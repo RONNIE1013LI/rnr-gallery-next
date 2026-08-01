@@ -13,5 +13,5 @@ export function getPeoplePetsFeeExGstCents(peoplePets: number): number {
     return PEOPLE_FEES_EX_GST_CENTS[peoplePets];
   }
 
-  return PEOPLE_FEES_EX_GST_CENTS[5] + (peoplePets - 5) * 2_500;
+  return peoplePets * 2_500;
 }

@@ -34,7 +34,7 @@ describe("R&R pricing", () => {
     expect(price.lines).toContainEqual({
       key: "people-pets",
       label: "People / pets fee",
-      amountExGstCents: 15_500,
+      amountExGstCents: 15_000,
     });
   });
 
