@@ -17,6 +17,7 @@ import type { PaymentOrderAccess } from "@/server/payments/payment-repository";
 import {
   createPaymentService,
   PaymentServiceError,
+  type PublicPaymentMethod,
   type PaymentStartResult,
 } from "@/server/payments/payment-service";
 import { selectPaymentProviders } from "@/server/payments/provider-registry";
@@ -36,6 +37,11 @@ type PaymentStarter = {
     idempotencyKey: string,
   ): Promise<PaymentStartResult>;
 };
+type OrderPaymentMethodFinder = {
+  availableMethodsForOrder(
+    access: PaymentOrderAccess,
+  ): Promise<readonly PublicPaymentMethod[]>;
+};
 type Dependencies = Readonly<{
   paymentService: PaymentStarter;
   getOptionalSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
@@ -43,19 +49,32 @@ type Dependencies = Readonly<{
 }>;
 type RouteContext = { params: Promise<{ orderNumber: string }> };
 
-function defaults(): Dependencies {
+type PaymentMethodDependencies = Readonly<{
+  paymentService: OrderPaymentMethodFinder;
+  getOptionalSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
+}>;
+
+function defaultPaymentService() {
   const database = getDatabase();
   const config = parsePaymentConfig();
   const checkoutRepository = createDrizzleCheckoutRepository(database);
+  return createPaymentService({
+    repository: createDrizzlePaymentRepository(database),
+    checkoutAuthority: checkoutRepository,
+    providers: selectPaymentProviders(config),
+    returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,
+  });
+}
+
+function defaults(): Dependencies {
   return {
-    paymentService: createPaymentService({
-      repository: createDrizzlePaymentRepository(database),
-      checkoutAuthority: checkoutRepository,
-      providers: selectPaymentProviders(config),
-      returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,
-    }),
+    paymentService: defaultPaymentService(),
     getOptionalSession,
   };
+}
+
+function paymentMethodDefaults(): PaymentMethodDependencies {
+  return { paymentService: defaultPaymentService(), getOptionalSession };
 }
 
 function json(body: unknown, status = 200) {
@@ -96,6 +115,25 @@ function publicResult(result: PaymentStartResult): PaymentStartResult {
   });
 }
 
+function publicMethods(methods: readonly PublicPaymentMethod[]) {
+  return methods.map(({ method, label, isTest }) => Object.freeze({ method, label, isTest }));
+}
+
+function paymentAccesses(
+  orderNumber: string,
+  authenticated: { user: { id: string } } | null,
+  rawToken: string | null,
+) {
+  const accesses: PaymentOrderAccess[] = [];
+  if (authenticated) {
+    accesses.push({ kind: "customer", orderNumber, customerId: authenticated.user.id });
+  }
+  if (rawToken) {
+    accesses.push({ kind: "guest", orderNumber, tokenDigest: hashCheckoutSessionToken(rawToken) });
+  }
+  return accesses;
+}
+
 function errorResponse(error: unknown) {
   if (error instanceof MutationRequestError) {
     return json({ error: { code: error.code, message: error.message } }, error.status);
@@ -123,18 +161,7 @@ export function createOrderPaymentRoute(dependencies?: Dependencies) {
       const { orderNumber } = await context.params;
       const authenticated = await deps.getOptionalSession(request.headers);
       const rawToken = readCheckoutSessionToken(request);
-      const accesses: PaymentOrderAccess[] = [];
-      if (authenticated) {
-        accesses.push({
-          kind: "customer", orderNumber, customerId: authenticated.user.id,
-        });
-      }
-      if (rawToken) {
-        accesses.push({
-          kind: "guest", orderNumber,
-          tokenDigest: hashCheckoutSessionToken(rawToken),
-        });
-      }
+      const accesses = paymentAccesses(orderNumber, authenticated, rawToken);
       if (accesses.length === 0) {
         throw new PaymentServiceError("ORDER_NOT_FOUND", "Order is unavailable");
       }
@@ -164,3 +191,39 @@ export function createOrderPaymentRoute(dependencies?: Dependencies) {
 }
 
 export const POST = createOrderPaymentRoute();
+
+export function createOrderPaymentMethodsRoute(dependencies?: PaymentMethodDependencies) {
+  return async function GET(request: Request, context: RouteContext) {
+    const deps = dependencies ?? paymentMethodDefaults();
+    try {
+      const { orderNumber } = await context.params;
+      const authenticated = await deps.getOptionalSession(request.headers);
+      const accesses = paymentAccesses(
+        orderNumber,
+        authenticated,
+        readCheckoutSessionToken(request),
+      );
+      if (accesses.length === 0) {
+        throw new PaymentServiceError("ORDER_NOT_FOUND", "Order is unavailable");
+      }
+      for (const [index, access] of accesses.entries()) {
+        try {
+          const methods = await deps.paymentService.availableMethodsForOrder(access);
+          return json({ methods: publicMethods(methods) });
+        } catch (error) {
+          if (
+            error instanceof PaymentServiceError &&
+            error.code === "ORDER_NOT_FOUND" &&
+            index < accesses.length - 1
+          ) continue;
+          throw error;
+        }
+      }
+      throw new PaymentServiceError("ORDER_NOT_FOUND", "Order is unavailable");
+    } catch (error) {
+      return errorResponse(error);
+    }
+  };
+}
+
+export const GET = createOrderPaymentMethodsRoute();

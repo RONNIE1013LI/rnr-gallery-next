@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import { PaymentServiceError } from "@/server/payments/payment-service";
-import { createOrderPaymentRoute } from "./route";
+import { createOrderPaymentMethodsRoute, createOrderPaymentRoute } from "./route";
 
 const origin = "https://shop.example.test";
 const token = "a".repeat(43);
@@ -127,5 +127,52 @@ describe("POST /api/orders/[orderNumber]/payment", () => {
       expect((await handler(invalid, context)).status).toBeGreaterThanOrEqual(400);
     }
     expect(paymentService.start).not.toHaveBeenCalled();
+  });
+});
+
+describe("GET /api/orders/[orderNumber]/payment", () => {
+  it("returns only availability-filtered methods for the owner-scoped immutable order", async () => {
+    const paymentService = { availableMethodsForOrder: vi.fn().mockResolvedValue([
+      { method: "card", label: "Card", isTest: false, provider: "internal" },
+    ]) };
+    const handler = createOrderPaymentMethodsRoute({
+      paymentService,
+      getOptionalSession: async () => null,
+    });
+
+    const response = await handler(new Request(`${origin}/api/orders/${orderNumber}/payment`, {
+      headers: { Cookie: `rnr_checkout_session=${token}` },
+    }), context);
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(paymentService.availableMethodsForOrder).toHaveBeenCalledWith({
+      kind: "guest", orderNumber, tokenDigest: hashCheckoutSessionToken(token),
+    });
+    expect(await response.json()).toEqual({ methods: [
+      { method: "card", label: "Card", isTest: false },
+    ] });
+  });
+
+  it("uses the signed-in owner fallback and returns the same 404 for no access", async () => {
+    const availableMethodsForOrder = vi.fn()
+      .mockRejectedValueOnce(new PaymentServiceError("ORDER_NOT_FOUND", "Order is unavailable"))
+      .mockResolvedValueOnce([]);
+    const owner = createOrderPaymentMethodsRoute({
+      paymentService: { availableMethodsForOrder },
+      getOptionalSession: async () => ({ user: { id: "customer-a" } }),
+    });
+    expect((await owner(new Request(`${origin}/api/orders/${orderNumber}/payment`, {
+      headers: { Cookie: `rnr_checkout_session=${token}` },
+    }), context)).status).toBe(200);
+    expect(availableMethodsForOrder).toHaveBeenNthCalledWith(2, {
+      kind: "guest", orderNumber, tokenDigest: hashCheckoutSessionToken(token),
+    });
+
+    const missing = createOrderPaymentMethodsRoute({
+      paymentService: { availableMethodsForOrder: vi.fn() },
+      getOptionalSession: async () => null,
+    });
+    expect((await missing(new Request(`${origin}/api/orders/${orderNumber}/payment`), context)).status).toBe(404);
   });
 });

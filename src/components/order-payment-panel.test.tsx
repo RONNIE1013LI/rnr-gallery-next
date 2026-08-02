@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { followPaymentAction, OrderPaymentPanel } from "./order-payment-panel";
+import { followPaymentAction, OrderPaymentPanel, parsePaymentStartResponse } from "./order-payment-panel";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
@@ -35,10 +35,37 @@ describe("OrderPaymentPanel", () => {
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
 
     expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
-    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ method: "afterpay", idempotencyKey: paymentIdempotencyKey });
-    expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull();
+    expect(JSON.parse(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1") ?? "null")).toMatchObject({
+      phase: "starting_payment",
+      method: "afterpay",
+      paymentIdempotencyKey,
+    });
+  });
+
+  it("persists a minimal direct-order recovery record before sending the request", async () => {
+    let resolveRequest!: (value: unknown) => void;
+    const fetchMock = vi.fn().mockImplementation(() => new Promise((resolve) => { resolveRequest = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
+
+    fireEvent.click(screen.getByRole("radio", { name: "Test Afterpay — no real payment" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const stored = JSON.parse(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1") ?? "null");
+    expect(stored).toEqual({
+      schemaVersion: 1,
+      phase: "starting_payment",
+      orderNumber: "RNR-2026-ABC",
+      paymentIdempotencyKey: expect.stringMatching(/^[0-9a-f-]{36}$/i),
+      method: "afterpay",
+    });
+    expect(JSON.stringify(stored)).not.toMatch(/clientSecret|redirectUrl|providerReference|returnState/);
+    resolveRequest({ ok: true, json: async () => ({
+      payment: { method: "afterpay", status: "processing", isTest: true, canRetry: false },
+      action: null,
+    }) });
   });
 
   it("ignores a stored payment attempt for another order", () => {
@@ -100,10 +127,46 @@ describe("OrderPaymentPanel", () => {
     expect(screen.queryByRole("button", { name: "Pay for order" })).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["paid" as const, "Payment confirmed."],
+    ["failed" as const, "Payment failed. Choose a payment method and try again."],
+    ["cancelled" as const, "Payment cancelled. Choose a payment method and try again."],
+    ["refunded" as const, "Payment refunded."],
+  ])("shows truthful copy for %s order status", (paymentStatus, expected) => {
+    render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus={paymentStatus} methods={methods} orderHref="/orders/RNR-2026-ABC" />);
+    expect(screen.getByText(expected)).toBeInTheDocument();
+  });
+
+  it.each([
+    ["paid" as const, "Payment confirmed."],
+    ["failed" as const, "Payment failed. Choose a payment method and try again."],
+    ["cancelled" as const, "Payment cancelled. Choose a payment method and try again."],
+  ])("clears recovery only for terminal %s start responses", async (status, expected) => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      payment: { method: "card", status, isTest: true, canRetry: status !== "paid" },
+      action: null,
+    }) }));
+    render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
+    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    expect(await screen.findByText(expected)).toBeInTheDocument();
+    expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull();
+  });
+
   it("keeps payment disabled when no methods are configured", () => {
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={[]} orderHref="/orders/RNR-2026-ABC" />);
     expect(screen.getByText("Payment methods are not configured yet")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Pay for order" })).toBeDisabled();
+  });
+
+  it("loads owner-scoped order methods instead of trusting configured-only options", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ methods: [methods[1]] }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" orderHref="/orders/RNR-2026-ABC" />);
+
+    expect(screen.getByText("Loading payment methods…")).toBeInTheDocument();
+    expect(await screen.findByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
+    expect(screen.queryByRole("radio", { name: "Test card — no real payment" })).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith("/api/orders/RNR-2026-ABC/payment", expect.objectContaining({ cache: "no-store" }));
   });
 
   it("routes public payment actions without interpreting them as paid", async () => {
@@ -115,6 +178,48 @@ describe("OrderPaymentPanel", () => {
     await followPaymentAction({ kind: "elements", method: "card", clientSecret: "client-secret" }, "/account/orders/RNR-2026-ABC", { assign, navigate });
     expect(navigate).toHaveBeenCalledWith("/account/orders/RNR-2026-ABC#payment");
     expect(assign).toHaveBeenCalledTimes(1);
+  });
+
+  it("retains recovery state while following a non-terminal action", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+      action: { kind: "elements", method: "card", clientSecret: "pi_secret_123" },
+    }) }));
+    render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
+    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-ABC#payment"));
+    const stored = window.sessionStorage.getItem("rnr-checkout-payment-intent-v1");
+    expect(stored).not.toBeNull();
+    expect(stored).not.toContain("pi_secret_123");
+  });
+
+  it("accepts only exact method-compatible payment responses and trusted action URLs", () => {
+    expect(parsePaymentStartResponse({
+      payment: { method: "afterpay", status: "requires_action", isTest: false, canRetry: false },
+      action: { kind: "redirect", method: "afterpay", redirectUrl: "https://pay.example.test/start" },
+    }, "afterpay", { nodeEnv: "production", currentOrigin: "https://shop.example.test" })).toMatchObject({ action: { kind: "redirect" } });
+    expect(parsePaymentStartResponse({
+      payment: { method: "card", status: "requires_action", isTest: true, canRetry: false },
+      action: { kind: "test", method: "card", redirectUrl: "http://127.0.0.1:3000/test-payment", isTest: true },
+    }, "card", { nodeEnv: "test", currentOrigin: "http://127.0.0.1:3000" })).toMatchObject({ action: { kind: "test" } });
+
+    const invalid = [
+      { payment: { method: "card", status: "processing", isTest: false, canRetry: false }, action: null, extra: true },
+      { payment: { method: "card", status: "unknown", isTest: false, canRetry: false }, action: null },
+      { payment: { method: "card", status: "failed", isTest: false, canRetry: false }, action: null },
+      { payment: { method: "card", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "redirect", method: "afterpay", redirectUrl: "https://pay.example.test" } },
+      { payment: { method: "afterpay", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "elements", method: "card", clientSecret: "secret" } },
+      { payment: { method: "card", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "test", method: "card", redirectUrl: "https://shop.example.test/test", isTest: true } },
+      { payment: { method: "afterpay", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "redirect", method: "afterpay", redirectUrl: "javascript:alert(1)" } },
+      { payment: { method: "afterpay", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "redirect", method: "afterpay", redirectUrl: "data:text/html,bad" } },
+      { payment: { method: "afterpay", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "redirect", method: "afterpay", redirectUrl: "http://pay.example.test/start" } },
+      { payment: { method: "afterpay", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "redirect", method: "afterpay", redirectUrl: "not a url" } },
+    ];
+    for (const payload of invalid) {
+      expect(() => parsePaymentStartResponse(payload, "card", {
+        nodeEnv: "production", currentOrigin: "https://shop.example.test",
+      })).toThrow("Payment response is invalid");
+    }
   });
 
   it("shows pending confirmation when the start response has no immediate action", async () => {

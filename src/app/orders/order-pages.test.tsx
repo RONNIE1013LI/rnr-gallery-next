@@ -81,6 +81,13 @@ describe("owner-scoped order pages", () => {
     findByCheckoutToken.mockResolvedValue(order);
     findByCustomer.mockResolvedValue(order);
     listByCustomer.mockResolvedValue([order]);
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ methods: [
+        { method: "card", label: "Test card — no real payment", isTest: true },
+        { method: "afterpay", label: "Test Afterpay — no real payment", isTest: true },
+      ] }),
+    }));
   });
 
   it("authorizes guest confirmation with the checkout cookie and renders immutable totals", async () => {
@@ -102,7 +109,7 @@ describe("owner-scoped order pages", () => {
     expect(screen.getAllByText("Urgent service")).toHaveLength(2);
     expect(screen.queryByText("No charge")).not.toBeInTheDocument();
     expect(screen.getAllByText("$180.75")).toHaveLength(2);
-    expect(screen.getByRole("radiogroup", { name: "Payment method" })).toBeInTheDocument();
+    expect(await screen.findByRole("radiogroup", { name: "Payment method" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
     expect(screen.getByText("No real payment will be taken.")).toBeInTheDocument();
   });

@@ -62,10 +62,12 @@ describe("CheckoutView", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-FRESH#payment"));
     const freshKey = JSON.parse(fetchMock.mock.calls[3][1].body).idempotencyKey;
     expect(freshKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
-    expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
+    expect(JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!)).toMatchObject({
+      phase: "starting_payment", orderNumber: "RNR-2026-FRESH",
+    });
   });
 
-  it("prefills a saved address, defaults to Post, reviews server totals and clears only after success", async () => {
+  it("prefills a saved address, defaults to Post, reviews server totals and retains pending payment recovery", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "post", serviceCode: "post", serviceName: "Live Post", amountExGstCents: 2000, gstCents: 300, amountInclGstCents: 2300, currency: "NZD", provenance: "gosweetspot", isTest: false } } }) })
@@ -109,7 +111,9 @@ describe("CheckoutView", () => {
       shipping: { method: "post", serviceCode: "post", amountInclGstCents: 2300 },
     });
     expect(localStorage.getItem(CART_STORAGE_KEY)).toBeNull();
-    expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
+    expect(JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!)).toMatchObject({
+      phase: "starting_payment", orderNumber: "RNR-2026-ABC",
+    });
   });
 
   it("keeps the cart and idempotency key when order creation fails", async () => {
@@ -341,7 +345,9 @@ describe("CheckoutView", () => {
     resolveRecovery({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-RECOVERED" } }) });
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-RECOVERED#payment"));
     expect(localStorage.getItem(CART_STORAGE_KEY)).toBeNull();
-    expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
+    expect(JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!)).toMatchObject({
+      phase: "starting_payment", orderNumber: "RNR-2026-RECOVERED",
+    });
   });
 
   it("keeps a failed recovery intent locked for retry without creating a checkout session", async () => {
@@ -473,19 +479,19 @@ describe("CheckoutView", () => {
 
     resolvePayment({ ok: true, json: async () => ({ payment: { method: "card", status: "processing", isTest: true, canRetry: false }, action: null }) });
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-PAY#payment"));
-    expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
+    expect(sessionStorage.getItem(paymentIntentStorageKey)).toBe(JSON.stringify(starting));
   });
 
   it("replays order-response and payment-response loss with the same distinct keys", async () => {
     const placing = {
       schemaVersion: 1, phase: "placing_order", orderIdempotencyKey: "70000000-0000-4000-8000-000000000008",
-      paymentIdempotencyKey: "80000000-0000-4000-8000-000000000008", method: "afterpay", checkoutVersion: 2,
+      paymentIdempotencyKey: "80000000-0000-4000-8000-000000000008", method: "card", checkoutVersion: 2,
       cartDigest: "a".repeat(64), shipping: { method: "pickup", serviceCode: "pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, isTest: false },
     };
     sessionStorage.setItem(paymentIntentStorageKey, JSON.stringify(placing));
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-RECOVER-PAY", paymentStatus: "awaiting_payment" } }) })
-      .mockResolvedValueOnce({ ok: false, status: 503, json: async () => ({ error: { message: "Payment response lost" } }) });
+      .mockRejectedValueOnce(new TypeError("Network response was lost after the request"));
     vi.stubGlobal("fetch", fetchMock);
     const first = render(<CheckoutView savedAddresses={[address]} />);
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-RECOVER-PAY#payment"));
@@ -496,14 +502,14 @@ describe("CheckoutView", () => {
     first.unmount();
     push.mockReset();
 
-    const retryFetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ payment: { method: "afterpay", status: "requires_action", isTest: true, canRetry: false }, action: { kind: "elements", method: "card", clientSecret: "safe-for-response-only" } }) });
+    const retryFetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ payment: { method: "card", status: "processing", isTest: false, canRetry: false }, action: { kind: "elements", method: "card", clientSecret: "safe-for-response-only" } }) });
     vi.stubGlobal("fetch", retryFetch);
     render(<CheckoutView savedAddresses={[address]} />);
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-RECOVER-PAY#payment"));
     expect(retryFetch).toHaveBeenCalledTimes(1);
     expect(retryFetch.mock.calls[0][0]).toBe("/api/orders/RNR-2026-RECOVER-PAY/payment");
     expect(JSON.parse(retryFetch.mock.calls[0][1].body).idempotencyKey).toBe(placing.paymentIdempotencyKey);
-    expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
+    expect(sessionStorage.getItem(paymentIntentStorageKey)).toBe(JSON.stringify(starting));
   });
 
   it("retains a starting intent when requires_action is returned without a safe action", async () => {
@@ -516,5 +522,18 @@ describe("CheckoutView", () => {
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-NEEDS-ACTION#payment"));
     expect(sessionStorage.getItem(paymentIntentStorageKey)).toBe(JSON.stringify(intent));
     expect(localStorage.getItem(CART_STORAGE_KEY)).toBeNull();
+  });
+
+  it.each(["paid", "failed", "cancelled"] as const)("clears recovery only after authoritative %s status", async (status) => {
+    const intent = { ...placementIntent("70000000-0000-4000-8000-000000000010"), phase: "starting_payment", orderNumber: "RNR-2026-TERMINAL" };
+    sessionStorage.setItem(paymentIntentStorageKey, JSON.stringify(intent));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      payment: { method: "card", status, isTest: true, canRetry: status !== "paid" }, action: null,
+    }) }));
+
+    render(<CheckoutView savedAddresses={[address]} />);
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-TERMINAL#payment"));
+    expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
   });
 });

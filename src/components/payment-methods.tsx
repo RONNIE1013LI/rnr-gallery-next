@@ -7,6 +7,38 @@ export type PaymentMethodOption = Readonly<{
   isTest: boolean;
 }>;
 
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function exactKeys(value: Record<string, unknown>, keys: readonly string[]) {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+export function parsePaymentMethodsResponse(payload: unknown): readonly PaymentMethodOption[] {
+  const response = record(payload);
+  if (!response || !exactKeys(response, ["methods"]) || !Array.isArray(response.methods)) {
+    throw new Error("Payment methods response is invalid");
+  }
+  const seen = new Set<PaymentMethodKey>();
+  const methods = response.methods.map((raw) => {
+    const method = record(raw);
+    if (!method || !exactKeys(method, ["method", "label", "isTest"]) ||
+      (method.method !== "card" && method.method !== "afterpay" && method.method !== "zip") ||
+      seen.has(method.method) || typeof method.label !== "string" || method.label.trim() !== method.label ||
+      method.label.length < 1 || method.label.length > 120 || typeof method.isTest !== "boolean") {
+      throw new Error("Payment methods response is invalid");
+    }
+    seen.add(method.method);
+    return Object.freeze({ method: method.method, label: method.label, isTest: method.isTest });
+  });
+  return Object.freeze(methods);
+}
+
 export function PaymentMethods({
   methods,
   value,

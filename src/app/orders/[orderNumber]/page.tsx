@@ -9,12 +9,6 @@ import { CHECKOUT_SESSION_COOKIE_NAME, hashCheckoutSessionToken, isCheckoutSessi
 import { getDatabase } from "@/server/db/client";
 import { createDrizzleOrderQueryRepository, OrderSnapshotIntegrityError } from "@/server/orders/drizzle-order-query-repository";
 import { createOrderQueryService } from "@/server/orders/order-query-service";
-import { parsePaymentConfig } from "@/server/payments/config";
-import { selectPaymentProviders } from "@/server/payments/provider-registry";
-
-function configuredPaymentMethods() {
-  return selectPaymentProviders(parsePaymentConfig()).map(({ method, label, isTest }) => ({ method, label, isTest }));
-}
 
 export default async function OrderConfirmationPage({ params }: { params: Promise<{ orderNumber: string }> }) {
   const [{ orderNumber }, cookieStore, session] = await Promise.all([params, cookies(), getOptionalSession()]);
@@ -27,5 +21,5 @@ export default async function OrderConfirmationPage({ params }: { params: Promis
     throw error;
   }
   if (!order) notFound();
-  return <main id="main-content" className={styles.orderPage}><OrderDetail order={order} heading="Order received." /><OrderPaymentPanel orderNumber={order.orderNumber} paymentStatus={order.paymentStatus} methods={configuredPaymentMethods()} orderHref={`/orders/${order.orderNumber}`} /><section className={styles.orderNext}><h2>Next steps</h2><div><Link className={styles.primaryButton} href="/shop">Continue browsing</Link>{session ? <Link className={styles.secondaryButton} href="/account/orders">View account orders</Link> : <Link className={styles.secondaryButton} href="/account/sign-in">Sign in</Link>}</div></section></main>;
+  return <main id="main-content" className={styles.orderPage}><OrderDetail order={order} heading="Order received." /><OrderPaymentPanel orderNumber={order.orderNumber} paymentStatus={order.paymentStatus} orderHref={`/orders/${order.orderNumber}`} /><section className={styles.orderNext}><h2>Next steps</h2><div><Link className={styles.primaryButton} href="/shop">Continue browsing</Link>{session ? <Link className={styles.secondaryButton} href="/account/orders">View account orders</Link> : <Link className={styles.secondaryButton} href="/account/sign-in">Sign in</Link>}</div></section></main>;
 }

@@ -11,7 +11,7 @@ import {
 } from "./drizzle-payment-repository";
 import { createPaymentService, PaymentServiceError } from "./payment-service";
 import type { PaymentProviderRegistration } from "./provider-registry";
-import type { CreateProviderSessionInput, PaymentProvider } from "./types";
+import type { CreateProviderSessionInput, PaymentProvider, ProviderSession } from "./types";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required");
@@ -367,6 +367,77 @@ describe("Drizzle payment repository", () => {
       .where(eq(paymentAttempts.id, afterTimeout.id));
     expect(recovered).toMatchObject({
       providerReference: "recovered-provider-reference",
+      returnStateDigest: createHash("sha256")
+        .update(providerInputs[0].returnState)
+        .digest("hex"),
+    });
+  });
+
+  it.each([
+    { name: "Afterpay redirect", method: "afterpay" as const, providerKey: "afterpay" as const },
+    { name: "Stripe Elements", method: "card" as const, providerKey: "stripe" as const },
+  ])("rehydrates a bound $name action after the first response is lost", async ({ method, providerKey }) => {
+    const owned = await createOrder();
+    const providerInputs: CreateProviderSessionInput[] = [];
+    const providerReference = `${providerKey}-${randomUUID()}`;
+    const provider: PaymentProvider = {
+      key: providerKey,
+      method,
+      refundCapability: "unsupported",
+      availability: async () => ({ available: true }),
+      createOrReuse: vi.fn(async (input): Promise<ProviderSession> => {
+        providerInputs.push(input);
+        if (providerKey === "stripe") {
+          return {
+            kind: "elements",
+            provider: "stripe",
+            method: "card",
+            providerReference,
+            providerStatus: "requires_payment_method",
+            clientSecret: `secret-${input.attemptId}`,
+          };
+        }
+        return {
+          kind: "redirect",
+          provider: "afterpay",
+          method: "afterpay",
+          providerReference,
+          providerStatus: "CREATED",
+          redirectUrl: `https://pay.example.test/${input.attemptId}`,
+        };
+      }),
+      completeReturn: vi.fn(),
+      retrieve: vi.fn(),
+    };
+    const service = createPaymentService({
+      repository,
+      checkoutAuthority: { findReviewedPaymentContext: vi.fn() },
+      providers: [{ method, label: method, isTest: false, provider }],
+      returnBaseUrl: "https://shop.example.test",
+      nodeEnv: "test",
+    });
+    const owner = {
+      kind: "guest" as const,
+      orderNumber: owned.orderNumber,
+      tokenDigest: owned.tokenDigest,
+    };
+    const clientKey = randomUUID();
+
+    const firstResponse = await service.start(owner, method, clientKey);
+    const [firstAttempt] = await database.select().from(paymentAttempts)
+      .where(eq(paymentAttempts.orderId, owned.orderId));
+    const replayResponse = await service.start(owner, method, clientKey);
+    const attempts = await database.select().from(paymentAttempts)
+      .where(eq(paymentAttempts.orderId, owned.orderId));
+
+    expect(replayResponse).toEqual(firstResponse);
+    expect(attempts).toEqual([firstAttempt]);
+    expect(providerInputs).toHaveLength(2);
+    expect(providerInputs[1]).toEqual(providerInputs[0]);
+    expect(firstAttempt).toMatchObject({
+      provider: providerKey,
+      method,
+      providerReference,
       returnStateDigest: createHash("sha256")
         .update(providerInputs[0].returnState)
         .digest("hex"),

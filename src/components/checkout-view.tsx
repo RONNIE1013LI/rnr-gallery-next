@@ -15,74 +15,27 @@ import { AddressForm, type AddressFieldErrors } from "./address-form";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { followPaymentAction, startOrderPayment } from "./order-payment-panel";
 import { PaymentMethods, type PaymentMethodOption } from "./payment-methods";
+import {
+  PAYMENT_INTENT_STORAGE_KEY,
+  readPaymentRecoveryIntent,
+  type CheckoutStartingPaymentIntent,
+  type PlacingOrderIntent,
+} from "./payment-recovery-intent";
 import styles from "./storefront.module.css";
 
 export type CheckoutSavedAddress = AddressInput & { id: string };
 const emptyAddress: AddressInput = { country: "NZ", fullName: "", building: "", street: "", suburb: "", region: "", postcode: "", phone: "", email: "" };
 const LEGACY_IDEMPOTENCY_STORAGE_KEY = "rnr-checkout-order-idempotency-v1";
 const LEGACY_PLACEMENT_STORAGE_KEY = "rnr-checkout-pending-placement-v1";
-const PAYMENT_INTENT_STORAGE_KEY = "rnr-checkout-payment-intent-v1";
-
-type PaymentIntentBase = {
-  schemaVersion: 1;
-  orderIdempotencyKey: string;
-  paymentIdempotencyKey: string;
-  method: PaymentMethodKey;
-  checkoutVersion: number;
-  cartDigest: string;
-  shipping: Pick<PublicShippingDTO["option"], "method" | "serviceCode" | "amountExGstCents" | "gstCents" | "amountInclGstCents" | "isTest">;
-};
-type PlacingOrderIntent = PaymentIntentBase & { phase: "placing_order" };
-type StartingPaymentIntent = PaymentIntentBase & { phase: "starting_payment"; orderNumber: string };
-type CheckoutPaymentIntent = PlacingOrderIntent | StartingPaymentIntent;
+type CheckoutPaymentIntent = PlacingOrderIntent | CheckoutStartingPaymentIntent;
 
 const recoveryRequests = new Map<string, Promise<unknown>>();
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
-function isUuid(value: string) {
-  return UUID_PATTERN.test(value);
-}
-
-function hasExactKeys(value: Record<string, unknown>, keys: string[]) {
-  const actual = Object.keys(value).sort();
-  const expected = [...keys].sort();
-  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
-}
-
-function parsePaymentIntent(raw: string | null): CheckoutPaymentIntent | null {
-  if (!raw) return null;
-  try {
-    const value = JSON.parse(raw) as unknown;
-    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-    const intent = value as Record<string, unknown>;
-    const baseKeys = ["schemaVersion", "phase", "orderIdempotencyKey", "paymentIdempotencyKey", "method", "checkoutVersion", "cartDigest", "shipping"];
-    if (intent.phase !== "placing_order" && intent.phase !== "starting_payment") return null;
-    if (!hasExactKeys(intent, intent.phase === "placing_order" ? baseKeys : [...baseKeys, "orderNumber"])) return null;
-    if (intent.schemaVersion !== 1 || typeof intent.orderIdempotencyKey !== "string" || !isUuid(intent.orderIdempotencyKey) || typeof intent.paymentIdempotencyKey !== "string" || !isUuid(intent.paymentIdempotencyKey) || intent.orderIdempotencyKey === intent.paymentIdempotencyKey) return null;
-    if (intent.method !== "card" && intent.method !== "afterpay" && intent.method !== "zip") return null;
-    if (intent.phase === "starting_payment" && (typeof intent.orderNumber !== "string" || !/^RNR-[A-Z0-9-]+$/.test(intent.orderNumber))) return null;
-    if (!Number.isSafeInteger(intent.checkoutVersion) || (intent.checkoutVersion as number) < 1 || typeof intent.cartDigest !== "string" || !/^[0-9a-f]{64}$/.test(intent.cartDigest)) return null;
-    if (!intent.shipping || typeof intent.shipping !== "object" || Array.isArray(intent.shipping)) return null;
-    const shipping = intent.shipping as Record<string, unknown>;
-    if (!hasExactKeys(shipping, ["method", "serviceCode", "amountExGstCents", "gstCents", "amountInclGstCents", "isTest"])) return null;
-    if ((shipping.method !== "post" && shipping.method !== "pickup") || typeof shipping.serviceCode !== "string" || shipping.serviceCode.length < 1 || shipping.serviceCode.length > 100 || typeof shipping.isTest !== "boolean") return null;
-    for (const key of ["amountExGstCents", "gstCents", "amountInclGstCents"] as const) {
-      if (!Number.isSafeInteger(shipping[key]) || (shipping[key] as number) < 0) return null;
-    }
-    if ((shipping.amountExGstCents as number) + (shipping.gstCents as number) !== shipping.amountInclGstCents) return null;
-    return value as CheckoutPaymentIntent;
-  } catch {
-    return null;
-  }
-}
-
 function readPaymentIntent() {
   if (typeof window === "undefined") return null;
-  const intent = parsePaymentIntent(window.sessionStorage.getItem(PAYMENT_INTENT_STORAGE_KEY));
-  if (!intent) window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+  const intent = readPaymentRecoveryIntent(window.sessionStorage);
   window.sessionStorage.removeItem(LEGACY_IDEMPOTENCY_STORAGE_KEY);
   window.sessionStorage.removeItem(LEGACY_PLACEMENT_STORAGE_KEY);
-  return intent;
+  return intent && "orderIdempotencyKey" in intent ? intent : null;
 }
 
 function placementRequest(intent: CheckoutPaymentIntent) {
@@ -175,15 +128,13 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   const finishPaymentStart = useCallback(async (orderNumber: string, payload: Awaited<ReturnType<typeof startOrderPayment>>) => {
     const orderHref = `/orders/${orderNumber}`;
     if (payload.action) {
-      window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
-      setPaymentIntent(null);
       await followPaymentAction(payload.action, orderHref, {
         assign: (url) => window.location.assign(url),
         navigate: push,
       });
       return;
     }
-    if (["processing", "paid", "failed", "cancelled"].includes(payload.payment.status)) {
+    if (["paid", "failed", "cancelled"].includes(payload.payment.status)) {
       window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
       setPaymentIntent(null);
     }
@@ -223,7 +174,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       setPending("order");
       setRecoveryChecked(true);
       try {
-        let starting: StartingPaymentIntent;
+        let starting: CheckoutStartingPaymentIntent;
         if (intent.phase === "placing_order") {
           const payload = await recoverRequest(`order:${JSON.stringify(intent)}`, () => postJson("/api/checkout/order", placementRequest(intent))) as { order: { orderNumber: string } };
           starting = { ...intent, phase: "starting_payment", orderNumber: payload.order.orderNumber };
@@ -293,7 +244,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       setPaymentIntent(intent);
     }
     try {
-      let starting: StartingPaymentIntent;
+      let starting: CheckoutStartingPaymentIntent;
       if (intent.phase === "placing_order") {
         const payload = await postJson("/api/checkout/order", placementRequest(intent));
         starting = { ...intent, phase: "starting_payment", orderNumber: payload.order.orderNumber };

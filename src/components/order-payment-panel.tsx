@@ -1,16 +1,31 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OrderPaymentStatus } from "@/server/db/schema/orders";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import type { PaymentActionDTO, PublicPaymentDTO } from "@/server/payments/public-dto";
-import { PaymentMethods, type PaymentMethodOption } from "./payment-methods";
+import {
+  PAYMENT_INTENT_STORAGE_KEY,
+  readPaymentRecoveryIntent,
+  type CheckoutStartingPaymentIntent,
+  type DirectStartingPaymentIntent,
+} from "./payment-recovery-intent";
+import {
+  parsePaymentMethodsResponse,
+  PaymentMethods,
+  type PaymentMethodOption,
+} from "./payment-methods";
 import styles from "./storefront.module.css";
 
-type PaymentStartResponse = Readonly<{
+export type PaymentStartResponse = Readonly<{
   payment: PublicPaymentDTO;
   action: PaymentActionDTO | null;
+}>;
+
+type PaymentResponseValidationContext = Readonly<{
+  nodeEnv: string | undefined;
+  currentOrigin: string;
 }>;
 
 type PaymentNavigation = Readonly<{
@@ -18,13 +33,8 @@ type PaymentNavigation = Readonly<{
   navigate: (url: string) => void;
 }>;
 
-const PAYMENT_INTENT_STORAGE_KEY = "rnr-checkout-payment-intent-v1";
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const STARTING_INTENT_KEYS = ["schemaVersion", "phase", "orderIdempotencyKey", "paymentIdempotencyKey", "method", "checkoutVersion", "cartDigest", "shipping", "orderNumber"];
-const SHIPPING_KEYS = ["method", "serviceCode", "amountExGstCents", "gstCents", "amountInclGstCents", "isTest"];
-
 type StoredStartingAttempt = Readonly<{
-  value: Record<string, unknown>;
+  value: CheckoutStartingPaymentIntent | DirectStartingPaymentIntent;
   method: PaymentMethodKey;
   paymentIdempotencyKey: string;
 }>;
@@ -35,24 +45,100 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]) {
   return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
 }
 
+function record(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function trustedActionUrl(
+  rawValue: unknown,
+  kind: "redirect" | "test",
+  context: PaymentResponseValidationContext,
+) {
+  if (typeof rawValue !== "string") return false;
+  try {
+    const url = new URL(rawValue);
+    if (url.username || url.password) return false;
+    if (url.protocol === "https:") return true;
+    if (kind !== "test" || url.protocol !== "http:" || context.nodeEnv === "production") return false;
+    const current = new URL(context.currentOrigin);
+    return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) && url.origin === current.origin;
+  } catch {
+    return false;
+  }
+}
+
+export function parsePaymentStartResponse(
+  payload: unknown,
+  selectedMethod: PaymentMethodKey,
+  context: PaymentResponseValidationContext,
+): PaymentStartResponse {
+  const result = record(payload);
+  const payment = record(result?.payment);
+  if (!result || !hasExactKeys(result, ["payment", "action"]) || !payment ||
+    !hasExactKeys(payment, ["method", "status", "isTest", "canRetry"])) {
+    throw new Error("Payment response is invalid");
+  }
+  const statuses = ["created", "requires_action", "processing", "paid", "failed", "cancelled"];
+  if (
+    payment.method !== selectedMethod ||
+    !statuses.includes(String(payment.status)) ||
+    typeof payment.isTest !== "boolean" ||
+    typeof payment.canRetry !== "boolean" ||
+    payment.canRetry !== (payment.status === "failed" || payment.status === "cancelled")
+  ) throw new Error("Payment response is invalid");
+  if (result.action === null) return result as PaymentStartResponse;
+
+  const action = record(result.action);
+  if (!action || action.method !== selectedMethod || action.method !== payment.method) {
+    throw new Error("Payment response is invalid");
+  }
+  if (action.kind === "elements") {
+    if (!hasExactKeys(action, ["kind", "method", "clientSecret"]) ||
+      selectedMethod !== "card" || payment.status !== "processing" || payment.isTest !== false ||
+      typeof action.clientSecret !== "string" || action.clientSecret.length < 1 || action.clientSecret.length > 2048) {
+      throw new Error("Payment response is invalid");
+    }
+  } else if (action.kind === "redirect") {
+    if (!hasExactKeys(action, ["kind", "method", "redirectUrl"]) ||
+      selectedMethod === "card" || payment.status !== "requires_action" || payment.isTest !== false ||
+      !trustedActionUrl(action.redirectUrl, "redirect", context)) {
+      throw new Error("Payment response is invalid");
+    }
+  } else if (action.kind === "test") {
+    if (!hasExactKeys(action, ["kind", "method", "redirectUrl", "isTest"]) ||
+      action.isTest !== true || payment.status !== "requires_action" || payment.isTest !== true ||
+      !trustedActionUrl(action.redirectUrl, "test", context)) {
+      throw new Error("Payment response is invalid");
+    }
+  } else {
+    throw new Error("Payment response is invalid");
+  }
+  return result as PaymentStartResponse;
+}
+
 function storedStartingAttempt(orderNumber: string): StoredStartingAttempt | null {
   if (typeof window === "undefined") return null;
-  try {
-    const value = JSON.parse(window.sessionStorage.getItem(PAYMENT_INTENT_STORAGE_KEY) ?? "null") as unknown;
-    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-    const intent = value as Record<string, unknown>;
-    if (!hasExactKeys(intent, STARTING_INTENT_KEYS) || intent.schemaVersion !== 1 || intent.phase !== "starting_payment" || intent.orderNumber !== orderNumber) return null;
-    if (intent.method !== "card" && intent.method !== "afterpay" && intent.method !== "zip") return null;
-    if (typeof intent.paymentIdempotencyKey !== "string" || !UUID_PATTERN.test(intent.paymentIdempotencyKey)) return null;
-    if (!intent.shipping || typeof intent.shipping !== "object" || Array.isArray(intent.shipping) || !hasExactKeys(intent.shipping as Record<string, unknown>, SHIPPING_KEYS)) return null;
-    return { value: intent, method: intent.method, paymentIdempotencyKey: intent.paymentIdempotencyKey };
-  } catch {
-    return null;
-  }
+  const intent = readPaymentRecoveryIntent(window.sessionStorage);
+  if (!intent || intent.phase !== "starting_payment" || intent.orderNumber !== orderNumber) return null;
+  return { value: intent, method: intent.method, paymentIdempotencyKey: intent.paymentIdempotencyKey };
 }
 
 function clearStoredStartingAttempt(orderNumber: string) {
   if (storedStartingAttempt(orderNumber)) window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+}
+
+function persistStartingAttempt(
+  orderNumber: string,
+  method: PaymentMethodKey,
+  paymentIdempotencyKey: string,
+) {
+  const existing = storedStartingAttempt(orderNumber)?.value;
+  const intent: CheckoutStartingPaymentIntent | DirectStartingPaymentIntent = existing && "orderIdempotencyKey" in existing
+    ? { ...existing, method, paymentIdempotencyKey }
+    : { schemaVersion: 1, phase: "starting_payment", orderNumber, method, paymentIdempotencyKey };
+  window.sessionStorage.setItem(PAYMENT_INTENT_STORAGE_KEY, JSON.stringify(intent));
 }
 
 function defaultMethod(methods: readonly PaymentMethodOption[]) {
@@ -81,74 +167,146 @@ export async function startOrderPayment(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ method, idempotencyKey }),
   });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error?.message ?? "Payment could not be started");
-  return payload as PaymentStartResponse;
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("Payment response is invalid");
+  }
+  if (!response.ok) {
+    const error = record(record(payload)?.error);
+    throw new Error(typeof error?.message === "string" ? error.message : "Payment could not be started");
+  }
+  return parsePaymentStartResponse(payload, method, {
+    nodeEnv: process.env.NODE_ENV,
+    currentOrigin: window.location.origin,
+  });
 }
 
 export function OrderPaymentPanel({
   orderNumber,
   paymentStatus,
-  methods,
+  methods: suppliedMethods,
   orderHref,
 }: {
   orderNumber: string;
   paymentStatus: OrderPaymentStatus;
-  methods: readonly PaymentMethodOption[];
+  methods?: readonly PaymentMethodOption[];
   orderHref: string;
 }) {
   const { push } = useRouter();
-  const initialAttempt = storedStartingAttempt(orderNumber);
+  const [initialAttempt] = useState(() => storedStartingAttempt(orderNumber));
+  const [methods, setMethods] = useState<readonly PaymentMethodOption[]>(suppliedMethods ?? []);
+  const [methodsLoaded, setMethodsLoaded] = useState(suppliedMethods !== undefined);
   const resumedMethod = initialAttempt && methods.some((option) => option.method === initialAttempt.method) ? initialAttempt.method : null;
   const [selected, setSelected] = useState<PaymentMethodKey | null>(() => resumedMethod ?? defaultMethod(methods));
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const paymentKey = useRef<string | null>(resumedMethod ? initialAttempt?.paymentIdempotencyKey ?? null : null);
+  const paymentAction = useRef<PaymentActionDTO | null>(null);
+  const resumed = useRef(false);
   const canStart = ["awaiting_payment", "failed", "cancelled"].includes(paymentStatus);
   const statusMessage = useMemo(() => {
     if (message) return message;
     if (paymentStatus === "processing") return "Payment confirmation is pending";
     if (paymentStatus === "paid") return "Payment confirmed.";
+    if (paymentStatus === "failed") return "Payment failed. Choose a payment method and try again.";
+    if (paymentStatus === "cancelled") return "Payment cancelled. Choose a payment method and try again.";
+    if (paymentStatus === "refunded") return "Payment refunded.";
     return "";
   }, [message, paymentStatus]);
 
-  async function start() {
-    if (!selected || pending || !canStart) return;
-    paymentKey.current ??= window.crypto.randomUUID();
-    const attempt = storedStartingAttempt(orderNumber);
-    if (attempt) {
-      window.sessionStorage.setItem(PAYMENT_INTENT_STORAGE_KEY, JSON.stringify({
-        ...attempt.value,
-        method: selected,
-        paymentIdempotencyKey: paymentKey.current,
-      }));
-    }
+  useEffect(() => {
+    if (suppliedMethods !== undefined || !canStart) return;
+    let active = true;
+    void fetch(`/api/orders/${encodeURIComponent(orderNumber)}/payment`, {
+      method: "GET",
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    }).then(async (response) => {
+      let payload: unknown;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error("Payment methods response is invalid");
+      }
+      if (!response.ok) {
+        const error = record(record(payload)?.error);
+        throw new Error(typeof error?.message === "string" ? error.message : "Payment methods could not be loaded");
+      }
+      const loaded = parsePaymentMethodsResponse(payload);
+      if (!active) return;
+      setMethods(loaded);
+      setSelected((current) => current && loaded.some(({ method }) => method === current)
+        ? current
+        : initialAttempt && loaded.some(({ method }) => method === initialAttempt.method)
+          ? initialAttempt.method
+          : defaultMethod(loaded));
+      setMethodsLoaded(true);
+    }).catch((error) => {
+      if (!active) return;
+      setMethods([]);
+      setSelected(null);
+      setMethodsLoaded(true);
+      setMessage(error instanceof Error ? error.message : "Payment methods could not be loaded");
+    });
+    return () => { active = false; };
+  }, [canStart, initialAttempt, orderNumber, suppliedMethods]);
+
+  const runPayment = useCallback(async (method: PaymentMethodKey, idempotencyKey: string) => {
     setPending(true);
     setMessage("");
     try {
-      const result = await startOrderPayment(orderNumber, selected, paymentKey.current);
+      const result = await startOrderPayment(orderNumber, method, idempotencyKey);
       if (result.action) {
-        clearStoredStartingAttempt(orderNumber);
+        paymentAction.current = result.action;
         await followPaymentAction(result.action, orderHref, {
           assign: (url) => window.location.assign(url),
           navigate: push,
         });
         return;
       }
-      if (["processing", "paid", "failed", "cancelled"].includes(result.payment.status)) clearStoredStartingAttempt(orderNumber);
-      setMessage("Payment confirmation is pending");
+      paymentAction.current = null;
+      if (["paid", "failed", "cancelled"].includes(result.payment.status)) {
+        clearStoredStartingAttempt(orderNumber);
+        paymentKey.current = null;
+      }
+      const messages: Record<PublicPaymentDTO["status"], string> = {
+        created: "Payment setup is pending. Try again shortly.",
+        requires_action: "Payment action is required. Try again to continue.",
+        processing: "Payment confirmation is pending",
+        paid: "Payment confirmed.",
+        failed: "Payment failed. Choose a payment method and try again.",
+        cancelled: "Payment cancelled. Choose a payment method and try again.",
+      };
+      setMessage(messages[result.payment.status]);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "Payment could not be started");
     } finally {
       setPending(false);
     }
+  }, [orderHref, orderNumber, push]);
+
+  useEffect(() => {
+    if (!methodsLoaded || resumed.current || !canStart || !resumedMethod || !initialAttempt) return;
+    resumed.current = true;
+    void runPayment(resumedMethod, initialAttempt.paymentIdempotencyKey);
+  }, [canStart, initialAttempt, methodsLoaded, resumedMethod, runPayment]);
+
+  async function start() {
+    if (!selected || pending || !canStart) return;
+    paymentKey.current ??= window.crypto.randomUUID();
+    persistStartingAttempt(orderNumber, selected, paymentKey.current);
+    await runPayment(selected, paymentKey.current);
   }
 
   return <section id="payment" className={styles.orderPaymentPanel}>
     <h2>Payment</h2>
     {canStart ? <>
-      <PaymentMethods methods={methods} value={selected} onChange={(method) => { setSelected(method); paymentKey.current = null; setMessage(""); }} disabled={pending} />
-      <button className={styles.primaryButton} type="button" disabled={!selected || pending || methods.length === 0} onClick={start}>{pending ? "Starting payment…" : "Pay for order"}</button>
+      {!methodsLoaded
+        ? <p className={styles.checkoutMessage}>Loading payment methods…</p>
+        : <PaymentMethods methods={methods} value={selected} onChange={(method) => { setSelected(method); paymentKey.current = null; setMessage(""); }} disabled={pending} />}
+      <button className={styles.primaryButton} type="button" disabled={!methodsLoaded || !selected || pending || methods.length === 0} onClick={start}>{pending ? "Starting payment…" : "Pay for order"}</button>
     </> : null}
     {statusMessage ? <p aria-live="polite" className={styles.checkoutMessage}>{statusMessage}</p> : null}
   </section>;

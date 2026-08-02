@@ -216,6 +216,27 @@ export function createPaymentService({
   validateRegistrations(providers);
   const byMethod = new Map(providers.map((entry) => [entry.method, entry]));
 
+  async function methodsForContext(context: PaymentEligibilityContext) {
+    const providerContext = eligibilityContext(context);
+    const results = await Promise.all(providers.map(async (entry) => {
+      try {
+        return {
+          entry,
+          availability: await entry.provider.availability(providerContext),
+        };
+      } catch {
+        return { entry, availability: { available: false as const, reason: "provider" } };
+      }
+    }));
+    return Object.freeze(results
+      .filter(({ availability }) => availability.available)
+      .map(({ entry }) => Object.freeze({
+        method: entry.method,
+        label: entry.label,
+        isTest: entry.isTest,
+      })));
+  }
+
   return {
     async availableMethods(
       access: ReviewedPaymentAccess,
@@ -227,24 +248,17 @@ export function createPaymentService({
           "The checkout has changed; review it again",
         );
       }
-      const providerContext = eligibilityContext(context);
-      const results = await Promise.all(providers.map(async (entry) => {
-        try {
-          return {
-            entry,
-            availability: await entry.provider.availability(providerContext),
-          };
-        } catch {
-          return { entry, availability: { available: false as const, reason: "provider" } };
-        }
-      }));
-      return Object.freeze(results
-        .filter(({ availability }) => availability.available)
-        .map(({ entry }) => Object.freeze({
-          method: entry.method,
-          label: entry.label,
-          isTest: entry.isTest,
-        })));
+      return methodsForContext(context);
+    },
+
+    async availableMethodsForOrder(
+      access: PaymentOrderAccess,
+    ): Promise<readonly PublicPaymentMethod[]> {
+      const order = await repository.findPayableOrder(access);
+      if (!order) {
+        throw new PaymentServiceError("ORDER_NOT_FOUND", "Order is unavailable");
+      }
+      return methodsForContext(order);
     },
 
     async start(
@@ -292,24 +306,15 @@ export function createPaymentService({
           "Another payment attempt is in progress",
         );
       }
-      if (claim.outcome === "existing" || !claim.claimId) {
-        return Object.freeze({
-          payment: publicPayment(method, claim.attempt.status, registration.isTest),
-          action: null,
-        });
-      }
-
-      let returnState: string;
-      let session: ProviderSession;
-      try {
-        returnState = deriveReturnState({
+      const createSession = async (stableReturnState?: string) => {
+        const returnState = stableReturnState ?? deriveReturnState({
           attemptId: claim.attempt.id,
           idempotencyKey: claim.attempt.idempotencyKey,
           provider: registration.provider.key,
           method,
         });
         if (!/^[a-f0-9]{64}$/.test(returnState)) throw new Error("Invalid return state");
-        session = await registration.provider.createOrReuse({
+        const session = await registration.provider.createOrReuse({
           order,
           attemptId: claim.attempt.id,
           idempotencyKey: claim.attempt.idempotencyKey,
@@ -334,6 +339,43 @@ export function createPaymentService({
         if (!hasExpectedIdentity(session, registration.provider, method)) {
           throw new Error("Payment provider identity mismatch");
         }
+        return { returnState, session };
+      };
+      if (claim.outcome === "existing" || !claim.claimId) {
+        if (!claim.attempt.providerReference) {
+          return Object.freeze({
+            payment: publicPayment(method, claim.attempt.status, registration.isTest),
+            action: null,
+          });
+        }
+        try {
+          const expectedState = deriveReturnState({
+            attemptId: claim.attempt.id,
+            idempotencyKey: claim.attempt.idempotencyKey,
+            provider: registration.provider.key,
+            method,
+          });
+          if (
+            !/^[a-f0-9]{64}$/.test(expectedState) ||
+            claim.attempt.returnStateDigest !== digestReturnState(expectedState)
+          ) throw new Error("Payment return state mismatch");
+          const { session } = await createSession(expectedState);
+          if (session.providerReference !== claim.attempt.providerReference) {
+            throw new Error("Payment provider reference mismatch");
+          }
+          return Object.freeze({
+            payment: publicPayment(method, claim.attempt.status, registration.isTest),
+            action: toImmediatePaymentActionDTO(session),
+          });
+        } catch {
+          throw unavailableStart();
+        }
+      }
+
+      let returnState: string;
+      let session: ProviderSession;
+      try {
+        ({ returnState, session } = await createSession());
       } catch {
         throw unavailableStart();
       }

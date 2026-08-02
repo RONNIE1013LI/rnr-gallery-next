@@ -1,5 +1,7 @@
+import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { NormalizedAddress } from "@/domain/address/types";
+import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import type { ReviewedPaymentCheckoutRepository } from "@/server/checkout/checkout-repository";
 import type { PaymentAttemptRecord, PaymentRepository } from "./payment-repository";
 import { createPaymentService, PaymentServiceError } from "./payment-service";
@@ -44,7 +46,7 @@ const attempt: PaymentAttemptRecord = {
   updatedAt: new Date("2026-08-02T00:00:00.000Z"),
 };
 
-function provider(method: "card" | "afterpay" = "card"): PaymentProvider {
+function provider(method: PaymentMethodKey = "card"): PaymentProvider {
   return {
     key: "local-test",
     method,
@@ -234,6 +236,36 @@ describe("payment service", () => {
       billingAddress: order.billingAddress,
       deliveryAddress: order.deliveryAddress,
     });
+  });
+
+  it("filters owner-scoped order methods through the same immutable availability context", async () => {
+    const australianAddress = { ...address, country: "AU" as const, region: "NSW", postcode: "2000", phone: "+61400000000" };
+    const australianOrder = {
+      ...order,
+      billingAddress: australianAddress,
+      deliveryAddress: australianAddress,
+      customer: { fullName: australianAddress.fullName, email: australianAddress.email, phone: australianAddress.phone },
+    };
+    const card = provider();
+    const zip = provider("zip");
+    vi.mocked(zip.availability).mockImplementation(async (context) => context.currency === "NZD"
+      ? { available: false, reason: "currency" }
+      : { available: true });
+    const repo = repository({ findPayableOrder: vi.fn().mockResolvedValue(australianOrder) });
+
+    await expect(service({
+      repository: repo,
+      providers: [registration(card), registration(zip)],
+    }).availableMethodsForOrder(access)).resolves.toEqual([
+      { method: "card", label: "Test card — no real payment", isTest: true },
+    ]);
+
+    expect(repo.findPayableOrder).toHaveBeenCalledWith(access);
+    expect(zip.availability).toHaveBeenCalledWith(expect.objectContaining({
+      amountCents: order.amountCents,
+      currency: "NZD",
+      deliveryAddress: australianAddress,
+    }));
   });
 
   it("starts from the immutable order, binds a state digest and returns a safe action", async () => {
@@ -497,9 +529,9 @@ describe("payment service", () => {
     }
   });
 
-  it("returns a safe status for a same-method non-claiming request", async () => {
+  it("keeps an unbound active lease pending without calling the provider", async () => {
     const card = provider();
-    const bound = { ...attempt, providerReference: "already-bound", status: "requires_action" as const };
+    const bound = { ...attempt, providerReference: null, returnStateDigest: null, status: "created" as const };
     const repo = repository({
       createOrClaimNonterminalAttempt: vi.fn().mockResolvedValue({
         outcome: "existing", attempt: bound, claimId: null,
@@ -507,10 +539,93 @@ describe("payment service", () => {
     });
     await expect(service({ repository: repo, providers: [registration(card)] })
       .start(access, "card", browserKey)).resolves.toEqual({
-        payment: { method: "card", status: "requires_action", isTest: true, canRetry: false },
+        payment: { method: "card", status: "created", isTest: true, canRetry: false },
         action: null,
       });
     expect(card.createOrReuse).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["afterpay", "afterpay", "redirect", "requires_action"],
+    ["stripe", "card", "elements", "processing"],
+  ] as const)("rehydrates the same %s action after the bound response is lost", async (key, method, kind, status) => {
+    const returnState = "c".repeat(64);
+    const providerReference = `${key}-reference`;
+    const paymentProvider: PaymentProvider = {
+      key,
+      method,
+      refundCapability: "unsupported",
+      availability: vi.fn().mockResolvedValue({ available: true }),
+      createOrReuse: vi.fn().mockImplementation(async (input) => kind === "elements"
+        ? { kind, provider: "stripe", method: "card", providerReference, providerStatus: "PROCESSING", clientSecret: "client_secret_same" }
+        : { kind, provider: "afterpay", method: "afterpay", providerReference, providerStatus: "REQUIRES_ACTION", redirectUrl: input.returnUrl }),
+      completeReturn: vi.fn(),
+      retrieve: vi.fn(),
+    };
+    const bound = {
+      ...attempt,
+      provider: key,
+      method,
+      providerReference,
+      returnStateDigest: createHash("sha256").update(returnState).digest("hex"),
+      status,
+    };
+    const repo = repository({
+      createOrClaimNonterminalAttempt: vi.fn().mockResolvedValue({ outcome: "existing", attempt: bound, claimId: null }),
+    });
+    const paymentService = service({
+      repository: repo,
+      providers: [{ method, label: method, isTest: false, provider: paymentProvider }],
+      deriveReturnState: () => returnState,
+    });
+
+    const result = await paymentService.start(access, method, browserKey);
+
+    expect(paymentProvider.createOrReuse).toHaveBeenCalledWith(expect.objectContaining({
+      attemptId: attempt.id,
+      idempotencyKey: attempt.idempotencyKey,
+      returnState,
+    }));
+    expect(result).toMatchObject({ payment: { method, status }, action: { kind, method } });
+    expect(repo.bindProviderSession).not.toHaveBeenCalled();
+  });
+
+  it.each(["digest", "reference", "kind"] as const)("fails closed when a rebound provider %s mismatches", async (mismatch) => {
+    const returnState = "d".repeat(64);
+    const paymentProvider: PaymentProvider = {
+      key: "afterpay",
+      method: "afterpay",
+      refundCapability: "unsupported",
+      availability: vi.fn().mockResolvedValue({ available: true }),
+      createOrReuse: vi.fn().mockResolvedValue({
+        kind: mismatch === "kind" ? "test" : "redirect",
+        provider: mismatch === "kind" ? "local-test" : "afterpay",
+        method: "afterpay",
+        providerReference: mismatch === "reference" ? "wrong-reference" : "afterpay-reference",
+        providerStatus: "REQUIRES_ACTION",
+        ...(mismatch === "kind" ? { url: "https://provider.test" } : { redirectUrl: "https://provider.test" }),
+      } as never),
+      completeReturn: vi.fn(),
+      retrieve: vi.fn(),
+    };
+    const bound = {
+      ...attempt,
+      provider: "afterpay" as const,
+      method: "afterpay" as const,
+      providerReference: "afterpay-reference",
+      returnStateDigest: mismatch === "digest" ? "e".repeat(64) : createHash("sha256").update(returnState).digest("hex"),
+      status: "requires_action" as const,
+    };
+    const repo = repository({
+      createOrClaimNonterminalAttempt: vi.fn().mockResolvedValue({ outcome: "existing", attempt: bound, claimId: null }),
+    });
+
+    await expect(service({
+      repository: repo,
+      providers: [{ method: "afterpay", label: "Afterpay", isTest: false, provider: paymentProvider }],
+      deriveReturnState: () => returnState,
+    }).start(access, "afterpay", browserKey)).rejects.toMatchObject({ code: "PAYMENT_UNAVAILABLE" });
+    expect(repo.bindProviderSession).not.toHaveBeenCalled();
   });
 
   it("keeps a timed-out claimed attempt recoverable with the same provider key", async () => {

@@ -137,7 +137,7 @@ function postInput(state: Awaited<ReturnType<typeof checkout>>) {
         amountInclGstCents: 2_300,
         currency: "NZD" as const,
         providerReference: `fresh-${randomUUID()}`,
-        expiresAt: new Date("2026-08-02T12:15:00.000Z"),
+        expiresAt: new Date("2099-01-01T00:00:00.000Z"),
         rawResponseHash: "b".repeat(64),
         isTest: true,
       },

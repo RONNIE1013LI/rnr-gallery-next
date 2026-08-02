@@ -1,6 +1,6 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import { PaymentMethods } from "./payment-methods";
+import { parsePaymentMethodsResponse, PaymentMethods } from "./payment-methods";
 
 const methods = [
   { method: "afterpay" as const, label: "Test Afterpay — no real payment", isTest: true },
@@ -8,6 +8,19 @@ const methods = [
 ];
 
 describe("PaymentMethods", () => {
+  it("accepts only an exact public payment-method response", () => {
+    expect(parsePaymentMethodsResponse({ methods })).toEqual(methods);
+    for (const payload of [
+      null,
+      { methods, extra: true },
+      { methods: [{ method: "cash", label: "Cash", isTest: false }] },
+      { methods: [{ method: "card", label: "", isTest: false }] },
+      { methods: [{ method: "card", label: "Card", isTest: "false" }] },
+      { methods: [methods[0], methods[0]] },
+      { methods: [{ ...methods[0], providerReference: "secret" }] },
+    ]) expect(() => parsePaymentMethodsResponse(payload)).toThrow("Payment methods response is invalid");
+  });
+
   it("renders an accessible payment radiogroup and truthful test copy", () => {
     render(<PaymentMethods methods={methods} value="card" onChange={vi.fn()} />);
 
