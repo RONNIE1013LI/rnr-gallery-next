@@ -60,10 +60,12 @@ function trustedActionUrl(
   try {
     const url = new URL(rawValue);
     if (url.username || url.password) return false;
-    if (url.protocol === "https:") return true;
-    if (kind !== "test" || url.protocol !== "http:" || context.nodeEnv === "production") return false;
+    if (kind === "redirect") return url.protocol === "https:";
+    if (context.nodeEnv === "production") return false;
     const current = new URL(context.currentOrigin);
-    return ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname) && url.origin === current.origin;
+    if (url.origin !== current.origin) return false;
+    if (url.protocol === "https:") return true;
+    return url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
   } catch {
     return false;
   }
@@ -198,11 +200,12 @@ export function OrderPaymentPanel({
   const [initialAttempt] = useState(() => storedStartingAttempt(orderNumber));
   const [methods, setMethods] = useState<readonly PaymentMethodOption[]>(suppliedMethods ?? []);
   const [methodsLoaded, setMethodsLoaded] = useState(suppliedMethods !== undefined);
-  const resumedMethod = initialAttempt && methods.some((option) => option.method === initialAttempt.method) ? initialAttempt.method : null;
+  const resumableAttempt = paymentStatus === "awaiting_payment" ? initialAttempt : null;
+  const resumedMethod = resumableAttempt && methods.some((option) => option.method === resumableAttempt.method) ? resumableAttempt.method : null;
   const [selected, setSelected] = useState<PaymentMethodKey | null>(() => resumedMethod ?? defaultMethod(methods));
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
-  const paymentKey = useRef<string | null>(resumedMethod ? initialAttempt?.paymentIdempotencyKey ?? null : null);
+  const paymentKey = useRef<string | null>(resumedMethod ? resumableAttempt?.paymentIdempotencyKey ?? null : null);
   const paymentAction = useRef<PaymentActionDTO | null>(null);
   const resumed = useRef(false);
   const canStart = ["awaiting_payment", "failed", "cancelled"].includes(paymentStatus);
@@ -215,6 +218,12 @@ export function OrderPaymentPanel({
     if (paymentStatus === "refunded") return "Payment refunded.";
     return "";
   }, [message, paymentStatus]);
+
+  useEffect(() => {
+    if (paymentStatus === "awaiting_payment" || !initialAttempt) return;
+    clearStoredStartingAttempt(orderNumber);
+    paymentKey.current = null;
+  }, [initialAttempt, orderNumber, paymentStatus]);
 
   useEffect(() => {
     if (suppliedMethods !== undefined || !canStart) return;
@@ -239,8 +248,8 @@ export function OrderPaymentPanel({
       setMethods(loaded);
       setSelected((current) => current && loaded.some(({ method }) => method === current)
         ? current
-        : initialAttempt && loaded.some(({ method }) => method === initialAttempt.method)
-          ? initialAttempt.method
+        : resumableAttempt && loaded.some(({ method }) => method === resumableAttempt.method)
+          ? resumableAttempt.method
           : defaultMethod(loaded));
       setMethodsLoaded(true);
     }).catch((error) => {
@@ -251,7 +260,7 @@ export function OrderPaymentPanel({
       setMessage(error instanceof Error ? error.message : "Payment methods could not be loaded");
     });
     return () => { active = false; };
-  }, [canStart, initialAttempt, orderNumber, suppliedMethods]);
+  }, [canStart, orderNumber, resumableAttempt, suppliedMethods]);
 
   const runPayment = useCallback(async (method: PaymentMethodKey, idempotencyKey: string) => {
     setPending(true);
@@ -288,10 +297,11 @@ export function OrderPaymentPanel({
   }, [orderHref, orderNumber, push]);
 
   useEffect(() => {
-    if (!methodsLoaded || resumed.current || !canStart || !resumedMethod || !initialAttempt) return;
+    if (!methodsLoaded || resumed.current || paymentStatus !== "awaiting_payment" || !resumedMethod || !resumableAttempt) return;
     resumed.current = true;
-    void runPayment(resumedMethod, initialAttempt.paymentIdempotencyKey);
-  }, [canStart, initialAttempt, methodsLoaded, resumedMethod, runPayment]);
+    paymentKey.current = resumableAttempt.paymentIdempotencyKey;
+    void runPayment(resumedMethod, resumableAttempt.paymentIdempotencyKey);
+  }, [methodsLoaded, paymentStatus, resumableAttempt, resumedMethod, runPayment]);
 
   async function start() {
     if (!selected || pending || !canStart) return;

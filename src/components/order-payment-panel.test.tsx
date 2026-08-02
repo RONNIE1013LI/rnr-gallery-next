@@ -169,6 +169,86 @@ describe("OrderPaymentPanel", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/orders/RNR-2026-ABC/payment", expect.objectContaining({ cache: "no-store" }));
   });
 
+  it("retries a dynamically resumed request with the exact stored key after a lost response", async () => {
+    const storedKey = "70000000-0000-4000-8000-000000000002";
+    const storedIntent = {
+      schemaVersion: 1,
+      phase: "starting_payment",
+      orderNumber: "RNR-2026-ABC",
+      paymentIdempotencyKey: storedKey,
+      method: "afterpay",
+    };
+    window.sessionStorage.setItem("rnr-checkout-payment-intent-v1", JSON.stringify(storedIntent));
+    const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+      if (init.method === "GET") {
+        return Promise.resolve({ ok: true, json: async () => ({ methods: [methods[1]] }) });
+      }
+      return Promise.reject(new TypeError("Payment response was lost"));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" orderHref="/orders/RNR-2026-ABC" />);
+
+    expect(await screen.findByText("Payment response was lost")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => init.method === "POST")).toHaveLength(2));
+    const requests = fetchMock.mock.calls
+      .filter(([, init]) => init.method === "POST")
+      .map(([, init]) => JSON.parse(init.body));
+    expect(requests).toEqual([
+      { method: "afterpay", idempotencyKey: storedKey },
+      { method: "afterpay", idempotencyKey: storedKey },
+    ]);
+    expect(JSON.parse(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1") ?? "null")).toEqual(storedIntent);
+  });
+
+  it.each(["processing", "paid", "failed", "cancelled", "refunded"] as const)(
+    "clears a retained starting intent and sends zero POSTs on initial %s status",
+    async (paymentStatus) => {
+      window.sessionStorage.setItem("rnr-checkout-payment-intent-v1", JSON.stringify({
+        schemaVersion: 1,
+        phase: "starting_payment",
+        orderNumber: "RNR-2026-ABC",
+        paymentIdempotencyKey: "70000000-0000-4000-8000-000000000002",
+        method: "afterpay",
+      }));
+      const fetchMock = vi.fn();
+      vi.stubGlobal("fetch", fetchMock);
+      render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus={paymentStatus} methods={methods} orderHref="/orders/RNR-2026-ABC" />);
+
+      await waitFor(() => expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull());
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["failed", "cancelled"] as const)(
+    "starts initial %s manual retries with one new stable key",
+    async (paymentStatus) => {
+      const oldKey = "70000000-0000-4000-8000-000000000002";
+      window.sessionStorage.setItem("rnr-checkout-payment-intent-v1", JSON.stringify({
+        schemaVersion: 1,
+        phase: "starting_payment",
+        orderNumber: "RNR-2026-ABC",
+        paymentIdempotencyKey: oldKey,
+        method: "afterpay",
+      }));
+      const fetchMock = vi.fn().mockRejectedValue(new TypeError("Payment response was lost"));
+      vi.stubGlobal("fetch", fetchMock);
+      render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus={paymentStatus} methods={methods} orderHref="/orders/RNR-2026-ABC" />);
+
+      expect(screen.getByText(paymentStatus === "failed"
+        ? "Payment failed. Choose a payment method and try again."
+        : "Payment cancelled. Choose a payment method and try again.")).toBeInTheDocument();
+      await waitFor(() => expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull());
+      fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+      await screen.findByText("Payment response was lost");
+      fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+      await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      const requests = fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body));
+      expect(requests[0].idempotencyKey).not.toBe(oldKey);
+      expect(requests[1]).toEqual(requests[0]);
+    },
+  );
+
   it("routes public payment actions without interpreting them as paid", async () => {
     const assign = vi.fn();
     const navigate = vi.fn();
@@ -202,6 +282,14 @@ describe("OrderPaymentPanel", () => {
       payment: { method: "card", status: "requires_action", isTest: true, canRetry: false },
       action: { kind: "test", method: "card", redirectUrl: "http://127.0.0.1:3000/test-payment", isTest: true },
     }, "card", { nodeEnv: "test", currentOrigin: "http://127.0.0.1:3000" })).toMatchObject({ action: { kind: "test" } });
+    expect(() => parsePaymentStartResponse({
+      payment: { method: "card", status: "requires_action", isTest: true, canRetry: false },
+      action: { kind: "test", method: "card", redirectUrl: "https://shop.example.test/test-payment", isTest: true },
+    }, "card", { nodeEnv: "production", currentOrigin: "https://shop.example.test" })).toThrow("Payment response is invalid");
+    expect(() => parsePaymentStartResponse({
+      payment: { method: "card", status: "requires_action", isTest: true, canRetry: false },
+      action: { kind: "test", method: "card", redirectUrl: "https://other.example.test/test-payment", isTest: true },
+    }, "card", { nodeEnv: "test", currentOrigin: "https://shop.example.test" })).toThrow("Payment response is invalid");
 
     const invalid = [
       { payment: { method: "card", status: "processing", isTest: false, canRetry: false }, action: null, extra: true },
