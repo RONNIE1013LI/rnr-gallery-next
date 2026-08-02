@@ -29,6 +29,10 @@ type Dependencies = Readonly<{
 type RouteContext = Readonly<{ params: Promise<{ provider: string }> }>;
 
 const noStoreHeaders = { "Cache-Control": "no-store" };
+const MAX_WEBHOOK_RAW_BODY_BYTES = 256 * 1024;
+
+class WebhookPayloadTooLargeError extends Error {}
+class InvalidWebhookBodyError extends Error {}
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: noStoreHeaders });
@@ -44,6 +48,70 @@ function invalidWebhook() {
   return json({
     error: { code: "INVALID_WEBHOOK", message: "Webhook verification failed" },
   }, 400);
+}
+
+function payloadTooLarge() {
+  return json({
+    error: { code: "PAYLOAD_TOO_LARGE", message: "Webhook payload is too large" },
+  }, 413);
+}
+
+async function readBoundedRawBody(request: Request): Promise<Uint8Array> {
+  const contentLength = request.headers.get("content-length");
+  if (contentLength !== null) {
+    if (!/^\d+$/.test(contentLength)) {
+      throw new InvalidWebhookBodyError();
+    }
+    const declaredLength = Number(contentLength);
+    if (!Number.isSafeInteger(declaredLength)) {
+      throw new InvalidWebhookBodyError();
+    }
+    if (declaredLength > MAX_WEBHOOK_RAW_BODY_BYTES) {
+      throw new WebhookPayloadTooLargeError();
+    }
+  }
+
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value.byteLength > MAX_WEBHOOK_RAW_BODY_BYTES - totalBytes) {
+        try {
+          await reader.cancel();
+        } catch {
+          // The bounded read still fails closed if stream cancellation itself fails.
+        }
+        throw new WebhookPayloadTooLargeError();
+      }
+      chunks.push(value.slice());
+      totalBytes += value.byteLength;
+    }
+  } catch (error) {
+    if (
+      error instanceof WebhookPayloadTooLargeError ||
+      error instanceof InvalidWebhookBodyError
+    ) throw error;
+    try {
+      await reader.cancel();
+    } catch {
+      // Reader errors are returned only as a safe invalid-webhook response.
+    }
+    throw new InvalidWebhookBodyError();
+  } finally {
+    reader.releaseLock();
+  }
+
+  const rawBody = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    rawBody.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return rawBody;
 }
 
 function defaults(): Dependencies {
@@ -81,9 +149,15 @@ export function createPaymentWebhookRoute(dependencies?: Dependencies) {
     if (!registration?.provider.verifyWebhook) return notFound();
 
     let rawBody: Uint8Array;
+    try {
+      rawBody = await readBoundedRawBody(request);
+    } catch (error) {
+      if (error instanceof WebhookPayloadTooLargeError) return payloadTooLarge();
+      return invalidWebhook();
+    }
+
     let event: VerifiedProviderEvent;
     try {
-      rawBody = new Uint8Array(await request.arrayBuffer());
       event = await registration.provider.verifyWebhook(rawBody, request.headers);
       if (event.provider !== "stripe") return invalidWebhook();
     } catch {

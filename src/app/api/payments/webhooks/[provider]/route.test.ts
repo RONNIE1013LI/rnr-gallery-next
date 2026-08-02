@@ -5,6 +5,7 @@ import type { PaymentProvider, VerifiedProviderEvent } from "@/server/payments/t
 import { createPaymentWebhookRoute } from "./route";
 
 const url = "https://shop.example.test/api/payments/webhooks/stripe";
+const maxRawBodyBytes = 256 * 1024;
 const event: VerifiedProviderEvent = {
   provider: "stripe",
   providerEventId: "evt_exact_123",
@@ -49,10 +50,33 @@ function webhookRequest(raw = new Uint8Array([0, 255, 13, 10, 123, 125])) {
   });
 }
 
+function streamingRequest(
+  chunks: readonly Uint8Array[],
+  headers: Readonly<Record<string, string>> = {},
+) {
+  let index = 0;
+  const cancelled = vi.fn();
+  const stream = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      const chunk = chunks[index++];
+      if (chunk) controller.enqueue(chunk);
+      else controller.close();
+    },
+    cancel: cancelled,
+  });
+  const request = new Request(url, {
+    method: "POST",
+    headers: { "stripe-signature": "t=1,v1=exact", ...headers },
+    body: stream,
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+  return { request, cancelled };
+}
+
 const stripeContext = { params: Promise.resolve({ provider: "stripe" }) };
 
 describe("POST /api/payments/webhooks/[provider]", () => {
-  it("reads the raw body exactly once and verifies it before atomic application", async () => {
+  it("consumes the raw stream once and verifies exact bytes without arrayBuffer or JSON", async () => {
     const { provider, registration: stripe } = registration();
     const applyVerifiedWebhook = vi.fn().mockResolvedValue("applied");
     const handler = createPaymentWebhookRoute({
@@ -62,19 +86,163 @@ describe("POST /api/payments/webhooks/[provider]", () => {
     const request = webhookRequest();
     const arrayBuffer = vi.spyOn(request, "arrayBuffer");
     const jsonBody = vi.spyOn(request, "json");
+    const getReader = vi.spyOn(request.body!, "getReader");
 
     const response = await handler(request, stripeContext);
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(await response.json()).toEqual({ received: true, result: "applied" });
-    expect(arrayBuffer).toHaveBeenCalledTimes(1);
+    expect(getReader).toHaveBeenCalledTimes(1);
+    expect(arrayBuffer).not.toHaveBeenCalled();
     expect(jsonBody).not.toHaveBeenCalled();
     expect(provider.verifyWebhook).toHaveBeenCalledTimes(1);
     const [verifiedRaw, headers] = vi.mocked(provider.verifyWebhook!).mock.calls[0]!;
     expect([...verifiedRaw]).toEqual([0, 255, 13, 10, 123, 125]);
     expect(headers).toBe(request.headers);
     expect(applyVerifiedWebhook).toHaveBeenCalledWith(event, verifiedRaw);
+  });
+
+  it("rejects a declared oversized body before reading or verifying", async () => {
+    const { provider, registration: stripe } = registration();
+    const applyVerifiedWebhook = vi.fn();
+    const handler = createPaymentWebhookRoute({
+      providers: [stripe],
+      paymentService: { applyVerifiedWebhook },
+    });
+    const request = webhookRequest(new Uint8Array([123]));
+    request.headers.set("content-length", String(maxRawBodyBytes + 1));
+    const getReader = vi.spyOn(request.body!, "getReader");
+
+    const response = await handler(request, stripeContext);
+
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({
+      error: { code: "PAYLOAD_TOO_LARGE", message: "Webhook payload is too large" },
+    });
+    expect(getReader).not.toHaveBeenCalled();
+    expect(provider.verifyWebhook).not.toHaveBeenCalled();
+    expect(applyVerifiedWebhook).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing length", {}],
+    ["misleading small length", { "content-length": "1" }],
+  ])("stops and cancels an oversized %s stream before verification", async (_name, headers) => {
+    const { provider, registration: stripe } = registration();
+    const applyVerifiedWebhook = vi.fn();
+    const handler = createPaymentWebhookRoute({
+      providers: [stripe],
+      paymentService: { applyVerifiedWebhook },
+    });
+    const { request, cancelled } = streamingRequest([
+      new Uint8Array(maxRawBodyBytes),
+      new Uint8Array([1]),
+      new Uint8Array([2, 3, 4]),
+    ], headers);
+
+    const response = await handler(request, stripeContext);
+
+    expect(response.status).toBe(413);
+    expect(cancelled).toHaveBeenCalledTimes(1);
+    expect(provider.verifyWebhook).not.toHaveBeenCalled();
+    expect(applyVerifiedWebhook).not.toHaveBeenCalled();
+  });
+
+  it("accepts the exact byte limit and preserves the raw payload", async () => {
+    const raw = new Uint8Array(maxRawBodyBytes);
+    raw[0] = 17;
+    raw[raw.length - 1] = 239;
+    const { provider, registration: stripe } = registration();
+    const handler = createPaymentWebhookRoute({
+      providers: [stripe],
+      paymentService: { applyVerifiedWebhook: vi.fn().mockResolvedValue("applied") },
+    });
+    const { request } = streamingRequest(
+      [raw.subarray(0, 100_000), raw.subarray(100_000)],
+      { "content-length": String(maxRawBodyBytes) },
+    );
+
+    expect((await handler(request, stripeContext)).status).toBe(200);
+    const [verifiedRaw] = vi.mocked(provider.verifyWebhook!).mock.calls[0]!;
+    expect(verifiedRaw).toHaveLength(maxRawBodyBytes);
+    expect(verifiedRaw[0]).toBe(17);
+    expect(verifiedRaw[verifiedRaw.length - 1]).toBe(239);
+  });
+
+  it("accepts an under-limit chunked body without Content-Length", async () => {
+    const { provider, registration: stripe } = registration();
+    const handler = createPaymentWebhookRoute({
+      providers: [stripe],
+      paymentService: { applyVerifiedWebhook: vi.fn().mockResolvedValue("applied") },
+    });
+    const { request } = streamingRequest([
+      new Uint8Array([0, 1]),
+      new Uint8Array([2, 255]),
+    ]);
+    expect(request.headers.has("content-length")).toBe(false);
+
+    expect((await handler(request, stripeContext)).status).toBe(200);
+    expect([...vi.mocked(provider.verifyWebhook!).mock.calls[0]![0]])
+      .toEqual([0, 1, 2, 255]);
+  });
+
+  it("accepts a valid decimal Content-Length with leading zeroes", async () => {
+    const { provider, registration: stripe } = registration();
+    const handler = createPaymentWebhookRoute({
+      providers: [stripe],
+      paymentService: { applyVerifiedWebhook: vi.fn().mockResolvedValue("applied") },
+    });
+    const { request } = streamingRequest(
+      [new Uint8Array([0, 1, 2, 255])],
+      { "content-length": "000004" },
+    );
+
+    expect((await handler(request, stripeContext)).status).toBe(200);
+    expect([...vi.mocked(provider.verifyWebhook!).mock.calls[0]![0]])
+      .toEqual([0, 1, 2, 255]);
+  });
+
+  it.each(["", "-1", "1.5", "abc", "9007199254740992"])(
+    "rejects malformed Content-Length %j before reading",
+    async (contentLength) => {
+      const { provider, registration: stripe } = registration();
+      const applyVerifiedWebhook = vi.fn();
+      const handler = createPaymentWebhookRoute({
+        providers: [stripe],
+        paymentService: { applyVerifiedWebhook },
+      });
+      const request = webhookRequest();
+      request.headers.set("content-length", contentLength);
+      const getReader = vi.spyOn(request.body!, "getReader");
+
+      const response = await handler(request, stripeContext);
+
+      expect(response.status).toBe(400);
+      expect(getReader).not.toHaveBeenCalled();
+      expect(provider.verifyWebhook).not.toHaveBeenCalled();
+      expect(applyVerifiedWebhook).not.toHaveBeenCalled();
+    },
+  );
+
+  it("handles an empty body as a safe verification failure", async () => {
+    const verifier = vi.fn().mockRejectedValue(new Error("empty payload"));
+    const { registration: stripe } = registration(verifier);
+    const applyVerifiedWebhook = vi.fn();
+    const handler = createPaymentWebhookRoute({
+      providers: [stripe],
+      paymentService: { applyVerifiedWebhook },
+    });
+    const request = new Request(url, {
+      method: "POST",
+      headers: { "stripe-signature": "t=1,v1=invalid" },
+    });
+
+    const response = await handler(request, stripeContext);
+
+    expect(response.status).toBe(400);
+    expect(verifier).toHaveBeenCalledWith(new Uint8Array(), request.headers);
+    expect(applyVerifiedWebhook).not.toHaveBeenCalled();
   });
 
   it.each(["duplicate" as const])("returns 200 for a same-hash %s without another transition", async (result) => {
