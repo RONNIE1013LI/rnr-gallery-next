@@ -69,6 +69,15 @@ describe("local test payment provider", () => {
       .toThrow("Local test payments cannot run in production");
   });
 
+  it.each(["test", ""])(
+    "cannot override a production process with nodeEnv=%j",
+    (nodeEnv) => {
+      vi.stubEnv("NODE_ENV", "production");
+      expect(() => createLocalTestProvider({ method: "card", nodeEnv }))
+        .toThrow("Local test payments cannot run in production");
+    },
+  );
+
   it.each(["card", "afterpay", "zip"] as const)(
     "is visibly local-test and never advertises refunds for %s",
     (method) => {

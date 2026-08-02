@@ -113,7 +113,10 @@ function availability(
 export function createLocalTestProvider(
   options: LocalTestProviderOptions,
 ): PaymentProvider {
-  if ((options.nodeEnv ?? process.env.NODE_ENV) === "production") {
+  if (
+    process.env.NODE_ENV === "production" ||
+    options.nodeEnv === "production"
+  ) {
     throw new Error("Local test payments cannot run in production");
   }
 

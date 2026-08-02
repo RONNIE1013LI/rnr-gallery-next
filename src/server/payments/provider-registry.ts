@@ -35,6 +35,11 @@ const realLabels: Record<PaymentMethodKey, string> = {
   afterpay: "Afterpay",
   zip: "Zip",
 };
+const realProviderKeys: Record<PaymentMethodKey, PaymentProvider["key"]> = {
+  card: "stripe",
+  afterpay: "afterpay",
+  zip: "zip",
+};
 
 function realProviderEnabled(config: PaymentConfig, method: PaymentMethodKey) {
   if (method === "card") return config.stripe.enabled;
@@ -47,8 +52,9 @@ function registration(
   provider: PaymentProvider,
   isTest: boolean,
 ) {
-  if (provider.method !== method) {
-    throw new Error(`Payment provider method mismatch for ${method}`);
+  const expectedKey = isTest ? "local-test" : realProviderKeys[method];
+  if (provider.method !== method || provider.key !== expectedKey) {
+    throw new Error(`Payment provider identity mismatch for ${method}`);
   }
   if (provider.refundCapability !== "unsupported") {
     throw new Error(`Payment provider refunds must remain unsupported for ${method}`);
@@ -76,6 +82,12 @@ export function selectPaymentProviders(
     }
 
     if (config.localTest.enabled) {
+      if (
+        process.env.NODE_ENV === "production" ||
+        options.nodeEnv === "production"
+      ) {
+        throw new Error("Local test payments cannot run in production");
+      }
       selected.push(registration(
         method,
         localFactory({ method, nodeEnv: options.nodeEnv }),
