@@ -65,9 +65,17 @@ export function ProductConfigurator({
     () => quoteConfiguration(schema, {
       sizeKey,
       peoplePets,
-      urgentFeeInclGstCents: urgentService?.feeInclGstCents,
+      urgentFeeInclGstCents: urgentServiceConfirmed
+        ? urgentService?.feeInclGstCents
+        : 0,
     }),
-    [peoplePets, schema, sizeKey, urgentService?.feeInclGstCents],
+    [
+      peoplePets,
+      schema,
+      sizeKey,
+      urgentService?.feeInclGstCents,
+      urgentServiceConfirmed,
+    ],
   );
   const uploadRequired =
     photoSubmissionMethod === "upload" &&

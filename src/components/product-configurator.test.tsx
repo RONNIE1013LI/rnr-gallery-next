@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getConfigurationSchema } from "@/domain/configuration/schemas";
 import { getProductBySlug } from "@/domain/catalogue/products";
@@ -100,7 +100,7 @@ describe("ProductConfigurator", () => {
     expect(stored.items[0].uploadReferences).toEqual(["private-reference"]);
   });
 
-  it("requires confirmation and adds the GST-inclusive fourth-day urgent fee", () => {
+  it("adds the GST-inclusive fourth-day fee only after confirmation", () => {
     render(
       <ProductConfigurator
         product={product}
@@ -114,12 +114,16 @@ describe("ProductConfigurator", () => {
       target: { value: "2026-08-07" },
     });
 
-    expect(screen.getAllByText("$50.00 incl GST")).toHaveLength(2);
-    expect(screen.getByText("$170.75")).toBeInTheDocument();
+    const orderSummary = screen.getByRole("complementary", { name: "Order summary" });
+    expect(screen.getAllByText("$50.00 incl GST")).toHaveLength(1);
+    expect(within(orderSummary).queryByText("$50.00 incl GST")).not.toBeInTheDocument();
+    expect(within(orderSummary).getByText("$120.75")).toBeInTheDocument();
     const addButton = screen.getByRole("button", { name: "Confirm urgent service to continue" });
     expect(addButton).toBeDisabled();
 
     fireEvent.click(screen.getByLabelText("Confirm urgent service"));
+    expect(within(orderSummary).getByText("$50.00 incl GST")).toBeInTheDocument();
+    expect(within(orderSummary).getByText("$170.75")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add to cart" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
     const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
