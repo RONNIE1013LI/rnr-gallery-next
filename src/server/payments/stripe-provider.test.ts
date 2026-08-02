@@ -76,6 +76,33 @@ function client(
 }
 
 describe("Stripe payment provider", () => {
+  it("bounds the production default SDK network budget below the reconciliation lease", async () => {
+    const StripeConstructor = vi.fn(function StripeConstructor() {
+      return client();
+    });
+    vi.resetModules();
+    vi.doMock("stripe", () => ({ default: StripeConstructor }));
+
+    try {
+      const { createStripeProvider: createProviderWithDefaultClient } =
+        await import("./stripe-provider");
+      const provider = createProviderWithDefaultClient({ config });
+
+      await expect(provider.createOrReuse(sessionInput)).resolves.toMatchObject({
+        kind: "elements",
+        provider: "stripe",
+      });
+
+      expect(StripeConstructor).toHaveBeenCalledWith(config.secretKey, {
+        timeout: 10_000,
+        maxNetworkRetries: 1,
+      });
+    } finally {
+      vi.doUnmock("stripe");
+      vi.resetModules();
+    }
+  });
+
   it("creates one explicit card PaymentIntent with exact immutable authority", async () => {
     const stripe = client();
     const provider = createStripeProvider({ config, client: stripe });

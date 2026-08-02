@@ -51,7 +51,10 @@ export type StripeClient = Readonly<{
 type EnabledStripeConfig = Extract<StripePaymentConfig, { enabled: true }>;
 
 function defaultClient(secretKey: string): StripeClient {
-  const stripe = new Stripe(secretKey);
+  const stripe = new Stripe(secretKey, {
+    timeout: 10_000,
+    maxNetworkRetries: 1,
+  });
   return {
     paymentIntents: {
       create: (params, options) => stripe.paymentIntents.create({
