@@ -155,6 +155,28 @@ describe("payment provider registry", () => {
     expect(localFactory).toHaveBeenCalledTimes(2);
   });
 
+  it("constructs the real Afterpay provider from enabled repository config", () => {
+    const providers = selectPaymentProviders(config({
+      localTest: disabled,
+      afterpay: {
+        enabled: true,
+        merchantId: "merchant",
+        secretKey: "secret",
+        environment: "sandbox",
+        merchantCountry: "NZ",
+        currency: "NZD",
+      },
+    }), { nodeEnv: "test" });
+
+    expect(providers.map(({ method, isTest, provider }) => ({
+      method,
+      isTest,
+      key: provider.key,
+    }))).toEqual([
+      { method: "afterpay", isTest: false, key: "afterpay" },
+    ]);
+  });
+
   it("cannot create local providers through a production registry override", () => {
     vi.stubEnv("NODE_ENV", "production");
     expect(() => selectPaymentProviders(config(), { nodeEnv: "test" }))

@@ -116,6 +116,7 @@ describe("local test payment provider", () => {
     await expect(afterRestart.completeReturn({
       order: input.order,
       providerReference: first.providerReference,
+      idempotencyKey: input.idempotencyKey,
       returnState: returnState!,
       returnUrl: callback,
     })).resolves.toEqual({
@@ -146,12 +147,14 @@ describe("local test payment provider", () => {
     await expect(provider.completeReturn({
       order: input.order,
       providerReference: session.providerReference,
+      idempotencyKey: input.idempotencyKey,
       returnState: input.returnState,
       returnUrl: hostile,
     })).rejects.toThrow("Local test return verification failed");
     await expect(provider.completeReturn({
       order: { ...input.order, amountCents: input.order.amountCents + 1 },
       providerReference: session.providerReference,
+      idempotencyKey: input.idempotencyKey,
       returnState: new URL(session.url).searchParams.get("state")!,
       returnUrl: new URL(session.url),
     })).rejects.toThrow("Local test return verification failed");

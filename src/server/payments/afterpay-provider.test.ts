@@ -1,0 +1,380 @@
+import { describe, expect, it, vi } from "vitest";
+import type { NormalizedAddress } from "@/domain/address/types";
+import type { AfterpayPaymentConfig } from "./config";
+import {
+  createAfterpayProvider,
+  formatAfterpayAmount,
+} from "./afterpay-provider";
+import type {
+  CompleteProviderReturnInput,
+  CreateProviderSessionInput,
+  PaymentOrder,
+} from "./types";
+
+const token = "002.checkout_token_123456789";
+const state = "s".repeat(64);
+const idempotencyKey = "i".repeat(64);
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function address(country: "NZ" | "AU" = "NZ"): NormalizedAddress {
+  return Object.freeze({
+    country,
+    fullName: "Aroha Ngata",
+    building: "Studio 2",
+    street: "1 Test Street",
+    suburb: country === "NZ" ? "Auckland Central" : "Sydney",
+    region: country === "NZ" ? "Auckland" : "NSW",
+    postcode: country === "NZ" ? "1010" : "2000",
+    phone: country === "NZ" ? "+64210000000" : "+61400000000",
+    email: "aroha@example.test",
+  });
+}
+
+function order(country: "NZ" | "AU" = "NZ"): PaymentOrder {
+  const customerAddress = address(country);
+  return Object.freeze({
+    id: "00000000-0000-4000-8000-000000000010",
+    orderNumber: "RNR-TEST-1001",
+    amountCents: 12_075,
+    currency: country === "NZ" ? "NZD" : "AUD",
+    customer: Object.freeze({
+      fullName: customerAddress.fullName,
+      email: customerAddress.email,
+      phone: customerAddress.phone,
+    }),
+    billingAddress: customerAddress,
+    deliveryAddress: Object.freeze({ ...customerAddress, building: "" }),
+  });
+}
+
+function config(
+  environment: "sandbox" | "production" = "sandbox",
+  country: "NZ" | "AU" = "NZ",
+): Extract<AfterpayPaymentConfig, { enabled: true }> {
+  return Object.freeze({
+    enabled: true,
+    merchantId: "merchant-id",
+    secretKey: "server-secret",
+    environment,
+    merchantCountry: country,
+    currency: country === "NZ" ? "NZD" : "AUD",
+  });
+}
+
+function configuration(currency: "NZD" | "AUD" = "NZD") {
+  return {
+    minimumAmount: { amount: "1.00", currency },
+    maximumAmount: { amount: "2000.00", currency },
+  };
+}
+
+function checkoutResponse(
+  environment: "sandbox" | "production" = "sandbox",
+  country: "NZ" | "AU" = "NZ",
+) {
+  const host = environment === "sandbox"
+    ? "portal.sandbox.afterpay.com"
+    : "portal.afterpay.com";
+  return {
+    token,
+    redirectCheckoutUrl: `https://${host}/${country.toLowerCase()}/checkout/?token=${encodeURIComponent(token)}`,
+  };
+}
+
+function capturedPayment(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "payment-id",
+    token,
+    merchantReference: "RNR-TEST-1001",
+    status: "APPROVED",
+    paymentState: "CAPTURED",
+    originalAmount: { amount: "120.75", currency: "NZD" },
+    openToCaptureAmount: { amount: "0.00", currency: "NZD" },
+    ...overrides,
+  };
+}
+
+function sessionInput(paymentOrder = order()): CreateProviderSessionInput {
+  return Object.freeze({
+    order: paymentOrder,
+    attemptId: "00000000-0000-4000-8000-000000000020",
+    idempotencyKey,
+    returnState: state,
+    returnUrl: `https://shop.example.test/api/payments/returns/afterpay?flow=return&orderNumber=${paymentOrder.orderNumber}&method=afterpay&state=${state}`,
+    cancelUrl: `https://shop.example.test/api/payments/returns/afterpay?flow=cancel&orderNumber=${paymentOrder.orderNumber}&method=afterpay&state=${state}`,
+  });
+}
+
+function completeInput(
+  paymentOrder = order(),
+  status = "SUCCESS",
+): CompleteProviderReturnInput & { idempotencyKey: string } {
+  return Object.freeze({
+    order: paymentOrder,
+    providerReference: token,
+    idempotencyKey,
+    returnState: state,
+    returnUrl: new URL(
+      `https://shop.example.test/payments/afterpay/return?state=${state}&status=${status}&orderToken=${encodeURIComponent(token)}`,
+    ),
+  });
+}
+
+describe("Afterpay provider", () => {
+  it.each([
+    [1, "0.01"],
+    [100, "1.00"],
+    [12_075, "120.75"],
+    [100_000, "1000.00"],
+  ])("formats %i cents without floating point drift", (amountCents, expected) => {
+    expect(formatAfterpayAmount(amountCents)).toBe(expected);
+  });
+
+  it.each([0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects an invalid cent amount: %s",
+    (amountCents) => {
+      expect(() => formatAfterpayAmount(amountCents))
+        .toThrow("Afterpay payment verification failed");
+    },
+  );
+
+  it.each([
+    ["sandbox", "NZ", "https://global-api-sandbox.afterpay.com", "portal.sandbox.afterpay.com"],
+    ["production", "AU", "https://global-api.afterpay.com", "portal.afterpay.com"],
+  ] as const)(
+    "uses only the official %s environment hosts",
+    async (environment, country, apiBase, portalHost) => {
+      const paymentOrder = order(country);
+      const fetchImpl = vi.fn()
+        .mockResolvedValueOnce(jsonResponse(configuration(paymentOrder.currency as "NZD" | "AUD")))
+        .mockResolvedValueOnce(jsonResponse(checkoutResponse(environment, country)));
+      const provider = createAfterpayProvider({
+        config: config(environment, country),
+        fetchImpl,
+      });
+
+      const session = await provider.createOrReuse(sessionInput(paymentOrder));
+
+      expect(fetchImpl.mock.calls[0]?.[0]).toBe(`${apiBase}/v2/configuration`);
+      expect(fetchImpl.mock.calls[1]?.[0]).toBe(`${apiBase}/v2/checkouts`);
+      expect(new URL(session.kind === "redirect" ? session.redirectUrl : "https://invalid.test").host)
+        .toBe(portalHost);
+    },
+  );
+
+  it("creates a checkout with exact money, customer, immutable addresses and trusted returns", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(configuration()))
+      .mockResolvedValueOnce(jsonResponse(configuration()))
+      .mockResolvedValueOnce(jsonResponse({
+        ...checkoutResponse(),
+        amount: { amount: "120.75", currency: "NZD" },
+        merchantReference: "RNR-TEST-1001",
+      }));
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+    const input = sessionInput();
+
+    await expect(provider.availability(input.order)).resolves.toEqual({ available: true });
+    const session = await provider.createOrReuse(input);
+
+    expect(session).toEqual({
+      kind: "redirect",
+      provider: "afterpay",
+      method: "afterpay",
+      providerReference: token,
+      providerStatus: "CREATED",
+      redirectUrl: checkoutResponse().redirectCheckoutUrl,
+    });
+    const checkoutCall = fetchImpl.mock.calls[2];
+    expect(checkoutCall?.[0]).toBe("https://global-api-sandbox.afterpay.com/v2/checkouts");
+    expect(JSON.parse(String((checkoutCall?.[1] as RequestInit).body))).toEqual({
+      amount: { amount: "120.75", currency: "NZD" },
+      consumer: {
+        givenNames: "Aroha",
+        surname: "Ngata",
+        email: "aroha@example.test",
+        phoneNumber: "+64210000000",
+      },
+      billing: {
+        name: "Aroha Ngata",
+        line1: "Studio 2",
+        line2: "1 Test Street",
+        area1: "Auckland Central",
+        region: "Auckland",
+        postcode: "1010",
+        countryCode: "NZ",
+        phoneNumber: "+64210000000",
+      },
+      shipping: {
+        name: "Aroha Ngata",
+        line1: "1 Test Street",
+        area1: "Auckland Central",
+        region: "Auckland",
+        postcode: "1010",
+        countryCode: "NZ",
+        phoneNumber: "+64210000000",
+      },
+      merchant: {
+        redirectConfirmUrl: input.returnUrl,
+        redirectCancelUrl: input.cancelUrl,
+      },
+      merchantReference: "RNR-TEST-1001",
+    });
+    expect(Object.isFrozen(input.order.billingAddress)).toBe(true);
+    expect(input.order.billingAddress).toEqual(address());
+  });
+
+  it("enforces remote inclusive limits before checkout", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(configuration()))
+      .mockResolvedValueOnce(jsonResponse(configuration()));
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+
+    await expect(provider.availability({ ...order(), amountCents: 99 }))
+      .resolves.toEqual({ available: false, reason: "amount" });
+    await expect(provider.createOrReuse(sessionInput({ ...order(), amountCents: 200_001 })))
+      .rejects.toThrow("Afterpay payment verification failed");
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["wrong portal", { ...checkoutResponse(), redirectCheckoutUrl: `https://evil.example.test/checkout?token=${token}` }],
+    ["token mismatch", { ...checkoutResponse(), redirectCheckoutUrl: "https://portal.sandbox.afterpay.com/nz/checkout?token=other-token" }],
+    ["amount mismatch", { ...checkoutResponse(), amount: { amount: "120.76", currency: "NZD" } }],
+    ["currency mismatch", { ...checkoutResponse(), amount: { amount: "120.75", currency: "AUD" } }],
+    ["reference mismatch", { ...checkoutResponse(), merchantReference: "RNR-OTHER" }],
+  ])("rejects an untrusted checkout response: %s", async (_name, response) => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(configuration()))
+      .mockResolvedValueOnce(jsonResponse(response));
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+
+    await expect(provider.createOrReuse(sessionInput()))
+      .rejects.toThrow("Afterpay payment verification failed");
+  });
+
+  it("treats browser SUCCESS only as authority to capture server-side", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(capturedPayment()));
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+
+    await expect(provider.completeReturn(completeInput())).resolves.toEqual({
+      providerReference: token,
+      providerStatus: "APPROVED:CAPTURED",
+      amountCents: 12_075,
+      currency: "NZD",
+      orderNumber: "RNR-TEST-1001",
+      status: "paid",
+    });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl.mock.calls[0]?.[0])
+      .toBe("https://global-api-sandbox.afterpay.com/v2/payments/capture");
+    const capture = JSON.parse(String((fetchImpl.mock.calls[0]?.[1] as RequestInit).body));
+    expect(capture).toMatchObject({
+      token,
+      merchantReference: "RNR-TEST-1001",
+      amount: { amount: "120.75", currency: "NZD" },
+      requestId: expect.stringMatching(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/),
+    });
+  });
+
+  it.each([
+    ["token", { token: "002.different" }],
+    ["merchant reference", { merchantReference: "RNR-OTHER" }],
+    ["amount", { originalAmount: { amount: "120.74", currency: "NZD" } }],
+    ["currency", { originalAmount: { amount: "120.75", currency: "AUD" } }],
+  ])("rejects an independently mismatched captured %s", async (_name, mismatch) => {
+    const provider = createAfterpayProvider({
+      config: config(),
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(capturedPayment(mismatch))),
+    });
+
+    await expect(provider.completeReturn(completeInput()))
+      .rejects.toThrow("Afterpay payment verification failed");
+  });
+
+  it.each([
+    [capturedPayment({ openToCaptureAmount: { amount: "1.00", currency: "NZD" } }), "processing"],
+    [capturedPayment({ paymentState: "AUTH_APPROVED" }), "processing"],
+    [capturedPayment({ status: "DECLINED", paymentState: "DECLINED" }), "failed"],
+  ] as const)("maps non-terminal authority conservatively to %s", async (response, expectedStatus) => {
+    const provider = createAfterpayProvider({
+      config: config(),
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(response)),
+    });
+
+    await expect(provider.completeReturn(completeInput()))
+      .resolves.toMatchObject({ status: expectedStatus });
+  });
+
+  it("handles a verified browser cancellation without a provider request", async () => {
+    const fetchImpl = vi.fn();
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+
+    await expect(provider.completeReturn(completeInput(order(), "CANCELLED")))
+      .resolves.toMatchObject({
+        providerReference: token,
+        providerStatus: "CANCELLED",
+        status: "cancelled",
+      });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("retrieves by token and reuses the same capture request ID on reconciliation", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(capturedPayment({ paymentState: "AUTH_APPROVED" })))
+      .mockResolvedValueOnce(jsonResponse(capturedPayment({ paymentState: "AUTH_APPROVED" })))
+      .mockResolvedValueOnce(jsonResponse(capturedPayment()))
+      .mockResolvedValueOnce(jsonResponse(capturedPayment()));
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+
+    await expect(provider.retrieve({ order: order(), providerReference: token }))
+      .resolves.toMatchObject({ status: "processing" });
+    await expect(provider.retryCompletion?.({
+      order: order(),
+      providerReference: token,
+      idempotencyKey,
+      source: "reconciliation",
+    })).resolves.toMatchObject({ status: "paid" });
+    await provider.completeReturn(completeInput());
+
+    expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+      `https://global-api-sandbox.afterpay.com/v2/payments/token/${encodeURIComponent(token)}`,
+    );
+    const retryCapture = JSON.parse(String((fetchImpl.mock.calls[2]?.[1] as RequestInit).body));
+    const returnCapture = JSON.parse(String((fetchImpl.mock.calls[3]?.[1] as RequestInit).body));
+    expect(retryCapture.requestId).toBe(returnCapture.requestId);
+  });
+
+  it("does not recapture when reconciliation retrieval is already terminal", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(capturedPayment()));
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+
+    await expect(provider.retryCompletion?.({
+      order: order(),
+      providerReference: token,
+      idempotencyKey,
+      source: "reconciliation",
+    })).resolves.toMatchObject({ status: "paid" });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("redacts credentials and response bodies from request failures", async () => {
+    const provider = createAfterpayProvider({
+      config: config(),
+      fetchImpl: vi.fn().mockResolvedValue(new Response("server-secret body", {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      })),
+    });
+
+    const error = await provider.availability(order()).catch((caught) => caught);
+    expect(String(error)).toBe("Error: Afterpay payment request failed");
+    expect(String(error)).not.toMatch(/server-secret|body|401/);
+  });
+});

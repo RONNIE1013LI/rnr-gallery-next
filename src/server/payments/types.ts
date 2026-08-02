@@ -40,6 +40,7 @@ export type CreateProviderSessionInput = Readonly<{
 export type CompleteProviderReturnInput = Readonly<{
   order: PaymentOrder;
   providerReference: string;
+  idempotencyKey: string;
   returnState: string;
   returnUrl: URL;
 }>;

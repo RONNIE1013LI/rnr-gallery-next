@@ -1,4 +1,5 @@
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
+import { createAfterpayProvider } from "./afterpay-provider";
 import type { PaymentConfig } from "./config";
 import {
   createLocalTestProvider,
@@ -81,6 +82,10 @@ export function selectPaymentProviders(
       if (!factory && method === "card" && config.stripe.enabled) {
         const stripeConfig = config.stripe;
         factory = () => createStripeProvider({ config: stripeConfig });
+      }
+      if (!factory && method === "afterpay" && config.afterpay.enabled) {
+        const afterpayConfig = config.afterpay;
+        factory = () => createAfterpayProvider({ config: afterpayConfig });
       }
       if (factory) selected.push(registration(method, factory(), false));
       continue;
