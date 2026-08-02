@@ -15,6 +15,13 @@
       "when": 1785640207668,
       "tag": "0001_nervous_whirlwind",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1785650101732,
+      "tag": "0002_salty_giant_man",
+      "breakpoints": true
     }
   ]
 }
