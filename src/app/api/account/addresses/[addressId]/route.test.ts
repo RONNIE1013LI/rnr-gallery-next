@@ -8,7 +8,8 @@ import { createAddressItemHandlers } from "./route";
 
 const ownerId = "owner-a";
 const foreignOwnerId = "owner-b";
-const addressId = "address-1";
+const addressId = "00000000-0000-4000-8000-000000000001";
+const missingAddressId = "00000000-0000-4000-8000-000000000002";
 const now = new Date("2026-08-02T00:00:00.000Z");
 
 const storedAddress: SavedAddress = {
@@ -39,6 +40,24 @@ const auAddress = {
   email: "mia@example.test",
 } as const;
 
+const nzAddress = {
+  country: "NZ",
+  fullName: "Aroha Ngata",
+  building: "Unit 4",
+  street: "12 Queen Street",
+  suburb: "Auckland Central",
+  region: "Auckland",
+  postcode: "1010",
+  phone: "021 123 4567",
+  email: "aroha@example.test",
+} as const;
+
+function rejectLikePostgresUuid(value: string) {
+  if (!/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(value)) {
+    throw new Error(`invalid input syntax for type uuid: "${value}"`);
+  }
+}
+
 function createMemoryRepository(initial: SavedAddress[]): AddressRepository {
   const addresses = [...initial];
 
@@ -47,6 +66,7 @@ function createMemoryRepository(initial: SavedAddress[]): AddressRepository {
       return addresses.filter((address) => address.ownerId === requestOwnerId);
     },
     async findByOwner(requestOwnerId, requestedAddressId) {
+      rejectLikePostgresUuid(requestedAddressId);
       return addresses.find(
         (address) =>
           address.ownerId === requestOwnerId &&
@@ -65,6 +85,7 @@ function createMemoryRepository(initial: SavedAddress[]): AddressRepository {
       return address;
     },
     async updateByOwner(requestOwnerId, requestedAddressId, input) {
+      rejectLikePostgresUuid(requestedAddressId);
       const index = addresses.findIndex(
         (address) =>
           address.ownerId === requestOwnerId &&
@@ -77,6 +98,7 @@ function createMemoryRepository(initial: SavedAddress[]): AddressRepository {
       return updated;
     },
     async deleteByOwner(requestOwnerId, requestedAddressId) {
+      rejectLikePostgresUuid(requestedAddressId);
       const index = addresses.findIndex(
         (address) =>
           address.ownerId === requestOwnerId &&
@@ -105,6 +127,27 @@ function context(requestedAddressId = addressId) {
 }
 
 describe("/api/account/addresses/[addressId]", () => {
+  it("updates an address for its owner with normalized New Zealand details", async () => {
+    const handlers = createAddressItemHandlers({
+      requireSession: async () => ({ user: { id: ownerId } }),
+      repository: createMemoryRepository([storedAddress]),
+    });
+
+    const response = await handlers.PUT(updateRequest(nzAddress), context());
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      address: {
+        id: addressId,
+        ownerId,
+        country: "NZ",
+        region: "Auckland",
+        postcode: "1010",
+        phone: "+64211234567",
+      },
+    });
+  });
+
   it("updates an address for its owner with normalized Australian details", async () => {
     const handlers = createAddressItemHandlers({
       requireSession: async () => ({ user: { id: ownerId } }),
@@ -149,6 +192,28 @@ describe("/api/account/addresses/[addressId]", () => {
     });
 
     const response = await handlers.DELETE(
+      new Request(
+        `http://localhost/api/account/addresses/${missingAddressId}`,
+        {
+          method: "DELETE",
+        },
+      ),
+      context(missingAddressId),
+    );
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: { code: "NOT_FOUND", message: "Address not found" },
+    });
+  });
+
+  it("returns 404 for a malformed ID before a PostgreSQL UUID comparison", async () => {
+    const handlers = createAddressItemHandlers({
+      requireSession: async () => ({ user: { id: ownerId } }),
+      repository: createMemoryRepository([storedAddress]),
+    });
+
+    const response = await handlers.DELETE(
       new Request("http://localhost/api/account/addresses/missing", {
         method: "DELETE",
       }),
@@ -156,6 +221,7 @@ describe("/api/account/addresses/[addressId]", () => {
     );
 
     expect(response.status).toBe(404);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(await response.json()).toEqual({
       error: { code: "NOT_FOUND", message: "Address not found" },
     });

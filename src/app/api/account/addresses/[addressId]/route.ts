@@ -18,6 +18,8 @@ type HandlerDependencies = {
 };
 
 const noStoreHeaders = { "Cache-Control": "no-store" };
+const addressIdPattern =
+  /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i;
 
 function json(body: unknown, status = 200) {
   return Response.json(body, {
@@ -91,11 +93,10 @@ export function createAddressItemHandlers(
     async PUT(request: Request, context: AddressRouteContext) {
       try {
         const session = await getSession();
-        const [{ addressId }, rawInput] = await Promise.all([
-          context.params,
-          request.json(),
-        ]);
-        const input = normalizeAddress(rawInput);
+        const { addressId } = await context.params;
+        if (!addressIdPattern.test(addressId)) return notFoundResponse();
+
+        const input = normalizeAddress(await request.json());
         const address = await getRepository().updateByOwner(
           session.user.id,
           addressId,
@@ -111,6 +112,8 @@ export function createAddressItemHandlers(
       try {
         const session = await getSession();
         const { addressId } = await context.params;
+        if (!addressIdPattern.test(addressId)) return notFoundResponse();
+
         const deleted = await getRepository().deleteByOwner(
           session.user.id,
           addressId,
