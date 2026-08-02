@@ -64,6 +64,9 @@ export const paymentAttempts = pgTable(
       table.provider,
       table.providerReference,
     ),
+    uniqueIndex("payment_attempts_provider_return_state_digest_unique")
+      .on(table.provider, table.returnStateDigest)
+      .where(sql`${table.returnStateDigest} IS NOT NULL`),
     uniqueIndex("payment_attempts_one_nonterminal_unique")
       .on(table.orderId)
       .where(

@@ -316,6 +316,64 @@ describe("payment schema database constraints", () => {
     ).rejects.toThrow("payment_attempts_provider_reference_unique");
   });
 
+  it("deduplicates return-state digests per provider while allowing nulls", async () => {
+    const digest = "f".repeat(64);
+    const firstOrder = await createOrder("return-state-a");
+    const secondOrder = await createOrder("return-state-b");
+    const thirdOrder = await createOrder("return-state-c");
+    const fourthOrder = await createOrder("return-state-d");
+    const fifthOrder = await createOrder("return-state-e");
+
+    await insertAttempt({
+      orderId: firstOrder,
+      provider: "afterpay",
+      method: "afterpay",
+      idempotencyKey: `return-state-a-${suffix}`,
+      returnStateDigest: digest,
+      status: "failed",
+    });
+    await expect(
+      insertAttempt({
+        orderId: secondOrder,
+        provider: "afterpay",
+        method: "afterpay",
+        idempotencyKey: `return-state-b-${suffix}`,
+        returnStateDigest: digest,
+        status: "failed",
+      }),
+    ).rejects.toThrow("payment_attempts_provider_return_state_digest_unique");
+    await expect(
+      insertAttempt({
+        orderId: thirdOrder,
+        provider: "zip",
+        method: "zip",
+        idempotencyKey: `return-state-c-${suffix}`,
+        returnStateDigest: digest,
+        status: "failed",
+      }),
+    ).resolves.toMatchObject({ rowCount: 1 });
+    await expect(
+      insertAttempt({
+        orderId: fourthOrder,
+        provider: "afterpay",
+        method: "afterpay",
+        idempotencyKey: `return-state-d-${suffix}`,
+        returnStateDigest: null,
+        status: "failed",
+      }),
+    ).resolves.toMatchObject({ rowCount: 1 });
+    await expect(
+      insertAttempt({
+        orderId: fifthOrder,
+        provider: "afterpay",
+        method: "afterpay",
+        idempotencyKey: `return-state-e-${suffix}`,
+        returnStateDigest: null,
+        status: "failed",
+      }),
+    ).resolves.toMatchObject({ rowCount: 1 });
+  });
+
   it("deduplicates webhook events and validates their SHA-256", async () => {
     const orderId = await createOrder("webhook");
     const attempt = await insertAttempt({

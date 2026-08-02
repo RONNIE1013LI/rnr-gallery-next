@@ -39,6 +39,18 @@ describe("payment schema contract", () => {
     expect(index?.config.where).toBeDefined();
   });
 
+  it("deduplicates non-null return-state digests per provider", () => {
+    const index = getTableConfig(paymentAttempts).indexes.find(
+      (candidate) =>
+        candidate.config.name ===
+        "payment_attempts_provider_return_state_digest_unique",
+    );
+
+    expect(index?.config.unique).toBe(true);
+    expect(index?.config.columns).toHaveLength(2);
+    expect(index?.config.where).toBeDefined();
+  });
+
   it("stores webhook metadata without raw payloads", () => {
     expect(getTableName(webhookEvents)).toBe("webhook_events");
 
@@ -62,6 +74,21 @@ describe("payment schema contract", () => {
     );
     expect(eventConfig.checks.map((check) => check.name)).toContain(
       "webhook_events_sha256_format",
+    );
+  });
+
+  it("never persists browser-facing provider secrets or redirects", () => {
+    const columns = getTableConfig(paymentAttempts).columns.map(
+      (column) => column.name,
+    );
+
+    expect(columns).not.toEqual(
+      expect.arrayContaining([
+        "client_secret",
+        "redirect_url",
+        "raw_body",
+        "raw_payload",
+      ]),
     );
   });
 });
