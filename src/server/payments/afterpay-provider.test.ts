@@ -312,29 +312,55 @@ describe("Afterpay provider", () => {
       .resolves.toMatchObject({ status: expectedStatus });
   });
 
-  it("handles a verified browser cancellation without a provider request", async () => {
-    const fetchImpl = vi.fn();
+  it("treats a forged browser cancellation with authoritative absence as processing", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ error: "not found" }, 404));
     const provider = createAfterpayProvider({ config: config(), fetchImpl });
 
     await expect(provider.completeReturn(completeInput(order(), "CANCELLED")))
       .resolves.toMatchObject({
         providerReference: token,
-        providerStatus: "CANCELLED",
-        status: "cancelled",
+        providerStatus: "NOT_FOUND",
+        status: "processing",
       });
-    expect(fetchImpl).not.toHaveBeenCalled();
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl.mock.calls[0]?.[0]).toContain("/v2/payments/token/");
+    expect((fetchImpl.mock.calls[0]?.[1] as RequestInit).method).toBe("GET");
   });
 
-  it("retrieves by token and reuses the same capture request ID on reconciliation", async () => {
+  it.each([
+    ["cancelled", capturedPayment({ status: "CANCELLED", paymentState: "CANCELLED" }), "cancelled"],
+    ["paid", capturedPayment(), "paid"],
+    ["failed", capturedPayment({ status: "DECLINED", paymentState: "DECLINED" }), "failed"],
+    ["processing", capturedPayment({ paymentState: "AUTH_APPROVED" }), "processing"],
+  ] as const)(
+    "uses provider authority, not browser cancellation, for %s",
+    async (_name, response, expectedStatus) => {
+      const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(response));
+      const provider = createAfterpayProvider({ config: config(), fetchImpl });
+
+      await expect(provider.completeReturn(completeInput(order(), "CANCELLED")))
+        .resolves.toMatchObject({ status: expectedStatus });
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect((fetchImpl.mock.calls[0]?.[1] as RequestInit).method).toBe("GET");
+    },
+  );
+
+  it("maps public retrieval absence conservatively to processing", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ error: "not found" }, 404));
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+
+    await expect(provider.retrieve({ order: order(), providerReference: token }))
+      .resolves.toMatchObject({ providerStatus: "NOT_FOUND", status: "processing" });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("captures only after authoritative absence and reuses the stable request ID", async () => {
     const fetchImpl = vi.fn()
-      .mockResolvedValueOnce(jsonResponse(capturedPayment({ paymentState: "AUTH_APPROVED" })))
-      .mockResolvedValueOnce(jsonResponse(capturedPayment({ paymentState: "AUTH_APPROVED" })))
+      .mockResolvedValueOnce(jsonResponse({ error: "not found" }, 404))
       .mockResolvedValueOnce(jsonResponse(capturedPayment()))
       .mockResolvedValueOnce(jsonResponse(capturedPayment()));
     const provider = createAfterpayProvider({ config: config(), fetchImpl });
 
-    await expect(provider.retrieve({ order: order(), providerReference: token }))
-      .resolves.toMatchObject({ status: "processing" });
     await expect(provider.retryCompletion?.({
       order: order(),
       providerReference: token,
@@ -346,23 +372,68 @@ describe("Afterpay provider", () => {
     expect(fetchImpl.mock.calls[0]?.[0]).toBe(
       `https://global-api-sandbox.afterpay.com/v2/payments/token/${encodeURIComponent(token)}`,
     );
-    const retryCapture = JSON.parse(String((fetchImpl.mock.calls[2]?.[1] as RequestInit).body));
-    const returnCapture = JSON.parse(String((fetchImpl.mock.calls[3]?.[1] as RequestInit).body));
+    const retryCapture = JSON.parse(String((fetchImpl.mock.calls[1]?.[1] as RequestInit).body));
+    const returnCapture = JSON.parse(String((fetchImpl.mock.calls[2]?.[1] as RequestInit).body));
     expect(retryCapture.requestId).toBe(returnCapture.requestId);
   });
 
-  it("does not recapture when reconciliation retrieval is already terminal", async () => {
-    const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(capturedPayment()));
-    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+  it.each([
+    ["authorized", capturedPayment({ paymentState: "AUTH_APPROVED" }), "processing"],
+    ["partially captured", capturedPayment({
+      paymentState: "PARTIALLY_CAPTURED",
+      openToCaptureAmount: { amount: "50.00", currency: "NZD" },
+    }), "processing"],
+    ["captured with open amount", capturedPayment({
+      openToCaptureAmount: { amount: "1.00", currency: "NZD" },
+    }), "processing"],
+    ["unknown", capturedPayment({ status: "PENDING", paymentState: "UNKNOWN" }), "processing"],
+    ["paid", capturedPayment(), "paid"],
+    ["declined", capturedPayment({ status: "DECLINED", paymentState: "DECLINED" }), "failed"],
+    ["cancelled", capturedPayment({ status: "CANCELLED", paymentState: "CANCELLED" }), "cancelled"],
+  ] as const)(
+    "never captures after reconciliation finds %s authority",
+    async (_name, response, expectedStatus) => {
+      const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(response));
+      const provider = createAfterpayProvider({ config: config(), fetchImpl });
 
-    await expect(provider.retryCompletion?.({
-      order: order(),
-      providerReference: token,
-      idempotencyKey,
-      source: "reconciliation",
-    })).resolves.toMatchObject({ status: "paid" });
-    expect(fetchImpl).toHaveBeenCalledOnce();
-  });
+      await expect(provider.retryCompletion?.({
+        order: order(),
+        providerReference: token,
+        idempotencyKey,
+        source: "reconciliation",
+      })).resolves.toMatchObject({ status: expectedStatus });
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect((fetchImpl.mock.calls[0]?.[1] as RequestInit).method).toBe("GET");
+    },
+  );
+
+  it.each([
+    ["timeout", () => Promise.reject(new Error("server-secret timeout"))],
+    ["provider 5xx", () => Promise.resolve(jsonResponse({ error: "server-secret" }, 503))],
+    ["invalid response", () => Promise.resolve(jsonResponse({ unsafe: "server-secret" }))],
+  ] as const)(
+    "does not capture after an ambiguous retrieval %s",
+    async (_name, responseFactory) => {
+      const fetchImpl = vi.fn((
+        request: string | URL | Request,
+        init?: RequestInit,
+      ) => {
+        void request;
+        void init;
+        return responseFactory();
+      });
+      const provider = createAfterpayProvider({ config: config(), fetchImpl });
+
+      await expect(provider.retryCompletion?.({
+        order: order(),
+        providerReference: token,
+        idempotencyKey,
+        source: "reconciliation",
+      })).rejects.toThrow("Afterpay payment request failed");
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect((fetchImpl.mock.calls[0]?.[1] as RequestInit).method).toBe("GET");
+    },
+  );
 
   it("redacts credentials and response bodies from request failures", async () => {
     const provider = createAfterpayProvider({

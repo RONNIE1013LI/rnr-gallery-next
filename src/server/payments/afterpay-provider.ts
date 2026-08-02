@@ -287,14 +287,14 @@ function stableRequestId(idempotencyKey: string) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function cancelledResult(order: PaymentOrder, providerReference: string) {
+function absentResult(order: PaymentOrder, providerReference: string) {
   return Object.freeze({
     providerReference,
-    providerStatus: "CANCELLED",
+    providerStatus: "NOT_FOUND",
     amountCents: order.amountCents,
     currency: order.currency,
     orderNumber: order.orderNumber,
-    status: "cancelled" as const,
+    status: "processing" as const,
   });
 }
 
@@ -331,14 +331,32 @@ export function createAfterpayProvider({
     return configurationLimits(response, config.currency);
   }
 
-  async function retrieve(order: PaymentOrder, providerReference: string) {
-    const response = await providerJson({
-      method: "GET",
-      path: `/v2/payments/token/${encodeURIComponent(providerReference)}`,
-      validate: isPayment,
-    });
+  async function retrieveAuthority(
+    order: PaymentOrder,
+    providerReference: string,
+  ): Promise<
+    | Readonly<{ kind: "found"; result: VerifiedPaymentResult }>
+    | Readonly<{ kind: "authoritative_absence" }>
+  > {
+    let response: PaymentResponse;
+    try {
+      response = await http.json({
+        method: "GET",
+        path: `/v2/payments/token/${encodeURIComponent(providerReference)}`,
+        validate: isPayment,
+      });
+    } catch (error) {
+      if (error instanceof ProviderHttpError && error.category === "not_found") {
+        return Object.freeze({ kind: "authoritative_absence" });
+      }
+      if (error instanceof ProviderHttpError) throw requestFailure();
+      throw error;
+    }
     assertPayment(response, order, providerReference);
-    return paymentResult(response, order);
+    return Object.freeze({
+      kind: "found",
+      result: paymentResult(response, order),
+    });
   }
 
   async function capture(
@@ -414,21 +432,39 @@ export function createAfterpayProvider({
         browserState !== input.returnState ||
         browserToken !== input.providerReference
       ) throw verificationFailure();
-      if (browserStatus === "CANCELLED") {
-        return cancelledResult(input.order, input.providerReference);
+      if (browserStatus === "SUCCESS") {
+        return capture(input.order, input.providerReference, input.idempotencyKey);
       }
-      if (browserStatus !== "SUCCESS") throw verificationFailure();
-      return capture(input.order, input.providerReference, input.idempotencyKey);
+      const authority = await retrieveAuthority(
+        input.order,
+        input.providerReference,
+      );
+      return authority.kind === "found"
+        ? authority.result
+        : absentResult(input.order, input.providerReference);
     },
 
     async retrieve(input) {
-      return retrieve(input.order, input.providerReference);
+      const authority = await retrieveAuthority(
+        input.order,
+        input.providerReference,
+      );
+      return authority.kind === "found"
+        ? authority.result
+        : absentResult(input.order, input.providerReference);
     },
 
     async retryCompletion(input) {
-      const current = await retrieve(input.order, input.providerReference);
-      if (current.status !== "processing") return current;
-      return capture(input.order, input.providerReference, input.idempotencyKey);
+      const authority = await retrieveAuthority(
+        input.order,
+        input.providerReference,
+      );
+      if (authority.kind === "found") return authority.result;
+      return capture(
+        input.order,
+        input.providerReference,
+        input.idempotencyKey,
+      );
     },
   };
   return Object.freeze(provider);

@@ -32,6 +32,7 @@ describe("provider HTTP boundary", () => {
       expect.objectContaining({
         method: "POST",
         body: JSON.stringify({ amount: "120.75" }),
+        redirect: "error",
         headers: {
           Accept: "application/json",
           Authorization: `Basic ${Buffer.from("merchant-id:server-secret").toString("base64")}`,
@@ -99,6 +100,62 @@ describe("provider HTTP boundary", () => {
     expect(error).toBeInstanceOf(ProviderHttpError);
     expect(error).toMatchObject({ code: "request", message: "Payment provider request failed" });
     expect(String(error)).not.toMatch(/server-secret|response body/);
+  });
+
+  it("fails closed on a redirect without forwarding credentials", async () => {
+    const fetchImpl = vi.fn().mockRejectedValue(
+      new TypeError("redirect to evil.example.test with server-secret"),
+    );
+    const http = createProviderHttp({
+      baseUrl: "https://global-api-sandbox.afterpay.com",
+      username: "merchant-id",
+      password: "server-secret",
+      userAgent: "merchant-id",
+      fetchImpl,
+    });
+
+    const error = await http.json({
+      method: "GET",
+      path: "/v2/configuration",
+      validate: (value): value is object => typeof value === "object" && value !== null,
+    }).catch((caught) => caught);
+
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({ redirect: "error" });
+    expect(error).toMatchObject({
+      name: "ProviderHttpError",
+      code: "request",
+      category: "other",
+      message: "Payment provider request failed",
+    });
+    expect(String(error)).not.toMatch(/evil|server-secret/);
+  });
+
+  it("classifies only a provider 404 as authoritative absence", async () => {
+    const http = createProviderHttp({
+      baseUrl: "https://global-api-sandbox.afterpay.com",
+      username: "merchant-id",
+      password: "server-secret",
+      userAgent: "merchant-id",
+      fetchImpl: vi.fn().mockResolvedValue(new Response("server-secret body", {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      })),
+    });
+
+    const error = await http.json({
+      method: "GET",
+      path: "/v2/payments/token/missing",
+      validate: (value): value is object => typeof value === "object" && value !== null,
+    }).catch((caught) => caught);
+
+    expect(error).toMatchObject({
+      name: "ProviderHttpError",
+      code: "response",
+      category: "not_found",
+      message: "Payment provider response invalid",
+    });
+    expect(String(error)).not.toMatch(/404|server-secret|body/);
   });
 
   it.each([

@@ -1,12 +1,17 @@
 export class ProviderHttpError extends Error {
   readonly code: "request" | "response";
+  readonly category: "not_found" | "other";
 
-  constructor(code: "request" | "response") {
+  constructor(
+    code: "request" | "response",
+    category: "not_found" | "other" = "other",
+  ) {
     super(code === "request"
       ? "Payment provider request failed"
       : "Payment provider response invalid");
     this.name = "ProviderHttpError";
     this.code = code;
+    this.category = category;
   }
 }
 
@@ -135,10 +140,16 @@ export function createProviderHttp(options: ProviderHttpOptions) {
         const response = await fetchImpl(url, {
           method: request.method,
           headers,
+          redirect: "error",
           signal: controller.signal,
           ...(request.body === undefined ? {} : { body: JSON.stringify(request.body) }),
         });
-        if (!response.ok) throw new ProviderHttpError("response");
+        if (!response.ok) {
+          throw new ProviderHttpError(
+            "response",
+            response.status === 404 ? "not_found" : "other",
+          );
+        }
         const contentType = response.headers.get("content-type")?.toLowerCase() ?? "";
         if (!/^application\/(?:[a-z0-9.+-]+\+)?json(?:\s*;|$)/.test(contentType)) {
           throw new ProviderHttpError("response");
