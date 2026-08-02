@@ -301,6 +301,77 @@ describe("OrderPaymentPanel", () => {
     expect(screen.queryByTestId("stripe-payment-form")).not.toBeInTheDocument();
   });
 
+  it.each(["processing", "paid", "failed", "cancelled", "refunded"] as const)(
+    "removes Stripe Elements and recovery when the authoritative order status becomes %s",
+    async (paymentStatus) => {
+      vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+        payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+        action: { kind: "elements", method: "card", clientSecret: "pi_secret_123", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
+      }) }));
+      const view = render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
+      fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+      expect(await screen.findByTestId("stripe-payment-form")).toBeInTheDocument();
+      expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).not.toBeNull();
+
+      view.rerender(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus={paymentStatus} methods={methods} orderHref="/orders/RNR-2026-ABC" />);
+
+      await waitFor(() => {
+        expect(screen.queryByTestId("stripe-payment-form")).not.toBeInTheDocument();
+        expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull();
+      });
+    },
+  );
+
+  it("remounts Stripe Elements when a card response has a different client secret", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+        action: { kind: "elements", method: "card", clientSecret: "pi_secret_first", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
+      }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+        action: { kind: "elements", method: "card", clientSecret: "pi_secret_second", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
+      }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
+    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    const firstForm = await screen.findByTestId("stripe-payment-form");
+    expect(firstForm).toHaveAttribute("data-client-secret", "pi_secret_first");
+
+    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    await waitFor(() => expect(screen.getByTestId("stripe-payment-form"))
+      .toHaveAttribute("data-client-secret", "pi_secret_second"));
+
+    expect(screen.getByTestId("stripe-payment-form")).not.toBe(firstForm);
+  });
+
+  it.each(["failed", "cancelled"] as const)(
+    "creates a fresh Stripe form for a manual card retry after %s",
+    async (paymentStatus) => {
+      const fetchMock = vi.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({
+          payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+          action: { kind: "elements", method: "card", clientSecret: "pi_secret_first", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
+        }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({
+          payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+          action: { kind: "elements", method: "card", clientSecret: "pi_secret_second", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
+        }) });
+      vi.stubGlobal("fetch", fetchMock);
+      const view = render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
+      fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+      const firstForm = await screen.findByTestId("stripe-payment-form");
+
+      view.rerender(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus={paymentStatus} methods={methods} orderHref="/orders/RNR-2026-ABC" />);
+      await waitFor(() => expect(screen.queryByTestId("stripe-payment-form")).not.toBeInTheDocument());
+      fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+
+      const secondForm = await screen.findByTestId("stripe-payment-form");
+      expect(secondForm).toHaveAttribute("data-client-secret", "pi_secret_second");
+      expect(secondForm).not.toBe(firstForm);
+    },
+  );
+
   it("accepts only exact method-compatible payment responses and trusted action URLs", () => {
     expect(parsePaymentStartResponse({
       payment: { method: "card", status: "processing", isTest: false, canRetry: false },

@@ -205,17 +205,19 @@ export async function startOrderPayment(
   });
 }
 
-export function OrderPaymentPanel({
-  orderNumber,
-  paymentStatus,
-  methods: suppliedMethods,
-  orderHref,
-}: {
+type OrderPaymentPanelProps = Readonly<{
   orderNumber: string;
   paymentStatus: OrderPaymentStatus;
   methods?: readonly PaymentMethodOption[];
   orderHref: string;
-}) {
+}>;
+
+function OrderPaymentPanelState({
+  orderNumber,
+  paymentStatus,
+  methods: suppliedMethods,
+  orderHref,
+}: OrderPaymentPanelProps) {
   const { push } = useRouter();
   const [initialAttempt] = useState(() => storedStartingAttempt(orderNumber));
   const [methods, setMethods] = useState<readonly PaymentMethodOption[]>(suppliedMethods ?? []);
@@ -240,10 +242,10 @@ export function OrderPaymentPanel({
   }, [message, paymentStatus]);
 
   useEffect(() => {
-    if (paymentStatus === "awaiting_payment" || !initialAttempt) return;
+    if (paymentStatus === "awaiting_payment") return;
     clearStoredStartingAttempt(orderNumber);
     paymentKey.current = null;
-  }, [initialAttempt, orderNumber, paymentStatus]);
+  }, [orderNumber, paymentStatus]);
 
   useEffect(() => {
     if (suppliedMethods !== undefined || !canStart) return;
@@ -344,10 +346,18 @@ export function OrderPaymentPanel({
       <button className={styles.primaryButton} type="button" disabled={!methodsLoaded || !selected || pending || methods.length === 0} onClick={start}>{pending ? "Starting payment…" : "Pay for order"}</button>
     </> : null}
     {paymentAction?.kind === "elements" ? <StripePaymentForm
+      key={paymentAction.clientSecret}
       clientSecret={paymentAction.clientSecret}
       publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""}
       returnUrl={paymentAction.returnUrl}
     /> : null}
     {statusMessage ? <p aria-live="polite" className={styles.checkoutMessage}>{statusMessage}</p> : null}
   </section>;
+}
+
+export function OrderPaymentPanel(props: OrderPaymentPanelProps) {
+  return <OrderPaymentPanelState
+    key={`${props.orderNumber}:${props.paymentStatus}`}
+    {...props}
+  />;
 }
