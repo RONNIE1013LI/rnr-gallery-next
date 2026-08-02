@@ -36,7 +36,11 @@ export function nextOrderPaymentStatus(
     return incoming === "refunded" ? "refunded" : "paid";
   }
 
-  if (current === "cancelled") {
+  if (
+    current === "cancelled" &&
+    incoming !== "processing" &&
+    incoming !== "paid"
+  ) {
     return "cancelled";
   }
 

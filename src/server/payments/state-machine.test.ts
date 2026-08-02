@@ -10,6 +10,9 @@ describe("payment state transitions", () => {
     ["processing", "paid", "paid"],
     ["paid", "failed", "paid"],
     ["failed", "processing", "processing"],
+    ["cancelled", "processing", "processing"],
+    ["refunded", "processing", "refunded"],
+    ["refunded", "paid", "refunded"],
   ] as const)("%s + %s => %s", (current, incoming, expected) => {
     expect(nextOrderPaymentStatus(current, incoming)).toBe(expected);
   });
@@ -24,6 +27,19 @@ describe("payment state transitions", () => {
     "reconciliation",
   ] as const)("accepts paid from the trusted %s path", (source) => {
     expect(verifiedIncomingStatus(source, "paid")).toBe("paid");
+  });
+
+  it("accepts a trusted paid result after cancellation", () => {
+    const trustedPaid = verifiedIncomingStatus("verified_webhook", "paid");
+
+    expect(nextOrderPaymentStatus("cancelled", trustedPaid)).toBe("paid");
+  });
+
+  it("turns an untrusted paid return into a retryable processing state", () => {
+    const browserStatus = verifiedIncomingStatus("browser_return", "paid");
+
+    expect(browserStatus).toBe("processing");
+    expect(nextOrderPaymentStatus("cancelled", browserStatus)).toBe("processing");
   });
 
   it.each(["processing", "failed", "cancelled"] as const)(
