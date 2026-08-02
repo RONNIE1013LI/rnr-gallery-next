@@ -21,7 +21,8 @@
 - Stripe PaymentIntents use `payment_method_types: ["card"]`; do not enable automatic payment methods.
 - Do not store/log card data, secrets, client secrets, raw webhook payloads or PII.
 - Zip v2 charge supports only AUD, USD and CAD. Effective eligibility is the intersection of that immutable provider allowlist and the merchant-configured allowlist. Current NZD orders therefore never offer real Zip and make zero Zip calls.
-- At most one nonterminal attempt exists per order/provider/method. Provider idempotency is stable and derived server-side from that persisted attempt; a browser UUID is only a retry hint.
+- At most one nonterminal payment attempt exists globally per order, regardless of provider or method. Provider idempotency is stable and derived server-side from that persisted attempt; a browser UUID is only a retry hint.
+- Starting another method while an order has a nonterminal attempt returns the existing attempt/conflict and makes zero provider calls. A future method switch must first obtain provider-confirmed cancellation and atomically supersede the old attempt; switching is out of this slice.
 - A provider return state is consumed atomically exactly once. Duplicate returns make no provider call and show the stored state while reconciliation owns any later retrieval.
 - A verified webhook event claim, locked attempt/order validation, transition and processed result commit atomically; injected faults must remain replayable.
 - On 2 August 2026 Zip NZ is closed to new merchant/customer applications and ceases NZ transactions at 11:59 pm on 16 August 2026; no NZ grace-period path is implemented.
@@ -85,7 +86,7 @@ await expect(insertAttempt({ orderId, expectedAmountCents: 1 }))
   .rejects.toThrow("payment_attempts_expected_order_amount_fk");
 await expect(Promise.all([
   insertNonterminalAttempt({ orderId, provider: "stripe", method: "card" }),
-  insertNonterminalAttempt({ orderId, provider: "stripe", method: "card" }),
+  insertNonterminalAttempt({ orderId, provider: "afterpay", method: "afterpay" }),
 ])).rejects.toThrow("payment_attempts_one_nonterminal_unique");
 ```
 
@@ -112,14 +113,14 @@ export type PaymentAttemptStatus =
 Add:
 
 - unique `(provider, idempotency_key)`;
-- PostgreSQL partial unique `(order_id, provider, method)` where status is one of `created`, `requires_action` or `processing`;
+- PostgreSQL partial unique `(order_id)` where status is one of `created`, `requires_action` or `processing`;
 - unique nullable `(provider, provider_reference)`;
 - positive expected amount check;
 - composite order-money FK from attempt `(order_id, expected_amount_cents, currency)` to a new unique order key `(id, total_incl_gst_cents, currency)`;
 - unique `(provider, provider_event_id)`;
 - SHA-256 format check.
 
-The generated SQL must include the partial unique index explicitly. A failed/cancelled attempt may be followed by a new attempt; a paid order may not.
+The generated SQL must include the order-global partial unique index explicitly. A failed/cancelled attempt may be followed by a new attempt; a paid order may not. Switching a still-nonterminal order to a different method/provider is rejected in this slice.
 
 - [ ] **Step 4: Generate, inspect and apply the migration**
 
@@ -203,13 +204,14 @@ export interface PaymentProvider {
   createOrReuse(input: CreateProviderSessionInput): Promise<ProviderSession>;
   completeReturn(input: CompleteProviderReturnInput): Promise<VerifiedPaymentResult>;
   retrieve(input: RetrieveProviderPaymentInput): Promise<VerifiedPaymentResult>;
+  retryCompletion?(input: RetryProviderCompletionInput): Promise<VerifiedPaymentResult>;
   verifyWebhook?(rawBody: Uint8Array, headers: Headers): Promise<VerifiedProviderEvent>;
 }
 ```
 
 `ProviderSession` is a discriminated union: `elements` with transient Stripe client secret, `redirect` with redirect URL, or `test` with a local URL. `VerifiedPaymentResult` always includes provider reference/status, amount, currency, order number and normalized status.
 
-The provider contract is currency-capable for isolated adapter tests, but the current order repository and service still produce only persisted NZD orders. `refundCapability` is declarative in this scope; every initial adapter reports `"unsupported"` until a refund operation is actually implemented. This prevents callers from assuming support, and no refund mutation/API/UI is added by this plan.
+The provider contract is currency-capable for isolated adapter tests, but the current order repository and service still produce only persisted NZD orders. Optional `retryCompletion` exists only for server-side capture/charge providers and must reuse the same attempt-derived completion request ID/idempotency key after authoritative retrieval proves the original operation did not complete. `refundCapability` is declarative in this scope; every initial adapter reports `"unsupported"` until a refund operation is actually implemented. This prevents callers from assuming support, and no refund mutation/API/UI is added by this plan.
 
 - [ ] **Step 4: Implement serializers and transition guards**
 
@@ -339,15 +341,16 @@ export interface PaymentRepository {
 }
 ```
 
-Test simultaneous starts with two different browser UUIDs create/reuse one nonterminal row and return only one provider-session claim. Test the same event/hash applies once, the same event/different hash is rejected, duplicate return-state consumption returns null, wrong guest token/customer returns null, and amount/currency/reference mismatch changes no state.
+Test simultaneous starts with two different browser UUIDs and different methods (`card` versus `afterpay`) create one order-global nonterminal row and return exactly one provider-session claim. The loser receives the existing attempt/conflict and must not create another provider session. Test the same event/hash applies once, the same event/different hash is rejected, duplicate return-state consumption returns null, wrong guest token/customer returns null, and amount/currency/reference mismatch changes no state.
 
 ```ts
 const [first, second] = await Promise.all([
-  repository.createOrClaimNonterminalAttempt({ ...input, clientKey: crypto.randomUUID() }),
-  repository.createOrClaimNonterminalAttempt({ ...input, clientKey: crypto.randomUUID() }),
+  repository.createOrClaimNonterminalAttempt({ ...input, method: "card", provider: "stripe", clientKey: crypto.randomUUID() }),
+  repository.createOrClaimNonterminalAttempt({ ...input, method: "afterpay", provider: "afterpay", clientKey: crypto.randomUUID() }),
 ]);
 expect(new Set([first.attempt.id, second.attempt.id])).toHaveSize(1);
 expect([first.claimId, second.claimId].filter(Boolean)).toHaveLength(1);
+expect([first.outcome, second.outcome].sort()).toEqual(["claimed", "existing_conflict"]);
 ```
 
 - [ ] **Step 2: Run and confirm failure**
@@ -360,7 +363,9 @@ TEST_DATABASE_URL="$TEST_DATABASE_URL" npm test -- --run \
 
 - [ ] **Step 3: Implement row locking, attempt claims and stable idempotency**
 
-Inside a transaction, lock the order and selected attempt with `FOR UPDATE`, validate immutable order fields and reuse the one nonterminal attempt for that order/provider/method. The transaction grants one short provider-session lease (`claimId`, expiry) to the caller allowed to create externally; concurrent callers receive the same attempt without a claim and must not call the provider. A crashed/expired lease may be reclaimed, but every claimant uses the same server-derived upstream idempotency key, for example SHA-256 of a versioned tuple containing attempt ID, provider and operation. Never derive the upstream key from the browser UUID.
+Inside a transaction, lock the order and its selected nonterminal attempt with `FOR UPDATE`, validate immutable order fields and reuse the single attempt regardless of requested provider/method. If the existing attempt belongs to another method/provider, return `existing_conflict` with no claim. Otherwise the transaction grants one short provider-session lease (`claimId`, expiry) to the caller allowed to create externally; concurrent callers receive the same attempt without a claim and must not call the provider. A crashed/expired lease may be reclaimed, but every claimant uses the same server-derived upstream idempotency key, for example SHA-256 of a versioned tuple containing attempt ID, provider and operation. Never derive the upstream key from the browser UUID.
+
+A later method switch requires provider-confirmed cancellation of the existing attempt followed by an atomic cancelled/superseded transition before a new attempt can satisfy the partial unique index. That switch flow is intentionally not implemented in this slice.
 
 `bindProviderSession` succeeds only for the active claim. `consumeReturnState` locks the attempt and changes `return_state_consumed_at` from null exactly once. `applyVerifiedResult` locks order/attempt, calls `nextOrderPaymentStatus`, and updates both together. Store only sanitized failure codes.
 
@@ -461,18 +466,28 @@ git commit -m "feat: add safe local payment adapters"
 
 ```ts
 const result = await service.start(access, "afterpay", paymentKey);
-expect(repository.createOrFindAttempt).toHaveBeenCalledWith(expect.objectContaining({
+expect(repository.createOrClaimNonterminalAttempt).toHaveBeenCalledWith(expect.objectContaining({
   expectedAmountCents: 12075,
   currency: "NZD",
 }));
 expect(provider.createOrReuse).toHaveBeenCalledWith(expect.objectContaining({
   order: expect.objectContaining({ amountCents: 12075 }),
 }));
+
+afterpayProvider.createOrReuse.mockClear();
+repository.createOrClaimNonterminalAttempt.mockResolvedValueOnce({
+  outcome: "existing_conflict",
+  attempt: existingCardAttempt,
+  claimId: null,
+});
+await expect(service.start(access, "afterpay", anotherPaymentKey))
+  .rejects.toMatchObject({ code: "PAYMENT_ATTEMPT_IN_PROGRESS" });
+expect(afterpayProvider.createOrReuse).not.toHaveBeenCalled();
 ```
 
 Cover inaccessible order, unavailable provider, duplicate start reuse, persisted attempt followed by provider timeout, paid-order retry rejection and retry after a failed attempt.
 
-Add a barrier-controlled concurrency test that calls `start` twice for the same order/method with two different valid browser UUIDs. Assert one persisted nonterminal attempt, one provider `createOrReuse` call, one stable server-derived provider idempotency key, and two responses referring to the same safe action/state. The non-claiming request may poll/reload the bound session but must not create one.
+Add a barrier-controlled concurrency test that calls `start` for `card` and `afterpay` on the same order with two different valid browser UUIDs. Assert one persisted nonterminal attempt, exactly one claim and one provider `createOrReuse` call total. The loser returns `PAYMENT_ATTEMPT_IN_PROGRESS`/the safe existing attempt state and performs zero provider calls. Also retain a same-method retry test: the non-claiming request may poll/reload the already-bound session but must not create one.
 
 - [ ] **Step 2: Run and confirm failure**
 
@@ -879,7 +894,7 @@ expect(provider.completeReturn).not.toHaveBeenCalled();
 
 - [ ] **Step 3: Implement consume-before-call behavior**
 
-Hash the untrusted state, call `consumeReturnState` under row lock, and stop immediately if it is already consumed. Never reset consumption after a provider timeout: the persisted attempt and provider reference are recovered by reconciliation, not by replaying capture/charge. Return URLs never accept amount, currency, order ID or paid status as authority.
+Hash the untrusted state, call `consumeReturnState` under row lock, and stop immediately if it is already consumed. Never reset consumption after a provider timeout: browser replay never retries capture/charge. It records an unknown completion outcome on the same persisted attempt for Task 13 to retrieve first and, only when provider authority proves no completion exists, safely retry with that attempt's unchanged request ID/idempotency key. Return URLs never accept amount, currency, order ID or paid status as authority.
 
 - [ ] **Step 4: Pass checks and commit**
 
@@ -905,7 +920,7 @@ git commit -m "feat: consume payment returns once"
 - Modify (created in Task 6): `src/server/payments/payment-service.test.ts`
 
 **Interfaces:**
-- Consumes: reconciliation candidates and provider `retrieve` results.
+- Consumes: reconciliation candidates, provider `retrieve` results and the persisted attempt's stable completion request ID/idempotency key.
 - Produces: protected, bounded recovery for processing/timed-out attempts.
 
 - [ ] **Step 1: Write authorization and bound tests**
@@ -914,7 +929,9 @@ Missing/wrong bearer returns `401`; missing configured secret returns `503`; cor
 
 - [ ] **Step 2: Write verified retrieval tests**
 
-Retrieve by stored provider reference only. Exact reference, order number, amount and currency must match before an atomic state transition. Cover Stripe succeeded/processing, Afterpay's strict fully-captured predicate from Task 9, Zip AUD adapter fixtures, stale failure after paid and a provider timeout that remains recoverable. Current NZD Zip attempts cannot be candidates because they cannot be created.
+Retrieve by stored provider reference first. Exact reference, order number, amount and currency must match before an atomic state transition. Cover Stripe succeeded/processing, Afterpay's strict fully-captured predicate from Task 9, Zip AUD adapter fixtures, stale failure after paid and both ambiguous timeout boundaries. Current NZD Zip attempts cannot be candidates because they cannot be created.
+
+For a timeout before the provider receives completion, mocked retrieval authoritatively returns not-found/not-completed; reconciliation then retries capture/charge once using the same persisted attempt and the exact original request ID/idempotency key. For a timeout after the provider processed completion, retrieval returns the matching captured payment; reconciliation applies it and never retries capture/charge. If retrieval is unavailable, ambiguous or merely pending, keep processing and do not retry.
 
 ```ts
 await reconcile({ limit: 50 });
@@ -925,11 +942,21 @@ expect(repository.applyVerifiedResult).toHaveBeenCalledWith(expect.objectContain
   expectedAmountCents: persistedAttempt.expectedAmountCents,
   currency: persistedAttempt.currency,
 }));
+
+provider.retrieve.mockResolvedValueOnce({ status: "not_found_authoritative" });
+await reconcileAttempt(timedOutBeforeReceipt);
+expect(provider.retryCompletion).toHaveBeenCalledWith(expect.objectContaining({
+  requestId: stableCompletionRequestId(timedOutBeforeReceipt),
+}));
+
+provider.retrieve.mockResolvedValueOnce(matchingCapturedResult);
+await reconcileAttempt(timedOutAfterProcessing);
+expect(provider.retryCompletion).not.toHaveBeenCalled();
 ```
 
 - [ ] **Step 3: Implement bounded reconciliation**
 
-The endpoint accepts no order/provider/body authority. It lists server-selected candidates, retrieves each independently and applies the normalized verified result through the repository. Duplicate returns do not call retrieve; this protected reconciliation path owns later retrieval.
+The endpoint accepts no order/provider/body authority. It lists server-selected candidates and always retrieves each independently before considering a retry. A matching terminal result is applied. An authoritative not-received/not-completed result may invoke the provider-specific completion retry on the same persisted attempt with its unchanged request ID/idempotency key; ambiguity remains processing. Duplicate browser returns do not call retrieve or retry; only this protected reconciliation path can do so.
 
 - [ ] **Step 4: Pass checks and commit**
 
@@ -1052,8 +1079,9 @@ Verify product → cart → NZ/AU address → shipping review → payment method
 - browser return alone is not paid;
 - server local capture/reconciliation can become paid;
 - response loss reuses one order/attempt;
-- two independent browser contexts using different client UUIDs for the same order/method cause one nonterminal attempt and one provider-session create;
+- two independent browser contexts concurrently starting card and Afterpay with different client UUIDs for the same order cause one order-global nonterminal attempt, one claim and one provider-session create; the loser shows the existing-payment conflict and makes zero provider calls;
 - simultaneous and repeated return URLs consume state once; duplicate requests make zero provider calls and reconciliation retrieves later if needed;
+- completion-timeout acceptance covers both before-provider-receipt (retrieve proves absence, then same-key retry) and after-provider-processing (retrieve finds capture, zero retry);
 - foreign guest/account receives not found;
 - targets are at least 44 px, focus visible, no overflow, no application console errors.
 
@@ -1104,12 +1132,14 @@ Each commit runs its focused tests, lint and typecheck. Schema, provider, callba
 ## Security Invariants
 
 - [ ] Payment amount/currency/reference match the immutable order before state change.
-- [ ] One nonterminal attempt exists per order/provider/method, including concurrent starts with different browser UUIDs.
+- [ ] One nonterminal attempt exists globally per order, including concurrent different-method starts with different browser UUIDs.
+- [ ] Method switching requires provider-confirmed cancellation and atomic supersession before another attempt; it is unavailable in this slice.
 - [ ] Provider idempotency derives stably from the persisted attempt and operation, never browser UUIDs or totals.
 - [ ] One provider event ID/hash, locked validation, transition and processed result commit atomically; different-hash replay is rejected and injected faults are replayable.
 - [ ] Stripe raw bytes are verified before JSON interpretation.
 - [ ] Stripe PaymentIntent explicitly uses card-only method types and never automatic payment methods.
 - [ ] Return routes atomically consume one-time state plus stored provider reference; duplicate returns make zero provider calls.
+- [ ] Reconciliation retrieves first after a completion timeout and retries only authoritative absence with the same attempt-derived completion key.
 - [ ] Browser return cannot propose paid.
 - [ ] Afterpay becomes paid only when approved, captured, zero open-to-capture and all stored identifiers/money match.
 - [ ] Paid cannot be overwritten by stale failure/processing.
