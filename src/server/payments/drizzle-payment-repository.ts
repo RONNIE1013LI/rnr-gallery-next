@@ -10,6 +10,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { normalizeAddress } from "@/domain/address/schema";
+import type { SupportedCountry } from "@/domain/address/types";
 import type { getDatabase } from "@/server/db/client";
 import {
   checkoutSessions,
@@ -26,8 +27,8 @@ import {
   nextOrderPaymentStatus,
   verifiedIncomingStatus,
 } from "./state-machine";
+import type { PaymentVerificationSource } from "./state-machine";
 import type {
-  ApplyVerifiedResultInput,
   AttemptClaim,
   BindProviderSessionInput,
   ConsumedReturnState,
@@ -241,8 +242,11 @@ function assertVerifiedResult(
 
 async function applyLockedVerifiedResult(
   transaction: Transaction,
-  input: ApplyVerifiedResultInput,
-  forcedSource?: "verified_webhook",
+  input: Readonly<{
+    attemptId: string;
+    result: VerifiedPaymentResult;
+    source: PaymentVerificationSource;
+  }>,
 ): Promise<PaymentAttemptWithOrder> {
   const { order, attempt } = await lockOrderThenAttempt(
     transaction,
@@ -250,8 +254,16 @@ async function applyLockedVerifiedResult(
   );
   assertVerifiedResult(order, attempt, input.result);
 
+  if (order.paymentStatus === "paid" || order.paymentStatus === "refunded") {
+    const addresses = await loadAddresses(transaction, order.id);
+    return Object.freeze({
+      attempt: attemptRecord(attempt),
+      order: paymentOrder(order, addresses),
+    });
+  }
+
   const incoming = verifiedIncomingStatus(
-    forcedSource ?? input.source ?? "server_capture",
+    input.source,
     input.result.status,
   );
   const orderStatus = nextOrderPaymentStatus(order.paymentStatus, incoming);
@@ -303,6 +315,8 @@ export function createDrizzlePaymentRepository(
           eq(orders.orderNumber, access.orderNumber),
           isNull(orders.customerId),
           eq(checkoutSessions.tokenDigest, access.tokenDigest),
+          isNotNull(checkoutSessions.completedAt),
+          sql`${checkoutSessions.expiresAt} > clock_timestamp()`,
         )
       : and(
           eq(orders.orderNumber, access.orderNumber),
@@ -357,6 +371,14 @@ export function createDrizzlePaymentRepository(
           throw new PaymentRepositoryConflictError();
         }
 
+        let country: SupportedCountry;
+        try {
+          const addresses = await loadAddresses(transaction, order.id);
+          country = addressFor(addresses, "delivery").country;
+        } catch {
+          throw new PaymentRepositoryConflictError("Invalid delivery address snapshot");
+        }
+
         const [existing] = await transaction
           .select()
           .from(paymentAttempts)
@@ -369,6 +391,9 @@ export function createDrizzlePaymentRepository(
         const now = await databaseNow(transaction);
 
         if (existing) {
+          if (existing.country !== country) {
+            throw new PaymentRepositoryConflictError("Payment country does not match delivery");
+          }
           if (existing.provider !== input.provider || existing.method !== input.method) {
             return Object.freeze({
               outcome: "existing_conflict" as const,
@@ -420,7 +445,7 @@ export function createDrizzlePaymentRepository(
             providerSessionLeaseExpiresAt: new Date(now.getTime() + leaseDurationMs),
             expectedAmountCents: input.expectedAmountCents,
             currency: input.currency,
-            country: input.country,
+            country,
             status: "created",
             createdAt: now,
             updatedAt: now,
@@ -442,7 +467,8 @@ export function createDrizzlePaymentRepository(
           const { attempt } = await lockOrderThenAttempt(transaction, input.attemptId);
           if (
             attempt.providerReference === input.providerReference &&
-            attempt.returnStateDigest === input.returnStateDigest
+            attempt.returnStateDigest === input.returnStateDigest &&
+            attempt.status === input.status
           ) {
             return attemptRecord(attempt);
           }
@@ -518,6 +544,13 @@ export function createDrizzlePaymentRepository(
     },
 
     async applyVerifiedResult(input): Promise<PaymentAttemptWithOrder> {
+      if (
+        input.source !== "browser_return" &&
+        input.source !== "server_capture" &&
+        input.source !== "reconciliation"
+      ) {
+        throw new PaymentVerificationMismatchError();
+      }
       return database.transaction((transaction) =>
         applyLockedVerifiedResult(transaction, input),
       );
@@ -562,8 +595,11 @@ export function createDrizzlePaymentRepository(
 
         await applyLockedVerifiedResult(
           transaction,
-          { attemptId: input.attemptId, result: input.result },
-          "verified_webhook",
+          {
+            attemptId: input.attemptId,
+            result: input.result,
+            source: "verified_webhook",
+          },
         );
         if (input.faultAt === "after_transition") {
           throw new PaymentRepositoryFaultError();

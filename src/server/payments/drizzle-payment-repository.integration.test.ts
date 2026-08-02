@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { orders, webhookEvents } from "@/server/db/schema";
+import { orders, paymentAttempts, webhookEvents } from "@/server/db/schema";
 import {
   PaymentRepositoryConflictError,
   PaymentVerificationMismatchError,
@@ -102,9 +102,17 @@ function claimInput(
     method: override.method ?? ("card" as const),
     expectedAmountCents: 7_475,
     currency: "NZD" as const,
-    country: "NZ" as const,
     clientKey: override.clientKey ?? randomUUID(),
   };
+}
+
+async function paymentRows(orderId: string, attemptId: string) {
+  const [order] = await database.select().from(orders).where(eq(orders.id, orderId));
+  const [attempt] = await database
+    .select()
+    .from(paymentAttempts)
+    .where(eq(paymentAttempts.id, attemptId));
+  return { order, attempt };
 }
 
 describe("Drizzle payment repository", () => {
@@ -174,6 +182,59 @@ describe("Drizzle payment repository", () => {
       orderNumber: corruptOrder.orderNumber,
       tokenDigest: corruptOrder.tokenDigest,
     })).resolves.toBeNull();
+
+    const incomplete = await createOrder();
+    await pool.query("update checkout_sessions set completed_at = null where id = $1", [
+      sessionIds.at(-1),
+    ]);
+    await expect(repository.findPayableOrder({
+      kind: "guest",
+      orderNumber: incomplete.orderNumber,
+      tokenDigest: incomplete.tokenDigest,
+    })).resolves.toBeNull();
+
+    const expired = await createOrder();
+    await pool.query(
+      "update checkout_sessions set expires_at = clock_timestamp() - interval '1 second' where id = $1",
+      [sessionIds.at(-1)],
+    );
+    await expect(repository.findPayableOrder({
+      kind: "guest",
+      orderNumber: expired.orderNumber,
+      tokenDigest: expired.tokenDigest,
+    })).resolves.toBeNull();
+  });
+
+  it("derives country from one valid delivery snapshot and rejects damaged snapshots", async () => {
+    const australian = await createOrder({
+      billingCountry: "AU",
+      deliveryCountry: "AU",
+    });
+    const forged = { ...claimInput(australian.orderId), country: "NZ" as const };
+    await expect(repository.createOrClaimNonterminalAttempt(forged)).resolves.toMatchObject({
+      attempt: { country: "AU" },
+    });
+
+    const missing = await createOrder();
+    await pool.query(
+      "delete from order_addresses where order_id = $1 and kind = 'delivery'",
+      [missing.orderId],
+    );
+    await expect(repository.createOrClaimNonterminalAttempt(claimInput(missing.orderId)))
+      .rejects.toBeInstanceOf(PaymentRepositoryConflictError);
+    await expect(database.select().from(paymentAttempts)
+      .where(eq(paymentAttempts.orderId, missing.orderId))).resolves.toHaveLength(0);
+
+    const mismatch = await createOrder();
+    const first = await repository.createOrClaimNonterminalAttempt(claimInput(mismatch.orderId));
+    await pool.query(
+      "update payment_attempts set country = 'AU', provider_session_lease_expires_at = clock_timestamp() - interval '1 second' where id = $1",
+      [first.attempt.id],
+    );
+    const before = await paymentRows(mismatch.orderId, first.attempt.id);
+    await expect(repository.createOrClaimNonterminalAttempt(claimInput(mismatch.orderId)))
+      .rejects.toBeInstanceOf(PaymentRepositoryConflictError);
+    await expect(paymentRows(mismatch.orderId, first.attempt.id)).resolves.toEqual(before);
   });
 
   it("creates one attempt and one claim for same-method and cross-method concurrency", async () => {
@@ -240,6 +301,40 @@ describe("Drizzle payment repository", () => {
       ...input,
       providerReference: "different-reference",
     })).rejects.toBeInstanceOf(PaymentRepositoryConflictError);
+    await expect(repository.bindProviderSession({
+      ...input,
+      status: "processing",
+    })).rejects.toBeInstanceOf(PaymentRepositoryConflictError);
+
+    const guardedOrder = await createOrder();
+    const guarded = await repository.createOrClaimNonterminalAttempt(
+      claimInput(guardedOrder.orderId),
+    );
+    const wrongClaimBefore = await paymentRows(guardedOrder.orderId, guarded.attempt.id);
+    await expect(repository.bindProviderSession({
+      attemptId: guarded.attempt.id,
+      claimId: randomUUID(),
+      providerReference: `wrong-${randomUUID()}`,
+      returnStateDigest: null,
+      status: "processing",
+    })).rejects.toBeInstanceOf(PaymentRepositoryConflictError);
+    await expect(paymentRows(guardedOrder.orderId, guarded.attempt.id))
+      .resolves.toEqual(wrongClaimBefore);
+
+    await pool.query(
+      "update payment_attempts set provider_session_lease_expires_at = clock_timestamp() - interval '1 second' where id = $1",
+      [guarded.attempt.id],
+    );
+    const expiredBefore = await paymentRows(guardedOrder.orderId, guarded.attempt.id);
+    await expect(repository.bindProviderSession({
+      attemptId: guarded.attempt.id,
+      claimId: guarded.claimId!,
+      providerReference: `expired-${randomUUID()}`,
+      returnStateDigest: null,
+      status: "processing",
+    })).rejects.toBeInstanceOf(PaymentRepositoryConflictError);
+    await expect(paymentRows(guardedOrder.orderId, guarded.attempt.id))
+      .resolves.toEqual(expiredBefore);
   });
 
   it("enforces unique return state during concurrent binds and consumes it once", async () => {
@@ -275,7 +370,7 @@ describe("Drizzle payment repository", () => {
     expect(consumed.filter(Boolean)).toHaveLength(1);
   });
 
-  it("applies verified money atomically and preserves monotonic paid state", async () => {
+  it("applies verified money atomically and preserves terminal state exactly", async () => {
     const order = await createOrder();
     const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
     const reference = `verified-${randomUUID()}`;
@@ -288,12 +383,35 @@ describe("Drizzle payment repository", () => {
       amountCents: 7_475, currency: "NZD" as const,
       orderNumber: order.orderNumber, status: "paid" as const,
     };
-    await expect(repository.applyVerifiedResult({ attemptId: claim.attempt.id, result }))
-      .resolves.toMatchObject({ order: { paymentStatus: "paid" }, attempt: { status: "paid" } });
     await expect(repository.applyVerifiedResult({
       attemptId: claim.attempt.id,
-      result: { ...result, status: "failed" },
-    })).resolves.toMatchObject({ order: { paymentStatus: "paid" }, attempt: { status: "paid" } });
+      result,
+      source: "server_capture",
+    })).resolves.toMatchObject({
+      order: { paymentStatus: "paid" },
+      attempt: { status: "paid" },
+    });
+    const paidBefore = await paymentRows(order.orderId, claim.attempt.id);
+    await repository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      result: { ...result, status: "failed", sanitizedFailureCode: "stale" },
+      source: "reconciliation",
+    });
+    await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toEqual(paidBefore);
+
+    const freshOrder = await createOrder();
+    const freshClaim = await repository.createOrClaimNonterminalAttempt(
+      claimInput(freshOrder.orderId),
+    );
+    const freshReference = `fresh-${randomUUID()}`;
+    await repository.bindProviderSession({
+      attemptId: freshClaim.attempt.id,
+      claimId: freshClaim.claimId!,
+      providerReference: freshReference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+    const freshBefore = await paymentRows(freshOrder.orderId, freshClaim.attempt.id);
     for (const mismatch of [
       { amountCents: 1 },
       { currency: "AUD" as const },
@@ -301,11 +419,17 @@ describe("Drizzle payment repository", () => {
       { providerReference: "wrong-reference" },
     ]) {
       await expect(repository.applyVerifiedResult({
-        attemptId: claim.attempt.id,
-        result: { ...result, ...mismatch },
+        attemptId: freshClaim.attempt.id,
+        result: {
+          ...result,
+          providerReference: freshReference,
+          orderNumber: freshOrder.orderNumber,
+          ...mismatch,
+        },
+        source: "server_capture",
       })).rejects.toBeInstanceOf(PaymentVerificationMismatchError);
-      await expect(database.select().from(orders).where(eq(orders.id, order.orderId)))
-        .resolves.toEqual([expect.objectContaining({ paymentStatus: "paid" })]);
+      await expect(paymentRows(freshOrder.orderId, freshClaim.attempt.id))
+        .resolves.toEqual(freshBefore);
     }
 
     const cancelledOrder = await createOrder({ paymentStatus: "cancelled" });
@@ -327,10 +451,65 @@ describe("Drizzle payment repository", () => {
         providerReference: cancelledReference,
         orderNumber: cancelledOrder.orderNumber,
       },
+      source: "reconciliation",
     })).resolves.toMatchObject({
       order: { paymentStatus: "paid" },
       attempt: { status: "paid" },
     });
+
+    const refundedOrder = await createOrder({ paymentStatus: "processing" });
+    const refundedClaim = await repository.createOrClaimNonterminalAttempt(
+      claimInput(refundedOrder.orderId),
+    );
+    const refundedReference = `refunded-${randomUUID()}`;
+    await repository.bindProviderSession({
+      attemptId: refundedClaim.attempt.id,
+      claimId: refundedClaim.claimId!,
+      providerReference: refundedReference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+    await pool.query("update orders set payment_status = 'refunded' where id = $1", [
+      refundedOrder.orderId,
+    ]);
+    const refundedBefore = await paymentRows(refundedOrder.orderId, refundedClaim.attempt.id);
+    await repository.applyVerifiedResult({
+      attemptId: refundedClaim.attempt.id,
+      result: {
+        ...result,
+        providerReference: refundedReference,
+        orderNumber: refundedOrder.orderNumber,
+        status: "processing",
+      },
+      source: "reconciliation",
+    });
+    await expect(paymentRows(refundedOrder.orderId, refundedClaim.attempt.id))
+      .resolves.toEqual(refundedBefore);
+
+    const sourceOrder = await createOrder();
+    const sourceClaim = await repository.createOrClaimNonterminalAttempt(
+      claimInput(sourceOrder.orderId),
+    );
+    const sourceReference = `source-${randomUUID()}`;
+    await repository.bindProviderSession({
+      attemptId: sourceClaim.attempt.id,
+      claimId: sourceClaim.claimId!,
+      providerReference: sourceReference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+    const sourceBefore = await paymentRows(sourceOrder.orderId, sourceClaim.attempt.id);
+    await expect(repository.applyVerifiedResult({
+      attemptId: sourceClaim.attempt.id,
+      result: {
+        ...result,
+        providerReference: sourceReference,
+        orderNumber: sourceOrder.orderNumber,
+      },
+    } as Parameters<typeof repository.applyVerifiedResult>[0]))
+      .rejects.toBeInstanceOf(PaymentVerificationMismatchError);
+    await expect(paymentRows(sourceOrder.orderId, sourceClaim.attempt.id))
+      .resolves.toEqual(sourceBefore);
   });
 
   it.each(["after_event_insert", "after_transition", "before_processed_result"] as const)(
@@ -365,6 +544,44 @@ describe("Drizzle payment repository", () => {
       })).resolves.toBe("hash_mismatch");
     },
   );
+
+  it("recovers a committed duplicate-unprocessed webhook exactly once", async () => {
+    const order = await createOrder();
+    const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
+    const reference = `recover-${randomUUID()}`;
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference: reference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+    const providerEventId = `recover-event-${randomUUID()}`;
+    const payloadSha256 = "e".repeat(64);
+    await database.insert(webhookEvents).values({
+      provider: "stripe",
+      providerEventId,
+      payloadSha256,
+      paymentAttemptId: claim.attempt.id,
+    });
+    const input = {
+      provider: "stripe" as const,
+      providerEventId,
+      payloadSha256,
+      attemptId: claim.attempt.id,
+      result: {
+        providerReference: reference,
+        providerStatus: "CAPTURED",
+        amountCents: 7_475,
+        currency: "NZD" as const,
+        orderNumber: order.orderNumber,
+        status: "paid" as const,
+      },
+    };
+
+    await expect(repository.applyVerifiedWebhookEventAtomically(input)).resolves.toBe("applied");
+    await expect(repository.applyVerifiedWebhookEventAtomically(input)).resolves.toBe("duplicate");
+  });
 
   it("lists only stable valid reconciliation candidates within the bounded limit", async () => {
     const order = await createOrder();

@@ -36,7 +36,6 @@ export type CreatePaymentAttemptInput = Readonly<{
   method: PaymentMethodKey;
   expectedAmountCents: number;
   currency: "NZD";
-  country: SupportedCountry;
   /** Compatibility-only browser value. It is never used for provider idempotency. */
   clientKey?: string;
 }>;
@@ -68,10 +67,12 @@ export type PaymentAttemptWithOrder = Readonly<{
 export type ApplyVerifiedResultInput = Readonly<{
   attemptId: string;
   result: VerifiedPaymentResult;
-  source?: PaymentVerificationSource;
+  source: Exclude<PaymentVerificationSource, "verified_webhook">;
 }>;
 
-export type VerifiedEventInput = ApplyVerifiedResultInput & Readonly<{
+export type VerifiedEventInput = Readonly<{
+  attemptId: string;
+  result: VerifiedPaymentResult;
   provider: PaymentProviderKey;
   providerEventId: string;
   payloadSha256: string;
