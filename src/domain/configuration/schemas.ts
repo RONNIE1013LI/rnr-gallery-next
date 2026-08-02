@@ -1,0 +1,123 @@
+import type { ProductConfigurationSchema } from "./types";
+
+const canvasSizes = Object.freeze([
+  { key: "a4", label: "A4 — 29.7 × 21 cm", priceExGstCents: 6_500 },
+  { key: "a3", label: "A3 — 42 × 29.7 cm", priceExGstCents: 7_800 },
+  { key: "a2", label: "A2 — 59.4 × 42 cm", priceExGstCents: 9_800 },
+  { key: "a1", label: "A1 — 84.1 × 59.4 cm", priceExGstCents: 14_800 },
+  { key: "a0", label: "A0 — 118.9 × 84.1 cm", priceExGstCents: 28_000 },
+]);
+
+const common = Object.freeze({
+  deliveryPreferences: Object.freeze(["post", "pickup"] as const),
+  defaultDeliveryPreference: "post" as const,
+  defaultPhotoSubmissionMethod: "upload" as const,
+});
+
+export const configurationSchemas = Object.freeze([
+  {
+    productKey: "photo-print-canvas",
+    sizes: canvasSizes,
+    defaultSizeKey: "a4",
+    orientationMode: "choice",
+    defaultOrientation: "landscape",
+    peoplePetsMode: "none",
+    defaultPeoplePets: 0,
+    minimumSourcePhotos: 1,
+    maximumSourcePhotos: 1,
+    includedPhotos: 1,
+    ...common,
+  },
+  {
+    productKey: "digital-oil-painting-canvas",
+    sizes: canvasSizes,
+    defaultSizeKey: "a4",
+    orientationMode: "choice",
+    defaultOrientation: "landscape",
+    peoplePetsMode: "required",
+    defaultPeoplePets: 1,
+    minimumSourcePhotos: 1,
+    includedPhotos: 0,
+    ...common,
+  },
+  {
+    productKey: "custom-themed-canvas",
+    sizes: Object.freeze([
+      { key: "a3", label: "A3 — 42 × 29.7 cm", priceExGstCents: 11_800 },
+      { key: "a2", label: "A2 — 59.4 × 42 cm", priceExGstCents: 14_800 },
+      { key: "a1", label: "A1 — 84.1 × 59.4 cm", priceExGstCents: 18_800 },
+      { key: "a0", label: "A0 — 118.9 × 84.1 cm", priceExGstCents: 32_000 },
+    ]),
+    defaultSizeKey: "a3",
+    orientationMode: "choice",
+    defaultOrientation: "landscape",
+    peoplePetsMode: "none",
+    defaultPeoplePets: 0,
+    minimumSourcePhotos: 1,
+    includedPhotos: 20,
+    ...common,
+  },
+  {
+    productKey: "roll-up-banner",
+    sizes: Object.freeze([
+      { key: "standard", label: "85 × 200 cm", priceExGstCents: 23_000 },
+    ]),
+    defaultSizeKey: "standard",
+    orientationMode: "none",
+    peoplePetsMode: "none",
+    defaultPeoplePets: 0,
+    minimumSourcePhotos: 1,
+    includedPhotos: 5,
+    ...common,
+  },
+  {
+    productKey: "custom-themed-wall-banner",
+    sizes: Object.freeze([
+      { key: "160x80", label: "160 × 80 cm", priceExGstCents: 16_500 },
+      { key: "200x100", label: "200 × 100 cm", priceExGstCents: 18_500 },
+      { key: "300x150", label: "300 × 150 cm", priceExGstCents: 33_000 },
+    ]),
+    defaultSizeKey: "160x80",
+    orientationMode: "none",
+    peoplePetsMode: "none",
+    defaultPeoplePets: 0,
+    minimumSourcePhotos: 1,
+    includedPhotos: 5,
+    ...common,
+  },
+  {
+    productKey: "digital-oil-painting-banner",
+    sizes: Object.freeze([
+      { key: "160x80", label: "160 × 80 cm", priceExGstCents: 12_000 },
+      { key: "200x100", label: "200 × 100 cm", priceExGstCents: 15_000 },
+      { key: "300x150", label: "300 × 150 cm", priceExGstCents: 29_500 },
+    ]),
+    defaultSizeKey: "160x80",
+    orientationMode: "none",
+    peoplePetsMode: "required",
+    defaultPeoplePets: 1,
+    minimumSourcePhotos: 1,
+    includedPhotos: 0,
+    ...common,
+  },
+  {
+    productKey: "grave-cover",
+    sizes: Object.freeze([
+      { key: "standard", label: "100 × 200 cm", priceExGstCents: 18_500 },
+    ]),
+    defaultSizeKey: "standard",
+    orientationMode: "fixed",
+    defaultOrientation: "portrait",
+    peoplePetsMode: "none",
+    defaultPeoplePets: 0,
+    minimumSourcePhotos: 1,
+    includedPhotos: 5,
+    ...common,
+  },
+] satisfies readonly ProductConfigurationSchema[]);
+
+export function getConfigurationSchema(
+  productKey: string,
+): ProductConfigurationSchema | undefined {
+  return configurationSchemas.find((schema) => schema.productKey === productKey);
+}
