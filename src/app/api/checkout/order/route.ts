@@ -25,10 +25,15 @@ import {
 
 export const runtime = "nodejs";
 const noStoreHeaders = { "Cache-Control": "no-store" };
-const inputSchema = z.object({ idempotencyKey: z.uuid() }).strict();
+const inputSchema = z.object({
+  idempotencyKey: z.uuid(),
+  checkoutVersion: z.number().int().positive(),
+  cartDigest: z.string().regex(/^[a-f0-9]{64}$/),
+  shipping: z.object({ method: z.enum(["post", "pickup"]), serviceCode: z.string().min(1), amountExGstCents: z.number().int().nonnegative(), gstCents: z.number().int().nonnegative(), amountInclGstCents: z.number().int().nonnegative(), isTest: z.boolean() }).strict(),
+}).strict();
 
 type OrderCreator = {
-  createOrder(sessionId: string, idempotencyKey: string): Promise<PaymentStartDTO>;
+  createOrder(sessionId: string, idempotencyKey: string, reviewed: Omit<z.infer<typeof inputSchema>, "idempotencyKey">): Promise<PaymentStartDTO>;
 };
 type Dependencies = Readonly<{
   repository: OrderRepository;
@@ -118,6 +123,7 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
       const order = await deps.orderService.createOrder(
         session.id,
         input.idempotencyKey,
+        { checkoutVersion: input.checkoutVersion, cartDigest: input.cartDigest, shipping: input.shipping },
       );
       return json({ order: publicOrder(order) });
     } catch (error) {

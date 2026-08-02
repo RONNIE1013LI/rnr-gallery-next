@@ -78,7 +78,11 @@ export function AddressForm({
               onChange({
                 ...value,
                 country: event.target.value as SupportedCountry,
+                building: "",
+                street: "",
+                suburb: "",
                 region: "",
+                postcode: "",
               })
             }
             value={value.country}

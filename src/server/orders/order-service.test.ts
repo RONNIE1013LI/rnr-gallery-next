@@ -53,6 +53,11 @@ function state(method: "pickup" | "post" = "pickup"): CheckoutStateRecord {
   };
 }
 
+function reviewed(method: "pickup" | "post" = "pickup") {
+  const checkout = state(method);
+  return { checkoutVersion: checkout.version, cartDigest: checkout.cartDigest!, shipping: method === "pickup" ? { method, serviceCode: "pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, isTest: false } : { method, serviceCode: "post", amountExGstCents: 2_000, gstCents: 300, amountInclGstCents: 2_300, isTest: true } } as const;
+}
+
 const existingOrder = {
   id: "40000000-0000-4000-8000-000000000001",
   checkoutSessionId: sessionId,
@@ -103,7 +108,7 @@ describe("atomic order service", () => {
     const shipping = shippingService();
     const service = createOrderService({ repository: repo, shippingService: shipping });
 
-    await expect(service.createOrder(sessionId, key)).resolves.toEqual({
+    await expect(service.createOrder(sessionId, key, reviewed())).resolves.toEqual({
       orderNumber: "RNR-2026-ABC12345",
       currency: "NZD",
       totalInclGstCents: 7_475,
@@ -119,6 +124,7 @@ describe("atomic order service", () => {
     await expect(service.createOrder(
       sessionId,
       "20000000-0000-4000-8000-000000000002",
+      reviewed(),
     )).rejects.toBeInstanceOf(OrderConflictError);
   });
 
@@ -130,7 +136,7 @@ describe("atomic order service", () => {
       createOrderNumber: () => "RNR-2026-ABC12345",
     });
 
-    await service.createOrder(sessionId, key);
+    await service.createOrder(sessionId, key, reviewed());
 
     expect(shipping.quotePost).not.toHaveBeenCalled();
     expect(repo.createAtomicOrder).toHaveBeenCalledWith(expect.objectContaining({
@@ -147,7 +153,7 @@ describe("atomic order service", () => {
     const shipping = shippingService();
     const service = createOrderService({ repository: repo, shippingService: shipping, now: () => now });
 
-    await service.createOrder(sessionId, key);
+    await service.createOrder(sessionId, key, reviewed("post"));
 
     expect(shipping.quotePost).toHaveBeenCalledWith(checkout.cartSnapshot, address);
     expect(repo.createAtomicOrder).toHaveBeenCalledWith(expect.objectContaining({
@@ -157,6 +163,19 @@ describe("atomic order service", () => {
         quote: expect.objectContaining({ providerReference: "fresh-ref" }),
       }),
     }));
+  });
+
+  it("rejects Post when the fresh quote differs from the reviewed quote", async () => {
+    const checkout = state("post");
+    const repo = repository({ getCheckoutState: vi.fn().mockResolvedValue(checkout) });
+    const service = createOrderService({ repository: repo, shippingService: shippingService(), now: () => now });
+    const staleReview = reviewed("post");
+
+    await expect(service.createOrder(sessionId, key, {
+      ...staleReview,
+      shipping: { ...staleReview.shipping, amountExGstCents: 1_900, gstCents: 285, amountInclGstCents: 2_185 },
+    })).rejects.toBeInstanceOf(OrderStateChangedError);
+    expect(repo.createAtomicOrder).not.toHaveBeenCalled();
   });
 
   it("captures transaction time after a potentially slow Post quote", async () => {
@@ -172,7 +191,7 @@ describe("atomic order service", () => {
       now: () => times.shift()!,
     });
 
-    await service.createOrder(sessionId, key);
+    await service.createOrder(sessionId, key, reviewed("post"));
 
     expect(repo.createAtomicOrder).toHaveBeenCalledWith(expect.objectContaining({
       now: new Date("2026-08-02T12:16:00.000Z"),
@@ -188,7 +207,7 @@ describe("atomic order service", () => {
       }),
     });
     const service = createOrderService({ repository: repo, shippingService: shippingService(), now: () => now });
-    await expect(service.createOrder(sessionId, key)).rejects.toBeInstanceOf(
+    await expect(service.createOrder(sessionId, key, reviewed())).rejects.toBeInstanceOf(
       OrderStateChangedError,
     );
     expect(repo.createAtomicOrder).not.toHaveBeenCalled();
@@ -206,7 +225,7 @@ describe("atomic order service", () => {
       createOrderNumber: () => numbers.shift()!,
     });
 
-    await service.createOrder(sessionId, key);
+    await service.createOrder(sessionId, key, reviewed());
 
     expect(repo.createAtomicOrder).toHaveBeenCalledTimes(2);
     expect(repo.createAtomicOrder).toHaveBeenLastCalledWith(expect.objectContaining({
@@ -223,7 +242,7 @@ describe("atomic order service", () => {
       createOrderNumber: () => "RNR-2026-BROKEN0000",
     });
 
-    await expect(service.createOrder(sessionId, key)).rejects.toBeInstanceOf(
+    await expect(service.createOrder(sessionId, key, reviewed())).rejects.toBeInstanceOf(
       OrderNumberCollisionError,
     );
     expect(repo.createAtomicOrder).toHaveBeenCalledTimes(5);
@@ -239,7 +258,7 @@ describe("atomic order service", () => {
       now: () => now,
     });
 
-    await expect(service.createOrder(sessionId, key)).rejects.toBeInstanceOf(
+    await expect(service.createOrder(sessionId, key, reviewed())).rejects.toBeInstanceOf(
       OrderStateChangedError,
     );
   });

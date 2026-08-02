@@ -19,6 +19,11 @@ export type PaymentStartDTO = Readonly<{
   totalInclGstCents: number;
   paymentStatus: OrderRecord["paymentStatus"];
 }>;
+export type ReviewedOrderExpectation = Readonly<{
+  checkoutVersion: number;
+  cartDigest: string;
+  shipping: Readonly<{ method: "post" | "pickup"; serviceCode: string; amountExGstCents: number; gstCents: number; amountInclGstCents: number; isTest: boolean }>;
+}>;
 
 export class OrderConflictError extends Error {
   constructor(message = "This checkout already has a different order request") {
@@ -71,6 +76,18 @@ function canonicalInputFrom(snapshot: RepricedCheckoutCart) {
   };
 }
 
+function shippingMatchesReviewed(
+  actual: ReviewedOrderExpectation["shipping"],
+  reviewed: ReviewedOrderExpectation["shipping"],
+) {
+  return actual.method === reviewed.method &&
+    actual.serviceCode === reviewed.serviceCode &&
+    actual.amountExGstCents === reviewed.amountExGstCents &&
+    actual.gstCents === reviewed.gstCents &&
+    actual.amountInclGstCents === reviewed.amountInclGstCents &&
+    actual.isTest === reviewed.isTest;
+}
+
 export function createOrderService({
   repository,
   shippingService,
@@ -83,7 +100,7 @@ export function createOrderService({
   createOrderNumber?: () => string;
 }) {
   return {
-    async createOrder(sessionId: string, idempotencyKey: string): Promise<PaymentStartDTO> {
+    async createOrder(sessionId: string, idempotencyKey: string, reviewed: ReviewedOrderExpectation): Promise<PaymentStartDTO> {
       const existing = await repository.findBySession(sessionId);
       if (existing) {
         if (existing.idempotencyKey !== idempotencyKey) throw new OrderConflictError();
@@ -102,6 +119,7 @@ export function createOrderService({
       ) {
         throw new OrderStateChangedError();
       }
+      if (state.version !== reviewed.checkoutVersion || state.cartDigest !== reviewed.cartDigest || state.deliveryMethod !== reviewed.shipping.method) throw new OrderStateChangedError();
 
       const pricingTime = now();
       const cart = repriceCart(canonicalInputFrom(state.cartSnapshot), {
@@ -122,6 +140,10 @@ export function createOrderService({
             requestDigest: result.requestDigest,
             quote: result.quote,
           }));
+      const actualShipping = shipping.kind === "pickup"
+        ? { method: "pickup" as const, serviceCode: "pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, isTest: false }
+        : { method: "post" as const, serviceCode: shipping.quote.serviceCode, amountExGstCents: shipping.quote.amountExGstCents, gstCents: shipping.quote.gstCents, amountInclGstCents: shipping.quote.amountInclGstCents, isTest: shipping.quote.isTest };
+      if (!shippingMatchesReviewed(actualShipping, reviewed.shipping)) throw new OrderStateChangedError("Shipping changed; review delivery and totals again");
       for (let attempt = 0; attempt < 5; attempt += 1) {
         try {
           const transactionTime = now();

@@ -12,6 +12,7 @@ const origin = "https://shop.example.test";
 const token = "a".repeat(43);
 const sessionId = "10000000-0000-4000-8000-000000000001";
 const key = "20000000-0000-4000-8000-000000000001";
+const validBody = { idempotencyKey: key, checkoutVersion: 2, cartDigest: "a".repeat(64), shipping: { method: "pickup", serviceCode: "pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, isTest: false } } as const;
 
 function request(body: unknown, cookie = token, requestOrigin = origin) {
   return new Request(`${origin}/api/checkout/order`, {
@@ -59,7 +60,7 @@ describe("POST /api/checkout/order", () => {
       now: () => new Date("2026-08-02T12:00:00.000Z"),
     });
 
-    const response = await handler(request({ idempotencyKey: key }));
+    const response = await handler(request(validBody));
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
@@ -67,7 +68,7 @@ describe("POST /api/checkout/order", () => {
       hashCheckoutSessionToken(token),
       new Date("2026-08-02T12:00:00.000Z"),
     );
-    expect(service.createOrder).toHaveBeenCalledWith(sessionId, key);
+    expect(service.createOrder).toHaveBeenCalledWith(sessionId, key, { checkoutVersion: 2, cartDigest: "a".repeat(64), shipping: validBody.shipping });
     expect(await response.json()).toEqual({ order: {
       orderNumber: "RNR-2026-ABC12345",
       currency: "NZD",
@@ -82,7 +83,7 @@ describe("POST /api/checkout/order", () => {
       repository: repository(), orderService: service,
       getOptionalSession: async () => null, trustedOrigin: origin,
     });
-    expect((await missing(request({ idempotencyKey: key }, ""))).status).toBe(401);
+    expect((await missing(request(validBody, ""))).status).toBe(401);
 
     const expiredRepo = repository();
     vi.mocked(expiredRepo.findSessionByTokenDigest).mockResolvedValue(null);
@@ -90,14 +91,14 @@ describe("POST /api/checkout/order", () => {
       repository: expiredRepo, orderService: service,
       getOptionalSession: async () => null, trustedOrigin: origin,
     });
-    expect((await expired(request({ idempotencyKey: key }))).status).toBe(401);
+    expect((await expired(request(validBody))).status).toBe(401);
 
     const foreign = createCheckoutOrderRoute({
       repository: repository("customer-a"), orderService: service,
       getOptionalSession: async () => ({ user: { id: "customer-b" } }),
       trustedOrigin: origin,
     });
-    expect((await foreign(request({ idempotencyKey: key }))).status).toBe(403);
+    expect((await foreign(request(validBody))).status).toBe(403);
     expect(service.createOrder).not.toHaveBeenCalled();
   });
 
@@ -111,8 +112,8 @@ describe("POST /api/checkout/order", () => {
       getOptionalSession: async () => ({ user: { id: "customer-a" } }),
       trustedOrigin: origin,
     });
-    expect((await handler(request({ idempotencyKey: key }))).status).toBe(200);
-    const tampered = await handler(request({ idempotencyKey: key, totalInclGstCents: 1 }));
+    expect((await handler(request(validBody))).status).toBe(200);
+    const tampered = await handler(request({ ...validBody, totalInclGstCents: 1 }));
     expect(tampered.status).toBe(400);
   });
 
@@ -127,7 +128,7 @@ describe("POST /api/checkout/order", () => {
       getOptionalSession: async () => null,
       trustedOrigin: origin,
     });
-    const response = await handler(request({ idempotencyKey: key }));
+    const response = await handler(request(validBody));
     expect(response.status).toBe(status);
     expect(await response.json()).toMatchObject({ error: { code } });
   });

@@ -16,6 +16,7 @@ import styles from "./storefront.module.css";
 
 export type CheckoutSavedAddress = AddressInput & { id: string };
 const emptyAddress: AddressInput = { country: "NZ", fullName: "", building: "", street: "", suburb: "", region: "", postcode: "", phone: "", email: "" };
+const IDEMPOTENCY_STORAGE_KEY = "rnr-checkout-order-idempotency-v1";
 
 function addressInput(address: AddressInput): AddressInput {
   const { country, fullName, building, street, suburb, region, postcode, phone, email } = address;
@@ -33,11 +34,21 @@ export function canonicalCheckoutCart(cart: Cart) {
   })) };
 }
 
+class CheckoutApiError extends Error { constructor(message: string, readonly code: string | undefined, readonly status: number, readonly fields?: unknown) { super(message); } }
 async function postJson(url: string, body: unknown) {
   const response = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
   const payload = await response.json();
-  if (!response.ok) throw Object.assign(new Error(payload.error?.message ?? "Request failed"), { fields: payload.error?.fields });
+  if (!response.ok) throw new CheckoutApiError(payload.error?.message ?? "Request failed", payload.error?.code, response.status, payload.error?.fields);
   return payload;
+}
+
+function initialIdempotencyKey() {
+  if (typeof window === "undefined") return "00000000-0000-4000-8000-000000000000";
+  const stored = window.sessionStorage.getItem(IDEMPOTENCY_STORAGE_KEY);
+  if (stored) return stored;
+  const created = window.crypto.randomUUID();
+  window.sessionStorage.setItem(IDEMPOTENCY_STORAGE_KEY, created);
+  return created;
 }
 
 function addressErrors(result: ReturnType<typeof addressInputSchema.safeParse>): AddressFieldErrors {
@@ -60,20 +71,25 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   const [delivery, setDelivery] = useState<AddressInput>(first ? addressInput(first) : emptyAddress);
   const [method, setMethod] = useState<"post" | "pickup">("post");
   const [reviewedCart, setReviewedCart] = useState<RepricedCheckoutCart | null>(null);
+  const [reviewedVersion, setReviewedVersion] = useState<number | null>(null);
   const [shipping, setShipping] = useState<PublicShippingDTO["option"] | null>(null);
   const [reviewKey, setReviewKey] = useState("");
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState<"review" | "order" | null>(null);
   const [billingErrors, setBillingErrors] = useState<AddressFieldErrors>({});
   const [deliveryErrors, setDeliveryErrors] = useState<AddressFieldErrors>({});
-  const [idempotencyKey, setIdempotencyKey] = useState(() => crypto.randomUUID());
+  const [idempotencyKey] = useState(initialIdempotencyKey);
+  const [billingSavedId, setBillingSavedId] = useState(first?.id ?? "");
+  const [deliverySavedId, setDeliverySavedId] = useState(first?.id ?? "");
+  const reviewing = useRef(false);
   const placing = useRef(false);
   const currentKey = useMemo(() => JSON.stringify({ snapshot, billing, delivery: different ? delivery : billing, different, method }), [snapshot, billing, delivery, different, method]);
-  const isReviewed = Boolean(reviewKey === currentKey && reviewedCart && shipping);
+  const isReviewed = Boolean(reviewKey === currentKey && reviewedCart && reviewedVersion !== null && shipping);
 
-  if (cart.items.length === 0) return <section className={styles.cartEmpty}><h1>Your cart is empty</h1><Link className={styles.primaryButton} href="/shop">Explore products</Link></section>;
+  if (cart.items.length === 0) return <section className={styles.cartEmpty}><h2>Your cart is empty</h2><Link className={styles.primaryButton} href="/shop">Explore products</Link></section>;
 
   async function review() {
+    if (reviewing.current || pending) return;
     setMessage("");
     const billingResult = addressInputSchema.safeParse(billing);
     const deliveryResult = addressInputSchema.safeParse(delivery);
@@ -85,14 +101,15 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());
       return;
     }
+    reviewing.current = true;
     setPending("review");
     try {
       const session = await postJson("/api/checkout/session", { cart: canonicalCheckoutCart(cart), billingAddress: billing, useDifferentDeliveryAddress: different, ...(different ? { deliveryAddress: delivery } : {}), deliveryMethod: method });
       const quote = await postJson("/api/checkout/shipping", {});
-      setReviewedCart(session.checkout.cart); setShipping(quote.shipping.option); setReviewKey(currentKey);
+      setReviewedCart(session.checkout.cart); setReviewedVersion(session.checkout.version); setShipping(quote.shipping.option); setReviewKey(currentKey);
       setMessage("Delivery and totals reviewed.");
-    } catch (error) { const fields = (error as { fields?: { billingAddress?: AddressFieldErrors; deliveryAddress?: AddressFieldErrors } }).fields; if (fields?.billingAddress) setBillingErrors(fields.billingAddress); if (fields?.deliveryAddress) setDeliveryErrors(fields.deliveryAddress); setReviewedCart(null); setShipping(null); setReviewKey(""); setMessage(error instanceof Error ? error.message : "Could not review checkout. Choose Pickup or try again."); requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); }
-    finally { setPending(null); }
+    } catch (error) { const fields = (error as CheckoutApiError).fields as { billingAddress?: AddressFieldErrors; deliveryAddress?: AddressFieldErrors } | undefined; if (fields?.billingAddress) setBillingErrors(fields.billingAddress); if (fields?.deliveryAddress) setDeliveryErrors(fields.deliveryAddress); setReviewedCart(null); setReviewedVersion(null); setShipping(null); setReviewKey(""); setMessage(error instanceof Error ? error.message : "Could not review checkout. Choose Pickup or try again."); requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); }
+    finally { reviewing.current = false; setPending(null); }
   }
 
   async function placeOrder() {
@@ -100,20 +117,20 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
     placing.current = true;
     setPending("order"); setMessage("");
     try {
-      const payload = await postJson("/api/checkout/order", { idempotencyKey });
+      const payload = await postJson("/api/checkout/order", { idempotencyKey, checkoutVersion: reviewedVersion, cartDigest: reviewedCart!.cartDigest, shipping: { method: shipping!.method, serviceCode: shipping!.serviceCode, amountExGstCents: shipping!.amountExGstCents, gstCents: shipping!.gstCents, amountInclGstCents: shipping!.amountInclGstCents, isTest: shipping!.isTest } });
       createBrowserCartRepository(window.localStorage).clear(); notifyCartChanged();
-      setIdempotencyKey(crypto.randomUUID()); router.push(`/orders/${payload.order.orderNumber}`);
-    } catch (error) { placing.current = false; setMessage(error instanceof Error ? error.message : "Order could not be created."); setPending(null); }
+      window.sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY); router.push(`/orders/${payload.order.orderNumber}`);
+    } catch (error) { placing.current = false; if (error instanceof CheckoutApiError && error.code === "CHECKOUT_CHANGED") { setReviewedCart(null); setReviewedVersion(null); setShipping(null); setReviewKey(""); setMessage("Checkout changed. Review delivery and totals again."); } else setMessage(error instanceof Error ? error.message : "Order could not be created."); setPending(null); }
   }
 
   return <div className={styles.checkoutLayout}>
-    <form className={styles.checkoutForm} onSubmit={(event) => event.preventDefault()}>
-      {savedAddresses.length ? <label className={styles.savedAddressSelect}>Saved address<select value="" onChange={(event) => { const selected = savedAddresses.find((address) => address.id === event.target.value); if (selected) { setBilling(addressInput(selected)); setDelivery(addressInput(selected)); } }}><option value="">Choose an address</option>{savedAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}
+    <form aria-label="Checkout details" className={styles.checkoutForm} noValidate onSubmit={(event) => { event.preventDefault(); void review(); }}>
+      {savedAddresses.length ? <label className={styles.savedAddressSelect}>Saved billing address<select disabled={Boolean(pending)} value={billingSavedId} onChange={(event) => { setBillingSavedId(event.target.value); const selected = savedAddresses.find((address) => address.id === event.target.value); if (selected) setBilling(addressInput(selected)); }}><option value="">Enter manually</option>{savedAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}
       <fieldset><legend>Billing address</legend><AddressForm value={billing} onChange={setBilling} errors={billingErrors} disabled={Boolean(pending)} /></fieldset>
-      <label className={styles.checkoutToggle}><input type="checkbox" checked={different} onChange={(event) => setDifferent(event.target.checked)} /> Deliver to a different address</label>
-      {different ? <fieldset><legend>Delivery address</legend><AddressForm value={delivery} onChange={setDelivery} errors={deliveryErrors} disabled={Boolean(pending)} /></fieldset> : null}
-      <fieldset><legend>Delivery</legend><div className={styles.deliveryChoices}><label><input type="radio" name="deliveryMethod" checked={method === "post"} onChange={() => setMethod("post")} /> Post</label><label><input type="radio" name="deliveryMethod" checked={method === "pickup"} onChange={() => setMethod("pickup")} /> Pickup</label></div></fieldset>
-      <button className={styles.secondaryButton} type="button" onClick={review} disabled={Boolean(pending)}>{pending === "review" ? "Reviewing…" : "Review delivery & totals"}</button>
+      <label className={styles.checkoutToggle}><input disabled={Boolean(pending)} type="checkbox" checked={different} onChange={(event) => setDifferent(event.target.checked)} /> Deliver to a different address</label>
+      {different ? <fieldset><legend>Delivery address</legend>{savedAddresses.length ? <label className={styles.savedAddressSelect}>Saved delivery address<select disabled={Boolean(pending)} value={deliverySavedId} onChange={(event) => { setDeliverySavedId(event.target.value); const selected = savedAddresses.find((address) => address.id === event.target.value); if (selected) setDelivery(addressInput(selected)); }}><option value="">Enter manually</option>{savedAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}<AddressForm value={delivery} onChange={setDelivery} errors={deliveryErrors} disabled={Boolean(pending)} /></fieldset> : null}
+      <fieldset><legend>Delivery</legend><div className={styles.deliveryChoices}><label><input disabled={Boolean(pending)} type="radio" name="deliveryMethod" checked={method === "post"} onChange={() => setMethod("post")} /> Post</label><label><input disabled={Boolean(pending)} type="radio" name="deliveryMethod" checked={method === "pickup"} onChange={() => setMethod("pickup")} /> Pickup</label></div></fieldset>
+      <button className={styles.secondaryButton} type="submit" disabled={Boolean(pending)}>{pending === "review" ? "Reviewing…" : "Review delivery & totals"}</button>
       <p aria-live="polite" className={styles.checkoutMessage}>{message}</p>
     </form>
     <aside className={styles.checkoutSummary}><p className={styles.eyebrow}>Your order</p><h2>Order summary</h2>{reviewedCart && !isReviewed ? <p className={styles.checkoutMessage}>Changes need review.</p> : null}<CheckoutOrderSummary cart={isReviewed ? reviewedCart : null} shipping={isReviewed ? shipping : null} /><button className={styles.primaryButton} type="button" disabled={!isReviewed || Boolean(pending)} onClick={placeOrder}>{pending === "order" ? "Placing order…" : "Place order"}</button></aside>

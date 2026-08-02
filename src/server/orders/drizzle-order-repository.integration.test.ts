@@ -391,7 +391,7 @@ describe("Drizzle atomic order repository", () => {
       createOrderNumber: () => numbers.shift()!,
     });
 
-    await expect(service.createOrder(retried.id, randomUUID())).resolves.toMatchObject({
+    await expect(service.createOrder(retried.id, randomUUID(), { checkoutVersion: retried.version, cartDigest: retried.cartDigest!, shipping: { method: "pickup", serviceCode: "pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, isTest: false } })).resolves.toMatchObject({
       orderNumber: uniqueNumber,
     });
   });

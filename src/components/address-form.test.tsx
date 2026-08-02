@@ -61,6 +61,23 @@ describe("AddressForm", () => {
     expect(screen.queryByLabelText("Region / city")).not.toBeInTheDocument();
   });
 
+  it("clears country-specific location fields when the country changes", () => {
+    render(<ControlledAddressForm />);
+
+    fireEvent.change(screen.getByLabelText("Building / unit (optional)"), { target: { value: "Unit 4" } });
+    fireEvent.change(screen.getByLabelText("Street address"), { target: { value: "12 Queen Street" } });
+    fireEvent.change(screen.getByLabelText("Suburb"), { target: { value: "Auckland Central" } });
+    fireEvent.change(screen.getByLabelText("Region / city"), { target: { value: "Auckland" } });
+    fireEvent.change(screen.getByLabelText("Postcode"), { target: { value: "1010" } });
+    fireEvent.change(screen.getByLabelText("Country"), { target: { value: "AU" } });
+
+    expect(screen.getByLabelText("Building / unit (optional)")).toHaveValue("");
+    expect(screen.getByLabelText("Street address")).toHaveValue("");
+    expect(screen.getByLabelText("Suburb")).toHaveValue("");
+    expect(screen.getByLabelText("State / territory")).toHaveValue("");
+    expect(screen.getByLabelText("Postcode")).toHaveValue("");
+  });
+
   it("uses a constrained four-digit numeric postcode input for both countries", () => {
     render(<ControlledAddressForm />);
 
