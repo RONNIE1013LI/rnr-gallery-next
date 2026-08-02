@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { NormalizedAddress } from "@/domain/address/types";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import type { ReviewedPaymentCheckoutRepository } from "@/server/checkout/checkout-repository";
 import { parsePaymentReturnOrigin } from "./config";
@@ -100,10 +101,78 @@ function unavailableStart(): PaymentServiceError {
   );
 }
 
-function expectedSessionKind(provider: PaymentProvider["key"]): ProviderSession["kind"] {
-  if (provider === "local-test") return "test";
-  if (provider === "stripe") return "elements";
-  return "redirect";
+const providerContracts: Readonly<Record<string, Readonly<{
+  methods: readonly PaymentMethodKey[];
+  sessionKind: ProviderSession["kind"];
+  isTest: boolean;
+}>>> = Object.freeze({
+  "local-test": Object.freeze({
+    methods: ["card", "afterpay", "zip"] as readonly PaymentMethodKey[],
+    sessionKind: "test",
+    isTest: true,
+  }),
+  stripe: Object.freeze({
+    methods: ["card"] as readonly PaymentMethodKey[],
+    sessionKind: "elements",
+    isTest: false,
+  }),
+  afterpay: Object.freeze({
+    methods: ["afterpay"] as readonly PaymentMethodKey[],
+    sessionKind: "redirect",
+    isTest: false,
+  }),
+  zip: Object.freeze({
+    methods: ["zip"] as readonly PaymentMethodKey[],
+    sessionKind: "redirect",
+    isTest: false,
+  }),
+});
+
+function minimalAddress(address: NormalizedAddress): NormalizedAddress {
+  return Object.freeze({
+    country: address.country,
+    fullName: address.fullName,
+    building: address.building,
+    street: address.street,
+    suburb: address.suburb,
+    region: address.region,
+    postcode: address.postcode,
+    phone: address.phone,
+    email: address.email,
+  });
+}
+
+function eligibilityContext(context: PaymentEligibilityContext): PaymentEligibilityContext {
+  return Object.freeze({
+    amountCents: context.amountCents,
+    currency: context.currency,
+    customer: Object.freeze({
+      fullName: context.customer.fullName,
+      email: context.customer.email,
+      phone: context.customer.phone,
+    }),
+    billingAddress: minimalAddress(context.billingAddress),
+    deliveryAddress: minimalAddress(context.deliveryAddress),
+  });
+}
+
+function validateRegistrations(providers: readonly PaymentProviderRegistration[]) {
+  const seen = new Set<PaymentMethodKey>();
+  for (const entry of providers) {
+    if (seen.has(entry.method)) {
+      throw new Error(`Duplicate payment method registration: ${entry.method}`);
+    }
+    seen.add(entry.method);
+    const contract = providerContracts[entry.provider.key];
+    if (
+      !contract ||
+      entry.method !== entry.provider.method ||
+      !contract.methods.includes(entry.method) ||
+      entry.isTest !== contract.isTest
+    ) {
+      throw new Error(`Invalid payment provider registration: ${entry.method}`);
+    }
+  }
 }
 
 function hasExpectedIdentity(
@@ -111,9 +180,10 @@ function hasExpectedIdentity(
   provider: PaymentProvider,
   method: PaymentMethodKey,
 ) {
+  const contract = providerContracts[provider.key];
   return session.provider === provider.key &&
     session.method === method &&
-    session.kind === expectedSessionKind(provider.key);
+    session.kind === contract?.sessionKind;
 }
 
 function publicPayment(
@@ -143,6 +213,7 @@ export function createPaymentService({
   if (!trustedOrigin) {
     throw new Error("Payment return base URL is invalid");
   }
+  validateRegistrations(providers);
   const byMethod = new Map(providers.map((entry) => [entry.method, entry]));
 
   return {
@@ -156,9 +227,13 @@ export function createPaymentService({
           "The checkout has changed; review it again",
         );
       }
+      const providerContext = eligibilityContext(context);
       const results = await Promise.all(providers.map(async (entry) => {
         try {
-          return { entry, availability: await entry.provider.availability(context) };
+          return {
+            entry,
+            availability: await entry.provider.availability(providerContext),
+          };
         } catch {
           return { entry, availability: { available: false as const, reason: "provider" } };
         }
@@ -191,7 +266,7 @@ export function createPaymentService({
       let methodAvailability;
       try {
         methodAvailability = await registration.provider.availability(
-          order satisfies PaymentEligibilityContext,
+          eligibilityContext(order satisfies PaymentEligibilityContext),
         );
       } catch {
         throw unavailableStart();

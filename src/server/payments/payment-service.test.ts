@@ -127,6 +127,87 @@ function service(input: {
 }
 
 describe("payment service", () => {
+  it("passes only a freshly constructed eligibility DTO to providers", async () => {
+    const enriched = {
+      ...order,
+      internalSecret: "must-not-reach-provider",
+      providerMetadata: { token: "internal" },
+    };
+    const card = provider();
+    const repo = repository({ findPayableOrder: vi.fn().mockResolvedValue(enriched) });
+    const authority = {
+      findReviewedPaymentContext: vi.fn().mockResolvedValue(enriched),
+    };
+    const paymentService = service({
+      repository: repo,
+      checkoutAuthority: authority,
+      providers: [registration(card)],
+    });
+
+    await paymentService.availableMethods({
+      sessionId: "checkout-id", checkoutVersion: 1, cartDigest: "b".repeat(64),
+    });
+    await paymentService.start(access, "card", browserKey);
+
+    const expected = {
+      amountCents: order.amountCents,
+      currency: order.currency,
+      customer: order.customer,
+      billingAddress: order.billingAddress,
+      deliveryAddress: order.deliveryAddress,
+    };
+    expect(card.availability).toHaveBeenNthCalledWith(1, expected);
+    expect(card.availability).toHaveBeenNthCalledWith(2, expected);
+    for (const [context] of vi.mocked(card.availability).mock.calls) {
+      expect(context).not.toHaveProperty("id");
+      expect(context).not.toHaveProperty("orderNumber");
+      expect(context).not.toHaveProperty("internalSecret");
+      expect(context).not.toHaveProperty("providerMetadata");
+    }
+  });
+
+  it("rejects duplicate or malformed provider registrations before use", () => {
+    const card = provider();
+    expect(() => service({
+      providers: [registration(card), registration(provider())],
+    })).toThrow("Duplicate payment method registration");
+
+    const malformed: PaymentProviderRegistration[] = [
+      { ...registration(card), method: "afterpay" },
+      {
+        ...registration(card),
+        provider: { ...card, key: "stripe", method: "afterpay" },
+        method: "afterpay",
+        isTest: false,
+      },
+      {
+        ...registration(card),
+        provider: { ...card, key: "afterpay", method: "card" },
+        isTest: false,
+      },
+      {
+        ...registration(card),
+        provider: { ...card, key: "zip", method: "afterpay" },
+        method: "afterpay",
+        isTest: false,
+      },
+      { ...registration(card), isTest: false },
+      {
+        ...registration(card),
+        provider: { ...card, key: "stripe" },
+        isTest: true,
+      },
+      {
+        ...registration(card),
+        provider: { ...card, key: "unknown-provider" as never },
+      },
+    ];
+    for (const entry of malformed) {
+      expect(() => service({ providers: [entry] }))
+        .toThrow("Invalid payment provider registration");
+    }
+  });
+
   it("discovers methods only from the exact persisted checkout context", async () => {
     const card = provider();
     const authority = { findReviewedPaymentContext: vi.fn().mockResolvedValue({
@@ -236,7 +317,10 @@ describe("payment service", () => {
       });
       await service({
         repository: repo,
-        providers: [registration(matchingProvider)],
+        providers: [{
+          ...registration(matchingProvider),
+          isTest: kind === "test",
+        }],
         deriveReturnState: () => "b".repeat(64),
       }).start(access, method, browserKey);
 
