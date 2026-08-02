@@ -7,10 +7,12 @@ import {
 } from "@/server/checkout/checkout-service";
 import {
   ensureCheckoutSession,
+  type CheckoutStateRecord,
   type CheckoutStateRepository,
   UnownedUploadReferenceError,
 } from "@/server/checkout/checkout-repository";
 import { createDrizzleCheckoutRepository } from "@/server/checkout/drizzle-checkout-repository";
+import { toPublicCheckoutDTO } from "@/server/checkout/public-dto";
 import {
   createCheckoutSessionToken,
   readCheckoutSessionToken,
@@ -30,7 +32,7 @@ export const runtime = "nodejs";
 const noStoreHeaders = { "Cache-Control": "no-store" };
 
 type CheckoutUpdater = {
-  updateSession(sessionId: string, input: never): Promise<unknown>;
+  updateSession(sessionId: string, input: never): Promise<CheckoutStateRecord>;
 };
 
 type Dependencies = Readonly<{
@@ -96,7 +98,7 @@ export function createCheckoutSessionRoute(dependencies?: Dependencies) {
         createToken: deps.createToken ?? createCheckoutSessionToken,
       });
 
-      let state: unknown;
+      let state: CheckoutStateRecord;
       try {
         state = await deps.checkoutService.updateSession(checkout.session.id, input as never);
       } catch (error) {
@@ -108,7 +110,7 @@ export function createCheckoutSessionRoute(dependencies?: Dependencies) {
         throw error;
       }
 
-      const response = json({ checkout: state });
+      const response = json({ checkout: toPublicCheckoutDTO(state) });
       if (checkout.cookieToken) {
         response.headers.append(
           "Set-Cookie",

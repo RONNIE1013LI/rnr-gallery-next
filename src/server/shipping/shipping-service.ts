@@ -46,6 +46,8 @@ function destinationFor(address: NormalizedAddress): ShippingDestination {
     contact: address.fullName,
     street: [address.building, address.street].filter(Boolean).join(", "),
     suburb: address.suburb,
+    // GoSweetSpot names this field `city`, but documents it as city/state and
+    // requires official state abbreviations for countries such as AU (for example NSW).
     city: address.region,
     postcode: address.postcode,
     countryCode: address.country,

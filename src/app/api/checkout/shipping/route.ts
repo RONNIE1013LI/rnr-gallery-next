@@ -5,6 +5,7 @@ import {
 } from "@/server/checkout/checkout-service";
 import type { CheckoutStateRepository } from "@/server/checkout/checkout-repository";
 import { createDrizzleCheckoutRepository } from "@/server/checkout/drizzle-checkout-repository";
+import { toPublicShippingDTO } from "@/server/checkout/public-dto";
 import {
   hashCheckoutSessionToken,
   readCheckoutSessionToken,
@@ -23,7 +24,10 @@ import {
 export const runtime = "nodejs";
 const noStoreHeaders = { "Cache-Control": "no-store" };
 
-type ShippingQuoter = { quoteShipping(sessionId: string): Promise<unknown> };
+type ShippingQuoteResult = Awaited<
+  ReturnType<ReturnType<typeof createCheckoutService>["quoteShipping"]>
+>;
+type ShippingQuoter = { quoteShipping(sessionId: string): Promise<ShippingQuoteResult> };
 type Dependencies = Readonly<{
   repository: CheckoutStateRepository;
   checkoutService: ShippingQuoter;
@@ -94,7 +98,8 @@ export function createCheckoutShippingRoute(dependencies?: Dependencies) {
         throw new CheckoutAccessError(authenticated ? 403 : 401);
       }
 
-      return json({ shipping: await deps.checkoutService.quoteShipping(session.id) });
+      const result = await deps.checkoutService.quoteShipping(session.id);
+      return json({ shipping: toPublicShippingDTO(result) });
     } catch (error) {
       return errorResponse(error);
     }

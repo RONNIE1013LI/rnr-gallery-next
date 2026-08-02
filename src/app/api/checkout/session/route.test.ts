@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
-import type { CheckoutStateRepository } from "@/server/checkout/checkout-repository";
+import type {
+  CheckoutStateRecord,
+  CheckoutStateRepository,
+} from "@/server/checkout/checkout-repository";
 import { InvalidCheckoutCartError } from "@/domain/checkout/types";
 import { InvalidCheckoutStateError } from "@/server/checkout/checkout-service";
 import { createCheckoutSessionRoute } from "./route";
@@ -41,8 +44,24 @@ function repository(): CheckoutStateRepository {
 describe("POST /api/checkout/session", () => {
   it("creates a session, delegates authoritative update and returns its opaque cookie", async () => {
     const repo = repository();
-    const state = { id: sessionId, version: 2, cartDigest: "a".repeat(64) };
-    const service = { updateSession: vi.fn().mockResolvedValue(state) };
+    const state = {
+      id: sessionId,
+      tokenDigest: "server-secret-digest",
+      customerId: "private-customer-id",
+      expiresAt: new Date("2026-09-01T00:00:00.000Z"),
+      version: 2,
+      cartDigest: "a".repeat(64),
+      cartSnapshot: { totalInclGstCents: 10_500, items: [] },
+      billingAddress: { country: "NZ", street: "12 Queen Street" },
+      deliveryAddress: { country: "NZ", street: "12 Queen Street" },
+      deliveryMethod: "post",
+      selectedShippingQuoteId: "private-quote-id",
+    };
+    const service = {
+      updateSession: vi.fn().mockResolvedValue(
+        state as unknown as CheckoutStateRecord,
+      ),
+    };
     const handler = createCheckoutSessionRoute({
       repository: repo,
       checkoutService: service,
@@ -58,7 +77,20 @@ describe("POST /api/checkout/session", () => {
 
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(await response.json()).toEqual({ checkout: state });
+    const body = await response.json();
+    expect(body).toEqual({
+      checkout: {
+        version: 2,
+        cart: state.cartSnapshot,
+        billingAddress: state.billingAddress,
+        deliveryAddress: state.deliveryAddress,
+        deliveryMethod: "post",
+        hasSelectedShippingQuote: true,
+      },
+    });
+    expect(JSON.stringify(body)).not.toMatch(
+      /server-secret-digest|private-customer-id|private-quote-id|expiresAt|\"id\"/,
+    );
     expect(service.updateSession).toHaveBeenCalledWith(sessionId, input);
     expect(response.headers.get("Set-Cookie")).toContain("rnr_checkout_session=new-token");
   });

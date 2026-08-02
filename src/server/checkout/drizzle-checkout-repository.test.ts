@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { inArray } from "drizzle-orm";
+import { eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { checkoutSessions, user } from "@/server/db/schema";
+import { checkoutSessions, shippingQuotes, user } from "@/server/db/schema";
 import { normalizeAddress } from "@/domain/address/schema";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import {
@@ -204,6 +204,26 @@ describe("Drizzle checkout repository", () => {
       requestDigest: "f".repeat(64),
       quote,
     })).resolves.toBeNull();
+    expect(await database
+      .select({ requestDigest: shippingQuotes.requestDigest })
+      .from(shippingQuotes)
+      .where(eq(shippingQuotes.checkoutSessionId, checkout.id)))
+      .toEqual([{ requestDigest: "e".repeat(64) }]);
+
+    await expect(repository.persistAndSelectShippingQuote({
+      sessionId: checkout.id,
+      expectedVersion: 2,
+      requestDigest: "1".repeat(64),
+      quote: {
+        ...quote,
+        providerReference: `stale-new-quote-${suffix}`,
+      },
+    })).resolves.toBeNull();
+    expect(await database
+      .select({ requestDigest: shippingQuotes.requestDigest })
+      .from(shippingQuotes)
+      .where(eq(shippingQuotes.checkoutSessionId, checkout.id)))
+      .toEqual([{ requestDigest: "e".repeat(64) }]);
     expect((await repository.getCheckoutState(checkout.id))?.selectedShippingQuoteId)
       .toBeNull();
   });

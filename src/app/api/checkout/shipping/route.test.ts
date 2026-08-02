@@ -40,8 +40,11 @@ describe("POST /api/checkout/shipping", () => {
     const service = { quoteShipping: vi.fn().mockResolvedValue({
       selectedQuoteId: "20000000-0000-4000-8000-000000000001",
       option: {
-        method: "post", amountInclGstCents: 2_300,
+        method: "post", serviceCode: "post", serviceName: "Post",
+        amountExGstCents: 2_000, gstCents: 300, amountInclGstCents: 2_300,
+        currency: "NZD",
         provenance: "local-test", isTest: true,
+        expiresAt: new Date("2026-08-02T12:15:00.000Z"),
       },
     }) };
     const handler = createCheckoutShippingRoute({
@@ -55,9 +58,20 @@ describe("POST /api/checkout/shipping", () => {
     const response = await handler(request());
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(await response.json()).toMatchObject({ shipping: {
-      option: { provenance: "local-test", isTest: true },
-    } });
+    const body = await response.json();
+    expect(body).toEqual({ shipping: { option: {
+      method: "post",
+      serviceCode: "post",
+      serviceName: "Post",
+      amountExGstCents: 2_000,
+      gstCents: 300,
+      amountInclGstCents: 2_300,
+      currency: "NZD",
+      provenance: "local-test",
+      isTest: true,
+      expiresAt: "2026-08-02T12:15:00.000Z",
+    } } });
+    expect(JSON.stringify(body)).not.toContain("selectedQuoteId");
     expect(service.quoteShipping).toHaveBeenCalledWith(sessionId);
   });
 

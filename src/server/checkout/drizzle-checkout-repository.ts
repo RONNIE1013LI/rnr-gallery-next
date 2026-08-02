@@ -9,6 +9,8 @@ import type { CheckoutStateRepository } from "./checkout-repository";
 
 type Database = ReturnType<typeof getDatabase>;
 
+class StaleCheckoutVersionError extends Error {}
+
 export function createDrizzleCheckoutRepository(
   database: Database,
 ): CheckoutStateRepository {
@@ -127,46 +129,52 @@ export function createDrizzleCheckoutRepository(
     },
 
     async persistAndSelectShippingQuote(input) {
-      return database.transaction(async (transaction) => {
-        const [quote] = await transaction
-          .insert(shippingQuotes)
-          .values({
-            checkoutSessionId: input.sessionId,
-            requestDigest: input.requestDigest,
-            ...input.quote,
-          })
-          .onConflictDoUpdate({
-            target: [
-              shippingQuotes.checkoutSessionId,
-              shippingQuotes.provider,
-              shippingQuotes.providerReference,
-            ],
-            set: {
+      try {
+        return await database.transaction(async (transaction) => {
+          const [quote] = await transaction
+            .insert(shippingQuotes)
+            .values({
+              checkoutSessionId: input.sessionId,
               requestDigest: input.requestDigest,
-              serviceCode: input.quote.serviceCode,
-              serviceName: input.quote.serviceName,
-              amountExGstCents: input.quote.amountExGstCents,
-              gstCents: input.quote.gstCents,
-              amountInclGstCents: input.quote.amountInclGstCents,
-              rawResponseHash: input.quote.rawResponseHash,
-              isTest: input.quote.isTest,
-              expiresAt: input.quote.expiresAt,
-            },
-          })
-          .returning();
+              ...input.quote,
+            })
+            .onConflictDoUpdate({
+              target: [
+                shippingQuotes.checkoutSessionId,
+                shippingQuotes.provider,
+                shippingQuotes.providerReference,
+              ],
+              set: {
+                requestDigest: input.requestDigest,
+                serviceCode: input.quote.serviceCode,
+                serviceName: input.quote.serviceName,
+                amountExGstCents: input.quote.amountExGstCents,
+                gstCents: input.quote.gstCents,
+                amountInclGstCents: input.quote.amountInclGstCents,
+                rawResponseHash: input.quote.rawResponseHash,
+                isTest: input.quote.isTest,
+                expiresAt: input.quote.expiresAt,
+              },
+            })
+            .returning();
 
-        const selected = await transaction
-          .update(checkoutSessions)
-          .set({ selectedShippingQuoteId: quote.id, updatedAt: new Date() })
-          .where(
-            and(
-              eq(checkoutSessions.id, input.sessionId),
-              eq(checkoutSessions.version, input.expectedVersion),
-            ),
-          )
-          .returning({ id: checkoutSessions.id });
-        return selected.length > 0 ? quote : null;
-      });
+          const selected = await transaction
+            .update(checkoutSessions)
+            .set({ selectedShippingQuoteId: quote.id, updatedAt: new Date() })
+            .where(
+              and(
+                eq(checkoutSessions.id, input.sessionId),
+                eq(checkoutSessions.version, input.expectedVersion),
+              ),
+            )
+            .returning({ id: checkoutSessions.id });
+          if (selected.length === 0) throw new StaleCheckoutVersionError();
+          return quote;
+        });
+      } catch (error) {
+        if (error instanceof StaleCheckoutVersionError) return null;
+        throw error;
+      }
     },
   };
 }

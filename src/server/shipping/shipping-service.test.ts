@@ -132,6 +132,32 @@ describe("shipping service", () => {
     ]).size).toBe(3);
   });
 
+  it("maps an Australian state abbreviation to GoSweetSpot's city field", async () => {
+    const quoteProvider = provider();
+    const service = createShippingService({ provider: quoteProvider, now: () => now });
+
+    await service.quotePost(cart(), {
+      ...address,
+      country: "AU",
+      building: "Level 2",
+      street: "55 George Street",
+      suburb: "Sydney",
+      region: "NSW",
+      postcode: "2000",
+      phone: "+61412345678",
+    });
+
+    expect(quoteProvider.quote).toHaveBeenCalledWith(expect.objectContaining({
+      destination: expect.objectContaining({
+        street: "Level 2, 55 George Street",
+        suburb: "Sydney",
+        city: "NSW",
+        postcode: "2000",
+        countryCode: "AU",
+      }),
+    }));
+  });
+
   it.each([
     ["an unavailable provider", provider({ availability: vi.fn().mockResolvedValue({ available: false }) })],
     ["provider availability failure", provider({ availability: vi.fn().mockRejectedValue(new Error("availability down")) })],
