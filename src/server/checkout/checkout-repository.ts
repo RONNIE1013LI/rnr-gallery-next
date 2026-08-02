@@ -1,4 +1,8 @@
 import { createCheckoutSessionToken, hashCheckoutSessionToken } from "./session-cookie";
+import type { NormalizedAddress } from "@/domain/address/types";
+import type { RepricedCheckoutCart } from "@/domain/checkout/types";
+import type { DeliveryPreference } from "@/domain/configuration/types";
+import type { ProviderShippingQuote } from "@/server/shipping/types";
 
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1_000;
 
@@ -35,6 +39,51 @@ export interface CheckoutRepository {
   deleteEmptySession(sessionId: string): Promise<boolean>;
   createUpload(input: CheckoutUploadInput): Promise<CheckoutUploadRecord>;
   findOwnedUploadIds(sessionId: string, uploadIds: string[]): Promise<string[]>;
+}
+
+export type CheckoutStateInput = Readonly<{
+  cartDigest: string;
+  cartSnapshot: RepricedCheckoutCart;
+  billingAddress: NormalizedAddress;
+  deliveryAddress: NormalizedAddress;
+  deliveryMethod: DeliveryPreference;
+}>;
+
+export type CheckoutStateRecord = CheckoutSessionRecord &
+  Readonly<{
+    version: number;
+    cartDigest: string | null;
+    cartSnapshot: RepricedCheckoutCart | null;
+    billingAddress: NormalizedAddress | null;
+    deliveryAddress: NormalizedAddress | null;
+    deliveryMethod: DeliveryPreference | null;
+    selectedShippingQuoteId: string | null;
+  }>;
+
+export type ShippingQuoteRecord = ProviderShippingQuote &
+  Readonly<{
+    id: string;
+    checkoutSessionId: string;
+    requestDigest: string;
+    createdAt: Date;
+  }>;
+
+export interface CheckoutStateRepository extends CheckoutRepository {
+  saveCheckoutState(
+    sessionId: string,
+    input: CheckoutStateInput,
+  ): Promise<CheckoutStateRecord | null>;
+  getCheckoutState(sessionId: string): Promise<CheckoutStateRecord | null>;
+  clearSelectedShippingQuote(
+    sessionId: string,
+    expectedVersion: number,
+  ): Promise<boolean>;
+  persistAndSelectShippingQuote(input: {
+    sessionId: string;
+    expectedVersion: number;
+    requestDigest: string;
+    quote: ProviderShippingQuote;
+  }): Promise<ShippingQuoteRecord | null>;
 }
 
 export class UnownedUploadReferenceError extends Error {

@@ -4,6 +4,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { checkoutSessions, user } from "@/server/db/schema";
+import { normalizeAddress } from "@/domain/address/schema";
+import { repriceCart } from "@/domain/checkout/reprice-cart";
 import {
   assertOwnedUploadReferences,
   UnownedUploadReferenceError,
@@ -117,5 +119,92 @@ describe("Drizzle checkout repository", () => {
     await expect(
       assertOwnedUploadReferences(repository, first.id, [secondUploadId]),
     ).rejects.toBeInstanceOf(UnownedUploadReferenceError);
+  });
+
+  it("versions changed checkout state, preserves identical state and selects only current quotes", async () => {
+    const checkout = await repository.createSession({
+      tokenDigest: `state-${suffix}`,
+      customerId: null,
+      expiresAt,
+    });
+    sessionIds.push(checkout.id);
+    const cartSnapshot = repriceCart({
+      version: 1,
+      items: [{
+        clientItemId: randomUUID(),
+        productKey: "photo-print-canvas",
+        sizeKey: "a4",
+        orientation: "landscape",
+        peoplePets: 0,
+        photoSubmissionMethod: "later",
+        designText: "Family",
+        notes: "",
+        neededDate: "2026-08-10",
+        urgentServiceConfirmed: false,
+        quantity: 1,
+        uploadReferences: [],
+      }],
+    }, { now: new Date("2026-08-02T12:00:00.000Z") });
+    const address = normalizeAddress({
+      country: "NZ",
+      fullName: "Aroha Ngata",
+      building: "",
+      street: "12 Queen Street",
+      suburb: "Auckland Central",
+      region: "Auckland",
+      postcode: "1010",
+      phone: "021 123 4567",
+      email: "aroha@example.test",
+    });
+    const input = {
+      cartDigest: cartSnapshot.cartDigest,
+      cartSnapshot,
+      billingAddress: address,
+      deliveryAddress: address,
+      deliveryMethod: "post" as const,
+    };
+
+    const first = await repository.saveCheckoutState(checkout.id, input);
+    expect(first).toMatchObject({ version: 2, selectedShippingQuoteId: null });
+    const quote = {
+      provider: "local-test" as const,
+      serviceCode: "test-post-nz",
+      serviceName: "Test Post — not a live carrier rate",
+      amountExGstCents: 2_000,
+      gstCents: 300,
+      amountInclGstCents: 2_300,
+      currency: "NZD" as const,
+      providerReference: `state-quote-${suffix}`,
+      expiresAt: new Date("2099-01-01T00:15:00.000Z"),
+      rawResponseHash: "d".repeat(64),
+      isTest: true,
+    };
+    const selected = await repository.persistAndSelectShippingQuote({
+      sessionId: checkout.id,
+      expectedVersion: 2,
+      requestDigest: "e".repeat(64),
+      quote,
+    });
+    expect(selected).toMatchObject({ requestDigest: "e".repeat(64), ...quote });
+
+    const unchanged = await repository.saveCheckoutState(checkout.id, input);
+    expect(unchanged).toMatchObject({
+      version: 2,
+      selectedShippingQuoteId: selected!.id,
+    });
+
+    const changed = await repository.saveCheckoutState(checkout.id, {
+      ...input,
+      deliveryAddress: { ...address, postcode: "6011", region: "Wellington" },
+    });
+    expect(changed).toMatchObject({ version: 3, selectedShippingQuoteId: null });
+    await expect(repository.persistAndSelectShippingQuote({
+      sessionId: checkout.id,
+      expectedVersion: 2,
+      requestDigest: "f".repeat(64),
+      quote,
+    })).resolves.toBeNull();
+    expect((await repository.getCheckoutState(checkout.id))?.selectedShippingQuoteId)
+      .toBeNull();
   });
 });

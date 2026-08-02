@@ -1,13 +1,17 @@
-import { and, eq, gt, inArray, notExists } from "drizzle-orm";
+import { and, eq, gt, inArray, notExists, or, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
-import { checkoutSessions, checkoutUploads } from "@/server/db/schema";
-import type { CheckoutRepository } from "./checkout-repository";
+import {
+  checkoutSessions,
+  checkoutUploads,
+  shippingQuotes,
+} from "@/server/db/schema";
+import type { CheckoutStateRepository } from "./checkout-repository";
 
 type Database = ReturnType<typeof getDatabase>;
 
 export function createDrizzleCheckoutRepository(
   database: Database,
-): CheckoutRepository {
+): CheckoutStateRepository {
   return {
     async findActiveSessionByTokenDigest(tokenDigest, now) {
       const [session] = await database
@@ -69,6 +73,100 @@ export function createDrizzleCheckoutRepository(
           ),
         );
       return uploads.map(({ id }) => id);
+    },
+
+    async saveCheckoutState(sessionId, input) {
+      const changed = or(
+        sql`${checkoutSessions.cartDigest} IS DISTINCT FROM ${input.cartDigest}`,
+        sql`${checkoutSessions.cartSnapshot} IS DISTINCT FROM ${input.cartSnapshot}`,
+        sql`${checkoutSessions.billingAddress} IS DISTINCT FROM ${input.billingAddress}`,
+        sql`${checkoutSessions.deliveryAddress} IS DISTINCT FROM ${input.deliveryAddress}`,
+        sql`${checkoutSessions.deliveryMethod} IS DISTINCT FROM ${input.deliveryMethod}`,
+      );
+      const [updated] = await database
+        .update(checkoutSessions)
+        .set({
+          ...input,
+          version: sql`${checkoutSessions.version} + 1`,
+          selectedShippingQuoteId: null,
+          updatedAt: new Date(),
+        })
+        .where(and(eq(checkoutSessions.id, sessionId), changed))
+        .returning();
+      if (updated) return updated;
+
+      const [current] = await database
+        .select()
+        .from(checkoutSessions)
+        .where(eq(checkoutSessions.id, sessionId))
+        .limit(1);
+      return current ?? null;
+    },
+
+    async getCheckoutState(sessionId) {
+      const [session] = await database
+        .select()
+        .from(checkoutSessions)
+        .where(eq(checkoutSessions.id, sessionId))
+        .limit(1);
+      return session ?? null;
+    },
+
+    async clearSelectedShippingQuote(sessionId, expectedVersion) {
+      const updated = await database
+        .update(checkoutSessions)
+        .set({ selectedShippingQuoteId: null, updatedAt: new Date() })
+        .where(
+          and(
+            eq(checkoutSessions.id, sessionId),
+            eq(checkoutSessions.version, expectedVersion),
+          ),
+        )
+        .returning({ id: checkoutSessions.id });
+      return updated.length > 0;
+    },
+
+    async persistAndSelectShippingQuote(input) {
+      return database.transaction(async (transaction) => {
+        const [quote] = await transaction
+          .insert(shippingQuotes)
+          .values({
+            checkoutSessionId: input.sessionId,
+            requestDigest: input.requestDigest,
+            ...input.quote,
+          })
+          .onConflictDoUpdate({
+            target: [
+              shippingQuotes.checkoutSessionId,
+              shippingQuotes.provider,
+              shippingQuotes.providerReference,
+            ],
+            set: {
+              requestDigest: input.requestDigest,
+              serviceCode: input.quote.serviceCode,
+              serviceName: input.quote.serviceName,
+              amountExGstCents: input.quote.amountExGstCents,
+              gstCents: input.quote.gstCents,
+              amountInclGstCents: input.quote.amountInclGstCents,
+              rawResponseHash: input.quote.rawResponseHash,
+              isTest: input.quote.isTest,
+              expiresAt: input.quote.expiresAt,
+            },
+          })
+          .returning();
+
+        const selected = await transaction
+          .update(checkoutSessions)
+          .set({ selectedShippingQuoteId: quote.id, updatedAt: new Date() })
+          .where(
+            and(
+              eq(checkoutSessions.id, input.sessionId),
+              eq(checkoutSessions.version, input.expectedVersion),
+            ),
+          )
+          .returning({ id: checkoutSessions.id });
+        return selected.length > 0 ? quote : null;
+      });
     },
   };
 }
