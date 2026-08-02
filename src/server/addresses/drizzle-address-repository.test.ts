@@ -74,6 +74,19 @@ describe("Drizzle address repository", () => {
     expect(await repository.listByOwner(ownerIds[1])).toEqual([]);
   });
 
+  it("ignores identity and ownership fields added to create input", async () => {
+    const inputWithExtraFields = {
+      ...nzAddress,
+      id: "00000000-0000-4000-8000-000000000001",
+      ownerId: ownerIds[1],
+    };
+
+    const created = await repository.create(ownerIds[0], inputWithExtraFields);
+
+    expect(created.id).not.toBe(inputWithExtraFields.id);
+    expect(created.ownerId).toBe(ownerIds[0]);
+  });
+
   it("treats foreign-owned addresses as missing during update and delete", async () => {
     const created = await repository.create(ownerIds[0], nzAddress);
 
@@ -102,5 +115,26 @@ describe("Drizzle address repository", () => {
     });
     expect(await repository.deleteByOwner(ownerIds[0], created.id)).toBe(true);
     expect(await repository.findByOwner(ownerIds[0], created.id)).toBeNull();
+  });
+
+  it("ignores identity and ownership fields added to update input", async () => {
+    const created = await repository.create(ownerIds[0], nzAddress);
+    const inputWithExtraFields = {
+      ...auAddress,
+      id: "00000000-0000-4000-8000-000000000002",
+      ownerId: ownerIds[1],
+    };
+
+    const updated = await repository.updateByOwner(
+      ownerIds[0],
+      created.id,
+      inputWithExtraFields,
+    );
+
+    expect(updated).toMatchObject({
+      id: created.id,
+      ownerId: ownerIds[0],
+      ...auAddress,
+    });
   });
 });

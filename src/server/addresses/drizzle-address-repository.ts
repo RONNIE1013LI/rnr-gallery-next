@@ -9,6 +9,20 @@ import type {
 
 type Database = ReturnType<typeof getDatabase>;
 
+function addressValues(input: CreateAddressInput) {
+  return {
+    country: input.country,
+    fullName: input.fullName,
+    building: input.building,
+    street: input.street,
+    suburb: input.suburb,
+    region: input.region,
+    postcode: input.postcode,
+    phone: input.phone,
+    email: input.email,
+  };
+}
+
 export function createDrizzleAddressRepository(
   database: Database,
 ): AddressRepository {
@@ -38,7 +52,7 @@ export function createDrizzleAddressRepository(
     async create(ownerId, input: CreateAddressInput): Promise<SavedAddress> {
       const [created] = await database
         .insert(customerAddresses)
-        .values({ ownerId, ...input })
+        .values({ ownerId, ...addressValues(input) })
         .returning();
 
       return created;
@@ -47,7 +61,7 @@ export function createDrizzleAddressRepository(
     async updateByOwner(ownerId, addressId, input) {
       const [updated] = await database
         .update(customerAddresses)
-        .set({ ...input, updatedAt: new Date() })
+        .set({ ...addressValues(input), updatedAt: new Date() })
         .where(
           and(
             eq(customerAddresses.id, addressId),
