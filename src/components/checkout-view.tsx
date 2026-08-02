@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AddressInput } from "@/domain/address/types";
 import { addressInputSchema } from "@/domain/address/schema";
 import { createBrowserCartRepository, parseStoredCart } from "@/domain/cart/browser-cart-repository";
@@ -17,6 +17,62 @@ import styles from "./storefront.module.css";
 export type CheckoutSavedAddress = AddressInput & { id: string };
 const emptyAddress: AddressInput = { country: "NZ", fullName: "", building: "", street: "", suburb: "", region: "", postcode: "", phone: "", email: "" };
 const IDEMPOTENCY_STORAGE_KEY = "rnr-checkout-order-idempotency-v1";
+const PLACEMENT_STORAGE_KEY = "rnr-checkout-pending-placement-v1";
+
+type PlacementIntent = {
+  schemaVersion: 1;
+  idempotencyKey: string;
+  checkoutVersion: number;
+  cartDigest: string;
+  shipping: Pick<PublicShippingDTO["option"], "method" | "serviceCode" | "amountExGstCents" | "gstCents" | "amountInclGstCents" | "isTest">;
+};
+
+const recoveryRequests = new Map<string, Promise<unknown>>();
+
+function hasExactKeys(value: Record<string, unknown>, keys: string[]) {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function parsePlacementIntent(raw: string | null): PlacementIntent | null {
+  if (!raw) return null;
+  try {
+    const value = JSON.parse(raw) as unknown;
+    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+    const intent = value as Record<string, unknown>;
+    if (!hasExactKeys(intent, ["schemaVersion", "idempotencyKey", "checkoutVersion", "cartDigest", "shipping"])) return null;
+    if (intent.schemaVersion !== 1 || typeof intent.idempotencyKey !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(intent.idempotencyKey)) return null;
+    if (!Number.isSafeInteger(intent.checkoutVersion) || (intent.checkoutVersion as number) < 1 || typeof intent.cartDigest !== "string" || !/^[0-9a-f]{64}$/.test(intent.cartDigest)) return null;
+    if (!intent.shipping || typeof intent.shipping !== "object" || Array.isArray(intent.shipping)) return null;
+    const shipping = intent.shipping as Record<string, unknown>;
+    if (!hasExactKeys(shipping, ["method", "serviceCode", "amountExGstCents", "gstCents", "amountInclGstCents", "isTest"])) return null;
+    if ((shipping.method !== "post" && shipping.method !== "pickup") || typeof shipping.serviceCode !== "string" || shipping.serviceCode.length < 1 || shipping.serviceCode.length > 100 || typeof shipping.isTest !== "boolean") return null;
+    for (const key of ["amountExGstCents", "gstCents", "amountInclGstCents"] as const) {
+      if (!Number.isSafeInteger(shipping[key]) || (shipping[key] as number) < 0) return null;
+    }
+    if ((shipping.amountExGstCents as number) + (shipping.gstCents as number) !== shipping.amountInclGstCents) return null;
+    return value as PlacementIntent;
+  } catch {
+    return null;
+  }
+}
+
+function readPlacementIntent() {
+  if (typeof window === "undefined") return null;
+  const intent = parsePlacementIntent(window.sessionStorage.getItem(PLACEMENT_STORAGE_KEY));
+  if (!intent) window.sessionStorage.removeItem(PLACEMENT_STORAGE_KEY);
+  return intent;
+}
+
+function placementRequest(intent: PlacementIntent) {
+  return {
+    idempotencyKey: intent.idempotencyKey,
+    checkoutVersion: intent.checkoutVersion,
+    cartDigest: intent.cartDigest,
+    shipping: intent.shipping,
+  };
+}
 
 function addressInput(address: AddressInput): AddressInput {
   const { country, fullName, building, street, suburb, region, postcode, phone, email } = address;
@@ -42,6 +98,15 @@ async function postJson(url: string, body: unknown) {
   return payload;
 }
 
+function recoverPlacement(intent: PlacementIntent) {
+  const key = JSON.stringify(intent);
+  const existing = recoveryRequests.get(key);
+  if (existing) return existing;
+  const request = postJson("/api/checkout/order", placementRequest(intent)).finally(() => recoveryRequests.delete(key));
+  recoveryRequests.set(key, request);
+  return request;
+}
+
 function initialIdempotencyKey() {
   if (typeof window === "undefined") return "00000000-0000-4000-8000-000000000000";
   const stored = window.sessionStorage.getItem(IDEMPOTENCY_STORAGE_KEY);
@@ -62,7 +127,7 @@ function addressErrors(result: ReturnType<typeof addressInputSchema.safeParse>):
 }
 
 export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: CheckoutSavedAddress[] }) {
-  const router = useRouter();
+  const { push } = useRouter();
   const snapshot = useSyncExternalStore(subscribeToCart, getCartSnapshot, () => EMPTY_CART_JSON);
   const cart = parseStoredCart(snapshot);
   const first = savedAddresses[0];
@@ -75,21 +140,79 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   const [shipping, setShipping] = useState<PublicShippingDTO["option"] | null>(null);
   const [reviewKey, setReviewKey] = useState("");
   const [message, setMessage] = useState("");
+  const [placementIntent, setPlacementIntent] = useState<PlacementIntent | null>(null);
+  const [recoveryChecked, setRecoveryChecked] = useState(false);
   const [pending, setPending] = useState<"review" | "order" | null>(null);
   const [billingErrors, setBillingErrors] = useState<AddressFieldErrors>({});
   const [deliveryErrors, setDeliveryErrors] = useState<AddressFieldErrors>({});
-  const [idempotencyKey] = useState(initialIdempotencyKey);
+  const [idempotencyKey, setIdempotencyKey] = useState("00000000-0000-4000-8000-000000000000");
   const [billingSavedId, setBillingSavedId] = useState(first?.id ?? "");
   const [deliverySavedId, setDeliverySavedId] = useState(first?.id ?? "");
   const reviewing = useRef(false);
   const placing = useRef(false);
   const currentKey = useMemo(() => JSON.stringify({ snapshot, billing, delivery: different ? delivery : billing, different, method }), [snapshot, billing, delivery, different, method]);
   const isReviewed = Boolean(reviewKey === currentKey && reviewedCart && reviewedVersion !== null && shipping);
+  const checkoutLocked = Boolean(!recoveryChecked || pending || placementIntent);
+
+  const completeOrder = useCallback((payload: { order: { orderNumber: string } }) => {
+    createBrowserCartRepository(window.localStorage).clear();
+    notifyCartChanged();
+    window.sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY);
+    window.sessionStorage.removeItem(PLACEMENT_STORAGE_KEY);
+    setPlacementIntent(null);
+    push(`/orders/${payload.order.orderNumber}`);
+  }, [push]);
+
+  const invalidatePlacement = useCallback(() => {
+    window.sessionStorage.removeItem(PLACEMENT_STORAGE_KEY);
+    window.sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY);
+    const nextKey = window.crypto.randomUUID();
+    window.sessionStorage.setItem(IDEMPOTENCY_STORAGE_KEY, nextKey);
+    setIdempotencyKey(nextKey);
+    setPlacementIntent(null);
+    setReviewedCart(null);
+    setReviewedVersion(null);
+    setShipping(null);
+    setReviewKey("");
+    setMessage("Checkout changed. Review delivery and totals again.");
+  }, []);
+
+  const handlePlacementFailure = useCallback((error: unknown) => {
+    placing.current = false;
+    if (error instanceof CheckoutApiError && error.code === "CHECKOUT_CHANGED") invalidatePlacement();
+    else setMessage(error instanceof Error ? error.message : "Order could not be created.");
+    setPending(null);
+  }, [invalidatePlacement]);
+
+  useEffect(() => {
+    let active = true;
+    void Promise.resolve().then(async () => {
+      if (!active) return;
+      const intent = readPlacementIntent();
+      if (!intent) {
+        setIdempotencyKey(initialIdempotencyKey());
+        setRecoveryChecked(true);
+        return;
+      }
+      window.sessionStorage.setItem(IDEMPOTENCY_STORAGE_KEY, intent.idempotencyKey);
+      setIdempotencyKey(intent.idempotencyKey);
+      setPlacementIntent(intent);
+      setPending("order");
+      setRecoveryChecked(true);
+      try {
+        const payload = await recoverPlacement(intent);
+        if (active) completeOrder(payload as { order: { orderNumber: string } });
+      } catch (error) {
+        if (active) handlePlacementFailure(error);
+      }
+    });
+    return () => { active = false; };
+  }, [completeOrder, handlePlacementFailure]);
 
   if (cart.items.length === 0) return <section className={styles.cartEmpty}><h2>Your cart is empty</h2><Link className={styles.primaryButton} href="/shop">Explore products</Link></section>;
 
   async function review() {
-    if (reviewing.current || pending) return;
+    if (reviewing.current || checkoutLocked) return;
     setMessage("");
     const billingResult = addressInputSchema.safeParse(billing);
     const deliveryResult = addressInputSchema.safeParse(delivery);
@@ -113,26 +236,36 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   }
 
   async function placeOrder() {
-    if (!isReviewed || pending || placing.current) return;
+    if ((!isReviewed && !placementIntent) || pending || placing.current) return;
     placing.current = true;
     setPending("order"); setMessage("");
+    const intent = placementIntent ?? {
+      schemaVersion: 1,
+      idempotencyKey,
+      checkoutVersion: reviewedVersion!,
+      cartDigest: reviewedCart!.cartDigest,
+      shipping: { method: shipping!.method, serviceCode: shipping!.serviceCode, amountExGstCents: shipping!.amountExGstCents, gstCents: shipping!.gstCents, amountInclGstCents: shipping!.amountInclGstCents, isTest: shipping!.isTest },
+    } satisfies PlacementIntent;
+    if (!placementIntent) {
+      window.sessionStorage.setItem(PLACEMENT_STORAGE_KEY, JSON.stringify(intent));
+      setPlacementIntent(intent);
+    }
     try {
-      const payload = await postJson("/api/checkout/order", { idempotencyKey, checkoutVersion: reviewedVersion, cartDigest: reviewedCart!.cartDigest, shipping: { method: shipping!.method, serviceCode: shipping!.serviceCode, amountExGstCents: shipping!.amountExGstCents, gstCents: shipping!.gstCents, amountInclGstCents: shipping!.amountInclGstCents, isTest: shipping!.isTest } });
-      createBrowserCartRepository(window.localStorage).clear(); notifyCartChanged();
-      window.sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY); router.push(`/orders/${payload.order.orderNumber}`);
-    } catch (error) { placing.current = false; if (error instanceof CheckoutApiError && error.code === "CHECKOUT_CHANGED") { setReviewedCart(null); setReviewedVersion(null); setShipping(null); setReviewKey(""); setMessage("Checkout changed. Review delivery and totals again."); } else setMessage(error instanceof Error ? error.message : "Order could not be created."); setPending(null); }
+      const payload = await postJson("/api/checkout/order", placementRequest(intent));
+      completeOrder(payload);
+    } catch (error) { handlePlacementFailure(error); }
   }
 
   return <div className={styles.checkoutLayout}>
     <form aria-label="Checkout details" className={styles.checkoutForm} noValidate onSubmit={(event) => { event.preventDefault(); void review(); }}>
-      {savedAddresses.length ? <label className={styles.savedAddressSelect}>Saved billing address<select disabled={Boolean(pending)} value={billingSavedId} onChange={(event) => { setBillingSavedId(event.target.value); const selected = savedAddresses.find((address) => address.id === event.target.value); if (selected) setBilling(addressInput(selected)); }}><option value="">Enter manually</option>{savedAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}
-      <fieldset><legend>Billing address</legend><AddressForm value={billing} onChange={setBilling} errors={billingErrors} disabled={Boolean(pending)} /></fieldset>
-      <label className={styles.checkoutToggle}><input disabled={Boolean(pending)} type="checkbox" checked={different} onChange={(event) => setDifferent(event.target.checked)} /> Deliver to a different address</label>
-      {different ? <fieldset><legend>Delivery address</legend>{savedAddresses.length ? <label className={styles.savedAddressSelect}>Saved delivery address<select disabled={Boolean(pending)} value={deliverySavedId} onChange={(event) => { setDeliverySavedId(event.target.value); const selected = savedAddresses.find((address) => address.id === event.target.value); if (selected) setDelivery(addressInput(selected)); }}><option value="">Enter manually</option>{savedAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}<AddressForm value={delivery} onChange={setDelivery} errors={deliveryErrors} disabled={Boolean(pending)} /></fieldset> : null}
-      <fieldset><legend>Delivery</legend><div className={styles.deliveryChoices}><label><input disabled={Boolean(pending)} type="radio" name="deliveryMethod" checked={method === "post"} onChange={() => setMethod("post")} /> Post</label><label><input disabled={Boolean(pending)} type="radio" name="deliveryMethod" checked={method === "pickup"} onChange={() => setMethod("pickup")} /> Pickup</label></div></fieldset>
-      <button className={styles.secondaryButton} type="submit" disabled={Boolean(pending)}>{pending === "review" ? "Reviewing…" : "Review delivery & totals"}</button>
+      {savedAddresses.length ? <label className={styles.savedAddressSelect}>Saved billing address<select disabled={checkoutLocked} value={billingSavedId} onChange={(event) => { setBillingSavedId(event.target.value); const selected = savedAddresses.find((address) => address.id === event.target.value); if (selected) setBilling(addressInput(selected)); }}><option value="">Enter manually</option>{savedAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}
+      <fieldset><legend>Billing address</legend><AddressForm value={billing} onChange={setBilling} errors={billingErrors} disabled={checkoutLocked} /></fieldset>
+      <label className={styles.checkoutToggle}><input disabled={checkoutLocked} type="checkbox" checked={different} onChange={(event) => setDifferent(event.target.checked)} /> Deliver to a different address</label>
+      {different ? <fieldset><legend>Delivery address</legend>{savedAddresses.length ? <label className={styles.savedAddressSelect}>Saved delivery address<select disabled={checkoutLocked} value={deliverySavedId} onChange={(event) => { setDeliverySavedId(event.target.value); const selected = savedAddresses.find((address) => address.id === event.target.value); if (selected) setDelivery(addressInput(selected)); }}><option value="">Enter manually</option>{savedAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}<AddressForm value={delivery} onChange={setDelivery} errors={deliveryErrors} disabled={checkoutLocked} /></fieldset> : null}
+      <fieldset><legend>Delivery</legend><div className={styles.deliveryChoices}><label><input disabled={checkoutLocked} type="radio" name="deliveryMethod" checked={method === "post"} onChange={() => setMethod("post")} /> Post</label><label><input disabled={checkoutLocked} type="radio" name="deliveryMethod" checked={method === "pickup"} onChange={() => setMethod("pickup")} /> Pickup</label></div></fieldset>
+      <button className={styles.secondaryButton} type="submit" disabled={checkoutLocked}>{!recoveryChecked ? "Checking order status…" : pending === "review" ? "Reviewing…" : "Review delivery & totals"}</button>
       <p aria-live="polite" className={styles.checkoutMessage}>{message}</p>
     </form>
-    <aside className={styles.checkoutSummary}><p className={styles.eyebrow}>Your order</p><h2>Order summary</h2>{reviewedCart && !isReviewed ? <p className={styles.checkoutMessage}>Changes need review.</p> : null}<CheckoutOrderSummary cart={isReviewed ? reviewedCart : null} shipping={isReviewed ? shipping : null} /><button className={styles.primaryButton} type="button" disabled={!isReviewed || Boolean(pending)} onClick={placeOrder}>{pending === "order" ? "Placing order…" : "Place order"}</button></aside>
+    <aside className={styles.checkoutSummary}><p className={styles.eyebrow}>Your order</p><h2>Order summary</h2>{reviewedCart && !isReviewed ? <p className={styles.checkoutMessage}>Changes need review.</p> : null}<CheckoutOrderSummary cart={isReviewed ? reviewedCart : null} shipping={isReviewed ? shipping : null} /><button className={styles.primaryButton} type="button" disabled={(!isReviewed && !placementIntent) || Boolean(pending)} onClick={placeOrder}>{pending === "order" ? "Recovering order…" : placementIntent ? "Retry order recovery" : "Place order"}</button></aside>
   </div>;
 }
