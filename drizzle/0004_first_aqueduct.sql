@@ -16,7 +16,25 @@ CREATE TABLE "payment_attempts" (
 	"sanitized_failure_code" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "payment_attempts_expected_amount_positive" CHECK ("payment_attempts"."expected_amount_cents" > 0)
+	CONSTRAINT "payment_attempts_expected_amount_positive" CHECK ("payment_attempts"."expected_amount_cents" > 0),
+	CONSTRAINT "payment_attempts_provider_valid" CHECK ("payment_attempts"."provider" in ('stripe', 'afterpay', 'zip', 'local-test')),
+	CONSTRAINT "payment_attempts_method_valid" CHECK ("payment_attempts"."method" in ('card', 'afterpay', 'zip')),
+	CONSTRAINT "payment_attempts_provider_method_valid" CHECK ((
+        "payment_attempts"."provider" NOT in ('stripe', 'afterpay', 'zip', 'local-test')
+        OR "payment_attempts"."method" NOT in ('card', 'afterpay', 'zip')
+        OR ("payment_attempts"."provider" = 'stripe' AND "payment_attempts"."method" = 'card')
+        OR ("payment_attempts"."provider" = 'afterpay' AND "payment_attempts"."method" = 'afterpay')
+        OR ("payment_attempts"."provider" = 'zip' AND "payment_attempts"."method" = 'zip')
+        OR ("payment_attempts"."provider" = 'local-test' AND "payment_attempts"."method" in ('card', 'afterpay', 'zip'))
+      )),
+	CONSTRAINT "payment_attempts_country_valid" CHECK ("payment_attempts"."country" in ('NZ', 'AU')),
+	CONSTRAINT "payment_attempts_status_valid" CHECK ("payment_attempts"."status" in ('created', 'requires_action', 'processing', 'paid', 'failed', 'cancelled')),
+	CONSTRAINT "payment_attempts_lease_pair_valid" CHECK ((
+        ("payment_attempts"."provider_session_lease_id" IS NULL AND "payment_attempts"."provider_session_lease_expires_at" IS NULL)
+        OR ("payment_attempts"."provider_session_lease_id" IS NOT NULL AND "payment_attempts"."provider_session_lease_expires_at" IS NOT NULL)
+      )),
+	CONSTRAINT "payment_attempts_return_state_digest_format" CHECK ("payment_attempts"."return_state_digest" IS NULL OR "payment_attempts"."return_state_digest" ~ '^[0-9a-f]{64}$'),
+	CONSTRAINT "payment_attempts_return_state_consumption_valid" CHECK ("payment_attempts"."return_state_consumed_at" IS NULL OR "payment_attempts"."return_state_digest" IS NOT NULL)
 );
 --> statement-breakpoint
 CREATE TABLE "webhook_events" (
@@ -28,7 +46,13 @@ CREATE TABLE "webhook_events" (
 	"processing_result" text,
 	"processed_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "webhook_events_sha256_format" CHECK ("webhook_events"."payload_sha256" ~ '^[0-9a-f]{64}$')
+	CONSTRAINT "webhook_events_sha256_format" CHECK ("webhook_events"."payload_sha256" ~ '^[0-9a-f]{64}$'),
+	CONSTRAINT "webhook_events_provider_valid" CHECK ("webhook_events"."provider" in ('stripe', 'afterpay', 'zip', 'local-test')),
+	CONSTRAINT "webhook_events_processing_result_valid" CHECK ("webhook_events"."processing_result" IS NULL OR "webhook_events"."processing_result" in ('applied', 'ignored', 'failed')),
+	CONSTRAINT "webhook_events_processing_pair_valid" CHECK ((
+        ("webhook_events"."processing_result" IS NULL AND "webhook_events"."processed_at" IS NULL)
+        OR ("webhook_events"."processing_result" IS NOT NULL AND "webhook_events"."processed_at" IS NOT NULL)
+      ))
 );
 --> statement-breakpoint
 ALTER TABLE "orders" ADD CONSTRAINT "orders_id_total_incl_gst_currency_unique" UNIQUE("id","total_incl_gst_cents","currency");--> statement-breakpoint

@@ -1912,6 +1912,38 @@
         "payment_attempts_expected_amount_positive": {
           "name": "payment_attempts_expected_amount_positive",
           "value": "\"payment_attempts\".\"expected_amount_cents\" > 0"
+        },
+        "payment_attempts_provider_valid": {
+          "name": "payment_attempts_provider_valid",
+          "value": "\"payment_attempts\".\"provider\" in ('stripe', 'afterpay', 'zip', 'local-test')"
+        },
+        "payment_attempts_method_valid": {
+          "name": "payment_attempts_method_valid",
+          "value": "\"payment_attempts\".\"method\" in ('card', 'afterpay', 'zip')"
+        },
+        "payment_attempts_provider_method_valid": {
+          "name": "payment_attempts_provider_method_valid",
+          "value": "(\n        \"payment_attempts\".\"provider\" NOT in ('stripe', 'afterpay', 'zip', 'local-test')\n        OR \"payment_attempts\".\"method\" NOT in ('card', 'afterpay', 'zip')\n        OR (\"payment_attempts\".\"provider\" = 'stripe' AND \"payment_attempts\".\"method\" = 'card')\n        OR (\"payment_attempts\".\"provider\" = 'afterpay' AND \"payment_attempts\".\"method\" = 'afterpay')\n        OR (\"payment_attempts\".\"provider\" = 'zip' AND \"payment_attempts\".\"method\" = 'zip')\n        OR (\"payment_attempts\".\"provider\" = 'local-test' AND \"payment_attempts\".\"method\" in ('card', 'afterpay', 'zip'))\n      )"
+        },
+        "payment_attempts_country_valid": {
+          "name": "payment_attempts_country_valid",
+          "value": "\"payment_attempts\".\"country\" in ('NZ', 'AU')"
+        },
+        "payment_attempts_status_valid": {
+          "name": "payment_attempts_status_valid",
+          "value": "\"payment_attempts\".\"status\" in ('created', 'requires_action', 'processing', 'paid', 'failed', 'cancelled')"
+        },
+        "payment_attempts_lease_pair_valid": {
+          "name": "payment_attempts_lease_pair_valid",
+          "value": "(\n        (\"payment_attempts\".\"provider_session_lease_id\" IS NULL AND \"payment_attempts\".\"provider_session_lease_expires_at\" IS NULL)\n        OR (\"payment_attempts\".\"provider_session_lease_id\" IS NOT NULL AND \"payment_attempts\".\"provider_session_lease_expires_at\" IS NOT NULL)\n      )"
+        },
+        "payment_attempts_return_state_digest_format": {
+          "name": "payment_attempts_return_state_digest_format",
+          "value": "\"payment_attempts\".\"return_state_digest\" IS NULL OR \"payment_attempts\".\"return_state_digest\" ~ '^[0-9a-f]{64}$'"
+        },
+        "payment_attempts_return_state_consumption_valid": {
+          "name": "payment_attempts_return_state_consumption_valid",
+          "value": "\"payment_attempts\".\"return_state_consumed_at\" IS NULL OR \"payment_attempts\".\"return_state_digest\" IS NOT NULL"
         }
       },
       "isRLSEnabled": false
@@ -2031,6 +2063,18 @@
         "webhook_events_sha256_format": {
           "name": "webhook_events_sha256_format",
           "value": "\"webhook_events\".\"payload_sha256\" ~ '^[0-9a-f]{64}$'"
+        },
+        "webhook_events_provider_valid": {
+          "name": "webhook_events_provider_valid",
+          "value": "\"webhook_events\".\"provider\" in ('stripe', 'afterpay', 'zip', 'local-test')"
+        },
+        "webhook_events_processing_result_valid": {
+          "name": "webhook_events_processing_result_valid",
+          "value": "\"webhook_events\".\"processing_result\" IS NULL OR \"webhook_events\".\"processing_result\" in ('applied', 'ignored', 'failed')"
+        },
+        "webhook_events_processing_pair_valid": {
+          "name": "webhook_events_processing_pair_valid",
+          "value": "(\n        (\"webhook_events\".\"processing_result\" IS NULL AND \"webhook_events\".\"processed_at\" IS NULL)\n        OR (\"webhook_events\".\"processing_result\" IS NOT NULL AND \"webhook_events\".\"processed_at\" IS NOT NULL)\n      )"
         }
       },
       "isRLSEnabled": false

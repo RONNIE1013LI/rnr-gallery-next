@@ -78,6 +78,48 @@ export const paymentAttempts = pgTable(
       "payment_attempts_expected_amount_positive",
       sql`${table.expectedAmountCents} > 0`,
     ),
+    check(
+      "payment_attempts_provider_valid",
+      sql`${table.provider} in ('stripe', 'afterpay', 'zip', 'local-test')`,
+    ),
+    check(
+      "payment_attempts_method_valid",
+      sql`${table.method} in ('card', 'afterpay', 'zip')`,
+    ),
+    check(
+      "payment_attempts_provider_method_valid",
+      sql`(
+        ${table.provider} NOT in ('stripe', 'afterpay', 'zip', 'local-test')
+        OR ${table.method} NOT in ('card', 'afterpay', 'zip')
+        OR (${table.provider} = 'stripe' AND ${table.method} = 'card')
+        OR (${table.provider} = 'afterpay' AND ${table.method} = 'afterpay')
+        OR (${table.provider} = 'zip' AND ${table.method} = 'zip')
+        OR (${table.provider} = 'local-test' AND ${table.method} in ('card', 'afterpay', 'zip'))
+      )`,
+    ),
+    check(
+      "payment_attempts_country_valid",
+      sql`${table.country} in ('NZ', 'AU')`,
+    ),
+    check(
+      "payment_attempts_status_valid",
+      sql`${table.status} in ('created', 'requires_action', 'processing', 'paid', 'failed', 'cancelled')`,
+    ),
+    check(
+      "payment_attempts_lease_pair_valid",
+      sql`(
+        (${table.providerSessionLeaseId} IS NULL AND ${table.providerSessionLeaseExpiresAt} IS NULL)
+        OR (${table.providerSessionLeaseId} IS NOT NULL AND ${table.providerSessionLeaseExpiresAt} IS NOT NULL)
+      )`,
+    ),
+    check(
+      "payment_attempts_return_state_digest_format",
+      sql`${table.returnStateDigest} IS NULL OR ${table.returnStateDigest} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "payment_attempts_return_state_consumption_valid",
+      sql`${table.returnStateConsumedAt} IS NULL OR ${table.returnStateDigest} IS NOT NULL`,
+    ),
   ],
 );
 
@@ -107,6 +149,21 @@ export const webhookEvents = pgTable(
     check(
       "webhook_events_sha256_format",
       sql`${table.payloadSha256} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
+      "webhook_events_provider_valid",
+      sql`${table.provider} in ('stripe', 'afterpay', 'zip', 'local-test')`,
+    ),
+    check(
+      "webhook_events_processing_result_valid",
+      sql`${table.processingResult} IS NULL OR ${table.processingResult} in ('applied', 'ignored', 'failed')`,
+    ),
+    check(
+      "webhook_events_processing_pair_valid",
+      sql`(
+        (${table.processingResult} IS NULL AND ${table.processedAt} IS NULL)
+        OR (${table.processingResult} IS NOT NULL AND ${table.processedAt} IS NOT NULL)
+      )`,
     ),
   ],
 );
