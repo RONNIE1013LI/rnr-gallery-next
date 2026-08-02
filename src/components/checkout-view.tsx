@@ -28,6 +28,11 @@ type PlacementIntent = {
 };
 
 const recoveryRequests = new Map<string, Promise<unknown>>();
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function isUuid(value: string) {
+  return UUID_PATTERN.test(value);
+}
 
 function hasExactKeys(value: Record<string, unknown>, keys: string[]) {
   const actual = Object.keys(value).sort();
@@ -42,7 +47,7 @@ function parsePlacementIntent(raw: string | null): PlacementIntent | null {
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     const intent = value as Record<string, unknown>;
     if (!hasExactKeys(intent, ["schemaVersion", "idempotencyKey", "checkoutVersion", "cartDigest", "shipping"])) return null;
-    if (intent.schemaVersion !== 1 || typeof intent.idempotencyKey !== "string" || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(intent.idempotencyKey)) return null;
+    if (intent.schemaVersion !== 1 || typeof intent.idempotencyKey !== "string" || !isUuid(intent.idempotencyKey)) return null;
     if (!Number.isSafeInteger(intent.checkoutVersion) || (intent.checkoutVersion as number) < 1 || typeof intent.cartDigest !== "string" || !/^[0-9a-f]{64}$/.test(intent.cartDigest)) return null;
     if (!intent.shipping || typeof intent.shipping !== "object" || Array.isArray(intent.shipping)) return null;
     const shipping = intent.shipping as Record<string, unknown>;
@@ -110,7 +115,11 @@ function recoverPlacement(intent: PlacementIntent) {
 function initialIdempotencyKey() {
   if (typeof window === "undefined") return "00000000-0000-4000-8000-000000000000";
   const stored = window.sessionStorage.getItem(IDEMPOTENCY_STORAGE_KEY);
-  if (stored) return stored;
+  if (stored && isUuid(stored)) return stored;
+  if (stored) {
+    window.sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY);
+    window.sessionStorage.removeItem(PLACEMENT_STORAGE_KEY);
+  }
   const created = window.crypto.randomUUID();
   window.sessionStorage.setItem(IDEMPOTENCY_STORAGE_KEY, created);
   return created;

@@ -40,6 +40,28 @@ describe("CheckoutView", () => {
     expect(await screen.findByRole("button", { name: "Review delivery & totals" })).toBeEnabled();
   });
 
+  it("replaces a malformed stored idempotency key before a new order is placed", async () => {
+    sessionStorage.setItem("rnr-checkout-order-idempotency-v1", "not-a-uuid");
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-FRESH" } }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView savedAddresses={[address]} />);
+
+    await checkoutReady();
+    const freshKey = sessionStorage.getItem("rnr-checkout-order-idempotency-v1");
+    expect(freshKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
+    expect(freshKey).not.toBe("not-a-uuid");
+    fireEvent.click(screen.getByLabelText("Pickup"));
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    await screen.findByText(/No shipping charge/);
+    fireEvent.click(screen.getByRole("button", { name: "Place order" }));
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-FRESH"));
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).idempotencyKey).toBe(freshKey);
+    expect(sessionStorage.getItem(placementStorageKey)).toBeNull();
+  });
+
   it("prefills a saved address, defaults to Post, reviews server totals and clears only after success", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
