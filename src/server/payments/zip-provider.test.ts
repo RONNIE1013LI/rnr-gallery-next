@@ -328,6 +328,30 @@ describe("Zip AU provider", () => {
     });
   });
 
+  it("uses browser Referred only to retrieve authoritative state and never charges", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(
+      jsonResponse(checkoutAuthority("referred")),
+    );
+    const provider = createZipProvider({ config: config(), fetchImpl });
+
+    await expect(provider.completeReturn(completeInput("Referred"))).resolves.toEqual({
+      providerReference: checkoutId,
+      providerStatus: "CHECKOUT:referred",
+      amountCents: 12_075,
+      currency: "AUD",
+      orderNumber: "RNR-AU-1001",
+      status: "failed",
+      sanitizedFailureCode: "declined",
+    });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledWith(
+      `https://sand.merchant-api.com/merchant/checkouts/${checkoutId}`,
+      expect.objectContaining({ method: "GET" }),
+    );
+    expect(fetchImpl.mock.calls.map(([url]) => String(url)))
+      .not.toContain("https://sand.merchant-api.com/merchant/charges");
+  });
+
   it.each([
     ["metadata", { metadata: { order_number: "RNR-OTHER" } }],
     ["amount", { amount: 120.76 }],

@@ -42,6 +42,16 @@ describe("GET /api/payments/returns/[provider]", () => {
       { ...common, method: "zip", result: "Approved", checkoutId: "zip_checkout_123" },
       "zip_checkout_123",
     ],
+    [
+      "zip",
+      { ...common, method: "zip", result: "Referred", checkoutId: "zip_checkout_123" },
+      "zip_checkout_123",
+    ],
+    [
+      "zip",
+      { ...common, method: "zip", result: "Declined", checkoutId: "zip_checkout_123" },
+      "zip_checkout_123",
+    ],
   ] as const)("passes only strict persisted-authority inputs for %s and redirects safely", async (
     provider,
     params,
@@ -104,6 +114,20 @@ describe("GET /api/payments/returns/[provider]", () => {
     expect(handleReturn).not.toHaveBeenCalled();
   });
 
+  it("rejects duplicate Zip result values before consuming", async () => {
+    const { route, handleReturn } = handler();
+    const incoming = request("zip", {
+      ...common, method: "zip", result: "Approved", checkoutId: "zip_checkout_123",
+    });
+    const url = new URL(incoming.url);
+    url.searchParams.append("result", "Referred");
+
+    expect((await route(new Request(url), {
+      params: Promise.resolve({ provider: "zip" }),
+    })).status).toBe(404);
+    expect(handleReturn).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["amount authority", "amount", "120.75"],
     ["currency authority", "currency", "NZD"],
@@ -139,6 +163,19 @@ describe("GET /api/payments/returns/[provider]", () => {
 
     expect((await route(new Request(url), {
       params: Promise.resolve({ provider: "afterpay" }),
+    })).status).toBe(404);
+    expect(handleReturn).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["cancel result", { ...common, flow: "cancel", method: "zip", result: "Cancelled", checkoutId: "zip_checkout_123" }],
+    ["cancelled on return", { ...common, method: "zip", result: "Cancelled", checkoutId: "zip_checkout_123" }],
+    ["lower-case referred", { ...common, method: "zip", result: "referred", checkoutId: "zip_checkout_123" }],
+    ["upper-case approved", { ...common, method: "zip", result: "APPROVED", checkoutId: "zip_checkout_123" }],
+  ])("rejects Zip %s before consuming", async (_name, params) => {
+    const { route, handleReturn } = handler();
+    expect((await route(request("zip", params), {
+      params: Promise.resolve({ provider: "zip" }),
     })).status).toBe(404);
     expect(handleReturn).not.toHaveBeenCalled();
   });

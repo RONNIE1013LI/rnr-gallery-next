@@ -153,9 +153,8 @@ function parseReturnInput(
     !providerReference ||
     !referencePattern.test(providerReference) ||
     !result ||
-    !["Approved", "Declined", "Cancelled"].includes(result) ||
-    (result === "Cancelled" && common.flow !== "cancel") ||
-    (result !== "Cancelled" && common.flow !== "return")
+    !["Approved", "Declined", "Referred"].includes(result) ||
+    common.flow !== "return"
   ) return null;
   return {
     provider,

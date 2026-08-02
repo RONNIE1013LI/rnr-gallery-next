@@ -1028,6 +1028,70 @@ describe("payment service", () => {
     });
   });
 
+  it("consumes a Referred Zip return once and never repeats provider work", async () => {
+    const state = "3".repeat(64);
+    const reference = "zip_referred_checkout_123";
+    const auAddress: NormalizedAddress = {
+      ...address, country: "AU", region: "NSW", postcode: "2000",
+      phone: "+61400000000",
+    };
+    const audOrder: PaymentOrder = {
+      ...order, currency: "AUD", billingAddress: auAddress, deliveryAddress: auAddress,
+    };
+    const result: VerifiedPaymentResult = {
+      providerReference: reference,
+      providerStatus: "CHECKOUT:referred",
+      amountCents: audOrder.amountCents,
+      currency: "AUD",
+      orderNumber: audOrder.orderNumber,
+      status: "failed",
+      sanitizedFailureCode: "declined",
+    };
+    const zip: PaymentProvider = {
+      ...provider("zip"), key: "zip", method: "zip",
+      completeReturn: vi.fn().mockResolvedValue(result),
+    };
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt, provider: "zip", method: "zip", providerReference: reference,
+      returnStateDigest: createHash("sha256").update(state).digest("hex"),
+      status: "requires_action", currency: "AUD", country: "AU",
+    };
+    const consumeReturnState = vi.fn()
+      .mockResolvedValueOnce({ outcome: "consumed", attempt: boundAttempt, order: audOrder })
+      .mockResolvedValueOnce({ outcome: "already_consumed", orderNumber: audOrder.orderNumber });
+    const applyVerifiedResult = vi.fn().mockResolvedValue({
+      attempt: { ...boundAttempt, status: "failed" },
+      order: { ...audOrder, paymentStatus: "failed" },
+    });
+    const paymentService = service({
+      repository: repository({ consumeReturnState, applyVerifiedResult }),
+      providers: [{ method: "zip", label: "Zip", isTest: false, provider: zip }],
+    });
+    const returnUrl = new URL(
+      `https://trusted.example.test/api/payments/returns/zip?flow=return&orderNumber=${audOrder.orderNumber}&method=zip&state=${state}&result=Referred&checkoutId=${reference}`,
+    );
+    const input = {
+      provider: "zip" as const,
+      method: "zip" as const,
+      orderNumber: audOrder.orderNumber,
+      returnState: state,
+      providerReference: reference,
+      returnUrl,
+    };
+
+    await expect(paymentService.handleReturn(input))
+      .resolves.toEqual({ orderNumber: audOrder.orderNumber });
+    await expect(paymentService.handleReturn(input))
+      .resolves.toEqual({ orderNumber: audOrder.orderNumber });
+    expect(zip.completeReturn).toHaveBeenCalledOnce();
+    expect(applyVerifiedResult).toHaveBeenCalledOnce();
+    expect(applyVerifiedResult).toHaveBeenCalledWith({
+      attemptId: boundAttempt.id,
+      result,
+      source: "server_capture",
+    });
+  });
+
   it("fails closed before provider completion when the persisted return authority is absent", async () => {
     const afterpay: PaymentProvider = {
       ...provider("afterpay"), key: "afterpay", method: "afterpay",
