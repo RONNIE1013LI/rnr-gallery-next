@@ -125,6 +125,20 @@ describe("Drizzle order query read model", () => {
       .toThrow(OrderSnapshotIntegrityError);
   });
 
+  it("accepts ordinary orders needed more than five working days away", () => {
+    const [result] = buildPublicOrders(
+      [orderRow],
+      [{ ...itemRow, neededDate: "2026-08-20", urgentWorkingDays: 12 }],
+      addresses,
+    );
+
+    expect(result.items[0]).toMatchObject({
+      neededDate: "2026-08-20",
+      urgentServiceConfirmed: false,
+      urgentWorkingDays: 12,
+    });
+  });
+
   const corruptions: [string, { row?: OrderRow; items?: ItemRow[]; item?: ItemRow; addressRows?: AddressRow[] }][] = [
     ["missing item", { items: [] as ItemRow[] }],
     ["unknown payment status", { row: { ...orderRow, paymentStatus: "unknown" } as unknown as OrderRow }],

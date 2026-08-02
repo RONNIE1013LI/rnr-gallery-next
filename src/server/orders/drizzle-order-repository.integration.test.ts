@@ -49,7 +49,7 @@ const address = normalizeAddress({
   postcode: "1010", phone: "021 123 4567", email: "aroha@example.test",
 });
 
-function cart(uploadReferences: string[] = []) {
+function cart(uploadReferences: string[] = [], neededDate = "2026-08-10") {
   return repriceCart({
     version: 1,
     items: [{
@@ -57,7 +57,7 @@ function cart(uploadReferences: string[] = []) {
       productKey: "photo-print-canvas", sizeKey: "a4", orientation: "landscape",
       peoplePets: 0,
       photoSubmissionMethod: uploadReferences.length ? "upload" : "later",
-      designText: "Family", notes: "", neededDate: "2026-08-10",
+      designText: "Family", notes: "", neededDate,
       urgentServiceConfirmed: false, quantity: 1, uploadReferences,
     }],
   }, { now });
@@ -466,6 +466,34 @@ describe("Drizzle atomic order repository", () => {
       .resolves.toBeNull();
     await expect(queryRepository.findByCustomer(guestOrder.orderNumber, customerIds[0]))
       .resolves.toBeNull();
+  });
+
+  it("creates and reads a customer order needed more than five working days away", async () => {
+    const snapshot = cart([], "2026-08-20");
+    expect(snapshot.items[0].urgentService).toEqual({
+      workingDays: 13,
+      feeInclGstCents: 0,
+    });
+    const state = await checkout({ customerId: customerIds[0], snapshot });
+    const created = await repository.createAtomicOrder(pickupInput(state));
+    const queryService = createOrderQueryService(queryRepository);
+
+    await expect(queryService.confirmation(created.orderNumber, {
+      tokenDigest: state.tokenDigest,
+      userId: customerIds[0],
+    })).resolves.toMatchObject({
+      orderNumber: created.orderNumber,
+      items: [{
+        neededDate: "2026-08-20",
+        urgentServiceConfirmed: false,
+        urgentWorkingDays: 13,
+      }],
+    });
+    await expect(queryService.accountOrders(customerIds[0])).resolves.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ orderNumber: created.orderNumber }),
+      ]),
+    );
   });
 
   it("uses a stable order-number tie-breaker for equal customer order dates", async () => {

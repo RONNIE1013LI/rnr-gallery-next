@@ -88,7 +88,7 @@ function publicItems(itemRows: OrderItemRow[]) {
     assertSnapshot(typeof item.designText === "string" && typeof item.notes === "string");
     assertSnapshot(isIsoCalendarDate(item.neededDate));
     assertSnapshot(typeof item.urgentServiceConfirmed === "boolean");
-    assertSnapshot(Number.isSafeInteger(item.urgentWorkingDays) && item.urgentWorkingDays >= 1 && item.urgentWorkingDays <= 5);
+    assertSnapshot(Number.isSafeInteger(item.urgentWorkingDays) && item.urgentWorkingDays >= 1);
     assertSnapshot(Number.isSafeInteger(item.quantity) && item.quantity >= 1 && item.quantity <= 5);
     assertSnapshot(Array.isArray(item.priceLines) && item.priceLines.length > 0);
     const keys = new Set<string>();
