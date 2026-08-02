@@ -1,0 +1,130 @@
+import { ZodError } from "zod";
+import { normalizeAddress } from "@/domain/address/schema";
+import type { AddressRepository } from "@/server/addresses/address-repository";
+import { createDrizzleAddressRepository } from "@/server/addresses/drizzle-address-repository";
+import { HttpError, requireSession } from "@/server/auth/require-session";
+import { getDatabase } from "@/server/db/client";
+
+export const runtime = "nodejs";
+
+type AddressSession = { user: { id: string } };
+type AddressRouteContext = {
+  params: Promise<{ addressId: string }>;
+};
+
+type HandlerDependencies = {
+  requireSession?: () => Promise<AddressSession>;
+  repository?: AddressRepository;
+};
+
+const noStoreHeaders = { "Cache-Control": "no-store" };
+
+function json(body: unknown, status = 200) {
+  return Response.json(body, {
+    status,
+    headers: noStoreHeaders,
+  });
+}
+
+function fieldErrors(error: ZodError): Record<string, string[]> {
+  return error.issues.reduce<Record<string, string[]>>((fields, issue) => {
+    const field = String(issue.path[0] ?? "address");
+    (fields[field] ??= []).push(issue.message);
+    return fields;
+  }, {});
+}
+
+function errorResponse(error: unknown) {
+  if (error instanceof HttpError && error.status === 401) {
+    return json(
+      { error: { code: "UNAUTHORIZED", message: error.message } },
+      401,
+    );
+  }
+
+  if (error instanceof ZodError) {
+    return json(
+      {
+        error: {
+          code: "VALIDATION_ERROR",
+          message: "Address details are invalid",
+          fields: fieldErrors(error),
+        },
+      },
+      422,
+    );
+  }
+
+  if (error instanceof SyntaxError) {
+    return json(
+      { error: { code: "INVALID_JSON", message: "Request body is invalid" } },
+      400,
+    );
+  }
+
+  return json(
+    {
+      error: {
+        code: "INTERNAL_ERROR",
+        message: "The request could not be completed",
+      },
+    },
+    500,
+  );
+}
+
+function notFoundResponse() {
+  return json(
+    { error: { code: "NOT_FOUND", message: "Address not found" } },
+    404,
+  );
+}
+
+export function createAddressItemHandlers(
+  dependencies: HandlerDependencies = {},
+) {
+  const getSession = dependencies.requireSession ?? requireSession;
+  const getRepository = () =>
+    dependencies.repository ?? createDrizzleAddressRepository(getDatabase());
+
+  return {
+    async PUT(request: Request, context: AddressRouteContext) {
+      try {
+        const session = await getSession();
+        const [{ addressId }, rawInput] = await Promise.all([
+          context.params,
+          request.json(),
+        ]);
+        const input = normalizeAddress(rawInput);
+        const address = await getRepository().updateByOwner(
+          session.user.id,
+          addressId,
+          input,
+        );
+        return address ? json({ address }) : notFoundResponse();
+      } catch (error) {
+        return errorResponse(error);
+      }
+    },
+
+    async DELETE(_request: Request, context: AddressRouteContext) {
+      try {
+        const session = await getSession();
+        const { addressId } = await context.params;
+        const deleted = await getRepository().deleteByOwner(
+          session.user.id,
+          addressId,
+        );
+        return deleted
+          ? new Response(null, { status: 204, headers: noStoreHeaders })
+          : notFoundResponse();
+      } catch (error) {
+        return errorResponse(error);
+      }
+    },
+  };
+}
+
+const handlers = createAddressItemHandlers();
+
+export const { PUT, DELETE } = handlers;
