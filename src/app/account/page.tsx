@@ -1,18 +1,39 @@
 import type { Metadata } from "next";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 import styles from "@/components/storefront.module.css";
+import { HttpError, requireSession } from "@/server/auth/require-session";
 
 export const metadata: Metadata = { title: "Account" };
 
-export default function AccountPage() {
+async function authenticatedSession() {
+  try {
+    return await requireSession();
+  } catch (error) {
+    if (error instanceof HttpError && error.status === 401) {
+      redirect("/account/sign-in");
+    }
+    throw error;
+  }
+}
+
+export default async function AccountPage() {
+  await authenticatedSession();
+
   return (
     <main id="main-content" className={styles.legalPage}>
-      <article>
+      <article className={styles.accountPage}>
         <p className={styles.eyebrow}>Customer account</p>
-        <h1>Keep every order in one place.</h1>
-        <p>
-          Secure account access, saved addresses, draft reviews and order tracking
-          will be enabled with the commerce workflow.
-        </p>
+        <h1>Your account.</h1>
+        <p>Manage the details that make ordering from R&amp;R Gallery simpler.</p>
+        <nav aria-label="Account" className={styles.accountNavigation}>
+          <Link href="/account/addresses">Saved addresses</Link>
+          <a href="#orders">Orders</a>
+        </nav>
+        <section className={styles.accountUpcoming} id="orders">
+          <h2>Orders</h2>
+          <p>The orders area is coming next. Order tracking is not available here yet.</p>
+        </section>
       </article>
     </main>
   );

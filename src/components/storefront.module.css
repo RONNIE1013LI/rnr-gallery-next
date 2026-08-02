@@ -555,6 +555,7 @@
 }
 
 .formField > span,
+.formField > label > span,
 .formField legend,
 .choiceCards legend,
 .counterRow > label {
@@ -1085,6 +1086,155 @@
   font-size: 0.9rem;
 }
 
+.accountPage {
+  max-width: 54rem !important;
+}
+
+.accountNavigation {
+  margin-top: 2rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.accountNavigation a {
+  min-height: 48px;
+  padding: 0.8rem 1.25rem;
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--gallery-green);
+  border-radius: 2px;
+  color: var(--gallery-green);
+  font-size: 0.86rem;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.accountUpcoming {
+  margin-top: 3rem;
+  padding-top: 2rem;
+  border-top: 1px solid var(--border);
+}
+
+.savedAddresses {
+  margin-top: 3rem;
+}
+
+.addressSectionHeading {
+  padding-bottom: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.addressSectionHeading h2,
+.addressEditor h3,
+.savedAddress h3 {
+  margin-top: 0;
+}
+
+.addressSectionHeading .primaryButton,
+.addressActions .primaryButton,
+.addressActions .secondaryButton,
+.deleteConfirmation .secondaryButton {
+  cursor: pointer;
+}
+
+.addressSectionHeading button:disabled,
+.addressActions button:disabled,
+.deleteConfirmation button:disabled {
+  color: #6b6e69;
+  background: #ced3cf;
+  cursor: not-allowed;
+}
+
+.addressEmpty {
+  margin-top: 2rem !important;
+}
+
+.addressList {
+  display: grid;
+}
+
+.savedAddress {
+  padding-block: 2rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.addressDetails {
+  margin-top: 0.75rem;
+  color: var(--muted);
+  font-style: normal;
+}
+
+.addressEditor {
+  margin-top: 1.5rem;
+  padding-block: 1.5rem;
+  border-block: 1px solid var(--border);
+}
+
+.savedAddress .addressEditor {
+  margin-top: 0;
+  padding-block: 0;
+  border: 0;
+}
+
+.addressFormFields {
+  margin-top: 1.25rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.addressPair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.fieldError {
+  margin-top: 0.4rem;
+  display: block;
+  color: #a42c22;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.addressActions {
+  margin-top: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+}
+
+.textButton {
+  min-height: 44px;
+  padding: 0.5rem;
+  color: #a42c22;
+  background: transparent;
+  border: 0;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.22em;
+  cursor: pointer;
+}
+
+.deleteConfirmation {
+  margin-top: 1.25rem;
+  padding-top: 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.deleteConfirmation p {
+  width: 100%;
+  margin-top: 0;
+}
+
 @media (max-width: 1100px) {
   .selectedWork .productGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1236,6 +1386,15 @@
 
   .fieldGrid {
     grid-template-columns: 1fr;
+  }
+
+  .addressPair {
+    grid-template-columns: 1fr;
+  }
+
+  .addressSectionHeading {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .counterRow {
