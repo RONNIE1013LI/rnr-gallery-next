@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CHECKOUT_SESSION_COOKIE_NAME,
   createCheckoutSessionToken,
@@ -8,6 +8,7 @@ import {
 } from "./session-cookie";
 
 describe("checkout session cookie", () => {
+  afterEach(() => vi.unstubAllEnvs());
   it("creates high-entropy opaque tokens and only exposes their digest for persistence", () => {
     const first = createCheckoutSessionToken();
     const second = createCheckoutSessionToken();
@@ -32,6 +33,11 @@ describe("checkout session cookie", () => {
 
   it("marks the cookie Secure in production", () => {
     expect(sessionCookie("opaque", "production").secure).toBe(true);
+  });
+
+  it("cannot downgrade Secure when the real runtime is production", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect(sessionCookie("opaque", "development").secure).toBe(true);
   });
 
   it("reads only a correctly shaped opaque token from request cookies", () => {

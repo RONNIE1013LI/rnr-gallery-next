@@ -18,6 +18,7 @@ import {
   InvalidUploadError,
   LocalPrivateUploadStore,
   type PrivateUploadReference,
+  validatePrivateUpload,
 } from "@/server/uploads/local-private-upload-store";
 
 export const runtime = "nodejs";
@@ -65,6 +66,15 @@ export function createUploadRoute(
     const deps = dependencies ?? defaultDependencies();
     try {
       assertTrustedMultipartMutationRequest(request, deps.trustedOrigin);
+      const file = await (deps.parseUpload ?? parseUpload)(request);
+      if (!file) {
+        return NextResponse.json(
+          { error: "Choose an image to upload." },
+          { status: 400 },
+        );
+      }
+      validatePrivateUpload(file);
+
       const authenticated = await deps.getOptionalSession(request.headers);
       const checkout = await ensureCheckoutSession({
         repository: deps.repository,
@@ -74,15 +84,17 @@ export function createUploadRoute(
         createToken: deps.createToken ?? createCheckoutSessionToken,
       });
 
-      const file = await (deps.parseUpload ?? parseUpload)(request);
-      if (!file) {
-        return NextResponse.json(
-          { error: "Choose an image to upload." },
-          { status: 400 },
-        );
+      let stored: PrivateUploadReference;
+      try {
+        stored = await deps.store.save(file);
+      } catch (error) {
+        if (checkout.created) {
+          await Promise.allSettled([
+            deps.repository.deleteEmptySession(checkout.session.id),
+          ]);
+        }
+        throw error;
       }
-
-      const stored = await deps.store.save(file);
       try {
         await deps.repository.createUpload({
           id: stored.id,
@@ -94,7 +106,12 @@ export function createUploadRoute(
           sha256: stored.sha256,
         });
       } catch (error) {
-        await deps.store.remove(stored);
+        await Promise.allSettled([
+          deps.store.remove(stored),
+          checkout.created
+            ? deps.repository.deleteEmptySession(checkout.session.id)
+            : Promise.resolve(false),
+        ]);
         throw error;
       }
 

@@ -18,6 +18,15 @@ type UploadFile = Readonly<{
   arrayBuffer(): Promise<ArrayBuffer>;
 }>;
 
+export function validatePrivateUpload(file: Pick<UploadFile, "type" | "size">) {
+  if (!ACCEPTED_MIME_TYPES.has(file.type)) {
+    throw new InvalidUploadError("Choose a JPG, PNG, WebP, HEIC or HEIF image.");
+  }
+  if (!Number.isInteger(file.size) || file.size < 1 || file.size > MAX_UPLOAD_BYTES) {
+    throw new InvalidUploadError("Each image must be between 1 byte and 25 MB.");
+  }
+}
+
 export type PrivateUploadReference = Readonly<{
   id: string;
   originalName: string;
@@ -41,12 +50,7 @@ export class LocalPrivateUploadStore {
   ) {}
 
   async save(file: UploadFile): Promise<PrivateUploadReference> {
-    if (!ACCEPTED_MIME_TYPES.has(file.type)) {
-      throw new InvalidUploadError("Choose a JPG, PNG, WebP, HEIC or HEIF image.");
-    }
-    if (!Number.isInteger(file.size) || file.size < 1 || file.size > MAX_UPLOAD_BYTES) {
-      throw new InvalidUploadError("Each image must be between 1 byte and 25 MB.");
-    }
+    validatePrivateUpload(file);
 
     const id = this.createId();
     const originalName = basename(file.name).replace(/[\u0000-\u001f\u007f]/g, "");

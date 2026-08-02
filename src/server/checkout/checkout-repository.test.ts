@@ -30,7 +30,7 @@ function repository(
   return {
     findActiveSessionByTokenDigest: vi.fn().mockResolvedValue(null),
     createSession: vi.fn().mockImplementation(async (input) => session(input)),
-    bindGuestSessionToCustomer: vi.fn().mockResolvedValue(null),
+    deleteEmptySession: vi.fn().mockResolvedValue(true),
     createUpload: vi.fn(),
     findOwnedUploadIds: vi.fn().mockResolvedValue([]),
     ...overrides,
@@ -54,7 +54,7 @@ describe("ensureCheckoutSession", () => {
       customerId: null,
       expiresAt: new Date("2026-09-01T00:00:00.000Z"),
     });
-    expect(result.cookieToken).toBe("new-token");
+    expect(result).toMatchObject({ cookieToken: "new-token", created: true });
   });
 
   it("reuses a matching guest session without replacing its cookie", async () => {
@@ -70,16 +70,14 @@ describe("ensureCheckoutSession", () => {
         customerId: null,
         now,
       }),
-    ).resolves.toEqual({ session: existing, cookieToken: null });
+    ).resolves.toEqual({ session: existing, cookieToken: null, created: false });
     expect(repo.createSession).not.toHaveBeenCalled();
   });
 
-  it("binds a guest checkout to the current signed-in customer", async () => {
+  it("keeps a guest checkout guest when the browser later signs in", async () => {
     const existing = session();
-    const bound = session({ customerId: "customer-a" });
     const repo = repository({
       findActiveSessionByTokenDigest: vi.fn().mockResolvedValue(existing),
-      bindGuestSessionToCustomer: vi.fn().mockResolvedValue(bound),
     });
 
     await expect(
@@ -89,7 +87,8 @@ describe("ensureCheckoutSession", () => {
         customerId: "customer-a",
         now,
       }),
-    ).resolves.toEqual({ session: bound, cookieToken: null });
+    ).resolves.toEqual({ session: existing, cookieToken: null, created: false });
+    expect(repo.createSession).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -110,7 +109,7 @@ describe("ensureCheckoutSession", () => {
       createToken: () => "replacement-token",
     });
 
-    expect(result.cookieToken).toBe("replacement-token");
+    expect(result).toMatchObject({ cookieToken: "replacement-token", created: true });
     expect(repo.createSession).toHaveBeenCalledWith(
       expect.objectContaining({ customerId }),
     );

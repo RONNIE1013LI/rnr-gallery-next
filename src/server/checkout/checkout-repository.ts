@@ -32,10 +32,7 @@ export interface CheckoutRepository {
     customerId: string | null;
     expiresAt: Date;
   }): Promise<CheckoutSessionRecord>;
-  bindGuestSessionToCustomer(
-    sessionId: string,
-    customerId: string,
-  ): Promise<CheckoutSessionRecord | null>;
+  deleteEmptySession(sessionId: string): Promise<boolean>;
   createUpload(input: CheckoutUploadInput): Promise<CheckoutUploadRecord>;
   findOwnedUploadIds(sessionId: string, uploadIds: string[]): Promise<string[]>;
 }
@@ -62,6 +59,7 @@ export async function ensureCheckoutSession({
 }): Promise<{
   session: CheckoutSessionRecord;
   cookieToken: string | null;
+  created: boolean;
 }> {
   const existing = rawToken
     ? await repository.findActiveSessionByTokenDigest(
@@ -70,16 +68,8 @@ export async function ensureCheckoutSession({
       )
     : null;
 
-  if (existing?.customerId === customerId) {
-    return { session: existing, cookieToken: null };
-  }
-
-  if (existing?.customerId === null && customerId !== null) {
-    const bound = await repository.bindGuestSessionToCustomer(
-      existing.id,
-      customerId,
-    );
-    if (bound) return { session: bound, cookieToken: null };
+  if (existing && (existing.customerId === null || existing.customerId === customerId)) {
+    return { session: existing, cookieToken: null, created: false };
   }
 
   const token = createToken();
@@ -88,7 +78,7 @@ export async function ensureCheckoutSession({
     customerId,
     expiresAt: new Date(now.getTime() + SESSION_LIFETIME_MS),
   });
-  return { session, cookieToken: token };
+  return { session, cookieToken: token, created: true };
 }
 
 export async function assertOwnedUploadReferences(

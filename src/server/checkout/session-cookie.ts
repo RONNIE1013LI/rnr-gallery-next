@@ -21,7 +21,7 @@ export function sessionCookie(
     httpOnly: true as const,
     sameSite: "lax" as const,
     path: "/",
-    secure: environment === "production",
+    secure: process.env.NODE_ENV === "production" || environment === "production",
     maxAge: CHECKOUT_SESSION_MAX_AGE_SECONDS,
   };
 }

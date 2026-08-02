@@ -39,7 +39,7 @@ describe("Drizzle checkout repository", () => {
     await pool.end();
   });
 
-  it("finds only active token digests and atomically binds a guest owner", async () => {
+  it("finds only active token digests and deletes a newly-created empty session", async () => {
     const guest = await repository.createSession({
       tokenDigest: `guest-${suffix}`,
       customerId: null,
@@ -54,13 +54,12 @@ describe("Drizzle checkout repository", () => {
       ),
     ).toMatchObject({ id: guest.id, customerId: null });
 
-    const bound = await repository.bindGuestSessionToCustomer(
-      guest.id,
-      customerIds[0],
-    );
-    expect(bound).toMatchObject({ customerId: customerIds[0] });
+    expect(await repository.deleteEmptySession(guest.id)).toBe(true);
     expect(
-      await repository.bindGuestSessionToCustomer(guest.id, customerIds[1]),
+      await repository.findActiveSessionByTokenDigest(
+        `guest-${suffix}`,
+        new Date("2026-08-02T00:00:00.000Z"),
+      ),
     ).toBeNull();
 
     const expired = await repository.createSession({
@@ -114,6 +113,7 @@ describe("Drizzle checkout repository", () => {
     await expect(
       assertOwnedUploadReferences(repository, first.id, [firstUploadId]),
     ).resolves.toBeUndefined();
+    expect(await repository.deleteEmptySession(first.id)).toBe(false);
     await expect(
       assertOwnedUploadReferences(repository, first.id, [secondUploadId]),
     ).rejects.toBeInstanceOf(UnownedUploadReferenceError);

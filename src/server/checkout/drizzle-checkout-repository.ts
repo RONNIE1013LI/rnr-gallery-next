@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, notExists } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import { checkoutSessions, checkoutUploads } from "@/server/db/schema";
 import type { CheckoutRepository } from "./checkout-repository";
@@ -31,18 +31,22 @@ export function createDrizzleCheckoutRepository(
       return session;
     },
 
-    async bindGuestSessionToCustomer(sessionId, customerId) {
-      const [session] = await database
-        .update(checkoutSessions)
-        .set({ customerId, updatedAt: new Date() })
+    async deleteEmptySession(sessionId) {
+      const deleted = await database
+        .delete(checkoutSessions)
         .where(
           and(
             eq(checkoutSessions.id, sessionId),
-            isNull(checkoutSessions.customerId),
+            notExists(
+              database
+                .select({ id: checkoutUploads.id })
+                .from(checkoutUploads)
+                .where(eq(checkoutUploads.checkoutSessionId, sessionId)),
+            ),
           ),
         )
-        .returning();
-      return session ?? null;
+        .returning({ id: checkoutSessions.id });
+      return deleted.length > 0;
     },
 
     async createUpload(input) {
