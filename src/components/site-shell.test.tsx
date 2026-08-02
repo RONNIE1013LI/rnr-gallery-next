@@ -1,9 +1,11 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { SiteFooter } from "./site-footer";
 import { SiteHeader } from "./site-header";
 
 describe("site shell", () => {
+  beforeEach(() => localStorage.clear());
+
   it("offers the main storefront routes", () => {
     render(<SiteHeader />);
 
@@ -29,6 +31,35 @@ describe("site shell", () => {
       "/cart",
     );
     expect(screen.getByText("Menu")).toBeInTheDocument();
+  });
+
+  it("shows the persisted cart quantity", () => {
+    localStorage.setItem(
+      "rnr-cart-v1",
+      JSON.stringify({
+        version: 1,
+        items: [{
+          id: "item",
+          productKey: "photo-print-canvas",
+          productSlug: "photo-print-canvas",
+          productTitle: "Photo Print Canvas",
+          imageSrc: "/media/home/family-canvas.webp",
+          sizeKey: "a4",
+          sizeLabel: "A4",
+          peoplePets: 0,
+          photoSubmissionMethod: "later",
+          designText: "",
+          notes: "",
+          neededDate: "2026-08-10",
+          deliveryPreference: "post",
+          quantity: 2,
+          price: { lines: [], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475 },
+          uploadReferences: [],
+        }],
+      }),
+    );
+    render(<SiteHeader />);
+    expect(screen.getByRole("link", { name: "Cart, 2 items" })).toBeInTheDocument();
   });
 
   it("keeps support and legal links in the footer", () => {

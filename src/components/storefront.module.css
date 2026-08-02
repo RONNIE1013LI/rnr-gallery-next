@@ -804,22 +804,16 @@
   font-size: 1.4rem;
 }
 
-.priceSummary .primaryButton,
-.mobileAddButton {
+.priceSummary .primaryButton {
   width: 100%;
   margin-top: 1rem;
   cursor: pointer;
 }
 
-.priceSummary .primaryButton:disabled,
-.mobileAddButton:disabled {
+.priceSummary .primaryButton:disabled {
   color: #6b6e69;
   background: #ced3cf;
   cursor: not-allowed;
-}
-
-.mobileAddButton {
-  display: none;
 }
 
 .addedMessage {
@@ -1126,29 +1120,10 @@
 
   .cartTotals {
     position: static;
-    grid-row: 1;
   }
 
   .priceSummary {
     position: static;
-    grid-row: 1;
-  }
-
-  .priceSummary .primaryButton {
-    display: none;
-  }
-
-  .mobileAddButton {
-    min-height: 52px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    color: #fff;
-    background: var(--gallery-green);
-    border: 0;
-    border-radius: 2px;
-    font: inherit;
-    font-weight: 750;
   }
 }
 

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { BrandMark } from "./brand-mark";
+import { CartCount } from "./cart-count";
 
 const navigation = [
   { href: "/shop", label: "Shop" },
@@ -36,9 +37,7 @@ export function SiteHeader() {
           <Link className="site-header__account" href="/account">
             Account
           </Link>
-          <Link className="site-header__cart" href="/cart" aria-label="Cart, 0 items">
-            Cart <span aria-hidden="true">0</span>
-          </Link>
+          <CartCount />
           <details className="mobile-menu">
             <summary>Menu</summary>
             <nav aria-label="Mobile navigation">

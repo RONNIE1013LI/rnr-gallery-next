@@ -46,7 +46,7 @@ describe("ProductConfigurator", () => {
       target: { value: "2026-08-20" },
     });
     fireEvent.click(screen.getByText("Send after ordering"));
-    fireEvent.click(screen.getAllByRole("button", { name: "Add to cart" })[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
 
     const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
     expect(stored.items).toHaveLength(1);
@@ -92,7 +92,7 @@ describe("ProductConfigurator", () => {
     });
 
     expect(await screen.findByText("source.jpg")).toBeInTheDocument();
-    fireEvent.click(screen.getAllByRole("button", { name: "Add to cart" })[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
     const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
     expect(stored.items[0].uploadReferences).toEqual(["private-reference"]);
   });

@@ -3,38 +3,28 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
-import { createBrowserCartRepository } from "@/domain/cart/browser-cart-repository";
+import {
+  createBrowserCartRepository,
+  parseStoredCart,
+} from "@/domain/cart/browser-cart-repository";
+import {
+  EMPTY_CART_JSON,
+  getCartSnapshot,
+  notifyCartChanged,
+  subscribeToCart,
+} from "@/domain/cart/browser-cart-events";
 import {
   calculateCartTotals,
   removeCartItem,
   setCartItemQuantity,
 } from "@/domain/cart/cart";
-import { CART_STORAGE_KEY, type Cart } from "@/domain/cart/types";
+import type { Cart } from "@/domain/cart/types";
 import { formatNzd } from "@/domain/money";
 import styles from "./storefront.module.css";
 
-const EMPTY_CART_JSON = '{"version":1,"items":[]}';
-const cartListeners = new Set<() => void>();
-
-function subscribe(listener: () => void) {
-  const handleStorage = (event: StorageEvent) => {
-    if (event.key === CART_STORAGE_KEY) listener();
-  };
-  cartListeners.add(listener);
-  window.addEventListener("storage", handleStorage);
-  return () => {
-    cartListeners.delete(listener);
-    window.removeEventListener("storage", handleStorage);
-  };
-}
-
-function getSnapshot() {
-  return window.localStorage.getItem(CART_STORAGE_KEY) ?? EMPTY_CART_JSON;
-}
-
 function saveCart(cart: Cart) {
   createBrowserCartRepository(window.localStorage).save(cart);
-  cartListeners.forEach((listener) => listener());
+  notifyCartChanged();
 }
 
 function labelFor(value: string): string {
@@ -50,12 +40,12 @@ function labelFor(value: string): string {
 }
 
 export function CartView() {
-  useSyncExternalStore(subscribe, getSnapshot, () => EMPTY_CART_JSON);
-  const repository =
-    typeof window === "undefined"
-      ? null
-      : createBrowserCartRepository(window.localStorage);
-  const cart = repository?.load() ?? { version: 1 as const, items: [] };
+  const snapshot = useSyncExternalStore(
+    subscribeToCart,
+    getCartSnapshot,
+    () => EMPTY_CART_JSON,
+  );
+  const cart = parseStoredCart(snapshot);
   const totals = calculateCartTotals(cart);
 
   if (cart.items.length === 0) {

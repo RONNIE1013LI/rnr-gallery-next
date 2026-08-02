@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Product } from "@/domain/catalogue/types";
 import { createBrowserCartRepository } from "@/domain/cart/browser-cart-repository";
+import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
 import { addCartItem } from "@/domain/cart/cart";
 import type {
   DeliveryPreference,
@@ -123,6 +124,7 @@ export function ProductConfigurator({
       uploadReferences: uploadedFiles.map((file) => file.id),
     });
     repository.save(cart);
+    notifyCartChanged();
     setAdded(true);
   }
 
@@ -311,9 +313,6 @@ export function ProductConfigurator({
           </div>
         </section>
 
-        <button className={styles.mobileAddButton} type="submit" disabled={addDisabled}>
-          {uploadRequired ? "Upload a source photo to continue" : "Add to cart"}
-        </button>
       </form>
 
       <aside className={styles.priceSummary} aria-label="Order summary">

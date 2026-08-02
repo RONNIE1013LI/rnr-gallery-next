@@ -47,7 +47,7 @@ function isCartItem(value: unknown): value is CartItem {
   );
 }
 
-function parseCart(value: string | null): Cart {
+export function parseStoredCart(value: string | null): Cart {
   if (!value) return emptyCart();
 
   try {
@@ -69,7 +69,7 @@ export function createBrowserCartRepository(
   storage: StorageLike,
 ): CartRepository {
   return {
-    load: () => parseCart(storage.getItem(CART_STORAGE_KEY)),
+    load: () => parseStoredCart(storage.getItem(CART_STORAGE_KEY)),
     save: (cart) => storage.setItem(CART_STORAGE_KEY, JSON.stringify(cart)),
     clear: () => storage.removeItem(CART_STORAGE_KEY),
   };
