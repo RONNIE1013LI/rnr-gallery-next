@@ -23,12 +23,13 @@ payment state and order state.
 - PostgreSQL with source-controlled Drizzle schema and SQL migrations.
 - Better Auth email/password accounts and database-backed sessions.
 - Guest checkout remains available; registration is not required to buy.
-- Signed-in customers can save, edit and delete New Zealand addresses.
+- Signed-in customers can save, edit and delete New Zealand and Australian
+  addresses.
 - Account routes expose only the signed-in customer's addresses and orders.
 
 ### Slice 3B — address, shipping and checkout
 
-- A consistent New Zealand checkout address form.
+- One country-aware checkout address form shared by New Zealand and Australia.
 - Server-side validation and normalization of country, street, suburb,
   city/region, postcode, phone and email.
 - A provider-neutral address-suggestion interface. It remains disabled until an
@@ -120,23 +121,32 @@ guest order; matching an email string alone is insufficient authorization.
 The checkout form uses these fields:
 
 - Full name
-- Country, fixed to New Zealand for the first release
+- Country, limited to New Zealand and Australia for the first release
 - Building/company, optional
 - Street
 - Suburb
-- City/region
+- City/region or Australian state/territory
 - Four-digit postcode
 - Phone
 - Email
 
-Billing and delivery address use the same component and validation schema.
+Billing and delivery address use the same component and country-aware validation
+schema.
 “Ship to a different address” reveals a second instance without introducing a
 different layout or field model. Saved addresses can prefill either instance.
 
-Address suggestions are advisory only. Selecting a suggestion populates
-structured fields, after which the customer can edit them. The server still
-validates the submitted fields. No browser API key or provider response is
-stored in an order.
+Country selection controls validation and constrains address suggestions to the
+selected country. New Zealand requires a four-digit postcode and New Zealand
+phone normalization. Australia requires a four-digit postcode, Australian
+phone normalization and one of `NSW`, `VIC`, `QLD`, `WA`, `SA`, `TAS`, `ACT`
+or `NT`. Switching country clears or revalidates dependent suggestion, state
+and postcode values so a mixed-country address cannot be submitted.
+
+Address suggestions are advisory only. Selecting a suggestion populates the
+structured fields for its country, after which the customer can edit them. The
+server still validates the submitted fields. No browser API key or complete
+provider response is stored in an order. Manual entry remains fully functional
+for both countries when the suggestion adapter is disabled or unavailable.
 
 ## Package Registry
 
@@ -167,8 +177,8 @@ app ID and secret remain server-only environment variables.
 Rules:
 
 1. Pickup returns an explicit NZ$0 pickup option without calling a carrier.
-2. Post is selectable only after a complete address returns a positive live
-   rate.
+2. Post is selectable for New Zealand or Australia only after a complete,
+   country-valid address returns a positive live rate for that destination.
 3. Provider timeout, malformed response, unknown package, missing credentials
    or no-rate response fails closed. It never becomes free shipping or a guessed
    flat rate.
@@ -177,7 +187,8 @@ Rules:
 5. The checkout recalculates a fresh quote before order creation.
 6. Provider GST treatment is configured only after a sandbox response is
    verified. No tax assumption is inferred from a displayed provider number.
-7. Rural and residential surcharges must come from the provider response.
+7. Rural, residential, international and destination surcharges must come from
+   the provider response.
 
 Until GoSweetSpot sandbox credentials and account-side rules produce a valid
 rate, Post remains unavailable and Pickup remains usable. Test adapters are
@@ -290,7 +301,8 @@ Automated tests cover:
 - guest and signed-in checkout;
 - server repricing and client-price tamper rejection;
 - every package profile and unknown-profile failure;
-- complete/incomplete address behavior;
+- complete/incomplete New Zealand and Australian address behavior, including
+  country switching and state/postcode validation;
 - pickup, valid live/test Post quote, expiry, cart/address invalidation and
   no-rate failure;
 - urgent fee only after explicit confirmation;
@@ -300,9 +312,10 @@ Automated tests cover:
 - amount/currency mismatch rejection;
 - provider failure and retry behavior.
 
-Browser acceptance covers product → cart → address → shipping → payment method
-selection → unpaid test order at 390, 820 and 1440px. Provider sandbox payment
-completion is tested only when sandbox credentials are supplied.
+Browser acceptance covers product → cart → New Zealand or Australian address →
+shipping → payment method selection → unpaid test order at 390, 820 and
+1440px. Provider sandbox payment completion is tested only when sandbox
+credentials are supplied.
 
 ## Environment and Security
 
@@ -354,6 +367,8 @@ adapter with incomplete credentials is disabled rather than partially active.
 
 - Guest checkout and account checkout use the same authoritative server flow.
 - Signed-in users can manage addresses and view only their own orders.
+- New Zealand and Australian addresses share one layout while enforcing the
+  correct country-specific rules and suggestion boundary.
 - All order totals are reproduced from immutable server snapshots.
 - Pickup is free; Post requires a current positive provider quote.
 - A confirmed live shipping response is displayed before placing an order.
