@@ -147,6 +147,14 @@ describe("SavedAddresses", () => {
     const confirmation = screen.getByRole("group", { name: "Delete Aroha Ngata?" });
     fireEvent.click(within(confirmation).getByRole("button", { name: "Confirm delete" }));
 
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/account/addresses/${addressId}`,
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
     expect(screen.getByRole("heading", { name: "Aroha Ngata" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Deleting…" })).toBeDisabled();
     resolveDelete?.(new Response(null, { status: 204 }));

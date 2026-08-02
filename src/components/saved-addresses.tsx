@@ -152,6 +152,8 @@ export function SavedAddresses({ initialAddresses }: SavedAddressesProps) {
     try {
       const response = await fetch(`/api/account/addresses/${addressId}`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
       });
 
       if (response.status !== 204) {
