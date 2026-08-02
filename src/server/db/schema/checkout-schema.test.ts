@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { getTableName } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
@@ -25,6 +27,25 @@ function referencedTables(table: Parameters<typeof getTableConfig>[0]) {
 }
 
 describe("checkout and order schema contract", () => {
+  it("backfills completed checkout sessions before adding order guards", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0003_awesome_tattoo.sql"),
+      "utf8",
+    );
+    const backfill = migration.indexOf(
+      'UPDATE "checkout_sessions" AS "session_snapshot" SET "completed_at"',
+    );
+    const firstGuard = migration.indexOf(
+      'CREATE UNIQUE INDEX "orders_session_idempotency_unique"',
+    );
+
+    expect(backfill).toBeGreaterThan(-1);
+    expect(backfill).toBeLessThan(firstGuard);
+    expect(migration.slice(backfill, firstGuard)).toContain(
+      '"order_snapshot"."created_at"',
+    );
+  });
+
   it("stores only a unique opaque checkout token digest", () => {
     expect(columnNames(checkoutSessions)).toContain("token_digest");
     expect(columnNames(checkoutSessions)).not.toContain("token");

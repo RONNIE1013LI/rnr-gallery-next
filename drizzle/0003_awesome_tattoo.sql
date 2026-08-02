@@ -20,6 +20,10 @@ UPDATE "orders" AS "order_snapshot" SET
   "shipping_request_digest" = "quote"."request_digest"
 FROM "shipping_quotes" AS "quote"
 WHERE "order_snapshot"."shipping_quote_id" = "quote"."id";--> statement-breakpoint
+UPDATE "checkout_sessions" AS "session_snapshot" SET "completed_at" = "order_snapshot"."created_at"
+FROM "orders" AS "order_snapshot"
+WHERE "order_snapshot"."checkout_session_id" = "session_snapshot"."id"
+  AND "session_snapshot"."completed_at" IS NULL;--> statement-breakpoint
 ALTER TABLE "orders" ALTER COLUMN "shipping_service_code" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "orders" ALTER COLUMN "shipping_service_name" SET NOT NULL;--> statement-breakpoint
 CREATE UNIQUE INDEX "orders_session_idempotency_unique" ON "orders" USING btree ("checkout_session_id","idempotency_key");--> statement-breakpoint

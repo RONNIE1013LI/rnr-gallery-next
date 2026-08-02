@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { and, eq, gt, inArray, isNull } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import {
   checkoutSessions,
@@ -61,14 +61,21 @@ export function calculateOrderTotals(
 }
 
 function isOrderNumberCollision(error: unknown): boolean {
-  return Boolean(
-    error &&
-    typeof error === "object" &&
-    "code" in error &&
-    error.code === "23505" &&
-    "constraint" in error &&
-    error.constraint === "orders_order_number_unique",
-  );
+  const seen = new Set<object>();
+  let current = error;
+  while (current && typeof current === "object" && !seen.has(current)) {
+    seen.add(current);
+    if (
+      "code" in current &&
+      current.code === "23505" &&
+      "constraint" in current &&
+      current.constraint === "orders_order_number_unique"
+    ) {
+      return true;
+    }
+    current = "cause" in current ? current.cause : undefined;
+  }
+  return false;
 }
 
 export function createDrizzleOrderRepository(database: Database): OrderRepository {
@@ -139,6 +146,17 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
             return existing;
           }
 
+          const clock = await transaction.execute<{ now: Date }>(
+            sql`select clock_timestamp() as "now"`,
+          );
+          const lockedAt = new Date(clock.rows[0].now);
+          if (
+            !Number.isFinite(lockedAt.getTime()) ||
+            locked.expiresAt.getTime() <= lockedAt.getTime()
+          ) {
+            throw new AtomicOrderStateError("The checkout session expired");
+          }
+
           if (
             locked.completedAt ||
             locked.customerId !== input.expectedCustomerId ||
@@ -170,8 +188,7 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
                 const expiry = input.shipping.quote.expiresAt.getTime();
                 if (
                   !Number.isFinite(expiry) ||
-                  !Number.isFinite(input.now.getTime()) ||
-                  expiry <= input.now.getTime()
+                  expiry <= lockedAt.getTime()
                 ) {
                   throw new AtomicOrderStateError("The fresh shipping quote expired");
                 }

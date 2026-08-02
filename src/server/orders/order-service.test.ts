@@ -9,6 +9,7 @@ import {
 } from "./order-service";
 import {
   OrderNumberCollisionError,
+  UnclaimableUploadError,
   type OrderRepository,
 } from "./order-repository";
 
@@ -226,5 +227,20 @@ describe("atomic order service", () => {
       OrderNumberCollisionError,
     );
     expect(repo.createAtomicOrder).toHaveBeenCalledTimes(5);
+  });
+
+  it("maps an upload claim race to a checkout-changed response", async () => {
+    const repo = repository({
+      createAtomicOrder: vi.fn().mockRejectedValue(new UnclaimableUploadError()),
+    });
+    const service = createOrderService({
+      repository: repo,
+      shippingService: shippingService(),
+      now: () => now,
+    });
+
+    await expect(service.createOrder(sessionId, key)).rejects.toBeInstanceOf(
+      OrderStateChangedError,
+    );
   });
 });

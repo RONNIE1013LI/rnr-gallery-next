@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
@@ -18,11 +20,14 @@ import { createDrizzleCheckoutRepository } from "@/server/checkout/drizzle-check
 import {
   createDrizzleOrderRepository,
 } from "./drizzle-order-repository";
+import { createOrderService } from "./order-service";
 import {
   AtomicOrderStateError,
   OrderConflictError,
+  OrderNumberCollisionError,
   UnclaimableUploadError,
 } from "./order-repository";
+import { createShippingService } from "@/server/shipping/shipping-service";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required");
@@ -51,6 +56,19 @@ function cart(uploadReferences: string[] = []) {
       photoSubmissionMethod: uploadReferences.length ? "upload" : "later",
       designText: "Family", notes: "", neededDate: "2026-08-10",
       urgentServiceConfirmed: false, quantity: 1, uploadReferences,
+    }],
+  }, { now });
+}
+
+function bannerCart() {
+  return repriceCart({
+    version: 1,
+    items: [{
+      clientItemId: randomUUID(),
+      productKey: "roll-up-banner", sizeKey: "standard",
+      peoplePets: 0, photoSubmissionMethod: "later",
+      designText: "Celebration", notes: "", neededDate: "2026-08-10",
+      urgentServiceConfirmed: false, quantity: 1, uploadReferences: [],
     }],
   }, { now });
 }
@@ -120,6 +138,30 @@ function postInput(state: Awaited<ReturnType<typeof checkout>>) {
         rawResponseHash: "b".repeat(64),
         isTest: true,
       },
+    },
+  };
+}
+
+async function databaseNow(): Promise<Date> {
+  const result = await pool.query<{ now: Date }>("select clock_timestamp() as now");
+  return new Date(result.rows[0].now);
+}
+
+async function lockSession(sessionId: string) {
+  const client = await pool.connect();
+  await client.query("begin");
+  await client.query(
+    "select id from checkout_sessions where id = $1 for update",
+    [sessionId],
+  );
+  return {
+    async releaseAfter(milliseconds: number) {
+      try {
+        await client.query("select pg_sleep($1)", [milliseconds / 1_000]);
+        await client.query("commit");
+      } finally {
+        client.release();
+      }
     },
   };
 }
@@ -202,6 +244,17 @@ describe("Drizzle atomic order repository", () => {
       .where(eq(shippingQuotes.checkoutSessionId, state.id))).toHaveLength(0);
   });
 
+  it("creates an order from a JSON-round-tripped orientation-none banner snapshot", async () => {
+    const canonical = bannerCart();
+    const state = await checkout({ snapshot: canonical });
+
+    expect(state.cartSnapshot?.items[0]).not.toHaveProperty("orientation");
+    await expect(repository.createAtomicOrder({
+      ...pickupInput(state),
+      cart: canonical,
+    })).resolves.toMatchObject({ totalInclGstCents: 26_450 });
+  });
+
   it("snapshots a fresh Post quote and preserves the signed-in owner", async () => {
     const state = await checkout({ customerId: customerIds[0], method: "post" });
     const input = postInput(state);
@@ -225,11 +278,56 @@ describe("Drizzle atomic order repository", () => {
     const input = postInput(state);
     await expect(repository.createAtomicOrder({
       ...input,
-      now: input.shipping.quote.expiresAt,
+      shipping: {
+        ...input.shipping,
+        quote: {
+          ...input.shipping.quote,
+          expiresAt: new Date("2000-01-01T00:00:00.000Z"),
+        },
+      },
     })).rejects.toBeInstanceOf(AtomicOrderStateError);
     expect(await repository.findBySession(state.id)).toBeNull();
     expect(await database.select().from(shippingQuotes)
       .where(eq(shippingQuotes.checkoutSessionId, state.id))).toHaveLength(0);
+  });
+
+  it("rejects a checkout session that expires while waiting for its row lock", async () => {
+    const state = await checkout();
+    const beforeLock = await databaseNow();
+    const expiresAt = new Date(beforeLock.getTime() + 400);
+    await database.update(checkoutSessions).set({ expiresAt })
+      .where(eq(checkoutSessions.id, state.id));
+    const locker = await lockSession(state.id);
+    const rejection = expect(repository.createAtomicOrder({
+      ...pickupInput(state),
+      now: beforeLock,
+    })).rejects.toBeInstanceOf(AtomicOrderStateError);
+
+    await locker.releaseAfter(700);
+    await rejection;
+    expect(await repository.findBySession(state.id)).toBeNull();
+  });
+
+  it("rejects a Post quote that expires while waiting for its checkout lock", async () => {
+    const state = await checkout({ method: "post" });
+    const beforeLock = await databaseNow();
+    const input = postInput(state);
+    const locker = await lockSession(state.id);
+    const rejection = expect(repository.createAtomicOrder({
+      ...input,
+      now: beforeLock,
+      shipping: {
+        ...input.shipping,
+        quote: {
+          ...input.shipping.quote,
+          expiresAt: new Date(beforeLock.getTime() + 400),
+        },
+      },
+    })).rejects.toBeInstanceOf(AtomicOrderStateError);
+
+    await locker.releaseAfter(700);
+    await rejection;
+    expect(await repository.findBySession(state.id)).toBeNull();
   });
 
   it("rolls back order, item and address inserts when an upload cannot be claimed", async () => {
@@ -267,6 +365,59 @@ describe("Drizzle atomic order repository", () => {
         .rejects.toBeInstanceOf(AtomicOrderStateError);
       expect(await repository.findBySession(state.id)).toBeNull();
     }
+  });
+
+  it("unwraps a real PostgreSQL order-number collision and lets the service retry", async () => {
+    const duplicateNumber = `RNR-2026-DUP${suffix.replaceAll("-", "").slice(0, 7).toUpperCase()}`;
+    const first = await checkout();
+    await repository.createAtomicOrder({
+      ...pickupInput(first),
+      orderNumber: duplicateNumber,
+    });
+
+    const directCollision = await checkout();
+    await expect(repository.createAtomicOrder({
+      ...pickupInput(directCollision),
+      orderNumber: duplicateNumber,
+    })).rejects.toBeInstanceOf(OrderNumberCollisionError);
+
+    const retried = await checkout();
+    const uniqueNumber = `RNR-2026-OK${suffix.replaceAll("-", "").slice(0, 8).toUpperCase()}`;
+    const numbers = [duplicateNumber, uniqueNumber];
+    const service = createOrderService({
+      repository,
+      shippingService: createShippingService({ provider: null }),
+      now: () => now,
+      createOrderNumber: () => numbers.shift()!,
+    });
+
+    await expect(service.createOrder(retried.id, randomUUID())).resolves.toMatchObject({
+      orderNumber: uniqueNumber,
+    });
+  });
+
+  it("backfills completed_at for an order created before migration 0003", async () => {
+    const state = await checkout();
+    const order = await repository.createAtomicOrder(pickupInput(state));
+    const [persistedOrder] = await database.select({ createdAt: orders.createdAt })
+      .from(orders).where(eq(orders.id, order.id));
+    await database.update(checkoutSessions).set({ completedAt: null })
+      .where(eq(checkoutSessions.id, state.id));
+
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0003_awesome_tattoo.sql"),
+      "utf8",
+    );
+    const statement = migration
+      .split("--> statement-breakpoint")
+      .find((candidate) => candidate.includes(
+        'UPDATE "checkout_sessions" AS "session_snapshot" SET "completed_at"',
+      ));
+    expect(statement).toBeDefined();
+    await pool.query(statement!);
+
+    expect((await repository.getCheckoutState(state.id))?.completedAt)
+      .toEqual(persistedOrder.createdAt);
   });
 
   it("serializes concurrent identical and different idempotency requests", async () => {

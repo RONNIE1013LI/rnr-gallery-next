@@ -169,7 +169,7 @@ function repriceItem(
     productTitle: product.title,
     sizeKey: size.key,
     sizeLabel: size.label,
-    orientation: item.orientation,
+    ...(item.orientation ? { orientation: item.orientation } : {}),
     peoplePets: item.peoplePets,
     photoSubmissionMethod: item.photoSubmissionMethod,
     designText: item.designText,

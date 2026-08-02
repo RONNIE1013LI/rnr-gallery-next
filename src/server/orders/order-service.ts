@@ -6,6 +6,7 @@ import {
   AtomicOrderStateError,
   OrderConflictError as RepositoryOrderConflictError,
   OrderNumberCollisionError,
+  UnclaimableUploadError,
   type OrderRecord,
   type OrderRepository,
 } from "./order-repository";
@@ -142,7 +143,12 @@ export function createOrderService({
         } catch (error) {
           if (error instanceof OrderNumberCollisionError && attempt < 4) continue;
           if (error instanceof RepositoryOrderConflictError) throw new OrderConflictError();
-          if (error instanceof AtomicOrderStateError) throw new OrderStateChangedError();
+          if (
+            error instanceof AtomicOrderStateError ||
+            error instanceof UnclaimableUploadError
+          ) {
+            throw new OrderStateChangedError();
+          }
           throw error;
         }
       }

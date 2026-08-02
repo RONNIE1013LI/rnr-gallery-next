@@ -101,6 +101,22 @@ describe("authoritative checkout repricing", () => {
     expect(Object.isFrozen(result.items[0])).toBe(true);
   });
 
+  it("omits orientation from JSON snapshots when the product has no orientation", () => {
+    const result = repriceCart(
+      cart({
+        productKey: "roll-up-banner",
+        sizeKey: "standard",
+        orientation: undefined,
+        photoSubmissionMethod: "later",
+        uploadReferences: [],
+      }),
+      { now: MONDAY_IN_AUCKLAND },
+    );
+
+    expect(result.items[0]).not.toHaveProperty("orientation");
+    expect(JSON.parse(JSON.stringify(result))).toEqual(result);
+  });
+
   it.each([
     ["unknown product", { productKey: "not-a-product" }],
     ["unknown size", { sizeKey: "not-a-size" }],
