@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { getConfigurationSchema } from "@/domain/configuration/schemas";
 import { InvalidCheckoutCartError } from "./types";
 import { repriceCart } from "./reprice-cart";
 
@@ -28,6 +29,21 @@ function cart(overrides: Record<string, unknown> = {}) {
     version: 1,
     items: [item(overrides)],
   };
+}
+
+function withA4RegistryPrice(priceExGstCents: number, assertion: () => void) {
+  const schema = getConfigurationSchema("photo-print-canvas")!;
+  const size = schema.sizes.find((candidate) => candidate.key === "a4")! as {
+    priceExGstCents: number;
+  };
+  const originalPrice = size.priceExGstCents;
+
+  try {
+    size.priceExGstCents = priceExGstCents;
+    assertion();
+  } finally {
+    size.priceExGstCents = originalPrice;
+  }
 }
 
 describe("authoritative checkout repricing", () => {
@@ -121,6 +137,65 @@ describe("authoritative checkout repricing", () => {
     ).toThrow(InvalidCheckoutCartError);
   });
 
+  it.each([21, Number.MAX_SAFE_INTEGER])(
+    "rejects unsafe people or pets count %s",
+    (peoplePets) => {
+      expect(() =>
+        repriceCart(
+          cart({ productKey: "digital-oil-painting-canvas", peoplePets }),
+          { now: MONDAY_IN_AUCKLAND },
+        ),
+      ).toThrow(InvalidCheckoutCartError);
+    },
+  );
+
+  it("rejects duplicate client item IDs", () => {
+    const duplicate = item({
+      photoSubmissionMethod: "later",
+      uploadReferences: [],
+    });
+
+    expect(() =>
+      repriceCart(
+        { version: 1, items: [duplicate, duplicate] },
+        { now: MONDAY_IN_AUCKLAND },
+      ),
+    ).toThrow("Client item IDs must be unique");
+  });
+
+  it("rejects unsafe computed money from the canonical registry", () => {
+    withA4RegistryPrice(Number.MAX_SAFE_INTEGER, () => {
+      expect(() =>
+        repriceCart(cart(), { now: MONDAY_IN_AUCKLAND }),
+      ).toThrow("safe integer cents");
+    });
+  });
+
+  it("rejects a safe unit amount that overflows its quantity line", () => {
+    withA4RegistryPrice(1_700_000_000_000_000, () => {
+      expect(() =>
+        repriceCart(cart({ quantity: 5 }), { now: MONDAY_IN_AUCKLAND }),
+      ).toThrow("Line price");
+    });
+  });
+
+  it("rejects safe item lines whose cart sum overflows", () => {
+    const items = Array.from({ length: 8 }, (_, index) =>
+      item({
+        clientItemId: `00000000-0000-4000-8000-${String(index + 10).padStart(12, "0")}`,
+        photoSubmissionMethod: "later",
+        quantity: 5,
+        uploadReferences: [],
+      }),
+    );
+
+    withA4RegistryPrice(200_000_000_000_000, () => {
+      expect(() =>
+        repriceCart({ version: 1, items }, { now: MONDAY_IN_AUCKLAND }),
+      ).toThrow("Cart price");
+    });
+  });
+
   it.each([
     ["2026-08-04", 1, 8_000, 6_957, 20_075],
     ["2026-08-05", 2, 7_000, 6_087, 19_075],
@@ -199,7 +274,15 @@ describe("authoritative checkout repricing", () => {
   it("keeps the digest stable for ignored browser fields and changes it for selections", () => {
     const original = repriceCart(cart(), { now: MONDAY_IN_AUCKLAND });
     const tampered = repriceCart(
-      cart({ productTitle: "Tampered", urgentFeeInclGstCents: 999_999 }),
+      cart({
+        productTitle: "Tampered",
+        urgentFeeInclGstCents: Number.MAX_VALUE,
+        price: {
+          subtotalExGstCents: Number.MAX_VALUE,
+          gstCents: Number.MAX_VALUE,
+          totalInclGstCents: Number.MAX_VALUE,
+        },
+      }),
       { now: MONDAY_IN_AUCKLAND },
     );
     const changed = repriceCart(cart({ quantity: 2 }), {

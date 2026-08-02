@@ -14,6 +14,14 @@ import {
 
 type RepriceCartOptions = Readonly<{ now?: Date }>;
 
+function assertSafeCents(label: string, ...values: readonly number[]): void {
+  if (values.some((value) => !Number.isSafeInteger(value) || value < 0)) {
+    throw new InvalidCheckoutCartError(
+      `${label} must contain non-negative safe integer cents.`,
+    );
+  }
+}
+
 function getAucklandDate(now: Date): string {
   if (Number.isNaN(now.getTime())) {
     throw new InvalidCheckoutCartError("The order time is invalid.");
@@ -90,6 +98,19 @@ function validateUploads(
 function freezeUnitPrice(
   price: ReturnType<typeof quoteConfiguration>,
 ): ReturnType<typeof quoteConfiguration> {
+  for (const line of price.lines) {
+    assertSafeCents(`${line.label} price`, line.amountExGstCents);
+    if (line.amountInclGstCents !== undefined) {
+      assertSafeCents(`${line.label} price`, line.amountInclGstCents);
+    }
+  }
+  assertSafeCents(
+    "Unit price",
+    price.subtotalExGstCents,
+    price.gstCents,
+    price.totalInclGstCents,
+  );
+
   return Object.freeze({
     ...price,
     lines: Object.freeze(price.lines.map((line) => Object.freeze({ ...line }))),
@@ -131,6 +152,15 @@ function repriceItem(
         : 0,
     }),
   );
+  const lineSubtotalExGstCents = unitPrice.subtotalExGstCents * item.quantity;
+  const lineGstCents = unitPrice.gstCents * item.quantity;
+  const lineTotalInclGstCents = unitPrice.totalInclGstCents * item.quantity;
+  assertSafeCents(
+    "Line price",
+    lineSubtotalExGstCents,
+    lineGstCents,
+    lineTotalInclGstCents,
+  );
 
   return Object.freeze({
     clientItemId: item.clientItemId,
@@ -153,9 +183,9 @@ function repriceItem(
     quantity: item.quantity,
     uploadReferences: Object.freeze([...item.uploadReferences]),
     unitPrice,
-    lineSubtotalExGstCents: unitPrice.subtotalExGstCents * item.quantity,
-    lineGstCents: unitPrice.gstCents * item.quantity,
-    lineTotalInclGstCents: unitPrice.totalInclGstCents * item.quantity,
+    lineSubtotalExGstCents,
+    lineGstCents,
+    lineTotalInclGstCents,
   });
 }
 
@@ -174,6 +204,9 @@ export function repriceCart(
 ): RepricedCheckoutCart {
   try {
     const input = parseCheckoutCartInput(value);
+    if (new Set(input.items.map((item) => item.clientItemId)).size !== input.items.length) {
+      throw new InvalidCheckoutCartError("Client item IDs must be unique.");
+    }
     const orderDate = getAucklandDate(options.now ?? new Date());
     const items = Object.freeze(
       input.items.map((item) => repriceItem(item, orderDate)),
@@ -194,6 +227,15 @@ export function repriceCart(
         itemCount: 0,
       },
     );
+    assertSafeCents(
+      "Cart price",
+      totals.subtotalExGstCents,
+      totals.gstCents,
+      totals.totalInclGstCents,
+    );
+    if (!Number.isSafeInteger(totals.itemCount) || totals.itemCount < 1) {
+      throw new InvalidCheckoutCartError("Cart item count must be a safe integer.");
+    }
 
     return Object.freeze({
       version: 1,

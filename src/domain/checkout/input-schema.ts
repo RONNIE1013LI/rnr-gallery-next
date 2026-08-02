@@ -1,12 +1,15 @@
 import { z } from "zod";
 import type { CanonicalCheckoutCartInput } from "./types";
 
+// Conservative per-artwork boundary matching the current 20-source-photo scale.
+export const MAX_PEOPLE_PETS_PER_ITEM = 20;
+
 const checkoutItemInputSchema = z.object({
   clientItemId: z.uuid(),
   productKey: z.string().trim().min(1).max(100),
   sizeKey: z.string().trim().min(1).max(100),
   orientation: z.enum(["landscape", "portrait"]).optional(),
-  peoplePets: z.number().int().nonnegative(),
+  peoplePets: z.number().int().nonnegative().max(MAX_PEOPLE_PETS_PER_ITEM),
   photoSubmissionMethod: z.enum(["upload", "later"]),
   designText: z.string().max(5_000),
   notes: z.string().max(5_000),
