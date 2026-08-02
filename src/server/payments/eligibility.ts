@@ -6,7 +6,7 @@ import type {
   StripePaymentConfig,
   ZipPaymentConfig,
 } from "./config";
-import type { PaymentCurrency, PaymentOrder } from "./types";
+import type { PaymentCurrency, PaymentEligibilityContext } from "./types";
 
 export type PaymentIneligibilityReason =
   | "configuration"
@@ -48,12 +48,12 @@ function unavailable(reason: PaymentIneligibilityReason): PaymentEligibilityResu
   return Object.freeze({ available: false, reason });
 }
 
-function hasValidAmount(order: PaymentOrder) {
+function hasValidAmount(order: PaymentEligibilityContext) {
   return Number.isSafeInteger(order.amountCents) && order.amountCents > 0;
 }
 
 export function stripeEligibility(
-  order: PaymentOrder,
+  order: PaymentEligibilityContext,
   config: StripePaymentConfig,
 ): PaymentEligibilityResult {
   if (!hasValidAmount(order)) return unavailable("amount");
@@ -65,7 +65,7 @@ export function stripeEligibility(
 }
 
 export function afterpayEligibility(
-  order: PaymentOrder,
+  order: PaymentEligibilityContext,
   config: AfterpayPaymentConfig,
   limits: AfterpayLimits | null,
 ): PaymentEligibilityResult {
@@ -95,7 +95,7 @@ export function afterpayEligibility(
 }
 
 export function zipEligibility(
-  order: PaymentOrder,
+  order: PaymentEligibilityContext,
   config: ZipPaymentConfig,
 ): PaymentEligibilityResult {
   if (!hasValidAmount(order)) return unavailable("amount");
@@ -117,7 +117,7 @@ export function zipEligibility(
 }
 
 export function localTestEligibility(
-  order: PaymentOrder,
+  order: PaymentEligibilityContext,
   config: LocalTestPaymentConfig,
   method: PaymentMethodKey,
 ): LocalTestEligibilityResult {
@@ -161,7 +161,7 @@ export function localTestEligibility(
 }
 
 export function paymentEligibility(
-  order: PaymentOrder,
+  order: PaymentEligibilityContext,
   config: PaymentConfig,
   limits: Readonly<{ afterpay: AfterpayLimits | null }>,
 ) {

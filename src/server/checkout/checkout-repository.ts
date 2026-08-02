@@ -3,6 +3,7 @@ import type { NormalizedAddress } from "@/domain/address/types";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { DeliveryPreference } from "@/domain/configuration/types";
 import type { ProviderShippingQuote } from "@/server/shipping/types";
+import type { PaymentEligibilityContext } from "@/server/payments/types";
 
 const SESSION_LIFETIME_MS = 30 * 24 * 60 * 60 * 1_000;
 
@@ -85,6 +86,14 @@ export interface CheckoutStateRepository extends CheckoutRepository {
     requestDigest: string;
     quote: ProviderShippingQuote;
   }): Promise<ShippingQuoteRecord | null>;
+}
+
+export interface ReviewedPaymentCheckoutRepository {
+  findReviewedPaymentContext(input: {
+    sessionId: string;
+    checkoutVersion: number;
+    cartDigest: string;
+  }): Promise<PaymentEligibilityContext | null>;
 }
 
 export class UnownedUploadReferenceError extends Error {

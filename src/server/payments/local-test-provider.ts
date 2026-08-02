@@ -4,6 +4,7 @@ import { localTestEligibility } from "./eligibility";
 import type {
   CompleteProviderReturnInput,
   CreateProviderSessionInput,
+  PaymentEligibilityContext,
   PaymentOrder,
   PaymentProvider,
   ProviderAvailability,
@@ -101,7 +102,7 @@ function assertReference(
 }
 
 function availability(
-  order: PaymentOrder,
+  order: PaymentEligibilityContext,
   method: PaymentMethodKey,
 ): ProviderAvailability {
   const result = localTestEligibility(order, localTestConfig, method);
@@ -126,7 +127,7 @@ export function createLocalTestProvider(
     method,
     refundCapability: "unsupported" as const,
 
-    async availability(order: PaymentOrder) {
+    async availability(order: PaymentEligibilityContext) {
       return availability(order, method);
     },
 

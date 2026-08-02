@@ -109,6 +109,7 @@ describe("atomic order service", () => {
     const service = createOrderService({ repository: repo, shippingService: shipping });
 
     await expect(service.createOrder(sessionId, key, reviewed())).resolves.toEqual({
+      orderId: existingOrder.id,
       orderNumber: "RNR-2026-ABC12345",
       currency: "NZD",
       totalInclGstCents: 7_475,

@@ -1,11 +1,15 @@
-import { and, eq, gt, inArray, isNull, notExists, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNotNull, isNull, notExists, or, sql } from "drizzle-orm";
+import { normalizeAddress } from "@/domain/address/schema";
 import type { getDatabase } from "@/server/db/client";
 import {
   checkoutSessions,
   checkoutUploads,
   shippingQuotes,
 } from "@/server/db/schema";
-import type { CheckoutStateRepository } from "./checkout-repository";
+import type {
+  CheckoutStateRepository,
+  ReviewedPaymentCheckoutRepository,
+} from "./checkout-repository";
 
 type Database = ReturnType<typeof getDatabase>;
 
@@ -13,7 +17,7 @@ class StaleCheckoutVersionError extends Error {}
 
 export function createDrizzleCheckoutRepository(
   database: Database,
-): CheckoutStateRepository {
+): CheckoutStateRepository & ReviewedPaymentCheckoutRepository {
   return {
     async findActiveSessionByTokenDigest(tokenDigest, now) {
       const [session] = await database
@@ -120,6 +124,72 @@ export function createDrizzleCheckoutRepository(
         .where(eq(checkoutSessions.id, sessionId))
         .limit(1);
       return session ?? null;
+    },
+
+    async findReviewedPaymentContext(input) {
+      const [row] = await database
+        .select({ session: checkoutSessions, quote: shippingQuotes })
+        .from(checkoutSessions)
+        .leftJoin(
+          shippingQuotes,
+          and(
+            eq(shippingQuotes.checkoutSessionId, checkoutSessions.id),
+            eq(shippingQuotes.id, checkoutSessions.selectedShippingQuoteId),
+          ),
+        )
+        .where(and(
+          eq(checkoutSessions.id, input.sessionId),
+          eq(checkoutSessions.version, input.checkoutVersion),
+          eq(checkoutSessions.cartDigest, input.cartDigest),
+          isNull(checkoutSessions.completedAt),
+          sql`${checkoutSessions.expiresAt} > clock_timestamp()`,
+          or(
+            and(
+              eq(checkoutSessions.deliveryMethod, "pickup"),
+              isNull(checkoutSessions.selectedShippingQuoteId),
+            ),
+            and(
+              eq(checkoutSessions.deliveryMethod, "post"),
+              isNotNull(checkoutSessions.selectedShippingQuoteId),
+              eq(shippingQuotes.currency, "NZD"),
+              gt(shippingQuotes.amountInclGstCents, 0),
+              sql`${shippingQuotes.expiresAt} > clock_timestamp()`,
+            ),
+          ),
+        ))
+        .limit(1);
+      if (
+        !row?.session.cartSnapshot ||
+        row.session.cartSnapshot.cartDigest !== input.cartDigest ||
+        !row.session.billingAddress ||
+        !row.session.deliveryAddress
+      ) return null;
+
+      try {
+        const billingAddress = normalizeAddress(row.session.billingAddress);
+        const deliveryAddress = normalizeAddress(row.session.deliveryAddress);
+        const shippingCents = row.session.deliveryMethod === "post"
+          ? row.quote?.amountInclGstCents
+          : 0;
+        if (!Number.isSafeInteger(shippingCents) || Number(shippingCents) < 0) {
+          return null;
+        }
+        const amountCents = row.session.cartSnapshot.totalInclGstCents + Number(shippingCents);
+        if (!Number.isSafeInteger(amountCents) || amountCents <= 0) return null;
+        return Object.freeze({
+          amountCents,
+          currency: "NZD" as const,
+          customer: Object.freeze({
+            fullName: billingAddress.fullName,
+            email: billingAddress.email,
+            phone: billingAddress.phone,
+          }),
+          billingAddress,
+          deliveryAddress,
+        });
+      } catch {
+        return null;
+      }
     },
 
     async clearSelectedShippingQuote(sessionId, expectedVersion) {

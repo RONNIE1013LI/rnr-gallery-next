@@ -1,5 +1,10 @@
 import { z, ZodError } from "zod";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
+import { parseAuthConfig } from "@/server/auth/config";
+import type {
+  CheckoutStateRepository,
+} from "@/server/checkout/checkout-repository";
+import { createDrizzleCheckoutRepository } from "@/server/checkout/drizzle-checkout-repository";
 import {
   hashCheckoutSessionToken,
   readCheckoutSessionToken,
@@ -9,36 +14,29 @@ import {
   assertTrustedMutationRequest,
   MutationRequestError,
 } from "@/server/http/mutation-request";
-import { createDrizzleOrderRepository } from "@/server/orders/drizzle-order-repository";
-import type { OrderRepository } from "@/server/orders/order-repository";
+import { parsePaymentConfig } from "@/server/payments/config";
+import { createDrizzlePaymentRepository } from "@/server/payments/drizzle-payment-repository";
 import {
-  createOrderService,
-  OrderConflictError,
-  OrderStateChangedError,
-  type PaymentStartDTO,
-  type PaymentOrderCreationResult,
-} from "@/server/orders/order-service";
-import {
-  createShippingService,
-  selectShippingProvider,
-  ShippingUnavailableError,
-} from "@/server/shipping/shipping-service";
+  createPaymentService,
+  PaymentServiceError,
+  type PublicPaymentMethod,
+  type ReviewedPaymentAccess,
+} from "@/server/payments/payment-service";
+import { selectPaymentProviders } from "@/server/payments/provider-registry";
 
 export const runtime = "nodejs";
 const noStoreHeaders = { "Cache-Control": "no-store" };
 const inputSchema = z.object({
-  idempotencyKey: z.uuid(),
   checkoutVersion: z.number().int().positive(),
   cartDigest: z.string().regex(/^[a-f0-9]{64}$/),
-  shipping: z.object({ method: z.enum(["post", "pickup"]), serviceCode: z.string().min(1), amountExGstCents: z.number().int().nonnegative(), gstCents: z.number().int().nonnegative(), amountInclGstCents: z.number().int().nonnegative(), isTest: z.boolean() }).strict(),
 }).strict();
 
-type OrderCreator = {
-  createOrder(sessionId: string, idempotencyKey: string, reviewed: Omit<z.infer<typeof inputSchema>, "idempotencyKey">): Promise<PaymentOrderCreationResult>;
+type PaymentMethodService = {
+  availableMethods(access: ReviewedPaymentAccess): Promise<readonly PublicPaymentMethod[]>;
 };
 type Dependencies = Readonly<{
-  repository: OrderRepository;
-  orderService: OrderCreator;
+  repository: CheckoutStateRepository;
+  paymentService: PaymentMethodService;
   getOptionalSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
   trustedOrigin?: string;
   now?: () => Date;
@@ -51,12 +49,16 @@ class CheckoutAccessError extends Error {
 }
 
 function defaults(): Dependencies {
-  const repository = createDrizzleOrderRepository(getDatabase());
+  const database = getDatabase();
+  const checkoutRepository = createDrizzleCheckoutRepository(database);
+  const config = parsePaymentConfig();
   return {
-    repository,
-    orderService: createOrderService({
-      repository,
-      shippingService: createShippingService({ provider: selectShippingProvider() }),
+    repository: checkoutRepository,
+    paymentService: createPaymentService({
+      repository: createDrizzlePaymentRepository(database),
+      checkoutAuthority: checkoutRepository,
+      providers: selectPaymentProviders(config),
+      returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,
     }),
     getOptionalSession,
   };
@@ -64,15 +66,6 @@ function defaults(): Dependencies {
 
 function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: noStoreHeaders });
-}
-
-function publicOrder(order: PaymentOrderCreationResult): PaymentStartDTO {
-  return Object.freeze({
-    orderNumber: order.orderNumber,
-    currency: order.currency,
-    totalInclGstCents: order.totalInclGstCents,
-    paymentStatus: order.paymentStatus,
-  });
 }
 
 function errorResponse(error: unknown) {
@@ -90,19 +83,13 @@ function errorResponse(error: unknown) {
       },
     }, error.status);
   }
-  if (error instanceof OrderConflictError) {
-    return json({ error: { code: "ORDER_CONFLICT", message: error.message } }, 409);
+  if (error instanceof PaymentServiceError && error.code === "CHECKOUT_CHANGED") {
+    return json({ error: { code: error.code, message: error.message } }, 409);
   }
-  if (error instanceof OrderStateChangedError) {
-    return json({ error: { code: "CHECKOUT_CHANGED", message: error.message } }, 409);
-  }
-  if (error instanceof ShippingUnavailableError) {
-    return json({ error: { code: "POST_UNAVAILABLE", message: error.message } }, 503);
-  }
-  return json({ error: { code: "INTERNAL_ERROR", message: "Order could not be created" } }, 500);
+  return json({ error: { code: "INTERNAL_ERROR", message: "Payment methods could not be loaded" } }, 500);
 }
 
-export function createCheckoutOrderRoute(dependencies?: Dependencies) {
+export function createCheckoutPaymentMethodsRoute(dependencies?: Dependencies) {
   return async function POST(request: Request) {
     const deps = dependencies ?? defaults();
     try {
@@ -110,9 +97,8 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
       const input = inputSchema.parse(await request.json());
       const rawToken = readCheckoutSessionToken(request);
       if (!rawToken) throw new CheckoutAccessError(401);
-
       const authenticated = await deps.getOptionalSession(request.headers);
-      const session = await deps.repository.findSessionByTokenDigest(
+      const session = await deps.repository.findActiveSessionByTokenDigest(
         hashCheckoutSessionToken(rawToken),
         deps.now?.() ?? new Date(),
       );
@@ -120,17 +106,16 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
       if (session.customerId && session.customerId !== authenticated?.user.id) {
         throw new CheckoutAccessError(authenticated ? 403 : 401);
       }
-
-      const order = await deps.orderService.createOrder(
-        session.id,
-        input.idempotencyKey,
-        { checkoutVersion: input.checkoutVersion, cartDigest: input.cartDigest, shipping: input.shipping },
-      );
-      return json({ order: publicOrder(order) });
+      const methods = await deps.paymentService.availableMethods({
+        sessionId: session.id,
+        checkoutVersion: input.checkoutVersion,
+        cartDigest: input.cartDigest,
+      });
+      return json({ methods });
     } catch (error) {
       return errorResponse(error);
     }
   };
 }
 
-export const POST = createCheckoutOrderRoute();
+export const POST = createCheckoutPaymentMethodsRoute();

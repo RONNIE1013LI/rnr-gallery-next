@@ -227,4 +227,120 @@ describe("Drizzle checkout repository", () => {
     expect((await repository.getCheckoutState(checkout.id))?.selectedShippingQuoteId)
       .toBeNull();
   });
+
+  it("loads an exact reviewed payment context with authoritative shipping", async () => {
+    const checkout = await repository.createSession({
+      tokenDigest: `payment-context-${suffix}`,
+      customerId: null,
+      expiresAt,
+    });
+    sessionIds.push(checkout.id);
+    const cartSnapshot = repriceCart({
+      version: 1,
+      items: [{
+        clientItemId: randomUUID(),
+        productKey: "photo-print-canvas",
+        sizeKey: "a4",
+        orientation: "landscape",
+        peoplePets: 0,
+        photoSubmissionMethod: "later",
+        designText: "Family",
+        notes: "",
+        neededDate: "2026-08-10",
+        urgentServiceConfirmed: false,
+        quantity: 1,
+        uploadReferences: [],
+      }],
+    }, { now: new Date("2026-08-02T12:00:00.000Z") });
+    const address = normalizeAddress({
+      country: "NZ", fullName: "Aroha Ngata", building: "",
+      street: "12 Queen Street", suburb: "Auckland Central", region: "Auckland",
+      postcode: "1010", phone: "021 123 4567", email: "aroha@example.test",
+    });
+    const saved = await repository.saveCheckoutState(checkout.id, {
+      cartDigest: cartSnapshot.cartDigest,
+      cartSnapshot,
+      billingAddress: address,
+      deliveryAddress: address,
+      deliveryMethod: "post",
+    });
+    const quote = await repository.persistAndSelectShippingQuote({
+      sessionId: checkout.id,
+      expectedVersion: saved!.version,
+      requestDigest: "8".repeat(64),
+      quote: {
+        provider: "local-test", serviceCode: "test-post-nz", serviceName: "Test Post",
+        amountExGstCents: 2_000, gstCents: 300, amountInclGstCents: 2_300,
+        currency: "NZD", providerReference: `payment-context-${suffix}`,
+        expiresAt: new Date("2099-01-01T00:15:00.000Z"),
+        rawResponseHash: "9".repeat(64), isTest: true,
+      },
+    });
+
+    await expect(repository.findReviewedPaymentContext({
+      sessionId: checkout.id,
+      checkoutVersion: saved!.version,
+      cartDigest: cartSnapshot.cartDigest,
+    })).resolves.toEqual({
+      amountCents: cartSnapshot.totalInclGstCents + quote!.amountInclGstCents,
+      currency: "NZD",
+      customer: { fullName: address.fullName, email: address.email, phone: address.phone },
+      billingAddress: address,
+      deliveryAddress: address,
+    });
+    await expect(repository.findReviewedPaymentContext({
+      sessionId: checkout.id,
+      checkoutVersion: saved!.version + 1,
+      cartDigest: cartSnapshot.cartDigest,
+    })).resolves.toBeNull();
+    await expect(repository.findReviewedPaymentContext({
+      sessionId: checkout.id,
+      checkoutVersion: saved!.version,
+      cartDigest: "0".repeat(64),
+    })).resolves.toBeNull();
+    await database.update(shippingQuotes)
+      .set({ expiresAt: new Date("2000-01-01T00:00:00.000Z") })
+      .where(eq(shippingQuotes.id, quote!.id));
+    await expect(repository.findReviewedPaymentContext({
+      sessionId: checkout.id,
+      checkoutVersion: saved!.version,
+      cartDigest: cartSnapshot.cartDigest,
+    })).resolves.toBeNull();
+  });
+
+  it("uses zero shipping only for a reviewed Pickup checkout", async () => {
+    const checkout = await repository.createSession({
+      tokenDigest: `pickup-payment-context-${suffix}`,
+      customerId: null,
+      expiresAt,
+    });
+    sessionIds.push(checkout.id);
+    const cartSnapshot = repriceCart({
+      version: 1,
+      items: [{
+        clientItemId: randomUUID(), productKey: "photo-print-canvas", sizeKey: "a4",
+        orientation: "landscape", peoplePets: 0, photoSubmissionMethod: "later",
+        designText: "Family", notes: "", neededDate: "2026-08-10",
+        urgentServiceConfirmed: false, quantity: 1, uploadReferences: [],
+      }],
+    }, { now: new Date("2026-08-02T12:00:00.000Z") });
+    const address = normalizeAddress({
+      country: "NZ", fullName: "Aroha Ngata", building: "",
+      street: "12 Queen Street", suburb: "Auckland Central", region: "Auckland",
+      postcode: "1010", phone: "021 123 4567", email: "aroha@example.test",
+    });
+    const saved = await repository.saveCheckoutState(checkout.id, {
+      cartDigest: cartSnapshot.cartDigest, cartSnapshot,
+      billingAddress: address, deliveryAddress: address, deliveryMethod: "pickup",
+    });
+
+    await expect(repository.findReviewedPaymentContext({
+      sessionId: checkout.id,
+      checkoutVersion: saved!.version,
+      cartDigest: cartSnapshot.cartDigest,
+    })).resolves.toMatchObject({
+      amountCents: cartSnapshot.totalInclGstCents,
+      currency: "NZD",
+    });
+  });
 });

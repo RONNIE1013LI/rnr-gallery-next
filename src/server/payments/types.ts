@@ -7,9 +7,7 @@ import type {
 
 export type PaymentCurrency = "NZD" | "AUD" | "USD" | "CAD";
 
-export type PaymentOrder = Readonly<{
-  id: string;
-  orderNumber: string;
+export type PaymentEligibilityContext = Readonly<{
   amountCents: number;
   currency: PaymentCurrency;
   customer: Readonly<{
@@ -19,6 +17,11 @@ export type PaymentOrder = Readonly<{
   }>;
   billingAddress: NormalizedAddress;
   deliveryAddress: NormalizedAddress;
+}>;
+
+export type PaymentOrder = PaymentEligibilityContext & Readonly<{
+  id: string;
+  orderNumber: string;
 }>;
 
 export type ProviderAvailability =
@@ -104,7 +107,7 @@ export interface PaymentProvider {
   readonly key: PaymentProviderKey;
   readonly method: PaymentMethodKey;
   readonly refundCapability: "unsupported" | "full" | "partial";
-  availability(order: PaymentOrder): Promise<ProviderAvailability>;
+  availability(context: PaymentEligibilityContext): Promise<ProviderAvailability>;
   createOrReuse(input: CreateProviderSessionInput): Promise<ProviderSession>;
   completeReturn(
     input: CompleteProviderReturnInput,

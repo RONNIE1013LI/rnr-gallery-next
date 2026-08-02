@@ -45,11 +45,15 @@ describe("POST /api/checkout/order", () => {
   it("uses the original completed session and returns only the payment-start DTO", async () => {
     const repo = repository();
     const service = { createOrder: vi.fn().mockResolvedValue({
+      orderId: "40000000-0000-4000-8000-000000000001",
       orderNumber: "RNR-2026-ABC12345",
       currency: "NZD",
       totalInclGstCents: 9_775,
       paymentStatus: "awaiting_payment",
       internalId: "must-not-leak",
+      providerReference: "must-not-leak",
+      attemptId: "must-not-leak",
+      secret: "must-not-leak",
       customerEmail: "must-not-leak@example.test",
     }) };
     const handler = createCheckoutOrderRoute({
@@ -104,6 +108,7 @@ describe("POST /api/checkout/order", () => {
 
   it("allows the signed-in owner but never accepts browser authority fields", async () => {
     const service = { createOrder: vi.fn().mockResolvedValue({
+      orderId: "40000000-0000-4000-8000-000000000001",
       orderNumber: "RNR-2026-ABC12345", currency: "NZD",
       totalInclGstCents: 7_475, paymentStatus: "awaiting_payment",
     }) };

@@ -19,6 +19,9 @@ export type PaymentStartDTO = Readonly<{
   totalInclGstCents: number;
   paymentStatus: OrderRecord["paymentStatus"];
 }>;
+export type PaymentOrderCreationResult = PaymentStartDTO & Readonly<{
+  orderId: string;
+}>;
 export type ReviewedOrderExpectation = Readonly<{
   checkoutVersion: number;
   cartDigest: string;
@@ -47,8 +50,9 @@ export function createOrderNumber(now = new Date()): string {
   return `RNR-${year}-${randomBytes(5).toString("hex").toUpperCase()}`;
 }
 
-function toPaymentStartDTO(order: OrderRecord): PaymentStartDTO {
+function toPaymentStartDTO(order: OrderRecord): PaymentOrderCreationResult {
   return Object.freeze({
+    orderId: order.id,
     orderNumber: order.orderNumber,
     currency: order.currency,
     totalInclGstCents: order.totalInclGstCents,
@@ -100,7 +104,7 @@ export function createOrderService({
   createOrderNumber?: () => string;
 }) {
   return {
-    async createOrder(sessionId: string, idempotencyKey: string, reviewed: ReviewedOrderExpectation): Promise<PaymentStartDTO> {
+    async createOrder(sessionId: string, idempotencyKey: string, reviewed: ReviewedOrderExpectation): Promise<PaymentOrderCreationResult> {
       const existing = await repository.findBySession(sessionId);
       if (existing) {
         if (existing.idempotencyKey !== idempotencyKey) throw new OrderConflictError();
