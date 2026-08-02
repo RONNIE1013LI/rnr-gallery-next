@@ -23,7 +23,6 @@ const order: PaymentOrder = {
   orderNumber: "RNR-1001",
   amountCents: 12_075,
   currency: "NZD",
-  country: "NZ",
   customer: {
     fullName: address.fullName,
     email: address.email,

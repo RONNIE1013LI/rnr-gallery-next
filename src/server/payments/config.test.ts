@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 import { parsePaymentConfig } from "./config";
 
+const completeProviderEnvironment = {
+  STRIPE_SECRET_KEY: "stripe-secret",
+  NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_public",
+  STRIPE_WEBHOOK_SECRET: "whsec_test",
+  AFTERPAY_MERCHANT_ID: "afterpay-merchant",
+  AFTERPAY_SECRET_KEY: "afterpay-secret",
+  AFTERPAY_ENVIRONMENT: "sandbox",
+  AFTERPAY_MERCHANT_COUNTRY: "NZ",
+  ZIP_API_KEY: "zip-secret",
+  ZIP_ENVIRONMENT: "sandbox",
+  ZIP_MERCHANT_COUNTRY: "AU",
+  ZIP_ALLOWED_CURRENCIES: "AUD,NZD",
+} as const;
+
 describe("parsePaymentConfig", () => {
   it("disables every provider when configuration is empty", () => {
     expect(parsePaymentConfig({})).toMatchObject({
@@ -34,16 +48,7 @@ describe("parsePaymentConfig", () => {
   it("enables complete, valid provider groups", () => {
     const config = parsePaymentConfig({
       NODE_ENV: "development",
-      STRIPE_SECRET_KEY: "stripe-secret",
-      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_public",
-      STRIPE_WEBHOOK_SECRET: "whsec_test",
-      AFTERPAY_MERCHANT_ID: "afterpay-merchant",
-      AFTERPAY_SECRET_KEY: "afterpay-secret",
-      AFTERPAY_ENVIRONMENT: "sandbox",
-      AFTERPAY_MERCHANT_COUNTRY: "NZ",
-      ZIP_API_KEY: "zip-secret",
-      ZIP_ENVIRONMENT: "sandbox",
-      ZIP_MERCHANT_COUNTRY: "AU",
+      ...completeProviderEnvironment,
       ZIP_ALLOWED_CURRENCIES: " AUD, NZD, AUD ",
       PAYMENT_RETURN_BASE_URL: "https://shop.example.test/payments",
       PAYMENT_RECONCILIATION_SECRET: "reconciliation-secret",
@@ -72,6 +77,58 @@ describe("parsePaymentConfig", () => {
       reconciliationSecret: "reconciliation-secret",
     });
   });
+
+  it.each([
+    ["missing", undefined],
+    ["invalid", "not-an-absolute-url"],
+    ["remote HTTP", "http://shop.example.test/payments"],
+  ])("disables real providers for a %s non-production return URL", (_, returnUrl) => {
+    const config = parsePaymentConfig({
+      NODE_ENV: "development",
+      ...completeProviderEnvironment,
+      PAYMENT_RETURN_BASE_URL: returnUrl,
+      ENABLE_LOCAL_TEST_PAYMENTS: "true",
+    });
+
+    expect(config).toMatchObject({
+      stripe: { enabled: false },
+      afterpay: { enabled: false },
+      zip: { enabled: false },
+      localTest: { enabled: true, isTest: true },
+      operations: { returnBaseUrl: null },
+    });
+  });
+
+  it("disables real providers for an HTTP return URL in production", () => {
+    const config = parsePaymentConfig({
+      NODE_ENV: "production",
+      ...completeProviderEnvironment,
+      PAYMENT_RETURN_BASE_URL: "http://localhost:3000/payments",
+    });
+
+    expect(config).toMatchObject({
+      stripe: { enabled: false },
+      afterpay: { enabled: false },
+      zip: { enabled: false },
+      operations: { returnBaseUrl: null },
+    });
+  });
+
+  it.each(["localhost", "127.0.0.1", "[::1]"])(
+    "allows an HTTP return URL on %s outside production",
+    (hostname) => {
+      const config = parsePaymentConfig({
+        NODE_ENV: "development",
+        ...completeProviderEnvironment,
+        PAYMENT_RETURN_BASE_URL: `http://${hostname}:3000/payments`,
+      });
+
+      expect(config.stripe.enabled).toBe(true);
+      expect(config.afterpay.enabled).toBe(true);
+      expect(config.zip.enabled).toBe(true);
+      expect(config.operations.returnBaseUrl).toContain(hostname);
+    },
+  );
 
   it.each([
     [{ AFTERPAY_ENVIRONMENT: "invalid" }, "afterpay"],

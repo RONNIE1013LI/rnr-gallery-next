@@ -12,7 +12,6 @@ export type PaymentOrder = Readonly<{
   orderNumber: string;
   amountCents: number;
   currency: PaymentCurrency;
-  country: "NZ" | "AU";
   customer: Readonly<{
     fullName: string;
     email: string;

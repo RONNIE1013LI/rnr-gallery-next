@@ -53,6 +53,7 @@ export type PaymentConfig = Readonly<{
 const PAYMENT_CURRENCIES = ["NZD", "AUD", "USD", "CAD"] as const;
 const PAYMENT_CURRENCY_SET = new Set<string>(PAYMENT_CURRENCIES);
 const PROVIDER_ENVIRONMENTS = new Set<string>(["sandbox", "production"]);
+const LOCAL_HTTP_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const AFTERPAY_CURRENCY_BY_COUNTRY = {
   NZ: "NZD",
   AU: "AUD",
@@ -66,7 +67,7 @@ function disabled(): DisabledPaymentConfig {
   return Object.freeze({ enabled: false });
 }
 
-function parseReturnBaseUrl(rawValue: string | null) {
+function parseReturnBaseUrl(rawValue: string | null, nodeEnvironment: string | undefined) {
   if (!rawValue) return null;
 
   try {
@@ -77,6 +78,12 @@ function parseReturnBaseUrl(rawValue: string | null) {
       url.password ||
       url.search ||
       url.hash
+    ) {
+      return null;
+    }
+    if (
+      url.protocol === "http:" &&
+      (nodeEnvironment === "production" || !LOCAL_HTTP_HOSTS.has(url.hostname))
     ) {
       return null;
     }
@@ -172,20 +179,26 @@ function parseZipConfig(env: PaymentEnvironment): ZipPaymentConfig {
 export function parsePaymentConfig(
   env: PaymentEnvironment = process.env,
 ): PaymentConfig {
+  const returnBaseUrl = parseReturnBaseUrl(
+    value(env, "PAYMENT_RETURN_BASE_URL"),
+    env.NODE_ENV,
+  );
   const localTestEnabled = value(env, "ENABLE_LOCAL_TEST_PAYMENTS") === "true";
   if (localTestEnabled && env.NODE_ENV === "production") {
     throw new Error("Local test payments cannot run in production");
   }
 
+  const realProviderEnvironment = returnBaseUrl ? env : {};
+
   return Object.freeze({
-    stripe: parseStripeConfig(env),
-    afterpay: parseAfterpayConfig(env),
-    zip: parseZipConfig(env),
+    stripe: parseStripeConfig(realProviderEnvironment),
+    afterpay: parseAfterpayConfig(realProviderEnvironment),
+    zip: parseZipConfig(realProviderEnvironment),
     localTest: localTestEnabled
       ? Object.freeze({ enabled: true, isTest: true })
       : disabled(),
     operations: Object.freeze({
-      returnBaseUrl: parseReturnBaseUrl(value(env, "PAYMENT_RETURN_BASE_URL")),
+      returnBaseUrl,
       reconciliationSecret: value(env, "PAYMENT_RECONCILIATION_SECRET"),
     }),
   });

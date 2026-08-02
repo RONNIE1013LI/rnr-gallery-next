@@ -17,11 +17,12 @@ import type {
 } from "./config";
 
 function orderFor(
-  country: "NZ" | "AU",
+  billingCountry: "NZ" | "AU",
   currency: PaymentOrder["currency"],
   amountCents = 12_075,
+  deliveryCountry = billingCountry,
 ): PaymentOrder {
-  const address: NormalizedAddress = {
+  const addressFor = (country: "NZ" | "AU"): NormalizedAddress => ({
     country,
     fullName: "Test Customer",
     building: "",
@@ -31,21 +32,22 @@ function orderFor(
     postcode: country === "NZ" ? "1010" : "2000",
     phone: country === "NZ" ? "+64210000000" : "+61400000000",
     email: "customer@example.test",
-  };
+  });
+  const billingAddress = addressFor(billingCountry);
+  const deliveryAddress = addressFor(deliveryCountry);
 
   return {
     id: "order-id",
     orderNumber: "RNR-1001",
     amountCents,
     currency,
-    country,
     customer: {
-      fullName: address.fullName,
-      email: address.email,
-      phone: address.phone,
+      fullName: billingAddress.fullName,
+      email: billingAddress.email,
+      phone: billingAddress.phone,
     },
-    billingAddress: address,
-    deliveryAddress: address,
+    billingAddress,
+    deliveryAddress,
   };
 }
 
@@ -130,7 +132,9 @@ describe("Afterpay eligibility", () => {
 
   it.each([
     { ...limits, minimumAmountCents: Number.NaN },
+    { ...limits, minimumAmountCents: Number.POSITIVE_INFINITY },
     { ...limits, minimumAmountCents: -1 },
+    { ...limits, maximumAmountCents: Number.MAX_SAFE_INTEGER + 1 },
     { ...limits, minimumAmountCents: 500, maximumAmountCents: 499 },
   ])("fails closed for malformed fetched limits", (malformedLimits) => {
     expect(
@@ -171,6 +175,31 @@ describe("Zip eligibility", () => {
       }),
     ).toEqual({ available: false, reason: "currency" });
   });
+
+  it("requires both billing and delivery addresses to be Australian", () => {
+    const splitAddressOrder = orderFor("NZ", "NZD", 12_075, "AU");
+    const limits = {
+      currency: "NZD" as const,
+      minimumAmountCents: 100,
+      maximumAmountCents: 200_000,
+    };
+
+    expect(afterpayEligibility(splitAddressOrder, afterpayConfig, limits)).toEqual({
+      available: true,
+    });
+    expect(zipEligibility(splitAddressOrder, zipConfig)).toEqual({
+      available: false,
+      reason: "country",
+    });
+    expect(
+      localTestEligibility(splitAddressOrder, localTestConfig, "afterpay"),
+    ).toEqual({ available: true, isTest: true });
+    expect(localTestEligibility(splitAddressOrder, localTestConfig, "zip")).toEqual({
+      available: false,
+      reason: "country",
+      isTest: true,
+    });
+  });
 });
 
 describe("local test eligibility", () => {
@@ -193,6 +222,46 @@ describe("local test eligibility", () => {
 });
 
 describe("paymentEligibility", () => {
+  it.each([0, -1, Number.NaN, Number.POSITIVE_INFINITY, Number.MAX_SAFE_INTEGER + 1])(
+    "rejects unsafe order amount %s before every payment method",
+    (amountCents) => {
+      const order = orderFor("NZ", "NZD", amountCents);
+      const limits = {
+        currency: "NZD" as const,
+        minimumAmountCents: 100,
+        maximumAmountCents: 200_000,
+      };
+
+      expect(stripeEligibility(order, stripeConfig)).toEqual({
+        available: false,
+        reason: "amount",
+      });
+      expect(afterpayEligibility(order, afterpayConfig, limits)).toEqual({
+        available: false,
+        reason: "amount",
+      });
+      expect(zipEligibility(order, zipConfig)).toEqual({
+        available: false,
+        reason: "amount",
+      });
+      expect(localTestEligibility(order, localTestConfig, "card")).toEqual({
+        available: false,
+        reason: "amount",
+        isTest: true,
+      });
+      expect(localTestEligibility(order, localTestConfig, "afterpay")).toEqual({
+        available: false,
+        reason: "amount",
+        isTest: true,
+      });
+      expect(localTestEligibility(order, localTestConfig, "zip")).toEqual({
+        available: false,
+        reason: "amount",
+        isTest: true,
+      });
+    },
+  );
+
   it("returns provider decisions without invoking any provider", () => {
     const config: PaymentConfig = {
       stripe: stripeConfig,
@@ -205,9 +274,9 @@ describe("paymentEligibility", () => {
     expect(
       paymentEligibility(orderFor("AU", "NZD"), config, { afterpay: null }),
     ).toMatchObject({
-      stripe: { available: true },
-      afterpay: { available: false, reason: "country" },
-      zip: { available: false, reason: "currency" },
+      stripe: { available: false, reason: "configuration" },
+      afterpay: { available: false, reason: "configuration" },
+      zip: { available: false, reason: "configuration" },
       localTest: {
         card: { available: true, isTest: true },
         afterpay: { available: false, reason: "currency", isTest: true },

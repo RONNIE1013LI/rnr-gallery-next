@@ -48,10 +48,15 @@ function unavailable(reason: PaymentIneligibilityReason): PaymentEligibilityResu
   return Object.freeze({ available: false, reason });
 }
 
+function hasValidAmount(order: PaymentOrder) {
+  return Number.isSafeInteger(order.amountCents) && order.amountCents > 0;
+}
+
 export function stripeEligibility(
   order: PaymentOrder,
   config: StripePaymentConfig,
 ): PaymentEligibilityResult {
+  if (!hasValidAmount(order)) return unavailable("amount");
   if (!config.enabled) return unavailable("configuration");
   if (!config.supportedCurrencies.includes(order.currency)) {
     return unavailable("currency");
@@ -64,14 +69,17 @@ export function afterpayEligibility(
   config: AfterpayPaymentConfig,
   limits: AfterpayLimits | null,
 ): PaymentEligibilityResult {
+  if (!hasValidAmount(order)) return unavailable("amount");
   if (!config.enabled) return unavailable("configuration");
-  if (order.country !== config.merchantCountry) return unavailable("country");
+  if (order.billingAddress.country !== config.merchantCountry) {
+    return unavailable("country");
+  }
   if (order.currency !== config.currency) return unavailable("currency");
   if (!limits) return unavailable("limits");
   if (limits.currency !== order.currency) return unavailable("currency");
   if (
-    !Number.isInteger(limits.minimumAmountCents) ||
-    !Number.isInteger(limits.maximumAmountCents) ||
+    !Number.isSafeInteger(limits.minimumAmountCents) ||
+    !Number.isSafeInteger(limits.maximumAmountCents) ||
     limits.minimumAmountCents < 0 ||
     limits.maximumAmountCents < limits.minimumAmountCents
   ) {
@@ -90,8 +98,13 @@ export function zipEligibility(
   order: PaymentOrder,
   config: ZipPaymentConfig,
 ): PaymentEligibilityResult {
+  if (!hasValidAmount(order)) return unavailable("amount");
   if (!config.enabled) return unavailable("configuration");
-  if (order.country !== "AU" || config.merchantCountry !== "AU") {
+  if (
+    order.billingAddress.country !== "AU" ||
+    order.deliveryAddress.country !== "AU" ||
+    config.merchantCountry !== "AU"
+  ) {
     return unavailable("country");
   }
   if (
@@ -108,6 +121,13 @@ export function localTestEligibility(
   config: LocalTestPaymentConfig,
   method: PaymentMethodKey,
 ): LocalTestEligibilityResult {
+  if (!hasValidAmount(order)) {
+    return Object.freeze({
+      available: false,
+      reason: "amount",
+      isTest: true,
+    });
+  }
   if (!config.enabled) {
     return Object.freeze({
       available: false,
@@ -123,10 +143,13 @@ export function localTestEligibility(
       : unavailable("currency");
   } else if (method === "afterpay") {
     result =
-      order.currency === COUNTRY_CURRENCY[order.country]
+      order.currency === COUNTRY_CURRENCY[order.billingAddress.country]
         ? available
         : unavailable("currency");
-  } else if (order.country !== "AU") {
+  } else if (
+    order.billingAddress.country !== "AU" ||
+    order.deliveryAddress.country !== "AU"
+  ) {
     result = unavailable("country");
   } else {
     result = ZIP_CHARGE_CURRENCIES.has(order.currency)
@@ -142,10 +165,20 @@ export function paymentEligibility(
   config: PaymentConfig,
   limits: Readonly<{ afterpay: AfterpayLimits | null }>,
 ) {
+  const realPaymentsEnabled = config.operations.returnBaseUrl !== null;
+  const disabledConfig = Object.freeze({ enabled: false } as const);
+
   return Object.freeze({
-    stripe: stripeEligibility(order, config.stripe),
-    afterpay: afterpayEligibility(order, config.afterpay, limits.afterpay),
-    zip: zipEligibility(order, config.zip),
+    stripe: stripeEligibility(
+      order,
+      realPaymentsEnabled ? config.stripe : disabledConfig,
+    ),
+    afterpay: afterpayEligibility(
+      order,
+      realPaymentsEnabled ? config.afterpay : disabledConfig,
+      limits.afterpay,
+    ),
+    zip: zipEligibility(order, realPaymentsEnabled ? config.zip : disabledConfig),
     localTest: Object.freeze({
       card: localTestEligibility(order, config.localTest, "card"),
       afterpay: localTestEligibility(order, config.localTest, "afterpay"),
