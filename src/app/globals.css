@@ -66,10 +66,12 @@ textarea {
   padding: 0.75rem 1rem;
   color: var(--paper);
   background: var(--ink);
+  opacity: 0;
   transform: translateY(-180%);
 }
 
 .skip-link:focus {
+  opacity: 1;
   transform: translateY(0);
 }
 
