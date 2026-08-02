@@ -1,18 +1,17 @@
 import type { Metadata } from "next";
-import Link from "next/link";
+import { CartView } from "@/components/cart-view";
 import styles from "@/components/storefront.module.css";
 
 export const metadata: Metadata = { title: "Cart" };
 
 export default function CartPage() {
   return (
-    <main id="main-content" className={styles.legalPage}>
-      <article>
+    <main id="main-content" className={styles.cartPage}>
+      <header className={styles.cartHeader}>
         <p className={styles.eyebrow}>Your order</p>
-        <h1>Your cart is empty.</h1>
-        <p>Choose a custom product to begin creating your artwork.</p>
-        <p><Link className={styles.primaryButton} href="/shop">Explore products</Link></p>
-      </article>
+        <h1>Cart</h1>
+      </header>
+      <CartView />
     </main>
   );
 }
