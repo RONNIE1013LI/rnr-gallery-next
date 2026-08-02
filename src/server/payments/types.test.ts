@@ -64,7 +64,7 @@ describe("PaymentProvider contract", () => {
         return verifiedResult;
       },
       async retrieve() {
-        return verifiedResult;
+        return { kind: "verified", result: verifiedResult };
       },
       async retryCompletion(input) {
         expect(input.source).toBe("reconciliation");
@@ -75,6 +75,10 @@ describe("PaymentProvider contract", () => {
 
     expect(await provider.availability(order)).toEqual({ available: true });
     expect(provider.refundCapability).toBe("unsupported");
+    await expect(provider.retrieve({
+      order,
+      providerReference: verifiedResult.providerReference,
+    })).resolves.toEqual({ kind: "verified", result: verifiedResult });
     await expect(
       provider.retryCompletion?.({
         order,

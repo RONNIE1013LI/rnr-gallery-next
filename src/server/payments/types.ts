@@ -106,6 +106,11 @@ export type VerifiedPaymentResult = Readonly<{
   sanitizedFailureCode?: string;
 }>;
 
+export type ProviderRetrievalAuthority =
+  | Readonly<{ kind: "verified"; result: VerifiedPaymentResult }>
+  | Readonly<{ kind: "authoritative_not_found" }>
+  | Readonly<{ kind: "authoritative_not_received" }>;
+
 export type VerifiedProviderEvent = Readonly<{
   provider: PaymentProviderKey;
   providerEventId: string;
@@ -123,7 +128,7 @@ export interface PaymentProvider {
   ): Promise<VerifiedPaymentResult>;
   retrieve(
     input: RetrieveProviderPaymentInput,
-  ): Promise<VerifiedPaymentResult>;
+  ): Promise<ProviderRetrievalAuthority>;
   /** Server-side recovery only, after authoritative retrieval proves incomplete. */
   retryCompletion?(
     input: RetryProviderCompletionInput,

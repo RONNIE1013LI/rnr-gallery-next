@@ -103,7 +103,9 @@ function repository(overrides: Partial<PaymentRepository> = {}): PaymentReposito
     consumeReturnState: vi.fn(),
     applyVerifiedWebhookEventAtomically: vi.fn(),
     applyVerifiedResult: vi.fn(),
-    listReconciliationCandidates: vi.fn(),
+    claimReconciliationCandidates: vi.fn().mockResolvedValue([]),
+    applyReconciliationResult: vi.fn(),
+    recordReconciliationOutcome: vi.fn(),
     ...overrides,
   };
 }
@@ -1115,5 +1117,328 @@ describe("payment service", () => {
     ));
     expect(afterpay.completeReturn).not.toHaveBeenCalled();
     expect(repo.applyVerifiedResult).not.toHaveBeenCalled();
+  });
+
+  it("reconciles a verified paid payment without retrying completion", async () => {
+    const providerReference = "afterpay-reconcile-paid";
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt,
+      provider: "afterpay",
+      method: "afterpay",
+      providerReference,
+      status: "processing",
+    };
+    const candidate = {
+      claimId: "40000000-0000-4000-8000-000000000001",
+      attempt: boundAttempt,
+      order: { ...order, paymentStatus: "processing" as const },
+    };
+    const result: VerifiedPaymentResult = {
+      providerReference,
+      providerStatus: "CAPTURED",
+      amountCents: order.amountCents,
+      currency: order.currency,
+      orderNumber: order.orderNumber,
+      status: "paid",
+    };
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"),
+      key: "afterpay",
+      method: "afterpay",
+      retrieve: vi.fn().mockResolvedValue({ kind: "verified", result }),
+      retryCompletion: vi.fn(),
+    };
+    const applyReconciliationResult = vi.fn().mockResolvedValue({
+      attempt: { ...boundAttempt, status: "paid" },
+      order: { ...order, paymentStatus: "paid" },
+    });
+    const repo = repository({
+      claimReconciliationCandidates: vi.fn()
+        .mockResolvedValueOnce([candidate])
+        .mockResolvedValue([]),
+      applyReconciliationResult,
+    });
+
+    await expect(service({
+      repository: repo,
+      providers: [{ method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay }],
+    }).reconcilePendingPayments()).resolves.toEqual({
+      processed: 1,
+      applied: 1,
+      retried: 0,
+      pending: 0,
+      failed: 0,
+    });
+    expect(repo.claimReconciliationCandidates).toHaveBeenNthCalledWith(1, 1);
+    expect(repo.claimReconciliationCandidates).toHaveBeenNthCalledWith(2, 1);
+    expect(afterpay.retrieve).toHaveBeenCalledWith({ order: candidate.order, providerReference });
+    expect(afterpay.retryCompletion).not.toHaveBeenCalled();
+    expect(applyReconciliationResult).toHaveBeenCalledWith({
+      attemptId: boundAttempt.id,
+      claimId: candidate.claimId,
+      result,
+    });
+  });
+
+  it("retries only authoritative absence with the persisted key and creation time", async () => {
+    const providerReference = "afterpay-reconcile-absent";
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt,
+      provider: "afterpay",
+      method: "afterpay",
+      providerReference,
+      status: "processing",
+    };
+    const candidate = {
+      claimId: "40000000-0000-4000-8000-000000000002",
+      attempt: boundAttempt,
+      order: { ...order, paymentStatus: "processing" as const },
+    };
+    const retriedResult: VerifiedPaymentResult = {
+      providerReference,
+      providerStatus: "CAPTURED",
+      amountCents: order.amountCents,
+      currency: order.currency,
+      orderNumber: order.orderNumber,
+      status: "paid",
+    };
+    const retryCompletion = vi.fn().mockResolvedValue(retriedResult);
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"), key: "afterpay", method: "afterpay",
+      retrieve: vi.fn().mockResolvedValue({ kind: "authoritative_not_found" }),
+      retryCompletion,
+    };
+    const applyReconciliationResult = vi.fn().mockResolvedValue({
+      attempt: { ...boundAttempt, status: "paid" },
+      order: { ...order, paymentStatus: "paid" },
+    });
+    const repo = repository({
+      claimReconciliationCandidates: vi.fn()
+        .mockResolvedValueOnce([candidate])
+        .mockResolvedValue([]),
+      applyReconciliationResult,
+    });
+
+    await expect(service({
+      repository: repo,
+      providers: [{ method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay }],
+    }).reconcilePendingPayments()).resolves.toMatchObject({ applied: 1, retried: 1, failed: 0 });
+    expect(retryCompletion).toHaveBeenCalledWith({
+      order: candidate.order,
+      providerReference,
+      idempotencyKey: boundAttempt.idempotencyKey,
+      attemptCreatedAt: boundAttempt.createdAt,
+      source: "reconciliation",
+    });
+    expect(applyReconciliationResult).toHaveBeenCalledWith({
+      attemptId: boundAttempt.id,
+      claimId: candidate.claimId,
+      result: retriedResult,
+    });
+  });
+
+  it("keeps retrieval timeouts processing and never retries completion", async () => {
+    const providerReference = "afterpay-reconcile-timeout";
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt, provider: "afterpay", method: "afterpay", providerReference,
+      status: "processing",
+    };
+    const candidate = {
+      claimId: "40000000-0000-4000-8000-000000000003",
+      attempt: boundAttempt,
+      order: { ...order, paymentStatus: "processing" as const },
+    };
+    const retryCompletion = vi.fn();
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"), key: "afterpay", method: "afterpay",
+      retrieve: vi.fn().mockRejectedValue(new PaymentProviderRequestError("redacted")),
+      retryCompletion,
+    };
+    const recordReconciliationOutcome = vi.fn().mockResolvedValue(undefined);
+    const repo = repository({
+      claimReconciliationCandidates: vi.fn()
+        .mockResolvedValueOnce([candidate])
+        .mockResolvedValue([]),
+      recordReconciliationOutcome,
+    });
+
+    await expect(service({
+      repository: repo,
+      providers: [{ method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay }],
+    }).reconcilePendingPayments()).resolves.toEqual({
+      processed: 1, applied: 0, retried: 0, pending: 1, failed: 0,
+    });
+    expect(retryCompletion).not.toHaveBeenCalled();
+    expect(recordReconciliationOutcome).toHaveBeenCalledWith({
+      attemptId: boundAttempt.id,
+      claimId: candidate.claimId,
+      code: "reconciliation_retrieval_unavailable",
+    });
+  });
+
+  it("fails closed when a retry result mismatches the immutable order", async () => {
+    const providerReference = "afterpay-reconcile-mismatch";
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt, provider: "afterpay", method: "afterpay", providerReference,
+      status: "processing",
+    };
+    const candidate = {
+      claimId: "40000000-0000-4000-8000-000000000004",
+      attempt: boundAttempt,
+      order: { ...order, paymentStatus: "processing" as const },
+    };
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"), key: "afterpay", method: "afterpay",
+      retrieve: vi.fn().mockResolvedValue({ kind: "authoritative_not_found" }),
+      retryCompletion: vi.fn().mockResolvedValue({
+        providerReference,
+        providerStatus: "CAPTURED",
+        amountCents: order.amountCents + 1,
+        currency: order.currency,
+        orderNumber: order.orderNumber,
+        status: "paid",
+      }),
+    };
+    const recordReconciliationOutcome = vi.fn().mockResolvedValue(undefined);
+    const repo = repository({
+      claimReconciliationCandidates: vi.fn()
+        .mockResolvedValueOnce([candidate])
+        .mockResolvedValue([]),
+      recordReconciliationOutcome,
+    });
+
+    await expect(service({
+      repository: repo,
+      providers: [{ method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay }],
+    }).reconcilePendingPayments()).resolves.toEqual({
+      processed: 1, applied: 0, retried: 1, pending: 0, failed: 1,
+    });
+    expect(repo.applyReconciliationResult).not.toHaveBeenCalled();
+    expect(recordReconciliationOutcome).toHaveBeenCalledWith({
+      attemptId: boundAttempt.id,
+      claimId: candidate.claimId,
+      code: "reconciliation_verification_failed",
+    });
+  });
+
+  it("isolates one candidate failure and continues the remaining batch", async () => {
+    const first = {
+      ...attempt,
+      provider: "afterpay" as const,
+      method: "afterpay" as const,
+      providerReference: "afterpay-first",
+      status: "processing" as const,
+    };
+    const second = {
+      ...first,
+      id: "20000000-0000-4000-8000-000000000002",
+      providerReference: "afterpay-second",
+    };
+    const candidates = [first, second].map((storedAttempt, index) => ({
+      claimId: `40000000-0000-4000-8000-00000000000${index + 5}`,
+      attempt: storedAttempt,
+      order: { ...order, paymentStatus: "processing" as const },
+    }));
+    const paidResult: VerifiedPaymentResult = {
+      providerReference: second.providerReference,
+      providerStatus: "CAPTURED",
+      amountCents: order.amountCents,
+      currency: order.currency,
+      orderNumber: order.orderNumber,
+      status: "paid",
+    };
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"), key: "afterpay", method: "afterpay",
+      retrieve: vi.fn()
+        .mockRejectedValueOnce(new Error("unexpected internal failure"))
+        .mockResolvedValueOnce({ kind: "verified", result: paidResult }),
+    };
+    const repo = repository({
+      claimReconciliationCandidates: vi.fn()
+        .mockResolvedValueOnce([candidates[0]])
+        .mockResolvedValueOnce([candidates[1]])
+        .mockResolvedValue([]),
+      applyReconciliationResult: vi.fn().mockResolvedValue({
+        attempt: { ...second, status: "paid" },
+        order: { ...order, paymentStatus: "paid" },
+      }),
+      recordReconciliationOutcome: vi.fn().mockResolvedValue(undefined),
+    });
+
+    await expect(service({
+      repository: repo,
+      providers: [{ method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay }],
+    }).reconcilePendingPayments()).resolves.toEqual({
+      processed: 2, applied: 1, retried: 0, pending: 0, failed: 1,
+    });
+    expect(afterpay.retrieve).toHaveBeenCalledTimes(2);
+  });
+
+  it("does not lease the next candidate until the current provider work is complete", async () => {
+    const first = {
+      ...attempt,
+      provider: "afterpay" as const,
+      method: "afterpay" as const,
+      providerReference: "afterpay-lease-first",
+      status: "processing" as const,
+    };
+    const second = {
+      ...first,
+      id: "20000000-0000-4000-8000-000000000020",
+      providerReference: "afterpay-lease-second",
+    };
+    const candidates = [first, second].map((storedAttempt, index) => ({
+      claimId: `50000000-0000-4000-8000-00000000000${index + 1}`,
+      attempt: storedAttempt,
+      order: { ...order, paymentStatus: "processing" as const },
+    }));
+    let releaseFirst!: (result: {
+      kind: "verified";
+      result: VerifiedPaymentResult;
+    }) => void;
+    const firstRetrieval = new Promise<{
+      kind: "verified";
+      result: VerifiedPaymentResult;
+    }>((resolve) => {
+      releaseFirst = resolve;
+    });
+    const resultFor = (storedAttempt: PaymentAttemptRecord): VerifiedPaymentResult => ({
+      providerReference: storedAttempt.providerReference!,
+      providerStatus: "AUTH_APPROVED",
+      amountCents: order.amountCents,
+      currency: order.currency,
+      orderNumber: order.orderNumber,
+      status: "processing",
+    });
+    const retrieve = vi.fn()
+      .mockImplementationOnce(() => firstRetrieval)
+      .mockResolvedValueOnce({ kind: "verified", result: resultFor(second) });
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"), key: "afterpay", method: "afterpay", retrieve,
+    };
+    const claimReconciliationCandidates = vi.fn()
+      .mockResolvedValueOnce([candidates[0]])
+      .mockResolvedValueOnce([candidates[1]])
+      .mockResolvedValue([]);
+    const repo = repository({
+      claimReconciliationCandidates,
+      applyReconciliationResult: vi.fn().mockImplementation(async ({ result }) => ({
+        attempt: { ...first, providerReference: result.providerReference },
+        order: { ...order, paymentStatus: "processing" },
+      })),
+    });
+    const reconciliation = service({
+      repository: repo,
+      providers: [{ method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay }],
+    }).reconcilePendingPayments();
+
+    await vi.waitFor(() => expect(retrieve).toHaveBeenCalledOnce());
+    expect(claimReconciliationCandidates).toHaveBeenCalledTimes(1);
+    expect(claimReconciliationCandidates).toHaveBeenCalledWith(1);
+
+    releaseFirst({ kind: "verified", result: resultFor(first) });
+    await expect(reconciliation).resolves.toMatchObject({ processed: 2, applied: 2 });
+    expect(claimReconciliationCandidates).toHaveBeenCalledTimes(3);
+    expect(retrieve).toHaveBeenCalledTimes(2);
   });
 });

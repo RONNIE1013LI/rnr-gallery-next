@@ -78,10 +78,31 @@ export type PaymentAttemptWithOrder = Readonly<{
   order: PaymentOrder & Readonly<{ paymentStatus: OrderPaymentStatus }>;
 }>;
 
+export type ReconciliationCandidate = PaymentAttemptWithOrder & Readonly<{
+  claimId: string;
+}>;
+
+export type ReconciliationOutcomeCode =
+  | "reconciliation_pending"
+  | "reconciliation_retrieval_unavailable"
+  | "reconciliation_verification_failed";
+
 export type ApplyVerifiedResultInput = Readonly<{
   attemptId: string;
   result: VerifiedPaymentResult;
   source: Exclude<PaymentVerificationSource, "verified_webhook">;
+}>;
+
+export type ApplyReconciliationResultInput = Readonly<{
+  attemptId: string;
+  claimId: string;
+  result: VerifiedPaymentResult;
+}>;
+
+export type RecordReconciliationOutcomeInput = Readonly<{
+  attemptId: string;
+  claimId: string;
+  code: ReconciliationOutcomeCode;
 }>;
 
 export type VerifiedEventInput = Readonly<{
@@ -107,9 +128,15 @@ export interface PaymentRepository {
   applyVerifiedResult(
     input: ApplyVerifiedResultInput,
   ): Promise<PaymentAttemptWithOrder>;
-  listReconciliationCandidates(
+  claimReconciliationCandidates(
     limit: number,
-  ): Promise<readonly PaymentAttemptWithOrder[]>;
+  ): Promise<readonly ReconciliationCandidate[]>;
+  applyReconciliationResult(
+    input: ApplyReconciliationResultInput,
+  ): Promise<PaymentAttemptWithOrder>;
+  recordReconciliationOutcome(
+    input: RecordReconciliationOutcomeInput,
+  ): Promise<void>;
 }
 
 export type ProviderIdempotencyKeyInput = Readonly<{

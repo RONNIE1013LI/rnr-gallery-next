@@ -392,7 +392,7 @@ describe("Zip AU provider", () => {
   });
 
   it.each([
-    ["completed", "Declined", "processing"],
+    ["completed", "Declined", "paid"],
     ["approved", "Declined", "processing"],
     ["created", "Approved", "processing"],
     ["expired", "Approved", "cancelled"],
@@ -411,20 +411,50 @@ describe("Zip AU provider", () => {
     },
   );
 
-  it("maps a missing checkout to processing without charging", async () => {
+  it("reports only a 404 checkout retrieval as authoritative absence", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ error: "not found" }, 404));
     const provider = createZipProvider({ config: config(), fetchImpl });
 
     await expect(provider.retrieve({ order: order(), providerReference: checkoutId }))
-      .resolves.toMatchObject({ providerStatus: "NOT_FOUND", status: "processing" });
+      .resolves.toEqual({ kind: "authoritative_not_found" });
     await expect(provider.completeReturn(completeInput()))
       .resolves.toMatchObject({ providerStatus: "NOT_FOUND", status: "processing" });
     expect(fetchImpl).toHaveBeenCalledTimes(2);
   });
 
+  it("reports a validated approved checkout as authoritative charge not received", async () => {
+    const provider = createZipProvider({
+      config: config(),
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(checkoutAuthority("approved"))),
+    });
+
+    await expect(provider.retrieve({ order: order(), providerReference: checkoutId }))
+      .resolves.toEqual({ kind: "authoritative_not_received" });
+  });
+
+  it("treats a validated completed AUD checkout as captured authority", async () => {
+    const provider = createZipProvider({
+      config: config(),
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(checkoutAuthority("completed"))),
+    });
+
+    await expect(provider.retrieve({ order: order(), providerReference: checkoutId }))
+      .resolves.toMatchObject({
+        kind: "verified",
+        result: {
+          providerReference: checkoutId,
+          providerStatus: "CHECKOUT:completed",
+          amountCents: order().amountCents,
+          currency: "AUD",
+          orderNumber: order().orderNumber,
+          status: "paid",
+        },
+      });
+  });
+
   it.each([
     ["created", "processing"],
-    ["completed", "processing"],
+    ["completed", "paid"],
     ["expired", "cancelled"],
     ["cancelled", "cancelled"],
     ["unknown", "processing"],

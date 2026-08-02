@@ -238,7 +238,10 @@ export function createStripeProvider({
     },
 
     async retrieve(input) {
-      return retrieve(input.order, input.providerReference);
+      return Object.freeze({
+        kind: "verified" as const,
+        result: await retrieve(input.order, input.providerReference),
+      });
     },
 
     async verifyWebhook(rawBody, headers) {

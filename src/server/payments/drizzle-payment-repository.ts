@@ -38,6 +38,7 @@ import type {
   PaymentOrderAccess,
   PaymentRepository,
   ProviderIdempotencyKeyInput,
+  ReconciliationCandidate,
   VerifiedEventInput,
 } from "./payment-repository";
 import type { PaymentOrder, VerifiedPaymentResult } from "./types";
@@ -53,12 +54,9 @@ const NONTERMINAL_ATTEMPTS: PaymentAttemptStatus[] = [
   "requires_action",
   "processing",
 ];
-const RECONCILABLE_ATTEMPTS: PaymentAttemptStatus[] = [
-  "requires_action",
-  "processing",
-];
 const RETURN_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const TERMINAL_ORDERS: OrderPaymentStatus[] = ["paid", "refunded"];
+const RECONCILIATION_STALE_MS = 60_000;
 
 export class PaymentRepositoryConflictError extends Error {
   constructor(message = "Payment attempt conflicts with the current state") {
@@ -644,39 +642,124 @@ export function createDrizzlePaymentRepository(
       });
     },
 
-    async listReconciliationCandidates(limit) {
+    async claimReconciliationCandidates(limit) {
       assertReconciliationLimit(limit);
-      const rows = await database
-        .select({ attempt: paymentAttempts, order: orders })
-        .from(paymentAttempts)
-        .innerJoin(orders, eq(orders.id, paymentAttempts.orderId))
-        .where(and(
-          inArray(paymentAttempts.status, RECONCILABLE_ATTEMPTS),
-          isNotNull(paymentAttempts.providerReference),
-          notInArray(orders.paymentStatus, TERMINAL_ORDERS),
-        ))
-        .orderBy(asc(paymentAttempts.updatedAt), asc(paymentAttempts.id))
-        .limit(50);
+      return database.transaction(async (transaction) => {
+        const now = await databaseNow(transaction);
+        const claimId = randomUUID();
+        const claimed = await transaction.execute<{ id: string }>(sql`
+          with candidates as (
+            select attempts.id
+            from ${paymentAttempts} as attempts
+            inner join ${orders} as candidate_orders
+              on candidate_orders.id = attempts.order_id
+            where attempts.status in ('requires_action', 'processing')
+              and attempts.provider_reference is not null
+              and candidate_orders.payment_status not in ('paid', 'refunded', 'failed', 'cancelled')
+              and (
+                attempts.provider_session_lease_id is null
+                or attempts.provider_session_lease_expires_at <= ${now}
+              )
+              and attempts.updated_at <= ${new Date(now.getTime() - RECONCILIATION_STALE_MS)}
+              and not (attempts.provider = 'zip' and attempts.currency <> 'AUD')
+            order by attempts.updated_at asc, attempts.id asc
+            for update of attempts skip locked
+            limit ${limit}
+          )
+          update ${paymentAttempts} as claimed_attempts
+          set provider_session_lease_id = ${claimId},
+              provider_session_lease_expires_at = ${new Date(now.getTime() + leaseDurationMs)}
+          from candidates
+          where claimed_attempts.id = candidates.id
+          returning claimed_attempts.id
+        `);
+        const claimedIds = claimed.rows.map((row) => row.id);
+        if (claimedIds.length === 0) return Object.freeze([]);
 
-      const candidates: PaymentAttemptWithOrder[] = [];
-      for (const row of rows) {
-        try {
-          if (
-            row.attempt.expectedAmountCents !== row.order.totalInclGstCents ||
-            row.attempt.currency !== row.order.currency ||
-            !row.attempt.providerReference
-          ) continue;
-          const addresses = await loadAddresses(database, row.order.id);
-          candidates.push(Object.freeze({
-            attempt: attemptRecord(row.attempt),
-            order: paymentOrder(row.order, addresses),
-          }));
-          if (candidates.length === limit) break;
-        } catch {
-          continue;
+        const rows = await transaction
+          .select({ attempt: paymentAttempts, order: orders })
+          .from(paymentAttempts)
+          .innerJoin(orders, eq(orders.id, paymentAttempts.orderId))
+          .where(inArray(paymentAttempts.id, claimedIds))
+          .orderBy(asc(paymentAttempts.updatedAt), asc(paymentAttempts.id));
+        const candidates: ReconciliationCandidate[] = [];
+        for (const row of rows) {
+          try {
+            if (
+              row.attempt.expectedAmountCents !== row.order.totalInclGstCents ||
+              row.attempt.currency !== row.order.currency ||
+              !row.attempt.providerReference
+            ) continue;
+            const addresses = await loadAddresses(transaction, row.order.id);
+            candidates.push(Object.freeze({
+              claimId,
+              attempt: attemptRecord(row.attempt),
+              order: paymentOrder(row.order, addresses),
+            }));
+          } catch {
+            continue;
+          }
         }
-      }
-      return Object.freeze(candidates);
+        return Object.freeze(candidates);
+      });
+    },
+
+    async applyReconciliationResult(input) {
+      return database.transaction(async (transaction) => {
+        const { attempt } = await lockOrderThenAttempt(transaction, input.attemptId);
+        const now = await databaseNow(transaction);
+        if (
+          attempt.providerSessionLeaseId !== input.claimId ||
+          !attempt.providerSessionLeaseExpiresAt ||
+          attempt.providerSessionLeaseExpiresAt.getTime() <= now.getTime()
+        ) {
+          throw new PaymentRepositoryConflictError("Reconciliation claim expired");
+        }
+        const applied = await applyLockedVerifiedResult(transaction, {
+          attemptId: input.attemptId,
+          result: input.result,
+          source: "reconciliation",
+        });
+        await transaction
+          .update(paymentAttempts)
+          .set({
+            providerSessionLeaseId: null,
+            providerSessionLeaseExpiresAt: null,
+          })
+          .where(and(
+            eq(paymentAttempts.id, input.attemptId),
+            eq(paymentAttempts.providerSessionLeaseId, input.claimId),
+          ));
+        return applied;
+      });
+    },
+
+    async recordReconciliationOutcome(input) {
+      await database.transaction(async (transaction) => {
+        const { order, attempt } = await lockOrderThenAttempt(transaction, input.attemptId);
+        const now = await databaseNow(transaction);
+        if (
+          attempt.providerSessionLeaseId !== input.claimId ||
+          !attempt.providerSessionLeaseExpiresAt ||
+          attempt.providerSessionLeaseExpiresAt.getTime() <= now.getTime()
+        ) {
+          throw new PaymentRepositoryConflictError("Reconciliation claim expired");
+        }
+        const terminal = order.paymentStatus === "paid" || order.paymentStatus === "refunded" ||
+          attempt.status === "paid";
+        await transaction
+          .update(paymentAttempts)
+          .set({
+            sanitizedFailureCode: terminal ? attempt.sanitizedFailureCode : input.code,
+            providerSessionLeaseId: null,
+            providerSessionLeaseExpiresAt: null,
+            updatedAt: now,
+          })
+          .where(and(
+            eq(paymentAttempts.id, input.attemptId),
+            eq(paymentAttempts.providerSessionLeaseId, input.claimId),
+          ));
+      });
     },
   };
 }

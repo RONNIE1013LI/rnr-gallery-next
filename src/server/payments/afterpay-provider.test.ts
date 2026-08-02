@@ -346,12 +346,12 @@ describe("Afterpay provider", () => {
     },
   );
 
-  it("maps public retrieval absence conservatively to processing", async () => {
+  it("reports only a 404 retrieval as authoritative absence", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ error: "not found" }, 404));
     const provider = createAfterpayProvider({ config: config(), fetchImpl });
 
     await expect(provider.retrieve({ order: order(), providerReference: token }))
-      .resolves.toMatchObject({ providerStatus: "NOT_FOUND", status: "processing" });
+      .resolves.toEqual({ kind: "authoritative_not_found" });
     expect(fetchImpl).toHaveBeenCalledOnce();
   });
 

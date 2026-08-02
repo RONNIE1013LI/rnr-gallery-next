@@ -125,12 +125,15 @@ describe("Stripe payment provider", () => {
 
     await expect(provider.retrieve({ order, providerReference: baseIntent.id }))
       .resolves.toMatchObject({
-        providerReference: baseIntent.id,
-        providerStatus: stripeStatus,
-        amountCents: order.amountCents,
-        currency: order.currency,
-        orderNumber: order.orderNumber,
-        status,
+        kind: "verified",
+        result: {
+          providerReference: baseIntent.id,
+          providerStatus: stripeStatus,
+          amountCents: order.amountCents,
+          currency: order.currency,
+          orderNumber: order.orderNumber,
+          status,
+        },
       });
     expect(stripe.paymentIntents.retrieve).toHaveBeenCalledWith(baseIntent.id);
   });

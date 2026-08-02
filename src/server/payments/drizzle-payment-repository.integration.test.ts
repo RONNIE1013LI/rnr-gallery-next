@@ -1006,7 +1006,7 @@ describe("Drizzle payment repository", () => {
     await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toEqual(paid);
   });
 
-  it("lists only stable valid reconciliation candidates within the bounded limit", async () => {
+  it("atomically claims only stale valid reconciliation candidates once", async () => {
     const order = await createOrder();
     const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
     await repository.bindProviderSession({
@@ -1015,13 +1015,220 @@ describe("Drizzle payment repository", () => {
       status: "processing",
     });
 
-    const candidates = await repository.listReconciliationCandidates(50);
-    expect(candidates).toEqual(expect.arrayContaining([
-      expect.objectContaining({ attempt: expect.objectContaining({ id: claim.attempt.id }) }),
+    await pool.query(
+      "update payment_attempts set updated_at = now() - interval '2 minutes' where id = $1",
+      [claim.attempt.id],
+    );
+    const claimCandidates = (repository as unknown as {
+      claimReconciliationCandidates(limit: number): Promise<readonly unknown[]>;
+    }).claimReconciliationCandidates.bind(repository);
+    const [candidates, concurrentCandidates] = await Promise.all([
+      claimCandidates(50),
+      claimCandidates(50),
+    ]);
+    const claimedBatch = [candidates, concurrentCandidates].find((batch) =>
+      batch.length === 1
+    );
+    expect(claimedBatch).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        attempt: expect.objectContaining({ id: claim.attempt.id }),
+        claimId: expect.any(String),
+      }),
     ]));
-    await expect(repository.listReconciliationCandidates(1)).resolves.toHaveLength(1);
-    await expect(repository.listReconciliationCandidates(0)).rejects.toThrow(
+    expect([candidates.length, concurrentCandidates.length].sort()).toEqual([0, 1]);
+    await expect(claimCandidates(0)).rejects.toThrow(
       "Reconciliation limit must be an integer from 1 to 50",
     );
+  });
+
+  it("excludes terminal orders and unsupported NZD Zip attempts from reconciliation", async () => {
+    const terminalOrder = await createOrder({ paymentStatus: "failed" });
+    const terminalClaim = await repository.createOrClaimNonterminalAttempt(
+      claimInput(terminalOrder.orderId),
+    );
+    await repository.bindProviderSession({
+      attemptId: terminalClaim.attempt.id,
+      claimId: terminalClaim.claimId!,
+      providerReference: `terminal-${randomUUID()}`,
+      returnStateDigest: null,
+      status: "processing",
+    });
+
+    const zipOrder = await createOrder();
+    const zipClaim = await repository.createOrClaimNonterminalAttempt({
+      orderId: zipOrder.orderId,
+      provider: "zip",
+      method: "zip",
+      expectedAmountCents: 7_475,
+      currency: "NZD",
+      clientKey: randomUUID(),
+    });
+    await repository.bindProviderSession({
+      attemptId: zipClaim.attempt.id,
+      claimId: zipClaim.claimId!,
+      providerReference: `zip-${randomUUID()}`,
+      returnStateDigest: null,
+      status: "processing",
+    });
+    await pool.query(
+      "update payment_attempts set updated_at = now() - interval '2 minutes' where id = any($1::uuid[])",
+      [[terminalClaim.attempt.id, zipClaim.attempt.id]],
+    );
+
+    const candidates = await repository.claimReconciliationCandidates(50);
+
+    expect(candidates.map(({ attempt: candidate }) => candidate.id))
+      .not.toEqual(expect.arrayContaining([terminalClaim.attempt.id, zipClaim.attempt.id]));
+  });
+
+  it("rejects a stale reconciliation result after a webhook has already paid the order", async () => {
+    const order = await createOrder();
+    const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
+    const providerReference = `paid-race-${randomUUID()}`;
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+    await pool.query(
+      "update payment_attempts set updated_at = now() - interval '2 minutes' where id = $1",
+      [claim.attempt.id],
+    );
+    const [candidate] = await repository.claimReconciliationCandidates(50);
+    expect(candidate.attempt.id).toBe(claim.attempt.id);
+    const paidResult = {
+      providerReference,
+      providerStatus: "succeeded",
+      amountCents: 7_475,
+      currency: "NZD" as const,
+      orderNumber: order.orderNumber,
+      status: "paid" as const,
+    };
+    await repository.applyVerifiedWebhookEventAtomically({
+      provider: "stripe",
+      providerEventId: `paid-race-${randomUUID()}`,
+      payloadSha256: "9".repeat(64),
+      result: paidResult,
+    });
+
+    await expect(repository.applyReconciliationResult({
+      attemptId: claim.attempt.id,
+      claimId: candidate.claimId,
+      result: {
+        ...paidResult,
+        providerStatus: "requires_payment_method",
+        status: "failed",
+        sanitizedFailureCode: "payment_method_required",
+      },
+    })).rejects.toThrow("Reconciliation claim expired");
+    await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toMatchObject({
+      order: { paymentStatus: "paid" },
+      attempt: { status: "paid" },
+    });
+  });
+
+  it("allows only one concurrent worker to retrieve the same claimed attempt", async () => {
+    const order = await createOrder();
+    const claim = await repository.createOrClaimNonterminalAttempt({
+      ...claimInput(order.orderId),
+      provider: "local-test",
+      method: "card",
+    });
+    const providerReference = `local-reconcile-${randomUUID()}`;
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+    await pool.query(
+      "update payment_attempts set updated_at = now() - interval '2 minutes' where id = $1",
+      [claim.attempt.id],
+    );
+    let releaseRetrieve!: () => void;
+    const retrievalGate = new Promise<void>((resolve) => {
+      releaseRetrieve = resolve;
+    });
+    const retrieve = vi.fn().mockImplementation(async () => {
+      await retrievalGate;
+      return {
+        kind: "verified" as const,
+        result: {
+          providerReference,
+          providerStatus: "TEST_PROCESSING",
+          amountCents: 7_475,
+          currency: "NZD" as const,
+          orderNumber: order.orderNumber,
+          status: "processing" as const,
+        },
+      };
+    });
+    const registration: PaymentProviderRegistration = {
+      method: "card",
+      label: "Test card — no real payment",
+      isTest: true,
+      provider: {
+        key: "local-test",
+        method: "card",
+        refundCapability: "unsupported",
+        availability: vi.fn().mockResolvedValue({ available: true }),
+        createOrReuse: vi.fn(),
+        completeReturn: vi.fn(),
+        retrieve,
+      },
+    };
+    const firstWorker = paymentService(registration).reconcilePendingPayments();
+    await vi.waitFor(() => expect(retrieve).toHaveBeenCalledOnce());
+
+    await expect(paymentService(registration).reconcilePendingPayments()).resolves.toEqual({
+      processed: 0,
+      applied: 0,
+      retried: 0,
+      pending: 0,
+      failed: 0,
+    });
+    expect(retrieve).toHaveBeenCalledOnce();
+
+    releaseRetrieve();
+    await expect(firstWorker).resolves.toMatchObject({ processed: 1, applied: 1 });
+    expect(retrieve).toHaveBeenCalledOnce();
+  });
+
+  it("releases a nonterminal reconciliation claim and backs off after a safe failure", async () => {
+    const order = await createOrder();
+    const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference: `outcome-${randomUUID()}`,
+      returnStateDigest: null,
+      status: "processing",
+    });
+    await pool.query(
+      "update payment_attempts set updated_at = now() - interval '2 minutes' where id = $1",
+      [claim.attempt.id],
+    );
+    const [candidate] = await repository.claimReconciliationCandidates(1);
+
+    await repository.recordReconciliationOutcome({
+      attemptId: claim.attempt.id,
+      claimId: candidate.claimId,
+      code: "reconciliation_retrieval_unavailable",
+    });
+
+    await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toMatchObject({
+      attempt: {
+        status: "processing",
+        sanitizedFailureCode: "reconciliation_retrieval_unavailable",
+        providerSessionLeaseId: null,
+        providerSessionLeaseExpiresAt: null,
+      },
+    });
+    expect((await repository.claimReconciliationCandidates(1))
+      .some(({ attempt: candidateAttempt }) => candidateAttempt.id === claim.attempt.id))
+      .toBe(false);
   });
 });

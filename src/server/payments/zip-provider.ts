@@ -240,6 +240,7 @@ function checkoutResult(
   let status: VerifiedPaymentResult["status"] = "processing";
   if (providerState === "declined" || providerState === "referred") status = "failed";
   else if (providerState === "expired" || providerState === "cancelled") status = "cancelled";
+  else if (providerState === "completed") status = "paid";
   return result(order, providerReference, `CHECKOUT:${providerState}`, status);
 }
 
@@ -440,9 +441,13 @@ export function createZipProvider({
 
     async retrieve(input) {
       const authority = await retrieveAuthority(input.order, input.providerReference);
-      return authority.kind === "found"
-        ? authority.result
-        : absentResult(input.order, input.providerReference);
+      if (authority.kind === "authoritative_absence") {
+        return Object.freeze({ kind: "authoritative_not_found" as const });
+      }
+      if (authority.response.state.trim().toLowerCase() === "approved") {
+        return Object.freeze({ kind: "authoritative_not_received" as const });
+      }
+      return Object.freeze({ kind: "verified" as const, result: authority.result });
     },
 
     async retryCompletion(input) {

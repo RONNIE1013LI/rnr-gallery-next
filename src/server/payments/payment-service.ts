@@ -21,6 +21,7 @@ import type {
   PaymentEligibilityContext,
   PaymentProvider,
   ProviderSession,
+  VerifiedPaymentResult,
   VerifiedProviderEvent,
 } from "./types";
 import {
@@ -72,6 +73,14 @@ export type PaymentReturnInput = Readonly<{
 }>;
 
 export type PaymentReturnResult = Readonly<{ orderNumber: string }>;
+
+export type PaymentReconciliationSummary = Readonly<{
+  processed: number;
+  applied: number;
+  retried: number;
+  pending: number;
+  failed: number;
+}>;
 
 type CheckoutPaymentAuthority = ReviewedPaymentCheckoutRepository;
 
@@ -221,6 +230,19 @@ function publicPayment(
   return toPublicPaymentDTO({ method, status, isTest });
 }
 
+function matchesReconciliationAuthority(
+  candidate: Awaited<ReturnType<PaymentRepository["claimReconciliationCandidates"]>>[number],
+  result: VerifiedPaymentResult,
+) {
+  return candidate.attempt.providerReference !== null &&
+    result.providerReference === candidate.attempt.providerReference &&
+    result.amountCents === candidate.attempt.expectedAmountCents &&
+    result.amountCents === candidate.order.amountCents &&
+    result.currency === candidate.attempt.currency &&
+    result.currency === candidate.order.currency &&
+    result.orderNumber === candidate.order.orderNumber;
+}
+
 export function createPaymentService({
   repository,
   checkoutAuthority,
@@ -268,6 +290,90 @@ export function createPaymentService({
   }
 
   return {
+    async reconcilePendingPayments(): Promise<PaymentReconciliationSummary> {
+      const summary = {
+        processed: 0,
+        applied: 0,
+        retried: 0,
+        pending: 0,
+        failed: 0,
+      };
+
+      for (let index = 0; index < 50; index += 1) {
+        const [candidate] = await repository.claimReconciliationCandidates(1);
+        if (!candidate) break;
+        summary.processed += 1;
+        const recordOutcome = async (
+          code: Parameters<PaymentRepository["recordReconciliationOutcome"]>[0]["code"],
+        ) => {
+          try {
+            await repository.recordReconciliationOutcome({
+              attemptId: candidate.attempt.id,
+              claimId: candidate.claimId,
+              code,
+            });
+          } catch {
+            // A concurrent verified transition may already own the final state.
+          }
+        };
+
+        try {
+          const registration = byMethod.get(candidate.attempt.method);
+          if (
+            !registration ||
+            registration.provider.key !== candidate.attempt.provider ||
+            !candidate.attempt.providerReference
+          ) {
+            throw new PaymentProviderVerificationError();
+          }
+          const authority = await registration.provider.retrieve({
+            order: candidate.order,
+            providerReference: candidate.attempt.providerReference,
+          });
+
+          let result: VerifiedPaymentResult;
+          if (authority.kind === "verified") {
+            result = authority.result;
+          } else {
+            if (!registration.provider.retryCompletion) {
+              await recordOutcome("reconciliation_pending");
+              summary.pending += 1;
+              continue;
+            }
+            summary.retried += 1;
+            result = await registration.provider.retryCompletion({
+              order: candidate.order,
+              providerReference: candidate.attempt.providerReference,
+              idempotencyKey: candidate.attempt.idempotencyKey,
+              attemptCreatedAt: candidate.attempt.createdAt,
+              source: "reconciliation",
+            });
+          }
+
+          if (!matchesReconciliationAuthority(candidate, result)) {
+            throw new PaymentProviderVerificationError();
+          }
+          await repository.applyReconciliationResult({
+            attemptId: candidate.attempt.id,
+            claimId: candidate.claimId,
+            result,
+          });
+          summary.applied += 1;
+          if (result.status === "processing") summary.pending += 1;
+        } catch (error) {
+          if (error instanceof PaymentProviderRequestError) {
+            await recordOutcome("reconciliation_retrieval_unavailable");
+            summary.pending += 1;
+          } else {
+            await recordOutcome("reconciliation_verification_failed");
+            summary.failed += 1;
+          }
+        }
+      }
+
+      return Object.freeze(summary);
+    },
+
     async applyVerifiedWebhook(
       event: VerifiedProviderEvent,
       rawBody: Uint8Array,

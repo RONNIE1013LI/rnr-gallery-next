@@ -172,7 +172,10 @@ export function createLocalTestProvider(
 
     async retrieve(input: RetrieveProviderPaymentInput) {
       assertReference(input.order, method, input.providerReference);
-      return verifiedResult(input.order, input.providerReference, "processing");
+      return Object.freeze({
+        kind: "verified" as const,
+        result: verifiedResult(input.order, input.providerReference, "processing"),
+      });
     },
   });
 }

@@ -454,8 +454,8 @@ export function createAfterpayProvider({
         input.providerReference,
       );
       return authority.kind === "found"
-        ? authority.result
-        : absentResult(input.order, input.providerReference);
+        ? Object.freeze({ kind: "verified" as const, result: authority.result })
+        : Object.freeze({ kind: "authoritative_not_found" as const });
     },
 
     async retryCompletion(input) {
