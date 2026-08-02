@@ -48,7 +48,7 @@ export default function Home() {
             src="/media/home/family-canvas.webp"
             alt="Personalised family canvas displayed in a warm home interior"
             fill
-            priority
+            loading="eager"
             sizes="(max-width: 820px) 100vw, 60vw"
           />
         </div>

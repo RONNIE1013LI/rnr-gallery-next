@@ -34,7 +34,7 @@ export default async function ProductPage({ params }: ProductPageProps) {
             src={product.image.src}
             alt={product.image.alt}
             fill
-            priority
+            loading="eager"
             sizes="(max-width: 820px) 100vw, 58vw"
           />
         </div>
