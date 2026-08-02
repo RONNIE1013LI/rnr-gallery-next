@@ -844,6 +844,58 @@ describe("payment service", () => {
     });
   });
 
+  it("lets only the first local-test return mark the order paid", async () => {
+    const state = "9".repeat(64);
+    const reference = "local-test.reference";
+    const result: VerifiedPaymentResult = {
+      providerReference: reference,
+      providerStatus: "TEST_CAPTURED",
+      amountCents: order.amountCents,
+      currency: order.currency,
+      orderNumber: order.orderNumber,
+      status: "paid",
+    };
+    const local = {
+      ...provider(),
+      completeReturn: vi.fn().mockResolvedValue(result),
+    };
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt,
+      providerReference: reference,
+      returnStateDigest: createHash("sha256").update(state).digest("hex"),
+      status: "requires_action",
+    };
+    const consumeReturnState = vi.fn()
+      .mockResolvedValueOnce({ outcome: "consumed", attempt: boundAttempt, order })
+      .mockResolvedValueOnce({ outcome: "already_consumed", orderNumber: order.orderNumber });
+    const applyVerifiedResult = vi.fn().mockResolvedValue({
+      attempt: { ...boundAttempt, status: "paid" },
+      order: { ...order, paymentStatus: "paid" },
+    });
+    const paymentService = service({
+      repository: repository({ consumeReturnState, applyVerifiedResult }),
+      providers: [registration(local)],
+    });
+    const returnUrl = new URL(
+      `https://trusted.example.test/api/payments/returns/local-test?flow=return&orderNumber=${order.orderNumber}&method=card&state=${state}&provider=local-test&providerReference=${reference}`,
+    );
+    const input = {
+      provider: "local-test" as const,
+      method: "card" as const,
+      orderNumber: order.orderNumber,
+      returnState: state,
+      providerReference: reference,
+      returnUrl,
+    };
+
+    await expect(paymentService.handleReturn(input))
+      .resolves.toEqual({ orderNumber: order.orderNumber });
+    await expect(paymentService.handleReturn(input))
+      .resolves.toEqual({ orderNumber: order.orderNumber });
+    expect(local.completeReturn).toHaveBeenCalledOnce();
+    expect(applyVerifiedResult).toHaveBeenCalledOnce();
+  });
+
   it("persists an unknown return result after provider timeout and never reopens it", async () => {
     const state = "d".repeat(64);
     const reference = "afterpay_timeout_123";

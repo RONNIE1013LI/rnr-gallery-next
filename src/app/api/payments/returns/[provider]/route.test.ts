@@ -7,7 +7,7 @@ const orderNumber = "RNR-2026-PAY1001";
 const state = "a".repeat(64);
 
 function request(
-  provider: "stripe" | "afterpay" | "zip",
+  provider: "stripe" | "afterpay" | "zip" | "local-test",
   params: Readonly<Record<string, string>>,
   origin = trustedOrigin,
 ) {
@@ -26,6 +26,66 @@ function handler(handleReturn = vi.fn().mockResolvedValue({ orderNumber })) {
 const common = { flow: "return", orderNumber, state };
 
 describe("GET /api/payments/returns/[provider]", () => {
+  it("completes a strict local-test return and redirects to the created order", async () => {
+    const { route, handleReturn } = handler();
+    const providerReference = "local-test.v1.card.00000000-0000-4000-8000-000000000001.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const incoming = request("local-test", {
+      ...common,
+      method: "card",
+      provider: "local-test",
+      providerReference,
+    });
+
+    const response = await route(incoming, {
+      params: Promise.resolve({ provider: "local-test" }),
+    });
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe(`${trustedOrigin}/orders/${orderNumber}`);
+    expect(handleReturn).toHaveBeenCalledWith({
+      provider: "local-test",
+      method: "card",
+      orderNumber,
+      returnState: state,
+      providerReference,
+      returnUrl: new URL(incoming.url),
+    });
+  });
+
+  it.each([
+    ["missing reference", { ...common, method: "card", provider: "local-test" }],
+    ["wrong provider marker", { ...common, method: "card", provider: "stripe", providerReference: "local-test.reference" }],
+    ["unknown method", { ...common, method: "cash", provider: "local-test", providerReference: "local-test.reference" }],
+    ["cancel flow", { ...common, flow: "cancel", method: "card", provider: "local-test", providerReference: "local-test.reference" }],
+  ])("rejects a local-test return with %s before consuming state", async (_name, params) => {
+    const { route, handleReturn } = handler();
+    const response = await route(request("local-test", params), {
+      params: Promise.resolve({ provider: "local-test" }),
+    });
+
+    expect(response.status).toBe(404);
+    expect(handleReturn).not.toHaveBeenCalled();
+  });
+
+  it("fails a local-test return closed when the provider is not registered", async () => {
+    const handleReturn = vi.fn().mockRejectedValue(new PaymentServiceError(
+      "PAYMENT_RETURN_NOT_FOUND",
+      "Payment return is unavailable",
+    ));
+    const { route } = handler(handleReturn);
+    const response = await route(request("local-test", {
+      ...common,
+      method: "afterpay",
+      provider: "local-test",
+      providerReference: "local-test.reference",
+    }), { params: Promise.resolve({ provider: "local-test" }) });
+
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: { code: "PAYMENT_RETURN_NOT_FOUND", message: "Payment return is unavailable" },
+    });
+  });
+
   it.each([
     [
       "stripe",

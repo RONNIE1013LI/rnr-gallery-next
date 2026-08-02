@@ -27,7 +27,8 @@ type Dependencies = Readonly<{
 type RouteContext = Readonly<{ params: Promise<{ provider: string }> }>;
 
 const noStoreHeaders = { "Cache-Control": "no-store" };
-const providers = new Set<ReturnProvider>(["stripe", "afterpay", "zip"]);
+const providers = new Set<ReturnProvider>(["stripe", "afterpay", "zip", "local-test"]);
+const paymentMethods = new Set<PaymentReturnInput["method"]>(["card", "afterpay", "zip"]);
 const orderNumberPattern = /^RNR-[A-Z0-9]+(?:-[A-Z0-9]+)+$/;
 const statePattern = /^[a-f0-9]{64}$/;
 const referencePattern = /^[A-Za-z0-9._-]{8,1024}$/;
@@ -136,6 +137,32 @@ function parseReturnInput(
     return {
       provider,
       method: "afterpay",
+      orderNumber: common.orderNumber,
+      returnState: common.returnState,
+      providerReference,
+    };
+  }
+
+  if (provider === "local-test") {
+    if (!hasExactKeys(url, new Set([
+      ...commonKeys,
+      "provider",
+      "providerReference",
+    ]))) return null;
+    const rawMethod = url.searchParams.get("method") as PaymentReturnInput["method"] | null;
+    if (!rawMethod || !paymentMethods.has(rawMethod)) return null;
+    const common = commonReturnValues(url, rawMethod);
+    const providerReference = url.searchParams.get("providerReference");
+    if (
+      !common ||
+      common.flow !== "return" ||
+      url.searchParams.get("provider") !== "local-test" ||
+      !providerReference ||
+      !referencePattern.test(providerReference)
+    ) return null;
+    return {
+      provider,
+      method: rawMethod,
       orderNumber: common.orderNumber,
       returnState: common.returnState,
       providerReference,

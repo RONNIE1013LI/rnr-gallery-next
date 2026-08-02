@@ -64,7 +64,7 @@ export type PaymentStartResult = Readonly<{
 }>;
 
 export type PaymentReturnInput = Readonly<{
-  provider: Extract<PaymentProviderKey, "stripe" | "afterpay" | "zip">;
+  provider: PaymentProviderKey;
   method: PaymentMethodKey;
   orderNumber: string;
   returnState: string;

@@ -1,12 +1,33 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { NormalizedAddress } from "@/domain/address/types";
 import type { PaymentMethodKey, PaymentProviderKey } from "@/server/db/schema";
-import type { PaymentConfig } from "./config";
+import { parsePaymentConfig, type PaymentConfig } from "./config";
 import { createLocalTestProvider } from "./local-test-provider";
+import type { PaymentRepository } from "./payment-repository";
+import { createPaymentService } from "./payment-service";
 import { selectPaymentProviders } from "./provider-registry";
 import type { PaymentOrder, PaymentProvider } from "./types";
 
 const disabled = Object.freeze({ enabled: false } as const);
+const completeProviderEnvironment = {
+  stripe: {
+    STRIPE_SECRET_KEY: "stripe-secret",
+    NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_public",
+    STRIPE_WEBHOOK_SECRET: "whsec_test",
+  },
+  afterpay: {
+    AFTERPAY_MERCHANT_ID: "afterpay-merchant",
+    AFTERPAY_SECRET_KEY: "afterpay-secret",
+    AFTERPAY_ENVIRONMENT: "sandbox",
+    AFTERPAY_MERCHANT_COUNTRY: "NZ",
+  },
+  zip: {
+    ZIP_API_KEY: "zip-secret",
+    ZIP_ENVIRONMENT: "sandbox",
+    ZIP_MERCHANT_COUNTRY: "AU",
+    ZIP_ALLOWED_CURRENCIES: "AUD,NZD",
+  },
+} as const;
 
 function config(overrides: Partial<PaymentConfig> = {}): PaymentConfig {
   return {
@@ -81,6 +102,98 @@ describe("payment provider registry", () => {
       reason: "currency",
     });
   });
+
+  it.each([
+    ["stripe", "STRIPE_SECRET_KEY"],
+    ["stripe", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"],
+    ["stripe", "STRIPE_WEBHOOK_SECRET"],
+    ["afterpay", "AFTERPAY_MERCHANT_ID"],
+    ["afterpay", "AFTERPAY_SECRET_KEY"],
+    ["afterpay", "AFTERPAY_ENVIRONMENT"],
+    ["afterpay", "AFTERPAY_MERCHANT_COUNTRY"],
+    ["zip", "ZIP_API_KEY"],
+    ["zip", "ZIP_ENVIRONMENT"],
+    ["zip", "ZIP_MERCHANT_COUNTRY"],
+    ["zip", "ZIP_ALLOWED_CURRENCIES"],
+  ] as const)(
+    "keeps a partial %s configuration local-test-only when %s is missing",
+    async (provider, missing) => {
+      const parsed = parsePaymentConfig({
+        NODE_ENV: "test",
+        ...completeProviderEnvironment[provider],
+        [missing]: undefined,
+        PAYMENT_RETURN_BASE_URL: "https://shop.example.test",
+        ENABLE_LOCAL_TEST_PAYMENTS: "true",
+      });
+      const cardFactory = vi.fn(() => fakeProvider("stripe", "card"));
+      const afterpayFactory = vi.fn(() => fakeProvider("afterpay", "afterpay"));
+      const zipFactory = vi.fn(() => fakeProvider("zip", "zip"));
+      const localFactory = vi.fn(createLocalTestProvider);
+      const providers = selectPaymentProviders(parsed, {
+        nodeEnv: "test",
+        realFactories: {
+          card: cardFactory,
+          afterpay: afterpayFactory,
+          zip: zipFactory,
+        },
+        localFactory,
+      });
+      const nzOrder = {
+        ...auNzdOrder(),
+        customer: {
+          fullName: "NZ Customer",
+          email: "customer@example.test",
+          phone: "+64210000000",
+        },
+        billingAddress: {
+          ...auNzdOrder().billingAddress,
+          country: "NZ" as const,
+          fullName: "NZ Customer",
+          suburb: "Auckland Central",
+          region: "Auckland",
+          postcode: "1010",
+          phone: "+64210000000",
+        },
+        deliveryAddress: {
+          ...auNzdOrder().deliveryAddress,
+          country: "NZ" as const,
+          fullName: "NZ Customer",
+          suburb: "Auckland Central",
+          region: "Auckland",
+          postcode: "1010",
+          phone: "+64210000000",
+        },
+      };
+      const methods = await createPaymentService({
+        repository: {} as PaymentRepository,
+        providers,
+        checkoutAuthority: {
+          findReviewedPaymentContext: vi.fn().mockResolvedValue({
+            amountCents: nzOrder.amountCents,
+            currency: nzOrder.currency,
+            customer: nzOrder.customer,
+            billingAddress: nzOrder.billingAddress,
+            deliveryAddress: nzOrder.deliveryAddress,
+          }),
+        },
+        returnBaseUrl: "https://shop.example.test",
+      }).availableMethods({
+        sessionId: "checkout-id",
+        checkoutVersion: 1,
+        cartDigest: "a".repeat(64),
+      });
+
+      expect(methods).toEqual([
+        { method: "card", label: "Test card — no real payment", isTest: true },
+        { method: "afterpay", label: "Test Afterpay — no real payment", isTest: true },
+      ]);
+      expect(providers.every(({ isTest, provider }) =>
+        isTest && provider.key === "local-test")).toBe(true);
+      expect(cardFactory).not.toHaveBeenCalled();
+      expect(afterpayFactory).not.toHaveBeenCalled();
+      expect(zipFactory).not.toHaveBeenCalled();
+    },
+  );
 
   it("uses real configured providers by method and constructs nothing unintended", () => {
     const cardFactory = vi.fn(() => fakeProvider("stripe", "card"));

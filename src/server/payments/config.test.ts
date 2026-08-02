@@ -26,14 +26,28 @@ describe("parsePaymentConfig", () => {
   });
 
   it.each([
-    ["stripe", { STRIPE_SECRET_KEY: "stripe-secret" }],
-    ["afterpay", { AFTERPAY_MERCHANT_ID: "merchant-id" }],
-    ["zip", { ZIP_API_KEY: "zip-api-key" }],
-  ] as const)("fails the partial %s group closed", (provider, env) => {
-    const config = parsePaymentConfig(env);
+    ["stripe", "STRIPE_SECRET_KEY"],
+    ["stripe", "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY"],
+    ["stripe", "STRIPE_WEBHOOK_SECRET"],
+    ["afterpay", "AFTERPAY_MERCHANT_ID"],
+    ["afterpay", "AFTERPAY_SECRET_KEY"],
+    ["afterpay", "AFTERPAY_ENVIRONMENT"],
+    ["afterpay", "AFTERPAY_MERCHANT_COUNTRY"],
+    ["zip", "ZIP_API_KEY"],
+    ["zip", "ZIP_ENVIRONMENT"],
+    ["zip", "ZIP_MERCHANT_COUNTRY"],
+    ["zip", "ZIP_ALLOWED_CURRENCIES"],
+  ] as const)("fails the partial %s group closed when %s is missing", (provider, missing) => {
+    const config = parsePaymentConfig({
+      NODE_ENV: "development",
+      ...completeProviderEnvironment,
+      [missing]: undefined,
+      PAYMENT_RETURN_BASE_URL: "https://shop.example.test",
+    });
 
     expect(config[provider]).toEqual({ enabled: false });
-    expect(JSON.stringify(config[provider])).not.toContain(Object.values(env)[0]);
+    expect(config.operations.returnBaseUrl).toBe("https://shop.example.test");
+    expect(JSON.stringify(config[provider])).not.toMatch(/secret|merchant|public/i);
   });
 
   it("throws when local test payments are explicitly enabled in production", () => {
