@@ -62,8 +62,8 @@ const order = Object.freeze({
   currency: "NZD",
   deliveryMethod: "pickup",
   shipping: Object.freeze({ provider: null, serviceName: "Pickup", isTest: false, amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0 }),
-  totals: Object.freeze({ productSubtotalExGstCents: 6500, productGstCents: 975, productTotalInclGstCents: 7475, totalExGstCents: 6500, totalGstCents: 975, totalInclGstCents: 7475 }),
-  items: Object.freeze([{ productTitle: "Photo Print Canvas", sizeLabel: "A4", orientation: "landscape", peoplePets: 0, photoSubmissionMethod: "later", designText: "Family", notes: "", neededDate: "2026-08-10", urgentServiceConfirmed: false, urgentWorkingDays: 5, quantity: 1, unitSubtotalExGstCents: 6500, unitGstCents: 975, unitTotalInclGstCents: 7475, lineSubtotalExGstCents: 6500, lineGstCents: 975, lineTotalInclGstCents: 7475 }]),
+  totals: Object.freeze({ productSubtotalExGstCents: 15717, productGstCents: 2358, productTotalInclGstCents: 18075, totalExGstCents: 15717, totalGstCents: 2358, totalInclGstCents: 18075 }),
+  items: Object.freeze([{ productTitle: "Photo Print Canvas", sizeLabel: "A4", orientation: "landscape", peoplePets: 2, photoSubmissionMethod: "later", designText: "Family forever", notes: "Use the warm sunset reference", neededDate: "2026-08-10", urgentServiceConfirmed: true, urgentWorkingDays: 3, quantity: 1, priceLines: Object.freeze([{ key: "product-size", label: "Product / size price", amountExGstCents: 6500 }, { key: "people-pets", label: "People / pets fee", amountExGstCents: 4000 }, { key: "urgent-service", label: "Urgent service", amountExGstCents: 5217, amountInclGstCents: 6000 }, { key: "no-charge", label: "No charge", amountExGstCents: 0 }]), unitSubtotalExGstCents: 15717, unitGstCents: 2358, unitTotalInclGstCents: 18075, lineSubtotalExGstCents: 15717, lineGstCents: 2358, lineTotalInclGstCents: 18075 }]),
   addresses: Object.freeze({ billing: address, delivery: address }),
 }) as PublicOrder;
 
@@ -85,9 +85,17 @@ describe("owner-scoped order pages", () => {
       order.orderNumber,
       hashCheckoutSessionToken("a".repeat(43)),
     );
-    expect(screen.getByRole("heading", { level: 1, name: "Order confirmed." })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Order received." })).toBeInTheDocument();
     expect(screen.getByText("Awaiting payment setup", { exact: false })).toBeInTheDocument();
-    expect(screen.getAllByText("$74.75")).toHaveLength(2);
+    expect(screen.getByText("Send after ordering")).toBeInTheDocument();
+    expect(screen.getByText("Family forever")).toBeInTheDocument();
+    expect(screen.getByText("Use the warm sunset reference")).toBeInTheDocument();
+    expect(screen.getByText("Confirmed · 3 working days")).toBeInTheDocument();
+    expect(screen.getByText("Product / size price")).toBeInTheDocument();
+    expect(screen.getByText("People / pets fee")).toBeInTheDocument();
+    expect(screen.getAllByText("Urgent service")).toHaveLength(2);
+    expect(screen.queryByText("No charge")).not.toBeInTheDocument();
+    expect(screen.getAllByText("$180.75")).toHaveLength(2);
     expect(screen.getByText("No payment has been requested on this test platform yet.")).toBeInTheDocument();
   });
 
@@ -112,10 +120,46 @@ describe("owner-scoped order pages", () => {
     render(await AccountOrdersPage());
     expect(listByCustomer).toHaveBeenCalledWith("user-1");
     expect(screen.getByRole("link", { name: /RNR-2026-ABC/ })).toHaveAttribute("href", "/account/orders/RNR-2026-ABC");
+    expect(screen.getByText("Awaiting payment setup")).toBeInTheDocument();
 
     render(await AccountOrderPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
     expect(findByCustomer).toHaveBeenCalledWith(order.orderNumber, "user-1");
-    expect(screen.getAllByRole("heading", { level: 1, name: "Order confirmed." })).toHaveLength(1);
+    expect(screen.getAllByRole("heading", { level: 1, name: "Order details." })).toHaveLength(1);
+  });
+
+  it("treats a malformed checkout cookie as absent before hashing or querying it", async () => {
+    cookies.mockResolvedValue({ get: () => ({ value: "not-a-session-token" }) });
+    getOptionalSession.mockResolvedValue({ user: { id: "user-1" } });
+
+    render(await OrderConfirmationPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
+
+    expect(findByCheckoutToken).not.toHaveBeenCalled();
+    expect(findByCustomer).toHaveBeenCalledWith(order.orderNumber, "user-1");
+  });
+
+  it("hides non-applicable people, empty design fields and zero price lines", async () => {
+    findByCheckoutToken.mockResolvedValue({
+      ...order,
+      items: [{
+        ...order.items[0],
+        peoplePets: 0,
+        designText: "",
+        notes: "  ",
+        urgentServiceConfirmed: false,
+        priceLines: [
+          { key: "product-size", label: "Product / size price", amountExGstCents: 6500 },
+          { key: "no-charge", label: "No charge", amountExGstCents: 0 },
+        ],
+      }],
+    });
+
+    render(await OrderConfirmationPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
+
+    expect(screen.queryByText("People / pets", { exact: true })).not.toBeInTheDocument();
+    expect(screen.queryByText("Design text")).not.toBeInTheDocument();
+    expect(screen.queryByText("Design notes")).not.toBeInTheDocument();
+    expect(screen.getByText("Not requested")).toBeInTheDocument();
+    expect(screen.queryByText("No charge")).not.toBeInTheDocument();
   });
 
   it("does not reveal another customer's order", async () => {

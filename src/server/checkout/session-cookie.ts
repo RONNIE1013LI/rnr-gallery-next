@@ -11,6 +11,10 @@ export function hashCheckoutSessionToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
+export function isCheckoutSessionToken(value: unknown): value is string {
+  return typeof value === "string" && /^[A-Za-z0-9_-]{43}$/.test(value);
+}
+
 export function sessionCookie(
   token: string,
   environment: string | undefined = process.env.NODE_ENV,
@@ -36,7 +40,7 @@ export function readCheckoutSessionToken(request: Request): string | null {
     const name = part.slice(0, separator).trim();
     if (name !== CHECKOUT_SESSION_COOKIE_NAME) continue;
     const value = part.slice(separator + 1).trim();
-    return /^[A-Za-z0-9_-]{43}$/.test(value) ? value : null;
+    return isCheckoutSessionToken(value) ? value : null;
   }
 
   return null;

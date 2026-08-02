@@ -3,6 +3,7 @@ import {
   CHECKOUT_SESSION_COOKIE_NAME,
   createCheckoutSessionToken,
   hashCheckoutSessionToken,
+  isCheckoutSessionToken,
   sessionCookie,
   readCheckoutSessionToken,
 } from "./session-cookie";
@@ -56,5 +57,10 @@ describe("checkout session cookie", () => {
         }),
       ),
     ).toBeNull();
+  });
+
+  it("shares one token-shape validator across request and server component readers", () => {
+    expect(isCheckoutSessionToken("a".repeat(43))).toBe(true);
+    expect(isCheckoutSessionToken("not-valid")).toBe(false);
   });
 });

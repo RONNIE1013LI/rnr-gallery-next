@@ -58,7 +58,11 @@ const itemRow: ItemRow = {
   urgentServiceConfirmed: false,
   urgentWorkingDays: 5,
   quantity: 1,
-  priceLines: [],
+  priceLines: [
+    { key: "product-size", label: "Product / size price", amountExGstCents: 6500 },
+    { key: "urgent-service", label: "Urgent service", amountExGstCents: 5217, amountInclGstCents: 6000, internalMetadata: "private" },
+    { key: "no-charge", label: "No-charge adjustment", amountExGstCents: 0 },
+  ] as ItemRow["priceLines"],
   uploadReferences: [],
   unitSubtotalExGstCents: 6500,
   unitGstCents: 975,
@@ -97,13 +101,21 @@ describe("Drizzle order query read model", () => {
     expect(Object.keys(result.items[0])).toEqual([
       "productTitle", "sizeLabel", "orientation", "peoplePets", "photoSubmissionMethod",
       "designText", "notes", "neededDate", "urgentServiceConfirmed", "urgentWorkingDays",
-      "quantity", "unitSubtotalExGstCents", "unitGstCents", "unitTotalInclGstCents",
+      "quantity", "priceLines", "unitSubtotalExGstCents", "unitGstCents", "unitTotalInclGstCents",
       "lineSubtotalExGstCents", "lineGstCents", "lineTotalInclGstCents",
     ]);
     expect(JSON.stringify(result)).not.toMatch(/checkoutSessionId|tokenDigest|customerId|shippingQuoteId|idempotencyKey|uploadReferences/);
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.items)).toBe(true);
     expect(Object.isFrozen(result.items[0])).toBe(true);
+    expect(result.items[0].priceLines).toEqual([
+      { key: "product-size", label: "Product / size price", amountExGstCents: 6500 },
+      { key: "urgent-service", label: "Urgent service", amountExGstCents: 5217, amountInclGstCents: 6000 },
+      { key: "no-charge", label: "No-charge adjustment", amountExGstCents: 0 },
+    ]);
+    expect(JSON.stringify(result)).not.toContain("internalMetadata");
+    expect(Object.isFrozen(result.items[0].priceLines)).toBe(true);
+    expect(Object.isFrozen(result.items[0].priceLines[0])).toBe(true);
     expect(Object.isFrozen(result.addresses.billing)).toBe(true);
   });
 
