@@ -38,14 +38,14 @@ describe("protected account pages", () => {
     const savedAddresses = screen.getByRole("link", { name: "Saved addresses" });
     expect(savedAddresses).toHaveAttribute("href", "/account/addresses");
     expect(savedAddresses).toHaveClass(styles.secondaryButton);
-    expect(screen.getByRole("link", { name: "Orders" })).toHaveClass(
-      styles.secondaryButton,
+    expect(screen.getByRole("link", { name: "Orders" })).toHaveAttribute(
+      "href",
+      "/account/orders",
     );
     expect(screen.getByRole("button", { name: "Sign out" })).toHaveClass(
       styles.secondaryButton,
     );
-    expect(screen.getByText(/orders area is coming next/i)).toBeInTheDocument();
-    expect(screen.queryByText(/order tracking.*works/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/orders area is coming next/i)).not.toBeInTheDocument();
   });
 
   it("requires a session before reading the owner's addresses", async () => {

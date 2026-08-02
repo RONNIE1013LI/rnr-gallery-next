@@ -31,13 +31,9 @@ export default async function AccountPage() {
           <Link className={styles.secondaryButton} href="/account/addresses">
             Saved addresses
           </Link>
-          <a className={styles.secondaryButton} href="#orders">Orders</a>
+          <Link className={styles.secondaryButton} href="/account/orders">Orders</Link>
           <AccountSignOut />
         </nav>
-        <section className={styles.accountUpcoming} id="orders">
-          <h2>Orders</h2>
-          <p>The orders area is coming next. Order tracking is not available here yet.</p>
-        </section>
       </article>
     </main>
   );

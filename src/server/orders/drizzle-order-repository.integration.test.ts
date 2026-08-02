@@ -20,6 +20,7 @@ import { createDrizzleCheckoutRepository } from "@/server/checkout/drizzle-check
 import {
   createDrizzleOrderRepository,
 } from "./drizzle-order-repository";
+import { createDrizzleOrderQueryRepository } from "./drizzle-order-query-repository";
 import { createOrderService } from "./order-service";
 import {
   AtomicOrderStateError,
@@ -36,6 +37,7 @@ const pool = new Pool({ connectionString: databaseUrl });
 const database = drizzle(pool);
 const checkoutRepository = createDrizzleCheckoutRepository(database);
 const repository = createDrizzleOrderRepository(database);
+const queryRepository = createDrizzleOrderQueryRepository(database);
 const suffix = randomUUID();
 const sessionIds: string[] = [];
 const customerIds: string[] = [];
@@ -418,6 +420,31 @@ describe("Drizzle atomic order repository", () => {
 
     expect((await repository.getCheckoutState(state.id))?.completedAt)
       .toEqual(persistedOrder.createdAt);
+  });
+
+  it("reads immutable guest and customer order snapshots only through their owner", async () => {
+    const guestState = await checkout();
+    const guestOrder = await repository.createAtomicOrder(pickupInput(guestState));
+    const guest = await queryRepository.findByCheckoutToken(
+      guestOrder.orderNumber,
+      guestState.tokenDigest,
+    );
+    expect(guest).toMatchObject({ orderNumber: guestOrder.orderNumber, deliveryMethod: "pickup", totals: { totalInclGstCents: 7_475 } });
+    expect(guest?.items).toHaveLength(1);
+    expect(guest?.addresses.billing).toEqual(address);
+    expect(Object.isFrozen(guest)).toBe(true);
+    expect(JSON.stringify(guest)).not.toMatch(/checkoutSessionId|tokenDigest|customerId|shippingQuoteId|"id"/);
+    await expect(queryRepository.findByCheckoutToken(guestOrder.orderNumber, "wrong"))
+      .resolves.toBeNull();
+
+    const customerState = await checkout({ customerId: customerIds[0] });
+    const customerOrder = await repository.createAtomicOrder(pickupInput(customerState));
+    const history = await queryRepository.listByCustomer(customerIds[0]);
+    expect(history.map(({ orderNumber }) => orderNumber)).toContain(customerOrder.orderNumber);
+    await expect(queryRepository.findByCustomer(customerOrder.orderNumber, "other-user"))
+      .resolves.toBeNull();
+    await expect(queryRepository.findByCustomer(guestOrder.orderNumber, customerIds[0]))
+      .resolves.toBeNull();
   });
 
   it("serializes concurrent identical and different idempotency requests", async () => {
