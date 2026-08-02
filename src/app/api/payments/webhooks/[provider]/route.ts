@@ -56,17 +56,28 @@ function payloadTooLarge() {
   }, 413);
 }
 
+async function cancelUnreadBody(request: Request) {
+  try {
+    await request.body?.cancel();
+  } catch {
+    // Pre-read validation status remains authoritative if cancellation fails.
+  }
+}
+
 async function readBoundedRawBody(request: Request): Promise<Uint8Array> {
   const contentLength = request.headers.get("content-length");
   if (contentLength !== null) {
     if (!/^\d+$/.test(contentLength)) {
+      await cancelUnreadBody(request);
       throw new InvalidWebhookBodyError();
     }
     const declaredLength = Number(contentLength);
     if (!Number.isSafeInteger(declaredLength)) {
+      await cancelUnreadBody(request);
       throw new InvalidWebhookBodyError();
     }
     if (declaredLength > MAX_WEBHOOK_RAW_BODY_BYTES) {
+      await cancelUnreadBody(request);
       throw new WebhookPayloadTooLargeError();
     }
   }

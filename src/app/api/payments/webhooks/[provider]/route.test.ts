@@ -53,9 +53,12 @@ function webhookRequest(raw = new Uint8Array([0, 255, 13, 10, 123, 125])) {
 function streamingRequest(
   chunks: readonly Uint8Array[],
   headers: Readonly<Record<string, string>> = {},
+  cancelError?: Error,
 ) {
   let index = 0;
-  const cancelled = vi.fn();
+  const cancelled = vi.fn(async () => {
+    if (cancelError) throw cancelError;
+  });
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) {
       const chunk = chunks[index++];
@@ -71,6 +74,21 @@ function streamingRequest(
     duplex: "half",
   } as RequestInit & { duplex: "half" });
   return { request, cancelled };
+}
+
+function erroredStreamingRequest() {
+  const stream = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.error(new Error("private stream and body details"));
+    },
+  });
+  const request = new Request(url, {
+    method: "POST",
+    headers: { "stripe-signature": "private-signature" },
+    body: stream,
+    duplex: "half",
+  } as RequestInit & { duplex: "half" });
+  return request;
 }
 
 const stripeContext = { params: Promise.resolve({ provider: "stripe" }) };
@@ -110,8 +128,11 @@ describe("POST /api/payments/webhooks/[provider]", () => {
       providers: [stripe],
       paymentService: { applyVerifiedWebhook },
     });
-    const request = webhookRequest(new Uint8Array([123]));
-    request.headers.set("content-length", String(maxRawBodyBytes + 1));
+    const { request, cancelled } = streamingRequest(
+      [new Uint8Array([123])],
+      { "content-length": String(maxRawBodyBytes + 1) },
+      new Error("private cancellation failure"),
+    );
     const getReader = vi.spyOn(request.body!, "getReader");
 
     const response = await handler(request, stripeContext);
@@ -121,6 +142,7 @@ describe("POST /api/payments/webhooks/[provider]", () => {
       error: { code: "PAYLOAD_TOO_LARGE", message: "Webhook payload is too large" },
     });
     expect(getReader).not.toHaveBeenCalled();
+    expect(cancelled).toHaveBeenCalledTimes(1);
     expect(provider.verifyWebhook).not.toHaveBeenCalled();
     expect(applyVerifiedWebhook).not.toHaveBeenCalled();
   });
@@ -212,18 +234,43 @@ describe("POST /api/payments/webhooks/[provider]", () => {
         providers: [stripe],
         paymentService: { applyVerifiedWebhook },
       });
-      const request = webhookRequest();
-      request.headers.set("content-length", contentLength);
+      const { request, cancelled } = streamingRequest(
+        [new Uint8Array([123])],
+        { "content-length": contentLength },
+      );
       const getReader = vi.spyOn(request.body!, "getReader");
 
       const response = await handler(request, stripeContext);
 
       expect(response.status).toBe(400);
       expect(getReader).not.toHaveBeenCalled();
+      expect(cancelled).toHaveBeenCalledTimes(1);
       expect(provider.verifyWebhook).not.toHaveBeenCalled();
       expect(applyVerifiedWebhook).not.toHaveBeenCalled();
     },
   );
+
+  it("fails safely and releases the reader lock when the request stream errors", async () => {
+    const { provider, registration: stripe } = registration();
+    const applyVerifiedWebhook = vi.fn();
+    const handler = createPaymentWebhookRoute({
+      providers: [stripe],
+      paymentService: { applyVerifiedWebhook },
+    });
+    const request = erroredStreamingRequest();
+
+    const response = await handler(request, stripeContext);
+
+    expect(response.status).toBe(400);
+    const body = await response.text();
+    expect(body).toBe(JSON.stringify({
+      error: { code: "INVALID_WEBHOOK", message: "Webhook verification failed" },
+    }));
+    expect(body).not.toMatch(/private stream|body details|private-signature/);
+    expect(request.body?.locked).toBe(false);
+    expect(provider.verifyWebhook).not.toHaveBeenCalled();
+    expect(applyVerifiedWebhook).not.toHaveBeenCalled();
+  });
 
   it("handles an empty body as a safe verification failure", async () => {
     const verifier = vi.fn().mockRejectedValue(new Error("empty payload"));
