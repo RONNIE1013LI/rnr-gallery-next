@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import type { ShippingQuoteProvider, ShippingQuoteRequest } from "./types";
 
 type LocalTestProviderOptions = Readonly<{
-  nodeEnv?: string;
   now?: () => Date;
 }>;
 
@@ -33,7 +32,7 @@ function createQuote(request: ShippingQuoteRequest, now: Date) {
 export function createLocalTestShippingProvider(
   options: LocalTestProviderOptions = {},
 ): ShippingQuoteProvider {
-  if ((options.nodeEnv ?? process.env.NODE_ENV) === "production") {
+  if (process.env.NODE_ENV === "production") {
     throw new Error("The local test shipping provider cannot run in production.");
   }
   const now = options.now ?? (() => new Date());

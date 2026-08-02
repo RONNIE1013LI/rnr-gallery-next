@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createLocalTestShippingProvider } from "./local-test-provider";
 import type { ShippingQuoteRequest } from "./types";
 
@@ -23,9 +23,12 @@ const request: ShippingQuoteRequest = {
 };
 
 describe("local test shipping provider", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("returns a visibly test-only deterministic quote", async () => {
     const provider = createLocalTestShippingProvider({
-      nodeEnv: "test",
       now: () => new Date("2026-08-02T00:00:00.000Z"),
     });
 
@@ -43,7 +46,14 @@ describe("local test shipping provider", () => {
   });
 
   it("cannot be enabled in production", () => {
-    expect(() => createLocalTestShippingProvider({ nodeEnv: "production" }))
+    vi.stubEnv("NODE_ENV", "production");
+    expect(() => createLocalTestShippingProvider())
+      .toThrow("production");
+  });
+
+  it("cannot bypass the real production environment with a caller override", () => {
+    vi.stubEnv("NODE_ENV", "production");
+    expect(() => createLocalTestShippingProvider({ nodeEnv: "test" } as never))
       .toThrow("production");
   });
 });
