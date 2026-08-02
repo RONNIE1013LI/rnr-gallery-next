@@ -1110,6 +1110,50 @@
   color: var(--muted);
 }
 
+.paymentMethods {
+  min-width: 0;
+  margin-top: 1.25rem;
+  border: 0;
+}
+
+.paymentMethods legend {
+  margin-bottom: 0.75rem;
+  font-family: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.paymentMethodChoices {
+  display: grid;
+  gap: 0.65rem;
+}
+
+.paymentMethodOption {
+  min-height: 44px;
+  padding: 0.7rem 0.8rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  border: 1px solid var(--border);
+  background: var(--paper);
+  cursor: pointer;
+}
+
+.paymentMethodOption:has(input:checked) {
+  border-color: var(--gallery-green);
+}
+
+.paymentMethodOption:has(input:focus-visible) {
+  outline: 2px solid var(--gallery-green);
+  outline-offset: 2px;
+}
+
+.paymentTestNotice {
+  margin-top: 0.75rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
 .checkoutSummary {
   position: sticky;
   top: 1.5rem;
@@ -1214,6 +1258,18 @@
 
 .orderNext {
   margin-top: 2rem;
+}
+
+.orderPaymentPanel {
+  width: min(100%, var(--content-width));
+  margin: 2rem auto 0;
+  padding: clamp(1.25rem, 3vw, 2rem);
+  background: var(--paper);
+  border: 1px solid var(--border);
+}
+
+.orderPaymentPanel .primaryButton {
+  margin-top: 1rem;
 }
 
 .orderNext > div {

@@ -15,6 +15,7 @@ const {
   getOptionalSession,
   listByCustomer,
   notFound,
+  push,
   redirect,
   requireSession,
 } = vi.hoisted(() => ({
@@ -24,12 +25,13 @@ const {
   getOptionalSession: vi.fn(),
   listByCustomer: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
+  push: vi.fn(),
   redirect: vi.fn((path: string) => { throw new Error(`REDIRECT:${path}`); }),
   requireSession: vi.fn(),
 }));
 
 vi.mock("next/headers", () => ({ cookies }));
-vi.mock("next/navigation", () => ({ notFound, redirect }));
+vi.mock("next/navigation", () => ({ notFound, redirect, useRouter: () => ({ push }) }));
 vi.mock("@/server/auth/get-optional-session", () => ({ getOptionalSession }));
 vi.mock("@/server/auth/require-session", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/server/auth/require-session")>();
@@ -72,6 +74,7 @@ const order = Object.freeze({
 describe("owner-scoped order pages", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("ENABLE_LOCAL_TEST_PAYMENTS", "true");
     cookies.mockResolvedValue({ get: () => ({ value: "a".repeat(43) }) });
     getOptionalSession.mockResolvedValue(null);
     requireSession.mockResolvedValue({ user: { id: "user-1" } });
@@ -99,7 +102,9 @@ describe("owner-scoped order pages", () => {
     expect(screen.getAllByText("Urgent service")).toHaveLength(2);
     expect(screen.queryByText("No charge")).not.toBeInTheDocument();
     expect(screen.getAllByText("$180.75")).toHaveLength(2);
-    expect(screen.getByText("No payment has been requested on this test platform yet.")).toBeInTheDocument();
+    expect(screen.getByRole("radiogroup", { name: "Payment method" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
+    expect(screen.getByText("No real payment will be taken.")).toBeInTheDocument();
   });
 
   it("returns not found when a guest cookie cannot access the guessed order", async () => {
@@ -129,6 +134,7 @@ describe("owner-scoped order pages", () => {
     render(await AccountOrderPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
     expect(findByCustomer).toHaveBeenCalledWith(order.orderNumber, "user-1");
     expect(screen.getAllByRole("heading", { level: 1, name: "Order details." })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Pay for order" })).toHaveLength(1);
   });
 
   it("treats a malformed checkout cookie as absent before hashing or querying it", async () => {
@@ -172,8 +178,8 @@ describe("owner-scoped order pages", () => {
     render(await OrderConfirmationPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
 
     expect(screen.getByText("Paid", { exact: false })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Payment setup is next" })).not.toBeInTheDocument();
-    expect(screen.queryByText("No payment has been requested on this test platform yet.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Pay for order" })).not.toBeInTheDocument();
+    expect(screen.getByText("Payment confirmed.")).toBeInTheDocument();
   });
 
   it("fails closed when an immutable order snapshot cannot be validated", async () => {

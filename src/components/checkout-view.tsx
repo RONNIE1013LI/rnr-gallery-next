@@ -10,22 +10,31 @@ import { EMPTY_CART_JSON, getCartSnapshot, notifyCartChanged, subscribeToCart } 
 import type { Cart } from "@/domain/cart/types";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { PublicShippingDTO } from "@/server/checkout/public-dto";
+import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import { AddressForm, type AddressFieldErrors } from "./address-form";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
+import { followPaymentAction, startOrderPayment } from "./order-payment-panel";
+import { PaymentMethods, type PaymentMethodOption } from "./payment-methods";
 import styles from "./storefront.module.css";
 
 export type CheckoutSavedAddress = AddressInput & { id: string };
 const emptyAddress: AddressInput = { country: "NZ", fullName: "", building: "", street: "", suburb: "", region: "", postcode: "", phone: "", email: "" };
-const IDEMPOTENCY_STORAGE_KEY = "rnr-checkout-order-idempotency-v1";
-const PLACEMENT_STORAGE_KEY = "rnr-checkout-pending-placement-v1";
+const LEGACY_IDEMPOTENCY_STORAGE_KEY = "rnr-checkout-order-idempotency-v1";
+const LEGACY_PLACEMENT_STORAGE_KEY = "rnr-checkout-pending-placement-v1";
+const PAYMENT_INTENT_STORAGE_KEY = "rnr-checkout-payment-intent-v1";
 
-type PlacementIntent = {
+type PaymentIntentBase = {
   schemaVersion: 1;
-  idempotencyKey: string;
+  orderIdempotencyKey: string;
+  paymentIdempotencyKey: string;
+  method: PaymentMethodKey;
   checkoutVersion: number;
   cartDigest: string;
   shipping: Pick<PublicShippingDTO["option"], "method" | "serviceCode" | "amountExGstCents" | "gstCents" | "amountInclGstCents" | "isTest">;
 };
+type PlacingOrderIntent = PaymentIntentBase & { phase: "placing_order" };
+type StartingPaymentIntent = PaymentIntentBase & { phase: "starting_payment"; orderNumber: string };
+type CheckoutPaymentIntent = PlacingOrderIntent | StartingPaymentIntent;
 
 const recoveryRequests = new Map<string, Promise<unknown>>();
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -40,14 +49,18 @@ function hasExactKeys(value: Record<string, unknown>, keys: string[]) {
   return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
 }
 
-function parsePlacementIntent(raw: string | null): PlacementIntent | null {
+function parsePaymentIntent(raw: string | null): CheckoutPaymentIntent | null {
   if (!raw) return null;
   try {
     const value = JSON.parse(raw) as unknown;
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     const intent = value as Record<string, unknown>;
-    if (!hasExactKeys(intent, ["schemaVersion", "idempotencyKey", "checkoutVersion", "cartDigest", "shipping"])) return null;
-    if (intent.schemaVersion !== 1 || typeof intent.idempotencyKey !== "string" || !isUuid(intent.idempotencyKey)) return null;
+    const baseKeys = ["schemaVersion", "phase", "orderIdempotencyKey", "paymentIdempotencyKey", "method", "checkoutVersion", "cartDigest", "shipping"];
+    if (intent.phase !== "placing_order" && intent.phase !== "starting_payment") return null;
+    if (!hasExactKeys(intent, intent.phase === "placing_order" ? baseKeys : [...baseKeys, "orderNumber"])) return null;
+    if (intent.schemaVersion !== 1 || typeof intent.orderIdempotencyKey !== "string" || !isUuid(intent.orderIdempotencyKey) || typeof intent.paymentIdempotencyKey !== "string" || !isUuid(intent.paymentIdempotencyKey) || intent.orderIdempotencyKey === intent.paymentIdempotencyKey) return null;
+    if (intent.method !== "card" && intent.method !== "afterpay" && intent.method !== "zip") return null;
+    if (intent.phase === "starting_payment" && (typeof intent.orderNumber !== "string" || !/^RNR-[A-Z0-9-]+$/.test(intent.orderNumber))) return null;
     if (!Number.isSafeInteger(intent.checkoutVersion) || (intent.checkoutVersion as number) < 1 || typeof intent.cartDigest !== "string" || !/^[0-9a-f]{64}$/.test(intent.cartDigest)) return null;
     if (!intent.shipping || typeof intent.shipping !== "object" || Array.isArray(intent.shipping)) return null;
     const shipping = intent.shipping as Record<string, unknown>;
@@ -57,22 +70,24 @@ function parsePlacementIntent(raw: string | null): PlacementIntent | null {
       if (!Number.isSafeInteger(shipping[key]) || (shipping[key] as number) < 0) return null;
     }
     if ((shipping.amountExGstCents as number) + (shipping.gstCents as number) !== shipping.amountInclGstCents) return null;
-    return value as PlacementIntent;
+    return value as CheckoutPaymentIntent;
   } catch {
     return null;
   }
 }
 
-function readPlacementIntent() {
+function readPaymentIntent() {
   if (typeof window === "undefined") return null;
-  const intent = parsePlacementIntent(window.sessionStorage.getItem(PLACEMENT_STORAGE_KEY));
-  if (!intent) window.sessionStorage.removeItem(PLACEMENT_STORAGE_KEY);
+  const intent = parsePaymentIntent(window.sessionStorage.getItem(PAYMENT_INTENT_STORAGE_KEY));
+  if (!intent) window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+  window.sessionStorage.removeItem(LEGACY_IDEMPOTENCY_STORAGE_KEY);
+  window.sessionStorage.removeItem(LEGACY_PLACEMENT_STORAGE_KEY);
   return intent;
 }
 
-function placementRequest(intent: PlacementIntent) {
+function placementRequest(intent: CheckoutPaymentIntent) {
   return {
-    idempotencyKey: intent.idempotencyKey,
+    idempotencyKey: intent.orderIdempotencyKey,
     checkoutVersion: intent.checkoutVersion,
     cartDigest: intent.cartDigest,
     shipping: intent.shipping,
@@ -103,26 +118,12 @@ async function postJson(url: string, body: unknown) {
   return payload;
 }
 
-function recoverPlacement(intent: PlacementIntent) {
-  const key = JSON.stringify(intent);
+function recoverRequest<T>(key: string, request: () => Promise<T>) {
   const existing = recoveryRequests.get(key);
-  if (existing) return existing;
-  const request = postJson("/api/checkout/order", placementRequest(intent)).finally(() => recoveryRequests.delete(key));
-  recoveryRequests.set(key, request);
-  return request;
-}
-
-function initialIdempotencyKey() {
-  if (typeof window === "undefined") return "00000000-0000-4000-8000-000000000000";
-  const stored = window.sessionStorage.getItem(IDEMPOTENCY_STORAGE_KEY);
-  if (stored && isUuid(stored)) return stored;
-  if (stored) {
-    window.sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY);
-    window.sessionStorage.removeItem(PLACEMENT_STORAGE_KEY);
-  }
-  const created = window.crypto.randomUUID();
-  window.sessionStorage.setItem(IDEMPOTENCY_STORAGE_KEY, created);
-  return created;
+  if (existing) return existing as Promise<T>;
+  const pending = request().finally(() => recoveryRequests.delete(key));
+  recoveryRequests.set(key, pending);
+  return pending;
 }
 
 function addressErrors(result: ReturnType<typeof addressInputSchema.safeParse>): AddressFieldErrors {
@@ -148,41 +149,57 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   const [reviewedVersion, setReviewedVersion] = useState<number | null>(null);
   const [shipping, setShipping] = useState<PublicShippingDTO["option"] | null>(null);
   const [reviewKey, setReviewKey] = useState("");
+  const [paymentMethods, setPaymentMethods] = useState<readonly PaymentMethodOption[]>([]);
+  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethodKey | null>(null);
+  const [paymentReviewKey, setPaymentReviewKey] = useState("");
   const [message, setMessage] = useState("");
-  const [placementIntent, setPlacementIntent] = useState<PlacementIntent | null>(null);
+  const [paymentIntent, setPaymentIntent] = useState<CheckoutPaymentIntent | null>(null);
   const [recoveryChecked, setRecoveryChecked] = useState(false);
   const [pending, setPending] = useState<"review" | "order" | null>(null);
   const [billingErrors, setBillingErrors] = useState<AddressFieldErrors>({});
   const [deliveryErrors, setDeliveryErrors] = useState<AddressFieldErrors>({});
-  const [idempotencyKey, setIdempotencyKey] = useState("00000000-0000-4000-8000-000000000000");
   const [billingSavedId, setBillingSavedId] = useState(first?.id ?? "");
   const [deliverySavedId, setDeliverySavedId] = useState(first?.id ?? "");
   const reviewing = useRef(false);
   const placing = useRef(false);
   const currentKey = useMemo(() => JSON.stringify({ snapshot, billing, delivery: different ? delivery : billing, different, method }), [snapshot, billing, delivery, different, method]);
   const isReviewed = Boolean(reviewKey === currentKey && reviewedCart && reviewedVersion !== null && shipping);
-  const checkoutLocked = Boolean(!recoveryChecked || pending || placementIntent);
+  const hasPaymentAuthority = Boolean(isReviewed && paymentReviewKey === currentKey);
+  const checkoutLocked = Boolean(!recoveryChecked || pending || paymentIntent);
 
-  const completeOrder = useCallback((payload: { order: { orderNumber: string } }) => {
+  const clearPlacedCart = useCallback(() => {
     createBrowserCartRepository(window.localStorage).clear();
     notifyCartChanged();
-    window.sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY);
-    window.sessionStorage.removeItem(PLACEMENT_STORAGE_KEY);
-    setPlacementIntent(null);
-    push(`/orders/${payload.order.orderNumber}`);
+  }, []);
+
+  const finishPaymentStart = useCallback(async (orderNumber: string, payload: Awaited<ReturnType<typeof startOrderPayment>>) => {
+    const orderHref = `/orders/${orderNumber}`;
+    if (payload.action) {
+      window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+      setPaymentIntent(null);
+      await followPaymentAction(payload.action, orderHref, {
+        assign: (url) => window.location.assign(url),
+        navigate: push,
+      });
+      return;
+    }
+    if (["processing", "paid", "failed", "cancelled"].includes(payload.payment.status)) {
+      window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+      setPaymentIntent(null);
+    }
+    push(`${orderHref}#payment`);
   }, [push]);
 
   const invalidatePlacement = useCallback(() => {
-    window.sessionStorage.removeItem(PLACEMENT_STORAGE_KEY);
-    window.sessionStorage.removeItem(IDEMPOTENCY_STORAGE_KEY);
-    const nextKey = window.crypto.randomUUID();
-    window.sessionStorage.setItem(IDEMPOTENCY_STORAGE_KEY, nextKey);
-    setIdempotencyKey(nextKey);
-    setPlacementIntent(null);
+    window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+    setPaymentIntent(null);
     setReviewedCart(null);
     setReviewedVersion(null);
     setShipping(null);
     setReviewKey("");
+    setPaymentMethods([]);
+    setSelectedPaymentMethod(null);
+    setPaymentReviewKey("");
     setMessage("Checkout changed. Review delivery and totals again.");
   }, []);
 
@@ -197,26 +214,35 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
     let active = true;
     void Promise.resolve().then(async () => {
       if (!active) return;
-      const intent = readPlacementIntent();
+      const intent = readPaymentIntent();
       if (!intent) {
-        setIdempotencyKey(initialIdempotencyKey());
         setRecoveryChecked(true);
         return;
       }
-      window.sessionStorage.setItem(IDEMPOTENCY_STORAGE_KEY, intent.idempotencyKey);
-      setIdempotencyKey(intent.idempotencyKey);
-      setPlacementIntent(intent);
+      setPaymentIntent(intent);
       setPending("order");
       setRecoveryChecked(true);
       try {
-        const payload = await recoverPlacement(intent);
-        if (active) completeOrder(payload as { order: { orderNumber: string } });
+        let starting: StartingPaymentIntent;
+        if (intent.phase === "placing_order") {
+          const payload = await recoverRequest(`order:${JSON.stringify(intent)}`, () => postJson("/api/checkout/order", placementRequest(intent))) as { order: { orderNumber: string } };
+          starting = { ...intent, phase: "starting_payment", orderNumber: payload.order.orderNumber };
+          window.sessionStorage.setItem(PAYMENT_INTENT_STORAGE_KEY, JSON.stringify(starting));
+          if (active) setPaymentIntent(starting);
+        } else starting = intent;
+        clearPlacedCart();
+        const payment = await recoverRequest(`payment:${JSON.stringify(starting)}`, () => startOrderPayment(starting.orderNumber, starting.method, starting.paymentIdempotencyKey));
+        if (active) await finishPaymentStart(starting.orderNumber, payment);
       } catch (error) {
-        if (active) handlePlacementFailure(error);
+        if (active) {
+          handlePlacementFailure(error);
+          const current = readPaymentIntent();
+          if (current?.phase === "starting_payment") push(`/orders/${current.orderNumber}#payment`);
+        }
       }
     });
     return () => { active = false; };
-  }, [completeOrder, handlePlacementFailure]);
+  }, [clearPlacedCart, finishPaymentStart, handlePlacementFailure, push]);
 
   if (cart.items.length === 0) return <section className={styles.cartEmpty}><h2>Your cart is empty</h2><Link className={styles.primaryButton} href="/shop">Explore products</Link></section>;
 
@@ -238,31 +264,50 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
     try {
       const session = await postJson("/api/checkout/session", { cart: canonicalCheckoutCart(cart), billingAddress: billing, useDifferentDeliveryAddress: different, ...(different ? { deliveryAddress: delivery } : {}), deliveryMethod: method });
       const quote = await postJson("/api/checkout/shipping", {});
+      const payment = await postJson("/api/checkout/payment-methods", { checkoutVersion: session.checkout.version, cartDigest: session.checkout.cart.cartDigest }) as { methods: readonly PaymentMethodOption[] };
       setReviewedCart(session.checkout.cart); setReviewedVersion(session.checkout.version); setShipping(quote.shipping.option); setReviewKey(currentKey);
+      setPaymentMethods(payment.methods);
+      setSelectedPaymentMethod(payment.methods.find((option) => option.method === "card")?.method ?? payment.methods[0]?.method ?? null);
+      setPaymentReviewKey(currentKey);
       setMessage("Delivery and totals reviewed.");
-    } catch (error) { const fields = (error as CheckoutApiError).fields as { billingAddress?: AddressFieldErrors; deliveryAddress?: AddressFieldErrors } | undefined; if (fields?.billingAddress) setBillingErrors(fields.billingAddress); if (fields?.deliveryAddress) setDeliveryErrors(fields.deliveryAddress); setReviewedCart(null); setReviewedVersion(null); setShipping(null); setReviewKey(""); setMessage(error instanceof Error ? error.message : "Could not review checkout. Choose Pickup or try again."); requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); }
+    } catch (error) { const fields = (error as CheckoutApiError).fields as { billingAddress?: AddressFieldErrors; deliveryAddress?: AddressFieldErrors } | undefined; if (fields?.billingAddress) setBillingErrors(fields.billingAddress); if (fields?.deliveryAddress) setDeliveryErrors(fields.deliveryAddress); setReviewedCart(null); setReviewedVersion(null); setShipping(null); setReviewKey(""); setPaymentMethods([]); setSelectedPaymentMethod(null); setPaymentReviewKey(""); setMessage(error instanceof Error ? error.message : "Could not review checkout. Choose Pickup or try again."); requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); }
     finally { reviewing.current = false; setPending(null); }
   }
 
   async function placeOrder() {
-    if ((!isReviewed && !placementIntent) || pending || placing.current) return;
+    if ((!paymentIntent && (!isReviewed || !selectedPaymentMethod || !hasPaymentAuthority)) || pending || placing.current) return;
     placing.current = true;
     setPending("order"); setMessage("");
-    const intent = placementIntent ?? {
+    const intent = paymentIntent ?? {
       schemaVersion: 1,
-      idempotencyKey,
+      phase: "placing_order",
+      orderIdempotencyKey: window.crypto.randomUUID(),
+      paymentIdempotencyKey: window.crypto.randomUUID(),
+      method: selectedPaymentMethod!,
       checkoutVersion: reviewedVersion!,
       cartDigest: reviewedCart!.cartDigest,
       shipping: { method: shipping!.method, serviceCode: shipping!.serviceCode, amountExGstCents: shipping!.amountExGstCents, gstCents: shipping!.gstCents, amountInclGstCents: shipping!.amountInclGstCents, isTest: shipping!.isTest },
-    } satisfies PlacementIntent;
-    if (!placementIntent) {
-      window.sessionStorage.setItem(PLACEMENT_STORAGE_KEY, JSON.stringify(intent));
-      setPlacementIntent(intent);
+    } satisfies PlacingOrderIntent;
+    if (!paymentIntent) {
+      window.sessionStorage.setItem(PAYMENT_INTENT_STORAGE_KEY, JSON.stringify(intent));
+      setPaymentIntent(intent);
     }
     try {
-      const payload = await postJson("/api/checkout/order", placementRequest(intent));
-      completeOrder(payload);
-    } catch (error) { handlePlacementFailure(error); }
+      let starting: StartingPaymentIntent;
+      if (intent.phase === "placing_order") {
+        const payload = await postJson("/api/checkout/order", placementRequest(intent));
+        starting = { ...intent, phase: "starting_payment", orderNumber: payload.order.orderNumber };
+        window.sessionStorage.setItem(PAYMENT_INTENT_STORAGE_KEY, JSON.stringify(starting));
+        setPaymentIntent(starting);
+      } else starting = intent;
+      clearPlacedCart();
+      const payment = await startOrderPayment(starting.orderNumber, starting.method, starting.paymentIdempotencyKey);
+      await finishPaymentStart(starting.orderNumber, payment);
+    } catch (error) {
+      handlePlacementFailure(error);
+      const current = readPaymentIntent();
+      if (current?.phase === "starting_payment") push(`/orders/${current.orderNumber}#payment`);
+    }
   }
 
   return <div className={styles.checkoutLayout}>
@@ -275,6 +320,6 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       <button className={styles.secondaryButton} type="submit" disabled={checkoutLocked}>{!recoveryChecked ? "Checking order status…" : pending === "review" ? "Reviewing…" : "Review delivery & totals"}</button>
       <p aria-live="polite" className={styles.checkoutMessage}>{message}</p>
     </form>
-    <aside className={styles.checkoutSummary}><p className={styles.eyebrow}>Your order</p><h2>Order summary</h2>{reviewedCart && !isReviewed ? <p className={styles.checkoutMessage}>Changes need review.</p> : null}<CheckoutOrderSummary cart={isReviewed ? reviewedCart : null} shipping={isReviewed ? shipping : null} /><button className={styles.primaryButton} type="button" disabled={(!isReviewed && !placementIntent) || Boolean(pending)} onClick={placeOrder}>{pending === "order" ? "Recovering order…" : placementIntent ? "Retry order recovery" : "Place order"}</button></aside>
+    <aside className={styles.checkoutSummary}><p className={styles.eyebrow}>Your order</p><h2>Order summary</h2>{reviewedCart && !isReviewed ? <p className={styles.checkoutMessage}>Changes need review.</p> : null}<CheckoutOrderSummary cart={isReviewed ? reviewedCart : null} shipping={isReviewed ? shipping : null} />{hasPaymentAuthority ? <PaymentMethods methods={paymentMethods} value={selectedPaymentMethod} onChange={setSelectedPaymentMethod} disabled={checkoutLocked} /> : null}<button className={styles.primaryButton} type="button" disabled={paymentIntent ? Boolean(pending) : !hasPaymentAuthority || !selectedPaymentMethod || paymentMethods.length === 0 || Boolean(pending)} onClick={placeOrder}>{pending === "order" ? "Starting order…" : paymentIntent?.phase === "starting_payment" ? "Retry payment recovery" : paymentIntent ? "Retry order recovery" : "Place order"}</button></aside>
   </div>;
 }
