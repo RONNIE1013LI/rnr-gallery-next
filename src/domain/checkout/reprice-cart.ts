@@ -207,6 +207,12 @@ export function repriceCart(
     if (new Set(input.items.map((item) => item.clientItemId)).size !== input.items.length) {
       throw new InvalidCheckoutCartError("Client item IDs must be unique.");
     }
+    const allUploadReferences = input.items.flatMap((item) => item.uploadReferences);
+    if (new Set(allUploadReferences).size !== allUploadReferences.length) {
+      throw new InvalidCheckoutCartError(
+        "Upload references cannot be shared between cart items.",
+      );
+    }
     const orderDate = getAucklandDate(options.now ?? new Date());
     const items = Object.freeze(
       input.items.map((item) => repriceItem(item, orderDate)),

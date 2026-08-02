@@ -28,11 +28,12 @@ async function createPickupOrder(
     `INSERT INTO orders (
        order_number, checkout_session_id, checkout_session_version,
        idempotency_key, customer_email, delivery_method,
+       shipping_service_code, shipping_service_name,
        product_subtotal_ex_gst_cents, product_gst_cents,
        product_total_incl_gst_cents, shipping_ex_gst_cents,
        shipping_gst_cents, shipping_total_incl_gst_cents,
        total_ex_gst_cents, total_gst_cents, total_incl_gst_cents
-     ) VALUES ($1, $2, 1, $3, 'checkout@example.test', 'pickup',
+     ) VALUES ($1, $2, 1, $3, 'checkout@example.test', 'pickup', 'pickup', 'Pickup',
        6500, 975, 7475, 0, 0, 0, 6500, 975, 7475)
      RETURNING id`,
     [`RNR-${randomUUID()}`, sessionId, idempotencyKey],
@@ -115,7 +116,7 @@ describe("checkout schema database constraints", () => {
     await pool.end();
   });
 
-  it("enforces one order per session and unique idempotency keys", async () => {
+  it("enforces one order per session and scopes idempotency to that session", async () => {
     const firstSession = await createSession("one-order-a");
     const secondSession = await createSession("one-order-b");
     const key = `task3-key-${suffix}`;
@@ -124,8 +125,8 @@ describe("checkout schema database constraints", () => {
     await expect(createPickupOrder(firstSession, `${key}-other`)).rejects.toThrow(
       "orders_checkout_session_id_unique",
     );
-    await expect(createPickupOrder(secondSession, key)).rejects.toThrow(
-      "orders_idempotency_key_unique",
+    await expect(createPickupOrder(secondSession, key)).resolves.toEqual(
+      expect.any(String),
     );
   });
 
@@ -136,11 +137,12 @@ describe("checkout schema database constraints", () => {
         `INSERT INTO orders (
            order_number, checkout_session_id, checkout_session_version,
            idempotency_key, customer_email, delivery_method,
+           shipping_service_code, shipping_service_name,
            product_subtotal_ex_gst_cents, product_gst_cents,
            product_total_incl_gst_cents, shipping_ex_gst_cents,
            shipping_gst_cents, shipping_total_incl_gst_cents,
            total_ex_gst_cents, total_gst_cents, total_incl_gst_cents
-         ) VALUES ($1, $2, 1, $3, 'checkout@example.test', 'pickup',
+         ) VALUES ($1, $2, 1, $3, 'checkout@example.test', 'pickup', 'pickup', 'Pickup',
            6500, 975, 1, 0, 0, 0, 6500, 975, 7475)`,
         [`RNR-${randomUUID()}`, sessionId, `task3-bad-${suffix}`],
       ),
@@ -166,11 +168,14 @@ describe("checkout schema database constraints", () => {
         `INSERT INTO orders (
            order_number, checkout_session_id, checkout_session_version,
            idempotency_key, customer_email, delivery_method, shipping_quote_id,
+           shipping_provider, shipping_service_code, shipping_service_name,
+           shipping_provider_reference, shipping_request_digest,
            product_subtotal_ex_gst_cents, product_gst_cents,
            product_total_incl_gst_cents, shipping_ex_gst_cents,
            shipping_gst_cents, shipping_total_incl_gst_cents,
            total_ex_gst_cents, total_gst_cents, total_incl_gst_cents
          ) VALUES ($1, $2, 1, $3, 'checkout@example.test', 'post', $4,
+           'local-test', 'post', 'Test Post', 'provider-ref', 'digest',
            6500, 975, 7475, 2000, 300, 2300, 8500, 1275, 9775)`,
         [
           `RNR-${randomUUID()}`,

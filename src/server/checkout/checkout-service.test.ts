@@ -269,4 +269,25 @@ describe("checkout service", () => {
       InvalidCheckoutStateError,
     );
   });
+
+  it("rejects a completed checkout before calling a shipping provider", async () => {
+    const repo = repository({
+      getCheckoutState: vi.fn().mockResolvedValue({
+        id: sessionId,
+        version: 4,
+        completedAt: new Date("2026-08-02T12:00:00.000Z"),
+        cartDigest: "cart",
+        cartSnapshot: { cartDigest: "cart" },
+        deliveryAddress: billingAddress,
+        deliveryMethod: "post",
+      }),
+    });
+    const shipping = shippingService();
+    const service = createCheckoutService({ repository: repo, shippingService: shipping });
+
+    await expect(service.quoteShipping(sessionId)).rejects.toBeInstanceOf(
+      InvalidCheckoutStateError,
+    );
+    expect(shipping.quotePost).not.toHaveBeenCalled();
+  });
 });

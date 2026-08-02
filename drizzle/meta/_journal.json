@@ -22,6 +22,13 @@
       "when": 1785650511136,
       "tag": "0002_shallow_onslaught",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1785655526348,
+      "tag": "0003_awesome_tattoo",
+      "breakpoints": true
     }
   ]
 }

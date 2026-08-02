@@ -21,6 +21,7 @@ import type {
   PhotoSubmissionMethod,
 } from "@/domain/configuration/types";
 import type { PriceLine } from "@/domain/pricing/types";
+import type { ProviderShippingQuote } from "@/server/shipping/types";
 import { user } from "./auth";
 import { checkoutSessions, shippingQuotes } from "./checkout";
 
@@ -45,7 +46,7 @@ export const orders = pgTable(
       .unique()
       .references(() => checkoutSessions.id, { onDelete: "restrict" }),
     checkoutSessionVersion: integer("checkout_session_version").notNull(),
-    idempotencyKey: text("idempotency_key").notNull().unique(),
+    idempotencyKey: text("idempotency_key").notNull(),
     customerId: text("customer_id").references(() => user.id, {
       onDelete: "set null",
     }),
@@ -53,6 +54,13 @@ export const orders = pgTable(
     currency: text("currency").$type<"NZD">().default("NZD").notNull(),
     deliveryMethod: text("delivery_method").$type<DeliveryPreference>().notNull(),
     shippingQuoteId: uuid("shipping_quote_id"),
+    shippingProvider: text("shipping_provider")
+      .$type<ProviderShippingQuote["provider"]>(),
+    shippingServiceCode: text("shipping_service_code").notNull(),
+    shippingServiceName: text("shipping_service_name").notNull(),
+    shippingProviderReference: text("shipping_provider_reference"),
+    shippingIsTest: boolean("shipping_is_test").default(false).notNull(),
+    shippingRequestDigest: text("shipping_request_digest"),
     productSubtotalExGstCents: bigint("product_subtotal_ex_gst_cents", {
       mode: "number",
     }).notNull(),
@@ -87,6 +95,10 @@ export const orders = pgTable(
   (table) => [
     index("orders_customer_id_idx").on(table.customerId),
     index("orders_created_at_idx").on(table.createdAt),
+    uniqueIndex("orders_session_idempotency_unique").on(
+      table.checkoutSessionId,
+      table.idempotencyKey,
+    ),
     unique("orders_checkout_session_id_id_unique").on(
       table.checkoutSessionId,
       table.id,
@@ -129,7 +141,28 @@ export const orders = pgTable(
     check("orders_currency_nzd", sql`${table.currency} = 'NZD'`),
     check(
       "orders_shipping_selection_valid",
-      sql`(${table.deliveryMethod} = 'pickup' AND ${table.shippingQuoteId} IS NULL AND ${table.shippingTotalInclGstCents} = 0) OR (${table.deliveryMethod} = 'post' AND ${table.shippingQuoteId} IS NOT NULL AND ${table.shippingTotalInclGstCents} > 0)`,
+      sql`(
+        ${table.deliveryMethod} = 'pickup'
+        AND ${table.shippingQuoteId} IS NULL
+        AND ${table.shippingProvider} IS NULL
+        AND ${table.shippingServiceCode} = 'pickup'
+        AND ${table.shippingServiceName} = 'Pickup'
+        AND ${table.shippingProviderReference} IS NULL
+        AND ${table.shippingIsTest} = false
+        AND ${table.shippingRequestDigest} IS NULL
+        AND ${table.shippingExGstCents} = 0
+        AND ${table.shippingGstCents} = 0
+        AND ${table.shippingTotalInclGstCents} = 0
+      ) OR (
+        ${table.deliveryMethod} = 'post'
+        AND ${table.shippingQuoteId} IS NOT NULL
+        AND ${table.shippingProvider} IS NOT NULL
+        AND length(${table.shippingServiceCode}) > 0
+        AND length(${table.shippingServiceName}) > 0
+        AND ${table.shippingProviderReference} IS NOT NULL
+        AND ${table.shippingRequestDigest} IS NOT NULL
+        AND ${table.shippingTotalInclGstCents} > 0
+      )`,
     ),
   ],
 );

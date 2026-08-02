@@ -163,6 +163,18 @@ describe("authoritative checkout repricing", () => {
     ).toThrow("Client item IDs must be unique");
   });
 
+  it("rejects one upload referenced by different cart items", () => {
+    expect(() =>
+      repriceCart({
+        version: 1,
+        items: [
+          item(),
+          item({ clientItemId: "00000000-0000-4000-8000-000000000011" }),
+        ],
+      }, { now: MONDAY_IN_AUCKLAND }),
+    ).toThrow("Upload references cannot be shared between cart items");
+  });
+
   it("rejects unsafe computed money from the canonical registry", () => {
     withA4RegistryPrice(Number.MAX_SAFE_INTEGER, () => {
       expect(() =>

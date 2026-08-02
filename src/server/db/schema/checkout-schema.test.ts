@@ -30,6 +30,7 @@ describe("checkout and order schema contract", () => {
     expect(columnNames(checkoutSessions)).not.toContain("token");
     expect(checkoutSessions.tokenDigest.notNull).toBe(true);
     expect(checkoutSessions.tokenDigest.isUnique).toBe(true);
+    expect(columnNames(checkoutSessions)).toContain("completed_at");
     expect(referencedTables(checkoutSessions)).toContain("user");
     expect(referencedTables(checkoutSessions)).toContain("shipping_quotes");
   });
@@ -52,13 +53,27 @@ describe("checkout and order schema contract", () => {
     ).toEqual(["checkout_session_id", "id"]);
   });
 
-  it("enforces one order per checkout session and globally unique idempotency", () => {
+  it("enforces one order per checkout session and session-scoped idempotency", () => {
     expect(orders.checkoutSessionId.isUnique).toBe(true);
-    expect(orders.idempotencyKey.isUnique).toBe(true);
+    expect(orders.idempotencyKey.isUnique).toBe(false);
     expect(orders.orderNumber.isUnique).toBe(true);
+    expect(config(orders).indexes.map((index) => index.config.name)).toContain(
+      "orders_session_idempotency_unique",
+    );
     expect(referencedTables(orders)).toEqual(
       expect.arrayContaining(["checkout_sessions", "shipping_quotes", "user"]),
     );
+  });
+
+  it("stores immutable shipping provenance on the order", () => {
+    expect(columnNames(orders)).toEqual(expect.arrayContaining([
+      "shipping_provider",
+      "shipping_service_code",
+      "shipping_service_name",
+      "shipping_provider_reference",
+      "shipping_is_test",
+      "shipping_request_digest",
+    ]));
   });
 
   it.each([

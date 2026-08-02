@@ -58,6 +58,7 @@ export type CheckoutStateRecord = CheckoutSessionRecord &
     deliveryAddress: NormalizedAddress | null;
     deliveryMethod: DeliveryPreference | null;
     selectedShippingQuoteId: string | null;
+    completedAt: Date | null;
   }>;
 
 export type ShippingQuoteRecord = ProviderShippingQuote &

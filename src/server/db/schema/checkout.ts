@@ -82,6 +82,7 @@ export const checkoutSessions = pgTable(
     deliveryAddress: jsonb("delivery_address").$type<NormalizedAddress>(),
     deliveryMethod: text("delivery_method").$type<DeliveryPreference>(),
     selectedShippingQuoteId: uuid("selected_shipping_quote_id"),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

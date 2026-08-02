@@ -1,0 +1,300 @@
+import { randomUUID } from "node:crypto";
+import { eq, inArray } from "drizzle-orm";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { normalizeAddress } from "@/domain/address/schema";
+import { repriceCart } from "@/domain/checkout/reprice-cart";
+import {
+  checkoutSessions,
+  checkoutUploads,
+  orderAddresses,
+  orderItems,
+  orders,
+  shippingQuotes,
+  user,
+} from "@/server/db/schema";
+import { createDrizzleCheckoutRepository } from "@/server/checkout/drizzle-checkout-repository";
+import {
+  createDrizzleOrderRepository,
+} from "./drizzle-order-repository";
+import {
+  AtomicOrderStateError,
+  OrderConflictError,
+  UnclaimableUploadError,
+} from "./order-repository";
+
+const databaseUrl = process.env.TEST_DATABASE_URL;
+if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required");
+
+const pool = new Pool({ connectionString: databaseUrl });
+const database = drizzle(pool);
+const checkoutRepository = createDrizzleCheckoutRepository(database);
+const repository = createDrizzleOrderRepository(database);
+const suffix = randomUUID();
+const sessionIds: string[] = [];
+const customerIds: string[] = [];
+const now = new Date("2026-08-02T12:00:00.000Z");
+const address = normalizeAddress({
+  country: "NZ", fullName: "Aroha Ngata", building: "",
+  street: "12 Queen Street", suburb: "Auckland Central", region: "Auckland",
+  postcode: "1010", phone: "021 123 4567", email: "aroha@example.test",
+});
+
+function cart(uploadReferences: string[] = []) {
+  return repriceCart({
+    version: 1,
+    items: [{
+      clientItemId: randomUUID(),
+      productKey: "photo-print-canvas", sizeKey: "a4", orientation: "landscape",
+      peoplePets: 0,
+      photoSubmissionMethod: uploadReferences.length ? "upload" : "later",
+      designText: "Family", notes: "", neededDate: "2026-08-10",
+      urgentServiceConfirmed: false, quantity: 1, uploadReferences,
+    }],
+  }, { now });
+}
+
+async function checkout({
+  customerId = null,
+  method = "pickup" as "pickup" | "post",
+  snapshot = cart(),
+}: {
+  customerId?: string | null;
+  method?: "pickup" | "post";
+  snapshot?: ReturnType<typeof cart>;
+} = {}) {
+  const session = await checkoutRepository.createSession({
+    tokenDigest: `order-${randomUUID()}-${suffix}`,
+    customerId,
+    expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+  });
+  sessionIds.push(session.id);
+  const state = await checkoutRepository.saveCheckoutState(session.id, {
+    cartDigest: snapshot.cartDigest,
+    cartSnapshot: snapshot,
+    billingAddress: address,
+    deliveryAddress: address,
+    deliveryMethod: method,
+  });
+  return state!;
+}
+
+function pickupInput(
+  state: Awaited<ReturnType<typeof checkout>>,
+  overrides: Record<string, unknown> = {},
+) {
+  return {
+    sessionId: state.id,
+    expectedCustomerId: state.customerId,
+    expectedVersion: state.version,
+    expectedCartDigest: state.cartDigest!,
+    cart: state.cartSnapshot!,
+    billingAddress: state.billingAddress!,
+    deliveryAddress: state.deliveryAddress!,
+    deliveryMethod: state.deliveryMethod!,
+    shipping: { kind: "pickup" as const },
+    idempotencyKey: randomUUID(),
+    orderNumber: `RNR-2026-${randomUUID().replaceAll("-", "").slice(0, 10).toUpperCase()}`,
+    now,
+    ...overrides,
+  };
+}
+
+function postInput(state: Awaited<ReturnType<typeof checkout>>) {
+  return {
+    ...pickupInput(state),
+    shipping: {
+      kind: "post" as const,
+      requestDigest: "a".repeat(64),
+      quote: {
+        provider: "local-test" as const,
+        serviceCode: "post",
+        serviceName: "Fresh Test Post",
+        amountExGstCents: 2_000,
+        gstCents: 300,
+        amountInclGstCents: 2_300,
+        currency: "NZD" as const,
+        providerReference: `fresh-${randomUUID()}`,
+        expiresAt: new Date("2026-08-02T12:15:00.000Z"),
+        rawResponseHash: "b".repeat(64),
+        isTest: true,
+      },
+    },
+  };
+}
+
+describe("Drizzle atomic order repository", () => {
+  beforeAll(async () => {
+    const customerId = `order-customer-${suffix}`;
+    customerIds.push(customerId);
+    await database.insert(user).values({
+      id: customerId,
+      name: "Order Customer",
+      email: `order-${suffix}@example.test`,
+    });
+  });
+
+  afterAll(async () => {
+    if (sessionIds.length) {
+      await database.delete(checkoutUploads)
+        .where(inArray(checkoutUploads.checkoutSessionId, sessionIds));
+      await database.delete(orders).where(inArray(orders.checkoutSessionId, sessionIds));
+      await database.update(checkoutSessions)
+        .set({ selectedShippingQuoteId: null })
+        .where(inArray(checkoutSessions.id, sessionIds));
+      await database.delete(shippingQuotes)
+        .where(inArray(shippingQuotes.checkoutSessionId, sessionIds));
+      await database.delete(checkoutSessions).where(inArray(checkoutSessions.id, sessionIds));
+    }
+    if (customerIds.length) {
+      await database.delete(user).where(inArray(user.id, customerIds));
+    }
+    await pool.end();
+  });
+
+  it("creates immutable Pickup snapshots, two addresses and consumes a guest checkout", async () => {
+    const state = await checkout();
+    const input = pickupInput(state);
+    const order = await repository.createAtomicOrder(input);
+
+    expect(order).toMatchObject({
+      customerId: null,
+      customerEmail: "aroha@example.test",
+      shippingProvider: null,
+      shippingServiceCode: "pickup",
+      shippingServiceName: "Pickup",
+      shippingProviderReference: null,
+      shippingIsTest: false,
+      shippingRequestDigest: null,
+      shippingTotalInclGstCents: 0,
+      totalInclGstCents: 7_475,
+    });
+    expect(await database.select().from(orderAddresses)
+      .where(eq(orderAddresses.orderId, order.id))).toHaveLength(2);
+    expect((await repository.getCheckoutState(state.id))?.completedAt).toEqual(now);
+    expect(await repository.findSessionByTokenDigest(state.tokenDigest, now))
+      .toMatchObject({ id: state.id, customerId: null });
+
+    await expect(repository.createAtomicOrder(input)).resolves.toMatchObject({ id: order.id });
+    await expect(repository.createAtomicOrder({
+      ...input, idempotencyKey: randomUUID(),
+    })).rejects.toBeInstanceOf(OrderConflictError);
+    await expect(checkoutRepository.saveCheckoutState(state.id, {
+      cartDigest: state.cartDigest!, cartSnapshot: state.cartSnapshot!,
+      billingAddress: address, deliveryAddress: address, deliveryMethod: "pickup",
+    })).resolves.toBeNull();
+    await expect(checkoutRepository.clearSelectedShippingQuote(state.id, state.version))
+      .resolves.toBe(false);
+    await expect(checkoutRepository.persistAndSelectShippingQuote({
+      sessionId: state.id,
+      expectedVersion: state.version,
+      requestDigest: "d".repeat(64),
+      quote: {
+        provider: "local-test", serviceCode: "post", serviceName: "Too late",
+        amountExGstCents: 2_000, gstCents: 300, amountInclGstCents: 2_300,
+        currency: "NZD", providerReference: `completed-${randomUUID()}`,
+        expiresAt: new Date("2026-08-02T12:15:00.000Z"),
+        rawResponseHash: "e".repeat(64), isTest: true,
+      },
+    })).resolves.toBeNull();
+    expect(await database.select().from(shippingQuotes)
+      .where(eq(shippingQuotes.checkoutSessionId, state.id))).toHaveLength(0);
+  });
+
+  it("snapshots a fresh Post quote and preserves the signed-in owner", async () => {
+    const state = await checkout({ customerId: customerIds[0], method: "post" });
+    const input = postInput(state);
+    const order = await repository.createAtomicOrder(input);
+
+    expect(order).toMatchObject({
+      customerId: customerIds[0],
+      shippingProvider: "local-test",
+      shippingServiceCode: "post",
+      shippingServiceName: "Fresh Test Post",
+      shippingProviderReference: input.shipping.quote.providerReference,
+      shippingIsTest: true,
+      shippingRequestDigest: "a".repeat(64),
+      shippingTotalInclGstCents: 2_300,
+      totalInclGstCents: 9_775,
+    });
+  });
+
+  it("rejects an expired Post quote without persisting a quote or order", async () => {
+    const state = await checkout({ method: "post" });
+    const input = postInput(state);
+    await expect(repository.createAtomicOrder({
+      ...input,
+      now: input.shipping.quote.expiresAt,
+    })).rejects.toBeInstanceOf(AtomicOrderStateError);
+    expect(await repository.findBySession(state.id)).toBeNull();
+    expect(await database.select().from(shippingQuotes)
+      .where(eq(shippingQuotes.checkoutSessionId, state.id))).toHaveLength(0);
+  });
+
+  it("rolls back order, item and address inserts when an upload cannot be claimed", async () => {
+    const uploadId = randomUUID();
+    const snapshot = cart([uploadId]);
+    const state = await checkout({ snapshot });
+    await checkoutRepository.createUpload({
+      id: uploadId,
+      checkoutSessionId: state.id,
+      storageKey: `${uploadId}.jpg`, originalName: "photo.jpg",
+      mediaType: "image/jpeg", sizeBytes: 100, sha256: "c".repeat(64),
+    });
+    await database.delete(checkoutUploads).where(eq(checkoutUploads.id, uploadId));
+
+    await expect(repository.createAtomicOrder(pickupInput(state)))
+      .rejects.toBeInstanceOf(UnclaimableUploadError);
+    expect(await repository.findBySession(state.id)).toBeNull();
+    expect(await database.select().from(orderItems)
+      .where(eq(orderItems.checkoutSessionId, state.id))).toHaveLength(0);
+    expect((await repository.getCheckoutState(state.id))?.completedAt).toBeNull();
+  });
+
+  it("rejects version, digest or address races under the checkout lock", async () => {
+    const changedAddress = { ...address, postcode: "6011", region: "Wellington" };
+    const changes = [
+      { version: 99 },
+      { cartDigest: "f".repeat(64) },
+      { deliveryAddress: changedAddress },
+    ];
+    for (const change of changes) {
+      const state = await checkout();
+      await database.update(checkoutSessions).set(change)
+        .where(eq(checkoutSessions.id, state.id));
+      await expect(repository.createAtomicOrder(pickupInput(state)))
+        .rejects.toBeInstanceOf(AtomicOrderStateError);
+      expect(await repository.findBySession(state.id)).toBeNull();
+    }
+  });
+
+  it("serializes concurrent identical and different idempotency requests", async () => {
+    const sameState = await checkout();
+    const same = pickupInput(sameState);
+    const sameResults = await Promise.all([
+      repository.createAtomicOrder({ ...same, orderNumber: "RNR-2026-SAME000001" }),
+      repository.createAtomicOrder({ ...same, orderNumber: "RNR-2026-SAME000002" }),
+    ]);
+    expect(new Set(sameResults.map(({ id }) => id)).size).toBe(1);
+
+    const differentState = await checkout();
+    const first = pickupInput(differentState, {
+      idempotencyKey: "50000000-0000-4000-8000-000000000001",
+      orderNumber: "RNR-2026-DIFF000001",
+    });
+    const second = {
+      ...first,
+      idempotencyKey: "50000000-0000-4000-8000-000000000002",
+      orderNumber: "RNR-2026-DIFF000002",
+    };
+    const results = await Promise.allSettled([
+      repository.createAtomicOrder(first),
+      repository.createAtomicOrder(second),
+    ]);
+    expect(results.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
+    expect(results.filter(({ status }) => status === "rejected")).toHaveLength(1);
+    expect(await database.select().from(orders)
+      .where(eq(orders.checkoutSessionId, differentState.id))).toHaveLength(1);
+  });
+});

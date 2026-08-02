@@ -1,4 +1,4 @@
-import { and, eq, gt, inArray, notExists, or, sql } from "drizzle-orm";
+import { and, eq, gt, inArray, isNull, notExists, or, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import {
   checkoutSessions,
@@ -23,6 +23,7 @@ export function createDrizzleCheckoutRepository(
           and(
             eq(checkoutSessions.tokenDigest, tokenDigest),
             gt(checkoutSessions.expiresAt, now),
+            isNull(checkoutSessions.completedAt),
           ),
         )
         .limit(1);
@@ -93,14 +94,21 @@ export function createDrizzleCheckoutRepository(
           selectedShippingQuoteId: null,
           updatedAt: new Date(),
         })
-        .where(and(eq(checkoutSessions.id, sessionId), changed))
+        .where(and(
+          eq(checkoutSessions.id, sessionId),
+          isNull(checkoutSessions.completedAt),
+          changed,
+        ))
         .returning();
       if (updated) return updated;
 
       const [current] = await database
         .select()
         .from(checkoutSessions)
-        .where(eq(checkoutSessions.id, sessionId))
+        .where(and(
+          eq(checkoutSessions.id, sessionId),
+          isNull(checkoutSessions.completedAt),
+        ))
         .limit(1);
       return current ?? null;
     },
@@ -122,6 +130,7 @@ export function createDrizzleCheckoutRepository(
           and(
             eq(checkoutSessions.id, sessionId),
             eq(checkoutSessions.version, expectedVersion),
+            isNull(checkoutSessions.completedAt),
           ),
         )
         .returning({ id: checkoutSessions.id });
@@ -165,6 +174,7 @@ export function createDrizzleCheckoutRepository(
               and(
                 eq(checkoutSessions.id, input.sessionId),
                 eq(checkoutSessions.version, input.expectedVersion),
+                isNull(checkoutSessions.completedAt),
               ),
             )
             .returning({ id: checkoutSessions.id });

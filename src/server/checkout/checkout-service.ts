@@ -64,6 +64,7 @@ export function createCheckoutService({
       const state = await repository.getCheckoutState(sessionId);
       if (
         !state ||
+        state.completedAt ||
         !state.cartSnapshot ||
         !state.cartDigest ||
         !state.deliveryAddress ||
