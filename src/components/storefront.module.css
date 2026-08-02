@@ -896,7 +896,7 @@
 .cartItem {
   padding: clamp(1.25rem, 2.5vw, 2rem);
   display: grid;
-  grid-template-columns: 2rem 6rem minmax(0, 1fr) auto;
+  grid-template-columns: 2.75rem 6rem minmax(0, 1fr) auto;
   gap: clamp(0.8rem, 2vw, 1.5rem);
   align-items: start;
   background: var(--paper);
@@ -908,8 +908,8 @@
 }
 
 .removeItem {
-  width: 28px;
-  height: 28px;
+  width: 44px;
+  height: 44px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -1660,7 +1660,7 @@
   }
 
   .cartItem {
-    grid-template-columns: 1.5rem 4.5rem minmax(0, 1fr);
+    grid-template-columns: 2.75rem 4.5rem minmax(0, 1fr);
   }
 
   .cartItemMedia {
