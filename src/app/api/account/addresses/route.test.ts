@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NormalizedAddress } from "@/domain/address/types";
 import type {
   AddressRepository,
@@ -9,6 +9,15 @@ import { createAddressCollectionHandlers } from "./route";
 
 const ownerId = "owner-a";
 const now = new Date("2026-08-02T00:00:00.000Z");
+const trustedOrigin = "https://shop.example.test";
+const testSecret = "test-only-auth-secret-32-characters";
+
+beforeEach(() => {
+  vi.stubEnv("BETTER_AUTH_URL", trustedOrigin);
+  vi.stubEnv("BETTER_AUTH_SECRET", testSecret);
+});
+
+afterEach(() => vi.unstubAllEnvs());
 
 const nzAddress = {
   country: "NZ",
@@ -81,10 +90,18 @@ function createMemoryRepository(): AddressRepository {
   };
 }
 
-function requestWith(body: unknown) {
+function requestWith(
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
   return new Request("http://localhost/api/account/addresses", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      Origin: trustedOrigin,
+      "Sec-Fetch-Site": "same-origin",
+      ...headers,
+    },
     body: JSON.stringify(body),
   });
 }
@@ -160,4 +177,36 @@ describe("/api/account/addresses", () => {
       addresses: [{ id: "address-1", ownerId, ...expected }],
     });
   });
+
+  it.each([
+    [
+      "a foreign origin",
+      { Origin: "https://attacker.example" },
+      403,
+      "FORBIDDEN",
+    ],
+    [
+      "a text/plain body",
+      { "Content-Type": "text/plain" },
+      415,
+      "UNSUPPORTED_MEDIA_TYPE",
+    ],
+  ])(
+    "rejects %s before creating an address",
+    async (_name, headers, status, code) => {
+      const repository = createMemoryRepository();
+      const handlers = createAddressCollectionHandlers({
+        requireSession: async () => ({ user: { id: ownerId } }),
+        repository,
+      });
+
+      const response = await handlers.POST(requestWith(nzAddress, headers));
+
+      expect(response.status).toBe(status);
+      expect(await response.json()).toMatchObject({ error: { code } });
+
+      const listResponse = await handlers.GET();
+      expect(await listResponse.json()).toEqual({ addresses: [] });
+    },
+  );
 });

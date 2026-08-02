@@ -36,6 +36,47 @@ describe("addressInputSchema", () => {
     expect(result.phone).toMatch(/^\+61/);
   });
 
+  it.each([
+    ["NZ", "Auckland", "1010", "+64211234567"],
+    ["AU", "NSW", "2000", "+61412345678"],
+  ] as const)(
+    "preserves a valid %s E.164 phone",
+    (country, region, postcode, phone) => {
+      expect(
+        normalizeAddress({
+          ...base,
+          country,
+          region,
+          postcode,
+          phone,
+        }).phone,
+      ).toBe(phone);
+    },
+  );
+
+  it.each([
+    ["NZ", "Auckland", "1010", "+61 412 345 678"],
+    ["AU", "NSW", "2000", "+64 21 123 4567"],
+  ] as const)(
+    "rejects a valid international phone from another country for %s",
+    (country, region, postcode, phone) => {
+      const result = addressInputSchema.safeParse({
+        ...base,
+        country,
+        region,
+        postcode,
+        phone,
+      });
+
+      expect(result.success).toBe(false);
+      if (!result.success) {
+        expect(result.error.flatten().fieldErrors.phone).toContain(
+          "Phone number is invalid for the selected country",
+        );
+      }
+    },
+  );
+
   it("rejects an Australian address with a non-Australian region", () => {
     const result = addressInputSchema.safeParse({
       ...base,

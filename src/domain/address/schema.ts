@@ -8,6 +8,14 @@ import {
 
 const requiredText = z.string().trim().min(1);
 
+function parsePhoneForCountry(
+  value: string,
+  country: (typeof SUPPORTED_COUNTRIES)[number],
+) {
+  const phone = parsePhoneNumberFromString(value, country);
+  return phone?.isValid() && phone.country === country ? phone : undefined;
+}
+
 export const addressInputSchema = z
   .object({
     country: z.enum(SUPPORTED_COUNTRIES),
@@ -34,8 +42,7 @@ export const addressInputSchema = z
       });
     }
 
-    const phone = parsePhoneNumberFromString(address.phone, address.country);
-    if (!phone?.isValid()) {
+    if (!parsePhoneForCountry(address.phone, address.country)) {
       context.addIssue({
         code: "custom",
         path: ["phone"],
@@ -46,8 +53,8 @@ export const addressInputSchema = z
 
 export function normalizeAddress(input: unknown): NormalizedAddress {
   const parsed = addressInputSchema.parse(input);
-  const phone = parsePhoneNumberFromString(parsed.phone, parsed.country);
-  if (!phone?.isValid()) {
+  const phone = parsePhoneForCountry(parsed.phone, parsed.country);
+  if (!phone) {
     throw new Error("Phone number is invalid for the selected country");
   }
 

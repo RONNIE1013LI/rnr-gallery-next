@@ -1097,17 +1097,28 @@
   gap: 0.75rem;
 }
 
-.accountNavigation a {
-  min-height: 48px;
-  padding: 0.8rem 1.25rem;
-  display: inline-flex;
-  align-items: center;
-  border: 1px solid var(--gallery-green);
-  border-radius: 2px;
+.accountNavigation .secondaryButton {
   color: var(--gallery-green);
-  font-size: 0.86rem;
-  font-weight: 700;
-  text-decoration: none;
+}
+
+.accountSignOut {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.accountSignOut .secondaryButton {
+  background: transparent;
+  cursor: pointer;
+}
+
+.accountSignOut .secondaryButton:disabled {
+  color: #6b6e69;
+  cursor: not-allowed;
+}
+
+.accountSignOut .formError {
+  margin-top: 0;
+  font-size: 0.85rem;
 }
 
 .accountUpcoming {

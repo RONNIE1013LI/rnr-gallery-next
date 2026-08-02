@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NormalizedAddress } from "@/domain/address/types";
 import type {
   AddressRepository,
@@ -11,6 +11,15 @@ const foreignOwnerId = "owner-b";
 const addressId = "00000000-0000-4000-8000-000000000001";
 const missingAddressId = "00000000-0000-4000-8000-000000000002";
 const now = new Date("2026-08-02T00:00:00.000Z");
+const trustedOrigin = "https://shop.example.test";
+const testSecret = "test-only-auth-secret-32-characters";
+
+beforeEach(() => {
+  vi.stubEnv("BETTER_AUTH_URL", trustedOrigin);
+  vi.stubEnv("BETTER_AUTH_SECRET", testSecret);
+});
+
+afterEach(() => vi.unstubAllEnvs());
 
 const storedAddress: SavedAddress = {
   id: addressId,
@@ -111,13 +120,38 @@ function createMemoryRepository(initial: SavedAddress[]): AddressRepository {
   };
 }
 
-function updateRequest(body: unknown) {
+function updateRequest(
+  body: unknown,
+  headers: Record<string, string> = {},
+) {
   return new Request(
     `http://localhost/api/account/addresses/${addressId}`,
     {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: {
+        "Content-Type": "application/json",
+        Origin: trustedOrigin,
+        "Sec-Fetch-Site": "same-origin",
+        ...headers,
+      },
       body: JSON.stringify(body),
+    },
+  );
+}
+
+function deleteRequest(
+  requestedAddressId: string,
+  headers: Record<string, string> = {},
+) {
+  return new Request(
+    `http://localhost/api/account/addresses/${requestedAddressId}`,
+    {
+      method: "DELETE",
+      headers: {
+        Origin: trustedOrigin,
+        "Sec-Fetch-Site": "same-origin",
+        ...headers,
+      },
     },
   );
 }
@@ -192,12 +226,7 @@ describe("/api/account/addresses/[addressId]", () => {
     });
 
     const response = await handlers.DELETE(
-      new Request(
-        `http://localhost/api/account/addresses/${missingAddressId}`,
-        {
-          method: "DELETE",
-        },
-      ),
+      deleteRequest(missingAddressId),
       context(missingAddressId),
     );
 
@@ -214,9 +243,7 @@ describe("/api/account/addresses/[addressId]", () => {
     });
 
     const response = await handlers.DELETE(
-      new Request("http://localhost/api/account/addresses/missing", {
-        method: "DELETE",
-      }),
+      deleteRequest("missing"),
       context("missing"),
     );
 
@@ -235,9 +262,7 @@ describe("/api/account/addresses/[addressId]", () => {
     });
 
     const response = await handlers.DELETE(
-      new Request(`http://localhost/api/account/addresses/${addressId}`, {
-        method: "DELETE",
-      }),
+      deleteRequest(addressId),
       context(),
     );
 
@@ -245,5 +270,61 @@ describe("/api/account/addresses/[addressId]", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(await response.text()).toBe("");
     await expect(repository.findByOwner(ownerId, addressId)).resolves.toBeNull();
+  });
+
+  it.each([
+    [
+      "a foreign origin",
+      { Origin: "https://attacker.example" },
+      403,
+      "FORBIDDEN",
+    ],
+    [
+      "a text/plain body",
+      { "Content-Type": "text/plain" },
+      415,
+      "UNSUPPORTED_MEDIA_TYPE",
+    ],
+  ])(
+    "rejects an update with %s before changing the address",
+    async (_name, headers, status, code) => {
+      const repository = createMemoryRepository([storedAddress]);
+      const handlers = createAddressItemHandlers({
+        requireSession: async () => ({ user: { id: ownerId } }),
+        repository,
+      });
+
+      const response = await handlers.PUT(
+        updateRequest(auAddress, headers),
+        context(),
+      );
+
+      expect(response.status).toBe(status);
+      expect(await response.json()).toMatchObject({ error: { code } });
+      await expect(repository.findByOwner(ownerId, addressId)).resolves.toEqual(
+        storedAddress,
+      );
+    },
+  );
+
+  it("rejects a cross-origin delete before removing the address", async () => {
+    const repository = createMemoryRepository([storedAddress]);
+    const handlers = createAddressItemHandlers({
+      requireSession: async () => ({ user: { id: ownerId } }),
+      repository,
+    });
+
+    const response = await handlers.DELETE(
+      deleteRequest(addressId, { Origin: "https://attacker.example" }),
+      context(),
+    );
+
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({
+      error: { code: "FORBIDDEN" },
+    });
+    await expect(repository.findByOwner(ownerId, addressId)).resolves.toEqual(
+      storedAddress,
+    );
   });
 });

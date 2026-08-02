@@ -75,6 +75,15 @@ describe("AddressForm", () => {
     expect(screen.getByLabelText("Postcode")).toHaveAttribute("inputMode", "numeric");
   });
 
+  it("inherits the 48px minimum control height from the shared form-field contract", () => {
+    render(<ControlledAddressForm />);
+
+    const form = screen.getByRole("form", { name: "Address details" });
+    for (const control of form.querySelectorAll("input, select")) {
+      expect(getComputedStyle(control).minHeight).toBe("48px");
+    }
+  });
+
   it("associates field errors with their controls and disables every control when pending", () => {
     const { rerender } = render(
       <AddressForm

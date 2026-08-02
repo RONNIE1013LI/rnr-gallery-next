@@ -4,6 +4,10 @@ import type { AddressRepository } from "@/server/addresses/address-repository";
 import { createDrizzleAddressRepository } from "@/server/addresses/drizzle-address-repository";
 import { HttpError, requireSession } from "@/server/auth/require-session";
 import { getDatabase } from "@/server/db/client";
+import {
+  assertTrustedMutationRequest,
+  MutationRequestError,
+} from "@/server/http/mutation-request";
 
 export const runtime = "nodejs";
 
@@ -57,6 +61,13 @@ function errorResponse(error: unknown) {
     );
   }
 
+  if (error instanceof MutationRequestError) {
+    return json(
+      { error: { code: error.code, message: error.message } },
+      error.status,
+    );
+  }
+
   if (error instanceof SyntaxError) {
     return json(
       { error: { code: "INVALID_JSON", message: "Request body is invalid" } },
@@ -93,6 +104,7 @@ export function createAddressItemHandlers(
     async PUT(request: Request, context: AddressRouteContext) {
       try {
         const session = await getSession();
+        assertTrustedMutationRequest(request);
         const { addressId } = await context.params;
         if (!addressIdPattern.test(addressId)) return notFoundResponse();
 
@@ -108,9 +120,10 @@ export function createAddressItemHandlers(
       }
     },
 
-    async DELETE(_request: Request, context: AddressRouteContext) {
+    async DELETE(request: Request, context: AddressRouteContext) {
       try {
         const session = await getSession();
+        assertTrustedMutationRequest(request);
         const { addressId } = await context.params;
         if (!addressIdPattern.test(addressId)) return notFoundResponse();
 

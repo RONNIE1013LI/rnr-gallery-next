@@ -7,6 +7,7 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   test: {
+    css: { include: /storefront\.module\.css$/ },
     environment: "jsdom",
     setupFiles: ["./vitest.setup.ts"],
   },
