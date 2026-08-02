@@ -1,10 +1,12 @@
 import Stripe from "stripe";
 import type { StripePaymentConfig } from "./config";
 import { stripeEligibility } from "./eligibility";
-import type {
-  PaymentOrder,
-  PaymentProvider,
-  VerifiedPaymentResult,
+import {
+  PaymentProviderRequestError,
+  PaymentProviderVerificationError,
+  type PaymentOrder,
+  type PaymentProvider,
+  type VerifiedPaymentResult,
 } from "./types";
 
 export type StripePaymentIntent = Readonly<{
@@ -68,11 +70,11 @@ function defaultClient(secretKey: string): StripeClient {
 }
 
 function requestFailure(): Error {
-  return new Error("Stripe payment request failed");
+  return new PaymentProviderRequestError("Stripe payment request failed");
 }
 
 function verificationFailure(): Error {
-  return new Error("Stripe payment verification failed");
+  return new PaymentProviderVerificationError("Stripe payment verification failed");
 }
 
 function assertIntent(

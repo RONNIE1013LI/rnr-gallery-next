@@ -6,7 +6,16 @@ import type { ReviewedPaymentCheckoutRepository } from "@/server/checkout/checko
 import type { PaymentAttemptRecord, PaymentRepository } from "./payment-repository";
 import { createPaymentService, PaymentServiceError } from "./payment-service";
 import type { PaymentProviderRegistration } from "./provider-registry";
-import type { PaymentOrder, PaymentProvider, VerifiedProviderEvent } from "./types";
+import type {
+  PaymentOrder,
+  PaymentProvider,
+  VerifiedPaymentResult,
+  VerifiedProviderEvent,
+} from "./types";
+import {
+  PaymentProviderRequestError,
+  PaymentProviderVerificationError,
+} from "./types";
 
 const address: NormalizedAddress = {
   country: "NZ", fullName: "Test Customer", building: "",
@@ -716,5 +725,331 @@ describe("payment service", () => {
     await expect(service({ repository: paidRepo, providers: [registration(card)] })
       .start(access, "card", browserKey)).rejects.toBeInstanceOf(PaymentServiceError);
     expect(paidRepo.createOrClaimNonterminalAttempt).not.toHaveBeenCalled();
+  });
+
+  it("consumes a Stripe return once without treating browser input as payment authority", async () => {
+    const state = "b".repeat(64);
+    const stripe: PaymentProvider = {
+      ...provider(), key: "stripe", method: "card",
+      completeReturn: vi.fn(),
+    };
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt, provider: "stripe", method: "card",
+      providerReference: "pi_persisted_123",
+      returnStateDigest: createHash("sha256").update(state).digest("hex"),
+      status: "processing",
+    };
+    const repo = repository({
+      consumeReturnState: vi.fn().mockResolvedValue({
+        outcome: "consumed", attempt: boundAttempt, order,
+      }),
+    });
+    const paymentService = service({
+      repository: repo,
+      providers: [{ method: "card", label: "Card", isTest: false, provider: stripe }],
+    });
+
+    await expect(paymentService.handleReturn({
+      provider: "stripe",
+      method: "card",
+      orderNumber: order.orderNumber,
+      returnState: state,
+      providerReference: "pi_persisted_123",
+      returnUrl: new URL(
+        `https://trusted.example.test/api/payments/returns/stripe?flow=return&orderNumber=${order.orderNumber}&method=card&state=${state}`,
+      ),
+    })).resolves.toEqual({ orderNumber: order.orderNumber });
+
+    expect(repo.consumeReturnState).toHaveBeenCalledWith({
+      provider: "stripe",
+      method: "card",
+      orderNumber: order.orderNumber,
+      providerReference: "pi_persisted_123",
+      digest: createHash("sha256").update(state).digest("hex"),
+    });
+    expect(stripe.completeReturn).not.toHaveBeenCalled();
+    expect(repo.applyVerifiedResult).not.toHaveBeenCalled();
+  });
+
+  it("lets only the first Afterpay return capture with immutable persisted authority", async () => {
+    const state = "c".repeat(64);
+    const reference = "afterpay_persisted_123";
+    const result: VerifiedPaymentResult = {
+      providerReference: reference,
+      providerStatus: "CAPTURED",
+      amountCents: order.amountCents,
+      currency: order.currency,
+      orderNumber: order.orderNumber,
+      status: "paid",
+    };
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"), key: "afterpay", method: "afterpay",
+      completeReturn: vi.fn().mockResolvedValue(result),
+    };
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt, provider: "afterpay", method: "afterpay",
+      providerReference: reference,
+      returnStateDigest: createHash("sha256").update(state).digest("hex"),
+      status: "requires_action",
+    };
+    const consumeReturnState = vi.fn()
+      .mockResolvedValueOnce({ outcome: "consumed", attempt: boundAttempt, order })
+      .mockResolvedValueOnce({ outcome: "already_consumed", orderNumber: order.orderNumber });
+    const applyVerifiedResult = vi.fn().mockResolvedValue({
+      attempt: { ...boundAttempt, status: "paid" },
+      order: { ...order, paymentStatus: "paid" },
+    });
+    const repo = repository({ consumeReturnState, applyVerifiedResult });
+    const paymentService = service({
+      repository: repo,
+      providers: [{
+        method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay,
+      }],
+    });
+    const returnUrl = new URL(
+      `https://trusted.example.test/api/payments/returns/afterpay?flow=return&orderNumber=${order.orderNumber}&method=afterpay&state=${state}&status=SUCCESS&orderToken=${reference}`,
+    );
+    const input = {
+      provider: "afterpay" as const,
+      method: "afterpay" as const,
+      orderNumber: order.orderNumber,
+      returnState: state,
+      providerReference: reference,
+      returnUrl,
+    };
+
+    await expect(Promise.all([
+      paymentService.handleReturn(input),
+      paymentService.handleReturn(input),
+    ])).resolves.toEqual([
+      { orderNumber: order.orderNumber },
+      { orderNumber: order.orderNumber },
+    ]);
+    expect(afterpay.completeReturn).toHaveBeenCalledOnce();
+    expect(afterpay.completeReturn).toHaveBeenCalledWith({
+      order,
+      providerReference: reference,
+      idempotencyKey: boundAttempt.idempotencyKey,
+      attemptCreatedAt: boundAttempt.createdAt,
+      returnState: state,
+      returnUrl,
+    });
+    expect(applyVerifiedResult).toHaveBeenCalledOnce();
+    expect(applyVerifiedResult).toHaveBeenCalledWith({
+      attemptId: boundAttempt.id,
+      result,
+      source: "server_capture",
+    });
+  });
+
+  it("persists an unknown return result after provider timeout and never reopens it", async () => {
+    const state = "d".repeat(64);
+    const reference = "afterpay_timeout_123";
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"), key: "afterpay", method: "afterpay",
+      completeReturn: vi.fn().mockRejectedValue(new PaymentProviderRequestError()),
+    };
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt, provider: "afterpay", method: "afterpay",
+      providerReference: reference,
+      returnStateDigest: createHash("sha256").update(state).digest("hex"),
+      status: "requires_action",
+    };
+    const consumeReturnState = vi.fn()
+      .mockResolvedValueOnce({ outcome: "consumed", attempt: boundAttempt, order })
+      .mockResolvedValueOnce({ outcome: "already_consumed", orderNumber: order.orderNumber });
+    const applyVerifiedResult = vi.fn().mockResolvedValue({
+      attempt: { ...boundAttempt, status: "processing" },
+      order: { ...order, paymentStatus: "processing" },
+    });
+    const paymentService = service({
+      repository: repository({ consumeReturnState, applyVerifiedResult }),
+      providers: [{
+        method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay,
+      }],
+    });
+    const returnUrl = new URL(
+      `https://trusted.example.test/api/payments/returns/afterpay?flow=return&orderNumber=${order.orderNumber}&method=afterpay&state=${state}&status=SUCCESS&orderToken=${reference}`,
+    );
+    const input = {
+      provider: "afterpay" as const, method: "afterpay" as const,
+      orderNumber: order.orderNumber, returnState: state,
+      providerReference: reference, returnUrl,
+    };
+
+    await expect(paymentService.handleReturn(input))
+      .resolves.toEqual({ orderNumber: order.orderNumber });
+    await expect(paymentService.handleReturn(input))
+      .resolves.toEqual({ orderNumber: order.orderNumber });
+    expect(afterpay.completeReturn).toHaveBeenCalledOnce();
+    expect(applyVerifiedResult).toHaveBeenCalledOnce();
+    expect(applyVerifiedResult).toHaveBeenCalledWith({
+      attemptId: boundAttempt.id,
+      result: {
+        providerReference: reference,
+        providerStatus: "RETURN_STATUS_UNKNOWN",
+        amountCents: boundAttempt.expectedAmountCents,
+        currency: boundAttempt.currency,
+        orderNumber: order.orderNumber,
+        status: "processing",
+      },
+      source: "browser_return",
+    });
+  });
+
+  it("does not invoke Zip completion for the current NZD service path", async () => {
+    const state = "e".repeat(64);
+    const reference = "zip_checkout_123";
+    const zip: PaymentProvider = {
+      ...provider("zip"), key: "zip", method: "zip", completeReturn: vi.fn(),
+    };
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt, provider: "zip", method: "zip", providerReference: reference,
+      returnStateDigest: createHash("sha256").update(state).digest("hex"),
+      status: "requires_action",
+    };
+    const repo = repository({
+      consumeReturnState: vi.fn().mockResolvedValue({
+        outcome: "consumed", attempt: boundAttempt, order,
+      }),
+    });
+    const paymentService = service({
+      repository: repo,
+      providers: [{ method: "zip", label: "Zip", isTest: false, provider: zip }],
+    });
+
+    await expect(paymentService.handleReturn({
+      provider: "zip", method: "zip", orderNumber: order.orderNumber,
+      returnState: state, providerReference: reference,
+      returnUrl: new URL(
+        `https://trusted.example.test/api/payments/returns/zip?flow=return&orderNumber=${order.orderNumber}&method=zip&state=${state}&result=Approved&checkoutId=${reference}`,
+      ),
+    })).resolves.toEqual({ orderNumber: order.orderNumber });
+    expect(zip.completeReturn).not.toHaveBeenCalled();
+    expect(repo.applyVerifiedResult).not.toHaveBeenCalled();
+  });
+
+  it("fails closed instead of recording a deterministic provider verification error as unknown", async () => {
+    const state = "2".repeat(64);
+    const reference = "afterpay_verification_123";
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"), key: "afterpay", method: "afterpay",
+      completeReturn: vi.fn().mockRejectedValue(new PaymentProviderVerificationError()),
+    };
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt, provider: "afterpay", method: "afterpay",
+      providerReference: reference,
+      returnStateDigest: createHash("sha256").update(state).digest("hex"),
+      status: "requires_action",
+    };
+    const applyVerifiedResult = vi.fn();
+    const paymentService = service({
+      repository: repository({
+        consumeReturnState: vi.fn().mockResolvedValue({
+          outcome: "consumed", attempt: boundAttempt, order,
+        }),
+        applyVerifiedResult,
+      }),
+      providers: [{
+        method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay,
+      }],
+    });
+
+    await expect(paymentService.handleReturn({
+      provider: "afterpay", method: "afterpay", orderNumber: order.orderNumber,
+      returnState: state, providerReference: reference,
+      returnUrl: new URL(
+        `https://trusted.example.test/api/payments/returns/afterpay?flow=return&orderNumber=${order.orderNumber}&method=afterpay&state=${state}&status=SUCCESS&orderToken=${reference}`,
+      ),
+    })).rejects.toEqual(new PaymentServiceError(
+      "PAYMENT_RETURN_NOT_FOUND",
+      "Payment return is unavailable",
+    ));
+    expect(applyVerifiedResult).not.toHaveBeenCalled();
+  });
+
+  it("allows only a persisted synthetic AUD Zip fixture to complete", async () => {
+    const state = "1".repeat(64);
+    const reference = "zip_aud_checkout_123";
+    const auAddress: NormalizedAddress = {
+      ...address, country: "AU", region: "NSW", postcode: "2000",
+      phone: "+61400000000",
+    };
+    const audOrder: PaymentOrder = {
+      ...order,
+      currency: "AUD",
+      billingAddress: auAddress,
+      deliveryAddress: auAddress,
+    };
+    const result: VerifiedPaymentResult = {
+      providerReference: reference,
+      providerStatus: "Charged",
+      amountCents: audOrder.amountCents,
+      currency: "AUD",
+      orderNumber: audOrder.orderNumber,
+      status: "paid",
+    };
+    const zip: PaymentProvider = {
+      ...provider("zip"), key: "zip", method: "zip",
+      completeReturn: vi.fn().mockResolvedValue(result),
+    };
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt, provider: "zip", method: "zip", providerReference: reference,
+      returnStateDigest: createHash("sha256").update(state).digest("hex"),
+      status: "requires_action", currency: "AUD", country: "AU",
+    };
+    const applyVerifiedResult = vi.fn().mockResolvedValue({
+      attempt: { ...boundAttempt, status: "paid" },
+      order: { ...audOrder, paymentStatus: "paid" },
+    });
+    const repo = repository({
+      consumeReturnState: vi.fn().mockResolvedValue({
+        outcome: "consumed", attempt: boundAttempt, order: audOrder,
+      }),
+      applyVerifiedResult,
+    });
+    const paymentService = service({
+      repository: repo,
+      providers: [{ method: "zip", label: "Zip", isTest: false, provider: zip }],
+    });
+    const returnUrl = new URL(
+      `https://trusted.example.test/api/payments/returns/zip?flow=return&orderNumber=${audOrder.orderNumber}&method=zip&state=${state}&result=Approved&checkoutId=${reference}`,
+    );
+
+    await expect(paymentService.handleReturn({
+      provider: "zip", method: "zip", orderNumber: audOrder.orderNumber,
+      returnState: state, providerReference: reference, returnUrl,
+    })).resolves.toEqual({ orderNumber: audOrder.orderNumber });
+    expect(zip.completeReturn).toHaveBeenCalledOnce();
+    expect(applyVerifiedResult).toHaveBeenCalledWith({
+      attemptId: boundAttempt.id,
+      result,
+      source: "server_capture",
+    });
+  });
+
+  it("fails closed before provider completion when the persisted return authority is absent", async () => {
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"), key: "afterpay", method: "afterpay",
+      completeReturn: vi.fn(),
+    };
+    const repo = repository({ consumeReturnState: vi.fn().mockResolvedValue(null) });
+    const paymentService = service({
+      repository: repo,
+      providers: [{
+        method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay,
+      }],
+    });
+
+    await expect(paymentService.handleReturn({
+      provider: "afterpay", method: "afterpay", orderNumber: order.orderNumber,
+      returnState: "f".repeat(64), providerReference: "wrong-reference",
+      returnUrl: new URL("https://trusted.example.test/api/payments/returns/afterpay"),
+    })).rejects.toEqual(new PaymentServiceError(
+      "PAYMENT_RETURN_NOT_FOUND",
+      "Payment return is unavailable",
+    ));
+    expect(afterpay.completeReturn).not.toHaveBeenCalled();
+    expect(repo.applyVerifiedResult).not.toHaveBeenCalled();
   });
 });

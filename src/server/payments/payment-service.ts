@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import type { NormalizedAddress } from "@/domain/address/types";
-import type { PaymentMethodKey } from "@/server/db/schema/payments";
+import type {
+  PaymentMethodKey,
+  PaymentProviderKey,
+} from "@/server/db/schema/payments";
 import type { ReviewedPaymentCheckoutRepository } from "@/server/checkout/checkout-repository";
 import { parsePaymentReturnOrigin } from "./config";
 import type {
@@ -20,12 +23,17 @@ import type {
   ProviderSession,
   VerifiedProviderEvent,
 } from "./types";
+import {
+  PaymentProviderRequestError,
+  PaymentProviderVerificationError,
+} from "./types";
 
 export type PaymentServiceErrorCode =
   | "CHECKOUT_CHANGED"
   | "ORDER_NOT_FOUND"
   | "PAYMENT_UNAVAILABLE"
-  | "PAYMENT_ATTEMPT_IN_PROGRESS";
+  | "PAYMENT_ATTEMPT_IN_PROGRESS"
+  | "PAYMENT_RETURN_NOT_FOUND";
 
 export class PaymentServiceError extends Error {
   constructor(
@@ -53,6 +61,17 @@ export type PaymentStartResult = Readonly<{
   payment: PublicPaymentDTO;
   action: PaymentActionDTO | null;
 }>;
+
+export type PaymentReturnInput = Readonly<{
+  provider: Extract<PaymentProviderKey, "stripe" | "afterpay" | "zip">;
+  method: PaymentMethodKey;
+  orderNumber: string;
+  returnState: string;
+  providerReference: string;
+  returnUrl: URL;
+}>;
+
+export type PaymentReturnResult = Readonly<{ orderNumber: string }>;
 
 type CheckoutPaymentAuthority = ReviewedPaymentCheckoutRepository;
 
@@ -99,6 +118,13 @@ function unavailableStart(): PaymentServiceError {
   return new PaymentServiceError(
     "PAYMENT_UNAVAILABLE",
     "Payment could not be started",
+  );
+}
+
+function unavailableReturn(): PaymentServiceError {
+  return new PaymentServiceError(
+    "PAYMENT_RETURN_NOT_FOUND",
+    "Payment return is unavailable",
   );
 }
 
@@ -279,6 +305,90 @@ export function createPaymentService({
         throw new PaymentServiceError("ORDER_NOT_FOUND", "Order is unavailable");
       }
       return methodsForContext(order);
+    },
+
+    async handleReturn(input: PaymentReturnInput): Promise<PaymentReturnResult> {
+      const registration = byMethod.get(input.method);
+      const expectedPath = `/api/payments/returns/${input.provider}`;
+      if (
+        !registration ||
+        registration.provider.key !== input.provider ||
+        input.returnUrl.origin !== trustedOrigin ||
+        input.returnUrl.pathname !== expectedPath ||
+        !/^[a-f0-9]{64}$/.test(input.returnState)
+      ) {
+        throw unavailableReturn();
+      }
+
+      const consumed = await repository.consumeReturnState({
+        provider: input.provider,
+        method: input.method,
+        digest: digestReturnState(input.returnState),
+        orderNumber: input.orderNumber,
+        providerReference: input.providerReference,
+      });
+      if (!consumed) throw unavailableReturn();
+      if (consumed.outcome === "already_consumed") {
+        return Object.freeze({ orderNumber: consumed.orderNumber });
+      }
+
+      const { attempt: storedAttempt, order: storedOrder } = consumed;
+      if (
+        storedAttempt.provider !== input.provider ||
+        storedAttempt.method !== input.method ||
+        storedAttempt.providerReference !== input.providerReference ||
+        storedAttempt.returnStateDigest !== digestReturnState(input.returnState) ||
+        storedAttempt.orderId !== storedOrder.id ||
+        storedOrder.orderNumber !== input.orderNumber ||
+        storedAttempt.expectedAmountCents !== storedOrder.amountCents ||
+        storedAttempt.currency !== storedOrder.currency
+      ) {
+        throw unavailableReturn();
+      }
+
+      if (
+        input.provider === "stripe" ||
+        (input.provider === "zip" && storedOrder.currency !== "AUD")
+      ) {
+        return Object.freeze({ orderNumber: storedOrder.orderNumber });
+      }
+
+      let result;
+      try {
+        result = await registration.provider.completeReturn({
+          order: storedOrder,
+          providerReference: storedAttempt.providerReference,
+          idempotencyKey: storedAttempt.idempotencyKey,
+          attemptCreatedAt: storedAttempt.createdAt,
+          returnState: input.returnState,
+          returnUrl: input.returnUrl,
+        });
+      } catch (error) {
+        if (error instanceof PaymentProviderVerificationError) {
+          throw unavailableReturn();
+        }
+        if (!(error instanceof PaymentProviderRequestError)) throw error;
+        await repository.applyVerifiedResult({
+          attemptId: storedAttempt.id,
+          result: {
+            providerReference: storedAttempt.providerReference,
+            providerStatus: "RETURN_STATUS_UNKNOWN",
+            amountCents: storedAttempt.expectedAmountCents,
+            currency: storedAttempt.currency,
+            orderNumber: storedOrder.orderNumber,
+            status: "processing",
+          },
+          source: "browser_return",
+        });
+        return Object.freeze({ orderNumber: storedOrder.orderNumber });
+      }
+
+      await repository.applyVerifiedResult({
+        attemptId: storedAttempt.id,
+        result,
+        source: "server_capture",
+      });
+      return Object.freeze({ orderNumber: storedOrder.orderNumber });
     },
 
     async start(

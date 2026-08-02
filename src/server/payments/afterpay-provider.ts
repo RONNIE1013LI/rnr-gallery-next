@@ -3,10 +3,12 @@ import type { NormalizedAddress } from "@/domain/address/types";
 import type { AfterpayPaymentConfig } from "./config";
 import { afterpayEligibility, type AfterpayLimits } from "./eligibility";
 import { createProviderHttp, ProviderHttpError } from "./provider-http";
-import type {
-  PaymentOrder,
-  PaymentProvider,
-  VerifiedPaymentResult,
+import {
+  PaymentProviderRequestError,
+  PaymentProviderVerificationError,
+  type PaymentOrder,
+  type PaymentProvider,
+  type VerifiedPaymentResult,
 } from "./types";
 
 type EnabledAfterpayConfig = Extract<AfterpayPaymentConfig, { enabled: true }>;
@@ -50,11 +52,13 @@ const PORTAL_HOST = {
 } as const;
 
 function requestFailure(): Error {
-  return new Error("Afterpay payment request failed");
+  return new PaymentProviderRequestError("Afterpay payment request failed");
 }
 
 function verificationFailure(): Error {
-  return new Error("Afterpay payment verification failed");
+  return new PaymentProviderVerificationError(
+    "Afterpay payment verification failed",
+  );
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

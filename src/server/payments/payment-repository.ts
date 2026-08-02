@@ -22,7 +22,7 @@ export type PaymentAttemptRecord = Readonly<{
   returnStateDigest: string | null;
   returnStateConsumedAt: Date | null;
   expectedAmountCents: number;
-  currency: "NZD";
+  currency: PaymentCurrency;
   country: SupportedCountry;
   status: PaymentAttemptStatus;
   sanitizedFailureCode: string | null;
@@ -54,10 +54,24 @@ export type BindProviderSessionInput = Readonly<{
   status: Extract<PaymentAttemptStatus, "requires_action" | "processing">;
 }>;
 
-export type ConsumedReturnState = Readonly<{
-  attempt: PaymentAttemptRecord;
-  order: PaymentOrder;
+export type ConsumeReturnStateInput = Readonly<{
+  provider: PaymentProviderKey;
+  method: PaymentMethodKey;
+  digest: string;
+  orderNumber: string;
+  providerReference: string;
 }>;
+
+export type ConsumedReturnState =
+  | Readonly<{
+      outcome: "consumed";
+      attempt: PaymentAttemptRecord;
+      order: PaymentOrder;
+    }>
+  | Readonly<{
+      outcome: "already_consumed";
+      orderNumber: string;
+    }>;
 
 export type PaymentAttemptWithOrder = Readonly<{
   attempt: PaymentAttemptRecord;
@@ -85,8 +99,7 @@ export interface PaymentRepository {
   ): Promise<AttemptClaim>;
   bindProviderSession(input: BindProviderSessionInput): Promise<PaymentAttemptRecord>;
   consumeReturnState(
-    provider: PaymentProviderKey,
-    digest: string,
+    input: ConsumeReturnStateInput,
   ): Promise<ConsumedReturnState | null>;
   applyVerifiedWebhookEventAtomically(
     input: VerifiedEventInput,

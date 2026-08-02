@@ -57,6 +57,7 @@ const RECONCILABLE_ATTEMPTS: PaymentAttemptStatus[] = [
   "requires_action",
   "processing",
 ];
+const RETURN_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const TERMINAL_ORDERS: OrderPaymentStatus[] = ["paid", "refunded"];
 
 export class PaymentRepositoryConflictError extends Error {
@@ -505,13 +506,13 @@ export function createDrizzlePaymentRepository(
       }
     },
 
-    async consumeReturnState(provider, digest): Promise<ConsumedReturnState | null> {
+    async consumeReturnState(input): Promise<ConsumedReturnState | null> {
       const [candidate] = await database
         .select({ id: paymentAttempts.id })
         .from(paymentAttempts)
         .where(and(
-          eq(paymentAttempts.provider, provider),
-          eq(paymentAttempts.returnStateDigest, digest),
+          eq(paymentAttempts.provider, input.provider),
+          eq(paymentAttempts.returnStateDigest, input.digest),
         ))
         .limit(1);
       if (!candidate) return null;
@@ -519,13 +520,24 @@ export function createDrizzlePaymentRepository(
       return database.transaction(async (transaction) => {
         const { order, attempt } = await lockOrderThenAttempt(transaction, candidate.id);
         if (
-          attempt.provider !== provider ||
-          attempt.returnStateDigest !== digest ||
-          attempt.returnStateConsumedAt
+          attempt.provider !== input.provider ||
+          attempt.method !== input.method ||
+          attempt.returnStateDigest !== input.digest ||
+          attempt.providerReference !== input.providerReference ||
+          order.orderNumber !== input.orderNumber
         ) {
           return null;
         }
+        if (attempt.returnStateConsumedAt) {
+          return Object.freeze({
+            outcome: "already_consumed" as const,
+            orderNumber: order.orderNumber,
+          });
+        }
         const now = await databaseNow(transaction);
+        if (
+          attempt.createdAt.getTime() + RETURN_STATE_MAX_AGE_MS <= now.getTime()
+        ) return null;
         const [updated] = await transaction
           .update(paymentAttempts)
           .set({ returnStateConsumedAt: now, updatedAt: now })
@@ -537,6 +549,7 @@ export function createDrizzlePaymentRepository(
         if (!updated) return null;
         const addresses = await loadAddresses(transaction, order.id);
         return Object.freeze({
+          outcome: "consumed" as const,
           attempt: attemptRecord(updated),
           order: paymentOrder(order, addresses),
         });

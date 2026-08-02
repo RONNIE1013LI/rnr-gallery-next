@@ -3,10 +3,12 @@ import type { NormalizedAddress } from "@/domain/address/types";
 import type { ZipPaymentConfig } from "./config";
 import { zipEligibility } from "./eligibility";
 import { createProviderHttp, ProviderHttpError } from "./provider-http";
-import type {
-  PaymentOrder,
-  PaymentProvider,
-  VerifiedPaymentResult,
+import {
+  PaymentProviderRequestError,
+  PaymentProviderVerificationError,
+  type PaymentOrder,
+  type PaymentProvider,
+  type VerifiedPaymentResult,
 } from "./types";
 
 type EnabledZipConfig = Extract<ZipPaymentConfig, { enabled: true }>;
@@ -47,11 +49,11 @@ const REDIRECT_HOST = {
 const APPROVAL_WINDOW_MS = 15 * 60 * 1000;
 
 function requestFailure() {
-  return new Error("Zip payment request failed");
+  return new PaymentProviderRequestError("Zip payment request failed");
 }
 
 function verificationFailure() {
-  return new Error("Zip payment verification failed");
+  return new PaymentProviderVerificationError("Zip payment verification failed");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

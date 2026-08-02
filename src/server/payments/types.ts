@@ -7,6 +7,10 @@ import type {
 
 export type PaymentCurrency = "NZD" | "AUD" | "USD" | "CAD";
 
+export class PaymentProviderRequestError extends Error {}
+
+export class PaymentProviderVerificationError extends Error {}
+
 export type PaymentEligibilityContext = Readonly<{
   amountCents: number;
   currency: PaymentCurrency;

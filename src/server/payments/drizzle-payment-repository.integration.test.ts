@@ -576,25 +576,110 @@ describe("Drizzle payment repository", () => {
       })),
     ]);
     const digest = "b".repeat(64);
+    const firstReference = `afterpay-${randomUUID()}`;
+    const secondReference = `afterpay-${randomUUID()}`;
     const settled = await Promise.allSettled([
       repository.bindProviderSession({
         attemptId: first.attempt.id, claimId: first.claimId!,
-        providerReference: `afterpay-${randomUUID()}`, returnStateDigest: digest,
+        providerReference: firstReference, returnStateDigest: digest,
         status: "requires_action",
       }),
       repository.bindProviderSession({
         attemptId: second.attempt.id, claimId: second.claimId!,
-        providerReference: `afterpay-${randomUUID()}`, returnStateDigest: digest,
+        providerReference: secondReference, returnStateDigest: digest,
         status: "requires_action",
       }),
     ]);
     expect(settled.filter(({ status }) => status === "fulfilled")).toHaveLength(1);
 
+    const winner = settled[0].status === "fulfilled"
+      ? { order: firstOrder, reference: firstReference, attempt: first.attempt }
+      : { order: secondOrder, reference: secondReference, attempt: second.attempt };
+
+    for (const invalid of [
+      { provider: "stripe" as const },
+      { method: "card" as const },
+      { digest: "c".repeat(64) },
+      { orderNumber: "RNR-PAY-NOT-THIS-ORDER" },
+      { providerReference: "afterpay-wrong-reference" },
+    ]) {
+      await expect(repository.consumeReturnState({
+        provider: "afterpay",
+        method: "afterpay",
+        digest,
+        orderNumber: winner.order.orderNumber,
+        providerReference: winner.reference,
+        ...invalid,
+      })).resolves.toBeNull();
+    }
+
     const consumed = await Promise.all([
-      repository.consumeReturnState("afterpay", digest),
-      repository.consumeReturnState("afterpay", digest),
+      repository.consumeReturnState({
+        provider: "afterpay", method: "afterpay", digest,
+        orderNumber: winner.order.orderNumber,
+        providerReference: winner.reference,
+      }),
+      repository.consumeReturnState({
+        provider: "afterpay", method: "afterpay", digest,
+        orderNumber: winner.order.orderNumber,
+        providerReference: winner.reference,
+      }),
     ]);
-    expect(consumed.filter(Boolean)).toHaveLength(1);
+    expect(consumed.map((value) => value?.outcome).sort())
+      .toEqual(["already_consumed", "consumed"]);
+    expect(consumed.find((value) => value?.outcome === "consumed")).toMatchObject({
+      attempt: {
+        id: winner.attempt.id,
+        providerReference: winner.reference,
+        idempotencyKey: winner.attempt.idempotencyKey,
+        createdAt: winner.attempt.createdAt,
+      },
+      order: { orderNumber: winner.order.orderNumber },
+    });
+
+    const afterRestart = createDrizzlePaymentRepository(database);
+    await expect(afterRestart.consumeReturnState({
+      provider: "afterpay", method: "afterpay", digest,
+      orderNumber: winner.order.orderNumber,
+      providerReference: winner.reference,
+    })).resolves.toEqual({
+      outcome: "already_consumed",
+      orderNumber: winner.order.orderNumber,
+    });
+  });
+
+  it("rejects an expired return state under the attempt row lock", async () => {
+    const order = await createOrder();
+    const claim = await repository.createOrClaimNonterminalAttempt(claimInput(
+      order.orderId,
+      { provider: "afterpay", method: "afterpay" },
+    ));
+    const digest = "7".repeat(64);
+    const providerReference = `afterpay-${randomUUID()}`;
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference,
+      returnStateDigest: digest,
+      status: "requires_action",
+    });
+    await pool.query(
+      "update payment_attempts set created_at = clock_timestamp() - interval '24 hours 1 second' where id = $1",
+      [claim.attempt.id],
+    );
+
+    await expect(repository.consumeReturnState({
+      provider: "afterpay",
+      method: "afterpay",
+      digest,
+      orderNumber: order.orderNumber,
+      providerReference,
+    })).resolves.toBeNull();
+    const [{ returnStateConsumedAt }] = await database
+      .select({ returnStateConsumedAt: paymentAttempts.returnStateConsumedAt })
+      .from(paymentAttempts)
+      .where(eq(paymentAttempts.id, claim.attempt.id));
+    expect(returnStateConsumedAt).toBeNull();
   });
 
   it("applies verified money atomically and preserves terminal state exactly", async () => {
