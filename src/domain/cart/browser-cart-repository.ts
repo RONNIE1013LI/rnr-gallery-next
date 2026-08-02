@@ -33,6 +33,10 @@ function isCartItem(value: unknown): value is CartItem {
     typeof item.designText === "string" &&
     typeof item.notes === "string" &&
     typeof item.neededDate === "string" &&
+    (item.urgentServiceConfirmed === undefined ||
+      typeof item.urgentServiceConfirmed === "boolean") &&
+    (item.urgentFeeInclGstCents === undefined ||
+      isNonNegativeInteger(item.urgentFeeInclGstCents)) &&
     (item.deliveryPreference === "post" ||
       item.deliveryPreference === "pickup") &&
     Number.isInteger(item.quantity) &&

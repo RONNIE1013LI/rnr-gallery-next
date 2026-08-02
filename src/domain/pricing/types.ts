@@ -2,6 +2,7 @@ export type PriceLine = Readonly<{
   key: string;
   label: string;
   amountExGstCents: number;
+  amountInclGstCents?: number;
 }>;
 
 export type PriceBreakdown = Readonly<{
@@ -40,5 +41,22 @@ export function createPriceBreakdown(
     subtotalExGstCents,
     gstCents,
     totalInclGstCents: subtotalExGstCents + gstCents,
+  });
+}
+
+export function addTaxInclusivePriceLine(
+  breakdown: PriceBreakdown,
+  line: Readonly<{ key: string; label: string; amountInclGstCents: number }>,
+): PriceBreakdown {
+  assertIntegerCents(line.amountInclGstCents, line.label);
+  const amountExGstCents = Math.round((line.amountInclGstCents * 100) / 115);
+  const gstCents = line.amountInclGstCents - amountExGstCents;
+  const priceLine = Object.freeze({ ...line, amountExGstCents });
+
+  return Object.freeze({
+    lines: Object.freeze([...breakdown.lines, priceLine]),
+    subtotalExGstCents: breakdown.subtotalExGstCents + amountExGstCents,
+    gstCents: breakdown.gstCents + gstCents,
+    totalInclGstCents: breakdown.totalInclGstCents + line.amountInclGstCents,
   });
 }

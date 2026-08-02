@@ -21,6 +21,8 @@ export type CartItem = Readonly<{
   designText: string;
   notes: string;
   neededDate: string;
+  urgentServiceConfirmed?: boolean;
+  urgentFeeInclGstCents?: number;
   deliveryPreference: DeliveryPreference;
   quantity: number;
   price: PriceBreakdown;

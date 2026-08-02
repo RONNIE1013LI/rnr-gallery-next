@@ -31,10 +31,11 @@ export default function TermsPage() {
         </p>
         <h2>Timing and urgent service</h2>
         <p>
-          Standard production planning begins from five working days. Urgent
-          service is offered only after R&amp;R Gallery confirms availability and the
-          applicable urgent fee. Prompt customer replies are required to meet an
-          agreed completion date.
+          The fifth working day and later have no urgent fee. The fourth working
+          day is $50, the third $60, the second $70 and the first $80, all
+          including GST. An urgent order is accepted only after the customer
+          confirms the displayed urgent service. Prompt replies are required so
+          we can complete the agreed urgent order on time.
         </p>
         <h2>Printing, colour and supplied files</h2>
         <p>

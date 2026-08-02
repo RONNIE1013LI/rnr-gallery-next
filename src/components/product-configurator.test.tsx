@@ -16,6 +16,7 @@ describe("ProductConfigurator", () => {
       <ProductConfigurator
         product={product}
         schema={schema}
+        orderDate="2026-08-03"
         createId={() => "configured-item"}
       />,
     );
@@ -33,6 +34,7 @@ describe("ProductConfigurator", () => {
       <ProductConfigurator
         product={product}
         schema={schema}
+        orderDate="2026-08-03"
         createId={() => "configured-item"}
       />,
     );
@@ -83,6 +85,7 @@ describe("ProductConfigurator", () => {
       <ProductConfigurator
         product={product}
         schema={schema}
+        orderDate="2026-08-03"
         createId={() => "configured-item"}
       />,
     );
@@ -95,5 +98,34 @@ describe("ProductConfigurator", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
     const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
     expect(stored.items[0].uploadReferences).toEqual(["private-reference"]);
+  });
+
+  it("requires confirmation and adds the GST-inclusive fourth-day urgent fee", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+        createId={() => "urgent-item"}
+      />,
+    );
+    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.change(screen.getByLabelText("Needed by"), {
+      target: { value: "2026-08-07" },
+    });
+
+    expect(screen.getAllByText("$50.00 incl GST")).toHaveLength(2);
+    expect(screen.getByText("$170.75")).toBeInTheDocument();
+    const addButton = screen.getByRole("button", { name: "Confirm urgent service to continue" });
+    expect(addButton).toBeDisabled();
+
+    fireEvent.click(screen.getByLabelText("Confirm urgent service"));
+    expect(screen.getByRole("button", { name: "Add to cart" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+    const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
+    expect(stored.items[0]).toMatchObject({
+      urgentServiceConfirmed: true,
+      urgentFeeInclGstCents: 5_000,
+    });
   });
 });

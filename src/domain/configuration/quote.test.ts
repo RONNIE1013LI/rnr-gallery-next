@@ -55,4 +55,25 @@ describe("configuration quotes", () => {
       quoteConfiguration(schema, { sizeKey: "160x80", peoplePets: 0 }),
     ).toThrow(InvalidPricingInputError);
   });
+
+  it("adds a GST-inclusive urgent fee without taxing it twice", () => {
+    const schema = getConfigurationSchema("digital-oil-painting-canvas")!;
+    const quote = quoteConfiguration(schema, {
+      sizeKey: "a4",
+      peoplePets: 1,
+      urgentFeeInclGstCents: 5_000,
+    });
+
+    expect(quote.lines.at(-1)).toEqual({
+      key: "urgent-service",
+      label: "Urgent service",
+      amountExGstCents: 4_348,
+      amountInclGstCents: 5_000,
+    });
+    expect(quote).toMatchObject({
+      subtotalExGstCents: 14_848,
+      gstCents: 2_227,
+      totalInclGstCents: 17_075,
+    });
+  });
 });

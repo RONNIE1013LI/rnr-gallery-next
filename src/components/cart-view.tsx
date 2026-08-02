@@ -81,6 +81,12 @@ export function CartView() {
                 {item.peoplePets > 0 && <div><dt>People / pets</dt><dd>{item.peoplePets}</dd></div>}
                 <div><dt>Photo submission</dt><dd>{labelFor(item.photoSubmissionMethod)}</dd></div>
                 <div><dt>Needed by</dt><dd>{item.neededDate}</dd></div>
+                {Boolean(item.urgentFeeInclGstCents) && (
+                  <div>
+                    <dt>Urgent service</dt>
+                    <dd>{formatNzd(item.urgentFeeInclGstCents!)} incl GST</dd>
+                  </div>
+                )}
                 <div><dt>Delivery</dt><dd>{labelFor(item.deliveryPreference)}</dd></div>
               </dl>
             </div>

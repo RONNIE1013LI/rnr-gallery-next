@@ -14,29 +14,25 @@ import type {
 } from "@/domain/configuration/types";
 import { quoteConfiguration } from "@/domain/configuration/quote";
 import { formatNzd } from "@/domain/money";
+import {
+  addWorkingDays,
+  getUrgentService,
+} from "@/domain/scheduling/urgent-service";
 import styles from "./storefront.module.css";
 
 type ProductConfiguratorProps = Readonly<{
   product: Product;
   schema: ProductConfigurationSchema;
+  orderDate: string;
   createId?: () => string;
 }>;
 
 type UploadedFile = Readonly<{ id: string; originalName: string }>;
 
-function defaultNeededDate(): string {
-  const date = new Date();
-  let remaining = 5;
-  while (remaining > 0) {
-    date.setDate(date.getDate() + 1);
-    if (date.getDay() !== 0 && date.getDay() !== 6) remaining -= 1;
-  }
-  return date.toISOString().slice(0, 10);
-}
-
 export function ProductConfigurator({
   product,
   schema,
+  orderDate,
   createId = () => crypto.randomUUID(),
 }: ProductConfiguratorProps) {
   const [sizeKey, setSizeKey] = useState(schema.defaultSizeKey);
@@ -48,7 +44,8 @@ export function ProductConfigurator({
     useState<PhotoSubmissionMethod>(schema.defaultPhotoSubmissionMethod);
   const [designText, setDesignText] = useState("");
   const [notes, setNotes] = useState("");
-  const [neededDate, setNeededDate] = useState(defaultNeededDate);
+  const [neededDate, setNeededDate] = useState(() => addWorkingDays(orderDate, 5));
+  const [urgentServiceConfirmed, setUrgentServiceConfirmed] = useState(false);
   const [deliveryPreference, setDeliveryPreference] =
     useState<DeliveryPreference>(schema.defaultDeliveryPreference);
   const [uploadedFiles, setUploadedFiles] = useState<readonly UploadedFile[]>([]);
@@ -57,14 +54,29 @@ export function ProductConfigurator({
   const [added, setAdded] = useState(false);
 
   const size = schema.sizes.find((option) => option.key === sizeKey)!;
+  const urgentService = useMemo(() => {
+    try {
+      return getUrgentService(orderDate, neededDate);
+    } catch {
+      return null;
+    }
+  }, [neededDate, orderDate]);
   const quote = useMemo(
-    () => quoteConfiguration(schema, { sizeKey, peoplePets }),
-    [peoplePets, schema, sizeKey],
+    () => quoteConfiguration(schema, {
+      sizeKey,
+      peoplePets,
+      urgentFeeInclGstCents: urgentService?.feeInclGstCents,
+    }),
+    [peoplePets, schema, sizeKey, urgentService?.feeInclGstCents],
   );
   const uploadRequired =
     photoSubmissionMethod === "upload" &&
     uploadedFiles.length < schema.minimumSourcePhotos;
-  const addDisabled = uploading || uploadRequired;
+  const urgentConfirmationRequired = Boolean(
+    urgentService?.requiresConfirmation && !urgentServiceConfirmed,
+  );
+  const addDisabled =
+    uploading || uploadRequired || !urgentService || urgentConfirmationRequired;
 
   async function uploadSourceFiles(files: FileList | null) {
     if (!files?.length) return;
@@ -103,6 +115,7 @@ export function ProductConfigurator({
   }
 
   function addToCart() {
+    if (addDisabled || !urgentService) return;
     const repository = createBrowserCartRepository(window.localStorage);
     const cart = addCartItem(repository.load(), {
       id: createId(),
@@ -118,6 +131,8 @@ export function ProductConfigurator({
       designText,
       notes,
       neededDate,
+      urgentServiceConfirmed,
+      urgentFeeInclGstCents: urgentService.feeInclGstCents,
       deliveryPreference,
       quantity: 1,
       price: quote,
@@ -296,8 +311,12 @@ export function ProductConfigurator({
               <input
                 type="date"
                 required
+                min={addWorkingDays(orderDate, 1)}
                 value={neededDate}
-                onChange={(event) => setNeededDate(event.target.value)}
+                onChange={(event) => {
+                  setNeededDate(event.target.value);
+                  setUrgentServiceConfirmed(false);
+                }}
               />
             </label>
             <label className={styles.formField}>
@@ -311,6 +330,20 @@ export function ProductConfigurator({
               </select>
             </label>
           </div>
+          {urgentService?.requiresConfirmation && (
+            <label className={styles.urgentConfirmation}>
+              <input
+                type="checkbox"
+                checked={urgentServiceConfirmed}
+                onChange={(event) => setUrgentServiceConfirmed(event.target.checked)}
+                aria-label="Confirm urgent service"
+              />
+              <span>
+                <strong>I need this order by the selected date and confirm urgent service.</strong>
+                <small>{formatNzd(urgentService.feeInclGstCents)} incl GST</small>
+              </span>
+            </label>
+          )}
         </section>
 
       </form>
@@ -326,7 +359,13 @@ export function ProductConfigurator({
         </dl>
         <dl className={styles.priceLines}>
           {quote.lines.map((line) => (
-            <div key={line.key}><dt>{line.label}</dt><dd>{formatNzd(line.amountExGstCents)}</dd></div>
+            <div key={line.key}>
+              <dt>{line.label}</dt>
+              <dd>
+                {formatNzd(line.amountInclGstCents ?? line.amountExGstCents)}
+                {line.amountInclGstCents !== undefined ? " incl GST" : ""}
+              </dd>
+            </div>
           ))}
           <div><dt>Subtotal ex GST</dt><dd>{formatNzd(quote.subtotalExGstCents)}</dd></div>
           <div><dt>GST (15%)</dt><dd>{formatNzd(quote.gstCents)}</dd></div>
@@ -338,7 +377,11 @@ export function ProductConfigurator({
           disabled={addDisabled}
           onClick={addToCart}
         >
-          {uploadRequired ? "Upload a source photo to continue" : "Add to cart"}
+          {uploadRequired
+            ? "Upload a source photo to continue"
+            : urgentConfirmationRequired
+              ? "Confirm urgent service to continue"
+              : "Add to cart"}
         </button>
         {added && (
           <p className={styles.addedMessage} role="status">
