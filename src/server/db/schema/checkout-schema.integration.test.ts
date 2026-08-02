@@ -40,6 +40,53 @@ async function createPickupOrder(
   return result.rows[0].id;
 }
 
+async function createQuote(sessionId: string, label: string): Promise<string> {
+  const result = await pool.query<{ id: string }>(
+    `INSERT INTO shipping_quotes (
+       checkout_session_id, request_digest, provider, service_code,
+       service_name, amount_ex_gst_cents, gst_cents, amount_incl_gst_cents,
+       provider_reference, raw_response_hash, expires_at
+     ) VALUES ($1, 'digest', 'local-test', 'post', 'Test Post',
+       2000, 300, 2300, $2, 'hash', now() + interval '10 minutes')
+     RETURNING id`,
+    [sessionId, `task3-${label}-${suffix}`],
+  );
+  return result.rows[0].id;
+}
+
+async function createOrderItem(sessionId: string, orderId: string): Promise<string> {
+  const result = await pool.query<{ id: string }>(
+    `INSERT INTO order_items (
+       checkout_session_id, order_id, position, client_item_id,
+       product_key, product_slug, product_title, size_key, size_label,
+       people_pets, photo_submission_method, design_text, notes, needed_date,
+       urgent_service_confirmed, urgent_working_days, quantity,
+       price_lines, upload_references, unit_subtotal_ex_gst_cents,
+       unit_gst_cents, unit_total_incl_gst_cents, line_subtotal_ex_gst_cents,
+       line_gst_cents, line_total_incl_gst_cents
+     ) VALUES ($1, $2, 0, $3, 'photo-print-canvas', 'photo-print-canvas',
+       'Photo Print Canvas', 'a4', 'A4', 0, 'later', '', '', '2026-08-10',
+       false, 5, 1, '[]', '[]', 6500, 975, 7475, 6500, 975, 7475)
+     RETURNING id`,
+    [sessionId, orderId, randomUUID()],
+  );
+  return result.rows[0].id;
+}
+
+async function claimUpload(
+  sessionId: string,
+  orderItemId: string,
+  label: string,
+) {
+  return pool.query(
+    `INSERT INTO checkout_uploads (
+       checkout_session_id, storage_key, original_name, media_type,
+       size_bytes, sha256, claimed_by_order_item_id, claimed_at
+     ) VALUES ($1, $2, 'photo.jpg', 'image/jpeg', 100, $3, $4, now())`,
+    [sessionId, `task3-${label}-${suffix}`, `hash-${label}`, orderItemId],
+  );
+}
+
 describe("checkout schema database constraints", () => {
   beforeAll(async () => {
     await pool.query("SELECT 1");
@@ -52,6 +99,10 @@ describe("checkout schema database constraints", () => {
     );
     await pool.query(
       "DELETE FROM orders WHERE checkout_session_id = ANY($1::uuid[])",
+      [sessionIds],
+    );
+    await pool.query(
+      "UPDATE checkout_sessions SET selected_shipping_quote_id = NULL WHERE id = ANY($1::uuid[])",
       [sessionIds],
     );
     await pool.query(
@@ -129,5 +180,41 @@ describe("checkout schema database constraints", () => {
         ],
       ),
     ).rejects.toThrow("orders_shipping_quote_owner_fk");
+  });
+
+  it("allows only the owning checkout session to select a shipping quote", async () => {
+    const quoteOwner = await createSession("selected-quote-owner");
+    const otherSession = await createSession("selected-quote-other");
+    const quoteId = await createQuote(quoteOwner, "selected-quote");
+
+    await expect(
+      pool.query(
+        "UPDATE checkout_sessions SET selected_shipping_quote_id = $1 WHERE id = $2",
+        [quoteId, quoteOwner],
+      ),
+    ).resolves.toMatchObject({ rowCount: 1 });
+    await expect(
+      pool.query(
+        "UPDATE checkout_sessions SET selected_shipping_quote_id = $1 WHERE id = $2",
+        [quoteId, otherSession],
+      ),
+    ).rejects.toThrow("checkout_sessions_selected_quote_owner_fk");
+  });
+
+  it("allows multiple owned uploads per item and rejects cross-session claims", async () => {
+    const ownerSession = await createSession("upload-owner");
+    const otherSession = await createSession("upload-other");
+    const orderId = await createPickupOrder(
+      ownerSession,
+      `task3-upload-order-${suffix}`,
+    );
+    const orderItemId = await createOrderItem(ownerSession, orderId);
+
+    await expect(claimUpload(ownerSession, orderItemId, "upload-one")).resolves
+      .toMatchObject({ rowCount: 1 });
+    await expect(claimUpload(ownerSession, orderItemId, "upload-two")).resolves
+      .toMatchObject({ rowCount: 1 });
+    await expect(claimUpload(otherSession, orderItemId, "upload-cross")).rejects
+      .toThrow("checkout_uploads_claim_owner_fk");
   });
 });

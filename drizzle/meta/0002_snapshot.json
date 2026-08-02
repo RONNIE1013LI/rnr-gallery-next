@@ -1,5 +1,5 @@
 {
-  "id": "d3b5a704-9eb3-470e-a45b-f4717ea1071d",
+  "id": "1a5ee836-cd5d-4dfc-a421-42a13e9beeee",
   "prevId": "0e3bcc5d-0168-4ee0-b436-fdb9a05da4e1",
   "version": "7",
   "dialect": "postgresql",
@@ -616,17 +616,19 @@
           "onDelete": "set null",
           "onUpdate": "no action"
         },
-        "checkout_sessions_selected_shipping_quote_id_shipping_quotes_id_fk": {
-          "name": "checkout_sessions_selected_shipping_quote_id_shipping_quotes_id_fk",
+        "checkout_sessions_selected_quote_owner_fk": {
+          "name": "checkout_sessions_selected_quote_owner_fk",
           "tableFrom": "checkout_sessions",
           "tableTo": "shipping_quotes",
           "columnsFrom": [
+            "id",
             "selected_shipping_quote_id"
           ],
           "columnsTo": [
+            "checkout_session_id",
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -1754,13 +1756,6 @@
           "nullsNotDistinct": false,
           "columns": [
             "storage_key"
-          ]
-        },
-        "checkout_uploads_claimed_by_order_item_id_unique": {
-          "name": "checkout_uploads_claimed_by_order_item_id_unique",
-          "nullsNotDistinct": false,
-          "columns": [
-            "claimed_by_order_item_id"
           ]
         }
       },

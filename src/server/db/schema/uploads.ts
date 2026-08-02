@@ -24,7 +24,7 @@ export const checkoutUploads = pgTable(
     mediaType: text("media_type").notNull(),
     sizeBytes: bigint("size_bytes", { mode: "number" }).notNull(),
     sha256: text("sha256").notNull(),
-    claimedByOrderItemId: uuid("claimed_by_order_item_id").unique(),
+    claimedByOrderItemId: uuid("claimed_by_order_item_id"),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()

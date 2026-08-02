@@ -38,6 +38,18 @@ describe("checkout and order schema contract", () => {
     expect(referencedTables(shippingQuotes)).toContain("checkout_sessions");
     expect(referencedTables(checkoutUploads)).toContain("checkout_sessions");
     expect(referencedTables(checkoutUploads)).toContain("order_items");
+    expect(checkoutUploads.claimedByOrderItemId.isUnique).toBe(false);
+
+    const selectedQuoteOwner = config(checkoutSessions).foreignKeys.find(
+      (foreignKey) => foreignKey.getName() === "checkout_sessions_selected_quote_owner_fk",
+    );
+    expect(selectedQuoteOwner?.reference().columns.map((column) => column.name)).toEqual([
+      "id",
+      "selected_shipping_quote_id",
+    ]);
+    expect(
+      selectedQuoteOwner?.reference().foreignColumns.map((column) => column.name),
+    ).toEqual(["checkout_session_id", "id"]);
   });
 
   it("enforces one order per checkout session and globally unique idempotency", () => {

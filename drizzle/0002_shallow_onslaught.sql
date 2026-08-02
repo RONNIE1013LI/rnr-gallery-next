@@ -163,13 +163,12 @@ CREATE TABLE "checkout_uploads" (
 	"claimed_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "checkout_uploads_storage_key_unique" UNIQUE("storage_key"),
-	CONSTRAINT "checkout_uploads_claimed_by_order_item_id_unique" UNIQUE("claimed_by_order_item_id"),
 	CONSTRAINT "checkout_uploads_size_bytes_positive" CHECK ("checkout_uploads"."size_bytes" > 0),
 	CONSTRAINT "checkout_uploads_claim_consistent" CHECK (("checkout_uploads"."claimed_by_order_item_id" IS NULL AND "checkout_uploads"."claimed_at" IS NULL) OR ("checkout_uploads"."claimed_by_order_item_id" IS NOT NULL AND "checkout_uploads"."claimed_at" IS NOT NULL))
 );
 --> statement-breakpoint
 ALTER TABLE "checkout_sessions" ADD CONSTRAINT "checkout_sessions_customer_id_user_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."user"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "checkout_sessions" ADD CONSTRAINT "checkout_sessions_selected_shipping_quote_id_shipping_quotes_id_fk" FOREIGN KEY ("selected_shipping_quote_id") REFERENCES "public"."shipping_quotes"("id") ON DELETE set null ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "checkout_sessions" ADD CONSTRAINT "checkout_sessions_selected_quote_owner_fk" FOREIGN KEY ("id","selected_shipping_quote_id") REFERENCES "public"."shipping_quotes"("checkout_session_id","id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "shipping_quotes" ADD CONSTRAINT "shipping_quotes_checkout_session_id_checkout_sessions_id_fk" FOREIGN KEY ("checkout_session_id") REFERENCES "public"."checkout_sessions"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "order_addresses" ADD CONSTRAINT "order_addresses_order_id_orders_id_fk" FOREIGN KEY ("order_id") REFERENCES "public"."orders"("id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint
 ALTER TABLE "order_items" ADD CONSTRAINT "order_items_order_owner_fk" FOREIGN KEY ("checkout_session_id","order_id") REFERENCES "public"."orders"("checkout_session_id","id") ON DELETE cascade ON UPDATE no action;--> statement-breakpoint

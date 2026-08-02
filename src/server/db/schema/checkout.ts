@@ -4,6 +4,7 @@ import {
   bigint,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -20,47 +21,13 @@ import type { DeliveryPreference } from "@/domain/configuration/types";
 import type { ProviderShippingQuote } from "@/server/shipping/types";
 import { user } from "./auth";
 
-export const checkoutSessions = pgTable(
-  "checkout_sessions",
-  {
-    id: uuid("id").defaultRandom().primaryKey(),
-    tokenDigest: text("token_digest").notNull().unique(),
-    customerId: text("customer_id").references(() => user.id, {
-      onDelete: "set null",
-    }),
-    version: integer("version").default(1).notNull(),
-    cartDigest: text("cart_digest"),
-    cartSnapshot: jsonb("cart_snapshot").$type<RepricedCheckoutCart>(),
-    billingAddress: jsonb("billing_address").$type<NormalizedAddress>(),
-    deliveryAddress: jsonb("delivery_address").$type<NormalizedAddress>(),
-    deliveryMethod: text("delivery_method").$type<DeliveryPreference>(),
-    selectedShippingQuoteId: uuid("selected_shipping_quote_id").references(
-      (): AnyPgColumn => shippingQuotes.id,
-      { onDelete: "set null" },
-    ),
-    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-    createdAt: timestamp("created_at", { withTimezone: true })
-      .defaultNow()
-      .notNull(),
-    updatedAt: timestamp("updated_at", { withTimezone: true })
-      .defaultNow()
-      .$onUpdate(() => /* @__PURE__ */ new Date())
-      .notNull(),
-  },
-  (table) => [
-    index("checkout_sessions_customer_id_idx").on(table.customerId),
-    index("checkout_sessions_expires_at_idx").on(table.expiresAt),
-    check("checkout_sessions_version_positive", sql`${table.version} > 0`),
-  ],
-);
-
 export const shippingQuotes = pgTable(
   "shipping_quotes",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     checkoutSessionId: uuid("checkout_session_id")
       .notNull()
-      .references(() => checkoutSessions.id, { onDelete: "cascade" }),
+      .references((): AnyPgColumn => checkoutSessions.id, { onDelete: "cascade" }),
     requestDigest: text("request_digest").notNull(),
     provider: text("provider").$type<ProviderShippingQuote["provider"]>().notNull(),
     serviceCode: text("service_code").notNull(),
@@ -97,5 +64,41 @@ export const shippingQuotes = pgTable(
       sql`${table.amountInclGstCents} = ${table.amountExGstCents} + ${table.gstCents}`,
     ),
     check("shipping_quotes_currency_nzd", sql`${table.currency} = 'NZD'`),
+  ],
+);
+
+export const checkoutSessions = pgTable(
+  "checkout_sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    tokenDigest: text("token_digest").notNull().unique(),
+    customerId: text("customer_id").references(() => user.id, {
+      onDelete: "set null",
+    }),
+    version: integer("version").default(1).notNull(),
+    cartDigest: text("cart_digest"),
+    cartSnapshot: jsonb("cart_snapshot").$type<RepricedCheckoutCart>(),
+    billingAddress: jsonb("billing_address").$type<NormalizedAddress>(),
+    deliveryAddress: jsonb("delivery_address").$type<NormalizedAddress>(),
+    deliveryMethod: text("delivery_method").$type<DeliveryPreference>(),
+    selectedShippingQuoteId: uuid("selected_shipping_quote_id"),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    index("checkout_sessions_customer_id_idx").on(table.customerId),
+    index("checkout_sessions_expires_at_idx").on(table.expiresAt),
+    foreignKey({
+      name: "checkout_sessions_selected_quote_owner_fk",
+      columns: [table.id, table.selectedShippingQuoteId],
+      foreignColumns: [shippingQuotes.checkoutSessionId, shippingQuotes.id],
+    }),
+    check("checkout_sessions_version_positive", sql`${table.version} > 0`),
   ],
 );
