@@ -6,13 +6,19 @@ import styles from "@/components/storefront.module.css";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
 import { CHECKOUT_SESSION_COOKIE_NAME, hashCheckoutSessionToken, isCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import { getDatabase } from "@/server/db/client";
-import { createDrizzleOrderQueryRepository } from "@/server/orders/drizzle-order-query-repository";
+import { createDrizzleOrderQueryRepository, OrderSnapshotIntegrityError } from "@/server/orders/drizzle-order-query-repository";
 import { createOrderQueryService } from "@/server/orders/order-query-service";
 
 export default async function OrderConfirmationPage({ params }: { params: Promise<{ orderNumber: string }> }) {
   const [{ orderNumber }, cookieStore, session] = await Promise.all([params, cookies(), getOptionalSession()]);
   const token = cookieStore.get(CHECKOUT_SESSION_COOKIE_NAME)?.value;
-  const order = await createOrderQueryService(createDrizzleOrderQueryRepository(getDatabase())).confirmation(orderNumber, { tokenDigest: isCheckoutSessionToken(token) ? hashCheckoutSessionToken(token) : null, userId: session?.user.id ?? null });
+  let order;
+  try {
+    order = await createOrderQueryService(createDrizzleOrderQueryRepository(getDatabase())).confirmation(orderNumber, { tokenDigest: isCheckoutSessionToken(token) ? hashCheckoutSessionToken(token) : null, userId: session?.user.id ?? null });
+  } catch (error) {
+    if (error instanceof OrderSnapshotIntegrityError) notFound();
+    throw error;
+  }
   if (!order) notFound();
-  return <main id="main-content" className={styles.orderPage}><OrderDetail order={order} heading="Order received." /><section className={styles.orderNext}><h2>Payment setup is next</h2><p>No payment has been requested on this test platform yet.</p><div><Link className={styles.primaryButton} href="/shop">Continue browsing</Link>{session ? <Link className={styles.secondaryButton} href="/account/orders">View account orders</Link> : <Link className={styles.secondaryButton} href="/account/sign-in">Sign in</Link>}</div></section></main>;
+  return <main id="main-content" className={styles.orderPage}><OrderDetail order={order} heading="Order received." />{order.paymentStatus === "awaiting_payment" ? <section className={styles.orderNext}><h2>Payment setup is next</h2><p>No payment has been requested on this test platform yet.</p><div><Link className={styles.primaryButton} href="/shop">Continue browsing</Link>{session ? <Link className={styles.secondaryButton} href="/account/orders">View account orders</Link> : <Link className={styles.secondaryButton} href="/account/sign-in">Sign in</Link>}</div></section> : null}</main>;
 }

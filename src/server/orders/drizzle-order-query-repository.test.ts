@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { orderAddresses, orderItems, orders } from "@/server/db/schema";
-import { buildPublicOrders } from "./drizzle-order-query-repository";
+import {
+  buildPublicOrders,
+  OrderSnapshotIntegrityError,
+} from "./drizzle-order-query-repository";
 
 type OrderRow = typeof orders.$inferSelect;
 type ItemRow = typeof orderItems.$inferSelect;
@@ -60,8 +63,7 @@ const itemRow: ItemRow = {
   quantity: 1,
   priceLines: [
     { key: "product-size", label: "Product / size price", amountExGstCents: 6500 },
-    { key: "urgent-service", label: "Urgent service", amountExGstCents: 5217, amountInclGstCents: 6000, internalMetadata: "private" },
-    { key: "no-charge", label: "No-charge adjustment", amountExGstCents: 0 },
+    { key: "no-charge", label: "No-charge adjustment", amountExGstCents: 0, amountInclGstCents: 0, internalMetadata: "private" },
   ] as ItemRow["priceLines"],
   uploadReferences: [],
   unitSubtotalExGstCents: 6500,
@@ -110,8 +112,7 @@ describe("Drizzle order query read model", () => {
     expect(Object.isFrozen(result.items[0])).toBe(true);
     expect(result.items[0].priceLines).toEqual([
       { key: "product-size", label: "Product / size price", amountExGstCents: 6500 },
-      { key: "urgent-service", label: "Urgent service", amountExGstCents: 5217, amountInclGstCents: 6000 },
-      { key: "no-charge", label: "No-charge adjustment", amountExGstCents: 0 },
+      { key: "no-charge", label: "No-charge adjustment", amountExGstCents: 0, amountInclGstCents: 0 },
     ]);
     expect(JSON.stringify(result)).not.toContain("internalMetadata");
     expect(Object.isFrozen(result.items[0].priceLines)).toBe(true);
@@ -121,6 +122,42 @@ describe("Drizzle order query read model", () => {
 
   it("fails closed when either immutable address snapshot is missing", () => {
     expect(() => buildPublicOrders([orderRow], [itemRow], addresses.slice(0, 1)))
-      .toThrow("has no delivery address snapshot");
+      .toThrow(OrderSnapshotIntegrityError);
+  });
+
+  const corruptions: [string, { row?: OrderRow; items?: ItemRow[]; item?: ItemRow; addressRows?: AddressRow[] }][] = [
+    ["missing item", { items: [] as ItemRow[] }],
+    ["unknown payment status", { row: { ...orderRow, paymentStatus: "unknown" } as unknown as OrderRow }],
+    ["unknown fulfilment status", { row: { ...orderRow, fulfilmentStatus: "unknown" } as unknown as OrderRow }],
+    ["unknown currency", { row: { ...orderRow, currency: "AUD" } as unknown as OrderRow }],
+    ["unknown delivery method", { row: { ...orderRow, deliveryMethod: "courier" } as unknown as OrderRow }],
+    ["unknown shipping provider", { row: { ...orderRow, deliveryMethod: "post", shippingProvider: "unknown" } as unknown as OrderRow }],
+    ["invalid pickup provenance", { row: { ...orderRow, shippingIsTest: true } }],
+    ["invalid created date", { row: { ...orderRow, createdAt: new Date(Number.NaN) } }],
+    ["invalid address", { addressRows: addresses.map((value, index) => index ? value : { ...value, postcode: "bad" }) as AddressRow[] }],
+    ["invalid price line", { item: { ...itemRow, priceLines: [{ key: "bad", label: "Bad", amountExGstCents: -1 }] } as ItemRow }],
+    ["invalid tax-inclusive price line", { item: { ...itemRow, priceLines: [{ key: "product-size", label: "Product / size price", amountExGstCents: 6500, amountInclGstCents: 99_999 }] } as ItemRow }],
+    ["invalid item quantity", { item: { ...itemRow, quantity: 0 } }],
+    ["invalid item position", { item: { ...itemRow, position: 2 } }],
+    ["invalid needed date", { item: { ...itemRow, neededDate: "2026-02-31" } }],
+    ["item money imbalance", { item: { ...itemRow, lineTotalInclGstCents: 7476 } }],
+    ["order money imbalance", { row: { ...orderRow, totalInclGstCents: 7476 } }],
+  ];
+
+  it.each(corruptions)("rejects a corrupt %s without exposing snapshot data", (_label, change) => {
+    const invoke = () => buildPublicOrders(
+      [change.row ?? orderRow],
+      change.items ?? [change.item ?? itemRow],
+      change.addressRows ?? addresses,
+    );
+
+    expect(invoke).toThrow(OrderSnapshotIntegrityError);
+    try {
+      invoke();
+    } catch (error) {
+      expect(error).toMatchObject({ message: "Order snapshot cannot be displayed" });
+      expect(String(error)).not.toContain(orderRow.orderNumber);
+      expect(String(error)).not.toContain(addressBase.email);
+    }
   });
 });

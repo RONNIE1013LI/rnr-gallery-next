@@ -21,6 +21,7 @@ import {
   createDrizzleOrderRepository,
 } from "./drizzle-order-repository";
 import { createDrizzleOrderQueryRepository } from "./drizzle-order-query-repository";
+import { createOrderQueryService } from "./order-query-service";
 import { createOrderService } from "./order-service";
 import {
   AtomicOrderStateError,
@@ -437,14 +438,56 @@ describe("Drizzle atomic order repository", () => {
     await expect(queryRepository.findByCheckoutToken(guestOrder.orderNumber, "wrong"))
       .resolves.toBeNull();
 
+    await database.update(checkoutSessions).set({ expiresAt: new Date("2000-01-01T00:00:00.000Z") })
+      .where(eq(checkoutSessions.id, guestState.id));
+    await expect(queryRepository.findByCheckoutToken(
+      guestOrder.orderNumber,
+      guestState.tokenDigest,
+    )).resolves.toBeNull();
+
     const customerState = await checkout({ customerId: customerIds[0] });
     const customerOrder = await repository.createAtomicOrder(pickupInput(customerState));
+    await expect(queryRepository.findByCheckoutToken(
+      customerOrder.orderNumber,
+      customerState.tokenDigest,
+    )).resolves.toBeNull();
+    const queryService = createOrderQueryService(queryRepository);
+    await expect(queryService.confirmation(customerOrder.orderNumber, {
+      tokenDigest: customerState.tokenDigest,
+      userId: null,
+    })).resolves.toBeNull();
+    await expect(queryService.confirmation(customerOrder.orderNumber, {
+      tokenDigest: customerState.tokenDigest,
+      userId: customerIds[0],
+    })).resolves.toMatchObject({ orderNumber: customerOrder.orderNumber });
     const history = await queryRepository.listByCustomer(customerIds[0]);
     expect(history.map(({ orderNumber }) => orderNumber)).toContain(customerOrder.orderNumber);
     await expect(queryRepository.findByCustomer(customerOrder.orderNumber, "other-user"))
       .resolves.toBeNull();
     await expect(queryRepository.findByCustomer(guestOrder.orderNumber, customerIds[0]))
       .resolves.toBeNull();
+  });
+
+  it("uses a stable order-number tie-breaker for equal customer order dates", async () => {
+    const firstState = await checkout({ customerId: customerIds[0] });
+    const secondState = await checkout({ customerId: customerIds[0] });
+    const tag = suffix.replaceAll("-", "").slice(0, 7).toUpperCase();
+    const first = await repository.createAtomicOrder(pickupInput(firstState, {
+      orderNumber: `RNR-2026-${tag}A`,
+    }));
+    const second = await repository.createAtomicOrder(pickupInput(secondState, {
+      orderNumber: `RNR-2026-${tag}Z`,
+    }));
+    const sameDate = new Date("2026-08-02T12:30:00.000Z");
+    await database.update(orders).set({ createdAt: sameDate })
+      .where(inArray(orders.id, [first.id, second.id]));
+
+    const history = await queryRepository.listByCustomer(customerIds[0]);
+    const tied = history
+      .filter(({ orderNumber }) => orderNumber === first.orderNumber || orderNumber === second.orderNumber)
+      .map(({ orderNumber }) => orderNumber);
+
+    expect(tied).toEqual([second.orderNumber, first.orderNumber]);
   });
 
   it("serializes concurrent identical and different idempotency requests", async () => {

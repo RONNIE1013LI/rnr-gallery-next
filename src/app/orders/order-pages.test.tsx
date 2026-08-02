@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "@/server/auth/require-session";
 import { hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import type { PublicOrder } from "@/server/orders/order-query-service";
+import { OrderSnapshotIntegrityError } from "@/server/orders/drizzle-order-query-repository";
 import AccountOrderPage from "../account/orders/[orderNumber]/page";
 import AccountOrdersPage from "../account/orders/page";
 import OrderConfirmationPage from "./[orderNumber]/page";
@@ -35,7 +36,8 @@ vi.mock("@/server/auth/require-session", async (importOriginal) => {
   return { ...original, requireSession };
 });
 vi.mock("@/server/db/client", () => ({ getDatabase: vi.fn(() => ({})) }));
-vi.mock("@/server/orders/drizzle-order-query-repository", () => ({
+vi.mock("@/server/orders/drizzle-order-query-repository", async (importOriginal) => ({
+  ...await importOriginal<typeof import("@/server/orders/drizzle-order-query-repository")>(),
   createDrizzleOrderQueryRepository: () => ({
     findByCheckoutToken,
     findByCustomer,
@@ -56,7 +58,7 @@ const address = {
 } as const;
 const order = Object.freeze({
   orderNumber: "RNR-2026-ABC",
-  createdAt: "2026-08-02T00:00:00.000Z",
+  createdAt: "2026-08-02T12:30:00.000Z",
   paymentStatus: "awaiting_payment",
   fulfilmentStatus: "new",
   currency: "NZD",
@@ -87,6 +89,7 @@ describe("owner-scoped order pages", () => {
     );
     expect(screen.getByRole("heading", { level: 1, name: "Order received." })).toBeInTheDocument();
     expect(screen.getByText("Awaiting payment setup", { exact: false })).toBeInTheDocument();
+    expect(screen.getByText("3 August 2026", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("Send after ordering")).toBeInTheDocument();
     expect(screen.getByText("Family forever")).toBeInTheDocument();
     expect(screen.getByText("Use the warm sunset reference")).toBeInTheDocument();
@@ -121,6 +124,7 @@ describe("owner-scoped order pages", () => {
     expect(listByCustomer).toHaveBeenCalledWith("user-1");
     expect(screen.getByRole("link", { name: /RNR-2026-ABC/ })).toHaveAttribute("href", "/account/orders/RNR-2026-ABC");
     expect(screen.getByText("Awaiting payment setup")).toBeInTheDocument();
+    expect(screen.getByText("3 August 2026")).toBeInTheDocument();
 
     render(await AccountOrderPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
     expect(findByCustomer).toHaveBeenCalledWith(order.orderNumber, "user-1");
@@ -160,6 +164,33 @@ describe("owner-scoped order pages", () => {
     expect(screen.queryByText("Design notes")).not.toBeInTheDocument();
     expect(screen.getByText("Not requested")).toBeInTheDocument();
     expect(screen.queryByText("No charge")).not.toBeInTheDocument();
+  });
+
+  it("does not show awaiting-payment guidance for a paid order", async () => {
+    findByCheckoutToken.mockResolvedValue({ ...order, paymentStatus: "paid" });
+
+    render(await OrderConfirmationPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
+
+    expect(screen.getByText("Paid", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Payment setup is next" })).not.toBeInTheDocument();
+    expect(screen.queryByText("No payment has been requested on this test platform yet.")).not.toBeInTheDocument();
+  });
+
+  it("fails closed when an immutable order snapshot cannot be validated", async () => {
+    findByCheckoutToken.mockRejectedValue(new OrderSnapshotIntegrityError());
+
+    await expect(OrderConfirmationPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }))
+      .rejects.toThrow("NOT_FOUND");
+    expect(notFound).toHaveBeenCalled();
+  });
+
+  it("fails closed on corrupt account history or owner detail snapshots", async () => {
+    listByCustomer.mockRejectedValueOnce(new OrderSnapshotIntegrityError());
+    await expect(AccountOrdersPage()).rejects.toThrow("NOT_FOUND");
+
+    findByCustomer.mockRejectedValueOnce(new OrderSnapshotIntegrityError());
+    await expect(AccountOrderPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }))
+      .rejects.toThrow("NOT_FOUND");
   });
 
   it("does not reveal another customer's order", async () => {
