@@ -16,6 +16,12 @@ export type StripePaymentIntent = Readonly<{
   client_secret: string | null;
 }>;
 
+export type StripeWebhookEvent = Readonly<{
+  id: string;
+  type: string;
+  data: Readonly<{ object: StripePaymentIntent }>;
+}>;
+
 type StripeCreateParams = Readonly<{
   amount: number;
   currency: string;
@@ -30,6 +36,13 @@ export type StripeClient = Readonly<{
       options: Readonly<{ idempotencyKey: string }>,
     ): Promise<StripePaymentIntent>;
     retrieve(providerReference: string): Promise<StripePaymentIntent>;
+  }>;
+  webhooks: Readonly<{
+    constructEvent(
+      rawBody: Uint8Array,
+      signature: string,
+      secret: string,
+    ): StripeWebhookEvent;
   }>;
 }>;
 
@@ -46,6 +59,10 @@ function defaultClient(secretKey: string): StripeClient {
         metadata: { ...params.metadata },
       }, options),
       retrieve: (providerReference) => stripe.paymentIntents.retrieve(providerReference),
+    },
+    webhooks: {
+      constructEvent: (rawBody, signature, secret) =>
+        stripe.webhooks.constructEvent(rawBody, signature, secret) as StripeWebhookEvent,
     },
   };
 }
@@ -98,6 +115,62 @@ function verifiedResult(
     orderNumber: order.orderNumber,
     status,
     ...(status === "failed" ? { sanitizedFailureCode: "payment_method_required" } : {}),
+  });
+}
+
+const webhookStatuses = Object.freeze({
+  "payment_intent.succeeded": Object.freeze({ providerStatus: "succeeded", status: "paid" }),
+  "payment_intent.processing": Object.freeze({ providerStatus: "processing", status: "processing" }),
+  "payment_intent.payment_failed": Object.freeze({
+    providerStatus: "requires_payment_method",
+    status: "failed",
+  }),
+  "payment_intent.canceled": Object.freeze({ providerStatus: "canceled", status: "cancelled" }),
+} satisfies Readonly<Record<string, Readonly<{
+  providerStatus: string;
+  status: VerifiedPaymentResult["status"];
+}>>>);
+
+function verifiedWebhookResult(
+  event: StripeWebhookEvent,
+  config: EnabledStripeConfig,
+) {
+  const mapping = webhookStatuses[event.type as keyof typeof webhookStatuses];
+  const intent = event.data?.object;
+  const currency = intent?.currency?.toUpperCase();
+  const orderNumber = intent?.metadata?.order_number;
+  if (
+    typeof event.id !== "string" ||
+    !event.id.startsWith("evt_") ||
+    !mapping ||
+    !intent ||
+    typeof intent.id !== "string" ||
+    !intent.id.startsWith("pi_") ||
+    !Number.isSafeInteger(intent.amount) ||
+    intent.amount <= 0 ||
+    !config.supportedCurrencies.includes(currency as VerifiedPaymentResult["currency"]) ||
+    typeof orderNumber !== "string" ||
+    orderNumber.length === 0 ||
+    orderNumber !== orderNumber.trim() ||
+    intent.status !== mapping.providerStatus
+  ) {
+    throw verificationFailure();
+  }
+  const result: VerifiedPaymentResult = Object.freeze({
+    providerReference: intent.id,
+    providerStatus: intent.status,
+    amountCents: intent.amount,
+    currency: currency as VerifiedPaymentResult["currency"],
+    orderNumber,
+    status: mapping.status,
+    ...(mapping.status === "failed"
+      ? { sanitizedFailureCode: "payment_method_required" }
+      : {}),
+  });
+  return Object.freeze({
+    provider: "stripe" as const,
+    providerEventId: event.id,
+    result,
   });
 }
 
@@ -164,6 +237,21 @@ export function createStripeProvider({
 
     async retrieve(input) {
       return retrieve(input.order, input.providerReference);
+    },
+
+    async verifyWebhook(rawBody, headers) {
+      const signature = headers.get("stripe-signature");
+      if (!signature) throw verificationFailure();
+      try {
+        const event = client.webhooks.constructEvent(
+          rawBody,
+          signature,
+          config.webhookSecret,
+        );
+        return verifiedWebhookResult(event, config);
+      } catch {
+        throw verificationFailure();
+      }
     },
   };
   return Object.freeze(provider);

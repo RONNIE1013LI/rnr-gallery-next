@@ -71,7 +71,6 @@ export type ApplyVerifiedResultInput = Readonly<{
 }>;
 
 export type VerifiedEventInput = Readonly<{
-  attemptId: string;
   result: VerifiedPaymentResult;
   provider: PaymentProviderKey;
   providerEventId: string;

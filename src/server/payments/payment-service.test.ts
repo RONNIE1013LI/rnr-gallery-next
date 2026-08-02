@@ -6,7 +6,7 @@ import type { ReviewedPaymentCheckoutRepository } from "@/server/checkout/checko
 import type { PaymentAttemptRecord, PaymentRepository } from "./payment-repository";
 import { createPaymentService, PaymentServiceError } from "./payment-service";
 import type { PaymentProviderRegistration } from "./provider-registry";
-import type { PaymentOrder, PaymentProvider } from "./types";
+import type { PaymentOrder, PaymentProvider, VerifiedProviderEvent } from "./types";
 
 const address: NormalizedAddress = {
   country: "NZ", fullName: "Test Customer", building: "",
@@ -129,6 +129,60 @@ function service(input: {
 }
 
 describe("payment service", () => {
+  it("hashes exact webhook bytes server-side and atomically applies only a registered provider event", async () => {
+    const applyVerifiedWebhookEventAtomically = vi.fn().mockResolvedValue("applied");
+    const repo = repository({ applyVerifiedWebhookEventAtomically });
+    const stripe: PaymentProvider = {
+      ...provider(),
+      key: "stripe",
+      verifyWebhook: vi.fn(),
+    };
+    const paymentService = service({
+      repository: repo,
+      providers: [{ method: "card", label: "Card", isTest: false, provider: stripe }],
+    });
+    const rawBody = new Uint8Array([0, 255, 13, 10, 123, 125]);
+    const event: VerifiedProviderEvent = {
+      provider: "stripe",
+      providerEventId: "evt_exact_123",
+      result: {
+        providerReference: "pi_exact_123",
+        providerStatus: "succeeded",
+        amountCents: order.amountCents,
+        currency: order.currency,
+        orderNumber: order.orderNumber,
+        status: "paid",
+      },
+    };
+
+    await expect(paymentService.applyVerifiedWebhook(event, rawBody)).resolves.toBe("applied");
+    expect(applyVerifiedWebhookEventAtomically).toHaveBeenCalledWith({
+      ...event,
+      payloadSha256: createHash("sha256").update(rawBody).digest("hex"),
+    });
+  });
+
+  it("rejects webhook events from providers without a registered verifier", async () => {
+    const repo = repository();
+    const paymentService = service({ repository: repo });
+    const event: VerifiedProviderEvent = {
+      provider: "stripe",
+      providerEventId: "evt_unregistered",
+      result: {
+        providerReference: "pi_unregistered",
+        providerStatus: "succeeded",
+        amountCents: order.amountCents,
+        currency: order.currency,
+        orderNumber: order.orderNumber,
+        status: "paid",
+      },
+    };
+
+    await expect(paymentService.applyVerifiedWebhook(event, new Uint8Array()))
+      .rejects.toThrow("Payment webhook provider is unavailable");
+    expect(repo.applyVerifiedWebhookEventAtomically).not.toHaveBeenCalled();
+  });
+
   it("passes only a freshly constructed eligibility DTO to providers", async () => {
     const enriched = {
       ...order,

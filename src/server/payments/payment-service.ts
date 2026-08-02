@@ -18,6 +18,7 @@ import type {
   PaymentEligibilityContext,
   PaymentProvider,
   ProviderSession,
+  VerifiedProviderEvent,
 } from "./types";
 
 export type PaymentServiceErrorCode =
@@ -215,6 +216,9 @@ export function createPaymentService({
   }
   validateRegistrations(providers);
   const byMethod = new Map(providers.map((entry) => [entry.method, entry]));
+  const webhookProviders = new Set(providers
+    .filter((entry) => typeof entry.provider.verifyWebhook === "function")
+    .map((entry) => entry.provider.key));
 
   async function methodsForContext(context: PaymentEligibilityContext) {
     const providerContext = eligibilityContext(context);
@@ -238,6 +242,22 @@ export function createPaymentService({
   }
 
   return {
+    async applyVerifiedWebhook(
+      event: VerifiedProviderEvent,
+      rawBody: Uint8Array,
+    ) {
+      if (!webhookProviders.has(event.provider)) {
+        throw new Error("Payment webhook provider is unavailable");
+      }
+      const payloadSha256 = createHash("sha256").update(rawBody).digest("hex");
+      return repository.applyVerifiedWebhookEventAtomically({
+        provider: event.provider,
+        providerEventId: event.providerEventId,
+        result: event.result,
+        payloadSha256,
+      });
+    },
+
     async availableMethods(
       access: ReviewedPaymentAccess,
     ): Promise<readonly PublicPaymentMethod[]> {

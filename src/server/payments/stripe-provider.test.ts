@@ -5,6 +5,7 @@ import {
   createStripeProvider,
   type StripeClient,
   type StripePaymentIntent,
+  type StripeWebhookEvent,
 } from "./stripe-provider";
 import type { CreateProviderSessionInput, PaymentOrder } from "./types";
 
@@ -52,11 +53,24 @@ const sessionInput: CreateProviderSessionInput = {
   cancelUrl: "https://shop.example.test/api/payments/returns/stripe?flow=cancel&state=safe",
 };
 
-function client(intent: StripePaymentIntent = baseIntent): StripeClient {
+function webhookEvent(
+  type = "payment_intent.succeeded",
+  intent: StripePaymentIntent = { ...baseIntent, status: "succeeded", client_secret: null },
+): StripeWebhookEvent {
+  return { id: "evt_exact_123", type, data: { object: intent } };
+}
+
+function client(
+  intent: StripePaymentIntent = baseIntent,
+  event: StripeWebhookEvent = webhookEvent(),
+): StripeClient {
   return {
     paymentIntents: {
       create: vi.fn().mockResolvedValue(intent),
       retrieve: vi.fn().mockResolvedValue(intent),
+    },
+    webhooks: {
+      constructEvent: vi.fn().mockReturnValue(event),
     },
   };
 }
@@ -149,5 +163,93 @@ describe("Stripe payment provider", () => {
       .rejects.toThrow("Stripe payment request failed");
     await expect(provider.createOrReuse(sessionInput))
       .rejects.not.toThrow("sk_live_private_value");
+  });
+
+  it.each([
+    ["payment_intent.succeeded", "succeeded", "paid"],
+    ["payment_intent.processing", "processing", "processing"],
+    ["payment_intent.payment_failed", "requires_payment_method", "failed"],
+    ["payment_intent.canceled", "canceled", "cancelled"],
+  ] as const)("verifies raw %s events into exact normalized results", async (
+    eventType,
+    providerStatus,
+    status,
+  ) => {
+    const event = webhookEvent(eventType, {
+      ...baseIntent,
+      status: providerStatus,
+      client_secret: null,
+    });
+    const stripe = client(baseIntent, event);
+    const provider = createStripeProvider({ config, client: stripe });
+    const rawBody = new Uint8Array([0, 255, 13, 10, 123, 125]);
+    const headers = new Headers({ "stripe-signature": "t=1,v1=exact" });
+
+    await expect(provider.verifyWebhook?.(rawBody, headers)).resolves.toEqual({
+      provider: "stripe",
+      providerEventId: event.id,
+      result: {
+        providerReference: baseIntent.id,
+        providerStatus,
+        amountCents: order.amountCents,
+        currency: order.currency,
+        orderNumber: order.orderNumber,
+        status,
+        ...(status === "failed" ? { sanitizedFailureCode: "payment_method_required" } : {}),
+      },
+    });
+    expect(stripe.webhooks.constructEvent).toHaveBeenCalledWith(
+      rawBody,
+      "t=1,v1=exact",
+      config.webhookSecret,
+    );
+    expect(vi.mocked(stripe.webhooks.constructEvent).mock.calls[0]?.[0]).toBe(rawBody);
+  });
+
+  it.each([
+    ["missing signature", new Headers(), webhookEvent()],
+    ["unsupported event", new Headers({ "stripe-signature": "valid" }), webhookEvent("charge.succeeded")],
+    ["event/status mismatch", new Headers({ "stripe-signature": "valid" }), webhookEvent(
+      "payment_intent.succeeded",
+      { ...baseIntent, status: "processing", client_secret: null },
+    )],
+    ["invalid event id", new Headers({ "stripe-signature": "valid" }), { ...webhookEvent(), id: "" }],
+    ["invalid intent reference", new Headers({ "stripe-signature": "valid" }), webhookEvent(
+      "payment_intent.succeeded",
+      { ...baseIntent, id: "bad", status: "succeeded", client_secret: null },
+    )],
+    ["invalid amount", new Headers({ "stripe-signature": "valid" }), webhookEvent(
+      "payment_intent.succeeded",
+      { ...baseIntent, amount: -1, status: "succeeded", client_secret: null },
+    )],
+    ["invalid currency", new Headers({ "stripe-signature": "valid" }), webhookEvent(
+      "payment_intent.succeeded",
+      { ...baseIntent, currency: "btc", status: "succeeded", client_secret: null },
+    )],
+    ["missing order metadata", new Headers({ "stripe-signature": "valid" }), webhookEvent(
+      "payment_intent.succeeded",
+      { ...baseIntent, metadata: {}, status: "succeeded", client_secret: null },
+    )],
+  ])("fails closed for %s webhook input", async (_name, headers, event) => {
+    const stripe = client(baseIntent, event as StripeWebhookEvent);
+    const provider = createStripeProvider({ config, client: stripe });
+
+    await expect(provider.verifyWebhook?.(new Uint8Array([123, 125]), headers))
+      .rejects.toThrow("Stripe payment verification failed");
+  });
+
+  it("redacts signature verification errors, secrets, and raw bodies", async () => {
+    const stripe = client();
+    vi.mocked(stripe.webhooks.constructEvent).mockImplementation(() => {
+      throw new Error("bad whsec_private {customer-secret-body}");
+    });
+    const provider = createStripeProvider({ config, client: stripe });
+
+    const verification = provider.verifyWebhook?.(
+      new TextEncoder().encode("{customer-secret-body}"),
+      new Headers({ "stripe-signature": "private-signature" }),
+    );
+    await expect(verification).rejects.toThrow("Stripe payment verification failed");
+    await expect(verification).rejects.not.toThrow(/whsec|customer-secret|private-signature/);
   });
 });

@@ -754,7 +754,6 @@ describe("Drizzle payment repository", () => {
         provider: "stripe" as const,
         providerEventId: `evt-${randomUUID()}`,
         payloadSha256: "c".repeat(64),
-        attemptId: claim.attempt.id,
         result: {
           providerReference: reference, providerStatus: "CAPTURED",
           amountCents: 7_475, currency: "NZD" as const,
@@ -796,7 +795,6 @@ describe("Drizzle payment repository", () => {
       provider: "stripe" as const,
       providerEventId,
       payloadSha256,
-      attemptId: claim.attempt.id,
       result: {
         providerReference: reference,
         providerStatus: "CAPTURED",
@@ -831,6 +829,96 @@ describe("Drizzle payment repository", () => {
       paymentAttemptId: claim.attempt.id,
     });
     expect(event.processedAt).toBeInstanceOf(Date);
+  });
+
+  it("locates the attempt only from verified provider authority and rejects all mismatches", async () => {
+    const order = await createOrder();
+    const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
+    const reference = `authority-${randomUUID()}`;
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference: reference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+    const baseInput = {
+      provider: "stripe" as const,
+      providerEventId: `authority-event-${randomUUID()}`,
+      payloadSha256: "f".repeat(64),
+      result: {
+        providerReference: reference,
+        providerStatus: "succeeded",
+        amountCents: 7_475,
+        currency: "NZD" as const,
+        orderNumber: order.orderNumber,
+        status: "paid" as const,
+      },
+    };
+
+    for (const [index, mismatch] of [
+      { providerReference: `missing-${randomUUID()}` },
+      { amountCents: 1 },
+      { currency: "AUD" as const },
+      { orderNumber: "RNR-WRONG" },
+    ].entries()) {
+      await expect(repository.applyVerifiedWebhookEventAtomically({
+        ...baseInput,
+        providerEventId: `${baseInput.providerEventId}-${index}`,
+        result: { ...baseInput.result, ...mismatch },
+      })).rejects.toBeInstanceOf(PaymentVerificationMismatchError);
+      expect(await database.select().from(webhookEvents)
+        .where(eq(webhookEvents.providerEventId, `${baseInput.providerEventId}-${index}`)))
+        .toHaveLength(0);
+    }
+    const before = await paymentRows(order.orderId, claim.attempt.id);
+    await expect(repository.applyVerifiedWebhookEventAtomically({
+      ...baseInput,
+      provider: "afterpay",
+      providerEventId: `${baseInput.providerEventId}-provider`,
+    })).rejects.toBeInstanceOf(PaymentVerificationMismatchError);
+    await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toEqual(before);
+  });
+
+  it("keeps a paid attempt and order paid when a later verified failure arrives", async () => {
+    const order = await createOrder();
+    const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
+    const reference = `monotonic-${randomUUID()}`;
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference: reference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+    const input = {
+      provider: "stripe" as const,
+      providerEventId: `paid-${randomUUID()}`,
+      payloadSha256: "1".repeat(64),
+      result: {
+        providerReference: reference,
+        providerStatus: "succeeded",
+        amountCents: 7_475,
+        currency: "NZD" as const,
+        orderNumber: order.orderNumber,
+        status: "paid" as const,
+      },
+    };
+    await expect(repository.applyVerifiedWebhookEventAtomically(input)).resolves.toBe("applied");
+    const paid = await paymentRows(order.orderId, claim.attempt.id);
+
+    await expect(repository.applyVerifiedWebhookEventAtomically({
+      ...input,
+      providerEventId: `failed-${randomUUID()}`,
+      payloadSha256: "2".repeat(64),
+      result: {
+        ...input.result,
+        providerStatus: "requires_payment_method",
+        status: "failed",
+        sanitizedFailureCode: "payment_method_required",
+      },
+    })).resolves.toBe("applied");
+    await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toEqual(paid);
   });
 
   it("lists only stable valid reconciliation candidates within the bounded limit", async () => {

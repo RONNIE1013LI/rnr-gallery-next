@@ -558,17 +558,12 @@ export function createDrizzlePaymentRepository(
 
     async applyVerifiedWebhookEventAtomically(input: VerifiedEventInput) {
       return database.transaction(async (transaction) => {
-        const locked = await lockOrderThenAttempt(transaction, input.attemptId);
-        if (locked.attempt.provider !== input.provider) {
-          throw new PaymentVerificationMismatchError();
-        }
         const inserted = await transaction
           .insert(webhookEvents)
           .values({
             provider: input.provider,
             providerEventId: input.providerEventId,
             payloadSha256: input.payloadSha256,
-            paymentAttemptId: input.attemptId,
           })
           .onConflictDoNothing()
           .returning();
@@ -585,18 +580,34 @@ export function createDrizzlePaymentRepository(
               .limit(1);
         if (!event) throw new PaymentRepositoryConflictError();
         if (event.payloadSha256 !== input.payloadSha256) return "hash_mismatch";
-        if (event.paymentAttemptId !== input.attemptId) {
-          throw new PaymentRepositoryConflictError();
-        }
         if (event.processingResult) return "duplicate";
         if (input.faultAt === "after_event_insert") {
           throw new PaymentRepositoryFaultError();
         }
 
+        const [candidate] = await transaction
+          .select({ id: paymentAttempts.id })
+          .from(paymentAttempts)
+          .where(and(
+            eq(paymentAttempts.provider, input.provider),
+            eq(paymentAttempts.providerReference, input.result.providerReference),
+          ))
+          .limit(1);
+        if (!candidate) throw new PaymentVerificationMismatchError();
+        const locked = await lockOrderThenAttempt(transaction, candidate.id);
+        if (
+          locked.attempt.provider !== input.provider ||
+          locked.attempt.providerReference !== input.result.providerReference ||
+          (event.paymentAttemptId !== null && event.paymentAttemptId !== candidate.id)
+        ) {
+          throw new PaymentVerificationMismatchError();
+        }
+        assertVerifiedResult(locked.order, locked.attempt, input.result);
+
         await applyLockedVerifiedResult(
           transaction,
           {
-            attemptId: input.attemptId,
+            attemptId: candidate.id,
             result: input.result,
             source: "verified_webhook",
           },
@@ -610,7 +621,11 @@ export function createDrizzlePaymentRepository(
         const now = await databaseNow(transaction);
         await transaction
           .update(webhookEvents)
-          .set({ processingResult: "applied", processedAt: now })
+          .set({
+            paymentAttemptId: candidate.id,
+            processingResult: "applied",
+            processedAt: now,
+          })
           .where(eq(webhookEvents.id, event.id));
         return "applied";
       });
