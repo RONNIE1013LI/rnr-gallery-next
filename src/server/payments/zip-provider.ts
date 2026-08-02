@@ -27,12 +27,11 @@ type CheckoutResponse = Readonly<{
 
 type ChargeResponse = Readonly<{
   id: string;
-  reference: string;
   amount: number;
   captured_amount: number;
   currency: ZipCurrency;
   state: string;
-  order: Readonly<{ reference: string }>;
+  metadata: Readonly<{ order_number: string }>;
 }>;
 
 const API_BASE = {
@@ -44,6 +43,8 @@ const REDIRECT_HOST = {
   sandbox: "account.sandbox.zipmoney.com.au",
   production: "account.zipmoney.com.au",
 } as const;
+
+const APPROVAL_WINDOW_MS = 15 * 60 * 1000;
 
 function requestFailure() {
   return new Error("Zip payment request failed");
@@ -81,14 +82,14 @@ function isCheckout(value: unknown): value is CheckoutResponse {
 }
 
 function isCharge(value: unknown): value is ChargeResponse {
-  if (!isRecord(value) || !isRecord(value.order)) return false;
+  if (!isRecord(value) || !isRecord(value.metadata)) return false;
   return typeof value.id === "string" && value.id.length > 0 &&
-    typeof value.reference === "string" && value.reference.length > 0 &&
     isMoney(value.amount) &&
     isMoney(value.captured_amount) &&
     isZipCurrency(value.currency) &&
     typeof value.state === "string" &&
-    typeof value.order.reference === "string" && value.order.reference.length > 0;
+    typeof value.metadata.order_number === "string" &&
+    value.metadata.order_number.length > 0;
 }
 
 function moneyToCents(value: number) {
@@ -205,8 +206,7 @@ function assertCharge(
   assertProviderReference(response.id);
   if (
     response.state.length === 0 ||
-    response.reference !== order.orderNumber ||
-    response.order.reference !== order.orderNumber ||
+    response.metadata.order_number !== order.orderNumber ||
     response.currency !== order.currency ||
     moneyToCents(response.amount) !== order.amountCents
   ) throw verificationFailure();
@@ -234,11 +234,11 @@ function checkoutResult(
   order: PaymentOrder,
   providerReference: string,
 ) {
+  const providerState = response.state.trim().toLowerCase();
   let status: VerifiedPaymentResult["status"] = "processing";
-  if (response.state === "completed") status = "paid";
-  else if (response.state === "expired" || response.state === "declined") status = "failed";
-  else if (response.state === "cancelled") status = "cancelled";
-  return result(order, providerReference, `CHECKOUT:${response.state}`, status);
+  if (providerState === "declined" || providerState === "referred") status = "failed";
+  else if (providerState === "expired" || providerState === "cancelled") status = "cancelled";
+  return result(order, providerReference, `CHECKOUT:${providerState}`, status);
 }
 
 function chargeResult(
@@ -246,14 +246,26 @@ function chargeResult(
   order: PaymentOrder,
   providerReference: string,
 ) {
+  const providerState = response.state.trim().toLowerCase();
   let status: VerifiedPaymentResult["status"] = "processing";
-  if (response.state === "declined") status = "failed";
-  else if (response.state === "cancelled") status = "cancelled";
+  if (providerState === "declined" || providerState === "referred") status = "failed";
+  else if (providerState === "expired" || providerState === "cancelled") status = "cancelled";
   else if (
-    ["approved", "captured", "authorised"].includes(response.state) &&
+    providerState === "captured" &&
     moneyToCents(response.captured_amount) === order.amountCents
   ) status = "paid";
-  return result(order, providerReference, `CHARGE:${response.state}`, status);
+  return result(order, providerReference, `CHARGE:${providerState}`, status);
+}
+
+function withinApprovalWindow(attemptCreatedAt: unknown, currentTime: unknown) {
+  if (
+    !(attemptCreatedAt instanceof Date) ||
+    !(currentTime instanceof Date) ||
+    !Number.isFinite(attemptCreatedAt.getTime()) ||
+    !Number.isFinite(currentTime.getTime())
+  ) return false;
+  const elapsedMs = currentTime.getTime() - attemptCreatedAt.getTime();
+  return elapsedMs >= 0 && elapsedMs <= APPROVAL_WINDOW_MS;
 }
 
 function stableRequestId(purpose: "checkout" | "charge", idempotencyKey: string) {
@@ -277,9 +289,11 @@ function absentResult(order: PaymentOrder, providerReference: string) {
 export function createZipProvider({
   config,
   fetchImpl,
+  now = () => new Date(),
 }: {
   config: EnabledZipConfig;
   fetchImpl?: ProviderFetch;
+  now?: () => Date;
 }): PaymentProvider {
   const http = createProviderHttp({
     baseUrl: API_BASE[config.environment],
@@ -385,6 +399,7 @@ export function createZipProvider({
               address: zipAddress(input.order.deliveryAddress),
             },
           },
+          metadata: { order_number: input.order.orderNumber },
           config: { redirect_uri: input.returnUrl },
         },
         validate: isCheckout,
@@ -413,7 +428,8 @@ export function createZipProvider({
       }
       if (
         input.returnUrl.searchParams.get("result") === "Approved" &&
-        authority.response.state === "approved"
+        authority.response.state.trim().toLowerCase() === "approved" &&
+        withinApprovalWindow(input.attemptCreatedAt, now())
       ) {
         return charge(input.order, input.providerReference, input.idempotencyKey);
       }
@@ -432,7 +448,10 @@ export function createZipProvider({
       if (authority.kind === "authoritative_absence") {
         return absentResult(input.order, input.providerReference);
       }
-      if (authority.response.state === "approved") {
+      if (
+        authority.response.state.trim().toLowerCase() === "approved" &&
+        withinApprovalWindow(input.attemptCreatedAt, now())
+      ) {
         return charge(input.order, input.providerReference, input.idempotencyKey);
       }
       return authority.result;

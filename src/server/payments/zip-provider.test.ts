@@ -97,12 +97,11 @@ function checkoutAuthority(
 function chargeResponse(overrides: Record<string, unknown> = {}) {
   return {
     id: "ch_AKS81QxsiKUSnr281pX7z4",
-    reference: "RNR-AU-1001",
     amount: 120.75,
     captured_amount: 120.75,
     currency: "AUD",
     state: "captured",
-    order: { reference: "RNR-AU-1001" },
+    metadata: { order_number: "RNR-AU-1001" },
     ...overrides,
   };
 }
@@ -120,11 +119,13 @@ function sessionInput(paymentOrder = order()): CreateProviderSessionInput {
 
 function completeInput(
   result = "Approved",
+  attemptCreatedAt = new Date(),
 ): CompleteProviderReturnInput {
   return Object.freeze({
     order: order(),
     providerReference: checkoutId,
     idempotencyKey,
+    attemptCreatedAt,
     returnState: state,
     returnUrl: new URL(
       `https://shop.example.test/api/payments/returns/zip?state=${state}&result=${result}&checkoutId=${encodeURIComponent(checkoutId)}`,
@@ -267,6 +268,7 @@ describe("Zip AU provider", () => {
           },
         },
       },
+      metadata: { order_number: "RNR-AU-1001" },
       config: { redirect_uri: input.returnUrl },
     });
   });
@@ -327,8 +329,7 @@ describe("Zip AU provider", () => {
   });
 
   it.each([
-    ["reference", { reference: "RNR-OTHER" }],
-    ["order reference", { order: { reference: "RNR-OTHER" } }],
+    ["metadata", { metadata: { order_number: "RNR-OTHER" } }],
     ["amount", { amount: 120.76 }],
     ["currency", { currency: "USD" }],
     ["state", { state: "" }],
@@ -346,8 +347,12 @@ describe("Zip AU provider", () => {
 
   it.each([
     [chargeResponse({ captured_amount: 100 }), "processing"],
-    [chargeResponse({ state: "authorised", captured_amount: 0 }), "processing"],
+    [chargeResponse({ state: "approved" }), "processing"],
+    [chargeResponse({ state: "authorised" }), "processing"],
+    [chargeResponse({ state: "CAPTURED" }), "paid"],
     [chargeResponse({ state: "declined", captured_amount: 0 }), "failed"],
+    [chargeResponse({ state: "referred", captured_amount: 0 }), "failed"],
+    [chargeResponse({ state: "expired", captured_amount: 0 }), "cancelled"],
     [chargeResponse({ state: "cancelled", captured_amount: 0 }), "cancelled"],
     [chargeResponse({ state: "unknown", captured_amount: 0 }), "processing"],
   ] as const)("maps a provider charge conservatively to %s", async (response, expectedStatus) => {
@@ -363,10 +368,10 @@ describe("Zip AU provider", () => {
   });
 
   it.each([
-    ["completed", "Declined", "paid"],
+    ["completed", "Declined", "processing"],
     ["approved", "Declined", "processing"],
     ["created", "Approved", "processing"],
-    ["expired", "Approved", "failed"],
+    ["expired", "Approved", "cancelled"],
     ["cancelled", "Approved", "cancelled"],
   ] as const)(
     "uses checkout state %s conservatively for browser %s",
@@ -395,8 +400,8 @@ describe("Zip AU provider", () => {
 
   it.each([
     ["created", "processing"],
-    ["completed", "paid"],
-    ["expired", "failed"],
+    ["completed", "processing"],
+    ["expired", "cancelled"],
     ["cancelled", "cancelled"],
     ["unknown", "processing"],
   ] as const)(
@@ -411,6 +416,7 @@ describe("Zip AU provider", () => {
         order: order(),
         providerReference: checkoutId,
         idempotencyKey,
+        attemptCreatedAt: new Date(),
         source: "reconciliation",
       })).resolves.toMatchObject({ status: expectedStatus });
       expect(fetchImpl).toHaveBeenCalledOnce();
@@ -429,6 +435,7 @@ describe("Zip AU provider", () => {
       order: order(),
       providerReference: checkoutId,
       idempotencyKey,
+      attemptCreatedAt: new Date(),
       source: "reconciliation" as const,
     };
     await provider.retryCompletion?.(retryInput);
@@ -455,6 +462,7 @@ describe("Zip AU provider", () => {
       order: order(),
       providerReference: checkoutId,
       idempotencyKey,
+      attemptCreatedAt: new Date(),
       source: "reconciliation",
     })).rejects.toThrow("Zip payment request failed");
     expect(fetchImpl).toHaveBeenCalledOnce();
@@ -472,5 +480,73 @@ describe("Zip AU provider", () => {
     const error = await provider.createOrReuse(sessionInput()).catch((caught) => caught);
     expect(String(error)).toBe("Error: Zip payment request failed");
     expect(String(error)).not.toMatch(/zip-server-secret|body|401/);
+  });
+
+  it("allows a charge at the exact server-side 15-minute boundary", async () => {
+    const createdAt = new Date("2026-08-03T00:00:00.000Z");
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(checkoutAuthority("approved")))
+      .mockResolvedValueOnce(jsonResponse(chargeResponse()));
+    const provider = createZipProvider({
+      config: config(),
+      fetchImpl,
+      now: () => new Date("2026-08-03T00:15:00.000Z"),
+    });
+
+    await expect(provider.completeReturn(completeInput("Approved", createdAt)))
+      .resolves.toMatchObject({ status: "paid" });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+  });
+
+  it.each([
+    ["outside 15 minutes", new Date("2026-08-03T00:00:00.000Z"), new Date("2026-08-03T00:15:00.001Z")],
+    ["future attempt", new Date("2026-08-03T00:00:00.001Z"), new Date("2026-08-03T00:00:00.000Z")],
+    ["invalid attempt", new Date(Number.NaN), new Date("2026-08-03T00:00:00.000Z")],
+  ])("never charges completion with an %s timestamp", async (_name, createdAt, currentTime) => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(
+      jsonResponse(checkoutAuthority("approved")),
+    );
+    const provider = createZipProvider({
+      config: config(),
+      fetchImpl,
+      now: () => currentTime,
+    });
+
+    await expect(provider.completeReturn(completeInput("Approved", createdAt)))
+      .resolves.toMatchObject({ status: "processing" });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("never charges completion without a persisted attempt timestamp", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(
+      jsonResponse(checkoutAuthority("approved")),
+    );
+    const provider = createZipProvider({ config: config(), fetchImpl });
+    const unprovenInput: Record<string, unknown> = { ...completeInput() };
+    Reflect.deleteProperty(unprovenInput, "attemptCreatedAt");
+
+    await expect(provider.completeReturn(unprovenInput as CompleteProviderReturnInput))
+      .resolves.toMatchObject({ status: "processing" });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+  });
+
+  it("never charges reconciliation outside the 15-minute window", async () => {
+    const fetchImpl = vi.fn().mockResolvedValueOnce(
+      jsonResponse(checkoutAuthority("approved")),
+    );
+    const provider = createZipProvider({
+      config: config(),
+      fetchImpl,
+      now: () => new Date("2026-08-03T00:15:00.001Z"),
+    });
+
+    await expect(provider.retryCompletion?.({
+      order: order(),
+      providerReference: checkoutId,
+      idempotencyKey,
+      attemptCreatedAt: new Date("2026-08-03T00:00:00.000Z"),
+      source: "reconciliation",
+    })).resolves.toMatchObject({ status: "processing" });
+    expect(fetchImpl).toHaveBeenCalledOnce();
   });
 });

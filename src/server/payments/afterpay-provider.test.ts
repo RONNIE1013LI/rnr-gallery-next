@@ -119,6 +119,7 @@ function completeInput(
     order: paymentOrder,
     providerReference: token,
     idempotencyKey,
+    attemptCreatedAt: new Date(),
     returnState: state,
     returnUrl: new URL(
       `https://shop.example.test/payments/afterpay/return?state=${state}&status=${status}&orderToken=${encodeURIComponent(token)}`,
@@ -365,6 +366,7 @@ describe("Afterpay provider", () => {
       order: order(),
       providerReference: token,
       idempotencyKey,
+      attemptCreatedAt: new Date(),
       source: "reconciliation",
     })).resolves.toMatchObject({ status: "paid" });
     await provider.completeReturn(completeInput());
@@ -400,6 +402,7 @@ describe("Afterpay provider", () => {
         order: order(),
         providerReference: token,
         idempotencyKey,
+        attemptCreatedAt: new Date(),
         source: "reconciliation",
       })).resolves.toMatchObject({ status: expectedStatus });
       expect(fetchImpl).toHaveBeenCalledOnce();
@@ -428,6 +431,7 @@ describe("Afterpay provider", () => {
         order: order(),
         providerReference: token,
         idempotencyKey,
+        attemptCreatedAt: new Date(),
         source: "reconciliation",
       })).rejects.toThrow("Afterpay payment request failed");
       expect(fetchImpl).toHaveBeenCalledOnce();

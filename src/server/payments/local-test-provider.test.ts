@@ -117,6 +117,7 @@ describe("local test payment provider", () => {
       order: input.order,
       providerReference: first.providerReference,
       idempotencyKey: input.idempotencyKey,
+      attemptCreatedAt: new Date(),
       returnState: returnState!,
       returnUrl: callback,
     })).resolves.toEqual({
@@ -148,6 +149,7 @@ describe("local test payment provider", () => {
       order: input.order,
       providerReference: session.providerReference,
       idempotencyKey: input.idempotencyKey,
+      attemptCreatedAt: new Date(),
       returnState: input.returnState,
       returnUrl: hostile,
     })).rejects.toThrow("Local test return verification failed");
@@ -155,6 +157,7 @@ describe("local test payment provider", () => {
       order: { ...input.order, amountCents: input.order.amountCents + 1 },
       providerReference: session.providerReference,
       idempotencyKey: input.idempotencyKey,
+      attemptCreatedAt: new Date(),
       returnState: new URL(session.url).searchParams.get("state")!,
       returnUrl: new URL(session.url),
     })).rejects.toThrow("Local test return verification failed");

@@ -41,6 +41,7 @@ export type CompleteProviderReturnInput = Readonly<{
   order: PaymentOrder;
   providerReference: string;
   idempotencyKey: string;
+  attemptCreatedAt: Date;
   returnState: string;
   returnUrl: URL;
 }>;
@@ -54,6 +55,7 @@ export type RetryProviderCompletionInput = Readonly<{
   order: PaymentOrder;
   providerReference: string;
   idempotencyKey: string;
+  attemptCreatedAt: Date;
   source: "reconciliation";
 }>;
 

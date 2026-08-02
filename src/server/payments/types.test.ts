@@ -80,6 +80,7 @@ describe("PaymentProvider contract", () => {
         order,
         providerReference: "provider-payment-1",
         idempotencyKey: "stable-completion-key",
+        attemptCreatedAt: new Date("2026-08-03T00:00:00.000Z"),
         source: "reconciliation",
       }),
     ).resolves.toEqual(verifiedResult);
