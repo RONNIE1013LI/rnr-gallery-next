@@ -190,7 +190,6 @@ export type PaymentOrder = Readonly<{
   orderNumber: string;
   amountCents: number;
   currency: "NZD" | "AUD" | "USD" | "CAD";
-  country: "NZ" | "AU";
   customer: Readonly<{ fullName: string; email: string; phone: string }>;
   billingAddress: NormalizedAddress;
   deliveryAddress: NormalizedAddress;
@@ -208,6 +207,11 @@ export interface PaymentProvider {
   verifyWebhook?(rawBody: Uint8Array, headers: Headers): Promise<VerifiedProviderEvent>;
 }
 ```
+
+`PaymentOrder` has no ambiguous top-level country. `billingAddress.country` and
+`deliveryAddress.country` preserve their separate immutable meanings. Afterpay
+eligibility and request construction use the billing country. Zip eligibility
+and request construction validate both billing and delivery countries.
 
 `ProviderSession` is a discriminated union: `elements` with transient Stripe client secret, `redirect` with redirect URL, or `test` with a local URL. `VerifiedPaymentResult` always includes provider reference/status, amount, currency, order number and normalized status.
 
@@ -364,6 +368,11 @@ TEST_DATABASE_URL="$TEST_DATABASE_URL" npm test -- --run \
 - [ ] **Step 3: Implement row locking, attempt claims and stable idempotency**
 
 Inside a transaction, lock the order and its selected nonterminal attempt with `FOR UPDATE`, validate immutable order fields and reuse the single attempt regardless of requested provider/method. If the existing attempt belongs to another method/provider, return `existing_conflict` with no claim. Otherwise the transaction grants one short provider-session lease (`claimId`, expiry) to the caller allowed to create externally; concurrent callers receive the same attempt without a claim and must not call the provider. A crashed/expired lease may be reclaimed, but every claimant uses the same server-derived upstream idempotency key, for example SHA-256 of a versioned tuple containing attempt ID, provider and operation. Never derive the upstream key from the browser UUID.
+
+`CreatePaymentAttemptInput` does not accept a country. While holding the order
+lock, the repository validates the unique immutable delivery-address snapshot
+and derives `payment_attempts.country` from `deliveryAddress.country`. A caller
+cannot choose or override the persisted attempt country.
 
 A later method switch requires provider-confirmed cancellation of the existing attempt followed by an atomic cancelled/superseded transition before a new attempt can satisfy the partial unique index. That switch flow is intentionally not implemented in this slice.
 

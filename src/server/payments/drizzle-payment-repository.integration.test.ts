@@ -479,7 +479,8 @@ describe("Drizzle payment repository", () => {
         ...result,
         providerReference: refundedReference,
         orderNumber: refundedOrder.orderNumber,
-        status: "processing",
+        status: "failed",
+        sanitizedFailureCode: "stale-refund-failure",
       },
       source: "reconciliation",
     });
@@ -579,8 +580,30 @@ describe("Drizzle payment repository", () => {
       },
     };
 
-    await expect(repository.applyVerifiedWebhookEventAtomically(input)).resolves.toBe("applied");
-    await expect(repository.applyVerifiedWebhookEventAtomically(input)).resolves.toBe("duplicate");
+    const outcomes = await Promise.all([
+      repository.applyVerifiedWebhookEventAtomically(input),
+      repository.applyVerifiedWebhookEventAtomically(input),
+    ]);
+    expect(outcomes.sort()).toEqual(["applied", "duplicate"]);
+
+    const persisted = await paymentRows(order.orderId, claim.attempt.id);
+    expect(persisted.order).toMatchObject({ paymentStatus: "paid" });
+    expect(persisted.attempt).toMatchObject({
+      status: "paid",
+      providerReference: reference,
+      sanitizedFailureCode: null,
+      providerSessionLeaseId: null,
+      providerSessionLeaseExpiresAt: null,
+    });
+    const [event] = await database
+      .select()
+      .from(webhookEvents)
+      .where(eq(webhookEvents.providerEventId, providerEventId));
+    expect(event).toMatchObject({
+      processingResult: "applied",
+      paymentAttemptId: claim.attempt.id,
+    });
+    expect(event.processedAt).toBeInstanceOf(Date);
   });
 
   it("lists only stable valid reconciliation candidates within the bounded limit", async () => {
