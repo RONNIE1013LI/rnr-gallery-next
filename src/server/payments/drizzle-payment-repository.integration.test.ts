@@ -395,6 +395,7 @@ describe("Drizzle payment repository", () => {
             providerReference,
             providerStatus: "requires_payment_method",
             clientSecret: `secret-${input.attemptId}`,
+            returnUrl: input.returnUrl,
           };
         }
         return {

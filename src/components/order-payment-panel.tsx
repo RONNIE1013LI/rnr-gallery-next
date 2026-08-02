@@ -16,6 +16,7 @@ import {
   PaymentMethods,
   type PaymentMethodOption,
 } from "./payment-methods";
+import { StripePaymentForm } from "./stripe-payment-form";
 import styles from "./storefront.module.css";
 
 export type PaymentStartResponse = Readonly<{
@@ -71,6 +72,24 @@ function trustedActionUrl(
   }
 }
 
+function trustedElementsReturnUrl(
+  rawValue: unknown,
+  context: PaymentResponseValidationContext,
+) {
+  if (typeof rawValue !== "string") return false;
+  try {
+    const url = new URL(rawValue);
+    const current = new URL(context.currentOrigin);
+    if (url.username || url.password || url.origin !== current.origin) return false;
+    if (url.protocol === "https:") return true;
+    return context.nodeEnv !== "production" &&
+      url.protocol === "http:" &&
+      ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 export function parsePaymentStartResponse(
   payload: unknown,
   selectedMethod: PaymentMethodKey,
@@ -97,9 +116,10 @@ export function parsePaymentStartResponse(
     throw new Error("Payment response is invalid");
   }
   if (action.kind === "elements") {
-    if (!hasExactKeys(action, ["kind", "method", "clientSecret"]) ||
+    if (!hasExactKeys(action, ["kind", "method", "clientSecret", "returnUrl"]) ||
       selectedMethod !== "card" || payment.status !== "processing" || payment.isTest !== false ||
-      typeof action.clientSecret !== "string" || action.clientSecret.length < 1 || action.clientSecret.length > 2048) {
+      typeof action.clientSecret !== "string" || action.clientSecret.length < 1 || action.clientSecret.length > 2048 ||
+      !trustedElementsReturnUrl(action.returnUrl, context)) {
       throw new Error("Payment response is invalid");
     }
   } else if (action.kind === "redirect") {
@@ -206,7 +226,7 @@ export function OrderPaymentPanel({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const paymentKey = useRef<string | null>(resumedMethod ? resumableAttempt?.paymentIdempotencyKey ?? null : null);
-  const paymentAction = useRef<PaymentActionDTO | null>(null);
+  const [paymentAction, setPaymentAction] = useState<PaymentActionDTO | null>(null);
   const resumed = useRef(false);
   const canStart = ["awaiting_payment", "failed", "cancelled"].includes(paymentStatus);
   const statusMessage = useMemo(() => {
@@ -268,14 +288,14 @@ export function OrderPaymentPanel({
     try {
       const result = await startOrderPayment(orderNumber, method, idempotencyKey);
       if (result.action) {
-        paymentAction.current = result.action;
+        setPaymentAction(result.action);
         await followPaymentAction(result.action, orderHref, {
           assign: (url) => window.location.assign(url),
           navigate: push,
         });
         return;
       }
-      paymentAction.current = null;
+      setPaymentAction(null);
       if (["paid", "failed", "cancelled"].includes(result.payment.status)) {
         clearStoredStartingAttempt(orderNumber);
         paymentKey.current = null;
@@ -315,9 +335,19 @@ export function OrderPaymentPanel({
     {canStart ? <>
       {!methodsLoaded
         ? <p className={styles.checkoutMessage}>Loading payment methods…</p>
-        : <PaymentMethods methods={methods} value={selected} onChange={(method) => { setSelected(method); paymentKey.current = null; setMessage(""); }} disabled={pending} />}
+        : <PaymentMethods methods={methods} value={selected} onChange={(method) => {
+          setSelected(method);
+          setPaymentAction(null);
+          paymentKey.current = null;
+          setMessage("");
+        }} disabled={pending} />}
       <button className={styles.primaryButton} type="button" disabled={!methodsLoaded || !selected || pending || methods.length === 0} onClick={start}>{pending ? "Starting payment…" : "Pay for order"}</button>
     </> : null}
+    {paymentAction?.kind === "elements" ? <StripePaymentForm
+      clientSecret={paymentAction.clientSecret}
+      publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""}
+      returnUrl={paymentAction.returnUrl}
+    /> : null}
     {statusMessage ? <p aria-live="polite" className={styles.checkoutMessage}>{statusMessage}</p> : null}
   </section>;
 }

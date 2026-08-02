@@ -330,7 +330,7 @@ describe("payment service", () => {
       };
       vi.mocked(card.createOrReuse).mockResolvedValue(
         kind === "elements"
-          ? { ...base, kind, provider: "stripe", clientSecret: "secret" }
+          ? { ...base, kind, provider: "stripe", clientSecret: "secret", returnUrl: "https://trusted.example.test/payment-return" }
           : kind === "redirect"
             ? { ...base, kind, provider: "afterpay", method: "afterpay", redirectUrl: "https://provider.test" }
             : { ...base, kind, provider: "local-test", url: "https://trusted.example.test/test" },
@@ -385,7 +385,7 @@ describe("payment service", () => {
   it("fails closed on provider session identity or kind mismatch without binding", async () => {
     const cases = [
       { kind: "test", provider: "stripe", method: "card", url: "https://provider.test" },
-      { kind: "elements", provider: "local-test", method: "card", clientSecret: "secret" },
+      { kind: "elements", provider: "local-test", method: "card", clientSecret: "secret", returnUrl: "https://shop.example.test/payment-return" },
       { kind: "redirect", provider: "local-test", method: "card", redirectUrl: "https://provider.test" },
       { kind: "test", provider: "local-test", method: "afterpay", url: "https://provider.test" },
     ] as const;

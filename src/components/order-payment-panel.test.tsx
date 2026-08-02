@@ -4,6 +4,18 @@ import { followPaymentAction, OrderPaymentPanel, parsePaymentStartResponse } fro
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+vi.mock("./stripe-payment-form", () => ({
+  StripePaymentForm: ({ clientSecret, publishableKey, returnUrl }: {
+    clientSecret: string;
+    publishableKey: string;
+    returnUrl: string;
+  }) => <div
+    data-testid="stripe-payment-form"
+    data-client-secret={clientSecret}
+    data-publishable-key={publishableKey}
+    data-return-url={returnUrl}
+  />,
+}));
 
 const methods = [
   { method: "card" as const, label: "Test card — no real payment", isTest: true },
@@ -255,7 +267,7 @@ describe("OrderPaymentPanel", () => {
     await followPaymentAction({ kind: "redirect", method: "afterpay", redirectUrl: "https://pay.example.test/start" }, "/orders/RNR-2026-ABC", { assign, navigate });
     expect(assign).toHaveBeenCalledWith("https://pay.example.test/start");
 
-    await followPaymentAction({ kind: "elements", method: "card", clientSecret: "client-secret" }, "/account/orders/RNR-2026-ABC", { assign, navigate });
+    await followPaymentAction({ kind: "elements", method: "card", clientSecret: "client-secret", returnUrl: "https://shop.example.test/payment-return" }, "/account/orders/RNR-2026-ABC", { assign, navigate });
     expect(navigate).toHaveBeenCalledWith("/account/orders/RNR-2026-ABC#payment");
     expect(assign).toHaveBeenCalledTimes(1);
   });
@@ -263,7 +275,7 @@ describe("OrderPaymentPanel", () => {
   it("retains recovery state while following a non-terminal action", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({
       payment: { method: "card", status: "processing", isTest: false, canRetry: false },
-      action: { kind: "elements", method: "card", clientSecret: "pi_secret_123" },
+      action: { kind: "elements", method: "card", clientSecret: "pi_secret_123", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
     }) }));
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
     fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
@@ -271,9 +283,29 @@ describe("OrderPaymentPanel", () => {
     const stored = window.sessionStorage.getItem("rnr-checkout-payment-intent-v1");
     expect(stored).not.toBeNull();
     expect(stored).not.toContain("pi_secret_123");
+    expect(screen.getByTestId("stripe-payment-form")).toHaveAttribute("data-client-secret", "pi_secret_123");
+    expect(screen.getByTestId("stripe-payment-form")).toHaveAttribute("data-return-url", "http://localhost:3000/api/payments/returns/stripe?state=safe");
+  });
+
+  it("removes a stale Stripe form when the customer changes payment method", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+      action: { kind: "elements", method: "card", clientSecret: "pi_secret_123", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
+    }) }));
+    render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
+    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    expect(await screen.findByTestId("stripe-payment-form")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("radio", { name: "Test Afterpay — no real payment" }));
+
+    expect(screen.queryByTestId("stripe-payment-form")).not.toBeInTheDocument();
   });
 
   it("accepts only exact method-compatible payment responses and trusted action URLs", () => {
+    expect(parsePaymentStartResponse({
+      payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+      action: { kind: "elements", method: "card", clientSecret: "pi_secret_safe", returnUrl: "https://shop.example.test/api/payments/returns/stripe?state=safe" },
+    }, "card", { nodeEnv: "production", currentOrigin: "https://shop.example.test" })).toMatchObject({ action: { kind: "elements" } });
     expect(parsePaymentStartResponse({
       payment: { method: "afterpay", status: "requires_action", isTest: false, canRetry: false },
       action: { kind: "redirect", method: "afterpay", redirectUrl: "https://pay.example.test/start" },
@@ -296,7 +328,10 @@ describe("OrderPaymentPanel", () => {
       { payment: { method: "card", status: "unknown", isTest: false, canRetry: false }, action: null },
       { payment: { method: "card", status: "failed", isTest: false, canRetry: false }, action: null },
       { payment: { method: "card", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "redirect", method: "afterpay", redirectUrl: "https://pay.example.test" } },
-      { payment: { method: "afterpay", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "elements", method: "card", clientSecret: "secret" } },
+      { payment: { method: "afterpay", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "elements", method: "card", clientSecret: "secret", returnUrl: "https://shop.example.test/payment-return" } },
+      { payment: { method: "card", status: "processing", isTest: false, canRetry: false }, action: { kind: "elements", method: "card", clientSecret: "secret" } },
+      { payment: { method: "card", status: "processing", isTest: false, canRetry: false }, action: { kind: "elements", method: "card", clientSecret: "secret", returnUrl: "https://other.example.test/payment-return" } },
+      { payment: { method: "card", status: "processing", isTest: false, canRetry: false }, action: { kind: "elements", method: "card", clientSecret: "secret", returnUrl: "javascript:alert(1)" } },
       { payment: { method: "card", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "test", method: "card", redirectUrl: "https://shop.example.test/test", isTest: true } },
       { payment: { method: "afterpay", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "redirect", method: "afterpay", redirectUrl: "javascript:alert(1)" } },
       { payment: { method: "afterpay", status: "requires_action", isTest: false, canRetry: false }, action: { kind: "redirect", method: "afterpay", redirectUrl: "data:text/html,bad" } },

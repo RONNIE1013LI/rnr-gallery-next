@@ -70,6 +70,7 @@ export type ProviderSession =
         provider: "stripe";
         method: "card";
         clientSecret: string;
+        returnUrl: string;
       }>)
   | (ProviderSessionBase &
       Readonly<{

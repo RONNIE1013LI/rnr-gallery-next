@@ -1272,6 +1272,17 @@
   margin-top: 1rem;
 }
 
+.stripePaymentForm {
+  margin-top: 1.25rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.stripePaymentForm .primaryButton {
+  width: fit-content;
+  margin-top: 0;
+}
+
 .orderNext > div {
   margin-top: 1.25rem;
   display: flex;

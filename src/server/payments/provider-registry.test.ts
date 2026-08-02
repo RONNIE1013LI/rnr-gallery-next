@@ -147,9 +147,10 @@ describe("payment provider registry", () => {
         supportedCurrencies: ["NZD"],
       },
     }), { nodeEnv: "test", localFactory });
-    expect(configuredWithoutFactory.map(({ method }) => method)).toEqual([
-      "afterpay",
-      "zip",
+    expect(configuredWithoutFactory.map(({ method, provider }) => ({ method, provider: provider.key }))).toEqual([
+      { method: "card", provider: "stripe" },
+      { method: "afterpay", provider: "local-test" },
+      { method: "zip", provider: "local-test" },
     ]);
     expect(localFactory).toHaveBeenCalledTimes(2);
   });

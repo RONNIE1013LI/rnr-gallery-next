@@ -95,6 +95,7 @@ function publicAction(action: PaymentActionDTO | null): PaymentActionDTO | null 
   if (action.kind === "elements") {
     return Object.freeze({
       kind: "elements", method: "card", clientSecret: action.clientSecret,
+      returnUrl: action.returnUrl,
     });
   }
   if (action.kind === "redirect") {

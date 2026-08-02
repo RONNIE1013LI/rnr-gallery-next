@@ -502,7 +502,7 @@ describe("CheckoutView", () => {
     first.unmount();
     push.mockReset();
 
-    const retryFetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ payment: { method: "card", status: "processing", isTest: false, canRetry: false }, action: { kind: "elements", method: "card", clientSecret: "safe-for-response-only" } }) });
+    const retryFetch = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({ payment: { method: "card", status: "processing", isTest: false, canRetry: false }, action: { kind: "elements", method: "card", clientSecret: "safe-for-response-only", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" } }) });
     vi.stubGlobal("fetch", retryFetch);
     render(<CheckoutView savedAddresses={[address]} />);
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-RECOVER-PAY#payment"));

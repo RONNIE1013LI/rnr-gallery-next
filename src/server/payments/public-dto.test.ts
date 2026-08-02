@@ -41,12 +41,14 @@ describe("payment public DTOs", () => {
       providerReference: "pi_internal",
       providerStatus: "requires_action",
       clientSecret: "pi_secret_for_elements",
+      returnUrl: "https://shop.example.test/api/payments/returns/stripe?state=safe",
     });
 
     expect(action).toEqual({
       kind: "elements",
       method: "card",
       clientSecret: "pi_secret_for_elements",
+      returnUrl: "https://shop.example.test/api/payments/returns/stripe?state=safe",
     });
     expect(action).not.toHaveProperty("providerReference");
     expect(action).not.toHaveProperty("providerStatus");

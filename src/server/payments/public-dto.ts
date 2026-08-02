@@ -9,6 +9,7 @@ export type PaymentActionDTO =
       kind: "elements";
       method: "card";
       clientSecret: string;
+      returnUrl: string;
     }>
   | Readonly<{
       kind: "redirect";
@@ -60,6 +61,7 @@ export function toImmediatePaymentActionDTO(
         kind: "elements",
         method: "card",
         clientSecret: session.clientSecret,
+        returnUrl: session.returnUrl,
       });
     case "redirect":
       return Object.freeze({

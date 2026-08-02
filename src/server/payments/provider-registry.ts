@@ -4,6 +4,7 @@ import {
   createLocalTestProvider,
   type LocalTestProviderOptions,
 } from "./local-test-provider";
+import { createStripeProvider } from "./stripe-provider";
 import type { PaymentProvider } from "./types";
 
 type ProviderFactory = () => PaymentProvider;
@@ -76,7 +77,11 @@ export function selectPaymentProviders(
 
   for (const method of methods) {
     if (realProviderEnabled(config, method)) {
-      const factory = options.realFactories?.[method];
+      let factory = options.realFactories?.[method];
+      if (!factory && method === "card" && config.stripe.enabled) {
+        const stripeConfig = config.stripe;
+        factory = () => createStripeProvider({ config: stripeConfig });
+      }
       if (factory) selected.push(registration(method, factory(), false));
       continue;
     }
