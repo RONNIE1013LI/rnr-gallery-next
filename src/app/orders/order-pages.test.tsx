@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "@/server/auth/require-session";
 import { hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
@@ -69,6 +69,7 @@ const order = Object.freeze({
   totals: Object.freeze({ productSubtotalExGstCents: 15717, productGstCents: 2358, productTotalInclGstCents: 18075, totalExGstCents: 15717, totalGstCents: 2358, totalInclGstCents: 18075 }),
   items: Object.freeze([{ productTitle: "Photo Print Canvas", sizeLabel: "A4", orientation: "landscape", peoplePets: 2, photoSubmissionMethod: "later", designText: "Family forever", notes: "Use the warm sunset reference", neededDate: "2026-08-10", urgentServiceConfirmed: true, urgentWorkingDays: 3, quantity: 1, priceLines: Object.freeze([{ key: "product-size", label: "Product / size price", amountExGstCents: 6500 }, { key: "people-pets", label: "People / pets fee", amountExGstCents: 4000 }, { key: "urgent-service", label: "Urgent service", amountExGstCents: 5217, amountInclGstCents: 6000 }, { key: "no-charge", label: "No charge", amountExGstCents: 0 }]), unitSubtotalExGstCents: 15717, unitGstCents: 2358, unitTotalInclGstCents: 18075, lineSubtotalExGstCents: 15717, lineGstCents: 2358, lineTotalInclGstCents: 18075 }]),
   addresses: Object.freeze({ billing: address, delivery: address }),
+  payment: null,
 }) as PublicOrder;
 
 describe("owner-scoped order pages", () => {
@@ -180,13 +181,55 @@ describe("owner-scoped order pages", () => {
   });
 
   it("does not show awaiting-payment guidance for a paid order", async () => {
-    findByCheckoutToken.mockResolvedValue({ ...order, paymentStatus: "paid" });
+    findByCheckoutToken.mockResolvedValue({
+      ...order,
+      paymentStatus: "paid",
+      payment: { method: "card", status: "paid", canRetry: false, isTest: false },
+    });
 
     render(await OrderConfirmationPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
 
-    expect(screen.getByText("Paid", { exact: false })).toBeInTheDocument();
+    expect(screen.getAllByText("Paid", { exact: false }).length).toBeGreaterThanOrEqual(1);
     expect(screen.queryByRole("button", { name: "Pay for order" })).not.toBeInTheDocument();
     expect(screen.getByText("Payment confirmed.")).toBeInTheDocument();
+  });
+
+  it("passes the authorized current attempt to the payment recovery panel", async () => {
+    findByCheckoutToken.mockResolvedValue({
+      ...order,
+      paymentStatus: "failed",
+      payment: { method: "afterpay", status: "failed", canRetry: true, isTest: true },
+    });
+
+    render(await OrderConfirmationPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
+
+    expect(screen.getByText("Payment method")).toBeInTheDocument();
+    expect(screen.getByText("Afterpay (test)")).toBeInTheDocument();
+    expect(screen.getByText("Payment attempt")).toBeInTheDocument();
+    expect(screen.getByText("Failed", { exact: true })).toBeInTheDocument();
+    const summary = screen.getByRole("heading", { name: "Order summary" }).closest("aside");
+    expect(summary).not.toBeNull();
+    expect(within(summary!).getAllByRole("term").map(({ textContent }) => textContent)).toEqual([
+      "Products ex GST",
+      "Shipping ex GST",
+      "GST",
+      "Payment method",
+      "Payment attempt",
+      "Total incl GST",
+    ]);
+    expect(await screen.findByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
+  });
+
+  it("passes the authenticated customer's current attempt to the payment recovery panel", async () => {
+    findByCustomer.mockResolvedValue({
+      ...order,
+      paymentStatus: "cancelled",
+      payment: { method: "afterpay", status: "cancelled", canRetry: true, isTest: true },
+    });
+
+    render(await AccountOrderPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
+
+    expect(await screen.findByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
   });
 
   it("fails closed when an immutable order snapshot cannot be validated", async () => {

@@ -21,5 +21,5 @@ export default async function OrderConfirmationPage({ params }: { params: Promis
     throw error;
   }
   if (!order) notFound();
-  return <main id="main-content" className={styles.orderPage}><OrderDetail order={order} heading="Order received." /><OrderPaymentPanel orderNumber={order.orderNumber} paymentStatus={order.paymentStatus} orderHref={`/orders/${order.orderNumber}`} /><section className={styles.orderNext}><h2>Next steps</h2><div><Link className={styles.primaryButton} href="/shop">Continue browsing</Link>{session ? <Link className={styles.secondaryButton} href="/account/orders">View account orders</Link> : <Link className={styles.secondaryButton} href="/account/sign-in">Sign in</Link>}</div></section></main>;
+  return <main id="main-content" className={styles.orderPage}><OrderDetail order={order} heading="Order received." /><OrderPaymentPanel orderNumber={order.orderNumber} paymentStatus={order.paymentStatus} payment={order.payment} orderHref={`/orders/${order.orderNumber}`} /><section className={styles.orderNext}><h2>Next steps</h2><div><Link className={styles.primaryButton} href="/shop">Continue browsing</Link>{session ? <Link className={styles.secondaryButton} href="/account/orders">View account orders</Link> : <Link className={styles.secondaryButton} href="/account/sign-in">Sign in</Link>}</div></section></main>;
 }

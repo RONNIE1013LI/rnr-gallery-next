@@ -139,6 +139,125 @@ describe("OrderPaymentPanel", () => {
     expect(screen.queryByRole("button", { name: "Pay for order" })).not.toBeInTheDocument();
   });
 
+  it("shows pending confirmation when the current attempt is processing before the order snapshot catches up", () => {
+    render(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="awaiting_payment"
+      payment={{ method: "card", status: "processing", isTest: false, canRetry: false }}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
+
+    expect(screen.getByText("Payment confirmation is pending")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
+    expect(screen.queryByRole("radio", { name: "Test Afterpay — no real payment" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue payment" })).toBeEnabled();
+  });
+
+  it("continues the same authoritative processing method after an order refresh", () => {
+    render(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="processing"
+      payment={{ method: "card", status: "processing", isTest: true, canRetry: false }}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
+
+    expect(screen.getByText("Payment confirmation is pending")).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
+    expect(screen.queryByRole("radio", { name: "Test Afterpay — no real payment" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue payment" })).toBeEnabled();
+    expect(screen.queryByText("Payment confirmed.")).not.toBeInTheDocument();
+  });
+
+  it("locks an existing actionable attempt to its authoritative method", () => {
+    render(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="awaiting_payment"
+      payment={{ method: "afterpay", status: "requires_action", isTest: true, canRetry: false }}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
+
+    expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
+    expect(screen.queryByRole("radio", { name: "Test card — no real payment" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Continue payment" })).toBeEnabled();
+  });
+
+  it("rebinds the controls when an authoritative attempt appears without changing order status", () => {
+    const view = render(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="awaiting_payment"
+      payment={null}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
+    expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
+
+    view.rerender(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="awaiting_payment"
+      payment={{ method: "afterpay", status: "requires_action", isTest: true, canRetry: false }}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
+
+    expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
+    expect(screen.queryByRole("radio", { name: "Test card — no real payment" })).not.toBeInTheDocument();
+  });
+
+  it.each(["failed", "cancelled"] as const)(
+    "defaults a retryable %s attempt to the method that failed",
+    (status) => {
+      render(<OrderPaymentPanel
+        orderNumber="RNR-2026-ABC"
+        paymentStatus={status}
+        payment={{ method: "afterpay", status, isTest: true, canRetry: true }}
+        methods={methods}
+        orderHref="/orders/RNR-2026-ABC"
+      />);
+
+      expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
+      expect(screen.getByRole("button", { name: "Pay for order" })).toBeEnabled();
+    },
+  );
+
+  it.each(["paid", "refunded"] as const)(
+    "lets authoritative order status %s suppress retry even if a stale attempt says failed",
+    (paymentStatus) => {
+      render(<OrderPaymentPanel
+        orderNumber="RNR-2026-ABC"
+        paymentStatus={paymentStatus}
+        payment={{ method: "afterpay", status: "failed", isTest: true, canRetry: true }}
+        methods={methods}
+        orderHref="/orders/RNR-2026-ABC"
+      />);
+
+      expect(screen.queryByRole("radiogroup", { name: "Payment method" })).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: /payment/i })).not.toBeInTheDocument();
+    },
+  );
+
+  it.each(["failed", "cancelled"] as const)(
+    "lets authoritative %s order status override a stale processing attempt",
+    (paymentStatus) => {
+      render(<OrderPaymentPanel
+        orderNumber="RNR-2026-ABC"
+        paymentStatus={paymentStatus}
+        payment={{ method: "afterpay", status: "processing", isTest: true, canRetry: false }}
+        methods={methods}
+        orderHref="/orders/RNR-2026-ABC"
+      />);
+
+      expect(screen.getByText(paymentStatus === "failed"
+        ? "Payment failed. Choose a payment method and try again."
+        : "Payment cancelled. Choose a payment method and try again.")).toBeInTheDocument();
+      expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
+      expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Pay for order" })).toBeEnabled();
+    },
+  );
+
   it.each([
     ["paid" as const, "Payment confirmed."],
     ["failed" as const, "Payment failed. Choose a payment method and try again."],

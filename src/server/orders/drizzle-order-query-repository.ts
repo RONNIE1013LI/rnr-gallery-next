@@ -1,13 +1,19 @@
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
-import { checkoutSessions, orderAddresses, orderItems, orders } from "@/server/db/schema";
+import { checkoutSessions, orderAddresses, orderItems, orders, paymentAttempts } from "@/server/db/schema";
 import { normalizeAddress } from "@/domain/address/schema";
+import { toPublicPaymentDTO } from "@/server/payments/public-dto";
 import type { OrderQueryRepository, PublicOrder } from "./order-query-service";
 
 type Database = ReturnType<typeof getDatabase>;
+type ReadExecutor = Pick<Database, "select">;
 type OrderRow = typeof orders.$inferSelect;
 type OrderItemRow = typeof orderItems.$inferSelect;
 type OrderAddressRow = typeof orderAddresses.$inferSelect;
+type PaymentReadRow = Pick<
+  typeof paymentAttempts.$inferSelect,
+  "orderId" | "method" | "status" | "provider" | "createdAt" | "id"
+>;
 
 const paymentStatuses = new Set(["awaiting_payment", "processing", "paid", "failed", "cancelled", "refunded"]);
 const fulfilmentStatuses = new Set(["new"]);
@@ -128,10 +134,28 @@ function publicItems(itemRows: OrderItemRow[]) {
   });
 }
 
+function publicPayment(row: OrderRow, attempts: PaymentReadRow[]) {
+  const orderAttempts = attempts.filter((attempt) => attempt.orderId === row.id);
+  const candidates = row.paymentStatus === "paid" || row.paymentStatus === "refunded"
+    ? orderAttempts.filter((attempt) => attempt.status === "paid")
+    : orderAttempts;
+  const current = candidates.sort((first, second) =>
+    second.createdAt.getTime() - first.createdAt.getTime() ||
+    second.id.localeCompare(first.id),
+  )[0];
+  if (!current) return null;
+  return toPublicPaymentDTO({
+    method: current.method,
+    status: current.status,
+    isTest: current.provider === "local-test",
+  });
+}
+
 export function buildPublicOrders(
   rows: OrderRow[],
   items: OrderItemRow[],
   addresses: OrderAddressRow[],
+  attempts: PaymentReadRow[] = [],
 ): PublicOrder[] {
   return rows.map((row) => {
     try {
@@ -149,6 +173,7 @@ export function buildPublicOrders(
         shipping: Object.freeze({ provider: row.shippingProvider, serviceName: row.shippingServiceName, isTest: row.shippingIsTest, amountExGstCents: row.shippingExGstCents, gstCents: row.shippingGstCents, amountInclGstCents: row.shippingTotalInclGstCents }),
         totals: Object.freeze({ productSubtotalExGstCents: row.productSubtotalExGstCents, productGstCents: row.productGstCents, productTotalInclGstCents: row.productTotalInclGstCents, totalExGstCents: row.totalExGstCents, totalGstCents: row.totalGstCents, totalInclGstCents: row.totalInclGstCents }),
         items: Object.freeze(mappedItems), addresses: Object.freeze({ billing: publicAddress(addressRows, "billing"), delivery: publicAddress(addressRows, "delivery") }),
+        payment: publicPayment(row, attempts),
       });
     } catch {
       throw new OrderSnapshotIntegrityError();
@@ -157,22 +182,44 @@ export function buildPublicOrders(
 }
 
 export function createDrizzleOrderQueryRepository(database: Database): OrderQueryRepository {
-  async function hydrate(rows: OrderRow[]): Promise<PublicOrder[]> {
+  async function hydrate(executor: ReadExecutor, rows: OrderRow[]): Promise<PublicOrder[]> {
     if (!rows.length) return [];
     const ids = rows.map(({ id }) => id);
-    const [items, addresses] = await Promise.all([
-      database.select().from(orderItems).where(inArray(orderItems.orderId, ids)).orderBy(orderItems.position),
-      database.select().from(orderAddresses).where(inArray(orderAddresses.orderId, ids)),
-    ]);
-    return buildPublicOrders(rows, items, addresses);
+    const items = await executor.select().from(orderItems).where(inArray(orderItems.orderId, ids)).orderBy(orderItems.position);
+    const addresses = await executor.select().from(orderAddresses).where(inArray(orderAddresses.orderId, ids));
+    const attempts = await executor.select({
+      orderId: paymentAttempts.orderId,
+      method: paymentAttempts.method,
+      status: paymentAttempts.status,
+      provider: paymentAttempts.provider,
+      createdAt: paymentAttempts.createdAt,
+      id: paymentAttempts.id,
+    }).from(paymentAttempts).where(inArray(paymentAttempts.orderId, ids));
+    return buildPublicOrders(rows, items, addresses, attempts);
   }
-  async function one(rows: OrderRow[]) { return (await hydrate(rows))[0] ?? null; }
+  async function one(executor: ReadExecutor, rows: OrderRow[]) {
+    return (await hydrate(executor, rows))[0] ?? null;
+  }
+  const snapshot = <T>(read: (transaction: ReadExecutor) => Promise<T>) =>
+    database.transaction(read, { isolationLevel: "repeatable read", accessMode: "read only" });
   return {
     async findByCheckoutToken(orderNumber, tokenDigest) {
-      const rows = await database.select({ order: orders }).from(orders).innerJoin(checkoutSessions, and(eq(checkoutSessions.id, orders.checkoutSessionId), eq(checkoutSessions.tokenDigest, tokenDigest), isNotNull(checkoutSessions.completedAt), sql`${checkoutSessions.expiresAt} > clock_timestamp()`)).where(and(eq(orders.orderNumber, orderNumber), isNull(orders.customerId))).limit(1);
-      return one(rows.map(({ order }) => order));
+      return snapshot(async (transaction) => {
+        const rows = await transaction.select({ order: orders }).from(orders).innerJoin(checkoutSessions, and(eq(checkoutSessions.id, orders.checkoutSessionId), eq(checkoutSessions.tokenDigest, tokenDigest), isNotNull(checkoutSessions.completedAt), sql`${checkoutSessions.expiresAt} > clock_timestamp()`)).where(and(eq(orders.orderNumber, orderNumber), isNull(orders.customerId))).limit(1);
+        return one(transaction, rows.map(({ order }) => order));
+      });
     },
-    async findByCustomer(orderNumber, customerId) { return one(await database.select().from(orders).where(and(eq(orders.orderNumber, orderNumber), eq(orders.customerId, customerId))).limit(1)); },
-    async listByCustomer(customerId) { return hydrate(await database.select().from(orders).where(eq(orders.customerId, customerId)).orderBy(desc(orders.createdAt), desc(orders.orderNumber))); },
+    async findByCustomer(orderNumber, customerId) {
+      return snapshot(async (transaction) => {
+        const rows = await transaction.select().from(orders).where(and(eq(orders.orderNumber, orderNumber), eq(orders.customerId, customerId))).limit(1);
+        return one(transaction, rows);
+      });
+    },
+    async listByCustomer(customerId) {
+      return snapshot(async (transaction) => {
+        const rows = await transaction.select().from(orders).where(eq(orders.customerId, customerId)).orderBy(desc(orders.createdAt), desc(orders.orderNumber));
+        return hydrate(transaction, rows);
+      });
+    },
   };
 }

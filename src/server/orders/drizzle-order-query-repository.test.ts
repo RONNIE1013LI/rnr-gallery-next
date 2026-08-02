@@ -1,13 +1,18 @@
-import { describe, expect, it } from "vitest";
-import { orderAddresses, orderItems, orders } from "@/server/db/schema";
+import { describe, expect, it, vi } from "vitest";
+import { orderAddresses, orderItems, orders, paymentAttempts } from "@/server/db/schema";
 import {
   buildPublicOrders,
+  createDrizzleOrderQueryRepository,
   OrderSnapshotIntegrityError,
 } from "./drizzle-order-query-repository";
 
 type OrderRow = typeof orders.$inferSelect;
 type ItemRow = typeof orderItems.$inferSelect;
 type AddressRow = typeof orderAddresses.$inferSelect;
+type PaymentReadRow = Pick<
+  typeof paymentAttempts.$inferSelect,
+  "orderId" | "method" | "status" | "provider" | "createdAt" | "updatedAt" | "id"
+>;
 
 const createdAt = new Date("2026-08-02T00:00:00.000Z");
 const orderRow: OrderRow = {
@@ -91,14 +96,91 @@ const addresses: AddressRow[] = [
   { ...addressBase, id: "60000000-0000-4000-8000-000000000001", kind: "billing" },
   { ...addressBase, id: "60000000-0000-4000-8000-000000000002", kind: "delivery" },
 ];
+const attemptRow: PaymentReadRow = {
+  id: "70000000-0000-4000-8000-000000000001",
+  orderId: orderRow.id,
+  method: "afterpay",
+  provider: "local-test",
+  status: "failed",
+  createdAt: new Date("2026-08-02T00:01:00.000Z"),
+  updatedAt: new Date("2026-08-02T00:01:00.000Z"),
+};
 
 describe("Drizzle order query read model", () => {
+  it.each(["guest", "customer", "list"] as const)(
+    "reads the authorized %s order and its payment snapshot in one read-only repeatable-read transaction",
+    async (kind) => {
+      const results = kind === "guest"
+        ? [[{ order: { ...orderRow, customerId: null } }], [itemRow], addresses, [attemptRow]]
+        : [[orderRow], [itemRow], addresses, [attemptRow]];
+      let readInFlight = false;
+      const transactionSelect = vi.fn((selection?: unknown) => {
+        void selection;
+        const value = results.shift() ?? [];
+        const query = {
+          from: () => query,
+          innerJoin: () => query,
+          where: () => query,
+          orderBy: () => query,
+          limit: () => query,
+          then: (
+            resolve: (rows: unknown[]) => unknown,
+            reject: (error: unknown) => unknown,
+          ) => {
+            if (readInFlight) {
+              return Promise.reject(new Error("transaction reads overlapped")).then(resolve, reject);
+            }
+            readInFlight = true;
+            return Promise.resolve().then(() => {
+              readInFlight = false;
+              return value;
+            }).then(resolve, reject);
+          },
+        };
+        return query;
+      });
+      const transaction = { select: transactionSelect };
+      const database = {
+        select: vi.fn(() => { throw new Error("query escaped the snapshot transaction"); }),
+        transaction: vi.fn(async (callback: (tx: typeof transaction) => Promise<unknown>, config: unknown) => {
+          expect(config).toEqual({ isolationLevel: "repeatable read", accessMode: "read only" });
+          return callback(transaction);
+        }),
+      };
+      const repository = createDrizzleOrderQueryRepository(
+        database as unknown as Parameters<typeof createDrizzleOrderQueryRepository>[0],
+      );
+
+      const result = kind === "guest"
+        ? await repository.findByCheckoutToken(orderRow.orderNumber, "token-digest")
+        : kind === "customer"
+          ? await repository.findByCustomer(orderRow.orderNumber, "user-1")
+          : await repository.listByCustomer("user-1");
+
+      expect(result).toBeTruthy();
+      expect(database.transaction).toHaveBeenCalledTimes(1);
+      expect(database.select).not.toHaveBeenCalled();
+      expect(transactionSelect).toHaveBeenCalledTimes(4);
+      expect(results).toHaveLength(0);
+      expect(transactionSelect.mock.calls[0]).toEqual(kind === "guest" ? [{ order: orders }] : []);
+      expect(transactionSelect.mock.calls[3]?.[0]).toMatchObject({
+        orderId: paymentAttempts.orderId,
+        method: paymentAttempts.method,
+        status: paymentAttempts.status,
+        provider: paymentAttempts.provider,
+        createdAt: paymentAttempts.createdAt,
+        id: paymentAttempts.id,
+      });
+      expect(transactionSelect.mock.calls[3]?.[0]).not.toHaveProperty("updatedAt");
+    },
+  );
+
   it("maps only the explicit public field whitelist and freezes nested snapshots", () => {
-    const [result] = buildPublicOrders([orderRow], [itemRow], addresses);
+    const [result] = buildPublicOrders([orderRow], [itemRow], addresses, [attemptRow]);
 
     expect(Object.keys(result)).toEqual([
       "orderNumber", "createdAt", "paymentStatus", "fulfilmentStatus", "currency",
-      "deliveryMethod", "shipping", "totals", "items", "addresses",
+      "deliveryMethod", "shipping", "totals", "items", "addresses", "payment",
     ]);
     expect(Object.keys(result.items[0])).toEqual([
       "productTitle", "sizeLabel", "orientation", "peoplePets", "photoSubmissionMethod",
@@ -118,7 +200,120 @@ describe("Drizzle order query read model", () => {
     expect(Object.isFrozen(result.items[0].priceLines)).toBe(true);
     expect(Object.isFrozen(result.items[0].priceLines[0])).toBe(true);
     expect(Object.isFrozen(result.addresses.billing)).toBe(true);
+    expect(result.payment).toEqual({
+      method: "afterpay",
+      status: "failed",
+      canRetry: true,
+      isTest: true,
+    });
+    expect(Object.keys(result.payment ?? {}).sort()).toEqual([
+      "canRetry", "isTest", "method", "status",
+    ]);
+    expect(Object.isFrozen(result.payment)).toBe(true);
+    expect(JSON.stringify(result.payment)).not.toMatch(
+      /providerReference|attemptId|clientSecret|returnState|failure|event|provider|createdAt|updatedAt|id/,
+    );
   });
+
+  it("returns null when an authorized order has no payment attempt", () => {
+    const [result] = buildPublicOrders([orderRow], [itemRow], addresses, []);
+
+    expect(result.payment).toBeNull();
+  });
+
+  it("selects the newest attempt by immutable creation order instead of mutable updated time", () => {
+    const newerProcessing: PaymentReadRow = {
+      ...attemptRow,
+      id: "70000000-0000-4000-8000-000000000010",
+      method: "card",
+      provider: "stripe",
+      status: "processing",
+      createdAt: new Date("2026-08-02T00:02:00.000Z"),
+      updatedAt: new Date("2026-08-02T00:02:00.000Z"),
+    };
+    const staleFailureWithLateUpdate: PaymentReadRow = {
+      ...attemptRow,
+      createdAt: new Date("2026-08-02T00:01:00.000Z"),
+      updatedAt: new Date("2026-08-02T00:05:00.000Z"),
+    };
+
+    const [result] = buildPublicOrders(
+      [{ ...orderRow, paymentStatus: "processing" }],
+      [itemRow],
+      addresses,
+      [staleFailureWithLateUpdate, newerProcessing],
+    );
+
+    expect(result.payment).toEqual({
+      method: "card",
+      status: "processing",
+      canRetry: false,
+      isTest: false,
+    });
+  });
+
+  it("uses descending attempt id as the stable tie-breaker for equal creation times", () => {
+    const lowerId: PaymentReadRow = {
+      ...attemptRow,
+      id: "70000000-0000-4000-8000-000000000001",
+      method: "afterpay",
+      status: "failed",
+    };
+    const higherId: PaymentReadRow = {
+      ...attemptRow,
+      id: "70000000-0000-4000-8000-000000000099",
+      method: "card",
+      provider: "stripe",
+      status: "processing",
+    };
+
+    const [result] = buildPublicOrders(
+      [{ ...orderRow, paymentStatus: "processing" }],
+      [itemRow],
+      addresses,
+      [lowerId, higherId],
+    );
+
+    expect(result.payment).toEqual({
+      method: "card",
+      status: "processing",
+      canRetry: false,
+      isTest: false,
+    });
+  });
+
+  it.each(["paid", "refunded"] as const)(
+    "uses the newest paid attempt for a %s order even when a later failed attempt exists",
+    (paymentStatus) => {
+      const paidAttempt: PaymentReadRow = {
+        ...attemptRow,
+        method: "card",
+        provider: "stripe",
+        status: "paid",
+      };
+      const laterFailure: PaymentReadRow = {
+        ...attemptRow,
+        id: "70000000-0000-4000-8000-000000000011",
+        status: "failed",
+        createdAt: new Date("2026-08-02T00:03:00.000Z"),
+        updatedAt: new Date("2026-08-02T00:03:00.000Z"),
+      };
+
+      const [result] = buildPublicOrders(
+        [{ ...orderRow, paymentStatus }],
+        [itemRow],
+        addresses,
+        [laterFailure, paidAttempt],
+      );
+
+      expect(result.payment).toEqual({
+        method: "card",
+        status: "paid",
+        canRetry: false,
+        isTest: false,
+      });
+    },
+  );
 
   it("fails closed when either immutable address snapshot is missing", () => {
     expect(() => buildPublicOrders([orderRow], [itemRow], addresses.slice(0, 1)))

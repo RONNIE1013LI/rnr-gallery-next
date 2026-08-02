@@ -208,6 +208,7 @@ export async function startOrderPayment(
 type OrderPaymentPanelProps = Readonly<{
   orderNumber: string;
   paymentStatus: OrderPaymentStatus;
+  payment?: PublicPaymentDTO | null;
   methods?: readonly PaymentMethodOption[];
   orderHref: string;
 }>;
@@ -215,6 +216,7 @@ type OrderPaymentPanelProps = Readonly<{
 function OrderPaymentPanelState({
   orderNumber,
   paymentStatus,
+  payment = null,
   methods: suppliedMethods,
   orderHref,
 }: OrderPaymentPanelProps) {
@@ -222,24 +224,43 @@ function OrderPaymentPanelState({
   const [initialAttempt] = useState(() => storedStartingAttempt(orderNumber));
   const [methods, setMethods] = useState<readonly PaymentMethodOption[]>(suppliedMethods ?? []);
   const [methodsLoaded, setMethodsLoaded] = useState(suppliedMethods !== undefined);
-  const resumableAttempt = paymentStatus === "awaiting_payment" ? initialAttempt : null;
+  const lockedMethod = (paymentStatus === "awaiting_payment" || paymentStatus === "processing") && payment &&
+    ["created", "requires_action", "processing"].includes(payment.status)
+    ? payment.method
+    : null;
+  const preferredMethod = lockedMethod ?? (payment?.canRetry ? payment.method : null);
+  const visibleMethods = useMemo(
+    () => lockedMethod ? methods.filter(({ method }) => method === lockedMethod) : methods,
+    [lockedMethod, methods],
+  );
+  const resumableAttempt = paymentStatus === "awaiting_payment" && !payment ? initialAttempt : null;
   const resumedMethod = resumableAttempt && methods.some((option) => option.method === resumableAttempt.method) ? resumableAttempt.method : null;
-  const [selected, setSelected] = useState<PaymentMethodKey | null>(() => resumedMethod ?? defaultMethod(methods));
+  const [selected, setSelected] = useState<PaymentMethodKey | null>(() =>
+    preferredMethod && methods.some(({ method }) => method === preferredMethod)
+      ? preferredMethod
+      : resumedMethod ?? defaultMethod(methods),
+  );
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const paymentKey = useRef<string | null>(resumedMethod ? resumableAttempt?.paymentIdempotencyKey ?? null : null);
   const [paymentAction, setPaymentAction] = useState<PaymentActionDTO | null>(null);
   const resumed = useRef(false);
-  const canStart = ["awaiting_payment", "failed", "cancelled"].includes(paymentStatus);
+  const canStart = paymentStatus === "failed" || paymentStatus === "cancelled" ||
+    (paymentStatus === "awaiting_payment" &&
+      (!payment || payment.canRetry || lockedMethod !== null)) ||
+    (paymentStatus === "processing" && lockedMethod !== null);
   const statusMessage = useMemo(() => {
     if (message) return message;
-    if (paymentStatus === "processing") return "Payment confirmation is pending";
     if (paymentStatus === "paid") return "Payment confirmed.";
+    if (paymentStatus === "refunded") return "Payment refunded.";
     if (paymentStatus === "failed") return "Payment failed. Choose a payment method and try again.";
     if (paymentStatus === "cancelled") return "Payment cancelled. Choose a payment method and try again.";
-    if (paymentStatus === "refunded") return "Payment refunded.";
+    if (payment?.status === "processing") return "Payment confirmation is pending";
+    if (payment?.status === "created") return "Payment setup is pending. Continue with the same payment method.";
+    if (payment?.status === "requires_action") return "Payment action is required. Continue with the same payment method.";
+    if (paymentStatus === "processing") return "Payment confirmation is pending";
     return "";
-  }, [message, paymentStatus]);
+  }, [message, payment, paymentStatus]);
 
   useEffect(() => {
     if (paymentStatus === "awaiting_payment") return;
@@ -270,6 +291,8 @@ function OrderPaymentPanelState({
       setMethods(loaded);
       setSelected((current) => current && loaded.some(({ method }) => method === current)
         ? current
+        : preferredMethod && loaded.some(({ method }) => method === preferredMethod)
+          ? preferredMethod
         : resumableAttempt && loaded.some(({ method }) => method === resumableAttempt.method)
           ? resumableAttempt.method
           : defaultMethod(loaded));
@@ -282,7 +305,7 @@ function OrderPaymentPanelState({
       setMessage(error instanceof Error ? error.message : "Payment methods could not be loaded");
     });
     return () => { active = false; };
-  }, [canStart, orderNumber, resumableAttempt, suppliedMethods]);
+  }, [canStart, orderNumber, preferredMethod, resumableAttempt, suppliedMethods]);
 
   const runPayment = useCallback(async (method: PaymentMethodKey, idempotencyKey: string) => {
     setPending(true);
@@ -337,13 +360,13 @@ function OrderPaymentPanelState({
     {canStart ? <>
       {!methodsLoaded
         ? <p className={styles.checkoutMessage}>Loading payment methods…</p>
-        : <PaymentMethods methods={methods} value={selected} onChange={(method) => {
+        : <PaymentMethods methods={visibleMethods} value={selected} onChange={(method) => {
           setSelected(method);
           setPaymentAction(null);
           paymentKey.current = null;
           setMessage("");
         }} disabled={pending} />}
-      <button className={styles.primaryButton} type="button" disabled={!methodsLoaded || !selected || pending || methods.length === 0} onClick={start}>{pending ? "Starting payment…" : "Pay for order"}</button>
+      <button className={styles.primaryButton} type="button" disabled={!methodsLoaded || !selected || pending || visibleMethods.length === 0} onClick={start}>{pending ? "Starting payment…" : lockedMethod ? "Continue payment" : "Pay for order"}</button>
     </> : null}
     {paymentAction?.kind === "elements" ? <StripePaymentForm
       key={paymentAction.clientSecret}
@@ -357,7 +380,7 @@ function OrderPaymentPanelState({
 
 export function OrderPaymentPanel(props: OrderPaymentPanelProps) {
   return <OrderPaymentPanelState
-    key={`${props.orderNumber}:${props.paymentStatus}`}
+    key={`${props.orderNumber}:${props.paymentStatus}:${props.payment?.method ?? "none"}:${props.payment?.status ?? "none"}`}
     {...props}
   />;
 }

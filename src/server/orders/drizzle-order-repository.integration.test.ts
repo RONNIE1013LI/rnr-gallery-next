@@ -13,6 +13,7 @@ import {
   orderAddresses,
   orderItems,
   orders,
+  paymentAttempts,
   shippingQuotes,
   user,
 } from "@/server/db/schema";
@@ -184,6 +185,12 @@ describe("Drizzle atomic order repository", () => {
     if (sessionIds.length) {
       await database.delete(checkoutUploads)
         .where(inArray(checkoutUploads.checkoutSessionId, sessionIds));
+      const ownedOrders = await database.select({ id: orders.id }).from(orders)
+        .where(inArray(orders.checkoutSessionId, sessionIds));
+      if (ownedOrders.length) {
+        await database.delete(paymentAttempts)
+          .where(inArray(paymentAttempts.orderId, ownedOrders.map(({ id }) => id)));
+      }
       await database.delete(orders).where(inArray(orders.checkoutSessionId, sessionIds));
       await database.update(checkoutSessions)
         .set({ selectedShippingQuoteId: null })
@@ -426,15 +433,39 @@ describe("Drizzle atomic order repository", () => {
   it("reads immutable guest and customer order snapshots only through their owner", async () => {
     const guestState = await checkout();
     const guestOrder = await repository.createAtomicOrder(pickupInput(guestState));
+    await database.insert(paymentAttempts).values({
+      orderId: guestOrder.id,
+      provider: "local-test",
+      method: "afterpay",
+      idempotencyKey: `guest-payment-${randomUUID()}`,
+      expectedAmountCents: guestOrder.totalInclGstCents,
+      currency: "NZD",
+      country: "NZ",
+      status: "requires_action",
+      createdAt: new Date("2026-08-02T12:01:00.000Z"),
+      updatedAt: new Date("2026-08-02T12:01:00.000Z"),
+    });
     const guest = await queryRepository.findByCheckoutToken(
       guestOrder.orderNumber,
       guestState.tokenDigest,
     );
-    expect(guest).toMatchObject({ orderNumber: guestOrder.orderNumber, deliveryMethod: "pickup", totals: { totalInclGstCents: 7_475 } });
+    expect(guest).toMatchObject({
+      orderNumber: guestOrder.orderNumber,
+      deliveryMethod: "pickup",
+      totals: { totalInclGstCents: 7_475 },
+      payment: {
+        method: "afterpay",
+        status: "requires_action",
+        canRetry: false,
+        isTest: true,
+      },
+    });
     expect(guest?.items).toHaveLength(1);
     expect(guest?.addresses.billing).toEqual(address);
     expect(Object.isFrozen(guest)).toBe(true);
-    expect(JSON.stringify(guest)).not.toMatch(/checkoutSessionId|tokenDigest|customerId|shippingQuoteId|"id"/);
+    expect(JSON.stringify(guest)).not.toMatch(
+      /checkoutSessionId|tokenDigest|customerId|shippingQuoteId|providerReference|attemptId|clientSecret|returnState|failure|event|"id"/,
+    );
     await expect(queryRepository.findByCheckoutToken(guestOrder.orderNumber, "wrong"))
       .resolves.toBeNull();
 
@@ -447,6 +478,18 @@ describe("Drizzle atomic order repository", () => {
 
     const customerState = await checkout({ customerId: customerIds[0] });
     const customerOrder = await repository.createAtomicOrder(pickupInput(customerState));
+    await database.insert(paymentAttempts).values({
+      orderId: customerOrder.id,
+      provider: "stripe",
+      method: "card",
+      idempotencyKey: `customer-payment-${randomUUID()}`,
+      expectedAmountCents: customerOrder.totalInclGstCents,
+      currency: "NZD",
+      country: "NZ",
+      status: "failed",
+      createdAt: new Date("2026-08-02T12:02:00.000Z"),
+      updatedAt: new Date("2026-08-02T12:02:00.000Z"),
+    });
     await expect(queryRepository.findByCheckoutToken(
       customerOrder.orderNumber,
       customerState.tokenDigest,
@@ -459,7 +502,10 @@ describe("Drizzle atomic order repository", () => {
     await expect(queryService.confirmation(customerOrder.orderNumber, {
       tokenDigest: customerState.tokenDigest,
       userId: customerIds[0],
-    })).resolves.toMatchObject({ orderNumber: customerOrder.orderNumber });
+    })).resolves.toMatchObject({
+      orderNumber: customerOrder.orderNumber,
+      payment: { method: "card", status: "failed", canRetry: true, isTest: false },
+    });
     const history = await queryRepository.listByCustomer(customerIds[0]);
     expect(history.map(({ orderNumber }) => orderNumber)).toContain(customerOrder.orderNumber);
     await expect(queryRepository.findByCustomer(customerOrder.orderNumber, "other-user"))
