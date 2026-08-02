@@ -103,6 +103,11 @@ export const orders = pgTable(
       table.checkoutSessionId,
       table.id,
     ),
+    unique("orders_id_total_incl_gst_currency_unique").on(
+      table.id,
+      table.totalInclGstCents,
+      table.currency,
+    ),
     foreignKey({
       name: "orders_shipping_quote_owner_fk",
       columns: [table.checkoutSessionId, table.shippingQuoteId],
