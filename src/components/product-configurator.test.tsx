@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getConfigurationSchema } from "@/domain/configuration/schemas";
 import { getProductBySlug } from "@/domain/catalogue/products";
 import { ProductConfigurator } from "./product-configurator";
@@ -9,6 +9,7 @@ const schema = getConfigurationSchema(product.key)!;
 
 describe("ProductConfigurator", () => {
   beforeEach(() => localStorage.clear());
+  afterEach(() => vi.unstubAllGlobals());
 
   it("shows the default configuration and exact price", () => {
     render(
@@ -44,6 +45,7 @@ describe("ProductConfigurator", () => {
     fireEvent.change(screen.getByLabelText("Needed by"), {
       target: { value: "2026-08-20" },
     });
+    fireEvent.click(screen.getByText("Send after ordering"));
     fireEvent.click(screen.getAllByRole("button", { name: "Add to cart" })[1]);
 
     const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
@@ -60,5 +62,38 @@ describe("ProductConfigurator", () => {
       "href",
       "/cart",
     );
+  });
+
+  it("uploads source files privately and stores only their references", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          reference: {
+            id: "private-reference",
+            originalName: "source.jpg",
+            mimeType: "image/jpeg",
+            size: 3,
+          },
+        }),
+      }),
+    );
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        createId={() => "configured-item"}
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Choose source photos"), {
+      target: { files: [new File([new Uint8Array([1, 2, 3])], "source.jpg", { type: "image/jpeg" })] },
+    });
+
+    expect(await screen.findByText("source.jpg")).toBeInTheDocument();
+    fireEvent.click(screen.getAllByRole("button", { name: "Add to cart" })[1]);
+    const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
+    expect(stored.items[0].uploadReferences).toEqual(["private-reference"]);
   });
 });

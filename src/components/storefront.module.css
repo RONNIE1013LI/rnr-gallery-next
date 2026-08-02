@@ -696,6 +696,54 @@
   color: var(--muted);
 }
 
+.uploadPanel {
+  margin-top: 1rem;
+  padding: 1rem;
+  background: #f6f3ec;
+  border: 1px dashed #b9b3a7;
+}
+
+.uploadButton {
+  min-height: 46px;
+  padding: 0.7rem 1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  background: var(--gallery-green);
+  font-size: 0.82rem;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.uploadButton input {
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  opacity: 0;
+}
+
+.uploadPanel > p {
+  margin-top: 0.7rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.uploadedFiles {
+  margin-top: 0.8rem;
+  padding-left: 1.15rem;
+  font-size: 0.82rem;
+}
+
+.uploadedFiles li + li {
+  margin-top: 0.25rem;
+}
+
+.formError {
+  color: #a42c22 !important;
+  font-weight: 700;
+}
+
 .priceSummary {
   padding: clamp(1.5rem, 3vw, 2.2rem);
   position: sticky;
@@ -761,6 +809,13 @@
   width: 100%;
   margin-top: 1rem;
   cursor: pointer;
+}
+
+.priceSummary .primaryButton:disabled,
+.mobileAddButton:disabled {
+  color: #6b6e69;
+  background: #ced3cf;
+  cursor: not-allowed;
 }
 
 .mobileAddButton {

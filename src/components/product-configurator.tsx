@@ -21,6 +21,8 @@ type ProductConfiguratorProps = Readonly<{
   createId?: () => string;
 }>;
 
+type UploadedFile = Readonly<{ id: string; originalName: string }>;
+
 function defaultNeededDate(): string {
   const date = new Date();
   let remaining = 5;
@@ -48,6 +50,9 @@ export function ProductConfigurator({
   const [neededDate, setNeededDate] = useState(defaultNeededDate);
   const [deliveryPreference, setDeliveryPreference] =
     useState<DeliveryPreference>(schema.defaultDeliveryPreference);
+  const [uploadedFiles, setUploadedFiles] = useState<readonly UploadedFile[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [uploadError, setUploadError] = useState("");
   const [added, setAdded] = useState(false);
 
   const size = schema.sizes.find((option) => option.key === sizeKey)!;
@@ -55,6 +60,46 @@ export function ProductConfigurator({
     () => quoteConfiguration(schema, { sizeKey, peoplePets }),
     [peoplePets, schema, sizeKey],
   );
+  const uploadRequired =
+    photoSubmissionMethod === "upload" &&
+    uploadedFiles.length < schema.minimumSourcePhotos;
+  const addDisabled = uploading || uploadRequired;
+
+  async function uploadSourceFiles(files: FileList | null) {
+    if (!files?.length) return;
+    setUploading(true);
+    setUploadError("");
+
+    try {
+      const maximum = schema.maximumSourcePhotos ?? 20;
+      if (uploadedFiles.length + files.length > maximum) {
+        throw new Error(`Choose no more than ${maximum} source photos.`);
+      }
+
+      const uploaded = await Promise.all(
+        Array.from(files).map(async (file) => {
+          const data = new FormData();
+          data.set("file", file);
+          const response = await fetch("/api/uploads", { method: "POST", body: data });
+          const body = await response.json() as {
+            reference?: UploadedFile;
+            error?: string;
+          };
+          if (!response.ok || !body.reference) {
+            throw new Error(body.error ?? "The image could not be uploaded.");
+          }
+          return body.reference;
+        }),
+      );
+      setUploadedFiles((current) => [...current, ...uploaded]);
+    } catch (error) {
+      setUploadError(
+        error instanceof Error ? error.message : "The image could not be uploaded.",
+      );
+    } finally {
+      setUploading(false);
+    }
+  }
 
   function addToCart() {
     const repository = createBrowserCartRepository(window.localStorage);
@@ -75,7 +120,7 @@ export function ProductConfigurator({
       deliveryPreference,
       quantity: 1,
       price: quote,
-      uploadReferences: [],
+      uploadReferences: uploadedFiles.map((file) => file.id),
     });
     repository.save(cart);
     setAdded(true);
@@ -189,6 +234,28 @@ export function ProductConfigurator({
               <span><strong>Send after ordering</strong><small>Provide files later by Messenger, email or WhatsApp.</small></span>
             </label>
           </fieldset>
+          {photoSubmissionMethod === "upload" && (
+            <div className={styles.uploadPanel}>
+              <label className={styles.uploadButton}>
+                <span>{uploading ? "Uploading…" : "Choose source photos"}</span>
+                <input
+                  type="file"
+                  multiple
+                  disabled={uploading}
+                  accept="image/jpeg,image/png,image/webp,image/heic,image/heif"
+                  aria-label="Choose source photos"
+                  onChange={(event) => void uploadSourceFiles(event.target.files)}
+                />
+              </label>
+              <p>JPG, PNG, WebP, HEIC or HEIF. Maximum 25 MB per image.</p>
+              {uploadedFiles.length > 0 && (
+                <ul className={styles.uploadedFiles}>
+                  {uploadedFiles.map((file) => <li key={file.id}>{file.originalName}</li>)}
+                </ul>
+              )}
+              {uploadError && <p className={styles.formError} role="alert">{uploadError}</p>}
+            </div>
+          )}
         </section>
 
         <section className={styles.configuratorStep}>
@@ -244,7 +311,9 @@ export function ProductConfigurator({
           </div>
         </section>
 
-        <button className={styles.mobileAddButton} type="submit">Add to cart</button>
+        <button className={styles.mobileAddButton} type="submit" disabled={addDisabled}>
+          {uploadRequired ? "Upload a source photo to continue" : "Add to cart"}
+        </button>
       </form>
 
       <aside className={styles.priceSummary} aria-label="Order summary">
@@ -264,7 +333,14 @@ export function ProductConfigurator({
           <div><dt>GST (15%)</dt><dd>{formatNzd(quote.gstCents)}</dd></div>
           <div className={styles.priceTotal}><dt>Total incl GST</dt><dd>{formatNzd(quote.totalInclGstCents)}</dd></div>
         </dl>
-        <button className={styles.primaryButton} type="button" onClick={addToCart}>Add to cart</button>
+        <button
+          className={styles.primaryButton}
+          type="button"
+          disabled={addDisabled}
+          onClick={addToCart}
+        >
+          {uploadRequired ? "Upload a source photo to continue" : "Add to cart"}
+        </button>
         {added && (
           <p className={styles.addedMessage} role="status">
             Added to your cart. <Link href="/cart">View cart</Link>
