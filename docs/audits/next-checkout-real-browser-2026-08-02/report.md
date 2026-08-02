@@ -53,4 +53,3 @@ The browser reported matching document client and scroll widths at every checked
 - The screenshots include the Next.js development badge because acceptance ran against the local development server.
 - An `apple-touch-icon` request remains a non-checkout asset gap; it does not affect checkout behavior.
 - No live payment, carrier shipment, email, or production order was created.
-
