@@ -1058,6 +1058,33 @@
   padding-left: 1.25rem;
 }
 
+.authPage {
+  max-width: 34rem !important;
+}
+
+.authForm {
+  margin-top: 2rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.authForm .primaryButton {
+  width: 100%;
+  margin-top: 0.5rem;
+  cursor: pointer;
+}
+
+.authForm .primaryButton:disabled {
+  color: #6b6e69;
+  background: #ced3cf;
+  cursor: not-allowed;
+}
+
+.authSwitch {
+  color: var(--muted) !important;
+  font-size: 0.9rem;
+}
+
 @media (max-width: 1100px) {
   .selectedWork .productGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
