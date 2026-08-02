@@ -296,6 +296,12 @@ PAYMENT_RECONCILIATION_SECRET=
 ENABLE_LOCAL_TEST_PAYMENTS=false
 ```
 
+`PAYMENT_RETURN_BASE_URL` is a trusted site origin, not a callback path. Use
+`https://shop.example.com` in production or an HTTP loopback origin during local
+development. Userinfo, query, hash and non-root paths are rejected. Payment
+callbacks are always constructed server-side below
+`/api/payments/returns/{provider}`.
+
 An incomplete group returns `enabled: false`; do not throw during ordinary page render and do not expose missing variable names or values to the browser. Production local-test enablement is the one configuration error that throws.
 
 - [ ] **Step 4: Add exact eligibility rules**
@@ -497,6 +503,13 @@ expect(afterpayProvider.createOrReuse).not.toHaveBeenCalled();
 Cover inaccessible order, unavailable provider, duplicate start reuse, persisted attempt followed by provider timeout, paid-order retry rejection and retry after a failed attempt.
 
 Add a barrier-controlled concurrency test that calls `start` for `card` and `afterpay` on the same order with two different valid browser UUIDs. Assert one persisted nonterminal attempt, exactly one claim and one provider `createOrReuse` call total. The loser returns `PAYMENT_ATTEMPT_IN_PROGRESS`/the safe existing attempt state and performs zero provider calls. Also retain a same-method retry test: the non-claiming request may poll/reload the already-bound session but must not create one.
+
+The service derives a versioned, server-only return state from the persisted
+attempt ID, persisted upstream idempotency key, provider and method. The same
+attempt must receive the same state after process restart or lease reclaim;
+different attempts must not. Both return and cancel URLs use the trusted origin,
+`/api/payments/returns/{provider}`, explicit flow/order/method, and this state.
+The browser payment UUID is never state authority.
 
 - [ ] **Step 2: Run and confirm failure**
 

@@ -36,7 +36,10 @@ describe("POST /api/checkout/payment-methods", () => {
   it("accepts only version and digest then uses the authorized persisted checkout", async () => {
     const repo = repository();
     const paymentService = { availableMethods: vi.fn().mockResolvedValue([
-      { method: "card", label: "Test card — no real payment", isTest: true },
+      {
+        method: "card", label: "Test card — no real payment", isTest: true,
+        provider: "internal", secret: "must-not-leak",
+      },
     ]) };
     const handler = createCheckoutPaymentMethodsRoute({
       repository: repo,

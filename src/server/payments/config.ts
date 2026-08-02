@@ -67,7 +67,10 @@ function disabled(): DisabledPaymentConfig {
   return Object.freeze({ enabled: false });
 }
 
-function parseReturnBaseUrl(rawValue: string | null, nodeEnvironment: string | undefined) {
+export function parsePaymentReturnOrigin(
+  rawValue: string | null,
+  nodeEnvironment: string | undefined,
+) {
   if (!rawValue) return null;
 
   try {
@@ -77,7 +80,8 @@ function parseReturnBaseUrl(rawValue: string | null, nodeEnvironment: string | u
       url.username ||
       url.password ||
       url.search ||
-      url.hash
+      url.hash ||
+      url.pathname !== "/"
     ) {
       return null;
     }
@@ -87,7 +91,7 @@ function parseReturnBaseUrl(rawValue: string | null, nodeEnvironment: string | u
     ) {
       return null;
     }
-    return url.toString().replace(/\/$/, "");
+    return url.origin;
   } catch {
     return null;
   }
@@ -179,7 +183,7 @@ function parseZipConfig(env: PaymentEnvironment): ZipPaymentConfig {
 export function parsePaymentConfig(
   env: PaymentEnvironment = process.env,
 ): PaymentConfig {
-  const returnBaseUrl = parseReturnBaseUrl(
+  const returnBaseUrl = parsePaymentReturnOrigin(
     value(env, "PAYMENT_RETURN_BASE_URL"),
     env.NODE_ENV,
   );

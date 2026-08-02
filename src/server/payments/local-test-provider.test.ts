@@ -45,6 +45,7 @@ function sessionInput(paymentOrder = order()): CreateProviderSessionInput {
     order: paymentOrder,
     attemptId: "00000000-0000-4000-8000-000000000020",
     idempotencyKey: "a".repeat(64),
+    returnState: "a".repeat(64),
     returnUrl: "http://localhost:3000/payments/return",
     cancelUrl: "http://localhost:3000/payments/cancel",
   });
@@ -109,7 +110,7 @@ describe("local test payment provider", () => {
     if (first.kind !== "test") throw new Error("Expected local test session");
     const callback = new URL(first.url);
     const returnState = callback.searchParams.get("state");
-    expect(returnState).toMatch(/^[a-f0-9]{64}$/);
+    expect(returnState).toBe(input.returnState);
     callback.searchParams.set("result", "failed");
 
     await expect(afterRestart.completeReturn({
@@ -133,7 +134,7 @@ describe("local test payment provider", () => {
     });
   });
 
-  it("ignores browser result and rejects unconsumed or mismatched return data", async () => {
+  it("ignores browser result and rejects mismatched return data", async () => {
     const provider = createLocalTestProvider({ nodeEnv: "test", method: "afterpay" });
     const input = sessionInput();
     const session = await provider.createOrReuse(input);
@@ -145,7 +146,7 @@ describe("local test payment provider", () => {
     await expect(provider.completeReturn({
       order: input.order,
       providerReference: session.providerReference,
-      returnState: "b".repeat(64),
+      returnState: input.returnState,
       returnUrl: hostile,
     })).rejects.toThrow("Local test return verification failed");
     await expect(provider.completeReturn({

@@ -68,6 +68,14 @@ function json(body: unknown, status = 200) {
   return Response.json(body, { status, headers: noStoreHeaders });
 }
 
+function publicMethods(methods: readonly PublicPaymentMethod[]) {
+  return methods.map((method) => Object.freeze({
+    method: method.method,
+    label: method.label,
+    isTest: method.isTest,
+  }));
+}
+
 function errorResponse(error: unknown) {
   if (error instanceof MutationRequestError) {
     return json({ error: { code: error.code, message: error.message } }, error.status);
@@ -111,7 +119,7 @@ export function createCheckoutPaymentMethodsRoute(dependencies?: Dependencies) {
         checkoutVersion: input.checkoutVersion,
         cartDigest: input.cartDigest,
       });
-      return json({ methods });
+      return json({ methods: publicMethods(methods) });
     } catch (error) {
       return errorResponse(error);
     }

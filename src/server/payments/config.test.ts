@@ -50,7 +50,7 @@ describe("parsePaymentConfig", () => {
       NODE_ENV: "development",
       ...completeProviderEnvironment,
       ZIP_ALLOWED_CURRENCIES: " AUD, NZD, AUD ",
-      PAYMENT_RETURN_BASE_URL: "https://shop.example.test/payments",
+      PAYMENT_RETURN_BASE_URL: "https://shop.example.test",
       PAYMENT_RECONCILIATION_SECRET: "reconciliation-secret",
       ENABLE_LOCAL_TEST_PAYMENTS: "true",
     });
@@ -73,7 +73,7 @@ describe("parsePaymentConfig", () => {
     });
     expect(config.localTest).toEqual({ enabled: true, isTest: true });
     expect(config.operations).toEqual({
-      returnBaseUrl: "https://shop.example.test/payments",
+      returnBaseUrl: "https://shop.example.test",
       reconciliationSecret: "reconciliation-secret",
     });
   });
@@ -81,7 +81,10 @@ describe("parsePaymentConfig", () => {
   it.each([
     ["missing", undefined],
     ["invalid", "not-an-absolute-url"],
-    ["remote HTTP", "http://shop.example.test/payments"],
+    ["remote HTTP", "http://shop.example.test"],
+    ["non-root path", "https://shop.example.test/payments"],
+    ["search", "https://shop.example.test/?next=elsewhere"],
+    ["hash", "https://shop.example.test/#payments"],
   ])("disables real providers for a %s non-production return URL", (_, returnUrl) => {
     const config = parsePaymentConfig({
       NODE_ENV: "development",
@@ -103,7 +106,7 @@ describe("parsePaymentConfig", () => {
     const config = parsePaymentConfig({
       NODE_ENV: "production",
       ...completeProviderEnvironment,
-      PAYMENT_RETURN_BASE_URL: "http://localhost:3000/payments",
+      PAYMENT_RETURN_BASE_URL: "http://localhost:3000",
     });
 
     expect(config).toMatchObject({
@@ -120,7 +123,7 @@ describe("parsePaymentConfig", () => {
       const config = parsePaymentConfig({
         NODE_ENV: "development",
         ...completeProviderEnvironment,
-        PAYMENT_RETURN_BASE_URL: `http://${hostname}:3000/payments`,
+        PAYMENT_RETURN_BASE_URL: `http://${hostname}:3000`,
       });
 
       expect(config.stripe.enabled).toBe(true);

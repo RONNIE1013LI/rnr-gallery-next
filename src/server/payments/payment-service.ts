@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import type { ReviewedPaymentCheckoutRepository } from "@/server/checkout/checkout-repository";
+import { parsePaymentReturnOrigin } from "./config";
 import type {
   PaymentOrderAccess,
   PaymentRepository,
@@ -12,7 +13,11 @@ import {
   type PaymentActionDTO,
   type PublicPaymentDTO,
 } from "./public-dto";
-import type { PaymentEligibilityContext, ProviderSession } from "./types";
+import type {
+  PaymentEligibilityContext,
+  PaymentProvider,
+  ProviderSession,
+} from "./types";
 
 export type PaymentServiceErrorCode =
   | "CHECKOUT_CHANGED"
@@ -49,26 +54,66 @@ export type PaymentStartResult = Readonly<{
 
 type CheckoutPaymentAuthority = ReviewedPaymentCheckoutRepository;
 
-function returnStateDigest(session: ProviderSession) {
-  if (session.kind !== "test") return null;
-  const rawState = new URL(session.url).searchParams.get("state");
-  if (!rawState) throw new Error("Payment provider did not return state");
+type ReturnStateSeed = Readonly<{
+  attemptId: string;
+  idempotencyKey: string;
+  provider: string;
+  method: string;
+}>;
+
+function defaultReturnState(seed: ReturnStateSeed) {
+  return createHash("sha256")
+    .update([
+      "rnr-return-state:v1",
+      seed.attemptId,
+      seed.provider,
+      seed.method,
+      seed.idempotencyKey,
+    ].join(":"), "utf8")
+    .digest("hex");
+}
+
+function digestReturnState(rawState: string) {
   return createHash("sha256").update(rawState, "utf8").digest("hex");
 }
 
 function trustedPaymentUrl(
-  base: URL,
+  origin: string,
+  provider: PaymentProvider["key"],
   action: "return" | "cancel",
   orderNumber: string,
   method: PaymentMethodKey,
+  returnState: string,
 ) {
-  const url = new URL(base.toString());
-  url.pathname = `${url.pathname.replace(/\/$/, "")}/${action}`;
-  url.search = "";
-  url.hash = "";
+  const url = new URL(`/api/payments/returns/${provider}`, origin);
+  url.searchParams.set("flow", action);
   url.searchParams.set("orderNumber", orderNumber);
   url.searchParams.set("method", method);
+  url.searchParams.set("state", returnState);
   return url.toString();
+}
+
+function unavailableStart(): PaymentServiceError {
+  return new PaymentServiceError(
+    "PAYMENT_UNAVAILABLE",
+    "Payment could not be started",
+  );
+}
+
+function expectedSessionKind(provider: PaymentProvider["key"]): ProviderSession["kind"] {
+  if (provider === "local-test") return "test";
+  if (provider === "stripe") return "elements";
+  return "redirect";
+}
+
+function hasExpectedIdentity(
+  session: ProviderSession,
+  provider: PaymentProvider,
+  method: PaymentMethodKey,
+) {
+  return session.provider === provider.key &&
+    session.method === method &&
+    session.kind === expectedSessionKind(provider.key);
 }
 
 function publicPayment(
@@ -84,18 +129,18 @@ export function createPaymentService({
   checkoutAuthority,
   providers,
   returnBaseUrl,
+  deriveReturnState = defaultReturnState,
+  nodeEnv = process.env.NODE_ENV,
 }: {
   repository: PaymentRepository;
   checkoutAuthority: CheckoutPaymentAuthority;
   providers: readonly PaymentProviderRegistration[];
   returnBaseUrl: string;
+  deriveReturnState?: (input: ReturnStateSeed) => string;
+  nodeEnv?: string;
 }) {
-  const trustedBase = new URL(returnBaseUrl);
-  if (
-    !["http:", "https:"].includes(trustedBase.protocol) ||
-    trustedBase.username ||
-    trustedBase.password
-  ) {
+  const trustedOrigin = parsePaymentReturnOrigin(returnBaseUrl, nodeEnv);
+  if (!trustedOrigin) {
     throw new Error("Payment return base URL is invalid");
   }
   const byMethod = new Map(providers.map((entry) => [entry.method, entry]));
@@ -111,10 +156,13 @@ export function createPaymentService({
           "The checkout has changed; review it again",
         );
       }
-      const results = await Promise.all(providers.map(async (entry) => ({
-        entry,
-        availability: await entry.provider.availability(context),
-      })));
+      const results = await Promise.all(providers.map(async (entry) => {
+        try {
+          return { entry, availability: await entry.provider.availability(context) };
+        } catch {
+          return { entry, availability: { available: false as const, reason: "provider" } };
+        }
+      }));
       return Object.freeze(results
         .filter(({ availability }) => availability.available)
         .map(({ entry }) => Object.freeze({
@@ -140,9 +188,14 @@ export function createPaymentService({
           "Payment method is unavailable",
         );
       }
-      const methodAvailability = await registration.provider.availability(
-        order satisfies PaymentEligibilityContext,
-      );
+      let methodAvailability;
+      try {
+        methodAvailability = await registration.provider.availability(
+          order satisfies PaymentEligibilityContext,
+        );
+      } catch {
+        throw unavailableStart();
+      }
       if (!methodAvailability.available) {
         throw new PaymentServiceError(
           "PAYMENT_UNAVAILABLE",
@@ -171,31 +224,56 @@ export function createPaymentService({
         });
       }
 
-      const session = await registration.provider.createOrReuse({
-        order,
-        attemptId: claim.attempt.id,
-        idempotencyKey: claim.attempt.idempotencyKey,
-        returnUrl: trustedPaymentUrl(
-          trustedBase,
-          "return",
-          order.orderNumber,
+      let returnState: string;
+      let session: ProviderSession;
+      try {
+        returnState = deriveReturnState({
+          attemptId: claim.attempt.id,
+          idempotencyKey: claim.attempt.idempotencyKey,
+          provider: registration.provider.key,
           method,
-        ),
-        cancelUrl: trustedPaymentUrl(
-          trustedBase,
-          "cancel",
-          order.orderNumber,
-          method,
-        ),
-      });
+        });
+        if (!/^[a-f0-9]{64}$/.test(returnState)) throw new Error("Invalid return state");
+        session = await registration.provider.createOrReuse({
+          order,
+          attemptId: claim.attempt.id,
+          idempotencyKey: claim.attempt.idempotencyKey,
+          returnState,
+          returnUrl: trustedPaymentUrl(
+            trustedOrigin,
+            registration.provider.key,
+            "return",
+            order.orderNumber,
+            method,
+            returnState,
+          ),
+          cancelUrl: trustedPaymentUrl(
+            trustedOrigin,
+            registration.provider.key,
+            "cancel",
+            order.orderNumber,
+            method,
+            returnState,
+          ),
+        });
+        if (!hasExpectedIdentity(session, registration.provider, method)) {
+          throw new Error("Payment provider identity mismatch");
+        }
+      } catch {
+        throw unavailableStart();
+      }
       const status = session.kind === "elements" ? "processing" : "requires_action";
-      await repository.bindProviderSession({
-        attemptId: claim.attempt.id,
-        claimId: claim.claimId,
-        providerReference: session.providerReference,
-        returnStateDigest: returnStateDigest(session),
-        status,
-      });
+      try {
+        await repository.bindProviderSession({
+          attemptId: claim.attempt.id,
+          claimId: claim.claimId,
+          providerReference: session.providerReference,
+          returnStateDigest: digestReturnState(returnState),
+          status,
+        });
+      } catch {
+        throw unavailableStart();
+      }
       return Object.freeze({
         payment: publicPayment(method, status, registration.isTest),
         action: toImmediatePaymentActionDTO(session),

@@ -52,7 +52,6 @@ function provider(method: "card" | "afterpay" = "card"): PaymentProvider {
     availability: vi.fn().mockResolvedValue({ available: true }),
     createOrReuse: vi.fn().mockImplementation(async (input) => {
       const url = new URL(input.returnUrl);
-      url.searchParams.set("state", "raw-return-state");
       return {
         kind: "test" as const,
         provider: "local-test" as const,
@@ -102,6 +101,13 @@ function service(input: {
   repository?: PaymentRepository;
   providers?: readonly PaymentProviderRegistration[];
   checkoutAuthority?: ReviewedPaymentCheckoutRepository;
+  deriveReturnState?: (input: {
+    attemptId: string;
+    idempotencyKey: string;
+    provider: string;
+    method: string;
+  }) => string;
+  returnBaseUrl?: string;
 } = {}) {
   return createPaymentService({
     repository: input.repository ?? repository(),
@@ -115,7 +121,8 @@ function service(input: {
         deliveryAddress: order.deliveryAddress,
       }),
     },
-    returnBaseUrl: "https://trusted.example.test/payments",
+    returnBaseUrl: input.returnBaseUrl ?? "https://trusted.example.test",
+    deriveReturnState: input.deriveReturnState ?? (() => "a".repeat(64)),
   });
 }
 
@@ -170,12 +177,18 @@ describe("payment service", () => {
       order,
       attemptId: attempt.id,
       idempotencyKey: attempt.idempotencyKey,
-      returnUrl: expect.stringContaining("trusted.example.test"),
-      cancelUrl: expect.stringContaining("trusted.example.test"),
+      returnState: "a".repeat(64),
+      returnUrl: expect.stringContaining("trusted.example.test/api/payments/returns/local-test"),
+      cancelUrl: expect.stringContaining("trusted.example.test/api/payments/returns/local-test"),
     }));
     const createInput = vi.mocked(card.createOrReuse).mock.calls[0][0];
     expect(createInput.returnUrl).toContain(encodeURIComponent(order.orderNumber));
     expect(createInput.cancelUrl).toContain(encodeURIComponent(order.orderNumber));
+    expect(new URL(createInput.returnUrl).searchParams).toMatchObject(expect.any(URLSearchParams));
+    expect(new URL(createInput.returnUrl).searchParams.get("flow")).toBe("return");
+    expect(new URL(createInput.cancelUrl).searchParams.get("flow")).toBe("cancel");
+    expect(new URL(createInput.returnUrl).searchParams.get("state")).toBe("a".repeat(64));
+    expect(new URL(createInput.cancelUrl).searchParams.get("state")).toBe("a".repeat(64));
     expect(repo.bindProviderSession).toHaveBeenCalledWith(expect.objectContaining({
       attemptId: attempt.id,
       claimId: "30000000-0000-4000-8000-000000000001",
@@ -190,6 +203,121 @@ describe("payment service", () => {
     expect(JSON.stringify(result)).not.toMatch(
       /orderId|attemptId|claimId|providerReference|providerStatus|returnStateDigest|idempotencyKey/,
     );
+  });
+
+  it.each(["test", "redirect", "elements"] as const)(
+    "binds the service-generated return state for a %s session",
+    async (kind) => {
+      const card = provider();
+      const base = {
+        provider: kind === "elements" ? "stripe" as const : "local-test" as const,
+        method: "card" as const,
+        providerReference: `${kind}-reference`,
+        providerStatus: "REQUIRES_ACTION",
+      };
+      vi.mocked(card.createOrReuse).mockResolvedValue(
+        kind === "elements"
+          ? { ...base, kind, provider: "stripe", clientSecret: "secret" }
+          : kind === "redirect"
+            ? { ...base, kind, provider: "afterpay", method: "afterpay", redirectUrl: "https://provider.test" }
+            : { ...base, kind, provider: "local-test", url: "https://trusted.example.test/test" },
+      );
+      const matchingProvider = kind === "elements"
+        ? { ...card, key: "stripe" as const }
+        : kind === "redirect"
+          ? { ...card, key: "afterpay" as const, method: "afterpay" as const }
+          : card;
+      const method = matchingProvider.method;
+      const repo = repository({
+        createOrClaimNonterminalAttempt: vi.fn().mockResolvedValue({
+          outcome: "claimed", attempt: { ...attempt, provider: matchingProvider.key, method },
+          claimId: "30000000-0000-4000-8000-000000000001",
+        }),
+      });
+      await service({
+        repository: repo,
+        providers: [registration(matchingProvider)],
+        deriveReturnState: () => "b".repeat(64),
+      }).start(access, method, browserKey);
+
+      expect(repo.bindProviderSession).toHaveBeenCalledWith(expect.objectContaining({
+        returnStateDigest: "a0fab1377f49a759b57f63318262ebe89fabfc990e8e93ceac2984561482b9d4",
+      }));
+    },
+  );
+
+  it("rejects malformed injected state and non-origin return bases before provider use", async () => {
+    for (const deriveReturnState of [
+      () => "",
+      () => "short",
+      () => "!".repeat(64),
+    ]) {
+      await expect(service({ deriveReturnState }).start(access, "card", browserKey))
+        .rejects.toMatchObject({ code: "PAYMENT_UNAVAILABLE" });
+    }
+    for (const returnBaseUrl of [
+      "https://trusted.example.test/payments",
+      "https://user:pass@trusted.example.test",
+      "https://trusted.example.test/?next=bad",
+      "https://trusted.example.test/#bad",
+      "http://remote.example.test",
+    ]) {
+      expect(() => service({ returnBaseUrl })).toThrow("Payment return base URL is invalid");
+    }
+  });
+
+  it("fails closed on provider session identity or kind mismatch without binding", async () => {
+    const cases = [
+      { kind: "test", provider: "stripe", method: "card", url: "https://provider.test" },
+      { kind: "elements", provider: "local-test", method: "card", clientSecret: "secret" },
+      { kind: "redirect", provider: "local-test", method: "card", redirectUrl: "https://provider.test" },
+      { kind: "test", provider: "local-test", method: "afterpay", url: "https://provider.test" },
+    ] as const;
+    for (const session of cases) {
+      const card = provider();
+      vi.mocked(card.createOrReuse).mockResolvedValue({
+        ...session,
+        providerReference: "mismatched",
+        providerStatus: "BAD",
+      } as never);
+      const repo = repository();
+      await expect(service({ repository: repo, providers: [registration(card)] })
+        .start(access, "card", browserKey))
+        .rejects.toMatchObject({ code: "PAYMENT_UNAVAILABLE" });
+      expect(repo.bindProviderSession).not.toHaveBeenCalled();
+    }
+  });
+
+  it("isolates method discovery failures and wraps provider/bind failures safely", async () => {
+    const card = provider();
+    const afterpay = provider("afterpay");
+    vi.mocked(card.availability).mockRejectedValue(new Error("raw availability secret"));
+    await expect(service({ providers: [registration(card), registration(afterpay)] })
+      .availableMethods({
+        sessionId: "checkout-id", checkoutVersion: 1, cartDigest: "b".repeat(64),
+      })).resolves.toEqual([
+        { method: "afterpay", label: "Test Afterpay — no real payment", isTest: true },
+      ]);
+
+    const createFailure = repository();
+    const bindFailure = repository({
+      bindProviderSession: vi.fn().mockRejectedValue(new Error("raw bind secret")),
+    });
+    for (const [repo, phase] of [
+      [createFailure, "create"],
+      [bindFailure, "bind"],
+    ] as const) {
+      const failing = provider();
+      if (phase === "create") {
+        vi.mocked(failing.createOrReuse).mockRejectedValue(new Error("raw create secret"));
+      }
+      await expect(service({ repository: repo, providers: [registration(failing)] })
+        .start(access, "card", browserKey))
+        .rejects.toEqual(new PaymentServiceError(
+          "PAYMENT_UNAVAILABLE",
+          "Payment could not be started",
+        ));
+    }
   });
 
   it("fails closed before provider or claim for inaccessible and unavailable orders", async () => {
@@ -313,7 +441,11 @@ describe("payment service", () => {
     const repo = repository();
     const paymentService = service({ repository: repo, providers: [registration(card)] });
 
-    await expect(paymentService.start(access, "card", browserKey)).rejects.toThrow("provider timeout");
+    await expect(paymentService.start(access, "card", browserKey))
+      .rejects.toEqual(new PaymentServiceError(
+        "PAYMENT_UNAVAILABLE",
+        "Payment could not be started",
+      ));
     expect(repo.bindProviderSession).not.toHaveBeenCalled();
     await expect(paymentService.start(access, "card", browserKey)).resolves.toBeDefined();
     expect(vi.mocked(card.createOrReuse).mock.calls.map(([input]) => input.idempotencyKey))

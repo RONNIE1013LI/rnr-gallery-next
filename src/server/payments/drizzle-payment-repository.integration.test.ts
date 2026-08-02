@@ -1,14 +1,17 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { orders, paymentAttempts, webhookEvents } from "@/server/db/schema";
 import {
   PaymentRepositoryConflictError,
   PaymentVerificationMismatchError,
   createDrizzlePaymentRepository,
 } from "./drizzle-payment-repository";
+import { createPaymentService, PaymentServiceError } from "./payment-service";
+import type { PaymentProviderRegistration } from "./provider-registry";
+import type { CreateProviderSessionInput, PaymentProvider } from "./types";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required");
@@ -113,6 +116,35 @@ async function paymentRows(orderId: string, attemptId: string) {
     .from(paymentAttempts)
     .where(eq(paymentAttempts.id, attemptId));
   return { order, attempt };
+}
+
+function testRegistration(
+  createOrReuse: (input: CreateProviderSessionInput) => ReturnType<PaymentProvider["createOrReuse"]>,
+): PaymentProviderRegistration {
+  return {
+    method: "card",
+    label: "Test card — no real payment",
+    isTest: true,
+    provider: {
+      key: "local-test",
+      method: "card",
+      refundCapability: "unsupported",
+      availability: async () => ({ available: true }),
+      createOrReuse: vi.fn(createOrReuse),
+      completeReturn: vi.fn(),
+      retrieve: vi.fn(),
+    },
+  };
+}
+
+function paymentService(registration: PaymentProviderRegistration) {
+  return createPaymentService({
+    repository,
+    checkoutAuthority: { findReviewedPaymentContext: vi.fn() },
+    providers: [registration],
+    returnBaseUrl: "http://127.0.0.1:3000",
+    nodeEnv: "test",
+  });
 }
 
 describe("Drizzle payment repository", () => {
@@ -276,6 +308,129 @@ describe("Drizzle payment repository", () => {
     expect(reclaimed).toMatchObject({ outcome: "claimed", attempt: { id: first.attempt.id } });
     expect(reclaimed.claimId).not.toBe(first.claimId);
     expect(reclaimed.attempt.idempotencyKey).toBe(first.attempt.idempotencyKey);
+  });
+
+  it("recovers a timed-out provider session with one stable attempt, key and return state", async () => {
+    const owned = await createOrder();
+    const providerInputs: CreateProviderSessionInput[] = [];
+    const registration = testRegistration(async (input) => {
+      providerInputs.push(input);
+      if (providerInputs.length === 1) throw new Error("provider timeout secret");
+      return {
+        kind: "test",
+        provider: "local-test",
+        method: "card",
+        providerReference: "recovered-provider-reference",
+        providerStatus: "TEST_REQUIRES_ACTION",
+        url: input.returnUrl,
+      };
+    });
+    const service = paymentService(registration);
+    const owner = {
+      kind: "guest" as const,
+      orderNumber: owned.orderNumber,
+      tokenDigest: owned.tokenDigest,
+    };
+
+    await expect(service.start(owner, "card", randomUUID()))
+      .rejects.toEqual(new PaymentServiceError(
+        "PAYMENT_UNAVAILABLE",
+        "Payment could not be started",
+      ));
+    const [afterTimeout] = await database.select().from(paymentAttempts)
+      .where(eq(paymentAttempts.orderId, owned.orderId));
+    expect(afterTimeout).toMatchObject({
+      status: "created",
+      providerReference: null,
+      returnStateDigest: null,
+    });
+
+    await expect(service.start(owner, "card", randomUUID())).resolves.toMatchObject({
+      payment: { status: "created" },
+      action: null,
+    });
+    expect(providerInputs).toHaveLength(1);
+
+    await pool.query(
+      "update payment_attempts set provider_session_lease_expires_at = clock_timestamp() - interval '1 second' where id = $1",
+      [afterTimeout.id],
+    );
+    await expect(service.start(owner, "card", randomUUID())).resolves.toMatchObject({
+      payment: { status: "requires_action" },
+      action: { kind: "test" },
+    });
+    expect(providerInputs).toHaveLength(2);
+    expect(providerInputs[1].attemptId).toBe(providerInputs[0].attemptId);
+    expect(providerInputs[1].idempotencyKey).toBe(providerInputs[0].idempotencyKey);
+    expect(providerInputs[1].returnState).toBe(providerInputs[0].returnState);
+    const [recovered] = await database.select().from(paymentAttempts)
+      .where(eq(paymentAttempts.id, afterTimeout.id));
+    expect(recovered).toMatchObject({
+      providerReference: "recovered-provider-reference",
+      returnStateDigest: createHash("sha256")
+        .update(providerInputs[0].returnState)
+        .digest("hex"),
+    });
+  });
+
+  it("starts a new attempt after failure and never claims or calls a provider for paid orders", async () => {
+    const failedOrder = await createOrder();
+    const providerInputs: CreateProviderSessionInput[] = [];
+    const registration = testRegistration(async (input) => {
+      providerInputs.push(input);
+      return {
+        kind: "test",
+        provider: "local-test",
+        method: "card",
+        providerReference: `reference-${input.attemptId}`,
+        providerStatus: "TEST_REQUIRES_ACTION",
+        url: input.returnUrl,
+      };
+    });
+    const service = paymentService(registration);
+    const owner = {
+      kind: "guest" as const,
+      orderNumber: failedOrder.orderNumber,
+      tokenDigest: failedOrder.tokenDigest,
+    };
+    await service.start(owner, "card", randomUUID());
+    const [first] = await database.select().from(paymentAttempts)
+      .where(eq(paymentAttempts.orderId, failedOrder.orderId));
+    await repository.applyVerifiedResult({
+      attemptId: first.id,
+      source: "reconciliation",
+      result: {
+        providerReference: first.providerReference!,
+        providerStatus: "TEST_FAILED",
+        amountCents: 7_475,
+        currency: "NZD",
+        orderNumber: failedOrder.orderNumber,
+        status: "failed",
+        sanitizedFailureCode: "declined",
+      },
+    });
+    await service.start(owner, "card", randomUUID());
+    const afterFailure = await database.select().from(paymentAttempts)
+      .where(eq(paymentAttempts.orderId, failedOrder.orderId));
+    expect(afterFailure).toHaveLength(2);
+    expect(new Set(afterFailure.map(({ id }) => id)).size).toBe(2);
+    expect(providerInputs).toHaveLength(2);
+    expect(providerInputs[1].attemptId).not.toBe(providerInputs[0].attemptId);
+    expect(providerInputs[1].returnState).not.toBe(providerInputs[0].returnState);
+
+    const paid = await createOrder({ paymentStatus: "paid" });
+    const paidRegistration = testRegistration(async () => {
+      throw new Error("must not be called");
+    });
+    const paidService = paymentService(paidRegistration);
+    await expect(paidService.start({
+      kind: "guest",
+      orderNumber: paid.orderNumber,
+      tokenDigest: paid.tokenDigest,
+    }, "card", randomUUID())).rejects.toMatchObject({ code: "ORDER_NOT_FOUND" });
+    expect(paidRegistration.provider.createOrReuse).not.toHaveBeenCalled();
+    await expect(database.select().from(paymentAttempts)
+      .where(eq(paymentAttempts.orderId, paid.orderId))).resolves.toHaveLength(0);
   });
 
   it("binds only the active claim, permits exact replay and rejects overwrite", async () => {

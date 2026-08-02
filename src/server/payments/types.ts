@@ -32,6 +32,7 @@ export type CreateProviderSessionInput = Readonly<{
   order: PaymentOrder;
   attemptId: string;
   idempotencyKey: string;
+  returnState: string;
   returnUrl: string;
   cancelUrl: string;
 }>;

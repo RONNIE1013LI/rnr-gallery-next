@@ -47,12 +47,6 @@ function providerReference(
   return `${referencePrefix}.${method}.${attemptId}.${integrity}`;
 }
 
-function returnState(reference: string, order: PaymentOrder) {
-  return digest(
-    JSON.stringify([referencePrefix, "return", reference, orderFingerprint(order)]),
-  );
-}
-
 function safeEqual(actual: string, expected: string) {
   if (actual.length !== expected.length) return false;
   const actualBuffer = Buffer.from(actual);
@@ -138,12 +132,11 @@ export function createLocalTestProvider(
       }
 
       const reference = providerReference(method, input.attemptId, input.order);
-      const state = returnState(reference, input.order);
       const url = new URL(input.returnUrl);
       url.searchParams.set("provider", "local-test");
       url.searchParams.set("method", method);
       url.searchParams.set("providerReference", reference);
-      url.searchParams.set("state", state);
+      url.searchParams.set("state", input.returnState);
 
       return Object.freeze({
         kind: "test" as const,
@@ -158,13 +151,11 @@ export function createLocalTestProvider(
     async completeReturn(input: CompleteProviderReturnInput) {
       try {
         assertReference(input.order, method, input.providerReference);
-        const expectedState = returnState(input.providerReference, input.order);
         const urlReference = input.returnUrl.searchParams.get("providerReference");
         const urlState = input.returnUrl.searchParams.get("state");
         const urlMethod = input.returnUrl.searchParams.get("method");
         const urlProvider = input.returnUrl.searchParams.get("provider");
         if (
-          !safeEqual(input.returnState, expectedState) ||
           urlReference !== input.providerReference ||
           urlState !== input.returnState ||
           urlMethod !== method ||
