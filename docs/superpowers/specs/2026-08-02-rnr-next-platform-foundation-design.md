@@ -75,7 +75,7 @@ Every product has a stable key, slug, category, workflow key, summary, media ref
 Phase 1 must reproduce the approved reference vectors:
 
 - Digital Oil Painting Canvas A4 base: 6,500 cents ex GST.
-- Canvas people/pets fees: 1 = 4,000; 2 = 6,000; 3 = 8,500; 4 = 11,000; 5 = 13,000; each above 5 = 2,500 cents ex GST.
+- Canvas people/pets fees: 1 = 4,000; 2 = 6,000; 3 = 8,500; 4 = 11,000; 5 = 13,000; 6 or more = count × 2,500 cents ex GST.
 - Digital Oil Painting Canvas A4 with one person: subtotal 10,500; GST 1,575; total 12,075 cents.
 - Roll-Up Banner fixed package: 23,000 cents ex GST; GST 3,450; total 26,450 cents.
 - GST rate: 15 percent.
@@ -132,4 +132,3 @@ The API returns an immutable price breakdown containing line items, subtotal ex 
 - Homepage, shop, category and product pages have a coherent new visual identity.
 - Navigation and layouts work at the required responsive widths.
 - No files in `../rnr-wordpress-staging` are modified.
-
