@@ -20,15 +20,18 @@ type ProviderFetch = typeof fetch;
 type JsonRequest<T> = Readonly<{
   method: "GET" | "POST";
   path: string;
+  headers?: Readonly<Record<string, string>>;
   body?: unknown;
   validate: (value: unknown) => value is T;
 }>;
 
 type ProviderHttpOptions = Readonly<{
   baseUrl: string;
-  username: string;
-  password: string;
-  userAgent: string;
+  username?: string;
+  password?: string;
+  userAgent?: string;
+  bearerToken?: string;
+  defaultHeaders?: Readonly<Record<string, string>>;
   fetchImpl?: ProviderFetch;
   timeoutMs?: number;
   maxResponseBytes?: number;
@@ -70,6 +73,36 @@ function requestUrl(baseUrl: URL, path: string) {
     throw new ProviderHttpError("request");
   }
   return url.toString();
+}
+
+const headerNamePattern = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+const protectedHeaderNames = new Set([
+  "accept",
+  "authorization",
+  "content-type",
+  "user-agent",
+]);
+
+function validatedHeaders(
+  value: Readonly<Record<string, string>> | undefined,
+  occupiedNames: Set<string>,
+) {
+  const result: Record<string, string> = {};
+  for (const [name, headerValue] of Object.entries(value ?? {})) {
+    const normalizedName = name.toLowerCase();
+    if (
+      !headerNamePattern.test(name) ||
+      protectedHeaderNames.has(normalizedName) ||
+      occupiedNames.has(normalizedName) ||
+      !headerValue ||
+      /[\r\n]/.test(headerValue)
+    ) {
+      throw new ProviderHttpError("request");
+    }
+    occupiedNames.add(normalizedName);
+    result[name] = headerValue;
+  }
+  return result;
 }
 
 async function boundedResponseText(response: Response, maxBytes: number) {
@@ -114,15 +147,27 @@ export function createProviderHttp(options: ProviderHttpOptions) {
   const fetchImpl = options.fetchImpl ?? fetch;
   const timeoutMs = options.timeoutMs ?? 10_000;
   const maxResponseBytes = options.maxResponseBytes ?? 256 * 1024;
+  const hasBasicAuth = Boolean(options.username && options.password && options.userAgent);
+  const hasBearerAuth = Boolean(options.bearerToken);
   if (
-    !options.username ||
-    !options.password ||
-    !options.userAgent ||
+    hasBasicAuth === hasBearerAuth ||
+    (hasBasicAuth && (!options.username || !options.password || !options.userAgent)) ||
+    (hasBearerAuth && (options.username || options.password)) ||
     !Number.isSafeInteger(timeoutMs) ||
     timeoutMs <= 0 ||
     !Number.isSafeInteger(maxResponseBytes) ||
     maxResponseBytes <= 0
   ) return configurationFailure();
+
+  let defaultHeaders: Record<string, string>;
+  try {
+    defaultHeaders = validatedHeaders(options.defaultHeaders, new Set());
+  } catch {
+    return configurationFailure();
+  }
+  const authorization = hasBearerAuth
+    ? `Bearer ${options.bearerToken}`
+    : `Basic ${Buffer.from(`${options.username}:${options.password}`).toString("base64")}`;
 
   return Object.freeze({
     async json<T>(request: JsonRequest<T>): Promise<T> {
@@ -132,10 +177,13 @@ export function createProviderHttp(options: ProviderHttpOptions) {
       try {
         const headers: Record<string, string> = {
           Accept: "application/json",
-          Authorization: `Basic ${Buffer.from(`${options.username}:${options.password}`).toString("base64")}`,
-          "User-Agent": options.userAgent,
+          Authorization: authorization,
+          ...(options.userAgent ? { "User-Agent": options.userAgent } : {}),
+          ...defaultHeaders,
         };
         if (request.body !== undefined) headers["Content-Type"] = "application/json";
+        const occupiedNames = new Set(Object.keys(headers).map((name) => name.toLowerCase()));
+        Object.assign(headers, validatedHeaders(request.headers, occupiedNames));
 
         const response = await fetchImpl(url, {
           method: request.method,

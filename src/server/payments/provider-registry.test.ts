@@ -177,6 +177,27 @@ describe("payment provider registry", () => {
     ]);
   });
 
+  it("constructs the real Zip provider from enabled repository config", () => {
+    const providers = selectPaymentProviders(config({
+      localTest: disabled,
+      zip: {
+        enabled: true,
+        apiKey: "zip-secret",
+        environment: "sandbox",
+        merchantCountry: "AU",
+        allowedCurrencies: ["AUD"],
+      },
+    }), { nodeEnv: "test" });
+
+    expect(providers.map(({ method, isTest, provider }) => ({
+      method,
+      isTest,
+      key: provider.key,
+    }))).toEqual([
+      { method: "zip", isTest: false, key: "zip" },
+    ]);
+  });
+
   it("cannot create local providers through a production registry override", () => {
     vi.stubEnv("NODE_ENV", "production");
     expect(() => selectPaymentProviders(config(), { nodeEnv: "test" }))

@@ -44,6 +44,59 @@ describe("provider HTTP boundary", () => {
     );
   });
 
+  it("supports server-only Bearer auth and bounded provider request headers", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
+    const http = createProviderHttp({
+      baseUrl: "https://sand.merchant-api.com",
+      bearerToken: "zip-server-secret",
+      defaultHeaders: { "Zip-Version": "2021-08-25" },
+      fetchImpl,
+    });
+
+    await http.json({
+      method: "POST",
+      path: "/merchant/charges",
+      headers: { "Idempotency-Key": "stable-charge-key" },
+      body: { amount: 120.75 },
+      validate: (value): value is { ok: true } =>
+        typeof value === "object" && value !== null && (value as { ok?: unknown }).ok === true,
+    });
+
+    expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({
+      redirect: "error",
+      headers: {
+        Accept: "application/json",
+        Authorization: "Bearer zip-server-secret",
+        "Content-Type": "application/json",
+        "Idempotency-Key": "stable-charge-key",
+        "Zip-Version": "2021-08-25",
+      },
+    });
+  });
+
+  it("rejects mixed authentication or protected-header overrides", async () => {
+    expect(() => createProviderHttp({
+      baseUrl: "https://sand.merchant-api.com",
+      username: "merchant-id",
+      password: "server-secret",
+      bearerToken: "zip-secret",
+      fetchImpl: vi.fn(),
+    })).toThrow("Payment provider configuration is invalid");
+
+    const http = createProviderHttp({
+      baseUrl: "https://sand.merchant-api.com",
+      bearerToken: "zip-server-secret",
+      defaultHeaders: { "Zip-Version": "2021-08-25" },
+      fetchImpl: vi.fn(),
+    });
+    await expect(http.json({
+      method: "GET",
+      path: "/merchant/checkouts/co_test",
+      headers: { Authorization: "Bearer attacker" },
+      validate: (value): value is object => typeof value === "object" && value !== null,
+    })).rejects.toMatchObject({ code: "request" });
+  });
+
   it.each([
     "http://global-api-sandbox.afterpay.com",
     "https://user:password@global-api-sandbox.afterpay.com",
