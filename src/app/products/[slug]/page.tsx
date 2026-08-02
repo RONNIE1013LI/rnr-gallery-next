@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Image from "next/image";
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import styles from "@/components/storefront.module.css";
 import { getProductBySlug, products } from "@/domain/catalogue/products";
@@ -50,13 +51,12 @@ export default async function ProductPage({ params }: ProductPageProps) {
             <li>Upload now or provide your source photos after ordering</li>
             <li>Review a draft before production begins</li>
           </ul>
-          <a
+          <Link
             className={styles.primaryButton}
-            href="https://m.me/RandRgallery"
-            rel="noopener noreferrer"
+            href={`/products/${product.slug}/configure`}
           >
-            Discuss your artwork
-          </a>
+            Create your artwork
+          </Link>
         </div>
       </div>
     </main>

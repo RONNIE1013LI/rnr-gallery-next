@@ -455,6 +455,327 @@
   margin-bottom: 2rem;
 }
 
+.configurePage {
+  padding: clamp(3.5rem, 7vw, 7rem) var(--page-gutter) var(--section-space);
+}
+
+.configureIntro,
+.configuratorLayout {
+  width: min(100%, var(--content-width));
+  margin-inline: auto;
+}
+
+.configureIntro {
+  padding-bottom: 3rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.configureIntro h1 {
+  margin-top: 0.8rem;
+  font-family: var(--font-display);
+  font-size: clamp(3.1rem, 7vw, 6.6rem);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  line-height: 0.98;
+}
+
+.configureIntro > p:last-child {
+  max-width: 46rem;
+  margin-top: 1.25rem;
+  color: var(--muted);
+}
+
+.configuratorLayout {
+  margin-top: 3rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(21rem, 0.42fr);
+  gap: clamp(1.5rem, 4vw, 4rem);
+  align-items: start;
+}
+
+.configuratorForm {
+  display: grid;
+  gap: 1.25rem;
+}
+
+.configuratorStep {
+  padding: clamp(1.4rem, 3vw, 2.4rem);
+  background: var(--paper);
+  border: 1px solid var(--border);
+}
+
+.configuratorStep:nth-child(even) {
+  background: #eee9df;
+}
+
+.stepHeading {
+  margin-bottom: 1.8rem;
+  display: grid;
+  grid-template-columns: 2.6rem minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.stepHeading > span {
+  padding-top: 0.22rem;
+  color: var(--aged-gold);
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+}
+
+.stepHeading h2,
+.priceSummary h2 {
+  font-family: var(--font-display);
+  font-weight: 500;
+  letter-spacing: -0.025em;
+  line-height: 1.05;
+}
+
+.stepHeading h2 {
+  font-size: clamp(1.6rem, 3vw, 2.25rem);
+}
+
+.stepHeading p {
+  margin-top: 0.45rem;
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.fieldGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.formField,
+.choiceCards {
+  min-width: 0;
+  border: 0;
+}
+
+.formField > span,
+.formField legend,
+.choiceCards legend,
+.counterRow > label {
+  margin-bottom: 0.55rem;
+  display: block;
+  color: var(--ink);
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.formField select,
+.formField input,
+.formField textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.78rem 0.9rem;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #cbc6bb;
+  border-radius: 2px;
+  font: inherit;
+}
+
+.formField textarea {
+  min-height: 9rem;
+  resize: vertical;
+}
+
+.configuratorStep .formField + .formField {
+  margin-top: 1rem;
+}
+
+.segmentedControl {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  overflow: hidden;
+  border: 1px solid #cbc6bb;
+  border-radius: 999px;
+}
+
+.segmentedControl label {
+  min-width: 0;
+  position: relative;
+}
+
+.segmentedControl input {
+  width: 1px;
+  height: 1px;
+  position: absolute;
+  opacity: 0;
+}
+
+.segmentedControl span {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.82rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.segmentedControl input:checked + span {
+  color: #fff;
+  background: var(--gallery-green);
+}
+
+.segmentedControl input:focus-visible + span {
+  outline: 2px solid var(--aged-gold);
+  outline-offset: -3px;
+}
+
+.counterRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+}
+
+.counterRow > label {
+  margin-bottom: 0;
+}
+
+.counter {
+  display: grid;
+  grid-template-columns: 48px 3.5rem 48px;
+  border: 1px solid #cbc6bb;
+}
+
+.counter button,
+.counter input {
+  min-height: 48px;
+  color: var(--ink);
+  background: #fff;
+  border: 0;
+  font: inherit;
+  text-align: center;
+}
+
+.counter button {
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+.counter input {
+  min-width: 0;
+  border-inline: 1px solid #cbc6bb;
+}
+
+.choiceCards {
+  display: grid;
+  gap: 0.8rem;
+}
+
+.choiceCards label {
+  min-height: 76px;
+  padding: 1rem;
+  display: grid;
+  grid-template-columns: 1.25rem minmax(0, 1fr);
+  gap: 0.75rem;
+  align-items: start;
+  background: #fff;
+  border: 1px solid #cbc6bb;
+  cursor: pointer;
+}
+
+.choiceCards input {
+  margin-top: 0.2rem;
+}
+
+.choiceCards strong,
+.choiceCards small {
+  display: block;
+}
+
+.choiceCards small {
+  margin-top: 0.3rem;
+  color: var(--muted);
+}
+
+.priceSummary {
+  padding: clamp(1.5rem, 3vw, 2.2rem);
+  position: sticky;
+  top: 1.5rem;
+  background: #e7edf0;
+  border-top: 3px solid var(--gallery-green);
+}
+
+.priceSummary h2 {
+  margin-top: 0.75rem;
+  font-size: 2rem;
+}
+
+.priceSummary h2 + p {
+  margin-top: 0.5rem;
+  color: var(--muted);
+}
+
+.summaryDetails,
+.priceLines {
+  margin-top: 1.5rem;
+}
+
+.summaryDetails > div,
+.priceLines > div {
+  padding-block: 0.7rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 1rem;
+  border-bottom: 1px solid #c7d0d3;
+}
+
+.summaryDetails dt {
+  color: var(--muted);
+}
+
+.summaryDetails dd,
+.priceLines dd {
+  text-align: right;
+}
+
+.priceLines {
+  font-size: 0.9rem;
+}
+
+.priceTotal {
+  margin-top: 0.5rem;
+  padding: 1rem !important;
+  align-items: center;
+  background: #f3efe7;
+  border-left: 3px solid var(--aged-gold);
+  border-bottom: 0 !important;
+  font-weight: 800;
+}
+
+.priceTotal dd {
+  color: var(--gallery-green);
+  font-size: 1.4rem;
+}
+
+.priceSummary .primaryButton,
+.mobileAddButton {
+  width: 100%;
+  margin-top: 1rem;
+  cursor: pointer;
+}
+
+.mobileAddButton {
+  display: none;
+}
+
+.addedMessage {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+}
+
+.addedMessage a {
+  font-weight: 750;
+}
+
 .legalPage > article {
   max-width: 54rem;
 }
@@ -561,6 +882,32 @@
   .productDetailCopy {
     position: static;
   }
+
+  .configuratorLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .priceSummary {
+    position: static;
+    grid-row: 1;
+  }
+
+  .priceSummary .primaryButton {
+    display: none;
+  }
+
+  .mobileAddButton {
+    min-height: 52px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    background: var(--gallery-green);
+    border: 0;
+    border-radius: 2px;
+    font: inherit;
+    font-weight: 750;
+  }
 }
 
 @media (max-width: 650px) {
@@ -594,5 +941,32 @@
 
   .pageIntro h1 {
     font-size: clamp(3.2rem, 16vw, 5rem);
+  }
+
+  .configurePage {
+    padding-inline: clamp(0.85rem, 4vw, 1.25rem);
+  }
+
+  .configureIntro {
+    padding-bottom: 2rem;
+  }
+
+  .configuratorLayout {
+    margin-top: 1.25rem;
+    gap: 1rem;
+  }
+
+  .configuratorStep,
+  .priceSummary {
+    padding: 1.25rem;
+  }
+
+  .fieldGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .counterRow {
+    align-items: flex-start;
+    flex-direction: column;
   }
 }
