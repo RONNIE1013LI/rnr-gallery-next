@@ -1,8 +1,10 @@
 import { isDeepStrictEqual } from "node:util";
-import { asc, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, max, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
-import { galleryDesigns } from "@/server/db/schema";
+import { galleryDesignRevisions, galleryDesigns } from "@/server/db/schema";
+import type { GalleryDesignRevisionSnapshot, GalleryDesignStatus } from "@/server/db/schema/gallery";
 import type {
+  AdminGalleryRepository,
   GalleryImportRow,
   GalleryRepository,
 } from "./gallery-repository";
@@ -33,9 +35,33 @@ function comparable(row: typeof galleryDesigns.$inferSelect): GalleryImportRow {
   });
 }
 
+function revisionSnapshot(row: typeof galleryDesigns.$inferSelect): GalleryDesignRevisionSnapshot {
+  return Object.freeze({
+    ...comparable(row),
+    status: row.status,
+    trashedAt: row.trashedAt?.toISOString() ?? null,
+  });
+}
+
+async function revise(
+  transaction: Parameters<Parameters<Database["transaction"]>[0]>[0],
+  row: typeof galleryDesigns.$inferSelect,
+  actorUserId: string,
+) {
+  const [latest] = await transaction.select({ value: max(galleryDesignRevisions.revisionNumber) })
+    .from(galleryDesignRevisions)
+    .where(eq(galleryDesignRevisions.designId, row.id));
+  await transaction.insert(galleryDesignRevisions).values({
+    designId: row.id,
+    revisionNumber: (latest?.value ?? 0) + 1,
+    priorSnapshot: revisionSnapshot(row),
+    actorUserId,
+  });
+}
+
 export function createDrizzleGalleryRepository(
   database: Database,
-): GalleryRepository {
+): GalleryRepository & AdminGalleryRepository {
   return {
     async replaceInitialImport(rows) {
       const incoming = [...rows].sort((left, right) =>
@@ -99,6 +125,56 @@ export function createDrizzleGalleryRepository(
         .where(sql`${galleryDesigns.id} = ${designId} and ${galleryDesigns.status} = 'active'`)
         .limit(1);
       return row ? Object.freeze({ ...comparable(row), createdAt: row.createdAt }) : null;
+    },
+    async findDesign(designId) {
+      const [row] = await database.select().from(galleryDesigns)
+        .where(eq(galleryDesigns.id, designId)).limit(1);
+      return row ? Object.freeze({
+        ...comparable(row), createdAt: row.createdAt, updatedAt: row.updatedAt,
+        status: row.status, trashedAt: row.trashedAt,
+      }) : null;
+    },
+    async listAdminCandidates() {
+      const rows = await database.select().from(galleryDesigns)
+        .orderBy(desc(galleryDesigns.updatedAt), asc(galleryDesigns.id));
+      return Object.freeze(rows.map((row) => Object.freeze({
+        ...comparable(row), createdAt: row.createdAt, updatedAt: row.updatedAt,
+        status: row.status, trashedAt: row.trashedAt,
+      })));
+    },
+    async createDesign(row) {
+      await database.insert(galleryDesigns).values({
+        ...row, status: "active", trashedAt: null,
+      });
+    },
+    async updateDesign(designId, update, actorUserId) {
+      return database.transaction(async (transaction) => {
+        const [current] = await transaction.select().from(galleryDesigns)
+          .where(eq(galleryDesigns.id, designId)).limit(1).for("update");
+        if (!current) return false;
+        await revise(transaction, current, actorUserId);
+        const [updated] = await transaction.update(galleryDesigns)
+          .set({ ...update, updatedAt: new Date() })
+          .where(eq(galleryDesigns.id, designId)).returning({ id: galleryDesigns.id });
+        return Boolean(updated);
+      });
+    },
+    async setDesignStatus(designId, status, actorUserId) {
+      return database.transaction(async (transaction) => {
+        const [current] = await transaction.select().from(galleryDesigns)
+          .where(eq(galleryDesigns.id, designId)).limit(1).for("update");
+        if (!current) return false;
+        if (current.status === status) return true;
+        await revise(transaction, current, actorUserId);
+        const nextStatus = status as GalleryDesignStatus;
+        const [updated] = await transaction.update(galleryDesigns).set({
+          status: nextStatus,
+          trashedAt: status === "trashed" ? new Date() : null,
+          updatedAt: new Date(),
+        }).where(and(eq(galleryDesigns.id, designId), eq(galleryDesigns.status, current.status)))
+          .returning({ id: galleryDesigns.id });
+        return Boolean(updated);
+      });
     },
   };
 }

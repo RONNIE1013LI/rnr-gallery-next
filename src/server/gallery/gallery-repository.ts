@@ -24,6 +24,14 @@ export type GalleryPublicCandidate = GalleryImportRow & Readonly<{
   createdAt: Date;
 }>;
 
+export type GalleryAdminRecord = GalleryPublicCandidate & Readonly<{
+  status: "active" | "trashed";
+  trashedAt: Date | null;
+  updatedAt: Date;
+}>;
+
+export type GalleryAdminUpdate = Partial<Omit<GalleryImportRow, "id">>;
+
 export type GalleryActiveImage = Readonly<{
   id: string;
   storageKey: string;
@@ -38,4 +46,12 @@ export interface GalleryRepository {
   listActiveCandidates(): Promise<readonly GalleryPublicCandidate[]>;
   findActiveImage(designId: string): Promise<GalleryActiveImage | null>;
   findActiveDesign(designId: string): Promise<GalleryPublicCandidate | null>;
+}
+
+export interface AdminGalleryRepository {
+  listAdminCandidates(): Promise<readonly GalleryAdminRecord[]>;
+  findDesign(designId: string): Promise<GalleryAdminRecord | null>;
+  createDesign(row: GalleryImportRow, actorUserId: string): Promise<void>;
+  updateDesign(designId: string, update: GalleryAdminUpdate, actorUserId: string): Promise<boolean>;
+  setDesignStatus(designId: string, status: "active" | "trashed", actorUserId: string): Promise<boolean>;
 }
