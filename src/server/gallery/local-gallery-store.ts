@@ -94,7 +94,7 @@ export class LocalGalleryStore {
   async writeGeneration(
     generationId: string,
     images: readonly GenerationImage[],
-  ): Promise<readonly string[]> {
+  ): Promise<Readonly<{ storageKeys: readonly string[]; created: boolean }>> {
     if (!/^[a-f0-9]{64}$/.test(generationId)) {
       throw new Error("Invalid gallery generation ID");
     }
@@ -116,6 +116,7 @@ export class LocalGalleryStore {
       ),
     );
 
+    let created = true;
     try {
       await Promise.all(images.map((image, index) =>
         writeFile(
@@ -136,6 +137,7 @@ export class LocalGalleryStore {
         ) {
           throw error;
         }
+        created = false;
         await rm(stagingDirectory, { recursive: true, force: true });
       }
 
@@ -146,10 +148,23 @@ export class LocalGalleryStore {
           throw new Error("Gallery generation hash verification failed");
         }
       }
-      return Object.freeze(keys);
+      return Object.freeze({
+        storageKeys: Object.freeze(keys),
+        created,
+      });
     } catch (error) {
       await rm(stagingDirectory, { recursive: true, force: true });
       throw error;
     }
+  }
+
+  async removeGeneration(generationId: string): Promise<void> {
+    if (!/^[a-f0-9]{64}$/.test(generationId)) {
+      throw new Error("Invalid gallery generation ID");
+    }
+    await rm(
+      join(this.config.storageDir, "generations", generationId),
+      { recursive: true, force: true },
+    );
   }
 }

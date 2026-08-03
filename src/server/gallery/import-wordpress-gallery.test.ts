@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import sharp from "sharp";
@@ -144,5 +144,30 @@ describe("importWordPressGallery", () => {
       repository,
       store,
     })).rejects.toThrow(/expected 357.*received 2/i);
+  });
+
+  it("removes the new unreferenced generation when database activation fails", async () => {
+    const paths = await fixture();
+    const repository: GalleryRepository = {
+      replaceInitialImport: async () => {
+        throw new Error("database activation failed");
+      },
+    };
+    const store = new LocalGalleryStore({
+      storageDir: paths.storage,
+      maxUploadBytes: 1_000_000,
+      maxImagePixels: 1_000_000,
+    });
+
+    await expect(importWordPressGallery({
+      manifestPath: paths.manifestPath,
+      imagesDir: paths.source,
+      expectedCount: 2,
+      repository,
+      store,
+    })).rejects.toThrow("database activation failed");
+
+    await expect(readdir(join(paths.storage, "generations")))
+      .resolves.toEqual([]);
   });
 });

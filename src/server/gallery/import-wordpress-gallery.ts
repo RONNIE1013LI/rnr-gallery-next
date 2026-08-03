@@ -63,7 +63,7 @@ export async function importWordPressGallery(
       contentHash: metadata.contentHash,
     }))))
     .digest("hex");
-  const storageKeys = await options.store.writeGeneration(
+  const generation = await options.store.writeGeneration(
     generationId,
     inspected.map(({ record, bytes, metadata }) => ({
       designId: record.id,
@@ -80,14 +80,22 @@ export async function importWordPressGallery(
       themeSlugs: record.themeSlugs,
       altText: record.altText,
       productSlug: record.productSlug,
-      storageKey: storageKeys[index],
+      storageKey: generation.storageKeys[index],
       contentHash: metadata.contentHash,
       mimeType: metadata.mimeType,
       width: metadata.width,
       height: metadata.height,
     }),
   );
-  const result = await options.repository.replaceInitialImport(rows);
+  let result;
+  try {
+    result = await options.repository.replaceInitialImport(rows);
+  } catch (error) {
+    if (generation.created) {
+      await options.store.removeGeneration(generationId);
+    }
+    throw error;
+  }
   const questionableBirthdayLabels = records
     .filter((record) => record.occasionSlug === "birthday" && record.subOccasion)
     .map((record) => record.subOccasion!)
