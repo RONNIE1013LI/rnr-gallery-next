@@ -82,6 +82,37 @@ npm run db:check
 npm run build
 ```
 
+## Design Gallery operations
+
+Gallery images are stored outside Git. Set `GALLERY_STORAGE_DIR` to a persistent,
+private directory that is readable and writable by the application process. Do
+not point it at the WordPress uploads directory.
+
+Create a database backup before the first import. Then import the approved
+manifest and its images from the repository root:
+
+```bash
+npm run gallery:import -- \
+  --manifest "/absolute/path/to/rnr-design-gallery/manifest.json" \
+  --images "/absolute/path/to/rnr-design-gallery" \
+  --report "/absolute/path/to/gallery-import-report.json"
+```
+
+The import is content-addressed and safe to repeat. A second unchanged run must
+report `0 imported, 357 unchanged`. Keep both the database backup and the
+external gallery directory together when moving or restoring the application.
+
+Administrator access is granted to an existing account by exact email address:
+
+```bash
+npm run admin:role -- grant person@example.com
+npm run admin:role -- revoke person@example.com
+```
+
+The management interface is `/admin/design-gallery`. Gallery administration
+does not change product prices; it only manages approved images, taxonomy,
+target products, and public visibility.
+
 The repository integration test requires a disposable PostgreSQL database. Set
 `TEST_DATABASE_URL`, migrate that same database, and then run the suite:
 

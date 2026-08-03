@@ -1,0 +1,28 @@
+{
+  "importedAt": "2026-08-03T01:45:46.512Z",
+  "expected": 357,
+  "imported": 0,
+  "unchanged": 357,
+  "generationId": "ceef858eeff681d26f137724beab213cf5e29b082b5adae9523c889de1cfceb5",
+  "questionableBirthdayLabels": [
+    "100th Birthday",
+    "16th Birthday",
+    "18th Birthday",
+    "1st Birthday",
+    "21st Birthday",
+    "3rd Birthday",
+    "40th Birthday",
+    "50th Birthday",
+    "5th Birthday",
+    "60th Birthday",
+    "65th Birthday",
+    "70th Birthday",
+    "80th Birthday"
+  ],
+  "categoryTotals": {
+    "grave-cover": 8,
+    "canvas": 111,
+    "roll-up-banner": 131,
+    "wall-hanging-banners": 107
+  }
+}
