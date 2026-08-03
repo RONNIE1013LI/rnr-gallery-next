@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import sharp from "sharp";
 import type { GalleryConfig } from "./config";
@@ -89,6 +89,16 @@ export class LocalGalleryStore {
   async read(storageKey: string): Promise<Buffer> {
     const safeKey = validateGalleryStorageKey(storageKey);
     return readFile(join(this.config.storageDir, safeKey));
+  }
+
+  async isAvailable(storageKey: string): Promise<boolean> {
+    const safeKey = validateGalleryStorageKey(storageKey);
+    try {
+      const metadata = await stat(join(this.config.storageDir, safeKey));
+      return metadata.isFile() && metadata.size > 0;
+    } catch {
+      return false;
+    }
   }
 
   async writeGeneration(

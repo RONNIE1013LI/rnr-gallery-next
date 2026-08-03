@@ -79,5 +79,18 @@ export function createDrizzleGalleryRepository(
         createdAt: row.createdAt,
       })));
     },
+    async findActiveImage(designId) {
+      const [row] = await database
+        .select({
+          id: galleryDesigns.id,
+          storageKey: galleryDesigns.storageKey,
+          contentHash: galleryDesigns.contentHash,
+          mimeType: galleryDesigns.mimeType,
+        })
+        .from(galleryDesigns)
+        .where(sql`${galleryDesigns.id} = ${designId} and ${galleryDesigns.status} = 'active'`)
+        .limit(1);
+      return row ? Object.freeze(row) : null;
+    },
   };
 }

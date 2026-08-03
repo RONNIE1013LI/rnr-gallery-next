@@ -24,9 +24,17 @@ export type GalleryPublicCandidate = GalleryImportRow & Readonly<{
   createdAt: Date;
 }>;
 
+export type GalleryActiveImage = Readonly<{
+  id: string;
+  storageKey: string;
+  contentHash: string;
+  mimeType: GalleryImportRow["mimeType"];
+}>;
+
 export interface GalleryRepository {
   replaceInitialImport(
     rows: readonly GalleryImportRow[],
   ): Promise<Readonly<{ imported: number; unchanged: number }>>;
   listActiveCandidates(): Promise<readonly GalleryPublicCandidate[]>;
+  findActiveImage(designId: string): Promise<GalleryActiveImage | null>;
 }

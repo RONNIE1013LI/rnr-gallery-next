@@ -111,5 +111,9 @@ describe("LocalGalleryStore", () => {
       `managed/${designId}-431ced6916a2.png`,
     );
     await expect(store.read(stored.storageKey)).resolves.toEqual(onePixelPng);
+    await expect(store.isAvailable(stored.storageKey)).resolves.toBe(true);
+    await expect(
+      store.isAvailable(`managed/${"e".repeat(64)}-${"f".repeat(12)}.png`),
+    ).resolves.toBe(false);
   });
 });
