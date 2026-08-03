@@ -7,26 +7,34 @@ import { importWordPressGallery } from "@/server/gallery/import-wordpress-galler
 import { LocalGalleryStore } from "@/server/gallery/local-gallery-store";
 import { getDatabase } from "@/server/db/client";
 
-const arguments_ = parseGalleryImportArguments(process.argv.slice(2));
-const config = parseGalleryConfig();
-const result = await importWordPressGallery({
-  manifestPath: arguments_.manifestPath,
-  imagesDir: arguments_.imagesDir,
-  repository: createDrizzleGalleryRepository(getDatabase()),
-  store: new LocalGalleryStore(config),
+async function main() {
+  const arguments_ = parseGalleryImportArguments(process.argv.slice(2));
+  const config = parseGalleryConfig();
+  const result = await importWordPressGallery({
+    manifestPath: arguments_.manifestPath,
+    imagesDir: arguments_.imagesDir,
+    repository: createDrizzleGalleryRepository(getDatabase()),
+    store: new LocalGalleryStore(config),
+  });
+  const report = {
+    importedAt: new Date().toISOString(),
+    expected: 357,
+    ...result,
+  };
+  await mkdir(dirname(arguments_.reportPath), { recursive: true });
+  const temporaryReport = `${arguments_.reportPath}.tmp-${process.pid}`;
+  await writeFile(temporaryReport, `${JSON.stringify(report, null, 2)}\n`, {
+    flag: "wx",
+    mode: 0o600,
+  });
+  await rename(temporaryReport, arguments_.reportPath);
+  process.stdout.write(
+    `Gallery import complete: ${result.imported} imported, ${result.unchanged} unchanged.\n`,
+  );
+}
+
+void main().catch((error: unknown) => {
+  const message = error instanceof Error ? error.message : "Unknown error";
+  process.stderr.write(`Gallery import failed: ${message}\n`);
+  process.exitCode = 1;
 });
-const report = {
-  importedAt: new Date().toISOString(),
-  expected: 357,
-  ...result,
-};
-await mkdir(dirname(arguments_.reportPath), { recursive: true });
-const temporaryReport = `${arguments_.reportPath}.tmp-${process.pid}`;
-await writeFile(temporaryReport, `${JSON.stringify(report, null, 2)}\n`, {
-  flag: "wx",
-  mode: 0o600,
-});
-await rename(temporaryReport, arguments_.reportPath);
-process.stdout.write(
-  `Gallery import complete: ${result.imported} imported, ${result.unchanged} unchanged.\n`,
-);
