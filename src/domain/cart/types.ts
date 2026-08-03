@@ -13,6 +13,7 @@ export type CartItem = Readonly<{
   productSlug: string;
   productTitle: string;
   imageSrc: string;
+  galleryDesignId?: string;
   sizeKey: string;
   sizeLabel: string;
   orientation?: Orientation;

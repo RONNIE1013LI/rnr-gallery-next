@@ -1308,6 +1308,19 @@
   font-size: clamp(1.45rem, 2.5vw, 2rem);
 }
 
+.gallerySnapshotText {
+  margin-top: 0.8rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1rem;
+  font-size: 0.82rem;
+}
+
+.gallerySnapshotText a {
+  color: var(--gallery-green);
+  font-weight: 750;
+}
+
 .cartItemDetails dl {
   margin-top: 1rem;
   max-width: 38rem;
@@ -1538,6 +1551,26 @@
   border-bottom: 1px solid var(--border);
 }
 
+.checkoutProduct img {
+  width: 4rem;
+  height: 4rem;
+  flex: 0 0 auto;
+  object-fit: cover;
+}
+
+.checkoutProduct > div {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 0.25rem;
+}
+
+.checkoutProduct small {
+  color: var(--gallery-green);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
 .checkoutProduct span,
 .checkoutProvenance {
   color: var(--muted);
@@ -1588,6 +1621,34 @@
 
 .orderItemSnapshot + .orderItemSnapshot {
   margin-top: 1rem;
+}
+
+.gallerySnapshot {
+  margin-block: 1rem;
+  padding: 0.75rem;
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 1rem;
+  align-items: center;
+  background: #f3efe7;
+  border-left: 3px solid var(--aged-gold);
+}
+
+.gallerySnapshot img {
+  width: 5.5rem;
+  height: 5.5rem;
+  object-fit: cover;
+}
+
+.gallerySnapshot div {
+  min-width: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.gallerySnapshot span {
+  color: var(--muted);
+  overflow-wrap: anywhere;
 }
 
 .orderItemSnapshot dl > div,

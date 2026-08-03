@@ -136,6 +136,7 @@ export function ProductConfigurator({
       productSlug: product.slug,
       productTitle: product.title,
       imageSrc: product.image.src,
+      ...(designInspiration ? { galleryDesignId: designInspiration.id } : {}),
       sizeKey,
       sizeLabel: size.label,
       orientation,

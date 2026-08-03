@@ -80,6 +80,20 @@ describe("guest cart", () => {
     expect(repository.load()).toEqual(emptyCart());
   });
 
+  it("keeps a valid gallery design ID and drops a malformed one without losing the cart", () => {
+    const storage = new MemoryStorage();
+    const repository = createBrowserCartRepository(storage);
+    repository.save(addCartItem(emptyCart(), item({ galleryDesignId: "a".repeat(64) })));
+    expect(repository.load().items[0].galleryDesignId).toBe("a".repeat(64));
+
+    const malformed = JSON.parse(storage.getItem("rnr-cart-v1")!);
+    malformed.items[0].galleryDesignId = "../../not-a-design";
+    storage.setItem("rnr-cart-v1", JSON.stringify(malformed));
+
+    expect(repository.load().items).toHaveLength(1);
+    expect(repository.load().items[0]).not.toHaveProperty("galleryDesignId");
+  });
+
   it.each(["not json", '{"version":2,"items":[]}', '{"version":1,"items":"bad"}'])(
     "fails closed for invalid stored data: %s",
     (value) => {

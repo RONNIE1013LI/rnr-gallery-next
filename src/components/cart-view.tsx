@@ -75,6 +75,14 @@ export function CartView() {
             </div>
             <div className={styles.cartItemDetails}>
               <h2>{item.productTitle}</h2>
+              {item.galleryDesignId && (
+                <div className={styles.gallerySnapshotText}>
+                  <strong>Selected design inspiration</strong>
+                  <Link href={`/products/${item.productSlug}?design=${item.galleryDesignId}`}>
+                    View selected design
+                  </Link>
+                </div>
+              )}
               <dl>
                 <div><dt>Size</dt><dd>{item.sizeLabel}</dd></div>
                 {item.orientation && <div><dt>Orientation</dt><dd>{labelFor(item.orientation)}</dd></div>}

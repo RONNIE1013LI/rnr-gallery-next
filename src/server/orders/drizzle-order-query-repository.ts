@@ -41,6 +41,8 @@ function isNonEmptyString(value: unknown): value is string {
   return typeof value === "string" && value.trim().length > 0;
 }
 
+const sha256Pattern = /^[a-f0-9]{64}$/;
+
 function isIsoCalendarDate(value: unknown): value is string {
   if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
   const date = new Date(`${value}T00:00:00.000Z`);
@@ -88,6 +90,20 @@ function publicItems(itemRows: OrderItemRow[]) {
   return itemRows.map((item, index) => {
     assertSnapshot(item.position === index);
     assertSnapshot(isNonEmptyString(item.productTitle) && isNonEmptyString(item.sizeLabel));
+    const galleryValues = [
+      item.galleryDesignId,
+      item.galleryDesignTitle,
+      item.galleryDesignContentHash,
+      item.galleryDesignProductSlug,
+    ];
+    const hasGalleryDesign = galleryValues.every((value) => value !== null);
+    assertSnapshot(hasGalleryDesign || galleryValues.every((value) => value === null));
+    if (hasGalleryDesign) {
+      assertSnapshot(sha256Pattern.test(item.galleryDesignId!));
+      assertSnapshot(isNonEmptyString(item.galleryDesignTitle));
+      assertSnapshot(sha256Pattern.test(item.galleryDesignContentHash!));
+      assertSnapshot(isNonEmptyString(item.galleryDesignProductSlug));
+    }
     assertSnapshot(item.orientation === null || orientations.has(item.orientation));
     assertSnapshot(Number.isSafeInteger(item.peoplePets) && item.peoplePets >= 0 && item.peoplePets <= 20);
     assertSnapshot(photoSubmissionMethods.has(item.photoSubmissionMethod));
@@ -120,7 +136,17 @@ function publicItems(itemRows: OrderItemRow[]) {
     assertSnapshot(item.lineTotalInclGstCents === item.unitTotalInclGstCents * item.quantity);
     assertSnapshot(priceLines.reduce((sum, line) => sum + line.amountExGstCents, 0) === item.unitSubtotalExGstCents);
     return Object.freeze({
-      productTitle: item.productTitle, sizeLabel: item.sizeLabel,
+      productTitle: item.productTitle,
+      ...(hasGalleryDesign ? {
+        galleryDesign: Object.freeze({
+          id: item.galleryDesignId!,
+          title: item.galleryDesignTitle!,
+          contentHash: item.galleryDesignContentHash!,
+          productSlug: item.galleryDesignProductSlug!,
+          imageUrl: `/gallery-images/${item.galleryDesignId}?v=${item.galleryDesignContentHash}`,
+        }),
+      } : {}),
+      sizeLabel: item.sizeLabel,
       ...(item.orientation ? { orientation: item.orientation } : {}),
       peoplePets: item.peoplePets, photoSubmissionMethod: item.photoSubmissionMethod,
       designText: item.designText, notes: item.notes, neededDate: item.neededDate,

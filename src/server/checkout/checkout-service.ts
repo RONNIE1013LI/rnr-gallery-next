@@ -1,4 +1,6 @@
 import { normalizeAddress } from "@/domain/address/schema";
+import { products } from "@/domain/catalogue/products";
+import { parseCheckoutCartInput } from "@/domain/checkout/input-schema";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import type { DeliveryPreference } from "@/domain/configuration/types";
 import type { createShippingService } from "@/server/shipping/shipping-service";
@@ -8,6 +10,15 @@ import {
 } from "./checkout-repository";
 
 type ShippingService = ReturnType<typeof createShippingService>;
+type GallerySelectionService = Readonly<{
+  resolve: (designId: string | undefined, productSlug: string) => Promise<{
+    id: string;
+    title: string;
+    contentHash: string;
+    productSlug: string;
+    imageUrl: string;
+  } | null>;
+}>;
 
 export type UpdateCheckoutSessionInput = Readonly<{
   cart: unknown;
@@ -27,10 +38,12 @@ export class InvalidCheckoutStateError extends Error {
 export function createCheckoutService({
   repository,
   shippingService,
+  gallerySelectionService,
   now = () => new Date(),
 }: {
   repository: CheckoutStateRepository;
   shippingService: ShippingService;
+  gallerySelectionService?: GallerySelectionService;
   now?: () => Date;
 }) {
   return {
@@ -42,7 +55,24 @@ export function createCheckoutService({
       const deliveryAddress = input.useDifferentDeliveryAddress === true
         ? normalizeAddress(input.deliveryAddress)
         : billingAddress;
-      const cartSnapshot = repriceCart(input.cart, { now: now() });
+      const canonicalCart = parseCheckoutCartInput(input.cart);
+      const galleryDesigns = new Map();
+      await Promise.all(canonicalCart.items.map(async (item) => {
+        if (!item.galleryDesignId || !gallerySelectionService) return;
+        const product = products.find(
+          (candidate) => candidate.active && candidate.key === item.productKey,
+        );
+        if (!product) return;
+        const selection = await gallerySelectionService.resolve(
+          item.galleryDesignId,
+          product.slug,
+        );
+        if (selection) galleryDesigns.set(item.galleryDesignId, selection);
+      }));
+      const cartSnapshot = repriceCart(canonicalCart, {
+        now: now(),
+        galleryDesigns,
+      });
       await assertOwnedUploadReferences(
         repository,
         sessionId,

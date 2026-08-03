@@ -161,4 +161,35 @@ describe("ProductConfigurator", () => {
     expect(screen.queryByRole("img", { name: "Memorial floral canvas" }))
       .not.toBeInTheDocument();
   });
+
+  it("stores the selected gallery design ID without changing the configured price", () => {
+    const designId = "a".repeat(64);
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+        createId={() => "configured-item"}
+        selectedDesign={{
+          id: designId,
+          title: "In loving memory",
+          altText: "Memorial floral canvas",
+          imageUrl: `/gallery-images/${designId}?v=${"b".repeat(64)}`,
+          contentHash: "b".repeat(64),
+          productSlug: "digital-oil-painting-canvas",
+          width: 1200,
+          height: 1600,
+        }}
+      />,
+    );
+
+    expect(screen.getByText("$120.75")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+
+    expect(JSON.parse(localStorage.getItem("rnr-cart-v1")!).items[0]).toMatchObject({
+      galleryDesignId: designId,
+      price: { totalInclGstCents: 12_075 },
+    });
+  });
 });

@@ -7,6 +7,7 @@ export const MAX_PEOPLE_PETS_PER_ITEM = 20;
 const checkoutItemInputSchema = z.object({
   clientItemId: z.uuid(),
   productKey: z.string().trim().min(1).max(100),
+  galleryDesignId: z.string().regex(/^[a-f0-9]{64}$/).optional(),
   sizeKey: z.string().trim().min(1).max(100),
   orientation: z.enum(["landscape", "portrait"]).optional(),
   peoplePets: z.number().int().nonnegative().max(MAX_PEOPLE_PETS_PER_ITEM),

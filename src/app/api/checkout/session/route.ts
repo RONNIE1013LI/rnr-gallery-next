@@ -19,6 +19,7 @@ import {
   sessionCookie,
 } from "@/server/checkout/session-cookie";
 import { getDatabase } from "@/server/db/client";
+import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 import {
   assertTrustedMutationRequest,
   MutationRequestError,
@@ -54,6 +55,7 @@ function defaults(): Dependencies {
       shippingService: createShippingService({
         provider: selectShippingProvider(),
       }),
+      gallerySelectionService: getGalleryRuntime().selectionService,
     }),
     getOptionalSession,
   };

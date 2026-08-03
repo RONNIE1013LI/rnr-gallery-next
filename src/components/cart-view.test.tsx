@@ -52,6 +52,23 @@ describe("CartView", () => {
     expect(screen.getByText("$74.75")).toBeInTheDocument();
   });
 
+  it("shows the chosen design inspiration and preserves its product route", async () => {
+    localStorage.setItem(
+      "rnr-cart-v1",
+      JSON.stringify({
+        version: 1,
+        items: [{ ...cartItem, galleryDesignId: "a".repeat(64) }],
+      }),
+    );
+    render(<CartView />);
+
+    expect(await screen.findByText("Selected design inspiration")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "View selected design" })).toHaveAttribute(
+      "href",
+      `/products/photo-print-canvas?design=${"a".repeat(64)}`,
+    );
+  });
+
   it("updates quantity and removes an item persistently", async () => {
     seedCart();
     render(<CartView />);

@@ -11,6 +11,8 @@ function isNonNegativeInteger(value: unknown): value is number {
   return Number.isInteger(value) && Number(value) >= 0;
 }
 
+const galleryDesignIdPattern = /^[a-f0-9]{64}$/;
+
 function isCartItem(value: unknown): value is CartItem {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
@@ -63,7 +65,19 @@ export function parseStoredCart(value: string | null): Cart {
     ) {
       return emptyCart();
     }
-    return Object.freeze({ version: 1, items: Object.freeze(parsed.items) });
+    const items = parsed.items.map((value) => {
+      const item = value as CartItem;
+      if (
+        item.galleryDesignId === undefined ||
+        galleryDesignIdPattern.test(item.galleryDesignId)
+      ) {
+        return Object.freeze({ ...item });
+      }
+      const safeItem = { ...item };
+      delete safeItem.galleryDesignId;
+      return Object.freeze(safeItem);
+    });
+    return Object.freeze({ version: 1, items: Object.freeze(items) });
   } catch {
     return emptyCart();
   }

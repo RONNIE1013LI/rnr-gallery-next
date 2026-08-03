@@ -180,14 +180,22 @@ describe("Drizzle order query read model", () => {
   );
 
   it("maps only the explicit public field whitelist and freezes nested snapshots", () => {
-    const [result] = buildPublicOrders([orderRow], [itemRow], addresses, [attemptRow]);
+    const galleryDesignId = "a".repeat(64);
+    const galleryItem = {
+      ...itemRow,
+      galleryDesignId,
+      galleryDesignTitle: "Family at sunset",
+      galleryDesignContentHash: "b".repeat(64),
+      galleryDesignProductSlug: "photo-print-canvas",
+    };
+    const [result] = buildPublicOrders([orderRow], [galleryItem], addresses, [attemptRow]);
 
     expect(Object.keys(result)).toEqual([
       "orderNumber", "createdAt", "paymentStatus", "fulfilmentStatus", "currency",
       "deliveryMethod", "shipping", "totals", "items", "addresses", "payment",
     ]);
     expect(Object.keys(result.items[0])).toEqual([
-      "productTitle", "sizeLabel", "orientation", "peoplePets", "photoSubmissionMethod",
+      "productTitle", "galleryDesign", "sizeLabel", "orientation", "peoplePets", "photoSubmissionMethod",
       "designText", "notes", "neededDate", "urgentServiceConfirmed", "urgentWorkingDays",
       "quantity", "priceLines", "unitSubtotalExGstCents", "unitGstCents", "unitTotalInclGstCents",
       "lineSubtotalExGstCents", "lineGstCents", "lineTotalInclGstCents",
@@ -196,6 +204,14 @@ describe("Drizzle order query read model", () => {
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.items)).toBe(true);
     expect(Object.isFrozen(result.items[0])).toBe(true);
+    expect(result.items[0].galleryDesign).toEqual({
+      id: galleryDesignId,
+      title: "Family at sunset",
+      contentHash: "b".repeat(64),
+      productSlug: "photo-print-canvas",
+      imageUrl: `/gallery-images/${galleryDesignId}?v=${"b".repeat(64)}`,
+    });
+    expect(Object.isFrozen(result.items[0].galleryDesign)).toBe(true);
     expect(result.items[0].priceLines).toEqual([
       { key: "product-size", label: "Product / size price", amountExGstCents: 6500 },
       { key: "no-charge", label: "No-charge adjustment", amountExGstCents: 0, amountInclGstCents: 0 },
@@ -353,6 +369,7 @@ describe("Drizzle order query read model", () => {
     ["invalid item quantity", { item: { ...itemRow, quantity: 0 } }],
     ["invalid item position", { item: { ...itemRow, position: 2 } }],
     ["invalid needed date", { item: { ...itemRow, neededDate: "2026-02-31" } }],
+    ["partial gallery snapshot", { item: { ...itemRow, galleryDesignId: "a".repeat(64) } }],
     ["item money imbalance", { item: { ...itemRow, lineTotalInclGstCents: 7476 } }],
     ["order money imbalance", { row: { ...orderRow, totalInclGstCents: 7476 } }],
   ];

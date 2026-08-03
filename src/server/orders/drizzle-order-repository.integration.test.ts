@@ -77,6 +77,30 @@ function bannerCart() {
   }, { now });
 }
 
+function galleryCart() {
+  const designId = "a".repeat(64);
+  const contentHash = "b".repeat(64);
+  return repriceCart({
+    version: 1,
+    items: [{
+      clientItemId: randomUUID(),
+      productKey: "digital-oil-painting-canvas", sizeKey: "a4", orientation: "landscape",
+      galleryDesignId: designId, peoplePets: 1, photoSubmissionMethod: "later",
+      designText: "Family", notes: "", neededDate: "2026-08-10",
+      urgentServiceConfirmed: false, quantity: 1, uploadReferences: [],
+    }],
+  }, {
+    now,
+    galleryDesigns: new Map([[designId, {
+      id: designId,
+      title: "Family at sunset",
+      contentHash,
+      productSlug: "digital-oil-painting-canvas",
+      imageUrl: `/gallery-images/${designId}?v=${contentHash}`,
+    }]]),
+  });
+}
+
 async function checkout({
   customerId = null,
   method = "pickup" as "pickup" | "post",
@@ -263,6 +287,21 @@ describe("Drizzle atomic order repository", () => {
       ...pickupInput(state),
       cart: canonical,
     })).resolves.toMatchObject({ totalInclGstCents: 26_450 });
+  });
+
+  it("persists the immutable gallery design snapshot on the order item", async () => {
+    const snapshot = galleryCart();
+    const state = await checkout({ snapshot });
+    const order = await repository.createAtomicOrder(pickupInput(state));
+    const [stored] = await database.select().from(orderItems)
+      .where(eq(orderItems.orderId, order.id));
+
+    expect(stored).toMatchObject({
+      galleryDesignId: "a".repeat(64),
+      galleryDesignTitle: "Family at sunset",
+      galleryDesignContentHash: "b".repeat(64),
+      galleryDesignProductSlug: "digital-oil-painting-canvas",
+    });
   });
 
   it("snapshots a fresh Post quote and preserves the signed-in owner", async () => {

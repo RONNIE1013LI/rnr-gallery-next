@@ -47,6 +47,45 @@ function withA4RegistryPrice(priceExGstCents: number, assertion: () => void) {
 }
 
 describe("authoritative checkout repricing", () => {
+  it("accepts only a trusted matching gallery snapshot without changing price", () => {
+    const designId = "a".repeat(64);
+    const result = repriceCart(cart({ galleryDesignId: designId }), {
+      now: MONDAY_IN_AUCKLAND,
+      galleryDesigns: new Map([[designId, {
+        id: designId,
+        title: "In loving memory",
+        contentHash: "b".repeat(64),
+        productSlug: "photo-print-canvas",
+        imageUrl: `/gallery-images/${designId}?v=${"b".repeat(64)}`,
+      }]]),
+    });
+
+    expect(result.items[0].galleryDesign).toEqual({
+      id: designId,
+      title: "In loving memory",
+      contentHash: "b".repeat(64),
+      productSlug: "photo-print-canvas",
+      imageUrl: `/gallery-images/${designId}?v=${"b".repeat(64)}`,
+    });
+    expect(result.items[0].unitPrice.totalInclGstCents).toBe(7_475);
+  });
+
+  it("rejects missing or product-mismatched gallery selections", () => {
+    const designId = "a".repeat(64);
+    expect(() => repriceCart(cart({ galleryDesignId: designId }), {
+      now: MONDAY_IN_AUCKLAND,
+    })).toThrow("selected gallery design is unavailable");
+    expect(() => repriceCart(cart({ galleryDesignId: designId }), {
+      now: MONDAY_IN_AUCKLAND,
+      galleryDesigns: new Map([[designId, {
+        id: designId,
+        title: "Wrong product",
+        contentHash: "b".repeat(64),
+        productSlug: "roll-up-banner",
+        imageUrl: `/gallery-images/${designId}`,
+      }]]),
+    })).toThrow("selected gallery design is unavailable");
+  });
   it("ignores browser money and labels and resolves canonical product data", () => {
     const result = repriceCart(
       cart({

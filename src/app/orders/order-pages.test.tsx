@@ -67,7 +67,7 @@ const order = Object.freeze({
   deliveryMethod: "pickup",
   shipping: Object.freeze({ provider: null, serviceName: "Pickup", isTest: false, amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0 }),
   totals: Object.freeze({ productSubtotalExGstCents: 15717, productGstCents: 2358, productTotalInclGstCents: 18075, totalExGstCents: 15717, totalGstCents: 2358, totalInclGstCents: 18075 }),
-  items: Object.freeze([{ productTitle: "Photo Print Canvas", sizeLabel: "A4", orientation: "landscape", peoplePets: 2, photoSubmissionMethod: "later", designText: "Family forever", notes: "Use the warm sunset reference", neededDate: "2026-08-10", urgentServiceConfirmed: true, urgentWorkingDays: 3, quantity: 1, priceLines: Object.freeze([{ key: "product-size", label: "Product / size price", amountExGstCents: 6500 }, { key: "people-pets", label: "People / pets fee", amountExGstCents: 4000 }, { key: "urgent-service", label: "Urgent service", amountExGstCents: 5217, amountInclGstCents: 6000 }, { key: "no-charge", label: "No charge", amountExGstCents: 0 }]), unitSubtotalExGstCents: 15717, unitGstCents: 2358, unitTotalInclGstCents: 18075, lineSubtotalExGstCents: 15717, lineGstCents: 2358, lineTotalInclGstCents: 18075 }]),
+  items: Object.freeze([{ productTitle: "Photo Print Canvas", galleryDesign: Object.freeze({ id: "a".repeat(64), title: "Family at sunset", contentHash: "b".repeat(64), productSlug: "photo-print-canvas", imageUrl: `/gallery-images/${"a".repeat(64)}?v=${"b".repeat(64)}` }), sizeLabel: "A4", orientation: "landscape", peoplePets: 2, photoSubmissionMethod: "later", designText: "Family forever", notes: "Use the warm sunset reference", neededDate: "2026-08-10", urgentServiceConfirmed: true, urgentWorkingDays: 3, quantity: 1, priceLines: Object.freeze([{ key: "product-size", label: "Product / size price", amountExGstCents: 6500 }, { key: "people-pets", label: "People / pets fee", amountExGstCents: 4000 }, { key: "urgent-service", label: "Urgent service", amountExGstCents: 5217, amountInclGstCents: 6000 }, { key: "no-charge", label: "No charge", amountExGstCents: 0 }]), unitSubtotalExGstCents: 15717, unitGstCents: 2358, unitTotalInclGstCents: 18075, lineSubtotalExGstCents: 15717, lineGstCents: 2358, lineTotalInclGstCents: 18075 }]),
   addresses: Object.freeze({ billing: address, delivery: address }),
   payment: null,
 }) as PublicOrder;
@@ -104,6 +104,11 @@ describe("owner-scoped order pages", () => {
     expect(screen.getByText("Send after ordering")).toBeInTheDocument();
     expect(screen.getByText("Family forever")).toBeInTheDocument();
     expect(screen.getByText("Use the warm sunset reference")).toBeInTheDocument();
+    expect(screen.getByText("Family at sunset")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Family at sunset" })).toHaveAttribute(
+      "src",
+      expect.stringContaining(`/gallery-images/${"a".repeat(64)}`),
+    );
     expect(screen.getByText("Confirmed · 3 working days")).toBeInTheDocument();
     expect(screen.getByText("Product / size price")).toBeInTheDocument();
     expect(screen.getByText("People / pets fee")).toBeInTheDocument();

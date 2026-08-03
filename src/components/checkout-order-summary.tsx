@@ -15,8 +15,20 @@ export function CheckoutOrderSummary({ cart, shipping }: {
     <>
       {cart.items.map((item) => (
         <div className={styles.checkoutProduct} key={item.clientItemId}>
-          <strong>{item.productTitle} × {item.quantity}</strong>
-          <span>{item.sizeLabel}</span>
+          {item.galleryDesign && (
+            <Image
+              src={item.galleryDesign.imageUrl}
+              alt={item.galleryDesign.title}
+              width={64}
+              height={64}
+              unoptimized
+            />
+          )}
+          <div>
+            <strong>{item.productTitle} × {item.quantity}</strong>
+            <span>{item.sizeLabel}</span>
+            {item.galleryDesign && <small>{item.galleryDesign.title}</small>}
+          </div>
         </div>
       ))}
       <dl className={styles.priceLines}>
@@ -29,3 +41,4 @@ export function CheckoutOrderSummary({ cart, shipping }: {
     </>
   );
 }
+import Image from "next/image";

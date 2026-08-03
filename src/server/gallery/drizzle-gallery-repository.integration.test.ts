@@ -9,6 +9,10 @@ import type { GalleryImportRow } from "./gallery-repository";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is required");
+const testDatabaseName = new URL(testDatabaseUrl).pathname.replace(/^\//, "");
+const hasDedicatedTestDatabase =
+  testDatabaseUrl !== process.env.DATABASE_URL &&
+  /(?:^|[-_])test(?:$|[-_])/.test(testDatabaseName);
 
 const database = drizzle(testDatabaseUrl);
 const repository = createDrizzleGalleryRepository(database);
@@ -27,7 +31,7 @@ const row: GalleryImportRow = {
   height: 1600,
 };
 
-describe("createDrizzleGalleryRepository", () => {
+describe.runIf(hasDedicatedTestDatabase)("createDrizzleGalleryRepository", () => {
   beforeEach(async () => {
     await database.delete(galleryDesigns);
   });

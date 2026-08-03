@@ -66,6 +66,7 @@ function canonicalInputFrom(snapshot: RepricedCheckoutCart) {
     items: snapshot.items.map((item) => ({
       clientItemId: item.clientItemId,
       productKey: item.productKey,
+      ...(item.galleryDesign ? { galleryDesignId: item.galleryDesign.id } : {}),
       sizeKey: item.sizeKey,
       ...(item.orientation ? { orientation: item.orientation } : {}),
       peoplePets: item.peoplePets,
@@ -128,6 +129,11 @@ export function createOrderService({
       const pricingTime = now();
       const cart = repriceCart(canonicalInputFrom(state.cartSnapshot), {
         now: pricingTime,
+        galleryDesigns: new Map(
+          state.cartSnapshot.items.flatMap((item) =>
+            item.galleryDesign ? [[item.galleryDesign.id, item.galleryDesign] as const] : [],
+          ),
+        ),
       });
       if (cart.cartDigest !== state.cartDigest) throw new OrderStateChangedError();
 

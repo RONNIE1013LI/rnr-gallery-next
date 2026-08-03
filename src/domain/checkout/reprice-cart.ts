@@ -8,11 +8,15 @@ import { parseCheckoutCartInput } from "./input-schema";
 import {
   InvalidCheckoutCartError,
   type CanonicalCheckoutItemInput,
+  type GalleryDesignSnapshot,
   type RepricedCheckoutCart,
   type RepricedCheckoutItem,
 } from "./types";
 
-type RepriceCartOptions = Readonly<{ now?: Date }>;
+type RepriceCartOptions = Readonly<{
+  now?: Date;
+  galleryDesigns?: ReadonlyMap<string, GalleryDesignSnapshot>;
+}>;
 
 function assertSafeCents(label: string, ...values: readonly number[]): void {
   if (values.some((value) => !Number.isSafeInteger(value) || value < 0)) {
@@ -120,6 +124,7 @@ function freezeUnitPrice(
 function repriceItem(
   item: CanonicalCheckoutItemInput,
   orderDate: string,
+  galleryDesigns: ReadonlyMap<string, GalleryDesignSnapshot>,
 ): RepricedCheckoutItem {
   const schema = getConfigurationSchema(item.productKey);
   const product = products.find(
@@ -127,6 +132,18 @@ function repriceItem(
   );
   if (!schema || !product) {
     throw new InvalidCheckoutCartError("The selected product is unavailable.");
+  }
+
+  const galleryDesign = item.galleryDesignId
+    ? galleryDesigns.get(item.galleryDesignId)
+    : undefined;
+  if (
+    item.galleryDesignId &&
+    (!galleryDesign ||
+      galleryDesign.id !== item.galleryDesignId ||
+      galleryDesign.productSlug !== product.slug)
+  ) {
+    throw new InvalidCheckoutCartError("The selected gallery design is unavailable.");
   }
 
   const size = schema.sizes.find((candidate) => candidate.key === item.sizeKey);
@@ -167,6 +184,7 @@ function repriceItem(
     productKey: product.key,
     productSlug: product.slug,
     productTitle: product.title,
+    ...(galleryDesign ? { galleryDesign: Object.freeze({ ...galleryDesign }) } : {}),
     sizeKey: size.key,
     sizeLabel: size.label,
     ...(item.orientation ? { orientation: item.orientation } : {}),
@@ -215,7 +233,11 @@ export function repriceCart(
     }
     const orderDate = getAucklandDate(options.now ?? new Date());
     const items = Object.freeze(
-      input.items.map((item) => repriceItem(item, orderDate)),
+      input.items.map((item) => repriceItem(
+        item,
+        orderDate,
+        options.galleryDesigns ?? new Map(),
+      )),
     );
     const totals = items.reduce(
       (result, item) => ({

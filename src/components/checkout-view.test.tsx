@@ -26,8 +26,13 @@ describe("CheckoutView", () => {
   beforeEach(() => { localStorage.clear(); sessionStorage.clear(); localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart)); push.mockReset(); vi.restoreAllMocks(); });
 
   it("builds a canonical request without browser pricing or labels", () => {
-    const input = canonicalCheckoutCart(cart);
+    const galleryDesignId = "a".repeat(64);
+    const input = canonicalCheckoutCart({
+      ...cart,
+      items: [{ ...cart.items[0], galleryDesignId }],
+    });
     expect(input.items[0]).toMatchObject({ clientItemId: cart.items[0].id, productKey: "photo-print-canvas", sizeKey: "a4", quantity: 1 });
+    expect(input.items[0].galleryDesignId).toBe(galleryDesignId);
     expect(JSON.stringify(input)).not.toMatch(/Browser title|Browser size|subtotalExGstCents|totalInclGstCents|price/);
   });
 

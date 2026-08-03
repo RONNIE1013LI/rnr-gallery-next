@@ -11,9 +11,18 @@ export class InvalidCheckoutCartError extends Error {
   }
 }
 
+export type GalleryDesignSnapshot = Readonly<{
+  id: string;
+  title: string;
+  contentHash: string;
+  productSlug: string;
+  imageUrl: string;
+}>;
+
 export type CanonicalCheckoutItemInput = Readonly<{
   clientItemId: string;
   productKey: string;
+  galleryDesignId?: string;
   sizeKey: string;
   orientation?: Orientation;
   peoplePets: number;
@@ -36,6 +45,7 @@ export type RepricedCheckoutItem = Readonly<{
   productKey: string;
   productSlug: string;
   productTitle: string;
+  galleryDesign?: GalleryDesignSnapshot;
   sizeKey: string;
   sizeLabel: string;
   orientation?: Orientation;

@@ -121,6 +121,35 @@ function shippingService() {
 }
 
 describe("checkout service", () => {
+  it("resolves gallery metadata on the server and persists the trusted snapshot", async () => {
+    const designId = "a".repeat(64);
+    const resolve = vi.fn().mockResolvedValue({
+      id: designId,
+      title: "Family at sunset",
+      contentHash: "b".repeat(64),
+      productSlug: "photo-print-canvas",
+      imageUrl: `/gallery-images/${designId}?v=${"b".repeat(64)}`,
+    });
+    const service = createCheckoutService({
+      repository: repository(),
+      shippingService: shippingService(),
+      gallerySelectionService: { resolve },
+      now: () => now,
+    });
+
+    const state = await service.updateSession(sessionId, {
+      cart: cart({ galleryDesignId: designId }),
+      billingAddress,
+      deliveryMethod: "post",
+    });
+
+    expect(resolve).toHaveBeenCalledWith(designId, "photo-print-canvas");
+    expect(state.cartSnapshot?.items[0].galleryDesign).toMatchObject({
+      id: designId,
+      title: "Family at sunset",
+      contentHash: "b".repeat(64),
+    });
+  });
   it("normalizes NZ addresses, reprices canonical cart and persists a versioned snapshot", async () => {
     const repo = repository();
     const service = createCheckoutService({
