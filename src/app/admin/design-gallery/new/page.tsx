@@ -1,11 +1,11 @@
 import { AdminGalleryForm } from "@/components/admin-gallery-form";
-import { requireAdmin } from "@/server/auth/require-admin";
+import { requireAdminPage } from "@/server/auth/require-admin-page";
 import styles from "@/components/storefront.module.css";
 
 export const metadata = { title: "Add gallery design" };
 
 export default async function NewAdminGalleryDesignPage() {
-  await requireAdmin();
+  await requireAdminPage();
   return (
     <section className={styles.adminSectionNarrow}>
       <header className={styles.adminHeading}>

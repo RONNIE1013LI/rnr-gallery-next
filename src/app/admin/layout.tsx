@@ -1,9 +1,9 @@
 import Link from "next/link";
-import { requireAdmin } from "@/server/auth/require-admin";
+import { requireAdminPage } from "@/server/auth/require-admin-page";
 import styles from "@/components/storefront.module.css";
 
 export default async function AdminLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  await requireAdmin();
+  await requireAdminPage();
   return (
     <main id="main-content" className={styles.adminPage}>
       <nav className={styles.adminNavigation} aria-label="Administration">

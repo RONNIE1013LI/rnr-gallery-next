@@ -11,6 +11,7 @@ import type { Cart } from "@/domain/cart/types";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { PublicShippingDTO } from "@/server/checkout/public-dto";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
+import { createClientId } from "@/lib/client-id";
 import { AddressForm, type AddressFieldErrors } from "./address-form";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { followPaymentAction, startOrderPayment } from "./order-payment-panel";
@@ -233,8 +234,8 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
     const intent = paymentIntent ?? {
       schemaVersion: 1,
       phase: "placing_order",
-      orderIdempotencyKey: window.crypto.randomUUID(),
-      paymentIdempotencyKey: window.crypto.randomUUID(),
+      orderIdempotencyKey: createClientId(),
+      paymentIdempotencyKey: createClientId(),
       method: selectedPaymentMethod!,
       checkoutVersion: reviewedVersion!,
       cartDigest: reviewedCart!.cartDigest,

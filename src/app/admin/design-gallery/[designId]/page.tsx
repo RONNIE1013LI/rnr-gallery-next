@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { AdminGalleryForm, type AdminGalleryFormDesign } from "@/components/admin-gallery-form";
-import { requireAdmin } from "@/server/auth/require-admin";
+import { requireAdminPage } from "@/server/auth/require-admin-page";
 import { getAdminGalleryService } from "@/server/gallery/admin-gallery-runtime";
 import styles from "@/components/storefront.module.css";
 
@@ -9,7 +9,7 @@ type Props = Readonly<{ params: Promise<{ designId: string }> }>;
 export const metadata = { title: "Edit gallery design" };
 
 export default async function EditAdminGalleryDesignPage({ params }: Props) {
-  await requireAdmin();
+  await requireAdminPage();
   const { designId } = await params;
   const record = await getAdminGalleryService().get(designId);
   if (!record) notFound();

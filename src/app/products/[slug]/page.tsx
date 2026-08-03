@@ -43,6 +43,7 @@ export function ProductPageContent({
             alt={selection?.altText ?? product.image.alt}
             fill
             loading="eager"
+            priority
             sizes="(max-width: 820px) 100vw, 58vw"
             unoptimized={Boolean(selection)}
           />

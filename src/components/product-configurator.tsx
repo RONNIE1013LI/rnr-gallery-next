@@ -15,6 +15,7 @@ import type {
 } from "@/domain/configuration/types";
 import { quoteConfiguration } from "@/domain/configuration/quote";
 import { formatNzd } from "@/domain/money";
+import { createClientId } from "@/lib/client-id";
 import {
   addWorkingDays,
   getUrgentService,
@@ -36,7 +37,7 @@ export function ProductConfigurator({
   product,
   schema,
   orderDate,
-  createId = () => crypto.randomUUID(),
+  createId = createClientId,
   selectedDesign = null,
 }: ProductConfiguratorProps) {
   const [designInspiration, setDesignInspiration] = useState(selectedDesign);
@@ -173,6 +174,7 @@ export function ProductConfigurator({
               alt={designInspiration.altText}
               width={designInspiration.width}
               height={designInspiration.height}
+              priority
               unoptimized
             />
             <div>

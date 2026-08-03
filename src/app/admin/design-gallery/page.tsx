@@ -1,13 +1,13 @@
 import Link from "next/link";
 import { AdminGalleryList, type AdminGalleryListItem } from "@/components/admin-gallery-list";
-import { requireAdmin } from "@/server/auth/require-admin";
+import { requireAdminPage } from "@/server/auth/require-admin-page";
 import { getAdminGalleryService } from "@/server/gallery/admin-gallery-runtime";
 import styles from "@/components/storefront.module.css";
 
 export const metadata = { title: "Manage Design Gallery" };
 
 export default async function AdminGalleryPage() {
-  await requireAdmin();
+  await requireAdminPage();
   const records = await getAdminGalleryService().list();
   const designs = records.map((record) => ({
     id: String(record.id),

@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OrderPaymentStatus } from "@/server/db/schema/orders";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import type { PaymentActionDTO, PublicPaymentDTO } from "@/server/payments/public-dto";
+import { createClientId } from "@/lib/client-id";
 import {
   PAYMENT_INTENT_STORAGE_KEY,
   readPaymentRecoveryIntent,
@@ -350,7 +351,7 @@ function OrderPaymentPanelState({
 
   async function start() {
     if (!selected || pending || !canStart) return;
-    paymentKey.current ??= window.crypto.randomUUID();
+    paymentKey.current ??= createClientId();
     persistStartingAttempt(orderNumber, selected, paymentKey.current);
     await runPayment(selected, paymentKey.current);
   }
