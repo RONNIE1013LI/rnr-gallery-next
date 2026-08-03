@@ -13,7 +13,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:check": "drizzle-kit check",
-    "gallery:import": "tsx scripts/import-wordpress-gallery.ts"
+    "gallery:import": "tsx scripts/import-wordpress-gallery.ts",
+    "admin:role": "tsx scripts/set-admin-role.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.6.25",
