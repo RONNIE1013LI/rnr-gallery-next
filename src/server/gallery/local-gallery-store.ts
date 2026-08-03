@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import sharp from "sharp";
 import type { GalleryConfig } from "./config";
@@ -16,6 +16,12 @@ type SupportedImage = Readonly<{
 
 export type StoredGalleryImage = SupportedImage &
   Readonly<{ storageKey: string }>;
+
+export type GenerationImage = Readonly<{
+  designId: string;
+  bytes: Uint8Array;
+  metadata: SupportedImage;
+}>;
 
 const imageFormats = {
   jpeg: { extension: "jpg", mimeType: "image/jpeg" },
@@ -83,5 +89,67 @@ export class LocalGalleryStore {
   async read(storageKey: string): Promise<Buffer> {
     const safeKey = validateGalleryStorageKey(storageKey);
     return readFile(join(this.config.storageDir, safeKey));
+  }
+
+  async writeGeneration(
+    generationId: string,
+    images: readonly GenerationImage[],
+  ): Promise<readonly string[]> {
+    if (!/^[a-f0-9]{64}$/.test(generationId)) {
+      throw new Error("Invalid gallery generation ID");
+    }
+    const generationDirectory = join(
+      this.config.storageDir,
+      "generations",
+      generationId,
+    );
+    const stagingDirectory = join(
+      this.config.storageDir,
+      `.staging-${randomUUID()}`,
+    );
+    await mkdir(this.config.storageDir, { recursive: true });
+    await mkdir(stagingDirectory, { recursive: false });
+
+    const keys = images.map((image) =>
+      validateGalleryStorageKey(
+        `generations/${generationId}/${image.designId}-${image.metadata.contentHash.slice(0, 12)}.${image.metadata.extension}`,
+      ),
+    );
+
+    try {
+      await Promise.all(images.map((image, index) =>
+        writeFile(
+          join(stagingDirectory, keys[index].split("/").at(-1)!),
+          image.bytes,
+          { flag: "wx", mode: 0o600 },
+        ),
+      ));
+      await mkdir(dirname(generationDirectory), { recursive: true });
+      try {
+        await rename(stagingDirectory, generationDirectory);
+      } catch (error) {
+        if (
+          !error ||
+          typeof error !== "object" ||
+          !("code" in error) ||
+          !["EEXIST", "ENOTEMPTY"].includes(String(error.code))
+        ) {
+          throw error;
+        }
+        await rm(stagingDirectory, { recursive: true, force: true });
+      }
+
+      for (const [index, key] of keys.entries()) {
+        const stored = await this.read(key);
+        const storedHash = createHash("sha256").update(stored).digest("hex");
+        if (storedHash !== images[index].metadata.contentHash) {
+          throw new Error("Gallery generation hash verification failed");
+        }
+      }
+      return Object.freeze(keys);
+    } catch (error) {
+      await rm(stagingDirectory, { recursive: true, force: true });
+      throw error;
+    }
   }
 }

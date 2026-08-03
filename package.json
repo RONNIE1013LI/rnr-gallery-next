@@ -12,7 +12,8 @@
     "test:run": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:check": "drizzle-kit check"
+    "db:check": "drizzle-kit check",
+    "gallery:import": "tsx scripts/import-wordpress-gallery.ts"
   },
   "dependencies": {
     "@better-auth/drizzle-adapter": "1.6.25",
@@ -42,6 +43,7 @@
     "eslint": "^9",
     "eslint-config-next": "16.2.12",
     "jsdom": "^30.0.1",
+    "tsx": "^4.23.5",
     "typescript": "^5",
     "vite-tsconfig-paths": "^6.1.1",
     "vitest": "^4.1.10"
