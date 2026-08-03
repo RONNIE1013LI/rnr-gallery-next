@@ -32,6 +32,7 @@ function repository(rows: readonly GalleryPublicCandidate[]): GalleryRepository 
     replaceInitialImport: async () => ({ imported: 0, unchanged: 0 }),
     listActiveCandidates: async () => rows,
     findActiveImage: async () => null,
+    findActiveDesign: async () => null,
   };
 }
 

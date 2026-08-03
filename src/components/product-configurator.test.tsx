@@ -132,4 +132,33 @@ describe("ProductConfigurator", () => {
       urgentFeeInclGstCents: 5_000,
     });
   });
+
+  it("shows and can remove a selected design inspiration", () => {
+    const designId = "a".repeat(64);
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+        selectedDesign={{
+          id: designId,
+          title: "In loving memory",
+          altText: "Memorial floral canvas",
+          imageUrl: `/gallery-images/${designId}?v=${"b".repeat(64)}`,
+          contentHash: "b".repeat(64),
+          productSlug: "digital-oil-painting-canvas",
+          width: 1200,
+          height: 1600,
+        }}
+      />,
+    );
+
+    expect(screen.getByRole("heading", { name: "Selected design inspiration" }))
+      .toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Memorial floral canvas" }))
+      .toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Remove selected design" }));
+    expect(screen.queryByRole("img", { name: "Memorial floral canvas" }))
+      .not.toBeInTheDocument();
+  });
 });

@@ -1,5 +1,6 @@
 "use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import type { Product } from "@/domain/catalogue/types";
@@ -19,12 +20,14 @@ import {
   getUrgentService,
 } from "@/domain/scheduling/urgent-service";
 import styles from "./storefront.module.css";
+import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
 
 type ProductConfiguratorProps = Readonly<{
   product: Product;
   schema: ProductConfigurationSchema;
   orderDate: string;
   createId?: () => string;
+  selectedDesign?: GalleryDesignSelection | null;
 }>;
 
 type UploadedFile = Readonly<{ id: string; originalName: string }>;
@@ -34,7 +37,9 @@ export function ProductConfigurator({
   schema,
   orderDate,
   createId = () => crypto.randomUUID(),
+  selectedDesign = null,
 }: ProductConfiguratorProps) {
+  const [designInspiration, setDesignInspiration] = useState(selectedDesign);
   const [sizeKey, setSizeKey] = useState(schema.defaultSizeKey);
   const [orientation, setOrientation] = useState<Orientation | undefined>(
     schema.defaultOrientation,
@@ -160,6 +165,25 @@ export function ProductConfigurator({
           addToCart();
         }}
       >
+        {designInspiration && (
+          <section className={styles.selectedDesignPanel}>
+            <Image
+              src={designInspiration.imageUrl}
+              alt={designInspiration.altText}
+              width={designInspiration.width}
+              height={designInspiration.height}
+              unoptimized
+            />
+            <div>
+              <h2>Selected design inspiration</h2>
+              <p>{designInspiration.title}</p>
+              <small>We will prepare a personalised draft for your review; the finished artwork is not an exact copy.</small>
+            </div>
+            <button type="button" onClick={() => setDesignInspiration(null)}>
+              Remove selected design
+            </button>
+          </section>
+        )}
         <section className={styles.configuratorStep}>
           <div className={styles.stepHeading}>
             <span>01</span>

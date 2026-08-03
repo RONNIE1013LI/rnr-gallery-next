@@ -60,6 +60,10 @@ class MemoryGalleryRepository implements GalleryRepository {
     return null;
   }
 
+  async findActiveDesign() {
+    return null;
+  }
+
   async replaceInitialImport(rows: readonly GalleryImportRow[]) {
     if (this.rows.length === 0) {
       this.rows = Object.freeze(rows.map((row) => Object.freeze({ ...row })));
@@ -159,6 +163,7 @@ describe("importWordPressGallery", () => {
     const repository: GalleryRepository = {
       listActiveCandidates: async () => [],
       findActiveImage: async () => null,
+      findActiveDesign: async () => null,
       replaceInitialImport: async () => {
         throw new Error("database activation failed");
       },

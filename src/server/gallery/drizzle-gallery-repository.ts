@@ -92,5 +92,13 @@ export function createDrizzleGalleryRepository(
         .limit(1);
       return row ? Object.freeze(row) : null;
     },
+    async findActiveDesign(designId) {
+      const [row] = await database
+        .select()
+        .from(galleryDesigns)
+        .where(sql`${galleryDesigns.id} = ${designId} and ${galleryDesigns.status} = 'active'`)
+        .limit(1);
+      return row ? Object.freeze({ ...comparable(row), createdAt: row.createdAt }) : null;
+    },
   };
 }

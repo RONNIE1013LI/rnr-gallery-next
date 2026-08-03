@@ -37,4 +37,5 @@ export interface GalleryRepository {
   ): Promise<Readonly<{ imported: number; unchanged: number }>>;
   listActiveCandidates(): Promise<readonly GalleryPublicCandidate[]>;
   findActiveImage(designId: string): Promise<GalleryActiveImage | null>;
+  findActiveDesign(designId: string): Promise<GalleryPublicCandidate | null>;
 }
