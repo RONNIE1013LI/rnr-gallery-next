@@ -20,8 +20,13 @@ export type GalleryImportRow = Readonly<{
   height: number;
 }>;
 
+export type GalleryPublicCandidate = GalleryImportRow & Readonly<{
+  createdAt: Date;
+}>;
+
 export interface GalleryRepository {
   replaceInitialImport(
     rows: readonly GalleryImportRow[],
   ): Promise<Readonly<{ imported: number; unchanged: number }>>;
+  listActiveCandidates(): Promise<readonly GalleryPublicCandidate[]>;
 }

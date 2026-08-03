@@ -1,5 +1,5 @@
 import { isDeepStrictEqual } from "node:util";
-import { asc, sql } from "drizzle-orm";
+import { asc, desc, eq, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import { galleryDesigns } from "@/server/db/schema";
 import type {
@@ -67,6 +67,17 @@ export function createDrizzleGalleryRepository(
         }
         return Object.freeze({ imported: 0, unchanged: current.length });
       });
+    },
+    async listActiveCandidates() {
+      const rows = await database
+        .select()
+        .from(galleryDesigns)
+        .where(eq(galleryDesigns.status, "active"))
+        .orderBy(desc(galleryDesigns.createdAt), asc(galleryDesigns.id));
+      return Object.freeze(rows.map((row) => Object.freeze({
+        ...comparable(row),
+        createdAt: row.createdAt,
+      })));
     },
   };
 }

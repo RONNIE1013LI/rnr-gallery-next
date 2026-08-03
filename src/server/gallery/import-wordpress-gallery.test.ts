@@ -52,6 +52,10 @@ async function fixture() {
 class MemoryGalleryRepository implements GalleryRepository {
   rows: readonly GalleryImportRow[] = [];
 
+  async listActiveCandidates() {
+    return [];
+  }
+
   async replaceInitialImport(rows: readonly GalleryImportRow[]) {
     if (this.rows.length === 0) {
       this.rows = Object.freeze(rows.map((row) => Object.freeze({ ...row })));
@@ -149,6 +153,7 @@ describe("importWordPressGallery", () => {
   it("removes the new unreferenced generation when database activation fails", async () => {
     const paths = await fixture();
     const repository: GalleryRepository = {
+      listActiveCandidates: async () => [],
       replaceInitialImport: async () => {
         throw new Error("database activation failed");
       },
