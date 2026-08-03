@@ -234,6 +234,341 @@
   font-size: 0.85rem;
 }
 
+.adminPage {
+  width: min(100% - (2 * var(--page-gutter)), var(--content-width));
+  min-height: 70vh;
+  margin-inline: auto;
+  padding-block: clamp(2rem, 5vw, 5rem);
+}
+
+.adminNavigation {
+  margin-bottom: clamp(2rem, 4vw, 3.5rem);
+  padding-bottom: 1rem;
+  display: flex;
+  gap: 1.5rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.adminNavigation a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--gallery-green);
+  font-size: 0.88rem;
+  font-weight: 750;
+}
+
+.adminSection,
+.adminSectionNarrow {
+  display: grid;
+  gap: 2rem;
+}
+
+.adminSectionNarrow {
+  max-width: 64rem;
+}
+
+.adminHeading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 2rem;
+}
+
+.adminHeading h1 {
+  margin-top: 0.5rem;
+  font-family: var(--font-display);
+  font-size: clamp(2.5rem, 5vw, 4.5rem);
+  font-weight: 400;
+  letter-spacing: -0.035em;
+  line-height: 1;
+}
+
+.adminHeading p:last-child {
+  max-width: 48rem;
+  margin-top: 0.8rem;
+  color: var(--muted);
+}
+
+.adminHeading .primaryButton,
+.adminFormActions .primaryButton,
+.adminFormActions .secondaryButton {
+  flex: 0 0 auto;
+  text-decoration: none;
+}
+
+.adminGalleryTable {
+  overflow: hidden;
+  background: var(--paper);
+  border: 1px solid var(--border);
+}
+
+.adminGalleryTableHeader,
+.adminGalleryRow {
+  display: grid;
+  grid-template-columns: minmax(17rem, 1.4fr) minmax(11rem, 0.8fr) minmax(12rem, 1fr) 6rem 8rem;
+  gap: 1rem;
+  align-items: center;
+}
+
+.adminGalleryTableHeader {
+  min-height: 3.25rem;
+  padding-inline: 1rem;
+  color: var(--muted);
+  background: #eee9df;
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.adminGalleryRow {
+  min-height: 7rem;
+  padding: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+.adminGalleryArtwork {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+}
+
+.adminGalleryArtwork img {
+  width: 5.5rem;
+  height: 5.5rem;
+  object-fit: contain;
+  background: #eee9df;
+}
+
+.adminGalleryArtwork h2 {
+  overflow-wrap: anywhere;
+  font-size: 0.95rem;
+  line-height: 1.3;
+}
+
+.adminGalleryArtwork small,
+.adminGalleryMeta span {
+  display: block;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.adminGalleryMeta strong,
+.adminGalleryProduct {
+  display: block;
+  font-size: 0.82rem;
+}
+
+.adminStatusActive,
+.adminStatusTrashed {
+  width: max-content;
+  padding: 0.25rem 0.55rem;
+  font-size: 0.72rem;
+  font-weight: 800;
+  text-transform: uppercase;
+}
+
+.adminStatusActive {
+  color: #fff;
+  background: var(--gallery-green);
+}
+
+.adminStatusTrashed {
+  color: #7c271f;
+  background: #f2ddd8;
+}
+
+.adminGalleryActions {
+  display: flex;
+  gap: 0.8rem;
+}
+
+.adminGalleryActions a {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--gallery-green);
+  font-size: 0.82rem;
+  font-weight: 750;
+}
+
+.adminEmpty {
+  padding: 3rem;
+  background: var(--paper);
+  border-block: 1px solid var(--border);
+  color: var(--muted);
+}
+
+.adminGalleryForm {
+  padding: clamp(1.25rem, 4vw, 2.5rem);
+  background: var(--paper);
+  border: 1px solid var(--border);
+}
+
+.adminFormGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1.25rem;
+}
+
+.adminFullField {
+  grid-column: 1 / -1;
+}
+
+.adminFullField small {
+  margin-top: 0.4rem;
+  display: block;
+  color: var(--muted);
+}
+
+.adminCurrentImage {
+  margin-bottom: 2rem;
+  display: grid;
+  grid-template-columns: 10rem minmax(0, 1fr);
+  align-items: center;
+  gap: 1rem;
+}
+
+.adminCurrentImage img {
+  width: 10rem;
+  height: 10rem;
+  object-fit: contain;
+  background: #eee9df;
+}
+
+.adminCurrentImage p {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.adminThemeFieldset {
+  margin-top: 1.5rem;
+  padding: 0;
+  border: 0;
+}
+
+.adminThemeFieldset legend {
+  margin-bottom: 0.75rem;
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.adminThemeFieldset > div {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+}
+
+.adminThemeFieldset label {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  color: var(--muted);
+  font-size: 0.84rem;
+}
+
+.adminThemeFieldset input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: var(--gallery-green);
+}
+
+.adminFormActions {
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.adminStatusButton {
+  min-height: 44px;
+  margin-left: auto;
+  padding: 0.75rem 1rem;
+  color: #7c271f;
+  background: transparent;
+  border: 1px solid #b7857f;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.adminFormError {
+  margin-bottom: 1.25rem;
+  padding: 0.85rem 1rem;
+  color: #7c271f;
+  background: #f2ddd8;
+  border-left: 3px solid #7c271f;
+}
+
+@media (max-width: 1023px) {
+  .adminGalleryTableHeader {
+    display: none;
+  }
+
+  .adminGalleryRow {
+    grid-template-columns: minmax(0, 1.5fr) minmax(10rem, 0.8fr) 6rem;
+  }
+
+  .adminGalleryProduct,
+  .adminGalleryActions {
+    grid-column: 2;
+  }
+
+  .adminStatusActive,
+  .adminStatusTrashed {
+    grid-column: 3;
+    grid-row: 1;
+  }
+}
+
+@media (max-width: 767px) {
+  .adminPage {
+    width: min(100% - 2rem, var(--content-width));
+    padding-block: 2rem;
+  }
+
+  .adminNavigation,
+  .adminHeading,
+  .adminFormActions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .adminGalleryTable {
+    border-inline: 0;
+  }
+
+  .adminGalleryRow {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+  }
+
+  .adminGalleryProduct,
+  .adminGalleryActions,
+  .adminStatusActive,
+  .adminStatusTrashed {
+    grid-column: 1;
+    grid-row: auto;
+  }
+
+  .adminFormGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .adminFullField {
+    grid-column: 1;
+  }
+
+  .adminStatusButton {
+    margin-left: 0;
+  }
+}
+
 @media (max-width: 1179px) {
   .galleryGrid {
     columns: 2;

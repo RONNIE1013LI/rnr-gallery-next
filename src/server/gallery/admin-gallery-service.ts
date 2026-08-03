@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { galleryOccasions, galleryProductTypes, galleryThemes } from "@/domain/gallery/taxonomy";
 import type { GalleryOccasionSlug, GalleryProductSlug, GalleryProductTypeSlug, GalleryThemeSlug } from "@/domain/gallery/types";
-import type { GalleryAdminUpdate, GalleryImportRow } from "./gallery-repository";
+import type { GalleryAdminRecord, GalleryAdminUpdate, GalleryImportRow } from "./gallery-repository";
 
 export type GalleryAdminMetadata = Readonly<{
   productTypeSlug: GalleryProductTypeSlug;
@@ -14,7 +14,7 @@ export type GalleryAdminMetadata = Readonly<{
 
 type Dependencies = Readonly<{
   repository: {
-    listAdminCandidates?(): Promise<readonly ({ id: string; status: "active" | "trashed"; storageKey: string } & Record<string, unknown>)[]>;
+    listAdminCandidates?(): Promise<readonly GalleryAdminRecord[]>;
     findDesign(id: string): Promise<{ id: string; status: "active" | "trashed"; storageKey: string } | null>;
     createDesign(row: GalleryImportRow, actorUserId: string): Promise<void>;
     updateDesign(id: string, update: GalleryAdminUpdate, actorUserId: string): Promise<boolean>;
