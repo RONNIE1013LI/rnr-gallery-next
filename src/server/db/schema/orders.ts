@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   boolean,
+  char,
   check,
   foreignKey,
   index,
@@ -183,6 +184,10 @@ export const orderItems = pgTable(
     productKey: text("product_key").notNull(),
     productSlug: text("product_slug").notNull(),
     productTitle: text("product_title").notNull(),
+    galleryDesignId: char("gallery_design_id", { length: 64 }),
+    galleryDesignTitle: text("gallery_design_title"),
+    galleryDesignContentHash: char("gallery_design_content_hash", { length: 64 }),
+    galleryDesignProductSlug: text("gallery_design_product_slug"),
     sizeKey: text("size_key").notNull(),
     sizeLabel: text("size_label").notNull(),
     orientation: text("orientation").$type<Orientation>(),
@@ -235,6 +240,20 @@ export const orderItems = pgTable(
     check("order_items_people_pets_valid", sql`${table.peoplePets} BETWEEN 0 AND 20`),
     check("order_items_urgent_days_positive", sql`${table.urgentWorkingDays} > 0`),
     check("order_items_quantity_valid", sql`${table.quantity} BETWEEN 1 AND 5`),
+    check(
+      "order_items_gallery_snapshot_complete",
+      sql`(
+        ${table.galleryDesignId} is null
+        and ${table.galleryDesignTitle} is null
+        and ${table.galleryDesignContentHash} is null
+        and ${table.galleryDesignProductSlug} is null
+      ) or (
+        ${table.galleryDesignId} is not null
+        and length(trim(${table.galleryDesignTitle})) > 0
+        and ${table.galleryDesignContentHash} ~ '^[a-f0-9]{64}$'
+        and length(trim(${table.galleryDesignProductSlug})) > 0
+      )`,
+    ),
     check("order_items_unit_subtotal_nonnegative", sql`${table.unitSubtotalExGstCents} >= 0`),
     check("order_items_unit_gst_nonnegative", sql`${table.unitGstCents} >= 0`),
     check("order_items_unit_total_nonnegative", sql`${table.unitTotalInclGstCents} >= 0`),
