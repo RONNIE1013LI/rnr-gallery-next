@@ -6,6 +6,8 @@ import {
   type AddressInput,
   type SupportedCountry,
 } from "@/domain/address/types";
+import { ADDRESS_FIELD_LIMITS } from "@/domain/address/schema";
+import { GoogleAddressAutocomplete } from "./google-address-autocomplete";
 import styles from "./storefront.module.css";
 
 export type AddressFieldErrors = Partial<Record<keyof AddressInput, string[]>>;
@@ -15,6 +17,7 @@ type AddressFormProps = {
   onChange: (value: AddressInput) => void;
   errors?: AddressFieldErrors;
   disabled?: boolean;
+  googleMapsApiKey?: string;
 };
 
 type FieldName = keyof AddressInput;
@@ -44,6 +47,7 @@ export function AddressForm({
   onChange,
   errors = {},
   disabled = false,
+  googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
 }: AddressFormProps) {
   const idPrefix = useId();
 
@@ -101,6 +105,7 @@ export function AddressForm({
           <input
             {...fieldAttributes("building")}
             autoComplete="address-line2"
+            maxLength={ADDRESS_FIELD_LIMITS.building}
             onChange={(event) => updateField("building", event.target.value)}
             value={value.building}
           />
@@ -116,26 +121,41 @@ export function AddressForm({
         <input
           {...fieldAttributes("fullName")}
           autoComplete="name"
+          maxLength={ADDRESS_FIELD_LIMITS.fullName}
           onChange={(event) => updateField("fullName", event.target.value)}
           required
           value={value.fullName}
         />
       </FieldShell>
 
-      <FieldShell
-        errorId={`${idPrefix}-street-error`}
-        errors={errors.street}
-        inputId={`${idPrefix}-street`}
-        label="Street address"
-      >
-        <input
-          {...fieldAttributes("street")}
-          autoComplete="address-line1"
-          onChange={(event) => updateField("street", event.target.value)}
-          required
-          value={value.street}
+      {googleMapsApiKey ? (
+        <GoogleAddressAutocomplete
+          apiKey={googleMapsApiKey}
+          country={value.country}
+          disabled={disabled}
+          errorId={`${idPrefix}-street-error`}
+          errors={errors.street}
+          inputId={`${idPrefix}-street`}
+          onChange={onChange}
+          value={value}
         />
-      </FieldShell>
+      ) : (
+        <FieldShell
+          errorId={`${idPrefix}-street-error`}
+          errors={errors.street}
+          inputId={`${idPrefix}-street`}
+          label="Street address"
+        >
+          <input
+            {...fieldAttributes("street")}
+            autoComplete="address-line1"
+            maxLength={ADDRESS_FIELD_LIMITS.street}
+            onChange={(event) => updateField("street", event.target.value)}
+            required
+            value={value.street}
+          />
+        </FieldShell>
+      )}
 
       <FieldShell
         errorId={`${idPrefix}-suburb-error`}
@@ -146,6 +166,7 @@ export function AddressForm({
         <input
           {...fieldAttributes("suburb")}
           autoComplete="address-level2"
+          maxLength={ADDRESS_FIELD_LIMITS.suburb}
           onChange={(event) => updateField("suburb", event.target.value)}
           required
           value={value.suburb}
@@ -176,6 +197,7 @@ export function AddressForm({
             <input
               {...fieldAttributes("region")}
               autoComplete="address-level1"
+              maxLength={ADDRESS_FIELD_LIMITS.region}
               onChange={(event) => updateField("region", event.target.value)}
               required
               value={value.region}
@@ -213,6 +235,7 @@ export function AddressForm({
             {...fieldAttributes("phone")}
             autoComplete="tel"
             inputMode="tel"
+            maxLength={ADDRESS_FIELD_LIMITS.phone}
             onChange={(event) => updateField("phone", event.target.value)}
             required
             type="tel"
@@ -229,6 +252,7 @@ export function AddressForm({
           <input
             {...fieldAttributes("email")}
             autoComplete="email"
+            maxLength={ADDRESS_FIELD_LIMITS.email}
             onChange={(event) => updateField("email", event.target.value)}
             required
             type="email"

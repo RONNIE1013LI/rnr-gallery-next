@@ -1,5 +1,9 @@
 import { normalizeAddress } from "@/domain/address/schema";
-import { products } from "@/domain/catalogue/products";
+import {
+  defaultProductRegistry,
+  getRegistryProductByKey,
+  type ProductRegistryDocument,
+} from "@/domain/catalogue/product-registry";
 import { parseCheckoutCartInput } from "@/domain/checkout/input-schema";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import type { DeliveryPreference } from "@/domain/configuration/types";
@@ -18,6 +22,12 @@ type GallerySelectionService = Readonly<{
     productSlug: string;
     imageUrl: string;
   } | null>;
+}>;
+type ProductRegistryService = Readonly<{
+  current: () => Promise<Readonly<{
+    revision: number;
+    registry: ProductRegistryDocument;
+  }>>;
 }>;
 
 export type UpdateCheckoutSessionInput = Readonly<{
@@ -39,11 +49,13 @@ export function createCheckoutService({
   repository,
   shippingService,
   gallerySelectionService,
+  productRegistryService,
   now = () => new Date(),
 }: {
   repository: CheckoutStateRepository;
   shippingService: ShippingService;
   gallerySelectionService?: GallerySelectionService;
+  productRegistryService?: ProductRegistryService;
   now?: () => Date;
 }) {
   return {
@@ -56,12 +68,13 @@ export function createCheckoutService({
         ? normalizeAddress(input.deliveryAddress)
         : billingAddress;
       const canonicalCart = parseCheckoutCartInput(input.cart);
+      const registry = productRegistryService
+        ? (await productRegistryService.current()).registry
+        : defaultProductRegistry;
       const galleryDesigns = new Map();
       await Promise.all(canonicalCart.items.map(async (item) => {
         if (!item.galleryDesignId || !gallerySelectionService) return;
-        const product = products.find(
-          (candidate) => candidate.active && candidate.key === item.productKey,
-        );
+        const product = getRegistryProductByKey(registry, item.productKey);
         if (!product) return;
         const selection = await gallerySelectionService.resolve(
           item.galleryDesignId,
@@ -72,6 +85,7 @@ export function createCheckoutService({
       const cartSnapshot = repriceCart(canonicalCart, {
         now: now(),
         galleryDesigns,
+        registry,
       });
       await assertOwnedUploadReferences(
         repository,

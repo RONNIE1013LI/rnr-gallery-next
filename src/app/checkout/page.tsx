@@ -5,7 +5,10 @@ import { createDrizzleAddressRepository } from "@/server/addresses/drizzle-addre
 import { getOptionalSession } from "@/server/auth/get-optional-session";
 import { getDatabase } from "@/server/db/client";
 
-export const metadata: Metadata = { title: "Checkout" };
+export const metadata: Metadata = {
+  title: "Checkout",
+  robots: { index: false, follow: false },
+};
 
 export default async function CheckoutPage() {
   const session = await getOptionalSession();

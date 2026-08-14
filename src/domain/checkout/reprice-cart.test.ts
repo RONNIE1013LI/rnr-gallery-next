@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { getConfigurationSchema } from "@/domain/configuration/schemas";
+import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
 import { InvalidCheckoutCartError } from "./types";
 import { repriceCart } from "./reprice-cart";
 
@@ -31,22 +32,50 @@ function cart(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function withA4RegistryPrice(priceExGstCents: number, assertion: () => void) {
-  const schema = getConfigurationSchema("photo-print-canvas")!;
-  const size = schema.sizes.find((candidate) => candidate.key === "a4")! as {
-    priceExGstCents: number;
-  };
-  const originalPrice = size.priceExGstCents;
-
-  try {
-    size.priceExGstCents = priceExGstCents;
-    assertion();
-  } finally {
-    size.priceExGstCents = originalPrice;
-  }
+function withA4RegistryPrice(
+  priceExGstCents: number,
+  assertion: (registry: ProductRegistryDocument) => void,
+) {
+  const registry = structuredClone(defaultProductRegistry);
+  const product = registry.products.find(
+    (candidate) => candidate.key === "photo-print-canvas",
+  )!;
+  product.configuration.sizes.find(
+    (candidate) => candidate.key === "a4",
+  )!.priceExGstCents = priceExGstCents;
+  assertion(registry);
 }
 
 describe("authoritative checkout repricing", () => {
+  it("uses one supplied registry for product, people and urgent prices", () => {
+    const registry = structuredClone(defaultProductRegistry);
+    const product = registry.products.find(
+      (candidate) => candidate.key === "digital-oil-painting-canvas",
+    )!;
+    product.configuration.sizes[0].priceExGstCents = 7_100;
+    registry.pricing.peoplePetsFeesExGstCents[0] = 4_500;
+    registry.pricing.urgentServiceFeesInclGstCents[3] = 5_500;
+
+    const result = repriceCart(cart({
+      productKey: "digital-oil-painting-canvas",
+      peoplePets: 1,
+      neededDate: "2026-08-07",
+      urgentServiceConfirmed: true,
+    }), { now: MONDAY_IN_AUCKLAND, registry });
+
+    expect(result.items[0].unitPrice.lines).toEqual([
+      { key: "product-size", label: "Product / size price", amountExGstCents: 7_100 },
+      { key: "people-pets", label: "People / pets fee", amountExGstCents: 4_500 },
+      {
+        key: "urgent-service",
+        label: "Urgent service",
+        amountExGstCents: 4_783,
+        amountInclGstCents: 5_500,
+      },
+    ]);
+    expect(result.items[0].unitPrice.totalInclGstCents).toBe(18_840);
+  });
+
   it("accepts only a trusted matching gallery snapshot without changing price", () => {
     const designId = "a".repeat(64);
     const result = repriceCart(cart({ galleryDesignId: designId }), {
@@ -68,6 +97,36 @@ describe("authoritative checkout repricing", () => {
       imageUrl: `/gallery-images/${designId}?v=${"b".repeat(64)}`,
     });
     expect(result.items[0].unitPrice.totalInclGstCents).toBe(7_475);
+  });
+
+  it("keeps the cart digest stable when trusted metadata has equivalent key ordering", () => {
+    const designId = "a".repeat(64);
+    const contentHash = "b".repeat(64);
+    const imageUrl = `/gallery-images/${designId}?v=${contentHash}`;
+    const input = cart({ galleryDesignId: designId });
+    const first = repriceCart(input, {
+      now: MONDAY_IN_AUCKLAND,
+      galleryDesigns: new Map([[designId, {
+        id: designId,
+        title: "In loving memory",
+        contentHash,
+        productSlug: "photo-print-canvas",
+        imageUrl,
+      }]]),
+    });
+    const reordered = repriceCart(input, {
+      now: MONDAY_IN_AUCKLAND,
+      galleryDesigns: new Map([[designId, {
+        imageUrl,
+        productSlug: "photo-print-canvas",
+        contentHash,
+        title: "In loving memory",
+        id: designId,
+      }]]),
+    });
+
+    expect(reordered).toEqual(first);
+    expect(reordered.cartDigest).toBe(first.cartDigest);
   });
 
   it("rejects missing or product-mismatched gallery selections", () => {
@@ -156,11 +215,46 @@ describe("authoritative checkout repricing", () => {
     expect(JSON.parse(JSON.stringify(result))).toEqual(result);
   });
 
+  it("canonicalizes a legacy Grave Cover checkout to 100 × 200 cm without orientation", () => {
+    const result = repriceCart(
+      cart({
+        productKey: "grave-cover",
+        sizeKey: "standard",
+        orientation: "portrait",
+        photoSubmissionMethod: "later",
+        uploadReferences: [],
+      }),
+      { now: MONDAY_IN_AUCKLAND },
+    );
+
+    expect(result.items[0].sizeLabel).toBe("100 × 200 cm");
+    expect(result.items[0]).not.toHaveProperty("orientation");
+  });
+
+  it("defaults a background-removal product's first uploaded image to its main photo", () => {
+    const secondUploadId = "00000000-0000-4000-8000-000000000002";
+    const result = repriceCart(cart({
+      productKey: "roll-up-banner",
+      sizeKey: "standard",
+      orientation: undefined,
+      peoplePets: 0,
+      uploadReferences: [UPLOAD_ID, secondUploadId],
+      extraBackgroundRemovalUploadIds: [secondUploadId],
+    }), { now: MONDAY_IN_AUCKLAND });
+
+    expect(result.items[0]).toMatchObject({
+      mainPhotoUploadId: UPLOAD_ID,
+      extraBackgroundRemovalUploadIds: [secondUploadId],
+      sizeLabel: "85 × 200 cm",
+      unitPrice: { totalInclGstCents: 28_450 },
+    });
+  });
+
   it.each([
     ["unknown product", { productKey: "not-a-product" }],
     ["unknown size", { sizeKey: "not-a-size" }],
     ["missing choice orientation", { orientation: undefined }],
-    ["invalid fixed orientation", {
+    ["orientation where none is offered on Grave Cover", {
       productKey: "grave-cover",
       sizeKey: "standard",
       orientation: "landscape",
@@ -231,17 +325,17 @@ describe("authoritative checkout repricing", () => {
   });
 
   it("rejects unsafe computed money from the canonical registry", () => {
-    withA4RegistryPrice(Number.MAX_SAFE_INTEGER, () => {
+    withA4RegistryPrice(Number.MAX_SAFE_INTEGER, (registry) => {
       expect(() =>
-        repriceCart(cart(), { now: MONDAY_IN_AUCKLAND }),
+        repriceCart(cart(), { now: MONDAY_IN_AUCKLAND, registry }),
       ).toThrow("safe integer cents");
     });
   });
 
   it("rejects a safe unit amount that overflows its quantity line", () => {
-    withA4RegistryPrice(1_700_000_000_000_000, () => {
+    withA4RegistryPrice(1_700_000_000_000_000, (registry) => {
       expect(() =>
-        repriceCart(cart({ quantity: 5 }), { now: MONDAY_IN_AUCKLAND }),
+        repriceCart(cart({ quantity: 5 }), { now: MONDAY_IN_AUCKLAND, registry }),
       ).toThrow("Line price");
     });
   });
@@ -256,9 +350,9 @@ describe("authoritative checkout repricing", () => {
       }),
     );
 
-    withA4RegistryPrice(200_000_000_000_000, () => {
+    withA4RegistryPrice(200_000_000_000_000, (registry) => {
       expect(() =>
-        repriceCart({ version: 1, items }, { now: MONDAY_IN_AUCKLAND }),
+        repriceCart({ version: 1, items }, { now: MONDAY_IN_AUCKLAND, registry }),
       ).toThrow("Cart price");
     });
   });

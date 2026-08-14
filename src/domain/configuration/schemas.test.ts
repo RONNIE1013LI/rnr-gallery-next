@@ -30,16 +30,17 @@ describe("product configuration schemas", () => {
     ]);
   });
 
-  it("keeps Roll-Up and Grave Cover fixed", () => {
+  it("keeps single-format Roll-Up and Grave Cover free of orientation metadata", () => {
     expect(getConfigurationSchema("roll-up-banner")).toMatchObject({
       defaultSizeKey: "standard",
       orientationMode: "none",
     });
     expect(getConfigurationSchema("grave-cover")).toMatchObject({
       defaultSizeKey: "standard",
-      orientationMode: "fixed",
-      defaultOrientation: "portrait",
+      orientationMode: "none",
+      sizes: [{ key: "standard", label: "100 × 200 cm" }],
     });
+    expect(getConfigurationSchema("grave-cover")).not.toHaveProperty("defaultOrientation");
   });
 
   it("uses only post and pickup delivery choices with post first", () => {

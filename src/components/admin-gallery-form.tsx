@@ -57,6 +57,9 @@ export function AdminGalleryForm({ design }: Readonly<{ design?: AdminGalleryFor
 
   async function changeStatus() {
     if (!design) return;
+    if (design.status === "active" && !window.confirm(
+      "Move this design to trash? It will be removed from the public gallery but its revision history will be preserved.",
+    )) return;
     setSubmitting(true);
     setError("");
     const restoring = design.status === "trashed";
@@ -128,7 +131,7 @@ export function AdminGalleryForm({ design }: Readonly<{ design?: AdminGalleryFor
 
         <label className={`${styles.formField} ${styles.adminFullField}`}>
           <span>Image</span>
-          <input name="image" type="file" accept="image/jpeg,image/png,image/webp" />
+          <input name="image" type="file" accept="image/jpeg,image/png,image/webp" required={!design} />
           {design ? <small>Leave empty to keep the current image.</small> : null}
         </label>
       </div>

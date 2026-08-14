@@ -100,4 +100,24 @@ describe("addressInputSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it.each([
+    ["fullName", 121],
+    ["building", 101],
+    ["street", 181],
+    ["suburb", 101],
+    ["region", 101],
+    ["phone", 33],
+    ["email", 255],
+  ] as const)("rejects an oversized %s field", (field, length) => {
+    const result = addressInputSchema.safeParse({
+      ...base,
+      country: "NZ",
+      region: "Auckland",
+      phone: "021 123 4567",
+      [field]: "a".repeat(length),
+    });
+
+    expect(result.success).toBe(false);
+  });
 });

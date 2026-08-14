@@ -94,6 +94,23 @@ describe("guest cart", () => {
     expect(repository.load().items[0]).not.toHaveProperty("galleryDesignId");
   });
 
+  it("migrates legacy Grave Cover carts to the canonical format without orientation", () => {
+    const storage = new MemoryStorage();
+    const repository = createBrowserCartRepository(storage);
+    repository.save(addCartItem(emptyCart(), item({
+      productKey: "grave-cover",
+      productSlug: "grave-cover",
+      productTitle: "Grave Cover",
+      sizeKey: "standard",
+      sizeLabel: "200 × 100 cm",
+      orientation: "portrait",
+    })));
+
+    const [storedItem] = repository.load().items;
+    expect(storedItem.sizeLabel).toBe("100 × 200 cm");
+    expect(storedItem).not.toHaveProperty("orientation");
+  });
+
   it.each(["not json", '{"version":2,"items":[]}', '{"version":1,"items":"bad"}'])(
     "fails closed for invalid stored data: %s",
     (value) => {

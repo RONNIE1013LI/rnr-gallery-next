@@ -4,6 +4,7 @@ import type { StripePaymentConfig } from "./config";
 import {
   createStripeProvider,
   type StripeClient,
+  type StripeCharge,
   type StripePaymentIntent,
   type StripeWebhookEvent,
 } from "./stripe-provider";
@@ -103,7 +104,7 @@ describe("Stripe payment provider", () => {
     }
   });
 
-  it("creates one explicit card PaymentIntent with exact immutable authority", async () => {
+  it("creates one Stripe PaymentIntent for cards and Link without enabling Afterpay", async () => {
     const stripe = client();
     const provider = createStripeProvider({ config, client: stripe });
 
@@ -120,9 +121,11 @@ describe("Stripe payment provider", () => {
     expect(stripe.paymentIntents.create).toHaveBeenCalledWith({
       amount: order.amountCents,
       currency: "nzd",
-      payment_method_types: ["card"],
+      payment_method_types: ["card", "link"],
       metadata: { order_number: order.orderNumber },
     }, { idempotencyKey: sessionInput.idempotencyKey });
+    expect(vi.mocked(stripe.paymentIntents.create).mock.calls[0]?.[0].payment_method_types)
+      .not.toContain("afterpay_clearpay");
     expect(vi.mocked(stripe.paymentIntents.create).mock.calls[0]?.[0])
       .not.toHaveProperty("automatic_payment_methods");
   });
@@ -163,6 +166,40 @@ describe("Stripe payment provider", () => {
         },
       });
     expect(stripe.paymentIntents.retrieve).toHaveBeenCalledWith(baseIntent.id);
+  });
+
+  it("verifies a full Stripe charge refund against its original PaymentIntent", async () => {
+    const charge: StripeCharge = {
+      id: "ch_refunded_123",
+      payment_intent: baseIntent.id,
+      amount: order.amountCents,
+      amount_refunded: order.amountCents,
+      currency: "nzd",
+      metadata: { order_number: order.orderNumber },
+      refunded: true,
+    };
+    const event: StripeWebhookEvent = {
+      id: "evt_refund_123",
+      type: "charge.refunded",
+      data: { object: charge },
+    };
+    const provider = createStripeProvider({ config, client: client(baseIntent, event) });
+
+    await expect(provider.verifyWebhook?.(
+      new Uint8Array([1, 2, 3]),
+      new Headers({ "stripe-signature": "t=1,v1=refund" }),
+    )).resolves.toEqual({
+      provider: "stripe",
+      providerEventId: event.id,
+      result: {
+        providerReference: baseIntent.id,
+        providerStatus: "refunded",
+        amountCents: order.amountCents,
+        currency: order.currency,
+        orderNumber: order.orderNumber,
+        status: "refunded",
+      },
+    });
   });
 
   it.each([

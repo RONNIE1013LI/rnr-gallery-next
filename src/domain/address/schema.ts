@@ -6,7 +6,17 @@ import {
   type NormalizedAddress,
 } from "./types";
 
-const requiredText = z.string().trim().min(1);
+export const ADDRESS_FIELD_LIMITS = Object.freeze({
+  fullName: 120,
+  building: 100,
+  street: 180,
+  suburb: 100,
+  region: 100,
+  phone: 32,
+  email: 254,
+});
+
+const requiredText = (maximum: number) => z.string().trim().min(1).max(maximum);
 
 function parsePhoneForCountry(
   value: string,
@@ -19,14 +29,14 @@ function parsePhoneForCountry(
 export const addressInputSchema = z
   .object({
     country: z.enum(SUPPORTED_COUNTRIES),
-    fullName: requiredText,
-    building: z.string().trim(),
-    street: requiredText,
-    suburb: requiredText,
-    region: requiredText,
+    fullName: requiredText(ADDRESS_FIELD_LIMITS.fullName),
+    building: z.string().trim().max(ADDRESS_FIELD_LIMITS.building),
+    street: requiredText(ADDRESS_FIELD_LIMITS.street),
+    suburb: requiredText(ADDRESS_FIELD_LIMITS.suburb),
+    region: requiredText(ADDRESS_FIELD_LIMITS.region),
     postcode: z.string().trim().regex(/^\d{4}$/),
-    phone: requiredText,
-    email: z.string().trim().email(),
+    phone: requiredText(ADDRESS_FIELD_LIMITS.phone),
+    email: z.string().trim().max(ADDRESS_FIELD_LIMITS.email).email(),
   })
   .superRefine((address, context) => {
     if (

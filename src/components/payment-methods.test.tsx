@@ -28,6 +28,14 @@ describe("PaymentMethods", () => {
     expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
     expect(screen.getByText("Test Afterpay — no real payment")).toBeInTheDocument();
     expect(screen.getByText("No real payment will be taken.")).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Accepted cards: Visa, Mastercard and American Express" })).toBeInTheDocument();
+    expect(screen.getByText("Secure payment powered by Stripe")).toBeInTheDocument();
+  });
+
+  it("only shows Stripe card trust information when Card is selected", () => {
+    render(<PaymentMethods methods={methods} value="afterpay" onChange={vi.fn()} />);
+
+    expect(screen.queryByText("Secure payment powered by Stripe")).not.toBeInTheDocument();
   });
 
   it("reports selection and has at least 44px interaction targets through the shared class", () => {

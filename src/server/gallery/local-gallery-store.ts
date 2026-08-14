@@ -5,7 +5,7 @@ import sharp from "sharp";
 import type { GalleryConfig } from "./config";
 import { validateGalleryStorageKey } from "./storage-key";
 
-type SupportedImage = Readonly<{
+export type SupportedImage = Readonly<{
   contentHash: string;
   extension: "jpg" | "png" | "webp";
   mimeType: "image/jpeg" | "image/png" | "image/webp";

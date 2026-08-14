@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import { PaymentServiceError } from "@/server/payments/payment-service";
-import { createOrderPaymentMethodsRoute, createOrderPaymentRoute } from "./route";
+import { createOrderPaymentMethodsRoute, createOrderPaymentRoute } from "./route-handler";
 
 const origin = "https://shop.example.test";
 const token = "a".repeat(43);
@@ -25,7 +25,7 @@ const context = { params: Promise.resolve({ orderNumber }) };
 
 describe("POST /api/orders/[orderNumber]/payment", () => {
   it("starts an owner-scoped guest payment and explicitly serializes a safe action", async () => {
-    const paymentService = { start: vi.fn().mockResolvedValue({
+    const paymentService = { confirmPayment: vi.fn(), start: vi.fn().mockResolvedValue({
       payment: {
         method: "card", status: "requires_action", isTest: true, canRetry: false,
         attemptId: "internal", providerReference: "internal", providerError: "internal",
@@ -54,8 +54,39 @@ describe("POST /api/orders/[orderNumber]/payment", () => {
     });
   });
 
+  it("confirms the current owned attempt without accepting provider authority from the browser", async () => {
+    const paymentService = {
+      start: vi.fn(),
+      confirmPayment: vi.fn().mockResolvedValue({
+        payment: { method: "card", status: "paid", isTest: false, canRetry: false },
+        orderNumber,
+      }),
+    };
+    const handler = createOrderPaymentRoute({
+      paymentService,
+      getOptionalSession: async () => null,
+      trustedOrigin: origin,
+    });
+
+    const response = await handler(request({ action: "confirm" }), context);
+
+    expect(response.status).toBe(200);
+    expect(paymentService.confirmPayment).toHaveBeenCalledWith({
+      kind: "guest", orderNumber, tokenDigest: hashCheckoutSessionToken(token),
+    });
+    expect(paymentService.start).not.toHaveBeenCalled();
+    expect(await response.json()).toEqual({
+      payment: { method: "card", status: "paid", isTest: false, canRetry: false },
+      orderNumber,
+    });
+    expect((await handler(request({
+      action: "confirm",
+      providerReference: "pi_attacker_supplied",
+    }), context)).status).toBe(400);
+  });
+
   it("uses the signed-in owner without trusting browser owner or order fields", async () => {
-    const paymentService = { start: vi.fn().mockResolvedValue({
+    const paymentService = { confirmPayment: vi.fn(), start: vi.fn().mockResolvedValue({
       payment: { method: "afterpay", status: "created", isTest: false, canRetry: false },
       action: null,
     }) };
@@ -77,14 +108,14 @@ describe("POST /api/orders/[orderNumber]/payment", () => {
 
   it("returns the same generic 404 for missing access or inaccessible orders", async () => {
     const missingAccess = createOrderPaymentRoute({
-      paymentService: { start: vi.fn() }, getOptionalSession: async () => null,
+      paymentService: { start: vi.fn(), confirmPayment: vi.fn() }, getOptionalSession: async () => null,
       trustedOrigin: origin,
     });
     const noAccessResponse = await missingAccess(request(validBody, ""), context);
     expect(noAccessResponse.status).toBe(404);
 
     const inaccessible = createOrderPaymentRoute({
-      paymentService: { start: vi.fn().mockRejectedValue(
+      paymentService: { confirmPayment: vi.fn(), start: vi.fn().mockRejectedValue(
         new PaymentServiceError("ORDER_NOT_FOUND", "Order is unavailable"),
       ) },
       getOptionalSession: async () => null,
@@ -103,7 +134,7 @@ describe("POST /api/orders/[orderNumber]/payment", () => {
       [new PaymentServiceError("PAYMENT_ATTEMPT_IN_PROGRESS", "Another payment is in progress"), 409],
     ] as const) {
       const handler = createOrderPaymentRoute({
-        paymentService: { start: vi.fn().mockRejectedValue(error) },
+        paymentService: { confirmPayment: vi.fn(), start: vi.fn().mockRejectedValue(error) },
         getOptionalSession: async () => null,
         trustedOrigin: origin,
       });
@@ -114,7 +145,7 @@ describe("POST /api/orders/[orderNumber]/payment", () => {
   });
 
   it("rejects malformed bodies and cross-site requests before service access", async () => {
-    const paymentService = { start: vi.fn() };
+    const paymentService = { start: vi.fn(), confirmPayment: vi.fn() };
     const handler = createOrderPaymentRoute({
       paymentService, getOptionalSession: async () => null, trustedOrigin: origin,
     });

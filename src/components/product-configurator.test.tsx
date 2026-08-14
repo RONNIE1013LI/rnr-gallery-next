@@ -1,8 +1,11 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getConfigurationSchema } from "@/domain/configuration/schemas";
 import { getProductBySlug } from "@/domain/catalogue/products";
 import { ProductConfigurator } from "./product-configurator";
+import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import styles from "./storefront.module.css";
 
 const product = getProductBySlug("digital-oil-painting-canvas")!;
 const schema = getConfigurationSchema(product.key)!;
@@ -21,12 +24,336 @@ describe("ProductConfigurator", () => {
       />,
     );
 
-    expect(screen.getByLabelText("Size")).toHaveValue("a4");
+    expect(screen.getByRole("radio", { name: /A4.*From \$105\.00 \+ GST/ })).toBeChecked();
     expect(screen.getByLabelText("Landscape")).toBeChecked();
     expect(screen.getByLabelText("People or pets in artwork")).toHaveValue("1");
     expect(screen.getByText("$105.00")).toBeInTheDocument();
     expect(screen.getByText("$15.75")).toBeInTheDocument();
     expect(screen.getByText("$120.75")).toBeInTheDocument();
+  });
+
+  it("presents every available size as a selectable card with its minimum price", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+      />,
+    );
+
+    const sizePicker = screen.getByRole("radiogroup", { name: "Size" });
+    expect(within(sizePicker).getAllByRole("radio")).toHaveLength(5);
+    expect(
+      within(sizePicker).getByRole("radio", {
+        name: /A0.*From \$320\.00 \+ GST/,
+      }),
+    ).not.toBeChecked();
+
+    fireEvent.click(
+      within(sizePicker).getByRole("radio", {
+        name: /A0.*From \$320\.00 \+ GST/,
+      }),
+    );
+
+    expect(
+      within(sizePicker).getByRole("radio", {
+        name: /A0.*From \$320\.00 \+ GST/,
+      }),
+    ).toBeChecked();
+    expect(
+      within(screen.getByRole("complementary", { name: "Order summary" }))
+        .getByText("A0 — 118.9 × 84.1 cm"),
+    ).toBeInTheDocument();
+  });
+
+  it("presents delivery as two radio choices and persists the selected option", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+        createId={() => "pickup-item"}
+      />,
+    );
+
+    const delivery = screen.getByRole("radiogroup", { name: "Delivery" });
+    expect(within(delivery).getAllByRole("radio")).toHaveLength(2);
+    expect(within(delivery).getByRole("radio", { name: "Post" })).toBeChecked();
+
+    fireEvent.click(within(delivery).getByRole("radio", { name: "Pickup" }));
+    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+
+    expect(within(delivery).getByRole("radio", { name: "Pickup" })).toBeChecked();
+    expect(JSON.parse(localStorage.getItem("rnr-cart-v1")!).items[0]).toMatchObject({
+      id: "pickup-item",
+      deliveryPreference: "pickup",
+    });
+  });
+
+  it("applies the latest explicit delivery choice to the whole cart", () => {
+    const first = render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+        createId={() => "first-item"}
+      />,
+    );
+    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+    first.unmount();
+
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+        createId={() => "second-item"}
+      />,
+    );
+    expect(screen.getByText("This choice applies to your whole order.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("radio", { name: "Pickup" }));
+    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+
+    const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
+    expect(stored.items).toHaveLength(2);
+    expect(stored.items.every((item: { deliveryPreference: string }) => item.deliveryPreference === "pickup")).toBe(true);
+  });
+
+  it("shows size-card starting prices in pure black at the existing text size", () => {
+    const css = readFileSync("src/components/storefront.module.css", "utf8");
+
+    expect(css).toMatch(
+      /\.sizeOptionBody\s*>\s*span\s*\{[\s\S]*?color:\s*#000;[\s\S]*?font-size:\s*0\.875rem;/,
+    );
+  });
+
+  it("uses the shared capsule hierarchy for file upload and the post-add cart action", () => {
+    const css = readFileSync("src/components/storefront.module.css", "utf8");
+
+    expect(css).toMatch(
+      /\.uploadButton\s*\{[\s\S]*?min-height:\s*48px;[\s\S]*?color:\s*var\(--gallery-green\);[\s\S]*?background:\s*transparent;[\s\S]*?border:\s*1px solid var\(--gallery-green\);[\s\S]*?border-radius:\s*var\(--radius-button\);/,
+    );
+    expect(css).toMatch(
+      /\.addedMessageAction\s*\{[\s\S]*?min-height:\s*48px;[\s\S]*?color:\s*#fff;[\s\S]*?background:\s*var\(--gallery-green\);[\s\S]*?border-radius:\s*var\(--radius-button\);/,
+    );
+  });
+
+  it("uses the server-supplied registry policy for preview prices", () => {
+    const pricing = structuredClone(defaultProductRegistry.pricing);
+    pricing.peoplePetsFeesExGstCents[0] = 4_500;
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        pricing={pricing}
+        orderDate="2026-08-03"
+      />,
+    );
+
+    expect(screen.getByText("$110.00")).toBeInTheDocument();
+    expect(screen.getByText("$16.50")).toBeInTheDocument();
+    expect(screen.getByText("$126.50")).toBeInTheDocument();
+  });
+
+  it("keeps a product preview beside the live order summary while configuring", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+      />,
+    );
+
+    const preview = screen.getByRole("region", { name: "Artwork preview" });
+    expect(within(preview).getByRole("img", { name: product.image.alt })).toBeVisible();
+    expect(
+      within(preview).getByText("Preview your selection as you personalise your order."),
+    ).toBeVisible();
+    expect(screen.getByRole("complementary", { name: "Order summary" })).toBeVisible();
+  });
+
+  it("flattens the sticky preview sidebar on mobile so it cannot cover the form", () => {
+    const css = readFileSync("src/components/storefront.module.css", "utf8");
+    const sidebarRule = css.lastIndexOf(".configuratorSidebar");
+    const mobileRulesStart = css.lastIndexOf("@media (max-width: 820px)", sidebarRule);
+    const mobileRulesEnd = css.indexOf("@media", sidebarRule);
+    const mobileRules = css.slice(mobileRulesStart, mobileRulesEnd);
+
+    expect(mobileRules).toMatch(
+      /\.configuratorSidebar\s*\{[\s\S]*?display:\s*contents;/,
+    );
+  });
+
+  it("uses the sticky sidebar's full height so Safari stops it before related designs", () => {
+    const css = readFileSync("src/components/storefront.module.css", "utf8");
+    const desktopSidebarRule = css.match(
+      /\.configuratorSidebar\s*\{([\s\S]*?)\}/,
+    )?.[1];
+
+    expect(desktopSidebarRule).toMatch(/position:\s*sticky;/);
+    expect(desktopSidebarRule).not.toMatch(/max-height:/);
+  });
+
+  it("contains the localized iOS date control inside its mobile field", () => {
+    const css = readFileSync("src/components/storefront.module.css", "utf8");
+
+    expect(css).toMatch(
+      /\.configuratorForm \.fieldGrid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/,
+    );
+    expect(css).toMatch(
+      /\.formField input\[type=["']date["']\]\s*\{[\s\S]*?display:\s*block;[\s\S]*?inline-size:\s*100%;[\s\S]*?min-inline-size:\s*0;[\s\S]*?max-inline-size:\s*100%;[\s\S]*?-webkit-appearance:\s*none;[\s\S]*?appearance:\s*none;/,
+    );
+  });
+
+  it("presents related designs as image-only links to the matching configurator", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+        relatedDesigns={[
+          {
+            id: "a".repeat(64),
+            title: "Memorial floral canvas",
+            altText: "Memorial floral canvas",
+            imageUrl: `/gallery-images/${"a".repeat(64)}?v=${"b".repeat(64)}`,
+            width: 1200,
+            height: 1600,
+            productSlug: "digital-oil-painting-canvas",
+          },
+        ]}
+      />,
+    );
+
+    expect(screen.getByRole("region", { name: "Related designs" })).toBeVisible();
+    expect(screen.getByText("Made by R&R")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Design inspiration" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Memorial floral canvas" })).toHaveAttribute(
+      "href",
+      `/products/digital-oil-painting-canvas/configure?design=${"a".repeat(64)}`,
+    );
+    expect(screen.getByRole("link", { name: "View all designs" })).toHaveAttribute(
+      "href",
+      "/design-gallery",
+    );
+    expect(screen.queryByRole("heading", { name: "Memorial floral canvas" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Configure with this design")).not.toBeInTheDocument();
+  });
+
+  it("updates the displayed size and order summary when orientation changes", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+      />,
+    );
+
+    expect(screen.getByText("Dimensions are always shown as width × height.")).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText("Portrait"));
+    expect(screen.getByRole("radio", {
+      name: /A4 — 21 × 29\.7 cm.*From \$105\.00 \+ GST/,
+    })).toBeChecked();
+    expect(within(screen.getByRole("complementary", { name: "Order summary" }))
+      .getByText("A4 — 21 × 29.7 cm")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Artwork preview" }))
+      .getByText("A4 — 21 × 29.7 cm")).toBeInTheDocument();
+  });
+
+  it("shows practical examples for artwork wording and notes", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+      />,
+    );
+
+    const designTextField = screen.getByLabelText("Text for your design");
+    const designNotesField = screen.getByLabelText("Design notes");
+
+    expect(designTextField).toHaveAttribute(
+      "placeholder",
+      "e.g. Top text: HAPPY 1ST BIRTHDAY\nBottom text: ETI JUNIOR COLLINS",
+    );
+    expect(designNotesField).toHaveAttribute(
+      "placeholder",
+      "e.g. Background: Orange and white Polynesian pattern design",
+    );
+    expect(designTextField).toHaveClass(styles.exampleTextarea);
+    expect(designNotesField).toHaveClass(styles.exampleTextarea);
+  });
+
+  it("skips artwork direction for Photo Print Canvas", () => {
+    const photoPrintCanvas = getProductBySlug("photo-print-canvas")!;
+    const photoPrintSchema = getConfigurationSchema(photoPrintCanvas.key)!;
+    render(
+      <ProductConfigurator
+        product={photoPrintCanvas}
+        schema={photoPrintSchema}
+        orderDate="2026-08-03"
+      />,
+    );
+
+    expect(screen.queryByRole("heading", { name: "Artwork direction" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Text for your design")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Design notes")).not.toBeInTheDocument();
+
+    const timingStep = screen.getByRole("heading", { name: "Timing and delivery" })
+      .closest("section");
+    expect(timingStep).not.toBeNull();
+    expect(within(timingStep!).getByText("03")).toBeInTheDocument();
+  });
+
+  it("does not render an empty format selector for a one-size product", () => {
+    const rollUp = getProductBySlug("roll-up-banner")!;
+    const rollUpSchema = getConfigurationSchema(rollUp.key)!;
+    render(
+      <ProductConfigurator
+        product={rollUp}
+        schema={rollUpSchema}
+        orderDate="2026-08-03"
+      />,
+    );
+
+    expect(screen.queryByRole("radiogroup", { name: "Size" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Choose the format" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Upload original photos" })).toBeInTheDocument();
+  });
+
+  it("shows Grave Cover as one 100 × 200 cm format without orientation", () => {
+    const graveCover = getProductBySlug("grave-cover")!;
+    const graveCoverSchema = getConfigurationSchema(graveCover.key)!;
+    render(
+      <ProductConfigurator
+        product={graveCover}
+        schema={graveCoverSchema}
+        orderDate="2026-08-03"
+        createId={() => "grave-cover-item"}
+      />,
+    );
+
+    expect(screen.queryByRole("radiogroup", { name: "Size" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Orientation")).not.toBeInTheDocument();
+    expect(screen.queryByText("Portrait")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Artwork preview" }))
+      .getByText("100 × 200 cm")).toBeInTheDocument();
+    expect(within(screen.getByRole("complementary", { name: "Order summary" }))
+      .getByText("100 × 200 cm")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+    const storedItem = JSON.parse(localStorage.getItem("rnr-cart-v1")!).items[0];
+    expect(storedItem).toMatchObject({
+      productKey: "grave-cover",
+      sizeKey: "standard",
+      sizeLabel: "100 × 200 cm",
+    });
+    expect(storedItem).not.toHaveProperty("orientation");
   });
 
   it("updates the quote and persists the configured item", () => {
@@ -44,7 +371,9 @@ describe("ProductConfigurator", () => {
     expect(screen.getByText("$18.75")).toBeInTheDocument();
     expect(screen.getByText("$143.75")).toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Needed by"), {
+    const completionDate = screen.getByLabelText("Production completion date");
+    expect(completionDate.closest("div")).toHaveClass(styles.timingFields);
+    fireEvent.change(completionDate, {
       target: { value: "2026-08-20" },
     });
     fireEvent.click(screen.getByText("Send after ordering"));
@@ -64,6 +393,26 @@ describe("ProductConfigurator", () => {
       "href",
       "/cart",
     );
+    expect(screen.getByRole("link", { name: "View cart" })).toHaveAttribute(
+      "class",
+      expect.stringContaining("addedMessageAction"),
+    );
+  });
+
+  it("caps the people or pets control at the server maximum", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+      />,
+    );
+
+    const increase = screen.getByRole("button", { name: "Increase people or pets" });
+    for (let click = 0; click < 25; click += 1) fireEvent.click(increase);
+
+    expect(screen.getByLabelText("People or pets in artwork")).toHaveValue("20");
+    expect(increase).toBeDisabled();
   });
 
   it("uploads source files privately and stores only their references", async () => {
@@ -90,14 +439,93 @@ describe("ProductConfigurator", () => {
       />,
     );
 
-    fireEvent.change(screen.getByLabelText("Choose source photos"), {
+    fireEvent.change(screen.getByLabelText("Choose files"), {
       target: { files: [new File([new Uint8Array([1, 2, 3])], "source.jpg", { type: "image/jpeg" })] },
     });
 
-    expect(await screen.findByText("source.jpg")).toBeInTheDocument();
+    expect(await screen.findByText("Photo 1")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
     const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
     expect(stored.items[0].uploadReferences).toEqual(["private-reference"]);
+  });
+
+  it("separates the compact remove icon from its accessible upload-preview hit area", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          reference: {
+            id: "private-reference",
+            originalName: "source.jpg",
+            mimeType: "image/jpeg",
+            size: 3,
+          },
+        }),
+      }),
+    );
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Choose files"), {
+      target: { files: [new File([new Uint8Array([1, 2, 3])], "source.jpg", { type: "image/jpeg" })] },
+    });
+
+    const remove = await screen.findByRole("button", { name: "Remove Photo 1" });
+    expect(remove).toHaveClass(styles.uploadPreviewRemove);
+    const icon = within(remove).getByText("×");
+    expect(icon).toHaveClass(styles.uploadPreviewRemoveIcon);
+    expect(icon).toHaveAttribute("aria-hidden", "true");
+  });
+
+  it("shows the server rejection beside the upload control", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      json: async () => ({ error: "The image contents do not match the selected file type." }),
+    }));
+    render(<ProductConfigurator product={product} schema={schema} orderDate="2026-08-03" />);
+
+    fireEvent.change(screen.getByLabelText("Choose files"), {
+      target: { files: [new File(["not-an-image"], "fake.jpg", { type: "image/jpeg" })] },
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The image contents do not match the selected file type.",
+    );
+  });
+
+  it("manages a Roll-Up main photo and paid extra background removal", async () => {
+    const rollUp = getProductBySlug("roll-up-banner")!;
+    const rollUpSchema = getConfigurationSchema(rollUp.key)!;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ reference: { id: "photo-one", originalName: "one.jpg" } }) })
+        .mockResolvedValueOnce({ ok: true, json: async () => ({ reference: { id: "photo-two", originalName: "two.jpg" } }) }),
+    );
+    render(<ProductConfigurator product={rollUp} schema={rollUpSchema} orderDate="2026-08-03" />);
+
+    fireEvent.change(screen.getByLabelText("Choose files"), {
+      target: { files: [
+        new File([new Uint8Array([1])], "one.jpg", { type: "image/jpeg" }),
+        new File([new Uint8Array([2])], "two.jpg", { type: "image/jpeg" }),
+      ] },
+    });
+
+    expect((await screen.findAllByText("Main photo"))[0]).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /remove background/i }));
+    expect(screen.getByRole("button", { name: /background removal/i })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByText("1 × $20.00 incl GST")).toBeInTheDocument();
+    expect(screen.getByText("$284.50")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Set as main" }));
+    expect(screen.getAllByText("Main photo")).toHaveLength(2);
+    expect(screen.getByText("Extra background removals").nextElementSibling).toHaveTextContent("0");
   });
 
   it("adds the GST-inclusive fourth-day fee only after confirmation", () => {
@@ -110,11 +538,25 @@ describe("ProductConfigurator", () => {
       />,
     );
     fireEvent.click(screen.getByText("Send after ordering"));
-    fireEvent.change(screen.getByLabelText("Needed by"), {
+    fireEvent.change(screen.getByLabelText("Production completion date"), {
       target: { value: "2026-08-07" },
     });
 
     const orderSummary = screen.getByRole("complementary", { name: "Order summary" });
+    const completionDateField = screen
+      .getByLabelText("Production completion date")
+      .closest("label");
+    const urgentConfirmation = screen
+      .getByLabelText("Confirm urgent service")
+      .closest("label");
+    const delivery = screen.getByRole("radiogroup", { name: "Delivery" });
+
+    expect(completionDateField?.nextElementSibling).toBe(urgentConfirmation);
+    expect(urgentConfirmation?.nextElementSibling).toBe(delivery);
+    const css = readFileSync("src/components/storefront.module.css", "utf8");
+    expect(css).toMatch(
+      /\.timingFields \.urgentConfirmation\s*\{[\s\S]*?margin-top:\s*0;/,
+    );
     expect(screen.getAllByText("$50.00 incl GST")).toHaveLength(1);
     expect(within(orderSummary).queryByText("$50.00 incl GST")).not.toBeInTheDocument();
     expect(within(orderSummary).getByText("$120.75")).toBeInTheDocument();
@@ -133,7 +575,7 @@ describe("ProductConfigurator", () => {
     });
   });
 
-  it("shows and can remove a selected design inspiration", () => {
+  it("uses the selected design in the product preview without adding a second panel", () => {
     const designId = "a".repeat(64);
     render(
       <ProductConfigurator
@@ -153,12 +595,20 @@ describe("ProductConfigurator", () => {
       />,
     );
 
-    expect(screen.getByRole("heading", { name: "Selected design inspiration" }))
+    const preview = screen.getByRole("region", { name: "Artwork preview" });
+    expect(within(preview).getByRole("img", { name: "Memorial floral canvas" }))
       .toBeInTheDocument();
-    expect(screen.getByRole("img", { name: "Memorial floral canvas" }))
-      .toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Remove selected design" }));
-    expect(screen.queryByRole("img", { name: "Memorial floral canvas" }))
+    expect(within(preview).getByRole("button", { name: "View full image" })).toBeInTheDocument();
+    fireEvent.click(within(preview).getByRole("button", { name: "View full image" }));
+    const dialog = screen.getByRole("dialog", { name: "Artwork full image" });
+    const close = within(dialog).getByRole("button", { name: "Close image preview" });
+    expect(close).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(close).toHaveFocus();
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Artwork full image" })).not.toBeInTheDocument();
+    expect(within(preview).getByRole("button", { name: "View full image" })).toHaveFocus();
+    expect(screen.queryByRole("heading", { name: "Selected design inspiration" }))
       .not.toBeInTheDocument();
   });
 

@@ -12,7 +12,7 @@ describe("AdminGalleryForm", () => {
     render(<AdminGalleryForm />);
     fireEvent.change(screen.getByLabelText("Alt text"), { target: { value: "Memorial canvas" } });
     fireEvent.change(screen.getByLabelText("Image"), { target: { files: [new File([new Uint8Array([1])], "art.jpg", { type: "image/jpeg" })] } });
-    fireEvent.click(screen.getByRole("button", { name: "Add design" }));
+    fireEvent.submit(screen.getByRole("button", { name: "Add design" }).closest("form")!);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/admin/design-gallery", expect.objectContaining({ method: "POST" })));
     expect(push).toHaveBeenCalledWith("/admin/design-gallery");
   });

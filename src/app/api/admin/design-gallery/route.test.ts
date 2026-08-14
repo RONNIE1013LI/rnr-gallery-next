@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { HttpError } from "@/server/auth/require-session";
-import { createAdminGalleryCollectionRoute } from "./route";
+import { createAdminGalleryCollectionRoute } from "./route-handler";
 
 describe("admin gallery collection route", () => {
   it("returns 401/403 before reading gallery data", async () => {

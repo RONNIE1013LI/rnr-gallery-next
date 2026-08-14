@@ -35,8 +35,33 @@ describe("R&R catalogue", () => {
     }
   });
 
+  it("uses a distinct prepared shop image for every product", () => {
+    expect(
+      Object.fromEntries(products.map((product) => [product.key, product.image.src])),
+    ).toEqual({
+      "photo-print-canvas": "/media/products/photo-print-canvas-shop.webp",
+      "digital-oil-painting-canvas": "/media/products/digital-oil-painting-canvas-shop.webp",
+      "custom-themed-canvas": "/media/products/custom-themed-canvas-shop.webp",
+      "roll-up-banner": "/media/products/roll-up-banner-shop.webp",
+      "custom-themed-wall-banner": "/media/products/wall-hanging-banner-shop.webp",
+      "digital-oil-painting-banner": "/media/products/digital-oil-painting-banner-shop.webp",
+      "grave-cover": "/media/products/grave-cover-shop.webp",
+    });
+
+    expect(new Set(products.map((product) => product.image.src))).toHaveLength(7);
+  });
+
   it("groups three canvas and four banner products", () => {
     expect(getProductsByCategory("canvas")).toHaveLength(3);
     expect(getProductsByCategory("banners")).toHaveLength(4);
+  });
+
+  it("states the finished dimensions in every single-size product summary", () => {
+    expect(getProductBySlug("roll-up-banner")?.summary).toBe(
+      "Our roll-up banner includes custom design, an 85 × 200 cm printed banner, stand, carry bag, pegs and box.",
+    );
+    expect(getProductBySlug("grave-cover")?.summary).toContain(
+      "100 cm × 200 cm",
+    );
   });
 });

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import type { CheckoutStateRepository } from "@/server/checkout/checkout-repository";
-import { createCheckoutPaymentMethodsRoute } from "./route";
+import { createCheckoutPaymentMethodsRoute } from "./route-handler";
 
 const origin = "https://shop.example.test";
 const token = "a".repeat(43);

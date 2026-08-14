@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { PaymentServiceError } from "@/server/payments/payment-service";
-import { createPaymentReturnRoute } from "./route";
+import { createPaymentReturnRoute } from "./route-handler";
 
 const trustedOrigin = "https://shop.example.test";
 const orderNumber = "RNR-2026-PAY1001";
@@ -50,6 +50,33 @@ describe("GET /api/payments/returns/[provider]", () => {
       providerReference,
       returnUrl: new URL(incoming.url),
     });
+  });
+
+  it("accepts a trusted public host when the framework exposes its internal bind origin", async () => {
+    const { route, handleReturn } = handler();
+    const providerReference = "local-test.v1.card.00000000-0000-4000-8000-000000000001.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    const internal = request("local-test", {
+      ...common,
+      method: "card",
+      provider: "local-test",
+      providerReference,
+    }, "http://0.0.0.0:3000");
+    const incoming = new Request(internal, {
+      headers: {
+        Host: "shop.example.test",
+        "X-Forwarded-Proto": "https",
+      },
+    });
+
+    const response = await route(incoming, {
+      params: Promise.resolve({ provider: "local-test" }),
+    });
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location")).toBe(`${trustedOrigin}/orders/${orderNumber}`);
+    expect(handleReturn).toHaveBeenCalledWith(expect.objectContaining({
+      returnUrl: new URL(new URL(internal.url).pathname + new URL(internal.url).search, trustedOrigin),
+    }));
   });
 
   it.each([

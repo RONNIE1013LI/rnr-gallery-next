@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createPaymentReconciliationRoute,
   timingSafeSecretEqual,
-} from "./route";
+} from "./route-handler";
 
 const url = "https://shop.example.test/api/internal/payments/reconcile";
 const summary = {

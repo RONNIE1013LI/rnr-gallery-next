@@ -11,11 +11,11 @@ import {
   createCheckoutSessionToken,
   hashCheckoutSessionToken,
 } from "@/server/checkout/session-cookie";
-import { checkoutSessions, orders } from "@/server/db/schema";
+import { checkoutSessions, orders, productionJobs } from "@/server/db/schema";
 import { createDrizzleOrderRepository } from "@/server/orders/drizzle-order-repository";
 import { createOrderService } from "@/server/orders/order-service";
 import { createShippingService } from "@/server/shipping/shipping-service";
-import { createCheckoutOrderRoute } from "./route";
+import { createCheckoutOrderRoute } from "./route-handler";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required");
@@ -44,6 +44,13 @@ function request(token: string, body: unknown) {
 describe("POST /api/checkout/order recovery", () => {
   afterAll(async () => {
     for (const sessionId of sessionIds) {
+      const createdOrders = await database
+        .select({ id: orders.id })
+        .from(orders)
+        .where(eq(orders.checkoutSessionId, sessionId));
+      for (const order of createdOrders) {
+        await database.delete(productionJobs).where(eq(productionJobs.orderId, order.id));
+      }
       await database.delete(orders).where(eq(orders.checkoutSessionId, sessionId));
       await database.delete(checkoutSessions).where(eq(checkoutSessions.id, sessionId));
     }

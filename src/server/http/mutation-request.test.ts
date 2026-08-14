@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   assertTrustedMutationRequest,
   MutationRequestError,
+  parseBoundedJson,
 } from "./mutation-request";
 
 const trustedOrigin = "https://shop.example.test";
@@ -11,21 +12,26 @@ function mutationRequest({
   body = "{}",
   contentType = "application/json",
   fetchSite = "same-origin",
+  host,
   method = "POST",
   origin = trustedOrigin,
+  requestOrigin = trustedOrigin,
 }: {
   body?: string | null;
   contentType?: string | null;
   fetchSite?: string | null;
+  host?: string;
   method?: "POST" | "PUT" | "DELETE";
   origin?: string | null;
+  requestOrigin?: string;
 } = {}) {
   const headers = new Headers();
   if (contentType) headers.set("Content-Type", contentType);
   if (fetchSite) headers.set("Sec-Fetch-Site", fetchSite);
+  if (host) headers.set("Host", host);
   if (origin) headers.set("Origin", origin);
 
-  return new Request(`${trustedOrigin}/api/account/addresses`, {
+  return new Request(`${requestOrigin}/api/account/addresses`, {
     body: body ?? undefined,
     headers,
     method,
@@ -43,6 +49,34 @@ describe("assertTrustedMutationRequest", () => {
         trustedOrigin,
       ),
     ).not.toThrow();
+  });
+
+  it("accepts localhost as a same-origin alternative to a configured LAN origin", () => {
+    const localhost = "http://localhost:3000";
+
+    expect(() =>
+      assertTrustedMutationRequest(
+        mutationRequest({
+          host: "localhost:3000",
+          origin: localhost,
+          requestOrigin: "http://0.0.0.0:3000",
+        }),
+        "http://192.168.4.199:3000",
+      ),
+    ).not.toThrow();
+  });
+
+  it("rejects a local alternative when Origin and Host do not match", () => {
+    expect(() =>
+      assertTrustedMutationRequest(
+        mutationRequest({
+          host: "192.168.4.199:3000",
+          origin: "http://localhost:3000",
+          requestOrigin: "http://0.0.0.0:3000",
+        }),
+        "http://192.168.4.199:3000",
+      ),
+    ).toThrowError(MutationRequestError);
   });
 
   it.each([
@@ -76,5 +110,30 @@ describe("assertTrustedMutationRequest", () => {
       expect(error).toBeInstanceOf(MutationRequestError);
       expect(error).toMatchObject({ status, code });
     }
+  });
+
+  it("stops reading a chunked JSON body after the configured limit", async () => {
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('{"value":"'));
+        controller.enqueue(new TextEncoder().encode('too large"}'));
+        controller.close();
+      },
+    });
+    const request = new Request(`${trustedOrigin}/api/checkout/session`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: trustedOrigin,
+        "Sec-Fetch-Site": "same-origin",
+      },
+      body,
+      duplex: "half",
+    } as RequestInit & { duplex: "half" });
+
+    await expect(parseBoundedJson(request, 12)).rejects.toMatchObject({
+      status: 413,
+      code: "PAYLOAD_TOO_LARGE",
+    });
   });
 });

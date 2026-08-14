@@ -28,6 +28,8 @@ export type CartItem = Readonly<{
   quantity: number;
   price: PriceBreakdown;
   uploadReferences: readonly string[];
+  mainPhotoUploadId?: string;
+  extraBackgroundRemovalUploadIds?: readonly string[];
 }>;
 
 export type Cart = Readonly<{

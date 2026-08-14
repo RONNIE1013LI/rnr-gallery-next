@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createGalleryImageHandler } from "./route";
+import { createGalleryImageHandler } from "@/server/gallery/gallery-image-handler";
 
 const designId = "a".repeat(64);
 const metadata = {

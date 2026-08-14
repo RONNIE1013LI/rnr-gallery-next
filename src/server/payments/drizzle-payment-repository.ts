@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import {
   and,
   asc,
+  desc,
   eq,
   inArray,
   isNotNull,
@@ -15,6 +16,7 @@ import type { getDatabase } from "@/server/db/client";
 import {
   checkoutSessions,
   orderAddresses,
+  orderNotificationOutbox,
   orders,
   paymentAttempts,
   webhookEvents,
@@ -253,7 +255,7 @@ async function applyLockedVerifiedResult(
   );
   assertVerifiedResult(order, attempt, input.result);
 
-  if (order.paymentStatus === "paid" || order.paymentStatus === "refunded") {
+  if (order.paymentStatus === "refunded") {
     const addresses = await loadAddresses(transaction, order.id);
     return Object.freeze({
       attempt: attemptRecord(attempt),
@@ -265,8 +267,17 @@ async function applyLockedVerifiedResult(
     input.source,
     input.result.status,
   );
+  if (order.paymentStatus === "paid" && incoming !== "refunded") {
+    const addresses = await loadAddresses(transaction, order.id);
+    return Object.freeze({
+      attempt: attemptRecord(attempt),
+      order: paymentOrder(order, addresses),
+    });
+  }
   const orderStatus = nextOrderPaymentStatus(order.paymentStatus, incoming);
-  const attemptStatus = attempt.status === "paid" ? "paid" : incoming;
+  const attemptStatus = incoming === "refunded" || attempt.status === "paid"
+    ? "paid"
+    : incoming;
   const now = await databaseNow(transaction);
 
   const [updatedAttempt] = await transaction
@@ -285,6 +296,27 @@ async function applyLockedVerifiedResult(
     .set({ paymentStatus: orderStatus, updatedAt: now })
     .where(eq(orders.id, order.id))
     .returning();
+  if (orderStatus === "paid") {
+    await transaction.insert(orderNotificationOutbox).values({
+      eventKey: `payment-confirmed:${order.id}`,
+      kind: "payment_confirmed",
+      orderId: order.id,
+      recipientEmail: order.customerEmail,
+      availableAt: now,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });
+  } else if (orderStatus === "failed") {
+    await transaction.insert(orderNotificationOutbox).values({
+      eventKey: `payment-failed:${attempt.id}`,
+      kind: "payment_failed",
+      orderId: order.id,
+      recipientEmail: order.customerEmail,
+      availableAt: now,
+      createdAt: now,
+      updatedAt: now,
+    }).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });
+  }
   const addresses = await loadAddresses(transaction, order.id);
   return Object.freeze({
     attempt: attemptRecord(updatedAttempt),
@@ -348,8 +380,47 @@ export function createDrizzlePaymentRepository(
     }
   }
 
+  async function findCurrentPayment(
+    access: PaymentOrderAccess,
+  ): Promise<PaymentAttemptWithOrder | null> {
+    const ownership = access.kind === "guest"
+      ? and(
+          eq(orders.orderNumber, access.orderNumber),
+          isNull(orders.customerId),
+          eq(checkoutSessions.tokenDigest, access.tokenDigest),
+          isNotNull(checkoutSessions.completedAt),
+          sql`${checkoutSessions.expiresAt} > clock_timestamp()`,
+        )
+      : and(
+          eq(orders.orderNumber, access.orderNumber),
+          eq(orders.customerId, access.customerId),
+        );
+    const [row] = await database
+      .select({ order: orders, attempt: paymentAttempts })
+      .from(orders)
+      .innerJoin(
+        checkoutSessions,
+        eq(checkoutSessions.id, orders.checkoutSessionId),
+      )
+      .innerJoin(paymentAttempts, eq(paymentAttempts.orderId, orders.id))
+      .where(ownership)
+      .orderBy(desc(paymentAttempts.createdAt))
+      .limit(1);
+    if (!row) return null;
+    try {
+      const addresses = await loadAddresses(database, row.order.id);
+      return Object.freeze({
+        attempt: attemptRecord(row.attempt),
+        order: paymentOrder(row.order, addresses),
+      });
+    } catch {
+      return null;
+    }
+  }
+
   return {
     findPayableOrder,
+    findCurrentPayment,
 
     async createOrClaimNonterminalAttempt(
       input: CreatePaymentAttemptInput,

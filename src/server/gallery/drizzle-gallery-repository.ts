@@ -1,7 +1,9 @@
 import { isDeepStrictEqual } from "node:util";
-import { and, asc, desc, eq, max, sql } from "drizzle-orm";
+import { randomUUID } from "node:crypto";
+import { and, asc, desc, eq, inArray, max, or, sql, type SQL } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
-import { galleryDesignRevisions, galleryDesigns } from "@/server/db/schema";
+import { adminAuditLogs, galleryDesignRevisions, galleryDesigns, user } from "@/server/db/schema";
+import { buildAuditRecord } from "@/server/admin/audit-service";
 import type { GalleryDesignRevisionSnapshot, GalleryDesignStatus } from "@/server/db/schema/gallery";
 import type {
   AdminGalleryRepository,
@@ -59,6 +61,53 @@ async function revise(
   });
 }
 
+function auditSummary(row: Partial<GalleryImportRow> & { status?: GalleryDesignStatus }) {
+  return Object.freeze({
+    ...(row.productTypeSlug ? { productTypeSlug: row.productTypeSlug } : {}),
+    ...(row.occasionSlug ? { occasionSlug: row.occasionSlug } : {}),
+    ...(row.subOccasion !== undefined ? { subOccasion: row.subOccasion } : {}),
+    ...(row.themeSlugs ? { themeSlugs: row.themeSlugs } : {}),
+    ...(row.altText ? { altText: row.altText } : {}),
+    ...(row.productSlug ? { productSlug: row.productSlug } : {}),
+    ...(row.width ? { width: row.width } : {}),
+    ...(row.height ? { height: row.height } : {}),
+    ...(row.mimeType ? { mimeType: row.mimeType } : {}),
+    ...(row.status ? { status: row.status } : {}),
+  });
+}
+
+async function actorEmail(
+  executor: Parameters<Parameters<Database["transaction"]>[0]>[0],
+  actorUserId: string,
+) {
+  const [actor] = await executor.select({ email: user.email }).from(user)
+    .where(eq(user.id, actorUserId)).limit(1);
+  return actor?.email ?? "unknown@invalid.local";
+}
+
+async function auditGalleryMutation(
+  executor: Parameters<Parameters<Database["transaction"]>[0]>[0],
+  input: Readonly<{
+    actorUserId: string;
+    action: string;
+    designId: string;
+    beforeSummary?: Record<string, unknown>;
+    afterSummary?: Record<string, unknown>;
+  }>,
+) {
+  await executor.insert(adminAuditLogs).values(buildAuditRecord({
+    actorUserId: input.actorUserId,
+    actorEmail: await actorEmail(executor, input.actorUserId),
+    action: input.action,
+    resourceType: "gallery_design",
+    resourceId: input.designId,
+    ...(input.beforeSummary ? { beforeSummary: input.beforeSummary } : {}),
+    ...(input.afterSummary ? { afterSummary: input.afterSummary } : {}),
+    result: "success",
+    idempotencyKey: randomUUID(),
+  }));
+}
+
 export function createDrizzleGalleryRepository(
   database: Database,
 ): GalleryRepository & AdminGalleryRepository {
@@ -105,6 +154,45 @@ export function createDrizzleGalleryRepository(
         createdAt: row.createdAt,
       })));
     },
+    async listActivePage(query, pageSize) {
+      const conditions: SQL[] = [eq(galleryDesigns.status, "active")];
+      if (query.productTypes.length > 0) {
+        conditions.push(inArray(galleryDesigns.productTypeSlug, query.productTypes));
+      }
+      if (query.occasions.length > 0) {
+        conditions.push(inArray(galleryDesigns.occasionSlug, query.occasions));
+      }
+      if (query.birthdayAges.length > 0) {
+        conditions.push(inArray(galleryDesigns.subOccasion, query.birthdayAges));
+      }
+      if (query.themes.length > 0) {
+        const themeCondition = or(...query.themes.map((theme) =>
+          sql`${galleryDesigns.themeSlugs} @> ${JSON.stringify([theme])}::jsonb`,
+        ));
+        if (themeCondition) conditions.push(themeCondition);
+      }
+      const where = and(...conditions);
+      const [countRow] = await database.select({ value: sql<number>`count(*)::int` })
+        .from(galleryDesigns)
+        .where(where);
+      const total = countRow?.value ?? 0;
+      const pageCount = Math.max(1, Math.ceil(total / pageSize));
+      const page = Math.min(query.page, pageCount);
+      const rows = await database.select().from(galleryDesigns)
+        .where(where)
+        .orderBy(desc(galleryDesigns.createdAt), asc(galleryDesigns.id))
+        .limit(pageSize)
+        .offset((page - 1) * pageSize);
+      return Object.freeze({
+        items: Object.freeze(rows.map((row) => Object.freeze({
+          ...comparable(row),
+          createdAt: row.createdAt,
+        }))),
+        total,
+        page,
+        pageCount,
+      });
+    },
     async findActiveImage(designId) {
       const [row] = await database
         .select({
@@ -142,9 +230,17 @@ export function createDrizzleGalleryRepository(
         status: row.status, trashedAt: row.trashedAt,
       })));
     },
-    async createDesign(row) {
-      await database.insert(galleryDesigns).values({
-        ...row, status: "active", trashedAt: null,
+    async createDesign(row, actorUserId) {
+      await database.transaction(async (transaction) => {
+        await transaction.insert(galleryDesigns).values({
+          ...row, status: "active", trashedAt: null,
+        });
+        await auditGalleryMutation(transaction, {
+          actorUserId,
+          action: "gallery_design.created",
+          designId: row.id,
+          afterSummary: auditSummary({ ...row, status: "active" }),
+        });
       });
     },
     async updateDesign(designId, update, actorUserId) {
@@ -156,6 +252,15 @@ export function createDrizzleGalleryRepository(
         const [updated] = await transaction.update(galleryDesigns)
           .set({ ...update, updatedAt: new Date() })
           .where(eq(galleryDesigns.id, designId)).returning({ id: galleryDesigns.id });
+        if (updated) {
+          await auditGalleryMutation(transaction, {
+            actorUserId,
+            action: "gallery_design.updated",
+            designId,
+            beforeSummary: auditSummary({ ...comparable(current), status: current.status }),
+            afterSummary: auditSummary({ ...comparable(current), ...update, status: current.status }),
+          });
+        }
         return Boolean(updated);
       });
     },
@@ -173,6 +278,15 @@ export function createDrizzleGalleryRepository(
           updatedAt: new Date(),
         }).where(and(eq(galleryDesigns.id, designId), eq(galleryDesigns.status, current.status)))
           .returning({ id: galleryDesigns.id });
+        if (updated) {
+          await auditGalleryMutation(transaction, {
+            actorUserId,
+            action: status === "trashed" ? "gallery_design.trashed" : "gallery_design.restored",
+            designId,
+            beforeSummary: auditSummary({ ...comparable(current), status: current.status }),
+            afterSummary: auditSummary({ ...comparable(current), status: nextStatus }),
+          });
+        }
         return Boolean(updated);
       });
     },

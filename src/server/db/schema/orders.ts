@@ -34,8 +34,22 @@ export type OrderPaymentStatus =
   | "cancelled"
   | "refunded";
 
-export type OrderFulfilmentStatus = "new";
+export type OrderFulfilmentStatus =
+  | "new"
+  | "designing"
+  | "awaiting_customer"
+  | "ready_to_print"
+  | "printing"
+  | "on_hold"
+  | "shipped"
+  | "completed"
+  | "cancelled";
 export type OrderAddressKind = "billing" | "delivery";
+export type OrderNotificationKind =
+  | "payment_confirmed"
+  | "payment_failed"
+  | "order_shipped";
+export type OrderNotificationStatus = "pending" | "sending" | "sent" | "failed";
 
 export const orders = pgTable(
   "orders",
@@ -85,6 +99,12 @@ export const orders = pgTable(
       .$type<OrderFulfilmentStatus>()
       .default("new")
       .notNull(),
+    trackingNumber: text("tracking_number"),
+    trackingCarrier: text("tracking_carrier"),
+    trackingUrl: text("tracking_url"),
+    shippedAt: timestamp("shipped_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -145,6 +165,14 @@ export const orders = pgTable(
       sql`${table.totalInclGstCents} = ${table.totalExGstCents} + ${table.totalGstCents}`,
     ),
     check("orders_currency_nzd", sql`${table.currency} = 'NZD'`),
+    check(
+      "orders_fulfilment_status_valid",
+      sql`${table.fulfilmentStatus} in ('new', 'designing', 'awaiting_customer', 'ready_to_print', 'printing', 'on_hold', 'shipped', 'completed', 'cancelled')`,
+    ),
+    check(
+      "orders_tracking_pair_valid",
+      sql`(${table.trackingNumber} is null and ${table.trackingCarrier} is null and ${table.trackingUrl} is null) or (${table.trackingNumber} is not null and ${table.trackingCarrier} is not null)`,
+    ),
     check(
       "orders_shipping_selection_valid",
       sql`(
@@ -304,5 +332,51 @@ export const orderAddresses = pgTable(
     uniqueIndex("order_addresses_order_kind_unique").on(table.orderId, table.kind),
     check("order_addresses_kind_valid", sql`${table.kind} IN ('billing', 'delivery')`),
     check("order_addresses_country_valid", sql`${table.country} IN ('NZ', 'AU')`),
+  ],
+);
+
+export const orderNotificationOutbox = pgTable(
+  "order_notification_outbox",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    eventKey: text("event_key").notNull(),
+    kind: text("kind").$type<OrderNotificationKind>().notNull(),
+    orderId: uuid("order_id")
+      .notNull()
+      .references(() => orders.id, { onDelete: "cascade" }),
+    recipientEmail: text("recipient_email").notNull(),
+    status: text("status")
+      .$type<OrderNotificationStatus>()
+      .default("pending")
+      .notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    availableAt: timestamp("available_at", { withTimezone: true }).defaultNow().notNull(),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    providerMessageId: text("provider_message_id"),
+    lastErrorCode: text("last_error_code"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("order_notification_outbox_event_key_unique").on(table.eventKey),
+    index("order_notification_outbox_status_available_idx").on(table.status, table.availableAt),
+    index("order_notification_outbox_order_id_idx").on(table.orderId),
+    check(
+      "order_notification_outbox_kind_valid",
+      sql`${table.kind} in ('payment_confirmed', 'payment_failed', 'order_shipped')`,
+    ),
+    check(
+      "order_notification_outbox_status_valid",
+      sql`${table.status} in ('pending', 'sending', 'sent', 'failed')`,
+    ),
+    check("order_notification_outbox_attempts_nonnegative", sql`${table.attempts} >= 0`),
+    check(
+      "order_notification_outbox_recipient_present",
+      sql`length(trim(${table.recipientEmail})) > 0`,
+    ),
   ],
 );

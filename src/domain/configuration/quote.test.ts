@@ -76,4 +76,26 @@ describe("configuration quotes", () => {
       totalInclGstCents: 17_075,
     });
   });
+
+  it("derives Roll-Up extras from uploaded photo selections", () => {
+    const schema = getConfigurationSchema("roll-up-banner")!;
+    const quote = quoteConfiguration(schema, {
+      sizeKey: "standard",
+      peoplePets: 0,
+      sourcePhotoCount: 7,
+      extraBackgroundRemovalCount: 1,
+    });
+
+    expect(quote.lines).toEqual([
+      { key: "product-size", label: "Product / size price", amountExGstCents: 23_000 },
+      { key: "extra-photos", label: "Extra photos", amountExGstCents: 1_000 },
+      {
+        key: "extra-background-removals",
+        label: "Extra background removals",
+        amountExGstCents: 1_739,
+        amountInclGstCents: 2_000,
+      },
+    ]);
+    expect(quote.totalInclGstCents).toBe(29_600);
+  });
 });

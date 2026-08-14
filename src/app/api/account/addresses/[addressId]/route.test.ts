@@ -4,7 +4,7 @@ import type {
   AddressRepository,
   SavedAddress,
 } from "@/server/addresses/address-repository";
-import { createAddressItemHandlers } from "./route";
+import { createAddressItemHandlers } from "./route-handler";
 
 const ownerId = "owner-a";
 const foreignOwnerId = "owner-b";

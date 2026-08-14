@@ -9,6 +9,8 @@ export default defineConfig({
   test: {
     css: { include: /storefront\.module\.css$/ },
     environment: "jsdom",
+    fileParallelism: !process.env.TEST_DATABASE_URL,
     setupFiles: ["./vitest.setup.ts"],
+    testTimeout: process.env.TEST_DATABASE_URL ? 15_000 : 5_000,
   },
 });

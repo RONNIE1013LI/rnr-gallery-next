@@ -6,7 +6,7 @@ import {
 } from "@/server/orders/order-service";
 import { hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import { ShippingUnavailableError } from "@/server/shipping/shipping-service";
-import { createCheckoutOrderRoute } from "./route";
+import { createCheckoutOrderRoute } from "./route-handler";
 
 const origin = "https://shop.example.test";
 const token = "a".repeat(43);

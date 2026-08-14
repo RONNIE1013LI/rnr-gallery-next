@@ -1,37 +1,53 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Product } from "@/domain/catalogue/types";
-import { formatNzd } from "@/domain/money";
 import styles from "./storefront.module.css";
 
 type ProductStoryProps = Readonly<{
   product: Product;
-  eyebrow: string;
   ctaLabel: string;
+  ctaHref?: string;
+  copy?: Readonly<{
+    title: string;
+    summary: string;
+    features: readonly string[];
+  }>;
   mediaFirst?: boolean;
 }>;
 
 export function ProductStory({
   product,
-  eyebrow,
   ctaLabel,
+  ctaHref,
+  copy,
   mediaFirst = false,
 }: ProductStoryProps) {
+  const storyCopy =
+    copy ??
+    ({
+      title: product.title,
+      summary: product.summary,
+      features: [
+        "Personalised around your photos and wording",
+        "Draft prepared for your review before production",
+        "Designed and produced with care in New Zealand",
+      ],
+    } as const);
+
   return (
-    <section className={`${styles.story} ${mediaFirst ? styles.storyMediaFirst : ""}`}>
+    <section
+      className={`${styles.story} ${mediaFirst ? styles.storyMediaFirst : ""}`}
+      aria-label={`${storyCopy.title} details`}
+    >
       <div className={styles.storyCopy}>
-        <p className={styles.eyebrow}>{eyebrow}</p>
-        <h2>{product.title}</h2>
-        <p className={styles.storyLead}>{product.summary}</p>
+        <h2>{storyCopy.title}</h2>
+        <p className={styles.storyLead}>{storyCopy.summary}</p>
         <ul className={styles.checkList}>
-          <li>Personalised around your photos and wording</li>
-          <li>Draft prepared for your review before production</li>
-          <li>Designed and produced with care in New Zealand</li>
+          {storyCopy.features.map((feature) => (
+            <li key={feature}>{feature}</li>
+          ))}
         </ul>
-        <p className={styles.storyPrice}>
-          From {formatNzd(product.startingPriceExGstCents)} + GST
-        </p>
-        <Link className={styles.primaryButton} href={`/products/${product.slug}`}>
+        <Link className={styles.primaryButton} href={ctaHref ?? `/products/${product.slug}`}>
           {ctaLabel}
         </Link>
       </div>

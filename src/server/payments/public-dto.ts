@@ -25,14 +25,14 @@ export type PaymentActionDTO =
 
 export type PublicPaymentDTO = Readonly<{
   method: PaymentMethodKey;
-  status: PaymentAttemptStatus;
+  status: PaymentAttemptStatus | "refunded";
   isTest: boolean;
   canRetry: boolean;
 }>;
 
 export type InternalPaymentPublicSource = Readonly<{
   method: PaymentMethodKey;
-  status: PaymentAttemptStatus;
+  status: PaymentAttemptStatus | "refunded";
   isTest: boolean;
   attemptId?: string;
   providerReference?: string | null;

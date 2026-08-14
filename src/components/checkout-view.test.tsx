@@ -5,6 +5,11 @@ import { canonicalCheckoutCart, CheckoutView } from "./checkout-view";
 
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+vi.mock("./stripe-payment-form", () => ({
+  StripePaymentForm: ({ clientSecret, returnUrl }: { clientSecret: string; returnUrl: string }) => (
+    <div data-testid="checkout-stripe-payment-form" data-client-secret={clientSecret} data-return-url={returnUrl} />
+  ),
+}));
 
 const cart: Cart = { version: 1, items: [{
   id: "30000000-0000-4000-8000-000000000001", productKey: "photo-print-canvas",
@@ -14,9 +19,15 @@ const cart: Cart = { version: 1, items: [{
   urgentServiceConfirmed: false, deliveryPreference: "pickup", quantity: 1,
   price: { lines: [], subtotalExGstCents: 1, gstCents: 1, totalInclGstCents: 2 }, uploadReferences: [],
 }] };
+const postCart: Cart = {
+  ...cart,
+  items: cart.items.map((item) => ({ ...item, deliveryPreference: "post" as const })),
+};
 const address = { id: "saved-1", country: "NZ" as const, fullName: "Aroha Ngata", building: "", street: "12 Queen Street", suburb: "Auckland Central", region: "Auckland", postcode: "1010", phone: "+64211234567", email: "aroha@example.test" };
 const repriced = { version: 1, orderDate: "2026-08-03", items: [{ clientItemId: cart.items[0].id, productKey: "photo-print-canvas", productSlug: "photo-print-canvas", productTitle: "Photo Print Canvas", sizeKey: "a4", sizeLabel: "A4", orientation: "landscape", peoplePets: 0, photoSubmissionMethod: "later", designText: "Family", notes: "", neededDate: "2026-08-10", urgentServiceConfirmed: false, urgentService: { workingDays: 5, feeInclGstCents: 0 }, quantity: 1, uploadReferences: [], unitPrice: { lines: [], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475 }, lineSubtotalExGstCents: 6500, lineGstCents: 975, lineTotalInclGstCents: 7475 }], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475, itemCount: 1, cartDigest: "a".repeat(64) };
 const paymentIntentStorageKey = "rnr-checkout-payment-intent-v1";
+const checkoutDraftStorageKey = "rnr-checkout-draft-v1";
+const pendingCheckoutStorageKey = "rnr-pending-checkout-v1";
 const methodsResponse = { ok: true, json: async () => ({ methods: [{ method: "card", label: "Test card — no real payment", isTest: true }] }) };
 const paymentResponse = { ok: true, json: async () => ({ payment: { method: "card", status: "processing", isTest: true, canRetry: false }, action: null }) };
 function placementIntent(orderIdempotencyKey = "70000000-0000-4000-8000-000000000001") { return { schemaVersion: 1, phase: "placing_order", orderIdempotencyKey, paymentIdempotencyKey: orderIdempotencyKey.replace(/^7/, "8"), method: "card", checkoutVersion: 2, cartDigest: "a".repeat(64), shipping: { method: "pickup", serviceCode: "pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, isTest: false } }; }
@@ -24,6 +35,26 @@ async function checkoutReady() { return screen.findByRole("button", { name: "Rev
 
 describe("CheckoutView", () => {
   beforeEach(() => { localStorage.clear(); sessionStorage.clear(); localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart)); push.mockReset(); vi.restoreAllMocks(); });
+
+  it("inherits the cart delivery choice without asking the customer to select it again", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
+      .mockResolvedValueOnce(methodsResponse);
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+
+    expect(screen.queryByRole("radiogroup", { name: "Delivery" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Delivery" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Selected with your order.", { exact: false })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    await screen.findByText(/No shipping charge/);
+
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).deliveryMethod).toBe("pickup");
+  });
 
   it("builds a canonical request without browser pricing or labels", () => {
     const galleryDesignId = "a".repeat(64);
@@ -43,8 +74,12 @@ describe("CheckoutView", () => {
 
     expect(screen.getByRole("button", { name: "Checking order status…" })).toBeDisabled();
     expect(screen.getByLabelText("Street address")).toBeDisabled();
+    expect(screen.queryByRole("radiogroup", { name: "Delivery" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Delivery" })).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
-    expect(await screen.findByRole("button", { name: "Review delivery & totals" })).toBeEnabled();
+    const reviewButton = await screen.findByRole("button", { name: "Review delivery & totals" });
+    expect(reviewButton).toBeEnabled();
+    expect(reviewButton.className).toContain("checkoutReviewButton");
   });
 
   it("replaces a malformed stored payment intent before a new order is placed", async () => {
@@ -60,10 +95,9 @@ describe("CheckoutView", () => {
 
     await checkoutReady();
     expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
-    fireEvent.click(screen.getByLabelText("Pickup"));
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByText(/No shipping charge/);
-    fireEvent.click(screen.getByRole("button", { name: "Place order" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-FRESH#payment"));
     const freshKey = JSON.parse(fetchMock.mock.calls[3][1].body).idempotencyKey;
     expect(freshKey).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i);
@@ -72,7 +106,8 @@ describe("CheckoutView", () => {
     });
   });
 
-  it("prefills a saved address, defaults to Post, reviews server totals and retains pending payment recovery", async () => {
+  it("prefills a saved address, inherits Post, reviews server totals and retains pending payment recovery", async () => {
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(postCart));
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "post", serviceCode: "post", serviceName: "Live Post", amountExGstCents: 2000, gstCents: 300, amountInclGstCents: 2300, currency: "NZD", provenance: "gosweetspot", isTest: false } } }) })
@@ -86,7 +121,7 @@ describe("CheckoutView", () => {
     render(<CheckoutView savedAddresses={[address]} />);
 
     expect(screen.getByLabelText("Full name")).toHaveValue("Aroha Ngata");
-    expect(screen.getByLabelText("Post")).toBeChecked();
+    expect(screen.queryByRole("heading", { name: "Delivery" })).not.toBeInTheDocument();
     await checkoutReady();
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByText("$97.75");
@@ -100,12 +135,12 @@ describe("CheckoutView", () => {
 
     fireEvent.change(screen.getByLabelText("Street address"), { target: { value: "14 Queen Street" } });
     expect(screen.getByText("Changes need review.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Place order" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Continue to/ })).toBeDisabled();
     fireEvent.change(screen.getByLabelText("Street address"), { target: { value: "12 Queen Street" } });
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByRole("radiogroup", { name: "Payment method" });
 
-    const placeOrder = screen.getByRole("button", { name: "Place order" });
+    const placeOrder = screen.getByRole("button", { name: "Continue to secure card payment" });
     fireEvent.click(placeOrder);
     fireEvent.click(placeOrder);
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-ABC#payment"));
@@ -115,7 +150,7 @@ describe("CheckoutView", () => {
       cartDigest: "a".repeat(64),
       shipping: { method: "post", serviceCode: "post", amountInclGstCents: 2300 },
     });
-    expect(localStorage.getItem(CART_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(postCart));
     expect(JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!)).toMatchObject({
       phase: "starting_payment", orderNumber: "RNR-2026-ABC",
     });
@@ -130,10 +165,9 @@ describe("CheckoutView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CheckoutView savedAddresses={[address]} />);
     await checkoutReady();
-    fireEvent.click(screen.getByLabelText("Pickup"));
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByText("$74.75");
-    fireEvent.click(screen.getByRole("button", { name: "Place order" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     await screen.findByText("Try again");
     fireEvent.click(screen.getByRole("button", { name: "Retry order recovery" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
@@ -142,6 +176,31 @@ describe("CheckoutView", () => {
     expect(secondKey).toBe(firstKey);
     expect(JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!).orderIdempotencyKey).toBe(firstKey);
     expect(localStorage.getItem(CART_STORAGE_KEY)).not.toBeNull();
+  });
+
+  it("restores the cart if payment creation fails after order creation", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
+      .mockResolvedValueOnce(methodsResponse)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-PAYFAIL" } }) })
+      .mockResolvedValueOnce({ ok: false, json: async () => ({ error: { message: "Could not start payment" } }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    await screen.findByText(/No shipping charge/);
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
+    await screen.findByText("Could not start payment");
+
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(cart));
+    expect(screen.queryByRole("heading", { level: 2, name: "Your cart is empty" })).not.toBeInTheDocument();
+    const starting = JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!);
+    expect(starting).toMatchObject({
+      phase: "starting_payment",
+      orderNumber: "RNR-2026-PAYFAIL",
+    });
   });
 
   it("supports a separate Australian delivery address with the same form", async () => {
@@ -154,20 +213,23 @@ describe("CheckoutView", () => {
     expect(screen.getAllByLabelText("Full name")).toHaveLength(2);
   });
 
-  it("shows a shop action for an empty browser cart", () => {
+  it("shows clear recovery routes for an empty browser cart", () => {
     localStorage.clear();
     render(<CheckoutView />);
-    expect(screen.getByRole("link", { name: "Explore products" })).toHaveAttribute("href", "/shop");
+    expect(screen.getByRole("link", { name: "Browse Canvas" })).toHaveAttribute("href", "/canvas");
+    expect(screen.getByRole("link", { name: "Browse Banners" })).toHaveAttribute("href", "/banners");
+    expect(screen.getByRole("link", { name: "Design Gallery" })).toHaveAttribute("href", "/design-gallery");
     expect(screen.queryByRole("heading", { level: 1 })).not.toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "Your cart is empty" })).toBeInTheDocument();
   });
 
-  it("preserves address fields after Post fails and can immediately review Pickup", async () => {
+  it("preserves address fields after a Post quote fails and can retry", async () => {
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(postCart));
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
       .mockResolvedValueOnce({ ok: false, json: async () => ({ error: { message: "Post unavailable" } }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 3, cart: repriced } }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "post", serviceCode: "post", serviceName: "Live Post", amountExGstCents: 2000, gstCents: 300, amountInclGstCents: 2300, currency: "NZD", provenance: "gosweetspot", isTest: false } } }) })
       .mockResolvedValueOnce(methodsResponse);
     vi.stubGlobal("fetch", fetchMock);
     render(<CheckoutView savedAddresses={[address]} />);
@@ -176,9 +238,37 @@ describe("CheckoutView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByText("Post unavailable");
     expect(screen.getByLabelText("Street address")).toHaveValue("12 Queen Street");
-    fireEvent.click(screen.getByLabelText("Pickup"));
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
-    await screen.findByText(/No shipping charge/);
+    await screen.findByText(/Live carrier rate/);
+  });
+
+  it("restores partially entered checkout details after a refresh without trusting old totals", async () => {
+    const firstRender = render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+    fireEvent.change(screen.getByLabelText("Street address"), { target: { value: "44 Refresh Road" } });
+    fireEvent.change(screen.getByLabelText("Building / unit (optional)"), { target: { value: "Unit 3" } });
+    await waitFor(() => expect(sessionStorage.getItem(checkoutDraftStorageKey)).toContain("44 Refresh Road"));
+    firstRender.unmount();
+
+    render(<CheckoutView savedAddresses={[address]} />);
+
+    await checkoutReady();
+    expect(screen.getByLabelText("Street address")).toHaveValue("44 Refresh Road");
+    expect(screen.getByLabelText("Building / unit (optional)")).toHaveValue("Unit 3");
+    expect(screen.queryByRole("heading", { name: "Delivery" })).not.toBeInTheDocument();
+    expect(screen.getByText("Your checkout details were restored. Review delivery and totals again.")).toBeInTheDocument();
+    expect(screen.getByText("Review delivery to see authoritative totals.")).toBeInTheDocument();
+  });
+
+  it("shows a useful retry message when the checkout network request fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Failed to fetch")));
+    render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+
+    expect(await screen.findByText("We couldn’t review delivery right now. Check your connection and try again.")).toBeInTheDocument();
+    expect(screen.queryByText("Failed to fetch")).not.toBeInTheDocument();
   });
 
   it("posts an exact separate Australian delivery address without saved IDs", async () => {
@@ -196,7 +286,6 @@ describe("CheckoutView", () => {
     fireEvent.change(screen.getByLabelText("State / territory"), { target: { value: "NSW" } });
     fireEvent.change(screen.getAllByLabelText("Postcode")[1], { target: { value: "2000" } });
     fireEvent.change(screen.getAllByLabelText("Phone")[1], { target: { value: "+61412345678" } });
-    fireEvent.click(screen.getByLabelText("Pickup"));
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByText(/No shipping charge/);
 
@@ -228,8 +317,7 @@ describe("CheckoutView", () => {
     expect(screen.getByLabelText("Saved billing address")).toBeDisabled();
     expect(screen.getByLabelText("Street address")).toBeDisabled();
     expect(screen.getByLabelText("Deliver to a different address")).toBeDisabled();
-    expect(screen.getByLabelText("Post")).toBeDisabled();
-    expect(screen.getByLabelText("Pickup")).toBeDisabled();
+    expect(screen.queryByRole("radiogroup", { name: "Delivery" })).not.toBeInTheDocument();
 
     fireEvent.submit(screen.getByRole("form", { name: "Checkout details" }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -258,13 +346,12 @@ describe("CheckoutView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CheckoutView savedAddresses={[address]} />);
     await checkoutReady();
-    fireEvent.click(screen.getByLabelText("Pickup"));
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByText(/No shipping charge/);
-    fireEvent.click(screen.getByRole("button", { name: "Place order" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
 
     expect(await screen.findByText("Checkout changed. Review delivery and totals again.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Place order" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Continue to/ })).toBeDisabled();
     expect(screen.getByText("Review delivery to see authoritative totals.")).toBeInTheDocument();
     expect(localStorage.getItem(CART_STORAGE_KEY)).not.toBeNull();
   });
@@ -278,10 +365,9 @@ describe("CheckoutView", () => {
     vi.stubGlobal("fetch", failingFetch);
     const firstRender = render(<CheckoutView savedAddresses={[address]} />);
     await checkoutReady();
-    fireEvent.click(screen.getByLabelText("Pickup"));
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByText(/No shipping charge/);
-    fireEvent.click(screen.getByRole("button", { name: "Place order" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     await screen.findByText("Try again");
     const firstKey = JSON.parse(failingFetch.mock.calls[3][1].body).idempotencyKey;
     firstRender.unmount();
@@ -307,10 +393,9 @@ describe("CheckoutView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CheckoutView savedAddresses={[address]} />);
     await checkoutReady();
-    fireEvent.click(screen.getByLabelText("Pickup"));
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByText(/No shipping charge/);
-    fireEvent.click(screen.getByRole("button", { name: "Place order" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
 
     const persisted = JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!);
@@ -322,9 +407,118 @@ describe("CheckoutView", () => {
       cartDigest: persisted.cartDigest,
       shipping: persisted.shipping,
     });
+    expect(JSON.parse(localStorage.getItem(pendingCheckoutStorageKey)!)).toEqual({
+      schemaVersion: 1,
+      intent: persisted,
+      cart,
+    });
 
     resolveOrder({ ok: false, status: 500, json: async () => ({ error: { code: "INTERNAL_ERROR", message: "Lost response" } }) });
     await screen.findByText("Lost response");
+  });
+
+  it("keeps the ordered cart snapshot when another tab changes the cart before the order response", async () => {
+    let resolveOrder!: (value: unknown) => void;
+    const changedCart = {
+      ...cart,
+      items: [{ ...cart.items[0], quantity: 2 }],
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
+      .mockResolvedValueOnce(methodsResponse)
+      .mockImplementationOnce(() => new Promise((resolve) => { resolveOrder = resolve; }))
+      .mockResolvedValueOnce(paymentResponse);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    await screen.findByRole("radiogroup", { name: "Payment method" });
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(changedCart));
+    resolveOrder({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-ORIGINAL-CART" } }) });
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-ORIGINAL-CART#payment"));
+    const pending = JSON.parse(localStorage.getItem(pendingCheckoutStorageKey)!);
+    expect(pending.intent).toMatchObject({
+      phase: "starting_payment",
+      orderNumber: "RNR-2026-ORIGINAL-CART",
+    });
+    expect(pending.cart).toEqual(cart);
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(changedCart));
+  });
+
+  it("does not overwrite a changed cart when payment startup fails", async () => {
+    const changedCart = {
+      ...cart,
+      items: [{ ...cart.items[0], quantity: 2 }],
+    };
+    let resolvePayment!: (value: unknown) => void;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
+      .mockResolvedValueOnce(methodsResponse)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-PAYMENT-ERROR" } }) })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolvePayment = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    await screen.findByRole("radiogroup", { name: "Payment method" });
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(changedCart));
+    resolvePayment({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: { code: "PAYMENT_UNAVAILABLE", message: "Payment is temporarily unavailable" } }),
+    });
+
+    expect(await screen.findByText("Payment is temporarily unavailable")).toBeInTheDocument();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(changedCart));
+  });
+
+  it("never rebinds a recovering order to a cart changed in another tab", async () => {
+    const intent = placementIntent("70000000-0000-4000-8000-000000000016");
+    const changedCart = {
+      ...cart,
+      items: [{ ...cart.items[0], quantity: 2 }],
+    };
+    sessionStorage.setItem(paymentIntentStorageKey, JSON.stringify(intent));
+    localStorage.setItem(pendingCheckoutStorageKey, JSON.stringify({ schemaVersion: 1, intent, cart }));
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(changedCart));
+    let resolvePayment!: (value: unknown) => void;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-RECOVER-ORIGINAL" } }) })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolvePayment = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CheckoutView savedAddresses={[address]} />);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(localStorage.getItem(pendingCheckoutStorageKey)!)).toMatchObject({
+      intent: {
+        phase: "starting_payment",
+        orderNumber: "RNR-2026-RECOVER-ORIGINAL",
+        orderIdempotencyKey: intent.orderIdempotencyKey,
+      },
+      cart,
+    });
+
+    resolvePayment({
+      ok: true,
+      json: async () => ({
+        payment: { method: "card", status: "paid", isTest: true, canRetry: false },
+        action: null,
+      }),
+    });
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-RECOVER-ORIGINAL#payment"));
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(changedCart));
+    expect(localStorage.getItem(pendingCheckoutStorageKey)).toBeNull();
   });
 
   it("recovers a pending placement before any new review and deduplicates a remount", async () => {
@@ -349,7 +543,7 @@ describe("CheckoutView", () => {
 
     resolveRecovery({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-RECOVERED" } }) });
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-RECOVERED#payment"));
-    expect(localStorage.getItem(CART_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(cart));
     expect(JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!)).toMatchObject({
       phase: "starting_payment", orderNumber: "RNR-2026-RECOVERED",
     });
@@ -380,6 +574,70 @@ describe("CheckoutView", () => {
     expect(await screen.findByText("Checkout changed. Review delivery and totals again.")).toBeInTheDocument();
     expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
     expect(screen.getByRole("button", { name: "Review delivery & totals" })).toBeEnabled();
+  });
+
+  it("discards an inaccessible payment recovery instead of sending the customer to a missing order page", async () => {
+    const intent = placementIntent("70000000-0000-4000-8000-000000000011");
+    sessionStorage.setItem(paymentIntentStorageKey, JSON.stringify(intent));
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-STALE" } }) })
+      .mockResolvedValueOnce({ ok: false, status: 404, json: async () => ({ error: { code: "ORDER_NOT_FOUND", message: "Order is unavailable" } }) }));
+
+    render(<CheckoutView savedAddresses={[address]} />);
+
+    expect(await screen.findByText("Your previous payment session is no longer available. Your cart is ready to checkout.")).toBeInTheDocument();
+    expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Review delivery & totals" })).toBeEnabled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("keeps a newly added cart instead of resuming an older order payment", async () => {
+    const intent = {
+      ...placementIntent("70000000-0000-4000-8000-000000000012"),
+      phase: "starting_payment" as const,
+      orderNumber: "RNR-2026-OLDER-A4",
+    };
+    sessionStorage.setItem(paymentIntentStorageKey, JSON.stringify(intent));
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CheckoutView savedAddresses={[address]} />);
+
+    await checkoutReady();
+    expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(cart));
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("unlocks checkout when a restored cart still has an older payment recovery", async () => {
+    const intent = {
+      ...placementIntent("70000000-0000-4000-8000-000000000013"),
+      phase: "starting_payment" as const,
+      orderNumber: "RNR-2026-RESTORED-CART",
+    };
+    sessionStorage.setItem(paymentIntentStorageKey, JSON.stringify(intent));
+    sessionStorage.setItem("rnr-checkout-payment-intent-cart-v1", JSON.stringify({
+      schemaVersion: 1,
+      intentKey: intent.orderIdempotencyKey,
+      cart,
+    }));
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: { code: "INTERNAL_ERROR", message: "Temporarily unavailable" } }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CheckoutView savedAddresses={[address]} />);
+
+    await waitFor(() => expect(screen.getByLabelText("Street address")).toBeEnabled());
+    expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
+    expect(sessionStorage.getItem("rnr-checkout-payment-intent-cart-v1")).toBeNull();
+    expect(screen.getByRole("button", { name: "Review delivery & totals" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Retry payment recovery" })).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it.each([
@@ -421,7 +679,6 @@ describe("CheckoutView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CheckoutView savedAddresses={[address]} />);
     await checkoutReady();
-    fireEvent.click(screen.getByLabelText("Pickup"));
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
 
     expect(await screen.findByRole("radiogroup", { name: "Payment method" })).toBeInTheDocument();
@@ -431,7 +688,7 @@ describe("CheckoutView", () => {
 
     fireEvent.change(screen.getByLabelText("Street address"), { target: { value: "14 Queen Street" } });
     expect(screen.queryByRole("radiogroup", { name: "Payment method" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Place order" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Continue to/ })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
     expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
@@ -445,10 +702,9 @@ describe("CheckoutView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CheckoutView savedAddresses={[address]} />);
     await checkoutReady();
-    fireEvent.click(screen.getByLabelText("Pickup"));
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     expect(await screen.findByText("Payment methods are not configured yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Place order" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Continue to/ })).toBeDisabled();
   });
 
   it("persists non-sensitive placing and starting phases before each mutation", async () => {
@@ -463,10 +719,9 @@ describe("CheckoutView", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<CheckoutView savedAddresses={[address]} />);
     await checkoutReady();
-    fireEvent.click(screen.getByLabelText("Pickup"));
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByRole("radiogroup", { name: "Payment method" });
-    fireEvent.click(screen.getByRole("button", { name: "Place order" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
 
     const placing = JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!);
@@ -480,11 +735,83 @@ describe("CheckoutView", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     const starting = JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!);
     expect(starting).toEqual({ ...placing, phase: "starting_payment", orderNumber: "RNR-2026-PAY" });
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(cart));
+    expect(screen.queryByRole("heading", { name: "Your cart is empty" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preparing payment…" })).toBeDisabled();
     expect(JSON.parse(fetchMock.mock.calls[4][1].body)).toEqual({ method: "card", idempotencyKey: placing.paymentIdempotencyKey });
 
     resolvePayment({ ok: true, json: async () => ({ payment: { method: "card", status: "processing", isTest: true, canRetry: false }, action: null }) });
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-PAY#payment"));
     expect(sessionStorage.getItem(paymentIntentStorageKey)).toBe(JSON.stringify(starting));
+  });
+
+  it("keeps the cart and a durable resume record while Stripe card details are unfinished", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
+      .mockResolvedValueOnce(methodsResponse)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-CARD-OPEN" } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+        action: { kind: "elements", method: "card", clientSecret: "pi_secret_open", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
+      }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    await screen.findByRole("radiogroup", { name: "Payment method" });
+
+    fireEvent.click(screen.getByRole("button", { name: "Continue to secure card payment" }));
+
+    expect(await screen.findByTestId("checkout-stripe-payment-form")).toBeInTheDocument();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(cart));
+    expect(JSON.parse(localStorage.getItem(pendingCheckoutStorageKey)!)).toMatchObject({
+      schemaVersion: 1,
+      intent: { phase: "starting_payment", orderNumber: "RNR-2026-CARD-OPEN" },
+      cart,
+    });
+  });
+
+  it("returns a reopened browser to the same unfinished order without creating another order", async () => {
+    const intent = {
+      ...placementIntent("70000000-0000-4000-8000-000000000014"),
+      phase: "starting_payment" as const,
+      orderNumber: "RNR-2026-REOPENED",
+    };
+    localStorage.setItem(pendingCheckoutStorageKey, JSON.stringify({ schemaVersion: 1, intent, cart }));
+    sessionStorage.clear();
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CheckoutView savedAddresses={[address]} />);
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-REOPENED#payment"));
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(cart));
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("replays the same durable placing intent when the browser closes before the order response", async () => {
+    const intent = placementIntent("70000000-0000-4000-8000-000000000015");
+    localStorage.setItem(pendingCheckoutStorageKey, JSON.stringify({ schemaVersion: 1, intent, cart }));
+    sessionStorage.clear();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-REOPENED-PLACEMENT" } }) })
+      .mockResolvedValueOnce(paymentResponse);
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CheckoutView savedAddresses={[address]} />);
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-REOPENED-PLACEMENT#payment"));
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/checkout/order");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).idempotencyKey).toBe(intent.orderIdempotencyKey);
+    expect(JSON.parse(localStorage.getItem(pendingCheckoutStorageKey)!)).toMatchObject({
+      intent: {
+        phase: "starting_payment",
+        orderNumber: "RNR-2026-REOPENED-PLACEMENT",
+        orderIdempotencyKey: intent.orderIdempotencyKey,
+      },
+      cart,
+    });
   });
 
   it("replays order-response and payment-response loss with the same distinct keys", async () => {
@@ -494,6 +821,11 @@ describe("CheckoutView", () => {
       cartDigest: "a".repeat(64), shipping: { method: "pickup", serviceCode: "pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, isTest: false },
     };
     sessionStorage.setItem(paymentIntentStorageKey, JSON.stringify(placing));
+    localStorage.setItem(pendingCheckoutStorageKey, JSON.stringify({
+      schemaVersion: 1,
+      intent: placing,
+      cart,
+    }));
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-RECOVER-PAY", paymentStatus: "awaiting_payment" } }) })
       .mockRejectedValueOnce(new TypeError("Network response was lost after the request"));
@@ -503,7 +835,7 @@ describe("CheckoutView", () => {
     expect(JSON.parse(fetchMock.mock.calls[0][1].body).idempotencyKey).toBe(placing.orderIdempotencyKey);
     const starting = JSON.parse(sessionStorage.getItem(paymentIntentStorageKey)!);
     expect(starting).toMatchObject({ phase: "starting_payment", orderNumber: "RNR-2026-RECOVER-PAY", paymentIdempotencyKey: placing.paymentIdempotencyKey });
-    expect(localStorage.getItem(CART_STORAGE_KEY)).toBeNull();
+    expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(cart));
     first.unmount();
     push.mockReset();
 
@@ -511,15 +843,14 @@ describe("CheckoutView", () => {
     vi.stubGlobal("fetch", retryFetch);
     render(<CheckoutView savedAddresses={[address]} />);
     await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-RECOVER-PAY#payment"));
-    expect(retryFetch).toHaveBeenCalledTimes(1);
-    expect(retryFetch.mock.calls[0][0]).toBe("/api/orders/RNR-2026-RECOVER-PAY/payment");
-    expect(JSON.parse(retryFetch.mock.calls[0][1].body).idempotencyKey).toBe(placing.paymentIdempotencyKey);
+    expect(retryFetch).not.toHaveBeenCalled();
     expect(sessionStorage.getItem(paymentIntentStorageKey)).toBe(JSON.stringify(starting));
   });
 
   it("retains a starting intent when requires_action is returned without a safe action", async () => {
     const intent = { ...placementIntent("70000000-0000-4000-8000-000000000009"), phase: "starting_payment", orderNumber: "RNR-2026-NEEDS-ACTION" };
     sessionStorage.setItem(paymentIntentStorageKey, JSON.stringify(intent));
+    localStorage.removeItem(CART_STORAGE_KEY);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ payment: { method: "card", status: "requires_action", isTest: true, canRetry: false }, action: null }) }));
 
     render(<CheckoutView savedAddresses={[address]} />);
@@ -532,6 +863,7 @@ describe("CheckoutView", () => {
   it.each(["paid", "failed", "cancelled"] as const)("clears recovery only after authoritative %s status", async (status) => {
     const intent = { ...placementIntent("70000000-0000-4000-8000-000000000010"), phase: "starting_payment", orderNumber: "RNR-2026-TERMINAL" };
     sessionStorage.setItem(paymentIntentStorageKey, JSON.stringify(intent));
+    localStorage.removeItem(CART_STORAGE_KEY);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({
       payment: { method: "card", status, isTest: true, canRetry: status !== "paid" }, action: null,
     }) }));

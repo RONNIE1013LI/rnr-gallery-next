@@ -1,16 +1,25 @@
 import type { Metadata } from "next";
 import { CataloguePage } from "@/components/catalogue-page";
-import { getProductsByCategory } from "@/domain/catalogue/products";
+import { getRegistryProducts } from "@/domain/catalogue/product-registry";
+import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 
-export const metadata: Metadata = { title: "Custom banners" };
+export const metadata: Metadata = {
+  title: "Custom banners",
+  description: "Personalised roll-up banners, wall banners and grave covers for meaningful occasions.",
+  alternates: { canonical: "/banners" },
+};
+export const dynamic = "force-dynamic";
 
-export default function BannersPage() {
+export default async function BannersPage() {
+  const { registry } = await getSafePublicProductRegistry();
   return (
     <CataloguePage
-      eyebrow="Banner collection"
-      title="A meaningful presence at any scale."
-      description="Portable roll-up displays, wall banners, painterly banner artwork and memorial grave covers for events and lasting tributes."
-      products={getProductsByCategory("banners")}
+      eyebrow="BANNERS"
+      title="Custom banners made for your occasion."
+      description="Choose a roll-up banner, wall banner or grave cover, then personalise the details."
+      products={getRegistryProducts(registry).filter(
+        (product) => product.active && product.category === "banners",
+      )}
     />
   );
 }

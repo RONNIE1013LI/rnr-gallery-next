@@ -99,8 +99,16 @@ describe("shipping service", () => {
         countryCode: "NZ",
       },
       packages: [
-        expect.objectContaining({ productKey: "photo-print-canvas", sizeKey: "a4" }),
-        expect.objectContaining({ productKey: "photo-print-canvas", sizeKey: "a4" }),
+        expect.objectContaining({
+          productKey: "photo-print-canvas",
+          sizeKey: "a4",
+          unitPriceInclGstCents: 7_475,
+        }),
+        expect.objectContaining({
+          productKey: "photo-print-canvas",
+          sizeKey: "a4",
+          unitPriceInclGstCents: 7_475,
+        }),
       ],
     }));
     expect(result).toMatchObject({

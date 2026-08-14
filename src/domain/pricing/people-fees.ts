@@ -1,8 +1,19 @@
 import { InvalidPricingInputError } from "./types";
 
-const PEOPLE_FEES_EX_GST_CENTS = [0, 4_000, 6_000, 8_500, 11_000, 13_000] as const;
+export type PeoplePetsPricing = Readonly<{
+  peoplePetsFeesExGstCents: readonly number[];
+  additionalPeoplePetsEachExGstCents: number;
+}>;
 
-export function getPeoplePetsFeeExGstCents(peoplePets: number): number {
+export const DEFAULT_PEOPLE_PETS_PRICING: PeoplePetsPricing = Object.freeze({
+  peoplePetsFeesExGstCents: Object.freeze([4_000, 6_000, 8_500, 11_000, 13_000]),
+  additionalPeoplePetsEachExGstCents: 2_500,
+});
+
+export function getPeoplePetsFeeExGstCents(
+  peoplePets: number,
+  pricing: PeoplePetsPricing = DEFAULT_PEOPLE_PETS_PRICING,
+): number {
   if (!Number.isInteger(peoplePets) || peoplePets < 1) {
     throw new InvalidPricingInputError(
       "The final artwork must include at least one person or pet.",
@@ -10,8 +21,18 @@ export function getPeoplePetsFeeExGstCents(peoplePets: number): number {
   }
 
   if (peoplePets <= 5) {
-    return PEOPLE_FEES_EX_GST_CENTS[peoplePets];
+    const fee = pricing.peoplePetsFeesExGstCents[peoplePets - 1];
+    if (!Number.isSafeInteger(fee) || fee! < 0) {
+      throw new InvalidPricingInputError("People / pets price is invalid.");
+    }
+    return fee!;
   }
 
-  return peoplePets * 2_500;
+  if (
+    !Number.isSafeInteger(pricing.additionalPeoplePetsEachExGstCents) ||
+    pricing.additionalPeoplePetsEachExGstCents < 0
+  ) {
+    throw new InvalidPricingInputError("People / pets price is invalid.");
+  }
+  return peoplePets * pricing.additionalPeoplePetsEachExGstCents;
 }

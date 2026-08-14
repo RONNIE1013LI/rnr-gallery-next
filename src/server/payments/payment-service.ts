@@ -19,6 +19,7 @@ import {
 } from "./public-dto";
 import type {
   PaymentEligibilityContext,
+  PaymentOrder,
   PaymentProvider,
   ProviderSession,
   VerifiedPaymentResult,
@@ -73,6 +74,11 @@ export type PaymentReturnInput = Readonly<{
 }>;
 
 export type PaymentReturnResult = Readonly<{ orderNumber: string }>;
+
+export type PaymentConfirmationResult = Readonly<{
+  payment: PublicPaymentDTO;
+  orderNumber: string;
+}>;
 
 export type PaymentReconciliationSummary = Readonly<{
   processed: number;
@@ -192,6 +198,18 @@ function eligibilityContext(context: PaymentEligibilityContext): PaymentEligibil
   });
 }
 
+function providerPaymentOrder(order: PaymentOrder): PaymentOrder {
+  return Object.freeze({
+    id: order.id,
+    orderNumber: order.orderNumber,
+    amountCents: order.amountCents,
+    currency: order.currency,
+    customer: Object.freeze({ ...order.customer }),
+    billingAddress: minimalAddress(order.billingAddress),
+    deliveryAddress: minimalAddress(order.deliveryAddress),
+  });
+}
+
 function validateRegistrations(providers: readonly PaymentProviderRegistration[]) {
   const seen = new Set<PaymentMethodKey>();
   for (const entry of providers) {
@@ -290,6 +308,47 @@ export function createPaymentService({
   }
 
   return {
+    async confirmPayment(
+      access: PaymentOrderAccess,
+    ): Promise<PaymentConfirmationResult> {
+      const current = await repository.findCurrentPayment(access);
+      if (!current || !current.attempt.providerReference) {
+        throw new PaymentServiceError("ORDER_NOT_FOUND", "Order is unavailable");
+      }
+      const registration = byMethod.get(current.attempt.method);
+      if (
+        !registration ||
+        registration.provider.key !== current.attempt.provider
+      ) {
+        throw unavailableStart();
+      }
+
+      let authority;
+      try {
+        authority = await registration.provider.retrieve({
+          order: providerPaymentOrder(current.order),
+          providerReference: current.attempt.providerReference,
+        });
+      } catch {
+        throw unavailableStart();
+      }
+      if (authority.kind !== "verified") throw unavailableStart();
+
+      const applied = await repository.applyVerifiedResult({
+        attemptId: current.attempt.id,
+        result: authority.result,
+        source: "reconciliation",
+      });
+      return Object.freeze({
+        payment: publicPayment(
+          applied.attempt.method,
+          applied.attempt.status,
+          registration.isTest,
+        ),
+        orderNumber: applied.order.orderNumber,
+      });
+    },
+
     async reconcilePendingPayments(): Promise<PaymentReconciliationSummary> {
       const summary = {
         processed: 0,

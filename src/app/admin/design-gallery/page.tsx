@@ -2,12 +2,13 @@ import Link from "next/link";
 import { AdminGalleryList, type AdminGalleryListItem } from "@/components/admin-gallery-list";
 import { requireAdminPage } from "@/server/auth/require-admin-page";
 import { getAdminGalleryService } from "@/server/gallery/admin-gallery-runtime";
-import styles from "@/components/storefront.module.css";
+import styles from "@/components/admin/admin.module.css";
 
 export const metadata = { title: "Manage Design Gallery" };
+export const dynamic = "force-dynamic";
 
 export default async function AdminGalleryPage() {
-  await requireAdminPage();
+  await requireAdminPage("/admin/design-gallery", "manage_gallery");
   const records = await getAdminGalleryService().list();
   const designs = records.map((record) => ({
     id: String(record.id),
@@ -21,14 +22,14 @@ export default async function AdminGalleryPage() {
   } satisfies AdminGalleryListItem));
 
   return (
-    <section className={styles.adminSection}>
-      <header className={styles.adminHeading}>
+    <section className={styles.pageSection}>
+      <header className={styles.pageHeader}>
         <div>
-          <p className={styles.eyebrow}>Administration</p>
+          <nav className={styles.breadcrumbs} aria-label="Breadcrumb"><Link href="/admin">Dashboard</Link><span>/</span><span>Design Gallery</span></nav>
           <h1>Design Gallery management</h1>
           <p>{designs.length} designs. Edit classifications, replace artwork, or remove a design from the public gallery.</p>
         </div>
-        <Link className={styles.primaryButton} href="/admin/design-gallery/new">Add design</Link>
+        <Link className={styles.primaryAdminButton} href="/admin/design-gallery/new">Add design</Link>
       </header>
       <AdminGalleryList designs={designs} />
     </section>

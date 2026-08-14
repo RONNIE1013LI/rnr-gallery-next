@@ -115,6 +115,9 @@ export type VerifiedEventInput = Readonly<{
 
 export interface PaymentRepository {
   findPayableOrder(access: PaymentOrderAccess): Promise<PaymentOrder | null>;
+  findCurrentPayment(
+    access: PaymentOrderAccess,
+  ): Promise<PaymentAttemptWithOrder | null>;
   createOrClaimNonterminalAttempt(
     input: CreatePaymentAttemptInput,
   ): Promise<AttemptClaim>;

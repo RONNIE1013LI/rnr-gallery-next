@@ -1,5 +1,36 @@
 import type { Product, ProductCategory } from "./types";
 
+export const PRODUCT_SHOP_IMAGES = {
+  "photo-print-canvas": {
+    src: "/media/products/photo-print-canvas-shop.webp",
+    alt: "A large family photograph printed directly on a gallery-wrapped canvas",
+  },
+  "digital-oil-painting-canvas": {
+    src: "/media/products/digital-oil-painting-canvas-shop.webp",
+    alt: "A personalised painterly family artwork displayed on a gallery-wrapped canvas",
+  },
+  "custom-themed-canvas": {
+    src: "/media/products/custom-themed-canvas-shop.webp",
+    alt: "A multi-photo family collage composed and printed on a gallery-wrapped canvas",
+  },
+  "roll-up-banner": {
+    src: "/media/products/roll-up-banner-shop.webp",
+    alt: "A personalised 21st birthday roll-up banner standing on its complete display base",
+  },
+  "custom-themed-wall-banner": {
+    src: "/media/products/wall-hanging-banner-shop.webp",
+    alt: "A wide personalised first birthday wall banner hung by its corner eyelets",
+  },
+  "digital-oil-painting-banner": {
+    src: "/media/products/digital-oil-painting-banner-shop.webp",
+    alt: "A wide painterly welcome-home portrait banner hung by reinforced corner eyelets",
+  },
+  "grave-cover": {
+    src: "/media/products/grave-cover-shop.webp",
+    alt: "A personalised memorial grave cover secured flat at a graveside",
+  },
+} as const;
+
 export const products = Object.freeze([
   {
     key: "photo-print-canvas",
@@ -8,10 +39,7 @@ export const products = Object.freeze([
     workflowKey: "photo_print_canvas",
     title: "Photo Print Canvas",
     summary: "Your complete photo printed as a clean, gallery-wrapped canvas.",
-    image: {
-      src: "/media/home/family-canvas.webp",
-      alt: "Family portrait presented as a landscape canvas in a warm interior",
-    },
+    image: PRODUCT_SHOP_IMAGES["photo-print-canvas"],
     startingPriceExGstCents: 6_500,
     active: true,
     featured: false,
@@ -23,10 +51,7 @@ export const products = Object.freeze([
     workflowKey: "digital_oil_painting_canvas",
     title: "Digital Oil Painting Canvas",
     summary: "A painterly portrait created from your photos and finished on canvas.",
-    image: {
-      src: "/media/home/digital-oil-pet.webp",
-      alt: "Custom digital oil portrait of a dog displayed on canvas",
-    },
+    image: PRODUCT_SHOP_IMAGES["digital-oil-painting-canvas"],
     startingPriceExGstCents: 10_500,
     active: true,
     featured: true,
@@ -38,10 +63,7 @@ export const products = Object.freeze([
     workflowKey: "custom_themed_canvas",
     title: "Custom Themed Canvas",
     summary: "Photos, names and meaningful wording composed into one personal design.",
-    image: {
-      src: "/media/home/family-canvas.webp",
-      alt: "Personalised family artwork printed as a landscape canvas",
-    },
+    image: PRODUCT_SHOP_IMAGES["custom-themed-canvas"],
     startingPriceExGstCents: 11_800,
     active: true,
     featured: false,
@@ -52,11 +74,8 @@ export const products = Object.freeze([
     category: "banners",
     workflowKey: "roll_up_banner",
     title: "Roll-Up Banner",
-    summary: "A portable personalised display with stand, carry bag and custom artwork.",
-    image: {
-      src: "/media/home/roll-up-banner.webp",
-      alt: "Personalised memorial roll-up banner displayed indoors",
-    },
+    summary: "Our roll-up banner includes custom design, an 85 × 200 cm printed banner, stand, carry bag, pegs and box.",
+    image: PRODUCT_SHOP_IMAGES["roll-up-banner"],
     startingPriceExGstCents: 23_000,
     active: true,
     featured: true,
@@ -68,10 +87,7 @@ export const products = Object.freeze([
     workflowKey: "custom_themed_wall_banner",
     title: "Custom Themed Wall Banner",
     summary: "A large-format fabric banner designed for tributes, celebrations and events.",
-    image: {
-      src: "/media/home/wall-banner.webp",
-      alt: "Wide personalised memorial banner mounted on an interior wall",
-    },
+    image: PRODUCT_SHOP_IMAGES["custom-themed-wall-banner"],
     startingPriceExGstCents: 16_500,
     active: true,
     featured: true,
@@ -83,10 +99,7 @@ export const products = Object.freeze([
     workflowKey: "digital_oil_painting_banner",
     title: "Digital Oil Painting Banner",
     summary: "Painterly portrait artwork prepared for a durable large-format banner.",
-    image: {
-      src: "/media/home/wall-banner.webp",
-      alt: "Large-format portrait artwork shown as a wall banner",
-    },
+    image: PRODUCT_SHOP_IMAGES["digital-oil-painting-banner"],
     startingPriceExGstCents: 16_000,
     active: true,
     featured: false,
@@ -97,11 +110,8 @@ export const products = Object.freeze([
     category: "banners",
     workflowKey: "grave_cover",
     title: "Grave Cover",
-    summary: "A personalised memorial cover with reinforced eyelets and custom artwork.",
-    image: {
-      src: "/media/home/roll-up-banner.webp",
-      alt: "Personalised memorial artwork prepared for a fabric grave cover",
-    },
+    summary: "A custom 100 cm × 200 cm grave cover with reinforced eyelets and personalised artwork.",
+    image: PRODUCT_SHOP_IMAGES["grave-cover"],
     startingPriceExGstCents: 18_500,
     active: true,
     featured: false,

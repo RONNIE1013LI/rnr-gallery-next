@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CheckoutRepository } from "@/server/checkout/checkout-repository";
 import { CHECKOUT_SESSION_COOKIE_NAME } from "@/server/checkout/session-cookie";
 import type { PrivateUploadReference } from "@/server/uploads/local-private-upload-store";
-import { createUploadRoute } from "./route";
+import { createUploadRoute } from "./route-handler";
 
 const origin = "https://shop.example.test";
 const sessionId = "10000000-0000-4000-8000-000000000001";
@@ -16,6 +16,8 @@ const stored: PrivateUploadReference = {
   sha256: "a".repeat(64),
 };
 const parsedFile = new File(["abc"], "family.jpg", { type: "image/jpeg" });
+const uploadSizeMessage =
+  "Images must be 25 MB or smaller. Supported formats: JPG, JPEG, PNG, WEBP and HEIC.";
 
 function request(requestOrigin = origin, cookieToken?: string) {
   const boundary = "rnr-test-boundary";
@@ -198,6 +200,45 @@ describe("POST /api/uploads", () => {
 
     expect((await handler(request())).status).toBe(500);
     expect(repo.deleteEmptySession).toHaveBeenCalledWith(sessionId);
+  });
+
+  it("returns customer-friendly guidance when the selected image exceeds 25 MB", async () => {
+    const handler = createUploadRoute({
+      repository: repository(),
+      store: { save: vi.fn(), remove: vi.fn() },
+      getOptionalSession: async () => null,
+      trustedOrigin: origin,
+      parseUpload: async () => ({
+        name: "large.jpg",
+        type: "image/jpeg",
+        size: 25 * 1024 * 1024 + 1,
+        arrayBuffer: async () => new ArrayBuffer(0),
+      }) as File,
+    });
+
+    const response = await handler(request());
+
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({ error: uploadSizeMessage });
+  });
+
+  it("returns the same customer-friendly guidance when the request is too large", async () => {
+    const oversizedRequest = request();
+    oversizedRequest.headers.set("Content-Length", String(26 * 1024 * 1024 + 1));
+    const handler = createUploadRoute({
+      repository: repository(),
+      store: { save: vi.fn(), remove: vi.fn() },
+      getOptionalSession: async () => null,
+      trustedOrigin: origin,
+    });
+
+    const response = await handler(oversizedRequest);
+
+    expect(response.status).toBe(413);
+    expect(await response.json()).toEqual({
+      error: uploadSizeMessage,
+      code: "PAYLOAD_TOO_LARGE",
+    });
   });
 
   it("never deletes an existing session when private storage fails", async () => {

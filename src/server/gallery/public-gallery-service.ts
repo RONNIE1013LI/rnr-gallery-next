@@ -22,21 +22,6 @@ type Dependencies = Readonly<{
   imageAvailable: (storageKey: string) => Promise<boolean>;
 }>;
 
-function intersects(left: readonly string[], right: readonly string[]): boolean {
-  return right.length === 0 || left.some((value) => right.includes(value));
-}
-
-function matches(row: GalleryPublicCandidate, query: GalleryQuery): boolean {
-  return (
-    (query.productTypes.length === 0 || query.productTypes.includes(row.productTypeSlug)) &&
-    (query.occasions.length === 0 || query.occasions.includes(row.occasionSlug)) &&
-    (query.birthdayAges.length === 0 || (
-      row.subOccasion !== null && query.birthdayAges.includes(row.subOccasion)
-    )) &&
-    intersects(row.themeSlugs, query.themes)
-  );
-}
-
 function publicItem(row: GalleryPublicCandidate): PublicGalleryItem {
   return Object.freeze({
     id: row.id,
@@ -55,27 +40,33 @@ function publicItem(row: GalleryPublicCandidate): PublicGalleryItem {
 
 export function createPublicGalleryService(dependencies: Dependencies) {
   return Object.freeze({
-    async list(query: GalleryQuery) {
-      const candidates = (await dependencies.repository.listActiveCandidates())
-        .filter((row) => matches(row, query));
-      const available = [];
-      for (const row of candidates) {
-        if (await dependencies.imageAvailable(row.storageKey)) available.push(row);
-      }
-      available.sort((left, right) =>
-        right.createdAt.getTime() - left.createdAt.getTime() ||
-        left.id.localeCompare(right.id),
-      );
-      const total = available.length;
+    async findByIds(designIds: readonly string[]) {
+      const rows = await Promise.all(designIds.map(async (designId) => {
+        const row = await dependencies.repository.findActiveDesign(designId);
+        if (!row || !await dependencies.imageAvailable(row.storageKey)) return null;
+        return publicItem(row);
+      }));
+      return Object.freeze(rows.flatMap((row) => row ? [row] : []));
+    },
+    async list(query: GalleryQuery, requestedPageSize = pageSize) {
+      const resolvedPageSize = Number.isSafeInteger(requestedPageSize)
+        ? Math.min(pageSize, Math.max(1, requestedPageSize))
+        : pageSize;
+      const result = await dependencies.repository.listActivePage(query, resolvedPageSize);
+      const availability = await Promise.all(result.items.map(async (row) => ({
+        row,
+        available: await dependencies.imageAvailable(row.storageKey),
+      })));
+      const available = availability.flatMap(({ row, available }) => available ? [row] : []);
+      const total = Math.max(0, result.total - (result.items.length - available.length));
       const pageCount = Math.max(1, Math.ceil(total / pageSize));
-      const page = Math.min(query.page, pageCount);
-      const start = (page - 1) * pageSize;
+      const page = Math.min(result.page, pageCount);
       return Object.freeze({
-        items: Object.freeze(available.slice(start, start + pageSize).map(publicItem)),
+        items: Object.freeze(available.map(publicItem)),
         total,
         page,
         pageCount,
-        pageSize,
+        pageSize: resolvedPageSize,
       });
     },
   });

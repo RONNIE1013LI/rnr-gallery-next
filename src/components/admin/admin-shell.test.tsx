@@ -1,0 +1,103 @@
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it } from "vitest";
+import { AdminShell } from "./admin-shell";
+
+describe("AdminShell", () => {
+  it("renders the full operations navigation and current administrator", () => {
+    render(
+      <AdminShell
+        administrator={{ name: "Ronnie", email: "owner@example.test", role: "admin" }}
+      >
+        <p>Page content</p>
+      </AdminShell>,
+    );
+
+    expect(screen.getAllByRole("navigation", { name: "Administration" })).toHaveLength(1);
+    for (const [name, href] of [
+      ["Dashboard", "/admin"],
+      ["Orders", "/admin/orders"],
+      ["Production", "/admin/jobs"],
+      ["Customers", "/admin/customers"],
+      ["Users", "/admin/users"],
+      ["Products", "/admin/products"],
+      ["Design Gallery", "/admin/design-gallery"],
+      ["Content", "/admin/content"],
+      ["Media", "/admin/media"],
+      ["Shipping", "/admin/settings/shipping"],
+      ["Payment", "/admin/settings/payment"],
+      ["Audit Log", "/admin/audit"],
+    ]) {
+      expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
+    }
+    expect(screen.getByText("owner@example.test")).toBeInTheDocument();
+    expect(screen.getByText("Admin", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByText("Page content")).toBeInTheDocument();
+  });
+
+  it("omits restricted configuration links for staff", () => {
+    render(
+      <AdminShell
+        administrator={{ name: "Studio Staff", email: "staff@example.test", role: "staff" }}
+      >
+        <p>Page content</p>
+      </AdminShell>,
+    );
+
+    expect(screen.getByRole("link", { name: "Orders" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Production" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Design Gallery" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Shipping" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Payment" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Audit Log" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
+  });
+
+  it("closes the mobile navigation after a destination is selected", () => {
+    render(
+      <AdminShell
+        administrator={{ name: "Ronnie", email: "owner@example.test", role: "admin" }}
+      >
+        <p>Page content</p>
+      </AdminShell>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Open administration menu" }));
+    const menu = screen.getByRole("navigation", { name: "Administration menu" });
+    const productsLink = within(menu).getByRole("link", { name: "Products" });
+    productsLink.addEventListener("click", (event) => event.preventDefault());
+    fireEvent.click(productsLink);
+
+    expect(screen.queryByRole("navigation", { name: "Administration menu" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("keeps mobile navigation non-modal while preserving Escape close and scroll lock", () => {
+    render(
+      <AdminShell
+        administrator={{ name: "Ronnie", email: "owner@example.test", role: "admin" }}
+      >
+        <button type="button">Background action</button>
+      </AdminShell>,
+    );
+
+    const trigger = screen.getByRole("button", { name: "Open administration menu" });
+    trigger.focus();
+    fireEvent.click(trigger);
+    const menu = screen.getByRole("navigation", { name: "Administration menu" });
+    expect(trigger).toHaveFocus();
+    expect(document.body.style.overflow).toBe("hidden");
+    const auditLog = within(menu).getByRole("link", { name: "Audit Log" });
+    auditLog.focus();
+    expect(fireEvent.keyDown(document, { key: "Tab" })).toBe(true);
+
+    const backgroundAction = screen.getByRole("button", { name: "Background action" });
+    expect(backgroundAction).not.toHaveProperty("inert", true);
+    backgroundAction.focus();
+
+    fireEvent.keyDown(document, { key: "Escape" });
+    expect(screen.queryByRole("navigation", { name: "Administration menu" }))
+      .not.toBeInTheDocument();
+    expect(document.body.style.overflow).toBe("");
+    expect(backgroundAction).toHaveFocus();
+  });
+});

@@ -56,6 +56,10 @@ class MemoryGalleryRepository implements GalleryRepository {
     return [];
   }
 
+  async listActivePage() {
+    return { items: [], total: 0, page: 1, pageCount: 1 };
+  }
+
   async findActiveImage() {
     return null;
   }
@@ -162,6 +166,7 @@ describe("importWordPressGallery", () => {
     const paths = await fixture();
     const repository: GalleryRepository = {
       listActiveCandidates: async () => [],
+      listActivePage: async () => ({ items: [], total: 0, page: 1, pageCount: 1 }),
       findActiveImage: async () => null,
       findActiveDesign: async () => null,
       replaceInitialImport: async () => {

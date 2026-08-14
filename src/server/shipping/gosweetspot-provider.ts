@@ -6,12 +6,32 @@ import {
   type ShippingQuoteProvider,
   type ShippingQuoteRequest,
 } from "./types";
+import { normalizeShippingServiceName } from "@/domain/shipping/service-name";
 
-const responseSchema = z.array(z.object({
+const rateSchema = z.object({
   description: z.string().trim().min(1),
-  shortcode: z.string().trim().min(1),
+  shortcode: z.string().trim().min(1).nullish(),
+  shortCode: z.string().trim().min(1).nullish(),
   rate: z.number().finite(),
+}).superRefine((rate, context) => {
+  if (rate.shortcode && rate.shortCode && rate.shortcode !== rate.shortCode) {
+    context.addIssue({
+      code: "custom",
+      message: "GoSweetSpot returned conflicting short codes.",
+    });
+  }
+}).transform((rate) => ({
+  description: rate.description,
+  shortcode: rate.shortcode ?? rate.shortCode ??
+    `gss-${createHash("sha256").update(rate.description).digest("hex").slice(0, 12)}`,
+  rate: rate.rate,
 }));
+
+const rateListSchema = z.array(rateSchema);
+const responseSchema = z.union([
+  rateListSchema,
+  z.object({ rates: rateListSchema }).transform((response) => response.rates),
+]);
 
 type RateTaxMode = "incl_gst" | "ex_gst";
 
@@ -57,6 +77,16 @@ function taxAmounts(rate: number, mode: RateTaxMode) {
   return { amountExGstCents, gstCents, amountInclGstCents: amountExGstCents + gstCents };
 }
 
+function normalizeGoSweetSpotText(value: string): string {
+  return value
+    .normalize("NFKD")
+    .replace(/[\u2018\u2019\u02bc]/g, "'")
+    .replace(/[\u201c\u201d]/g, '"')
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/\p{M}/gu, "")
+    .replace(/[^\x20-\x7e]/g, "");
+}
+
 export function createGoSweetSpotShippingProvider(
   options: GoSweetSpotOptions,
 ): ShippingQuoteProvider {
@@ -80,6 +110,15 @@ export function createGoSweetSpotShippingProvider(
       if (request.packages.length < 1) {
         throw new ShippingProviderError("At least one shipping package is required.");
       }
+      if (request.packages.some((item) =>
+        !Number.isSafeInteger(item.lengthMm) || item.lengthMm <= 0 ||
+        !Number.isSafeInteger(item.widthMm) || item.widthMm <= 0 ||
+        !Number.isSafeInteger(item.heightMm) || item.heightMm <= 0 ||
+        !Number.isSafeInteger(item.weightGrams) || item.weightGrams <= 0 ||
+        !Number.isSafeInteger(item.unitPriceInclGstCents) || item.unitPriceInclGstCents < 0
+      )) {
+        throw new ShippingProviderError("The package details are invalid.");
+      }
       const weightGrams = request.packages.reduce((total, item) => total + item.weightGrams, 0);
       if (!Number.isSafeInteger(weightGrams) || weightGrams <= 0) {
         throw new ShippingProviderError("The package weight is invalid.");
@@ -89,13 +128,21 @@ export function createGoSweetSpotShippingProvider(
         weight: weightGrams / 1_000,
         cartvalue: request.cartValueInclGstCents / 100,
         destination: {
-          Contact: request.destination.contact,
-          street: request.destination.street,
-          suburb: request.destination.suburb,
-          city: request.destination.city,
-          postcode: request.destination.postcode,
-          countrycode: request.destination.countryCode,
+          Contact: normalizeGoSweetSpotText(request.destination.contact),
+          street: normalizeGoSweetSpotText(request.destination.street),
+          suburb: normalizeGoSweetSpotText(request.destination.suburb),
+          city: normalizeGoSweetSpotText(request.destination.city),
+          Country: request.destination.countryCode,
+          Postcode: request.destination.postcode,
         },
+        Products: request.packages.map((item) => ({
+          Quantity: 1,
+          UnitWeightKg: item.weightGrams / 1_000,
+          UnitPrice: item.unitPriceInclGstCents / 100,
+          UnitLengthCm: item.lengthMm / 10,
+          UnitWidthCm: item.widthMm / 10,
+          UnitHeightCm: item.heightMm / 10,
+        })),
       });
       const signature = createHmac("sha256", options.secret)
         .update(rawBody)
@@ -139,7 +186,7 @@ export function createGoSweetSpotShippingProvider(
         return Object.freeze({
           provider: "gosweetspot" as const,
           serviceCode: selected.shortcode,
-          serviceName: selected.description,
+          serviceName: normalizeShippingServiceName(selected.description),
           ...amounts,
           currency: "NZD" as const,
           providerReference: `${selected.shortcode}:${rawResponseHash.slice(0, 16)}`,

@@ -18,6 +18,8 @@ const checkoutItemInputSchema = z.object({
   urgentServiceConfirmed: z.boolean().optional(),
   quantity: z.number().int().min(1).max(5),
   uploadReferences: z.array(z.uuid()).max(20),
+  mainPhotoUploadId: z.uuid().optional(),
+  extraBackgroundRemovalUploadIds: z.array(z.uuid()).max(19).optional(),
 });
 
 export const checkoutCartInputSchema = z.object({

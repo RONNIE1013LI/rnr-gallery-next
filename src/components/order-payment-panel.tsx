@@ -6,6 +6,7 @@ import type { OrderPaymentStatus } from "@/server/db/schema/orders";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import type { PaymentActionDTO, PublicPaymentDTO } from "@/server/payments/public-dto";
 import { createClientId } from "@/lib/client-id";
+import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
 import {
   PAYMENT_INTENT_STORAGE_KEY,
   readPaymentRecoveryIntent,
@@ -17,6 +18,11 @@ import {
   PaymentMethods,
   type PaymentMethodOption,
 } from "./payment-methods";
+import {
+  completePendingCheckout,
+  readPendingCheckout,
+  savePendingCheckout,
+} from "./pending-checkout";
 import { StripePaymentForm } from "./stripe-payment-form";
 import styles from "./storefront.module.css";
 
@@ -24,6 +30,12 @@ export type PaymentStartResponse = Readonly<{
   payment: PublicPaymentDTO;
   action: PaymentActionDTO | null;
 }>;
+
+export class PaymentStartError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+  }
+}
 
 type PaymentResponseValidationContext = Readonly<{
   nodeEnv: string | undefined;
@@ -67,7 +79,7 @@ function trustedActionUrl(
     const current = new URL(context.currentOrigin);
     if (url.origin !== current.origin) return false;
     if (url.protocol === "https:") return true;
-    return url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    return context.nodeEnv !== "production" && url.protocol === "http:";
   } catch {
     return false;
   }
@@ -83,9 +95,7 @@ function trustedElementsReturnUrl(
     const current = new URL(context.currentOrigin);
     if (url.username || url.password || url.origin !== current.origin) return false;
     if (url.protocol === "https:") return true;
-    return context.nodeEnv !== "production" &&
-      url.protocol === "http:" &&
-      ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname);
+    return context.nodeEnv !== "production" && url.protocol === "http:";
   } catch {
     return false;
   }
@@ -143,7 +153,13 @@ export function parsePaymentStartResponse(
 
 function storedStartingAttempt(orderNumber: string): StoredStartingAttempt | null {
   if (typeof window === "undefined") return null;
-  const intent = readPaymentRecoveryIntent(window.sessionStorage);
+  const sessionIntent = readPaymentRecoveryIntent(window.sessionStorage);
+  const durableIntent = readPendingCheckout(window.localStorage)?.intent ?? null;
+  const intent = sessionIntent?.phase === "starting_payment" && sessionIntent.orderNumber === orderNumber
+    ? sessionIntent
+    : durableIntent?.phase === "starting_payment" && durableIntent.orderNumber === orderNumber
+      ? durableIntent
+      : null;
   if (!intent || intent.phase !== "starting_payment" || intent.orderNumber !== orderNumber) return null;
   return { value: intent, method: intent.method, paymentIdempotencyKey: intent.paymentIdempotencyKey };
 }
@@ -162,6 +178,14 @@ function persistStartingAttempt(
     ? { ...existing, method, paymentIdempotencyKey }
     : { schemaVersion: 1, phase: "starting_payment", orderNumber, method, paymentIdempotencyKey };
   window.sessionStorage.setItem(PAYMENT_INTENT_STORAGE_KEY, JSON.stringify(intent));
+  const pending = readPendingCheckout(window.localStorage);
+  if (
+    pending?.intent.phase === "starting_payment" &&
+    pending.intent.orderNumber === orderNumber &&
+    "orderIdempotencyKey" in intent
+  ) {
+    savePendingCheckout(window.localStorage, intent, pending.cart);
+  }
 }
 
 function defaultMethod(methods: readonly PaymentMethodOption[]) {
@@ -174,7 +198,6 @@ export async function followPaymentAction(
   navigation: PaymentNavigation,
 ) {
   if (action.kind === "elements") {
-    navigation.navigate(`${orderHref}#payment`);
     return;
   }
   navigation.assign(action.redirectUrl);
@@ -198,7 +221,7 @@ export async function startOrderPayment(
   }
   if (!response.ok) {
     const error = record(record(payload)?.error);
-    throw new Error(typeof error?.message === "string" ? error.message : "Payment could not be started");
+    throw new PaymentStartError(typeof error?.message === "string" ? error.message : "Payment could not be started", response.status);
   }
   return parsePaymentStartResponse(payload, method, {
     nodeEnv: process.env.NODE_ENV,
@@ -212,7 +235,16 @@ type OrderPaymentPanelProps = Readonly<{
   payment?: PublicPaymentDTO | null;
   methods?: readonly PaymentMethodOption[];
   orderHref: string;
+  totalInclGstCents?: number;
 }>;
+
+function paymentActionLabel(method: PaymentMethodKey | null, pending: boolean) {
+  if (pending) return method === "card" ? "Preparing secure card payment…" : "Starting payment…";
+  if (method === "card") return "Continue to secure card payment";
+  if (method === "afterpay") return "Continue to Afterpay";
+  if (method === "zip") return "Continue to Zip Pay";
+  return "Continue to payment";
+}
 
 function OrderPaymentPanelState({
   orderNumber,
@@ -220,8 +252,9 @@ function OrderPaymentPanelState({
   payment = null,
   methods: suppliedMethods,
   orderHref,
+  totalInclGstCents,
 }: OrderPaymentPanelProps) {
-  const { push } = useRouter();
+  const { push, refresh } = useRouter();
   const [initialAttempt] = useState(() => storedStartingAttempt(orderNumber));
   const [methods, setMethods] = useState<readonly PaymentMethodOption[]>(suppliedMethods ?? []);
   const [methodsLoaded, setMethodsLoaded] = useState(suppliedMethods !== undefined);
@@ -234,7 +267,12 @@ function OrderPaymentPanelState({
     () => lockedMethod ? methods.filter(({ method }) => method === lockedMethod) : methods,
     [lockedMethod, methods],
   );
-  const resumableAttempt = paymentStatus === "awaiting_payment" && !payment ? initialAttempt : null;
+  const resumableAttempt =
+    (paymentStatus === "awaiting_payment" || paymentStatus === "processing") &&
+    initialAttempt &&
+    (!payment || payment.method === initialAttempt.method)
+      ? initialAttempt
+      : null;
   const resumedMethod = resumableAttempt && methods.some((option) => option.method === resumableAttempt.method) ? resumableAttempt.method : null;
   const [selected, setSelected] = useState<PaymentMethodKey | null>(() =>
     preferredMethod && methods.some(({ method }) => method === preferredMethod)
@@ -256,16 +294,22 @@ function OrderPaymentPanelState({
     if (paymentStatus === "refunded") return "Payment refunded.";
     if (paymentStatus === "failed") return "Payment failed. Choose a payment method and try again.";
     if (paymentStatus === "cancelled") return "Payment cancelled. Choose a payment method and try again.";
-    if (payment?.status === "processing") return "Payment confirmation is pending";
+    if (paymentAction?.kind === "elements") return "Enter your card details below to confirm your order.";
+    if (payment?.status === "processing") return "Complete payment to confirm your order.";
     if (payment?.status === "created") return "Payment setup is pending. Continue with the same payment method.";
     if (payment?.status === "requires_action") return "Payment action is required. Continue with the same payment method.";
-    if (paymentStatus === "processing") return "Payment confirmation is pending";
+    if (paymentStatus === "processing") return "Payment is processing. Your order is not yet confirmed.";
     return "";
-  }, [message, payment, paymentStatus]);
+  }, [message, payment, paymentAction, paymentStatus]);
 
   useEffect(() => {
-    if (paymentStatus === "awaiting_payment") return;
-    clearStoredStartingAttempt(orderNumber);
+    if (paymentStatus === "awaiting_payment" || paymentStatus === "processing") return;
+    if (paymentStatus === "paid" || paymentStatus === "refunded") {
+      if (completePendingCheckout(window.localStorage, orderNumber)) notifyCartChanged();
+      window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+    } else {
+      clearStoredStartingAttempt(orderNumber);
+    }
     paymentKey.current = null;
   }, [orderNumber, paymentStatus]);
 
@@ -322,17 +366,23 @@ function OrderPaymentPanelState({
         return;
       }
       setPaymentAction(null);
-      if (["paid", "failed", "cancelled"].includes(result.payment.status)) {
-        clearStoredStartingAttempt(orderNumber);
+      if (["paid", "failed", "cancelled", "refunded"].includes(result.payment.status)) {
+        if (result.payment.status === "paid" || result.payment.status === "refunded") {
+          if (completePendingCheckout(window.localStorage, orderNumber)) notifyCartChanged();
+          window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+        } else {
+          clearStoredStartingAttempt(orderNumber);
+        }
         paymentKey.current = null;
       }
       const messages: Record<PublicPaymentDTO["status"], string> = {
         created: "Payment setup is pending. Try again shortly.",
         requires_action: "Payment action is required. Try again to continue.",
-        processing: "Payment confirmation is pending",
+        processing: "Payment is processing. Your order is not yet confirmed.",
         paid: "Payment confirmed.",
         failed: "Payment failed. Choose a payment method and try again.",
         cancelled: "Payment cancelled. Choose a payment method and try again.",
+        refunded: "Payment refunded.",
       };
       setMessage(messages[result.payment.status]);
     } catch (error) {
@@ -343,7 +393,7 @@ function OrderPaymentPanelState({
   }, [orderHref, orderNumber, push]);
 
   useEffect(() => {
-    if (!methodsLoaded || resumed.current || paymentStatus !== "awaiting_payment" || !resumedMethod || !resumableAttempt) return;
+    if (!methodsLoaded || resumed.current || !["awaiting_payment", "processing"].includes(paymentStatus) || !resumedMethod || !resumableAttempt) return;
     resumed.current = true;
     paymentKey.current = resumableAttempt.paymentIdempotencyKey;
     void runPayment(resumedMethod, resumableAttempt.paymentIdempotencyKey);
@@ -367,13 +417,26 @@ function OrderPaymentPanelState({
           paymentKey.current = null;
           setMessage("");
         }} disabled={pending} />}
-      <button className={styles.primaryButton} type="button" disabled={!methodsLoaded || !selected || pending || visibleMethods.length === 0} onClick={start}>{pending ? "Starting payment…" : lockedMethod ? "Continue payment" : "Pay for order"}</button>
+      {paymentAction?.kind !== "elements" ? <button className={styles.primaryButton} type="button" disabled={!methodsLoaded || !selected || pending || visibleMethods.length === 0} onClick={start}>{paymentActionLabel(selected, pending)}</button> : null}
     </> : null}
     {paymentAction?.kind === "elements" ? <StripePaymentForm
       key={paymentAction.clientSecret}
       clientSecret={paymentAction.clientSecret}
+      confirmationUrl={`/api/orders/${encodeURIComponent(orderNumber)}/payment`}
+      onPaymentUpdated={(status) => {
+        if (status === "processing") return;
+        if (status === "paid") {
+          if (completePendingCheckout(window.localStorage, orderNumber)) notifyCartChanged();
+          window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+        } else {
+          clearStoredStartingAttempt(orderNumber);
+        }
+        paymentKey.current = null;
+        refresh();
+      }}
       publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""}
       returnUrl={paymentAction.returnUrl}
+      totalInclGstCents={totalInclGstCents}
     /> : null}
     {statusMessage ? <p aria-live="polite" className={styles.checkoutMessage}>{statusMessage}</p> : null}
   </section>;

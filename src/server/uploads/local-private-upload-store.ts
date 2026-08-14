@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
-import { mkdir, open, rm } from "node:fs/promises";
-import { basename, join } from "node:path";
+import { mkdir, open, readFile, rm } from "node:fs/promises";
+import { basename, isAbsolute, join, resolve } from "node:path";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
 const ACCEPTED_MIME_TYPES = new Set([
@@ -11,7 +11,7 @@ const ACCEPTED_MIME_TYPES = new Set([
   "image/heif",
 ]);
 
-type UploadFile = Readonly<{
+export type UploadFile = Readonly<{
   name: string;
   type: string;
   size: number;
@@ -43,6 +43,33 @@ export class InvalidUploadError extends Error {
   }
 }
 
+function ascii(bytes: Uint8Array, start: number, length: number) {
+  return String.fromCharCode(...bytes.subarray(start, start + length));
+}
+
+export function hasImageSignature(bytes: Uint8Array, mimeType: string) {
+  if (mimeType === "image/jpeg") {
+    return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
+  }
+  if (mimeType === "image/png") {
+    return bytes.length >= 8 && [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]
+      .every((value, index) => bytes[index] === value);
+  }
+  if (mimeType === "image/webp") {
+    return bytes.length >= 12 && ascii(bytes, 0, 4) === "RIFF" && ascii(bytes, 8, 4) === "WEBP";
+  }
+  if (mimeType === "image/heic" || mimeType === "image/heif") {
+    if (bytes.length < 12 || ascii(bytes, 4, 4) !== "ftyp") return false;
+    const accepted = new Set(mimeType === "image/heic"
+      ? ["heic", "heix", "hevc", "hevx"]
+      : ["mif1", "msf1", "heic", "heix", "hevc", "hevx"]);
+    for (let offset = 8; offset + 4 <= Math.min(bytes.length, 64); offset += 4) {
+      if (accepted.has(ascii(bytes, offset, 4))) return true;
+    }
+  }
+  return false;
+}
+
 export class LocalPrivateUploadStore {
   constructor(
     private readonly rootDirectory: string,
@@ -55,6 +82,9 @@ export class LocalPrivateUploadStore {
     const id = this.createId();
     const originalName = basename(file.name).replace(/[\u0000-\u001f\u007f]/g, "");
     const bytes = Buffer.from(await file.arrayBuffer());
+    if (!hasImageSignature(bytes, file.type)) {
+      throw new InvalidUploadError("The image contents do not match the selected file type.");
+    }
     const storageKey = `${id}.bin`;
     const reference: PrivateUploadReference = Object.freeze({
       id,
@@ -103,4 +133,27 @@ export class LocalPrivateUploadStore {
       rm(join(this.rootDirectory, `${reference.id}.json`), { force: true }),
     ]);
   }
+
+  async read(storageKey: string): Promise<Buffer> {
+    if (!/^[0-9a-f-]{36}\.bin$/i.test(storageKey) || basename(storageKey) !== storageKey) {
+      throw new InvalidUploadError("Invalid private upload reference");
+    }
+    return readFile(join(this.rootDirectory, storageKey));
+  }
+}
+
+export function privateUploadDirectory(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+) {
+  const configured = env.RNR_PRIVATE_UPLOAD_DIR?.trim();
+  if (!configured) {
+    if (env.NODE_ENV === "production") {
+      throw new Error("RNR_PRIVATE_UPLOAD_DIR is required in production");
+    }
+    return join(process.cwd(), ".data", "private-uploads");
+  }
+  if (!isAbsolute(configured)) {
+    throw new Error("RNR_PRIVATE_UPLOAD_DIR must be absolute");
+  }
+  return resolve(configured);
 }

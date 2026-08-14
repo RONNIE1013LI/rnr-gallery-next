@@ -1,7 +1,15 @@
+import Image from "next/image";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import { formatNzd } from "@/domain/money";
+import { normalizeShippingServiceName } from "@/domain/shipping/service-name";
 import type { PublicShippingDTO } from "@/server/checkout/public-dto";
 import styles from "./storefront.module.css";
+
+function shippingDisclosure(shipping: PublicShippingDTO["option"]) {
+  if (shipping.method === "pickup") return `${shipping.serviceName} · No shipping charge`;
+  const serviceName = normalizeShippingServiceName(shipping.serviceName).replace(/\s*—\s*not a live carrier rate$/i, "");
+  return `${serviceName} · ${shipping.isTest ? "Test rate — not a live carrier rate" : "Live carrier rate"}`;
+}
 
 export function CheckoutOrderSummary({ cart, shipping }: {
   cart: RepricedCheckoutCart | null;
@@ -37,8 +45,7 @@ export function CheckoutOrderSummary({ cart, shipping }: {
         <div><dt>Shipping ex GST</dt><dd>{formatNzd(shippingEx)}</dd></div>
         <div className={styles.priceTotal}><dt>Total incl GST</dt><dd>{formatNzd(cart.totalInclGstCents + shippingTotal)}</dd></div>
       </dl>
-      {shipping ? <p className={styles.checkoutProvenance}>{shipping.serviceName} · {shipping.method === "pickup" ? "No shipping charge" : shipping.isTest ? "Test rate — not a live carrier rate" : "Live carrier rate"}</p> : null}
+      {shipping ? <p className={styles.checkoutProvenance}>{shippingDisclosure(shipping)}</p> : null}
     </>
   );
 }
-import Image from "next/image";

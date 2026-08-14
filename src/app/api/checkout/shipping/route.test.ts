@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CheckoutStateRepository } from "@/server/checkout/checkout-repository";
 import { hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import { ShippingUnavailableError } from "@/server/shipping/shipping-service";
-import { createCheckoutShippingRoute } from "./route";
+import { createCheckoutShippingRoute } from "./route-handler";
 
 const origin = "https://shop.example.test";
 const token = "a".repeat(43);

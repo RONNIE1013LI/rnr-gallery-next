@@ -1,5 +1,8 @@
 import { isDeepStrictEqual } from "node:util";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
+import type { NormalizedAddress } from "@/domain/address/types";
+import type { RepricedCheckoutCart } from "@/domain/checkout/types";
+import type { DeliveryPreference } from "@/domain/configuration/types";
 import type { getDatabase } from "@/server/db/client";
 import {
   checkoutSessions,
@@ -7,6 +10,8 @@ import {
   orderAddresses,
   orderItems,
   orders,
+  productionJobItems,
+  productionJobs,
   shippingQuotes,
 } from "@/server/db/schema";
 import {
@@ -18,6 +23,75 @@ import {
 } from "./order-repository";
 
 type Database = ReturnType<typeof getDatabase>;
+
+function productionAddressText(address: NormalizedAddress) {
+  return [
+    address.fullName,
+    address.building,
+    address.street,
+    address.suburb,
+    address.region,
+    address.postcode,
+    address.country,
+  ].map((value) => value.trim()).filter(Boolean).join("\n");
+}
+
+export function buildWebProductionJobSnapshot(input: Readonly<{
+  order: Readonly<{ id: string; orderNumber: string }>;
+  cart: RepricedCheckoutCart;
+  billingAddress: NormalizedAddress;
+  deliveryAddress: NormalizedAddress;
+  deliveryMethod: DeliveryPreference;
+  orderItemIds: readonly string[];
+  now: Date;
+}>) {
+  if (input.orderItemIds.length !== input.cart.items.length) {
+    throw new AtomicOrderStateError("Production job item links are incomplete");
+  }
+  const neededDate = [...input.cart.items]
+    .map((item) => item.neededDate)
+    .sort()[0];
+  if (!neededDate) {
+    throw new AtomicOrderStateError("Production job required date is missing");
+  }
+  const designRequirements = input.cart.items
+    .map((item) => item.designText.trim())
+    .filter(Boolean)
+    .join("\n\n");
+  const internalNotes = input.cart.items
+    .map((item) => item.notes.trim())
+    .filter(Boolean)
+    .join("\n\n");
+  return Object.freeze({
+    job: Object.freeze({
+      jobNumber: input.order.orderNumber,
+      source: "web" as const,
+      orderId: input.order.id,
+      customerName: input.billingAddress.fullName,
+      customerEmail: input.billingAddress.email,
+      customerPhone: input.billingAddress.phone,
+      customerSource: "web" as const,
+      urgent: input.cart.items.some((item) => item.urgentServiceConfirmed),
+      neededDate,
+      deliveryMethod: input.deliveryMethod,
+      deliveryAddress: productionAddressText(input.deliveryAddress),
+      designRequirements,
+      internalNotes,
+      createdAt: input.now,
+      updatedAt: input.now,
+    }),
+    items: Object.freeze(input.cart.items.map((item, position) => Object.freeze({
+      position,
+      sourceOrderItemId: input.orderItemIds[position],
+      productTitle: item.productTitle,
+      sizeLabel: item.sizeLabel,
+      quantity: item.quantity,
+      designText: item.designText,
+      notes: item.notes,
+      createdAt: input.now,
+    }))),
+  });
+}
 
 export function calculateOrderTotals(
   product: {
@@ -119,6 +193,7 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
           eq(checkoutUploads.checkoutSessionId, sessionId),
           inArray(checkoutUploads.id, uploadIds),
           isNull(checkoutUploads.claimedByOrderItemId),
+          isNull(checkoutUploads.cleanupClaimedAt),
         ));
       return rows.map(({ id }) => id);
     },
@@ -258,6 +333,7 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
             })
             .returning();
 
+          const createdOrderItemIds: string[] = [];
           for (const [position, item] of input.cart.items.entries()) {
             const [orderItem] = await transaction
               .insert(orderItems)
@@ -294,6 +370,7 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
                 lineTotalInclGstCents: item.lineTotalInclGstCents,
               })
               .returning({ id: orderItems.id });
+            createdOrderItemIds.push(orderItem.id);
 
             if (item.uploadReferences.length > 0) {
               const claimed = await transaction
@@ -303,6 +380,7 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
                   eq(checkoutUploads.checkoutSessionId, input.sessionId),
                   inArray(checkoutUploads.id, [...item.uploadReferences]),
                   isNull(checkoutUploads.claimedByOrderItemId),
+                  isNull(checkoutUploads.cleanupClaimedAt),
                 ))
                 .returning({ id: checkoutUploads.id });
               if (claimed.length !== item.uploadReferences.length) {
@@ -310,6 +388,26 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
               }
             }
           }
+
+          const productionSnapshot = buildWebProductionJobSnapshot({
+            order,
+            cart: input.cart,
+            billingAddress: input.billingAddress,
+            deliveryAddress: input.deliveryAddress,
+            deliveryMethod: input.deliveryMethod,
+            orderItemIds: createdOrderItemIds,
+            now: input.now,
+          });
+          const [productionJob] = await transaction
+            .insert(productionJobs)
+            .values(productionSnapshot.job)
+            .returning({ id: productionJobs.id });
+          await transaction.insert(productionJobItems).values(
+            productionSnapshot.items.map((item) => ({
+              ...item,
+              jobId: productionJob.id,
+            })),
+          );
 
           await transaction.insert(orderAddresses).values([
             { orderId: order.id, kind: "billing", ...input.billingAddress },

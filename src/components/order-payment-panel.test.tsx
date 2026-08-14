@@ -3,18 +3,27 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { followPaymentAction, OrderPaymentPanel, parsePaymentStartResponse } from "./order-payment-panel";
 
 const push = vi.fn();
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+const refresh = vi.fn();
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh }) }));
 vi.mock("./stripe-payment-form", () => ({
-  StripePaymentForm: ({ clientSecret, publishableKey, returnUrl }: {
+  StripePaymentForm: ({ clientSecret, confirmationUrl, publishableKey, returnUrl, totalInclGstCents, onPaymentUpdated }: {
     clientSecret: string;
+    confirmationUrl: string;
     publishableKey: string;
     returnUrl: string;
+    totalInclGstCents: number;
+    onPaymentUpdated: (status: "paid" | "failed" | "cancelled" | "processing") => void;
   }) => <div
-    data-testid="stripe-payment-form"
-    data-client-secret={clientSecret}
-    data-publishable-key={publishableKey}
-    data-return-url={returnUrl}
-  />,
+      data-testid="stripe-payment-form"
+      data-client-secret={clientSecret}
+      data-confirmation-url={confirmationUrl}
+      data-publishable-key={publishableKey}
+      data-return-url={returnUrl}
+      data-total-incl-gst-cents={totalInclGstCents}
+    >
+      <button type="button" onClick={() => onPaymentUpdated("paid")}>Simulate Stripe paid</button>
+      <button type="button" onClick={() => onPaymentUpdated("failed")}>Simulate Stripe failed</button>
+    </div>,
 }));
 
 const methods = [
@@ -22,8 +31,147 @@ const methods = [
   { method: "afterpay" as const, label: "Test Afterpay — no real payment", isTest: true },
 ];
 
+const pendingCart = { version: 1, items: [{
+  id: "30000000-0000-4000-8000-000000000001",
+  productKey: "photo-print-canvas",
+  productSlug: "photo-print-canvas",
+  productTitle: "Photo Print Canvas",
+  imageSrc: "/test.jpg",
+  sizeKey: "a4",
+  sizeLabel: "A4",
+  orientation: "landscape",
+  peoplePets: 0,
+  photoSubmissionMethod: "later",
+  designText: "Family",
+  notes: "",
+  neededDate: "2026-08-20",
+  urgentServiceConfirmed: false,
+  deliveryPreference: "pickup",
+  quantity: 1,
+  price: { lines: [], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475 },
+  uploadReferences: [],
+}] } as const;
+
+const durableIntent = {
+  schemaVersion: 1,
+  phase: "starting_payment",
+  orderIdempotencyKey: "70000000-0000-4000-8000-000000000001",
+  paymentIdempotencyKey: "80000000-0000-4000-8000-000000000001",
+  method: "card",
+  checkoutVersion: 2,
+  cartDigest: "a".repeat(64),
+  shipping: { method: "pickup", serviceCode: "pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, isTest: false },
+  orderNumber: "RNR-2026-ABC",
+} as const;
+
+function seedDurablePendingCheckout() {
+  window.localStorage.setItem("rnr-cart-v1", JSON.stringify(pendingCart));
+  window.localStorage.setItem("rnr-pending-checkout-v1", JSON.stringify({
+    schemaVersion: 1,
+    intent: durableIntent,
+    cart: pendingCart,
+  }));
+}
+
 describe("OrderPaymentPanel", () => {
-  beforeEach(() => { push.mockReset(); vi.restoreAllMocks(); window.sessionStorage.clear(); });
+  beforeEach(() => {
+    push.mockReset();
+    refresh.mockReset();
+    vi.restoreAllMocks();
+    window.sessionStorage.clear();
+    window.localStorage.clear();
+  });
+
+  it("resumes the same Stripe payment from durable storage after the browser is reopened", async () => {
+    seedDurablePendingCheckout();
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+      action: { kind: "elements", method: "card", clientSecret: "pi_secret_reopened", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
+    }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="awaiting_payment"
+      payment={{ method: "card", status: "processing", isTest: false, canRetry: false }}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
+
+    expect(await screen.findByTestId("stripe-payment-form")).toHaveAttribute("data-client-secret", "pi_secret_reopened");
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      method: "card",
+      idempotencyKey: durableIntent.paymentIdempotencyKey,
+    });
+    expect(window.localStorage.getItem("rnr-cart-v1")).toBe(JSON.stringify(pendingCart));
+  });
+
+  it("clears the matching retained cart only after payment is confirmed", async () => {
+    seedDurablePendingCheckout();
+
+    render(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="paid"
+      payment={{ method: "card", status: "paid", isTest: false, canRetry: false }}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
+
+    await waitFor(() => expect(window.localStorage.getItem("rnr-cart-v1")).toBeNull());
+    expect(window.localStorage.getItem("rnr-pending-checkout-v1")).toBeNull();
+  });
+
+  it.each(["failed", "cancelled"] as const)(
+    "retains the ordered-cart association after %s so a successful retry clears it",
+    async (paymentStatus) => {
+      seedDurablePendingCheckout();
+      const fetchMock = vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          payment: { method: "card", status: "paid", isTest: false, canRetry: false },
+          action: null,
+        }),
+      });
+      vi.stubGlobal("fetch", fetchMock);
+      render(<OrderPaymentPanel
+        orderNumber="RNR-2026-ABC"
+        paymentStatus={paymentStatus}
+        payment={{ method: "card", status: paymentStatus, isTest: false, canRetry: true }}
+        methods={methods}
+        orderHref="/orders/RNR-2026-ABC"
+      />);
+
+      await waitFor(() => expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull());
+      expect(window.localStorage.getItem("rnr-pending-checkout-v1")).not.toBeNull();
+      expect(window.localStorage.getItem("rnr-cart-v1")).toBe(JSON.stringify(pendingCart));
+
+      fireEvent.click(screen.getByRole("button", { name: "Continue to secure card payment" }));
+
+      await waitFor(() => expect(window.localStorage.getItem("rnr-cart-v1")).toBeNull());
+      expect(window.localStorage.getItem("rnr-pending-checkout-v1")).toBeNull();
+    },
+  );
+
+  it("keeps the durable cart association when Stripe reports a failed confirmation", async () => {
+    seedDurablePendingCheckout();
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+      action: { kind: "elements", method: "card", clientSecret: "pi_secret_failed", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
+    }) }));
+    render(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="awaiting_payment"
+      payment={{ method: "card", status: "processing", isTest: false, canRetry: false }}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
+
+    await screen.findByTestId("stripe-payment-form");
+    fireEvent.click(screen.getByRole("button", { name: "Simulate Stripe failed" }));
+
+    expect(window.localStorage.getItem("rnr-pending-checkout-v1")).not.toBeNull();
+    expect(window.localStorage.getItem("rnr-cart-v1")).toBe(JSON.stringify(pendingCart));
+  });
 
   it("resumes the checkout payment attempt for the same order with the same key and method", async () => {
     const paymentIdempotencyKey = "70000000-0000-4000-8000-000000000002";
@@ -63,7 +211,7 @@ describe("OrderPaymentPanel", () => {
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
 
     fireEvent.click(screen.getByRole("radio", { name: "Test Afterpay — no real payment" }));
-    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     const stored = JSON.parse(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1") ?? "null");
     expect(stored).toEqual({
@@ -108,7 +256,7 @@ describe("OrderPaymentPanel", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={[methods[0]]} orderHref="/orders/RNR-2026-ABC" />);
-    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
 
     await screen.findByText("Unavailable");
     const request = JSON.parse(fetchMock.mock.calls[0][1].body);
@@ -123,7 +271,7 @@ describe("OrderPaymentPanel", () => {
 
     expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
     fireEvent.click(screen.getByRole("radio", { name: "Test Afterpay — no real payment" }));
-    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
 
     expect(await screen.findByText("Afterpay is unavailable")).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeEnabled();
@@ -134,9 +282,9 @@ describe("OrderPaymentPanel", () => {
 
   it("shows truthful processing copy without claiming payment succeeded", () => {
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="processing" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
-    expect(screen.getByText("Payment confirmation is pending")).toBeInTheDocument();
+    expect(screen.getByText("Payment is processing. Your order is not yet confirmed.")).toBeInTheDocument();
     expect(screen.queryByText("Paid")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Pay for order" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Continue to/ })).not.toBeInTheDocument();
   });
 
   it("shows pending confirmation when the current attempt is processing before the order snapshot catches up", () => {
@@ -148,10 +296,10 @@ describe("OrderPaymentPanel", () => {
       orderHref="/orders/RNR-2026-ABC"
     />);
 
-    expect(screen.getByText("Payment confirmation is pending")).toBeInTheDocument();
+    expect(screen.getByText("Complete payment to confirm your order.")).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
     expect(screen.queryByRole("radio", { name: "Test Afterpay — no real payment" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue payment" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Continue to secure card payment" })).toBeEnabled();
   });
 
   it("continues the same authoritative processing method after an order refresh", () => {
@@ -163,10 +311,10 @@ describe("OrderPaymentPanel", () => {
       orderHref="/orders/RNR-2026-ABC"
     />);
 
-    expect(screen.getByText("Payment confirmation is pending")).toBeInTheDocument();
+    expect(screen.getByText("Complete payment to confirm your order.")).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
     expect(screen.queryByRole("radio", { name: "Test Afterpay — no real payment" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue payment" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Continue to/ })).toBeEnabled();
     expect(screen.queryByText("Payment confirmed.")).not.toBeInTheDocument();
   });
 
@@ -181,7 +329,7 @@ describe("OrderPaymentPanel", () => {
 
     expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
     expect(screen.queryByRole("radio", { name: "Test card — no real payment" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Continue payment" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: /Continue to/ })).toBeEnabled();
   });
 
   it("rebinds the controls when an authoritative attempt appears without changing order status", () => {
@@ -218,7 +366,7 @@ describe("OrderPaymentPanel", () => {
       />);
 
       expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
-      expect(screen.getByRole("button", { name: "Pay for order" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /Continue to/ })).toBeEnabled();
     },
   );
 
@@ -254,7 +402,7 @@ describe("OrderPaymentPanel", () => {
         : "Payment cancelled. Choose a payment method and try again.")).toBeInTheDocument();
       expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
       expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeInTheDocument();
-      expect(screen.getByRole("button", { name: "Pay for order" })).toBeEnabled();
+      expect(screen.getByRole("button", { name: /Continue to/ })).toBeEnabled();
     },
   );
 
@@ -278,7 +426,7 @@ describe("OrderPaymentPanel", () => {
       action: null,
     }) }));
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
-    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     expect(await screen.findByText(expected)).toBeInTheDocument();
     expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull();
   });
@@ -286,7 +434,7 @@ describe("OrderPaymentPanel", () => {
   it("keeps payment disabled when no methods are configured", () => {
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={[]} orderHref="/orders/RNR-2026-ABC" />);
     expect(screen.getByText("Payment methods are not configured yet")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pay for order" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: /Continue to/ })).toBeDisabled();
   });
 
   it("loads owner-scoped order methods instead of trusting configured-only options", async () => {
@@ -320,7 +468,7 @@ describe("OrderPaymentPanel", () => {
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" orderHref="/orders/RNR-2026-ABC" />);
 
     expect(await screen.findByText("Payment response was lost")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     await waitFor(() => expect(fetchMock.mock.calls.filter(([, init]) => init.method === "POST")).toHaveLength(2));
     const requests = fetchMock.mock.calls
       .filter(([, init]) => init.method === "POST")
@@ -332,7 +480,7 @@ describe("OrderPaymentPanel", () => {
     expect(JSON.parse(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1") ?? "null")).toEqual(storedIntent);
   });
 
-  it.each(["processing", "paid", "failed", "cancelled", "refunded"] as const)(
+  it.each(["paid", "failed", "cancelled", "refunded"] as const)(
     "clears a retained starting intent and sends zero POSTs on initial %s status",
     async (paymentStatus) => {
       window.sessionStorage.setItem("rnr-checkout-payment-intent-v1", JSON.stringify({
@@ -370,9 +518,9 @@ describe("OrderPaymentPanel", () => {
         ? "Payment failed. Choose a payment method and try again."
         : "Payment cancelled. Choose a payment method and try again.")).toBeInTheDocument();
       await waitFor(() => expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull());
-      fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+      fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
       await screen.findByText("Payment response was lost");
-      fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+      fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
       await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
       const requests = fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body));
       expect(requests[0].idempotencyKey).not.toBe(oldKey);
@@ -387,7 +535,7 @@ describe("OrderPaymentPanel", () => {
     expect(assign).toHaveBeenCalledWith("https://pay.example.test/start");
 
     await followPaymentAction({ kind: "elements", method: "card", clientSecret: "client-secret", returnUrl: "https://shop.example.test/payment-return" }, "/account/orders/RNR-2026-ABC", { assign, navigate });
-    expect(navigate).toHaveBeenCalledWith("/account/orders/RNR-2026-ABC#payment");
+    expect(navigate).not.toHaveBeenCalled();
     expect(assign).toHaveBeenCalledTimes(1);
   });
 
@@ -396,14 +544,52 @@ describe("OrderPaymentPanel", () => {
       payment: { method: "card", status: "processing", isTest: false, canRetry: false },
       action: { kind: "elements", method: "card", clientSecret: "pi_secret_123", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
     }) }));
-    render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
-    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
-    await waitFor(() => expect(push).toHaveBeenCalledWith("/orders/RNR-2026-ABC#payment"));
+    render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" totalInclGstCents={39725} />);
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
+    await screen.findByTestId("stripe-payment-form");
+    expect(push).not.toHaveBeenCalled();
     const stored = window.sessionStorage.getItem("rnr-checkout-payment-intent-v1");
     expect(stored).not.toBeNull();
     expect(stored).not.toContain("pi_secret_123");
     expect(screen.getByTestId("stripe-payment-form")).toHaveAttribute("data-client-secret", "pi_secret_123");
+    expect(screen.getByTestId("stripe-payment-form")).toHaveAttribute("data-confirmation-url", "/api/orders/RNR-2026-ABC/payment");
     expect(screen.getByTestId("stripe-payment-form")).toHaveAttribute("data-return-url", "http://localhost:3000/api/payments/returns/stripe?state=safe");
+    expect(screen.getByTestId("stripe-payment-form")).toHaveAttribute("data-total-incl-gst-cents", "39725");
+    expect(screen.queryByRole("button", { name: "Continue to secure card payment" })).not.toBeInTheDocument();
+  });
+
+  it("reopens Stripe Elements for a stored processing card attempt instead of confirming it empty", async () => {
+    const paymentIdempotencyKey = "70000000-0000-4000-8000-000000000002";
+    window.sessionStorage.setItem("rnr-checkout-payment-intent-v1", JSON.stringify({
+      schemaVersion: 1,
+      phase: "starting_payment",
+      orderNumber: "RNR-2026-ABC",
+      paymentIdempotencyKey,
+      method: "card",
+    }));
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({
+      payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+      action: { kind: "elements", method: "card", clientSecret: "pi_secret_resume", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
+    }) });
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="awaiting_payment"
+      payment={{ method: "card", status: "processing", isTest: false, canRetry: false }}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
+
+    expect(await screen.findByTestId("stripe-payment-form")).toHaveAttribute(
+      "data-client-secret",
+      "pi_secret_resume",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      method: "card",
+      idempotencyKey: paymentIdempotencyKey,
+    });
   });
 
   it("removes a stale Stripe form when the customer changes payment method", async () => {
@@ -412,7 +598,7 @@ describe("OrderPaymentPanel", () => {
       action: { kind: "elements", method: "card", clientSecret: "pi_secret_123", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
     }) }));
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
-    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     expect(await screen.findByTestId("stripe-payment-form")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("radio", { name: "Test Afterpay — no real payment" }));
@@ -420,7 +606,7 @@ describe("OrderPaymentPanel", () => {
     expect(screen.queryByTestId("stripe-payment-form")).not.toBeInTheDocument();
   });
 
-  it.each(["processing", "paid", "failed", "cancelled", "refunded"] as const)(
+  it.each(["paid", "failed", "cancelled", "refunded"] as const)(
     "removes Stripe Elements and recovery when the authoritative order status becomes %s",
     async (paymentStatus) => {
       vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({
@@ -428,7 +614,7 @@ describe("OrderPaymentPanel", () => {
         action: { kind: "elements", method: "card", clientSecret: "pi_secret_123", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
       }) }));
       const view = render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
-      fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+      fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
       expect(await screen.findByTestId("stripe-payment-form")).toBeInTheDocument();
       expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).not.toBeNull();
 
@@ -441,27 +627,18 @@ describe("OrderPaymentPanel", () => {
     },
   );
 
-  it("remounts Stripe Elements when a card response has a different client secret", async () => {
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce({ ok: true, json: async () => ({
-        payment: { method: "card", status: "processing", isTest: false, canRetry: false },
-        action: { kind: "elements", method: "card", clientSecret: "pi_secret_first", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
-      }) })
-      .mockResolvedValueOnce({ ok: true, json: async () => ({
-        payment: { method: "card", status: "processing", isTest: false, canRetry: false },
-        action: { kind: "elements", method: "card", clientSecret: "pi_secret_second", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
-      }) });
+  it("shows one final card action after Stripe Elements opens", async () => {
+    const fetchMock = vi.fn().mockResolvedValueOnce({ ok: true, json: async () => ({
+      payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+      action: { kind: "elements", method: "card", clientSecret: "pi_secret_first", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
+    }) });
     vi.stubGlobal("fetch", fetchMock);
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
-    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to secure card payment" }));
     const firstForm = await screen.findByTestId("stripe-payment-form");
     expect(firstForm).toHaveAttribute("data-client-secret", "pi_secret_first");
-
-    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
-    await waitFor(() => expect(screen.getByTestId("stripe-payment-form"))
-      .toHaveAttribute("data-client-secret", "pi_secret_second"));
-
-    expect(screen.getByTestId("stripe-payment-form")).not.toBe(firstForm);
+    expect(screen.queryByRole("button", { name: "Continue to secure card payment" })).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it.each(["failed", "cancelled"] as const)(
@@ -478,12 +655,12 @@ describe("OrderPaymentPanel", () => {
         }) });
       vi.stubGlobal("fetch", fetchMock);
       const view = render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
-      fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+      fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
       const firstForm = await screen.findByTestId("stripe-payment-form");
 
       view.rerender(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus={paymentStatus} methods={methods} orderHref="/orders/RNR-2026-ABC" />);
       await waitFor(() => expect(screen.queryByTestId("stripe-payment-form")).not.toBeInTheDocument());
-      fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
+      fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
 
       const secondForm = await screen.findByTestId("stripe-payment-form");
       expect(secondForm).toHaveAttribute("data-client-secret", "pi_secret_second");
@@ -504,6 +681,16 @@ describe("OrderPaymentPanel", () => {
       payment: { method: "card", status: "requires_action", isTest: true, canRetry: false },
       action: { kind: "test", method: "card", redirectUrl: "http://127.0.0.1:3000/test-payment", isTest: true },
     }, "card", { nodeEnv: "test", currentOrigin: "http://127.0.0.1:3000" })).toMatchObject({ action: { kind: "test" } });
+    expect(parsePaymentStartResponse({
+      payment: { method: "card", status: "requires_action", isTest: true, canRetry: false },
+      action: { kind: "test", method: "card", redirectUrl: "http://192.168.4.199:3000/test-payment", isTest: true },
+    }, "card", { nodeEnv: "development", currentOrigin: "http://192.168.4.199:3000" }))
+      .toMatchObject({ action: { kind: "test" } });
+    expect(parsePaymentStartResponse({
+      payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+      action: { kind: "elements", method: "card", clientSecret: "pi_secret_lan", returnUrl: "http://192.168.4.199:3000/api/payments/returns/stripe?state=safe" },
+    }, "card", { nodeEnv: "development", currentOrigin: "http://192.168.4.199:3000" }))
+      .toMatchObject({ action: { kind: "elements" } });
     expect(() => parsePaymentStartResponse({
       payment: { method: "card", status: "requires_action", isTest: true, canRetry: false },
       action: { kind: "test", method: "card", redirectUrl: "https://shop.example.test/test-payment", isTest: true },
@@ -538,8 +725,8 @@ describe("OrderPaymentPanel", () => {
   it("shows pending confirmation when the start response has no immediate action", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: async () => ({ payment: { method: "card", status: "processing", isTest: true, canRetry: false }, action: null }) }));
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
-    fireEvent.click(screen.getByRole("button", { name: "Pay for order" }));
-    await waitFor(() => expect(screen.getByText("Payment confirmation is pending")).toBeInTheDocument());
+    fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
+    await waitFor(() => expect(screen.getByText("Payment is processing. Your order is not yet confirmed.")).toBeInTheDocument());
     expect(screen.queryByText("Paid")).not.toBeInTheDocument();
   });
 });

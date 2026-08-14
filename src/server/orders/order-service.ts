@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import type { createShippingService } from "@/server/shipping/shipping-service";
@@ -77,6 +78,10 @@ function canonicalInputFrom(snapshot: RepricedCheckoutCart) {
       urgentServiceConfirmed: item.urgentServiceConfirmed,
       quantity: item.quantity,
       uploadReferences: [...item.uploadReferences],
+      ...(item.mainPhotoUploadId ? { mainPhotoUploadId: item.mainPhotoUploadId } : {}),
+      ...(item.extraBackgroundRemovalUploadIds
+        ? { extraBackgroundRemovalUploadIds: [...item.extraBackgroundRemovalUploadIds] }
+        : {}),
     })),
   };
 }
@@ -96,11 +101,15 @@ function shippingMatchesReviewed(
 export function createOrderService({
   repository,
   shippingService,
+  productRegistryService,
   now = () => new Date(),
   createOrderNumber: makeOrderNumber = () => createOrderNumber(now()),
 }: {
   repository: OrderRepository;
   shippingService: ShippingService;
+  productRegistryService?: Readonly<{
+    current(): Promise<Readonly<{ registry: ProductRegistryDocument }>>;
+  }>;
   now?: () => Date;
   createOrderNumber?: () => string;
 }) {
@@ -127,6 +136,9 @@ export function createOrderService({
       if (state.version !== reviewed.checkoutVersion || state.cartDigest !== reviewed.cartDigest || state.deliveryMethod !== reviewed.shipping.method) throw new OrderStateChangedError();
 
       const pricingTime = now();
+      const registry = productRegistryService
+        ? (await productRegistryService.current()).registry
+        : undefined;
       const cart = repriceCart(canonicalInputFrom(state.cartSnapshot), {
         now: pricingTime,
         galleryDesigns: new Map(
@@ -134,6 +146,7 @@ export function createOrderService({
             item.galleryDesign ? [[item.galleryDesign.id, item.galleryDesign] as const] : [],
           ),
         ),
+        ...(registry ? { registry } : {}),
       });
       if (cart.cartDigest !== state.cartDigest) throw new OrderStateChangedError();
 

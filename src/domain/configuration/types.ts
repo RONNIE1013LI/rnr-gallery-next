@@ -20,6 +20,9 @@ export type ProductConfigurationSchema = Readonly<{
   minimumSourcePhotos: number;
   maximumSourcePhotos?: number;
   includedPhotos: number;
+  artworkDirectionMode: "required" | "none";
+  extraPhotoPriceExGstCents?: number;
+  extraBackgroundRemovalFeeInclGstCents?: number;
   deliveryPreferences: readonly DeliveryPreference[];
   defaultDeliveryPreference: DeliveryPreference;
   defaultPhotoSubmissionMethod: PhotoSubmissionMethod;

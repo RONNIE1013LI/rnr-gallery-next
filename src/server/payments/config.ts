@@ -1,3 +1,5 @@
+import { isLocalOrPrivateHostname } from "@/server/network/private-hostname";
+
 import type { PaymentCurrency } from "./types";
 
 type PaymentEnvironment = Readonly<Record<string, string | undefined>>;
@@ -53,7 +55,6 @@ export type PaymentConfig = Readonly<{
 const PAYMENT_CURRENCIES = ["NZD", "AUD", "USD", "CAD"] as const;
 const PAYMENT_CURRENCY_SET = new Set<string>(PAYMENT_CURRENCIES);
 const PROVIDER_ENVIRONMENTS = new Set<string>(["sandbox", "production"]);
-const LOCAL_HTTP_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]"]);
 const AFTERPAY_CURRENCY_BY_COUNTRY = {
   NZ: "NZD",
   AU: "AUD",
@@ -87,7 +88,8 @@ export function parsePaymentReturnOrigin(
     }
     if (
       url.protocol === "http:" &&
-      (nodeEnvironment === "production" || !LOCAL_HTTP_HOSTS.has(url.hostname))
+      (nodeEnvironment === "production" ||
+        !isLocalOrPrivateHostname(url.hostname))
     ) {
       return null;
     }

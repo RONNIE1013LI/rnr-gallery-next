@@ -2,7 +2,10 @@ import type { Metadata } from "next";
 import { CartView } from "@/components/cart-view";
 import styles from "@/components/storefront.module.css";
 
-export const metadata: Metadata = { title: "Cart" };
+export const metadata: Metadata = {
+  title: "Cart",
+  robots: { index: false, follow: false },
+};
 
 export default function CartPage() {
   return (

@@ -11,6 +11,7 @@ const request: ShippingQuoteRequest = {
     widthMm: 300,
     heightMm: 30,
     weightGrams: 500,
+    unitPriceInclGstCents: 6_325,
   }],
   destination: {
     contact: "Aroha Smith",

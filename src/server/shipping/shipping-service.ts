@@ -7,6 +7,7 @@ import { getPackageProfile } from "./package-registry";
 import type {
   PackageProfile,
   ProviderShippingQuote,
+  ShippingPackage,
   ShippingDestination,
   ShippingQuoteProvider,
   ShippingQuoteRequest,
@@ -34,10 +35,12 @@ export class ShippingUnavailableError extends Error {
   }
 }
 
-function packagesFor(cart: RepricedCheckoutCart): PackageProfile[] {
+function packagesFor(cart: RepricedCheckoutCart): ShippingPackage[] {
   return cart.items.flatMap((item) =>
-    Array.from({ length: item.quantity }, () =>
-      getPackageProfile(item.productKey, item.sizeKey)),
+    Array.from({ length: item.quantity }, () => Object.freeze({
+      ...getPackageProfile(item.productKey, item.sizeKey),
+      unitPriceInclGstCents: item.unitPrice.totalInclGstCents,
+    })),
   );
 }
 

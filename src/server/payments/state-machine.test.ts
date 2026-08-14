@@ -9,6 +9,7 @@ describe("payment state transitions", () => {
     ["awaiting_payment", "processing", "processing"],
     ["processing", "paid", "paid"],
     ["paid", "failed", "paid"],
+    ["paid", "refunded", "refunded"],
     ["failed", "processing", "processing"],
     ["cancelled", "processing", "processing"],
     ["refunded", "processing", "refunded"],

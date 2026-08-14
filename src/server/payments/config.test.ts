@@ -147,6 +147,18 @@ describe("parsePaymentConfig", () => {
     },
   );
 
+  it("allows private LAN HTTP returns outside production", () => {
+    const config = parsePaymentConfig({
+      NODE_ENV: "development",
+      ...completeProviderEnvironment,
+      PAYMENT_RETURN_BASE_URL: "http://192.168.4.199:3000",
+    });
+
+    expect(config.operations.returnBaseUrl).toBe(
+      "http://192.168.4.199:3000",
+    );
+  });
+
   it.each([
     [{ AFTERPAY_ENVIRONMENT: "invalid" }, "afterpay"],
     [{ AFTERPAY_MERCHANT_COUNTRY: "US" }, "afterpay"],

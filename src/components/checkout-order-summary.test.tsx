@@ -30,4 +30,48 @@ describe("CheckoutOrderSummary", () => {
     expect(screen.getByRole("img", { name: "Family at sunset" })).toBeInTheDocument();
     expect(screen.getByText("$74.75")).toBeInTheDocument();
   });
+
+  it("uses one concise test-rate disclosure", () => {
+    const cart = {
+      version: 1,
+      orderDate: "2026-08-03",
+      items: [],
+      subtotalExGstCents: 0,
+      gstCents: 0,
+      totalInclGstCents: 0,
+      itemCount: 0,
+      cartDigest: "c".repeat(64),
+    } as const satisfies RepricedCheckoutCart;
+
+    render(<CheckoutOrderSummary cart={cart} shipping={{
+      method: "post", serviceCode: "test-post", serviceName: "Test Post — not a live carrier rate",
+      amountExGstCents: 2000, gstCents: 300, amountInclGstCents: 2300, currency: "NZD",
+      provenance: "local-test", isTest: true,
+    }} />);
+
+    expect(screen.getByText("Test Post · Test rate — not a live carrier rate")).toBeInTheDocument();
+    expect(screen.queryByText("Test Post — not a live carrier rate · Test rate — not a live carrier rate")).not.toBeInTheDocument();
+  });
+
+  it("corrects the known GoSweetSpot Auckland label typo", () => {
+    const cart = {
+      version: 1,
+      orderDate: "2026-08-03",
+      items: [],
+      subtotalExGstCents: 0,
+      gstCents: 0,
+      totalInclGstCents: 0,
+      itemCount: 0,
+      cartDigest: "c".repeat(64),
+    } as const satisfies RepricedCheckoutCart;
+
+    render(<CheckoutOrderSummary cart={cart} shipping={{
+      method: "post", serviceCode: "akl", serviceName: "Auckalnd Urban",
+      amountExGstCents: 1000, gstCents: 150, amountInclGstCents: 1150, currency: "NZD",
+      provenance: "gosweetspot", isTest: false,
+    }} />);
+
+    expect(screen.getByText("Auckland Urban · Live carrier rate")).toBeInTheDocument();
+    expect(screen.queryByText(/Auckalnd/)).not.toBeInTheDocument();
+  });
 });

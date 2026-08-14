@@ -59,6 +59,7 @@ export function PaymentMethods({
     <div role="radiogroup" aria-label="Payment method" className={styles.paymentMethodChoices}>
       {methods.map((option) => <label className={styles.paymentMethodOption} key={option.method}>
         <input
+          aria-label={option.label}
           type="radio"
           name="paymentMethod"
           value={option.method}
@@ -67,8 +68,21 @@ export function PaymentMethods({
           onChange={() => onChange(option.method)}
         />
         <span>{option.label}</span>
+        {option.method === "card" ? <span
+          aria-label="Accepted cards: Visa, Mastercard and American Express"
+          className={styles.paymentCardBrands}
+          role="img"
+        >
+          <span className={styles.paymentBrandVisa}>VISA</span>
+          <span className={styles.paymentBrandMastercard} aria-hidden="true"><i /><i /></span>
+          <span className={styles.paymentBrandAmex}>AMEX</span>
+        </span> : null}
       </label>)}
     </div>
+    {value === "card" ? <p className={styles.stripeTrustMessage}>
+      <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M6.5 8V6.5a3.5 3.5 0 0 1 7 0V8m-8 0h9a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" /></svg>
+      Secure payment powered by Stripe
+    </p> : null}
     {methods.some((option) => option.isTest) ? <p className={styles.paymentTestNotice}>No real payment will be taken.</p> : null}
   </fieldset>;
 }

@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
+import { and, count, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import { checkoutSessions, orderAddresses, orderItems, orders, paymentAttempts } from "@/server/db/schema";
 import { normalizeAddress } from "@/domain/address/schema";
@@ -16,7 +16,17 @@ type PaymentReadRow = Pick<
 >;
 
 const paymentStatuses = new Set(["awaiting_payment", "processing", "paid", "failed", "cancelled", "refunded"]);
-const fulfilmentStatuses = new Set(["new"]);
+const fulfilmentStatuses = new Set([
+  "new",
+  "designing",
+  "awaiting_customer",
+  "ready_to_print",
+  "printing",
+  "on_hold",
+  "shipped",
+  "completed",
+  "cancelled",
+]);
 const deliveryMethods = new Set(["pickup", "post"]);
 const shippingProviders = new Set(["gosweetspot", "local-test"]);
 const orientations = new Set(["landscape", "portrait"]);
@@ -135,6 +145,7 @@ function publicItems(itemRows: OrderItemRow[]) {
     assertSnapshot(item.lineGstCents === item.unitGstCents * item.quantity);
     assertSnapshot(item.lineTotalInclGstCents === item.unitTotalInclGstCents * item.quantity);
     assertSnapshot(priceLines.reduce((sum, line) => sum + line.amountExGstCents, 0) === item.unitSubtotalExGstCents);
+    const isGraveCover = item.productKey === "grave-cover";
     return Object.freeze({
       productTitle: item.productTitle,
       ...(hasGalleryDesign ? {
@@ -146,8 +157,8 @@ function publicItems(itemRows: OrderItemRow[]) {
           imageUrl: `/gallery-images/${item.galleryDesignId}?v=${item.galleryDesignContentHash}`,
         }),
       } : {}),
-      sizeLabel: item.sizeLabel,
-      ...(item.orientation ? { orientation: item.orientation } : {}),
+      sizeLabel: isGraveCover ? "100 × 200 cm" : item.sizeLabel,
+      ...(!isGraveCover && item.orientation ? { orientation: item.orientation } : {}),
       peoplePets: item.peoplePets, photoSubmissionMethod: item.photoSubmissionMethod,
       designText: item.designText, notes: item.notes, neededDate: item.neededDate,
       urgentServiceConfirmed: item.urgentServiceConfirmed, urgentWorkingDays: item.urgentWorkingDays,
@@ -172,7 +183,7 @@ function publicPayment(row: OrderRow, attempts: PaymentReadRow[]) {
   if (!current) return null;
   return toPublicPaymentDTO({
     method: current.method,
-    status: current.status,
+    status: row.paymentStatus === "refunded" ? "refunded" : current.status,
     isTest: current.provider === "local-test",
   });
 }
@@ -245,6 +256,33 @@ export function createDrizzleOrderQueryRepository(database: Database): OrderQuer
       return snapshot(async (transaction) => {
         const rows = await transaction.select().from(orders).where(eq(orders.customerId, customerId)).orderBy(desc(orders.createdAt), desc(orders.orderNumber));
         return hydrate(transaction, rows);
+      });
+    },
+    async listPageByCustomer(customerId: string, requestedPage: number, pageSize = 20) {
+      if (!Number.isInteger(pageSize) || pageSize < 1 || pageSize > 50) {
+        throw new Error("Order history page size must be between 1 and 50");
+      }
+      const normalizedPage = Number.isInteger(requestedPage) && requestedPage > 0
+        ? requestedPage
+        : 1;
+      return snapshot(async (transaction) => {
+        const [countRow] = await transaction.select({ value: count() }).from(orders)
+          .where(eq(orders.customerId, customerId));
+        const total = Number(countRow?.value ?? 0);
+        const pageCount = Math.ceil(total / pageSize);
+        const page = pageCount ? Math.min(normalizedPage, pageCount) : 1;
+        const rows = await transaction.select().from(orders)
+          .where(eq(orders.customerId, customerId))
+          .orderBy(desc(orders.createdAt), desc(orders.orderNumber))
+          .limit(pageSize)
+          .offset((page - 1) * pageSize);
+        return Object.freeze({
+          items: Object.freeze(await hydrate(transaction, rows)),
+          total,
+          page,
+          pageSize,
+          pageCount,
+        });
       });
     },
   };

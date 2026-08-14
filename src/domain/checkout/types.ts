@@ -33,6 +33,8 @@ export type CanonicalCheckoutItemInput = Readonly<{
   urgentServiceConfirmed?: boolean;
   quantity: number;
   uploadReferences: readonly string[];
+  mainPhotoUploadId?: string;
+  extraBackgroundRemovalUploadIds?: readonly string[];
 }>;
 
 export type CanonicalCheckoutCartInput = Readonly<{
@@ -61,6 +63,8 @@ export type RepricedCheckoutItem = Readonly<{
   }>;
   quantity: number;
   uploadReferences: readonly string[];
+  mainPhotoUploadId?: string;
+  extraBackgroundRemovalUploadIds?: readonly string[];
   unitPrice: PriceBreakdown;
   lineSubtotalExGstCents: number;
   lineGstCents: number;

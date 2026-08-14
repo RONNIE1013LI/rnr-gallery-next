@@ -26,6 +26,7 @@ export const checkoutUploads = pgTable(
     sha256: text("sha256").notNull(),
     claimedByOrderItemId: uuid("claimed_by_order_item_id"),
     claimedAt: timestamp("claimed_at", { withTimezone: true }),
+    cleanupClaimedAt: timestamp("cleanup_claimed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -41,6 +42,10 @@ export const checkoutUploads = pgTable(
     check(
       "checkout_uploads_claim_consistent",
       sql`(${table.claimedByOrderItemId} IS NULL AND ${table.claimedAt} IS NULL) OR (${table.claimedByOrderItemId} IS NOT NULL AND ${table.claimedAt} IS NOT NULL)`,
+    ),
+    check(
+      "checkout_uploads_cleanup_unclaimed",
+      sql`${table.cleanupClaimedAt} IS NULL OR ${table.claimedByOrderItemId} IS NULL`,
     ),
   ],
 );

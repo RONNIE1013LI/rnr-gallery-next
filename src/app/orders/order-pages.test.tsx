@@ -13,6 +13,8 @@ const {
   findByCheckoutToken,
   findByCustomer,
   getOptionalSession,
+  getOptionalCustomerProofView,
+  listPageByCustomer,
   listByCustomer,
   notFound,
   push,
@@ -23,6 +25,8 @@ const {
   findByCheckoutToken: vi.fn(),
   findByCustomer: vi.fn(),
   getOptionalSession: vi.fn(),
+  getOptionalCustomerProofView: vi.fn(),
+  listPageByCustomer: vi.fn(),
   listByCustomer: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
   push: vi.fn(),
@@ -33,6 +37,7 @@ const {
 vi.mock("next/headers", () => ({ cookies }));
 vi.mock("next/navigation", () => ({ notFound, redirect, useRouter: () => ({ push }) }));
 vi.mock("@/server/auth/get-optional-session", () => ({ getOptionalSession }));
+vi.mock("@/server/production/optional-customer-proof", () => ({ getOptionalCustomerProofView }));
 vi.mock("@/server/auth/require-session", async (importOriginal) => {
   const original = await importOriginal<typeof import("@/server/auth/require-session")>();
   return { ...original, requireSession };
@@ -43,6 +48,7 @@ vi.mock("@/server/orders/drizzle-order-query-repository", async (importOriginal)
   createDrizzleOrderQueryRepository: () => ({
     findByCheckoutToken,
     findByCustomer,
+    listPageByCustomer,
     listByCustomer,
   }),
 }));
@@ -78,10 +84,18 @@ describe("owner-scoped order pages", () => {
     vi.stubEnv("ENABLE_LOCAL_TEST_PAYMENTS", "true");
     cookies.mockResolvedValue({ get: () => ({ value: "a".repeat(43) }) });
     getOptionalSession.mockResolvedValue(null);
+    getOptionalCustomerProofView.mockResolvedValue(null);
     requireSession.mockResolvedValue({ user: { id: "user-1" } });
     findByCheckoutToken.mockResolvedValue(order);
     findByCustomer.mockResolvedValue(order);
     listByCustomer.mockResolvedValue([order]);
+    listPageByCustomer.mockResolvedValue({
+      items: [order],
+      total: 21,
+      page: 2,
+      pageSize: 20,
+      pageCount: 2,
+    });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,
       json: async () => ({ methods: [
@@ -98,12 +112,15 @@ describe("owner-scoped order pages", () => {
       order.orderNumber,
       hashCheckoutSessionToken("a".repeat(43)),
     );
-    expect(screen.getByRole("heading", { level: 1, name: "Order received." })).toBeInTheDocument();
-    expect(screen.getByText("Awaiting payment setup", { exact: false })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "Complete your payment." })).toBeInTheDocument();
+    expect(screen.getByText("Payment required", { exact: false })).toBeInTheDocument();
+    expect(screen.queryByText("Order received.")).not.toBeInTheDocument();
     expect(screen.getByText("3 August 2026", { exact: false })).toBeInTheDocument();
     expect(screen.getByText("Send after ordering")).toBeInTheDocument();
     expect(screen.getByText("Family forever")).toBeInTheDocument();
     expect(screen.getByText("Use the warm sunset reference")).toBeInTheDocument();
+    expect(screen.getByText("Production completion date")).toBeInTheDocument();
+    expect(screen.queryByText("Needed by")).not.toBeInTheDocument();
     expect(screen.getByText("Family at sunset")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Family at sunset" })).toHaveAttribute(
       "src",
@@ -118,6 +135,20 @@ describe("owner-scoped order pages", () => {
     expect(await screen.findByRole("radiogroup", { name: "Payment method" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
     expect(screen.getByText("No real payment will be taken.")).toBeInTheDocument();
+  });
+
+  it("places the order total alongside the first item card instead of the items heading", async () => {
+    render(await OrderConfirmationPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
+
+    const summary = screen.getByRole("heading", { level: 2, name: "Order summary" }).closest("aside");
+    const items = screen.getByRole("heading", { level: 2, name: "Items" });
+    const itemCard = screen.getByRole("heading", { level: 3, name: "Photo Print Canvas × 1" }).closest("article");
+
+    expect(summary).not.toBeNull();
+    expect(itemCard).not.toBeNull();
+    expect(items.previousElementSibling).toBeNull();
+    expect(items.nextElementSibling).toBe(itemCard?.parentElement);
+    expect(summary?.previousElementSibling).toBe(itemCard?.parentElement);
   });
 
   it("returns not found when a guest cookie cannot access the guessed order", async () => {
@@ -138,16 +169,17 @@ describe("owner-scoped order pages", () => {
   });
 
   it("lists and reads only the authenticated customer's orders", async () => {
-    render(await AccountOrdersPage());
-    expect(listByCustomer).toHaveBeenCalledWith("user-1");
+    render(await AccountOrdersPage({ searchParams: Promise.resolve({ page: "2" }) }));
+    expect(listPageByCustomer).toHaveBeenCalledWith("user-1", 2);
+    expect(screen.getByRole("link", { name: "Previous orders" })).toHaveAttribute("href", "/account/orders?page=1");
     expect(screen.getByRole("link", { name: /RNR-2026-ABC/ })).toHaveAttribute("href", "/account/orders/RNR-2026-ABC");
-    expect(screen.getByText("Awaiting payment setup")).toBeInTheDocument();
+    expect(screen.getByText("Payment required")).toBeInTheDocument();
     expect(screen.getByText("3 August 2026")).toBeInTheDocument();
 
     render(await AccountOrderPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
     expect(findByCustomer).toHaveBeenCalledWith(order.orderNumber, "user-1");
     expect(screen.getAllByRole("heading", { level: 1, name: "Order details." })).toHaveLength(1);
-    expect(screen.getAllByRole("button", { name: "Pay for order" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: /Continue to/ })).toHaveLength(1);
   });
 
   it("treats a malformed checkout cookie as absent before hashing or querying it", async () => {
@@ -194,9 +226,30 @@ describe("owner-scoped order pages", () => {
 
     render(await OrderConfirmationPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
 
+    expect(screen.getByRole("heading", { level: 1, name: "Order confirmed." })).toBeInTheDocument();
     expect(screen.getAllByText("Paid", { exact: false }).length).toBeGreaterThanOrEqual(1);
-    expect(screen.queryByRole("button", { name: "Pay for order" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Continue to/ })).not.toBeInTheDocument();
     expect(screen.getByText("Payment confirmed.")).toBeInTheDocument();
+  });
+
+  it("shows one clear test-rate disclosure instead of repeating the carrier warning", async () => {
+    findByCheckoutToken.mockResolvedValue({
+      ...order,
+      deliveryMethod: "post",
+      shipping: {
+        provider: "test",
+        serviceName: "Test Post — not a live carrier rate",
+        isTest: true,
+        amountExGstCents: 2000,
+        gstCents: 300,
+        amountInclGstCents: 2300,
+      },
+    });
+
+    render(await OrderConfirmationPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
+
+    expect(screen.getByText("Test Post · Test rate — not a live carrier rate")).toBeInTheDocument();
+    expect(screen.queryByText("Test Post — not a live carrier rate · Test rate — not a live carrier rate")).not.toBeInTheDocument();
   });
 
   it("passes the authorized current attempt to the payment recovery panel", async () => {
@@ -246,8 +299,8 @@ describe("owner-scoped order pages", () => {
   });
 
   it("fails closed on corrupt account history or owner detail snapshots", async () => {
-    listByCustomer.mockRejectedValueOnce(new OrderSnapshotIntegrityError());
-    await expect(AccountOrdersPage()).rejects.toThrow("NOT_FOUND");
+    listPageByCustomer.mockRejectedValueOnce(new OrderSnapshotIntegrityError());
+    await expect(AccountOrdersPage({})).rejects.toThrow("NOT_FOUND");
 
     findByCustomer.mockRejectedValueOnce(new OrderSnapshotIntegrityError());
     await expect(AccountOrderPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }))
@@ -261,8 +314,8 @@ describe("owner-scoped order pages", () => {
   });
 
   it("renders a semantic empty account history without querying another owner", async () => {
-    listByCustomer.mockResolvedValue([]);
-    const { container } = render(await AccountOrdersPage());
+    listPageByCustomer.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
+    const { container } = render(await AccountOrdersPage({}));
     expect(container.querySelector("main#main-content")).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 1, name: "Your orders." })).toBeInTheDocument();
     expect(screen.getByRole("heading", { level: 2, name: "No orders yet" })).toBeInTheDocument();
@@ -271,12 +324,12 @@ describe("owner-scoped order pages", () => {
   });
 
   it.each([
-    ["history", () => AccountOrdersPage()],
+    ["history", () => AccountOrdersPage({})],
     ["detail", () => AccountOrderPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) })],
   ])("redirects an unauthenticated account order %s request before querying", async (_name, page) => {
     requireSession.mockRejectedValue(new HttpError("Unauthorized", 401));
     await expect(page()).rejects.toThrow("REDIRECT:/account/sign-in");
-    expect(listByCustomer).not.toHaveBeenCalled();
+    expect(listPageByCustomer).not.toHaveBeenCalled();
     expect(findByCustomer).not.toHaveBeenCalled();
   });
 });

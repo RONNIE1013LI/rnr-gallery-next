@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { orders, paymentAttempts, webhookEvents } from "@/server/db/schema";
+import { orderNotificationOutbox, orders, paymentAttempts, webhookEvents } from "@/server/db/schema";
 import {
   PaymentRepositoryConflictError,
   PaymentVerificationMismatchError,
@@ -234,6 +234,44 @@ describe("Drizzle payment repository", () => {
       kind: "guest",
       orderNumber: expired.orderNumber,
       tokenDigest: expired.tokenDigest,
+    })).resolves.toBeNull();
+  });
+
+  it("returns the current payment only to the order owner", async () => {
+    const owned = await createOrder();
+    const claim = await repository.createOrClaimNonterminalAttempt(
+      claimInput(owned.orderId),
+    );
+    const providerReference = `pi_${randomUUID().replaceAll("-", "")}`;
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+
+    await expect(repository.findCurrentPayment({
+      kind: "guest",
+      orderNumber: owned.orderNumber,
+      tokenDigest: owned.tokenDigest,
+    })).resolves.toMatchObject({
+      attempt: {
+        id: claim.attempt.id,
+        providerReference,
+        status: "processing",
+      },
+      order: { id: owned.orderId, orderNumber: owned.orderNumber },
+    });
+    await expect(repository.findCurrentPayment({
+      kind: "guest",
+      orderNumber: owned.orderNumber,
+      tokenDigest: "wrong-token",
+    })).resolves.toBeNull();
+    await expect(repository.findCurrentPayment({
+      kind: "customer",
+      orderNumber: owned.orderNumber,
+      customerId: "wrong-customer",
     })).resolves.toBeNull();
   });
 
@@ -703,6 +741,15 @@ describe("Drizzle payment repository", () => {
       order: { paymentStatus: "paid" },
       attempt: { status: "paid" },
     });
+    await expect(database.select().from(orderNotificationOutbox)
+      .where(eq(orderNotificationOutbox.orderId, order.orderId))).resolves.toEqual([
+      expect.objectContaining({
+        eventKey: `payment-confirmed:${order.orderId}`,
+        kind: "payment_confirmed",
+        recipientEmail: "payer@example.test",
+        status: "pending",
+      }),
+    ]);
     const paidBefore = await paymentRows(order.orderId, claim.attempt.id);
     await repository.applyVerifiedResult({
       attemptId: claim.attempt.id,
@@ -710,6 +757,14 @@ describe("Drizzle payment repository", () => {
       source: "reconciliation",
     });
     await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toEqual(paidBefore);
+    await expect(repository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      result: { ...result, providerStatus: "refunded", status: "refunded" },
+      source: "reconciliation",
+    })).resolves.toMatchObject({
+      order: { paymentStatus: "refunded" },
+      attempt: { status: "paid" },
+    });
 
     const freshOrder = await createOrder();
     const freshClaim = await repository.createOrClaimNonterminalAttempt(
@@ -1026,16 +1081,18 @@ describe("Drizzle payment repository", () => {
       claimCandidates(50),
       claimCandidates(50),
     ]);
-    const claimedBatch = [candidates, concurrentCandidates].find((batch) =>
-      batch.length === 1
+    const targetClaims = [candidates, concurrentCandidates].map((batch) =>
+      batch.filter((candidate) => (
+        candidate as { attempt?: { id?: string } }
+      ).attempt?.id === claim.attempt.id)
     );
-    expect(claimedBatch).toEqual(expect.arrayContaining([
+    expect(targetClaims.flat()).toEqual([
       expect.objectContaining({
         attempt: expect.objectContaining({ id: claim.attempt.id }),
         claimId: expect.any(String),
       }),
-    ]));
-    expect([candidates.length, concurrentCandidates.length].sort()).toEqual([0, 1]);
+    ]);
+    expect(targetClaims.map((batch) => batch.length).sort()).toEqual([0, 1]);
     await expect(claimCandidates(0)).rejects.toThrow(
       "Reconciliation limit must be an integer from 1 to 50",
     );

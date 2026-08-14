@@ -1,4 +1,7 @@
-import { getPeoplePetsFeeExGstCents } from "./people-fees";
+import {
+  getPeoplePetsFeeExGstCents,
+  type PeoplePetsPricing,
+} from "./people-fees";
 import {
   assertIntegerCents,
   createPriceBreakdown,
@@ -12,6 +15,7 @@ type DigitalOilCanvasInput = Readonly<{
 
 export function calculateDigitalOilCanvas(
   input: DigitalOilCanvasInput,
+  peoplePetsPricing?: PeoplePetsPricing,
 ): PriceBreakdown {
   assertIntegerCents(input.baseExGstCents, "Canvas base price");
 
@@ -24,7 +28,10 @@ export function calculateDigitalOilCanvas(
     Object.freeze({
       key: "people-pets",
       label: "People / pets fee",
-      amountExGstCents: getPeoplePetsFeeExGstCents(input.peoplePets),
+      amountExGstCents: getPeoplePetsFeeExGstCents(
+        input.peoplePets,
+        peoplePetsPricing,
+      ),
     }),
   ]);
 }

@@ -9,6 +9,10 @@ export type PackageProfile = Readonly<{
   weightGrams: number;
 }>;
 
+export type ShippingPackage = Readonly<PackageProfile & {
+  unitPriceInclGstCents: number;
+}>;
+
 export type ShippingDestination = Readonly<{
   contact: string;
   street: string;
@@ -20,7 +24,7 @@ export type ShippingDestination = Readonly<{
 
 export type ShippingQuoteRequest = Readonly<{
   cartValueInclGstCents: number;
-  packages: readonly PackageProfile[];
+  packages: readonly ShippingPackage[];
   destination: ShippingDestination;
 }>;
 

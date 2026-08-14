@@ -6,13 +6,14 @@ import {
   GalleryImportConflictError,
 } from "./drizzle-gallery-repository";
 import type { GalleryImportRow } from "./gallery-repository";
+import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is required");
-const testDatabaseName = new URL(testDatabaseUrl).pathname.replace(/^\//, "");
-const hasDedicatedTestDatabase =
-  testDatabaseUrl !== process.env.DATABASE_URL &&
-  /(?:^|[-_])test(?:$|[-_])/.test(testDatabaseName);
+const hasDedicatedTestDatabase = isDedicatedTestDatabase(
+  testDatabaseUrl,
+  process.env.DATABASE_URL,
+);
 
 const database = drizzle(testDatabaseUrl);
 const repository = createDrizzleGalleryRepository(database);
@@ -61,5 +62,41 @@ describe.runIf(hasDedicatedTestDatabase)("createDrizzleGalleryRepository", () =>
     const stored = await database.select().from(galleryDesigns);
     expect(stored).toHaveLength(1);
     expect(stored[0].altText).toBe("Memorial canvas design");
+  });
+
+  it("filters and paginates active designs in PostgreSQL", async () => {
+    const matching = {
+      ...row,
+      id: "4".repeat(64),
+      contentHash: "4".repeat(64),
+      storageKey: `generations/${"2".repeat(64)}/${"4".repeat(64)}-${"4".repeat(12)}.jpg`,
+      occasionSlug: "birthday" as const,
+      subOccasion: "21st Birthday",
+      themeSlugs: ["cultural-island" as const],
+      altText: "Matching canvas",
+    };
+    const wrongProduct = {
+      ...matching,
+      id: "5".repeat(64),
+      contentHash: "5".repeat(64),
+      storageKey: `generations/${"2".repeat(64)}/${"5".repeat(64)}-${"5".repeat(12)}.jpg`,
+      productTypeSlug: "roll-up-banner" as const,
+      productSlug: "roll-up-banner" as const,
+      altText: "Wrong product",
+    };
+    await database.insert(galleryDesigns).values([matching, wrongProduct]);
+
+    await expect(repository.listActivePage({
+      page: 9,
+      productTypes: ["canvas"],
+      occasions: ["birthday"],
+      birthdayAges: ["21st Birthday"],
+      themes: ["cultural-island"],
+    }, 24)).resolves.toMatchObject({
+      total: 1,
+      page: 1,
+      pageCount: 1,
+      items: [expect.objectContaining({ id: matching.id })],
+    });
   });
 });

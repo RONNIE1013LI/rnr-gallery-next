@@ -91,6 +91,7 @@ function registration(paymentProvider = provider()): PaymentProviderRegistration
 function repository(overrides: Partial<PaymentRepository> = {}): PaymentRepository {
   return {
     findPayableOrder: vi.fn().mockResolvedValue(order),
+    findCurrentPayment: vi.fn().mockResolvedValue(null),
     createOrClaimNonterminalAttempt: vi.fn().mockResolvedValue({
       outcome: "claimed", attempt, claimId: "30000000-0000-4000-8000-000000000001",
     }),
@@ -771,6 +772,66 @@ describe("payment service", () => {
     });
     expect(stripe.completeReturn).not.toHaveBeenCalled();
     expect(repo.applyVerifiedResult).not.toHaveBeenCalled();
+  });
+
+  it("confirms an owned Stripe payment only from server-retrieved provider authority", async () => {
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt,
+      provider: "stripe",
+      method: "card",
+      providerReference: "pi_server_verified_123",
+      status: "processing",
+    };
+    const paidResult: VerifiedPaymentResult = {
+      providerReference: boundAttempt.providerReference!,
+      providerStatus: "succeeded",
+      amountCents: order.amountCents,
+      currency: order.currency,
+      orderNumber: order.orderNumber,
+      status: "paid",
+    };
+    const findCurrentPayment = vi.fn().mockResolvedValue({
+      attempt: boundAttempt,
+      order: { ...order, paymentStatus: "awaiting_payment" },
+    });
+    const applyVerifiedResult = vi.fn().mockResolvedValue({
+      attempt: { ...boundAttempt, status: "paid" },
+      order: { ...order, paymentStatus: "paid" },
+    });
+    const repo = repository({ applyVerifiedResult }) as PaymentRepository & {
+      findCurrentPayment: typeof findCurrentPayment;
+    };
+    repo.findCurrentPayment = findCurrentPayment;
+    const stripe: PaymentProvider = {
+      ...provider(),
+      key: "stripe",
+      method: "card",
+      retrieve: vi.fn().mockResolvedValue({ kind: "verified", result: paidResult }),
+    };
+    const paymentService = service({
+      repository: repo,
+      providers: [{ method: "card", label: "Card", isTest: false, provider: stripe }],
+    });
+    const confirmPayment = (paymentService as unknown as {
+      confirmPayment?: (ownedAccess: typeof access) => Promise<unknown>;
+    }).confirmPayment;
+
+    expect(confirmPayment).toBeDefined();
+    if (!confirmPayment) return;
+    await expect(confirmPayment(access)).resolves.toEqual({
+      payment: { method: "card", status: "paid", isTest: false, canRetry: false },
+      orderNumber: order.orderNumber,
+    });
+    expect(findCurrentPayment).toHaveBeenCalledWith(access);
+    expect(stripe.retrieve).toHaveBeenCalledWith({
+      order,
+      providerReference: boundAttempt.providerReference,
+    });
+    expect(applyVerifiedResult).toHaveBeenCalledWith({
+      attemptId: boundAttempt.id,
+      result: paidResult,
+      source: "reconciliation",
+    });
   });
 
   it("lets only the first Afterpay return capture with immutable persisted authority", async () => {

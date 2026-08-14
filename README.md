@@ -11,6 +11,7 @@ Prerequisites are Node.js/npm compatible with the committed lockfile and a
 reachable PostgreSQL database. Install exactly the locked dependency graph:
 
 ```bash
+npm run backup:lan
 npm ci
 ```
 
@@ -22,6 +23,10 @@ variables through the shell. Never commit or print their values.
   development and test may use HTTP only on localhost.
 - `BETTER_AUTH_SECRET` is a randomly generated secret of at least 32
   characters.
+- `NEXT_PUBLIC_GOOGLE_MAPS_API_KEY` enables optional address suggestions in the
+  shared NZ/AU address form. Restrict this browser key to approved site origins
+  and only the Maps JavaScript API plus Places API (New). If it is absent or
+  blocked, customers can continue with the complete manual address form.
 
 Provision PostgreSQL outside the application with a dedicated database and
 least-privilege role that can run the committed migrations. Production should
@@ -102,6 +107,19 @@ The import is content-addressed and safe to repeat. A second unchanged run must
 report `0 imported, 357 unchanged`. Keep both the database backup and the
 external gallery directory together when moving or restoring the application.
 
+Customer uploads and production files also live outside Git. In production,
+`RNR_PRIVATE_UPLOAD_DIR` is required and must point to an absolute, persistent,
+private directory. Deploy this application on a host or container with durable
+storage mounted for both `GALLERY_STORAGE_DIR` and `RNR_PRIVATE_UPLOAD_DIR`;
+ephemeral/serverless filesystems are not supported. Back up both directories
+together with PostgreSQL so database file references can always be restored.
+
+Set a strong server-only `MAINTENANCE_CRON_SECRET` and schedule an authenticated
+empty `POST /api/internal/uploads/cleanup` at least daily. The bounded cleanup
+removes unclaimed files only after their checkout has expired (or a completed
+checkout has passed its retention window), then removes empty expired checkout
+sessions. Never expose this bearer secret to browser code.
+
 Administrator access is granted to an existing account by exact email address:
 
 ```bash
@@ -113,20 +131,24 @@ The management interface is `/admin/design-gallery`. Gallery administration
 does not change product prices; it only manages approved images, taxonomy,
 target products, and public visibility.
 
-The repository integration test requires a disposable PostgreSQL database. Set
-`TEST_DATABASE_URL`, migrate that same database, and then run the suite:
+The repository integration tests require two disposable PostgreSQL targets:
+an application guard database in `DATABASE_URL` and a different database named
+with `test` in `TEST_DATABASE_URL`. Never point either value at staging or
+production. Migrate the test database, then run the suite with both values set:
 
 ```bash
+export DATABASE_URL=postgresql://.../rnr_ci_app
+export TEST_DATABASE_URL=postgresql://.../rnr_integration_test
 DATABASE_URL="$TEST_DATABASE_URL" npm run db:migrate
-TEST_DATABASE_URL="$TEST_DATABASE_URL" npm run test:run
+npm run test:run
 ```
 
 ## Dependency advisories
 
-As of 2 August 2026, `npm audit --omit=dev` reports seven open advisories: four
-moderate and three high, through esbuild/Drizzle Kit and Next.js dependencies on
-PostCSS and Sharp. npm only offers `--force` remediations that introduce
-breaking, incompatible versions (including Drizzle Kit 0.18.1 and Next.js
-9.3.3). Those changes are intentionally not applied. Do not run
-`npm audit fix --force`; track compatible upstream releases and re-run the full
-verification gate before changing these dependencies.
+As of 14 August 2026, `npm audit --omit=dev` reports four moderate advisories in
+the Drizzle Kit development toolchain through its legacy esbuild loader. There
+are no high or critical advisories. npm only offers a `--force` remediation that
+downgrades Drizzle Kit from 0.31.10 to the incompatible 0.18.1 release. That
+change is intentionally not applied. Do not run `npm audit fix --force`; track
+compatible upstream releases and re-run the full verification gate before
+changing these dependencies.

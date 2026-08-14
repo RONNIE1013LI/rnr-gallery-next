@@ -13,6 +13,19 @@ function isNonNegativeInteger(value: unknown): value is number {
 
 const galleryDesignIdPattern = /^[a-f0-9]{64}$/;
 
+export function normalizeLegacyGraveCoverCart(cart: Cart): Cart {
+  const items = cart.items.map((item) => {
+    if (item.productKey !== "grave-cover" || item.orientation !== "portrait") {
+      return item;
+    }
+    const { orientation, ...itemWithoutOrientation } = item;
+    return orientation === "portrait"
+      ? Object.freeze({ ...itemWithoutOrientation, sizeLabel: "100 × 200 cm" })
+      : item;
+  });
+  return Object.freeze({ version: 1, items: Object.freeze(items) });
+}
+
 function isCartItem(value: unknown): value is CartItem {
   if (!value || typeof value !== "object") return false;
   const item = value as Record<string, unknown>;
@@ -77,7 +90,7 @@ export function parseStoredCart(value: string | null): Cart {
       delete safeItem.galleryDesignId;
       return Object.freeze(safeItem);
     });
-    return Object.freeze({ version: 1, items: Object.freeze(items) });
+    return normalizeLegacyGraveCoverCart({ version: 1, items });
   } catch {
     return emptyCart();
   }

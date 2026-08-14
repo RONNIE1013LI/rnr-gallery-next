@@ -4,6 +4,7 @@ import type {
   GalleryProductTypeSlug,
   GalleryThemeSlug,
 } from "@/domain/gallery/types";
+import type { GalleryQuery } from "@/domain/gallery/query";
 
 export type GalleryImportRow = Readonly<{
   id: string;
@@ -44,6 +45,15 @@ export interface GalleryRepository {
     rows: readonly GalleryImportRow[],
   ): Promise<Readonly<{ imported: number; unchanged: number }>>;
   listActiveCandidates(): Promise<readonly GalleryPublicCandidate[]>;
+  listActivePage(
+    query: GalleryQuery,
+    pageSize: number,
+  ): Promise<Readonly<{
+    items: readonly GalleryPublicCandidate[];
+    total: number;
+    page: number;
+    pageCount: number;
+  }>>;
   findActiveImage(designId: string): Promise<GalleryActiveImage | null>;
   findActiveDesign(designId: string): Promise<GalleryPublicCandidate | null>;
 }

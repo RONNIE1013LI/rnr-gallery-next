@@ -14,6 +14,8 @@ import {
   orderItems,
   orders,
   paymentAttempts,
+  productionJobItems,
+  productionJobs,
   shippingQuotes,
   user,
 } from "@/server/db/schema";
@@ -212,6 +214,8 @@ describe("Drizzle atomic order repository", () => {
       const ownedOrders = await database.select({ id: orders.id }).from(orders)
         .where(inArray(orders.checkoutSessionId, sessionIds));
       if (ownedOrders.length) {
+        await database.delete(productionJobs)
+          .where(inArray(productionJobs.orderId, ownedOrders.map(({ id }) => id)));
         await database.delete(paymentAttempts)
           .where(inArray(paymentAttempts.orderId, ownedOrders.map(({ id }) => id)));
       }
@@ -248,11 +252,26 @@ describe("Drizzle atomic order repository", () => {
     });
     expect(await database.select().from(orderAddresses)
       .where(eq(orderAddresses.orderId, order.id))).toHaveLength(2);
+    const [productionJob] = await database.select().from(productionJobs)
+      .where(eq(productionJobs.orderId, order.id));
+    expect(productionJob).toMatchObject({
+      jobNumber: order.orderNumber,
+      source: "web",
+      urgent: false,
+      neededDate: "2026-08-10",
+      customerName: "Aroha Ngata",
+      customerSource: "web",
+      deliveryAddress: "Aroha Ngata\n12 Queen Street\nAuckland Central\nAuckland\n1010\nNZ",
+    });
+    expect(await database.select().from(productionJobItems)
+      .where(eq(productionJobItems.jobId, productionJob.id))).toHaveLength(1);
     expect((await repository.getCheckoutState(state.id))?.completedAt).toEqual(now);
     expect(await repository.findSessionByTokenDigest(state.tokenDigest, now))
       .toMatchObject({ id: state.id, customerId: null });
 
     await expect(repository.createAtomicOrder(input)).resolves.toMatchObject({ id: order.id });
+    expect(await database.select().from(productionJobs)
+      .where(eq(productionJobs.orderId, order.id))).toHaveLength(1);
     await expect(repository.createAtomicOrder({
       ...input, idempotencyKey: randomUUID(),
     })).rejects.toBeInstanceOf(OrderConflictError);
@@ -601,6 +620,11 @@ describe("Drizzle atomic order repository", () => {
       .map(({ orderNumber }) => orderNumber);
 
     expect(tied).toEqual([second.orderNumber, first.orderNumber]);
+
+    const page = await queryRepository.listPageByCustomer(customerIds[0], 1, 1);
+    expect(page.items).toHaveLength(1);
+    expect(page.total).toBeGreaterThanOrEqual(2);
+    expect(page.pageCount).toBe(page.total);
   });
 
   it("serializes concurrent identical and different idempotency requests", async () => {

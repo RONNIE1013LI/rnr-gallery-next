@@ -1,0 +1,2 @@
+ALTER TABLE "checkout_uploads" ADD COLUMN "cleanup_claimed_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "checkout_uploads" ADD CONSTRAINT "checkout_uploads_cleanup_unclaimed" CHECK ("checkout_uploads"."cleanup_claimed_at" IS NULL OR "checkout_uploads"."claimed_by_order_item_id" IS NULL);

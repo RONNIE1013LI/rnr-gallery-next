@@ -5,7 +5,7 @@ import type {
   SavedAddress,
 } from "@/server/addresses/address-repository";
 import { HttpError } from "@/server/auth/require-session";
-import { createAddressCollectionHandlers } from "./route";
+import { createAddressCollectionHandlers } from "./route-handler";
 
 const ownerId = "owner-a";
 const now = new Date("2026-08-02T00:00:00.000Z");

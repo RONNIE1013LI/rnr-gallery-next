@@ -1,3 +1,4 @@
+import type { DeliveryPreference } from "@/domain/configuration/types";
 import type { Cart, CartItem, CartTotals } from "./types";
 
 function assertQuantity(quantity: number): void {
@@ -48,6 +49,22 @@ export function removeCartItem(cart: Cart, itemId: string): Cart {
   return Object.freeze({
     version: 1,
     items: Object.freeze(cart.items.filter((item) => item.id !== itemId)),
+  });
+}
+
+export function setCartDeliveryPreference(
+  cart: Cart,
+  deliveryPreference: DeliveryPreference,
+): Cart {
+  return Object.freeze({
+    version: 1,
+    items: Object.freeze(
+      cart.items.map((item) =>
+        item.deliveryPreference === deliveryPreference
+          ? item
+          : Object.freeze({ ...item, deliveryPreference }),
+      ),
+    ),
   });
 }
 

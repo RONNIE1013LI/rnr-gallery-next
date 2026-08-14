@@ -1,9 +1,15 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import { ProductConfigurator } from "@/components/product-configurator";
+import {
+  ProductConfigurator,
+  type ProductConfiguratorRelatedDesign,
+} from "@/components/product-configurator";
 import styles from "@/components/storefront.module.css";
-import { getProductBySlug } from "@/domain/catalogue/products";
-import { getConfigurationSchema } from "@/domain/configuration/schemas";
+import {
+  getRegistryProductBySlug,
+  schemaFromRegistry,
+} from "@/domain/catalogue/product-registry";
+import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 
@@ -25,15 +31,44 @@ function getAucklandOrderDate(): string {
   return `${value.year}-${value.month}-${value.day}`;
 }
 
+async function getProductDesigns(slug: string): Promise<readonly ProductConfiguratorRelatedDesign[]> {
+  const runtime = getGalleryRuntime();
+  const candidates = await runtime.repository.listActiveCandidates();
+  const relevant = await Promise.all(
+    candidates
+      .filter((candidate) => candidate.productSlug === slug)
+      .map(async (candidate) => {
+        const isAvailable = await runtime.store.isAvailable(candidate.storageKey);
+        if (!isAvailable) return null;
+        return {
+          id: candidate.id,
+          altText: candidate.altText,
+          imageUrl: `/gallery-images/${candidate.id}?v=${candidate.contentHash}`,
+          width: candidate.width,
+          height: candidate.height,
+          title: candidate.subOccasion ?? candidate.altText,
+          productSlug: candidate.productSlug,
+        } as ProductConfiguratorRelatedDesign;
+      }),
+  );
+
+  return Object.freeze(relevant.filter((item): item is ProductConfiguratorRelatedDesign => item !== null).slice(0, 8));
+}
+
 export async function generateMetadata({ params }: ConfigurePageProps): Promise<Metadata> {
-  const product = getProductBySlug((await params).slug);
-  return { title: product ? `Create ${product.title}` : "Product not found" };
+  const { registry } = await getSafePublicProductRegistry();
+  const product = getRegistryProductBySlug(registry, (await params).slug);
+  return {
+    title: product ? `Create ${product.title}` : "Product not found",
+    robots: { index: false, follow: false },
+  };
 }
 
 export default async function ConfigurePage({ params, searchParams }: ConfigurePageProps) {
-  const product = getProductBySlug((await params).slug);
+  const { registry } = await getSafePublicProductRegistry();
+  const product = getRegistryProductBySlug(registry, (await params).slug);
   if (!product) notFound();
-  const schema = getConfigurationSchema(product.key);
+  const schema = schemaFromRegistry(registry, product.key);
   if (!schema) notFound();
   const rawDesign = (await searchParams).design;
   const designId = Array.isArray(rawDesign) ? rawDesign[0] : rawDesign;
@@ -44,18 +79,27 @@ export default async function ConfigurePage({ params, searchParams }: ConfigureP
     selectedDesign = null;
   }
 
+  let relatedDesigns: readonly ProductConfiguratorRelatedDesign[] = [];
+  try {
+    relatedDesigns = await getProductDesigns(product.slug);
+  } catch {
+    relatedDesigns = [];
+  }
+
   return (
     <main id="main-content" className={styles.configurePage}>
       <header className={styles.configureIntro}>
         <p className={styles.eyebrow}>Create your artwork</p>
         <h1>{product.title}</h1>
-        <p>Choose the details below. We prepare a design draft for your review before production.</p>
+        <p>{product.summary}</p>
       </header>
       <ProductConfigurator
         product={product}
         schema={schema}
+        pricing={registry.pricing}
         orderDate={getAucklandOrderDate()}
         selectedDesign={selectedDesign}
+        relatedDesigns={relatedDesigns}
       />
     </main>
   );

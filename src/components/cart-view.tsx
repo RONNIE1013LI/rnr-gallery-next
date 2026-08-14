@@ -22,8 +22,9 @@ import type { Cart } from "@/domain/cart/types";
 import { formatNzd } from "@/domain/money";
 import styles from "./storefront.module.css";
 
-function saveCart(cart: Cart) {
-  createBrowserCartRepository(window.localStorage).save(cart);
+function updateCart(update: (cart: Cart) => Cart) {
+  const repository = createBrowserCartRepository(window.localStorage);
+  repository.save(update(repository.load()));
   notifyCartChanged();
 }
 
@@ -51,10 +52,13 @@ export function CartView() {
   if (cart.items.length === 0) {
     return (
       <section className={styles.cartEmpty}>
-        <p className={styles.eyebrow}>Your order</p>
-        <h1>Your cart is empty</h1>
+        <h2>Your cart is empty</h2>
         <p>Choose a custom product to begin creating your artwork.</p>
-        <Link className={styles.primaryButton} href="/shop">Explore products</Link>
+        <div className={styles.emptyStateActions}>
+          <Link className={styles.primaryButton} href="/canvas">Browse Canvas</Link>
+          <Link className={styles.secondaryButton} href="/banners">Browse Banners</Link>
+          <Link className={styles.secondaryButton} href="/design-gallery">Design Gallery</Link>
+        </div>
       </section>
     );
   }
@@ -68,7 +72,7 @@ export function CartView() {
               className={styles.removeItem}
               type="button"
               aria-label={`Remove ${item.productTitle}`}
-              onClick={() => saveCart(removeCartItem(cart, item.id))}
+              onClick={() => updateCart((current) => removeCartItem(current, item.id))}
             >×</button>
             <div className={styles.cartItemMedia}>
               <Image src={item.imageSrc} alt="" fill sizes="96px" />
@@ -78,7 +82,7 @@ export function CartView() {
               {item.galleryDesignId && (
                 <div className={styles.gallerySnapshotText}>
                   <strong>Selected design inspiration</strong>
-                  <Link href={`/products/${item.productSlug}?design=${item.galleryDesignId}`}>
+                  <Link href={`/products/${item.productSlug}/configure?design=${item.galleryDesignId}`}>
                     View selected design
                   </Link>
                 </div>
@@ -88,7 +92,7 @@ export function CartView() {
                 {item.orientation && <div><dt>Orientation</dt><dd>{labelFor(item.orientation)}</dd></div>}
                 {item.peoplePets > 0 && <div><dt>People / pets</dt><dd>{item.peoplePets}</dd></div>}
                 <div><dt>Photo submission</dt><dd>{labelFor(item.photoSubmissionMethod)}</dd></div>
-                <div><dt>Needed by</dt><dd>{item.neededDate}</dd></div>
+                <div><dt>Production completion date</dt><dd>{item.neededDate}</dd></div>
                 {Boolean(item.urgentFeeInclGstCents) && (
                   <div>
                     <dt>Urgent service</dt>
@@ -105,9 +109,8 @@ export function CartView() {
                   aria-label={`Quantity for ${item.productTitle}`}
                   value={item.quantity}
                   onChange={(event) =>
-                    saveCart(
-                      setCartItemQuantity(cart, item.id, Number(event.target.value)),
-                    )
+                    updateCart((current) =>
+                      setCartItemQuantity(current, item.id, Number(event.target.value)))
                   }
                 >
                   {[1, 2, 3, 4, 5].map((quantity) => (
@@ -129,7 +132,7 @@ export function CartView() {
           <div><dt>GST (15%)</dt><dd>{formatNzd(totals.gstCents)}</dd></div>
           <div className={styles.priceTotal}><dt>Total incl GST</dt><dd>{formatNzd(totals.totalInclGstCents)}</dd></div>
         </dl>
-        <Link className={styles.primaryButton} href="/checkout">Continue to checkout</Link>
+        <Link className={styles.primaryButton} href="/checkout/start">Continue to checkout</Link>
         <p className={styles.cartAssurance}>Draft approval comes before production.</p>
       </aside>
     </div>

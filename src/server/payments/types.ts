@@ -91,10 +91,9 @@ export type ProviderSession =
         url: string;
       }>);
 
-export type VerifiedPaymentStatus = Extract<
-  PaymentAttemptStatus,
-  "processing" | "paid" | "failed" | "cancelled"
->;
+export type VerifiedPaymentStatus =
+  | Extract<PaymentAttemptStatus, "processing" | "paid" | "failed" | "cancelled">
+  | "refunded";
 
 export type VerifiedPaymentResult = Readonly<{
   providerReference: string;

@@ -6,6 +6,11 @@ export type GalleryConfig = Readonly<{
   maxImagePixels: number;
 }>;
 
+export type GalleryLimits = Pick<
+  GalleryConfig,
+  "maxUploadBytes" | "maxImagePixels"
+>;
+
 type GalleryEnvironment = Readonly<Record<string, string | undefined>>;
 
 function positiveInteger(value: string | undefined, name: string): number {
@@ -27,6 +32,14 @@ export function parseGalleryConfig(
 
   return Object.freeze({
     storageDir: resolve(rawStorageDir),
+    ...parseGalleryLimits(env),
+  });
+}
+
+export function parseGalleryLimits(
+  env: GalleryEnvironment = process.env,
+): GalleryLimits {
+  return Object.freeze({
     maxUploadBytes: positiveInteger(
       env.GALLERY_MAX_UPLOAD_BYTES,
       "GALLERY_MAX_UPLOAD_BYTES",

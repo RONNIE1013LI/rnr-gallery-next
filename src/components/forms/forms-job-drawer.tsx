@@ -1,0 +1,155 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
+
+import { ProductionJobDetail } from "@/components/admin/production-job-detail";
+import type { getProductionJobDetail, ProductionAssignee } from "@/server/production/drizzle-production-job-repository";
+import type { ProductionFileSummary } from "@/server/production/production-proof-service";
+import type { CustomerNotificationSummary } from "@/server/notifications/customer-notification-service";
+import styles from "./forms.module.css";
+import { useContainedDialog } from "./use-contained-dialog";
+
+type Detail = NonNullable<Awaited<ReturnType<typeof getProductionJobDetail>>>;
+
+function reviveDates(value: unknown, key = ""): unknown {
+  if (typeof value === "string" && key.endsWith("At") && /^\d{4}-\d{2}-\d{2}T/.test(value)) return new Date(value);
+  if (Array.isArray(value)) return value.map((entry) => reviveDates(entry));
+  if (value && typeof value === "object") return Object.fromEntries(
+    Object.entries(value).map(([entryKey, entry]) => [entryKey, reviveDates(entry, entryKey)]),
+  );
+  return value;
+}
+
+function FormsJobDrawerSession({
+  jobId,
+  onClose,
+  assignees,
+  canManageFinance,
+  canUpdate = true,
+  canUploadFiles = true,
+  canReviewProofs = true,
+}: Readonly<{
+  jobId: string;
+  onClose: () => void;
+  assignees: readonly ProductionAssignee[];
+  canManageFinance: boolean;
+  canUpdate?: boolean;
+  canUploadFiles?: boolean;
+  canReviewProofs?: boolean;
+}>) {
+  const [detail, setDetail] = useState<Detail | null>(null);
+  const [files, setFiles] = useState<readonly ProductionFileSummary[]>([]);
+  const [notifications, setNotifications] = useState<readonly CustomerNotificationSummary[]>([]);
+  const [loadedAssignees, setLoadedAssignees] = useState<readonly ProductionAssignee[]>(assignees);
+  const [revision, setRevision] = useState({ changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false });
+  const [error, setError] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [width, setWidth] = useState(() => {
+    if (typeof window === "undefined") return 720;
+    const stored = Number(window.localStorage.getItem("rnr-forms-drawer-width"));
+    return Number.isFinite(stored) && stored >= 520 && stored <= 900 ? stored : 720;
+  });
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const backdropRef = useRef<HTMLDivElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void fetch(`/api/forms/jobs/${encodeURIComponent(jobId)}`, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
+    }).then(async (response) => {
+      const body = await response.json().catch(() => null) as {
+        detail?: unknown;
+        files?: unknown;
+        notifications?: unknown;
+        assignees?: unknown;
+        revision?: unknown;
+        error?: string;
+      } | null;
+      if (!response.ok || !body?.detail) throw new Error(body?.error || "The order could not be loaded.");
+      setDetail(reviveDates(body.detail) as Detail);
+      if (Array.isArray(body.files)) setFiles(reviveDates(body.files) as readonly ProductionFileSummary[]);
+      if (Array.isArray(body.notifications)) setNotifications(reviveDates(body.notifications) as readonly CustomerNotificationSummary[]);
+      if (Array.isArray(body.assignees)) setLoadedAssignees(body.assignees as readonly ProductionAssignee[]);
+      if (body.revision && typeof body.revision === "object") setRevision(body.revision as typeof revision);
+    }).catch((requestError) => {
+      if (requestError instanceof DOMException && requestError.name === "AbortError") return;
+      setError(requestError instanceof Error ? requestError.message : "The order could not be loaded.");
+    });
+    return () => controller.abort();
+  }, [assignees, jobId]);
+
+  function close() {
+    if (dirty && !window.confirm("Discard unsaved changes to this order?")) return;
+    onClose();
+  }
+
+  useContainedDialog({
+    active: true,
+    dialogRef,
+    initialFocusRef: closeButtonRef,
+    isolationRootRef: backdropRef,
+    onClose: close,
+  });
+
+  return (
+    <div ref={backdropRef} className={styles.drawerBackdrop} onMouseDown={(event) => {
+      if (event.target === event.currentTarget) close();
+    }}>
+      <div
+        ref={dialogRef}
+        className={styles.jobDrawer}
+        role="dialog"
+        aria-modal="true"
+        aria-label={detail ? `Order ${detail.job.jobNumber}` : "Order editor"}
+        tabIndex={-1}
+        style={{ "--drawer-width": `${width}px` } as React.CSSProperties}
+      >
+        <header className={styles.drawerHeader}>
+          <div><strong>{detail?.job.jobNumber ?? "Loading order…"}</strong><span>{dirty ? "Unsaved changes" : "Order editor"}</span></div>
+          <label className={styles.drawerWidth}><span>Width</span><input aria-label="Editor width" type="range" min="520" max="900" step="20" value={width} onChange={(event) => {
+            const next = Number(event.target.value);
+            setWidth(next);
+            window.localStorage.setItem("rnr-forms-drawer-width", String(next));
+          }} /></label>
+          <Link href={`/order-system/jobs/${encodeURIComponent(jobId)}`}>Open full editor</Link>
+          <button ref={closeButtonRef} type="button" aria-label="Close order editor" onClick={close}>×</button>
+        </header>
+        <div className={`${styles.drawerContent} ${styles.formsEditor}`} data-forms-editor onChangeCapture={() => setDirty(true)}>
+          {error ? <div className={styles.formsErrorState} role="alert"><strong>Order unavailable</strong><p>{error}</p><button type="button" onClick={onClose}>Return to data list</button></div> : null}
+          {!detail && !error ? <div className={styles.drawerLoading} role="status">Loading order details…</div> : null}
+          {detail ? <ProductionJobDetail
+            detail={detail}
+            assignees={loadedAssignees}
+            canManageFinance={canManageFinance}
+            files={files}
+            notifications={notifications}
+            revision={revision}
+            jobApiBase="/api/forms/jobs"
+            invoicePdfBase="/api/forms/invoices"
+            orderBasePath={null}
+            notificationRetryEndpoint="/api/forms/notifications/retry"
+            canUploadFiles={canUploadFiles}
+            canReviewProofs={canReviewProofs}
+            canRetryNotifications={canUploadFiles}
+            canUpdateJob={canUpdate}
+          /> : null}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function FormsJobDrawer(props: Readonly<{
+  jobId: string;
+  onClose: () => void;
+  assignees: readonly ProductionAssignee[];
+  canManageFinance: boolean;
+  canUpdate?: boolean;
+  canUploadFiles?: boolean;
+  canReviewProofs?: boolean;
+}>) {
+  return <FormsJobDrawerSession key={props.jobId} {...props} />;
+}

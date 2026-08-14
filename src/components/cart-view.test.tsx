@@ -36,8 +36,10 @@ describe("CartView", () => {
 
   it("shows a useful empty state", () => {
     render(<CartView />);
-    expect(screen.getByRole("heading", { name: "Your cart is empty" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Explore products" })).toHaveAttribute("href", "/shop");
+    expect(screen.getByRole("heading", { level: 2, name: "Your cart is empty" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Browse Canvas" })).toHaveAttribute("href", "/canvas");
+    expect(screen.getByRole("link", { name: "Browse Banners" })).toHaveAttribute("href", "/banners");
+    expect(screen.getByRole("link", { name: "Design Gallery" })).toHaveAttribute("href", "/design-gallery");
   });
 
   it("shows aligned configuration details and totals", async () => {
@@ -47,9 +49,15 @@ describe("CartView", () => {
     expect(await screen.findByRole("heading", { name: "Photo Print Canvas" })).toBeInTheDocument();
     expect(screen.getByText("A4 — 29.7 × 21 cm")).toBeInTheDocument();
     expect(screen.getByText("Send after ordering")).toBeInTheDocument();
+    expect(screen.getByText("Production completion date")).toBeInTheDocument();
+    expect(screen.queryByText("Needed by")).not.toBeInTheDocument();
     expect(screen.getByText("$65.00")).toBeInTheDocument();
     expect(screen.getByText("$9.75")).toBeInTheDocument();
     expect(screen.getByText("$74.75")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Continue to checkout" })).toHaveAttribute(
+      "href",
+      "/checkout/start",
+    );
   });
 
   it("shows the chosen design inspiration and preserves its product route", async () => {
@@ -65,7 +73,7 @@ describe("CartView", () => {
     expect(await screen.findByText("Selected design inspiration")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View selected design" })).toHaveAttribute(
       "href",
-      `/products/photo-print-canvas?design=${"a".repeat(64)}`,
+      `/products/photo-print-canvas/configure?design=${"a".repeat(64)}`,
     );
   });
 
@@ -83,5 +91,24 @@ describe("CartView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Remove Photo Print Canvas" }));
     expect(screen.getByRole("heading", { name: "Your cart is empty" })).toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem("rnr-cart-v1")!).items).toEqual([]);
+  });
+
+  it("re-reads storage before editing so another tab's new item is preserved", async () => {
+    seedCart();
+    render(<CartView />);
+    await screen.findByRole("heading", { name: "Photo Print Canvas" });
+    localStorage.setItem("rnr-cart-v1", JSON.stringify({
+      version: 1,
+      items: [cartItem, { ...cartItem, id: "item-from-other-tab", productTitle: "Wall Banner" }],
+    }));
+
+    fireEvent.change(screen.getByLabelText("Quantity for Photo Print Canvas"), {
+      target: { value: "2" },
+    });
+
+    expect(JSON.parse(localStorage.getItem("rnr-cart-v1")!).items).toEqual([
+      expect.objectContaining({ id: "item-1", quantity: 2 }),
+      expect.objectContaining({ id: "item-from-other-tab", productTitle: "Wall Banner" }),
+    ]);
   });
 });

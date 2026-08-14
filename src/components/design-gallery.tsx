@@ -1,13 +1,13 @@
 import Image from "next/image";
 import Link from "next/link";
 import {
-  galleryBirthdayAges,
   galleryPageHref,
   type GalleryQuery,
 } from "@/domain/gallery/query";
-import { galleryOccasions, galleryThemes } from "@/domain/gallery/taxonomy";
+import { galleryThemes } from "@/domain/gallery/taxonomy";
 import type { GalleryProductTypeSlug } from "@/domain/gallery/types";
 import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
+import { DesignGalleryOccasionFilters } from "./design-gallery-occasion-filters";
 import styles from "./storefront.module.css";
 
 type GalleryResult = Readonly<{
@@ -25,6 +25,13 @@ const productTypeLabels: Readonly<Record<GalleryProductTypeSlug, string>> = {
   "grave-cover": "Grave covers",
   "roll-up-banner": "Roll-up banners",
   "wall-hanging-banners": "Wall banners",
+};
+
+const productTypeMobileLabels: Readonly<Record<GalleryProductTypeSlug, string>> = {
+  canvas: "Canvas",
+  "grave-cover": "Grave cover",
+  "roll-up-banner": "Roll-up banner",
+  "wall-hanging-banners": "Wall banner",
 };
 
 const occasionLabels = {
@@ -68,7 +75,7 @@ function FilterCheckbox({
 }
 
 export function DesignGallery({ query, result }: Props) {
-  const advancedOpen = query.birthdayAges.length > 0 || query.themes.length > 0;
+  const advancedOpen = query.showFilters || query.birthdayAges.length > 0 || query.themes.length > 0;
   const quickFilters = [
     ["All Designs", quickHref([])],
     ["Memorial", quickHref([["occasion", "memorial"]])],
@@ -87,7 +94,6 @@ export function DesignGallery({ query, result }: Props) {
   return (
     <main id="main-content" className={styles.galleryPage}>
       <header className={styles.galleryIntro}>
-        <p className={styles.eyebrow}>Our work</p>
         <h1>Designed around your story.</h1>
         <p>Personalised artwork created for memorials, celebrations, families and life&apos;s most meaningful moments.</p>
       </header>
@@ -96,7 +102,7 @@ export function DesignGallery({ query, result }: Props) {
         {quickFilters.map(([label, href]) => <Link key={label} href={href}>{label}</Link>)}
       </nav>
 
-      <details className={styles.galleryFilters} open={advancedOpen}>
+      <details id="browse-by-occasion" className={styles.galleryFilters} open={advancedOpen}>
         <summary>Filters +</summary>
         <form action="/design-gallery" method="get">
           <fieldset>
@@ -105,20 +111,11 @@ export function DesignGallery({ query, result }: Props) {
               <FilterCheckbox key={value} name="design_type" value={value} label={productTypeLabels[value]} checked={query.productTypes.includes(value)} />
             ))}
           </fieldset>
-          <fieldset>
-            <legend>Occasion</legend>
-            {galleryOccasions.map((value) => (
-              <FilterCheckbox key={value} name="occasion" value={value} label={occasionLabels[value]} checked={query.occasions.includes(value)} />
-            ))}
-          </fieldset>
-          {query.occasions.includes("birthday") && (
-            <fieldset>
-              <legend>Birthday age</legend>
-              {galleryBirthdayAges.map((value) => (
-                <FilterCheckbox key={value} name="birthday_age" value={value} label={value} checked={query.birthdayAges.includes(value)} />
-              ))}
-            </fieldset>
-          )}
+          <DesignGalleryOccasionFilters
+            key={`${query.occasions.join(",")}:${query.birthdayAges.join(",")}`}
+            selectedOccasions={query.occasions}
+            selectedBirthdayAges={query.birthdayAges}
+          />
           <fieldset>
             <legend>Theme</legend>
             {galleryThemes.map((value) => (
@@ -138,25 +135,43 @@ export function DesignGallery({ query, result }: Props) {
 
       {result.items.length > 0 ? (
         <section className={styles.galleryGrid} aria-label="Design gallery artworks">
-          {result.items.map((item) => {
+          {result.items.map((item, index) => {
             const title = item.subOccasion ?? occasionLabels[item.occasionSlug];
+            const mobileSpan = item.productTypeSlug === "wall-hanging-banners" ? "wide" : "compact";
             return (
-              <article className={styles.galleryCard} key={item.id}>
-                <Image
-                  src={`/gallery-images/${item.id}?v=${item.contentHash}`}
-                  alt={item.altText}
-                  width={item.width}
-                  height={item.height}
-                  sizes="(max-width: 767px) 100vw, (max-width: 1179px) 50vw, 33vw"
-                  unoptimized
-                />
-                <div className={styles.galleryCardBody}>
-                  <h2>{title}</h2>
-                  <p>{occasionLabels[item.occasionSlug]} · {productTypeLabels[item.productTypeSlug]}</p>
-                  <Link href={`/products/${item.productSlug}?design=${item.id}`}>
-                    View {item.altText}
-                  </Link>
-                </div>
+              <article
+                className={styles.galleryCard}
+                data-gallery-mobile-span={mobileSpan}
+                key={item.id}
+              >
+                <Link
+                  aria-label={`Create this artwork: ${item.altText}`}
+                  className={styles.galleryCardLink}
+                  href={`/products/${item.productSlug}/configure?design=${item.id}`}
+                >
+                  <div className={styles.galleryCardMedia}>
+                    <Image
+                      src={`/gallery-images/${item.id}?v=${item.contentHash}`}
+                      alt={item.altText}
+                      width={item.width}
+                      height={item.height}
+                      loading={index < 3 ? "eager" : "lazy"}
+                      fetchPriority={index < 3 ? "high" : "auto"}
+                      sizes={mobileSpan === "wide"
+                        ? "(max-width: 767px) 100vw, (max-width: 1179px) 50vw, 33vw"
+                        : "(max-width: 767px) 50vw, (max-width: 1179px) 50vw, 33vw"}
+                      unoptimized
+                    />
+                    <span className={styles.galleryCardBadge}>
+                      {productTypeMobileLabels[item.productTypeSlug]}
+                    </span>
+                  </div>
+                  <div className={styles.galleryCardBody}>
+                    <h2>{title}</h2>
+                    <p>{occasionLabels[item.occasionSlug]} · {productTypeLabels[item.productTypeSlug]}</p>
+                    <span className={styles.galleryCardAction}>Create this artwork</span>
+                  </div>
+                </Link>
               </article>
             );
           })}

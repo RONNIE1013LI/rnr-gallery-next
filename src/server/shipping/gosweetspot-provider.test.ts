@@ -13,6 +13,7 @@ const request: ShippingQuoteRequest = {
       widthMm: 300,
       heightMm: 30,
       weightGrams: 500,
+      unitPriceInclGstCents: 6_325,
     },
     {
       productKey: "photo-print-canvas",
@@ -21,6 +22,7 @@ const request: ShippingQuoteRequest = {
       widthMm: 430,
       heightMm: 30,
       weightGrams: 1_000,
+      unitPriceInclGstCents: 5_750,
     },
   ],
   destination: {
@@ -45,9 +47,27 @@ describe("GoSweetSpot shipping provider", () => {
           street: "1 Queen Street",
           suburb: "Auckland Central",
           city: "Auckland",
-          postcode: "1010",
-          countrycode: "NZ",
+          Country: "NZ",
+          Postcode: "1010",
         },
+        Products: [
+          {
+            Quantity: 1,
+            UnitWeightKg: 0.5,
+            UnitPrice: 63.25,
+            UnitLengthCm: 22,
+            UnitWidthCm: 30,
+            UnitHeightCm: 3,
+          },
+          {
+            Quantity: 1,
+            UnitWeightKg: 1,
+            UnitPrice: 57.5,
+            UnitLengthCm: 30,
+            UnitWidthCm: 43,
+            UnitHeightCm: 3,
+          },
+        ],
       });
       expect(new Headers(init?.headers).get("X-GSS-Hmac-Sha256")).toBe(
         createHmac("sha256", "test-secret").update(body).digest("hex"),
@@ -82,6 +102,84 @@ describe("GoSweetSpot shipping provider", () => {
       "https://checkout.gosweetspot.com/CustomApi/Rates/app%2Fid",
       expect.objectContaining({ method: "POST" }),
     );
+  });
+
+  it("normalizes non-ASCII destination text before signing the GoSweetSpot request", async () => {
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      expect(JSON.parse(String(init?.body)).destination).toEqual({
+        Contact: "Gloria Su'a",
+        street: "5, 33 Wrights Road",
+        suburb: "Addington",
+        city: "Christchurch",
+        Country: "NZ",
+        Postcode: "8024",
+      });
+      return new Response(JSON.stringify({
+        rates: [
+          { description: "South Island", shortCode: null, rate: 36 },
+        ],
+      }), { status: 200 });
+    });
+    const provider = createGoSweetSpotShippingProvider({
+      appId: "app",
+      secret: "secret",
+      rateTaxMode: "incl_gst",
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+    const destination = {
+      ...request.destination,
+      contact: "Gloria Su’a",
+      street: "5, 33 Wrights Road",
+      suburb: "Addington",
+      city: "Christchurch",
+      postcode: "8024",
+    };
+
+    await expect(provider.quote({ ...request, destination })).resolves.toMatchObject({
+      serviceName: "South Island",
+      amountInclGstCents: 3_600,
+    });
+    expect(destination.contact).toBe("Gloria Su’a");
+  });
+
+  it("accepts the account Custom API response wrapper and camel-case short code", async () => {
+    const provider = createGoSweetSpotShippingProvider({
+      appId: "app",
+      secret: "secret",
+      rateTaxMode: "incl_gst",
+      fetchImpl: (async () => new Response(JSON.stringify({
+        rates: [
+          { description: "Standard Shipping", shortCode: "SD", rate: 5 },
+        ],
+      }), { status: 200 })) as typeof fetch,
+    });
+
+    await expect(provider.quote(request)).resolves.toMatchObject({
+      serviceCode: "SD",
+      serviceName: "Standard Shipping",
+      amountExGstCents: 435,
+      gstCents: 65,
+      amountInclGstCents: 500,
+    });
+  });
+
+  it("creates a stable service code when GoSweetSpot returns a null short code", async () => {
+    const provider = createGoSweetSpotShippingProvider({
+      appId: "app",
+      secret: "secret",
+      rateTaxMode: "incl_gst",
+      fetchImpl: (async () => new Response(JSON.stringify({
+        rates: [
+          { description: "Standard Shipping", shortCode: null, rate: 5 },
+        ],
+      }), { status: 200 })) as typeof fetch,
+    });
+
+    await expect(provider.quote(request)).resolves.toMatchObject({
+      serviceCode: "gss-c0c654766304",
+      serviceName: "Standard Shipping",
+      amountInclGstCents: 500,
+    });
   });
 
   it("adds GST only when the configured account rate is ex GST", async () => {

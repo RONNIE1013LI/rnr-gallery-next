@@ -4,7 +4,11 @@ import { parseGalleryQuery } from "@/domain/gallery/query";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 import styles from "@/components/storefront.module.css";
 
-export const metadata: Metadata = { title: "Design gallery" };
+export const metadata: Metadata = {
+  title: "Design gallery",
+  description: "Explore real R&R Gallery canvas, banner and memorial artwork for design inspiration.",
+  alternates: { canonical: "/design-gallery" },
+};
 
 type Props = Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -19,7 +23,6 @@ export default async function DesignGalleryPage({ searchParams }: Props) {
     return (
       <main id="main-content" className={styles.galleryPage}>
         <section className={styles.galleryUnavailable}>
-          <p className={styles.eyebrow}>Design gallery</p>
           <h1>The gallery is temporarily unavailable.</h1>
           <p>Please try again shortly or browse our products in the meantime.</p>
         </section>

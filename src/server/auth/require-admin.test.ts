@@ -27,7 +27,7 @@ describe("requireAdminFrom", () => {
   });
 
   it("fails closed for a missing or unknown database role", async () => {
-    for (const role of [null, "owner"]) {
+    for (const role of [null, "owner", "form_staff"]) {
       await expect(requireAdminFrom(
         vi.fn().mockResolvedValue(session),
         vi.fn().mockResolvedValue(role),

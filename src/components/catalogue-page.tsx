@@ -18,13 +18,13 @@ export function CataloguePage({
   return (
     <main id="main-content" className={styles.pageMain}>
       <header className={styles.pageIntro}>
-        <p className={styles.eyebrow}>{eyebrow}</p>
+        {eyebrow ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
         <h1>{title}</h1>
-        <p>{description}</p>
+        {description ? <p>{description}</p> : null}
       </header>
       <section className={styles.productGrid} aria-label={`${title} products`}>
-        {products.map((product) => (
-          <ProductCard key={product.key} product={product} />
+        {products.map((product, index) => (
+          <ProductCard key={product.key} product={product} priority={index === 0} />
         ))}
       </section>
     </main>

@@ -1,5 +1,15 @@
 import { relations, sql } from "drizzle-orm";
-import { pgTable, text, timestamp, boolean, index, check } from "drizzle-orm/pg-core";
+import {
+  bigint,
+  boolean,
+  check,
+  index,
+  integer,
+  pgTable,
+  text,
+  timestamp,
+  uniqueIndex,
+} from "drizzle-orm/pg-core";
 
 export const user = pgTable(
   "user",
@@ -9,7 +19,10 @@ export const user = pgTable(
     email: text("email").notNull().unique(),
     emailVerified: boolean("email_verified").default(false).notNull(),
     image: text("image"),
-    role: text("role").$type<"customer" | "admin">().default("customer").notNull(),
+    role: text("role")
+      .$type<"customer" | "form_staff" | "staff" | "admin">()
+      .default("customer")
+      .notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     updatedAt: timestamp("updated_at")
       .defaultNow()
@@ -17,7 +30,10 @@ export const user = pgTable(
       .notNull(),
   },
   (table) => [
-    check("user_role_valid", sql`${table.role} in ('customer', 'admin')`),
+    check(
+      "user_role_valid",
+      sql`${table.role} in ('customer', 'form_staff', 'staff', 'admin')`,
+    ),
   ],
 );
 
@@ -78,6 +94,17 @@ export const verification = pgTable(
       .notNull(),
   },
   (table) => [index("verification_identifier_idx").on(table.identifier)],
+);
+
+export const rateLimit = pgTable(
+  "rateLimit",
+  {
+    id: text("id").primaryKey(),
+    key: text("key").notNull(),
+    count: integer("count").notNull(),
+    lastRequest: bigint("lastRequest", { mode: "number" }).notNull(),
+  },
+  (table) => [uniqueIndex("rateLimit_key_unique").on(table.key)],
 );
 
 export const userRelations = relations(user, ({ many }) => ({

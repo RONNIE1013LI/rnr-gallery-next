@@ -77,6 +77,7 @@ export function createDrizzleCheckoutRepository(
           and(
             eq(checkoutUploads.checkoutSessionId, sessionId),
             inArray(checkoutUploads.id, uploadIds),
+            isNull(checkoutUploads.cleanupClaimedAt),
           ),
         );
       return uploads.map(({ id }) => id);

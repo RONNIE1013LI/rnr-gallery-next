@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { PaymentVerificationMismatchError } from "@/server/payments/drizzle-payment-repository";
 import type { PaymentProviderRegistration } from "@/server/payments/provider-registry";
 import type { PaymentProvider, VerifiedProviderEvent } from "@/server/payments/types";
-import { createPaymentWebhookRoute } from "./route";
+import { createPaymentWebhookRoute } from "./route-handler";
 
 const url = "https://shop.example.test/api/payments/webhooks/stripe";
 const maxRawBodyBytes = 256 * 1024;

@@ -1,16 +1,22 @@
-import Link from "next/link";
+import type { Metadata } from "next";
+import { headers } from "next/headers";
+import { AdminShell } from "@/components/admin/admin-shell";
 import { requireAdminPage } from "@/server/auth/require-admin-page";
-import styles from "@/components/storefront.module.css";
+
+export const metadata: Metadata = {
+  robots: { index: false, follow: false },
+};
 
 export default async function AdminLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  await requireAdminPage();
+  const requestHeaders = await headers();
+  const access = await requireAdminPage(requestHeaders.get("x-rnr-request-path") ?? "/admin");
   return (
-    <main id="main-content" className={styles.adminPage}>
-      <nav className={styles.adminNavigation} aria-label="Administration">
-        <Link href="/admin/design-gallery">Design Gallery</Link>
-        <Link href="/design-gallery">View public gallery</Link>
-      </nav>
+    <AdminShell administrator={{
+      name: access.user.name ?? access.user.email ?? "Administrator",
+      email: access.user.email ?? "Administrator",
+      role: access.adminRole,
+    }}>
       {children}
-    </main>
+    </AdminShell>
   );
 }

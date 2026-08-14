@@ -1,5 +1,8 @@
+"use client";
+
 import Image from "next/image";
 import Link from "next/link";
+import { useMemo, useState } from "react";
 import styles from "./storefront.module.css";
 
 export type AdminGalleryListItem = Readonly<{
@@ -18,12 +21,28 @@ function label(value: string) {
 }
 
 export function AdminGalleryList({ designs }: Readonly<{ designs: readonly AdminGalleryListItem[] }>) {
+  const [query, setQuery] = useState("");
+  const [status, setStatus] = useState<"all" | "active" | "trashed">("all");
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return designs.filter((design) => {
+      if (status !== "all" && design.status !== status) return false;
+      return !needle || [design.altText, design.productTypeSlug, design.occasionSlug, design.subOccasion, design.productSlug, design.id]
+        .filter(Boolean).join(" ").toLowerCase().includes(needle);
+    });
+  }, [designs, query, status]);
+
   if (designs.length === 0) {
     return <p className={styles.adminEmpty}>No gallery designs found.</p>;
   }
 
-  return (
-    <div className={styles.adminGalleryTable}>
+  return (<>
+    <div className={styles.adminGalleryFilters}>
+      <label><span>Search designs</span><input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Title, occasion, product or ID" /></label>
+      <label><span>Status</span><select value={status} onChange={(event) => setStatus(event.target.value as typeof status)}><option value="all">All statuses</option><option value="active">Active</option><option value="trashed">Trashed</option></select></label>
+      <span>{filtered.length} shown</span>
+    </div>
+    {filtered.length ? <div className={styles.adminGalleryTable}>
       <div className={styles.adminGalleryTableHeader} aria-hidden="true">
         <span>Artwork</span>
         <span>Classification</span>
@@ -31,7 +50,7 @@ export function AdminGalleryList({ designs }: Readonly<{ designs: readonly Admin
         <span>Status</span>
         <span>Actions</span>
       </div>
-      {designs.map((design) => (
+      {filtered.map((design) => (
         <article className={styles.adminGalleryRow} key={design.id}>
           <div className={styles.adminGalleryArtwork}>
             <Image src={design.imageUrl} alt="" width={88} height={88} unoptimized />
@@ -57,6 +76,6 @@ export function AdminGalleryList({ designs }: Readonly<{ designs: readonly Admin
           </div>
         </article>
       ))}
-    </div>
-  );
+    </div> : <p className={styles.adminEmpty}>No gallery designs match this search.</p>}
+  </>);
 }

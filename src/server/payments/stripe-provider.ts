@@ -18,16 +18,26 @@ export type StripePaymentIntent = Readonly<{
   client_secret: string | null;
 }>;
 
+export type StripeCharge = Readonly<{
+  id: string;
+  payment_intent: string | null;
+  amount: number;
+  amount_refunded: number;
+  currency: string;
+  metadata: Readonly<Record<string, string>>;
+  refunded: boolean;
+}>;
+
 export type StripeWebhookEvent = Readonly<{
   id: string;
   type: string;
-  data: Readonly<{ object: StripePaymentIntent }>;
+  data: Readonly<{ object: StripePaymentIntent | StripeCharge }>;
 }>;
 
 type StripeCreateParams = Readonly<{
   amount: number;
   currency: string;
-  payment_method_types: readonly ["card"];
+  payment_method_types: readonly ["card", "link"];
   metadata: Readonly<{ order_number: string }>;
 }>;
 
@@ -140,31 +150,66 @@ function verifiedWebhookResult(
   event: StripeWebhookEvent,
   config: EnabledStripeConfig,
 ) {
-  const mapping = webhookStatuses[event.type as keyof typeof webhookStatuses];
   const intent = event.data?.object;
-  const currency = intent?.currency?.toUpperCase();
-  const orderNumber = intent?.metadata?.order_number;
+  if (event.type === "charge.refunded") {
+    const charge = intent as StripeCharge;
+    const currency = charge?.currency?.toUpperCase();
+    const orderNumber = charge?.metadata?.order_number;
+    if (
+      typeof event.id !== "string" ||
+      !event.id.startsWith("evt_") ||
+      !charge ||
+      typeof charge.id !== "string" ||
+      !charge.id.startsWith("ch_") ||
+      typeof charge.payment_intent !== "string" ||
+      !charge.payment_intent.startsWith("pi_") ||
+      !Number.isSafeInteger(charge.amount) ||
+      charge.amount <= 0 ||
+      charge.amount_refunded !== charge.amount ||
+      charge.refunded !== true ||
+      !config.supportedCurrencies.includes(currency as VerifiedPaymentResult["currency"]) ||
+      typeof orderNumber !== "string" ||
+      !orderNumber.trim()
+    ) throw verificationFailure();
+    return Object.freeze({
+      provider: "stripe" as const,
+      providerEventId: event.id,
+      result: Object.freeze({
+        providerReference: charge.payment_intent,
+        providerStatus: "refunded",
+        amountCents: charge.amount,
+        currency: currency as VerifiedPaymentResult["currency"],
+        orderNumber,
+        status: "refunded" as const,
+      }),
+    });
+  }
+
+  const mapping = webhookStatuses[event.type as keyof typeof webhookStatuses];
+  const paymentIntent = intent as StripePaymentIntent;
+  const currency = paymentIntent?.currency?.toUpperCase();
+  const orderNumber = paymentIntent?.metadata?.order_number;
   if (
     typeof event.id !== "string" ||
     !event.id.startsWith("evt_") ||
     !mapping ||
-    !intent ||
-    typeof intent.id !== "string" ||
-    !intent.id.startsWith("pi_") ||
-    !Number.isSafeInteger(intent.amount) ||
-    intent.amount <= 0 ||
+    !paymentIntent ||
+    typeof paymentIntent.id !== "string" ||
+    !paymentIntent.id.startsWith("pi_") ||
+    !Number.isSafeInteger(paymentIntent.amount) ||
+    paymentIntent.amount <= 0 ||
     !config.supportedCurrencies.includes(currency as VerifiedPaymentResult["currency"]) ||
     typeof orderNumber !== "string" ||
     orderNumber.length === 0 ||
     orderNumber !== orderNumber.trim() ||
-    intent.status !== mapping.providerStatus
+    paymentIntent.status !== mapping.providerStatus
   ) {
     throw verificationFailure();
   }
   const result: VerifiedPaymentResult = Object.freeze({
-    providerReference: intent.id,
-    providerStatus: intent.status,
-    amountCents: intent.amount,
+    providerReference: paymentIntent.id,
+    providerStatus: paymentIntent.status,
+    amountCents: paymentIntent.amount,
     currency: currency as VerifiedPaymentResult["currency"],
     orderNumber,
     status: mapping.status,
@@ -215,7 +260,7 @@ export function createStripeProvider({
         intent = await client.paymentIntents.create({
           amount: input.order.amountCents,
           currency: input.order.currency.toLowerCase(),
-          payment_method_types: ["card"],
+          payment_method_types: ["card", "link"],
           metadata: { order_number: input.order.orderNumber },
         }, { idempotencyKey: input.idempotencyKey });
       } catch {

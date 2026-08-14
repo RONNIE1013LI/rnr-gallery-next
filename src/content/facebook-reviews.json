@@ -1,0 +1,49 @@
+{
+  "sourceUrl": "https://www.facebook.com/RandRgallery/reviews/?id=100063872118160&sk=reviews",
+  "recommendationRate": 100,
+  "reviewCount": 284,
+  "reviews": [
+    {
+      "id": "grace-stowers-canvas",
+      "reviewer": "Grace Stowers",
+      "recommended": true,
+      "text": "I can’t recommend R&R Gallery enough. I’ve ordered five canvases from them so far; two were sent overseas and three were gifted to family in New Zealand."
+    },
+    {
+      "id": "teru-vina-banner",
+      "reviewer": "Teru Vina",
+      "recommended": true,
+      "text": "I just received my order from R&R Gallery. Fast delivery and the banner was beautiful. Thank you so much."
+    },
+    {
+      "id": "harris-nanoz-banner",
+      "reviewer": "Harris Nanoz",
+      "recommended": true,
+      "text": "I would recommend this business to anyone wanting a beautiful banner, whether it’s for a birthday, wedding, or just in general."
+    },
+    {
+      "id": "ari-george-banner",
+      "reviewer": "Ari George",
+      "recommended": true,
+      "text": "Absolutely loved the outcome of our banners. R&R did an awesome, fast and efficient job with our banners."
+    },
+    {
+      "id": "lya-vilioliettai-portrait",
+      "reviewer": "Lya Vilioliettai",
+      "recommended": true,
+      "text": "Highly recommend them. They are very friendly, helpful, and the price for their portraits is very affordable."
+    },
+    {
+      "id": "arlu-brooking-service",
+      "reviewer": "Arlu Brooking",
+      "recommended": true,
+      "text": "Amazing service and product. Simple communication, and the order arrived in perfect condition on time."
+    },
+    {
+      "id": "mercadies-millar-brooks-fast-turnaround",
+      "reviewer": "Mercadies Millar-Brooks",
+      "recommended": true,
+      "text": "Highly recommend R&R Gallery. I ordered on Thursday night and received it the following afternoon."
+    }
+  ]
+}

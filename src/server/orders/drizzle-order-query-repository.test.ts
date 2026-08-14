@@ -43,6 +43,12 @@ const orderRow: OrderRow = {
   totalInclGstCents: 7475,
   paymentStatus: "awaiting_payment",
   fulfilmentStatus: "new",
+  trackingNumber: null,
+  trackingCarrier: null,
+  trackingUrl: null,
+  shippedAt: null,
+  completedAt: null,
+  cancelledAt: null,
   createdAt,
   updatedAt: createdAt,
 };
@@ -241,6 +247,23 @@ describe("Drizzle order query read model", () => {
     expect(result.payment).toBeNull();
   });
 
+  it("normalizes legacy Grave Cover order display without changing monetary snapshots", () => {
+    const legacyItem = {
+      ...itemRow,
+      productKey: "grave-cover",
+      productSlug: "grave-cover",
+      productTitle: "Grave Cover",
+      sizeKey: "standard",
+      sizeLabel: "200 × 100 cm",
+      orientation: "portrait" as const,
+    };
+
+    const [result] = buildPublicOrders([orderRow], [legacyItem], addresses, []);
+    expect(result.items[0].sizeLabel).toBe("100 × 200 cm");
+    expect(result.items[0]).not.toHaveProperty("orientation");
+    expect(result.items[0].lineTotalInclGstCents).toBe(itemRow.lineTotalInclGstCents);
+  });
+
   it("selects the newest attempt by immutable creation order instead of mutable updated time", () => {
     const newerProcessing: PaymentReadRow = {
       ...attemptRow,
@@ -302,9 +325,12 @@ describe("Drizzle order query read model", () => {
     });
   });
 
-  it.each(["paid", "refunded"] as const)(
-    "uses the newest paid attempt for a %s order even when a later failed attempt exists",
-    (paymentStatus) => {
+  it.each([
+    ["paid", "paid"],
+    ["refunded", "refunded"],
+  ] as const)(
+    "uses the newest paid attempt for a %s order and reports %s",
+    (paymentStatus, expectedStatus) => {
       const paidAttempt: PaymentReadRow = {
         ...attemptRow,
         method: "card",
@@ -328,7 +354,7 @@ describe("Drizzle order query read model", () => {
 
       expect(result.payment).toEqual({
         method: "card",
-        status: "paid",
+        status: expectedStatus,
         canRetry: false,
         isTest: false,
       });
@@ -352,6 +378,26 @@ describe("Drizzle order query read model", () => {
       urgentServiceConfirmed: false,
       urgentWorkingDays: 12,
     });
+  });
+
+  it.each([
+    "new",
+    "designing",
+    "awaiting_customer",
+    "ready_to_print",
+    "printing",
+    "on_hold",
+    "shipped",
+    "completed",
+    "cancelled",
+  ] as const)("displays an order in the supported %s fulfilment state", (fulfilmentStatus) => {
+    const [result] = buildPublicOrders(
+      [{ ...orderRow, fulfilmentStatus }],
+      [itemRow],
+      addresses,
+    );
+
+    expect(result.fulfilmentStatus).toBe(fulfilmentStatus);
   });
 
   const corruptions: [string, { row?: OrderRow; items?: ItemRow[]; item?: ItemRow; addressRows?: AddressRow[] }][] = [

@@ -31,6 +31,7 @@ export type GalleryQuery = Readonly<{
   occasions: readonly GalleryOccasionSlug[];
   birthdayAges: readonly string[];
   themes: readonly GalleryThemeSlug[];
+  showFilters?: boolean;
 }>;
 
 type QueryInput =
@@ -59,6 +60,7 @@ function approved<T extends string>(
 export function parseGalleryQuery(input: QueryInput): GalleryQuery {
   const rawPage = values(input, "page")[0];
   const parsedPage = Number.parseInt(rawPage ?? "1", 10);
+  const showFilters = values(input, "filters")[0] === "1";
   return Object.freeze({
     page: Number.isSafeInteger(parsedPage) && parsedPage > 0 ? parsedPage : 1,
     productTypes: approved(
@@ -68,6 +70,7 @@ export function parseGalleryQuery(input: QueryInput): GalleryQuery {
     occasions: approved(values(input, "occasion"), galleryOccasions),
     birthdayAges: approved(values(input, "birthday_age"), galleryBirthdayAges),
     themes: approved(values(input, "theme"), galleryThemes),
+    ...(showFilters ? { showFilters: true } : {}),
   });
 }
 
@@ -77,6 +80,7 @@ export function galleryPageHref(query: GalleryQuery, page: number): string {
   query.occasions.forEach((value) => params.append("occasion", value));
   query.birthdayAges.forEach((value) => params.append("birthday_age", value));
   query.themes.forEach((value) => params.append("theme", value));
+  if (query.showFilters) params.set("filters", "1");
   params.set("page", String(Math.max(1, Math.trunc(page))));
   return `/design-gallery?${params.toString()}`;
 }

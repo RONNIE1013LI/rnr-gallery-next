@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { normalizeAddress } from "@/domain/address/schema";
+import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import type { CheckoutStateRecord } from "@/server/checkout/checkout-repository";
 import {
@@ -212,6 +213,31 @@ describe("atomic order service", () => {
       OrderStateChangedError,
     );
     expect(repo.createAtomicOrder).not.toHaveBeenCalled();
+  });
+
+  it("creates an order from the same managed product registry used to review checkout", async () => {
+    const registry = structuredClone(defaultProductRegistry);
+    const product = registry.products.find((candidate) => candidate.key === "photo-print-canvas");
+    const size = product?.configuration.sizes.find((candidate) => candidate.key === "a4");
+    if (!size) throw new Error("Missing managed price fixture");
+    size.priceExGstCents += 1_000;
+    const cart = repriceCart(canonicalCart(), { now, registry });
+    const checkout = { ...state(), cartDigest: cart.cartDigest, cartSnapshot: cart };
+    const repo = repository({ getCheckoutState: vi.fn().mockResolvedValue(checkout) });
+    const current = vi.fn().mockResolvedValue({ revision: 4, registry });
+    const service = createOrderService({
+      repository: repo,
+      shippingService: shippingService(),
+      productRegistryService: { current },
+      now: () => now,
+    });
+
+    await expect(service.createOrder(sessionId, key, {
+      ...reviewed(),
+      cartDigest: cart.cartDigest,
+    })).resolves.toEqual(expect.objectContaining({ orderNumber: existingOrder.orderNumber }));
+    expect(current).toHaveBeenCalledOnce();
+    expect(repo.createAtomicOrder).toHaveBeenCalledWith(expect.objectContaining({ cart }));
   });
 
   it("retries a non-PII order-number collision without requoting", async () => {

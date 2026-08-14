@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
   InvalidUploadError,
   LocalPrivateUploadStore,
+  privateUploadDirectory,
 } from "./local-private-upload-store";
 
 const temporaryDirectories: string[] = [];
@@ -24,10 +25,24 @@ afterEach(async () => {
 });
 
 describe("LocalPrivateUploadStore", () => {
+  it("requires an explicit absolute persistent directory in production", () => {
+    expect(() => privateUploadDirectory({ NODE_ENV: "production" })).toThrow(
+      "RNR_PRIVATE_UPLOAD_DIR is required in production",
+    );
+    expect(() => privateUploadDirectory({
+      NODE_ENV: "production",
+      RNR_PRIVATE_UPLOAD_DIR: "relative/uploads",
+    })).toThrow("RNR_PRIVATE_UPLOAD_DIR must be absolute");
+    expect(privateUploadDirectory({
+      NODE_ENV: "production",
+      RNR_PRIVATE_UPLOAD_DIR: "/srv/rnr/private-uploads",
+    })).toBe("/srv/rnr/private-uploads");
+  });
+
   it("stores image bytes and safe metadata outside the public tree", async () => {
     const directory = await temporaryDirectory();
     const store = new LocalPrivateUploadStore(directory, () => "upload-id");
-    const file = new File([new Uint8Array([1, 2, 3])], "family photo.jpg", {
+    const file = new File([new Uint8Array([0xff, 0xd8, 0xff, 1, 2, 3])], "family photo.jpg", {
       type: "image/jpeg",
     });
 
@@ -37,12 +52,12 @@ describe("LocalPrivateUploadStore", () => {
       id: "upload-id",
       originalName: "family photo.jpg",
       mimeType: "image/jpeg",
-      size: 3,
+      size: 6,
       storageKey: "upload-id.bin",
-      sha256: "039058c6f2c0cb492c533b0a4d14ef77cc0f78abccced5287d84a1a2011cfb81",
+      sha256: "6456b2ac4bae7c410724a1dbd8eeaaf2a9cb6b03c3e6c82ccd8101b284656791",
     });
     expect(await readFile(join(directory, "upload-id.bin"))).toEqual(
-      Buffer.from([1, 2, 3]),
+      Buffer.from([0xff, 0xd8, 0xff, 1, 2, 3]),
     );
     expect(JSON.parse(await readFile(join(directory, "upload-id.json"), "utf8")))
       .toEqual(reference);
@@ -52,7 +67,7 @@ describe("LocalPrivateUploadStore", () => {
     const directory = await temporaryDirectory();
     const store = new LocalPrivateUploadStore(directory, () => "upload-id");
     const reference = await store.save(
-      new File([new Uint8Array([1])], "photo.jpg", { type: "image/jpeg" }),
+      new File([new Uint8Array([0xff, 0xd8, 0xff])], "photo.jpg", { type: "image/jpeg" }),
     );
 
     await store.remove(reference);
@@ -68,7 +83,7 @@ describe("LocalPrivateUploadStore", () => {
     const store = new LocalPrivateUploadStore(directory, () => "upload-id");
 
     await expect(
-      store.save(new File(["photo"], "photo.jpg", { type: "image/jpeg" })),
+      store.save(new File([new Uint8Array([0xff, 0xd8, 0xff])], "photo.jpg", { type: "image/jpeg" })),
     ).rejects.toThrow();
 
     await expect(access(join(directory, "upload-id.bin"))).rejects.toThrow();
@@ -89,5 +104,13 @@ describe("LocalPrivateUploadStore", () => {
       arrayBuffer: async () => new ArrayBuffer(0),
     };
     await expect(store.save(oversized)).rejects.toBeInstanceOf(InvalidUploadError);
+  });
+
+  it("rejects a file whose bytes do not match its claimed image type", async () => {
+    const store = new LocalPrivateUploadStore(await temporaryDirectory());
+
+    await expect(store.save(
+      new File(["not a jpeg"], "disguised.jpg", { type: "image/jpeg" }),
+    )).rejects.toThrow("image contents do not match");
   });
 });

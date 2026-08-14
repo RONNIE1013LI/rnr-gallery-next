@@ -1,15 +1,14 @@
 import { getDatabase } from "@/server/db/client";
-import { parseGalleryConfig } from "./config";
 import { createDrizzleGalleryRepository } from "./drizzle-gallery-repository";
 import { createDesignSelectionService } from "./design-selection-service";
-import { LocalGalleryStore } from "./local-gallery-store";
+import { createGalleryStore } from "./gallery-store";
 import { createPublicGalleryService } from "./public-gallery-service";
 
 let runtime: ReturnType<typeof createRuntime> | undefined;
 
 function createRuntime() {
   const repository = createDrizzleGalleryRepository(getDatabase());
-  const store = new LocalGalleryStore(parseGalleryConfig());
+  const store = createGalleryStore();
   return Object.freeze({
     repository,
     store,

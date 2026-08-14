@@ -12,6 +12,7 @@ const common = Object.freeze({
   deliveryPreferences: Object.freeze(["post", "pickup"] as const),
   defaultDeliveryPreference: "post" as const,
   defaultPhotoSubmissionMethod: "upload" as const,
+  artworkDirectionMode: "required" as const,
 });
 
 export const configurationSchemas = Object.freeze([
@@ -27,6 +28,7 @@ export const configurationSchemas = Object.freeze([
     maximumSourcePhotos: 1,
     includedPhotos: 1,
     ...common,
+    artworkDirectionMode: "none",
   },
   {
     productKey: "digital-oil-painting-canvas",
@@ -68,6 +70,8 @@ export const configurationSchemas = Object.freeze([
     defaultPeoplePets: 0,
     minimumSourcePhotos: 1,
     includedPhotos: 5,
+    extraPhotoPriceExGstCents: 500,
+    extraBackgroundRemovalFeeInclGstCents: 2_000,
     ...common,
   },
   {
@@ -83,6 +87,8 @@ export const configurationSchemas = Object.freeze([
     defaultPeoplePets: 0,
     minimumSourcePhotos: 1,
     includedPhotos: 5,
+    extraPhotoPriceExGstCents: 500,
+    extraBackgroundRemovalFeeInclGstCents: 2_000,
     ...common,
   },
   {
@@ -98,6 +104,7 @@ export const configurationSchemas = Object.freeze([
     defaultPeoplePets: 1,
     minimumSourcePhotos: 1,
     includedPhotos: 0,
+    extraBackgroundRemovalFeeInclGstCents: 2_000,
     ...common,
   },
   {
@@ -106,12 +113,13 @@ export const configurationSchemas = Object.freeze([
       { key: "standard", label: "100 × 200 cm", priceExGstCents: 18_500 },
     ]),
     defaultSizeKey: "standard",
-    orientationMode: "fixed",
-    defaultOrientation: "portrait",
+    orientationMode: "none",
     peoplePetsMode: "none",
     defaultPeoplePets: 0,
     minimumSourcePhotos: 1,
     includedPhotos: 5,
+    extraPhotoPriceExGstCents: 500,
+    extraBackgroundRemovalFeeInclGstCents: 2_000,
     ...common,
   },
 ] satisfies readonly ProductConfigurationSchema[]);

@@ -5,7 +5,7 @@ import type {
 } from "@/server/checkout/checkout-repository";
 import { InvalidCheckoutCartError } from "@/domain/checkout/types";
 import { InvalidCheckoutStateError } from "@/server/checkout/checkout-service";
-import { createCheckoutSessionRoute } from "./route";
+import { createCheckoutSessionRoute } from "./route-handler";
 
 const origin = "https://shop.example.test";
 const sessionId = "10000000-0000-4000-8000-000000000001";

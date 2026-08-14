@@ -1,7 +1,12 @@
 import { createHash } from "node:crypto";
-import { products } from "@/domain/catalogue/products";
-import { getConfigurationSchema } from "@/domain/configuration/schemas";
+import {
+  defaultProductRegistry,
+  getRegistryProductByKey,
+  schemaFromRegistry,
+  type ProductRegistryDocument,
+} from "@/domain/catalogue/product-registry";
 import { quoteConfiguration } from "@/domain/configuration/quote";
+import { formatConfigurationSizeLabel } from "@/domain/configuration/size-label";
 import type { ProductConfigurationSchema } from "@/domain/configuration/types";
 import { getUrgentService } from "@/domain/scheduling/urgent-service";
 import { parseCheckoutCartInput } from "./input-schema";
@@ -16,6 +21,7 @@ import {
 type RepriceCartOptions = Readonly<{
   now?: Date;
   galleryDesigns?: ReadonlyMap<string, GalleryDesignSnapshot>;
+  registry?: ProductRegistryDocument;
 }>;
 
 function assertSafeCents(label: string, ...values: readonly number[]): void {
@@ -99,6 +105,59 @@ function validateUploads(
   }
 }
 
+function validatePhotoSelections(
+  schema: ProductConfigurationSchema,
+  item: CanonicalCheckoutItemInput,
+): Readonly<{
+  mainPhotoUploadId?: string;
+  extraBackgroundRemovalUploadIds: readonly string[];
+}> {
+  const mainPhotoUploadId = item.mainPhotoUploadId;
+  const extraBackgroundRemovalUploadIds = item.extraBackgroundRemovalUploadIds ?? [];
+  const supportsBackgroundRemoval =
+    schema.extraBackgroundRemovalFeeInclGstCents !== undefined;
+
+  if (!supportsBackgroundRemoval) {
+    if (mainPhotoUploadId || extraBackgroundRemovalUploadIds.length > 0) {
+      throw new InvalidCheckoutCartError(
+        "This product does not offer background removal selections.",
+      );
+    }
+    return Object.freeze({ extraBackgroundRemovalUploadIds: Object.freeze([]) });
+  }
+
+  if (item.photoSubmissionMethod === "later") {
+    if (mainPhotoUploadId || extraBackgroundRemovalUploadIds.length > 0) {
+      throw new InvalidCheckoutCartError(
+        "Photo selections require uploaded source photos.",
+      );
+    }
+    return Object.freeze({ extraBackgroundRemovalUploadIds: Object.freeze([]) });
+  }
+
+  // The first uploaded file is the original workflow's default main photo.
+  // Keeping that default here also lets carts created before this field existed
+  // complete safely without trusting any browser price.
+  const resolvedMainPhotoUploadId = mainPhotoUploadId ?? item.uploadReferences[0];
+  if (!resolvedMainPhotoUploadId || !item.uploadReferences.includes(resolvedMainPhotoUploadId)) {
+    throw new InvalidCheckoutCartError("Choose one uploaded photo as the main photo.");
+  }
+  if (
+    new Set(extraBackgroundRemovalUploadIds).size !== extraBackgroundRemovalUploadIds.length ||
+    extraBackgroundRemovalUploadIds.some(
+      (uploadId) => uploadId === resolvedMainPhotoUploadId || !item.uploadReferences.includes(uploadId),
+    )
+  ) {
+    throw new InvalidCheckoutCartError(
+      "Background removal selections must be distinct non-main uploaded photos.",
+    );
+  }
+  return Object.freeze({
+    mainPhotoUploadId: resolvedMainPhotoUploadId,
+    extraBackgroundRemovalUploadIds: Object.freeze([...extraBackgroundRemovalUploadIds]),
+  });
+}
+
 function freezeUnitPrice(
   price: ReturnType<typeof quoteConfiguration>,
 ): ReturnType<typeof quoteConfiguration> {
@@ -125,53 +184,66 @@ function repriceItem(
   item: CanonicalCheckoutItemInput,
   orderDate: string,
   galleryDesigns: ReadonlyMap<string, GalleryDesignSnapshot>,
+  registry: ProductRegistryDocument,
 ): RepricedCheckoutItem {
-  const schema = getConfigurationSchema(item.productKey);
-  const product = products.find(
-    (candidate) => candidate.active && candidate.key === item.productKey,
-  );
+  const normalizedItem = item.productKey === "grave-cover" && item.orientation === "portrait"
+    ? { ...item, orientation: undefined }
+    : item;
+  const schema = schemaFromRegistry(registry, normalizedItem.productKey);
+  const product = getRegistryProductByKey(registry, normalizedItem.productKey);
   if (!schema || !product) {
     throw new InvalidCheckoutCartError("The selected product is unavailable.");
   }
 
-  const galleryDesign = item.galleryDesignId
-    ? galleryDesigns.get(item.galleryDesignId)
+  const galleryDesign = normalizedItem.galleryDesignId
+    ? galleryDesigns.get(normalizedItem.galleryDesignId)
     : undefined;
   if (
-    item.galleryDesignId &&
+    normalizedItem.galleryDesignId &&
     (!galleryDesign ||
-      galleryDesign.id !== item.galleryDesignId ||
+      galleryDesign.id !== normalizedItem.galleryDesignId ||
       galleryDesign.productSlug !== product.slug)
   ) {
     throw new InvalidCheckoutCartError("The selected gallery design is unavailable.");
   }
 
-  const size = schema.sizes.find((candidate) => candidate.key === item.sizeKey);
+  const size = schema.sizes.find((candidate) => candidate.key === normalizedItem.sizeKey);
   if (!size) {
     throw new InvalidCheckoutCartError("The selected size is unavailable.");
   }
 
-  validateOrientation(schema, item);
-  validatePeoplePets(schema, item);
-  validateUploads(schema, item);
+  validateOrientation(schema, normalizedItem);
+  validatePeoplePets(schema, normalizedItem);
+  validateUploads(schema, normalizedItem);
+  const photoSelections = validatePhotoSelections(schema, normalizedItem);
 
-  const urgentService = getUrgentService(orderDate, item.neededDate);
-  if (urgentService.requiresConfirmation && item.urgentServiceConfirmed !== true) {
+  const urgentService = getUrgentService(
+    orderDate,
+    normalizedItem.neededDate,
+    registry.pricing.urgentServiceFeesInclGstCents,
+  );
+  if (urgentService.requiresConfirmation && normalizedItem.urgentServiceConfirmed !== true) {
     throw new InvalidCheckoutCartError("Urgent service must be confirmed.");
   }
 
   const unitPrice = freezeUnitPrice(
-    quoteConfiguration(schema, {
-      sizeKey: item.sizeKey,
-      peoplePets: item.peoplePets,
-      urgentFeeInclGstCents: item.urgentServiceConfirmed === true
-        ? urgentService.feeInclGstCents
-        : 0,
-    }),
+    quoteConfiguration(
+      schema,
+      {
+        sizeKey: normalizedItem.sizeKey,
+        peoplePets: normalizedItem.peoplePets,
+        sourcePhotoCount: normalizedItem.uploadReferences.length,
+        extraBackgroundRemovalCount: photoSelections.extraBackgroundRemovalUploadIds.length,
+        urgentFeeInclGstCents: normalizedItem.urgentServiceConfirmed === true
+          ? urgentService.feeInclGstCents
+          : 0,
+      },
+      { peoplePetsPricing: registry.pricing },
+    ),
   );
-  const lineSubtotalExGstCents = unitPrice.subtotalExGstCents * item.quantity;
-  const lineGstCents = unitPrice.gstCents * item.quantity;
-  const lineTotalInclGstCents = unitPrice.totalInclGstCents * item.quantity;
+  const lineSubtotalExGstCents = unitPrice.subtotalExGstCents * normalizedItem.quantity;
+  const lineGstCents = unitPrice.gstCents * normalizedItem.quantity;
+  const lineTotalInclGstCents = unitPrice.totalInclGstCents * normalizedItem.quantity;
   assertSafeCents(
     "Line price",
     lineSubtotalExGstCents,
@@ -180,26 +252,32 @@ function repriceItem(
   );
 
   return Object.freeze({
-    clientItemId: item.clientItemId,
+    clientItemId: normalizedItem.clientItemId,
     productKey: product.key,
     productSlug: product.slug,
     productTitle: product.title,
     ...(galleryDesign ? { galleryDesign: Object.freeze({ ...galleryDesign }) } : {}),
     sizeKey: size.key,
-    sizeLabel: size.label,
-    ...(item.orientation ? { orientation: item.orientation } : {}),
-    peoplePets: item.peoplePets,
-    photoSubmissionMethod: item.photoSubmissionMethod,
-    designText: item.designText,
-    notes: item.notes,
-    neededDate: item.neededDate,
-    urgentServiceConfirmed: item.urgentServiceConfirmed === true,
+    sizeLabel: formatConfigurationSizeLabel(size, normalizedItem.orientation),
+    ...(normalizedItem.orientation ? { orientation: normalizedItem.orientation } : {}),
+    peoplePets: normalizedItem.peoplePets,
+    photoSubmissionMethod: normalizedItem.photoSubmissionMethod,
+    designText: normalizedItem.designText,
+    notes: normalizedItem.notes,
+    neededDate: normalizedItem.neededDate,
+    urgentServiceConfirmed: normalizedItem.urgentServiceConfirmed === true,
     urgentService: Object.freeze({
       workingDays: urgentService.workingDays,
       feeInclGstCents: urgentService.feeInclGstCents,
     }),
-    quantity: item.quantity,
-    uploadReferences: Object.freeze([...item.uploadReferences]),
+    quantity: normalizedItem.quantity,
+    uploadReferences: Object.freeze([...normalizedItem.uploadReferences]),
+    ...(photoSelections.mainPhotoUploadId
+      ? { mainPhotoUploadId: photoSelections.mainPhotoUploadId }
+      : {}),
+    ...(photoSelections.extraBackgroundRemovalUploadIds.length > 0
+      ? { extraBackgroundRemovalUploadIds: photoSelections.extraBackgroundRemovalUploadIds }
+      : {}),
     unitPrice,
     lineSubtotalExGstCents,
     lineGstCents,
@@ -212,8 +290,20 @@ function createCartDigest(
   items: readonly RepricedCheckoutItem[],
 ): string {
   return createHash("sha256")
-    .update(JSON.stringify({ version: 1, orderDate, items }))
+    .update(stableStringify({ version: 1, orderDate, items }))
     .digest("hex");
+}
+
+function stableStringify(value: unknown): string {
+  return JSON.stringify(value, (_key, child: unknown) => {
+    if (!child || typeof child !== "object" || Array.isArray(child)) {
+      return child;
+    }
+    return Object.fromEntries(
+      Object.entries(child as Record<string, unknown>)
+        .sort(([left], [right]) => left < right ? -1 : left > right ? 1 : 0),
+    );
+  });
 }
 
 export function repriceCart(
@@ -232,11 +322,13 @@ export function repriceCart(
       );
     }
     const orderDate = getAucklandDate(options.now ?? new Date());
+    const registry = options.registry ?? defaultProductRegistry;
     const items = Object.freeze(
       input.items.map((item) => repriceItem(
         item,
         orderDate,
         options.galleryDesigns ?? new Map(),
+        registry,
       )),
     );
     const totals = items.reduce(
