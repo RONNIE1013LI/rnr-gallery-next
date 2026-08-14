@@ -731,4 +731,30 @@ describe("HomepageV3", () => {
     expect(screen.getByText("Grave Cover", { selector: "figcaption" })).toBeInTheDocument();
     expect(screen.getByText("Roll-up Banner", { selector: "figcaption" })).toBeInTheDocument();
   });
+
+  it("loads the two gallery artworks nearest the first viewport without waiting for lazy loading", () => {
+    const landscape = galleryItem(
+      "ed3f5c8db693d7f93782151c2362789d2bd31b0a39539e022ae5d39eaa1ef790",
+      { altText: "Landscape canvas" },
+    );
+    const portrait = galleryItem(
+      "88e63ad4c403d5bcdb37f2ee2f142d63100c970b43808f82f5b6ca21a1aea5aa",
+      {
+        altText: "Portrait canvas",
+        productSlug: "custom-themed-canvas",
+        width: 1456,
+        height: 2076,
+      },
+    );
+
+    render(<HomepageV3
+      registry={defaultProductRegistry}
+      galleryItems={[landscape, portrait]}
+    />);
+
+    expect(screen.getByRole("img", { name: landscape.altText }))
+      .toHaveAttribute("loading", "eager");
+    expect(screen.getByRole("img", { name: portrait.altText }))
+      .toHaveAttribute("loading", "eager");
+  });
 });

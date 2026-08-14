@@ -116,7 +116,9 @@ function GalleryArtworkCard({
             width={item.width}
             height={item.height}
             sizes={sizes}
-            loading="lazy"
+            loading={slot === "canvas-landscape" || slot === "canvas-portrait"
+              ? "eager"
+              : "lazy"}
             unoptimized
           />
         </div>
