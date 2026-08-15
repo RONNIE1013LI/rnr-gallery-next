@@ -5,7 +5,9 @@ import {
   schemaFromRegistry,
   type ProductRegistryDocument,
 } from "@/domain/catalogue/product-registry";
-import { quoteConfiguration } from "@/domain/configuration/quote";
+import { quoteMarketConfiguration } from "@/domain/pricing/market-quote";
+import { InvalidPricingInputError } from "@/domain/pricing/types";
+import type { Market } from "@/domain/markets/types";
 import { formatConfigurationSizeLabel } from "@/domain/configuration/size-label";
 import type { ProductConfigurationSchema } from "@/domain/configuration/types";
 import { getUrgentService } from "@/domain/scheduling/urgent-service";
@@ -23,6 +25,8 @@ type RepriceCartOptions = Readonly<{
   now?: Date;
   galleryDesigns?: ReadonlyMap<string, GalleryDesignSnapshot>;
   registry?: ProductRegistryDocument;
+  market?: Market;
+  registryRevision?: number;
 }>;
 
 function assertSafeCents(label: string, ...values: readonly number[]): void {
@@ -160,8 +164,8 @@ function validatePhotoSelections(
 }
 
 function freezeUnitPrice(
-  price: ReturnType<typeof quoteConfiguration>,
-): ReturnType<typeof quoteConfiguration> {
+  price: ReturnType<typeof quoteMarketConfiguration>,
+): ReturnType<typeof quoteMarketConfiguration> {
   for (const line of price.lines) {
     assertSafeCents(`${line.label} price`, line.amountExGstCents);
     if (line.amountInclGstCents !== undefined) {
@@ -186,6 +190,7 @@ function repriceItem(
   orderDate: string,
   galleryDesigns: ReadonlyMap<string, GalleryDesignSnapshot>,
   registry: ProductRegistryDocument,
+  market: Market,
 ): RepricedCheckoutItem {
   const normalizedItem = item.productKey === "grave-cover" && item.orientation === "portrait"
     ? { ...item, orientation: undefined }
@@ -218,28 +223,35 @@ function repriceItem(
   validateUploads(schema, normalizedItem);
   const photoSelections = validatePhotoSelections(schema, normalizedItem);
 
+  const marketUrgentFees = registry.markets[market].urgentServiceFees.map((fee) => {
+    if (!Number.isSafeInteger(fee.amountInclTaxCents)) {
+      throw new InvalidCheckoutCartError("Urgent service pricing is unavailable.");
+    }
+    return fee.amountInclTaxCents as number;
+  });
   const urgentService = getUrgentService(
     orderDate,
     normalizedItem.neededDate,
-    registry.pricing.urgentServiceFeesInclGstCents,
+    marketUrgentFees,
   );
   if (urgentService.requiresConfirmation && normalizedItem.urgentServiceConfirmed !== true) {
     throw new InvalidCheckoutCartError("Urgent service must be confirmed.");
   }
 
   const unitPrice = freezeUnitPrice(
-    quoteConfiguration(
-      schema,
+    quoteMarketConfiguration(
+      registry,
+      market,
+      normalizedItem.productKey,
       {
         sizeKey: normalizedItem.sizeKey,
         peoplePets: normalizedItem.peoplePets,
         sourcePhotoCount: normalizedItem.uploadReferences.length,
         extraBackgroundRemovalCount: photoSelections.extraBackgroundRemovalUploadIds.length,
-        urgentFeeInclGstCents: normalizedItem.urgentServiceConfirmed === true
-          ? urgentService.feeInclGstCents
-          : 0,
+        ...(normalizedItem.urgentServiceConfirmed === true
+          ? { urgentWorkingDays: urgentService.workingDays }
+          : {}),
       },
-      { peoplePetsPricing: registry.pricing },
     ),
   );
   const lineSubtotalExGstCents = unitPrice.subtotalExGstCents * normalizedItem.quantity;
@@ -289,9 +301,19 @@ function repriceItem(
 function createCartDigest(
   orderDate: string,
   items: readonly RepricedCheckoutItem[],
+  market: Market,
+  currency: string,
+  priceBookRevision: number,
 ): string {
   return createHash("sha256")
-    .update(stableStringify({ version: 1, orderDate, items }))
+    .update(stableStringify({
+      version: 1,
+      market,
+      currency,
+      priceBookRevision,
+      orderDate,
+      items,
+    }))
     .digest("hex");
 }
 
@@ -324,12 +346,18 @@ export function repriceCart(
     }
     const orderDate = getAucklandDate(options.now ?? new Date());
     const registry = options.registry ?? defaultProductRegistry;
+    const market = options.market ?? "NZ";
+    const priceBookRevision = options.registryRevision ?? 0;
+    if (!Number.isSafeInteger(priceBookRevision) || priceBookRevision < 0) {
+      throw new InvalidCheckoutCartError("The price-book revision is invalid.");
+    }
     const items = Object.freeze(
       input.items.map((item) => repriceItem(
         item,
         orderDate,
         options.galleryDesigns ?? new Map(),
         registry,
+        market,
       )),
     );
     const totals = items.reduce(
@@ -360,13 +388,29 @@ export function repriceCart(
 
     return Object.freeze({
       version: 1,
+      market,
+      currency: registry.markets[market].currency,
+      taxJurisdiction: items[0].unitPrice.taxJurisdiction,
+      taxRateBasisPoints: items[0].unitPrice.taxRateBasisPoints,
+      priceBookRevision,
       orderDate,
       items,
       ...totals,
-      cartDigest: createCartDigest(orderDate, items),
+      discountCents: 0,
+      designSurchargeCents: 0,
+      cartDigest: createCartDigest(
+        orderDate,
+        items,
+        market,
+        registry.markets[market].currency,
+        priceBookRevision,
+      ),
     });
   } catch (error) {
     if (error instanceof InvalidCheckoutCartError) throw error;
+    if (error instanceof InvalidPricingInputError) {
+      throw new InvalidCheckoutCartError(error.message, { cause: error });
+    }
     throw new InvalidCheckoutCartError("The checkout cart is invalid.", {
       cause: error,
     });

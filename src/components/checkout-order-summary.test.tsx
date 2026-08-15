@@ -8,6 +8,8 @@ describe("CheckoutOrderSummary", () => {
     const designId = "a".repeat(64);
     const cart = {
       version: 1,
+      market: "NZ", currency: "NZD", taxJurisdiction: "NZ_GST",
+      taxRateBasisPoints: 1_500, priceBookRevision: 0,
       orderDate: "2026-08-03",
       items: [{
         clientItemId: "30000000-0000-4000-8000-000000000001",
@@ -18,10 +20,15 @@ describe("CheckoutOrderSummary", () => {
         sizeKey: "a4", sizeLabel: "A4", orientation: "landscape", peoplePets: 0,
         photoSubmissionMethod: "later", designText: "", notes: "", neededDate: "2026-08-10",
         urgentServiceConfirmed: false, urgentService: { workingDays: 5, feeInclGstCents: 0 },
-        quantity: 1, uploadReferences: [], unitPrice: { lines: [], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475 },
+        quantity: 1, uploadReferences: [], unitPrice: {
+          market: "NZ", currency: "NZD", taxJurisdiction: "NZ_GST",
+          taxRateBasisPoints: 1_500, discountCents: 0, designSurchargeCents: 0,
+          lines: [], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475,
+        },
         lineSubtotalExGstCents: 6500, lineGstCents: 975, lineTotalInclGstCents: 7475,
       }],
-      subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475, itemCount: 1,
+      subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475,
+      discountCents: 0, designSurchargeCents: 0, itemCount: 1,
       cartDigest: "c".repeat(64),
     } as const satisfies RepricedCheckoutCart;
 
@@ -38,11 +45,15 @@ describe("CheckoutOrderSummary", () => {
   it("uses one concise test-rate disclosure", () => {
     const cart = {
       version: 1,
+      market: "NZ", currency: "NZD", taxJurisdiction: "NZ_GST",
+      taxRateBasisPoints: 1_500, priceBookRevision: 0,
       orderDate: "2026-08-03",
       items: [],
       subtotalExGstCents: 0,
       gstCents: 0,
       totalInclGstCents: 0,
+      discountCents: 0,
+      designSurchargeCents: 0,
       itemCount: 0,
       cartDigest: "c".repeat(64),
     } as const satisfies RepricedCheckoutCart;
@@ -61,11 +72,15 @@ describe("CheckoutOrderSummary", () => {
   it("corrects the known GoSweetSpot Auckland label typo", () => {
     const cart = {
       version: 1,
+      market: "NZ", currency: "NZD", taxJurisdiction: "NZ_GST",
+      taxRateBasisPoints: 1_500, priceBookRevision: 0,
       orderDate: "2026-08-03",
       items: [],
       subtotalExGstCents: 0,
       gstCents: 0,
       totalInclGstCents: 0,
+      discountCents: 0,
+      designSurchargeCents: 0,
       itemCount: 0,
       cartDigest: "c".repeat(64),
     } as const satisfies RepricedCheckoutCart;

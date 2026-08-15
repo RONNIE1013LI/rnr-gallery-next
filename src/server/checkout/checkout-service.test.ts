@@ -3,6 +3,7 @@ import type { CheckoutStateRepository } from "./checkout-repository";
 import { createCheckoutService, InvalidCheckoutStateError } from "./checkout-service";
 import { ShippingUnavailableError } from "@/server/shipping/shipping-service";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import { synchronizeNewZealandPriceBook } from "@/domain/catalogue/market-price-book";
 
 const sessionId = "10000000-0000-4000-8000-000000000001";
 const now = new Date("2026-08-02T12:00:00.000Z");
@@ -125,6 +126,7 @@ describe("checkout service", () => {
   it("loads the current registry immediately before authoritative repricing", async () => {
     const registry = structuredClone(defaultProductRegistry);
     registry.products[0].configuration.sizes[0].priceExGstCents = 7_100;
+    synchronizeNewZealandPriceBook(registry);
     const current = vi.fn().mockResolvedValue({ revision: 2, registry });
     const service = createCheckoutService({
       repository: repository(),
@@ -141,6 +143,7 @@ describe("checkout service", () => {
 
     expect(current).toHaveBeenCalledOnce();
     expect(state.cartSnapshot?.totalInclGstCents).toBe(8_165);
+    expect(state.cartSnapshot?.priceBookRevision).toBe(2);
   });
 
   it("resolves gallery metadata on the server and persists the trusted snapshot", async () => {

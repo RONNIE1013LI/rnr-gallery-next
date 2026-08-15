@@ -68,9 +68,10 @@ export function createCheckoutService({
         ? normalizeAddress(input.deliveryAddress)
         : billingAddress;
       const canonicalCart = parseCheckoutCartInput(input.cart);
-      const registry = productRegistryService
-        ? (await productRegistryService.current()).registry
-        : defaultProductRegistry;
+      const registryState = productRegistryService
+        ? await productRegistryService.current()
+        : { revision: 0, registry: defaultProductRegistry };
+      const { registry } = registryState;
       const galleryDesigns = new Map();
       await Promise.all(canonicalCart.items.map(async (item) => {
         if (!item.galleryDesignId || !gallerySelectionService) return;
@@ -86,6 +87,7 @@ export function createCheckoutService({
         now: now(),
         galleryDesigns,
         registry,
+        registryRevision: registryState.revision,
       });
       await assertOwnedUploadReferences(
         repository,

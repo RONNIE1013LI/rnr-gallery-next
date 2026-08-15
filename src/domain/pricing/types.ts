@@ -12,6 +12,15 @@ export type PriceBreakdown = Readonly<{
   totalInclGstCents: number;
 }>;
 
+export type MarketPriceBreakdown = PriceBreakdown & Readonly<{
+  market: Market;
+  currency: MarketCurrency;
+  taxJurisdiction: TaxJurisdiction;
+  taxRateBasisPoints: number;
+  discountCents: number;
+  designSurchargeCents: number;
+}>;
+
 export class InvalidPricingInputError extends Error {
   constructor(message: string) {
     super(message);
@@ -70,3 +79,8 @@ export function addTaxInclusivePriceLine(
     totalInclGstCents: breakdown.totalInclGstCents + line.amountInclGstCents,
   });
 }
+import type {
+  Market,
+  MarketCurrency,
+  TaxJurisdiction,
+} from "@/domain/markets/types";

@@ -2,7 +2,8 @@ import type {
   Orientation,
   PhotoSubmissionMethod,
 } from "@/domain/configuration/types";
-import type { PriceBreakdown } from "@/domain/pricing/types";
+import type { Market, MarketCurrency, TaxJurisdiction } from "@/domain/markets/types";
+import type { MarketPriceBreakdown } from "@/domain/pricing/types";
 
 export class InvalidCheckoutCartError extends Error {
   constructor(message: string, options?: ErrorOptions) {
@@ -65,7 +66,7 @@ export type RepricedCheckoutItem = Readonly<{
   uploadReferences: readonly string[];
   mainPhotoUploadId?: string;
   extraBackgroundRemovalUploadIds?: readonly string[];
-  unitPrice: PriceBreakdown;
+  unitPrice: MarketPriceBreakdown;
   lineSubtotalExGstCents: number;
   lineGstCents: number;
   lineTotalInclGstCents: number;
@@ -73,11 +74,18 @@ export type RepricedCheckoutItem = Readonly<{
 
 export type RepricedCheckoutCart = Readonly<{
   version: 1;
+  market: Market;
+  currency: MarketCurrency;
+  taxJurisdiction: TaxJurisdiction;
+  taxRateBasisPoints: number;
+  priceBookRevision: number;
   orderDate: string;
   items: readonly RepricedCheckoutItem[];
   subtotalExGstCents: number;
   gstCents: number;
   totalInclGstCents: number;
+  discountCents: number;
+  designSurchargeCents: number;
   itemCount: number;
   cartDigest: string;
 }>;

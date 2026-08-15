@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
+import { synchronizeNewZealandPriceBook } from "@/domain/catalogue/market-price-book";
 import { InvalidCheckoutCartError } from "./types";
 import { repriceCart } from "./reprice-cart";
 
@@ -49,6 +50,7 @@ function withA4RegistryPrice(
   product.configuration.sizes.find(
     (candidate) => candidate.key === "a4",
   )!.priceExGstCents = priceExGstCents;
+  synchronizeNewZealandPriceBook(registry);
   assertion(registry);
 }
 
@@ -61,13 +63,14 @@ describe("authoritative checkout repricing", () => {
     product.configuration.sizes[0].priceExGstCents = 7_100;
     registry.pricing.peoplePetsFeesExGstCents[0] = 4_500;
     registry.pricing.urgentServiceFeesInclGstCents[3] = 5_500;
+    synchronizeNewZealandPriceBook(registry);
 
     const result = repriceCart(cart({
       productKey: "digital-oil-painting-canvas",
       peoplePets: 1,
       neededDate: "2026-08-07",
       urgentServiceConfirmed: true,
-    }), { now: MONDAY_IN_AUCKLAND, registry });
+    }), { now: MONDAY_IN_AUCKLAND, registry, registryRevision: 7 });
 
     expect(result.items[0].unitPrice.lines).toEqual([
       { key: "product-size", label: "Product / size price", amountExGstCents: 7_100 },
@@ -80,6 +83,11 @@ describe("authoritative checkout repricing", () => {
       },
     ]);
     expect(result.items[0].unitPrice.totalInclGstCents).toBe(18_840);
+    expect(result).toMatchObject({
+      market: "NZ",
+      currency: "NZD",
+      priceBookRevision: 7,
+    });
   });
 
   it("accepts only a trusted matching gallery snapshot without changing price", () => {
