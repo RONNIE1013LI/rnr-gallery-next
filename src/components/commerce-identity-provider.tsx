@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, Fragment, useContext, useEffect, useState } from "react";
+import { createContext, Fragment, useContext, useEffect, useRef, useState } from "react";
 
 import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
 import {
@@ -44,6 +44,7 @@ export function CommerceIdentityProvider({
   initialCustomerId,
 }: Readonly<{ children: React.ReactNode; initialCustomerId: string | null }>) {
   const [customerId, setCustomerId] = useState(initialCustomerId);
+  const customerIdRef = useRef(initialCustomerId);
   setActiveCustomerId(customerId);
 
   useEffect(() => {
@@ -55,7 +56,24 @@ export function CommerceIdentityProvider({
     return () => setActiveCustomerId(null);
   }, []);
 
+  useEffect(() => {
+    const previousCustomerId = customerIdRef.current;
+    if (previousCustomerId === initialCustomerId) return;
+    if (previousCustomerId !== null) {
+      clearIdentityCheckoutState(
+        window.localStorage,
+        window.sessionStorage,
+        previousCustomerId,
+      );
+    }
+    customerIdRef.current = initialCustomerId;
+    setActiveCustomerId(initialCustomerId);
+    setCustomerId(initialCustomerId);
+    notifyCartChanged();
+  }, [initialCustomerId]);
+
   function switchIdentity(nextCustomerId: string | null) {
+    customerIdRef.current = nextCustomerId;
     setActiveCustomerId(nextCustomerId);
     setCustomerId(nextCustomerId);
     notifyCartChanged();

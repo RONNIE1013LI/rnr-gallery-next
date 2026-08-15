@@ -81,4 +81,23 @@ describe("same-browser identity transitions", () => {
     fireEvent.click(screen.getByRole("button", { name: "User A" }));
     expect(screen.getByRole("link", { name: "Cart, 1 items" })).toBeInTheDocument();
   });
+
+  it("follows authenticated identity prop changes without remounting the layout", async () => {
+    localStorage.setItem(getCartStorageKey("customer-a"), JSON.stringify(cart("Product A")));
+    localStorage.setItem(getCartStorageKey("customer-b"), JSON.stringify(cart("Product B", 2)));
+    const view = render(
+      <CommerceIdentityProvider initialCustomerId="customer-a"><CartCount /></CommerceIdentityProvider>,
+    );
+    expect(screen.getByRole("link", { name: "Cart, 1 items" })).toBeInTheDocument();
+
+    view.rerender(
+      <CommerceIdentityProvider initialCustomerId={null}><CartCount /></CommerceIdentityProvider>,
+    );
+    await waitFor(() => expect(screen.getByRole("link", { name: "Cart, 0 items" })).toBeInTheDocument());
+
+    view.rerender(
+      <CommerceIdentityProvider initialCustomerId="customer-b"><CartCount /></CommerceIdentityProvider>,
+    );
+    await waitFor(() => expect(screen.getByRole("link", { name: "Cart, 2 items" })).toBeInTheDocument());
+  });
 });
