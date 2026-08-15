@@ -8,7 +8,7 @@ For example, the Roll-Up Banner remains NZ$230.00 excluding GST, NZ$34.50 GST, a
 
 ## Design
 
-- Keep the existing catalogue and pricing engine as the authoritative source. Catalogue prices remain stored excluding GST and the pricing engine continues to add 15% GST.
+- Keep each existing price field's tax semantics authoritative instead of applying one blanket conversion. Product sizes, people/pet fees, and extra-photo fees currently stored excluding GST receive 15% GST exactly once. Fees already stored including GST, including urgent-service and background-removal fees, are used unchanged and must never be taxed again.
 - Use explicit `NZ$` formatting and show the calculated final value as the primary consumer price: `NZ$264.50 incl GST`.
 - Remove secondary `excl GST` prices from public product cards, product details, design details, advertising landing pages, and configuration choices so customers are not asked to mentally add tax.
 - In configurator, Cart, Checkout, and order summaries, show item prices and totals using GST-inclusive amounts. An excluded-GST subtotal and GST component may remain only as a clearly subordinate tax breakdown where needed for invoices or order transparency.
@@ -19,6 +19,6 @@ For example, the Roll-Up Banner remains NZ$230.00 excluding GST, NZ$34.50 GST, a
 
 - Add regression tests for public price components and representative product/configuration pages.
 - Verify Roll-Up Banner displays NZ$264.50 incl GST and never presents NZ$230.00 as the customer-facing final price.
+- Verify a mixed quote containing an excluded-GST product price and an included-GST urgent or background-removal fee taxes only the excluded-GST part.
 - Verify Cart, Checkout, order creation, and payment adapters continue to use the unchanged GST-inclusive total.
 - Run TypeScript, focused unit tests, production build, and mobile/desktop browser checks at the canonical local site.
-
