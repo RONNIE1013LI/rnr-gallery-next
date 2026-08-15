@@ -11,7 +11,12 @@ vi.mock("./stripe-payment-form", () => ({
     returnUrl: string;
     onPaymentUpdated: (status: "paid" | "failed" | "cancelled" | "processing") => void;
   }) => (
-    <div data-testid="checkout-stripe-payment-form" data-client-secret={clientSecret} data-return-url={returnUrl}>
+    <div
+      data-testid="checkout-stripe-payment-form"
+      data-client-secret={clientSecret}
+      data-entry-scroll-y={window.scrollY}
+      data-return-url={returnUrl}
+    >
       <button type="button" onClick={() => onPaymentUpdated("paid")}>Simulate Stripe paid</button>
     </div>
   ),
@@ -757,7 +762,13 @@ describe("CheckoutView", () => {
   });
 
   it("keeps the cart and a durable resume record while Stripe card details are unfinished", async () => {
-    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    let scrollY = 900;
+    let scrollBehaviorAtCall = "";
+    vi.spyOn(window, "scrollY", "get").mockImplementation(() => scrollY);
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {
+      scrollBehaviorAtCall = document.documentElement.style.scrollBehavior;
+      scrollY = 0;
+    });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
@@ -775,7 +786,9 @@ describe("CheckoutView", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Continue to secure card payment" }));
 
-    expect(await screen.findByTestId("checkout-stripe-payment-form")).toBeInTheDocument();
+    const stripeForm = await screen.findByTestId("checkout-stripe-payment-form");
+    expect(stripeForm).toHaveAttribute("data-entry-scroll-y", "0");
+    expect(scrollBehaviorAtCall).toBe("auto");
     await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: "auto" }));
     expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(cart));
     expect(JSON.parse(localStorage.getItem(pendingCheckoutStorageKey)!)).toMatchObject({

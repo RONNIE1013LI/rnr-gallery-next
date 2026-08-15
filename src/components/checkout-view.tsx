@@ -163,6 +163,14 @@ function recoverRequest<T>(key: string, request: () => Promise<T>) {
   return pending;
 }
 
+function scrollPageToTopImmediately() {
+  const root = document.documentElement;
+  const previousScrollBehavior = root.style.scrollBehavior;
+  root.style.scrollBehavior = "auto";
+  window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  root.style.scrollBehavior = previousScrollBehavior;
+}
+
 function addressErrors(result: ReturnType<typeof addressInputSchema.safeParse>): AddressFieldErrors {
   if (result.success) return {};
   const errors: AddressFieldErrors = {};
@@ -241,6 +249,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   const finishPaymentStart = useCallback(async (orderNumber: string, payload: Awaited<ReturnType<typeof startOrderPayment>>) => {
     const orderHref = `/orders/${orderNumber}`;
     if (payload.action?.kind === "elements") {
+      scrollPageToTopImmediately();
       setPaymentAction(payload.action);
       placing.current = false;
       setPending(null);
@@ -404,15 +413,6 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
     const draft: CheckoutDraft = { schemaVersion: 1, cartSnapshot: snapshot, billing, delivery, different };
     window.sessionStorage.setItem(getActiveCheckoutDraftStorageKey(), JSON.stringify(draft));
   }, [billing, cart.items.length, delivery, different, draftChecked, paymentIntent, snapshot]);
-
-  const stripePaymentClientSecret = paymentIntent?.phase === "starting_payment" && paymentAction?.kind === "elements"
-    ? paymentAction.clientSecret
-    : null;
-
-  useEffect(() => {
-    if (!stripePaymentClientSecret) return;
-    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
-  }, [stripePaymentClientSecret]);
 
   if (paymentIntent?.phase === "starting_payment" && paymentAction?.kind === "elements") {
     return <section className={styles.orderPaymentPanel} id="payment">
