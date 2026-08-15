@@ -140,6 +140,26 @@ describe("Stripe payment provider", () => {
       .toEqual({ idempotencyKey: sessionInput.idempotencyKey });
   });
 
+  it("retrieves a bound PaymentIntent instead of recreating it during payment recovery", async () => {
+    const stripe = client();
+    const provider = createStripeProvider({ config, client: stripe });
+
+    await expect(provider.createOrReuse({
+      ...sessionInput,
+      providerReference: baseIntent.id,
+    })).resolves.toEqual({
+      kind: "elements",
+      provider: "stripe",
+      method: "card",
+      providerReference: baseIntent.id,
+      providerStatus: "requires_action",
+      clientSecret: baseIntent.client_secret,
+      returnUrl: sessionInput.returnUrl,
+    });
+    expect(stripe.paymentIntents.retrieve).toHaveBeenCalledWith(baseIntent.id);
+    expect(stripe.paymentIntents.create).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["succeeded", "paid"],
     ["processing", "processing"],

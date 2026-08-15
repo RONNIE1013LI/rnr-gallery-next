@@ -257,16 +257,18 @@ export function createStripeProvider({
       }
       let intent: StripePaymentIntent;
       try {
-        intent = await client.paymentIntents.create({
-          amount: input.order.amountCents,
-          currency: input.order.currency.toLowerCase(),
-          payment_method_types: ["card"],
-          metadata: { order_number: input.order.orderNumber },
-        }, { idempotencyKey: input.idempotencyKey });
+        intent = input.providerReference
+          ? await client.paymentIntents.retrieve(input.providerReference)
+          : await client.paymentIntents.create({
+              amount: input.order.amountCents,
+              currency: input.order.currency.toLowerCase(),
+              payment_method_types: ["card"],
+              metadata: { order_number: input.order.orderNumber },
+            }, { idempotencyKey: input.idempotencyKey });
       } catch {
         throw requestFailure();
       }
-      assertIntent(intent, input.order);
+      assertIntent(intent, input.order, input.providerReference);
       if (typeof intent.client_secret !== "string" || intent.client_secret.length === 0) {
         throw verificationFailure();
       }

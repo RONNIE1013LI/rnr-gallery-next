@@ -601,7 +601,10 @@ export function createPaymentService({
           "Another payment attempt is in progress",
         );
       }
-      const createSession = async (stableReturnState?: string) => {
+      const createSession = async (
+        stableReturnState?: string,
+        providerReference?: string,
+      ) => {
         const returnState = stableReturnState ?? deriveReturnState({
           attemptId: claim.attempt.id,
           idempotencyKey: claim.attempt.idempotencyKey,
@@ -613,6 +616,7 @@ export function createPaymentService({
           order,
           attemptId: claim.attempt.id,
           idempotencyKey: claim.attempt.idempotencyKey,
+          providerReference,
           returnState,
           returnUrl: trustedPaymentUrl(
             trustedOrigin,
@@ -654,7 +658,10 @@ export function createPaymentService({
             !/^[a-f0-9]{64}$/.test(expectedState) ||
             claim.attempt.returnStateDigest !== digestReturnState(expectedState)
           ) throw new Error("Payment return state mismatch");
-          const { session } = await createSession(expectedState);
+          const { session } = await createSession(
+            expectedState,
+            claim.attempt.providerReference,
+          );
           if (session.providerReference !== claim.attempt.providerReference) {
             throw new Error("Payment provider reference mismatch");
           }

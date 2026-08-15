@@ -472,7 +472,11 @@ describe("Drizzle payment repository", () => {
     expect(replayResponse).toEqual(firstResponse);
     expect(attempts).toEqual([firstAttempt]);
     expect(providerInputs).toHaveLength(2);
-    expect(providerInputs[1]).toEqual(providerInputs[0]);
+    expect(providerInputs[0].providerReference).toBeUndefined();
+    expect(providerInputs[1]).toEqual({
+      ...providerInputs[0],
+      providerReference,
+    });
     expect(firstAttempt).toMatchObject({
       provider: providerKey,
       method,

@@ -650,6 +650,7 @@ describe("payment service", () => {
     expect(paymentProvider.createOrReuse).toHaveBeenCalledWith(expect.objectContaining({
       attemptId: attempt.id,
       idempotencyKey: attempt.idempotencyKey,
+      providerReference,
       returnState,
     }));
     expect(result).toMatchObject({ payment: { method, status }, action: { kind, method } });
