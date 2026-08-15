@@ -74,6 +74,12 @@ describe("product registry administration", () => {
         "digital-oil-painting-canvas",
       )?.startingPriceExGstCents,
     ).toBe(11_100);
+    expect(
+      result.registry.markets.NZ.products
+        .find((product) => product.productKey === "digital-oil-painting-canvas")
+        ?.sizes.find((size) => size.sizeKey === "a4")
+        ?.amountInclTaxCents,
+    ).toBe(8_165);
     expect(repository.publish).toHaveBeenCalledWith(expect.objectContaining({
       expectedRevision: 0,
       action: "product.registry.product.published",

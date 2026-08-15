@@ -18,6 +18,13 @@ import {
   getPeoplePetsFeeExGstCents,
 } from "@/domain/pricing/people-fees";
 import { DEFAULT_URGENT_SERVICE_FEES_INCL_GST_CENTS } from "@/domain/scheduling/urgent-service";
+import {
+  assertMarketCheckoutReady,
+  assertMarketPriceBookStructure,
+  createDefaultMarketPriceBooks,
+  marketPriceBooksSchema,
+  type MarketPriceBooks,
+} from "./market-price-book";
 
 const MAX_PRICE_CENTS = 100_000_000;
 
@@ -60,9 +67,10 @@ export type ProductRegistryPricing = {
 };
 
 export type ProductRegistryDocument = {
-  schemaVersion: 1;
+  schemaVersion: 2;
   products: RegistryProduct[];
   pricing: ProductRegistryPricing;
+  markets: MarketPriceBooks;
 };
 
 export class ProductRegistryValidationError extends Error {
@@ -96,7 +104,7 @@ const configurationSchema = z.object({
   defaultPhotoSubmissionMethod: z.enum(["upload", "later"]),
 }).strict();
 
-const documentSchema = z.object({
+const legacyDocumentSchema = z.object({
   schemaVersion: z.literal(1),
   products: z.array(z.object({
     key: z.string().min(1),
@@ -120,6 +128,11 @@ const documentSchema = z.object({
   }).strict(),
 }).strict();
 
+const documentSchema = legacyDocumentSchema.extend({
+  schemaVersion: z.literal(2),
+  markets: marketPriceBooksSchema,
+}).strict();
+
 function cloneConfiguration(schema: ProductConfigurationSchema): RegistryConfiguration {
   return {
     ...schema,
@@ -128,7 +141,7 @@ function cloneConfiguration(schema: ProductConfigurationSchema): RegistryConfigu
   };
 }
 
-export const defaultProductRegistry: ProductRegistryDocument = {
+const defaultLegacyProductRegistry = {
   schemaVersion: 1,
   products: baselineProducts.map((product) => {
     const configuration = configurationSchemas.find(
@@ -162,6 +175,34 @@ export const defaultProductRegistry: ProductRegistryDocument = {
       ...DEFAULT_URGENT_SERVICE_FEES_INCL_GST_CENTS,
     ],
   },
+} as const satisfies Readonly<{
+  schemaVersion: 1;
+  products: RegistryProduct[];
+  pricing: ProductRegistryPricing;
+}>;
+
+export const defaultProductRegistry: ProductRegistryDocument = {
+  schemaVersion: 2,
+  products: defaultLegacyProductRegistry.products.map((product) => ({
+    ...product,
+    image: { ...product.image },
+    configuration: {
+      ...product.configuration,
+      sizes: product.configuration.sizes.map((size) => ({ ...size })),
+      deliveryPreferences: [...product.configuration.deliveryPreferences],
+    },
+  })),
+  pricing: {
+    peoplePetsFeesExGstCents: [
+      ...defaultLegacyProductRegistry.pricing.peoplePetsFeesExGstCents,
+    ],
+    additionalPeoplePetsEachExGstCents:
+      defaultLegacyProductRegistry.pricing.additionalPeoplePetsEachExGstCents,
+    urgentServiceFeesInclGstCents: [
+      ...defaultLegacyProductRegistry.pricing.urgentServiceFeesInclGstCents,
+    ],
+  },
+  markets: createDefaultMarketPriceBooks(defaultLegacyProductRegistry),
 };
 
 function sameValues(left: readonly unknown[], right: readonly unknown[]) {
@@ -240,7 +281,7 @@ function deepFreeze<T>(value: T): T {
 }
 
 export function parseProductRegistry(value: unknown): ProductRegistryDocument {
-  const normalized = structuredClone(value);
+  let normalized = structuredClone(value);
   if (normalized && typeof normalized === "object" && "products" in normalized) {
     const products = (normalized as { products?: unknown }).products;
     if (Array.isArray(products)) {
@@ -295,6 +336,22 @@ export function parseProductRegistry(value: unknown): ProductRegistryDocument {
     }
   }
 
+  if (
+    normalized &&
+    typeof normalized === "object" &&
+    (normalized as { schemaVersion?: unknown }).schemaVersion === 1
+  ) {
+    const legacy = legacyDocumentSchema.safeParse(normalized);
+    if (!legacy.success) {
+      throw new ProductRegistryValidationError("The product registry is invalid.");
+    }
+    normalized = {
+      ...legacy.data,
+      schemaVersion: 2,
+      markets: createDefaultMarketPriceBooks(legacy.data),
+    };
+  }
+
   const parsed = documentSchema.safeParse(normalized);
   if (!parsed.success) {
     const hasPriceError = parsed.error.issues.some((issue) =>
@@ -310,6 +367,17 @@ export function parseProductRegistry(value: unknown): ProductRegistryDocument {
   }
   const document = parsed.data as ProductRegistryDocument;
   assertImmutableStructure(document);
+  try {
+    assertMarketPriceBookStructure(document);
+    assertMarketCheckoutReady(document, "NZ");
+    if (document.markets.AU.enabled) {
+      assertMarketCheckoutReady(document, "AU");
+    }
+  } catch (error) {
+    throw new ProductRegistryValidationError(
+      error instanceof Error ? error.message : "The market price book is invalid.",
+    );
+  }
   if (!document.products.some((product) => product.active)) {
     throw new ProductRegistryValidationError("At least one product must be active.");
   }

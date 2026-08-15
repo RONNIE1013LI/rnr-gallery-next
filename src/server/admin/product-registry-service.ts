@@ -5,6 +5,7 @@ import {
   parseProductRegistry,
   type ProductRegistryDocument,
 } from "@/domain/catalogue/product-registry";
+import { synchronizeNewZealandPriceBook } from "@/domain/catalogue/market-price-book";
 import type { getDatabase } from "@/server/db/client";
 import {
   adminAuditLogs,
@@ -156,6 +157,7 @@ export function createProductRegistryService(
         product.configuration.extraBackgroundRemovalFeeInclGstCents =
           parsed.data.extraBackgroundRemovalFeeInclGstCents;
       }
+      synchronizeNewZealandPriceBook(next);
       let registry: ProductRegistryDocument;
       try {
         registry = parseProductRegistry(next);
@@ -196,6 +198,7 @@ export function createProductRegistryService(
           parsed.data.additionalPeoplePetsEachExGstCents,
         urgentServiceFeesInclGstCents: [...parsed.data.urgentServiceFeesInclGstCents],
       };
+      synchronizeNewZealandPriceBook(next);
       let registry: ProductRegistryDocument;
       try {
         registry = parseProductRegistry(next);

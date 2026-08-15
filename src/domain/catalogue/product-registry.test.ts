@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { quoteConfiguration } from "@/domain/configuration/quote";
 import { getUrgentService } from "@/domain/scheduling/urgent-service";
+import { synchronizeNewZealandPriceBook } from "./market-price-book";
 import {
   defaultProductRegistry,
   getRegistryProductBySlug,
@@ -9,6 +10,21 @@ import {
 } from "./product-registry";
 
 describe("authoritative product registry", () => {
+  it("ships a complete NZ price book and a disabled empty AU price book", () => {
+    expect(defaultProductRegistry.schemaVersion).toBe(2);
+    expect(defaultProductRegistry.markets.NZ).toMatchObject({
+      market: "NZ",
+      currency: "NZD",
+      enabled: true,
+    });
+    expect(defaultProductRegistry.markets.AU).toMatchObject({
+      market: "AU",
+      currency: "AUD",
+      enabled: false,
+      tax: { registered: false, rateBasisPoints: 1_000 },
+    });
+  });
+
   it("upgrades legacy product imagery while preserving administrator-selected media", () => {
     const legacy = structuredClone(defaultProductRegistry);
     const legacySources: Record<string, string> = {
@@ -87,6 +103,7 @@ describe("authoritative product registry", () => {
       (candidate) => candidate.key === "digital-oil-painting-canvas",
     )!;
     product.configuration.sizes[0].priceExGstCents = 7_100;
+    synchronizeNewZealandPriceBook(input);
 
     const registry = parseProductRegistry(input);
 
@@ -114,6 +131,7 @@ describe("authoritative product registry", () => {
     const input = structuredClone(defaultProductRegistry);
     input.pricing.peoplePetsFeesExGstCents = [4_500, 6_000, 8_500, 11_000, 13_000];
     input.pricing.urgentServiceFeesInclGstCents = [8_500, 7_000, 6_000, 5_000];
+    synchronizeNewZealandPriceBook(input);
     const registry = parseProductRegistry(input);
     const schema = schemaFromRegistry(registry, "digital-oil-painting-canvas")!;
 
