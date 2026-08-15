@@ -67,6 +67,8 @@ describe("DesignGallery", () => {
       .toHaveAttribute("width", "1200");
     expect(screen.getByRole("img", { name: "Golden 21st birthday canvas" }))
       .toHaveAttribute("fetchpriority", "high");
+    expect(screen.getByRole("img", { name: "Golden 21st birthday canvas" }).getAttribute("src"))
+      .toContain("/_next/image?url=");
     const artworkLink = screen.getByRole("link", { name: /view design details/i });
     expect(artworkLink).toContainElement(
       screen.getByRole("img", { name: "Golden 21st birthday canvas" }),

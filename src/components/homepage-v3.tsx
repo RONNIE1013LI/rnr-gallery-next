@@ -131,7 +131,6 @@ function GalleryArtworkCard({
             height={item.height}
             sizes={sizes}
             loading="lazy"
-            unoptimized
           />
         </div>
         <figcaption className={styles.galleryProductLabel}>{label}</figcaption>

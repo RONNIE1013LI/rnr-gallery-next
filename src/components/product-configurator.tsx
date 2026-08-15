@@ -301,7 +301,6 @@ export function ProductConfigurator({
             fill
             priority
             sizes="(max-width: 820px) 100vw, 38vw"
-            unoptimized={Boolean(designInspiration)}
           />
           <button
             ref={previewZoomTriggerRef}
@@ -724,7 +723,6 @@ export function ProductConfigurator({
                   width={design.width}
                   height={design.height}
                   sizes="(max-width: 767px) 50vw, (max-width: 1180px) 33vw, 25vw"
-                  unoptimized
                 />
               </Link>
             ))}

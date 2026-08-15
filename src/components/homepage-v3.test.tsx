@@ -721,8 +721,8 @@ describe("HomepageV3", () => {
 
     render(<HomepageV3 registry={defaultProductRegistry} galleryItems={[birthday]} />);
 
-    expect(screen.getByRole("img", { name: birthday.altText }))
-      .toHaveAttribute("src", `/gallery-images/${birthday.id}?v=${birthday.contentHash}`);
+    expect(screen.getByRole("img", { name: birthday.altText }).getAttribute("src"))
+      .toContain(encodeURIComponent(`/gallery-images/${birthday.id}?v=${birthday.contentHash}`));
     expect(screen.getByRole("link", { name: `View design details: ${birthday.altText}` }))
       .toHaveAttribute(
         "href",
@@ -788,6 +788,8 @@ describe("HomepageV3", () => {
 
     expect(screen.getByRole("img", { name: landscape.altText }))
       .toHaveAttribute("loading", "lazy");
+    expect(screen.getByRole("img", { name: landscape.altText }).getAttribute("src"))
+      .toContain("/_next/image?url=");
     expect(screen.getByRole("img", { name: portrait.altText }))
       .toHaveAttribute("loading", "lazy");
   });

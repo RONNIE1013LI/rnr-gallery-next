@@ -166,7 +166,6 @@ export function DesignGallery({ query, result }: Props) {
                       sizes={mobileSpan === "wide"
                         ? "(max-width: 767px) 100vw, (max-width: 1179px) 50vw, 33vw"
                         : "(max-width: 767px) 50vw, (max-width: 1179px) 50vw, 33vw"}
-                      unoptimized
                     />
                     <span className={styles.galleryCardBadge}>
                       {productTypeMobileLabels[item.productTypeSlug]}

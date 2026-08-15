@@ -94,7 +94,6 @@ export function ProductPageContent({
             loading="eager"
             priority
             sizes="(max-width: 820px) 100vw, 58vw"
-            unoptimized={Boolean(selection)}
           />
         </div>
         <div className={styles.productDetailCopy}>
