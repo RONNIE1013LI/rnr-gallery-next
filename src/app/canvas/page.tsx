@@ -1,13 +1,15 @@
-import type { Metadata } from "next";
 import { CataloguePage } from "@/components/catalogue-page";
 import { getRegistryProducts } from "@/domain/catalogue/product-registry";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
+import { buildPublicMetadata } from "@/server/seo/metadata";
 
-export const metadata: Metadata = {
+export const metadata = buildPublicMetadata({
   title: "Custom canvas",
   description: "Personalised photo print, digital oil painting and themed canvas artwork.",
-  alternates: { canonical: "/canvas" },
-};
+  path: "/canvas",
+  image: "/media/products/photo-print-canvas-shop.webp",
+  imageAlt: "Personalised photo print canvas",
+});
 export const dynamic = "force-dynamic";
 
 export default async function CanvasPage() {
@@ -17,6 +19,8 @@ export default async function CanvasPage() {
       eyebrow="CANVAS"
       title="Personalised canvas made from your photos."
       description="Choose photo print, digital oil painting or a custom themed canvas."
+      path="/canvas"
+      breadcrumbLabel="Canvas"
       products={getRegistryProducts(registry).filter(
         (product) => product.active && product.category === "canvas",
       )}

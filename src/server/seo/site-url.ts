@@ -3,7 +3,7 @@ type SiteEnvironment = Readonly<{
   BETTER_AUTH_URL?: string;
 }>;
 
-const fallback = new URL("https://rnrgallery.com");
+const fallback = new URL("https://rrgallery.co.nz");
 
 export function getSiteUrl(environment: SiteEnvironment = process.env) {
   const raw = environment.BETTER_AUTH_URL?.trim();

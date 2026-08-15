@@ -12,6 +12,10 @@ describe("site URL", () => {
     "https://user:secret@example.test",
     "https://example.test/not-an-origin",
   ])("falls back safely for invalid configured URL %s", (BETTER_AUTH_URL) => {
-    expect(getSiteUrl({ BETTER_AUTH_URL }).toString()).toBe("https://rnrgallery.com/");
+    expect(getSiteUrl({ BETTER_AUTH_URL }).toString()).toBe("https://rrgallery.co.nz/");
+  });
+
+  it("uses the current R&R Gallery storefront when no origin is configured", () => {
+    expect(getSiteUrl({}).toString()).toBe("https://rrgallery.co.nz/");
   });
 });

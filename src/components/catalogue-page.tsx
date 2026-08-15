@@ -1,11 +1,15 @@
 import type { Product } from "@/domain/catalogue/types";
+import { buildBreadcrumbData } from "@/server/seo/metadata";
 import { ProductCard } from "./product-card";
+import { StructuredData } from "./structured-data";
 import styles from "./storefront.module.css";
 
 type CataloguePageProps = Readonly<{
   eyebrow: string;
   title: string;
   description: string;
+  path?: string;
+  breadcrumbLabel?: string;
   products: readonly Product[];
 }>;
 
@@ -13,10 +17,18 @@ export function CataloguePage({
   eyebrow,
   title,
   description,
+  path,
+  breadcrumbLabel,
   products,
 }: CataloguePageProps) {
   return (
     <main id="main-content" className={styles.pageMain}>
+      {path && breadcrumbLabel ? (
+        <StructuredData id="rnr-catalogue-breadcrumbs" data={buildBreadcrumbData([
+          { name: "Home", path: "/" },
+          { name: breadcrumbLabel, path },
+        ])} />
+      ) : null}
       <header className={styles.pageIntro}>
         {eyebrow ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
         <h1>{title}</h1>

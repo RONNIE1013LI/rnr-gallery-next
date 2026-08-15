@@ -39,11 +39,30 @@ describe("ProductPageContent", () => {
       "/products/digital-oil-painting-canvas?reviews=2#facebook-recommendations",
     );
     const structuredData = container.querySelector("#rnr-product-data");
+    const breadcrumbs = container.querySelector("#rnr-product-breadcrumbs");
     expect(structuredData).toHaveAttribute("type", "application/ld+json");
-    expect(JSON.parse(structuredData?.textContent ?? "{}")).toMatchObject({
+    const parsedProduct = JSON.parse(structuredData?.textContent ?? "{}");
+    expect(parsedProduct).toMatchObject({
       "@type": "Product",
       name: "Digital Oil Painting Canvas",
-      offers: { priceCurrency: "NZD", availability: "https://schema.org/InStock" },
+      offers: {
+        price: "120.75",
+        priceCurrency: "NZD",
+        availability: "https://schema.org/InStock",
+      },
+    });
+    expect(screen.getByText("From NZ$120.75 incl GST")).toBeVisible();
+    expect(JSON.parse(breadcrumbs?.textContent ?? "{}")).toMatchObject({
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { position: 1, name: "Home", item: "https://rrgallery.co.nz/" },
+        { position: 2, name: "Shop", item: "https://rrgallery.co.nz/shop" },
+        {
+          position: 3,
+          name: "Digital Oil Painting Canvas",
+          item: "https://rrgallery.co.nz/products/digital-oil-painting-canvas",
+        },
+      ],
     });
 
     render(<ProductPageContent product={product} reviewPage={2} selection={null} />);

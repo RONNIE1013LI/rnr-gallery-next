@@ -52,4 +52,26 @@ describe("CataloguePage image loading", () => {
       expect(image).not.toHaveAttribute("loading", "eager");
     }
   });
+
+  it("publishes a breadcrumb canonical for the current category", () => {
+    const { container } = render(
+      <CataloguePage
+        eyebrow="Canvas"
+        title="Custom canvas"
+        description="Choose a format"
+        path="/canvas"
+        breadcrumbLabel="Canvas"
+        products={products.slice(0, 2)}
+      />,
+    );
+
+    expect(JSON.parse(container.querySelector("#rnr-catalogue-breadcrumbs")?.textContent ?? "{}"))
+      .toMatchObject({
+        "@type": "BreadcrumbList",
+        itemListElement: [
+          { position: 1, name: "Home", item: "https://rrgallery.co.nz/" },
+          { position: 2, name: "Canvas", item: "https://rrgallery.co.nz/canvas" },
+        ],
+      });
+  });
 });

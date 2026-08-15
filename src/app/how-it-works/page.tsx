@@ -1,12 +1,14 @@
-import type { Metadata } from "next";
 import Link from "next/link";
 import styles from "@/components/storefront.module.css";
+import { buildPublicMetadata } from "@/server/seo/metadata";
 
-export const metadata: Metadata = {
+export const metadata = buildPublicMetadata({
   title: "How it works",
   description: "How R&R Gallery turns your photos and wording into approved personalised artwork.",
-  alternates: { canonical: "/how-it-works" },
-};
+  path: "/how-it-works",
+  image: "/media/home/homepage-begin-photo-help.webp",
+  imageAlt: "Customer preparing photos for personalised artwork",
+});
 
 export default function HowItWorksPage() {
   return (

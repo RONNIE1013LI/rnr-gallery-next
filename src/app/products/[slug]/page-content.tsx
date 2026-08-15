@@ -8,11 +8,12 @@ import styles from "@/components/storefront.module.css";
 import { products } from "@/domain/catalogue/products";
 import { getRegistryProductBySlug } from "@/domain/catalogue/product-registry";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
-import { formatNzd } from "@/domain/money";
+import { addNzdGst, formatNzdExplicit } from "@/domain/money";
 import type { Product } from "@/domain/catalogue/types";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 import { getSiteUrl } from "@/server/seo/site-url";
+import { buildBreadcrumbData, buildPublicMetadata } from "@/server/seo/metadata";
 
 export type ProductPageProps = {
   params: Promise<{ slug: string }>;
@@ -34,18 +35,13 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
   const { registry } = await getSafePublicProductRegistry();
   const product = getRegistryProductBySlug(registry, (await params).slug);
   return product
-    ? {
+    ? buildPublicMetadata({
         title: product.title,
         description: product.summary,
-        alternates: { canonical: `/products/${product.slug}` },
-        openGraph: {
-          type: "website",
-          title: product.title,
-          description: product.summary,
-          url: `/products/${product.slug}`,
-          images: [{ url: product.image.src, alt: product.image.alt }],
-        },
-      }
+        path: `/products/${product.slug}`,
+        image: product.image.src,
+        imageAlt: product.image.alt,
+      })
     : { title: "Product not found" };
 }
 
@@ -64,7 +60,8 @@ export function ProductPageContent({
   const siteUrl = getSiteUrl();
   const productUrl = new URL(`/products/${product.slug}`, siteUrl).toString();
   const imageUrl = new URL(selection?.imageUrl ?? product.image.src, siteUrl).toString();
-  const priceInclGst = (Math.round(product.startingPriceExGstCents * 1.15) / 100).toFixed(2);
+  const priceInclGstCents = addNzdGst(product.startingPriceExGstCents);
+  const priceInclGst = (priceInclGstCents / 100).toFixed(2);
   return (
     <main id="main-content" className={styles.productDetail}>
       <StructuredData id="rnr-product-data" data={{
@@ -83,6 +80,11 @@ export function ProductPageContent({
           itemCondition: "https://schema.org/NewCondition",
         },
       }} />
+      <StructuredData id="rnr-product-breadcrumbs" data={buildBreadcrumbData([
+        { name: "Home", path: "/" },
+        { name: "Shop", path: "/shop" },
+        { name: product.title, path: `/products/${product.slug}` },
+      ])} />
       <div className={styles.productDetailInner}>
         <div className={styles.productDetailMedia}>
           <Image
@@ -106,7 +108,7 @@ export function ProductPageContent({
           )}
           <p className={styles.productDetailLead}>{product.summary}</p>
           <p className={styles.productDetailPrice}>
-            From {formatNzd(product.startingPriceExGstCents)} + GST
+            From {formatNzdExplicit(priceInclGstCents)} incl GST
           </p>
           <ul className={styles.checkList}>
             <li>Choose the finished format and artwork details</li>

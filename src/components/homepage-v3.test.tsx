@@ -28,6 +28,22 @@ function galleryItem(
 }
 
 describe("HomepageV3", () => {
+  it("publishes parseable LocalBusiness and WebSite structured data", () => {
+    const { container } = render(<HomepageV3 registry={defaultProductRegistry} />);
+    const localBusiness = container.querySelector("#rnr-local-business");
+    const website = container.querySelector("#rnr-website");
+
+    expect(JSON.parse(localBusiness?.textContent ?? "{}")).toMatchObject({
+      "@type": "LocalBusiness",
+      name: "R&R Gallery",
+    });
+    expect(JSON.parse(website?.textContent ?? "{}")).toMatchObject({
+      "@type": "WebSite",
+      name: "R&R Gallery",
+      url: "https://rrgallery.co.nz/",
+    });
+  });
+
   it("uses controlled FAQ buttons instead of hydration-sensitive native details", () => {
     render(<HomepageV3 registry={defaultProductRegistry} />);
     const question = screen.getByRole("button", {

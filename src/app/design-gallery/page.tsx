@@ -1,14 +1,16 @@
-import type { Metadata } from "next";
 import { DesignGallery } from "@/components/design-gallery";
 import { parseGalleryQuery } from "@/domain/gallery/query";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 import styles from "@/components/storefront.module.css";
+import { buildPublicMetadata } from "@/server/seo/metadata";
 
-export const metadata: Metadata = {
+export const metadata = buildPublicMetadata({
   title: "Design gallery",
   description: "Explore real R&R Gallery canvas, banner and memorial artwork for design inspiration.",
-  alternates: { canonical: "/design-gallery" },
-};
+  path: "/design-gallery",
+  image: "/media/home/homepage-signature-family-artwork-v2.webp",
+  imageAlt: "Selection of completed personalised R&R Gallery designs",
+});
 
 type Props = Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;

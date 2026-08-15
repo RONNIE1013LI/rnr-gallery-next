@@ -208,6 +208,12 @@ export function HomepageV3({
         },
         areaServed: ["New Zealand", "Australia"],
       }} />
+      <StructuredData id="rnr-website" data={{
+        "@context": "https://schema.org",
+        "@type": "WebSite",
+        name: "R&R Gallery",
+        url: getSiteUrl().toString(),
+      }} />
 
       <section className={`${styles.hero} ${styles.sectionPaper}`}>
         <div className={`${styles.shell} ${styles.heroGrid}`}>
