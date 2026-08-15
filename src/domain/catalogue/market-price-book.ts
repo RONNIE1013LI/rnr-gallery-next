@@ -127,9 +127,12 @@ function priceBookSchema<MarketLiteral extends "NZ" | "AU", CurrencyLiteral exte
   }).strict();
 }
 
+export const newZealandPriceBookSchema = priceBookSchema("NZ", "NZD");
+export const australiaPriceBookSchema = priceBookSchema("AU", "AUD");
+
 export const marketPriceBooksSchema = z.object({
-  NZ: priceBookSchema("NZ", "NZD"),
-  AU: priceBookSchema("AU", "AUD"),
+  NZ: newZealandPriceBookSchema,
+  AU: australiaPriceBookSchema,
 }).strict();
 
 export class MarketPriceBookValidationError extends Error {

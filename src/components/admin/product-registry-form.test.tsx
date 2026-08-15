@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
 import { listAdminProducts } from "@/server/admin/product-admin-service";
 import { ProductRegistryForm } from "./product-registry-form";
 
@@ -24,6 +25,8 @@ describe("product registry editor", () => {
     render(<ProductRegistryForm
       products={listAdminProducts(defaultProductRegistry).filter((product) => product.key === "roll-up-banner")}
       pricing={defaultProductRegistry.pricing}
+      markets={defaultProductRegistry.markets}
+      australiaCompleteness={getMarketCompleteness(defaultProductRegistry, "AU")}
       revision={2}
     />);
 
@@ -49,10 +52,57 @@ describe("product registry editor", () => {
     render(<ProductRegistryForm
       products={listAdminProducts(defaultProductRegistry).slice(0, 1)}
       pricing={defaultProductRegistry.pricing}
+      markets={defaultProductRegistry.markets}
+      australiaCompleteness={getMarketCompleteness(defaultProductRegistry, "AU")}
       revision={0}
     />);
 
     fireEvent.click(screen.getByRole("button", { name: "Publish Photo Print Canvas" }));
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("saves fixed AUD draft prices without deriving them from NZD", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "published",
+      revision: 4,
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    vi.stubGlobal("crypto", { randomUUID: () => "australia-price-book-0001" });
+    render(<ProductRegistryForm
+      products={listAdminProducts(defaultProductRegistry).filter((product) => product.key === "roll-up-banner")}
+      pricing={defaultProductRegistry.pricing}
+      markets={defaultProductRegistry.markets}
+      australiaCompleteness={getMarketCompleteness(defaultProductRegistry, "AU")}
+      revision={3}
+    />);
+
+    expect(screen.getByRole("heading", { name: "Australia — AUD" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Enable Australia checkout")).toBeDisabled();
+    fireEvent.change(screen.getByLabelText("Roll-Up Banner · standard final price (AUD)"), {
+      target: { value: "320.00" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save Australia price book" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/admin/products/market-pricing");
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(payload).toMatchObject({
+      expectedRevision: 3,
+      idempotencyKey: "australia-price-book-0001",
+      priceBook: {
+        market: "AU",
+        currency: "AUD",
+        enabled: false,
+        tax: { registered: false, rateBasisPoints: 1_000 },
+      },
+    });
+    expect(
+      payload.priceBook.products
+        .find((product: { productKey: string }) => product.productKey === "roll-up-banner")
+        .sizes.find(
+        (size: { sizeKey: string }) => size.sizeKey === "standard",
+      ).amountInclTaxCents,
+    ).toBe(32_000);
   });
 });

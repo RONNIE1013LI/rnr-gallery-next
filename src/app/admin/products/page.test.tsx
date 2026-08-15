@@ -21,10 +21,12 @@ describe("admin products page", () => {
 
     expect(requireAdminPage).toHaveBeenCalledWith("/admin/products", "manage_prices");
     expect(screen.getByRole("heading", { name: "Products & pricing" })).toBeInTheDocument();
-    expect(screen.getByText("Digital Oil Painting Canvas")).toBeInTheDocument();
+    expect(screen.getAllByText("Digital Oil Painting Canvas")).toHaveLength(2);
     expect(within(screen.getByRole("note")).getByText(/revision 2/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Publish Digital Oil Painting Canvas" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Publish store-wide fees" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Australia — AUD" })).toBeInTheDocument();
+    expect(screen.getByText(/AUD prices still required/i)).toBeInTheDocument();
     expect(screen.queryByText(/editing is locked/i)).not.toBeInTheDocument();
   });
 });

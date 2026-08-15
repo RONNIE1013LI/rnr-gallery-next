@@ -4,6 +4,7 @@ import styles from "@/components/admin/admin.module.css";
 import { listAdminProducts } from "@/server/admin/product-admin-service";
 import { getProductRegistryRuntime } from "@/server/admin/product-registry-runtime";
 import { requireAdminPage } from "@/server/auth/require-admin-page";
+import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
 
 export const metadata = { title: "Products & pricing | R&R Gallery Admin" };
 
@@ -30,6 +31,8 @@ export default async function AdminProductsPage() {
       <ProductRegistryForm
         products={products}
         pricing={registry.pricing}
+        markets={registry.markets}
+        australiaCompleteness={getMarketCompleteness(registry, "AU")}
         revision={revision}
       />
     </section>

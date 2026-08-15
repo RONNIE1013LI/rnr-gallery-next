@@ -4,6 +4,7 @@ import {
   getRegistryProductBySlug,
 } from "@/domain/catalogue/product-registry";
 import {
+  ProductRegistryValidationError,
   ProductRegistryConflictError,
   createProductRegistryService,
 } from "./product-registry-service";
@@ -161,5 +162,25 @@ describe("product registry administration", () => {
     })).rejects.toThrow("Product image was not found in Media.");
     expect(assetExists).toHaveBeenCalledWith("/media/home/missing.webp");
     expect(repository.publish).not.toHaveBeenCalled();
+  });
+
+  it("publishes incomplete Australia prices only while the market remains disabled", async () => {
+    const service = createProductRegistryService(memoryRepository());
+    const australia = structuredClone(defaultProductRegistry.markets.AU);
+    australia.products[0].sizes[0].amountInclTaxCents = 32_000;
+
+    const result = await service.publishMarket(actor, {
+      expectedRevision: 0,
+      idempotencyKey: "australia-draft-0001",
+      priceBook: australia,
+    });
+
+    expect(result.registry.markets.AU.products[0].sizes[0].amountInclTaxCents).toBe(32_000);
+    australia.enabled = true;
+    await expect(service.publishMarket(actor, {
+      expectedRevision: 1,
+      idempotencyKey: "australia-enable-0001",
+      priceBook: australia,
+    })).rejects.toBeInstanceOf(ProductRegistryValidationError);
   });
 });

@@ -5,7 +5,10 @@ import {
   parseProductRegistry,
   type ProductRegistryDocument,
 } from "@/domain/catalogue/product-registry";
-import { synchronizeNewZealandPriceBook } from "@/domain/catalogue/market-price-book";
+import {
+  australiaPriceBookSchema,
+  synchronizeNewZealandPriceBook,
+} from "@/domain/catalogue/market-price-book";
 import type { getDatabase } from "@/server/db/client";
 import {
   adminAuditLogs,
@@ -43,6 +46,9 @@ const pricingPatchSchema = mutationBase.extend({
   peoplePetsFeesExGstCents: z.array(cents).length(5),
   additionalPeoplePetsEachExGstCents: cents,
   urgentServiceFeesInclGstCents: z.array(cents).length(4),
+}).strict();
+const marketPatchSchema = mutationBase.extend({
+  priceBook: australiaPriceBookSchema,
 }).strict();
 
 type Database = ReturnType<typeof getDatabase>;
@@ -214,6 +220,40 @@ export function createProductRegistryService(
         resourceId: "pricing",
         beforeSummary,
         afterSummary: { ...registry.pricing },
+        snapshot: registry,
+      });
+    },
+
+    async publishMarket(actor: Actor, input: unknown) {
+      const parsed = marketPatchSchema.safeParse(input);
+      if (!parsed.success) {
+        throw new ProductRegistryValidationError("Enter valid Australia price-book values.");
+      }
+      const current = await load();
+      const next = structuredClone(current.registry);
+      const beforeSummary = {
+        enabled: next.markets.AU.enabled,
+        tax: { ...next.markets.AU.tax },
+      };
+      next.markets.AU = structuredClone(parsed.data.priceBook);
+      let registry: ProductRegistryDocument;
+      try {
+        registry = parseProductRegistry(next);
+      } catch (error) {
+        throw new ProductRegistryValidationError(
+          error instanceof Error ? error.message : "The Australia price book is invalid.",
+        );
+      }
+      return publish(actor, parsed.data.expectedRevision, {
+        idempotencyKey: parsed.data.idempotencyKey,
+        ...withoutUndefined({ requestSource: parsed.data.requestSource }),
+        action: "product.registry.market.published",
+        resourceId: "AU",
+        beforeSummary,
+        afterSummary: {
+          enabled: registry.markets.AU.enabled,
+          tax: { ...registry.markets.AU.tax },
+        },
         snapshot: registry,
       });
     },
