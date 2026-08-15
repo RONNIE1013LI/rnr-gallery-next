@@ -128,8 +128,8 @@ export function CartView() {
         <p className={styles.eyebrow}>Order total</p>
         <h2>Cart summary</h2>
         <dl className={styles.priceLines}>
-          <div><dt>Subtotal ex GST</dt><dd>{formatNzd(totals.subtotalExGstCents)}</dd></div>
-          <div><dt>GST (15%)</dt><dd>{formatNzd(totals.gstCents)}</dd></div>
+          <div><dt>Subtotal incl GST</dt><dd>{formatNzd(totals.totalInclGstCents)}</dd></div>
+          <div><dt>Includes GST (15%)</dt><dd>{formatNzd(totals.gstCents)}</dd></div>
           <div className={styles.priceTotal}><dt>Total incl GST</dt><dd>{formatNzd(totals.totalInclGstCents)}</dd></div>
         </dl>
         <Link className={styles.primaryButton} href="/checkout/start">Continue to checkout</Link>

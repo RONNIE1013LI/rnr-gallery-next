@@ -130,8 +130,12 @@ describe("owner-scoped order pages", () => {
     expect(screen.getByText("Product / size price")).toBeInTheDocument();
     expect(screen.getByText("People / pets fee")).toBeInTheDocument();
     expect(screen.getAllByText("Urgent service")).toHaveLength(2);
+    expect(screen.getByText("NZ$74.75 incl GST")).toBeInTheDocument();
+    expect(screen.getByText("NZ$46.00 incl GST")).toBeInTheDocument();
+    expect(screen.getByText("NZ$60.00 incl GST")).toBeInTheDocument();
+    expect(screen.queryByText(/ex GST/i)).not.toBeInTheDocument();
     expect(screen.queryByText("No charge")).not.toBeInTheDocument();
-    expect(screen.getAllByText("NZ$180.75")).toHaveLength(2);
+    expect(screen.getAllByText("NZ$180.75")).toHaveLength(3);
     expect(await screen.findByRole("radiogroup", { name: "Payment method" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
     expect(screen.getByText("No real payment will be taken.")).toBeInTheDocument();
@@ -268,9 +272,9 @@ describe("owner-scoped order pages", () => {
     const summary = screen.getByRole("heading", { name: "Order summary" }).closest("aside");
     expect(summary).not.toBeNull();
     expect(within(summary!).getAllByRole("term").map(({ textContent }) => textContent)).toEqual([
-      "Products ex GST",
-      "Shipping ex GST",
-      "GST",
+      "Products incl GST",
+      "Shipping incl GST",
+      "Includes GST",
       "Payment method",
       "Payment attempt",
       "Total incl GST",

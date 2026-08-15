@@ -28,7 +28,11 @@ describe("CheckoutOrderSummary", () => {
     render(<CheckoutOrderSummary cart={cart} shipping={null} />);
     expect(screen.getByText("Family at sunset")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Family at sunset" })).toBeInTheDocument();
-    expect(screen.getByText("NZ$74.75")).toBeInTheDocument();
+    expect(screen.getByText("Products incl GST")).toBeInTheDocument();
+    expect(screen.getByText("Shipping incl GST")).toBeInTheDocument();
+    expect(screen.getByText("Includes GST")).toBeInTheDocument();
+    expect(screen.getAllByText("NZ$74.75")).toHaveLength(2);
+    expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
   });
 
   it("uses one concise test-rate disclosure", () => {
@@ -50,6 +54,7 @@ describe("CheckoutOrderSummary", () => {
     }} />);
 
     expect(screen.getByText("Test Post · Test rate — not a live carrier rate")).toBeInTheDocument();
+    expect(screen.getAllByText("NZ$23.00")).toHaveLength(2);
     expect(screen.queryByText("Test Post — not a live carrier rate · Test rate — not a live carrier rate")).not.toBeInTheDocument();
   });
 

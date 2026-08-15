@@ -21,6 +21,7 @@ import { MAX_SOURCE_PHOTOS_PER_ITEM } from "@/domain/configuration/types";
 import { quoteConfiguration } from "@/domain/configuration/quote";
 import { formatConfigurationSizeLabel } from "@/domain/configuration/size-label";
 import { addNzdGst, formatNzd } from "@/domain/money";
+import { getPriceLineAmountInclGstCents } from "@/domain/pricing/types";
 import {
   MAX_CHECKOUT_TEXT_LENGTH,
   MAX_PEOPLE_PETS_PER_ITEM,
@@ -371,13 +372,11 @@ export function ProductConfigurator({
               <div key={line.key}>
                 <dt>{line.label}</dt>
                 <dd>
-                  {formatNzd(line.amountInclGstCents ?? line.amountExGstCents)}
-                  {line.amountInclGstCents !== undefined ? " incl GST" : ""}
+                  {formatNzd(getPriceLineAmountInclGstCents(line))} incl GST
                 </dd>
               </div>
             ))}
-            <div><dt>Subtotal ex GST</dt><dd>{formatNzd(quote.subtotalExGstCents)}</dd></div>
-            <div><dt>GST (15%)</dt><dd>{formatNzd(quote.gstCents)}</dd></div>
+            <div><dt>Includes GST (15%)</dt><dd>{formatNzd(quote.gstCents)}</dd></div>
             <div className={styles.priceTotal}><dt>Total incl GST</dt><dd>{formatNzd(quote.totalInclGstCents)}</dd></div>
           </dl>
           <PurchaseTrustStrip />
@@ -427,7 +426,6 @@ export function ProductConfigurator({
                 <div className={styles.sizeOptions}>
                   {sizeChoices.map((option) => {
                     const priceLabel = `From ${formatNzd(addNzdGst(option.minimumPriceExGstCents))} incl GST`;
-                    const secondaryPriceLabel = `${formatNzd(option.minimumPriceExGstCents)} excl GST`;
                     return (
                       <label className={styles.sizeOption} key={option.key}>
                         <input
@@ -436,12 +434,11 @@ export function ProductConfigurator({
                           value={option.key}
                           checked={sizeKey === option.key}
                           onChange={() => setSizeKey(option.key)}
-                          aria-label={`${option.label}, ${priceLabel}, ${secondaryPriceLabel}`}
+                          aria-label={`${option.label}, ${priceLabel}`}
                         />
                         <span className={styles.sizeOptionBody}>
                           <strong>{option.label}</strong>
                           <span>{priceLabel}</span>
-                          <small>{secondaryPriceLabel}</small>
                         </span>
                       </label>
                     );

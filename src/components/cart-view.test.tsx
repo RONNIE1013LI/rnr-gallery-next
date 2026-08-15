@@ -51,9 +51,11 @@ describe("CartView", () => {
     expect(screen.getByText("Send Photos After Ordering")).toBeInTheDocument();
     expect(screen.getByText("Production completion date")).toBeInTheDocument();
     expect(screen.queryByText("Needed by")).not.toBeInTheDocument();
-    expect(screen.getByText("NZ$65.00")).toBeInTheDocument();
+    expect(screen.getByText("Subtotal incl GST")).toBeInTheDocument();
+    expect(screen.getByText("Includes GST (15%)")).toBeInTheDocument();
     expect(screen.getByText("NZ$9.75")).toBeInTheDocument();
-    expect(screen.getByText("NZ$74.75")).toBeInTheDocument();
+    expect(screen.getAllByText("NZ$74.75")).toHaveLength(2);
+    expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Continue to checkout" })).toHaveAttribute(
       "href",
       "/checkout/start",
@@ -85,7 +87,7 @@ describe("CartView", () => {
     fireEvent.change(screen.getByLabelText("Quantity for Photo Print Canvas"), {
       target: { value: "2" },
     });
-    expect(screen.getByText("NZ$149.50")).toBeInTheDocument();
+    expect(screen.getAllByText("NZ$149.50")).toHaveLength(2);
     expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0].quantity).toBe(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Remove Photo Print Canvas" }));

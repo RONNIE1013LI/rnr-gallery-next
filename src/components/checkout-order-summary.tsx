@@ -16,7 +16,6 @@ export function CheckoutOrderSummary({ cart, shipping }: {
   shipping: PublicShippingDTO["option"] | null;
 }) {
   if (!cart) return <p>Review delivery to see authoritative totals.</p>;
-  const shippingEx = shipping?.amountExGstCents ?? 0;
   const shippingGst = shipping?.gstCents ?? 0;
   const shippingTotal = shipping?.amountInclGstCents ?? 0;
   return (
@@ -40,9 +39,9 @@ export function CheckoutOrderSummary({ cart, shipping }: {
         </div>
       ))}
       <dl className={styles.priceLines}>
-        <div><dt>Subtotal ex GST</dt><dd>{formatNzd(cart.subtotalExGstCents)}</dd></div>
-        <div><dt>GST</dt><dd>{formatNzd(cart.gstCents + shippingGst)}</dd></div>
-        <div><dt>Shipping ex GST</dt><dd>{formatNzd(shippingEx)}</dd></div>
+        <div><dt>Products incl GST</dt><dd>{formatNzd(cart.totalInclGstCents)}</dd></div>
+        <div><dt>Shipping incl GST</dt><dd>{formatNzd(shippingTotal)}</dd></div>
+        <div><dt>Includes GST</dt><dd>{formatNzd(cart.gstCents + shippingGst)}</dd></div>
         <div className={styles.priceTotal}><dt>Total incl GST</dt><dd>{formatNzd(cart.totalInclGstCents + shippingTotal)}</dd></div>
       </dl>
       {shipping ? <p className={styles.checkoutProvenance}>{shippingDisclosure(shipping)}</p> : null}

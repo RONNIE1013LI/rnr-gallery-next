@@ -70,11 +70,11 @@ export function CheckoutEntrySummary() {
 
           <dl className={styles.checkoutEntryTotals}>
             <div>
-              <dt>Subtotal ex GST</dt>
-              <dd>{formatNzd(totals.subtotalExGstCents)}</dd>
+              <dt>Subtotal incl GST</dt>
+              <dd>{formatNzd(totals.totalInclGstCents)}</dd>
             </div>
             <div>
-              <dt>GST (15%)</dt>
+              <dt>Includes GST (15%)</dt>
               <dd>{formatNzd(totals.gstCents)}</dd>
             </div>
             <div className={styles.checkoutEntryTotal}>

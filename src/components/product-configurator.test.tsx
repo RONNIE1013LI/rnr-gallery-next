@@ -24,12 +24,16 @@ describe("ProductConfigurator", () => {
       />,
     );
 
-    expect(screen.getByRole("radio", { name: /A4.*From NZ\$120\.75 incl GST.*NZ\$105\.00 excl GST/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /^A4.*From NZ\$120\.75 incl GST$/ })).toBeChecked();
     expect(screen.getByLabelText("Landscape")).toBeChecked();
     expect(screen.getByLabelText("People or pets in artwork")).toHaveValue("1");
-    expect(screen.getByText("NZ$105.00")).toBeInTheDocument();
-    expect(screen.getByText("NZ$15.75")).toBeInTheDocument();
-    expect(screen.getByText("NZ$120.75")).toBeInTheDocument();
+    const orderSummary = screen.getByRole("complementary", { name: "Order summary" });
+    expect(within(orderSummary).getByText("NZ$74.75 incl GST")).toBeInTheDocument();
+    expect(within(orderSummary).getByText("NZ$46.00 incl GST")).toBeInTheDocument();
+    expect(within(orderSummary).getByText("Includes GST (15%)")).toBeInTheDocument();
+    expect(within(orderSummary).getByText("NZ$15.75")).toBeInTheDocument();
+    expect(within(orderSummary).getByText("NZ$120.75")).toBeInTheDocument();
+    expect(within(orderSummary).queryByText(/excl GST/i)).not.toBeInTheDocument();
   });
 
   it("presents every available size as a selectable card with its minimum price", () => {
@@ -45,19 +49,19 @@ describe("ProductConfigurator", () => {
     expect(within(sizePicker).getAllByRole("radio")).toHaveLength(5);
     expect(
       within(sizePicker).getByRole("radio", {
-        name: /A0.*From NZ\$368\.00 incl GST.*NZ\$320\.00 excl GST/,
+        name: /^A0.*From NZ\$368\.00 incl GST$/,
       }),
     ).not.toBeChecked();
 
     fireEvent.click(
       within(sizePicker).getByRole("radio", {
-        name: /A0.*From NZ\$368\.00 incl GST.*NZ\$320\.00 excl GST/,
+        name: /^A0.*From NZ\$368\.00 incl GST$/,
       }),
     );
 
     expect(
       within(sizePicker).getByRole("radio", {
-        name: /A0.*From NZ\$368\.00 incl GST.*NZ\$320\.00 excl GST/,
+        name: /^A0.*From NZ\$368\.00 incl GST$/,
       }),
     ).toBeChecked();
     expect(
@@ -153,7 +157,7 @@ describe("ProductConfigurator", () => {
       />,
     );
 
-    expect(screen.getByText("NZ$110.00")).toBeInTheDocument();
+    expect(screen.getByText("NZ$51.75 incl GST")).toBeInTheDocument();
     expect(screen.getByText("NZ$16.50")).toBeInTheDocument();
     expect(screen.getByText("NZ$126.50")).toBeInTheDocument();
   });
@@ -255,7 +259,7 @@ describe("ProductConfigurator", () => {
     expect(screen.getByText("Dimensions are always shown as width × height.")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Portrait"));
     expect(screen.getByRole("radio", {
-      name: /A4 — 21 × 29\.7 cm.*From NZ\$120\.75 incl GST.*NZ\$105\.00 excl GST/,
+      name: /^A4 — 21 × 29\.7 cm.*From NZ\$120\.75 incl GST$/,
     })).toBeChecked();
     expect(within(screen.getByRole("complementary", { name: "Order summary" }))
       .getByText("A4 — 21 × 29.7 cm")).toBeInTheDocument();
@@ -367,7 +371,7 @@ describe("ProductConfigurator", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Increase people or pets" }));
-    expect(screen.getByText("NZ$125.00")).toBeInTheDocument();
+    expect(screen.getByText("NZ$69.00 incl GST")).toBeInTheDocument();
     expect(screen.getByText("NZ$18.75")).toBeInTheDocument();
     expect(screen.getByText("NZ$143.75")).toBeInTheDocument();
 
@@ -539,7 +543,7 @@ describe("ProductConfigurator", () => {
     expect(await screen.findByText("Photo 21", undefined, { timeout: 5_000 })).toBeInTheDocument();
     const summary = screen.getByRole("complementary", { name: "Order summary" });
     expect(within(summary).getByText("Extra photos")).toBeInTheDocument();
-    expect(within(summary).getByText("NZ$5.00")).toBeInTheDocument();
+    expect(within(summary).getByText("NZ$5.75 incl GST")).toBeInTheDocument();
     expect(within(summary).getByText("NZ$141.45")).toBeInTheDocument();
     expect(screen.queryByText(/Choose no more than 20 source photos/)).not.toBeInTheDocument();
   });
@@ -604,6 +608,9 @@ describe("ProductConfigurator", () => {
         .mockResolvedValueOnce({ ok: true, json: async () => ({ reference: { id: "photo-two", originalName: "two.jpg" } }) }),
     );
     render(<ProductConfigurator product={rollUp} schema={rollUpSchema} orderDate="2026-08-03" />);
+
+    const orderSummary = screen.getByRole("complementary", { name: "Order summary" });
+    expect(within(orderSummary).getByText("NZ$264.50 incl GST")).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText("Choose files"), {
       target: { files: [
