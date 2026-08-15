@@ -29,6 +29,12 @@ export function buildSecurityHeaders(nodeEnv: string | undefined) {
 
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["192.168.4.199"],
+  images: {
+    localPatterns: [
+      { pathname: "/**", search: "" },
+      { pathname: "/gallery-images/**" },
+    ],
+  },
   devIndicators: false,
   onDemandEntries: {
     maxInactiveAge: 12 * 60 * 60 * 1_000,

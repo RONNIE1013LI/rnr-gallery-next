@@ -1,0 +1,3 @@
+old_url,new_url,redirect_type,reason,verified
+https://rnrgallery.com/example-old-product,https://rrgallery.co.nz/products/example-new-product,301,TEMPLATE ONLY - replace with a verified one-to-one product mapping,false
+https://rnrgallery.com/example-obsolete-page,,404-or-410,TEMPLATE ONLY - business decision required when no equivalent content exists,false

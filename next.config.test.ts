@@ -22,6 +22,16 @@ describe("Next.js workspace configuration", () => {
     expect(nextConfig.onDemandEntries?.pagesBufferLength).toBeGreaterThanOrEqual(64);
   });
 
+  it("allows versioned public Gallery images through the responsive image pipeline", () => {
+    expect(nextConfig.images?.localPatterns).toContainEqual({
+      pathname: "/**",
+      search: "",
+    });
+    expect(nextConfig.images?.localPatterns).toContainEqual({
+      pathname: "/gallery-images/**",
+    });
+  });
+
   it("adds non-breaking browser security headers and production HSTS", () => {
     const headers = Object.fromEntries(
       buildSecurityHeaders("production").map(({ key, value }) => [key, value]),
