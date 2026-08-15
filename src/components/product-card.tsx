@@ -1,18 +1,31 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Product } from "@/domain/catalogue/types";
-import { addNzdGst, formatNzd } from "@/domain/money";
+import type { Market } from "@/domain/markets/types";
+import { currencyForMarket } from "@/domain/markets/market";
+import { addNzdGst, formatMarketMoney } from "@/domain/money";
 import styles from "./storefront.module.css";
 
 export function ProductCard({
   product,
   priority = false,
-}: Readonly<{ product: Product; priority?: boolean }>) {
-  const configureHref = `/products/${product.slug}/configure`;
+  market = "NZ",
+  priceInclTaxCents,
+}: Readonly<{
+  product: Product;
+  priority?: boolean;
+  market?: Market;
+  priceInclTaxCents?: number;
+}>) {
+  const destination = market === "AU"
+    ? `/au/products/${product.slug}`
+    : `/products/${product.slug}/configure`;
+  const displayPrice = priceInclTaxCents ?? addNzdGst(product.startingPriceExGstCents);
+  const taxLabel = market === "NZ" ? " incl GST" : "";
 
   return (
     <article className={styles.productCard}>
-      <Link className={styles.productCardLink} href={configureHref}>
+      <Link className={styles.productCardLink} href={destination}>
         <div className={styles.productCardMedia}>
           <Image
             src={product.image.src}
@@ -30,7 +43,7 @@ export function ProductCard({
           <p>{product.summary}</p>
           <div className={styles.productCardFooter}>
             <span className={styles.publicPrice}>
-              <strong>From {formatNzd(addNzdGst(product.startingPriceExGstCents))} incl GST</strong>
+              <strong>From {formatMarketMoney(displayPrice, currencyForMarket(market))}{taxLabel}</strong>
             </span>
             <span className={styles.primaryButton}>Create Your Artwork</span>
           </div>

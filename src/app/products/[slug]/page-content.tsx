@@ -8,7 +8,9 @@ import styles from "@/components/storefront.module.css";
 import { products } from "@/domain/catalogue/products";
 import { getRegistryProductBySlug } from "@/domain/catalogue/product-registry";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
-import { addNzdGst, formatNzdExplicit } from "@/domain/money";
+import { addNzdGst, formatMarketMoney } from "@/domain/money";
+import { currencyForMarket } from "@/domain/markets/market";
+import type { Market } from "@/domain/markets/types";
 import type { Product } from "@/domain/catalogue/types";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
@@ -49,19 +51,28 @@ export function ProductPageContent({
   product,
   selection,
   reviewPage = 1,
+  market = "NZ",
+  priceInclTaxCents,
+  taxRegistered,
 }: Readonly<{
   product: Product;
   selection: GalleryDesignSelection | null;
   reviewPage?: number;
+  market?: Market;
+  priceInclTaxCents?: number;
+  taxRegistered?: boolean;
 }>) {
+  const marketPrefix = market === "AU" ? "/au" : "";
   const configureHref = selection
-    ? `/products/${product.slug}/configure?design=${selection.id}`
-    : `/products/${product.slug}/configure`;
+    ? `${marketPrefix}/products/${product.slug}/configure?design=${selection.id}`
+    : `${marketPrefix}/products/${product.slug}/configure`;
   const siteUrl = getSiteUrl();
-  const productUrl = new URL(`/products/${product.slug}`, siteUrl).toString();
+  const productPath = `${marketPrefix}/products/${product.slug}`;
+  const productUrl = new URL(productPath, siteUrl).toString();
   const imageUrl = new URL(selection?.imageUrl ?? product.image.src, siteUrl).toString();
-  const priceInclGstCents = addNzdGst(product.startingPriceExGstCents);
-  const priceInclGst = (priceInclGstCents / 100).toFixed(2);
+  const displayPrice = priceInclTaxCents ?? addNzdGst(product.startingPriceExGstCents);
+  const currency = currencyForMarket(market);
+  const taxLabel = market === "NZ" || taxRegistered ? " incl GST" : "";
   return (
     <main id="main-content" className={styles.productDetail}>
       <StructuredData id="rnr-product-data" data={{
@@ -74,16 +85,16 @@ export function ProductPageContent({
         offers: {
           "@type": "Offer",
           url: productUrl,
-          priceCurrency: "NZD",
-          price: priceInclGst,
+          priceCurrency: currency,
+          price: (displayPrice / 100).toFixed(2),
           availability: "https://schema.org/InStock",
           itemCondition: "https://schema.org/NewCondition",
         },
       }} />
       <StructuredData id="rnr-product-breadcrumbs" data={buildBreadcrumbData([
-        { name: "Home", path: "/" },
-        { name: "Shop", path: "/shop" },
-        { name: product.title, path: `/products/${product.slug}` },
+        { name: "Home", path: marketPrefix || "/" },
+        { name: "Shop", path: market === "AU" ? "/au" : "/shop" },
+        { name: product.title, path: productPath },
       ])} />
       <div className={styles.productDetailInner}>
         <div className={styles.productDetailMedia}>
@@ -107,7 +118,7 @@ export function ProductPageContent({
           )}
           <p className={styles.productDetailLead}>{product.summary}</p>
           <p className={styles.productDetailPrice}>
-            From {formatNzdExplicit(priceInclGstCents)} incl GST
+            From {formatMarketMoney(displayPrice, currency)}{taxLabel}
           </p>
           <ul className={styles.checkList}>
             <li>Choose the finished format and artwork details</li>
@@ -122,7 +133,7 @@ export function ProductPageContent({
       <FacebookReviews
         compact
         page={reviewPage}
-        pagePath={`/products/${product.slug}`}
+        pagePath={productPath}
       />
     </main>
   );

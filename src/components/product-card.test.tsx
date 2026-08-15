@@ -31,6 +31,24 @@ describe("ProductCard", () => {
     expect(screen.getByText("From NZ$120.75 incl GST")).toBeVisible();
     expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
   });
+
+  it("renders a fixed Australian price and AU route without NZ fallback", () => {
+    const product = products[1];
+    render(
+      <ProductCard
+        product={product}
+        market="AU"
+        priceInclTaxCents={32_000}
+      />,
+    );
+
+    expect(screen.getByRole("link")).toHaveAttribute(
+      "href",
+      `/au/products/${product.slug}`,
+    );
+    expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
+    expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
+  });
 });
 
 describe("CataloguePage image loading", () => {

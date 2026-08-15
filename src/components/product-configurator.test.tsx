@@ -4,11 +4,34 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getConfigurationSchema } from "@/domain/configuration/schemas";
 import { getProductBySlug } from "@/domain/catalogue/products";
 import { ProductConfigurator } from "./product-configurator";
-import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import {
+  defaultProductRegistry,
+  parseProductRegistry,
+} from "@/domain/catalogue/product-registry";
 import styles from "./storefront.module.css";
 
 const product = getProductBySlug("digital-oil-painting-canvas")!;
 const schema = getConfigurationSchema(product.key)!;
+
+function enabledAustraliaRegistry() {
+  const registry = structuredClone(defaultProductRegistry);
+  for (const marketProduct of registry.markets.AU.products) {
+    for (const size of marketProduct.sizes) size.amountInclTaxCents = 40_000;
+    for (const charge of marketProduct.charges) charge.amountInclTaxCents = 3_000;
+  }
+  const canvas = registry.markets.AU.products.find(
+    (entry) => entry.productKey === product.key,
+  )!;
+  canvas.sizes.find((size) => size.sizeKey === schema.defaultSizeKey)!.amountInclTaxCents = 40_000;
+  for (const fee of registry.markets.AU.peoplePets.fees) {
+    fee.amountInclTaxCents = fee.count * 6_000;
+  }
+  registry.markets.AU.peoplePets.additionalEachInclTaxCents = 4_000;
+  for (const fee of registry.markets.AU.urgentServiceFees) fee.amountInclTaxCents = 10_000;
+  for (const shipping of registry.markets.AU.shippingMethods) shipping.amountInclTaxCents = 4_500;
+  registry.markets.AU.enabled = true;
+  return parseProductRegistry(registry);
+}
 
 describe("ProductConfigurator", () => {
   beforeEach(() => localStorage.clear());
@@ -34,6 +57,27 @@ describe("ProductConfigurator", () => {
     expect(within(orderSummary).getByText("NZ$15.75")).toBeInTheDocument();
     expect(within(orderSummary).getByText("NZ$120.75")).toBeInTheDocument();
     expect(within(orderSummary).queryByText(/excl GST/i)).not.toBeInTheDocument();
+  });
+
+  it("quotes and stores an Australian configuration only in fixed AUD", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        registry={enabledAustraliaRegistry()}
+        market="AU"
+        orderDate="2026-08-03"
+        createId={() => "aud-item"}
+      />,
+    );
+
+    const summary = screen.getByRole("complementary", { name: "Order summary" });
+    expect(within(summary).getByText("A$460.00 AUD")).toBeVisible();
+    expect(within(summary).queryByText(/NZ\$/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0].price)
+      .toMatchObject({ market: "AU", currency: "AUD", totalInclGstCents: 46_000 });
   });
 
   it("presents every available size as a selectable card with its minimum price", () => {

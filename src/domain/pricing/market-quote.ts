@@ -182,3 +182,18 @@ export function quoteMarketConfiguration(
     designSurchargeCents: 0,
   });
 }
+
+export function getMarketStartingPriceInclTaxCents(
+  registry: ProductRegistryDocument,
+  market: Market,
+  productKey: string,
+): number {
+  const schema = schemaFromRegistry(registry, productKey);
+  if (!schema) {
+    throw new InvalidPricingInputError("The product is unavailable for this market.");
+  }
+  return quoteMarketConfiguration(registry, market, productKey, {
+    sizeKey: schema.defaultSizeKey,
+    peoplePets: schema.defaultPeoplePets,
+  }).totalInclGstCents;
+}

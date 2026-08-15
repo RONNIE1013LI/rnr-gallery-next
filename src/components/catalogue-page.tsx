@@ -1,4 +1,5 @@
 import type { Product } from "@/domain/catalogue/types";
+import type { Market } from "@/domain/markets/types";
 import { buildBreadcrumbData } from "@/server/seo/metadata";
 import { ProductCard } from "./product-card";
 import { StructuredData } from "./structured-data";
@@ -11,6 +12,8 @@ type CataloguePageProps = Readonly<{
   path?: string;
   breadcrumbLabel?: string;
   products: readonly Product[];
+  market?: Market;
+  pricesInclTaxCents?: Readonly<Record<string, number>>;
 }>;
 
 export function CataloguePage({
@@ -20,6 +23,8 @@ export function CataloguePage({
   path,
   breadcrumbLabel,
   products,
+  market = "NZ",
+  pricesInclTaxCents,
 }: CataloguePageProps) {
   return (
     <main id="main-content" className={styles.pageMain}>
@@ -36,7 +41,13 @@ export function CataloguePage({
       </header>
       <section className={styles.productGrid} aria-label={`${title} products`}>
         {products.map((product, index) => (
-          <ProductCard key={product.key} product={product} priority={index === 0} />
+          <ProductCard
+            key={product.key}
+            product={product}
+            priority={index === 0}
+            market={market}
+            priceInclTaxCents={pricesInclTaxCents?.[product.key]}
+          />
         ))}
       </section>
     </main>

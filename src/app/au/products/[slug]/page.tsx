@@ -1,0 +1,56 @@
+import type { Metadata } from "next";
+import { notFound } from "next/navigation";
+import { AustraliaUnavailable } from "@/components/market-unavailable";
+import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
+import { getRegistryProductBySlug } from "@/domain/catalogue/product-registry";
+import { getMarketStartingPriceInclTaxCents } from "@/domain/pricing/market-quote";
+import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
+import { buildPublicMetadata } from "@/server/seo/metadata";
+import {
+  ProductPageContent,
+  resolveProductPageSearchSelection,
+  type ProductPageProps,
+} from "@/app/products/[slug]/page-content";
+
+export const dynamic = "force-dynamic";
+
+export async function generateMetadata({ params }: ProductPageProps): Promise<Metadata> {
+  const { registry } = await getSafePublicProductRegistry();
+  const product = getRegistryProductBySlug(registry, (await params).slug);
+  if (!product) return { title: "Product not found", robots: { index: false, follow: false } };
+  if (!registry.markets.AU.enabled || !getMarketCompleteness(registry, "AU").ready) {
+    return {
+      title: `${product.title} for Australia — not available yet`,
+      robots: { index: false, follow: false },
+    };
+  }
+  return buildPublicMetadata({
+    title: `${product.title} Australia`,
+    description: `${product.summary} Fixed Australian pricing in AUD.`,
+    path: `/au/products/${product.slug}`,
+    image: product.image.src,
+    imageAlt: product.image.alt,
+  });
+}
+
+export default async function AustraliaProductPage({ params, searchParams }: ProductPageProps) {
+  const { registry } = await getSafePublicProductRegistry();
+  const product = getRegistryProductBySlug(registry, (await params).slug);
+  if (!product) notFound();
+  if (!registry.markets.AU.enabled || !getMarketCompleteness(registry, "AU").ready) {
+    return <AustraliaUnavailable />;
+  }
+  const { selection } = await resolveProductPageSearchSelection(product.slug, searchParams);
+  const rawReviewPage = (await searchParams).reviews;
+  const reviewPage = Number(Array.isArray(rawReviewPage) ? rawReviewPage[0] : rawReviewPage);
+  return (
+    <ProductPageContent
+      product={product}
+      selection={selection}
+      reviewPage={Number.isInteger(reviewPage) ? reviewPage : 1}
+      market="AU"
+      priceInclTaxCents={getMarketStartingPriceInclTaxCents(registry, "AU", product.key)}
+      taxRegistered={registry.markets.AU.tax.registered}
+    />
+  );
+}

@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { defaultProductRegistry, parseProductRegistry } from "@/domain/catalogue/product-registry";
-import { quoteMarketConfiguration } from "./market-quote";
+import {
+  getMarketStartingPriceInclTaxCents,
+  quoteMarketConfiguration,
+} from "./market-quote";
 
 function enabledAustraliaRegistry(registered: boolean) {
   const registry = structuredClone(defaultProductRegistry);
@@ -67,5 +70,20 @@ describe("market configuration quote", () => {
       "roll-up-banner",
       { sizeKey: "standard", peoplePets: 0 },
     )).toThrow("Australia market is disabled");
+  });
+
+  it("uses the market price book for storefront starting prices", () => {
+    const registry = enabledAustraliaRegistry(false);
+
+    expect(getMarketStartingPriceInclTaxCents(
+      registry,
+      "AU",
+      "roll-up-banner",
+    )).toBe(32_000);
+    expect(getMarketStartingPriceInclTaxCents(
+      registry,
+      "AU",
+      "digital-oil-painting-canvas",
+    )).toBe(46_000);
   });
 });

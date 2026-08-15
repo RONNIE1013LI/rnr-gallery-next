@@ -87,6 +87,8 @@ export default async function ConfigurePage({ params, searchParams }: ConfigureP
     product={product}
     schema={schema}
     pricing={registry.pricing}
+    registry={registry}
+    market="NZ"
     orderDate={getAucklandOrderDate()}
     selectedDesign={selectedDesign}
     relatedDesigns={relatedDesigns}

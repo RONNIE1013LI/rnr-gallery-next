@@ -3,7 +3,11 @@ import {
   type ProductConfiguratorRelatedDesign,
 } from "@/components/product-configurator";
 import styles from "@/components/storefront.module.css";
-import type { ProductRegistryPricing } from "@/domain/catalogue/product-registry";
+import type {
+  ProductRegistryDocument,
+  ProductRegistryPricing,
+} from "@/domain/catalogue/product-registry";
+import type { Market } from "@/domain/markets/types";
 import type { Product } from "@/domain/catalogue/types";
 import type { ProductConfigurationSchema } from "@/domain/configuration/types";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
@@ -12,6 +16,8 @@ export function ConfigurePageContent({
   product,
   schema,
   pricing,
+  registry,
+  market = "NZ",
   orderDate,
   selectedDesign,
   relatedDesigns,
@@ -19,6 +25,8 @@ export function ConfigurePageContent({
   product: Product;
   schema: ProductConfigurationSchema;
   pricing: ProductRegistryPricing;
+  registry?: ProductRegistryDocument;
+  market?: Market;
   orderDate: string;
   selectedDesign: GalleryDesignSelection | null;
   relatedDesigns: readonly ProductConfiguratorRelatedDesign[];
@@ -35,6 +43,8 @@ export function ConfigurePageContent({
         product={product}
         schema={schema}
         pricing={pricing}
+        registry={registry}
+        market={market}
         orderDate={orderDate}
         selectedDesign={selectedDesign}
         relatedDesigns={relatedDesigns}

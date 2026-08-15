@@ -6,6 +6,7 @@ import { useCallback, useMemo, useRef, useState } from "react";
 import type { Product } from "@/domain/catalogue/types";
 import {
   defaultProductRegistry,
+  type ProductRegistryDocument,
   type ProductRegistryPricing,
 } from "@/domain/catalogue/product-registry";
 import { createBrowserCartRepository } from "@/domain/cart/browser-cart-repository";
@@ -20,7 +21,10 @@ import type {
 import { MAX_SOURCE_PHOTOS_PER_ITEM } from "@/domain/configuration/types";
 import { quoteConfiguration } from "@/domain/configuration/quote";
 import { formatConfigurationSizeLabel } from "@/domain/configuration/size-label";
-import { addNzdGst, formatNzd } from "@/domain/money";
+import { addNzdGst, formatMarketMoney } from "@/domain/money";
+import { currencyForMarket } from "@/domain/markets/market";
+import type { Market } from "@/domain/markets/types";
+import { quoteMarketConfiguration } from "@/domain/pricing/market-quote";
 import { getPriceLineAmountInclGstCents } from "@/domain/pricing/types";
 import {
   MAX_CHECKOUT_TEXT_LENGTH,
@@ -50,6 +54,8 @@ type ProductConfiguratorProps = Readonly<{
   product: Product;
   schema: ProductConfigurationSchema;
   pricing?: ProductRegistryPricing;
+  registry?: ProductRegistryDocument;
+  market?: Market;
   orderDate: string;
   createId?: () => string;
   selectedDesign?: GalleryDesignSelection | null;
@@ -66,6 +72,8 @@ export function ProductConfigurator({
   product,
   schema,
   pricing = defaultProductRegistry.pricing,
+  registry,
+  market = "NZ",
   orderDate,
   createId = createClientId,
   selectedDesign = null,
@@ -125,54 +133,82 @@ export function ProductConfigurator({
     photoSubmissionMethod === "upload" ? extraBackgroundRemovalUploadIds : [];
   const previewImage = designInspiration?.imageUrl ?? product.image.src;
   const previewAlt = designInspiration?.altText ?? product.image.alt;
+  const currency = currencyForMarket(market);
+  const marketBook = registry?.markets[market];
+  const taxRegistered = market === "NZ" || marketBook?.tax.registered === true;
+  const taxSuffix = taxRegistered ? " incl GST" : "";
+  const urgentFees = useMemo(
+    () => marketBook
+      ? marketBook.urgentServiceFees.map((fee) => fee.amountInclTaxCents ?? 0)
+      : pricing.urgentServiceFeesInclGstCents,
+    [marketBook, pricing.urgentServiceFeesInclGstCents],
+  );
   const urgentService = useMemo(() => {
     try {
       return getUrgentService(
         orderDate,
         neededDate,
-        pricing.urgentServiceFeesInclGstCents,
+        urgentFees,
       );
     } catch {
       return null;
     }
-  }, [neededDate, orderDate, pricing.urgentServiceFeesInclGstCents]);
+  }, [neededDate, orderDate, urgentFees]);
   const sizeChoices = useMemo(
     () => schema.sizes.map((option) => ({
       key: option.key,
       label: formatConfigurationSizeLabel(option, orientation),
-      minimumPriceExGstCents: quoteConfiguration(
-        schema,
-        {
-          sizeKey: option.key,
-          peoplePets: schema.defaultPeoplePets,
-        },
-        { peoplePetsPricing: pricing },
-      ).subtotalExGstCents,
+      minimumPriceInclTaxCents: registry
+        ? quoteMarketConfiguration(registry, market, product.key, {
+            sizeKey: option.key,
+            peoplePets: schema.defaultPeoplePets,
+          }).totalInclGstCents
+        : addNzdGst(quoteConfiguration(
+            schema,
+            {
+              sizeKey: option.key,
+              peoplePets: schema.defaultPeoplePets,
+            },
+            { peoplePetsPricing: pricing },
+          ).subtotalExGstCents),
     })),
-    [orientation, pricing, schema],
+    [market, orientation, pricing, product.key, registry, schema],
   );
   const quote = useMemo(
-    () => quoteConfiguration(
-      schema,
-      {
-        sizeKey,
-        peoplePets,
-        sourcePhotoCount: uploadReferences.length,
-        extraBackgroundRemovalCount: activeBackgroundRemovalUploadIds.length,
-        urgentFeeInclGstCents: urgentServiceConfirmed
-          ? urgentService?.feeInclGstCents
-          : 0,
-      },
-      { peoplePetsPricing: pricing },
-    ),
+    () => registry
+      ? quoteMarketConfiguration(registry, market, product.key, {
+          sizeKey,
+          peoplePets,
+          sourcePhotoCount: uploadReferences.length,
+          extraBackgroundRemovalCount: activeBackgroundRemovalUploadIds.length,
+          urgentWorkingDays: urgentServiceConfirmed && urgentService?.requiresConfirmation
+            ? urgentService.workingDays
+            : undefined,
+        })
+      : quoteConfiguration(
+          schema,
+          {
+            sizeKey,
+            peoplePets,
+            sourcePhotoCount: uploadReferences.length,
+            extraBackgroundRemovalCount: activeBackgroundRemovalUploadIds.length,
+            urgentFeeInclGstCents: urgentServiceConfirmed
+              ? urgentService?.feeInclGstCents
+              : 0,
+          },
+          { peoplePetsPricing: pricing },
+        ),
     [
       peoplePets,
+      market,
       pricing,
+      product.key,
+      registry,
       activeBackgroundRemovalUploadIds.length,
       schema,
       sizeKey,
       uploadReferences.length,
-      urgentService?.feeInclGstCents,
+      urgentService,
       urgentServiceConfirmed,
     ],
   );
@@ -372,12 +408,18 @@ export function ProductConfigurator({
               <div key={line.key}>
                 <dt>{line.label}</dt>
                 <dd>
-                  {formatNzd(getPriceLineAmountInclGstCents(line))} incl GST
+                  {formatMarketMoney(getPriceLineAmountInclGstCents(line), currency)}{taxSuffix}
                 </dd>
               </div>
             ))}
-            <div><dt>Includes GST (15%)</dt><dd>{formatNzd(quote.gstCents)}</dd></div>
-            <div className={styles.priceTotal}><dt>Total incl GST</dt><dd>{formatNzd(quote.totalInclGstCents)}</dd></div>
+            <div>
+              <dt>{market === "NZ" ? "Includes GST (15%)" : taxRegistered ? "Includes Australian GST" : "Australian GST not charged"}</dt>
+              <dd>{formatMarketMoney(quote.gstCents, currency)}</dd>
+            </div>
+            <div className={styles.priceTotal}>
+              <dt>{taxRegistered ? "Total incl GST" : "Total"}</dt>
+              <dd>{formatMarketMoney(quote.totalInclGstCents, currency)}</dd>
+            </div>
           </dl>
           <PurchaseTrustStrip />
           <button
@@ -425,7 +467,7 @@ export function ProductConfigurator({
                 <legend>Size</legend>
                 <div className={styles.sizeOptions}>
                   {sizeChoices.map((option) => {
-                    const priceLabel = `From ${formatNzd(addNzdGst(option.minimumPriceExGstCents))} incl GST`;
+                  const priceLabel = `From ${formatMarketMoney(option.minimumPriceInclTaxCents, currency)}${taxSuffix}`;
                     return (
                       <label className={styles.sizeOption} key={option.key}>
                         <input
@@ -545,7 +587,7 @@ export function ProductConfigurator({
               </label>
               <p>{uploadedFiles.length > 0 ? "Files are ready. Choose a main photo or remove any file before adding to cart." : "Add clear original files. You can remove a file before adding to cart."}</p>
               <p>{schema.includedPhotos > 0 ? `Up to ${schema.includedPhotos} photos are included. Additional photos are charged from photo ${schema.includedPhotos + 1}.` : "Upload clear source photos. Source-photo count does not determine the price."}</p>
-              {supportsBackgroundRemoval && <p>Choose one main photo. Background removal for the main photo is included. Select “Remove background” on any additional photo for {formatNzd(schema.extraBackgroundRemovalFeeInclGstCents!)} incl GST each.</p>}
+              {supportsBackgroundRemoval && <p>Choose one main photo. Background removal for the main photo is included. Select “Remove background” on any additional photo for {formatMarketMoney(marketBook?.products.find((entry) => entry.productKey === product.key)?.charges.find((charge) => charge.key === "background-removal")?.amountInclTaxCents ?? schema.extraBackgroundRemovalFeeInclGstCents!, currency)}{taxSuffix} each.</p>}
               <p className={styles.uploadPrivacyNotice}>By uploading files, you confirm that you have permission to provide them. We use them to prepare and fulfil your order. Temporary uploads that are not attached to an order are normally deleted after seven days. <Link href="/privacy">Privacy Policy</Link></p>
               {uploadedFiles.length > 0 && <div className={styles.uploadPreviewGrid}>
                 {uploadedFiles.map((file, index) => {
@@ -570,7 +612,7 @@ export function ProductConfigurator({
                     <strong>Photo {index + 1}</strong>
                     {isMain ? <><span className={styles.mainPhotoBadge}>Main photo</span><span className={styles.backgroundIncluded}>Background removal included</span></> : supportsBackgroundRemoval ? <div className={styles.uploadPreviewActions}>
                       <button type="button" onClick={() => selectMainPhoto(file.id)}>Set as main</button>
-                      <button type="button" className={backgroundRemovalSelected ? styles.backgroundSelected : undefined} aria-pressed={backgroundRemovalSelected} onClick={() => toggleBackgroundRemoval(file.id)}><span>{backgroundRemovalSelected ? "Background removal ✓" : "Remove background"}</span><strong>+{formatNzd(schema.extraBackgroundRemovalFeeInclGstCents!)} incl GST</strong></button>
+                      <button type="button" className={backgroundRemovalSelected ? styles.backgroundSelected : undefined} aria-pressed={backgroundRemovalSelected} onClick={() => toggleBackgroundRemoval(file.id)}><span>{backgroundRemovalSelected ? "Background removal ✓" : "Remove background"}</span><strong>+{formatMarketMoney(marketBook?.products.find((entry) => entry.productKey === product.key)?.charges.find((charge) => charge.key === "background-removal")?.amountInclTaxCents ?? schema.extraBackgroundRemovalFeeInclGstCents!, currency)}{taxSuffix}</strong></button>
                     </div> : null}
                   </article>;
                 })}
@@ -578,7 +620,7 @@ export function ProductConfigurator({
               {supportsBackgroundRemoval && uploadedFiles.length > 0 && mainPhotoUploadId && <dl className={styles.backgroundRemovalSummary}>
                 <div><dt>Main photo</dt><dd>Photo {uploadedFiles.findIndex((file) => file.id === mainPhotoUploadId) + 1}</dd></div>
                 <div><dt>Extra background removals</dt><dd>{activeBackgroundRemovalUploadIds.length}</dd></div>
-                <div><dt>Background removal charge</dt><dd>{activeBackgroundRemovalUploadIds.length > 0 ? `${activeBackgroundRemovalUploadIds.length} × ${formatNzd(schema.extraBackgroundRemovalFeeInclGstCents!)} incl GST` : "None"}</dd></div>
+                <div><dt>Background removal charge</dt><dd>{activeBackgroundRemovalUploadIds.length > 0 ? `${activeBackgroundRemovalUploadIds.length} × ${formatMarketMoney(marketBook?.products.find((entry) => entry.productKey === product.key)?.charges.find((charge) => charge.key === "background-removal")?.amountInclTaxCents ?? schema.extraBackgroundRemovalFeeInclGstCents!, currency)}${taxSuffix}` : "None"}</dd></div>
               </dl>}
               {uploadError && <p className={styles.formError} role="alert">{uploadError}</p>}
             </div>
@@ -662,7 +704,7 @@ export function ProductConfigurator({
                 />
                 <span>
                   <strong>I need this order by the selected date and confirm urgent service.</strong>
-                  <small>{formatNzd(urgentService.feeInclGstCents)} incl GST</small>
+                  <small>{formatMarketMoney(urgentService.feeInclGstCents, currency)}{taxSuffix}</small>
                 </span>
               </label>
             )}
@@ -678,7 +720,7 @@ export function ProductConfigurator({
                   />
                   Post
                 </label>
-                <label>
+                {market === "NZ" ? <label>
                   <input
                     type="radio"
                     name="delivery-preference"
@@ -686,7 +728,7 @@ export function ProductConfigurator({
                     onChange={() => setDeliveryPreference("pickup")}
                   />
                   Pickup
-                </label>
+                </label> : null}
               </div>
               <p className={styles.deliveryScopeNote}>This choice applies to your whole order.</p>
             </fieldset>
@@ -711,7 +753,7 @@ export function ProductConfigurator({
             {relatedDesigns.map((design) => (
               <Link
                 className={styles.configureRelatedImageLink}
-                href={`/products/${design.productSlug}/configure?design=${design.id}`}
+                href={`${market === "AU" ? "/au" : ""}/products/${design.productSlug}/configure?design=${design.id}`}
                 key={design.id}
               >
                 <Image

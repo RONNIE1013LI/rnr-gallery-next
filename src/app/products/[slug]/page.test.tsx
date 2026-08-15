@@ -69,4 +69,29 @@ describe("ProductPageContent", () => {
     render(<ProductPageContent product={product} reviewPage={2} selection={null} />);
     expect(screen.getByText("Harris Nanoz")).toBeInTheDocument();
   });
+
+  it("keeps Australian product links, prices and structured data in AUD", () => {
+    const product = getProductBySlug("roll-up-banner")!;
+    const { container } = render(
+      <ProductPageContent
+        product={product}
+        selection={null}
+        market="AU"
+        priceInclTaxCents={32_000}
+      />,
+    );
+
+    expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Create your artwork" })).toHaveAttribute(
+      "href",
+      "/au/products/roll-up-banner/configure",
+    );
+    const data = JSON.parse(container.querySelector("#rnr-product-data")?.textContent ?? "{}");
+    expect(data.offers).toMatchObject({
+      price: "320.00",
+      priceCurrency: "AUD",
+      url: "https://rrgallery.co.nz/au/products/roll-up-banner",
+    });
+    expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
+  });
 });
