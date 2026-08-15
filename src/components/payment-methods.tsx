@@ -79,10 +79,15 @@ export function PaymentMethods({
         </span> : null}
       </label>)}
     </div>
-    {value === "card" ? <p className={styles.stripeTrustMessage}>
-      <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M6.5 8V6.5a3.5 3.5 0 0 1 7 0V8m-8 0h9a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" /></svg>
-      Secure payment powered by Stripe
-    </p> : null}
+    {value === "card" ? <>
+      <p className={styles.stripeTrustMessage}>
+        <svg aria-hidden="true" viewBox="0 0 20 20"><path d="M6.5 8V6.5a3.5 3.5 0 0 1 7 0V8m-8 0h9a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1h-9a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z" /></svg>
+        Secure payment powered by Stripe
+      </p>
+      <p className={styles.checkoutMessage}>
+        Card, Apple Pay and Google Pay are supported. Wallets appear only on eligible devices.
+      </p>
+    </> : null}
     {methods.some((option) => option.isTest) ? <p className={styles.paymentTestNotice}>No real payment will be taken.</p> : null}
   </fieldset>;
 }

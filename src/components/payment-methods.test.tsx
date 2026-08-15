@@ -30,12 +30,18 @@ describe("PaymentMethods", () => {
     expect(screen.getByText("No real payment will be taken.")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Accepted cards: Visa, Mastercard and American Express" })).toBeInTheDocument();
     expect(screen.getByText("Secure payment powered by Stripe")).toBeInTheDocument();
+    expect(screen.getByText(
+      "Card, Apple Pay and Google Pay are supported. Wallets appear only on eligible devices.",
+    )).toBeInTheDocument();
   });
 
   it("only shows Stripe card trust information when Card is selected", () => {
     render(<PaymentMethods methods={methods} value="afterpay" onChange={vi.fn()} />);
 
     expect(screen.queryByText("Secure payment powered by Stripe")).not.toBeInTheDocument();
+    expect(screen.queryByText(
+      "Card, Apple Pay and Google Pay are supported. Wallets appear only on eligible devices.",
+    )).not.toBeInTheDocument();
   });
 
   it("reports selection and has at least 44px interaction targets through the shared class", () => {
