@@ -9,8 +9,8 @@ Add a clear, trustworthy payment-logo strip to the existing site footer so custo
 - Show Visa, Mastercard, American Express, Apple Pay, Google Pay, and Afterpay.
 - Place the strip between the existing footer navigation grid and copyright row.
 - Render the existing bundled `react-icons` brand SVGs so the footer has no third-party runtime dependency.
-- Keep the existing dark-green footer and display each mark in a consistent light tile.
-- Keep all six marks readable in one centered row when space allows and wrap them cleanly on narrow screens.
+- Keep the existing dark-green footer and display each mark directly without a tile or border.
+- Keep all six marks in one centered row at every supported width, shrinking spacing and mark size on narrow screens while preserving extra width for Afterpay.
 - Give the section and each logo accessible names.
 
 ## Non-goals
@@ -23,4 +23,4 @@ Add a clear, trustworthy payment-logo strip to the existing site footer so custo
 
 - A component regression test must fail if any required brand is absent or if the payment strip moves outside its position between footer navigation and copyright.
 - Run the focused footer test, full test suite, typecheck, lint for changed files, and production build.
-- After deployment, verify all six assets and the responsive footer on the production site.
+- After deployment, verify all six marks, the single-row layout at 320px, and the responsive footer on the production site.

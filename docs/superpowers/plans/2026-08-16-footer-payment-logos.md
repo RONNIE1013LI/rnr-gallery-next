@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add a responsive, accessible footer strip containing Visa, Mastercard, American Express, Apple Pay, Google Pay, and Afterpay logos.
+**Goal:** Add a responsive, accessible, single-row footer strip containing Visa, Mastercard, American Express, Apple Pay, Google Pay, and Afterpay logos.
 
 **Architecture:** `SiteFooter` renders existing bundled brand SVG components as a labelled semantic section between navigation and legal content. `globals.css` normalizes tile size and responsive wrapping without changing checkout logic.
 
@@ -13,7 +13,7 @@
 - Display all six required brands: Visa, Mastercard, American Express, Apple Pay, Google Pay, and Afterpay.
 - Do not change payment-provider behavior, checkout pricing, or order logic.
 - Use the existing `react-icons` dependency; do not add a dependency or remote image request.
-- Preserve the existing footer structure and visual system.
+- Preserve the existing footer structure and visual system, with no background tile or visible heading around the marks.
 
 ---
 
@@ -57,7 +57,7 @@ Render the six-item list in `SiteFooter` between `.site-footer__grid` and `.site
 
 - [ ] **Step 4: Add responsive styling**
 
-Use a centered flex row on wide screens and an equal-width three-column grid on narrow screens. Normalize marks with a white tile, contained image sizing, and override the footer navigation list-item spacing rule for the logo list.
+Use a centered flex row at all widths. On narrow screens, shrink the marks and gaps proportionally, keep Afterpay wider than the card marks, and override the footer navigation list-item spacing rule for the logo list.
 
 - [ ] **Step 5: Run focused verification and confirm GREEN**
 
@@ -97,7 +97,7 @@ Check the production homepage and each `/media/payments/*.svg` URL for successfu
 
 - [ ] **Step 3: Verify mobile layout**
 
-At a narrow mobile viewport, confirm the six logo tiles wrap without horizontal overflow and remain above the copyright row.
+At 390px and 320px mobile viewports, confirm all six marks remain in one row without horizontal overflow or Afterpay clipping and remain above the copyright row.
 
 - [ ] **Step 4: Record deployment evidence**
 
