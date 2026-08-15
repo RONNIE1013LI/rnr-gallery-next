@@ -81,6 +81,24 @@ describe("HomepageV3", () => {
     );
   });
 
+  it("prioritises only the actual homepage LCP image", () => {
+    const { container } = render(<HomepageV3 registry={defaultProductRegistry} />);
+
+    const lcpImage = screen.getByRole("img", {
+      name: "Finished custom family artwork created by R&R Gallery",
+    });
+    expect(lcpImage).toHaveAttribute("fetchpriority", "high");
+    expect(lcpImage).not.toHaveAttribute("loading", "lazy");
+
+    const otherImages = Array.from(container.querySelectorAll("img"))
+      .filter((image) => image !== lcpImage);
+    expect(otherImages.length).toBeGreaterThan(0);
+    for (const image of otherImages) {
+      expect(image).toHaveAttribute("loading", "lazy");
+      expect(image).not.toHaveAttribute("fetchpriority", "high");
+    }
+  });
+
   it("merges product and helper paths into one discovery section", () => {
     const { container } = render(<HomepageV3 registry={defaultProductRegistry} />);
 
@@ -732,7 +750,7 @@ describe("HomepageV3", () => {
     expect(screen.getByText("Roll-up Banner", { selector: "figcaption" })).toBeInTheDocument();
   });
 
-  it("loads the two gallery artworks nearest the first viewport without waiting for lazy loading", () => {
+  it("keeps gallery artworks lazy so they do not compete with the homepage LCP image", () => {
     const landscape = galleryItem(
       "ed3f5c8db693d7f93782151c2362789d2bd31b0a39539e022ae5d39eaa1ef790",
       { altText: "Landscape canvas" },
@@ -753,8 +771,8 @@ describe("HomepageV3", () => {
     />);
 
     expect(screen.getByRole("img", { name: landscape.altText }))
-      .toHaveAttribute("loading", "eager");
+      .toHaveAttribute("loading", "lazy");
     expect(screen.getByRole("img", { name: portrait.altText }))
-      .toHaveAttribute("loading", "eager");
+      .toHaveAttribute("loading", "lazy");
   });
 });

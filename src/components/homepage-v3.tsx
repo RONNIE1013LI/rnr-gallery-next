@@ -28,6 +28,7 @@ type ArtworkProps = Readonly<{
   className?: string;
   sizes?: string;
   productRatio?: string;
+  preload?: boolean;
 }>;
 
 function Artwork({
@@ -41,6 +42,7 @@ function Artwork({
   className = "",
   sizes = "(max-width: 760px) 100vw, 40vw",
   productRatio,
+  preload = false,
 }: ArtworkProps) {
   const ratioClass = ratio === "three-four"
     ? styles.ratioThreeFour
@@ -70,7 +72,15 @@ function Artwork({
       data-product-ratio={productRatio}
     >
       {slot.src ? (
-        <Image src={slot.src} alt={slot.alt} fill sizes={sizes} />
+        <Image
+          src={slot.src}
+          alt={slot.alt}
+          fill
+          sizes={sizes}
+          preload={preload}
+          loading={preload ? undefined : "lazy"}
+          fetchPriority={preload ? "high" : undefined}
+        />
       ) : (
         <span className={styles.people} aria-hidden="true">
           {Array.from({ length: people }, (_, index) => <i key={index} />)}
@@ -116,9 +126,7 @@ function GalleryArtworkCard({
             width={item.width}
             height={item.height}
             sizes={sizes}
-            loading={slot === "canvas-landscape" || slot === "canvas-portrait"
-              ? "eager"
-              : "lazy"}
+            loading="lazy"
             unoptimized
           />
         </div>
@@ -241,6 +249,7 @@ export function HomepageV3({
                 label="FINISHED ARTWORK"
                 darkLabel
                 sizes="(max-width: 760px) 94vw, 35rem"
+                preload
               />
             </figure>
             <figure className={styles.printedCard}>
