@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
+import { getCheckoutSessionCookieName, hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import { PaymentServiceError } from "@/server/payments/payment-service";
 import { createOrderPaymentMethodsRoute, createOrderPaymentRoute } from "./route-handler";
 
@@ -16,7 +16,7 @@ function request(body: unknown, cookie = token, requestOrigin = origin) {
       "Content-Type": "application/json",
       Origin: requestOrigin,
       "Sec-Fetch-Site": requestOrigin === origin ? "same-origin" : "cross-site",
-      ...(cookie ? { Cookie: `rnr_checkout_session=${cookie}` } : {}),
+      ...(cookie ? { Cookie: `rnr_checkout_session_guest=${cookie}` } : {}),
     },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
@@ -172,7 +172,7 @@ describe("GET /api/orders/[orderNumber]/payment", () => {
     });
 
     const response = await handler(new Request(`${origin}/api/orders/${orderNumber}/payment`, {
-      headers: { Cookie: `rnr_checkout_session=${token}` },
+      headers: { Cookie: `rnr_checkout_session_guest=${token}` },
     }), context);
 
     expect(response.status).toBe(200);
@@ -194,7 +194,7 @@ describe("GET /api/orders/[orderNumber]/payment", () => {
       getOptionalSession: async () => ({ user: { id: "customer-a" } }),
     });
     expect((await owner(new Request(`${origin}/api/orders/${orderNumber}/payment`, {
-      headers: { Cookie: `rnr_checkout_session=${token}` },
+      headers: { Cookie: `${getCheckoutSessionCookieName("customer-a")}=${token}` },
     }), context)).status).toBe(200);
     expect(availableMethodsForOrder).toHaveBeenNthCalledWith(2, {
       kind: "guest", orderNumber, tokenDigest: hashCheckoutSessionToken(token),

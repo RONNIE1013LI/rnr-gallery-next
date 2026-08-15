@@ -111,16 +111,17 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
     try {
       assertTrustedMutationRequest(request, deps.trustedOrigin);
       const input = inputSchema.parse(await parseBoundedJson(request));
-      const rawToken = readCheckoutSessionToken(request);
+      const authenticated = await deps.getOptionalSession(request.headers);
+      const customerId = authenticated?.user.id ?? null;
+      const rawToken = readCheckoutSessionToken(request, customerId);
       if (!rawToken) throw new CheckoutAccessError(401);
 
-      const authenticated = await deps.getOptionalSession(request.headers);
       const session = await deps.repository.findSessionByTokenDigest(
         hashCheckoutSessionToken(rawToken),
         deps.now?.() ?? new Date(),
       );
       if (!session) throw new CheckoutAccessError(401);
-      if (session.customerId && session.customerId !== authenticated?.user.id) {
+      if (session.customerId !== customerId) {
         throw new CheckoutAccessError(authenticated ? 403 : 401);
       }
 

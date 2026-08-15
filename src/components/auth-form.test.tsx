@@ -10,8 +10,8 @@ vi.mock("next/navigation", () => ({
 
 function createClient(overrides: Partial<AuthClient> = {}): AuthClient {
   return {
-    signIn: { email: vi.fn().mockResolvedValue({ error: null }) },
-    signUp: { email: vi.fn().mockResolvedValue({ error: null }) },
+    signIn: { email: vi.fn().mockResolvedValue({ error: null, data: { user: { id: "customer-a" } } }) },
+    signUp: { email: vi.fn().mockResolvedValue({ error: null, data: { user: { id: "customer-a" } } }) },
     ...overrides,
   };
 }

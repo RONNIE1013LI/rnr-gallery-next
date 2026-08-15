@@ -68,7 +68,7 @@ describe("StripePaymentForm", () => {
     expect(paymentElement.options).toEqual({
       wallets: { applePay: "auto", googlePay: "auto" },
     });
-    expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull();
+    expect(window.sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent")).toBeNull();
   });
 
   it("does not submit Stripe while the card details are empty", () => {

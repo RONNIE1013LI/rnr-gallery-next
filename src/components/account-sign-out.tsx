@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { authClient } from "@/lib/auth-client";
+import { useCommerceIdentity } from "./commerce-identity-provider";
 import styles from "./storefront.module.css";
 
 type SignOutResult = {
@@ -24,6 +25,7 @@ export function AccountSignOut({
   client = authClient,
 }: AccountSignOutProps) {
   const router = useRouter();
+  const { signOutToGuest } = useCommerceIdentity();
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -38,6 +40,7 @@ export function AccountSignOut({
         return;
       }
 
+      signOutToGuest();
       router.replace("/account/sign-in");
     } catch {
       setError(fallbackError);

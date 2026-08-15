@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { SiteChrome } from "@/components/site-chrome";
 import { getSafePublicContent } from "@/server/admin/admin-content-runtime";
 import { getSiteUrl } from "@/server/seo/site-url";
+import { getOptionalSession } from "@/server/auth/get-optional-session";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -48,10 +49,13 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const managed = await getSafePublicContent([
-    "footer.tagline",
-    "contact.email",
-    "contact.phone",
+  const [managed, session] = await Promise.all([
+    getSafePublicContent([
+      "footer.tagline",
+      "contact.email",
+      "contact.phone",
+    ]),
+    getOptionalSession(),
   ]);
 
   return (
@@ -59,6 +63,7 @@ export default async function RootLayout({
       <body>
         <a className="skip-link" href="#main-content">Skip to content</a>
         <SiteChrome
+          initialCustomerId={session?.user.id ?? null}
           footerContent={{
             tagline: managed["footer.tagline"],
             email: managed["contact.email"],

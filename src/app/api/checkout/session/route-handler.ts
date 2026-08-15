@@ -95,10 +95,11 @@ export function createCheckoutSessionRoute(dependencies?: Dependencies) {
       assertTrustedMutationRequest(request, deps.trustedOrigin);
       const input = await parseBoundedJson(request);
       const authenticated = await deps.getOptionalSession(request.headers);
+      const customerId = authenticated?.user.id ?? null;
       const checkout = await ensureCheckoutSession({
         repository: deps.repository,
-        rawToken: readCheckoutSessionToken(request),
-        customerId: authenticated?.user.id ?? null,
+        rawToken: readCheckoutSessionToken(request, customerId),
+        customerId,
         now: deps.now?.() ?? new Date(),
         createToken: deps.createToken ?? createCheckoutSessionToken,
       });
@@ -119,7 +120,7 @@ export function createCheckoutSessionRoute(dependencies?: Dependencies) {
       if (checkout.cookieToken) {
         response.headers.append(
           "Set-Cookie",
-          serializeCookie(sessionCookie(checkout.cookieToken, deps.environment)),
+          serializeCookie(sessionCookie(checkout.cookieToken, deps.environment, customerId)),
         );
       }
       return response;

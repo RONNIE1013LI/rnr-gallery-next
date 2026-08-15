@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { useId, useState } from "react";
 import { authClient } from "@/lib/auth-client";
 import { safeAuthReturnPath } from "@/server/auth/safe-return-path";
+import { useCommerceIdentity } from "./commerce-identity-provider";
 import styles from "./storefront.module.css";
 
 type AuthResult = {
   error: { message?: string } | null;
+  data?: unknown;
 };
 
 type SignInInput = {
@@ -39,6 +41,7 @@ export function AuthForm({
   showAccountSwitch = true,
 }: AuthFormProps) {
   const router = useRouter();
+  const { activateUser } = useCommerceIdentity();
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
@@ -97,6 +100,13 @@ export function AuthForm({
         return;
       }
 
+      const data = response.data as { user?: { id?: unknown } } | undefined;
+      if (typeof data?.user?.id !== "string" || !data.user.id.trim()) {
+        setError("Your account was authenticated, but its customer ID was unavailable. Please try again.");
+        return;
+      }
+
+      activateUser(data.user.id);
       router.replace(destination);
     } catch {
       setError("We could not complete your request. Please try again.");

@@ -147,7 +147,7 @@ describe("site shell", () => {
 
   it("shows the persisted cart quantity", () => {
     localStorage.setItem(
-      "rnr-cart-v1",
+      "rnr:commerce:v1:guest:cart",
       JSON.stringify({
         version: 1,
         items: [{

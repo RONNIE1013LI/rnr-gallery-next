@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import type { CheckoutStateRepository } from "@/server/checkout/checkout-repository";
-import { hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
+import { getCheckoutSessionCookieName, hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import { ShippingUnavailableError } from "@/server/shipping/shipping-service";
 import { createCheckoutShippingRoute } from "./route-handler";
 
@@ -8,14 +8,14 @@ const origin = "https://shop.example.test";
 const token = "a".repeat(43);
 const sessionId = "10000000-0000-4000-8000-000000000001";
 
-function request(cookie = token, requestOrigin = origin) {
+function request(cookie = token, requestOrigin = origin, customerId: string | null = null) {
   return new Request(`${origin}/api/checkout/shipping`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Origin: requestOrigin,
       "Sec-Fetch-Site": requestOrigin === origin ? "same-origin" : "cross-site",
-      ...(cookie ? { Cookie: `rnr_checkout_session=${cookie}` } : {}),
+      ...(cookie ? { Cookie: `${getCheckoutSessionCookieName(customerId)}=${cookie}` } : {}),
     },
     body: "{}",
   });
@@ -88,7 +88,7 @@ describe("POST /api/checkout/shipping", () => {
       getOptionalSession: async () => ({ user: { id: "customer-b" } }),
       trustedOrigin: origin,
     });
-    expect((await foreign(request())).status).toBe(403);
+    expect((await foreign(request(token, origin, "customer-b"))).status).toBe(403);
     expect(service.quoteShipping).not.toHaveBeenCalled();
   });
 

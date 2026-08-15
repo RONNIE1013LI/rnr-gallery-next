@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   CHECKOUT_SESSION_COOKIE_NAME,
   createCheckoutSessionToken,
+  getCheckoutSessionCookieName,
   hashCheckoutSessionToken,
   isCheckoutSessionToken,
   sessionCookie,
@@ -30,6 +31,14 @@ describe("checkout session cookie", () => {
       secure: false,
       maxAge: 60 * 60 * 24 * 30,
     });
+  });
+
+  it("uses a different opaque cookie name for Guest, User A, and User B", () => {
+    const guest = getCheckoutSessionCookieName(null);
+    const userA = getCheckoutSessionCookieName("customer-a");
+    const userB = getCheckoutSessionCookieName("customer-b");
+    expect(new Set([guest, userA, userB]).size).toBe(3);
+    expect(userA).not.toContain("customer-a");
   });
 
   it("marks the cookie Secure in production", () => {

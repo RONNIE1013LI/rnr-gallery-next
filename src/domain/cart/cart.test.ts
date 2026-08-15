@@ -86,9 +86,9 @@ describe("guest cart", () => {
     repository.save(addCartItem(emptyCart(), item({ galleryDesignId: "a".repeat(64) })));
     expect(repository.load().items[0].galleryDesignId).toBe("a".repeat(64));
 
-    const malformed = JSON.parse(storage.getItem("rnr-cart-v1")!);
+    const malformed = JSON.parse(storage.getItem("rnr:commerce:v1:guest:cart")!);
     malformed.items[0].galleryDesignId = "../../not-a-design";
-    storage.setItem("rnr-cart-v1", JSON.stringify(malformed));
+    storage.setItem("rnr:commerce:v1:guest:cart", JSON.stringify(malformed));
 
     expect(repository.load().items).toHaveLength(1);
     expect(repository.load().items[0]).not.toHaveProperty("galleryDesignId");
@@ -115,7 +115,7 @@ describe("guest cart", () => {
     "fails closed for invalid stored data: %s",
     (value) => {
       const storage = new MemoryStorage();
-      storage.setItem("rnr-cart-v1", value);
+      storage.setItem("rnr:commerce:v1:guest:cart", value);
       expect(createBrowserCartRepository(storage).load()).toEqual(emptyCart());
     },
   );

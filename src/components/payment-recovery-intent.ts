@@ -1,7 +1,12 @@
 import type { PublicShippingDTO } from "@/server/checkout/public-dto";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
+import {
+  getActivePaymentIntentStorageKey,
+  getPaymentIntentStorageKey,
+} from "@/domain/cart/browser-cart-scope";
 
-export const PAYMENT_INTENT_STORAGE_KEY = "rnr-checkout-payment-intent-v1";
+export const LEGACY_PAYMENT_INTENT_STORAGE_KEY = "rnr-checkout-payment-intent-v1";
+export const PAYMENT_INTENT_STORAGE_KEY = getPaymentIntentStorageKey(null);
 
 type ShippingAuthority = Pick<
   PublicShippingDTO["option"],
@@ -120,8 +125,9 @@ export function parsePaymentRecoveryIntent(raw: string | null): PaymentRecoveryI
 }
 
 export function readPaymentRecoveryIntent(storage: Pick<Storage, "getItem" | "removeItem">) {
-  const raw = storage.getItem(PAYMENT_INTENT_STORAGE_KEY);
+  const storageKey = getActivePaymentIntentStorageKey();
+  const raw = storage.getItem(storageKey);
   const intent = parsePaymentRecoveryIntent(raw);
-  if (raw && !intent) storage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+  if (raw && !intent) storage.removeItem(storageKey);
   return intent;
 }

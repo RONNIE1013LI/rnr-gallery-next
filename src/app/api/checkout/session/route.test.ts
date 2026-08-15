@@ -92,7 +92,7 @@ describe("POST /api/checkout/session", () => {
       /server-secret-digest|private-customer-id|private-quote-id|expiresAt|\"id\"/,
     );
     expect(service.updateSession).toHaveBeenCalledWith(sessionId, input);
-    expect(response.headers.get("Set-Cookie")).toContain("rnr_checkout_session=new-token");
+    expect(response.headers.get("Set-Cookie")).toContain("rnr_checkout_session_guest=new-token");
   });
 
   it("rejects invalid JSON and cross-site requests before creating a session", async () => {

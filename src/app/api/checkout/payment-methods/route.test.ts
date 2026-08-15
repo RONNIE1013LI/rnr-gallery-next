@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
+import { getCheckoutSessionCookieName, hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import type { CheckoutStateRepository } from "@/server/checkout/checkout-repository";
 import { createCheckoutPaymentMethodsRoute } from "./route-handler";
 
@@ -8,14 +8,14 @@ const token = "a".repeat(43);
 const sessionId = "10000000-0000-4000-8000-000000000001";
 const validBody = { checkoutVersion: 4, cartDigest: "b".repeat(64) };
 
-function request(body: unknown, cookie = token, requestOrigin = origin) {
+function request(body: unknown, cookie = token, requestOrigin = origin, customerId: string | null = null) {
   return new Request(`${origin}/api/checkout/payment-methods`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Origin: requestOrigin,
       "Sec-Fetch-Site": requestOrigin === origin ? "same-origin" : "cross-site",
-      ...(cookie ? { Cookie: `rnr_checkout_session=${cookie}` } : {}),
+      ...(cookie ? { Cookie: `${getCheckoutSessionCookieName(customerId)}=${cookie}` } : {}),
     },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
@@ -101,14 +101,14 @@ describe("POST /api/checkout/payment-methods", () => {
       getOptionalSession: async () => ({ user: { id: "customer-b" } }),
       trustedOrigin: origin,
     });
-    expect((await foreign(request(validBody))).status).toBe(403);
+    expect((await foreign(request(validBody, token, origin, "customer-b"))).status).toBe(403);
 
     const owner = createCheckoutPaymentMethodsRoute({
       repository: repository("customer-a"), paymentService,
       getOptionalSession: async () => ({ user: { id: "customer-a" } }),
       trustedOrigin: origin,
     });
-    expect((await owner(request(validBody))).status).toBe(200);
+    expect((await owner(request(validBody, token, origin, "customer-a"))).status).toBe(200);
   });
 
   it("rejects cross-site requests before repository access", async () => {

@@ -172,7 +172,7 @@ export function createOrderPaymentRoute(dependencies?: Dependencies) {
       const input = inputSchema.parse(await parseBoundedJson(request));
       const { orderNumber } = await context.params;
       const authenticated = await deps.getOptionalSession(request.headers);
-      const rawToken = readCheckoutSessionToken(request);
+      const rawToken = readCheckoutSessionToken(request, authenticated?.user.id ?? null);
       const accesses = paymentAccesses(orderNumber, authenticated, rawToken);
       if (accesses.length === 0) {
         throw new PaymentServiceError("ORDER_NOT_FOUND", "Order is unavailable");
@@ -220,7 +220,7 @@ export function createOrderPaymentMethodsRoute(dependencies?: PaymentMethodDepen
       const accesses = paymentAccesses(
         orderNumber,
         authenticated,
-        readCheckoutSessionToken(request),
+        readCheckoutSessionToken(request, authenticated?.user.id ?? null),
       );
       if (accesses.length === 0) {
         throw new PaymentServiceError("ORDER_NOT_FOUND", "Order is unavailable");

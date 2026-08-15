@@ -1,6 +1,6 @@
 import { cookies } from "next/headers";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
-import { CHECKOUT_SESSION_COOKIE_NAME } from "@/server/checkout/session-cookie";
+import { getCheckoutSessionCookieName } from "@/server/checkout/session-cookie";
 import { resolveCustomerProofAccess } from "./customer-proof-access";
 
 function integer(value: string | null | undefined) {
@@ -16,12 +16,13 @@ export async function resolveCustomerProofRequestAccess(input: Readonly<{
   signature?: string | null;
 }>) {
   const [session, cookieStore] = await Promise.all([getOptionalSession(), cookies()]);
+  const customerId = session?.user.id ?? null;
   return resolveCustomerProofAccess({
     orderNumber: input.orderNumber,
     fileId: input.fileId,
     expires: integer(input.expires),
     signature: input.signature,
-    userId: session?.user.id ?? null,
-    checkoutToken: cookieStore.get(CHECKOUT_SESSION_COOKIE_NAME)?.value ?? null,
+    userId: customerId,
+    checkoutToken: cookieStore.get(getCheckoutSessionCookieName(customerId))?.value ?? null,
   }, process.env.BETTER_AUTH_SECRET ?? "");
 }

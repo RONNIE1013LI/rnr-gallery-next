@@ -4,7 +4,7 @@ import {
   OrderConflictError,
   OrderStateChangedError,
 } from "@/server/orders/order-service";
-import { hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
+import { getCheckoutSessionCookieName, hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import { ShippingUnavailableError } from "@/server/shipping/shipping-service";
 import { createCheckoutOrderRoute } from "./route-handler";
 
@@ -14,14 +14,14 @@ const sessionId = "10000000-0000-4000-8000-000000000001";
 const key = "20000000-0000-4000-8000-000000000001";
 const validBody = { idempotencyKey: key, checkoutVersion: 2, cartDigest: "a".repeat(64), shipping: { method: "pickup", serviceCode: "pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, isTest: false } } as const;
 
-function request(body: unknown, cookie = token, requestOrigin = origin) {
+function request(body: unknown, cookie = token, requestOrigin = origin, customerId: string | null = null) {
   return new Request(`${origin}/api/checkout/order`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Origin: requestOrigin,
       "Sec-Fetch-Site": requestOrigin === origin ? "same-origin" : "cross-site",
-      ...(cookie ? { Cookie: `rnr_checkout_session=${cookie}` } : {}),
+      ...(cookie ? { Cookie: `${getCheckoutSessionCookieName(customerId)}=${cookie}` } : {}),
     },
     body: typeof body === "string" ? body : JSON.stringify(body),
   });
@@ -59,7 +59,7 @@ describe("POST /api/checkout/order", () => {
     const handler = createCheckoutOrderRoute({
       repository: repo,
       orderService: service,
-      getOptionalSession: async () => ({ user: { id: "signed-in-later" } }),
+      getOptionalSession: async () => null,
       trustedOrigin: origin,
       now: () => new Date("2026-08-02T12:00:00.000Z"),
     });
@@ -102,7 +102,7 @@ describe("POST /api/checkout/order", () => {
       getOptionalSession: async () => ({ user: { id: "customer-b" } }),
       trustedOrigin: origin,
     });
-    expect((await foreign(request(validBody))).status).toBe(403);
+    expect((await foreign(request(validBody, token, origin, "customer-b"))).status).toBe(403);
     expect(service.createOrder).not.toHaveBeenCalled();
   });
 
@@ -117,8 +117,8 @@ describe("POST /api/checkout/order", () => {
       getOptionalSession: async () => ({ user: { id: "customer-a" } }),
       trustedOrigin: origin,
     });
-    expect((await handler(request(validBody))).status).toBe(200);
-    const tampered = await handler(request({ ...validBody, totalInclGstCents: 1 }));
+    expect((await handler(request(validBody, token, origin, "customer-a"))).status).toBe(200);
+    const tampered = await handler(request({ ...validBody, totalInclGstCents: 1 }, token, origin, "customer-a"));
     expect(tampered.status).toBe(400);
   });
 

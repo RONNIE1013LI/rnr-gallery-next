@@ -74,21 +74,21 @@ describe("ensureCheckoutSession", () => {
     expect(repo.createSession).not.toHaveBeenCalled();
   });
 
-  it("keeps a guest checkout guest when the browser later signs in", async () => {
+  it("rotates a guest checkout when the browser later signs in", async () => {
     const existing = session();
     const repo = repository({
       findActiveSessionByTokenDigest: vi.fn().mockResolvedValue(existing),
     });
 
-    await expect(
-      ensureCheckoutSession({
-        repository: repo,
-        rawToken: "existing-token",
-        customerId: "customer-a",
-        now,
-      }),
-    ).resolves.toEqual({ session: existing, cookieToken: null, created: false });
-    expect(repo.createSession).not.toHaveBeenCalled();
+    const result = await ensureCheckoutSession({
+      repository: repo,
+      rawToken: "existing-token",
+      customerId: "customer-a",
+      now,
+      createToken: () => "replacement-token",
+    });
+    expect(result).toMatchObject({ cookieToken: "replacement-token", created: true });
+    expect(repo.createSession).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-a" }));
   });
 
   it.each([

@@ -7,8 +7,8 @@ import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import type { PaymentActionDTO, PublicPaymentDTO } from "@/server/payments/public-dto";
 import { createClientId } from "@/lib/client-id";
 import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
+import { getActivePaymentIntentStorageKey } from "@/domain/cart/browser-cart-scope";
 import {
-  PAYMENT_INTENT_STORAGE_KEY,
   readPaymentRecoveryIntent,
   type CheckoutStartingPaymentIntent,
   type DirectStartingPaymentIntent,
@@ -165,7 +165,7 @@ function storedStartingAttempt(orderNumber: string): StoredStartingAttempt | nul
 }
 
 function clearStoredStartingAttempt(orderNumber: string) {
-  if (storedStartingAttempt(orderNumber)) window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+  if (storedStartingAttempt(orderNumber)) window.sessionStorage.removeItem(getActivePaymentIntentStorageKey());
 }
 
 function persistStartingAttempt(
@@ -177,7 +177,7 @@ function persistStartingAttempt(
   const intent: CheckoutStartingPaymentIntent | DirectStartingPaymentIntent = existing && "orderIdempotencyKey" in existing
     ? { ...existing, method, paymentIdempotencyKey }
     : { schemaVersion: 1, phase: "starting_payment", orderNumber, method, paymentIdempotencyKey };
-  window.sessionStorage.setItem(PAYMENT_INTENT_STORAGE_KEY, JSON.stringify(intent));
+  window.sessionStorage.setItem(getActivePaymentIntentStorageKey(), JSON.stringify(intent));
   const pending = readPendingCheckout(window.localStorage);
   if (
     pending?.intent.phase === "starting_payment" &&
@@ -306,7 +306,7 @@ function OrderPaymentPanelState({
     if (paymentStatus === "awaiting_payment" || paymentStatus === "processing") return;
     if (paymentStatus === "paid" || paymentStatus === "refunded") {
       if (completePendingCheckout(window.localStorage, orderNumber)) notifyCartChanged();
-      window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+      window.sessionStorage.removeItem(getActivePaymentIntentStorageKey());
     } else {
       clearStoredStartingAttempt(orderNumber);
     }
@@ -369,7 +369,7 @@ function OrderPaymentPanelState({
       if (["paid", "failed", "cancelled", "refunded"].includes(result.payment.status)) {
         if (result.payment.status === "paid" || result.payment.status === "refunded") {
           if (completePendingCheckout(window.localStorage, orderNumber)) notifyCartChanged();
-          window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+          window.sessionStorage.removeItem(getActivePaymentIntentStorageKey());
         } else {
           clearStoredStartingAttempt(orderNumber);
         }
@@ -427,7 +427,7 @@ function OrderPaymentPanelState({
         if (status === "processing") return;
         if (status === "paid") {
           if (completePendingCheckout(window.localStorage, orderNumber)) notifyCartChanged();
-          window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+          window.sessionStorage.removeItem(getActivePaymentIntentStorageKey());
         } else {
           clearStoredStartingAttempt(orderNumber);
         }

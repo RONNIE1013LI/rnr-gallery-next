@@ -85,7 +85,7 @@ describe("ProductConfigurator", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
 
     expect(within(delivery).getByRole("radio", { name: "Pickup" })).toBeChecked();
-    expect(JSON.parse(localStorage.getItem("rnr-cart-v1")!).items[0]).toMatchObject({
+    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0]).toMatchObject({
       id: "pickup-item",
       deliveryPreference: "pickup",
     });
@@ -117,7 +117,7 @@ describe("ProductConfigurator", () => {
     fireEvent.click(screen.getByText("Send after ordering"));
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
 
-    const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
+    const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
     expect(stored.items).toHaveLength(2);
     expect(stored.items.every((item: { deliveryPreference: string }) => item.deliveryPreference === "pickup")).toBe(true);
   });
@@ -347,7 +347,7 @@ describe("ProductConfigurator", () => {
 
     fireEvent.click(screen.getByText("Send after ordering"));
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
-    const storedItem = JSON.parse(localStorage.getItem("rnr-cart-v1")!).items[0];
+    const storedItem = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0];
     expect(storedItem).toMatchObject({
       productKey: "grave-cover",
       sizeKey: "standard",
@@ -379,7 +379,7 @@ describe("ProductConfigurator", () => {
     fireEvent.click(screen.getByText("Send after ordering"));
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
 
-    const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
+    const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
     expect(stored.items).toHaveLength(1);
     expect(stored.items[0]).toMatchObject({
       id: "configured-item",
@@ -445,7 +445,7 @@ describe("ProductConfigurator", () => {
 
     expect(await screen.findByText("Photo 1")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
-    const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
+    const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
     expect(stored.items[0].uploadReferences).toEqual(["private-reference"]);
   });
 
@@ -568,7 +568,7 @@ describe("ProductConfigurator", () => {
     expect(within(orderSummary).getByText("$170.75")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add to cart" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
-    const stored = JSON.parse(localStorage.getItem("rnr-cart-v1")!);
+    const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
     expect(stored.items[0]).toMatchObject({
       urgentServiceConfirmed: true,
       urgentFeeInclGstCents: 5_000,
@@ -637,7 +637,7 @@ describe("ProductConfigurator", () => {
     fireEvent.click(screen.getByText("Send after ordering"));
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
 
-    expect(JSON.parse(localStorage.getItem("rnr-cart-v1")!).items[0]).toMatchObject({
+    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0]).toMatchObject({
       galleryDesignId: designId,
       price: { totalInclGstCents: 12_075 },
     });

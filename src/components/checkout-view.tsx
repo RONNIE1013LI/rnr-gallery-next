@@ -7,7 +7,14 @@ import type { AddressInput } from "@/domain/address/types";
 import { ADDRESS_FIELD_LIMITS, addressInputSchema } from "@/domain/address/schema";
 import { createBrowserCartRepository, parseStoredCart } from "@/domain/cart/browser-cart-repository";
 import { EMPTY_CART_JSON, getCartSnapshot, notifyCartChanged, subscribeToCart } from "@/domain/cart/browser-cart-events";
-import { CART_STORAGE_KEY, type Cart } from "@/domain/cart/types";
+import {
+  getActiveCartStorageKey,
+  getActiveCheckoutDraftStorageKey,
+  getActiveCheckoutIntentCartBackupKey,
+  getActiveCustomerId,
+  getActivePaymentIntentStorageKey,
+} from "@/domain/cart/browser-cart-scope";
+import { type Cart } from "@/domain/cart/types";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { PublicShippingDTO } from "@/server/checkout/public-dto";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
@@ -19,7 +26,6 @@ import { followPaymentAction, PaymentStartError, startOrderPayment } from "./ord
 import { PaymentMethods, type PaymentMethodOption } from "./payment-methods";
 import { StripePaymentForm } from "./stripe-payment-form";
 import {
-  PAYMENT_INTENT_STORAGE_KEY,
   readPaymentRecoveryIntent,
   type CheckoutStartingPaymentIntent,
   type PlacingOrderIntent,
@@ -37,8 +43,6 @@ export type CheckoutSavedAddress = AddressInput & { id: string };
 const emptyAddress: AddressInput = { country: "NZ", fullName: "", building: "", street: "", suburb: "", region: "", postcode: "", phone: "", email: "" };
 const LEGACY_IDEMPOTENCY_STORAGE_KEY = "rnr-checkout-order-idempotency-v1";
 const LEGACY_PLACEMENT_STORAGE_KEY = "rnr-checkout-pending-placement-v1";
-const CHECKOUT_DRAFT_STORAGE_KEY = "rnr-checkout-draft-v1";
-const CHECKOUT_INTENT_CART_BACKUP_KEY = "rnr-checkout-payment-intent-cart-v1";
 type CheckoutPaymentIntent = PlacingOrderIntent | CheckoutStartingPaymentIntent;
 type CheckoutDraft = Readonly<{
   schemaVersion: 1;
@@ -60,7 +64,7 @@ function checkoutIntentKey(intent: CheckoutPaymentIntent) {
 function readCheckoutIntentCart(storage: Pick<Storage, "getItem">, intent: CheckoutPaymentIntent | null) {
   if (!intent) return null;
   try {
-    const value = JSON.parse(storage.getItem(CHECKOUT_INTENT_CART_BACKUP_KEY) ?? "null") as unknown;
+    const value = JSON.parse(storage.getItem(getActiveCheckoutIntentCartBackupKey()) ?? "null") as unknown;
     if (!value || typeof value !== "object" || Array.isArray(value)) return null;
     const entry = value as Partial<CheckoutIntentCartBackup>;
     if (entry.schemaVersion !== 1 || entry.intentKey !== checkoutIntentKey(intent)) return null;
@@ -73,7 +77,7 @@ function readCheckoutIntentCart(storage: Pick<Storage, "getItem">, intent: Check
 }
 
 function clearCheckoutIntentCartBackup(storage: Pick<Storage, "removeItem">) {
-  storage.removeItem(CHECKOUT_INTENT_CART_BACKUP_KEY);
+  storage.removeItem(getActiveCheckoutIntentCartBackupKey());
 }
 
 function setCheckoutIntentCartBackup(storage: Pick<Storage, "setItem">, intent: CheckoutPaymentIntent, cart: Cart) {
@@ -83,7 +87,7 @@ function setCheckoutIntentCartBackup(storage: Pick<Storage, "setItem">, intent: 
     intentKey: checkoutIntentKey(intent),
     cart,
   };
-  storage.setItem(CHECKOUT_INTENT_CART_BACKUP_KEY, JSON.stringify(entry));
+  storage.setItem(getActiveCheckoutIntentCartBackupKey(), JSON.stringify(entry));
 }
 
 const recoveryRequests = new Map<string, Promise<unknown>>();
@@ -120,7 +124,7 @@ function isDraftAddress(value: unknown): value is AddressInput {
 
 function readCheckoutDraft(storage: Storage, cartSnapshot: string): CheckoutDraft | null {
   try {
-    const value = JSON.parse(storage.getItem(CHECKOUT_DRAFT_STORAGE_KEY) ?? "null") as Partial<CheckoutDraft> | null;
+    const value = JSON.parse(storage.getItem(getActiveCheckoutDraftStorageKey()) ?? "null") as Partial<CheckoutDraft> | null;
     if (!value || value.schemaVersion !== 1 || value.cartSnapshot !== cartSnapshot) return null;
     if (!isDraftAddress(value.billing) || !isDraftAddress(value.delivery)) return null;
     if (typeof value.different !== "boolean") return null;
@@ -151,10 +155,11 @@ async function postJson(url: string, body: unknown) {
 }
 
 function recoverRequest<T>(key: string, request: () => Promise<T>) {
-  const existing = recoveryRequests.get(key);
+  const scopedKey = `${getActiveCustomerId() ?? "guest"}:${key}`;
+  const existing = recoveryRequests.get(scopedKey);
   if (existing) return existing as Promise<T>;
-  const pending = request().finally(() => recoveryRequests.delete(key));
-  recoveryRequests.set(key, pending);
+  const pending = request().finally(() => recoveryRequests.delete(scopedKey));
+  recoveryRequests.set(scopedKey, pending);
   return pending;
 }
 
@@ -211,13 +216,13 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   const hasPaymentAuthority = Boolean(isReviewed && paymentReviewKey === currentKey);
   const checkoutLocked = Boolean(!recoveryChecked || !draftChecked || pending || paymentIntent);
   const hasPersistedPaymentIntent = typeof window !== "undefined"
-    ? window.sessionStorage.getItem(PAYMENT_INTENT_STORAGE_KEY) !== null
+    ? window.sessionStorage.getItem(getActivePaymentIntentStorageKey()) !== null
     : false;
 
   const rememberPlacedCart = useCallback((intent: CheckoutStartingPaymentIntent, orderedCart: Cart) => {
     setCheckoutIntentCartBackup(window.sessionStorage, intent, orderedCart);
     savePendingCheckout(window.localStorage, intent, orderedCart);
-    window.sessionStorage.removeItem(CHECKOUT_DRAFT_STORAGE_KEY);
+    window.sessionStorage.removeItem(getActiveCheckoutDraftStorageKey());
   }, []);
 
   const restoreCart = useCallback((cartToRestore: Cart) => {
@@ -228,7 +233,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   }, []);
 
   const restoreCartIfEmpty = useCallback((cartToRestore: Cart) => {
-    const currentCart = parseStoredCart(window.localStorage.getItem(CART_STORAGE_KEY));
+    const currentCart = parseStoredCart(window.localStorage.getItem(getActiveCartStorageKey()));
     if (currentCart.items.length > 0) return;
     restoreCart(cartToRestore);
   }, [restoreCart]);
@@ -249,7 +254,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       return;
     }
     if (["paid", "failed", "cancelled"].includes(payload.payment.status)) {
-      window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+      window.sessionStorage.removeItem(getActivePaymentIntentStorageKey());
       clearCheckoutIntentCartBackup(window.sessionStorage);
       if (payload.payment.status === "paid") {
         if (completePendingCheckout(window.localStorage, orderNumber)) notifyCartChanged();
@@ -260,7 +265,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   }, [push]);
 
   const invalidatePlacement = useCallback(() => {
-    window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+    window.sessionStorage.removeItem(getActivePaymentIntentStorageKey());
     clearCheckoutIntentCartBackup(window.sessionStorage);
     clearPendingCheckout(window.localStorage);
     setPaymentIntent(null);
@@ -291,11 +296,11 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
     void Promise.resolve().then(async () => {
       if (!active) return;
       let intent = readPaymentIntent();
-      const currentCart = parseStoredCart(window.localStorage.getItem(CART_STORAGE_KEY));
+      const currentCart = parseStoredCart(window.localStorage.getItem(getActiveCartStorageKey()));
       const durablePending = readPendingCheckout(window.localStorage);
       if (!intent && pendingCheckoutMatchesCart(durablePending, currentCart)) {
         intent = durablePending!.intent;
-        window.sessionStorage.setItem(PAYMENT_INTENT_STORAGE_KEY, JSON.stringify(intent));
+        window.sessionStorage.setItem(getActivePaymentIntentStorageKey(), JSON.stringify(intent));
       }
       if (!intent) {
         if (durablePending) clearPendingCheckout(window.localStorage);
@@ -315,7 +320,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
           push(`/orders/${intent.orderNumber}#payment`);
           return;
         }
-        window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+        window.sessionStorage.removeItem(getActivePaymentIntentStorageKey());
         clearCheckoutIntentCartBackup(window.sessionStorage);
         clearPendingCheckout(window.localStorage);
         setMessage("Your cart is ready to checkout.");
@@ -337,7 +342,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
           starting = { ...intent, phase: "starting_payment", orderNumber: payload.order.orderNumber };
           recoveredOrderNumber = starting.orderNumber;
           if (cartForRecovery) rememberPlacedCart(starting, cartForRecovery);
-          window.sessionStorage.setItem(PAYMENT_INTENT_STORAGE_KEY, JSON.stringify(starting));
+          window.sessionStorage.setItem(getActivePaymentIntentStorageKey(), JSON.stringify(starting));
           if (active) setPaymentIntent(starting);
         } else starting = intent;
         const payment = await recoverRequest(`payment:${JSON.stringify(starting)}`, () => startOrderPayment(starting.orderNumber, starting.method, starting.paymentIdempotencyKey));
@@ -348,7 +353,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
             const backup = intent.phase === "placing_order" ? readCheckoutIntentCart(window.sessionStorage, intent) : intentCartBackup;
             if (backup) restoreCartIfEmpty(backup);
             else if (cartForRecovery) restoreCartIfEmpty(cartForRecovery);
-            window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+            window.sessionStorage.removeItem(getActivePaymentIntentStorageKey());
             if (recoveredOrderNumber) clearPendingCheckout(window.localStorage, recoveredOrderNumber);
             else clearPendingCheckout(window.localStorage);
             setPaymentIntent(null);
@@ -374,7 +379,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
     void Promise.resolve().then(() => {
       if (!active || draftChecked) return;
       if (cart.items.length === 0) {
-        window.sessionStorage.removeItem(CHECKOUT_DRAFT_STORAGE_KEY);
+        window.sessionStorage.removeItem(getActiveCheckoutDraftStorageKey());
         setDraftChecked(true);
         return;
       }
@@ -387,7 +392,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
         setDeliverySavedId("");
         setMessage("Your checkout details were restored. Review delivery and totals again.");
       } else {
-        window.sessionStorage.removeItem(CHECKOUT_DRAFT_STORAGE_KEY);
+        window.sessionStorage.removeItem(getActiveCheckoutDraftStorageKey());
       }
       setDraftChecked(true);
     });
@@ -397,7 +402,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   useEffect(() => {
     if (!draftChecked || cart.items.length === 0 || paymentIntent) return;
     const draft: CheckoutDraft = { schemaVersion: 1, cartSnapshot: snapshot, billing, delivery, different };
-    window.sessionStorage.setItem(CHECKOUT_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+    window.sessionStorage.setItem(getActiveCheckoutDraftStorageKey(), JSON.stringify(draft));
   }, [billing, cart.items.length, delivery, different, draftChecked, paymentIntent, snapshot]);
 
   if (paymentIntent?.phase === "starting_payment" && paymentAction?.kind === "elements") {
@@ -418,7 +423,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
             if (completePendingCheckout(window.localStorage, paymentIntent.orderNumber)) notifyCartChanged();
           }
           if (status !== "processing") {
-            window.sessionStorage.removeItem(PAYMENT_INTENT_STORAGE_KEY);
+            window.sessionStorage.removeItem(getActivePaymentIntentStorageKey());
             clearCheckoutIntentCartBackup(window.sessionStorage);
           }
           push(returnUrl);
@@ -508,7 +513,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       ? existingPending.cart
       : cart;
     if (!paymentIntent) {
-      window.sessionStorage.setItem(PAYMENT_INTENT_STORAGE_KEY, JSON.stringify(intent));
+      window.sessionStorage.setItem(getActivePaymentIntentStorageKey(), JSON.stringify(intent));
       savePendingCheckout(window.localStorage, intent, orderedCart);
       setCheckoutIntentCartBackup(window.sessionStorage, intent, orderedCart);
       setPaymentIntent(intent);
@@ -522,7 +527,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
         const payload = await postJson("/api/checkout/order", placementRequest(intent));
         starting = { ...intent, phase: "starting_payment", orderNumber: payload.order.orderNumber };
         rememberPlacedCart(starting, orderedCart);
-        window.sessionStorage.setItem(PAYMENT_INTENT_STORAGE_KEY, JSON.stringify(starting));
+        window.sessionStorage.setItem(getActivePaymentIntentStorageKey(), JSON.stringify(starting));
         setPaymentIntent(starting);
       } else starting = intent;
       if (intent.phase !== "placing_order") rememberPlacedCart(starting, orderedCart);

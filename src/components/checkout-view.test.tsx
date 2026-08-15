@@ -25,9 +25,9 @@ const postCart: Cart = {
 };
 const address = { id: "saved-1", country: "NZ" as const, fullName: "Aroha Ngata", building: "", street: "12 Queen Street", suburb: "Auckland Central", region: "Auckland", postcode: "1010", phone: "+64211234567", email: "aroha@example.test" };
 const repriced = { version: 1, orderDate: "2026-08-03", items: [{ clientItemId: cart.items[0].id, productKey: "photo-print-canvas", productSlug: "photo-print-canvas", productTitle: "Photo Print Canvas", sizeKey: "a4", sizeLabel: "A4", orientation: "landscape", peoplePets: 0, photoSubmissionMethod: "later", designText: "Family", notes: "", neededDate: "2026-08-10", urgentServiceConfirmed: false, urgentService: { workingDays: 5, feeInclGstCents: 0 }, quantity: 1, uploadReferences: [], unitPrice: { lines: [], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475 }, lineSubtotalExGstCents: 6500, lineGstCents: 975, lineTotalInclGstCents: 7475 }], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475, itemCount: 1, cartDigest: "a".repeat(64) };
-const paymentIntentStorageKey = "rnr-checkout-payment-intent-v1";
-const checkoutDraftStorageKey = "rnr-checkout-draft-v1";
-const pendingCheckoutStorageKey = "rnr-pending-checkout-v1";
+const paymentIntentStorageKey = "rnr:commerce:v1:guest:checkout:payment-intent";
+const checkoutDraftStorageKey = "rnr:commerce:v1:guest:checkout:draft";
+const pendingCheckoutStorageKey = "rnr:commerce:v1:guest:checkout:pending";
 const methodsResponse = { ok: true, json: async () => ({ methods: [{ method: "card", label: "Test card — no real payment", isTest: true }] }) };
 const paymentResponse = { ok: true, json: async () => ({ payment: { method: "card", status: "processing", isTest: true, canRetry: false }, action: null }) };
 function placementIntent(orderIdempotencyKey = "70000000-0000-4000-8000-000000000001") { return { schemaVersion: 1, phase: "placing_order", orderIdempotencyKey, paymentIdempotencyKey: orderIdempotencyKey.replace(/^7/, "8"), method: "card", checkoutVersion: 2, cartDigest: "a".repeat(64), shipping: { method: "pickup", serviceCode: "pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, isTest: false } }; }
@@ -618,7 +618,7 @@ describe("CheckoutView", () => {
       orderNumber: "RNR-2026-RESTORED-CART",
     };
     sessionStorage.setItem(paymentIntentStorageKey, JSON.stringify(intent));
-    sessionStorage.setItem("rnr-checkout-payment-intent-cart-v1", JSON.stringify({
+    sessionStorage.setItem("rnr:commerce:v1:guest:checkout:intent-cart-backup", JSON.stringify({
       schemaVersion: 1,
       intentKey: intent.orderIdempotencyKey,
       cart,
@@ -634,7 +634,7 @@ describe("CheckoutView", () => {
 
     await waitFor(() => expect(screen.getByLabelText("Street address")).toBeEnabled());
     expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
-    expect(sessionStorage.getItem("rnr-checkout-payment-intent-cart-v1")).toBeNull();
+    expect(sessionStorage.getItem("rnr:commerce:v1:guest:checkout:intent-cart-backup")).toBeNull();
     expect(screen.getByRole("button", { name: "Review delivery & totals" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Retry payment recovery" })).not.toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();

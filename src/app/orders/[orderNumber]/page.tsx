@@ -7,7 +7,7 @@ import { OrderPaymentPanel } from "@/components/order-payment-panel";
 import { CustomerProofPanel } from "@/components/customer-proof-panel";
 import styles from "@/components/storefront.module.css";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
-import { CHECKOUT_SESSION_COOKIE_NAME, hashCheckoutSessionToken, isCheckoutSessionToken } from "@/server/checkout/session-cookie";
+import { getCheckoutSessionCookieName, hashCheckoutSessionToken, isCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import { getDatabase } from "@/server/db/client";
 import { createDrizzleOrderQueryRepository, OrderSnapshotIntegrityError } from "@/server/orders/drizzle-order-query-repository";
 import { createOrderQueryService } from "@/server/orders/order-query-service";
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
 
 export default async function OrderConfirmationPage({ params }: { params: Promise<{ orderNumber: string }> }) {
   const [{ orderNumber }, cookieStore, session] = await Promise.all([params, cookies(), getOptionalSession()]);
-  const token = cookieStore.get(CHECKOUT_SESSION_COOKIE_NAME)?.value;
+  const token = cookieStore.get(getCheckoutSessionCookieName(session?.user.id ?? null))?.value;
   let order;
   try {
     order = await createOrderQueryService(createDrizzleOrderQueryRepository(getDatabase())).confirmation(orderNumber, { tokenDigest: isCheckoutSessionToken(token) ? hashCheckoutSessionToken(token) : null, userId: session?.user.id ?? null });

@@ -87,15 +87,16 @@ export function createCheckoutShippingRoute(dependencies?: Dependencies) {
       if (!body || typeof body !== "object" || Array.isArray(body)) {
         throw new SyntaxError("Request body is invalid");
       }
-      const token = readCheckoutSessionToken(request);
-      if (!token) throw new CheckoutAccessError(401);
       const authenticated = await deps.getOptionalSession(request.headers);
+      const customerId = authenticated?.user.id ?? null;
+      const token = readCheckoutSessionToken(request, customerId);
+      if (!token) throw new CheckoutAccessError(401);
       const session = await deps.repository.findActiveSessionByTokenDigest(
         hashCheckoutSessionToken(token),
         deps.now?.() ?? new Date(),
       );
       if (!session) throw new CheckoutAccessError(401);
-      if (session.customerId && session.customerId !== authenticated?.user.id) {
+      if (session.customerId !== customerId) {
         throw new CheckoutAccessError(authenticated ? 403 : 401);
       }
 

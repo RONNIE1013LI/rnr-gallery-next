@@ -65,8 +65,8 @@ const durableIntent = {
 } as const;
 
 function seedDurablePendingCheckout() {
-  window.localStorage.setItem("rnr-cart-v1", JSON.stringify(pendingCart));
-  window.localStorage.setItem("rnr-pending-checkout-v1", JSON.stringify({
+  window.localStorage.setItem("rnr:commerce:v1:guest:cart", JSON.stringify(pendingCart));
+  window.localStorage.setItem("rnr:commerce:v1:guest:checkout:pending", JSON.stringify({
     schemaVersion: 1,
     intent: durableIntent,
     cart: pendingCart,
@@ -103,7 +103,7 @@ describe("OrderPaymentPanel", () => {
       method: "card",
       idempotencyKey: durableIntent.paymentIdempotencyKey,
     });
-    expect(window.localStorage.getItem("rnr-cart-v1")).toBe(JSON.stringify(pendingCart));
+    expect(window.localStorage.getItem("rnr:commerce:v1:guest:cart")).toBe(JSON.stringify(pendingCart));
   });
 
   it("clears the matching retained cart only after payment is confirmed", async () => {
@@ -117,8 +117,8 @@ describe("OrderPaymentPanel", () => {
       orderHref="/orders/RNR-2026-ABC"
     />);
 
-    await waitFor(() => expect(window.localStorage.getItem("rnr-cart-v1")).toBeNull());
-    expect(window.localStorage.getItem("rnr-pending-checkout-v1")).toBeNull();
+    await waitFor(() => expect(window.localStorage.getItem("rnr:commerce:v1:guest:cart")).toBeNull());
+    expect(window.localStorage.getItem("rnr:commerce:v1:guest:checkout:pending")).toBeNull();
   });
 
   it.each(["failed", "cancelled"] as const)(
@@ -141,14 +141,14 @@ describe("OrderPaymentPanel", () => {
         orderHref="/orders/RNR-2026-ABC"
       />);
 
-      await waitFor(() => expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull());
-      expect(window.localStorage.getItem("rnr-pending-checkout-v1")).not.toBeNull();
-      expect(window.localStorage.getItem("rnr-cart-v1")).toBe(JSON.stringify(pendingCart));
+      await waitFor(() => expect(window.sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent")).toBeNull());
+      expect(window.localStorage.getItem("rnr:commerce:v1:guest:checkout:pending")).not.toBeNull();
+      expect(window.localStorage.getItem("rnr:commerce:v1:guest:cart")).toBe(JSON.stringify(pendingCart));
 
       fireEvent.click(screen.getByRole("button", { name: "Continue to secure card payment" }));
 
-      await waitFor(() => expect(window.localStorage.getItem("rnr-cart-v1")).toBeNull());
-      expect(window.localStorage.getItem("rnr-pending-checkout-v1")).toBeNull();
+      await waitFor(() => expect(window.localStorage.getItem("rnr:commerce:v1:guest:cart")).toBeNull());
+      expect(window.localStorage.getItem("rnr:commerce:v1:guest:checkout:pending")).toBeNull();
     },
   );
 
@@ -169,13 +169,13 @@ describe("OrderPaymentPanel", () => {
     await screen.findByTestId("stripe-payment-form");
     fireEvent.click(screen.getByRole("button", { name: "Simulate Stripe failed" }));
 
-    expect(window.localStorage.getItem("rnr-pending-checkout-v1")).not.toBeNull();
-    expect(window.localStorage.getItem("rnr-cart-v1")).toBe(JSON.stringify(pendingCart));
+    expect(window.localStorage.getItem("rnr:commerce:v1:guest:checkout:pending")).not.toBeNull();
+    expect(window.localStorage.getItem("rnr:commerce:v1:guest:cart")).toBe(JSON.stringify(pendingCart));
   });
 
   it("resumes the checkout payment attempt for the same order with the same key and method", async () => {
     const paymentIdempotencyKey = "70000000-0000-4000-8000-000000000002";
-    window.sessionStorage.setItem("rnr-checkout-payment-intent-v1", JSON.stringify({
+    window.sessionStorage.setItem("rnr:commerce:v1:guest:checkout:payment-intent", JSON.stringify({
       schemaVersion: 1,
       phase: "starting_payment",
       orderIdempotencyKey: "70000000-0000-4000-8000-000000000001",
@@ -197,7 +197,7 @@ describe("OrderPaymentPanel", () => {
     expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
     expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ method: "afterpay", idempotencyKey: paymentIdempotencyKey });
-    expect(JSON.parse(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1") ?? "null")).toMatchObject({
+    expect(JSON.parse(window.sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent") ?? "null")).toMatchObject({
       phase: "starting_payment",
       method: "afterpay",
       paymentIdempotencyKey,
@@ -213,7 +213,7 @@ describe("OrderPaymentPanel", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Test Afterpay — no real payment" }));
     fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    const stored = JSON.parse(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1") ?? "null");
+    const stored = JSON.parse(window.sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent") ?? "null");
     expect(stored).toEqual({
       schemaVersion: 1,
       phase: "starting_payment",
@@ -229,7 +229,7 @@ describe("OrderPaymentPanel", () => {
   });
 
   it("ignores a stored payment attempt for another order", () => {
-    window.sessionStorage.setItem("rnr-checkout-payment-intent-v1", JSON.stringify({
+    window.sessionStorage.setItem("rnr:commerce:v1:guest:checkout:payment-intent", JSON.stringify({
       phase: "starting_payment",
       paymentIdempotencyKey: "70000000-0000-4000-8000-000000000002",
       method: "afterpay",
@@ -241,7 +241,7 @@ describe("OrderPaymentPanel", () => {
 
   it("uses a new key when the stored method is no longer available", async () => {
     const storedKey = "70000000-0000-4000-8000-000000000002";
-    window.sessionStorage.setItem("rnr-checkout-payment-intent-v1", JSON.stringify({
+    window.sessionStorage.setItem("rnr:commerce:v1:guest:checkout:payment-intent", JSON.stringify({
       schemaVersion: 1,
       phase: "starting_payment",
       orderIdempotencyKey: "70000000-0000-4000-8000-000000000001",
@@ -428,7 +428,7 @@ describe("OrderPaymentPanel", () => {
     render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
     fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     expect(await screen.findByText(expected)).toBeInTheDocument();
-    expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull();
+    expect(window.sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent")).toBeNull();
   });
 
   it("keeps payment disabled when no methods are configured", () => {
@@ -457,7 +457,7 @@ describe("OrderPaymentPanel", () => {
       paymentIdempotencyKey: storedKey,
       method: "afterpay",
     };
-    window.sessionStorage.setItem("rnr-checkout-payment-intent-v1", JSON.stringify(storedIntent));
+    window.sessionStorage.setItem("rnr:commerce:v1:guest:checkout:payment-intent", JSON.stringify(storedIntent));
     const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
       if (init.method === "GET") {
         return Promise.resolve({ ok: true, json: async () => ({ methods: [methods[1]] }) });
@@ -477,13 +477,13 @@ describe("OrderPaymentPanel", () => {
       { method: "afterpay", idempotencyKey: storedKey },
       { method: "afterpay", idempotencyKey: storedKey },
     ]);
-    expect(JSON.parse(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1") ?? "null")).toEqual(storedIntent);
+    expect(JSON.parse(window.sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent") ?? "null")).toEqual(storedIntent);
   });
 
   it.each(["paid", "failed", "cancelled", "refunded"] as const)(
     "clears a retained starting intent and sends zero POSTs on initial %s status",
     async (paymentStatus) => {
-      window.sessionStorage.setItem("rnr-checkout-payment-intent-v1", JSON.stringify({
+      window.sessionStorage.setItem("rnr:commerce:v1:guest:checkout:payment-intent", JSON.stringify({
         schemaVersion: 1,
         phase: "starting_payment",
         orderNumber: "RNR-2026-ABC",
@@ -494,7 +494,7 @@ describe("OrderPaymentPanel", () => {
       vi.stubGlobal("fetch", fetchMock);
       render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus={paymentStatus} methods={methods} orderHref="/orders/RNR-2026-ABC" />);
 
-      await waitFor(() => expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull());
+      await waitFor(() => expect(window.sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent")).toBeNull());
       expect(fetchMock).not.toHaveBeenCalled();
     },
   );
@@ -503,7 +503,7 @@ describe("OrderPaymentPanel", () => {
     "starts initial %s manual retries with one new stable key",
     async (paymentStatus) => {
       const oldKey = "70000000-0000-4000-8000-000000000002";
-      window.sessionStorage.setItem("rnr-checkout-payment-intent-v1", JSON.stringify({
+      window.sessionStorage.setItem("rnr:commerce:v1:guest:checkout:payment-intent", JSON.stringify({
         schemaVersion: 1,
         phase: "starting_payment",
         orderNumber: "RNR-2026-ABC",
@@ -517,7 +517,7 @@ describe("OrderPaymentPanel", () => {
       expect(screen.getByText(paymentStatus === "failed"
         ? "Payment failed. Choose a payment method and try again."
         : "Payment cancelled. Choose a payment method and try again.")).toBeInTheDocument();
-      await waitFor(() => expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull());
+      await waitFor(() => expect(window.sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent")).toBeNull());
       fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
       await screen.findByText("Payment response was lost");
       fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
@@ -548,7 +548,7 @@ describe("OrderPaymentPanel", () => {
     fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     await screen.findByTestId("stripe-payment-form");
     expect(push).not.toHaveBeenCalled();
-    const stored = window.sessionStorage.getItem("rnr-checkout-payment-intent-v1");
+    const stored = window.sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent");
     expect(stored).not.toBeNull();
     expect(stored).not.toContain("pi_secret_123");
     expect(screen.getByTestId("stripe-payment-form")).toHaveAttribute("data-client-secret", "pi_secret_123");
@@ -560,7 +560,7 @@ describe("OrderPaymentPanel", () => {
 
   it("reopens Stripe Elements for a stored processing card attempt instead of confirming it empty", async () => {
     const paymentIdempotencyKey = "70000000-0000-4000-8000-000000000002";
-    window.sessionStorage.setItem("rnr-checkout-payment-intent-v1", JSON.stringify({
+    window.sessionStorage.setItem("rnr:commerce:v1:guest:checkout:payment-intent", JSON.stringify({
       schemaVersion: 1,
       phase: "starting_payment",
       orderNumber: "RNR-2026-ABC",
@@ -616,13 +616,13 @@ describe("OrderPaymentPanel", () => {
       const view = render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" />);
       fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
       expect(await screen.findByTestId("stripe-payment-form")).toBeInTheDocument();
-      expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).not.toBeNull();
+      expect(window.sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent")).not.toBeNull();
 
       view.rerender(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus={paymentStatus} methods={methods} orderHref="/orders/RNR-2026-ABC" />);
 
       await waitFor(() => {
         expect(screen.queryByTestId("stripe-payment-form")).not.toBeInTheDocument();
-        expect(window.sessionStorage.getItem("rnr-checkout-payment-intent-v1")).toBeNull();
+        expect(window.sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent")).toBeNull();
       });
     },
   );

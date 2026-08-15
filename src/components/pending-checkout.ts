@@ -3,14 +3,20 @@ import {
   normalizeLegacyGraveCoverCart,
   parseStoredCart,
 } from "@/domain/cart/browser-cart-repository";
-import { CART_STORAGE_KEY, type Cart, type StorageLike } from "@/domain/cart/types";
+import {
+  getActiveCartStorageKey,
+  getActivePendingCheckoutStorageKey,
+  getPendingCheckoutStorageKey,
+} from "@/domain/cart/browser-cart-scope";
+import { type Cart, type StorageLike } from "@/domain/cart/types";
 import {
   parsePaymentRecoveryIntent,
   type CheckoutStartingPaymentIntent,
   type PlacingOrderIntent,
 } from "./payment-recovery-intent";
 
-export const PENDING_CHECKOUT_STORAGE_KEY = "rnr-pending-checkout-v1";
+export const LEGACY_PENDING_CHECKOUT_STORAGE_KEY = "rnr-pending-checkout-v1";
+export const PENDING_CHECKOUT_STORAGE_KEY = getPendingCheckoutStorageKey(null);
 
 export type PendingCheckout = Readonly<{
   schemaVersion: 1;
@@ -36,11 +42,12 @@ export function savePendingCheckout(
 ) {
   if (cart.items.length === 0) return;
   const pending: PendingCheckout = { schemaVersion: 1, intent, cart };
-  storage.setItem(PENDING_CHECKOUT_STORAGE_KEY, JSON.stringify(pending));
+  storage.setItem(getActivePendingCheckoutStorageKey(), JSON.stringify(pending));
 }
 
 export function readPendingCheckout(storage: StorageLike): PendingCheckout | null {
-  const raw = storage.getItem(PENDING_CHECKOUT_STORAGE_KEY);
+  const storageKey = getActivePendingCheckoutStorageKey();
+  const raw = storage.getItem(storageKey);
   if (!raw) return null;
   try {
     const value = JSON.parse(raw) as Record<string, unknown>;
@@ -65,7 +72,7 @@ export function readPendingCheckout(storage: StorageLike): PendingCheckout | nul
       cart,
     });
   } catch {
-    storage.removeItem(PENDING_CHECKOUT_STORAGE_KEY);
+    storage.removeItem(storageKey);
     return null;
   }
 }
@@ -79,7 +86,7 @@ export function clearPendingCheckout(storage: StorageLike, orderNumber?: string)
       pending.intent.orderNumber !== orderNumber
     ) return;
   }
-  storage.removeItem(PENDING_CHECKOUT_STORAGE_KEY);
+  storage.removeItem(getActivePendingCheckoutStorageKey());
 }
 
 export function completePendingCheckout(storage: StorageLike, orderNumber: string) {
@@ -90,9 +97,9 @@ export function completePendingCheckout(storage: StorageLike, orderNumber: strin
     pending.intent.orderNumber !== orderNumber
   ) return false;
   const repository = createBrowserCartRepository(storage);
-  const currentCart = parseStoredCart(storage.getItem(CART_STORAGE_KEY));
+  const currentCart = parseStoredCart(storage.getItem(getActiveCartStorageKey()));
   const shouldClearCart = pendingCheckoutMatchesCart(pending, currentCart);
   if (shouldClearCart) repository.clear();
-  storage.removeItem(PENDING_CHECKOUT_STORAGE_KEY);
+  storage.removeItem(getActivePendingCheckoutStorageKey());
   return shouldClearCart;
 }

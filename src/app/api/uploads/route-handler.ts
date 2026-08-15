@@ -76,10 +76,11 @@ export function createUploadRoute(
       validatePrivateUpload(file);
 
       const authenticated = await deps.getOptionalSession(request.headers);
+      const customerId = authenticated?.user.id ?? null;
       const checkout = await ensureCheckoutSession({
         repository: deps.repository,
-        rawToken: readCheckoutSessionToken(request),
-        customerId: authenticated?.user.id ?? null,
+        rawToken: readCheckoutSessionToken(request, customerId),
+        customerId,
         now: deps.now?.() ?? new Date(),
         createToken: deps.createToken ?? createCheckoutSessionToken,
       });
@@ -126,7 +127,7 @@ export function createUploadRoute(
       );
       if (checkout.cookieToken) {
         response.cookies.set(
-          sessionCookie(checkout.cookieToken, deps.environment),
+          sessionCookie(checkout.cookieToken, deps.environment, customerId),
         );
       }
       return response;

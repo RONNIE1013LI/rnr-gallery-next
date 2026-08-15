@@ -127,7 +127,7 @@ export async function ensureCheckoutSession({
       )
     : null;
 
-  if (existing && (existing.customerId === null || existing.customerId === customerId)) {
+  if (existing && existing.customerId === customerId) {
     return { session: existing, cookieToken: null, created: false };
   }
 

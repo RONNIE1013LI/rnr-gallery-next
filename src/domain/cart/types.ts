@@ -5,7 +5,8 @@ import type {
 } from "@/domain/configuration/types";
 import type { PriceBreakdown } from "@/domain/pricing/types";
 
-export const CART_STORAGE_KEY = "rnr-cart-v1";
+export const LEGACY_CART_STORAGE_KEY = "rnr-cart-v1";
+export const CART_STORAGE_KEY = "rnr:commerce:v1:guest:cart";
 
 export type CartItem = Readonly<{
   id: string;

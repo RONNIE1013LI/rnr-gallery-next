@@ -26,7 +26,7 @@ const cartItem: CartItem = {
 
 function seedCart() {
   localStorage.setItem(
-    "rnr-cart-v1",
+    "rnr:commerce:v1:guest:cart",
     JSON.stringify({ version: 1, items: [cartItem] }),
   );
 }
@@ -62,7 +62,7 @@ describe("CartView", () => {
 
   it("shows the chosen design inspiration and preserves its product route", async () => {
     localStorage.setItem(
-      "rnr-cart-v1",
+      "rnr:commerce:v1:guest:cart",
       JSON.stringify({
         version: 1,
         items: [{ ...cartItem, galleryDesignId: "a".repeat(64) }],
@@ -86,18 +86,18 @@ describe("CartView", () => {
       target: { value: "2" },
     });
     expect(screen.getByText("$149.50")).toBeInTheDocument();
-    expect(JSON.parse(localStorage.getItem("rnr-cart-v1")!).items[0].quantity).toBe(2);
+    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0].quantity).toBe(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Remove Photo Print Canvas" }));
     expect(screen.getByRole("heading", { name: "Your cart is empty" })).toBeInTheDocument();
-    expect(JSON.parse(localStorage.getItem("rnr-cart-v1")!).items).toEqual([]);
+    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items).toEqual([]);
   });
 
   it("re-reads storage before editing so another tab's new item is preserved", async () => {
     seedCart();
     render(<CartView />);
     await screen.findByRole("heading", { name: "Photo Print Canvas" });
-    localStorage.setItem("rnr-cart-v1", JSON.stringify({
+    localStorage.setItem("rnr:commerce:v1:guest:cart", JSON.stringify({
       version: 1,
       items: [cartItem, { ...cartItem, id: "item-from-other-tab", productTitle: "Wall Banner" }],
     }));
@@ -106,7 +106,7 @@ describe("CartView", () => {
       target: { value: "2" },
     });
 
-    expect(JSON.parse(localStorage.getItem("rnr-cart-v1")!).items).toEqual([
+    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items).toEqual([
       expect.objectContaining({ id: "item-1", quantity: 2 }),
       expect.objectContaining({ id: "item-from-other-tab", productTitle: "Wall Banner" }),
     ]);

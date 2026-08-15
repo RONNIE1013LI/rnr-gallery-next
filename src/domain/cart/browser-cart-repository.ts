@@ -1,6 +1,6 @@
 import { emptyCart } from "./cart";
+import { getActiveCartStorageKey } from "./browser-cart-scope";
 import {
-  CART_STORAGE_KEY,
   type Cart,
   type CartItem,
   type CartRepository,
@@ -98,10 +98,11 @@ export function parseStoredCart(value: string | null): Cart {
 
 export function createBrowserCartRepository(
   storage: StorageLike,
+  storageKey = getActiveCartStorageKey(),
 ): CartRepository {
   return {
-    load: () => parseStoredCart(storage.getItem(CART_STORAGE_KEY)),
-    save: (cart) => storage.setItem(CART_STORAGE_KEY, JSON.stringify(cart)),
-    clear: () => storage.removeItem(CART_STORAGE_KEY),
+    load: () => parseStoredCart(storage.getItem(storageKey)),
+    save: (cart) => storage.setItem(storageKey, JSON.stringify(cart)),
+    clear: () => storage.removeItem(storageKey),
   };
 }

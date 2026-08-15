@@ -241,7 +241,7 @@ describe("POST /api/uploads", () => {
     });
   });
 
-  it("never deletes an existing session when private storage fails", async () => {
+  it("rotates a guest session on sign-in and deletes only the new empty session when storage fails", async () => {
     const existingToken = "a".repeat(43);
     const repo = repository({
       findActiveSessionByTokenDigest: vi.fn().mockResolvedValue({
@@ -263,11 +263,11 @@ describe("POST /api/uploads", () => {
     });
 
     expect((await handler(request(origin, existingToken))).status).toBe(500);
-    expect(repo.createSession).not.toHaveBeenCalled();
-    expect(repo.deleteEmptySession).not.toHaveBeenCalled();
+    expect(repo.createSession).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-a" }));
+    expect(repo.deleteEmptySession).toHaveBeenCalledWith(sessionId);
   });
 
-  it("never deletes an existing guest session when metadata persistence fails after sign-in", async () => {
+  it("does not reuse a guest session after sign-in when metadata persistence fails", async () => {
     const existingToken = "b".repeat(43);
     const repo = repository({
       findActiveSessionByTokenDigest: vi.fn().mockResolvedValue({
@@ -288,12 +288,12 @@ describe("POST /api/uploads", () => {
     });
 
     expect((await handler(request(origin, existingToken))).status).toBe(500);
-    expect(repo.createSession).not.toHaveBeenCalled();
+    expect(repo.createSession).toHaveBeenCalledWith(expect.objectContaining({ customerId: "customer-a" }));
     expect(repo.createUpload).toHaveBeenCalledWith(
       expect.objectContaining({ checkoutSessionId: sessionId }),
     );
     expect(store.remove).toHaveBeenCalledWith(stored);
-    expect(repo.deleteEmptySession).not.toHaveBeenCalled();
+    expect(repo.deleteEmptySession).toHaveBeenCalledWith(sessionId);
   });
 
   it("rejects cross-site multipart requests before creating a session or file", async () => {
