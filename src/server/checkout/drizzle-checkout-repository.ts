@@ -152,7 +152,6 @@ export function createDrizzleCheckoutRepository(
             and(
               eq(checkoutSessions.deliveryMethod, "post"),
               isNotNull(checkoutSessions.selectedShippingQuoteId),
-              eq(shippingQuotes.currency, "NZD"),
               gt(shippingQuotes.amountInclGstCents, 0),
               sql`${shippingQuotes.expiresAt} > clock_timestamp()`,
             ),
@@ -169,6 +168,12 @@ export function createDrizzleCheckoutRepository(
       try {
         const billingAddress = normalizeAddress(row.session.billingAddress);
         const deliveryAddress = normalizeAddress(row.session.deliveryAddress);
+        const currency = row.session.cartSnapshot.currency ?? "NZD";
+        if (
+          (currency !== "NZD" && currency !== "AUD") ||
+          row.session.cartSnapshot.market !== deliveryAddress.country ||
+          (row.session.deliveryMethod === "post" && row.quote?.currency !== currency)
+        ) return null;
         const shippingCents = row.session.deliveryMethod === "post"
           ? row.quote?.amountInclGstCents
           : 0;
@@ -179,7 +184,7 @@ export function createDrizzleCheckoutRepository(
         if (!Number.isSafeInteger(amountCents) || amountCents <= 0) return null;
         return Object.freeze({
           amountCents,
-          currency: "NZD" as const,
+          currency,
           customer: Object.freeze({
             fullName: billingAddress.fullName,
             email: billingAddress.email,

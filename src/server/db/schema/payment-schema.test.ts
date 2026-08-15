@@ -24,6 +24,9 @@ describe("payment schema contract", () => {
     expect(getTableConfig(orders).uniqueConstraints.map((item) => item.name)).toContain(
       "orders_id_total_incl_gst_currency_unique",
     );
+    expect(attemptConfig.checks.map((check) => check.name)).toContain(
+      "payment_attempts_currency_valid",
+    );
   });
 
   it("allows only one nonterminal attempt globally per order", () => {

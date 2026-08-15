@@ -1,0 +1,1 @@
+ALTER TABLE "payment_attempts" ADD CONSTRAINT "payment_attempts_currency_valid" CHECK ("payment_attempts"."currency" in ('NZD', 'AUD'));

@@ -384,6 +384,64 @@ describe("payment service", () => {
     );
   });
 
+  it("starts an Australian order with the immutable AUD amount and currency", async () => {
+    const australianAddress: NormalizedAddress = {
+      ...address,
+      country: "AU",
+      region: "NSW",
+      postcode: "2000",
+      phone: "+61400000000",
+    };
+    const australianOrder: PaymentOrder = {
+      ...order,
+      amountCents: 13_500,
+      currency: "AUD",
+      customer: {
+        fullName: australianAddress.fullName,
+        email: australianAddress.email,
+        phone: australianAddress.phone,
+      },
+      billingAddress: australianAddress,
+      deliveryAddress: australianAddress,
+    };
+    const australianAttempt: PaymentAttemptRecord = {
+      ...attempt,
+      expectedAmountCents: australianOrder.amountCents,
+      currency: "AUD",
+      country: "AU",
+    };
+    const repo = repository({
+      findPayableOrder: vi.fn().mockResolvedValue(australianOrder),
+      createOrClaimNonterminalAttempt: vi.fn().mockResolvedValue({
+        outcome: "claimed",
+        attempt: australianAttempt,
+        claimId: "30000000-0000-4000-8000-000000000002",
+      }),
+      bindProviderSession: vi.fn().mockImplementation(async (input) => ({
+        ...australianAttempt,
+        providerReference: input.providerReference,
+        returnStateDigest: input.returnStateDigest,
+        status: input.status,
+      })),
+    });
+    const card = provider();
+    const paymentService = service({ repository: repo, providers: [registration(card)] });
+
+    await paymentService.start(access, "card", browserKey);
+
+    expect(repo.createOrClaimNonterminalAttempt).toHaveBeenCalledWith({
+      orderId: australianOrder.id,
+      provider: "local-test",
+      method: "card",
+      expectedAmountCents: 13_500,
+      currency: "AUD",
+      clientKey: browserKey,
+    });
+    expect(card.createOrReuse).toHaveBeenCalledWith(expect.objectContaining({
+      order: australianOrder,
+    }));
+  });
+
   it.each(["test", "redirect", "elements"] as const)(
     "binds the service-generated return state for a %s session",
     async (kind) => {
@@ -517,6 +575,14 @@ describe("payment service", () => {
       .start(access, "card", browserKey))
       .rejects.toMatchObject({ code: "PAYMENT_UNAVAILABLE" });
     expect(unavailableRepo.createOrClaimNonterminalAttempt).not.toHaveBeenCalled();
+
+    const unsupportedCurrencyRepo = repository({
+      findPayableOrder: vi.fn().mockResolvedValue({ ...order, currency: "USD" }),
+    });
+    await expect(service({ repository: unsupportedCurrencyRepo, providers: [registration(card)] })
+      .start(access, "card", browserKey))
+      .rejects.toMatchObject({ code: "PAYMENT_UNAVAILABLE" });
+    expect(unsupportedCurrencyRepo.createOrClaimNonterminalAttempt).not.toHaveBeenCalled();
   });
 
   it("never calls a losing provider and never falls back across methods", async () => {

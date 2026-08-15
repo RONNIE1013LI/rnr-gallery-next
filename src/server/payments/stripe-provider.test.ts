@@ -128,6 +128,45 @@ describe("Stripe payment provider", () => {
       .not.toHaveProperty("automatic_payment_methods");
   });
 
+  it("creates Australian PaymentIntents in AUD without converting the fixed amount", async () => {
+    const australianAddress: NormalizedAddress = {
+      ...address,
+      country: "AU",
+      region: "NSW",
+      postcode: "2000",
+      phone: "+61400000000",
+    };
+    const australianOrder: PaymentOrder = {
+      ...order,
+      amountCents: 13_500,
+      currency: "AUD",
+      customer: {
+        fullName: australianAddress.fullName,
+        email: australianAddress.email,
+        phone: australianAddress.phone,
+      },
+      billingAddress: australianAddress,
+      deliveryAddress: australianAddress,
+    };
+    const australianIntent: StripePaymentIntent = {
+      ...baseIntent,
+      amount: australianOrder.amountCents,
+      currency: "aud",
+      metadata: { order_number: australianOrder.orderNumber },
+    };
+    const stripe = client(australianIntent);
+    const provider = createStripeProvider({ config, client: stripe });
+
+    await expect(provider.createOrReuse({ ...sessionInput, order: australianOrder }))
+      .resolves.toMatchObject({ providerReference: australianIntent.id });
+    expect(stripe.paymentIntents.create).toHaveBeenCalledWith({
+      amount: 13_500,
+      currency: "aud",
+      payment_method_types: ["card"],
+      metadata: { order_number: australianOrder.orderNumber },
+    }, { idempotencyKey: sessionInput.idempotencyKey });
+  });
+
   it("uses the same provider idempotency key when createOrReuse is replayed", async () => {
     const stripe = client();
     const provider = createStripeProvider({ config, client: stripe });

@@ -1,4 +1,5 @@
 import type { SupportedCountry } from "@/domain/address/types";
+import type { MarketCurrency } from "@/domain/markets/types";
 import type {
   OrderPaymentStatus,
   PaymentAttemptStatus,
@@ -35,7 +36,7 @@ export type CreatePaymentAttemptInput = Readonly<{
   provider: PaymentProviderKey;
   method: PaymentMethodKey;
   expectedAmountCents: number;
-  currency: "NZD";
+  currency: MarketCurrency;
   /** Compatibility-only browser value. It is never used for provider idempotency. */
   clientKey?: string;
 }>;

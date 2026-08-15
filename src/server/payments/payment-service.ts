@@ -565,6 +565,12 @@ export function createPaymentService({
       if (!order) {
         throw new PaymentServiceError("ORDER_NOT_FOUND", "Order is unavailable");
       }
+      if (order.currency !== "NZD" && order.currency !== "AUD") {
+        throw new PaymentServiceError(
+          "PAYMENT_UNAVAILABLE",
+          "Payment method is unavailable",
+        );
+      }
       const registration = byMethod.get(method);
       if (!registration) {
         throw new PaymentServiceError(
@@ -592,7 +598,7 @@ export function createPaymentService({
         provider: registration.provider.key,
         method,
         expectedAmountCents: order.amountCents,
-        currency: "NZD",
+        currency: order.currency,
         clientKey,
       });
       if (claim.outcome === "existing_conflict") {

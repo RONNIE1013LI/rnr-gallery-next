@@ -151,7 +151,7 @@ function paymentOrder(
   if (
     !isNonEmpty(order.orderNumber) ||
     !isNonEmpty(order.customerEmail) ||
-    order.currency !== "NZD" ||
+    (order.currency !== "NZD" && order.currency !== "AUD") ||
     !isPositiveMoney(order.totalInclGstCents)
   ) {
     throw new Error("Invalid order snapshot");

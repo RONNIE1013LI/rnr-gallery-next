@@ -11,6 +11,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { SupportedCountry } from "@/domain/address/types";
+import type { MarketCurrency } from "@/domain/markets/types";
 import { orders } from "./orders";
 
 export type PaymentProviderKey = "stripe" | "afterpay" | "zip" | "local-test";
@@ -42,7 +43,7 @@ export const paymentAttempts = pgTable(
       withTimezone: true,
     }),
     expectedAmountCents: bigint("expected_amount_cents", { mode: "number" }).notNull(),
-    currency: text("currency").$type<"NZD">().notNull(),
+    currency: text("currency").$type<MarketCurrency>().notNull(),
     country: text("country").$type<SupportedCountry>().notNull(),
     status: text("status").$type<PaymentAttemptStatus>().notNull(),
     sanitizedFailureCode: text("sanitized_failure_code"),
@@ -103,6 +104,10 @@ export const paymentAttempts = pgTable(
     check(
       "payment_attempts_country_valid",
       sql`${table.country} in ('NZ', 'AU')`,
+    ),
+    check(
+      "payment_attempts_currency_valid",
+      sql`${table.currency} in ('NZD', 'AUD')`,
     ),
     check(
       "payment_attempts_status_valid",
