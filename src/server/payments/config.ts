@@ -5,6 +5,7 @@ import type { PaymentCurrency } from "./types";
 type PaymentEnvironment = Readonly<Record<string, string | undefined>>;
 type DisabledPaymentConfig = Readonly<{ enabled: false }>;
 type ProviderEnvironment = "sandbox" | "production";
+type StripeMode = "test" | "live";
 
 export type StripePaymentConfig =
   | DisabledPaymentConfig
@@ -68,6 +69,18 @@ function disabled(): DisabledPaymentConfig {
   return Object.freeze({ enabled: false });
 }
 
+function stripeServerKeyMode(key: string): StripeMode | null {
+  if (key.startsWith("sk_test_") || key.startsWith("rk_test_")) return "test";
+  if (key.startsWith("sk_live_") || key.startsWith("rk_live_")) return "live";
+  return null;
+}
+
+function stripePublishableKeyMode(key: string): StripeMode | null {
+  if (key.startsWith("pk_test_")) return "test";
+  if (key.startsWith("pk_live_")) return "live";
+  return null;
+}
+
 export function parsePaymentReturnOrigin(
   rawValue: string | null,
   nodeEnvironment: string | undefined,
@@ -103,8 +116,18 @@ function parseStripeConfig(env: PaymentEnvironment): StripePaymentConfig {
   const secretKey = value(env, "STRIPE_SECRET_KEY");
   const publishableKey = value(env, "NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY");
   const webhookSecret = value(env, "STRIPE_WEBHOOK_SECRET");
+  const serverMode = secretKey ? stripeServerKeyMode(secretKey) : null;
+  const publishableMode = publishableKey
+    ? stripePublishableKeyMode(publishableKey)
+    : null;
 
-  if (!secretKey || !publishableKey || !webhookSecret) return disabled();
+  if (
+    !secretKey ||
+    !publishableKey ||
+    !webhookSecret?.startsWith("whsec_") ||
+    !serverMode ||
+    serverMode !== publishableMode
+  ) return disabled();
 
   return Object.freeze({
     enabled: true,

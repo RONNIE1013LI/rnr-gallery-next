@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { parsePaymentConfig } from "./config";
 
 const completeProviderEnvironment = {
-  STRIPE_SECRET_KEY: "stripe-secret",
+  STRIPE_SECRET_KEY: "sk_test_not_real",
   NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: "pk_test_public",
   STRIPE_WEBHOOK_SECRET: "whsec_test",
   AFTERPAY_MERCHANT_ID: "afterpay-merchant",
@@ -48,6 +48,41 @@ describe("parsePaymentConfig", () => {
     expect(config[provider]).toEqual({ enabled: false });
     expect(config.operations.returnBaseUrl).toBe("https://shop.example.test");
     expect(JSON.stringify(config[provider])).not.toMatch(/secret|merchant|public/i);
+  });
+
+  it.each([
+    ["test secret with live publishable", "sk_test_not_real", "pk_live_not_real", "whsec_not_real"],
+    ["live secret with test publishable", "sk_live_not_real", "pk_test_not_real", "whsec_not_real"],
+    ["malformed server key", "stripe-secret", "pk_test_not_real", "whsec_not_real"],
+    ["malformed publishable key", "sk_test_not_real", "stripe-public", "whsec_not_real"],
+    ["malformed webhook secret", "sk_test_not_real", "pk_test_not_real", "stripe-webhook"],
+  ] as const)("disables Stripe for %s", (_, secretKey, publishableKey, webhookSecret) => {
+    const config = parsePaymentConfig({
+      NODE_ENV: "production",
+      PAYMENT_RETURN_BASE_URL: "https://rrgallery.co.nz",
+      STRIPE_SECRET_KEY: secretKey,
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: publishableKey,
+      STRIPE_WEBHOOK_SECRET: webhookSecret,
+    });
+
+    expect(config.stripe).toEqual({ enabled: false });
+  });
+
+  it.each([
+    ["standard test", "sk_test_not_real", "pk_test_not_real"],
+    ["restricted test", "rk_test_not_real", "pk_test_not_real"],
+    ["standard live", "sk_live_not_real", "pk_live_not_real"],
+    ["restricted live", "rk_live_not_real", "pk_live_not_real"],
+  ] as const)("enables a matching %s Stripe group", (_, secretKey, publishableKey) => {
+    const config = parsePaymentConfig({
+      NODE_ENV: "production",
+      PAYMENT_RETURN_BASE_URL: "https://rrgallery.co.nz",
+      STRIPE_SECRET_KEY: secretKey,
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: publishableKey,
+      STRIPE_WEBHOOK_SECRET: "whsec_not_real",
+    });
+
+    expect(config.stripe.enabled).toBe(true);
   });
 
   it("throws when local test payments are explicitly enabled in production", () => {
