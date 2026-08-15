@@ -6,6 +6,8 @@ import type { MouseEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { BrandMark } from "./brand-mark";
 import { CartCount } from "./cart-count";
+import { MarketSelector } from "./market-selector";
+import type { Market } from "@/domain/markets/types";
 
 const mobileNavigation = [
   { href: "/", label: "Home" },
@@ -130,8 +132,17 @@ function DesktopMenu({
   );
 }
 
-export function SiteHeader() {
+export function SiteHeader({
+  initialMarket = "NZ",
+  australiaEnabled = false,
+}: Readonly<{
+  initialMarket?: Market;
+  australiaEnabled?: boolean;
+}>) {
   const pathname = usePathname();
+  const market: Market = pathname === "/au" || pathname.startsWith("/au/")
+    ? "AU"
+    : initialMarket;
   const mobileMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileMenuClosing, setIsMobileMenuClosing] = useState(false);
@@ -219,6 +230,11 @@ export function SiteHeader() {
           </nav>
 
           <div className="site-header__actions">
+            <MarketSelector
+              market={market}
+              australiaEnabled={australiaEnabled}
+              pathname={pathname}
+            />
             <Link
               className="site-header__account"
               href="/account"

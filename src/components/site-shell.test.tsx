@@ -3,11 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SiteFooter } from "./site-footer";
 import { SiteHeader } from "./site-header";
 
-const { usePathname } = vi.hoisted(() => ({
+const { usePathname, push, refresh } = vi.hoisted(() => ({
   usePathname: vi.fn(() => "/"),
+  push: vi.fn(),
+  refresh: vi.fn(),
 }));
 
-vi.mock("next/navigation", () => ({ usePathname }));
+vi.mock("next/navigation", () => ({ usePathname, useRouter: () => ({ push, refresh }) }));
 
 describe("site shell", () => {
   beforeEach(() => {
@@ -72,6 +74,8 @@ describe("site shell", () => {
       "/cart",
     );
     expect(screen.getByText("Menu")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Country and currency" })).toHaveValue("NZ");
+    expect(screen.getByRole("option", { name: "Australia — AUD" })).toBeDisabled();
   });
 
   it("marks the current primary navigation destination", () => {

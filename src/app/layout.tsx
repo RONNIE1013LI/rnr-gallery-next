@@ -3,6 +3,9 @@ import { SiteChrome } from "@/components/site-chrome";
 import { getSafePublicContent } from "@/server/admin/admin-content-runtime";
 import { getSiteUrl } from "@/server/seo/site-url";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
+import { cookies } from "next/headers";
+import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
+import { MARKET_COOKIE_NAME, parseMarketCookie } from "@/server/markets/market-cookie";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -49,13 +52,15 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const [managed, session] = await Promise.all([
+  const [managed, session, registryState, cookieStore] = await Promise.all([
     getSafePublicContent([
       "footer.tagline",
       "contact.email",
       "contact.phone",
     ]),
     getOptionalSession(),
+    getSafePublicProductRegistry(),
+    cookies(),
   ]);
 
   return (
@@ -64,6 +69,8 @@ export default async function RootLayout({
         <a className="skip-link" href="#main-content">Skip to content</a>
         <SiteChrome
           initialCustomerId={session?.user.id ?? null}
+          initialMarket={parseMarketCookie(cookieStore.get(MARKET_COOKIE_NAME)?.value) ?? "NZ"}
+          australiaEnabled={registryState.registry.markets.AU.enabled}
           footerContent={{
             tagline: managed["footer.tagline"],
             email: managed["contact.email"],
