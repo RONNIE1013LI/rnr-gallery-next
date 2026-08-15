@@ -27,6 +27,16 @@ export function assertIntegerCents(value: number, label: string): void {
   }
 }
 
+export function getPriceLineAmountInclGstCents(line: PriceLine): number {
+  if (line.amountInclGstCents !== undefined) {
+    assertIntegerCents(line.amountInclGstCents, line.label);
+    return line.amountInclGstCents;
+  }
+
+  assertIntegerCents(line.amountExGstCents, line.label);
+  return Math.round((line.amountExGstCents * 115) / 100);
+}
+
 export function createPriceBreakdown(
   lines: readonly PriceLine[],
 ): PriceBreakdown {

@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import { formatNzd } from "@/domain/money";
 import { calculateDigitalOilCanvas } from "./calculate-canvas";
 import { calculateFixedPackage } from "./calculate-fixed-package";
-import { InvalidPricingInputError } from "./types";
+import {
+  getPriceLineAmountInclGstCents,
+  InvalidPricingInputError,
+} from "./types";
 
 describe("R&R pricing", () => {
   it("calculates an A4 digital oil canvas with one person", () => {
@@ -44,6 +47,23 @@ describe("R&R pricing", () => {
       gstCents: 3_450,
       totalInclGstCents: 26_450,
     });
+  });
+
+  it("converts an excluded-GST price line to its customer-facing total", () => {
+    expect(getPriceLineAmountInclGstCents({
+      key: "product-size",
+      label: "Product / size price",
+      amountExGstCents: 23_000,
+    })).toBe(26_450);
+  });
+
+  it("does not tax an already GST-inclusive fee again", () => {
+    expect(getPriceLineAmountInclGstCents({
+      key: "urgent-service",
+      label: "Urgent service",
+      amountExGstCents: 6_957,
+      amountInclGstCents: 8_000,
+    })).toBe(8_000);
   });
 
   it("rejects a canvas with no people or pets", () => {
