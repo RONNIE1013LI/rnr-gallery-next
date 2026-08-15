@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatNzd } from "@/domain/money";
+import { formatMarketMoney, formatNzd } from "@/domain/money";
 import { calculateDigitalOilCanvas } from "./calculate-canvas";
 import { calculateFixedPackage } from "./calculate-fixed-package";
 import {
@@ -74,5 +74,10 @@ describe("R&R pricing", () => {
 
   it("formats NZD cents consistently", () => {
     expect(formatNzd(12_075)).toBe("NZ$120.75");
+  });
+
+  it("formats each market currency explicitly", () => {
+    expect(formatMarketMoney(12_075, "NZD")).toBe("NZ$120.75");
+    expect(formatMarketMoney(32_000, "AUD")).toBe("A$320.00 AUD");
   });
 });
