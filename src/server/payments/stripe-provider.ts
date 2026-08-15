@@ -37,7 +37,7 @@ export type StripeWebhookEvent = Readonly<{
 type StripeCreateParams = Readonly<{
   amount: number;
   currency: string;
-  payment_method_types: readonly ["card", "link"];
+  payment_method_types: readonly ["card"];
   metadata: Readonly<{ order_number: string }>;
 }>;
 
@@ -260,7 +260,7 @@ export function createStripeProvider({
         intent = await client.paymentIntents.create({
           amount: input.order.amountCents,
           currency: input.order.currency.toLowerCase(),
-          payment_method_types: ["card", "link"],
+          payment_method_types: ["card"],
           metadata: { order_number: input.order.orderNumber },
         }, { idempotencyKey: input.idempotencyKey });
       } catch {

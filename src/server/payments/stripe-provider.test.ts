@@ -104,7 +104,7 @@ describe("Stripe payment provider", () => {
     }
   });
 
-  it("creates one Stripe PaymentIntent for cards and Link without enabling Afterpay", async () => {
+  it("creates one card-only Stripe PaymentIntent without automatic methods", async () => {
     const stripe = client();
     const provider = createStripeProvider({ config, client: stripe });
 
@@ -121,11 +121,9 @@ describe("Stripe payment provider", () => {
     expect(stripe.paymentIntents.create).toHaveBeenCalledWith({
       amount: order.amountCents,
       currency: "nzd",
-      payment_method_types: ["card", "link"],
+      payment_method_types: ["card"],
       metadata: { order_number: order.orderNumber },
     }, { idempotencyKey: sessionInput.idempotencyKey });
-    expect(vi.mocked(stripe.paymentIntents.create).mock.calls[0]?.[0].payment_method_types)
-      .not.toContain("afterpay_clearpay");
     expect(vi.mocked(stripe.paymentIntents.create).mock.calls[0]?.[0])
       .not.toHaveProperty("automatic_payment_methods");
   });
