@@ -14,8 +14,8 @@ export const metadata: Metadata = {
     "Personalised canvas, banners and print artwork made with care in New Zealand.",
   applicationName: "R&R Gallery",
   icons: {
-    icon: "/media/brand/rr-gallery-logo.webp",
-    apple: "/media/brand/rr-gallery-logo.webp",
+    icon: "/media/brand/rr-gallery-logo-2026.webp",
+    apple: "/media/brand/rr-gallery-logo-2026.webp",
   },
   formatDetection: {
     address: false,

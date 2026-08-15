@@ -14,6 +14,13 @@ function cssRule(source: string, selector: string) {
 }
 
 describe("root layout metadata", () => {
+  it("uses the current R&R Gallery mark for browser and Apple icons", () => {
+    expect(metadata.icons).toEqual({
+      icon: "/media/brand/rr-gallery-logo-2026.webp",
+      apple: "/media/brand/rr-gallery-logo-2026.webp",
+    });
+  });
+
   it("reserves the vertical scrollbar gutter so page changes do not shift the site frame", () => {
     const globals = cssFile("src/app/globals.css");
 
