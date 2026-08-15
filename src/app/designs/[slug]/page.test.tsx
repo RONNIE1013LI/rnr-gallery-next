@@ -56,6 +56,7 @@ describe("public design detail page", () => {
     expect(screen.getByText("Roll-up banner")).toBeInTheDocument();
     expect(screen.getByText("Birthday")).toBeInTheDocument();
     expect(screen.getByText("From NZ$264.50 incl GST")).toBeVisible();
+    expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
     expect(screen.getByText("85 × 200 cm")).toBeVisible();
     expect(screen.getByRole("link", { name: "Use This Design" }))
       .toHaveAttribute("href", `/products/roll-up-banner/configure?design=${designId}`);

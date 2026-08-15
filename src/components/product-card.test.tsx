@@ -29,7 +29,7 @@ describe("ProductCard", () => {
     );
     expect(screen.getByText("Create Your Artwork")).toHaveClass(styles.primaryButton);
     expect(screen.getByText("From NZ$120.75 incl GST")).toBeVisible();
-    expect(screen.getByText("NZ$105.00 excl GST")).toBeVisible();
+    expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
   });
 });
 

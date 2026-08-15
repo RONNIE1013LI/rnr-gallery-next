@@ -14,6 +14,7 @@ describe("AdLandingPage", () => {
     expect(screen.getByRole("heading", { level: 1, name: content.heading })).toBeVisible();
     expect(screen.getByText(content.sizeSummary)).toBeVisible();
     expect(screen.getByText(`From ${startingPrice} incl GST`)).toBeVisible();
+    expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
     expect(screen.getAllByRole("link", { name: "Start Customising" }))
       .toHaveLength(2);
     for (const link of screen.getAllByRole("link", { name: "Start Customising" })) {

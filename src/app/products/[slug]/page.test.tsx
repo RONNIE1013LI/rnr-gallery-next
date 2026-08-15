@@ -52,6 +52,7 @@ describe("ProductPageContent", () => {
       },
     });
     expect(screen.getByText("From NZ$120.75 incl GST")).toBeVisible();
+    expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
     expect(JSON.parse(breadcrumbs?.textContent ?? "{}")).toMatchObject({
       "@type": "BreadcrumbList",
       itemListElement: [

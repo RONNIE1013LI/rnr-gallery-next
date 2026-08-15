@@ -31,7 +31,6 @@ export function ProductCard({
           <div className={styles.productCardFooter}>
             <span className={styles.publicPrice}>
               <strong>From {formatNzd(addNzdGst(product.startingPriceExGstCents))} incl GST</strong>
-              <small>{formatNzd(product.startingPriceExGstCents)} excl GST</small>
             </span>
             <span className={styles.primaryButton}>Create Your Artwork</span>
           </div>

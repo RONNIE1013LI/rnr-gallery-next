@@ -109,9 +109,6 @@ export function ProductPageContent({
           <p className={styles.productDetailPrice}>
             From {formatNzdExplicit(priceInclGstCents)} incl GST
           </p>
-          <p className={styles.publicPriceSecondary}>
-            {formatNzdExplicit(product.startingPriceExGstCents)} excl GST
-          </p>
           <ul className={styles.checkList}>
             <li>Choose the finished format and artwork details</li>
             <li>Upload now or provide your source photos after ordering</li>

@@ -48,7 +48,6 @@ export function AdLandingPage({ content, product }: Readonly<{
           <h1>{content.heading}</h1>
           <p className={styles.productDetailLead}>{content.description}</p>
           <p className={styles.productDetailPrice}>From {formatNzd(priceInclGstCents)} incl GST</p>
-          <p className={styles.publicPriceSecondary}>{formatNzd(product.startingPriceExGstCents)} excl GST</p>
           <PurchaseTrustStrip />
           <div className={styles.designDetailActions}>
             <Link className={styles.primaryButton} href={configureHref}>Start Customising</Link>
