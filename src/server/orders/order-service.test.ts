@@ -146,7 +146,16 @@ describe("atomic order service", () => {
       idempotencyKey: key,
       orderNumber: "RNR-2026-ABC12345",
       shipping: { kind: "pickup" },
+      attribution: null,
     }));
+  });
+
+  it("binds the reviewed attribution snapshot only when creating the order", async () => {
+    const repo = repository();
+    const service = createOrderService({ repository: repo, shippingService: shippingService(), now: () => now });
+    const attribution = { utm_source: "google", utm_medium: "cpc", gclid: "click-1" } as const;
+    await service.createOrder(sessionId, key, { ...reviewed(), attribution });
+    expect(repo.createAtomicOrder).toHaveBeenCalledWith(expect.objectContaining({ attribution }));
   });
 
   it("freshly requotes Post and passes the quote into the transaction", async () => {

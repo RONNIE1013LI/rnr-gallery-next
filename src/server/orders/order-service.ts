@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
+import type { OrderAttribution } from "@/domain/analytics/attribution";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import type { createShippingService } from "@/server/shipping/shipping-service";
@@ -27,6 +28,7 @@ export type ReviewedOrderExpectation = Readonly<{
   checkoutVersion: number;
   cartDigest: string;
   shipping: Readonly<{ method: "post" | "pickup"; serviceCode: string; amountExGstCents: number; gstCents: number; amountInclGstCents: number; isTest: boolean }>;
+  attribution?: OrderAttribution;
 }>;
 
 export class OrderConflictError extends Error {
@@ -180,6 +182,7 @@ export function createOrderService({
             deliveryAddress: state.deliveryAddress,
             deliveryMethod: state.deliveryMethod,
             shipping,
+            attribution: reviewed.attribution ?? null,
             idempotencyKey,
             orderNumber: makeOrderNumber(),
             now: transactionTime,

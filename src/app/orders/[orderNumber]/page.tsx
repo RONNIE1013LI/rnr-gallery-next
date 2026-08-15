@@ -5,6 +5,8 @@ import { notFound } from "next/navigation";
 import { customerOrderHeading, OrderDetail } from "@/components/order-detail";
 import { OrderPaymentPanel } from "@/components/order-payment-panel";
 import { CustomerProofPanel } from "@/components/customer-proof-panel";
+import { PurchaseTracker } from "@/components/purchase-tracker";
+import { buildPurchaseEvent } from "@/domain/analytics/events";
 import styles from "@/components/storefront.module.css";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
 import { getCheckoutSessionCookieName, hashCheckoutSessionToken, isCheckoutSessionToken } from "@/server/checkout/session-cookie";
@@ -36,5 +38,5 @@ export default async function OrderConfirmationPage({ params }: { params: Promis
     checkoutToken: token ?? null,
   }, process.env.BETTER_AUTH_SECRET ?? "");
   const proof = proofAccess ? await getOptionalCustomerProofView(orderNumber, proofAccess) : null;
-  return <main id="main-content" className={styles.orderPage}><OrderDetail order={order} heading={customerOrderHeading(order.paymentStatus)} showPaymentGuidance />{proof ? <CustomerProofPanel proof={proof} /> : null}<OrderPaymentPanel orderNumber={order.orderNumber} paymentStatus={order.paymentStatus} payment={order.payment} orderHref={`/orders/${order.orderNumber}`} totalInclGstCents={order.totals.totalInclGstCents} /><section className={styles.orderNext}><h2>Next steps</h2><div><Link className={styles.primaryButton} href="/shop">Continue browsing</Link>{session ? <Link className={styles.secondaryButton} href="/account/orders">View account orders</Link> : <Link className={styles.secondaryButton} href="/account/sign-in">Sign in</Link>}</div></section></main>;
+  return <main id="main-content" className={styles.orderPage}><PurchaseTracker event={buildPurchaseEvent(order)} /><OrderDetail order={order} heading={customerOrderHeading(order.paymentStatus)} showPaymentGuidance />{proof ? <CustomerProofPanel proof={proof} /> : null}<OrderPaymentPanel orderNumber={order.orderNumber} paymentStatus={order.paymentStatus} payment={order.payment} orderHref={`/orders/${order.orderNumber}`} totalInclGstCents={order.totals.totalInclGstCents} /><section className={styles.orderNext}><h2>Next steps</h2><div><Link className={styles.primaryButton} href="/shop">Continue browsing</Link>{session ? <Link className={styles.secondaryButton} href="/account/orders">View account orders</Link> : <Link className={styles.secondaryButton} href="/account/sign-in">Sign in</Link>}</div></section></main>;
 }

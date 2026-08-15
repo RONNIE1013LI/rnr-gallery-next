@@ -1,4 +1,5 @@
 import { z, ZodError } from "zod";
+import { ATTRIBUTION_FIELDS } from "@/domain/analytics/attribution";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
 import {
   hashCheckoutSessionToken,
@@ -28,11 +29,17 @@ import {
 
 export const runtime = "nodejs";
 const noStoreHeaders = { "Cache-Control": "no-store" };
+const attributionSchema = z.object(Object.fromEntries(
+  ATTRIBUTION_FIELDS.map((field) => [field, z.string().trim().min(1).max(200).optional()]),
+) as Record<typeof ATTRIBUTION_FIELDS[number], z.ZodOptional<z.ZodString>>).strict()
+  .refine((value) => Object.values(value).some(Boolean))
+  .optional();
 const inputSchema = z.object({
   idempotencyKey: z.uuid(),
   checkoutVersion: z.number().int().positive(),
   cartDigest: z.string().regex(/^[a-f0-9]{64}$/),
   shipping: z.object({ method: z.enum(["post", "pickup"]), serviceCode: z.string().min(1), amountExGstCents: z.number().int().nonnegative(), gstCents: z.number().int().nonnegative(), amountInclGstCents: z.number().int().nonnegative(), isTest: z.boolean() }).strict(),
+  attribution: attributionSchema,
 }).strict();
 
 type OrderCreator = {
@@ -128,7 +135,7 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
       const order = await deps.orderService.createOrder(
         session.id,
         input.idempotencyKey,
-        { checkoutVersion: input.checkoutVersion, cartDigest: input.cartDigest, shipping: input.shipping },
+        { checkoutVersion: input.checkoutVersion, cartDigest: input.cartDigest, shipping: input.shipping, ...(input.attribution ? { attribution: input.attribution } : {}) },
       );
       return json({ order: publicOrder(order) });
     } catch (error) {

@@ -8,8 +8,10 @@ import {
   setActiveCustomerId,
 } from "@/domain/cart/browser-cart-scope";
 import { LEGACY_CART_STORAGE_KEY } from "@/domain/cart/types";
+import { clearAttribution } from "@/domain/analytics/attribution";
 import { LEGACY_PAYMENT_INTENT_STORAGE_KEY } from "./payment-recovery-intent";
 import { LEGACY_PENDING_CHECKOUT_STORAGE_KEY } from "./pending-checkout";
+import { AttributionCapture } from "./attribution-capture";
 
 const LEGACY_SESSION_KEYS = [
   LEGACY_PAYMENT_INTENT_STORAGE_KEY,
@@ -65,6 +67,7 @@ export function CommerceIdentityProvider({
         window.sessionStorage,
         previousCustomerId,
       );
+      clearAttribution(window.sessionStorage, previousCustomerId);
     }
     customerIdRef.current = initialCustomerId;
     setActiveCustomerId(initialCustomerId);
@@ -89,6 +92,7 @@ export function CommerceIdentityProvider({
     signOutToGuest() {
       if (customerId !== null) {
         clearIdentityCheckoutState(window.localStorage, window.sessionStorage, customerId);
+        clearAttribution(window.sessionStorage, customerId);
       }
       switchIdentity(null);
     },
@@ -96,6 +100,7 @@ export function CommerceIdentityProvider({
 
   return (
     <CommerceIdentityContext.Provider value={value}>
+      <AttributionCapture customerId={customerId} />
       <Fragment key={customerId ?? "guest"}>
         {children}
       </Fragment>

@@ -42,6 +42,18 @@ function repository(customerId: string | null = null): OrderRepository {
 }
 
 describe("POST /api/checkout/order", () => {
+  it("binds only allowlisted attribution to the new order", async () => {
+    const service = { createOrder: vi.fn().mockResolvedValue({
+      orderId: "40000000-0000-4000-8000-000000000001", orderNumber: "RNR-2026-ATTR",
+      currency: "NZD", totalInclGstCents: 9_775, paymentStatus: "awaiting_payment",
+    }) };
+    const handler = createCheckoutOrderRoute({ repository: repository(), orderService: service, getOptionalSession: async () => null, trustedOrigin: origin });
+    const attribution = { utm_source: "google", utm_medium: "cpc", gclid: "click-1" };
+    expect((await handler(request({ ...validBody, attribution }))).status).toBe(200);
+    expect(service.createOrder).toHaveBeenCalledWith(sessionId, key, expect.objectContaining({ attribution }));
+
+    expect((await handler(request({ ...validBody, attribution: { ...attribution, email: "private@example.test" } }))).status).toBe(400);
+  });
   it("uses the original completed session and returns only the payment-start DTO", async () => {
     const repo = repository();
     const service = { createOrder: vi.fn().mockResolvedValue({

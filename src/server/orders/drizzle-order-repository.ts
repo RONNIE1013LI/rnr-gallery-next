@@ -323,6 +323,7 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
               customerEmail: input.billingAddress.email,
               deliveryMethod: input.deliveryMethod,
               shippingQuoteId,
+              attribution: input.attribution ?? null,
               ...shippingSnapshot,
               productSubtotalExGstCents: input.cart.subtotalExGstCents,
               productGstCents: input.cart.gstCents,

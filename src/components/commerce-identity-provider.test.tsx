@@ -8,6 +8,7 @@ import {
   getPendingCheckoutStorageKey,
 } from "@/domain/cart/browser-cart-scope";
 import type { Cart } from "@/domain/cart/types";
+import { getAttributionStorageKey } from "@/domain/analytics/attribution";
 import { AccountSignOut } from "./account-sign-out";
 import { CartCount } from "./cart-count";
 import { CommerceIdentityProvider, useCommerceIdentity } from "./commerce-identity-provider";
@@ -58,6 +59,8 @@ describe("same-browser identity transitions", () => {
     localStorage.setItem(getPendingCheckoutStorageKey("customer-a"), "pending-a");
     sessionStorage.setItem(getCheckoutDraftStorageKey("customer-a"), "draft-a");
     sessionStorage.setItem(getPaymentIntentStorageKey("customer-a"), "payment-a");
+    sessionStorage.setItem(getAttributionStorageKey("customer-a"), JSON.stringify({ utm_source: "google" }));
+    sessionStorage.setItem(getAttributionStorageKey(null), JSON.stringify({ utm_source: "guest" }));
     render(<CommerceIdentityProvider initialCustomerId="customer-a">
       <CartCount />
       <AccountSignOut client={{ signOut: vi.fn().mockResolvedValue({ error: null }) }} />
@@ -69,6 +72,8 @@ describe("same-browser identity transitions", () => {
     expect(localStorage.getItem(getPendingCheckoutStorageKey("customer-a"))).toBeNull();
     expect(sessionStorage.getItem(getCheckoutDraftStorageKey("customer-a"))).toBeNull();
     expect(sessionStorage.getItem(getPaymentIntentStorageKey("customer-a"))).toBeNull();
+    expect(sessionStorage.getItem(getAttributionStorageKey("customer-a"))).toBeNull();
+    expect(sessionStorage.getItem(getAttributionStorageKey(null))).not.toBeNull();
   });
 
   it("switches A to B and back to A using only each identity's own cart", () => {

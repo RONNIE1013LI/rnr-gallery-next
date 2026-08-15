@@ -16,6 +16,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { SupportedCountry } from "@/domain/address/types";
+import type { OrderAttribution } from "@/domain/analytics/attribution";
 import type {
   DeliveryPreference,
   Orientation,
@@ -76,6 +77,7 @@ export const orders = pgTable(
     shippingProviderReference: text("shipping_provider_reference"),
     shippingIsTest: boolean("shipping_is_test").default(false).notNull(),
     shippingRequestDigest: text("shipping_request_digest"),
+    attribution: jsonb("attribution").$type<OrderAttribution>(),
     productSubtotalExGstCents: bigint("product_subtotal_ex_gst_cents", {
       mode: "number",
     }).notNull(),

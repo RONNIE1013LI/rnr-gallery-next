@@ -155,6 +155,13 @@
       "when": 1785982816236,
       "tag": "0021_freezing_archangel",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1786804476658,
+      "tag": "0022_lame_madame_masque",
+      "breakpoints": true
     }
   ]
 }

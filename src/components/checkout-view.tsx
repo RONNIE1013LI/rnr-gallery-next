@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { AddressInput } from "@/domain/address/types";
 import { ADDRESS_FIELD_LIMITS, addressInputSchema } from "@/domain/address/schema";
+import { readAttribution } from "@/domain/analytics/attribution";
 import { createBrowserCartRepository, parseStoredCart } from "@/domain/cart/browser-cart-repository";
 import { EMPTY_CART_JSON, getCartSnapshot, notifyCartChanged, subscribeToCart } from "@/domain/cart/browser-cart-events";
 import {
@@ -100,11 +101,15 @@ function readPaymentIntent() {
 }
 
 function placementRequest(intent: CheckoutPaymentIntent) {
+  const attribution = typeof window === "undefined"
+    ? null
+    : readAttribution(window.sessionStorage, getActiveCustomerId());
   return {
     idempotencyKey: intent.orderIdempotencyKey,
     checkoutVersion: intent.checkoutVersion,
     cartDigest: intent.cartDigest,
     shipping: intent.shipping,
+    ...(attribution ? { attribution } : {}),
   };
 }
 
