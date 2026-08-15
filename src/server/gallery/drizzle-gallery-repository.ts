@@ -1,6 +1,6 @@
 import { isDeepStrictEqual } from "node:util";
 import { randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, max, or, sql, type SQL } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, like, max, or, sql, type SQL } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import { adminAuditLogs, galleryDesignRevisions, galleryDesigns, user } from "@/server/db/schema";
 import { buildAuditRecord } from "@/server/admin/audit-service";
@@ -213,6 +213,20 @@ export function createDrizzleGalleryRepository(
         .where(sql`${galleryDesigns.id} = ${designId} and ${galleryDesigns.status} = 'active'`)
         .limit(1);
       return row ? Object.freeze({ ...comparable(row), createdAt: row.createdAt }) : null;
+    },
+    async findActiveDesignByIdPrefix(designIdPrefix) {
+      const rows = await database
+        .select()
+        .from(galleryDesigns)
+        .where(and(
+          eq(galleryDesigns.status, "active"),
+          like(galleryDesigns.id, `${designIdPrefix}%`),
+        ))
+        .orderBy(asc(galleryDesigns.id))
+        .limit(2);
+      if (rows.length !== 1) return null;
+      const row = rows[0];
+      return Object.freeze({ ...comparable(row), createdAt: row.createdAt });
     },
     async findDesign(designId) {
       const [row] = await database.select().from(galleryDesigns)

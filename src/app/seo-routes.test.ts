@@ -20,11 +20,15 @@ describe("public SEO routes", () => {
   it("lists active public products and excludes private commerce surfaces", () => {
     const registry = structuredClone(defaultProductRegistry);
     registry.products[0].active = false;
-    const sitemap = buildPublicSitemap(registry, new URL("https://shop.example.test"));
+    const sitemap = buildPublicSitemap(registry, new URL("https://shop.example.test"), [{
+      slug: "40th-birthday-a1b2c3d4",
+      createdAt: new Date("2026-08-10T00:00:00Z"),
+    }]);
     const urls = sitemap.map((entry) => entry.url);
 
     expect(urls).toContain("https://shop.example.test/");
     expect(urls).toContain("https://shop.example.test/products/digital-oil-painting-canvas");
+    expect(urls).toContain("https://shop.example.test/designs/40th-birthday-a1b2c3d4");
     expect(urls).not.toContain(`https://shop.example.test/products/${registry.products[0].slug}`);
     expect(urls.some((url) => /\/(?:admin|account|cart|checkout|orders)(?:\/|$)/.test(url))).toBe(false);
     expect(sitemap.every((entry) => entry.lastModified instanceof Date)).toBe(true);

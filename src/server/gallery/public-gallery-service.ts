@@ -1,4 +1,9 @@
 import type { GalleryQuery } from "@/domain/gallery/query";
+import {
+  buildPublicDesignSlug,
+  publicDesignIdPrefixFromSlug,
+  publicDesignTitle,
+} from "@/domain/gallery/public-design-slug";
 import type { GalleryPublicCandidate, GalleryRepository } from "./gallery-repository";
 
 const pageSize = 24;
@@ -40,6 +45,25 @@ function publicItem(row: GalleryPublicCandidate): PublicGalleryItem {
 
 export function createPublicGalleryService(dependencies: Dependencies) {
   return Object.freeze({
+    async listSitemapDesigns() {
+      const rows = await dependencies.repository.listActiveCandidates();
+      const available = await Promise.all(rows.map(async (row) => ({
+        row,
+        available: await dependencies.imageAvailable(row.storageKey),
+      })));
+      return Object.freeze(available.flatMap(({ row, available }) => available ? [{
+        slug: buildPublicDesignSlug(publicDesignTitle(row), row.id),
+        createdAt: row.createdAt,
+      }] : []));
+    },
+    async findByPublicSlug(slug: string) {
+      const prefix = publicDesignIdPrefixFromSlug(slug);
+      const findByPrefix = dependencies.repository.findActiveDesignByIdPrefix;
+      if (!prefix || !findByPrefix) return null;
+      const row = await findByPrefix(prefix);
+      if (!row || !await dependencies.imageAvailable(row.storageKey)) return null;
+      return publicItem(row);
+    },
     async findByIds(designIds: readonly string[]) {
       const rows = await Promise.all(designIds.map(async (designId) => {
         const row = await dependencies.repository.findActiveDesign(designId);

@@ -56,6 +56,9 @@ export interface GalleryRepository {
   }>>;
   findActiveImage(designId: string): Promise<GalleryActiveImage | null>;
   findActiveDesign(designId: string): Promise<GalleryPublicCandidate | null>;
+  findActiveDesignByIdPrefix?(
+    designIdPrefix: string,
+  ): Promise<GalleryPublicCandidate | null>;
 }
 
 export interface AdminGalleryRepository {

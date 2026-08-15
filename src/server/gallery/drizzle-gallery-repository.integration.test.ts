@@ -99,4 +99,26 @@ describe.runIf(hasDedicatedTestDatabase)("createDrizzleGalleryRepository", () =>
       items: [expect.objectContaining({ id: matching.id })],
     });
   });
+
+  it("resolves only a unique active design ID prefix", async () => {
+    const first = {
+      ...row,
+      id: `abcdef12${"1".repeat(56)}`,
+      contentHash: "6".repeat(64),
+      storageKey: `generations/${"2".repeat(64)}/abcdef12-${"6".repeat(12)}.jpg`,
+    };
+    const collision = {
+      ...row,
+      id: `abcdef12${"2".repeat(56)}`,
+      contentHash: "7".repeat(64),
+      storageKey: `generations/${"2".repeat(64)}/abcdef12-${"7".repeat(12)}.jpg`,
+    };
+    await database.insert(galleryDesigns).values(first);
+
+    await expect(repository.findActiveDesignByIdPrefix!("abcdef12"))
+      .resolves.toMatchObject({ id: first.id });
+
+    await database.insert(galleryDesigns).values(collision);
+    await expect(repository.findActiveDesignByIdPrefix!("abcdef12")).resolves.toBeNull();
+  });
 });

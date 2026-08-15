@@ -4,6 +4,10 @@ import {
   galleryPageHref,
   type GalleryQuery,
 } from "@/domain/gallery/query";
+import {
+  buildPublicDesignSlug,
+  publicDesignTitle,
+} from "@/domain/gallery/public-design-slug";
 import { galleryThemes } from "@/domain/gallery/taxonomy";
 import type { GalleryProductTypeSlug } from "@/domain/gallery/types";
 import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
@@ -137,6 +141,8 @@ export function DesignGallery({ query, result }: Props) {
         <section className={styles.galleryGrid} aria-label="Design gallery artworks">
           {result.items.map((item, index) => {
             const title = item.subOccasion ?? occasionLabels[item.occasionSlug];
+            const publicSlug = buildPublicDesignSlug(publicDesignTitle(item), item.id);
+            const returnTo = galleryPageHref(query, result.page);
             const mobileSpan = item.productTypeSlug === "wall-hanging-banners" ? "wide" : "compact";
             return (
               <article
@@ -145,9 +151,9 @@ export function DesignGallery({ query, result }: Props) {
                 key={item.id}
               >
                 <Link
-                  aria-label={`Create this artwork: ${item.altText}`}
+                  aria-label={`View design details: ${item.altText}`}
                   className={styles.galleryCardLink}
-                  href={`/products/${item.productSlug}/configure?design=${item.id}`}
+                  href={`/designs/${publicSlug}?from=${encodeURIComponent(returnTo)}`}
                 >
                   <div className={styles.galleryCardMedia}>
                     <Image
@@ -169,7 +175,7 @@ export function DesignGallery({ query, result }: Props) {
                   <div className={styles.galleryCardBody}>
                     <h2>{title}</h2>
                     <p>{occasionLabels[item.occasionSlug]} · {productTypeLabels[item.productTypeSlug]}</p>
-                    <span className={styles.galleryCardAction}>Create this artwork</span>
+                    <span className={styles.galleryCardAction}>View design</span>
                   </div>
                 </Link>
               </article>

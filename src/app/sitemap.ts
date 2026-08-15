@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
 import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
+import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 import { getSiteUrl } from "@/server/seo/site-url";
 
 const pages = [
@@ -19,6 +20,7 @@ const contentLastModified = new Date("2026-08-16T00:00:00+12:00");
 export function buildPublicSitemap(
   registry: ProductRegistryDocument,
   siteUrl: URL,
+  designs: readonly Readonly<{ slug: string; createdAt: Date }>[] = [],
 ): MetadataRoute.Sitemap {
   const entry = (
     pathname: string,
@@ -35,10 +37,20 @@ export function buildPublicSitemap(
     ...registry.products.filter((product) => product.active).map((product) =>
       entry(`/products/${product.slug}`, 0.9, "weekly"),
     ),
+    ...designs.map((design) => ({
+      ...entry(`/designs/${design.slug}`, 0.7, "monthly"),
+      lastModified: design.createdAt,
+    })),
   ];
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const { registry } = await getSafePublicProductRegistry();
-  return buildPublicSitemap(registry, getSiteUrl());
+  let designs: readonly Readonly<{ slug: string; createdAt: Date }>[] = [];
+  try {
+    designs = await getGalleryRuntime().publicService.listSitemapDesigns();
+  } catch {
+    designs = [];
+  }
+  return buildPublicSitemap(registry, getSiteUrl(), designs);
 }

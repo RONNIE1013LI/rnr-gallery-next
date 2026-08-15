@@ -6,6 +6,10 @@ import {
   getRegistryProducts,
   type ProductRegistryDocument,
 } from "@/domain/catalogue/product-registry";
+import {
+  buildPublicDesignSlug,
+  publicDesignTitle,
+} from "@/domain/gallery/public-design-slug";
 import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
 import { getSiteUrl } from "@/server/seo/site-url";
 import {
@@ -113,10 +117,10 @@ function GalleryArtworkCard({
 }>) {
   return (
     <Link
-      aria-label={`Create this artwork: ${item.altText}`}
+      aria-label={`View design details: ${item.altText}`}
       className={`${styles.galleryCard} ${className}`}
       data-homepage-gallery-slot={slot}
-      href={`/products/${item.productSlug}/configure?design=${item.id}`}
+      href={`/designs/${buildPublicDesignSlug(publicDesignTitle(item), item.id)}`}
     >
       <figure className={styles.galleryFigure}>
         <div className={styles.galleryRealMedia}>

@@ -1,0 +1,115 @@
+import { render, screen, within } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import DesignDetailPage, { generateMetadata, revalidate } from "./page";
+
+const { findByPublicSlug, list, notFound } = vi.hoisted(() => ({
+  findByPublicSlug: vi.fn(),
+  list: vi.fn(),
+  notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
+}));
+
+vi.mock("next/navigation", () => ({ notFound }));
+vi.mock("@/server/gallery/gallery-runtime", () => ({
+  getGalleryRuntime: () => ({ publicService: { findByPublicSlug, list } }),
+}));
+vi.mock("@/server/admin/product-registry-runtime", () => ({
+  getSafePublicProductRegistry: async () => ({ registry: defaultProductRegistry }),
+}));
+
+const designId = `a1b2c3d4${"a".repeat(56)}`;
+const design = {
+  id: designId,
+  productTypeSlug: "roll-up-banner" as const,
+  occasionSlug: "birthday" as const,
+  subOccasion: "40th Birthday",
+  themeSlugs: [],
+  altText: "Black and gold 40th birthday roll-up banner",
+  productSlug: "roll-up-banner" as const,
+  contentHash: "b".repeat(64),
+  mimeType: "image/jpeg" as const,
+  width: 1200,
+  height: 2400,
+};
+
+const props = {
+  params: Promise.resolve({ slug: "black-and-gold-40th-birthday-roll-up-a1b2c3d4" }),
+  searchParams: Promise.resolve({ from: "/design-gallery?occasion=birthday&page=2" }),
+};
+
+describe("public design detail page", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    findByPublicSlug.mockResolvedValue(design);
+    list.mockResolvedValue({ items: [], total: 0, page: 1, pageCount: 1, pageSize: 5 });
+  });
+
+  it("uses on-demand revalidation instead of prebuilding every gallery design", () => {
+    expect(revalidate).toBe(3600);
+  });
+
+  it("shows the artwork, known product details and the existing configurator destination", async () => {
+    const { container } = render(await DesignDetailPage(props));
+
+    expect(screen.getByRole("heading", { name: "40th Birthday" })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: design.altText })).toBeInTheDocument();
+    expect(screen.getByText("Roll-up banner")).toBeInTheDocument();
+    expect(screen.getByText("Birthday")).toBeInTheDocument();
+    expect(screen.getByText("From NZ$264.50 incl GST")).toBeVisible();
+    expect(screen.getByText("85 × 200 cm")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Use This Design" }))
+      .toHaveAttribute("href", `/products/roll-up-banner/configure?design=${designId}`);
+    expect(screen.getByRole("link", { name: "View Similar Designs" }))
+      .toHaveAttribute("href", "/design-gallery?occasion=birthday&page=2");
+    const breadcrumbs = JSON.parse(container.querySelector("#rnr-design-breadcrumbs")?.textContent ?? "{}");
+    expect(breadcrumbs).toMatchObject({
+      "@type": "BreadcrumbList",
+      itemListElement: [
+        { position: 1, name: "Home" },
+        { position: 2, name: "Design Gallery" },
+        { position: 3, name: "40th Birthday" },
+      ],
+    });
+  });
+
+  it("publishes metadata for the concrete artwork and its public canonical", async () => {
+    const metadata = await generateMetadata(props);
+    expect(metadata).toMatchObject({
+      title: "40th Birthday Roll-up Banner Design",
+      description: expect.stringContaining("40th Birthday"),
+      alternates: {
+        canonical: "https://rrgallery.co.nz/designs/40th-birthday-a1b2c3d4",
+      },
+      openGraph: {
+        title: "40th Birthday Roll-up Banner Design",
+        images: [expect.objectContaining({ url: expect.stringContaining(`/gallery-images/${designId}`) })],
+      },
+      robots: { index: true, follow: true },
+    });
+  });
+
+  it("returns a real not-found response for invalid or non-public designs", async () => {
+    findByPublicSlug.mockResolvedValue(null);
+    await expect(DesignDetailPage({
+      params: Promise.resolve({ slug: "missing-design-deadbeef" }),
+      searchParams: Promise.resolve({}),
+    })).rejects.toThrow("NOT_FOUND");
+    expect(notFound).toHaveBeenCalled();
+  });
+
+  it("renders related public artworks without duplicating the current design", async () => {
+    list.mockResolvedValue({
+      items: [design, { ...design, id: `e5f6a7b8${"e".repeat(56)}`, subOccasion: "50th Birthday", altText: "50th birthday roll-up banner" }],
+      total: 2,
+      page: 1,
+      pageCount: 1,
+      pageSize: 5,
+    });
+    render(await DesignDetailPage(props));
+
+    const related = screen.getByRole("region", { name: "Related designs" });
+    expect(within(related).queryByRole("img", { name: design.altText })).not.toBeInTheDocument();
+    expect(within(related).getByRole("link", { name: /50th birthday/i }))
+      .toHaveAttribute("href", "/designs/50th-birthday-e5f6a7b8");
+  });
+});

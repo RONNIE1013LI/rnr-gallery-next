@@ -78,6 +78,58 @@ describe("public gallery service", () => {
     expect(findActiveDesign).toHaveBeenCalledTimes(3);
   });
 
+  it("resolves only an active, available design from a unique public slug prefix", async () => {
+    const design = candidate(12, {
+      id: `a1b2c3d4${"a".repeat(56)}`,
+      subOccasion: "40th Birthday",
+    });
+    const findActiveDesignByIdPrefix = vi.fn(async (prefix: string) =>
+      prefix === "a1b2c3d4" ? design : null
+    );
+    const service = createPublicGalleryService({
+      repository: {
+        ...repository([]),
+        findActiveDesignByIdPrefix,
+      },
+      imageAvailable: async () => true,
+    });
+
+    await expect(service.findByPublicSlug("black-gold-40th-birthday-a1b2c3d4"))
+      .resolves.toMatchObject({ id: design.id, subOccasion: "40th Birthday" });
+    expect(findActiveDesignByIdPrefix).toHaveBeenCalledWith("a1b2c3d4");
+  });
+
+  it("does not expose a design whose image is unavailable", async () => {
+    const design = candidate(13, { id: `deadbeef${"d".repeat(56)}` });
+    const service = createPublicGalleryService({
+      repository: {
+        ...repository([]),
+        findActiveDesignByIdPrefix: async () => design,
+      },
+      imageAvailable: async () => false,
+    });
+
+    await expect(service.findByPublicSlug("private-looking-design-deadbeef"))
+      .resolves.toBeNull();
+  });
+
+  it("builds sitemap records only for active designs with available images", async () => {
+    const available = candidate(14, {
+      id: `1234abcd${"a".repeat(56)}`,
+      subOccasion: "21st Birthday",
+    });
+    const missingImage = candidate(15, { id: `5678efab${"b".repeat(56)}` });
+    const service = createPublicGalleryService({
+      repository: repository([available, missingImage]),
+      imageAvailable: async (storageKey) => !storageKey.endsWith("/15.jpg"),
+    });
+
+    await expect(service.listSitemapDesigns()).resolves.toEqual([{
+      slug: "21st-birthday-1234abcd",
+      createdAt: available.createdAt,
+    }]);
+  });
+
   it("allows the homepage to request one available design per category", async () => {
     const query = {
       page: 1,

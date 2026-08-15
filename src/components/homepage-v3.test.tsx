@@ -707,7 +707,7 @@ describe("HomepageV3", () => {
     expect(productLinks).not.toHaveTextContent("Birthday");
   });
 
-  it("renders Design Gallery images and opens their matching configurators", () => {
+  it("renders Design Gallery images and opens their public detail pages", () => {
     const birthday = galleryItem(
       "a62ca0891fb346b22d7854d9967cedc29c1acdeb56e9a65a003aedac9c55f49d",
       {
@@ -723,10 +723,10 @@ describe("HomepageV3", () => {
 
     expect(screen.getByRole("img", { name: birthday.altText }))
       .toHaveAttribute("src", `/gallery-images/${birthday.id}?v=${birthday.contentHash}`);
-    expect(screen.getByRole("link", { name: `Create this artwork: ${birthday.altText}` }))
+    expect(screen.getByRole("link", { name: `View design details: ${birthday.altText}` }))
       .toHaveAttribute(
         "href",
-        `/products/${birthday.productSlug}/configure?design=${birthday.id}`,
+        "/designs/21st-birthday-a62ca089",
       );
   });
 

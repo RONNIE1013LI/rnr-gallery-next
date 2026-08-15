@@ -67,12 +67,15 @@ describe("DesignGallery", () => {
       .toHaveAttribute("width", "1200");
     expect(screen.getByRole("img", { name: "Golden 21st birthday canvas" }))
       .toHaveAttribute("fetchpriority", "high");
-    const artworkLink = screen.getByRole("link", { name: /create this artwork/i });
+    const artworkLink = screen.getByRole("link", { name: /view design details/i });
     expect(artworkLink).toContainElement(
       screen.getByRole("img", { name: "Golden 21st birthday canvas" }),
     );
     expect(artworkLink)
-      .toHaveAttribute("href", `/products/digital-oil-painting-canvas/configure?design=${"a".repeat(64)}`);
+      .toHaveAttribute(
+        "href",
+        `/designs/21st-birthday-aaaaaaaa?from=${encodeURIComponent("/design-gallery?design_type=canvas&occasion=birthday&birthday_age=21st+Birthday&page=1")}`,
+      );
     expect(screen.getByRole("link", { name: "Next page" })).toHaveAttribute("href", expect.stringContaining("page=2"));
   });
 
