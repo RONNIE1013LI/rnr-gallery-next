@@ -12,6 +12,9 @@ import { metadata as aboutMetadata } from "./about/page";
 import { metadata as contactMetadata } from "./contact/page";
 import { metadata as helpMetadata } from "./help/page";
 import { metadata as shippingMetadata } from "./shipping-delivery/page";
+import { metadata as rollUpLandingMetadata } from "./custom-roll-up-banners-nz/page";
+import { metadata as wallBannerLandingMetadata } from "./custom-wall-banners-nz/page";
+import { metadata as photoCanvasLandingMetadata } from "./custom-photo-canvas-nz/page";
 import { metadata as accountMetadata } from "./account/layout";
 import { metadata as adminMetadata } from "./admin/layout";
 import { metadata as formsMetadata } from "./forms/layout";
@@ -37,6 +40,9 @@ describe("public SEO routes", () => {
     expect(urls).toContain("https://shop.example.test/contact");
     expect(urls).toContain("https://shop.example.test/help");
     expect(urls).toContain("https://shop.example.test/shipping-delivery");
+    expect(urls).toContain("https://shop.example.test/custom-roll-up-banners-nz");
+    expect(urls).toContain("https://shop.example.test/custom-wall-banners-nz");
+    expect(urls).toContain("https://shop.example.test/custom-photo-canvas-nz");
     expect(urls).not.toContain(`https://shop.example.test/products/${registry.products[0].slug}`);
     expect(urls.some((url) => /\/(?:admin|account|cart|checkout|orders)(?:\/|$)/.test(url))).toBe(false);
     expect(sitemap.every((entry) => entry.lastModified instanceof Date)).toBe(true);
@@ -76,6 +82,9 @@ describe("public SEO routes", () => {
     ["contact", contactMetadata, "https://rrgallery.co.nz/contact"],
     ["help", helpMetadata, "https://rrgallery.co.nz/help"],
     ["shipping", shippingMetadata, "https://rrgallery.co.nz/shipping-delivery"],
+    ["roll-up landing", rollUpLandingMetadata, "https://rrgallery.co.nz/custom-roll-up-banners-nz"],
+    ["wall banner landing", wallBannerLandingMetadata, "https://rrgallery.co.nz/custom-wall-banners-nz"],
+    ["photo canvas landing", photoCanvasLandingMetadata, "https://rrgallery.co.nz/custom-photo-canvas-nz"],
   ])("gives %s unique, indexable social metadata and an absolute canonical", (_label, metadata, canonical) => {
     expect(metadata.title).toBeTruthy();
     expect(metadata.description).toBeTruthy();
@@ -94,7 +103,7 @@ describe("public SEO routes", () => {
   });
 
   it("does not reuse titles or descriptions across primary public routes", () => {
-    const metadata = [homeMetadata, shopMetadata, canvasMetadata, bannersMetadata, galleryMetadata, howItWorksMetadata, aboutMetadata, contactMetadata, helpMetadata, shippingMetadata];
+    const metadata = [homeMetadata, shopMetadata, canvasMetadata, bannersMetadata, galleryMetadata, howItWorksMetadata, aboutMetadata, contactMetadata, helpMetadata, shippingMetadata, rollUpLandingMetadata, wallBannerLandingMetadata, photoCanvasLandingMetadata];
     expect(new Set(metadata.map((entry) => entry.title)).size).toBe(metadata.length);
     expect(new Set(metadata.map((entry) => entry.description)).size).toBe(metadata.length);
   });

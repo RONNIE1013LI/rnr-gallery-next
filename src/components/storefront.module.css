@@ -5149,3 +5149,162 @@
     min-height: 48px;
   }
 }
+
+.adLandingPage {
+  width: min(100% - 2rem, 76rem);
+  margin: 0 auto;
+  padding: clamp(1.5rem, 4vw, 4rem) 0 5rem;
+}
+
+.adLandingHero {
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(20rem, 0.85fr);
+  gap: clamp(2rem, 5vw, 5rem);
+  align-items: center;
+}
+
+.adLandingCopy h1 {
+  margin-top: 0.8rem;
+  font-family: var(--font-display);
+  font-size: clamp(2.4rem, 6vw, 5.2rem);
+  line-height: 0.98;
+  overflow-wrap: anywhere;
+}
+
+.adLandingCopy .purchaseTrustStrip {
+  margin-block: 1rem 1.4rem;
+}
+
+.adLandingHeroMedia {
+  min-height: clamp(25rem, 54vw, 40rem);
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-card);
+  background: var(--soft-paper);
+}
+
+.adLandingHeroMedia img {
+  object-fit: cover;
+}
+
+.adLandingSection,
+.adLandingExamples,
+.adLandingFaq,
+.adLandingFinalCta {
+  margin-top: clamp(4rem, 8vw, 7rem);
+}
+
+.adLandingSection {
+  padding-top: 2rem;
+  display: grid;
+  grid-template-columns: minmax(0, 0.7fr) minmax(0, 1fr);
+  gap: 2rem;
+  border-top: 1px solid var(--border);
+}
+
+.adLandingSection h2,
+.adLandingExamples h2,
+.adLandingFaq h2,
+.adLandingFinalCta h2 {
+  margin-top: 0.5rem;
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 4vw, 3.5rem);
+  line-height: 1.05;
+}
+
+.adLandingSection ul,
+.adLandingSection ol {
+  margin-top: 1rem;
+  padding-left: 1.2rem;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.adLandingSection ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.adLandingSection ol li {
+  padding-bottom: 1rem;
+  display: grid;
+  gap: 0.3rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.adLandingSection ol span {
+  color: var(--muted);
+}
+
+.adLandingExamples > div:last-child {
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.adLandingExamples img {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: var(--radius-card);
+}
+
+.adLandingFaq details {
+  padding: 1.1rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.adLandingFaq summary {
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.adLandingFaq details p {
+  max-width: 52rem;
+  margin-top: 0.8rem;
+  color: var(--muted);
+}
+
+.adLandingFinalCta {
+  padding: clamp(2rem, 5vw, 4rem);
+  display: flex;
+  justify-content: space-between;
+  gap: 1.5rem;
+  align-items: center;
+  border-radius: var(--radius-card);
+  background: var(--soft-paper);
+}
+
+@media (max-width: 820px) {
+  .adLandingHero,
+  .adLandingSection {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .adLandingHeroMedia {
+    min-height: 28rem;
+  }
+
+  .adLandingFinalCta {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+@media (max-width: 520px) {
+  .adLandingPage {
+    width: min(100% - 1.5rem, 76rem);
+  }
+
+  .adLandingHeroMedia {
+    min-height: 23rem;
+  }
+
+  .adLandingExamples > div:last-child {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
