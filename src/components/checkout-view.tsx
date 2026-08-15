@@ -405,6 +405,15 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
     window.sessionStorage.setItem(getActiveCheckoutDraftStorageKey(), JSON.stringify(draft));
   }, [billing, cart.items.length, delivery, different, draftChecked, paymentIntent, snapshot]);
 
+  const stripePaymentClientSecret = paymentIntent?.phase === "starting_payment" && paymentAction?.kind === "elements"
+    ? paymentAction.clientSecret
+    : null;
+
+  useEffect(() => {
+    if (!stripePaymentClientSecret) return;
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+  }, [stripePaymentClientSecret]);
+
   if (paymentIntent?.phase === "starting_payment" && paymentAction?.kind === "elements") {
     return <section className={styles.orderPaymentPanel} id="payment">
       <h2>Secure card payment</h2>
@@ -417,7 +426,6 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
           ? reviewedCart.totalInclGstCents + (shipping?.amountInclGstCents ?? 0)
           : undefined}
         onPaymentUpdated={(status) => {
-          const returnUrl = `/orders/${paymentIntent.orderNumber}#payment`;
           setIsReturningToOrder(true);
           if (status === "paid") {
             if (completePendingCheckout(window.localStorage, paymentIntent.orderNumber)) notifyCartChanged();
@@ -426,7 +434,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
             window.sessionStorage.removeItem(getActivePaymentIntentStorageKey());
             clearCheckoutIntentCartBackup(window.sessionStorage);
           }
-          push(returnUrl);
+          push(`/orders/${paymentIntent.orderNumber}`, { scroll: true });
         }}
       />
     </section>;

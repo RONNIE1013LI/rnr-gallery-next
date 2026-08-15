@@ -6,8 +6,14 @@ import { canonicalCheckoutCart, CheckoutView } from "./checkout-view";
 const push = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 vi.mock("./stripe-payment-form", () => ({
-  StripePaymentForm: ({ clientSecret, returnUrl }: { clientSecret: string; returnUrl: string }) => (
-    <div data-testid="checkout-stripe-payment-form" data-client-secret={clientSecret} data-return-url={returnUrl} />
+  StripePaymentForm: ({ clientSecret, returnUrl, onPaymentUpdated }: {
+    clientSecret: string;
+    returnUrl: string;
+    onPaymentUpdated: (status: "paid" | "failed" | "cancelled" | "processing") => void;
+  }) => (
+    <div data-testid="checkout-stripe-payment-form" data-client-secret={clientSecret} data-return-url={returnUrl}>
+      <button type="button" onClick={() => onPaymentUpdated("paid")}>Simulate Stripe paid</button>
+    </div>
   ),
 }));
 
@@ -746,6 +752,7 @@ describe("CheckoutView", () => {
   });
 
   it("keeps the cart and a durable resume record while Stripe card details are unfinished", async () => {
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => {});
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
       .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
@@ -764,12 +771,36 @@ describe("CheckoutView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue to secure card payment" }));
 
     expect(await screen.findByTestId("checkout-stripe-payment-form")).toBeInTheDocument();
+    await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: "auto" }));
     expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(cart));
     expect(JSON.parse(localStorage.getItem(pendingCheckoutStorageKey)!)).toMatchObject({
       schemaVersion: 1,
       intent: { phase: "starting_payment", orderNumber: "RNR-2026-CARD-OPEN" },
       cart,
     });
+  });
+
+  it("opens the order page at the top after Stripe confirms payment", async () => {
+    vi.spyOn(window, "scrollTo").mockImplementation(() => {});
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
+      .mockResolvedValueOnce(methodsResponse)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ order: { orderNumber: "RNR-2026-CARD-PAID" } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({
+        payment: { method: "card", status: "processing", isTest: false, canRetry: false },
+        action: { kind: "elements", method: "card", clientSecret: "pi_secret_paid", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
+      }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    await screen.findByRole("radiogroup", { name: "Payment method" });
+    fireEvent.click(screen.getByRole("button", { name: "Continue to secure card payment" }));
+
+    fireEvent.click(await screen.findByRole("button", { name: "Simulate Stripe paid" }));
+
+    expect(push).toHaveBeenCalledWith("/orders/RNR-2026-CARD-PAID", { scroll: true });
   });
 
   it("returns a reopened browser to the same unfinished order without creating another order", async () => {
