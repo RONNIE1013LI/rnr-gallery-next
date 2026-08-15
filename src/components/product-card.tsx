@@ -1,7 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import type { Product } from "@/domain/catalogue/types";
-import { formatNzd } from "@/domain/money";
+import { addNzdGst, formatNzd } from "@/domain/money";
 import styles from "./storefront.module.css";
 
 export function ProductCard({
@@ -29,7 +29,10 @@ export function ProductCard({
           <h2>{product.title}</h2>
           <p>{product.summary}</p>
           <div className={styles.productCardFooter}>
-            <span>From {formatNzd(product.startingPriceExGstCents)} + GST</span>
+            <span className={styles.publicPrice}>
+              <strong>From {formatNzd(addNzdGst(product.startingPriceExGstCents))} incl GST</strong>
+              <small>{formatNzd(product.startingPriceExGstCents)} excl GST</small>
+            </span>
             <span className={styles.primaryButton}>Create Your Artwork</span>
           </div>
         </div>

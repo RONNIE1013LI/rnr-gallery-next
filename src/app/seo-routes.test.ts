@@ -8,6 +8,10 @@ import { metadata as canvasMetadata } from "./canvas/page";
 import { metadata as bannersMetadata } from "./banners/page";
 import { metadata as galleryMetadata } from "./design-gallery/page";
 import { metadata as howItWorksMetadata } from "./how-it-works/page";
+import { metadata as aboutMetadata } from "./about/page";
+import { metadata as contactMetadata } from "./contact/page";
+import { metadata as helpMetadata } from "./help/page";
+import { metadata as shippingMetadata } from "./shipping-delivery/page";
 import { metadata as accountMetadata } from "./account/layout";
 import { metadata as adminMetadata } from "./admin/layout";
 import { metadata as formsMetadata } from "./forms/layout";
@@ -29,6 +33,10 @@ describe("public SEO routes", () => {
     expect(urls).toContain("https://shop.example.test/");
     expect(urls).toContain("https://shop.example.test/products/digital-oil-painting-canvas");
     expect(urls).toContain("https://shop.example.test/designs/40th-birthday-a1b2c3d4");
+    expect(urls).toContain("https://shop.example.test/about");
+    expect(urls).toContain("https://shop.example.test/contact");
+    expect(urls).toContain("https://shop.example.test/help");
+    expect(urls).toContain("https://shop.example.test/shipping-delivery");
     expect(urls).not.toContain(`https://shop.example.test/products/${registry.products[0].slug}`);
     expect(urls.some((url) => /\/(?:admin|account|cart|checkout|orders)(?:\/|$)/.test(url))).toBe(false);
     expect(sitemap.every((entry) => entry.lastModified instanceof Date)).toBe(true);
@@ -64,6 +72,10 @@ describe("public SEO routes", () => {
     ["banners", bannersMetadata, "https://rrgallery.co.nz/banners"],
     ["design gallery", galleryMetadata, "https://rrgallery.co.nz/design-gallery"],
     ["how it works", howItWorksMetadata, "https://rrgallery.co.nz/how-it-works"],
+    ["about", aboutMetadata, "https://rrgallery.co.nz/about"],
+    ["contact", contactMetadata, "https://rrgallery.co.nz/contact"],
+    ["help", helpMetadata, "https://rrgallery.co.nz/help"],
+    ["shipping", shippingMetadata, "https://rrgallery.co.nz/shipping-delivery"],
   ])("gives %s unique, indexable social metadata and an absolute canonical", (_label, metadata, canonical) => {
     expect(metadata.title).toBeTruthy();
     expect(metadata.description).toBeTruthy();
@@ -82,7 +94,7 @@ describe("public SEO routes", () => {
   });
 
   it("does not reuse titles or descriptions across primary public routes", () => {
-    const metadata = [homeMetadata, shopMetadata, canvasMetadata, bannersMetadata, galleryMetadata, howItWorksMetadata];
+    const metadata = [homeMetadata, shopMetadata, canvasMetadata, bannersMetadata, galleryMetadata, howItWorksMetadata, aboutMetadata, contactMetadata, helpMetadata, shippingMetadata];
     expect(new Set(metadata.map((entry) => entry.title)).size).toBe(metadata.length);
     expect(new Set(metadata.map((entry) => entry.description)).size).toBe(metadata.length);
   });

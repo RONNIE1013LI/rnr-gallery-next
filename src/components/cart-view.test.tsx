@@ -48,12 +48,12 @@ describe("CartView", () => {
 
     expect(await screen.findByRole("heading", { name: "Photo Print Canvas" })).toBeInTheDocument();
     expect(screen.getByText("A4 — 29.7 × 21 cm")).toBeInTheDocument();
-    expect(screen.getByText("Send after ordering")).toBeInTheDocument();
+    expect(screen.getByText("Send Photos After Ordering")).toBeInTheDocument();
     expect(screen.getByText("Production completion date")).toBeInTheDocument();
     expect(screen.queryByText("Needed by")).not.toBeInTheDocument();
-    expect(screen.getByText("$65.00")).toBeInTheDocument();
-    expect(screen.getByText("$9.75")).toBeInTheDocument();
-    expect(screen.getByText("$74.75")).toBeInTheDocument();
+    expect(screen.getByText("NZ$65.00")).toBeInTheDocument();
+    expect(screen.getByText("NZ$9.75")).toBeInTheDocument();
+    expect(screen.getByText("NZ$74.75")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Continue to checkout" })).toHaveAttribute(
       "href",
       "/checkout/start",
@@ -85,7 +85,7 @@ describe("CartView", () => {
     fireEvent.change(screen.getByLabelText("Quantity for Photo Print Canvas"), {
       target: { value: "2" },
     });
-    expect(screen.getByText("$149.50")).toBeInTheDocument();
+    expect(screen.getByText("NZ$149.50")).toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0].quantity).toBe(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Remove Photo Print Canvas" }));

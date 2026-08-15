@@ -53,7 +53,8 @@ export function SiteFooter({ content = defaultContent }: Readonly<{ content?: Si
             <li><Link href="/design-gallery">Gallery</Link></li>
             <li><Link href="/#gallery">Designs by Product</Link></li>
             <li><Link href="/#transformation">Transformations</Link></li>
-            <li><Link href="/#process">How It Works</Link></li>
+            <li><Link href="/how-it-works">How It Works</Link></li>
+            <li><Link href="/about">About</Link></li>
           </ul>
         </div>
 
@@ -64,6 +65,7 @@ export function SiteFooter({ content = defaultContent }: Readonly<{ content?: Si
             <li><Link href="/cart">Cart</Link></li>
             <li><Link href="/privacy">Privacy</Link></li>
             <li><Link href="/terms">Terms</Link></li>
+            <li><Link href="/shipping-delivery">Shipping &amp; Delivery</Link></li>
           </ul>
         </div>
 
@@ -71,7 +73,8 @@ export function SiteFooter({ content = defaultContent }: Readonly<{ content?: Si
           <div className="site-footer__help-menu">
             <p className="site-footer__title">Need help?</p>
             <ul>
-              <li><Link href="/#faq">FAQ</Link></li>
+              <li><Link href="/help">FAQ</Link></li>
+              <li><Link href="/contact">Contact</Link></li>
               <li>
                 <a href="https://m.me/RandRgallery" rel="noopener noreferrer">
                   Message R&amp;R

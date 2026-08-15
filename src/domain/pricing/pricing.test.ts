@@ -53,6 +53,6 @@ describe("R&R pricing", () => {
   });
 
   it("formats NZD cents consistently", () => {
-    expect(formatNzd(12_075)).toBe("$120.75");
+    expect(formatNzd(12_075)).toBe("NZ$120.75");
   });
 });

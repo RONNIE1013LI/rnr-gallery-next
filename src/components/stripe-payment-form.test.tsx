@@ -74,7 +74,7 @@ describe("StripePaymentForm", () => {
   it("does not submit Stripe while the card details are empty", () => {
     render(<StripePaymentForm {...props} />);
 
-    const confirm = screen.getByRole("button", { name: "Pay $397.25 and place order" });
+    const confirm = screen.getByRole("button", { name: "Pay NZ$397.25 and place order" });
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(confirmPayment).not.toHaveBeenCalled();
@@ -96,7 +96,7 @@ describe("StripePaymentForm", () => {
 
     act(() => paymentElement.onReady?.());
     act(() => paymentElement.onChange?.({ complete: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Pay $397.25 and place order" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pay NZ$397.25 and place order" }));
 
     await waitFor(() => expect(confirmPayment).toHaveBeenCalledWith({
       elements: elementsValue,
@@ -112,7 +112,7 @@ describe("StripePaymentForm", () => {
     ));
     expect(onPaymentUpdated).toHaveBeenCalledWith("paid");
     expect(await screen.findByText("Payment confirmed. Your order has been placed.")).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Pay $397.25 and place order" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Pay NZ$397.25 and place order" })).toBeDisabled();
   });
 
   it("shows a client validation message without locking the editable card form", async () => {
@@ -122,7 +122,7 @@ describe("StripePaymentForm", () => {
     render(<StripePaymentForm {...props} />);
     act(() => paymentElement.onReady?.());
     act(() => paymentElement.onChange?.({ complete: true }));
-    const button = screen.getByRole("button", { name: "Pay $397.25 and place order" });
+    const button = screen.getByRole("button", { name: "Pay NZ$397.25 and place order" });
     fireEvent.click(button);
     expect(await screen.findByText("Enter a complete card number.")).toBeInTheDocument();
     expect(button).toBeEnabled();
@@ -145,7 +145,7 @@ describe("StripePaymentForm", () => {
 
     act(() => paymentElement.onReady?.());
     act(() => paymentElement.onChange?.({ complete: true }));
-    fireEvent.click(screen.getByRole("button", { name: "Pay $397.25 and place order" }));
+    fireEvent.click(screen.getByRole("button", { name: "Pay NZ$397.25 and place order" }));
 
     await waitFor(() => expect(fetchSpy).toHaveBeenCalledWith(
       props.confirmationUrl,
@@ -163,7 +163,7 @@ describe("StripePaymentForm", () => {
 
     act(() => paymentElement.onReady?.());
     act(() => paymentElement.onChange?.({ complete: true }));
-    const button = screen.getByRole("button", { name: "Pay $397.25 and place order" });
+    const button = screen.getByRole("button", { name: "Pay NZ$397.25 and place order" });
     fireEvent.click(button);
 
     expect(await screen.findByText(

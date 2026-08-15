@@ -1368,6 +1368,22 @@
   white-space: nowrap;
 }
 
+.publicPrice {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.publicPrice strong {
+  font-size: 1rem;
+}
+
+.publicPrice small,
+.publicPriceSecondary {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 500;
+}
+
 .process {
   color: var(--paper);
   background: var(--gallery-green);
@@ -2075,6 +2091,15 @@
   white-space: nowrap;
 }
 
+.sizeOptionBody > small {
+  grid-column: 2;
+  color: var(--muted);
+  font-size: 0.72rem;
+  line-height: 1.25;
+  text-align: right;
+  white-space: nowrap;
+}
+
 .sizeOption:hover .sizeOptionBody {
   border-color: var(--gallery-green);
 }
@@ -2565,6 +2590,24 @@
 .priceTotal dd {
   color: var(--gallery-green);
   font-size: 1.4rem;
+}
+
+.purchaseTrustStrip {
+  margin: 1.1rem 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.8rem;
+  color: var(--gallery-green);
+  font-size: 0.76rem;
+  font-weight: 700;
+  line-height: 1.35;
+  list-style: none;
+}
+
+.purchaseTrustStrip li::before {
+  margin-right: 0.35rem;
+  content: "✓";
 }
 
 .priceSummary .primaryButton {

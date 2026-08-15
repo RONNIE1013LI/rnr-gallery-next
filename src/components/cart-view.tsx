@@ -30,8 +30,8 @@ function updateCart(update: (cart: Cart) => Cart) {
 
 function labelFor(value: string): string {
   const labels: Record<string, string> = {
-    upload: "Upload on this page",
-    later: "Send after ordering",
+    upload: "Upload Photos Now",
+    later: "Send Photos After Ordering",
     landscape: "Landscape",
     portrait: "Portrait",
     post: "Post",

@@ -1,10 +1,6 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
-import {
-  ProductConfigurator,
-  type ProductConfiguratorRelatedDesign,
-} from "@/components/product-configurator";
-import styles from "@/components/storefront.module.css";
+import type { ProductConfiguratorRelatedDesign } from "@/components/product-configurator";
 import {
   getRegistryProductBySlug,
   schemaFromRegistry,
@@ -12,6 +8,7 @@ import {
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
+import { ConfigurePageContent } from "./page-content";
 
 type ConfigurePageProps = {
   params: Promise<{ slug: string }>;
@@ -86,21 +83,12 @@ export default async function ConfigurePage({ params, searchParams }: ConfigureP
     relatedDesigns = [];
   }
 
-  return (
-    <main id="main-content" className={styles.configurePage}>
-      <header className={styles.configureIntro}>
-        <p className={styles.eyebrow}>Create your artwork</p>
-        <h1>{product.title}</h1>
-        <p>{product.summary}</p>
-      </header>
-      <ProductConfigurator
-        product={product}
-        schema={schema}
-        pricing={registry.pricing}
-        orderDate={getAucklandOrderDate()}
-        selectedDesign={selectedDesign}
-        relatedDesigns={relatedDesigns}
-      />
-    </main>
-  );
+  return <ConfigurePageContent
+    product={product}
+    schema={schema}
+    pricing={registry.pricing}
+    orderDate={getAucklandOrderDate()}
+    selectedDesign={selectedDesign}
+    relatedDesigns={relatedDesigns}
+  />;
 }

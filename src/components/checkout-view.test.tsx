@@ -135,8 +135,8 @@ describe("CheckoutView", () => {
     expect(screen.queryByRole("heading", { name: "Delivery" })).not.toBeInTheDocument();
     await checkoutReady();
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
-    await screen.findByText("$97.75");
-    expect(screen.getByText("$65.00")).toBeInTheDocument();
+    await screen.findByText("NZ$97.75");
+    expect(screen.getByText("NZ$65.00")).toBeInTheDocument();
     expect(screen.getByText("Shipping ex GST")).toBeInTheDocument();
     expect(screen.getByText(/Live carrier rate/)).toBeInTheDocument();
     expect(fetchMock.mock.calls[0][0]).toBe("/api/checkout/session");
@@ -177,7 +177,7 @@ describe("CheckoutView", () => {
     render(<CheckoutView savedAddresses={[address]} />);
     await checkoutReady();
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
-    await screen.findByText("$74.75");
+    await screen.findByText("NZ$74.75");
     fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     await screen.findByText("Try again");
     fireEvent.click(screen.getByRole("button", { name: "Retry order recovery" }));

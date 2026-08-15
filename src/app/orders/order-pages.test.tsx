@@ -116,7 +116,7 @@ describe("owner-scoped order pages", () => {
     expect(screen.getByText("Payment required", { exact: false })).toBeInTheDocument();
     expect(screen.queryByText("Order received.")).not.toBeInTheDocument();
     expect(screen.getByText("3 August 2026", { exact: false })).toBeInTheDocument();
-    expect(screen.getByText("Send after ordering")).toBeInTheDocument();
+    expect(screen.getByText("Send Photos After Ordering")).toBeInTheDocument();
     expect(screen.getByText("Family forever")).toBeInTheDocument();
     expect(screen.getByText("Use the warm sunset reference")).toBeInTheDocument();
     expect(screen.getByText("Production completion date")).toBeInTheDocument();
@@ -131,7 +131,7 @@ describe("owner-scoped order pages", () => {
     expect(screen.getByText("People / pets fee")).toBeInTheDocument();
     expect(screen.getAllByText("Urgent service")).toHaveLength(2);
     expect(screen.queryByText("No charge")).not.toBeInTheDocument();
-    expect(screen.getAllByText("$180.75")).toHaveLength(2);
+    expect(screen.getAllByText("NZ$180.75")).toHaveLength(2);
     expect(await screen.findByRole("radiogroup", { name: "Payment method" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
     expect(screen.getByText("No real payment will be taken.")).toBeInTheDocument();

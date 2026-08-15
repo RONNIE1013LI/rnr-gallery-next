@@ -20,7 +20,7 @@ import type {
 import { MAX_SOURCE_PHOTOS_PER_ITEM } from "@/domain/configuration/types";
 import { quoteConfiguration } from "@/domain/configuration/quote";
 import { formatConfigurationSizeLabel } from "@/domain/configuration/size-label";
-import { formatNzd } from "@/domain/money";
+import { addNzdGst, formatNzd } from "@/domain/money";
 import {
   MAX_CHECKOUT_TEXT_LENGTH,
   MAX_PEOPLE_PETS_PER_ITEM,
@@ -33,6 +33,7 @@ import {
 import styles from "./storefront.module.css";
 import { useContainedDialog } from "./forms/use-contained-dialog";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
+import { PurchaseTrustStrip } from "./purchase-trust-strip";
 
 export type ProductConfiguratorRelatedDesign = Readonly<{
   id: string;
@@ -380,6 +381,7 @@ export function ProductConfigurator({
             <div><dt>GST (15%)</dt><dd>{formatNzd(quote.gstCents)}</dd></div>
             <div className={styles.priceTotal}><dt>Total incl GST</dt><dd>{formatNzd(quote.totalInclGstCents)}</dd></div>
           </dl>
+          <PurchaseTrustStrip />
           <button
             className={styles.primaryButton}
             type="button"
@@ -402,6 +404,7 @@ export function ProductConfigurator({
       </div>
 
         <form
+        id="customise"
         className={styles.configuratorForm}
         onSubmit={(event) => {
           event.preventDefault();
@@ -424,7 +427,8 @@ export function ProductConfigurator({
                 <legend>Size</legend>
                 <div className={styles.sizeOptions}>
                   {sizeChoices.map((option) => {
-                    const priceLabel = `From ${formatNzd(option.minimumPriceExGstCents)} + GST`;
+                    const priceLabel = `From ${formatNzd(addNzdGst(option.minimumPriceExGstCents))} incl GST`;
+                    const secondaryPriceLabel = `${formatNzd(option.minimumPriceExGstCents)} excl GST`;
                     return (
                       <label className={styles.sizeOption} key={option.key}>
                         <input
@@ -433,11 +437,12 @@ export function ProductConfigurator({
                           value={option.key}
                           checked={sizeKey === option.key}
                           onChange={() => setSizeKey(option.key)}
-                          aria-label={`${option.label}, ${priceLabel}`}
+                          aria-label={`${option.label}, ${priceLabel}, ${secondaryPriceLabel}`}
                         />
                         <span className={styles.sizeOptionBody}>
                           <strong>{option.label}</strong>
                           <span>{priceLabel}</span>
+                          <small>{secondaryPriceLabel}</small>
                         </span>
                       </label>
                     );
@@ -516,7 +521,7 @@ export function ProductConfigurator({
                 checked={photoSubmissionMethod === "upload"}
                 onChange={() => setPhotoSubmissionMethod("upload")}
               />
-              <span><strong>Upload on this page</strong><small>Recommended. Your original files stay private and retain their quality.</small></span>
+              <span><strong>Upload Photos Now</strong><small>Upload now — recommended for preserving original quality.</small></span>
             </label>
             <label>
               <input
@@ -525,7 +530,7 @@ export function ProductConfigurator({
                 checked={photoSubmissionMethod === "later"}
                 onChange={() => setPhotoSubmissionMethod("later")}
               />
-              <span><strong>Send after ordering</strong><small>Send your photos later by Messenger, Email or WhatsApp.</small></span>
+              <span><strong>Send Photos After Ordering</strong><small>Send later — send by Messenger, Email or WhatsApp after ordering.</small></span>
             </label>
           </fieldset>
           {photoSubmissionMethod === "upload" && (

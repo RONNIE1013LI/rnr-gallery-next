@@ -11,6 +11,10 @@ const pages = [
   ["/banners", 0.8, "weekly"],
   ["/design-gallery", 0.8, "weekly"],
   ["/how-it-works", 0.6, "monthly"],
+  ["/about", 0.5, "monthly"],
+  ["/contact", 0.5, "monthly"],
+  ["/help", 0.5, "monthly"],
+  ["/shipping-delivery", 0.5, "monthly"],
   ["/privacy", 0.2, "yearly"],
   ["/terms", 0.2, "yearly"],
 ] as const;

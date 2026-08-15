@@ -186,7 +186,7 @@ export function CustomerProofPanel({ proof, access }: Readonly<{
           ) : (
             <p className={styles.proofWaiting}>This draft is not currently awaiting a customer decision. Please contact R&R Gallery if you need help.</p>
           )}
-          <p className={styles.proofPolicy}>Changing to a different source photo may cost $25. Further revision rounds may cost $30. We will confirm any additional charge before applying it.</p>
+          <p className={styles.proofPolicy}>Changing to a different source photo may cost NZ$25. Further revision rounds may cost NZ$30. We will confirm any additional charge before applying it.</p>
           <p className={styles.formFeedback} aria-live="polite">{feedback}</p>
         </div>
       </div>

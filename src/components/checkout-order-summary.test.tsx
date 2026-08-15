@@ -28,7 +28,7 @@ describe("CheckoutOrderSummary", () => {
     render(<CheckoutOrderSummary cart={cart} shipping={null} />);
     expect(screen.getByText("Family at sunset")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Family at sunset" })).toBeInTheDocument();
-    expect(screen.getByText("$74.75")).toBeInTheDocument();
+    expect(screen.getByText("NZ$74.75")).toBeInTheDocument();
   });
 
   it("uses one concise test-rate disclosure", () => {

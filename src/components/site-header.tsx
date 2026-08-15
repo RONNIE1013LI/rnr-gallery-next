@@ -14,8 +14,8 @@ const mobileNavigation = [
   { href: "/banners", label: "Banners" },
   { href: "/design-gallery", label: "Design Gallery" },
   { href: "/#transformation", label: "Transformations" },
-  { href: "/#process", label: "How It Works" },
-  { href: "/#faq", label: "Help" },
+  { href: "/how-it-works", label: "How It Works" },
+  { href: "/help", label: "Help" },
 ] as const;
 
 const shopMenu = [
@@ -214,8 +214,8 @@ export function SiteHeader() {
               items={galleryMenu}
               pathname={pathname}
             />
-            <Link className="site-header__nav-link" href="/#process">How It Works</Link>
-            <Link className="site-header__nav-link" href="/#faq">Help</Link>
+            <Link className="site-header__nav-link" href="/how-it-works">How It Works</Link>
+            <Link className="site-header__nav-link" href="/help">Help</Link>
           </nav>
 
           <div className="site-header__actions">

@@ -5,11 +5,10 @@ export function formatNzd(cents: number): string {
     throw new InvalidPricingInputError("Money must be stored as integer cents.");
   }
 
-  return new Intl.NumberFormat("en-NZ", {
-    style: "currency",
-    currency: "NZD",
-    currencyDisplay: "narrowSymbol",
-  }).format(cents / 100);
+  return `NZ$${new Intl.NumberFormat("en-NZ", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents / 100)}`;
 }
 
 export function addNzdGst(exGstCents: number): number {
@@ -20,11 +19,5 @@ export function addNzdGst(exGstCents: number): number {
 }
 
 export function formatNzdExplicit(cents: number): string {
-  if (!Number.isSafeInteger(cents)) {
-    throw new InvalidPricingInputError("Money must be stored as integer cents.");
-  }
-  return `NZ$${new Intl.NumberFormat("en-NZ", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  }).format(cents / 100)}`;
+  return formatNzd(cents);
 }

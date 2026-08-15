@@ -55,11 +55,11 @@ describe("site shell", () => {
       .toHaveAttribute("href", "/#transformation");
     expect(screen.getAllByRole("link", { name: "How It Works" })[0]).toHaveAttribute(
       "href",
-      "/#process",
+      "/how-it-works",
     );
     expect(screen.getAllByRole("link", { name: "Help" })[0]).toHaveAttribute(
       "href",
-      "/#faq",
+      "/help",
     );
     expect(screen.getAllByRole("link", { name: "Start a Design" })[0]).toHaveAttribute(
       "href",
@@ -314,7 +314,13 @@ describe("site shell", () => {
     expect(within(footer).getByRole("link", { name: "Transformations" }))
       .toHaveAttribute("href", "/#transformation");
     expect(within(footer).getByRole("link", { name: "FAQ" }))
-      .toHaveAttribute("href", "/#faq");
+      .toHaveAttribute("href", "/help");
+    expect(within(footer).getByRole("link", { name: "About" }))
+      .toHaveAttribute("href", "/about");
+    expect(within(footer).getByRole("link", { name: "Contact" }))
+      .toHaveAttribute("href", "/contact");
+    expect(within(footer).getByRole("link", { name: "Shipping & Delivery" }))
+      .toHaveAttribute("href", "/shipping-delivery");
   });
 
   it("shows every accepted payment brand inside the footer", () => {

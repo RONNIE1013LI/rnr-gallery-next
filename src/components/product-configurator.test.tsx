@@ -24,12 +24,12 @@ describe("ProductConfigurator", () => {
       />,
     );
 
-    expect(screen.getByRole("radio", { name: /A4.*From \$105\.00 \+ GST/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /A4.*From NZ\$120\.75 incl GST.*NZ\$105\.00 excl GST/ })).toBeChecked();
     expect(screen.getByLabelText("Landscape")).toBeChecked();
     expect(screen.getByLabelText("People or pets in artwork")).toHaveValue("1");
-    expect(screen.getByText("$105.00")).toBeInTheDocument();
-    expect(screen.getByText("$15.75")).toBeInTheDocument();
-    expect(screen.getByText("$120.75")).toBeInTheDocument();
+    expect(screen.getByText("NZ$105.00")).toBeInTheDocument();
+    expect(screen.getByText("NZ$15.75")).toBeInTheDocument();
+    expect(screen.getByText("NZ$120.75")).toBeInTheDocument();
   });
 
   it("presents every available size as a selectable card with its minimum price", () => {
@@ -45,19 +45,19 @@ describe("ProductConfigurator", () => {
     expect(within(sizePicker).getAllByRole("radio")).toHaveLength(5);
     expect(
       within(sizePicker).getByRole("radio", {
-        name: /A0.*From \$320\.00 \+ GST/,
+        name: /A0.*From NZ\$368\.00 incl GST.*NZ\$320\.00 excl GST/,
       }),
     ).not.toBeChecked();
 
     fireEvent.click(
       within(sizePicker).getByRole("radio", {
-        name: /A0.*From \$320\.00 \+ GST/,
+        name: /A0.*From NZ\$368\.00 incl GST.*NZ\$320\.00 excl GST/,
       }),
     );
 
     expect(
       within(sizePicker).getByRole("radio", {
-        name: /A0.*From \$320\.00 \+ GST/,
+        name: /A0.*From NZ\$368\.00 incl GST.*NZ\$320\.00 excl GST/,
       }),
     ).toBeChecked();
     expect(
@@ -81,7 +81,7 @@ describe("ProductConfigurator", () => {
     expect(within(delivery).getByRole("radio", { name: "Post" })).toBeChecked();
 
     fireEvent.click(within(delivery).getByRole("radio", { name: "Pickup" }));
-    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
 
     expect(within(delivery).getByRole("radio", { name: "Pickup" })).toBeChecked();
@@ -100,7 +100,7 @@ describe("ProductConfigurator", () => {
         createId={() => "first-item"}
       />,
     );
-    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
     first.unmount();
 
@@ -114,7 +114,7 @@ describe("ProductConfigurator", () => {
     );
     expect(screen.getByText("This choice applies to your whole order.")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("radio", { name: "Pickup" }));
-    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
 
     const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
@@ -153,9 +153,9 @@ describe("ProductConfigurator", () => {
       />,
     );
 
-    expect(screen.getByText("$110.00")).toBeInTheDocument();
-    expect(screen.getByText("$16.50")).toBeInTheDocument();
-    expect(screen.getByText("$126.50")).toBeInTheDocument();
+    expect(screen.getByText("NZ$110.00")).toBeInTheDocument();
+    expect(screen.getByText("NZ$16.50")).toBeInTheDocument();
+    expect(screen.getByText("NZ$126.50")).toBeInTheDocument();
   });
 
   it("keeps a product preview beside the live order summary while configuring", () => {
@@ -255,7 +255,7 @@ describe("ProductConfigurator", () => {
     expect(screen.getByText("Dimensions are always shown as width × height.")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Portrait"));
     expect(screen.getByRole("radio", {
-      name: /A4 — 21 × 29\.7 cm.*From \$105\.00 \+ GST/,
+      name: /A4 — 21 × 29\.7 cm.*From NZ\$120\.75 incl GST.*NZ\$105\.00 excl GST/,
     })).toBeChecked();
     expect(within(screen.getByRole("complementary", { name: "Order summary" }))
       .getByText("A4 — 21 × 29.7 cm")).toBeInTheDocument();
@@ -345,7 +345,7 @@ describe("ProductConfigurator", () => {
     expect(within(screen.getByRole("complementary", { name: "Order summary" }))
       .getByText("100 × 200 cm")).toBeInTheDocument();
 
-    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
     const storedItem = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0];
     expect(storedItem).toMatchObject({
@@ -367,16 +367,16 @@ describe("ProductConfigurator", () => {
     );
 
     fireEvent.click(screen.getByRole("button", { name: "Increase people or pets" }));
-    expect(screen.getByText("$125.00")).toBeInTheDocument();
-    expect(screen.getByText("$18.75")).toBeInTheDocument();
-    expect(screen.getByText("$143.75")).toBeInTheDocument();
+    expect(screen.getByText("NZ$125.00")).toBeInTheDocument();
+    expect(screen.getByText("NZ$18.75")).toBeInTheDocument();
+    expect(screen.getByText("NZ$143.75")).toBeInTheDocument();
 
     const completionDate = screen.getByLabelText("Production completion date");
     expect(completionDate.closest("div")).toHaveClass(styles.timingFields);
     fireEvent.change(completionDate, {
       target: { value: "2026-08-20" },
     });
-    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
 
     const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
@@ -414,7 +414,7 @@ describe("ProductConfigurator", () => {
     fireEvent.change(screen.getByLabelText("Design notes"), {
       target: { value: "B".repeat(5_001) },
     });
-    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
 
     const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0];
@@ -474,6 +474,37 @@ describe("ProductConfigurator", () => {
     expect(stored.items[0].uploadReferences).toEqual(["private-reference"]);
   });
 
+  it("keeps uploaded files when switching to send later and back", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ reference: { id: "kept-reference", originalName: "kept.jpg" } }),
+    }));
+    render(<ProductConfigurator product={product} schema={schema} orderDate="2026-08-03" />);
+
+    fireEvent.change(screen.getByLabelText("Choose files"), {
+      target: { files: [new File([new Uint8Array([1])], "kept.jpg", { type: "image/jpeg" })] },
+    });
+    expect(await screen.findByText("Photo 1")).toBeVisible();
+
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
+    expect(screen.queryByText("Photo 1")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Add to cart" })).toBeEnabled();
+
+    fireEvent.click(screen.getByText("Upload Photos Now"));
+    expect(screen.getByText("Photo 1")).toBeVisible();
+  });
+
+  it("uses clear photo choices and confirmed trust information", () => {
+    render(<ProductConfigurator product={product} schema={schema} orderDate="2026-08-03" />);
+
+    expect(screen.getByText("Upload Photos Now")).toBeVisible();
+    expect(screen.getByText("Upload now — recommended for preserving original quality.")).toBeVisible();
+    expect(screen.getByText("Send Photos After Ordering")).toBeVisible();
+    expect(screen.getByText("Send later — send by Messenger, Email or WhatsApp after ordering.")).toBeVisible();
+    expect(screen.getByText("Proof before printing")).toBeVisible();
+    expect(document.querySelector("form#customise")).not.toBeNull();
+  });
+
   it("accepts photo 21 and starts charging the Custom Canvas extra-photo fee", async () => {
     const customCanvas = getProductBySlug("custom-themed-canvas")!;
     const customCanvasSchema = getConfigurationSchema(customCanvas.key)!;
@@ -508,8 +539,8 @@ describe("ProductConfigurator", () => {
     expect(await screen.findByText("Photo 21", undefined, { timeout: 5_000 })).toBeInTheDocument();
     const summary = screen.getByRole("complementary", { name: "Order summary" });
     expect(within(summary).getByText("Extra photos")).toBeInTheDocument();
-    expect(within(summary).getByText("$5.00")).toBeInTheDocument();
-    expect(within(summary).getByText("$141.45")).toBeInTheDocument();
+    expect(within(summary).getByText("NZ$5.00")).toBeInTheDocument();
+    expect(within(summary).getByText("NZ$141.45")).toBeInTheDocument();
     expect(screen.queryByText(/Choose no more than 20 source photos/)).not.toBeInTheDocument();
   });
 
@@ -584,8 +615,8 @@ describe("ProductConfigurator", () => {
     expect((await screen.findAllByText("Main photo"))[0]).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: /remove background/i }));
     expect(screen.getByRole("button", { name: /background removal/i })).toHaveAttribute("aria-pressed", "true");
-    expect(screen.getByText("1 × $20.00 incl GST")).toBeInTheDocument();
-    expect(screen.getByText("$284.50")).toBeInTheDocument();
+    expect(screen.getByText("1 × NZ$20.00 incl GST")).toBeInTheDocument();
+    expect(screen.getByText("NZ$284.50")).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "Set as main" }));
     expect(screen.getAllByText("Main photo")).toHaveLength(2);
@@ -601,7 +632,7 @@ describe("ProductConfigurator", () => {
         createId={() => "urgent-item"}
       />,
     );
-    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
     fireEvent.change(screen.getByLabelText("Production completion date"), {
       target: { value: "2026-08-07" },
     });
@@ -621,15 +652,15 @@ describe("ProductConfigurator", () => {
     expect(css).toMatch(
       /\.timingFields \.urgentConfirmation\s*\{[\s\S]*?margin-top:\s*0;/,
     );
-    expect(screen.getAllByText("$50.00 incl GST")).toHaveLength(1);
-    expect(within(orderSummary).queryByText("$50.00 incl GST")).not.toBeInTheDocument();
-    expect(within(orderSummary).getByText("$120.75")).toBeInTheDocument();
+    expect(screen.getAllByText("NZ$50.00 incl GST")).toHaveLength(1);
+    expect(within(orderSummary).queryByText("NZ$50.00 incl GST")).not.toBeInTheDocument();
+    expect(within(orderSummary).getByText("NZ$120.75")).toBeInTheDocument();
     const addButton = screen.getByRole("button", { name: "Confirm urgent service to continue" });
     expect(addButton).toBeDisabled();
 
     fireEvent.click(screen.getByLabelText("Confirm urgent service"));
-    expect(within(orderSummary).getByText("$50.00 incl GST")).toBeInTheDocument();
-    expect(within(orderSummary).getByText("$170.75")).toBeInTheDocument();
+    expect(within(orderSummary).getByText("NZ$50.00 incl GST")).toBeInTheDocument();
+    expect(within(orderSummary).getByText("NZ$170.75")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Add to cart" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
     const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
@@ -697,8 +728,8 @@ describe("ProductConfigurator", () => {
       />,
     );
 
-    expect(screen.getByText("$120.75")).toBeInTheDocument();
-    fireEvent.click(screen.getByText("Send after ordering"));
+    expect(screen.getByText("NZ$120.75")).toBeInTheDocument();
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
 
     expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0]).toMatchObject({

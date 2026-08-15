@@ -166,6 +166,7 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
             </div>
           </dl>
           <p className={styles.productDetailPrice}>From {formatNzdExplicit(priceInclGstCents)} incl GST</p>
+          <p className={styles.publicPriceSecondary}>{formatNzdExplicit(product.startingPriceExGstCents)} excl GST</p>
           <div className={styles.designDetailActions}>
             <Link className={styles.primaryButton} href={`/products/${product.slug}/configure?design=${design.id}`}>
               Use This Design
