@@ -16,7 +16,11 @@ export const ADDRESS_FIELD_LIMITS = Object.freeze({
   email: 254,
 });
 
-const requiredText = (maximum: number) => z.string().trim().min(1).max(maximum);
+const requiredText = (label: string, maximum: number) =>
+  z.string()
+    .trim()
+    .min(1, `${label} is required.`)
+    .max(maximum, `${label} is too long.`);
 
 function parsePhoneForCountry(
   value: string,
@@ -29,18 +33,21 @@ function parsePhoneForCountry(
 export const addressInputSchema = z
   .object({
     country: z.enum(SUPPORTED_COUNTRIES),
-    fullName: requiredText(ADDRESS_FIELD_LIMITS.fullName),
-    building: z.string().trim().max(ADDRESS_FIELD_LIMITS.building),
-    street: requiredText(ADDRESS_FIELD_LIMITS.street),
-    suburb: requiredText(ADDRESS_FIELD_LIMITS.suburb),
-    region: requiredText(ADDRESS_FIELD_LIMITS.region),
-    postcode: z.string().trim().regex(/^\d{4}$/),
-    phone: requiredText(ADDRESS_FIELD_LIMITS.phone),
-    email: z.string().trim().max(ADDRESS_FIELD_LIMITS.email).email(),
+    fullName: requiredText("Full name", ADDRESS_FIELD_LIMITS.fullName),
+    building: z.string().trim().max(ADDRESS_FIELD_LIMITS.building, "Building / unit is too long."),
+    street: requiredText("Street address", ADDRESS_FIELD_LIMITS.street),
+    suburb: requiredText("Suburb", ADDRESS_FIELD_LIMITS.suburb),
+    region: requiredText("Region / city", ADDRESS_FIELD_LIMITS.region),
+    postcode: z.string().trim().regex(/^\d{4}$/, "Enter a 4-digit postcode."),
+    phone: requiredText("Phone", ADDRESS_FIELD_LIMITS.phone),
+    email: z.string()
+      .trim()
+      .max(ADDRESS_FIELD_LIMITS.email, "Email address is too long.")
+      .email("Enter a valid email address."),
   })
   .superRefine((address, context) => {
     if (
-      address.country === "AU" &&
+      address.country === "AU" && address.region.length > 0 &&
       !AUSTRALIAN_REGIONS.includes(
         address.region as (typeof AUSTRALIAN_REGIONS)[number],
       )
@@ -52,7 +59,7 @@ export const addressInputSchema = z
       });
     }
 
-    if (!parsePhoneForCountry(address.phone, address.country)) {
+    if (address.phone.length > 0 && !parsePhoneForCountry(address.phone, address.country)) {
       context.addIssue({
         code: "custom",
         path: ["phone"],

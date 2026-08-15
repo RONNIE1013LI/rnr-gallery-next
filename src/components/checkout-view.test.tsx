@@ -306,6 +306,11 @@ describe("CheckoutView", () => {
     await checkoutReady();
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     expect(await screen.findByText("Correct the highlighted address fields, then review again.")).toBeInTheDocument();
+    expect(screen.getByText("Full name is required.")).toBeInTheDocument();
+    expect(screen.getByText("Street address is required.")).toBeInTheDocument();
+    expect(screen.getByText("Enter a 4-digit postcode.")).toBeInTheDocument();
+    expect(screen.getByText("Enter a valid email address.")).toBeInTheDocument();
+    expect(screen.queryByText(/Too small:|expected string|must match pattern/)).not.toBeInTheDocument();
     const firstInvalid = document.querySelector<HTMLElement>('[aria-invalid="true"]');
     expect(firstInvalid).toHaveAccessibleDescription();
     await waitFor(() => expect(document.activeElement).toBe(firstInvalid));
