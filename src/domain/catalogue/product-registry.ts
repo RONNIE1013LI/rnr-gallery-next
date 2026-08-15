@@ -5,12 +5,13 @@ import {
 } from "./products";
 import type { Product, ProductCategory } from "./types";
 import { configurationSchemas } from "@/domain/configuration/schemas";
-import type {
-  DeliveryPreference,
-  Orientation,
-  OrientationMode,
-  PhotoSubmissionMethod,
-  ProductConfigurationSchema,
+import {
+  MAX_SOURCE_PHOTOS_PER_ITEM,
+  type DeliveryPreference,
+  type Orientation,
+  type OrientationMode,
+  type PhotoSubmissionMethod,
+  type ProductConfigurationSchema,
 } from "@/domain/configuration/types";
 import {
   DEFAULT_PEOPLE_PETS_PRICING,
@@ -85,7 +86,7 @@ const configurationSchema = z.object({
   peoplePetsMode: z.enum(["required", "none"]),
   defaultPeoplePets: z.number().int().min(0).max(20),
   minimumSourcePhotos: z.number().int().min(0).max(20),
-  maximumSourcePhotos: z.number().int().min(1).max(20).optional(),
+  maximumSourcePhotos: z.number().int().min(1).max(MAX_SOURCE_PHOTOS_PER_ITEM).optional(),
   includedPhotos: z.number().int().min(0).max(20),
   artworkDirectionMode: z.enum(["required", "none"]).optional(),
   extraPhotoPriceExGstCents: cents.optional(),
@@ -268,6 +269,16 @@ export function parseProductRegistry(value: unknown): ProductRegistryDocument {
         LEGACY_ROLL_UP_BANNER_SUMMARIES.has(rollUpBanner.summary)
       ) {
         rollUpBanner.summary = ROLL_UP_BANNER_PACKAGE_SUMMARY;
+      }
+      const customCanvas = products.find((product) =>
+        product && typeof product === "object" &&
+        (product as { key?: unknown }).key === "custom-themed-canvas",
+      ) as { configuration?: Record<string, unknown> } | undefined;
+      if (
+        customCanvas?.configuration?.includedPhotos === 20 &&
+        customCanvas.configuration.extraPhotoPriceExGstCents === undefined
+      ) {
+        customCanvas.configuration.extraPhotoPriceExGstCents = 500;
       }
       const graveCover = products.find((product) =>
         product && typeof product === "object" &&

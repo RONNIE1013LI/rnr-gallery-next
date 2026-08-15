@@ -31,7 +31,7 @@ describe("configuration quotes", () => {
   it.each([
     [1, 10_500],
     [2, 12_500],
-    [6, 21_500],
+    [6, 22_000],
   ])("quotes Digital Oil A4 for %i people or pets", (peoplePets, subtotal) => {
     const schema = getConfigurationSchema("digital-oil-painting-canvas")!;
     expect(

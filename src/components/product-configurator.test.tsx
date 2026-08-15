@@ -399,6 +399,31 @@ describe("ProductConfigurator", () => {
     );
   });
 
+  it("keeps pasted artwork text within the server checkout boundary", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+        createId={() => "bounded-text-item"}
+      />,
+    );
+    fireEvent.change(screen.getByLabelText("Text for your design"), {
+      target: { value: "A".repeat(5_001) },
+    });
+    fireEvent.change(screen.getByLabelText("Design notes"), {
+      target: { value: "B".repeat(5_001) },
+    });
+    fireEvent.click(screen.getByText("Send after ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+
+    const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0];
+    expect(stored.designText).toHaveLength(5_000);
+    expect(stored.notes).toHaveLength(5_000);
+    expect(screen.getByLabelText("Text for your design")).toHaveAttribute("maxlength", "5000");
+    expect(screen.getByLabelText("Design notes")).toHaveAttribute("maxlength", "5000");
+  });
+
   it("caps the people or pets control at the server maximum", () => {
     render(
       <ProductConfigurator
@@ -447,6 +472,45 @@ describe("ProductConfigurator", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
     const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
     expect(stored.items[0].uploadReferences).toEqual(["private-reference"]);
+  });
+
+  it("accepts photo 21 and starts charging the Custom Canvas extra-photo fee", async () => {
+    const customCanvas = getProductBySlug("custom-themed-canvas")!;
+    const customCanvasSchema = getConfigurationSchema(customCanvas.key)!;
+    let uploadNumber = 0;
+    vi.stubGlobal("fetch", vi.fn().mockImplementation(async () => {
+      uploadNumber += 1;
+      return {
+        ok: true,
+        json: async () => ({
+          reference: {
+            id: `00000000-0000-4000-8000-${String(uploadNumber).padStart(12, "0")}`,
+            originalName: `photo-${uploadNumber}.jpg`,
+          },
+        }),
+      };
+    }));
+    render(
+      <ProductConfigurator
+        product={customCanvas}
+        schema={customCanvasSchema}
+        orderDate="2026-08-03"
+      />,
+    );
+    const files = Array.from({ length: 21 }, (_, index) =>
+      new File([new Uint8Array([index + 1])], `photo-${index + 1}.jpg`, { type: "image/jpeg" }),
+    );
+
+    fireEvent.change(screen.getByLabelText("Choose files"), {
+      target: { files },
+    });
+
+    expect(await screen.findByText("Photo 21", undefined, { timeout: 5_000 })).toBeInTheDocument();
+    const summary = screen.getByRole("complementary", { name: "Order summary" });
+    expect(within(summary).getByText("Extra photos")).toBeInTheDocument();
+    expect(within(summary).getByText("$5.00")).toBeInTheDocument();
+    expect(within(summary).getByText("$141.45")).toBeInTheDocument();
+    expect(screen.queryByText(/Choose no more than 20 source photos/)).not.toBeInTheDocument();
   });
 
   it("separates the compact remove icon from its accessible upload-preview hit area", async () => {

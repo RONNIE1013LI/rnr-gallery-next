@@ -159,4 +159,16 @@ describe("authoritative product registry", () => {
     expect(graveCover.configuration.orientationMode).toBe("fixed");
     expect(graveCover.configuration.defaultOrientation).toBe("portrait");
   });
+
+  it("upgrades a legacy Custom Canvas registry so photo 21 is charged", () => {
+    const legacy = structuredClone(defaultProductRegistry);
+    const customCanvas = legacy.products.find((product) => product.key === "custom-themed-canvas")!;
+    delete customCanvas.configuration.extraPhotoPriceExGstCents;
+
+    const parsed = parseProductRegistry(legacy);
+    const parsedCustomCanvas = parsed.products.find((product) => product.key === "custom-themed-canvas")!;
+
+    expect(parsedCustomCanvas.configuration.extraPhotoPriceExGstCents).toBe(500);
+    expect(customCanvas.configuration.extraPhotoPriceExGstCents).toBeUndefined();
+  });
 });

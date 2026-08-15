@@ -57,6 +57,7 @@ export const configurationSchemas = Object.freeze([
     defaultPeoplePets: 0,
     minimumSourcePhotos: 1,
     includedPhotos: 20,
+    extraPhotoPriceExGstCents: 500,
     ...common,
   },
   {

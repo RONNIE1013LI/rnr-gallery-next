@@ -3,6 +3,8 @@ export type OrientationMode = "choice" | "fixed" | "none";
 export type DeliveryPreference = "post" | "pickup";
 export type PhotoSubmissionMethod = "upload" | "later";
 
+export const MAX_SOURCE_PHOTOS_PER_ITEM = 50;
+
 export type ConfigurationSize = Readonly<{
   key: string;
   label: string;

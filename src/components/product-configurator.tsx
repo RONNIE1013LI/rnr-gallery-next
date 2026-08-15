@@ -17,10 +17,14 @@ import type {
   PhotoSubmissionMethod,
   ProductConfigurationSchema,
 } from "@/domain/configuration/types";
+import { MAX_SOURCE_PHOTOS_PER_ITEM } from "@/domain/configuration/types";
 import { quoteConfiguration } from "@/domain/configuration/quote";
 import { formatConfigurationSizeLabel } from "@/domain/configuration/size-label";
 import { formatNzd } from "@/domain/money";
-import { MAX_PEOPLE_PETS_PER_ITEM } from "@/domain/checkout/input-schema";
+import {
+  MAX_CHECKOUT_TEXT_LENGTH,
+  MAX_PEOPLE_PETS_PER_ITEM,
+} from "@/domain/checkout/input-schema";
 import { createClientId } from "@/lib/client-id";
 import {
   addWorkingDays,
@@ -185,7 +189,7 @@ export function ProductConfigurator({
     setUploadError("");
 
     try {
-      const maximum = schema.maximumSourcePhotos ?? 20;
+      const maximum = schema.maximumSourcePhotos ?? MAX_SOURCE_PHOTOS_PER_ITEM;
       if (uploadedFiles.length + files.length > maximum) {
         throw new Error(`Choose no more than ${maximum} source photos.`);
       }
@@ -594,8 +598,11 @@ export function ProductConfigurator({
             <textarea
               className={styles.exampleTextarea}
               value={designText}
+              maxLength={MAX_CHECKOUT_TEXT_LENGTH}
               placeholder={"e.g. Top text: HAPPY 1ST BIRTHDAY\nBottom text: ETI JUNIOR COLLINS"}
-              onChange={(event) => setDesignText(event.target.value)}
+              onChange={(event) =>
+                setDesignText(event.target.value.slice(0, MAX_CHECKOUT_TEXT_LENGTH))
+              }
             />
           </label>
           <label className={styles.formField}>
@@ -603,8 +610,11 @@ export function ProductConfigurator({
             <textarea
               className={styles.exampleTextarea}
               value={notes}
+              maxLength={MAX_CHECKOUT_TEXT_LENGTH}
               placeholder="e.g. Background: Orange and white Polynesian pattern design"
-              onChange={(event) => setNotes(event.target.value)}
+              onChange={(event) =>
+                setNotes(event.target.value.slice(0, MAX_CHECKOUT_TEXT_LENGTH))
+              }
             />
           </label>
         </section>

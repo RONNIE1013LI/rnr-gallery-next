@@ -10,6 +10,7 @@ import { formatConfigurationSizeLabel } from "@/domain/configuration/size-label"
 import type { ProductConfigurationSchema } from "@/domain/configuration/types";
 import { getUrgentService } from "@/domain/scheduling/urgent-service";
 import { parseCheckoutCartInput } from "./input-schema";
+import { MAX_SOURCE_PHOTOS_PER_ITEM } from "@/domain/configuration/types";
 import {
   InvalidCheckoutCartError,
   type CanonicalCheckoutItemInput,
@@ -91,7 +92,7 @@ function validateUploads(
     return;
   }
 
-  const maximum = schema.maximumSourcePhotos ?? 20;
+  const maximum = schema.maximumSourcePhotos ?? MAX_SOURCE_PHOTOS_PER_ITEM;
   if (
     item.uploadReferences.length < schema.minimumSourcePhotos ||
     item.uploadReferences.length > maximum

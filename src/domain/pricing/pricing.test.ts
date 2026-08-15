@@ -25,7 +25,7 @@ describe("R&R pricing", () => {
     });
   });
 
-  it("charges the documented fee for six people", () => {
+  it("adds the per-person fee after the five-person package", () => {
     const price = calculateDigitalOilCanvas({
       baseExGstCents: 6_500,
       peoplePets: 6,
@@ -34,7 +34,7 @@ describe("R&R pricing", () => {
     expect(price.lines).toContainEqual({
       key: "people-pets",
       label: "People / pets fee",
-      amountExGstCents: 15_000,
+      amountExGstCents: 15_500,
     });
   });
 

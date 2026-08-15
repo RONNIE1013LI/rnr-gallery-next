@@ -32,6 +32,12 @@ function cart(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function uploadIds(count: number) {
+  return Array.from({ length: count }, (_, index) =>
+    `00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}`,
+  );
+}
+
 function withA4RegistryPrice(
   priceExGstCents: number,
   assertion: (registry: ProductRegistryDocument) => void,
@@ -248,6 +254,40 @@ describe("authoritative checkout repricing", () => {
       sizeLabel: "85 × 200 cm",
       unitPrice: { totalInclGstCents: 28_450 },
     });
+  });
+
+  it("authoritatively prices Custom Canvas uploads beyond the 20 included photos", () => {
+    const result = repriceCart(cart({
+      productKey: "custom-themed-canvas",
+      sizeKey: "a3",
+      orientation: "landscape",
+      peoplePets: 0,
+      uploadReferences: uploadIds(21),
+    }), { now: MONDAY_IN_AUCKLAND });
+
+    expect(result.items[0].unitPrice.lines).toEqual([
+      { key: "product-size", label: "Product / size price", amountExGstCents: 11_800 },
+      { key: "extra-photos", label: "Extra photos", amountExGstCents: 500 },
+    ]);
+    expect(result.items[0].unitPrice.totalInclGstCents).toBe(14_145);
+  });
+
+  it("uses 50 as the technical source-photo boundary instead of the included-photo count", () => {
+    expect(() => repriceCart(cart({
+      productKey: "custom-themed-canvas",
+      sizeKey: "a3",
+      orientation: "landscape",
+      peoplePets: 0,
+      uploadReferences: uploadIds(50),
+    }), { now: MONDAY_IN_AUCKLAND })).not.toThrow();
+
+    expect(() => repriceCart(cart({
+      productKey: "custom-themed-canvas",
+      sizeKey: "a3",
+      orientation: "landscape",
+      peoplePets: 0,
+      uploadReferences: uploadIds(51),
+    }), { now: MONDAY_IN_AUCKLAND })).toThrow(InvalidCheckoutCartError);
   });
 
   it.each([

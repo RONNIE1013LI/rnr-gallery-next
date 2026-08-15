@@ -1,8 +1,10 @@
 import { z } from "zod";
 import type { CanonicalCheckoutCartInput } from "./types";
+import { MAX_SOURCE_PHOTOS_PER_ITEM } from "@/domain/configuration/types";
 
-// Conservative per-artwork boundary matching the current 20-source-photo scale.
+// Defensive boundaries that are independent from each product's included quantity.
 export const MAX_PEOPLE_PETS_PER_ITEM = 20;
+export const MAX_CHECKOUT_TEXT_LENGTH = 5_000;
 
 const checkoutItemInputSchema = z.object({
   clientItemId: z.uuid(),
@@ -12,14 +14,14 @@ const checkoutItemInputSchema = z.object({
   orientation: z.enum(["landscape", "portrait"]).optional(),
   peoplePets: z.number().int().nonnegative().max(MAX_PEOPLE_PETS_PER_ITEM),
   photoSubmissionMethod: z.enum(["upload", "later"]),
-  designText: z.string().max(5_000),
-  notes: z.string().max(5_000),
+  designText: z.string().max(MAX_CHECKOUT_TEXT_LENGTH),
+  notes: z.string().max(MAX_CHECKOUT_TEXT_LENGTH),
   neededDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   urgentServiceConfirmed: z.boolean().optional(),
   quantity: z.number().int().min(1).max(5),
-  uploadReferences: z.array(z.uuid()).max(20),
+  uploadReferences: z.array(z.uuid()).max(MAX_SOURCE_PHOTOS_PER_ITEM),
   mainPhotoUploadId: z.uuid().optional(),
-  extraBackgroundRemovalUploadIds: z.array(z.uuid()).max(19).optional(),
+  extraBackgroundRemovalUploadIds: z.array(z.uuid()).max(MAX_SOURCE_PHOTOS_PER_ITEM - 1).optional(),
 });
 
 export const checkoutCartInputSchema = z.object({
