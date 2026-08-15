@@ -97,6 +97,20 @@ describe("checkout and order schema contract", () => {
     ]));
   });
 
+  it("stores the complete immutable market pricing authority on every order", () => {
+    expect(columnNames(orders)).toEqual(expect.arrayContaining([
+      "market",
+      "currency",
+      "price_book_revision",
+      "tax_jurisdiction",
+      "tax_rate_basis_points",
+      "discount_cents",
+      "design_surcharge_cents",
+      "pricing_snapshot",
+    ]));
+    expect(orders.pricingSnapshot.notNull).toBe(true);
+  });
+
   it.each([
     [shippingQuotes, [
       "amount_ex_gst_cents",

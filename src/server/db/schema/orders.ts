@@ -23,6 +23,8 @@ import type {
   PhotoSubmissionMethod,
 } from "@/domain/configuration/types";
 import type { PriceLine } from "@/domain/pricing/types";
+import type { Market, MarketCurrency, TaxJurisdiction } from "@/domain/markets/types";
+import type { OrderPricingSnapshot } from "@/server/orders/order-pricing-snapshot";
 import type { ProviderShippingQuote } from "@/server/shipping/types";
 import { user } from "./auth";
 import { checkoutSessions, shippingQuotes } from "./checkout";
@@ -67,7 +69,17 @@ export const orders = pgTable(
       onDelete: "set null",
     }),
     customerEmail: text("customer_email").notNull(),
-    currency: text("currency").$type<"NZD">().default("NZD").notNull(),
+    market: text("market").$type<Market>().default("NZ").notNull(),
+    currency: text("currency").$type<MarketCurrency>().default("NZD").notNull(),
+    priceBookRevision: integer("price_book_revision").default(0).notNull(),
+    taxJurisdiction: text("tax_jurisdiction")
+      .$type<TaxJurisdiction>()
+      .default("NZ_GST")
+      .notNull(),
+    taxRateBasisPoints: integer("tax_rate_basis_points").default(1_500).notNull(),
+    discountCents: bigint("discount_cents", { mode: "number" }).default(0).notNull(),
+    designSurchargeCents: bigint("design_surcharge_cents", { mode: "number" }).default(0).notNull(),
+    pricingSnapshot: jsonb("pricing_snapshot").$type<OrderPricingSnapshot>().notNull(),
     deliveryMethod: text("delivery_method").$type<DeliveryPreference>().notNull(),
     shippingQuoteId: uuid("shipping_quote_id"),
     shippingProvider: text("shipping_provider")
@@ -166,7 +178,16 @@ export const orders = pgTable(
       "orders_total_incl_gst_balance",
       sql`${table.totalInclGstCents} = ${table.totalExGstCents} + ${table.totalGstCents}`,
     ),
-    check("orders_currency_nzd", sql`${table.currency} = 'NZD'`),
+    check("orders_market_supported", sql`${table.market} in ('NZ', 'AU')`),
+    check("orders_currency_supported", sql`${table.currency} in ('NZD', 'AUD')`),
+    check(
+      "orders_market_currency_match",
+      sql`(${table.market} = 'NZ' and ${table.currency} = 'NZD') or (${table.market} = 'AU' and ${table.currency} = 'AUD')`,
+    ),
+    check("orders_price_book_revision_nonnegative", sql`${table.priceBookRevision} >= 0`),
+    check("orders_tax_rate_valid", sql`${table.taxRateBasisPoints} between 0 and 10000`),
+    check("orders_discount_nonnegative", sql`${table.discountCents} >= 0`),
+    check("orders_design_surcharge_nonnegative", sql`${table.designSurchargeCents} >= 0`),
     check(
       "orders_fulfilment_status_valid",
       sql`${table.fulfilmentStatus} in ('new', 'designing', 'awaiting_customer', 'ready_to_print', 'printing', 'on_hold', 'shipped', 'completed', 'cancelled')`,

@@ -4,6 +4,7 @@ import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { DeliveryPreference } from "@/domain/configuration/types";
 import type { CheckoutSessionRecord, CheckoutStateRecord } from "@/server/checkout/checkout-repository";
 import type { ProviderShippingQuote } from "@/server/shipping/types";
+import type { MarketCurrency } from "@/domain/markets/types";
 
 export type OrderRecord = Readonly<{
   id: string;
@@ -12,7 +13,7 @@ export type OrderRecord = Readonly<{
   orderNumber: string;
   customerId: string | null;
   customerEmail: string;
-  currency: "NZD";
+  currency: MarketCurrency;
   totalInclGstCents: number;
   paymentStatus: "awaiting_payment" | "processing" | "paid" | "failed" | "cancelled" | "refunded";
 }>;

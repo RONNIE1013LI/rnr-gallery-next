@@ -1,7 +1,11 @@
 import { randomBytes } from "node:crypto";
-import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
+import {
+  defaultProductRegistry,
+  type ProductRegistryDocument,
+} from "@/domain/catalogue/product-registry";
 import type { OrderAttribution } from "@/domain/analytics/attribution";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
+import type { MarketCurrency } from "@/domain/markets/types";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import type { createShippingService } from "@/server/shipping/shipping-service";
 import {
@@ -17,7 +21,7 @@ type ShippingService = ReturnType<typeof createShippingService>;
 
 export type PaymentStartDTO = Readonly<{
   orderNumber: string;
-  currency: "NZD";
+  currency: MarketCurrency;
   totalInclGstCents: number;
   paymentStatus: OrderRecord["paymentStatus"];
 }>;
@@ -110,7 +114,7 @@ export function createOrderService({
   repository: OrderRepository;
   shippingService: ShippingService;
   productRegistryService?: Readonly<{
-    current(): Promise<Readonly<{ registry: ProductRegistryDocument }>>;
+    current(): Promise<Readonly<{ revision?: number; registry: ProductRegistryDocument }>>;
   }>;
   now?: () => Date;
   createOrderNumber?: () => string;
@@ -138,9 +142,14 @@ export function createOrderService({
       if (state.version !== reviewed.checkoutVersion || state.cartDigest !== reviewed.cartDigest || state.deliveryMethod !== reviewed.shipping.method) throw new OrderStateChangedError();
 
       const pricingTime = now();
-      const registry = productRegistryService
-        ? (await productRegistryService.current()).registry
+      const registryState = productRegistryService
+        ? await productRegistryService.current()
         : undefined;
+      const registry = registryState?.registry;
+      const market = state.cartSnapshot.market ?? "NZ";
+      const priceBookRevision = registryState?.revision
+        ?? state.cartSnapshot.priceBookRevision
+        ?? 0;
       const cart = repriceCart(canonicalInputFrom(state.cartSnapshot), {
         now: pricingTime,
         galleryDesigns: new Map(
@@ -149,6 +158,8 @@ export function createOrderService({
           ),
         ),
         ...(registry ? { registry } : {}),
+        market,
+        registryRevision: priceBookRevision,
       });
       if (cart.cartDigest !== state.cartDigest) throw new OrderStateChangedError();
 
@@ -160,7 +171,11 @@ export function createOrderService({
 
       const shipping = state.deliveryMethod === "pickup"
         ? ({ kind: "pickup" } as const)
-        : await shippingService.quotePost(cart, state.deliveryAddress).then((result) => ({
+        : await shippingService.quotePost(
+            cart,
+            state.deliveryAddress,
+            (registry ?? defaultProductRegistry).markets[market],
+          ).then((result) => ({
             kind: "post" as const,
             requestDigest: result.requestDigest,
             quote: result.quote,

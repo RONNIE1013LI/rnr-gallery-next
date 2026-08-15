@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { normalizeAddress } from "@/domain/address/schema";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import { synchronizeNewZealandPriceBook } from "@/domain/catalogue/market-price-book";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import type { CheckoutStateRecord } from "@/server/checkout/checkout-repository";
 import {
@@ -166,7 +167,11 @@ describe("atomic order service", () => {
 
     await service.createOrder(sessionId, key, reviewed("post"));
 
-    expect(shipping.quotePost).toHaveBeenCalledWith(checkout.cartSnapshot, address);
+    expect(shipping.quotePost).toHaveBeenCalledWith(
+      checkout.cartSnapshot,
+      address,
+      defaultProductRegistry.markets.NZ,
+    );
     expect(repo.createAtomicOrder).toHaveBeenCalledWith(expect.objectContaining({
       shipping: expect.objectContaining({
         kind: "post",
@@ -230,7 +235,8 @@ describe("atomic order service", () => {
     const size = product?.configuration.sizes.find((candidate) => candidate.key === "a4");
     if (!size) throw new Error("Missing managed price fixture");
     size.priceExGstCents += 1_000;
-    const cart = repriceCart(canonicalCart(), { now, registry });
+    synchronizeNewZealandPriceBook(registry);
+    const cart = repriceCart(canonicalCart(), { now, registry, registryRevision: 4 });
     const checkout = { ...state(), cartDigest: cart.cartDigest, cartSnapshot: cart };
     const repo = repository({ getCheckoutState: vi.fn().mockResolvedValue(checkout) });
     const current = vi.fn().mockResolvedValue({ revision: 4, registry });

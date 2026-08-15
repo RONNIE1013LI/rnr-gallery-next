@@ -28,7 +28,7 @@ const fulfilmentStatuses = new Set([
   "cancelled",
 ]);
 const deliveryMethods = new Set(["pickup", "post"]);
-const shippingProviders = new Set(["gosweetspot", "local-test"]);
+const shippingProviders = new Set(["gosweetspot", "local-test", "internal-fixed"]);
 const orientations = new Set(["landscape", "portrait"]);
 const photoSubmissionMethods = new Set(["upload", "later"]);
 
@@ -67,7 +67,12 @@ function assertMoneyBalance(total: number, first: number, second: number) {
 function validateOrderRow(row: OrderRow) {
   assertSnapshot(paymentStatuses.has(row.paymentStatus));
   assertSnapshot(fulfilmentStatuses.has(row.fulfilmentStatus));
-  assertSnapshot(row.currency === "NZD");
+  assertSnapshot(
+    (row.market === "NZ" && row.currency === "NZD" && row.taxJurisdiction === "NZ_GST") ||
+    (row.market === "AU" && row.currency === "AUD" && ["AU_GST", "NONE"].includes(row.taxJurisdiction)),
+  );
+  assertSnapshot(Number.isSafeInteger(row.priceBookRevision) && row.priceBookRevision >= 0);
+  assertSnapshot(Number.isSafeInteger(row.taxRateBasisPoints) && row.taxRateBasisPoints >= 0 && row.taxRateBasisPoints <= 10_000);
   assertSnapshot(deliveryMethods.has(row.deliveryMethod));
   assertSnapshot(row.createdAt instanceof Date && Number.isFinite(row.createdAt.getTime()));
   assertSnapshot(isNonEmptyString(row.shippingServiceName));
@@ -95,7 +100,7 @@ function publicAddress(addressRows: OrderAddressRow[], kind: "billing" | "delive
   return normalizeAddress({ country, fullName, building, street, suburb, region, postcode, phone, email });
 }
 
-function publicItems(itemRows: OrderItemRow[]) {
+function publicItems(itemRows: OrderItemRow[], order: OrderRow) {
   assertSnapshot(itemRows.length > 0);
   return itemRows.map((item, index) => {
     assertSnapshot(item.position === index);
@@ -131,7 +136,13 @@ function publicItems(itemRows: OrderItemRow[]) {
       assertSnapshot(isMoney(line.amountExGstCents));
       if (line.amountInclGstCents !== undefined) {
         assertSnapshot(isMoney(line.amountInclGstCents));
-        assertSnapshot(Math.round((line.amountInclGstCents * 100) / 115) === line.amountExGstCents);
+        const expectedExTax = order.taxJurisdiction === "NONE"
+          ? line.amountInclGstCents
+          : Math.round(
+              (line.amountInclGstCents * 10_000) /
+              (10_000 + order.taxRateBasisPoints),
+            );
+        assertSnapshot(expectedExTax === line.amountExGstCents);
       }
       return Object.freeze({
         key: line.key,
@@ -198,7 +209,7 @@ export function buildPublicOrders(
     try {
       validateOrderRow(row);
       const itemRows = items.filter(({ orderId }) => orderId === row.id);
-      const mappedItems = publicItems(itemRows);
+      const mappedItems = publicItems(itemRows, row);
       assertSnapshot(mappedItems.reduce((sum, item) => sum + item.lineSubtotalExGstCents, 0) === row.productSubtotalExGstCents);
       assertSnapshot(mappedItems.reduce((sum, item) => sum + item.lineGstCents, 0) === row.productGstCents);
       assertSnapshot(mappedItems.reduce((sum, item) => sum + item.lineTotalInclGstCents, 0) === row.productTotalInclGstCents);

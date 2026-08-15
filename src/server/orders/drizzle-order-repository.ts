@@ -21,6 +21,7 @@ import {
   type OrderRepository,
   UnclaimableUploadError,
 } from "./order-repository";
+import { buildOrderPricingSnapshot } from "./order-pricing-snapshot";
 
 type Database = ReturnType<typeof getDatabase>;
 
@@ -312,6 +313,10 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
 
           const { totalExGstCents, totalGstCents, totalInclGstCents } =
             calculateOrderTotals(input.cart, shippingSnapshot);
+          const pricingSnapshot = buildOrderPricingSnapshot(input.cart, input.shipping);
+          if (pricingSnapshot.finalTotalCents !== totalInclGstCents) {
+            throw new AtomicOrderStateError("The immutable pricing snapshot does not balance");
+          }
           const [order] = await transaction
             .insert(orders)
             .values({
@@ -321,6 +326,14 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
               idempotencyKey: input.idempotencyKey,
               customerId: locked.customerId,
               customerEmail: input.billingAddress.email,
+              market: input.cart.market,
+              currency: input.cart.currency,
+              priceBookRevision: input.cart.priceBookRevision,
+              taxJurisdiction: input.cart.taxJurisdiction,
+              taxRateBasisPoints: input.cart.taxRateBasisPoints,
+              discountCents: input.cart.discountCents,
+              designSurchargeCents: input.cart.designSurchargeCents,
+              pricingSnapshot,
               deliveryMethod: input.deliveryMethod,
               shippingQuoteId,
               attribution: input.attribution ?? null,
