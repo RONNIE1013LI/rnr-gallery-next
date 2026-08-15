@@ -5,6 +5,10 @@ import {
   schemaFromRegistry,
   type ProductRegistryDocument,
 } from "@/domain/catalogue/product-registry";
+import {
+  assertMarketCheckoutReady,
+  MarketPriceBookValidationError,
+} from "@/domain/catalogue/market-price-book";
 import { quoteMarketConfiguration } from "@/domain/pricing/market-quote";
 import { InvalidPricingInputError } from "@/domain/pricing/types";
 import type { Market } from "@/domain/markets/types";
@@ -347,6 +351,7 @@ export function repriceCart(
     const orderDate = getAucklandDate(options.now ?? new Date());
     const registry = options.registry ?? defaultProductRegistry;
     const market = options.market ?? "NZ";
+    assertMarketCheckoutReady(registry, market);
     const priceBookRevision = options.registryRevision ?? 0;
     if (!Number.isSafeInteger(priceBookRevision) || priceBookRevision < 0) {
       throw new InvalidCheckoutCartError("The price-book revision is invalid.");
@@ -408,7 +413,10 @@ export function repriceCart(
     });
   } catch (error) {
     if (error instanceof InvalidCheckoutCartError) throw error;
-    if (error instanceof InvalidPricingInputError) {
+    if (
+      error instanceof InvalidPricingInputError ||
+      error instanceof MarketPriceBookValidationError
+    ) {
       throw new InvalidCheckoutCartError(error.message, { cause: error });
     }
     throw new InvalidCheckoutCartError("The checkout cart is invalid.", {

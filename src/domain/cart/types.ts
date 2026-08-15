@@ -3,7 +3,7 @@ import type {
   Orientation,
   PhotoSubmissionMethod,
 } from "@/domain/configuration/types";
-import type { PriceBreakdown } from "@/domain/pricing/types";
+import type { MarketPriceBreakdown, PriceBreakdown } from "@/domain/pricing/types";
 
 export const LEGACY_CART_STORAGE_KEY = "rnr-cart-v1";
 export const CART_STORAGE_KEY = "rnr:commerce:v1:guest:cart";
@@ -27,7 +27,7 @@ export type CartItem = Readonly<{
   urgentFeeInclGstCents?: number;
   deliveryPreference: DeliveryPreference;
   quantity: number;
-  price: PriceBreakdown;
+  price: PriceBreakdown | MarketPriceBreakdown;
   uploadReferences: readonly string[];
   mainPhotoUploadId?: string;
   extraBackgroundRemovalUploadIds?: readonly string[];

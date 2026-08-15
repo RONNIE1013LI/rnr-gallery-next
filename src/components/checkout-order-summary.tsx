@@ -1,12 +1,13 @@
 import Image from "next/image";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
-import { formatNzd } from "@/domain/money";
+import { formatMarketMoney } from "@/domain/money";
 import { normalizeShippingServiceName } from "@/domain/shipping/service-name";
 import type { PublicShippingDTO } from "@/server/checkout/public-dto";
 import styles from "./storefront.module.css";
 
 function shippingDisclosure(shipping: PublicShippingDTO["option"]) {
   if (shipping.method === "pickup") return `${shipping.serviceName} · No shipping charge`;
+  if (shipping.provenance === "internal-fixed") return `${shipping.serviceName} · Fixed Australian delivery`;
   const serviceName = normalizeShippingServiceName(shipping.serviceName).replace(/\s*—\s*not a live carrier rate$/i, "");
   return `${serviceName} · ${shipping.isTest ? "Test rate — not a live carrier rate" : "Live carrier rate"}`;
 }
@@ -18,6 +19,10 @@ export function CheckoutOrderSummary({ cart, shipping }: {
   if (!cart) return <p>Review delivery to see authoritative totals.</p>;
   const shippingGst = shipping?.gstCents ?? 0;
   const shippingTotal = shipping?.amountInclGstCents ?? 0;
+  const currency = cart.currency ?? "NZD";
+  const taxJurisdiction = cart.taxJurisdiction ?? "NZ_GST";
+  const hasTax = taxJurisdiction !== "NONE";
+  const taxName = taxJurisdiction === "AU_GST" ? "Australian GST" : "GST";
   return (
     <>
       {cart.items.map((item) => (
@@ -39,10 +44,10 @@ export function CheckoutOrderSummary({ cart, shipping }: {
         </div>
       ))}
       <dl className={styles.priceLines}>
-        <div><dt>Products incl GST</dt><dd>{formatNzd(cart.totalInclGstCents)}</dd></div>
-        <div><dt>Shipping incl GST</dt><dd>{formatNzd(shippingTotal)}</dd></div>
-        <div><dt>Includes GST</dt><dd>{formatNzd(cart.gstCents + shippingGst)}</dd></div>
-        <div className={styles.priceTotal}><dt>Total incl GST</dt><dd>{formatNzd(cart.totalInclGstCents + shippingTotal)}</dd></div>
+        <div><dt>{hasTax ? "Products incl GST" : "Products"}</dt><dd>{formatMarketMoney(cart.totalInclGstCents, currency)}</dd></div>
+        <div><dt>{hasTax ? "Shipping incl GST" : "Shipping"}</dt><dd>{formatMarketMoney(shippingTotal, currency)}</dd></div>
+        <div><dt>{hasTax ? `Includes ${taxName}` : "GST not charged"}</dt><dd>{formatMarketMoney(cart.gstCents + shippingGst, currency)}</dd></div>
+        <div className={styles.priceTotal}><dt>{hasTax ? "Total incl GST" : "Total"}</dt><dd>{formatMarketMoney(cart.totalInclGstCents + shippingTotal, currency)}</dd></div>
       </dl>
       {shipping ? <p className={styles.checkoutProvenance}>{shippingDisclosure(shipping)}</p> : null}
     </>

@@ -21,7 +21,7 @@ export type PublicShippingDTO = Readonly<{
     amountExGstCents: number;
     gstCents: number;
     amountInclGstCents: number;
-    currency: "NZD";
+    currency: ShippingOption["currency"];
     provenance: ShippingOption["provenance"];
     isTest: boolean;
     expiresAt?: string;

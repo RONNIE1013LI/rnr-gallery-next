@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import type { CheckoutStateRepository } from "./checkout-repository";
 import { createCheckoutService, InvalidCheckoutStateError } from "./checkout-service";
 import { ShippingUnavailableError } from "@/server/shipping/shipping-service";
-import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import {
+  defaultProductRegistry,
+  parseProductRegistry,
+} from "@/domain/catalogue/product-registry";
 import { synchronizeNewZealandPriceBook } from "@/domain/catalogue/market-price-book";
 
 const sessionId = "10000000-0000-4000-8000-000000000001";
@@ -50,6 +53,20 @@ function cart(overrides: Record<string, unknown> = {}) {
       ...overrides,
     }],
   };
+}
+
+function enabledAustraliaRegistry() {
+  const registry = structuredClone(defaultProductRegistry);
+  for (const product of registry.markets.AU.products) {
+    for (const size of product.sizes) size.amountInclTaxCents = 40_000;
+    for (const charge of product.charges) charge.amountInclTaxCents = 3_000;
+  }
+  for (const fee of registry.markets.AU.peoplePets.fees) fee.amountInclTaxCents = fee.count * 6_000;
+  registry.markets.AU.peoplePets.additionalEachInclTaxCents = 4_000;
+  for (const fee of registry.markets.AU.urgentServiceFees) fee.amountInclTaxCents = 10_000;
+  for (const shipping of registry.markets.AU.shippingMethods) shipping.amountInclTaxCents = 4_500;
+  registry.markets.AU.enabled = true;
+  return parseProductRegistry(registry);
 }
 
 function repository(
@@ -209,10 +226,14 @@ describe("checkout service", () => {
     );
   });
 
-  it("normalizes an explicit Australian delivery address", async () => {
+  it("uses the shipping country as authority and reprices every item in fixed AUD", async () => {
+    const registry = enabledAustraliaRegistry();
     const service = createCheckoutService({
       repository: repository(),
       shippingService: shippingService(),
+      productRegistryService: {
+        current: vi.fn().mockResolvedValue({ revision: 9, registry }),
+      },
       now: () => now,
     });
     const state = await service.updateSession(sessionId, {
@@ -227,6 +248,47 @@ describe("checkout service", () => {
       region: "NSW",
       phone: "+61412345678",
     });
+    expect(state.cartSnapshot).toMatchObject({
+      market: "AU",
+      currency: "AUD",
+      priceBookRevision: 9,
+      totalInclGstCents: 40_000,
+      gstCents: 0,
+    });
+  });
+
+  it("fails closed instead of retaining NZ prices when AU is disabled", async () => {
+    const service = createCheckoutService({
+      repository: repository(),
+      shippingService: shippingService(),
+      now: () => now,
+    });
+    await expect(service.updateSession(sessionId, {
+      cart: cart(),
+      billingAddress,
+      useDifferentDeliveryAddress: true,
+      deliveryAddress: australianAddress,
+      deliveryMethod: "post",
+    })).rejects.toThrow("Australia market is disabled");
+  });
+
+  it("does not permit Australian delivery to retain NZ pickup", async () => {
+    const registry = enabledAustraliaRegistry();
+    const service = createCheckoutService({
+      repository: repository(),
+      shippingService: shippingService(),
+      productRegistryService: {
+        current: vi.fn().mockResolvedValue({ revision: 9, registry }),
+      },
+      now: () => now,
+    });
+    await expect(service.updateSession(sessionId, {
+      cart: cart(),
+      billingAddress,
+      useDifferentDeliveryAddress: true,
+      deliveryAddress: australianAddress,
+      deliveryMethod: "pickup",
+    })).rejects.toThrow("Pickup is only available in New Zealand");
   });
 
   it("rejects an upload reference not owned by the checkout session", async () => {

@@ -18,6 +18,7 @@ import {
 import type { NormalizedAddress } from "@/domain/address/types";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { DeliveryPreference } from "@/domain/configuration/types";
+import type { MarketCurrency } from "@/domain/markets/types";
 import type { ProviderShippingQuote } from "@/server/shipping/types";
 import { user } from "./auth";
 
@@ -32,7 +33,7 @@ export const shippingQuotes = pgTable(
     provider: text("provider").$type<ProviderShippingQuote["provider"]>().notNull(),
     serviceCode: text("service_code").notNull(),
     serviceName: text("service_name").notNull(),
-    currency: text("currency").$type<"NZD">().default("NZD").notNull(),
+    currency: text("currency").$type<MarketCurrency>().default("NZD").notNull(),
     amountExGstCents: bigint("amount_ex_gst_cents", { mode: "number" }).notNull(),
     gstCents: bigint("gst_cents", { mode: "number" }).notNull(),
     amountInclGstCents: bigint("amount_incl_gst_cents", { mode: "number" }).notNull(),
@@ -63,7 +64,7 @@ export const shippingQuotes = pgTable(
       "shipping_quotes_amounts_balance",
       sql`${table.amountInclGstCents} = ${table.amountExGstCents} + ${table.gstCents}`,
     ),
-    check("shipping_quotes_currency_nzd", sql`${table.currency} = 'NZD'`),
+    check("shipping_quotes_currency_supported", sql`${table.currency} in ('NZD', 'AUD')`),
   ],
 );
 

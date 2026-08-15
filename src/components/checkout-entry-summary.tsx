@@ -9,8 +9,8 @@ import {
   getCartSnapshot,
   subscribeToCart,
 } from "@/domain/cart/browser-cart-events";
-import { calculateCartTotals } from "@/domain/cart/cart";
-import { formatNzd } from "@/domain/money";
+import { calculateCartTotals, getCartDisplayMarket } from "@/domain/cart/cart";
+import { formatMarketMoney } from "@/domain/money";
 
 import styles from "./storefront.module.css";
 
@@ -31,6 +31,7 @@ export function CheckoutEntrySummary() {
   );
   const cart = parseStoredCart(snapshot);
   const totals = calculateCartTotals(cart);
+  const displayMarket = getCartDisplayMarket(cart);
 
   return (
     <aside
@@ -68,20 +69,20 @@ export function CheckoutEntrySummary() {
             ))}
           </ul>
 
-          <dl className={styles.checkoutEntryTotals}>
+          {displayMarket ? <dl className={styles.checkoutEntryTotals}>
             <div>
-              <dt>Subtotal incl GST</dt>
-              <dd>{formatNzd(totals.totalInclGstCents)}</dd>
+              <dt>{displayMarket.taxJurisdiction === "NONE" ? "Subtotal" : "Subtotal incl GST"}</dt>
+              <dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd>
             </div>
             <div>
-              <dt>Includes GST (15%)</dt>
-              <dd>{formatNzd(totals.gstCents)}</dd>
+              <dt>{displayMarket.taxJurisdiction === "NZ_GST" ? "Includes GST (15%)" : displayMarket.taxJurisdiction === "AU_GST" ? "Includes Australian GST" : "GST not charged"}</dt>
+              <dd>{formatMarketMoney(totals.gstCents, displayMarket.currency)}</dd>
             </div>
             <div className={styles.checkoutEntryTotal}>
-              <dt>Total incl GST</dt>
-              <dd>{formatNzd(totals.totalInclGstCents)}</dd>
+              <dt>{displayMarket.taxJurisdiction === "NONE" ? "Total" : "Total incl GST"}</dt>
+              <dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd>
             </div>
-          </dl>
+          </dl> : <p>Prices will be recalculated for the selected delivery country.</p>}
           <p className={styles.checkoutEntryDeliveryNote}>
             Delivery is reviewed after you continue to checkout.
           </p>

@@ -94,4 +94,26 @@ describe("CheckoutOrderSummary", () => {
     expect(screen.getByText("Auckland Urban · Live carrier rate")).toBeInTheDocument();
     expect(screen.queryByText(/Auckalnd/)).not.toBeInTheDocument();
   });
+
+  it("renders Australian products, fixed shipping and totals only in AUD", () => {
+    const cart = {
+      version: 1, market: "AU", currency: "AUD", taxJurisdiction: "NONE",
+      taxRateBasisPoints: 1_000, priceBookRevision: 9, orderDate: "2026-08-03",
+      items: [], subtotalExGstCents: 40_000, gstCents: 0, totalInclGstCents: 40_000,
+      discountCents: 0, designSurchargeCents: 0, itemCount: 1,
+      cartDigest: "d".repeat(64),
+    } as const satisfies RepricedCheckoutCart;
+    render(<CheckoutOrderSummary cart={cart} shipping={{
+      method: "post", serviceCode: "au-standard", serviceName: "Australia standard delivery",
+      amountExGstCents: 4_500, gstCents: 0, amountInclGstCents: 4_500, currency: "AUD",
+      provenance: "internal-fixed", isTest: false,
+    }} />);
+
+    expect(screen.getByText("Products")).toBeVisible();
+    expect(screen.getByText("GST not charged")).toBeVisible();
+    expect(screen.getByText("A$400.00 AUD")).toBeVisible();
+    expect(screen.getAllByText("A$445.00 AUD")).toHaveLength(1);
+    expect(screen.getByText("Australia standard delivery · Fixed Australian delivery")).toBeVisible();
+    expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
+  });
 });

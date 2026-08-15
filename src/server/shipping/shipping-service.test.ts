@@ -1,5 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
+import {
+  defaultProductRegistry,
+  parseProductRegistry,
+} from "@/domain/catalogue/product-registry";
 import type { NormalizedAddress } from "@/domain/address/types";
 import {
   createShippingService,
@@ -60,6 +64,45 @@ function provider(overrides: Partial<ShippingQuoteProvider> = {}): ShippingQuote
       isTest: true,
     }),
     ...overrides,
+  };
+}
+
+function australianFixture() {
+  const registry = structuredClone(defaultProductRegistry);
+  for (const product of registry.markets.AU.products) {
+    for (const size of product.sizes) size.amountInclTaxCents = 40_000;
+    for (const charge of product.charges) charge.amountInclTaxCents = 3_000;
+  }
+  for (const fee of registry.markets.AU.peoplePets.fees) fee.amountInclTaxCents = fee.count * 6_000;
+  registry.markets.AU.peoplePets.additionalEachInclTaxCents = 4_000;
+  for (const fee of registry.markets.AU.urgentServiceFees) fee.amountInclTaxCents = 10_000;
+  for (const shipping of registry.markets.AU.shippingMethods) shipping.amountInclTaxCents = 4_500;
+  registry.markets.AU.enabled = true;
+  const parsed = parseProductRegistry(registry);
+  return {
+    registry: parsed,
+    cart: repriceCart(cartInput(), { now, registry: parsed, market: "AU", registryRevision: 9 }),
+    address: { ...address, country: "AU" as const, region: "NSW", phone: "+61412345678" },
+  };
+}
+
+function cartInput() {
+  return {
+    version: 1 as const,
+    items: [{
+      clientItemId: "00000000-0000-4000-8000-000000000010",
+      productKey: "photo-print-canvas",
+      sizeKey: "a4",
+      orientation: "landscape" as const,
+      peoplePets: 0,
+      photoSubmissionMethod: "later" as const,
+      designText: "Family portrait",
+      notes: "Warm colours",
+      neededDate: "2026-08-10",
+      urgentServiceConfirmed: false,
+      quantity: 1,
+      uploadReferences: [],
+    }],
   };
 }
 
@@ -140,30 +183,39 @@ describe("shipping service", () => {
     ]).size).toBe(3);
   });
 
-  it("maps an Australian state abbreviation to GoSweetSpot's city field", async () => {
+  it("uses the manually stored fixed AUD shipping price without calling the NZ carrier", async () => {
     const quoteProvider = provider();
+    const fixture = australianFixture();
     const service = createShippingService({ provider: quoteProvider, now: () => now });
 
-    await service.quotePost(cart(), {
-      ...address,
-      country: "AU",
-      building: "Level 2",
-      street: "55 George Street",
-      suburb: "Sydney",
-      region: "NSW",
-      postcode: "2000",
-      phone: "+61412345678",
-    });
+    const result = await service.quotePost(
+      fixture.cart,
+      fixture.address,
+      fixture.registry.markets.AU,
+    );
 
-    expect(quoteProvider.quote).toHaveBeenCalledWith(expect.objectContaining({
-      destination: expect.objectContaining({
-        street: "Level 2, 55 George Street",
-        suburb: "Sydney",
-        city: "NSW",
-        postcode: "2000",
-        countryCode: "AU",
-      }),
-    }));
+    expect(quoteProvider.quote).not.toHaveBeenCalled();
+    expect(result).toMatchObject({
+      quote: {
+        provider: "internal-fixed",
+        currency: "AUD",
+        amountExGstCents: 4_500,
+        gstCents: 0,
+        amountInclGstCents: 4_500,
+      },
+      option: {
+        currency: "AUD",
+        amountInclGstCents: 4_500,
+        provenance: "internal-fixed",
+      },
+    });
+  });
+
+  it("rejects a destination whose country does not match the repriced cart market", async () => {
+    await expect(
+      createShippingService({ provider: provider(), now: () => now })
+        .quotePost(cart(), { ...address, country: "AU", region: "NSW", phone: "+61412345678" }),
+    ).rejects.toThrow("destination does not match");
   });
 
   it.each([

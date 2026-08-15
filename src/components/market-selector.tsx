@@ -7,6 +7,11 @@ import {
   clearIdentityCheckoutState,
   getActiveCustomerId,
 } from "@/domain/cart/browser-cart-scope";
+import { createBrowserCartRepository } from "@/domain/cart/browser-cart-repository";
+import { cartToCheckoutInput } from "@/domain/cart/checkout-input";
+import { applyAuthoritativeRepricing } from "@/domain/cart/cart";
+import type { RepricedCheckoutCart } from "@/domain/checkout/types";
+import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
 
 function destination(pathname: string, market: Market) {
   if (market === "NZ") {
@@ -33,12 +38,23 @@ export function MarketSelector({
     if (next === market) return;
     setPending(true);
     try {
+      const repository = createBrowserCartRepository(window.localStorage);
+      const activeCart = repository.load();
       const response = await fetch("/api/market", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ market: next }),
+        body: JSON.stringify({
+          market: next,
+          ...(activeCart.items.length > 0 ? { cart: cartToCheckoutInput(activeCart) } : {}),
+        }),
       });
       if (!response.ok) return;
+      const payload = await response.json() as { cart?: RepricedCheckoutCart };
+      if (activeCart.items.length > 0) {
+        if (!payload.cart) return;
+        repository.save(applyAuthoritativeRepricing(activeCart, payload.cart));
+        notifyCartChanged();
+      }
       clearIdentityCheckoutState(
         window.localStorage,
         window.sessionStorage,

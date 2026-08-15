@@ -16,6 +16,7 @@ import {
   getActivePaymentIntentStorageKey,
 } from "@/domain/cart/browser-cart-scope";
 import { type Cart } from "@/domain/cart/types";
+import { cartToCheckoutInput } from "@/domain/cart/checkout-input";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { PublicShippingDTO } from "@/server/checkout/public-dto";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
@@ -139,17 +140,7 @@ function readCheckoutDraft(storage: Storage, cartSnapshot: string): CheckoutDraf
   }
 }
 
-export function canonicalCheckoutCart(cart: Cart) {
-  return { version: 1 as const, items: cart.items.map((item) => ({
-    clientItemId: item.id, productKey: item.productKey, sizeKey: item.sizeKey,
-    ...(item.galleryDesignId ? { galleryDesignId: item.galleryDesignId } : {}),
-    ...(item.orientation ? { orientation: item.orientation } : {}),
-    peoplePets: item.peoplePets, photoSubmissionMethod: item.photoSubmissionMethod,
-    designText: item.designText, notes: item.notes, neededDate: item.neededDate,
-    urgentServiceConfirmed: item.urgentServiceConfirmed === true,
-    quantity: item.quantity, uploadReferences: [...item.uploadReferences],
-  })) };
-}
+export const canonicalCheckoutCart = cartToCheckoutInput;
 
 class CheckoutApiError extends Error { constructor(message: string, readonly code: string | undefined, readonly status: number, readonly fields?: unknown) { super(message); } }
 async function postJson(url: string, body: unknown) {

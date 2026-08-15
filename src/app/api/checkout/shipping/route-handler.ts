@@ -11,6 +11,7 @@ import {
   readCheckoutSessionToken,
 } from "@/server/checkout/session-cookie";
 import { getDatabase } from "@/server/db/client";
+import { getProductRegistryRuntime } from "@/server/admin/product-registry-runtime";
 import {
   assertTrustedMutationRequest,
   parseBoundedJson,
@@ -50,6 +51,7 @@ function defaults(): Dependencies {
     checkoutService: createCheckoutService({
       repository,
       shippingService: createShippingService({ provider: selectShippingProvider() }),
+      productRegistryService: getProductRegistryRuntime(),
     }),
     getOptionalSession,
   };

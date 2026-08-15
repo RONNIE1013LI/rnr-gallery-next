@@ -7,6 +7,7 @@ import {
   emptyCart,
   removeCartItem,
   setCartItemQuantity,
+  applyAuthoritativeRepricing,
 } from "./cart";
 import type { CartItem, StorageLike } from "./types";
 
@@ -78,6 +79,35 @@ describe("guest cart", () => {
     expect(repository.load()).toEqual(cart);
     repository.clear();
     expect(repository.load()).toEqual(emptyCart());
+  });
+
+  it("replaces every browser price from one authoritative market snapshot", () => {
+    const original = addCartItem(emptyCart(), item({ deliveryPreference: "pickup" }));
+    const unitPrice = {
+      market: "AU" as const, currency: "AUD" as const, taxJurisdiction: "NONE" as const,
+      taxRateBasisPoints: 1_000, discountCents: 0, designSurchargeCents: 0,
+      lines: [], subtotalExGstCents: 40_000, gstCents: 0, totalInclGstCents: 40_000,
+    };
+    const updated = applyAuthoritativeRepricing(original, {
+      version: 1, market: "AU", currency: "AUD", taxJurisdiction: "NONE",
+      taxRateBasisPoints: 1_000, priceBookRevision: 9, orderDate: "2026-08-16",
+      items: [{
+        clientItemId: "item-1", productKey: "photo-print-canvas",
+        productSlug: "photo-print-canvas", productTitle: "Photo Print Canvas",
+        sizeKey: "a4", sizeLabel: "A4", orientation: "landscape", peoplePets: 0,
+        photoSubmissionMethod: "upload", designText: "", notes: "", neededDate: "2026-08-10",
+        urgentServiceConfirmed: false, urgentService: { workingDays: 5, feeInclGstCents: 0 },
+        quantity: 1, uploadReferences: [], unitPrice,
+        lineSubtotalExGstCents: 40_000, lineGstCents: 0, lineTotalInclGstCents: 40_000,
+      }],
+      subtotalExGstCents: 40_000, gstCents: 0, totalInclGstCents: 40_000,
+      discountCents: 0, designSurchargeCents: 0, itemCount: 1, cartDigest: "a".repeat(64),
+    });
+
+    expect(updated.items[0]).toMatchObject({
+      deliveryPreference: "post",
+      price: { market: "AU", currency: "AUD", totalInclGstCents: 40_000 },
+    });
   });
 
   it("keeps a valid gallery design ID and drops a malformed one without losing the cart", () => {

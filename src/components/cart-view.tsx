@@ -15,11 +15,12 @@ import {
 } from "@/domain/cart/browser-cart-events";
 import {
   calculateCartTotals,
+  getCartDisplayMarket,
   removeCartItem,
   setCartItemQuantity,
 } from "@/domain/cart/cart";
 import type { Cart } from "@/domain/cart/types";
-import { formatNzd } from "@/domain/money";
+import { formatMarketMoney } from "@/domain/money";
 import styles from "./storefront.module.css";
 
 function updateCart(update: (cart: Cart) => Cart) {
@@ -48,6 +49,7 @@ export function CartView() {
   );
   const cart = parseStoredCart(snapshot);
   const totals = calculateCartTotals(cart);
+  const displayMarket = getCartDisplayMarket(cart);
 
   if (cart.items.length === 0) {
     return (
@@ -96,7 +98,7 @@ export function CartView() {
                 {Boolean(item.urgentFeeInclGstCents) && (
                   <div>
                     <dt>Urgent service</dt>
-                    <dd>{formatNzd(item.urgentFeeInclGstCents!)} incl GST</dd>
+                    <dd>{formatMarketMoney(item.urgentFeeInclGstCents!, ("currency" in item.price ? item.price.currency : "NZD"))}{("taxJurisdiction" in item.price && item.price.taxJurisdiction === "NONE") ? "" : " incl GST"}</dd>
                   </div>
                 )}
                 <div><dt>Delivery</dt><dd>{labelFor(item.deliveryPreference)}</dd></div>
@@ -127,11 +129,11 @@ export function CartView() {
       <aside className={styles.cartTotals} aria-label="Cart totals">
         <p className={styles.eyebrow}>Order total</p>
         <h2>Cart summary</h2>
-        <dl className={styles.priceLines}>
-          <div><dt>Subtotal incl GST</dt><dd>{formatNzd(totals.totalInclGstCents)}</dd></div>
-          <div><dt>Includes GST (15%)</dt><dd>{formatNzd(totals.gstCents)}</dd></div>
-          <div className={styles.priceTotal}><dt>Total incl GST</dt><dd>{formatNzd(totals.totalInclGstCents)}</dd></div>
-        </dl>
+        {displayMarket ? <dl className={styles.priceLines}>
+          <div><dt>{displayMarket.taxJurisdiction === "NONE" ? "Subtotal" : "Subtotal incl GST"}</dt><dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd></div>
+          <div><dt>{displayMarket.taxJurisdiction === "NZ_GST" ? "Includes GST (15%)" : displayMarket.taxJurisdiction === "AU_GST" ? "Includes Australian GST" : "GST not charged"}</dt><dd>{formatMarketMoney(totals.gstCents, displayMarket.currency)}</dd></div>
+          <div className={styles.priceTotal}><dt>{displayMarket.taxJurisdiction === "NONE" ? "Total" : "Total incl GST"}</dt><dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd></div>
+        </dl> : <p>Prices will be recalculated for the selected delivery country.</p>}
         <Link className={styles.primaryButton} href="/checkout/start">Continue to checkout</Link>
         <p className={styles.cartAssurance}>Draft approval comes before production.</p>
       </aside>

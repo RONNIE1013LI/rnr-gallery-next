@@ -7,6 +7,7 @@ import {
 import { parseCheckoutCartInput } from "@/domain/checkout/input-schema";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import type { DeliveryPreference } from "@/domain/configuration/types";
+import { marketForCountry } from "@/domain/markets/market";
 import type { createShippingService } from "@/server/shipping/shipping-service";
 import {
   assertOwnedUploadReferences,
@@ -67,6 +68,10 @@ export function createCheckoutService({
       const deliveryAddress = input.useDifferentDeliveryAddress === true
         ? normalizeAddress(input.deliveryAddress)
         : billingAddress;
+      const market = marketForCountry(deliveryAddress.country);
+      if (market === "AU" && input.deliveryMethod === "pickup") {
+        throw new InvalidCheckoutStateError("Pickup is only available in New Zealand");
+      }
       const canonicalCart = parseCheckoutCartInput(input.cart);
       const registryState = productRegistryService
         ? await productRegistryService.current()
@@ -87,6 +92,7 @@ export function createCheckoutService({
         now: now(),
         galleryDesigns,
         registry,
+        market,
         registryRevision: registryState.revision,
       });
       await assertOwnedUploadReferences(
@@ -131,9 +137,18 @@ export function createCheckoutService({
         });
       }
 
+      const registryState = productRegistryService
+        ? await productRegistryService.current()
+        : { revision: 0, registry: defaultProductRegistry };
+      const snapshotRevision = state.cartSnapshot.priceBookRevision ?? 0;
+      const snapshotMarket = state.cartSnapshot.market ?? "NZ";
+      if (registryState.revision !== snapshotRevision) {
+        throw new InvalidCheckoutStateError("Pricing changed. Review checkout again.");
+      }
       const quoted = await shippingService.quotePost(
         state.cartSnapshot,
         state.deliveryAddress,
+        registryState.registry.markets[snapshotMarket],
       );
       const persisted = await repository.persistAndSelectShippingQuote({
         sessionId,

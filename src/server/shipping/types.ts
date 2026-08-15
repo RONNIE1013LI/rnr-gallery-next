@@ -1,4 +1,5 @@
 import type { SupportedCountry } from "@/domain/address/types";
+import type { MarketCurrency } from "@/domain/markets/types";
 
 export type PackageProfile = Readonly<{
   productKey: string;
@@ -34,13 +35,13 @@ export type ProviderAvailability = Readonly<{
 }>;
 
 export type ProviderShippingQuote = Readonly<{
-  provider: "gosweetspot" | "local-test";
+  provider: "gosweetspot" | "local-test" | "internal-fixed";
   serviceCode: string;
   serviceName: string;
   amountExGstCents: number;
   gstCents: number;
   amountInclGstCents: number;
-  currency: "NZD";
+  currency: MarketCurrency;
   providerReference: string;
   expiresAt: Date;
   rawResponseHash: string;
