@@ -317,6 +317,29 @@ describe("site shell", () => {
       .toHaveAttribute("href", "/#faq");
   });
 
+  it("shows every accepted payment brand inside the footer", () => {
+    render(<SiteFooter />);
+    const footer = screen.getByRole("contentinfo");
+    const payments = within(footer).getByRole("region", {
+      name: "Accepted payments",
+    });
+
+    for (const name of [
+      "Visa",
+      "Mastercard",
+      "American Express",
+      "Apple Pay",
+      "Google Pay",
+      "Afterpay",
+    ]) {
+      expect(within(payments).getByRole("img", { name })).toBeVisible();
+    }
+
+    expect(footer.querySelector(".site-footer__grid")?.nextElementSibling)
+      .toBe(payments);
+    expect(payments.nextElementSibling).toHaveClass("site-footer__legal");
+  });
+
   it("places policies under Customer and links the footer brand to the page top", () => {
     render(<><SiteHeader /><SiteFooter /></>);
     const footer = screen.getByRole("contentinfo");
