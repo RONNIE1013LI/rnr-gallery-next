@@ -31,14 +31,14 @@ export function detectIntent(message: string): CustomerServiceIntent {
   if (/blurry|blurred|low.?resolution|photo quality|original photo|original file|use these photos|use my photos|combine.*(?:photos?|photographs?)|separate files|uncropped/.test(value)) {
     return "photo_guidance";
   }
+  if (/deposit|payment process|how.*payment|pay partly|part payment|split payment|weekly payment|afterpay|\bzip\b/.test(value)) {
+    return "payment_process";
+  }
   if (/design process|design work|how.*design|what happens.*design|theme|background idea|wording/.test(value)) {
     return "design_process";
   }
   if (/production process|production steps|how.*(?:made|produced)|what happens after.*(?:photo|detail)|production workflow/.test(value)) {
     return "production_process";
-  }
-  if (/deposit|payment process|how.*payment|pay partly|part payment|split payment|weekly payment|afterpay|\bzip\b/.test(value)) {
-    return "payment_process";
   }
   if (/^(?:hi|hello|hey|kia ora|kiaora)\b|thank you|thanks|make (?:this|it) (?:warmer|friendlier)|tone/.test(value)) {
     return "tone_adjustment";

@@ -1,5 +1,5 @@
 {
-  "knowledgeVersion": "44f2be6e9b161291c1caadad7d43e20d9cc006a1df19005795141ebbbe8800b1",
+  "knowledgeVersion": "4af8504b35764a40114f0900c83805d0ba4103417ef0c8945d226e4471537d34",
   "rules": [
     {
       "id": "AI-GOV-01",
@@ -47,12 +47,12 @@
     },
     {
       "id": "AI-SCOPE-02",
-      "text": "AI may ask whether the display will be wall-mounted or freestanding. It must not state package contents, included hardware, or a product recommendation as fact unless a separate CONFIRMED rule permits it.",
+      "text": "AI may compare and recommend product formats using separate CONFIRMED product-definition rules, including wall versus freestanding display and keepsake versus event use. It must not quote prices or add unconfirmed package contents.",
       "evidenceStatus": "CONFIRMED",
       "highRisk": false,
       "realtimeRequired": true,
-      "source": "Ronnie Phase 3 approval; clarified during Phase 3.1 remediation",
-      "lastConfirmed": "2026-08-16",
+      "source": "Ronnie Phase 3 approval and AI Quality Sign-off product cases 1-4",
+      "lastConfirmed": "2026-08-17",
       "mayAnswerAutomatically": true,
       "requiresHumanEscalation": true
     },
@@ -69,23 +69,23 @@
     },
     {
       "id": "AI-SCOPE-04",
-      "text": "AI may collect product, size, original photos, wording, theme, and colour preferences and say the team will review them and guide the next step. It must not state arrangement, preview, revision, refund, or approval stages as policy unless separately CONFIRMED.",
+      "text": "AI may collect product, size, original photos, wording, theme, and colour preferences and explain the separately CONFIRMED general design workflow. It must not state a free-revision count, guarantee a result, or infer an order-specific stage.",
       "evidenceStatus": "CONFIRMED",
       "highRisk": false,
       "realtimeRequired": true,
-      "source": "Ronnie Phase 3 approval; clarified during Phase 3.1 remediation",
-      "lastConfirmed": "2026-08-16",
+      "source": "Ronnie Phase 3 approval and AI Quality Sign-off design cases 9-12",
+      "lastConfirmed": "2026-08-17",
       "mayAnswerAutomatically": true,
       "requiresHumanEscalation": true
     },
     {
       "id": "AI-SCOPE-05",
-      "text": "AI may request the original image and offer a photo-quality assessment. It must not guarantee restoration, improvement quality, or print suitability before review. Keep the customer-facing draft limited to those actions; conclusions require file review.",
+      "text": "AI may request the original image, explain separately CONFIRMED enhancement capabilities with mandatory quality limitations, and offer assessment. It must not guarantee restoration, accurate reconstruction, improvement quality, or print suitability before review.",
       "evidenceStatus": "CONFIRMED",
       "highRisk": false,
       "realtimeRequired": true,
-      "source": "Ronnie Phase 3 approval; clarified by Ronnie during Phase 3.1 remediation",
-      "lastConfirmed": "2026-08-16",
+      "source": "Ronnie Phase 3 approval and AI Quality Sign-off photo cases 13-16",
+      "lastConfirmed": "2026-08-17",
       "mayAnswerAutomatically": true,
       "requiresHumanEscalation": true
     },
@@ -102,12 +102,12 @@
     },
     {
       "id": "AI-SCOPE-07",
-      "text": "AI may explain confirmed general pickup/payment process without current amounts, options, address, hours, or status.",
+      "text": "AI may explain the CONFIRMED general deposit/design/balance process without current order amounts, payment options, address, hours, or status.",
       "evidenceStatus": "CONFIRMED",
       "highRisk": false,
       "realtimeRequired": true,
-      "source": "Ronnie Phase 3 approval",
-      "lastConfirmed": "2026-08-16",
+      "source": "Ronnie Phase 3 approval and AI Quality Sign-off payment cases 17-20",
+      "lastConfirmed": "2026-08-17",
       "mayAnswerAutomatically": true,
       "requiresHumanEscalation": true
     },
@@ -124,12 +124,12 @@
     },
     {
       "id": "DESIGN-01",
-      "text": "Customer receives a preview before printing.",
-      "evidenceStatus": "EVIDENCE-BASED",
+      "text": "Customer receives a design draft for review and approval before printing.",
+      "evidenceStatus": "CONFIRMED",
       "highRisk": false,
       "realtimeRequired": true,
-      "source": "Repeated historical conversations, templates, and regression tests",
-      "lastConfirmed": "Not formally confirmed",
+      "source": "Ronnie AI Quality Sign-off, design cases 9 and 12 and payment cases 19-20",
+      "lastConfirmed": "2026-08-17",
       "mayAnswerAutomatically": true,
       "requiresHumanEscalation": true
     },
@@ -157,23 +157,34 @@
     },
     {
       "id": "DESIGN-04",
-      "text": "For photo-quality questions, AI may request the original image and offer an assessment. It must not guarantee restoration, improvement quality, or print suitability before review. Keep the customer-facing draft limited to requesting the original image and offering an assessment; conclusions require file review.",
+      "text": "For photo-quality questions, AI may request the original file, explain possible enhancement/clarity/blur-noise reduction or limited restoration, and offer assessment. It must state that results depend on source quality and must not guarantee restoration, accurate reconstruction, improvement quality, or print suitability before review.",
       "evidenceStatus": "CONFIRMED",
       "highRisk": false,
       "realtimeRequired": true,
-      "source": "Ronnie Phase 3.1 remediation instruction",
-      "lastConfirmed": "2026-08-16",
+      "source": "Ronnie Phase 3.1 remediation and AI Quality Sign-off photo case 13",
+      "lastConfirmed": "2026-08-17",
       "mayAnswerAutomatically": true,
       "requiresHumanEscalation": true
     },
     {
       "id": "DESIGN-05",
-      "text": "People/pets can be combined from different original photos.",
-      "evidenceStatus": "EVIDENCE-BASED",
+      "text": "People/pets can be combined from different original photos, subject to assessment of the original files.",
+      "evidenceStatus": "CONFIRMED",
       "highRisk": false,
       "realtimeRequired": true,
-      "source": "Multiple historical enquiries and tested reply",
-      "lastConfirmed": "Not formally confirmed",
+      "source": "Ronnie AI Quality Sign-off, photo case 15",
+      "lastConfirmed": "2026-08-17",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "DESIGN-06",
+      "text": "General design workflow: collect photos/theme/wording, create a draft, let the customer review and request adjustments, obtain final approval, then proceed to printing/production. No free-revision count or order-specific stage may be inferred.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie AI Quality Sign-off, design cases 9 and 12",
+      "lastConfirmed": "2026-08-17",
       "mayAnswerAutomatically": true,
       "requiresHumanEscalation": true
     },
@@ -223,13 +234,24 @@
     },
     {
       "id": "ORDER-04",
-      "text": "Remaining balance may be paid when ready to post or collect.",
-      "evidenceStatus": "EVIDENCE-BASED",
+      "text": "The remaining balance is due before printing and production proceed.",
+      "evidenceStatus": "CONFIRMED",
       "highRisk": false,
       "realtimeRequired": true,
-      "source": "Repeated historical replies/templates",
-      "lastConfirmed": "Not formally confirmed",
-      "mayAnswerAutomatically": false,
+      "source": "Ronnie AI Quality Sign-off, payment cases 19 and 20",
+      "lastConfirmed": "2026-08-17",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "ORDER-05",
+      "text": "A deposit confirms the order and starts design work; the draft is reviewed by the customer before final approval.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie AI Quality Sign-off, payment cases 17-20",
+      "lastConfirmed": "2026-08-17",
+      "mayAnswerAutomatically": true,
       "requiresHumanEscalation": true
     },
     {
@@ -241,6 +263,17 @@
       "source": "No approved dispute SOP",
       "lastConfirmed": "Not recorded",
       "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PHOTO-01",
+      "text": "Image work may include enhancement, clarity improvement, blur/noise reduction, blending, and limited restoration where feasible. Results depend on original quality; missing facial details and print suitability cannot be guaranteed before file review.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie AI Quality Sign-off, photo cases 13-16",
+      "lastConfirmed": "2026-08-17",
+      "mayAnswerAutomatically": true,
       "requiresHumanEscalation": true
     },
     {
@@ -442,6 +475,39 @@
       "requiresHumanEscalation": true
     },
     {
+      "id": "PRODUCT-04",
+      "text": "Canvas is printed on artist canvas material and stretched over a wooden frame for a solid, premium wall display or keepsake.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie AI Quality Sign-off, product cases 1-4",
+      "lastConfirmed": "2026-08-17",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRODUCT-05",
+      "text": "A wall banner is lightweight, flexible banner material with eyelets for hanging or securing to a wall; it suits larger or temporary event displays.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie AI Quality Sign-off, product cases 1-4",
+      "lastConfirmed": "2026-08-17",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRODUCT-06",
+      "text": "A roll-up banner is freestanding and includes its own stand, making it easy to set up and move without a wall.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie AI Quality Sign-off, product cases 1, 3 and 4",
+      "lastConfirmed": "2026-08-17",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
       "id": "PRODUCTION-01",
       "text": "Design and printing usually take around five working days after all photos, details, and deposit are received.",
       "evidenceStatus": "CONFIRMED",
@@ -577,15 +643,24 @@
   "answerableFacts": [
     "AI-GOV-01: Every AI reply is a suggestion requiring human review; AI has no send or mutation authority.",
     "AI-SCOPE-01: AI may adjust tone without adding business facts.",
-    "AI-SCOPE-02: AI may ask whether the display will be wall-mounted or freestanding. It must not state package contents, included hardware, or a product recommendation as fact unless a separate CONFIRMED rule permits it.",
+    "AI-SCOPE-02: AI may compare and recommend product formats using separate CONFIRMED product-definition rules, including wall versus freestanding display and keepsake versus event use. It must not quote prices or add unconfirmed package contents.",
     "AI-SCOPE-03: AI may collect the information needed for a quote without providing a price.",
-    "AI-SCOPE-04: AI may collect product, size, original photos, wording, theme, and colour preferences and say the team will review them and guide the next step. It must not state arrangement, preview, revision, refund, or approval stages as policy unless separately CONFIRMED.",
-    "AI-SCOPE-05: AI may request the original image and offer a photo-quality assessment. It must not guarantee restoration, improvement quality, or print suitability before review. Keep the customer-facing draft limited to those actions; conclusions require file review.",
+    "AI-SCOPE-04: AI may collect product, size, original photos, wording, theme, and colour preferences and explain the separately CONFIRMED general design workflow. It must not state a free-revision count, guarantee a result, or infer an order-specific stage.",
+    "AI-SCOPE-05: AI may request the original image, explain separately CONFIRMED enhancement capabilities with mandatory quality limitations, and offer assessment. It must not guarantee restoration, accurate reconstruction, improvement quality, or print suitability before review.",
     "AI-SCOPE-06: AI may explain the general production process without promising capacity or a completion date.",
-    "AI-SCOPE-07: AI may explain confirmed general pickup/payment process without current amounts, options, address, hours, or status.",
-    "DESIGN-04: For photo-quality questions, AI may request the original image and offer an assessment. It must not guarantee restoration, improvement quality, or print suitability before review. Keep the customer-facing draft limited to requesting the original image and offering an assessment; conclusions require file review.",
+    "AI-SCOPE-07: AI may explain the CONFIRMED general deposit/design/balance process without current order amounts, payment options, address, hours, or status.",
+    "DESIGN-01: Customer receives a design draft for review and approval before printing.",
+    "DESIGN-04: For photo-quality questions, AI may request the original file, explain possible enhancement/clarity/blur-noise reduction or limited restoration, and offer assessment. It must state that results depend on source quality and must not guarantee restoration, accurate reconstruction, improvement quality, or print suitability before review.",
+    "DESIGN-05: People/pets can be combined from different original photos, subject to assessment of the original files.",
+    "DESIGN-06: General design workflow: collect photos/theme/wording, create a draft, let the customer review and request adjustments, obtain final approval, then proceed to printing/production. No free-revision count or order-specific stage may be inferred.",
     "ORDER-01: Work begins after a 50% deposit is received.",
+    "ORDER-04: The remaining balance is due before printing and production proceed.",
+    "ORDER-05: A deposit confirms the order and starts design work; the draft is reviewed by the customer before final approval.",
+    "PHOTO-01: Image work may include enhancement, clarity improvement, blur/noise reduction, blending, and limited restoration where feasible. Results depend on original quality; missing facial details and print suitability cannot be guaranteed before file review.",
     "PRODUCT-01: Canvas is waterproof but sheltered outdoor use is recommended.",
+    "PRODUCT-04: Canvas is printed on artist canvas material and stretched over a wooden frame for a solid, premium wall display or keepsake.",
+    "PRODUCT-05: A wall banner is lightweight, flexible banner material with eyelets for hanging or securing to a wall; it suits larger or temporary event displays.",
+    "PRODUCT-06: A roll-up banner is freestanding and includes its own stand, making it easy to set up and move without a wall.",
     "VOICE-01: Replies are short, warm, practical English with one next step."
   ],
   "toneGuide": "# Tone Guide\n\n## Brand Voice\n\nR&R Gallery should sound like a real person helping a family prepare something meaningful.\n\nDefault qualities:\n\n- Warm.\n- Helpful.\n- Practical.\n- Calm.\n- Clear.\n- Patient.\n- Positive without being overly enthusiastic.\n\nAvoid corporate language and long AI-style explanations.\n\n## Reply Shape\n\nUse two to five short lines when possible:\n\n1. Warm acknowledgement.\n2. Key answer.\n3. One useful next question or action.\n\nExamples of openings:\n\n- “Hi there, thanks for reaching out.”\n- “Sure, no problem.”\n- “Yes, we can do that.”\n- “No worries at all.”\n- “Thank you for confirming.”\n\nExamples of next steps:\n\n- “Please send through the photos.”\n- “May I know which size you need?”\n- “Please send your suburb/postcode.”\n- “Please let us know your theme/background idea.”\n\n## Language\n\n- Use simple, natural English.\n- Use “please” and “thank you” often.\n- Prefer “May I know…” and “Please send through…” over formal service language.\n- Ask one clear question when the customer’s request is incomplete.\n- Do not repeat information the customer already provided.\n\n## Emojis\n\n- Restrained emojis are acceptable for low-risk enquiries: 😊, ☺️, ✅.\n- Avoid multiple emojis in one short reply.\n- Avoid cheerful emojis for complaints, refunds, serious delays, payment disputes, or memorial distress.\n\n## Complaints and Memorial Orders\n\nFor complaints:\n\n- Empathy first.\n- Short explanation second.\n- Solution and next step last.\n\nFor memorial orders:\n\n- Reflect the emotional meaning gently.\n- Do not become dramatic or overly sentimental.\n- Keep practical order/design steps clear.\n\n## Do\n\n- Keep replies short.\n- Be specific about the next step.\n- State GST and delivery caveats clearly.\n- Separate production timing from courier timing.\n- Confirm printing decisions explicitly.\n- Offer a helpful route forward.\n\n## Do Not\n\n- Debate or blame.\n- Use hard policy language before acknowledging the customer.\n- Promise delivery, refund, reprint, or design outcomes without confirmation.\n- Send long feature lists when one question will qualify the request.\n- Sound automated, defensive, or annoyed.\n- Include internal classifications, placeholders, or private order data in customer replies.",
@@ -730,5 +805,1162 @@
       "risk": "escalate",
       "provenance": "customer_brain.md"
     }
-  ]
+  ],
+  "goldenReplies": [
+    {
+      "id": "product-01",
+      "intent": "product_differences",
+      "customerQuestion": "Which product format should I choose?",
+      "approvedAnswer": "It depends on how you’d like to display it 😊\n\nCanvas: best for a permanent wall display or keepsake.\nWall hanging banner: lightweight and ready to hang with eyelets.\nRoll up banner: freestanding and includes a stand.\n\nWill it be displayed on a wall or freestanding?",
+      "reviewOutcome": "NEEDS_EDIT",
+      "requiredInformationPoints": [
+        "display_method",
+        "product_use_cases",
+        "product_structure",
+        "recommendation_reason"
+      ],
+      "forbiddenClaims": [
+        "current price",
+        "delivery guarantee",
+        "unconfirmed package contents"
+      ],
+      "toneCharacteristics": [
+        "warm",
+        "specific",
+        "comparative",
+        "one useful follow-up"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-02",
+        "PRODUCT-04",
+        "PRODUCT-05",
+        "PRODUCT-06",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "product-02",
+      "intent": "product_differences",
+      "customerQuestion": "What is the difference between a canvas and a wall banner?",
+      "approvedAnswer": "A canvas is printed on artist canvas material and stretched over a wooden frame, so it has a solid, premium look and is ready to hang on the wall.\n\nA wall banner is printed on flexible banner material. It is lightweight and usually comes with eyelets around the edges so it can be hung or secured to a wall.\n\nCanvas is more like permanent wall art, thicker and more premium. A wall banner is lightweight, flexible and easier to transport, suitable for birthdays, events, memorials and temporary displays. Both can be fully customised with your photos, wording and design.",
+      "reviewOutcome": "NEEDS_EDIT",
+      "requiredInformationPoints": [
+        "display_method",
+        "product_structure",
+        "product_use_cases"
+      ],
+      "forbiddenClaims": [
+        "current price",
+        "delivery guarantee",
+        "unconfirmed package contents"
+      ],
+      "toneCharacteristics": [
+        "clear",
+        "specific",
+        "comparative",
+        "practical"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-02",
+        "PRODUCT-04",
+        "PRODUCT-05",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "product-05",
+      "intent": "product_differences",
+      "customerQuestion": "Which product is best for a freestanding display?",
+      "approvedAnswer": "For a freestanding display, the Roll-up Banner is the best option because it comes with its own stand and can be placed anywhere without needing a wall.\n\nA Canvas needs to be hung or placed on an easel, while a Wall Banner normally needs to be attached to a wall or another structure.\n\nSo if you want something that can stand on its own and is easy to set up and move around, I’d recommend the Roll-up Banner.",
+      "reviewOutcome": "NEEDS_EDIT",
+      "requiredInformationPoints": [
+        "display_method",
+        "product_structure",
+        "recommendation_reason"
+      ],
+      "forbiddenClaims": [
+        "current price",
+        "delivery guarantee",
+        "unconfirmed package contents"
+      ],
+      "toneCharacteristics": [
+        "direct",
+        "reasoned recommendation",
+        "practical",
+        "clear"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-02",
+        "PRODUCT-04",
+        "PRODUCT-05",
+        "PRODUCT-06",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "product-08",
+      "intent": "product_differences",
+      "customerQuestion": "Which product format suits a memorial display?",
+      "approvedAnswer": "For a memorial display, it depends on how you plan to present it. Canvas is best for a more permanent, premium memorial piece that can be kept and displayed at home afterwards. Wall Banner is best for a larger memorial display at a funeral, church, hall, or family gathering. Roll-up Banner is best if you need a freestanding memorial display that is easy to set up and move.\n\nFor most funeral or memorial events, I’d usually recommend a Wall Banner or Roll-up Banner, depending on whether you have a wall available.",
+      "reviewOutcome": "NEEDS_EDIT",
+      "requiredInformationPoints": [
+        "display_method",
+        "product_use_cases",
+        "recommendation_reason"
+      ],
+      "forbiddenClaims": [
+        "current price",
+        "delivery guarantee",
+        "unconfirmed package contents"
+      ],
+      "toneCharacteristics": [
+        "respectful",
+        "specific",
+        "practical",
+        "reasoned recommendation"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-02",
+        "PRODUCT-04",
+        "PRODUCT-05",
+        "PRODUCT-06",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "quote-01",
+      "intent": "quote_information_collection",
+      "customerQuestion": "What details do you need to prepare a quote?",
+      "approvedAnswer": "Hi there, thanks for reaching out 😊\nPlease send the product format and size, your required date, original photos, and the total number of people or pets.\nPlease also include your suburb/postcode and any text, theme, or colour preferences.",
+      "reviewOutcome": "APPROVED",
+      "requiredInformationPoints": [
+        "product_and_size",
+        "photos_and_people",
+        "design_preferences",
+        "date_and_location"
+      ],
+      "forbiddenClaims": [
+        "current price",
+        "availability promise",
+        "delivery guarantee"
+      ],
+      "toneCharacteristics": [
+        "warm",
+        "concise",
+        "practical",
+        "clear next step"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-03",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "quote-02",
+      "intent": "quote_information_collection",
+      "customerQuestion": "Can I get a quote please?",
+      "approvedAnswer": "Hi there, thanks for reaching out 😊\nPlease send the product type, size, number of people or pets, and your suburb/postcode.\nOnce we have these details, the team can review your quote request.",
+      "reviewOutcome": "APPROVED",
+      "requiredInformationPoints": [
+        "product_and_size",
+        "photos_and_people",
+        "date_and_location",
+        "quote_next_step"
+      ],
+      "forbiddenClaims": [
+        "current price",
+        "availability promise",
+        "delivery guarantee"
+      ],
+      "toneCharacteristics": [
+        "warm",
+        "concise",
+        "helpful",
+        "clear next step"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-03",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "quote-05",
+      "intent": "quote_information_collection",
+      "customerQuestion": "Could you prepare a quote if I send the photos?",
+      "approvedAnswer": "Hi there, thanks for reaching out 😊\nYes, please send through the original photos, along with the product type, size, and number of people or pets.\nMay I also know your suburb/postcode and required date?",
+      "reviewOutcome": "APPROVED",
+      "requiredInformationPoints": [
+        "product_and_size",
+        "photos_and_people",
+        "date_and_location"
+      ],
+      "forbiddenClaims": [
+        "current price",
+        "availability promise",
+        "delivery guarantee"
+      ],
+      "toneCharacteristics": [
+        "warm",
+        "direct",
+        "practical",
+        "helpful follow-up"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-03",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "quote-08",
+      "intent": "quote_information_collection",
+      "customerQuestion": "I would like to get a quote for a custom design.",
+      "approvedAnswer": "Of course! We’d be happy to provide a quote for a custom design. Please send us the product you’re interested in, the size, how many photos you would like to include, the wording/text, your preferred theme, colours or style, and any reference images or design ideas. Once we have these details, we can confirm the price for you.",
+      "reviewOutcome": "NEEDS_EDIT",
+      "requiredInformationPoints": [
+        "product_and_size",
+        "photos_and_people",
+        "design_preferences",
+        "quote_next_step"
+      ],
+      "forbiddenClaims": [
+        "current price",
+        "availability promise",
+        "delivery guarantee"
+      ],
+      "toneCharacteristics": [
+        "welcoming",
+        "structured",
+        "specific",
+        "clear next step"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-03",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "design-01",
+      "intent": "design_process",
+      "customerQuestion": "How does the design process work?",
+      "approvedAnswer": "Our design process is simple: send us your photos and details, including the wording, preferred colours, theme and any reference designs. We create the first design draft, you review it and let us know any adjustments, and once you approve the final design we send it to production. Your finished order is then carefully packed and shipped. We’ll work with you throughout the design stage to make sure everything looks right before it goes to print.",
+      "reviewOutcome": "NEEDS_EDIT",
+      "requiredInformationPoints": [
+        "design_inputs",
+        "draft_review",
+        "adjustments_and_approval",
+        "approval_to_production"
+      ],
+      "forbiddenClaims": [
+        "free revision count",
+        "completion guarantee",
+        "order-specific status"
+      ],
+      "toneCharacteristics": [
+        "clear",
+        "reassuring",
+        "complete process",
+        "customer-focused"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-04",
+        "DESIGN-01",
+        "DESIGN-06",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "design-05",
+      "intent": "design_process",
+      "customerQuestion": "Can I send a background idea with my photos?",
+      "approvedAnswer": "Yes, please send through your photos along with your background idea, wording, and preferred colours 😊\nOur team will review the details and guide you on the next step.",
+      "reviewOutcome": "APPROVED",
+      "requiredInformationPoints": [
+        "design_inputs",
+        "photo_arrangement"
+      ],
+      "forbiddenClaims": [
+        "free revision count",
+        "guaranteed design outcome",
+        "completion guarantee"
+      ],
+      "toneCharacteristics": [
+        "warm",
+        "concise",
+        "practical",
+        "clear next step"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-04",
+        "PHOTO-01",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "design-07",
+      "intent": "design_process",
+      "customerQuestion": "How do you turn the photos into a design?",
+      "approvedAnswer": "Hi there, thanks for reaching out 😊\nWe combine your original photos into a personalised design based on your wording, theme, and colour preferences.\nPlease send through the photos and let us know the size and design idea you have in mind.",
+      "reviewOutcome": "APPROVED",
+      "requiredInformationPoints": [
+        "design_inputs",
+        "photo_arrangement"
+      ],
+      "forbiddenClaims": [
+        "free revision count",
+        "guaranteed design outcome",
+        "completion guarantee"
+      ],
+      "toneCharacteristics": [
+        "warm",
+        "specific",
+        "concise",
+        "clear next step"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-04",
+        "DESIGN-05",
+        "PHOTO-01",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "design-08",
+      "intent": "design_process",
+      "customerQuestion": "What happens after I send my theme and wording?",
+      "approvedAnswer": "Once you send us your theme, wording and photos, our designer will create a custom draft based on your requirements. We’ll send the draft to you for review, and you can let us know if any adjustments are needed. Once you’re happy with the final design and approve it, we’ll proceed with printing and production.",
+      "reviewOutcome": "NEEDS_EDIT",
+      "requiredInformationPoints": [
+        "design_inputs",
+        "draft_review",
+        "adjustments_and_approval",
+        "approval_to_production"
+      ],
+      "forbiddenClaims": [
+        "free revision count",
+        "completion guarantee",
+        "order-specific status"
+      ],
+      "toneCharacteristics": [
+        "clear",
+        "complete process",
+        "reassuring",
+        "direct"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-04",
+        "DESIGN-01",
+        "DESIGN-06",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "photo-01",
+      "intent": "photo_guidance",
+      "customerQuestion": "Can you use blurry photos?",
+      "approvedAnswer": "Yes, we can often work with blurry or low-quality photos. We can enhance the image, improve clarity, reduce blur and noise, and restore some facial details before using it in the design. However, the final result depends on the quality of the original photo, and there may be limits if important facial details are missing. Please send the original photo first so we can assess it and let you know what is possible before proceeding.",
+      "reviewOutcome": "NEEDS_EDIT",
+      "requiredInformationPoints": [
+        "original_file",
+        "enhancement_capability",
+        "source_quality_limit",
+        "no_guarantee_before_review",
+        "assessment_next_step"
+      ],
+      "forbiddenClaims": [
+        "restoration guarantee",
+        "accurate reconstruction guarantee",
+        "print suitability guarantee"
+      ],
+      "toneCharacteristics": [
+        "helpful",
+        "realistic",
+        "specific",
+        "clear limitation"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-05",
+        "PHOTO-01",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "photo-02",
+      "intent": "photo_guidance",
+      "customerQuestion": "My original photo is slightly blurred. Can you check it?",
+      "approvedAnswer": "Hi there, yes, please send through the original photo.\nWe can assess its quality and let you know what we find after reviewing the file. 😊",
+      "reviewOutcome": "APPROVED",
+      "requiredInformationPoints": [
+        "original_file",
+        "assessment_next_step",
+        "no_guarantee_before_review"
+      ],
+      "forbiddenClaims": [
+        "restoration guarantee",
+        "accurate reconstruction guarantee",
+        "print suitability guarantee"
+      ],
+      "toneCharacteristics": [
+        "warm",
+        "concise",
+        "cautious",
+        "clear next step"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-05",
+        "PHOTO-01",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "photo-05",
+      "intent": "photo_guidance",
+      "customerQuestion": "Can you combine people from different photos?",
+      "approvedAnswer": "Hi there, thanks for reaching out.\nYes, please send through the original photos, and we can assess whether they’re suitable to combine. 😊",
+      "reviewOutcome": "APPROVED",
+      "requiredInformationPoints": [
+        "original_file",
+        "enhancement_capability",
+        "assessment_next_step"
+      ],
+      "forbiddenClaims": [
+        "guaranteed composition result",
+        "print suitability guarantee",
+        "accurate reconstruction guarantee"
+      ],
+      "toneCharacteristics": [
+        "warm",
+        "concise",
+        "feasibility caveat",
+        "clear next step"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-05",
+        "DESIGN-05",
+        "PHOTO-01",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "photo-08",
+      "intent": "photo_guidance",
+      "customerQuestion": "The photo quality is not great. What should I send?",
+      "approvedAnswer": "Hi there, please send through the original image file rather than a screenshot or edited copy.\nWe can review the photo quality and let you know what may be possible after checking it. 😊",
+      "reviewOutcome": "APPROVED",
+      "requiredInformationPoints": [
+        "original_file",
+        "source_quality_limit",
+        "assessment_next_step"
+      ],
+      "forbiddenClaims": [
+        "restoration guarantee",
+        "accurate reconstruction guarantee",
+        "print suitability guarantee"
+      ],
+      "toneCharacteristics": [
+        "warm",
+        "concise",
+        "practical",
+        "clear next step"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-05",
+        "PHOTO-01",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "payment-01",
+      "intent": "payment_process",
+      "customerQuestion": "How does the deposit process work?",
+      "approvedAnswer": "Hi there, thanks for reaching out.\nWork begins once a 50% deposit has been received.\nPlease let us know which product you’re enquiring about, and we’ll guide you through the next step.",
+      "reviewOutcome": "APPROVED",
+      "requiredInformationPoints": [
+        "deposit_confirms_order",
+        "design_starts_after_deposit"
+      ],
+      "forbiddenClaims": [
+        "order-specific balance",
+        "unconfirmed payment method",
+        "refund or dispute decision"
+      ],
+      "toneCharacteristics": [
+        "warm",
+        "concise",
+        "clear policy",
+        "helpful next step"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-07",
+        "ORDER-01",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "payment-02",
+      "intent": "payment_process",
+      "customerQuestion": "Do I need a deposit before work begins?",
+      "approvedAnswer": "Hi there, yes - work begins after a 50% deposit is received.\nPlease let us know if you’d like help with the next step.",
+      "reviewOutcome": "APPROVED",
+      "requiredInformationPoints": [
+        "deposit_confirms_order",
+        "design_starts_after_deposit"
+      ],
+      "forbiddenClaims": [
+        "order-specific balance",
+        "unconfirmed payment method",
+        "refund or dispute decision"
+      ],
+      "toneCharacteristics": [
+        "direct",
+        "concise",
+        "warm",
+        "helpful next step"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-07",
+        "ORDER-01",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "payment-05",
+      "intent": "payment_process",
+      "customerQuestion": "What happens after I pay the deposit?",
+      "approvedAnswer": "Once your deposit is received, we’ll start working on your custom design. We’ll prepare a design draft using the photos, wording and theme you provided, then send it to you for review. You can request any necessary adjustments before approving the final design. Once the design is approved and the remaining balance is paid, we’ll proceed with printing and production.",
+      "reviewOutcome": "NEEDS_EDIT",
+      "requiredInformationPoints": [
+        "design_starts_after_deposit",
+        "draft_and_review",
+        "adjustments",
+        "balance_before_printing"
+      ],
+      "forbiddenClaims": [
+        "order-specific payment status",
+        "unconfirmed payment method",
+        "refund or dispute decision"
+      ],
+      "toneCharacteristics": [
+        "complete process",
+        "clear",
+        "reassuring",
+        "specific"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-07",
+        "ORDER-01",
+        "ORDER-04",
+        "ORDER-05",
+        "DESIGN-01",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    },
+    {
+      "id": "payment-08",
+      "intent": "payment_process",
+      "customerQuestion": "Could you explain how the deposit works?",
+      "approvedAnswer": "The deposit is a partial payment that confirms your order and allows us to begin the design work. Once the deposit is received, we’ll create your draft using your photos, wording and theme, then send it to you for review. You can request adjustments before approving the final design. The remaining balance is due before we proceed with printing and production.",
+      "reviewOutcome": "NEEDS_EDIT",
+      "requiredInformationPoints": [
+        "deposit_confirms_order",
+        "design_starts_after_deposit",
+        "draft_and_review",
+        "adjustments",
+        "balance_before_printing"
+      ],
+      "forbiddenClaims": [
+        "order-specific balance",
+        "unconfirmed payment method",
+        "refund or dispute decision"
+      ],
+      "toneCharacteristics": [
+        "complete process",
+        "clear",
+        "specific",
+        "reassuring"
+      ],
+      "relatedKnowledgeSources": [
+        "AI-SCOPE-07",
+        "ORDER-01",
+        "ORDER-04",
+        "ORDER-05",
+        "DESIGN-01",
+        "VOICE-01"
+      ],
+      "provenance": "Ronnie AI Quality Sign-off 2026-08-17"
+    }
+  ],
+  "qualityGuides": {
+    "tone_adjustment": {
+      "intent": "tone_adjustment",
+      "minimumRequiredContent": [
+        "Acknowledge the customer naturally",
+        "Preserve the original business meaning",
+        "Give one clear next step when needed"
+      ],
+      "recommendedDetailLevel": "One to three short lines; do not add business facts.",
+      "preferredStructure": [
+        "Warm acknowledgement",
+        "Clear answer",
+        "Optional next step"
+      ],
+      "usefulFollowUpQuestions": [
+        "How can we help with your order?"
+      ],
+      "forbiddenClaims": [
+        "Do not add prices, timelines, policies or guarantees that were not supplied."
+      ],
+      "requiredPoints": [
+        {
+          "id": "natural_acknowledgement",
+          "description": "Use a natural acknowledgement",
+          "matchAny": [
+            "thanks",
+            "thank you",
+            "sure",
+            "yes",
+            "no worries",
+            "hi there"
+          ]
+        },
+        {
+          "id": "useful_next_step",
+          "description": "Give a useful next step when the message needs one",
+          "matchAny": [
+            "please",
+            "may i",
+            "let us know",
+            "send through",
+            "can you"
+          ]
+        }
+      ],
+      "knowledgeRuleIds": [
+        "AI-SCOPE-01",
+        "VOICE-01"
+      ]
+    },
+    "product_differences": {
+      "intent": "product_differences",
+      "minimumRequiredContent": [
+        "Explain wall-mounted versus freestanding display",
+        "Describe relevant product structure such as frame, eyelets or stand",
+        "Distinguish keepsake/permanent wall art from event display",
+        "Give a recommendation with a reason"
+      ],
+      "recommendedDetailLevel": "Three to five short lines. Answer the products asked about first, then add the most useful alternative.",
+      "preferredStructure": [
+        "Direct comparison",
+        "Use case for each relevant product",
+        "Reasoned recommendation",
+        "Display follow-up question"
+      ],
+      "usefulFollowUpQuestions": [
+        "Will it be displayed on a wall or freestanding?",
+        "Is it for a permanent keepsake or an event display?"
+      ],
+      "forbiddenClaims": [
+        "Do not quote a current price.",
+        "Do not state package contents beyond confirmed product rules.",
+        "Do not promise outdoor durability, delivery or completion."
+      ],
+      "requiredPoints": [
+        {
+          "id": "display_method",
+          "description": "Explain wall-mounted versus freestanding display",
+          "matchAny": [
+            "wall",
+            "freestanding"
+          ]
+        },
+        {
+          "id": "product_structure",
+          "description": "Describe relevant physical structure",
+          "matchAny": [
+            "wooden frame",
+            "artist canvas",
+            "eyelets",
+            "flexible banner",
+            "stand"
+          ]
+        },
+        {
+          "id": "product_use_cases",
+          "description": "Explain keepsake/permanent versus event use",
+          "matchAny": [
+            "keepsake",
+            "permanent",
+            "event",
+            "temporary",
+            "memorial",
+            "funeral"
+          ]
+        },
+        {
+          "id": "recommendation_reason",
+          "description": "Recommend an option and explain why",
+          "matchAny": [
+            "because",
+            "recommend",
+            "best",
+            "so if",
+            "depending on"
+          ]
+        }
+      ],
+      "knowledgeRuleIds": [
+        "AI-SCOPE-02",
+        "PRODUCT-04",
+        "PRODUCT-05",
+        "PRODUCT-06"
+      ]
+    },
+    "quote_information_collection": {
+      "intent": "quote_information_collection",
+      "minimumRequiredContent": [
+        "Ask for product type and size",
+        "Ask for photos and people/pet count where relevant",
+        "Ask for wording/theme/style",
+        "Ask for required date and delivery suburb/postcode where useful",
+        "Explain that the details allow the team to confirm a quote"
+      ],
+      "recommendedDetailLevel": "Three to five short lines or a compact list. Do not provide a price.",
+      "preferredStructure": [
+        "Warm acknowledgement",
+        "Compact list of missing quote details",
+        "Explain the next step"
+      ],
+      "usefulFollowUpQuestions": [
+        "Which product and size do you need?",
+        "How many people or pets would you like to include?"
+      ],
+      "forbiddenClaims": [
+        "Do not quote a current price.",
+        "Do not promise availability, production capacity or delivery."
+      ],
+      "requiredPoints": [
+        {
+          "id": "product_and_size",
+          "description": "Collect product type and size",
+          "matchAny": [
+            "product",
+            "canvas",
+            "banner",
+            "size"
+          ]
+        },
+        {
+          "id": "photos_and_people",
+          "description": "Collect photos and people/pet count where relevant",
+          "matchAny": [
+            "photos",
+            "photo",
+            "people",
+            "pets",
+            "faces"
+          ]
+        },
+        {
+          "id": "design_preferences",
+          "description": "Collect wording, theme, colours or style",
+          "matchAny": [
+            "wording",
+            "text",
+            "theme",
+            "colour",
+            "color",
+            "style",
+            "design idea"
+          ]
+        },
+        {
+          "id": "date_and_location",
+          "description": "Collect required date and delivery location where useful",
+          "matchAny": [
+            "required date",
+            "date",
+            "suburb",
+            "postcode",
+            "delivery"
+          ]
+        },
+        {
+          "id": "quote_next_step",
+          "description": "Explain that the details allow quote confirmation",
+          "matchAny": [
+            "confirm the price",
+            "confirm your quote",
+            "confirm a quote",
+            "prepare a quote",
+            "review your quote",
+            "provide a quote",
+            "confirm your quote request"
+          ]
+        }
+      ],
+      "knowledgeRuleIds": [
+        "AI-SCOPE-03",
+        "VOICE-01"
+      ]
+    },
+    "design_process": {
+      "intent": "design_process",
+      "minimumRequiredContent": [
+        "Collect photos, theme, wording and product/size",
+        "Explain blending, arrangement or enhancement only where relevant",
+        "Explain that a design draft is created",
+        "Explain customer review and requested adjustments without stating an unconfirmed revision count",
+        "Explain approval before printing/production"
+      ],
+      "recommendedDetailLevel": "Three to five information-dense lines. Keep order-specific status out of the answer.",
+      "preferredStructure": [
+        "Inputs",
+        "Draft creation",
+        "Customer review/adjustments",
+        "Approval",
+        "Printing/production transition"
+      ],
+      "usefulFollowUpQuestions": [
+        "Please send your photos, wording, theme and preferred size.",
+        "Do you have a background or colour style in mind?"
+      ],
+      "forbiddenClaims": [
+        "Do not state a free revision count.",
+        "Do not claim an order has been approved or printed.",
+        "Do not guarantee a design result or completion date."
+      ],
+      "requiredPoints": [
+        {
+          "id": "design_inputs",
+          "description": "Collect photos, wording, theme and size",
+          "matchAny": [
+            "photos",
+            "wording",
+            "theme",
+            "size",
+            "colour",
+            "color"
+          ]
+        },
+        {
+          "id": "photo_arrangement",
+          "description": "Mention arrangement, blending or enhancement when relevant",
+          "matchAny": [
+            "arrange",
+            "arrangement",
+            "blend",
+            "background",
+            "enhance",
+            "combine"
+          ]
+        },
+        {
+          "id": "draft_review",
+          "description": "Explain creation and customer review of a draft",
+          "matchAny": [
+            "draft",
+            "review"
+          ]
+        },
+        {
+          "id": "adjustments_and_approval",
+          "description": "Explain adjustments and approval without an unconfirmed count",
+          "matchAny": [
+            "adjustments",
+            "changes",
+            "approve",
+            "approval"
+          ]
+        },
+        {
+          "id": "approval_to_production",
+          "description": "Explain transition to printing/production after approval",
+          "matchAny": [
+            "printing",
+            "production",
+            "goes to print",
+            "proceed with print"
+          ]
+        }
+      ],
+      "knowledgeRuleIds": [
+        "AI-SCOPE-04",
+        "DESIGN-01",
+        "DESIGN-06",
+        "PHOTO-01"
+      ]
+    },
+    "photo_guidance": {
+      "intent": "photo_guidance",
+      "minimumRequiredContent": [
+        "Ask for the original file",
+        "Explain possible enhancement, clarity improvement, blur/noise reduction or limited restoration",
+        "State that results depend on original quality",
+        "State that missing detail, restoration quality and print suitability can only be assessed after review",
+        "Offer assessment as the next step"
+      ],
+      "recommendedDetailLevel": "Three to five short lines. Be helpful without promising a result.",
+      "preferredStructure": [
+        "What may be possible",
+        "Quality limitations",
+        "Assessment-before-conclusion boundary",
+        "Request original file for assessment"
+      ],
+      "usefulFollowUpQuestions": [
+        "Please send the original image file so we can assess it."
+      ],
+      "forbiddenClaims": [
+        "Never promise restoration, accurate reconstruction or print suitability before review.",
+        "Do not use the word guarantee in the customer reply, including in a negative sentence.",
+        "Do not say a low-quality file will definitely print well."
+      ],
+      "requiredPoints": [
+        {
+          "id": "original_file",
+          "description": "Request the original image file",
+          "matchAny": [
+            "original file",
+            "original image",
+            "original photo"
+          ]
+        },
+        {
+          "id": "enhancement_capability",
+          "description": "Explain possible enhancement or limited restoration",
+          "matchAny": [
+            "enhance",
+            "clarity",
+            "reduce blur",
+            "reduce noise",
+            "restore",
+            "combine"
+          ]
+        },
+        {
+          "id": "source_quality_limit",
+          "description": "State that results depend on source quality",
+          "matchAny": [
+            "depends on",
+            "depend on the original",
+            "depend on the originals",
+            "original quality",
+            "quality of the original",
+            "may be limits"
+          ]
+        },
+        {
+          "id": "no_guarantee_before_review",
+          "description": "Avoid certainty before review",
+          "matchAny": [
+            "can only be assessed",
+            "can't confirm",
+            "before review",
+            "after review",
+            "after reviewing",
+            "what is possible"
+          ]
+        },
+        {
+          "id": "assessment_next_step",
+          "description": "Offer file assessment",
+          "matchAny": [
+            "assess",
+            "check the quality",
+            "review the file",
+            "send the photo"
+          ]
+        }
+      ],
+      "knowledgeRuleIds": [
+        "AI-SCOPE-05",
+        "PHOTO-01",
+        "DESIGN-05"
+      ]
+    },
+    "production_process": {
+      "intent": "production_process",
+      "minimumRequiredContent": [
+        "Explain review of supplied photos/details",
+        "Explain artwork preparation",
+        "Explain customer review/approval where relevant",
+        "Explain transition to printing/production",
+        "Ask for the missing product/size/details"
+      ],
+      "recommendedDetailLevel": "Three to five short lines without dates or capacity promises.",
+      "preferredStructure": [
+        "Inputs reviewed",
+        "Artwork prepared",
+        "Customer approval",
+        "Production transition",
+        "Next step"
+      ],
+      "usefulFollowUpQuestions": [
+        "Which product and size are you considering?"
+      ],
+      "forbiddenClaims": [
+        "Do not give a completion date or production ETA.",
+        "Do not imply that an order-specific approval has occurred."
+      ],
+      "requiredPoints": [
+        {
+          "id": "production_inputs",
+          "description": "Mention supplied photos/details",
+          "matchAny": [
+            "photos",
+            "details",
+            "wording",
+            "theme"
+          ]
+        },
+        {
+          "id": "artwork_preparation",
+          "description": "Explain artwork/design preparation",
+          "matchAny": [
+            "prepare the artwork",
+            "preparing the artwork",
+            "create the artwork",
+            "create a design draft",
+            "design draft",
+            "prepare the design"
+          ]
+        },
+        {
+          "id": "customer_approval",
+          "description": "Explain customer review or approval",
+          "matchAny": [
+            "review",
+            "approve",
+            "approval"
+          ]
+        },
+        {
+          "id": "printing_transition",
+          "description": "Explain transition to printing/production",
+          "matchAny": [
+            "printing",
+            "production",
+            "produce the final"
+          ]
+        },
+        {
+          "id": "production_next_step",
+          "description": "Give a useful next step",
+          "matchAny": [
+            "please send",
+            "send through the details",
+            "let us know",
+            "which product",
+            "which canvas size",
+            "preferred size"
+          ]
+        }
+      ],
+      "knowledgeRuleIds": [
+        "AI-SCOPE-06",
+        "DESIGN-06",
+        "VOICE-01"
+      ]
+    },
+    "payment_process": {
+      "intent": "payment_process",
+      "minimumRequiredContent": [
+        "Explain that the 50% deposit confirms the order",
+        "Explain that design work starts after the deposit",
+        "Explain draft creation and customer review",
+        "Explain that adjustments may be requested without stating an unconfirmed count",
+        "Explain that the remaining balance is due before printing/production"
+      ],
+      "recommendedDetailLevel": "Three to five information-dense lines. Keep all order-specific amounts/status out.",
+      "preferredStructure": [
+        "Deposit purpose",
+        "Design start",
+        "Draft review/adjustments",
+        "Remaining balance",
+        "Printing/production transition"
+      ],
+      "usefulFollowUpQuestions": [
+        "Which product would you like to order?"
+      ],
+      "forbiddenClaims": [
+        "Do not state an order-specific balance or payment status.",
+        "Do not mention unconfirmed payment methods.",
+        "Do not discuss disputes, refunds or chargebacks."
+      ],
+      "requiredPoints": [
+        {
+          "id": "deposit_confirms_order",
+          "description": "Explain that the deposit confirms the order",
+          "matchAny": [
+            "confirms your order",
+            "confirm the order",
+            "50% deposit"
+          ]
+        },
+        {
+          "id": "design_starts_after_deposit",
+          "description": "Explain that design work begins after deposit",
+          "matchAny": [
+            "begin the design",
+            "design work begins",
+            "design work starts",
+            "starts the design work",
+            "starts design work",
+            "start working",
+            "work begins"
+          ]
+        },
+        {
+          "id": "draft_and_review",
+          "description": "Explain draft creation and customer review",
+          "matchAny": [
+            "draft",
+            "review"
+          ]
+        },
+        {
+          "id": "adjustments",
+          "description": "Explain that adjustments may be requested",
+          "matchAny": [
+            "adjustments",
+            "changes"
+          ]
+        },
+        {
+          "id": "balance_before_printing",
+          "description": "Explain balance timing before printing/production",
+          "matchAny": [
+            "remaining balance",
+            "before printing",
+            "before we proceed with printing",
+            "before production"
+          ]
+        }
+      ],
+      "knowledgeRuleIds": [
+        "AI-SCOPE-07",
+        "ORDER-01",
+        "ORDER-04",
+        "ORDER-05",
+        "DESIGN-01"
+      ]
+    }
+  }
 }

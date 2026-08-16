@@ -1,26 +1,47 @@
 import type { CustomerServiceIntent } from "./intent-detection";
+import type { AnswerQualityGuide } from "./knowledge-retrieval";
 
 export function buildDraftPrompt(input: Readonly<{
   intent: CustomerServiceIntent;
   context: readonly string[];
   rules: readonly Readonly<{ id: string; text: string }>[];
   examples: readonly Readonly<{ customer: string; reply: string }>[];
+  goldenExamples: readonly Readonly<{ customerQuestion: string; approvedAnswer: string }>[];
+  qualityGuide: AnswerQualityGuide | null;
   toneGuide: string;
 }>) {
   const rules = input.rules.map((rule) => `${rule.id}: ${rule.text}`).join("\n");
   const examples = input.examples.map((example) => `Customer: ${example.customer}\nReply: ${example.reply}`).join("\n\n");
+  const goldenExamples = input.goldenExamples
+    .map((example) => `Customer: ${example.customerQuestion}\nRonnie-approved reply: ${example.approvedAnswer}`)
+    .join("\n\n");
+  const guide = input.qualityGuide;
+  const minimumContent = guide?.minimumRequiredContent.map((item) => `- ${item}`).join("\n") ?? "- Answer only with confirmed facts.";
+  const preferredStructure = guide?.preferredStructure.map((item) => `- ${item}`).join("\n") ?? "- Direct answer\n- Useful next step";
+  const forbiddenClaims = guide?.forbiddenClaims.map((item) => `- ${item}`).join("\n") ?? "- Do not add unconfirmed facts.";
+  const followUps = guide?.usefulFollowUpQuestions.map((item) => `- ${item}`).join("\n") ?? "- Ask one useful question when needed.";
   return {
     instructions: [
-      "Write one short R&R Gallery customer-service draft in natural English.",
+      "Write one specific, information-dense R&R Gallery customer-service draft in natural English.",
       "This is a suggestion for human review. Never send or claim that it was sent.",
       "Use only the confirmed rules below as business facts.",
       "Do not quote live prices, dates, availability, order data or unconfirmed policy.",
-      "Use two to five short lines, restrained emoji and one useful next step.",
+      "Cover every relevant required point. If a point is not relevant to the customer's exact question, omit it rather than forcing unrelated detail.",
+      "Use a maximum of five non-empty lines and 800 characters, restrained emoji and one useful next step.",
+      "For product hardware, use safe descriptive wording such as 'hangs with eyelets' or 'uses its own stand'; do not say 'includes', 'comes with', 'has' or 'provided with' around hardware.",
+      "For photo quality, do not use the word \"guarantee\", even in a negative sentence. Say results depend on the original and can only be assessed after reviewing the file.",
+      "When a process detail is not confirmed, keep that detail neutral; do not remove the rest of the confirmed process.",
       "Do not mention AI, policy status, internal risk or the knowledge base.",
       `Detected intent: ${input.intent}`,
       `CONFIRMED RULES:\n${rules}`,
+      `MINIMUM REQUIRED CONTENT:\n${minimumContent}`,
+      `RECOMMENDED DETAIL LEVEL:\n${guide?.recommendedDetailLevel ?? "Keep the answer concise and specific."}`,
+      `PREFERRED STRUCTURE:\n${preferredStructure}`,
+      `USEFUL FOLLOW-UP OPTIONS:\n${followUps}`,
+      `FORBIDDEN CLAIMS:\n${forbiddenClaims}`,
       `TONE GUIDE:\n${input.toneGuide.slice(0, 5_000)}`,
-      `STYLE EXAMPLES ONLY:\n${examples.slice(0, 4_000)}`,
+      `RONNIE-APPROVED GOLDEN EXAMPLES:\n${goldenExamples.slice(0, 5_000)}`,
+      `OLDER STYLE EXAMPLES ONLY:\n${examples.slice(0, 2_000)}`,
     ].join("\n\n"),
     input: [
       "Current same-customer conversation:",

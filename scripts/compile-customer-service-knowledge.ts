@@ -25,12 +25,44 @@ export type CompiledReplyExample = Readonly<{
   provenance: string;
 }>;
 
+export type CompiledGoldenReply = Readonly<{
+  id: string;
+  intent: string;
+  customerQuestion: string;
+  approvedAnswer: string;
+  reviewOutcome: "APPROVED" | "NEEDS_EDIT";
+  requiredInformationPoints: readonly string[];
+  forbiddenClaims: readonly string[];
+  toneCharacteristics: readonly string[];
+  relatedKnowledgeSources: readonly string[];
+  provenance: string;
+}>;
+
+export type CompiledRequiredPoint = Readonly<{
+  id: string;
+  description: string;
+  matchAny: readonly string[];
+}>;
+
+export type CompiledAnswerQualityGuide = Readonly<{
+  intent: string;
+  minimumRequiredContent: readonly string[];
+  recommendedDetailLevel: string;
+  preferredStructure: readonly string[];
+  usefulFollowUpQuestions: readonly string[];
+  forbiddenClaims: readonly string[];
+  requiredPoints: readonly CompiledRequiredPoint[];
+  knowledgeRuleIds: readonly string[];
+}>;
+
 export type CompiledCustomerServiceKnowledge = Readonly<{
   knowledgeVersion: string;
   rules: readonly CompiledPolicyRule[];
   answerableFacts: readonly string[];
   toneGuide: string;
   replyExamples: readonly CompiledReplyExample[];
+  goldenReplies: readonly CompiledGoldenReply[];
+  qualityGuides: Readonly<Record<string, CompiledAnswerQualityGuide>>;
 }>;
 
 function read(sourceDir: string, fileName: string) {
@@ -100,6 +132,115 @@ function parseReplyExamples(jsonl: string): CompiledReplyExample[] {
   return examples;
 }
 
+function stringValue(record: Record<string, unknown>, key: string) {
+  const value = String(record[key] ?? "").trim();
+  if (!value) throw new Error(`missing ${key}`);
+  return value;
+}
+
+function stringArray(record: Record<string, unknown>, key: string) {
+  const value = record[key];
+  if (!Array.isArray(value) || !value.length || value.some((item) => typeof item !== "string" || !item.trim())) {
+    throw new Error(`invalid ${key}`);
+  }
+  return value.map((item) => item.trim());
+}
+
+function confirmedRuleIds(rules: readonly CompiledPolicyRule[]) {
+  return new Set(rules.filter((rule) => rule.evidenceStatus === "CONFIRMED").map((rule) => rule.id));
+}
+
+function assertConfirmedSources(ids: readonly string[], confirmedIds: ReadonlySet<string>, label: string) {
+  const invalid = ids.find((id) => !confirmedIds.has(id));
+  if (invalid) throw new Error(`${label} references non-confirmed rule: ${invalid}`);
+}
+
+function parseGoldenReplies(jsonl: string, rules: readonly CompiledPolicyRule[]): CompiledGoldenReply[] {
+  const replies: CompiledGoldenReply[] = [];
+  const ids = new Set<string>();
+  const confirmedIds = confirmedRuleIds(rules);
+
+  jsonl.split(/\r?\n/).forEach((line, index) => {
+    if (!line.trim()) return;
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      const id = stringValue(parsed, "id");
+      if (ids.has(id)) throw new Error(`duplicate id ${id}`);
+      ids.add(id);
+      const outcome = stringValue(parsed, "review_outcome");
+      if (outcome !== "APPROVED" && outcome !== "NEEDS_EDIT") throw new Error("invalid review_outcome");
+      const relatedKnowledgeSources = stringArray(parsed, "related_knowledge_sources");
+      assertConfirmedSources(relatedKnowledgeSources, confirmedIds, `Golden reply ${id}`);
+      replies.push(Object.freeze({
+        id,
+        intent: stringValue(parsed, "intent"),
+        customerQuestion: stringValue(parsed, "customer_question"),
+        approvedAnswer: stringValue(parsed, "approved_answer"),
+        reviewOutcome: outcome,
+        requiredInformationPoints: stringArray(parsed, "required_information_points"),
+        forbiddenClaims: stringArray(parsed, "forbidden_claims"),
+        toneCharacteristics: stringArray(parsed, "tone_characteristics"),
+        relatedKnowledgeSources,
+        provenance: stringValue(parsed, "provenance"),
+      }));
+    } catch (error) {
+      const reason = error instanceof Error ? `: ${error.message}` : "";
+      throw new Error(`Invalid golden reply JSONL at line ${index + 1}${reason}`);
+    }
+  });
+
+  if (!replies.length) throw new Error("No golden replies found");
+  return replies;
+}
+
+function parseQualityGuides(json: string, rules: readonly CompiledPolicyRule[]) {
+  const parsed = JSON.parse(json) as Record<string, unknown>;
+  const intents = parsed.intents;
+  if (!intents || typeof intents !== "object" || Array.isArray(intents)) {
+    throw new Error("Invalid answer quality guide intents");
+  }
+  const confirmedIds = confirmedRuleIds(rules);
+  const guides: Record<string, CompiledAnswerQualityGuide> = {};
+
+  for (const [key, rawGuide] of Object.entries(intents as Record<string, unknown>)) {
+    if (!rawGuide || typeof rawGuide !== "object" || Array.isArray(rawGuide)) {
+      throw new Error(`Invalid answer quality guide: ${key}`);
+    }
+    const guide = rawGuide as Record<string, unknown>;
+    const intent = stringValue(guide, "intent");
+    if (intent !== key) throw new Error(`Answer quality guide key mismatch: ${key}`);
+    const rawPoints = guide.requiredPoints;
+    if (!Array.isArray(rawPoints) || !rawPoints.length) {
+      throw new Error(`Answer quality guide has no required points: ${key}`);
+    }
+    const requiredPoints = rawPoints.map((rawPoint) => {
+      if (!rawPoint || typeof rawPoint !== "object" || Array.isArray(rawPoint)) {
+        throw new Error(`Invalid required point for ${key}`);
+      }
+      const point = rawPoint as Record<string, unknown>;
+      return Object.freeze({
+        id: stringValue(point, "id"),
+        description: stringValue(point, "description"),
+        matchAny: stringArray(point, "matchAny"),
+      });
+    });
+    const knowledgeRuleIds = stringArray(guide, "knowledgeRuleIds");
+    assertConfirmedSources(knowledgeRuleIds, confirmedIds, `Answer quality guide ${key}`);
+    guides[key] = Object.freeze({
+      intent,
+      minimumRequiredContent: stringArray(guide, "minimumRequiredContent"),
+      recommendedDetailLevel: stringValue(guide, "recommendedDetailLevel"),
+      preferredStructure: stringArray(guide, "preferredStructure"),
+      usefulFollowUpQuestions: stringArray(guide, "usefulFollowUpQuestions"),
+      forbiddenClaims: stringArray(guide, "forbiddenClaims"),
+      requiredPoints,
+      knowledgeRuleIds,
+    });
+  }
+
+  return Object.freeze(guides);
+}
+
 export function compileCustomerServiceKnowledge(sourceDir: string): CompiledCustomerServiceKnowledge {
   const rules = parseRules(read(sourceDir, "policy-source-map.md"));
   const answerableFacts = rules
@@ -114,6 +255,8 @@ export function compileCustomerServiceKnowledge(sourceDir: string): CompiledCust
     answerableFacts,
     toneGuide: read(sourceDir, "tone-guide.md").trim(),
     replyExamples: parseReplyExamples(read(sourceDir, "reply-examples.jsonl")),
+    goldenReplies: parseGoldenReplies(read(sourceDir, "golden-replies.jsonl"), rules),
+    qualityGuides: parseQualityGuides(read(sourceDir, "answer-quality-guide.json"), rules),
   });
   const knowledgeVersion = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
   return Object.freeze({ knowledgeVersion, ...payload });

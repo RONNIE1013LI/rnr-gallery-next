@@ -48,6 +48,33 @@ describe("customer service knowledge compiler", () => {
     });
   });
 
+  it("compiles Ronnie-approved golden replies and intent quality guides", () => {
+    const result = compileCustomerServiceKnowledge(sourceDir);
+
+    expect(result.goldenReplies).toHaveLength(20);
+    expect(result.goldenReplies.find((reply) => reply.id === "product-01")).toMatchObject({
+      intent: "product_differences",
+      customerQuestion: "Which product format should I choose?",
+      reviewOutcome: "NEEDS_EDIT",
+      requiredInformationPoints: expect.arrayContaining(["display_method", "product_use_cases"]),
+      relatedKnowledgeSources: expect.arrayContaining(["AI-SCOPE-02", "PRODUCT-04"]),
+    });
+    expect(result.goldenReplies.every((reply) => (
+      reply.approvedAnswer.length > 0
+      && reply.forbiddenClaims.length > 0
+      && reply.toneCharacteristics.length > 0
+    ))).toBe(true);
+    expect(result.qualityGuides.product_differences).toMatchObject({
+      intent: "product_differences",
+      preferredStructure: expect.any(Array),
+      usefulFollowUpQuestions: expect.any(Array),
+      forbiddenClaims: expect.arrayContaining([expect.stringContaining("price")]),
+    });
+    expect(result.qualityGuides.design_process.requiredPoints.map((point) => point.id)).toEqual(
+      expect.arrayContaining(["design_inputs", "draft_review", "approval_to_production"]),
+    );
+  });
+
   it("rejects duplicate policy rules", () => {
     const target = copyKnowledge();
     const policyPath = join(target, "policy-source-map.md");

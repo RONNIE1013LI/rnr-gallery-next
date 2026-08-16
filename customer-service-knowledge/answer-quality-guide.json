@@ -1,0 +1,113 @@
+{
+  "version": 1,
+  "intents": {
+    "tone_adjustment": {
+      "intent": "tone_adjustment",
+      "minimumRequiredContent": ["Acknowledge the customer naturally", "Preserve the original business meaning", "Give one clear next step when needed"],
+      "recommendedDetailLevel": "One to three short lines; do not add business facts.",
+      "preferredStructure": ["Warm acknowledgement", "Clear answer", "Optional next step"],
+      "usefulFollowUpQuestions": ["How can we help with your order?"],
+      "forbiddenClaims": ["Do not add prices, timelines, policies or guarantees that were not supplied."],
+      "requiredPoints": [
+        {"id":"natural_acknowledgement","description":"Use a natural acknowledgement","matchAny":["thanks","thank you","sure","yes","no worries","hi there"]},
+        {"id":"useful_next_step","description":"Give a useful next step when the message needs one","matchAny":["please","may i","let us know","send through","can you"]}
+      ],
+      "knowledgeRuleIds": ["AI-SCOPE-01", "VOICE-01"]
+    },
+    "product_differences": {
+      "intent": "product_differences",
+      "minimumRequiredContent": ["Explain wall-mounted versus freestanding display", "Describe relevant product structure such as frame, eyelets or stand", "Distinguish keepsake/permanent wall art from event display", "Give a recommendation with a reason"],
+      "recommendedDetailLevel": "Three to five short lines. Answer the products asked about first, then add the most useful alternative.",
+      "preferredStructure": ["Direct comparison", "Use case for each relevant product", "Reasoned recommendation", "Display follow-up question"],
+      "usefulFollowUpQuestions": ["Will it be displayed on a wall or freestanding?", "Is it for a permanent keepsake or an event display?"],
+      "forbiddenClaims": ["Do not quote a current price.", "Do not state package contents beyond confirmed product rules.", "Do not promise outdoor durability, delivery or completion."],
+      "requiredPoints": [
+        {"id":"display_method","description":"Explain wall-mounted versus freestanding display","matchAny":["wall","freestanding"]},
+        {"id":"product_structure","description":"Describe relevant physical structure","matchAny":["wooden frame","artist canvas","eyelets","flexible banner","stand"]},
+        {"id":"product_use_cases","description":"Explain keepsake/permanent versus event use","matchAny":["keepsake","permanent","event","temporary","memorial","funeral"]},
+        {"id":"recommendation_reason","description":"Recommend an option and explain why","matchAny":["because","recommend","best","so if","depending on"]}
+      ],
+      "knowledgeRuleIds": ["AI-SCOPE-02", "PRODUCT-04", "PRODUCT-05", "PRODUCT-06"]
+    },
+    "quote_information_collection": {
+      "intent": "quote_information_collection",
+      "minimumRequiredContent": ["Ask for product type and size", "Ask for photos and people/pet count where relevant", "Ask for wording/theme/style", "Ask for required date and delivery suburb/postcode where useful", "Explain that the details allow the team to confirm a quote"],
+      "recommendedDetailLevel": "Three to five short lines or a compact list. Do not provide a price.",
+      "preferredStructure": ["Warm acknowledgement", "Compact list of missing quote details", "Explain the next step"],
+      "usefulFollowUpQuestions": ["Which product and size do you need?", "How many people or pets would you like to include?"],
+      "forbiddenClaims": ["Do not quote a current price.", "Do not promise availability, production capacity or delivery."],
+      "requiredPoints": [
+        {"id":"product_and_size","description":"Collect product type and size","matchAny":["product","canvas","banner","size"]},
+        {"id":"photos_and_people","description":"Collect photos and people/pet count where relevant","matchAny":["photos","photo","people","pets","faces"]},
+        {"id":"design_preferences","description":"Collect wording, theme, colours or style","matchAny":["wording","text","theme","colour","color","style","design idea"]},
+        {"id":"date_and_location","description":"Collect required date and delivery location where useful","matchAny":["required date","date","suburb","postcode","delivery"]},
+        {"id":"quote_next_step","description":"Explain that the details allow quote confirmation","matchAny":["confirm the price","confirm your quote","confirm a quote","prepare a quote","review your quote","provide a quote","confirm your quote request"]}
+      ],
+      "knowledgeRuleIds": ["AI-SCOPE-03", "VOICE-01"]
+    },
+    "design_process": {
+      "intent": "design_process",
+      "minimumRequiredContent": ["Collect photos, theme, wording and product/size", "Explain blending, arrangement or enhancement only where relevant", "Explain that a design draft is created", "Explain customer review and requested adjustments without stating an unconfirmed revision count", "Explain approval before printing/production"],
+      "recommendedDetailLevel": "Three to five information-dense lines. Keep order-specific status out of the answer.",
+      "preferredStructure": ["Inputs", "Draft creation", "Customer review/adjustments", "Approval", "Printing/production transition"],
+      "usefulFollowUpQuestions": ["Please send your photos, wording, theme and preferred size.", "Do you have a background or colour style in mind?"],
+      "forbiddenClaims": ["Do not state a free revision count.", "Do not claim an order has been approved or printed.", "Do not guarantee a design result or completion date."],
+      "requiredPoints": [
+        {"id":"design_inputs","description":"Collect photos, wording, theme and size","matchAny":["photos","wording","theme","size","colour","color"]},
+        {"id":"photo_arrangement","description":"Mention arrangement, blending or enhancement when relevant","matchAny":["arrange","arrangement","blend","background","enhance","combine"]},
+        {"id":"draft_review","description":"Explain creation and customer review of a draft","matchAny":["draft","review"]},
+        {"id":"adjustments_and_approval","description":"Explain adjustments and approval without an unconfirmed count","matchAny":["adjustments","changes","approve","approval"]},
+        {"id":"approval_to_production","description":"Explain transition to printing/production after approval","matchAny":["printing","production","goes to print","proceed with print"]}
+      ],
+      "knowledgeRuleIds": ["AI-SCOPE-04", "DESIGN-01", "DESIGN-06", "PHOTO-01"]
+    },
+    "photo_guidance": {
+      "intent": "photo_guidance",
+      "minimumRequiredContent": ["Ask for the original file", "Explain possible enhancement, clarity improvement, blur/noise reduction or limited restoration", "State that results depend on original quality", "State that missing detail, restoration quality and print suitability can only be assessed after review", "Offer assessment as the next step"],
+      "recommendedDetailLevel": "Three to five short lines. Be helpful without promising a result.",
+      "preferredStructure": ["What may be possible", "Quality limitations", "Assessment-before-conclusion boundary", "Request original file for assessment"],
+      "usefulFollowUpQuestions": ["Please send the original image file so we can assess it."],
+      "forbiddenClaims": ["Never promise restoration, accurate reconstruction or print suitability before review.", "Do not use the word guarantee in the customer reply, including in a negative sentence.", "Do not say a low-quality file will definitely print well."],
+      "requiredPoints": [
+        {"id":"original_file","description":"Request the original image file","matchAny":["original file","original image","original photo"]},
+        {"id":"enhancement_capability","description":"Explain possible enhancement or limited restoration","matchAny":["enhance","clarity","reduce blur","reduce noise","restore","combine"]},
+        {"id":"source_quality_limit","description":"State that results depend on source quality","matchAny":["depends on","depend on the original","depend on the originals","original quality","quality of the original","may be limits"]},
+        {"id":"no_guarantee_before_review","description":"Avoid certainty before review","matchAny":["can only be assessed","can't confirm","before review","after review","after reviewing","what is possible"]},
+        {"id":"assessment_next_step","description":"Offer file assessment","matchAny":["assess","check the quality","review the file","send the photo"]}
+      ],
+      "knowledgeRuleIds": ["AI-SCOPE-05", "PHOTO-01", "DESIGN-05"]
+    },
+    "production_process": {
+      "intent": "production_process",
+      "minimumRequiredContent": ["Explain review of supplied photos/details", "Explain artwork preparation", "Explain customer review/approval where relevant", "Explain transition to printing/production", "Ask for the missing product/size/details"],
+      "recommendedDetailLevel": "Three to five short lines without dates or capacity promises.",
+      "preferredStructure": ["Inputs reviewed", "Artwork prepared", "Customer approval", "Production transition", "Next step"],
+      "usefulFollowUpQuestions": ["Which product and size are you considering?"],
+      "forbiddenClaims": ["Do not give a completion date or production ETA.", "Do not imply that an order-specific approval has occurred."],
+      "requiredPoints": [
+        {"id":"production_inputs","description":"Mention supplied photos/details","matchAny":["photos","details","wording","theme"]},
+        {"id":"artwork_preparation","description":"Explain artwork/design preparation","matchAny":["prepare the artwork","preparing the artwork","create the artwork","create a design draft","design draft","prepare the design"]},
+        {"id":"customer_approval","description":"Explain customer review or approval","matchAny":["review","approve","approval"]},
+        {"id":"printing_transition","description":"Explain transition to printing/production","matchAny":["printing","production","produce the final"]},
+        {"id":"production_next_step","description":"Give a useful next step","matchAny":["please send","send through the details","let us know","which product","which canvas size","preferred size"]}
+      ],
+      "knowledgeRuleIds": ["AI-SCOPE-06", "DESIGN-06", "VOICE-01"]
+    },
+    "payment_process": {
+      "intent": "payment_process",
+      "minimumRequiredContent": ["Explain that the 50% deposit confirms the order", "Explain that design work starts after the deposit", "Explain draft creation and customer review", "Explain that adjustments may be requested without stating an unconfirmed count", "Explain that the remaining balance is due before printing/production"],
+      "recommendedDetailLevel": "Three to five information-dense lines. Keep all order-specific amounts/status out.",
+      "preferredStructure": ["Deposit purpose", "Design start", "Draft review/adjustments", "Remaining balance", "Printing/production transition"],
+      "usefulFollowUpQuestions": ["Which product would you like to order?"],
+      "forbiddenClaims": ["Do not state an order-specific balance or payment status.", "Do not mention unconfirmed payment methods.", "Do not discuss disputes, refunds or chargebacks."],
+      "requiredPoints": [
+        {"id":"deposit_confirms_order","description":"Explain that the deposit confirms the order","matchAny":["confirms your order","confirm the order","50% deposit"]},
+        {"id":"design_starts_after_deposit","description":"Explain that design work begins after deposit","matchAny":["begin the design","design work begins","design work starts","starts the design work","starts design work","start working","work begins"]},
+        {"id":"draft_and_review","description":"Explain draft creation and customer review","matchAny":["draft","review"]},
+        {"id":"adjustments","description":"Explain that adjustments may be requested","matchAny":["adjustments","changes"]},
+        {"id":"balance_before_printing","description":"Explain balance timing before printing/production","matchAny":["remaining balance","before printing","before we proceed with printing","before production"]}
+      ],
+      "knowledgeRuleIds": ["AI-SCOPE-07", "ORDER-01", "ORDER-04", "ORDER-05", "DESIGN-01"]
+    }
+  }
+}

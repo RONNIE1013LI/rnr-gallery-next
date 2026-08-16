@@ -4,6 +4,14 @@ Audit date: 2026-08-16
 
 This directory is the governed knowledge foundation for the Messenger AI Reply Assistant prototype and a future website AI Customer Assistant. The prototype adds a separate draft suggestion layer; it does not replace the existing rule replies or sending flow.
 
+## Phase 3.3 Answer Quality
+
+- `golden-replies.jsonl` contains 20 structured Ronnie-reviewed answers: 10 accepted originals and 10 human final versions.
+- `answer-quality-guide.json` defines minimum content, structure, follow-up guidance, forbidden claims, 31 required-point rules, and confirmed knowledge bundles for seven eligible intents.
+- Retrieval loads the complete confirmed bundle for the detected intent and uses at most two validator-compatible golden examples.
+- `answer-quality-grader.ts` scores completeness, specificity, next-step usefulness, Ronnie tone, verbosity, and unsupported claims after the unchanged output validator runs.
+- High-risk, unresolved, and real-time requests remain blocked before the provider. Drafts remain human-review-only and cannot send themselves.
+
 ## Phase 3 Policy-Gated AI Prototype
 
 - The policy gate runs before any model provider is called.
@@ -131,4 +139,7 @@ See `knowledge-gaps.md` for the complete gap register.
 - `reply-examples.jsonl`: anonymized, reusable examples.
 - `runtime-audit.md`: executable intent branches, hard-coded replies, auto-send behavior, and test coverage.
 - `policy-source-map.md`: rule status, evidence source, confirmation date, real-time dependency, and automation boundary.
+- `answer-quality-guide.json`: intent-level answer completeness and forbidden-claim rules.
+- `golden-replies.jsonl`: structured Ronnie-approved examples and required information points.
+- `phase-3-3-answer-quality-upgrade.md`: implementation and real 100-case evaluation result.
 - `knowledge-gaps.md`: conflicts, missing rules, and live-data requirements.

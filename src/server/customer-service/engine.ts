@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { evaluatePolicyGate, type PolicyKnowledge } from "./policy-gate";
-import { retrieveKnowledge } from "./knowledge-retrieval";
+import { retrieveKnowledge, type AnswerQualityGuide } from "./knowledge-retrieval";
 import { validateDraft } from "./output-validator";
 import { buildDraftPrompt } from "./prompt-builder";
 import { localDateScopeKey } from "./usage-cost";
@@ -18,6 +18,12 @@ type EngineKnowledge = PolicyKnowledge & Readonly<{
     risk: string;
     provenance: string;
   }>[];
+  goldenReplies: readonly Readonly<{
+    intent: string;
+    customerQuestion: string;
+    approvedAnswer: string;
+  }>[];
+  qualityGuides: Readonly<Record<string, AnswerQualityGuide>>;
 }>;
 
 export class CustomerServiceEngine {
@@ -95,6 +101,8 @@ export class CustomerServiceEngine {
       context: draftInput.context,
       rules: sources.rules,
       examples: sources.examples,
+      goldenExamples: sources.goldenExamples,
+      qualityGuide: sources.qualityGuide,
       toneGuide: this.knowledge.toneGuide,
     });
     try {
