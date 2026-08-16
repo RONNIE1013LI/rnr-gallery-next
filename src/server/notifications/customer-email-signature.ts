@@ -74,11 +74,18 @@ export function renderCustomerEmailSignature(
   const html = [
     '<div style="margin-top:24px;color:#333;font-family:Arial,sans-serif;line-height:1.5">',
     `<p style="margin:0 0 14px">${escapeHtml(signoff)}<br><strong>${escapeHtml(teamName)}</strong></p>`,
-    `<img src="${escapeHtml(logoUrl)}" alt="R&amp;R Gallery" width="120" style="display:block;width:120px;max-width:100%;height:auto;margin:0 0 12px">`,
-    `<p style="margin:0"><strong>${escapeHtml(companyLine)}</strong><br>`,
+    '<table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0;border-collapse:collapse">',
+    '<tbody><tr>',
+    '<td style="width:72px;padding:0 12px 0 0;vertical-align:top">',
+    `<img src="${escapeHtml(logoUrl)}" alt="R&amp;R Gallery" width="72" height="72" style="display:block;width:72px;height:72px;margin:0;border-radius:50%;object-fit:cover">`,
+    '</td>',
+    '<td style="padding:0;vertical-align:top;font-size:13px;line-height:18px;white-space:nowrap">',
+    `<strong>${escapeHtml(companyLine)}</strong><br>`,
     `📧 <a href="mailto:${encodeURIComponent(email)}">${escapeHtml(email)}</a><br>`,
     `🌐 <a href="${escapeHtml(websiteUrl)}">${escapeHtml(websiteLabel)}</a><br>`,
-    `📍 ${escapeHtml(address)}</p>`,
+    `📍 ${escapeHtml(address)}`,
+    '</td>',
+    '</tr></tbody></table>',
     "</div>",
   ].join("");
 

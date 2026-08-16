@@ -21,6 +21,25 @@ describe("customer email signature", () => {
     expect(signature.html).toContain('href="mailto:customerservice%40rnrgallery.com"');
   });
 
+  it("places a square logo beside a four-line contact block at matching height", () => {
+    const signature = renderCustomerEmailSignature({}, "https://rrgallery.co.nz");
+    const container = document.createElement("div");
+    container.innerHTML = signature.html;
+
+    const layout = container.querySelector('table[role="presentation"]');
+    const cells = layout?.querySelectorAll("td");
+    const logo = cells?.[0]?.querySelector("img");
+
+    expect(layout).not.toBeNull();
+    expect(cells).toHaveLength(2);
+    expect(logo).toHaveAttribute("width", "72");
+    expect(logo).toHaveAttribute("height", "72");
+    expect(cells?.[1]).toHaveTextContent("Customer Service | R&R Gallery Ltd. NZ");
+    expect(cells?.[1]).toHaveTextContent("customerservice@rnrgallery.com");
+    expect(cells?.[1]).toHaveTextContent("rrgallery.co.nz");
+    expect(cells?.[1]).toHaveTextContent("11 Para Close, Fairview Heights, Auckland 0632.");
+  });
+
   it("escapes published display text without changing trusted destinations", () => {
     const signature = renderCustomerEmailSignature({
       "email.signature.team_name": "Support & Care",

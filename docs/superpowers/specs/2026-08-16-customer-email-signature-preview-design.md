@@ -27,6 +27,10 @@ The existing per-field sample preview will remain for order-template fields. It 
 
 - The combined preview appears directly under the `Customer email signature` heading.
 - It is visually separated from editing controls and labelled `Live signature preview`.
+- The sign-off and team name remain above the contact block.
+- The round Logo appears to the left of the company, email, website and address lines.
+- The Logo is 72 by 72 pixels; the four contact lines use an 18-pixel line height so their total height is also 72 pixels.
+- The email HTML uses a presentation table for dependable two-column rendering across email clients.
 - Desktop and mobile use the existing Admin design system.
 - Mobile uses normal document flow with no sticky or floating behavior.
 
@@ -49,6 +53,7 @@ The existing per-field sample preview will remain for order-template fields. It 
 ## Automated Tests
 
 - The combined preview displays all six signature fields and the official logo.
+- The delivered HTML places a 72-pixel square Logo beside a four-line, 72-pixel-high contact block.
 - Editing a signature field updates the combined preview immediately before Save.
 - Signature fields no longer show the redundant single-field sample preview.
 - Order-template fields retain their existing sample-variable preview.

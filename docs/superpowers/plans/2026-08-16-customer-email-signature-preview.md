@@ -17,6 +17,7 @@
 - Do not interpret administrator input as arbitrary HTML.
 - Keep order-template sample-variable previews and remove only redundant signature-field previews.
 - Use normal responsive document flow without sticky or floating preview behavior.
+- Render the round 72-pixel Logo to the left of the four 18-pixel-high contact lines using an email-compatible presentation table.
 
 ---
 
