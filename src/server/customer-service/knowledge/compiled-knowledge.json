@@ -1,0 +1,616 @@
+{
+  "knowledgeVersion": "20f239e062eeb134e01d450c0299ff44a09a8af5ef9ed8c87f848a95cc6ca179",
+  "rules": [
+    {
+      "id": "CANCEL-01",
+      "text": "Cancellation treatment and deposit refund depend on order stage.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": true,
+      "realtimeRequired": true,
+      "source": "No approved stage/remedy matrix",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "DESIGN-01",
+      "text": "Customer receives a preview before printing.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated historical conversations, templates, and regression tests",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "DESIGN-02",
+      "text": "Up to two revisions are included before printing.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated historical conversations, templates, and regression tests",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "DESIGN-03",
+      "text": "No design changes are accepted after printing confirmation.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated historical conversations, templates, and regression tests",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "DESIGN-04",
+      "text": "For photo-quality questions, AI may request the original image and offer an assessment. It must not guarantee restoration, improvement quality, or print suitability before review. Keep the customer-facing draft limited to requesting the original image and offering an assessment; conclusions require file review.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie Phase 3.1 remediation instruction",
+      "lastConfirmed": "2026-08-16",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "DESIGN-05",
+      "text": "People/pets can be combined from different original photos.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Multiple historical enquiries and tested reply",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "LEGAL-01",
+      "text": "Consumer-rights handling and statutory remedies.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": true,
+      "realtimeRequired": true,
+      "source": "No approved legal/business policy",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "ORDER-01",
+      "text": "Work begins after a 50% deposit is received.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie explicitly instructed “half deposit”; repeated historical practice",
+      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "ORDER-02",
+      "text": "Split or weekly payments are accepted.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated historical replies and runtime wording",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "ORDER-03",
+      "text": "Afterpay and ZIP are available.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Runtime/template statement without current payment-provider verification",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "ORDER-04",
+      "text": "Remaining balance may be paid when ready to post or collect.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated historical replies/templates",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PAYMENT-01",
+      "text": "Payment dispute, chargeback, failed payment, or disputed balance handling.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": true,
+      "realtimeRequired": true,
+      "source": "No approved dispute SOP",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-01",
+      "text": "Normal photo-print canvas snapshot: A4 $65, A3 $78, A2 $98, A1 $148, A0 $280, excluding GST.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie explicitly supplied prices and GST treatment in Codex thread",
+      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-02",
+      "text": "Wall-banner snapshot: 160x80cm $189.75, 200x100cm $212.75, 300x150cm $379.50, including GST.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie explicitly corrected customer-facing size/price format",
+      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-03",
+      "text": "Digital painting banner base snapshot: 80x160cm $120, 100x200cm $150, 150x300cm $295 before people and GST.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie-supplied price image and explicit acceptance in Codex thread",
+      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-04",
+      "text": "Roll-up package snapshot is $264.50 including GST for 85x200cm.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated runtime/template value and historical screenshot; no preserved formal Ronnie policy confirmation",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-05",
+      "text": "Person drawing fee snapshot: 1 $40, 2 $60, 3 $85, 4 $110, 5 $130 before GST.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie-supplied price list and explicit instruction to remember it",
+      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-06",
+      "text": "“6+ people: $25 each” means every person is charged $25.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Price list wording exists; runtime chooses `count x $25`; interpretation was not explicitly confirmed",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-07",
+      "text": "Pets always use the same drawing fee as people.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "`customer_brain.md` and code combine people/pets; original supplied image says “Persons”",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-08",
+      "text": "Roll-up and wall banners include five photos; each additional photo costs $5.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated Messenger templates, historical examples, and tests",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-09",
+      "text": "One main-photo background removal is included; each additional removal costs $20.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated Messenger templates, historical examples, and tests",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-10",
+      "text": "A holding-baby pose/drawing costs $30.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "One historical example/template only",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-11",
+      "text": "Further revisions cost $30 after the included allowance.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated knowledge/template wording; fee unit remains undefined",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-12",
+      "text": "Replacing a person/photo after painting starts costs $25 per person.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated historical/template wording in `customer_brain.md` and runtime",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-13",
+      "text": "A1 custom-design canvas is $178.25 including GST.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "One example conflicts with the documented base-plus-person formula",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRICE-14",
+      "text": "Normal photo canvas bases also serve as digital-painting canvas bases.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Current formula/code assumption only",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRIVACY-01",
+      "text": "Permission is required before publicly sharing customer artwork/photos.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated historical/template practice",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRODUCT-01",
+      "text": "Canvas is waterproof but sheltered outdoor use is recommended.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie explicitly corrected this product guidance",
+      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRODUCT-02",
+      "text": "Roll-up package includes custom design, printed banner, stand, bag, pegs, box, up to five photos, and one background removal.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated historical replies and regression test",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRODUCT-03",
+      "text": "Wall banner includes custom design, eyelets, five photos, and one main-photo background removal.",
+      "evidenceStatus": "EVIDENCE-BASED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Repeated historical replies/templates",
+      "lastConfirmed": "Not formally confirmed",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "PRODUCTION-01",
+      "text": "Design and printing usually take around five working days after all photos, details, and deposit are received.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie explicitly supplied this wording",
+      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "REFUND-01",
+      "text": "Custom orders become non-refundable at a defined production stage.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": true,
+      "realtimeRequired": true,
+      "source": "Sources conflict between design start, draft completion, and painting completion",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "REMEDY-01",
+      "text": "Damaged goods remedy.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": true,
+      "realtimeRequired": true,
+      "source": "No approved policy",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "REMEDY-02",
+      "text": "Misprint/reprint remedy.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": true,
+      "realtimeRequired": true,
+      "source": "No approved policy",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "REMEDY-03",
+      "text": "Discount, store credit, refund, or compensation authority.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": true,
+      "realtimeRequired": true,
+      "source": "No approved limits or authorization matrix",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "SHIP-01",
+      "text": "NZ North Island orders over $299 qualify for free delivery.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie explicitly instructed this rule",
+      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "SHIP-02",
+      "text": "Australia guidance: DHL to major cities is usually 1–2 days after dispatch; standard delivery about one week; remote areas longer.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie explicitly corrected and approved this wording",
+      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "SHIP-03",
+      "text": "A courier estimate is a guaranteed delivery date.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": true,
+      "realtimeRequired": true,
+      "source": "No guarantee policy; existing wording warns delays can happen",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "SHIP-04",
+      "text": "Pickup is at the stored Albany address/hours.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie supplied address wording; runtime contains fixed address/hours",
+      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "URGENT-01",
+      "text": "Orders needed within two days have a $50 urgent fee.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie explicitly defined the two-day rule and fee",
+      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "URGENT-02",
+      "text": "Paying the urgent fee guarantees completion or delivery within two days.",
+      "evidenceStatus": "UNRESOLVED",
+      "highRisk": true,
+      "realtimeRequired": true,
+      "source": "No guarantee policy; capacity and courier dependencies are absent",
+      "lastConfirmed": "Not recorded",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "VOICE-01",
+      "text": "Replies are short, warm, practical English with one next step.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": false,
+      "source": "Ronnie corrections in Codex thread; `customer_brain.md` Brand Voice",
+      "lastConfirmed": "Not recorded; before 2026-08-16",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": false
+    }
+  ],
+  "answerableFacts": [
+    "DESIGN-04: For photo-quality questions, AI may request the original image and offer an assessment. It must not guarantee restoration, improvement quality, or print suitability before review. Keep the customer-facing draft limited to requesting the original image and offering an assessment; conclusions require file review.",
+    "ORDER-01: Work begins after a 50% deposit is received.",
+    "PRODUCT-01: Canvas is waterproof but sheltered outdoor use is recommended.",
+    "VOICE-01: Replies are short, warm, practical English with one next step."
+  ],
+  "toneGuide": "# Tone Guide\n\n## Brand Voice\n\nR&R Gallery should sound like a real person helping a family prepare something meaningful.\n\nDefault qualities:\n\n- Warm.\n- Helpful.\n- Practical.\n- Calm.\n- Clear.\n- Patient.\n- Positive without being overly enthusiastic.\n\nAvoid corporate language and long AI-style explanations.\n\n## Reply Shape\n\nUse two to five short lines when possible:\n\n1. Warm acknowledgement.\n2. Key answer.\n3. One useful next question or action.\n\nExamples of openings:\n\n- “Hi there, thanks for reaching out.”\n- “Sure, no problem.”\n- “Yes, we can do that.”\n- “No worries at all.”\n- “Thank you for confirming.”\n\nExamples of next steps:\n\n- “Please send through the photos.”\n- “May I know which size you need?”\n- “Please send your suburb/postcode.”\n- “Please let us know your theme/background idea.”\n\n## Language\n\n- Use simple, natural English.\n- Use “please” and “thank you” often.\n- Prefer “May I know…” and “Please send through…” over formal service language.\n- Ask one clear question when the customer’s request is incomplete.\n- Do not repeat information the customer already provided.\n\n## Emojis\n\n- Restrained emojis are acceptable for low-risk enquiries: 😊, ☺️, ✅.\n- Avoid multiple emojis in one short reply.\n- Avoid cheerful emojis for complaints, refunds, serious delays, payment disputes, or memorial distress.\n\n## Complaints and Memorial Orders\n\nFor complaints:\n\n- Empathy first.\n- Short explanation second.\n- Solution and next step last.\n\nFor memorial orders:\n\n- Reflect the emotional meaning gently.\n- Do not become dramatic or overly sentimental.\n- Keep practical order/design steps clear.\n\n## Do\n\n- Keep replies short.\n- Be specific about the next step.\n- State GST and delivery caveats clearly.\n- Separate production timing from courier timing.\n- Confirm printing decisions explicitly.\n- Offer a helpful route forward.\n\n## Do Not\n\n- Debate or blame.\n- Use hard policy language before acknowledging the customer.\n- Promise delivery, refund, reprint, or design outcomes without confirmation.\n- Send long feature lists when one question will qualify the request.\n- Sound automated, defensive, or annoyed.\n- Include internal classifications, placeholders, or private order data in customer replies.",
+  "replyExamples": [
+    {
+      "intent": "product_format",
+      "customer": "Which product format should I choose?",
+      "reply": "It depends on how you’d like to display it. Canvas is best for a wall display or keepsake, a wall banner hangs with eyelets, and a roll-up banner is freestanding. Will it be displayed on a wall or freestanding?",
+      "risk": "low",
+      "provenance": "customer_brain.md"
+    },
+    {
+      "intent": "generic_banner_enquiry",
+      "customer": "Can I get more information about your banners?",
+      "reply": "Hi, thanks for reaching out. We offer custom wall hanging banners and freestanding roll-up banners. Which type are you interested in, and what is the occasion?",
+      "risk": "low",
+      "provenance": "customer_brain.md"
+    },
+    {
+      "intent": "rollup_package",
+      "customer": "What does a roll-up banner include?",
+      "reply": "It includes custom design, an 85x200cm printed banner, stand, carry bag, pegs, box, up to five photos, and one free background removal. Please send your delivery postcode for current pricing and shipping.",
+      "risk": "low_with_live_price",
+      "provenance": "customer_brain.md and server.test.js"
+    },
+    {
+      "intent": "wall_banner_quote",
+      "customer": "How much are your hanging wall banners?",
+      "reply": "Our custom themed wall banners come ready to hang with eyelets and include up to five photos. Which size do you need? I’ll check the current price for you.",
+      "risk": "live_catalog_required",
+      "provenance": "customer_brain.md"
+    },
+    {
+      "intent": "canvas_quote",
+      "customer": "How much is a custom painting canvas?",
+      "reply": "The price depends on canvas size and the total number of people or pets. Please send the size and people/pet count for a current quote.",
+      "risk": "live_catalog_required",
+      "provenance": "customer_brain.md"
+    },
+    {
+      "intent": "merge_photos",
+      "customer": "Can you combine people from different photos?",
+      "reply": "Yes, we can merge people or pets from different photos into one artwork. Please send the original photos, preferred size, and total people/pets for a quote.",
+      "risk": "low",
+      "provenance": "server.test.js"
+    },
+    {
+      "intent": "blurry_photos",
+      "customer": "My photos are blurry. Can you still use them?",
+      "reply": "Please send the original images and we can assess their quality for you.",
+      "risk": "low",
+      "provenance": "Ronnie Phase 3.1 remediation confirmation"
+    },
+    {
+      "intent": "design_preview",
+      "customer": "Will I see the design before printing?",
+      "reply": "Yes, we’ll send a design preview for approval before printing. Please check all details carefully and list any requested changes together.",
+      "risk": "low",
+      "provenance": "customer_brain.md and server.test.js"
+    },
+    {
+      "intent": "revision_count",
+      "customer": "How many revisions are included?",
+      "reply": "The current policy includes up to two free revisions before printing. Once printing is confirmed, no further design changes can be made.",
+      "risk": "policy_confirmation_needed",
+      "provenance": "customer_brain.md and server.test.js"
+    },
+    {
+      "intent": "production_timing",
+      "customer": "How long do design and printing take?",
+      "reply": "Design and printing usually take around five working days after we receive all photos, details, and the deposit. Please send your required date so we can check current capacity.",
+      "risk": "live_capacity_required",
+      "provenance": "customer_brain.md"
+    },
+    {
+      "intent": "delivery_timing",
+      "customer": "How long does delivery take?",
+      "reply": "Delivery depends on the destination and courier. Please send your suburb/postcode and required date so we can check the current service and estimate.",
+      "risk": "live_shipping_required",
+      "provenance": "customer_brain.md and server.test.js"
+    },
+    {
+      "intent": "australia_shipping",
+      "customer": "Do you ship to Australia?",
+      "reply": "Yes, we ship to Australia. Please send your postcode and required date so we can check the current courier option, price, and estimate.",
+      "risk": "live_shipping_required",
+      "provenance": "customer_brain.md"
+    },
+    {
+      "intent": "urgent_order",
+      "customer": "Can you do it for tomorrow?",
+      "reply": "We may be able to take urgent orders. Please send the product, photos, required date, and pickup/delivery preference so the team can confirm capacity and the urgent fee.",
+      "risk": "escalate",
+      "provenance": "messages.json and customer_brain.md"
+    },
+    {
+      "intent": "object_removal",
+      "customer": "Can you remove the signs from the photo?",
+      "reply": "We can check that for you. Please send the original photo and mark the objects you want removed so the design team can confirm what is possible and whether any fee applies.",
+      "risk": "design_review",
+      "provenance": "customer_brain.md"
+    },
+    {
+      "intent": "pose_edit",
+      "customer": "Can you make it look like he is holding the baby?",
+      "reply": "Yes, we can check that pose for the artwork. Please send the original photos so the design team can confirm the result and any drawing fee.",
+      "risk": "design_review",
+      "provenance": "customer_brain.md"
+    },
+    {
+      "intent": "photos_later",
+      "customer": "Can I send the photos later?",
+      "reply": "Sure, no problem. Feel free to contact us when you’re ready.",
+      "risk": "low",
+      "provenance": "customer_brain.md and server.test.js"
+    },
+    {
+      "intent": "memorial_order",
+      "customer": "This is in memory of my mum.",
+      "reply": "We’d be honoured to help create something special in memory of your mum. Please send the photos and let us know which product and size you’re considering.",
+      "risk": "low_sensitive_tone",
+      "provenance": "current conversation history"
+    },
+    {
+      "intent": "refund_request",
+      "customer": "I want to cancel and get a refund.",
+      "reply": "Sorry to hear that. I’ll ask our team to review the order status and what work has been completed. Please send your order reference.",
+      "risk": "escalate",
+      "provenance": "customer_brain.md"
+    },
+    {
+      "intent": "post_print_change",
+      "customer": "Can I change the photo after it has been printed?",
+      "reply": "Thanks for checking. Because the item has already been printed, our team needs to review the options with you. Please send your order reference and the change requested.",
+      "risk": "escalate",
+      "provenance": "customer_brain.md"
+    },
+    {
+      "intent": "complaint",
+      "customer": "The face does not look right.",
+      "reply": "Sorry about that, and thank you for letting us know. Please send a clear photo or mark the area you’re concerned about, and our team will check the best way to help.",
+      "risk": "escalate",
+      "provenance": "customer_brain.md"
+    }
+  ]
+}
