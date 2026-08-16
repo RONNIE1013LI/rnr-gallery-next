@@ -166,6 +166,36 @@ describe("GET /api/payments/returns/[provider]", () => {
     });
   });
 
+  it("accepts an Afterpay cancellation for a numeric production order number", async () => {
+    const numericOrderNumber = "08000";
+    const handleReturn = vi.fn().mockResolvedValue({
+      orderNumber: numericOrderNumber,
+    });
+    const route = createPaymentReturnRoute({
+      trustedOrigin,
+      paymentService: { handleReturn },
+    });
+    const incoming = request("afterpay", {
+      ...common,
+      flow: "cancel",
+      orderNumber: numericOrderNumber,
+      method: "afterpay",
+      status: "CANCELLED",
+      orderToken: "afterpay_persisted_123",
+    });
+
+    const response = await route(incoming, {
+      params: Promise.resolve({ provider: "afterpay" }),
+    });
+
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location"))
+      .toBe(`${trustedOrigin}/orders/${numericOrderNumber}`);
+    expect(handleReturn).toHaveBeenCalledWith(expect.objectContaining({
+      orderNumber: numericOrderNumber,
+    }));
+  });
+
   it("accepts Stripe's optional client-secret field without forwarding it as authority", async () => {
     const { route, handleReturn } = handler();
     const incoming = request("stripe", {

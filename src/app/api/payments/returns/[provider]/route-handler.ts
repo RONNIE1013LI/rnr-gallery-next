@@ -29,7 +29,7 @@ type RouteContext = Readonly<{ params: Promise<{ provider: string }> }>;
 const noStoreHeaders = { "Cache-Control": "no-store" };
 const providers = new Set<ReturnProvider>(["stripe", "afterpay", "zip", "local-test"]);
 const paymentMethods = new Set<PaymentReturnInput["method"]>(["card", "afterpay", "zip"]);
-const orderNumberPattern = /^RNR-[A-Z0-9]+(?:-[A-Z0-9]+)+$/;
+const orderNumberPattern = /^(?:\d{5,}|RNR-[A-Z0-9]+(?:-[A-Z0-9]+)+)$/;
 const statePattern = /^[a-f0-9]{64}$/;
 const referencePattern = /^[A-Za-z0-9._-]{8,1024}$/;
 
