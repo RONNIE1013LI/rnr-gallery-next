@@ -13,12 +13,15 @@ export const runtime = "nodejs";
 type CleanupResult = Readonly<{
   examined: number;
   removed: number;
+  tombstoned: number;
   failed: number;
   sessionsDeleted: number;
 }>;
 
 type Dependencies = Readonly<{
   secret: string | null;
+  deleteEnabled: boolean;
+  report: () => Promise<{ eligible: number; eligibleBytes: number }>;
   run: (limit: number) => Promise<CleanupResult>;
 }>;
 
@@ -36,14 +39,27 @@ function bearerToken(headers: Headers) {
   return /^Bearer ([^\s,]{1,1024})$/.exec(headers.get("authorization") ?? "")?.[1] ?? null;
 }
 
+export function resolveUploadCleanupConfig(
+  environment: Readonly<Record<string, string | undefined>>,
+) {
+  return Object.freeze({
+    secret: environment.CRON_SECRET?.trim()
+      || environment.MAINTENANCE_CRON_SECRET?.trim()
+      || null,
+    deleteEnabled: environment.UPLOAD_CLEANUP_DELETE_ENABLED?.trim() === "true",
+  });
+}
+
 function defaults(): Dependencies {
   const database = getDatabase();
   const cleanup = createAbandonedUploadCleanup(
     createDrizzleAbandonedUploadCleanupRepository(database),
     createPrivateUploadStore(),
   );
+  const config = resolveUploadCleanupConfig(process.env);
   return Object.freeze({
-    secret: process.env.MAINTENANCE_CRON_SECRET?.trim() || null,
+    ...config,
+    report: cleanup.report,
     run: cleanup.run,
   });
 }
@@ -71,10 +87,20 @@ export function createUploadCleanupRoute(dependencies?: Dependencies) {
       });
     }
     try {
-      const result = await deps.run(50);
+      if (!deps.deleteEnabled) {
+        const report = await deps.report();
+        return Response.json({
+          mode: "report",
+          eligible: report.eligible,
+          eligibleBytes: report.eligibleBytes,
+        }, { headers: noStore });
+      }
+      const result = await deps.run(100);
       return Response.json({
+        mode: "delete",
         examined: result.examined,
         removed: result.removed,
+        tombstoned: result.tombstoned,
         failed: result.failed,
         sessionsDeleted: result.sessionsDeleted,
       }, { headers: noStore });
@@ -87,3 +113,4 @@ export function createUploadCleanupRoute(dependencies?: Dependencies) {
 }
 
 export const POST = createUploadCleanupRoute();
+export const GET = POST;
