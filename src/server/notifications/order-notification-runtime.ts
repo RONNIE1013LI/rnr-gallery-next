@@ -12,6 +12,7 @@ export function getOrderNotificationRuntime() {
         EMAIL_FROM: process.env.EMAIL_FROM,
       }),
       siteUrl: process.env.BETTER_AUTH_URL ?? "http://192.168.4.199:3000",
+      orderAccessSecret: process.env.BETTER_AUTH_SECRET ?? "",
     },
   );
 }

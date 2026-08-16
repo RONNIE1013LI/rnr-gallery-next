@@ -5,6 +5,7 @@ import type {
 } from "@/server/db/schema";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { formatMarketMoney } from "@/domain/money";
+import { createOrderEmailAccessToken } from "@/server/orders/order-email-access";
 import {
   EmailDeliveryError,
   type CustomerEmailMessage,
@@ -49,13 +50,24 @@ function escapeHtml(value: string) {
   })[character]!);
 }
 
-function orderMessage(event: OrderNotificationDelivery, siteUrl: string): CustomerEmailMessage {
+function orderMessage(
+  event: OrderNotificationDelivery,
+  siteUrl: string,
+  orderAccessSecret: string,
+  now: Date,
+): CustomerEmailMessage {
   const orderUrl = new URL(
     event.kind === "admin_order_received"
       ? `/admin/orders/${encodeURIComponent(event.orderId)}`
       : `/orders/${encodeURIComponent(event.orderNumber)}`,
     siteUrl,
   );
+  if (event.kind === "payment_confirmed") {
+    orderUrl.searchParams.set(
+      "access",
+      createOrderEmailAccessToken(event.orderNumber, orderAccessSecret, now),
+    );
+  }
   let subject: string;
   let paragraphs: readonly string[];
 
@@ -113,6 +125,7 @@ export function createOrderNotificationService(
   dependencies: Readonly<{
     provider: CustomerEmailProvider;
     siteUrl: string;
+    orderAccessSecret: string;
     now?: () => Date;
   }>,
 ) {
@@ -124,7 +137,12 @@ export function createOrderNotificationService(
     }
     const now = dependencies.now?.() ?? new Date();
     try {
-      const sent = await dependencies.provider.send(orderMessage(event, dependencies.siteUrl));
+      const sent = await dependencies.provider.send(orderMessage(
+        event,
+        dependencies.siteUrl,
+        dependencies.orderAccessSecret,
+        now,
+      ));
       await repository.markSent(event.id, sent.providerMessageId, now);
       return "sent" as const;
     } catch (error) {

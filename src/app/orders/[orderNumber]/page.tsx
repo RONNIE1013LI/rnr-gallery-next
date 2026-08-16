@@ -21,12 +21,31 @@ export const metadata: Metadata = {
   robots: { index: false, follow: false },
 };
 
-export default async function OrderConfirmationPage({ params }: { params: Promise<{ orderNumber: string }> }) {
-  const [{ orderNumber }, cookieStore, session] = await Promise.all([params, cookies(), getOptionalSession()]);
+export default async function OrderConfirmationPage({
+  params,
+  searchParams = Promise.resolve({}),
+}: {
+  params: Promise<{ orderNumber: string }>;
+  searchParams?: Promise<{ access?: string | string[] }>;
+}) {
+  const [{ orderNumber }, query, cookieStore, session] = await Promise.all([
+    params,
+    searchParams,
+    cookies(),
+    getOptionalSession(),
+  ]);
   const token = cookieStore.get(getCheckoutSessionCookieName(session?.user.id ?? null))?.value;
+  const emailAccessToken = typeof query.access === "string" ? query.access : null;
   let order;
   try {
-    order = await createOrderQueryService(createDrizzleOrderQueryRepository(getDatabase())).confirmation(orderNumber, { tokenDigest: isCheckoutSessionToken(token) ? hashCheckoutSessionToken(token) : null, userId: session?.user.id ?? null });
+    order = await createOrderQueryService(
+      createDrizzleOrderQueryRepository(getDatabase()),
+      { orderAccessSecret: process.env.BETTER_AUTH_SECRET ?? "" },
+    ).confirmation(orderNumber, {
+      tokenDigest: isCheckoutSessionToken(token) ? hashCheckoutSessionToken(token) : null,
+      userId: session?.user.id ?? null,
+      emailAccessToken,
+    });
   } catch (error) {
     if (error instanceof OrderSnapshotIntegrityError) notFound();
     throw error;

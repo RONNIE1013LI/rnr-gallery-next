@@ -2,6 +2,7 @@ import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "@/server/auth/require-session";
 import { hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
+import { createOrderEmailAccessToken } from "@/server/orders/order-email-access";
 import type { PublicOrder } from "@/server/orders/order-query-service";
 import { OrderSnapshotIntegrityError } from "@/server/orders/drizzle-order-query-repository";
 import AccountOrderPage from "../account/orders/[orderNumber]/page";
@@ -12,6 +13,7 @@ const {
   cookies,
   findByCheckoutToken,
   findByCustomer,
+  findByEmailAccess,
   getOptionalSession,
   getOptionalCustomerProofView,
   listPageByCustomer,
@@ -24,6 +26,7 @@ const {
   cookies: vi.fn(),
   findByCheckoutToken: vi.fn(),
   findByCustomer: vi.fn(),
+  findByEmailAccess: vi.fn(),
   getOptionalSession: vi.fn(),
   getOptionalCustomerProofView: vi.fn(),
   listPageByCustomer: vi.fn(),
@@ -48,6 +51,7 @@ vi.mock("@/server/orders/drizzle-order-query-repository", async (importOriginal)
   createDrizzleOrderQueryRepository: () => ({
     findByCheckoutToken,
     findByCustomer,
+    findByEmailAccess,
     listPageByCustomer,
     listByCustomer,
   }),
@@ -82,12 +86,14 @@ describe("owner-scoped order pages", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.stubEnv("ENABLE_LOCAL_TEST_PAYMENTS", "true");
+    vi.stubEnv("BETTER_AUTH_SECRET", "order-email-access-secret-with-sufficient-entropy-12345");
     cookies.mockResolvedValue({ get: () => ({ value: "a".repeat(43) }) });
     getOptionalSession.mockResolvedValue(null);
     getOptionalCustomerProofView.mockResolvedValue(null);
     requireSession.mockResolvedValue({ user: { id: "user-1" } });
     findByCheckoutToken.mockResolvedValue(order);
     findByCustomer.mockResolvedValue(order);
+    findByEmailAccess.mockResolvedValue(order);
     listByCustomer.mockResolvedValue([order]);
     listPageByCustomer.mockResolvedValue({
       items: [order],
@@ -159,6 +165,24 @@ describe("owner-scoped order pages", () => {
     findByCheckoutToken.mockResolvedValue(null);
     await expect(OrderConfirmationPage({ params: Promise.resolve({ orderNumber: "RNR-2026-GUESSED" }) })).rejects.toThrow("NOT_FOUND");
     expect(findByCustomer).not.toHaveBeenCalled();
+  });
+
+  it("authorizes an emailed order link without relying on the original browser cookie", async () => {
+    cookies.mockResolvedValue({ get: () => undefined });
+    const access = createOrderEmailAccessToken(
+      order.orderNumber,
+      "order-email-access-secret-with-sufficient-entropy-12345",
+    );
+
+    render(await OrderConfirmationPage({
+      params: Promise.resolve({ orderNumber: order.orderNumber }),
+      searchParams: Promise.resolve({ access }),
+    }));
+
+    expect(findByCheckoutToken).not.toHaveBeenCalled();
+    expect(findByCustomer).not.toHaveBeenCalled();
+    expect(findByEmailAccess).toHaveBeenCalledWith(order.orderNumber);
+    expect(screen.getByRole("heading", { level: 1, name: "Complete your payment." })).toBeInTheDocument();
   });
 
   it("falls back from a wrong checkout cookie only to the signed-in owner", async () => {

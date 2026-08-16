@@ -25,6 +25,7 @@ import {
 } from "./drizzle-order-repository";
 import { createDrizzleOrderQueryRepository } from "./drizzle-order-query-repository";
 import { createOrderQueryService } from "./order-query-service";
+import { createOrderEmailAccessToken } from "./order-email-access";
 import { createOrderService } from "./order-service";
 import {
   AtomicOrderStateError,
@@ -533,6 +534,21 @@ describe("Drizzle atomic order repository", () => {
       guestOrder.orderNumber,
       guestState.tokenDigest,
     )).resolves.toBeNull();
+    const emailAccessSecret = "order-email-access-secret-with-sufficient-entropy-12345";
+    const emailAccessNow = new Date("2026-08-16T06:30:00.000Z");
+    const guestEmailQuery = createOrderQueryService(queryRepository, {
+      orderAccessSecret: emailAccessSecret,
+      now: () => emailAccessNow,
+    });
+    await expect(guestEmailQuery.confirmation(guestOrder.orderNumber, {
+      tokenDigest: null,
+      userId: null,
+      emailAccessToken: createOrderEmailAccessToken(
+        guestOrder.orderNumber,
+        emailAccessSecret,
+        emailAccessNow,
+      ),
+    })).resolves.toMatchObject({ orderNumber: guestOrder.orderNumber });
 
     const customerState = await checkout({ customerId: customerIds[0] });
     const customerOrder = await repository.createAtomicOrder(pickupInput(customerState));

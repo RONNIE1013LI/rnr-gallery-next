@@ -4,8 +4,10 @@ import {
   type OrderNotificationRepository,
 } from "./order-notification-service";
 import type { CustomerEmailProvider } from "./customer-notification-service";
+import { verifyOrderEmailAccessToken } from "@/server/orders/order-email-access";
 
 const now = new Date("2026-08-06T02:00:00.000Z");
+const orderAccessSecret = "order-email-access-secret-with-sufficient-entropy-12345";
 const delivery = Object.freeze({
   id: "10000000-0000-4000-8000-000000000001",
   eventKey: "payment-confirmed:20000000-0000-4000-8000-000000000002",
@@ -42,6 +44,7 @@ describe("order notification delivery", () => {
     const service = createOrderNotificationService(repo, {
       provider,
       siteUrl: "https://shop.example.test",
+      orderAccessSecret,
       now: () => now,
     });
 
@@ -56,6 +59,14 @@ describe("order notification delivery", () => {
       subject: `Payment confirmed — ${delivery.orderNumber}`,
       text: expect.stringContaining("NZ$120.75"),
     }));
+    const message = send.mock.calls[0][0];
+    const orderUrl = new URL(message.text.match(/https:\/\/\S+/)?.[0] ?? "");
+    expect(verifyOrderEmailAccessToken(
+      orderUrl.searchParams.get("access"),
+      delivery.orderNumber,
+      orderAccessSecret,
+      now,
+    )).toBe(true);
     expect(repo.markSent).toHaveBeenCalledWith(delivery.id, "email-123", now);
   });
 
@@ -64,6 +75,7 @@ describe("order notification delivery", () => {
     const service = createOrderNotificationService(repo, {
       provider: { configured: false, send: vi.fn() },
       siteUrl: "https://shop.example.test",
+      orderAccessSecret,
     });
 
     await expect(service.deliverPending()).resolves.toEqual({
@@ -84,6 +96,7 @@ describe("order notification delivery", () => {
     const service = createOrderNotificationService(repo, {
       provider: { configured: true, send },
       siteUrl: "https://shop.example.test",
+      orderAccessSecret,
       now: () => now,
     });
 
@@ -109,6 +122,7 @@ describe("order notification delivery", () => {
     const service = createOrderNotificationService(repo, {
       provider: { configured: true, send },
       siteUrl: "https://shop.example.test",
+      orderAccessSecret,
       now: () => now,
     });
 
@@ -136,6 +150,7 @@ describe("order notification delivery", () => {
     const service = createOrderNotificationService(repo, {
       provider: { configured: true, send },
       siteUrl: "https://shop.example.test",
+      orderAccessSecret,
       now: () => now,
     });
 

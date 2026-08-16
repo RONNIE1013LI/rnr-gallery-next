@@ -5,6 +5,7 @@ import type { PriceLine } from "@/domain/pricing/types";
 import type { OrderPaymentStatus, OrderFulfilmentStatus } from "@/server/db/schema/orders";
 import type { PublicPaymentDTO } from "@/server/payments/public-dto";
 import type { ProviderShippingQuote } from "@/server/shipping/types";
+import { verifyOrderEmailAccessToken } from "./order-email-access";
 
 export type PublicOrderPriceLine = Readonly<Pick<PriceLine, "key" | "label" | "amountExGstCents" | "amountInclGstCents">>;
 export type PublicOrderItem = Readonly<{ productTitle: string; galleryDesign?: Readonly<{ id: string; title: string; contentHash: string; productSlug: string; imageUrl: string }>; sizeLabel: string; orientation?: Orientation; peoplePets: number; photoSubmissionMethod: PhotoSubmissionMethod; designText: string; notes: string; neededDate: string; urgentServiceConfirmed: boolean; urgentWorkingDays: number; quantity: number; priceLines: readonly PublicOrderPriceLine[]; unitSubtotalExGstCents: number; unitGstCents: number; unitTotalInclGstCents: number; lineSubtotalExGstCents: number; lineGstCents: number; lineTotalInclGstCents: number }>;
@@ -20,15 +21,37 @@ export type PublicOrderPage = Readonly<{
 export interface OrderQueryRepository {
   findByCheckoutToken(orderNumber: string, tokenDigest: string): Promise<PublicOrder | null>;
   findByCustomer(orderNumber: string, customerId: string): Promise<PublicOrder | null>;
+  findByEmailAccess(orderNumber: string): Promise<PublicOrder | null>;
   listByCustomer(customerId: string): Promise<readonly PublicOrder[]>;
   listPageByCustomer(customerId: string, page: number, pageSize?: number): Promise<PublicOrderPage>;
 }
 
-export function createOrderQueryService(repository: OrderQueryRepository) {
+export function createOrderQueryService(
+  repository: OrderQueryRepository,
+  dependencies: Readonly<{
+    orderAccessSecret?: string;
+    now?: () => Date;
+  }> = {},
+) {
   return {
-    async confirmation(orderNumber: string, owner: { tokenDigest: string | null; userId: string | null }) {
+    async confirmation(orderNumber: string, owner: {
+      tokenDigest: string | null;
+      userId: string | null;
+      emailAccessToken?: string | null;
+    }) {
       const byCookie = owner.tokenDigest ? await repository.findByCheckoutToken(orderNumber, owner.tokenDigest) : null;
-      return byCookie ?? (owner.userId ? repository.findByCustomer(orderNumber, owner.userId) : null);
+      const byCustomer = byCookie ?? (owner.userId
+        ? await repository.findByCustomer(orderNumber, owner.userId)
+        : null);
+      if (byCustomer) return byCustomer;
+      return verifyOrderEmailAccessToken(
+        owner.emailAccessToken,
+        orderNumber,
+        dependencies.orderAccessSecret ?? "",
+        dependencies.now?.() ?? new Date(),
+      )
+        ? repository.findByEmailAccess(orderNumber)
+        : null;
     },
     accountOrder: (orderNumber: string, userId: string) => repository.findByCustomer(orderNumber, userId),
     accountOrders: (userId: string) => repository.listByCustomer(userId),

@@ -125,7 +125,7 @@ const attemptRow: PaymentReadRow = {
 };
 
 describe("Drizzle order query read model", () => {
-  it.each(["guest", "customer", "list"] as const)(
+  it.each(["guest", "customer", "email", "list"] as const)(
     "reads the authorized %s order and its payment snapshot in one read-only repeatable-read transaction",
     async (kind) => {
       const results = kind === "guest"
@@ -173,6 +173,8 @@ describe("Drizzle order query read model", () => {
         ? await repository.findByCheckoutToken(orderRow.orderNumber, "token-digest")
         : kind === "customer"
           ? await repository.findByCustomer(orderRow.orderNumber, "user-1")
+          : kind === "email"
+            ? await repository.findByEmailAccess(orderRow.orderNumber)
           : await repository.listByCustomer("user-1");
 
       expect(result).toBeTruthy();

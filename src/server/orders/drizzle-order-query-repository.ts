@@ -263,6 +263,14 @@ export function createDrizzleOrderQueryRepository(database: Database): OrderQuer
         return one(transaction, rows);
       });
     },
+    async findByEmailAccess(orderNumber) {
+      return snapshot(async (transaction) => {
+        const rows = await transaction.select().from(orders)
+          .where(eq(orders.orderNumber, orderNumber))
+          .limit(1);
+        return one(transaction, rows);
+      });
+    },
     async listByCustomer(customerId) {
       return snapshot(async (transaction) => {
         const rows = await transaction.select().from(orders).where(eq(orders.customerId, customerId)).orderBy(desc(orders.createdAt), desc(orders.orderNumber));
