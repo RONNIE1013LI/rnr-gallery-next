@@ -15,4 +15,20 @@ describe("reply assistant generate API", () => {
     expect(requirePermission).toHaveBeenCalledWith("use_reply_assistant");
     expect(generate).toHaveBeenCalledWith({ messageId: "11111111-1111-4111-8111-111111111111", trigger: "manual_generate" });
   });
+
+  it("returns 404 when the message does not exist", async () => {
+    const requirePermission = vi.fn(async () => ({ user: { id: "staff-1" }, adminRole: "staff" as const }));
+    const generate = vi.fn(async () => {
+      throw new Error("customer_service_message_not_found");
+    });
+    const handler = createGenerateHandler({ enabled: true, requirePermission, generate, trustedOrigin: "https://admin.test" });
+    const response = await handler.POST(new Request("https://admin.test/api/reply-assistant/messages/11111111-1111-4111-8111-111111111111/generate", {
+      method: "POST",
+      headers: { origin: "https://admin.test", "content-type": "application/json" },
+      body: "{}",
+    }), { params: Promise.resolve({ messageId: "11111111-1111-4111-8111-111111111111" }) });
+
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toEqual({ error: { code: "NOT_FOUND" } });
+  });
 });

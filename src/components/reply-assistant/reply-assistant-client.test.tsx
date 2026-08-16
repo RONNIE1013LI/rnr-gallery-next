@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { ReplyAssistantClient } from "./reply-assistant-client";
+import { formatReplyReceivedAt, ReplyAssistantClient } from "./reply-assistant-client";
 
 const item = {
   messageId: "11111111-1111-4111-8111-111111111111",
@@ -16,6 +16,10 @@ describe("ReplyAssistantClient", () => {
   beforeEach(() => {
     vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ recorded: true }), { status: 201 })));
     Object.assign(navigator, { clipboard: { writeText: vi.fn(async () => undefined) } });
+  });
+
+  it("formats received times in a fixed timezone for stable hydration", () => {
+    expect(formatReplyReceivedAt("2026-08-17T00:00:00.000Z")).toBe("17/08/2026, 12:00:00 pm");
   });
 
   it("requires human acceptance before copy and never calls a send endpoint", async () => {

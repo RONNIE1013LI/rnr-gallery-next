@@ -15,6 +15,16 @@ export type ReplyQueueItem = Readonly<{
 
 type ReviewState = Readonly<{ mode: "pending" | "editing" | "accepted" | "edited" | "rejected"; text: string }>;
 
+const replyDateTime = new Intl.DateTimeFormat("en-NZ", {
+  dateStyle: "short",
+  timeStyle: "medium",
+  timeZone: "Pacific/Auckland",
+});
+
+export function formatReplyReceivedAt(value: string) {
+  return replyDateTime.format(new Date(value));
+}
+
 async function jsonRequest(url: string, body: unknown) {
   const response = await fetch(url, {
     method: "POST",
@@ -87,7 +97,7 @@ export function ReplyAssistantClient({ initialItems }: Readonly<{ initialItems?:
         return (
           <article className={styles.message} key={item.messageId}>
             <header>
-              <time>{new Date(item.receivedAt).toLocaleString("en-NZ")}</time>
+              <time>{formatReplyReceivedAt(item.receivedAt)}</time>
               <span data-risk={blocked}>{blocked ? "Human review required" : item.status.replaceAll("_", " ")}</span>
             </header>
             <div className={styles.customerText}><strong>Customer</strong><p>{item.body}</p></div>

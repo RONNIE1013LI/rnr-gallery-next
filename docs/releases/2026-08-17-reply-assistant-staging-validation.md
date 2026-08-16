@@ -8,7 +8,8 @@ This checklist validates a candidate on the local Next.js LAN service and a Verc
 
 Use these environments precisely:
 
-- Local Next.js: `http://192.168.4.199:3000`
+- Local Reply Assistant Staging: `http://192.168.4.199:3001`
+- The existing `http://192.168.4.199:3000` service belongs to the separate `payment-adapters` worktree and remains untouched.
 - Vercel Staging/Preview: record the exact HTTPS deployment URL below
 - Do not use `localhost` as evidence for the current local website.
 - Do not use the historical WordPress `:8080` environment as Next.js evidence.
@@ -107,7 +108,7 @@ Evidence: `________________________________`
 
 ## 5. Local LAN UI validation
 
-Use only `http://192.168.4.199:3000/reply-assistant` for current local Next.js browser evidence.
+Use `http://192.168.4.199:3001/reply-assistant` for this isolated Reply Assistant Staging candidate.
 
 - [ ] Admin can open the page.
 - [ ] Staff can open the page.
@@ -278,6 +279,168 @@ Still required before a Staging PASS:
 - apply the additive migration to an isolated Staging database;
 - run the Better Auth admin/staff/customer/unauthenticated browser matrix;
 - run signed webhook fixtures and an approved Staging/test Meta Page event through the deployed HTTPS endpoint;
-- verify browser layout at `http://192.168.4.199:3000/reply-assistant` and the exact Preview URL;
+- verify browser layout at `http://192.168.4.199:3001/reply-assistant` and the exact Preview URL;
 - review Vercel logs, PostgreSQL persistence across restarts and the final built bundle secret scan;
 - obtain Ronnie's draft-quality review and explicit Staging approval.
+
+## Executed Staging validation report
+
+Executed on 17 August 2026. This report records only checks actually run. `FAIL` also covers a required check that could not be completed; it does not imply that the underlying implementation is known to be defective.
+
+### Candidate and overall decision
+
+| Item | Result | Evidence |
+| --- | --- | --- |
+| Worktree, branch and commit recorded | PASS | `/Users/ronnieli/Documents/海报制作/rnr-next-platform/.worktrees/reply-assistant-migration`, `docs/reply-assistant-migration`, `f39b44603c3ae499c633423a7c92d3996a895f9a` |
+| Candidate based on `origin/main` | PASS | `git merge-base --is-ancestor origin/main HEAD` exited 0; recorded base `2415fb198920b1958898cf05c06259bc0e3cdbc8` |
+| Clean candidate | FAIL | Six focused Staging source/test fixes plus this validation report remain uncommitted: intent classification, missing-message API status and hydration-safe time formatting. No unrelated files are modified. |
+| Vercel Preview recorded | PASS | Deployment `dpl_3HJTJsa2ybCyvSBa2BY99UcjnZcy`; stable alias `https://rnr-gallery-reply-preview.vercel.app` |
+| Isolated databases recorded | PASS | `rnr_reply_assistant_test_20260817` and `rnr_reply_assistant_staging_20260817` |
+| Knowledge version recorded | PASS | SHA-256 `273d01224b8bef026dc69459ad0456e800f328ee81f7703d8c9a3f4512da024d` |
+| Overall Staging decision | **FAIL - NOT STAGING READY** | Required local LAN, mobile browser, real Meta-origin event and human sign-off checks remain incomplete. |
+
+### 1. Source and dependency baseline
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Clean worktree | FAIL | Seven intended files, including this report, are uncommitted. |
+| `origin/main` ancestor | PASS | Exit 0. |
+| `npm ci` | PASS WITH WARNING | Completed from committed lockfile; existing audit output reports four moderate dependency vulnerabilities and allow-scripts warnings. |
+| Knowledge check | PASS | Exit 0. |
+| TypeScript | PASS | Exit 0. |
+| ESLint quiet | PASS | Exit 0. |
+| Drizzle check | PASS | Exit 0. |
+| `git diff --check` | PASS | Exit 0. |
+
+### 2. Database migration
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Dedicated disposable test database | PASS | Test URL resolved to `rnr_reply_assistant_test_20260817`, separate from Staging and Production. |
+| All migrations applied | PASS | Migration command completed on both isolated databases. |
+| Complete test suite with test database | PASS | After the hydration fix, 274 test files and 1,660 tests passed; zero failures and zero skips. |
+| Six customer-service tables | PASS | Six `customer_service_*` tables observed. |
+| Existing definitions and rows unchanged | PASS | Migration `0022_reply_assistant.sql` is additive DDL only and references no existing business table for mutation. |
+| Duplicate indexes and check constraints | PASS | Schema tests and database integration tests passed. |
+| No raw identity, secret or payload columns | PASS | Schema inspection and scoped persistence tests passed. External keys are stored as 64-character hashes. |
+| Concurrent duplicate protection | PASS | Integration tests passed; signed duplicate fixture remained one message/attempt. |
+| Pilot limit | PASS | Integration tests prove sequence 101 cannot reserve a provider attempt. Active Staging pilot limit is 100. |
+| Concurrent budget hard stops | PASS | Usage/cost integration tests passed. |
+
+### 3. Environment and secret boundary
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Staging feature flag and pilot limit | PASS | Preview has `REPLY_ASSISTANT_ENABLED=true` and limit 100; Production feature flag was not enabled. |
+| Mock-first then real provider | PASS | Mock/gate/database suite ran before real OpenAI validation. |
+| OpenAI key server-only | PASS | Present in Preview server environment; exact-value source/build scan found zero matches. |
+| Reviewed model and budgets | PASS | Model `gpt-5.6-luna`; daily warning/hard stop USD 0.25/1 and total warning/hard stop USD 2/5. |
+| Meta credentials belong to approved Staging/test setup | FAIL | Values are configured but ownership of the App/Page was not independently confirmed by a real Meta-origin Staging event. |
+| Hash secret server-only | PASS | Present only in server environment; no `NEXT_PUBLIC_` Reply Assistant secret. |
+| Page access token absent | PASS | Absent from source, Preview, Production and built Reply Assistant scope. |
+| Logs contain no environment value | PASS | Exact-secret and privacy scans found no secret values. |
+
+### 4. Authentication and authorisation
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Page matrix | PASS | Anonymous 307 to sign-in; customer 307 to account; staff/admin 200. |
+| API matrix | PASS | Anonymous 401; customer 403; staff/admin 200. Customer feedback POST returned 403. |
+| Trusted origin | PASS | Wrong-origin POST returned 403. |
+| Malformed/oversized JSON | PASS | Returned 400 `INVALID_JSON` and 413 `PAYLOAD_TOO_LARGE`. |
+| No-store caching | PASS | Page is private/no-store; API responses are no-store. |
+| DTO identity isolation | PASS | Browser DTOs contain no sender, conversation or external identifier hashes. |
+
+### 5. Local LAN UI
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Admin/staff page access and local API auth matrix | PASS | Candidate runs independently at `http://192.168.4.199:3001`. Anonymous page/API returned 307/401, customer 307/403, and staff/admin 200/200. Port 3000 remained on `payment-adapters`. |
+| Queue, metrics, gate, draft and actions | PASS | Real browser showed metrics, HIGH RISK and REALTIME labels, editable draft, Generate, Regenerate, Copy and manual-sent controls. Generate produced a Mock draft through the normal API flow. |
+| 390 px and desktop layout | PASS | At 390x844, `innerWidth=390`, document/body scroll width 375, and no textarea/button/risk/main element crossed the viewport. No unrelated UI fix was required. |
+| Browser console | PASS WITH WARNING | Zero errors. Existing non-blocking warnings concerned logo LCP eager loading and an unused preloaded CSS resource. |
+
+### 6. Vercel Preview UI
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Better Auth Preview origin | PASS | Admin and staff authenticated on the stable Preview alias; redirects and API sessions were correct. |
+| No caching | PASS | Page/API cache headers matched private/no-store requirements. |
+| Cold and warm requests | PASS | Authenticated metrics requests both returned 200; observed CLI wall time 2.76 s cold-ish and 1.59 s warm. |
+| Persistence across deployment/restart | PASS | Messages, attempts, feedback and metrics remained after a new deployment. |
+| No local filesystem writes | PASS | Scoped runtime/build scan found no `fs`/`node:fs` write path or JSONL persistence. |
+| Core human-review workflow | PASS | Admin/staff saw queue, gate, risk and metrics. High-risk/realtime items had no textarea. Accept enabled Copy; Copy did not send. |
+| Staging provider latency | PASS | Three Staging calls: average 1,835 ms, slowest 2,597 ms. |
+| Browser console | FAIL | The deployed Preview logged React `#418` hydration text mismatches. Root cause was locale formatting without a fixed timezone. A TDD fix now uses `Pacific/Auckland`; focused tests, typecheck and lint pass, but deployment verification is pending. |
+| Hydration-fix Preview deployment | FAIL | Deployments `dpl_CtaB7mhtue7DoJMSQhKnoV5pCDKL` and `dpl_BFvTUKYFHnULpz7tMYamjCmdACxk` were created but blocked before build: `readyState=BLOCKED`, `buildingAt=null`, `seatBlock.blockCode=TEAM_ACCESS_REQUIRED`. Vercel reported that HEAD author `ronnieli@RonniedeMacBook-Pro.local` was not associated with the RRGallery team. A candidate commit with the authenticated team account email is required before retrying. |
+
+### 7. Meta webhook
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| GET correct/wrong/missing verification | PASS | Exact challenge returned 200; wrong and missing values returned 403. |
+| Valid signed text event | PASS | Returned 200 and persisted a hashed conversation/message before attempt processing. |
+| Invalid signature/tamper/wrong Page | PASS | Returned 401/401/403 and created zero rows. |
+| Echo/unsupported event filtering | PASS | Returned 200 and created zero rows. |
+| Duplicate event | PASS | Returned 200 and remained one row with no second attempt. |
+| Safe request logs | PASS | Logs showed method/path/status and no raw customer identity. |
+| DB-first plus `after()` ordering | PASS | Handler/unit tests and persisted signed-fixture results passed; gate-blocked messages persisted without provider calls. |
+| Background recovery/manual Generate | PASS | Recovery and same-gate generation tests passed. Missing-message generation now returns tested 404 `NOT_FOUND`. |
+| Real approved Meta App/Page event | FAIL | No real Meta-origin event was sent to this Preview callback. Production callback remained untouched. |
+
+### 8. Policy and output safety
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Gate decisions | PASS | 100/100 matched expected decisions. |
+| HIGH RISK pre-provider blocks | PASS | 20/20. |
+| UNRESOLVED pre-provider blocks | PASS | No UNRESOLVED fixture in this unchanged dataset; focused unresolved tests passed with zero provider calls. |
+| REALTIME_REQUIRED pre-provider blocks | PASS | 20/20. |
+| Policy bypass/cross-customer exposure | PASS | 0 / 0. |
+| Sendable output-validator violations | PASS | 0. |
+| Provider calls for blocked cases | PASS | 0. |
+| Focused high-risk cases | PASS | Refund, cancellation, damage, reprint, compensation, payment dispute, delivery guarantee and urgent guarantee stopped before provider invocation. |
+
+### 9. Real OpenAI validation
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Model | PASS | `gpt-5.6-luna`. |
+| Input/cached/output tokens | PASS | 38,956 / 0 / 2,577 in the accepted unchanged 100-case evaluation. |
+| Estimated cost | PASS | USD 0.010883. |
+| Average/slowest latency | PASS | 1,493 ms / 3,682 ms. |
+| Provider errors | PASS | 0. |
+| Direct/light edit/rejected | PASS | 56 / 4 / 0. |
+| Policy bypass | PASS | 0. |
+| Staging live aggregate | PASS | 3 calls, 1,971 input, 0 cached, 113 output, USD 0.000530, average 1,835 ms, slowest 2,597 ms, 0 provider errors, 0 output blocks, 0 gate bypass. |
+
+### 10. No-auto-send proof
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| No Reply Assistant send route | PASS | Route and built-output scan found none. |
+| No Graph send client | PASS | No `graph.facebook.com`, `/me/messages` or Messenger send client in scoped server output. |
+| Page access token absent | PASS | Source/environment/bundle checks passed. |
+| Human-only controls | PASS | Preview exposed Generate/Regenerate/feedback/metrics/Copy/manual status only. |
+| Copy cannot contact Meta | PASS | UI test and source scan confirm Clipboard-only Copy. |
+| No real customer messaged | PASS | No Send API credential exists and no customer message was sent during validation. |
+
+### 11. Secret and persistence audit
+
+| Check | Result | Evidence |
+| --- | --- | --- |
+| Exact secret scan | PASS | Zero exact matches in current source and `.next` output. |
+| No runtime filesystem/JSONL | PASS | Scoped source/build scan found none. |
+| PostgreSQL persistence | PASS | Feedback, attempts, usage, cost, budget and pilot metrics persisted in the isolated Staging database. |
+| Raw identity/payload absent | PASS | Stored external keys were hashed; no raw webhook payload or sender ID was stored. |
+| Vercel logs/privacy | PASS | Current deployment had zero 5xx in reviewed window and no secret/customer identity patterns. The only warning was a PostgreSQL SSL future-compatibility warning on successful requests. |
+
+### 12. Exit blockers
+
+1. The candidate must be committed or otherwise made into a clean, immutable review candidate.
+2. A real signed event from the approved Staging/test Meta App and Page has not reached the Preview callback.
+3. The hydration fix passed 1,660 tests but has not been verified on a successful Preview deployment because the two attempted deployments were blocked before build by Vercel team-author verification.
+4. Ronnie's draft-quality review and explicit Staging approval are not recorded.
+5. Security/privacy sign-off and rollback/old-ngrok owners are not assigned.
+
+Production feature flags, Production database, Production domain and Production Meta callback were not changed. `META_PAGE_ACCESS_TOKEN` remains absent and autonomous sending remains impossible.

@@ -28,7 +28,7 @@ export function detectIntent(message: string): CustomerServiceIntent {
   if (/which product|product format|difference.*(?:canvas|banner)|canvas.*(?:vs|or).*banner|wall or freestanding|freestanding display/.test(value)) {
     return "product_differences";
   }
-  if (/blurry|blurred|low.?resolution|photo quality|original photo|original file|use these photos|use my photos|combine.*photos|separate files|uncropped/.test(value)) {
+  if (/blurry|blurred|low.?resolution|photo quality|original photo|original file|use these photos|use my photos|combine.*(?:photos?|photographs?)|separate files|uncropped/.test(value)) {
     return "photo_guidance";
   }
   if (/design process|design work|how.*design|what happens.*design|theme|background idea|wording/.test(value)) {

@@ -6,6 +6,7 @@ describe("customer service intent detection", () => {
     ["Which product format should I choose?", "product_differences"],
     ["What details do you need to prepare a quote?", "quote_information_collection"],
     ["Can you use my blurry original photo?", "photo_guidance"],
+    ["Can you combine people from different photographs?", "photo_guidance"],
     ["What happens during the design process?", "design_process"],
     ["How is the canvas produced?", "production_process"],
     ["How does the deposit process work?", "payment_process"],
