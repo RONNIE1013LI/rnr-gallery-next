@@ -818,7 +818,7 @@ a:active {
 }
 
 .site-footer__payment-logo {
-  width: 1.875rem;
+  width: 2.5rem;
   aspect-ratio: 151 / 96;
   flex: 0 0 auto;
 }
@@ -1088,8 +1088,8 @@ a:active {
   }
 
   .site-footer__payment-logo {
-    width: 1.25rem;
-    min-width: 1.25rem;
+    width: 1.875rem;
+    min-width: 1.875rem;
     height: auto;
     aspect-ratio: 151 / 96;
     flex: 0 0 auto;
