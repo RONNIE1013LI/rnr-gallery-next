@@ -7,6 +7,11 @@ import type { MarketCurrency } from "@/domain/markets/types";
 import { formatMarketMoney } from "@/domain/money";
 import { createOrderEmailAccessToken } from "@/server/orders/order-email-access";
 import {
+  defaultCustomerEmailSignatureValues,
+  renderCustomerEmailSignature,
+  type CustomerEmailSignatureValues,
+} from "./customer-email-signature";
+import {
   defaultOrderEmailTemplateValues,
   renderOrderEmailTemplate,
   type OrderEmailTemplateValues,
@@ -61,6 +66,7 @@ function orderMessage(
   orderAccessSecret: string,
   now: Date,
   templateValues: Partial<OrderEmailTemplateValues>,
+  signatureValues: Partial<CustomerEmailSignatureValues>,
 ): CustomerEmailMessage {
   const orderUrl = new URL(
     event.kind === "admin_order_received"
@@ -92,11 +98,14 @@ function orderMessage(
   const greeting = event.kind === "admin_order_received"
     ? "Hello R&R Gallery team,"
     : `Hello ${event.customerName},`;
+  const footer = event.kind === "admin_order_received"
+    ? Object.freeze({ text: "R&R Gallery", html: "<p>R&amp;R Gallery</p>" })
+    : renderCustomerEmailSignature(signatureValues, siteUrl);
   return Object.freeze({
     to: event.recipientEmail,
     subject,
-    text: [greeting, "", ...paragraphs, "", `${actionLabel}: ${actionUrl}`, "", "R&R Gallery"].join("\n"),
-    html: `<p>${escapeHtml(greeting)}</p>${paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}<p><a href="${escapeHtml(actionUrl)}">${escapeHtml(actionLabel)}</a></p><p>R&amp;R Gallery</p>`,
+    text: [greeting, "", ...paragraphs, "", `${actionLabel}: ${actionUrl}`, "", footer.text].join("\n"),
+    html: `<p>${escapeHtml(greeting)}</p>${paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}<p><a href="${escapeHtml(actionUrl)}">${escapeHtml(actionLabel)}</a></p>${footer.html}`,
     idempotencyKey: event.eventKey,
   });
 }
@@ -108,12 +117,14 @@ export function createOrderNotificationService(
     siteUrl: string;
     orderAccessSecret: string;
     loadPublishedTemplates?: () => Promise<Partial<OrderEmailTemplateValues>>;
+    loadPublishedSignature?: () => Promise<Partial<CustomerEmailSignatureValues>>;
     now?: () => Date;
   }>,
 ) {
   async function deliver(
     event: OrderNotificationDelivery | null,
     templateValues: Partial<OrderEmailTemplateValues>,
+    signatureValues: Partial<CustomerEmailSignatureValues>,
   ) {
     if (!event) return "empty" as const;
     if (event.kind === "payment_failed" && event.paymentStatus !== "failed") {
@@ -128,6 +139,7 @@ export function createOrderNotificationService(
         dependencies.orderAccessSecret,
         now,
         templateValues,
+        signatureValues,
       ));
       await repository.markSent(event.id, sent.providerMessageId, now);
       return "sent" as const;
@@ -148,12 +160,16 @@ export function createOrderNotificationService(
       const templateValues = dependencies.loadPublishedTemplates
         ? await dependencies.loadPublishedTemplates().catch(() => defaultOrderEmailTemplateValues)
         : defaultOrderEmailTemplateValues;
+      const signatureValues = dependencies.loadPublishedSignature
+        ? await dependencies.loadPublishedSignature().catch(() => defaultCustomerEmailSignatureValues)
+        : defaultCustomerEmailSignatureValues;
       let sent = 0;
       let failed = 0;
       for (let index = 0; index < safeLimit; index += 1) {
         const result = await deliver(
           await repository.claimNext(dependencies.now?.() ?? new Date()),
           templateValues,
+          signatureValues,
         );
         if (result === "empty") break;
         if (result === "sent") sent += 1;

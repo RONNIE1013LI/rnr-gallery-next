@@ -60,6 +60,8 @@ describe("order notification delivery", () => {
       text: expect.stringContaining("NZ$120.75"),
     }));
     const message = send.mock.calls[0][0];
+    expect(message.text).toContain("Customer Service Team");
+    expect(message.html).toContain("/media/brand/rr-gallery-logo-2026.webp");
     const orderUrl = new URL(message.text.match(/https:\/\/\S+/)?.[0] ?? "");
     expect(verifyOrderEmailAccessToken(
       orderUrl.searchParams.get("access"),
@@ -133,6 +135,64 @@ describe("order notification delivery", () => {
       subject: `New paid order — ${adminDelivery.orderNumber}`,
       text: expect.stringContaining(`/admin/orders/${adminDelivery.orderId}`),
     }));
+    const message = send.mock.calls[0][0];
+    expect(message.text).not.toContain("Customer Service Team");
+    expect(message.html).not.toContain("/media/brand/rr-gallery-logo-2026.webp");
+  });
+
+  it("adds the customer signature to payment-failure emails", async () => {
+    const failedDelivery = {
+      ...delivery,
+      kind: "payment_failed" as const,
+      paymentStatus: "failed" as const,
+    };
+    const repo: OrderNotificationRepository = {
+      ...repository(),
+      claimNext: vi.fn().mockResolvedValueOnce(failedDelivery).mockResolvedValue(null),
+    };
+    const send = vi.fn().mockResolvedValue({ providerMessageId: "email-failed-123" });
+    const service = createOrderNotificationService(repo, {
+      provider: { configured: true, send },
+      siteUrl: "https://shop.example.test",
+      orderAccessSecret,
+      now: () => now,
+    });
+
+    await service.deliverPending();
+
+    expect(send.mock.calls[0][0].text).toContain("Customer Service Team");
+    expect(send.mock.calls[0][0].html).toContain(
+      "https://shop.example.test/media/brand/rr-gallery-logo-2026.webp",
+    );
+  });
+
+  it("adds the customer signature to shipped-order emails", async () => {
+    const shippedDelivery = {
+      ...delivery,
+      kind: "order_shipped" as const,
+      trackingNumber: "TRACK-123",
+      trackingCarrier: "NZ Post",
+      trackingUrl: "https://tracking.example.test/TRACK-123",
+    };
+    const repo: OrderNotificationRepository = {
+      ...repository(),
+      claimNext: vi.fn().mockResolvedValueOnce(shippedDelivery).mockResolvedValue(null),
+    };
+    const send = vi.fn().mockResolvedValue({ providerMessageId: "email-shipped-123" });
+    const service = createOrderNotificationService(repo, {
+      provider: { configured: true, send },
+      siteUrl: "https://shop.example.test",
+      orderAccessSecret,
+      now: () => now,
+    });
+
+    await service.deliverPending();
+
+    expect(send.mock.calls[0][0]).toEqual(expect.objectContaining({
+      idempotencyKey: shippedDelivery.eventKey,
+      text: expect.stringContaining("Customer Service Team"),
+      html: expect.stringContaining("/media/brand/rr-gallery-logo-2026.webp"),
+    }));
   });
 
   it("renders published wording without changing protected delivery data", async () => {
@@ -150,11 +210,15 @@ describe("order notification delivery", () => {
       "email.payment_confirmed.body": "Hello {{customer_name}}.\n\nWe received {{amount}}.",
       "email.payment_confirmed.action_label": "See receipt",
     });
+    const loadPublishedSignature = vi.fn().mockResolvedValue({
+      "email.signature.team_name": "R&R Customer Care",
+    });
     const service = createOrderNotificationService(repo, {
       provider: { configured: true, send },
       siteUrl: "https://shop.example.test",
       orderAccessSecret,
       loadPublishedTemplates,
+      loadPublishedSignature,
       now: () => now,
     });
 
@@ -170,6 +234,7 @@ describe("order notification delivery", () => {
     expect(message.text).toContain("See receipt: https://shop.example.test/orders/");
     expect(message.html).toContain("Aroha &lt;script&gt;alert(1)&lt;/script&gt;");
     expect(message.html).not.toContain("<script>");
+    expect(message.text).toContain("R&R Customer Care");
     const orderUrl = new URL(message.text.match(/https:\/\/\S+/)?.[0] ?? "");
     expect(verifyOrderEmailAccessToken(
       orderUrl.searchParams.get("access"),
@@ -178,6 +243,7 @@ describe("order notification delivery", () => {
       now,
     )).toBe(true);
     expect(loadPublishedTemplates).toHaveBeenCalledTimes(1);
+    expect(loadPublishedSignature).toHaveBeenCalledTimes(1);
   });
 
   it("falls back to code defaults when published templates cannot be read", async () => {

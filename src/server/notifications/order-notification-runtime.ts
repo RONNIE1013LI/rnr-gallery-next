@@ -1,5 +1,6 @@
 import { getDatabase } from "@/server/db/client";
 import { getSafePublicContent } from "@/server/admin/admin-content-runtime";
+import { customerEmailSignatureKeys } from "./customer-email-signature";
 import { createResendEmailProvider } from "./resend-email-provider";
 import { createDrizzleOrderNotificationRepository } from "./drizzle-order-notification-repository";
 import { orderEmailTemplateKeys } from "./order-email-templates";
@@ -16,6 +17,7 @@ export function getOrderNotificationRuntime() {
       siteUrl: process.env.BETTER_AUTH_URL ?? "http://192.168.4.199:3000",
       orderAccessSecret: process.env.BETTER_AUTH_SECRET ?? "",
       loadPublishedTemplates: () => getSafePublicContent(orderEmailTemplateKeys),
+      loadPublishedSignature: () => getSafePublicContent(customerEmailSignatureKeys),
     },
   );
 }

@@ -54,6 +54,9 @@ describe("customer proof notification delivery", () => {
       provider: { configured: true, send },
       siteUrl: "https://rnrgallery.example/",
       proofSecret: secret,
+      loadPublishedSignature: vi.fn().mockResolvedValue({
+        "email.signature.team_name": "R&R Customer Care",
+      }),
       now: () => new Date("2026-08-05T01:00:00.000Z"),
     });
 
@@ -64,6 +67,10 @@ describe("customer proof notification delivery", () => {
       idempotencyKey: event.eventKey,
       subject: `Your R&R Gallery design draft v${event.proofVersion} is ready`,
     });
+    expect(message.text).toContain("R&R Customer Care");
+    expect(message.html).toContain(
+      "https://rnrgallery.example/media/brand/rr-gallery-logo-2026.webp",
+    );
     const link = new URL(message.proofUrl);
     const expires = Number(link.searchParams.get("expires"));
     const signature = link.searchParams.get("signature");

@@ -3,6 +3,11 @@ import type {
   CustomerNotificationStatus,
 } from "@/server/db/schema";
 import { signProofAccess } from "@/server/production/proof-access-link";
+import {
+  defaultCustomerEmailSignatureValues,
+  renderCustomerEmailSignature,
+  type CustomerEmailSignatureValues,
+} from "./customer-email-signature";
 
 export type CustomerNotificationDelivery = Readonly<{
   id: string;
@@ -77,6 +82,7 @@ function proofMessage(
   event: CustomerNotificationDelivery,
   siteUrl: string,
   proofSecret: string,
+  signatureValues: Partial<CustomerEmailSignatureValues>,
 ) {
   const expires = Math.floor((event.createdAt.getTime() + proofLinkLifetimeMs) / 1000);
   const signature = signProofAccess({
@@ -89,6 +95,7 @@ function proofMessage(
   proofUrl.searchParams.set("expires", String(expires));
   proofUrl.searchParams.set("signature", signature);
   const subject = `Your R&R Gallery design draft v${event.proofVersion} is ready`;
+  const footer = renderCustomerEmailSignature(signatureValues, siteUrl);
   const text = [
     `Hello ${event.customerName},`,
     "",
@@ -98,9 +105,9 @@ function proofMessage(
     "",
     proofUrl.toString(),
     "",
-    "R&R Gallery",
+    footer.text,
   ].join("\n");
-  const html = `<p>Hello ${escapeHtml(event.customerName)},</p><p>Your design draft for order <strong>${escapeHtml(event.orderNumber)}</strong> is ready to review.</p><p>Please approve it for production or list all requested changes together. Up to two revision rounds are included. Changing to a different source photo may cost $25, and further revision rounds may cost $30.</p><p><a href="${escapeHtml(proofUrl.toString())}">Review your design draft</a></p><p>R&amp;R Gallery</p>`;
+  const html = `<p>Hello ${escapeHtml(event.customerName)},</p><p>Your design draft for order <strong>${escapeHtml(event.orderNumber)}</strong> is ready to review.</p><p>Please approve it for production or list all requested changes together. Up to two revision rounds are included. Changing to a different source photo may cost $25, and further revision rounds may cost $30.</p><p><a href="${escapeHtml(proofUrl.toString())}">Review your design draft</a></p>${footer.html}`;
   return Object.freeze({
     to: event.recipientEmail,
     subject,
@@ -117,10 +124,20 @@ export function createCustomerNotificationService(
     provider: CustomerEmailProvider;
     siteUrl: string;
     proofSecret: string;
+    loadPublishedSignature?: () => Promise<Partial<CustomerEmailSignatureValues>>;
     now?: () => Date;
   }>,
 ) {
-  async function deliver(event: CustomerNotificationDelivery | null) {
+  async function loadSignature() {
+    return dependencies.loadPublishedSignature
+      ? dependencies.loadPublishedSignature().catch(() => defaultCustomerEmailSignatureValues)
+      : defaultCustomerEmailSignatureValues;
+  }
+
+  async function deliver(
+    event: CustomerNotificationDelivery | null,
+    signatureValues: Partial<CustomerEmailSignatureValues>,
+  ) {
     if (!event) return Object.freeze({ result: "empty" as const });
     const now = dependencies.now?.() ?? new Date();
     const expiresAt = event.createdAt.getTime() + proofLinkLifetimeMs;
@@ -130,7 +147,7 @@ export function createCustomerNotificationService(
     }
     try {
       const sent = await dependencies.provider.send(
-        proofMessage(event, dependencies.siteUrl, dependencies.proofSecret),
+        proofMessage(event, dependencies.siteUrl, dependencies.proofSecret, signatureValues),
       );
       await repository.markSent(event.id, sent.providerMessageId, now);
       return Object.freeze({ result: "sent" as const });
@@ -147,7 +164,10 @@ export function createCustomerNotificationService(
       if (!dependencies.provider.configured) {
         return Object.freeze({ result: "not_configured" as const });
       }
-      return deliver(await repository.claimForFile(fileId, dependencies.now?.() ?? new Date()));
+      return deliver(
+        await repository.claimForFile(fileId, dependencies.now?.() ?? new Date()),
+        await loadSignature(),
+      );
     },
 
     async deliverPending(limit = 10) {
@@ -155,10 +175,14 @@ export function createCustomerNotificationService(
         return Object.freeze({ result: "not_configured" as const, sent: 0, failed: 0 });
       }
       const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+      const signatureValues = await loadSignature();
       let sent = 0;
       let failed = 0;
       for (let index = 0; index < safeLimit; index += 1) {
-        const result = await deliver(await repository.claimNext(dependencies.now?.() ?? new Date()));
+        const result = await deliver(
+          await repository.claimNext(dependencies.now?.() ?? new Date()),
+          signatureValues,
+        );
         if (result.result === "empty") break;
         if (result.result === "sent") sent += 1;
         if (result.result === "failed") failed += 1;

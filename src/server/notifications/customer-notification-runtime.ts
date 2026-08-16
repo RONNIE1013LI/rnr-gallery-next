@@ -1,4 +1,6 @@
 import { getDatabase } from "@/server/db/client";
+import { getSafePublicContent } from "@/server/admin/admin-content-runtime";
+import { customerEmailSignatureKeys } from "./customer-email-signature";
 import { createCustomerNotificationService } from "./customer-notification-service";
 import { createDrizzleCustomerNotificationRepository } from "./drizzle-customer-notification-repository";
 import { createResendEmailProvider } from "./resend-email-provider";
@@ -13,6 +15,7 @@ export function getCustomerNotificationRuntime() {
     }),
     siteUrl: process.env.BETTER_AUTH_URL ?? "http://192.168.4.199:3000",
     proofSecret: process.env.BETTER_AUTH_SECRET ?? "",
+    loadPublishedSignature: () => getSafePublicContent(customerEmailSignatureKeys),
   });
 }
 
