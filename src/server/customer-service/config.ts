@@ -40,6 +40,17 @@ function required(env: NodeJS.ProcessEnv | Record<string, string | undefined>, n
   return value;
 }
 
+const hostnamePattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/;
+
+function attachmentAllowedHosts(value: string | undefined) {
+  if (!value?.trim()) return Object.freeze([] as string[]);
+  const hosts = value.split(",").map((host) => host.trim().toLowerCase());
+  if (hosts.some((host) => !hostnamePattern.test(host))) {
+    throw new Error("META_ATTACHMENT_ALLOWED_HOSTS contains an invalid hostname");
+  }
+  return Object.freeze(hosts);
+}
+
 export function parseCustomerServiceConfig(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ): CustomerServiceConfig {
@@ -50,9 +61,7 @@ export function parseCustomerServiceConfig(
   const imageAnalysisEnabled = boolean(env.REPLY_ASSISTANT_IMAGE_ANALYSIS_ENABLED);
   const imageAnalysisModel = env.OPENAI_IMAGE_ANALYSIS_MODEL?.trim() ?? "";
   const blobReadWriteToken = env.BLOB_READ_WRITE_TOKEN?.trim() ?? "";
-  const metaAttachmentAllowedHosts = Object.freeze((env.META_ATTACHMENT_ALLOWED_HOSTS?.split(",") ?? [])
-    .map((host) => host.trim().toLowerCase())
-    .filter(Boolean));
+  const metaAttachmentAllowedHosts = attachmentAllowedHosts(env.META_ATTACHMENT_ALLOWED_HOSTS);
   if (imageAnalysisEnabled && !imageAnalysisModel) throw new Error("OPENAI_IMAGE_ANALYSIS_MODEL is required");
   if (imageAnalysisEnabled && !blobReadWriteToken) throw new Error("BLOB_READ_WRITE_TOKEN is required");
   if (imageAnalysisEnabled && metaAttachmentAllowedHosts.length === 0) {

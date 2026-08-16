@@ -79,4 +79,24 @@ describe("customer service server config", () => {
     });
     expect(parsed.metaAttachmentAllowedHosts).toEqual(["cdn.facebook.com", "fbcdn.net"]);
   });
+
+  it.each([
+    "http://example.test",
+    "user:pass@example.test",
+    "example.test:443",
+    "example.test/path",
+    "example.test?query=1",
+    "example.test#fragment",
+    "example .test",
+    "example..test",
+    "-example.test",
+    "example-.test",
+  ])("rejects invalid attachment hostname %s", (host) => {
+    expect(() => parseCustomerServiceConfig({
+      REPLY_ASSISTANT_IMAGE_ANALYSIS_ENABLED: "true",
+      OPENAI_IMAGE_ANALYSIS_MODEL: "gpt-vision",
+      BLOB_READ_WRITE_TOKEN: "blob-token",
+      META_ATTACHMENT_ALLOWED_HOSTS: host,
+    })).toThrow("META_ATTACHMENT_ALLOWED_HOSTS contains an invalid hostname");
+  });
 });
