@@ -19,6 +19,7 @@ import {
   orderNotificationOutbox,
   orders,
   paymentAttempts,
+  user,
   webhookEvents,
 } from "@/server/db/schema";
 import type {
@@ -312,6 +313,23 @@ async function applyLockedVerifiedResult(
       createdAt: now,
       updatedAt: now,
     }).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });
+    const administrators = await transaction.select({
+      id: user.id,
+      email: user.email,
+    }).from(user).where(eq(user.role, "admin"));
+    if (administrators.length) {
+      await transaction.insert(orderNotificationOutbox).values(
+        administrators.map((administrator) => ({
+          eventKey: `admin-order-received:${order.id}:${administrator.id}`,
+          kind: "admin_order_received" as const,
+          orderId: order.id,
+          recipientEmail: administrator.email,
+          availableAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })),
+      ).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });
+    }
   } else if (orderStatus === "failed") {
     await transaction.insert(orderNotificationOutbox).values({
       eventKey: `payment-failed:${attempt.id}`,

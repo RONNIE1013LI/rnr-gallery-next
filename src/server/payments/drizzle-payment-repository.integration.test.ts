@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
@@ -778,7 +778,10 @@ describe("Drizzle payment repository", () => {
       attempt: { status: "paid" },
     });
     await expect(database.select().from(orderNotificationOutbox)
-      .where(eq(orderNotificationOutbox.orderId, order.orderId))).resolves.toEqual([
+      .where(and(
+        eq(orderNotificationOutbox.orderId, order.orderId),
+        eq(orderNotificationOutbox.eventKey, `payment-confirmed:${order.orderId}`),
+      ))).resolves.toEqual([
       expect.objectContaining({
         eventKey: `payment-confirmed:${order.orderId}`,
         kind: "payment_confirmed",
@@ -943,7 +946,10 @@ describe("Drizzle payment repository", () => {
       source: "reconciliation",
     });
     await expect(database.select().from(orderNotificationOutbox)
-      .where(eq(orderNotificationOutbox.orderId, order.orderId))).resolves.toEqual([
+      .where(and(
+        eq(orderNotificationOutbox.orderId, order.orderId),
+        inArray(orderNotificationOutbox.kind, ["payment_confirmed", "payment_failed"]),
+      ))).resolves.toEqual([
       expect.objectContaining({ kind: "payment_failed", status: "pending" }),
     ]);
 
@@ -959,9 +965,67 @@ describe("Drizzle payment repository", () => {
     });
 
     await expect(database.select().from(orderNotificationOutbox)
-      .where(eq(orderNotificationOutbox.orderId, order.orderId))).resolves.toEqual([
+      .where(and(
+        eq(orderNotificationOutbox.orderId, order.orderId),
+        inArray(orderNotificationOutbox.kind, ["payment_confirmed", "payment_failed"]),
+      ))).resolves.toEqual([
       expect.objectContaining({ kind: "payment_confirmed", status: "pending" }),
     ]);
+  });
+
+  it("queues a distinct paid-order notification for each administrator", async () => {
+    const adminId = `payment-admin-${randomUUID()}`;
+    const adminEmail = "payer@example.test";
+    customerIds.push(adminId);
+    await pool.query(
+      `insert into "user" (id, name, email, role) values ($1, 'Payment Admin', $2, 'admin')`,
+      [adminId, adminEmail],
+    );
+    const order = await createOrder();
+    const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
+    const providerReference = `admin-notification-${randomUUID()}`;
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+
+    await repository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      result: {
+        providerReference,
+        providerStatus: "succeeded",
+        amountCents: 7_475,
+        currency: "NZD",
+        orderNumber: order.orderNumber,
+        status: "paid",
+      },
+      source: "reconciliation",
+    });
+
+    await expect(database.select().from(orderNotificationOutbox).where(eq(
+      orderNotificationOutbox.eventKey,
+      `admin-order-received:${order.orderId}:${adminId}`,
+    ))).resolves.toEqual([
+      expect.objectContaining({
+        kind: "admin_order_received",
+        orderId: order.orderId,
+        recipientEmail: adminEmail,
+        status: "pending",
+      }),
+    ]);
+    await expect(database.select({
+      kind: orderNotificationOutbox.kind,
+      recipientEmail: orderNotificationOutbox.recipientEmail,
+    }).from(orderNotificationOutbox).where(eq(
+      orderNotificationOutbox.orderId,
+      order.orderId,
+    ))).resolves.toEqual(expect.arrayContaining([
+      { kind: "payment_confirmed", recipientEmail: adminEmail },
+      { kind: "admin_order_received", recipientEmail: adminEmail },
+    ]));
   });
 
   it.each(["after_event_insert", "after_transition", "before_processed_result"] as const)(

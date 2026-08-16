@@ -1,0 +1,2 @@
+ALTER TABLE "order_notification_outbox" DROP CONSTRAINT "order_notification_outbox_kind_valid";--> statement-breakpoint
+ALTER TABLE "order_notification_outbox" ADD CONSTRAINT "order_notification_outbox_kind_valid" CHECK ("order_notification_outbox"."kind" in ('payment_confirmed', 'payment_failed', 'admin_order_received', 'order_shipped'));

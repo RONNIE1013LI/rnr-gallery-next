@@ -94,6 +94,33 @@ describe("order notification delivery", () => {
     }));
   });
 
+  it("sends administrators a distinct paid-order notification", async () => {
+    const adminDelivery = {
+      ...delivery,
+      eventKey: "admin-order-received:20000000-0000-4000-8000-000000000002:admin-1",
+      kind: "admin_order_received" as const,
+      recipientEmail: "owner@example.test",
+    };
+    const repo: OrderNotificationRepository = {
+      ...repository(),
+      claimNext: vi.fn().mockResolvedValueOnce(adminDelivery).mockResolvedValue(null),
+    };
+    const send = vi.fn().mockResolvedValue({ providerMessageId: "email-admin-123" });
+    const service = createOrderNotificationService(repo, {
+      provider: { configured: true, send },
+      siteUrl: "https://shop.example.test",
+      now: () => now,
+    });
+
+    await service.deliverPending();
+
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      to: adminDelivery.recipientEmail,
+      subject: `New paid order — ${adminDelivery.orderNumber}`,
+      text: expect.stringContaining(`/admin/orders/${adminDelivery.orderId}`),
+    }));
+  });
+
   it("discards an obsolete payment failure after the order becomes paid", async () => {
     const staleFailure = {
       ...delivery,

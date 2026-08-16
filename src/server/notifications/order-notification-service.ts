@@ -50,11 +50,22 @@ function escapeHtml(value: string) {
 }
 
 function orderMessage(event: OrderNotificationDelivery, siteUrl: string): CustomerEmailMessage {
-  const orderUrl = new URL(`/orders/${encodeURIComponent(event.orderNumber)}`, siteUrl);
+  const orderUrl = new URL(
+    event.kind === "admin_order_received"
+      ? `/admin/orders/${encodeURIComponent(event.orderId)}`
+      : `/orders/${encodeURIComponent(event.orderNumber)}`,
+    siteUrl,
+  );
   let subject: string;
   let paragraphs: readonly string[];
 
-  if (event.kind === "payment_confirmed") {
+  if (event.kind === "admin_order_received") {
+    subject = `New paid order — ${event.orderNumber}`;
+    paragraphs = [
+      `A new paid order for ${formatMarketMoney(event.totalInclGstCents, event.currency)} is ready for production review.`,
+      "Open the admin order to review its artwork, delivery and fulfilment details.",
+    ];
+  } else if (event.kind === "payment_confirmed") {
     subject = `Payment confirmed — ${event.orderNumber}`;
     paragraphs = [
       `We have confirmed your payment of ${formatMarketMoney(event.totalInclGstCents, event.currency)} for order ${event.orderNumber}.`,
@@ -78,12 +89,16 @@ function orderMessage(event: OrderNotificationDelivery, siteUrl: string): Custom
   const actionUrl = event.kind === "order_shipped" && event.trackingUrl
     ? event.trackingUrl
     : orderUrl.toString();
-  const actionLabel = event.kind === "payment_failed"
+  const actionLabel = event.kind === "admin_order_received"
+    ? "Open order"
+    : event.kind === "payment_failed"
     ? "Retry payment"
     : event.kind === "order_shipped"
       ? "Track your order"
       : "View your order";
-  const greeting = `Hello ${event.customerName},`;
+  const greeting = event.kind === "admin_order_received"
+    ? "Hello R&R Gallery team,"
+    : `Hello ${event.customerName},`;
   return Object.freeze({
     to: event.recipientEmail,
     subject,

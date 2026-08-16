@@ -183,6 +183,13 @@
       "when": 1786838893171,
       "tag": "0025_unknown_turbo",
       "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786860578020,
+      "tag": "0026_loose_eternity",
+      "breakpoints": true
     }
   ]
 }

@@ -51,6 +51,7 @@ export type OrderAddressKind = "billing" | "delivery";
 export type OrderNotificationKind =
   | "payment_confirmed"
   | "payment_failed"
+  | "admin_order_received"
   | "order_shipped";
 export type OrderNotificationStatus = "pending" | "sending" | "sent" | "failed";
 
@@ -390,7 +391,7 @@ export const orderNotificationOutbox = pgTable(
     index("order_notification_outbox_order_id_idx").on(table.orderId),
     check(
       "order_notification_outbox_kind_valid",
-      sql`${table.kind} in ('payment_confirmed', 'payment_failed', 'order_shipped')`,
+      sql`${table.kind} in ('payment_confirmed', 'payment_failed', 'admin_order_received', 'order_shipped')`,
     ),
     check(
       "order_notification_outbox_status_valid",
