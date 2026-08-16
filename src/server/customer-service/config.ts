@@ -12,6 +12,10 @@ export type CustomerServiceConfig = Readonly<{
   metaVerifyToken: string;
   metaPageId: string;
   idHashSecret: string;
+  imageAnalysisEnabled: boolean;
+  imageAnalysisModel: string;
+  metaAttachmentAllowedHosts: readonly string[];
+  blobReadWriteToken: string;
 }>;
 
 function boolean(value: string | undefined) {
@@ -43,6 +47,17 @@ export function parseCustomerServiceConfig(
   const provider = env.AI_PROVIDER?.trim() === "openai" ? "openai" : "mock";
   const openaiApiKey = env.OPENAI_API_KEY?.trim() ?? "";
   if (enabled && provider === "openai" && !openaiApiKey) throw new Error("OPENAI_API_KEY is required");
+  const imageAnalysisEnabled = boolean(env.REPLY_ASSISTANT_IMAGE_ANALYSIS_ENABLED);
+  const imageAnalysisModel = env.OPENAI_IMAGE_ANALYSIS_MODEL?.trim() ?? "";
+  const blobReadWriteToken = env.BLOB_READ_WRITE_TOKEN?.trim() ?? "";
+  const metaAttachmentAllowedHosts = Object.freeze((env.META_ATTACHMENT_ALLOWED_HOSTS?.split(",") ?? [])
+    .map((host) => host.trim().toLowerCase())
+    .filter(Boolean));
+  if (imageAnalysisEnabled && !imageAnalysisModel) throw new Error("OPENAI_IMAGE_ANALYSIS_MODEL is required");
+  if (imageAnalysisEnabled && !blobReadWriteToken) throw new Error("BLOB_READ_WRITE_TOKEN is required");
+  if (imageAnalysisEnabled && metaAttachmentAllowedHosts.length === 0) {
+    throw new Error("META_ATTACHMENT_ALLOWED_HOSTS is required");
+  }
   return Object.freeze({
     enabled,
     pilotLimit: positiveInteger(env.REPLY_ASSISTANT_PILOT_LIMIT, 100, "REPLY_ASSISTANT_PILOT_LIMIT"),
@@ -57,6 +72,10 @@ export function parseCustomerServiceConfig(
     metaVerifyToken: enabled ? required(env, "META_VERIFY_TOKEN") : "",
     metaPageId: enabled ? required(env, "META_PAGE_ID") : "",
     idHashSecret: enabled ? required(env, "CUSTOMER_SERVICE_ID_HASH_SECRET") : "",
+    imageAnalysisEnabled,
+    imageAnalysisModel,
+    metaAttachmentAllowedHosts,
+    blobReadWriteToken,
   });
 }
 

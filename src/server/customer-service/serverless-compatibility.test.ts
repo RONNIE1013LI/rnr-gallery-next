@@ -18,4 +18,11 @@ describe("reply assistant serverless compatibility", () => {
     expect(route).toContain('runtime = "nodejs"');
     expect(route).toContain("maxDuration = 30");
   });
+
+  it("keeps image-analysis configuration server-only", () => {
+    const config = readFileSync(resolve(process.cwd(), "src/server/customer-service/config.ts"), "utf8");
+    expect(config).not.toMatch(/NEXT_PUBLIC_/i);
+    expect(config).toContain("BLOB_READ_WRITE_TOKEN");
+    expect(config).toContain("OPENAI_IMAGE_ANALYSIS_MODEL");
+  });
 });
