@@ -1,6 +1,7 @@
 import { eq } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import { adminAuditLogs, contentEntries, user } from "@/server/db/schema";
+import { customerEmailSignatureDefinitions } from "@/server/notifications/customer-email-signature";
 import { orderEmailTemplateDefinitions } from "@/server/notifications/order-email-templates";
 import { buildAuditRecord } from "./audit-service";
 
@@ -38,6 +39,7 @@ export const contentDefinitions = Object.freeze([
     allowedVariables: Object.freeze([]) as readonly string[],
   })),
   ...orderEmailTemplateDefinitions,
+  ...customerEmailSignatureDefinitions,
 ]);
 
 export type ContentKey = typeof contentDefinitions[number]["key"];
@@ -73,6 +75,9 @@ export function parseContentValue(key: string, input: unknown): string {
     }
     const unknown = variables.find((variable) => !definition.allowedVariables.includes(variable as never));
     if (unknown) throw new ContentValidationError(`Unknown email template variable: ${unknown}`);
+    if (definition.key === "email.signature.email" && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+      throw new ContentValidationError("Enter a valid customer-service email");
+    }
   }
   return value;
 }

@@ -57,8 +57,23 @@ describe("admin content service", () => {
     const storefront = contentDefinitions.filter((entry) => entry.surface === "storefront");
     const email = contentDefinitions.filter((entry) => entry.surface === "email");
     expect(storefront.some((entry) => entry.key.startsWith("email."))).toBe(false);
-    expect(email).toHaveLength(12);
+    expect(email).toHaveLength(18);
     expect(email.every((entry) => entry.key.startsWith("email."))).toBe(true);
+  });
+
+  it("validates customer email signature contact fields", () => {
+    expect(parseContentValue(
+      "email.signature.email",
+      "customerservice@rnrgallery.com",
+    )).toBe("customerservice@rnrgallery.com");
+    expect(() => parseContentValue(
+      "email.signature.email",
+      "not-an-email",
+    )).toThrow("Enter a valid customer-service email");
+    expect(() => parseContentValue(
+      "email.signature.website_label",
+      "https://attacker.example",
+    )).toThrow("Email template URLs are managed by the system");
   });
 
   it("uses published values and safe code defaults for missing content", () => {
