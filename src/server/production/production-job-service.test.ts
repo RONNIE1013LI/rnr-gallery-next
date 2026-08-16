@@ -204,6 +204,17 @@ describe("manual production job service", () => {
     )).toBe("RRM-2026-ABCDEF1234");
   });
 
+  it("uses the shared async numeric allocator for manual orders", async () => {
+    const repo = repository();
+    const service = createProductionJobService(repo, {
+      createJobNumber: vi.fn().mockResolvedValue("08000"),
+    });
+    await service.createManual(actor, validInput, { canUpdateFinance: true });
+    expect(repo.createManual).toHaveBeenCalledWith(expect.objectContaining({
+      jobNumber: "08000",
+    }));
+  });
+
   it("prevents staff without finance permission from entering payment or costs", async () => {
     const service = createProductionJobService(repository());
     await expect(service.createManual(actor, validInput, {

@@ -190,6 +190,13 @@
       "when": 1786860578020,
       "tag": "0026_loose_eternity",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1786876242814,
+      "tag": "0027_redundant_the_hunter",
+      "breakpoints": true
     }
   ]
 }

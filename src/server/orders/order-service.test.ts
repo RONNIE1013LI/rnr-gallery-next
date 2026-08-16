@@ -275,6 +275,20 @@ describe("atomic order service", () => {
     }));
   });
 
+  it("accepts an async shared numeric order-number allocator", async () => {
+    const repo = repository();
+    const service = createOrderService({
+      repository: repo,
+      shippingService: shippingService(),
+      now: () => now,
+      createOrderNumber: vi.fn().mockResolvedValue("08000"),
+    });
+    await service.createOrder(sessionId, key, reviewed());
+    expect(repo.createAtomicOrder).toHaveBeenCalledWith(expect.objectContaining({
+      orderNumber: "08000",
+    }));
+  });
+
   it("stops after five order-number collisions", async () => {
     const repo = repository({
       createAtomicOrder: vi.fn().mockRejectedValue(new OrderNumberCollisionError()),

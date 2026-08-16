@@ -364,7 +364,7 @@ export function createManualJobNumber(
 export function createProductionJobService(
   repository: ProductionJobRepository,
   dependencies: Readonly<{
-    createJobNumber?: () => string;
+    createJobNumber?: () => string | Promise<string>;
     now?: () => Date;
   }> = {},
 ) {
@@ -408,7 +408,7 @@ export function createProductionJobService(
       const created = await repository.createManual({
         ...persistedJob,
         requestDigest,
-        jobNumber: dependencies.createJobNumber?.() ?? createManualJobNumber(createdAt),
+        jobNumber: await (dependencies.createJobNumber?.() ?? createManualJobNumber(createdAt)),
         actor,
         createdAt,
         canUpdateFinance: permissions.canUpdateFinance,

@@ -6,11 +6,13 @@ import {
   listProductionJobs,
 } from "@/server/production/drizzle-production-job-repository";
 import { createProductionJobService } from "@/server/production/production-job-service";
+import { allocateOrderNumber } from "@/server/orders/order-number";
 
 export function getAdminProductionRuntime() {
   const database = getDatabase();
   const service = createProductionJobService(
     createDrizzleProductionJobRepository(database),
+    { createJobNumber: () => allocateOrderNumber(database) },
   );
   return Object.freeze({
     list: (

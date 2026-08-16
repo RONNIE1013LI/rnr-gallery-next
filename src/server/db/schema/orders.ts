@@ -9,6 +9,7 @@ import {
   integer,
   jsonb,
   pgTable,
+  pgSequence,
   text,
   timestamp,
   unique,
@@ -54,6 +55,12 @@ export type OrderNotificationKind =
   | "admin_order_received"
   | "order_shipped";
 export type OrderNotificationStatus = "pending" | "sending" | "sent" | "failed";
+
+export const orderNumberSequence = pgSequence("rnr_order_number_seq", {
+  startWith: 8_000,
+  minValue: 8_000,
+  increment: 1,
+});
 
 export const orders = pgTable(
   "orders",

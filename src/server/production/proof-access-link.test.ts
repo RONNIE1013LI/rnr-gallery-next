@@ -18,6 +18,13 @@ describe("signed customer proof access", () => {
     expect(verifyProofAccess(payload, signature, secret, new Date(payload.expires * 1000))).toBe(false);
   });
 
+  it("accepts the new numeric order format while retaining legacy links", () => {
+    const numeric = { ...payload, orderNumber: "08000" };
+    const signature = signProofAccess(numeric, secret);
+    expect(verifyProofAccess(numeric, signature, secret, new Date((numeric.expires - 1) * 1000))).toBe(true);
+    expect(() => signProofAccess(payload, secret)).not.toThrow();
+  });
+
   it.each(["", "not-hex", "a".repeat(63), "a".repeat(66)])(
     "fails closed for malformed signature %s",
     (signature) => {

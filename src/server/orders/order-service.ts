@@ -117,7 +117,7 @@ export function createOrderService({
     current(): Promise<Readonly<{ revision?: number; registry: ProductRegistryDocument }>>;
   }>;
   now?: () => Date;
-  createOrderNumber?: () => string;
+  createOrderNumber?: () => string | Promise<string>;
 }) {
   return {
     async createOrder(sessionId: string, idempotencyKey: string, reviewed: ReviewedOrderExpectation): Promise<PaymentOrderCreationResult> {
@@ -199,7 +199,7 @@ export function createOrderService({
             shipping,
             attribution: reviewed.attribution ?? null,
             idempotencyKey,
-            orderNumber: makeOrderNumber(),
+            orderNumber: await makeOrderNumber(),
             now: transactionTime,
           });
           return toPaymentStartDTO(order);

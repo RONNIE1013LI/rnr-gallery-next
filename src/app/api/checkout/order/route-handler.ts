@@ -21,6 +21,7 @@ import {
   type PaymentStartDTO,
   type PaymentOrderCreationResult,
 } from "@/server/orders/order-service";
+import { allocateOrderNumber } from "@/server/orders/order-number";
 import {
   createShippingService,
   selectShippingProvider,
@@ -60,13 +61,15 @@ class CheckoutAccessError extends Error {
 }
 
 function defaults(): Dependencies {
-  const repository = createDrizzleOrderRepository(getDatabase());
+  const database = getDatabase();
+  const repository = createDrizzleOrderRepository(database);
   return {
     repository,
     orderService: createOrderService({
       repository,
       shippingService: createShippingService({ provider: selectShippingProvider() }),
       productRegistryService: getProductRegistryRuntime(),
+      createOrderNumber: () => allocateOrderNumber(database),
     }),
     getOptionalSession,
   };

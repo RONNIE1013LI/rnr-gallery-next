@@ -2,7 +2,7 @@ import { createHmac, timingSafeEqual } from "node:crypto";
 import { z } from "zod";
 
 const proofAccessSchema = z.object({
-  orderNumber: z.string().regex(/^RNR-\d{4}-[A-Z0-9]+$/),
+  orderNumber: z.string().regex(/^(?:\d{5,}|RNR-\d{4}-[A-Z0-9]+)$/),
   fileId: z.string().uuid(),
   expires: z.number().int().positive(),
 }).strict();
