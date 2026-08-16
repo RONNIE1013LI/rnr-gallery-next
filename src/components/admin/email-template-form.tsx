@@ -2,6 +2,11 @@
 
 import { FormEvent, useState } from "react";
 import { createClientId } from "@/lib/client-id";
+import {
+  customerEmailSignatureKeys,
+  renderCustomerEmailSignature,
+  type CustomerEmailSignatureValues,
+} from "@/server/notifications/customer-email-signature";
 import styles from "./admin.module.css";
 
 export type AdminEmailTemplateEntry = Readonly<{
@@ -34,11 +39,26 @@ function preview(value: string) {
   ));
 }
 
-function EmailTemplateEditor({ entry, canPublish }: Readonly<{
+function CustomerSignaturePreview({ values, siteUrl }: Readonly<{
+  values: Partial<CustomerEmailSignatureValues>;
+  siteUrl: string;
+}>) {
+  const signature = renderCustomerEmailSignature(values, siteUrl);
+  return (
+    <section className={styles.signaturePreview} aria-label="Live signature preview">
+      <h3>Live signature preview</h3>
+      <p>Shows the current editing values. Save or publish separately.</p>
+      <div dangerouslySetInnerHTML={{ __html: signature.html }} />
+    </section>
+  );
+}
+
+function EmailTemplateEditor({ entry, canPublish, value, onValueChange }: Readonly<{
   entry: AdminEmailTemplateEntry;
   canPublish: boolean;
+  value: string;
+  onValueChange: (value: string) => void;
 }>) {
-  const [value, setValue] = useState(entry.draftValue);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
 
@@ -73,7 +93,7 @@ function EmailTemplateEditor({ entry, canPublish }: Readonly<{
     maxLength: entry.maxLength,
     required: true,
     disabled: pending,
-    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => setValue(event.target.value),
+    onChange: (event: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => onValueChange(event.target.value),
   };
 
   return (
@@ -93,10 +113,12 @@ function EmailTemplateEditor({ entry, canPublish }: Readonly<{
         <span>{value.length} / {entry.maxLength}</span>
         <span>{entry.updatedAt ? `Last draft: ${entry.updatedByEmail ?? "Unknown administrator"}` : "Using code default"}</span>
       </div>
-      <div className={styles.contentPreview}>
-        <strong>Sample preview</strong>
-        <p>{preview(value)}</p>
-      </div>
+      {entry.group !== "Customer email signature" ? (
+        <div className={styles.contentPreview}>
+          <strong>Sample preview</strong>
+          <p>{preview(value)}</p>
+        </div>
+      ) : null}
       <p className={styles.liveValue}>Live: {entry.publishedValue}</p>
       <div className={styles.contentActions}>
         <button type="submit" disabled={pending}>Save draft</button>
@@ -107,20 +129,42 @@ function EmailTemplateEditor({ entry, canPublish }: Readonly<{
   );
 }
 
-export function EmailTemplateForm({ entries, canPublish }: Readonly<{
+export function EmailTemplateForm({ entries, canPublish, siteUrl }: Readonly<{
   entries: readonly AdminEmailTemplateEntry[];
   canPublish: boolean;
+  siteUrl: string;
 }>) {
+  const [values, setValues] = useState<Record<string, string>>(() => Object.fromEntries(
+    entries.map((entry) => [entry.key, entry.draftValue]),
+  ));
   const groups = [...new Set(entries.map((entry) => entry.group))];
   if (!groups.length) return <p className={styles.emptyState}>No email templates are configured.</p>;
+  const signatureValues = Object.fromEntries(customerEmailSignatureKeys.map((key) => [
+    key,
+    values[key] ?? "",
+  ])) as Partial<CustomerEmailSignatureValues>;
   return (
     <div className={styles.contentGroups}>
       {groups.map((group) => (
         <section key={group} className={styles.contentGroup}>
           <h2>{group}</h2>
-          <div>{entries.filter((entry) => entry.group === group).map((entry) => (
-            <EmailTemplateEditor key={entry.key} entry={entry} canPublish={canPublish} />
-          ))}</div>
+          <div>
+            {group === "Customer email signature" ? (
+              <CustomerSignaturePreview values={signatureValues} siteUrl={siteUrl} />
+            ) : null}
+            {entries.filter((entry) => entry.group === group).map((entry) => (
+              <EmailTemplateEditor
+                key={entry.key}
+                entry={entry}
+                canPublish={canPublish}
+                value={values[entry.key] ?? entry.draftValue}
+                onValueChange={(value) => setValues((current) => ({
+                  ...current,
+                  [entry.key]: value,
+                }))}
+              />
+            ))}
+          </div>
         </section>
       ))}
     </div>

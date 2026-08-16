@@ -26,7 +26,11 @@ export default async function AdminEmailTemplatesPage() {
         </div>
       </header>
       {!canPublish ? <p className={styles.safetyBanner}>Staff can save drafts. An Admin must publish email changes.</p> : null}
-      <EmailTemplateForm entries={entries} canPublish={canPublish} />
+      <EmailTemplateForm
+        entries={entries}
+        canPublish={canPublish}
+        siteUrl={process.env.BETTER_AUTH_URL ?? "http://192.168.4.199:3000"}
+      />
     </section>
   );
 }

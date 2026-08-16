@@ -363,6 +363,31 @@
   font-size: 12px;
 }
 
+.signaturePreview {
+  padding: 18px;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: #fff;
+}
+
+.signaturePreview > h3,
+.signaturePreview > p {
+  margin: 0;
+}
+
+.signaturePreview > p {
+  margin-top: 4px;
+  color: var(--admin-muted);
+  font-size: 12px;
+}
+
+.signaturePreview > div {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid #e1e1e4;
+}
+
 .contentPreview summary {
   cursor: pointer;
   font-weight: 650;
