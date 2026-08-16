@@ -74,4 +74,37 @@ describe("BlobPrivateUploadStore", () => {
       token: "vercel_blob_rw_test",
     });
   });
+
+  it("stores a PDF in private Blob storage only when explicitly allowed", async () => {
+    const put = vi.fn().mockResolvedValue({ pathname: "private-uploads/upload-id.bin" });
+    const store = new BlobPrivateUploadStore(
+      "vercel_blob_rw_test",
+      { put, get: vi.fn(), del: vi.fn() },
+      () => "11111111-1111-4111-8111-111111111111",
+    );
+    const pdf = new File(
+      [new TextEncoder().encode("%PDF-1.7\n")],
+      "bank-receipt.pdf",
+      { type: "application/pdf" },
+    );
+
+    await expect(store.save(pdf)).rejects.toThrow(
+      "Choose a JPG, PNG, WebP, HEIC or HEIF image.",
+    );
+    expect(put).not.toHaveBeenCalled();
+
+    await expect(store.save(pdf, { allowPdf: true })).resolves.toMatchObject({
+      originalName: "bank-receipt.pdf",
+      mimeType: "application/pdf",
+    });
+    expect(put).toHaveBeenCalledWith(
+      "private-uploads/11111111-1111-4111-8111-111111111111.bin",
+      expect.any(Buffer),
+      expect.objectContaining({
+        access: "private",
+        contentType: "application/pdf",
+        token: "vercel_blob_rw_test",
+      }),
+    );
+  });
 });

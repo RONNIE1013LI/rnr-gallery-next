@@ -4,6 +4,7 @@ import { del as deleteBlob, get as getBlob, put as putBlob } from "@vercel/blob"
 import {
   hasImageSignature,
   InvalidUploadError,
+  type PrivateUploadValidationOptions,
   type PrivateUploadReference,
   type UploadFile,
   validatePrivateUpload,
@@ -28,14 +29,17 @@ export class BlobPrivateUploadStore {
     private readonly createId: () => string = randomUUID,
   ) {}
 
-  async save(file: UploadFile): Promise<PrivateUploadReference> {
-    validatePrivateUpload(file);
+  async save(
+    file: UploadFile,
+    options: PrivateUploadValidationOptions = {},
+  ): Promise<PrivateUploadReference> {
+    validatePrivateUpload(file, options);
 
     const id = this.createId();
     const originalName = basename(file.name).replace(/[\u0000-\u001f\u007f]/g, "");
     const bytes = Buffer.from(await file.arrayBuffer());
-    if (!hasImageSignature(bytes, file.type)) {
-      throw new InvalidUploadError("The image contents do not match the selected file type.");
+    if (!hasImageSignature(bytes, file.type, options)) {
+      throw new InvalidUploadError("The file contents do not match the selected file type.");
     }
 
     const storageKey = `private-uploads/${id}.bin`;

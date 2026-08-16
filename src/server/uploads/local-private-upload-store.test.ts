@@ -111,6 +111,46 @@ describe("LocalPrivateUploadStore", () => {
 
     await expect(store.save(
       new File(["not a jpeg"], "disguised.jpg", { type: "image/jpeg" }),
-    )).rejects.toThrow("image contents do not match");
+    )).rejects.toThrow("contents do not match");
+  });
+
+  it("keeps PDF uploads disabled unless the caller explicitly allows them", async () => {
+    const store = new LocalPrivateUploadStore(await temporaryDirectory());
+    const pdf = new File(
+      [new TextEncoder().encode("%PDF-1.7\n")],
+      "bank-receipt.pdf",
+      { type: "application/pdf" },
+    );
+
+    await expect(store.save(pdf)).rejects.toThrow(
+      "Choose a JPG, PNG, WebP, HEIC or HEIF image.",
+    );
+  });
+
+  it("stores a PDF only when the caller explicitly allows it", async () => {
+    const store = new LocalPrivateUploadStore(
+      await temporaryDirectory(),
+      () => "11111111-1111-4111-8111-111111111111",
+    );
+    const pdf = new File(
+      [new TextEncoder().encode("%PDF-1.7\n")],
+      "bank-receipt.pdf",
+      { type: "application/pdf" },
+    );
+
+    await expect(store.save(pdf, { allowPdf: true })).resolves.toMatchObject({
+      originalName: "bank-receipt.pdf",
+      mimeType: "application/pdf",
+      size: 9,
+    });
+  });
+
+  it("rejects a PDF whose bytes do not match its claimed file type", async () => {
+    const store = new LocalPrivateUploadStore(await temporaryDirectory());
+
+    await expect(store.save(
+      new File(["not pdf"], "disguised.pdf", { type: "application/pdf" }),
+      { allowPdf: true },
+    )).rejects.toThrow("file contents do not match");
   });
 });

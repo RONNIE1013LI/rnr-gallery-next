@@ -3,13 +3,17 @@ import { mkdir, open, readFile, rm } from "node:fs/promises";
 import { basename, isAbsolute, join, resolve } from "node:path";
 
 const MAX_UPLOAD_BYTES = 25 * 1024 * 1024;
-const ACCEPTED_MIME_TYPES = new Set([
+const ACCEPTED_IMAGE_MIME_TYPES = new Set([
   "image/jpeg",
   "image/png",
   "image/webp",
   "image/heic",
   "image/heif",
 ]);
+
+export type PrivateUploadValidationOptions = Readonly<{
+  allowPdf?: boolean;
+}>;
 
 export type UploadFile = Readonly<{
   name: string;
@@ -18,12 +22,19 @@ export type UploadFile = Readonly<{
   arrayBuffer(): Promise<ArrayBuffer>;
 }>;
 
-export function validatePrivateUpload(file: Pick<UploadFile, "type" | "size">) {
-  if (!ACCEPTED_MIME_TYPES.has(file.type)) {
-    throw new InvalidUploadError("Choose a JPG, PNG, WebP, HEIC or HEIF image.");
+export function validatePrivateUpload(
+  file: Pick<UploadFile, "type" | "size">,
+  options: PrivateUploadValidationOptions = {},
+) {
+  const accepted = ACCEPTED_IMAGE_MIME_TYPES.has(file.type) ||
+    (options.allowPdf === true && file.type === "application/pdf");
+  if (!accepted) {
+    throw new InvalidUploadError(options.allowPdf
+      ? "Choose a JPG, PNG, WebP, HEIC, HEIF or PDF file."
+      : "Choose a JPG, PNG, WebP, HEIC or HEIF image.");
   }
   if (!Number.isInteger(file.size) || file.size < 1 || file.size > MAX_UPLOAD_BYTES) {
-    throw new InvalidUploadError("Each image must be between 1 byte and 25 MB.");
+    throw new InvalidUploadError("Each file must be between 1 byte and 25 MB.");
   }
 }
 
@@ -47,7 +58,11 @@ function ascii(bytes: Uint8Array, start: number, length: number) {
   return String.fromCharCode(...bytes.subarray(start, start + length));
 }
 
-export function hasImageSignature(bytes: Uint8Array, mimeType: string) {
+export function hasImageSignature(
+  bytes: Uint8Array,
+  mimeType: string,
+  options: PrivateUploadValidationOptions = {},
+) {
   if (mimeType === "image/jpeg") {
     return bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff;
   }
@@ -67,6 +82,9 @@ export function hasImageSignature(bytes: Uint8Array, mimeType: string) {
       if (accepted.has(ascii(bytes, offset, 4))) return true;
     }
   }
+  if (mimeType === "application/pdf" && options.allowPdf === true) {
+    return bytes.length >= 5 && ascii(bytes, 0, 5) === "%PDF-";
+  }
   return false;
 }
 
@@ -76,14 +94,17 @@ export class LocalPrivateUploadStore {
     private readonly createId: () => string = randomUUID,
   ) {}
 
-  async save(file: UploadFile): Promise<PrivateUploadReference> {
-    validatePrivateUpload(file);
+  async save(
+    file: UploadFile,
+    options: PrivateUploadValidationOptions = {},
+  ): Promise<PrivateUploadReference> {
+    validatePrivateUpload(file, options);
 
     const id = this.createId();
     const originalName = basename(file.name).replace(/[\u0000-\u001f\u007f]/g, "");
     const bytes = Buffer.from(await file.arrayBuffer());
-    if (!hasImageSignature(bytes, file.type)) {
-      throw new InvalidUploadError("The image contents do not match the selected file type.");
+    if (!hasImageSignature(bytes, file.type, options)) {
+      throw new InvalidUploadError("The file contents do not match the selected file type.");
     }
     const storageKey = `${id}.bin`;
     const reference: PrivateUploadReference = Object.freeze({
