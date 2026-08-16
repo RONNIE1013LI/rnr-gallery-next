@@ -1183,7 +1183,7 @@
   inset: 0;
   z-index: 1000;
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-rows: auto auto minmax(0, 1fr);
   color: #1d1d1f;
   background: #e4ebf2;
 }
@@ -1258,7 +1258,28 @@
   display: grid;
   min-width: 0;
   min-height: 0;
-  grid-template-columns: minmax(320px, 390px) minmax(620px, 1fr);
+  grid-template-columns: var(--invoice-editor-width, 440px) 10px minmax(0, 1fr);
+}
+
+.invoiceWorkspaceViewSwitch {
+  display: none;
+}
+
+.invoiceWorkspaceSeparator {
+  position: relative;
+  z-index: 1;
+  min-width: 10px;
+  border: 0;
+  border-right: 1px solid #c8d0d8;
+  border-left: 1px solid #c8d0d8;
+  outline: 0;
+  background: #dce3ea;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.invoiceWorkspaceSeparator:focus-visible {
+  box-shadow: inset 0 0 0 2px #173247;
 }
 
 .invoiceWorkspaceEditor {
@@ -1478,8 +1499,43 @@
 
   .invoiceWorkspaceLayout {
     grid-template-columns: 1fr;
+    min-height: 0;
     overflow-x: hidden;
     overflow-y: auto;
+  }
+
+  .invoiceWorkspaceViewSwitch {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    padding: 8px 12px;
+    border-bottom: 1px solid #c8d0d8;
+    background: #fff;
+  }
+
+  .invoiceWorkspaceViewSwitch button {
+    min-height: 44px;
+    border: 1px solid #aeb8c1;
+    border-radius: 4px;
+    color: #173247;
+    background: #fff;
+    font: inherit;
+    font-weight: 720;
+  }
+
+  .invoiceWorkspaceViewSwitch button[aria-pressed="true"] {
+    border-color: #173247;
+    color: #fff;
+    background: #173247;
+  }
+
+  .invoiceWorkspaceSeparator {
+    display: none;
+  }
+
+  .invoiceWorkspaceLayout[data-mobile-view="edit"] .invoicePreviewStage,
+  .invoiceWorkspaceLayout[data-mobile-view="preview"] .invoiceWorkspaceEditor {
+    display: none;
   }
 
   .invoiceWorkspaceEditor,

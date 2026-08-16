@@ -23,6 +23,37 @@ afterEach(() => {
 });
 
 describe("InvoiceWorkspace", () => {
+  it("resizes the desktop editor with accessible bounds and resets after reopening", () => {
+    const first = render(<Harness />);
+    const separator = screen.getByRole("separator", { name: "Resize invoice editor" });
+
+    expect(separator).toHaveAttribute("aria-valuemin", "320");
+    expect(separator).toHaveAttribute("aria-valuemax", "720");
+    expect(separator).toHaveAttribute("aria-valuenow", "440");
+    fireEvent.keyDown(separator, { key: "ArrowRight" });
+    expect(screen.getByTestId("invoice-workspace-layout")).toHaveStyle({ "--invoice-editor-width": "460px" });
+
+    first.unmount();
+    render(<Harness />);
+    expect(screen.getByRole("separator", { name: "Resize invoice editor" })).toHaveAttribute("aria-valuenow", "440");
+  });
+
+  it("switches mobile views without losing unsaved draft values", () => {
+    render(<Harness />);
+    const edit = screen.getByRole("button", { name: "Edit invoice" });
+    const preview = screen.getByRole("button", { name: "Preview invoice" });
+
+    expect(edit).toHaveAttribute("aria-pressed", "true");
+    expect(preview).toHaveAttribute("aria-pressed", "false");
+    fireEvent.change(screen.getByLabelText("Customer Name"), { target: { value: "Updated customer" } });
+    fireEvent.click(preview);
+    expect(screen.getByTestId("invoice-workspace-layout")).toHaveAttribute("data-mobile-view", "preview");
+    expect(preview).toHaveAttribute("aria-pressed", "true");
+    expect(within(screen.getByLabelText("Invoice live preview")).getAllByText("Updated customer").length).toBeGreaterThan(0);
+    fireEvent.click(edit);
+    expect(screen.getByLabelText("Customer Name")).toHaveValue("Updated customer");
+  });
+
   it("edits an unsaved invoice and updates its live preview", () => {
     render(<Harness />);
     expect(screen.getByText("Tax Invoice # INV-DRAFT")).toBeInTheDocument();

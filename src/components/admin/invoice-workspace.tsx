@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ResizableSeparator } from "@/components/shared/resizable-separator";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { calculateInvoiceTotals } from "@/server/invoices/invoice-domain";
 import { InvoicePreview } from "./invoice-preview";
@@ -68,6 +69,8 @@ export function InvoiceWorkspace({
 }>) {
   const [feedback, setFeedback] = useState("");
   const [downloading, setDownloading] = useState(false);
+  const [editorWidth, setEditorWidth] = useState(440);
+  const [mobileView, setMobileView] = useState<"edit" | "preview">("edit");
   const totals = useMemo(() => calculateInvoiceTotals(draft, gstRateBasisPoints), [draft, gstRateBasisPoints]);
 
   function field<K extends keyof Omit<InvoiceWorkspaceDraft, "items">>(key: K, value: InvoiceWorkspaceDraft[K]) {
@@ -111,7 +114,16 @@ export function InvoiceWorkspace({
         <div><span>Invoice</span><h2 id="invoice-workspace-title">Tax invoice preview</h2></div>
         <div><button type="button" onClick={download} disabled={downloading}>{downloading ? "Preparing…" : "Download PDF"}</button><button type="button" className={styles.secondaryAdminButton} onClick={onClose}>Close</button></div>
       </header>
-      <div className={styles.invoiceWorkspaceLayout}>
+      <div className={styles.invoiceWorkspaceViewSwitch} role="group" aria-label="Invoice workspace view">
+        <button type="button" aria-pressed={mobileView === "edit"} onClick={() => setMobileView("edit")}>Edit invoice</button>
+        <button type="button" aria-pressed={mobileView === "preview"} onClick={() => setMobileView("preview")}>Preview invoice</button>
+      </div>
+      <div
+        className={styles.invoiceWorkspaceLayout}
+        data-testid="invoice-workspace-layout"
+        data-mobile-view={mobileView}
+        style={{ "--invoice-editor-width": `${editorWidth}px` } as React.CSSProperties}
+      >
         <div className={styles.invoiceWorkspaceEditor}>
           <section><h3>Invoice details</h3><div className={styles.invoiceWorkspaceGrid}>
             <label><span>Invoice No.</span><input value={invoiceNumber} readOnly /></label>
@@ -145,6 +157,16 @@ export function InvoiceWorkspace({
           </div></section>
           <p aria-live="polite">{feedback}</p>
         </div>
+        <ResizableSeparator
+          className={styles.invoiceWorkspaceSeparator}
+          label="Resize invoice editor"
+          value={editorWidth}
+          min={320}
+          max={720}
+          step={20}
+          direction={1}
+          onChange={setEditorWidth}
+        />
         <div className={styles.invoicePreviewStage}><InvoicePreview invoiceNumber={invoiceNumber} draft={draft} currency={currency} gstRateBasisPoints={gstRateBasisPoints} totals={totals} /></div>
       </div>
     </div>
