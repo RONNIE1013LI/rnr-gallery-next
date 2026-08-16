@@ -1,8 +1,9 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { ClipboardEvent, FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClientId } from "@/lib/client-id";
+import { parseCustomerBlock } from "@/domain/forms/customer-block-parser";
 import styles from "./admin.module.css";
 
 export type ProductionAssignee = Readonly<{
@@ -61,6 +62,39 @@ export function ProductionJobForm({
   const [nextItemKey, setNextItemKey] = useState(1);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [pasteFeedback, setPasteFeedback] = useState("");
+  const customerNameRef = useRef<HTMLInputElement>(null);
+  const customerEmailRef = useRef<HTMLInputElement>(null);
+  const customerPhoneRef = useRef<HTMLInputElement>(null);
+  const deliveryMethodRef = useRef<HTMLSelectElement>(null);
+  const deliveryAddressRef = useRef<HTMLTextAreaElement>(null);
+
+  function pasteCustomerDetails(event: ClipboardEvent<HTMLTextAreaElement>) {
+    const textValue = event.clipboardData.getData("text/plain");
+    if (!textValue.includes("\n")) return;
+    event.preventDefault();
+    const parsed = parseCustomerBlock(
+      textValue,
+      deliveryMethodRef.current?.value ?? "post",
+    );
+    if (deliveryAddressRef.current) deliveryAddressRef.current.value = parsed.deliveryAddress;
+    const filled: string[] = [];
+    if (parsed.customerName && customerNameRef.current && !customerNameRef.current.value.trim()) {
+      customerNameRef.current.value = parsed.customerName;
+      filled.push("name");
+    }
+    if (parsed.customerPhone && customerPhoneRef.current && !customerPhoneRef.current.value.trim()) {
+      customerPhoneRef.current.value = parsed.customerPhone;
+      filled.push("phone");
+    }
+    if (parsed.customerEmail && customerEmailRef.current && !customerEmailRef.current.value.trim()) {
+      customerEmailRef.current.value = parsed.customerEmail;
+      filled.push("email");
+    }
+    setPasteFeedback(filled.length
+      ? `Filled ${filled.join(", ")}; check the delivery address before submitting.`
+      : "No empty customer fields were changed; check the delivery address before submitting.");
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -140,9 +174,9 @@ export function ProductionJobForm({
           <p>Manual orders remain independent from online checkout and payment records.</p>
         </div>
         <div className={styles.formGrid}>
-          <label><span>Customer name</span><input name="customerName" required maxLength={190} disabled={pending} /></label>
-          <label><span>Email</span><input name="customerEmail" type="email" maxLength={320} disabled={pending} /></label>
-          <label><span>Phone</span><input name="customerPhone" type="tel" maxLength={80} disabled={pending} /></label>
+          <label><span>Customer name</span><input ref={customerNameRef} name="customerName" required maxLength={190} disabled={pending} /></label>
+          <label><span>Email</span><input ref={customerEmailRef} name="customerEmail" type="email" maxLength={320} disabled={pending} /></label>
+          <label><span>Phone</span><input ref={customerPhoneRef} name="customerPhone" type="tel" maxLength={80} disabled={pending} /></label>
           <label><span>Web order number</span><input name="webOrderNumber" maxLength={190} disabled={pending} /></label>
           <label><span>Customer source</span><select name="customerSource" defaultValue="messenger" disabled={pending}>
             <option value="phone">Phone</option><option value="messenger">Messenger</option><option value="email">Email</option>
@@ -183,12 +217,13 @@ export function ProductionJobForm({
         <div className={styles.formSectionHeading}><div><span>03</span><h2>Production</h2></div></div>
         <div className={styles.formGrid}>
           <label><span>Needed date</span><input name="neededDate" type="date" defaultValue={defaultNeededDate()} required disabled={pending} /></label>
-          <label><span>Delivery</span><select name="deliveryMethod" defaultValue="post" disabled={pending}>
+          <label><span>Delivery</span><select ref={deliveryMethodRef} name="deliveryMethod" defaultValue="post" disabled={pending}>
             <option value="post">Post</option><option value="pickup">Pickup</option>
             <option value="delivery">Delivery</option><option value="courier">Courier</option>
             <option value="australia_shipping">Australia shipping</option><option value="email">Email</option><option value="other">Other</option>
           </select></label>
-          <label className={styles.fullField}><span>Delivery address</span><textarea name="deliveryAddress" rows={3} maxLength={5000} disabled={pending} /></label>
+          <label className={styles.fullField}><span>Delivery address</span><textarea ref={deliveryAddressRef} name="deliveryAddress" rows={3} maxLength={5000} onPaste={pasteCustomerDetails} disabled={pending} /></label>
+          {pasteFeedback ? <p className={`${styles.fieldHint} ${styles.fullField}`} role="status">{pasteFeedback}</p> : null}
           <label><span>Assign to</span><select name="assignedUserId" defaultValue="" disabled={pending}><option value="">Unassigned</option>{assignees.map((person) => <option key={person.id} value={person.id}>{person.name} · {person.email}</option>)}</select></label>
           <label><span>Production status</span><select name="manualStatus" defaultValue="new" disabled={pending}>{["new", "designing", "awaiting_customer", "ready_to_print", "printing", "on_hold", "shipped", "completed", "cancelled"].map((status) => <option value={status} key={status}>{status.replaceAll("_", " ")}</option>)}</select></label>
           <label className={styles.checkboxField}><input name="urgent" type="checkbox" disabled={pending} /><span>Urgent order confirmed with customer</span></label>

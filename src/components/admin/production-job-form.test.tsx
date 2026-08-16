@@ -41,6 +41,33 @@ describe("ProductionJobForm", () => {
     expect(screen.getByLabelText("Completed")).toBeInTheDocument();
   });
 
+  it("fills only empty customer fields from a pasted NZ delivery block", () => {
+    render(<ProductionJobForm assignees={assignees} canManageFinance />);
+    fireEvent.paste(screen.getByLabelText("Delivery address"), {
+      clipboardData: { getData: () => "Litea Murtagh\n2/6 Ryburn Road, Mount Wellington, Auckland 1062\n027-7199394\nLiteamurtagh@live.com" },
+    });
+    expect(screen.getByLabelText("Customer name")).toHaveValue("Litea Murtagh");
+    expect(screen.getByLabelText("Phone")).toHaveValue("+64277199394");
+    expect(screen.getByLabelText("Email")).toHaveValue("liteamurtagh@live.com");
+    expect(screen.getByLabelText("Delivery address")).toHaveValue(
+      "2/6 Ryburn Road, Mount Wellington, Auckland 1062",
+    );
+  });
+
+  it("does not overwrite existing customer fields when pasting", () => {
+    render(<ProductionJobForm assignees={assignees} canManageFinance />);
+    fireEvent.change(screen.getByLabelText("Customer name"), { target: { value: "Existing Name" } });
+    fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "+64210000000" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "existing@example.com" } });
+    fireEvent.paste(screen.getByLabelText("Delivery address"), {
+      clipboardData: { getData: () => "New Name\n8 George Street Sydney NSW 2000\n0412 345 678\nnew@example.com" },
+    });
+    expect(screen.getByLabelText("Customer name")).toHaveValue("Existing Name");
+    expect(screen.getByLabelText("Phone")).toHaveValue("+64210000000");
+    expect(screen.getByLabelText("Email")).toHaveValue("existing@example.com");
+    expect(screen.getByLabelText("Delivery address")).toHaveValue("8 George Street Sydney NSW 2000");
+  });
+
   it("creates a manual job with safe staff finance defaults and opens the detail", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       result: "created",
