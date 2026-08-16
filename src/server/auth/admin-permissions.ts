@@ -27,7 +27,8 @@ export type AdminPermission =
   | "manage_production_views"
   | "view_production_reports"
   | "export_production_jobs"
-  | "manage_production_fields";
+  | "manage_production_fields"
+  | "use_reply_assistant";
 
 const staffPermissions = new Set<AdminPermission>([
   "access_admin",
@@ -44,6 +45,7 @@ const staffPermissions = new Set<AdminPermission>([
   "review_production_proofs",
   "manage_production_views",
   "view_production_reports",
+  "use_reply_assistant",
 ]);
 
 export function isAdminRole(value: unknown): value is AdminRole {

@@ -30,6 +30,7 @@ describe("admin permissions", () => {
       "manage_production_views",
       "view_production_reports",
       "export_production_jobs",
+      "use_reply_assistant",
     ] as const) {
       expect(hasAdminPermission("admin", permission)).toBe(true);
     }
@@ -51,6 +52,7 @@ describe("admin permissions", () => {
       "review_production_proofs",
       "manage_production_views",
       "view_production_reports",
+      "use_reply_assistant",
     ] as const) {
       expect(hasAdminPermission("staff", permission)).toBe(true);
     }
