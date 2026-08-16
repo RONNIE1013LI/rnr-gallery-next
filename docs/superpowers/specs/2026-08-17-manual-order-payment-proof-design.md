@@ -44,7 +44,8 @@ The original manual-job idempotency key, created job ID and upload idempotency k
 
 ## File validation and storage
 
-- Extend the private upload store to validate PDF MIME type and the `%PDF-` file signature in addition to the current image signatures.
+- Extend the private upload store with an explicit `allowPdf` option that validates PDF MIME type and the `%PDF-` file signature. The option defaults to `false`, so customer-photo and all existing image-upload flows remain image-only.
+- The authenticated admin/forms job-file routes set `allowPdf` only after parsing `kind === "payment_proof"`; no public or checkout upload route enables it.
 - Extend the production-file validation so PDF is allowed only when the file kind is `payment_proof`; customer photos, design drafts and print files keep their existing image-only rule.
 - Continue using private storage permissions, opaque storage keys and authenticated download routes.
 - A payment proof remains finance-sensitive: upload, listing and download require the existing finance permissions in addition to the relevant file permission.
