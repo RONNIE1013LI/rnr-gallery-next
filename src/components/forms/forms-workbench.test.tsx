@@ -5,14 +5,20 @@ import { parseFormWorkbenchQuery } from "@/server/forms/forms-workbench-service"
 import { formOrderRow } from "./forms-test-data";
 import { FormsWorkbench } from "./forms-workbench";
 
-const { push } = vi.hoisted(() => ({ push: vi.fn() }));
-vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+const { push, replace } = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace }) }));
 vi.mock("./forms-job-drawer", () => ({
   FormsJobDrawer: ({ jobId, onClose }: { jobId: string; onClose: () => void }) => <div role="dialog" aria-label={`Drawer ${jobId}`}><button onClick={onClose}>Close drawer</button></div>,
 }));
+vi.mock("./forms-order-entry-drawer", () => ({
+  FormsOrderEntryDrawer: ({ onClose }: { onClose: () => void }) => <div role="dialog" aria-label="Order entry"><button onClick={onClose}>Close order entry</button></div>,
+}));
 
 describe("FormsWorkbench", () => {
-  beforeEach(() => push.mockReset());
+  beforeEach(() => {
+    push.mockReset();
+    replace.mockReset();
+  });
 
   it("renders source-style list controls, table, mobile cards and footer", () => {
     render(<FormsWorkbench
@@ -48,5 +54,27 @@ describe("FormsWorkbench", () => {
     />);
     expect(screen.getByRole("heading", { name: "No orders match these filters." })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Clear filters" })).toHaveAttribute("href", "/order-system");
+  });
+
+  it("closes manual entry without losing the Data list query or table", () => {
+    render(<FormsWorkbench
+      result={{ items: [formOrderRow], total: 40, page: 2, pageSize: 20, pageCount: 2 }}
+      query={parseFormWorkbenchQuery({ q: "07188", page: "2" })}
+      canExport
+      canViewFinance
+      orderEntry={{
+        assignees: [],
+        canManageFinance: true,
+        submittedBy: "operator@example.test",
+        productTitles: ["Canvas"],
+        customFields: [],
+        invoiceBusiness: { name: "R&R Gallery", address: "Auckland", email: "orders@example.test", phone: "+64", website: "https://example.test", gstNumber: "GST", bankAccount: "00" },
+      }}
+    />);
+
+    expect(screen.getByRole("dialog", { name: "Order entry" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close order entry" }));
+    expect(replace).toHaveBeenCalledWith("/order-system?q=07188&page=2");
+    expect(screen.getByRole("table", { name: "Orders data list" })).toBeInTheDocument();
   });
 });

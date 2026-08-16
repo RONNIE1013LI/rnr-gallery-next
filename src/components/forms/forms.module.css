@@ -264,6 +264,54 @@
   box-shadow: -18px 0 50px rgb(10 20 15 / 18%);
 }
 
+.orderEntryDrawer {
+  display: grid;
+  width: var(--entry-drawer-width);
+  max-width: calc(100vw - 280px);
+  height: 100dvh;
+  grid-template-columns: 10px minmax(0, 1fr);
+  overflow: hidden;
+  border-left: 1px solid var(--forms-border);
+  background: var(--forms-canvas);
+  box-shadow: -18px 0 50px rgb(10 20 15 / 18%);
+  animation: order-entry-slide-in 180ms ease-out;
+}
+
+.orderEntryDrawerPanel {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.orderEntryResizeHandle {
+  position: relative;
+  z-index: 2;
+  min-width: 10px;
+  border: 0;
+  border-right: 1px solid #aeb7c0;
+  outline: 0;
+  background: #dbe2e9;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.orderEntryResizeHandle:focus-visible {
+  box-shadow: inset 0 0 0 2px #173247;
+}
+
+.orderEntryDrawerContent {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 12px;
+}
+
+@keyframes order-entry-slide-in {
+  from { transform: translateX(24px); opacity: .7; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
 .drawerHeader {
   display: flex;
   min-height: 58px;
@@ -387,6 +435,14 @@
 }
 
 @media (max-width: 700px) {
+  .orderEntryDrawer {
+    max-width: calc(100vw - 20px);
+  }
+
+  .orderEntryDrawerContent {
+    padding: 6px;
+  }
+
   .jobDrawer {
     width: 100vw;
     border-left: 0;

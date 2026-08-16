@@ -12,6 +12,7 @@ import type {
 import { encodeFormFilterCondition } from "@/server/forms/forms-workbench-service";
 import { FormsFilterBuilder } from "./forms-filter-builder";
 import { FormsJobDrawer } from "./forms-job-drawer";
+import { FormsOrderEntryDrawer } from "./forms-order-entry-drawer";
 import { FormsOrderCards } from "./forms-order-cards";
 import { FormsOrderTable } from "./forms-order-table";
 import { FormsSavedViews } from "./forms-saved-views";
@@ -58,6 +59,7 @@ export function FormsWorkbench({
   canUploadFiles = false,
   canReviewProofs = false,
   assignees = [],
+  orderEntry,
 }: Readonly<{
   result: FormWorkbenchResult;
   query: FormWorkbenchQuery;
@@ -95,6 +97,11 @@ export function FormsWorkbench({
 
   function applyFilters(group: FormFilterGroup) {
     router.push(`/order-system${queryString({ ...query, match: group.match, conditions: group.conditions }) ? `?${queryString({ ...query, match: group.match, conditions: group.conditions })}` : ""}`);
+  }
+
+  function closeOrderEntry() {
+    const next = queryString(query, result.page);
+    router.replace(`/order-system${next ? `?${next}` : ""}`);
   }
 
   return (
@@ -222,6 +229,7 @@ export function FormsWorkbench({
         canUploadFiles={canUploadFiles}
         canReviewProofs={canReviewProofs}
       /> : null}
+      {orderEntry ? <FormsOrderEntryDrawer data={orderEntry} onClose={closeOrderEntry} /> : null}
     </section>
   );
 }
