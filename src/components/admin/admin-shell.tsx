@@ -23,6 +23,7 @@ const navigation = [
   { label: "Shipping", href: "/admin/settings/shipping", permission: "manage_shipping" },
   { label: "Payment", href: "/admin/settings/payment", permission: "manage_payment" },
   { label: "Audit Log", href: "/admin/audit", permission: "view_audit" },
+  { label: "Reply Assistant", href: "/reply-assistant", permission: "use_reply_assistant" },
 ] as const;
 
 function Navigation({ ariaLabel = "Administration", role, onNavigate }: Readonly<{

@@ -3,6 +3,7 @@ import { customerServiceApiError, noStoreJson } from "@/server/customer-service/
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
 import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
 import type { PilotMetricCounts } from "@/server/customer-service/repositories/customer-service-repository";
+import { calculatePilotMetrics } from "@/server/customer-service/metrics";
 
 export function createMetricsHandler(dependencies: Readonly<{
   enabled: boolean;
@@ -13,7 +14,7 @@ export function createMetricsHandler(dependencies: Readonly<{
     try {
       await dependencies.requirePermission("use_reply_assistant");
       if (!dependencies.enabled) return noStoreJson({ error: { code: "FEATURE_DISABLED" } }, 503);
-      return noStoreJson(await dependencies.metrics());
+      return noStoreJson(calculatePilotMetrics(await dependencies.metrics()));
     } catch (error) {
       return customerServiceApiError(error);
     }
