@@ -32,8 +32,11 @@ describe("customer email signature", () => {
 
     expect(layout).not.toBeNull();
     expect(cells).toHaveLength(2);
+    expect(cells?.[0]).toHaveAttribute("width", "84");
+    expect(cells?.[0]).toHaveStyle({ width: "84px", minWidth: "84px" });
     expect(logo).toHaveAttribute("width", "72");
     expect(logo).toHaveAttribute("height", "72");
+    expect(logo).toHaveStyle({ width: "72px", maxWidth: "72px", height: "72px" });
     expect(cells?.[1]).toHaveTextContent("Customer Service | R&R Gallery Ltd. NZ");
     expect(cells?.[1]).toHaveTextContent("customerservice@rnrgallery.com");
     expect(cells?.[1]).toHaveTextContent("rrgallery.co.nz");
