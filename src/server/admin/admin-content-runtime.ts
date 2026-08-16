@@ -20,6 +20,7 @@ export function getAdminContentRuntime() {
   const database = getDatabase();
   return Object.freeze({
     list: () => listAdminContent(database),
+    listEmailTemplates: () => listAdminContent(database, "email"),
     public: <K extends Parameters<typeof getPublicContent>[1][number]>(keys: readonly K[]) =>
       getPublicContent(database, keys),
     saveDraft: (

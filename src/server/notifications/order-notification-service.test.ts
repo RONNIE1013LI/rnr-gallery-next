@@ -135,6 +135,106 @@ describe("order notification delivery", () => {
     }));
   });
 
+  it("renders published wording without changing protected delivery data", async () => {
+    const customizedDelivery = {
+      ...delivery,
+      customerName: "Aroha <script>alert(1)</script>",
+    };
+    const repo: OrderNotificationRepository = {
+      ...repository(),
+      claimNext: vi.fn().mockResolvedValueOnce(customizedDelivery).mockResolvedValue(null),
+    };
+    const send = vi.fn().mockResolvedValue({ providerMessageId: "email-custom-123" });
+    const loadPublishedTemplates = vi.fn().mockResolvedValue({
+      "email.payment_confirmed.subject": "Receipt — {{order_number}}",
+      "email.payment_confirmed.body": "Hello {{customer_name}}.\n\nWe received {{amount}}.",
+      "email.payment_confirmed.action_label": "See receipt",
+    });
+    const service = createOrderNotificationService(repo, {
+      provider: { configured: true, send },
+      siteUrl: "https://shop.example.test",
+      orderAccessSecret,
+      loadPublishedTemplates,
+      now: () => now,
+    });
+
+    await service.deliverPending();
+
+    const message = send.mock.calls[0][0];
+    expect(message).toEqual(expect.objectContaining({
+      to: customizedDelivery.recipientEmail,
+      idempotencyKey: customizedDelivery.eventKey,
+      subject: `Receipt — ${customizedDelivery.orderNumber}`,
+      text: expect.stringContaining("We received NZ$120.75."),
+    }));
+    expect(message.text).toContain("See receipt: https://shop.example.test/orders/");
+    expect(message.html).toContain("Aroha &lt;script&gt;alert(1)&lt;/script&gt;");
+    expect(message.html).not.toContain("<script>");
+    const orderUrl = new URL(message.text.match(/https:\/\/\S+/)?.[0] ?? "");
+    expect(verifyOrderEmailAccessToken(
+      orderUrl.searchParams.get("access"),
+      customizedDelivery.orderNumber,
+      orderAccessSecret,
+      now,
+    )).toBe(true);
+    expect(loadPublishedTemplates).toHaveBeenCalledTimes(1);
+  });
+
+  it("falls back to code defaults when published templates cannot be read", async () => {
+    const repo = repository();
+    const send = vi.fn().mockResolvedValue({ providerMessageId: "email-fallback-123" });
+    const service = createOrderNotificationService(repo, {
+      provider: { configured: true, send },
+      siteUrl: "https://shop.example.test",
+      orderAccessSecret,
+      loadPublishedTemplates: vi.fn().mockRejectedValue(new Error("database unavailable")),
+      now: () => now,
+    });
+
+    await expect(service.deliverPending()).resolves.toEqual({
+      result: "processed",
+      sent: 1,
+      failed: 0,
+    });
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      subject: `Payment confirmed — ${delivery.orderNumber}`,
+      text: expect.stringContaining("Production normally takes 5 business days"),
+    }));
+  });
+
+  it("loads published templates once for a delivery batch", async () => {
+    const secondDelivery = {
+      ...delivery,
+      id: "10000000-0000-4000-8000-000000000002",
+      eventKey: "payment-confirmed:20000000-0000-4000-8000-000000000003",
+      orderId: "20000000-0000-4000-8000-000000000003",
+      orderNumber: "RNR-2026-DEF456",
+    };
+    const repo: OrderNotificationRepository = {
+      ...repository(),
+      claimNext: vi.fn()
+        .mockResolvedValueOnce(delivery)
+        .mockResolvedValueOnce(secondDelivery)
+        .mockResolvedValue(null),
+    };
+    const send = vi.fn().mockResolvedValue({ providerMessageId: "email-batch-123" });
+    const loadPublishedTemplates = vi.fn().mockResolvedValue({
+      "email.payment_confirmed.subject": "Receipt — {{order_number}}",
+    });
+    const service = createOrderNotificationService(repo, {
+      provider: { configured: true, send },
+      siteUrl: "https://shop.example.test",
+      orderAccessSecret,
+      loadPublishedTemplates,
+      now: () => now,
+    });
+
+    await service.deliverPending(5);
+
+    expect(send).toHaveBeenCalledTimes(2);
+    expect(loadPublishedTemplates).toHaveBeenCalledTimes(1);
+  });
+
   it("discards an obsolete payment failure after the order becomes paid", async () => {
     const staleFailure = {
       ...delivery,

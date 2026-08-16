@@ -7,6 +7,11 @@ import type { MarketCurrency } from "@/domain/markets/types";
 import { formatMarketMoney } from "@/domain/money";
 import { createOrderEmailAccessToken } from "@/server/orders/order-email-access";
 import {
+  defaultOrderEmailTemplateValues,
+  renderOrderEmailTemplate,
+  type OrderEmailTemplateValues,
+} from "./order-email-templates";
+import {
   EmailDeliveryError,
   type CustomerEmailMessage,
   type CustomerEmailProvider,
@@ -55,6 +60,7 @@ function orderMessage(
   siteUrl: string,
   orderAccessSecret: string,
   now: Date,
+  templateValues: Partial<OrderEmailTemplateValues>,
 ): CustomerEmailMessage {
   const orderUrl = new URL(
     event.kind === "admin_order_received"
@@ -68,46 +74,21 @@ function orderMessage(
       createOrderEmailAccessToken(event.orderNumber, orderAccessSecret, now),
     );
   }
-  let subject: string;
-  let paragraphs: readonly string[];
-
-  if (event.kind === "admin_order_received") {
-    subject = `New paid order — ${event.orderNumber}`;
-    paragraphs = [
-      `A new paid order for ${formatMarketMoney(event.totalInclGstCents, event.currency)} is ready for production review.`,
-      "Open the admin order to review its artwork, delivery and fulfilment details.",
-    ];
-  } else if (event.kind === "payment_confirmed") {
-    subject = `Payment confirmed — ${event.orderNumber}`;
-    paragraphs = [
-      `We have confirmed your payment of ${formatMarketMoney(event.totalInclGstCents, event.currency)} for order ${event.orderNumber}.`,
-      "Production normally takes 5 business days from the order date. We will contact you if your artwork requires a design review.",
-    ];
-  } else if (event.kind === "payment_failed") {
-    subject = `Payment could not be completed — ${event.orderNumber}`;
+  if (event.kind === "payment_failed") {
     orderUrl.hash = "payment";
-    paragraphs = [
-      `Payment for order ${event.orderNumber} was not completed, so production has not started.`,
-      "You can return to your order and try payment again.",
-    ];
-  } else {
-    subject = `Your order has been shipped — ${event.orderNumber}`;
-    const tracking = event.trackingNumber && event.trackingCarrier
-      ? `Tracking: ${event.trackingCarrier} ${event.trackingNumber}.`
-      : "Your order is on its way.";
-    paragraphs = [tracking];
   }
+
+  const { subject, paragraphs, actionLabel } = renderOrderEmailTemplate(event.kind, templateValues, {
+    customerName: event.customerName,
+    orderNumber: event.orderNumber,
+    amount: formatMarketMoney(event.totalInclGstCents, event.currency),
+    trackingNumber: event.trackingNumber,
+    trackingCarrier: event.trackingCarrier,
+  });
 
   const actionUrl = event.kind === "order_shipped" && event.trackingUrl
     ? event.trackingUrl
     : orderUrl.toString();
-  const actionLabel = event.kind === "admin_order_received"
-    ? "Open order"
-    : event.kind === "payment_failed"
-    ? "Retry payment"
-    : event.kind === "order_shipped"
-      ? "Track your order"
-      : "View your order";
   const greeting = event.kind === "admin_order_received"
     ? "Hello R&R Gallery team,"
     : `Hello ${event.customerName},`;
@@ -126,10 +107,14 @@ export function createOrderNotificationService(
     provider: CustomerEmailProvider;
     siteUrl: string;
     orderAccessSecret: string;
+    loadPublishedTemplates?: () => Promise<Partial<OrderEmailTemplateValues>>;
     now?: () => Date;
   }>,
 ) {
-  async function deliver(event: OrderNotificationDelivery | null) {
+  async function deliver(
+    event: OrderNotificationDelivery | null,
+    templateValues: Partial<OrderEmailTemplateValues>,
+  ) {
     if (!event) return "empty" as const;
     if (event.kind === "payment_failed" && event.paymentStatus !== "failed") {
       await repository.discard(event.id);
@@ -142,6 +127,7 @@ export function createOrderNotificationService(
         dependencies.siteUrl,
         dependencies.orderAccessSecret,
         now,
+        templateValues,
       ));
       await repository.markSent(event.id, sent.providerMessageId, now);
       return "sent" as const;
@@ -159,10 +145,16 @@ export function createOrderNotificationService(
         return Object.freeze({ result: "not_configured" as const, sent: 0, failed: 0 });
       }
       const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+      const templateValues = dependencies.loadPublishedTemplates
+        ? await dependencies.loadPublishedTemplates().catch(() => defaultOrderEmailTemplateValues)
+        : defaultOrderEmailTemplateValues;
       let sent = 0;
       let failed = 0;
       for (let index = 0; index < safeLimit; index += 1) {
-        const result = await deliver(await repository.claimNext(dependencies.now?.() ?? new Date()));
+        const result = await deliver(
+          await repository.claimNext(dependencies.now?.() ?? new Date()),
+          templateValues,
+        );
         if (result === "empty") break;
         if (result === "sent") sent += 1;
         if (result === "failed") failed += 1;
