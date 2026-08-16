@@ -349,9 +349,11 @@ describe("site shell", () => {
     )).toBe(true);
     expect(payments.querySelectorAll("svg")).toHaveLength(0);
 
+    const intro = footer.querySelector(".site-footer__intro");
+    expect(payments.parentElement).toHaveClass("site-footer__intro-stack");
+    expect(payments.parentElement?.firstElementChild).toBe(intro);
     expect(footer.querySelector(".site-footer__grid")?.nextElementSibling)
-      .toBe(payments);
-    expect(payments.nextElementSibling).toHaveClass("site-footer__legal");
+      .toHaveClass("site-footer__legal");
   });
 
   it("places policies under Customer and links the footer brand to the page top", () => {

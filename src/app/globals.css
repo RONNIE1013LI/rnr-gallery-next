@@ -707,7 +707,6 @@ a:active {
 }
 
 .site-footer__grid,
-.site-footer__payments,
 .site-footer__legal {
   width: min(100%, var(--content-width));
   margin-inline: auto;
@@ -790,10 +789,11 @@ a:active {
 }
 
 .site-footer__payments {
-  margin-top: clamp(2.75rem, 5vw, 4rem);
+  width: 100%;
+  margin-top: 1.5rem;
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
 }
 
 .site-footer__payments-title {
@@ -819,7 +819,7 @@ a:active {
 
 .site-footer__payment-logo {
   width: 2.5rem;
-  aspect-ratio: 151 / 96;
+  aspect-ratio: 147 / 92;
   flex: 0 0 auto;
 }
 
@@ -828,36 +828,36 @@ a:active {
   display: block;
   width: 100%;
   height: 100%;
-  aspect-ratio: 151 / 96;
+  aspect-ratio: 147 / 92;
   overflow: hidden;
   border-radius: 13% / 20%;
 }
 
 .site-footer__payment-sprite {
   position: absolute;
-  top: -2.0833%;
-  left: -1.3245%;
-  width: 775.4967%;
+  top: -4.3478%;
+  left: -2.7211%;
+  width: 796.5986%;
   max-width: none;
-  height: 104.1667%;
+  height: 108.6957%;
   object-fit: fill;
   user-select: none;
 }
 
 .site-footer__payment-mark--mastercard .site-footer__payment-sprite {
-  left: -113.9073%;
+  left: -118.3673%;
 }
 
 .site-footer__payment-mark--afterpay .site-footer__payment-sprite {
-  left: -226.4901%;
+  left: -234.0136%;
 }
 
 .site-footer__payment-mark--apple-pay .site-footer__payment-sprite {
-  left: -562.2517%;
+  left: -578.9116%;
 }
 
 .site-footer__payment-mark--google-pay .site-footer__payment-sprite {
-  left: -674.8344%;
+  left: -694.5578%;
 }
 
 .site-footer__legal {
@@ -1010,6 +1010,10 @@ a:active {
     grid-column: 1 / -1;
   }
 
+  .site-footer__intro-stack {
+    display: contents;
+  }
+
   .site-footer {
     padding-top: 3rem;
   }
@@ -1076,7 +1080,10 @@ a:active {
   }
 
   .site-footer__payments {
-    margin-top: 2.5rem;
+    grid-column: 1 / -1;
+    order: 1;
+    margin-top: 0.25rem;
+    justify-content: center;
   }
 
   .site-footer__payment-list {
@@ -1091,7 +1098,7 @@ a:active {
     width: 1.875rem;
     min-width: 1.875rem;
     height: auto;
-    aspect-ratio: 151 / 96;
+    aspect-ratio: 147 / 92;
     flex: 0 0 auto;
   }
 

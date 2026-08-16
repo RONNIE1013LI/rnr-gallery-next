@@ -96,18 +96,18 @@ describe("root layout metadata", () => {
     expect(cssRule(globals, ".site-footer {")).toContain("background: var(--brand-green);");
   });
 
-  it("shows the supplied footer payment artwork at the approved responsive sizes with a two-pixel source crop", () => {
+  it("shows the supplied footer payment artwork at the approved responsive sizes with a four-pixel source crop", () => {
     const globals = cssFile("src/app/globals.css");
     const logo = cssRule(globals, ".site-footer__payment-logo {");
     const mark = cssRule(globals, ".site-footer__payment-mark {");
     const sprite = cssRule(globals, ".site-footer__payment-sprite {");
 
     expect(logo).toContain("width: 2.5rem;");
-    expect(mark).toContain("aspect-ratio: 151 / 96;");
-    expect(sprite).toContain("top: -2.0833%;");
-    expect(sprite).toContain("left: -1.3245%;");
-    expect(sprite).toContain("width: 775.4967%;");
-    expect(sprite).toContain("height: 104.1667%;");
+    expect(mark).toContain("aspect-ratio: 147 / 92;");
+    expect(sprite).toContain("top: -4.3478%;");
+    expect(sprite).toContain("left: -2.7211%;");
+    expect(sprite).toContain("width: 796.5986%;");
+    expect(sprite).toContain("height: 108.6957%;");
     expect(globals).toContain("width: 1.875rem;\n    min-width: 1.875rem;");
   });
 

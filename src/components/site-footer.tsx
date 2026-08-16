@@ -32,11 +32,44 @@ export function SiteFooter({ content = defaultContent }: Readonly<{ content?: Si
   return (
     <footer className="site-footer">
       <div className="site-footer__grid">
-        <div className="site-footer__intro">
-          <a className="site-footer__brand" href="#top" aria-label="R&R Gallery">
-            <BrandMark imageSizes="(max-width: 560px) 88px, 72px" />
-          </a>
-          <p className="site-footer__tagline">{content.tagline}</p>
+        <div className="site-footer__intro-stack">
+          <div className="site-footer__intro">
+            <a className="site-footer__brand" href="#top" aria-label="R&R Gallery">
+              <BrandMark imageSizes="(max-width: 560px) 88px, 72px" />
+            </a>
+            <p className="site-footer__tagline">{content.tagline}</p>
+          </div>
+
+          <section
+            className="site-footer__payments"
+            aria-labelledby="site-footer-payments-title"
+          >
+            <p id="site-footer-payments-title" className="site-footer__payments-title">
+              Accepted payments
+            </p>
+            <ul className="site-footer__payment-list">
+              {paymentLogos.map((logo) => (
+                <li className="site-footer__payment-logo" key={logo.name}>
+                  <span
+                    role="img"
+                    aria-label={logo.name}
+                    className={`site-footer__payment-mark site-footer__payment-mark--${logo.className}`}
+                  >
+                    <Image
+                      src="/media/payments/footer-payment-methods.jpg"
+                      alt=""
+                      aria-hidden="true"
+                      className="site-footer__payment-sprite"
+                      width={1171}
+                      height={100}
+                      sizes="(max-width: 560px) 64px, 90px"
+                      unoptimized
+                    />
+                  </span>
+                </li>
+              ))}
+            </ul>
+          </section>
         </div>
 
         <div className="site-footer__column site-footer__shop">
@@ -96,37 +129,6 @@ export function SiteFooter({ content = defaultContent }: Readonly<{ content?: Si
           </div>
         </div>
       </div>
-
-      <section
-        className="site-footer__payments"
-        aria-labelledby="site-footer-payments-title"
-      >
-        <p id="site-footer-payments-title" className="site-footer__payments-title">
-          Accepted payments
-        </p>
-        <ul className="site-footer__payment-list">
-          {paymentLogos.map((logo) => (
-            <li className="site-footer__payment-logo" key={logo.name}>
-              <span
-                role="img"
-                aria-label={logo.name}
-                className={`site-footer__payment-mark site-footer__payment-mark--${logo.className}`}
-              >
-                <Image
-                  src="/media/payments/footer-payment-methods.jpg"
-                  alt=""
-                  aria-hidden="true"
-                  className="site-footer__payment-sprite"
-                  width={1171}
-                  height={100}
-                  sizes="(max-width: 560px) 64px, 90px"
-                  unoptimized
-                />
-              </span>
-            </li>
-          ))}
-        </ul>
-      </section>
 
       <div className="site-footer__legal">
         <span

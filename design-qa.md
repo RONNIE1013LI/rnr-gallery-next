@@ -52,6 +52,39 @@ final result: passed
 
 ---
 
+# Footer payment-logo placement and crop QA — 2026-08-16
+
+- Source visual truth: `/Users/ronnieli/Desktop/Snipaste_2026-08-16_22-01-20.jpg` (392 × 85 px).
+- Desktop implementation: `/tmp/rnr-footer-payment-desktop-fixed.jpg` at a 1440 × 1000 CSS viewport (1425 px document width after scrollbar gutter).
+- Mobile implementation: `/tmp/rnr-footer-payment-mobile-fixed.jpg` at a 390 × 1000 CSS viewport (375 px document width after scrollbar gutter).
+- Combined focused comparison: `/tmp/rnr-footer-payment-comparison.jpg`.
+- State: public About page footer, default market and theme.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing footer brand and navigation typography remain unchanged.
+- Spacing and layout rhythm: desktop payment marks now sit directly below the company brand text in the first footer column; the five marks remain 40 px wide. At 390 px they remain centred below the footer columns, 40 px below the help block, in one row at 30 px each.
+- Colors and visual tokens: the existing dark-green footer background and official payment-brand artwork are unchanged.
+- Image quality and asset fidelity: the supplied payment sprite remains the only visible asset. Each tile is cropped by four source pixels per edge, removing the external white fringe without replacing or redrawing any brand mark.
+- Copy and content: the approved Visa, Mastercard, Afterpay, Apple Pay and Google Pay order is unchanged; no visible payment label was added.
+
+## Verification and comparison history
+
+1. The initial implementation centred the payment row below the entire desktop footer grid and cropped only two source pixels per edge.
+2. The payment section was placed in the desktop brand stack, while the mobile `display: contents` and ordered grid placement preserved its existing bottom-centred position.
+3. The source window was inset by two additional pixels on every edge. The final combined comparison shows no external sprite fringe and no actionable P0, P1 or P2 mismatch.
+4. Desktop measurements: five 40 × 25.03 px marks, left aligned at x=57 beneath the company text.
+5. Mobile measurements: five 30 × 18.77 px marks, centred in one row; no horizontal overflow.
+6. Browser console: 0 errors and 0 warnings in the final mobile state.
+
+## Focused comparison evidence
+
+The combined comparison places the supplied logo-row reference, desktop brand-column result and mobile footer-bottom result in one image. The marks remain legible at their approved responsive sizes, desktop placement follows the requested company block, and mobile placement is unchanged.
+
+final result: passed
+
+---
+
 # Forms order-system visual replication QA — 2026-08-11
 
 - Source visual truth: `https://rnrgallery.com/order-system/` in the user's authenticated Safari session.
