@@ -36,6 +36,25 @@ type Props = Readonly<{
   backHref?: string;
 }>;
 
+type PaymentFinanceSnapshot = Readonly<{
+  manualPaymentStatus: string;
+  amountPayableCents: number;
+  amountPaidCents: number;
+  artistFeeCents: number;
+  materialCostCents: number;
+}>;
+
+type PaymentRecovery = Readonly<{
+  jobId: string;
+  jobNumber: string;
+  updatedAt: string;
+  proof: File;
+  uploadIdempotencyKey: string;
+  statusIdempotencyKey: string | null;
+  desiredFinance: PaymentFinanceSnapshot;
+  phase: "upload_proof" | "update_payment_status";
+}>;
+
 const fallbackInvoiceBusiness: InvoiceBusiness = Object.freeze({
   name: "R&R Gallery",
   address: "11 Para Close\nFairview Heights\nAuckland 0632\nNew Zealand",
@@ -88,6 +107,8 @@ export function ProductionJobForm({
   const [nextItemKey, setNextItemKey] = useState(1);
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [paymentProofError, setPaymentProofError] = useState("");
+  const [paymentRecovery, setPaymentRecovery] = useState<PaymentRecovery | null>(null);
   const [pasteFeedback, setPasteFeedback] = useState("");
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceWorkspaceDraft | null>(null);
@@ -99,6 +120,7 @@ export function ProductionJobForm({
   const customerPhoneRef = useRef<HTMLInputElement>(null);
   const deliveryMethodRef = useRef<HTMLSelectElement>(null);
   const deliveryAddressRef = useRef<HTMLTextAreaElement>(null);
+  const paymentProofRef = useRef<HTMLInputElement>(null);
 
   function pasteCustomerDetails(event: ClipboardEvent<HTMLTextAreaElement>) {
     const textValue = event.clipboardData.getData("text/plain");
@@ -155,12 +177,114 @@ export function ProductionJobForm({
     setInvoiceOpen(true);
   }
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function uploadPaymentProof(recovery: PaymentRecovery) {
+    const uploadBody = new FormData();
+    uploadBody.set("kind", "payment_proof");
+    uploadBody.set("idempotencyKey", recovery.uploadIdempotencyKey);
+    uploadBody.set("file", recovery.proof);
+    const response = await fetch(`${endpoint}/${recovery.jobId}/files`, {
+      method: "POST",
+      body: uploadBody,
+    });
+    const result = await response.json().catch(() => null) as { error?: string } | null;
+    if (!response.ok) throw new Error(result?.error || "The payment proof could not be uploaded.");
+  }
+
+  async function updatePaymentStatus(recovery: PaymentRecovery) {
+    if (!recovery.updatedAt || !recovery.statusIdempotencyKey) {
+      throw new Error("The saved order version is unavailable.");
+    }
+    const response = await fetch(`${endpoint}/${recovery.jobId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        expectedUpdatedAt: recovery.updatedAt,
+        idempotencyKey: recovery.statusIdempotencyKey,
+        finance: recovery.desiredFinance,
+      }),
+    });
+    const result = await response.json().catch(() => null) as { error?: string } | null;
+    if (!response.ok) throw new Error(result?.error || "The payment status could not be updated.");
+  }
+
+  function openCreatedJob(recovery: PaymentRecovery) {
+    setPaymentRecovery(null);
+    setFeedback(`Created ${recovery.jobNumber}. Opening details…`);
+    router.push(`${detailBasePath}/${recovery.jobId}`);
+  }
+
+  async function continuePaymentRecovery(recovery: PaymentRecovery) {
+    let nextRecovery = recovery;
+    if (recovery.phase === "upload_proof") {
+      try {
+        await uploadPaymentProof(recovery);
+      } catch {
+        setPaymentRecovery(recovery);
+        setFeedback(`Created ${recovery.jobNumber} as Awaiting payment. Payment proof upload failed. Retry the same order.`);
+        setPending(false);
+        return;
+      }
+      if (!recovery.statusIdempotencyKey) {
+        openCreatedJob(recovery);
+        return;
+      }
+      nextRecovery = { ...recovery, phase: "update_payment_status" };
+      setPaymentRecovery(nextRecovery);
+    }
+    try {
+      await updatePaymentStatus(nextRecovery);
+    } catch {
+      setPaymentRecovery(nextRecovery);
+      setFeedback(`Created ${nextRecovery.jobNumber} as Awaiting payment. Payment status update failed. Retry the same order.`);
+      setPending(false);
+      return;
+    }
+    openCreatedJob(nextRecovery);
+  }
+
+  async function retryPaymentRecovery() {
+    if (!paymentRecovery) return;
     setPending(true);
     setFeedback("");
+    await continuePaymentRecovery(paymentRecovery);
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (paymentRecovery) return;
+    setPending(true);
+    setFeedback("");
+    setPaymentProofError("");
     try {
       const form = new FormData(event.currentTarget);
+      const finalPaymentStatus = canManageFinance
+        ? String(form.get("manualPaymentStatus") ?? "awaiting_payment")
+        : "awaiting_payment";
+      const selectedProof = paymentProofRef.current?.files?.[0];
+      const paymentProof = selectedProof && selectedProof.size > 0
+        ? selectedProof
+        : null;
+      const requiresPaymentProof = finalPaymentStatus === "processing" || finalPaymentStatus === "paid";
+      if (requiresPaymentProof && !paymentProof) {
+        setPaymentProofError(`Attach the payment proof before marking this order as ${finalPaymentStatus}.`);
+        setPending(false);
+        return;
+      }
+      if (paymentProof && paymentProof.size > 25 * 1024 * 1024) {
+        setPaymentProofError("Payment proof must be 25 MB or smaller.");
+        setPending(false);
+        return;
+      }
+      const desiredFinance = {
+        manualPaymentStatus: finalPaymentStatus,
+        amountPayableCents: canManageFinance ? cents(form.get("amountPayable")) : 0,
+        amountPaidCents: canManageFinance ? cents(form.get("amountPaid")) : 0,
+        artistFeeCents: canManageFinance ? cents(form.get("artistFee")) : 0,
+        materialCostCents: canManageFinance ? cents(form.get("materialCost")) : 0,
+      };
+      const createIdempotencyKey = createClientId();
+      const uploadIdempotencyKey = paymentProof ? createClientId() : null;
+      const statusIdempotencyKey = requiresPaymentProof ? createClientId() : null;
       const customerName = String(form.get("customerName") ?? "");
       const customerEmail = String(form.get("customerEmail") ?? "");
       const deliveryAddress = String(form.get("deliveryAddress") ?? "");
@@ -172,7 +296,7 @@ export function ProductionJobForm({
         deliveryAddress: invoiceDraft.deliveryAddress || deliveryAddress,
       }) : undefined;
       const body = {
-        idempotencyKey: createClientId(),
+        idempotencyKey: createIdempotencyKey,
         customerName,
         customerEmail,
         customerPhone: String(form.get("customerPhone") ?? ""),
@@ -189,13 +313,11 @@ export function ProductionJobForm({
         designRequirements: String(form.get("designRequirements") ?? ""),
         internalNotes: String(form.get("internalNotes") ?? ""),
         manualStatus: String(form.get("manualStatus") ?? "new"),
-        manualPaymentStatus: canManageFinance
-          ? String(form.get("manualPaymentStatus") ?? "awaiting_payment")
-          : "awaiting_payment",
-        amountPayableCents: canManageFinance ? cents(form.get("amountPayable")) : 0,
-        amountPaidCents: canManageFinance ? cents(form.get("amountPaid")) : 0,
-        artistFeeCents: canManageFinance ? cents(form.get("artistFee")) : 0,
-        materialCostCents: canManageFinance ? cents(form.get("materialCost")) : 0,
+        manualPaymentStatus: requiresPaymentProof ? "awaiting_payment" : finalPaymentStatus,
+        amountPayableCents: desiredFinance.amountPayableCents,
+        amountPaidCents: desiredFinance.amountPaidCents,
+        artistFeeCents: desiredFinance.artistFeeCents,
+        materialCostCents: desiredFinance.materialCostCents,
         artistPaid: canManageFinance && form.get("artistPaid") === "on",
         completed: form.get("completed") === "on",
         customFields: customFields.map((field) => ({
@@ -219,10 +341,25 @@ export function ProductionJobForm({
       });
       const result = await response.json().catch(() => null) as {
         error?: string;
-        job?: { id?: string; jobNumber?: string };
+        job?: { id?: string; jobNumber?: string; updatedAt?: string };
       } | null;
       if (!response.ok || !result?.job?.id) {
         throw new Error(result?.error || "The production job could not be created.");
+      }
+      if (paymentProof && uploadIdempotencyKey) {
+        const recovery: PaymentRecovery = {
+          jobId: result.job.id,
+          jobNumber: result.job.jobNumber ?? "production job",
+          updatedAt: result.job.updatedAt ?? "",
+          proof: paymentProof,
+          uploadIdempotencyKey,
+          statusIdempotencyKey,
+          desiredFinance,
+          phase: "upload_proof",
+        };
+        setPaymentRecovery(recovery);
+        await continuePaymentRecovery(recovery);
+        return;
       }
       setFeedback(`Created ${result.job.jobNumber ?? "production job"}. Opening details…`);
       router.push(`${detailBasePath}/${result.job.id}`);
@@ -308,13 +445,16 @@ export function ProductionJobForm({
           {canUploadFiles ? <div className={styles.formGrid}>
             <div className={styles.fullField}>
               <label><span>Payment proof</span><input
+                ref={paymentProofRef}
                 name="paymentProof"
                 type="file"
                 accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
-                aria-describedby="payment-proof-help"
+                aria-describedby="payment-proof-help payment-proof-error"
+                onChange={() => setPaymentProofError("")}
                 disabled={pending}
               /></label>
               <small id="payment-proof-help" className={styles.fieldHint}>JPG, PNG, WebP, HEIC, HEIF or PDF. Maximum 25 MB.</small>
+              {paymentProofError ? <p id="payment-proof-error" className={styles.fieldHint} role="alert">{paymentProofError}</p> : null}
             </div>
           </div> : null}
         </section>
@@ -384,7 +524,12 @@ export function ProductionJobForm({
 
       <div className={styles.formSubmitBar}>
         <p aria-live="polite">{feedback}</p>
-        <button type="submit" disabled={pending}>{pending ? "Creating…" : "Create production job"}</button>
+        {paymentRecovery ? <button type="button" onClick={retryPaymentRecovery} disabled={pending}>
+          {pending
+            ? "Retrying…"
+            : paymentRecovery.phase === "upload_proof" ? "Retry payment proof" : "Retry payment status"}
+        </button> : null}
+        <button type="submit" disabled={pending || Boolean(paymentRecovery)}>{pending ? "Creating…" : "Create production job"}</button>
       </div>
     </form>
     {invoiceOpen && invoiceDraft ? <InvoiceWorkspace draft={invoiceDraft} onChange={setInvoiceDraft} onClose={() => setInvoiceOpen(false)} /> : null}

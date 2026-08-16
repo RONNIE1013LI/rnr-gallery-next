@@ -16,6 +16,13 @@ describe("ProductionJobForm", () => {
     { id: "staff-1", name: "Studio Artist", email: "artist@example.test" },
   ];
 
+  function fillRequiredManualOrder() {
+    fireEvent.change(screen.getByLabelText("Customer name"), { target: { value: "Payment Customer" } });
+    fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "021 000 0000" } });
+    fireEvent.change(screen.getByLabelText("Product"), { target: { value: "Canvas" } });
+    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
+  }
+
   it("shows manual finance fields only to administrators with finance permission", () => {
     const { rerender } = render(
       <ProductionJobForm assignees={assignees} canManageFinance />,
@@ -52,6 +59,213 @@ describe("ProductionJobForm", () => {
       <ProductionJobForm assignees={assignees} canManageFinance={false} canUploadFiles />,
     );
     expect(screen.queryByLabelText("Payment proof")).not.toBeInTheDocument();
+  });
+
+  it.each(["processing", "paid"])(
+    "requires a payment proof before creating a %s manual order",
+    async (paymentStatus) => {
+      const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+        result: "created",
+        job: {
+          id: "5b25574f-e1e4-4b29-927d-c24c5efc4d8b",
+          jobNumber: "08000",
+          updatedAt: "2026-08-17T00:00:00.000Z",
+        },
+      }), { status: 201, headers: { "Content-Type": "application/json" } }));
+      vi.stubGlobal("fetch", fetchMock);
+
+      render(<ProductionJobForm assignees={assignees} canManageFinance canUploadFiles />);
+      fillRequiredManualOrder();
+      fireEvent.change(screen.getByLabelText("Payment status"), { target: { value: paymentStatus } });
+      fireEvent.click(screen.getByRole("button", { name: "Create production job" }));
+
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        `Attach the payment proof before marking this order as ${paymentStatus}.`,
+      );
+      expect(fetchMock).not.toHaveBeenCalled();
+    },
+  );
+
+  it("creates awaiting payment, uploads proof, then applies the selected paid status", async () => {
+    const jobId = "5b25574f-e1e4-4b29-927d-c24c5efc4d8b";
+    const updatedAt = "2026-08-17T00:00:00.000Z";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        result: "created",
+        job: { id: jobId, jobNumber: "08000", updatedAt },
+      }), { status: 201, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "created" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "updated" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: vi.fn()
+      .mockReturnValueOnce("manual-create-request-1")
+      .mockReturnValueOnce("payment-upload-request-1")
+      .mockReturnValueOnce("payment-status-request-1") });
+
+    render(<ProductionJobForm
+      assignees={assignees}
+      canManageFinance
+      canUploadFiles
+      endpoint="/api/forms/jobs"
+      detailBasePath="/order-system/jobs"
+    />);
+    fillRequiredManualOrder();
+    fireEvent.change(screen.getByLabelText("Payment status"), { target: { value: "paid" } });
+    fireEvent.change(screen.getByLabelText("Amount payable (NZD)"), { target: { value: "230.50" } });
+    fireEvent.change(screen.getByLabelText("Amount paid (NZD)"), { target: { value: "230.50" } });
+    const proofInput = screen.getByLabelText("Payment proof") as HTMLInputElement;
+    const proof = new File([new Uint8Array([0xff, 0xd8, 0xff])], "receipt.jpg", { type: "image/jpeg" });
+    fireEvent.change(proofInput, { target: { files: [proof] } });
+    expect(proofInput.files?.[0]).toBe(proof);
+    fireEvent.submit(screen.getByRole("button", { name: "Create production job" }).closest("form")!);
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(push).toHaveBeenCalledWith(`/order-system/jobs/${jobId}`);
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe("/api/forms/jobs");
+    const createPayload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(createPayload).toMatchObject({
+      manualPaymentStatus: "awaiting_payment",
+      amountPayableCents: 23050,
+      amountPaidCents: 23050,
+    });
+
+    expect(fetchMock.mock.calls[1]?.[0]).toBe(`/api/forms/jobs/${jobId}/files`);
+    const uploadPayload = fetchMock.mock.calls[1]?.[1]?.body as FormData;
+    expect(uploadPayload.get("kind")).toBe("payment_proof");
+    expect(uploadPayload.get("idempotencyKey")).toBe("payment-upload-request-1");
+    expect(uploadPayload.get("file")).toBeInstanceOf(File);
+
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(`/api/forms/jobs/${jobId}`);
+    const statusPayload = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
+    expect(statusPayload).toEqual({
+      expectedUpdatedAt: updatedAt,
+      idempotencyKey: "payment-status-request-1",
+      finance: {
+        manualPaymentStatus: "paid",
+        amountPayableCents: 23050,
+        amountPaidCents: 23050,
+        artistFeeCents: 0,
+        materialCostCents: 0,
+      },
+    });
+  });
+
+  it("retries a failed proof upload without creating a duplicate order", async () => {
+    const jobId = "5b25574f-e1e4-4b29-927d-c24c5efc4d8b";
+    const updatedAt = "2026-08-17T00:00:00.000Z";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        result: "created",
+        job: { id: jobId, jobNumber: "08000", updatedAt },
+      }), { status: 201, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "Upload unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "created" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "updated" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: vi.fn()
+      .mockReturnValueOnce("manual-create-request-2")
+      .mockReturnValueOnce("payment-upload-request-2")
+      .mockReturnValueOnce("payment-status-request-2") });
+
+    render(<ProductionJobForm
+      assignees={assignees}
+      canManageFinance
+      canUploadFiles
+      endpoint="/api/forms/jobs"
+      detailBasePath="/order-system/jobs"
+    />);
+    fillRequiredManualOrder();
+    fireEvent.change(screen.getByLabelText("Payment status"), { target: { value: "paid" } });
+    fireEvent.change(screen.getByLabelText("Payment proof"), { target: { files: [
+      new File([new Uint8Array([0xff, 0xd8, 0xff])], "receipt.jpg", { type: "image/jpeg" }),
+    ] } });
+    fireEvent.submit(screen.getByRole("button", { name: "Create production job" }).closest("form")!);
+
+    expect(await screen.findByText(/Created 08000 as Awaiting payment.*upload failed/i)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(push).not.toHaveBeenCalled();
+
+    const firstUpload = fetchMock.mock.calls[1]?.[1]?.body as FormData;
+    fireEvent.click(screen.getByRole("button", { name: "Retry payment proof" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    const retriedUpload = fetchMock.mock.calls[2]?.[1]?.body as FormData;
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/forms/jobs")).toHaveLength(1);
+    expect(fetchMock.mock.calls[2]?.[0]).toBe(`/api/forms/jobs/${jobId}/files`);
+    expect(retriedUpload.get("idempotencyKey")).toBe(firstUpload.get("idempotencyKey"));
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(`/api/forms/jobs/${jobId}`);
+    expect(push).toHaveBeenCalledWith(`/order-system/jobs/${jobId}`);
+  });
+
+  it("retries a failed payment-status update without recreating or re-uploading", async () => {
+    const jobId = "5b25574f-e1e4-4b29-927d-c24c5efc4d8b";
+    const updatedAt = "2026-08-17T00:00:00.000Z";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        result: "created",
+        job: { id: jobId, jobNumber: "08000", updatedAt },
+      }), { status: 201, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "created" }), {
+        status: 201,
+        headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: "Update unavailable" }), {
+        status: 503,
+        headers: { "Content-Type": "application/json" },
+      }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "updated" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: vi.fn()
+      .mockReturnValueOnce("manual-create-request-3")
+      .mockReturnValueOnce("payment-upload-request-3")
+      .mockReturnValueOnce("payment-status-request-3") });
+
+    render(<ProductionJobForm
+      assignees={assignees}
+      canManageFinance
+      canUploadFiles
+      endpoint="/api/forms/jobs"
+      detailBasePath="/order-system/jobs"
+    />);
+    fillRequiredManualOrder();
+    fireEvent.change(screen.getByLabelText("Payment status"), { target: { value: "processing" } });
+    fireEvent.change(screen.getByLabelText("Payment proof"), { target: { files: [
+      new File([new Uint8Array([0xff, 0xd8, 0xff])], "receipt.jpg", { type: "image/jpeg" }),
+    ] } });
+    fireEvent.submit(screen.getByRole("button", { name: "Create production job" }).closest("form")!);
+
+    expect(await screen.findByText(/Created 08000 as Awaiting payment.*status update failed/i)).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(push).not.toHaveBeenCalled();
+
+    const firstStatusBody = String(fetchMock.mock.calls[2]?.[1]?.body);
+    fireEvent.click(screen.getByRole("button", { name: "Retry payment status" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/forms/jobs")).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url]) => url === `/api/forms/jobs/${jobId}/files`)).toHaveLength(1);
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(`/api/forms/jobs/${jobId}`);
+    expect(fetchMock.mock.calls[3]?.[1]?.body).toBe(firstStatusBody);
+    expect(push).toHaveBeenCalledWith(`/order-system/jobs/${jobId}`);
   });
 
   it("uses the approved data-entry section order", () => {
