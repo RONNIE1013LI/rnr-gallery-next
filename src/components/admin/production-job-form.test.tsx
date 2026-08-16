@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProductionJobForm } from "./production-job-form";
 
@@ -48,7 +48,6 @@ describe("ProductionJobForm", () => {
       "Order info",
       "Product / Size",
       "Payment",
-      "Design & Notes",
       "Delivery",
       "Customer info",
       "Internal Production Status",
@@ -56,6 +55,38 @@ describe("ProductionJobForm", () => {
     ]);
     expect(screen.getByText("Ronnie")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back" })).toHaveAttribute("href", "/order-system");
+  });
+
+  it("offers every approved Canvas and Banner size without Canvas dimension annotations", () => {
+    render(<ProductionJobForm assignees={assignees} canManageFinance />);
+
+    const size = screen.getByRole("combobox", { name: "Size" });
+    expect(size).toHaveDisplayValue("Please choose");
+    expect(within(size).getAllByRole("option").map((option) => option.textContent)).toEqual([
+      "Please choose",
+      "A0",
+      "A1",
+      "A2",
+      "A3",
+      "A4",
+      "A5",
+      "Banner 80x160cm",
+      "Banner 100x200cm",
+      "PullUpBanner",
+      "Banner 150x300cm",
+      "Custom Size",
+      "Other",
+    ]);
+  });
+
+  it("hides the unused Design and Notes fields from manual order entry", () => {
+    render(<ProductionJobForm assignees={assignees} canManageFinance />);
+
+    expect(screen.queryByRole("heading", { name: "Design & Notes" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Artwork direction")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Item notes")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Design requirements")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Internal notes")).not.toBeInTheDocument();
   });
 
   it("preserves active legacy customer and delivery fields", () => {
@@ -108,7 +139,7 @@ describe("ProductionJobForm", () => {
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "ana@example.test" } });
     fireEvent.change(screen.getByLabelText("Needed date"), { target: { value: "2026-08-11" } });
     fireEvent.change(screen.getByLabelText("Product"), { target: { value: "Roll Up Banner" } });
-    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "85 cm × 200 cm" } });
+    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "PullUpBanner" } });
     fireEvent.click(screen.getByRole("button", { name: "Create production job" }));
 
     await waitFor(() => expect(push).toHaveBeenCalledWith(
@@ -128,8 +159,31 @@ describe("ProductionJobForm", () => {
       paymentReconciliationStatus: "Not checked",
       artistPaid: false,
       completed: false,
-      items: [{ productTitle: "Roll Up Banner", sizeLabel: "85 cm × 200 cm", quantity: 1 }],
+      items: [{ productTitle: "Roll Up Banner", sizeLabel: "PullUpBanner", quantity: 1 }],
     });
+  });
+
+  it("uses Size other as the saved size when a manual custom size is entered", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "created",
+      job: { id: "9a781d13-3c8a-4d42-9b5f-54f09328e749", jobNumber: "08001" },
+    }), { status: 201, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: () => "manual-custom-size-0001" });
+
+    render(<ProductionJobForm assignees={assignees} canManageFinance={false} />);
+    fireEvent.change(screen.getByLabelText("Customer name"), { target: { value: "Custom Customer" } });
+    fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "021 000 0000" } });
+    fireEvent.change(screen.getByLabelText("Product"), { target: { value: "Wall Banner" } });
+    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "Custom Size" } });
+    fireEvent.change(screen.getByLabelText("Size other"), { target: { value: "Custom 90 × 180 cm" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create production job" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(payload.items).toEqual([
+      expect.objectContaining({ sizeLabel: "Custom 90 × 180 cm" }),
+    ]);
   });
 
   it("converts administrator-entered NZD values to cents", async () => {

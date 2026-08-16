@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClientId } from "@/lib/client-id";
 import { parseCustomerBlock } from "@/domain/forms/customer-block-parser";
+import { FORM_OPTION_SETS } from "@/domain/forms/forms-parity";
 import type { InvoiceBusiness } from "@/server/invoices/invoice-business";
 import { InvoiceWorkspace, invoiceRequestDraft, type InvoiceWorkspaceDraft } from "./invoice-workspace";
 import styles from "./admin.module.css";
@@ -280,7 +281,10 @@ export function ProductionJobForm({
               {itemKeys.length > 1 ? <button type="button" className={styles.removeItemButton} onClick={() => setItemKeys((current) => current.filter((itemKey) => itemKey !== key))}>Remove</button> : null}
               <div className={styles.formGrid}>
                 <label><span>Product</span><input name={`item-${key}-product`} list="rnr-production-products" required maxLength={190} disabled={pending} /></label>
-                <label><span>Size</span><input name={`item-${key}-size`} required maxLength={190} placeholder="e.g. A2 or 85 cm × 200 cm" disabled={pending} /></label>
+                <label><span>Size</span><select name={`item-${key}-size`} defaultValue="" required disabled={pending}>
+                  <option value="" disabled>Please choose</option>
+                  {FORM_OPTION_SETS.size.map((size) => <option key={size} value={size}>{size}</option>)}
+                </select></label>
                 <label><span>Size other</span><input name={`item-${key}-size-other`} maxLength={190} placeholder="Only if the standard size does not apply" disabled={pending} /></label>
                 <label className={styles.shortField}><span>Quantity</span><input name={`item-${key}-quantity`} type="number" min={1} max={100} defaultValue={1} required disabled={pending} /></label>
               </div>
@@ -304,26 +308,7 @@ export function ProductionJobForm({
       ) : null}
 
       <section className={styles.formPanel}>
-        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "05" : "04"}</span><h2>Design &amp; Notes</h2></div></div>
-        <div className={styles.productionItems}>
-          {itemKeys.map((key, index) => (
-            <fieldset className={styles.productionItem} key={key}>
-              <legend>Item {index + 1}</legend>
-              <div className={styles.formGrid}>
-                <label className={styles.fullField}><span>Artwork direction</span><textarea name={`item-${key}-design`} rows={3} maxLength={5000} disabled={pending} /></label>
-                <label className={styles.fullField}><span>Item notes</span><textarea name={`item-${key}-notes`} rows={2} maxLength={5000} disabled={pending} /></label>
-              </div>
-            </fieldset>
-          ))}
-        </div>
-        <div className={styles.formGrid}>
-          <label className={styles.fullField}><span>Design requirements</span><textarea name="designRequirements" rows={4} maxLength={10000} disabled={pending} /></label>
-          <label className={styles.fullField}><span>Internal notes</span><textarea name="internalNotes" rows={4} maxLength={10000} disabled={pending} /></label>
-        </div>
-      </section>
-
-      <section className={styles.formPanel}>
-        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "06" : "05"}</span><h2>Delivery</h2></div></div>
+        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "05" : "04"}</span><h2>Delivery</h2></div></div>
         <div className={styles.formGrid}>
           <label className={styles.checkboxField}><input name="urgent" type="checkbox" disabled={pending} /><span>Urgent order confirmed with customer</span></label>
           <label><span>Delivery method</span><select ref={deliveryMethodRef} name="deliveryMethod" defaultValue="post" disabled={pending}>
@@ -338,7 +323,7 @@ export function ProductionJobForm({
       </section>
 
       <section className={styles.formPanel}>
-        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "07" : "06"}</span><h2>Customer info</h2></div><p>Pasting a full customer block into Delivery address fills only empty fields.</p></div>
+        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "06" : "05"}</span><h2>Customer info</h2></div><p>Pasting a full customer block into Delivery address fills only empty fields.</p></div>
         <div className={styles.formGrid}>
           <label><span>Customer source</span><select name="customerSource" defaultValue="messenger" disabled={pending}>
             <option value="phone">Phone</option><option value="messenger">Messenger</option><option value="email">Email</option>
@@ -354,7 +339,7 @@ export function ProductionJobForm({
       </section>
 
       <section className={styles.formPanel}>
-        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "08" : "07"}</span><h2>Internal Production Status</h2></div></div>
+        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "07" : "06"}</span><h2>Internal Production Status</h2></div></div>
         <div className={styles.formGrid}>
           <label><span>Assign to</span><select name="assignedUserId" defaultValue="" disabled={pending}><option value="">Unassigned</option>{assignees.map((person) => <option key={person.id} value={person.id}>{person.name} · {person.email}</option>)}</select></label>
           <label><span>Production status</span><select name="manualStatus" defaultValue="new" disabled={pending}>{["new", "designing", "awaiting_customer", "ready_to_print", "printing", "on_hold", "shipped", "completed", "cancelled"].map((status) => <option value={status} key={status}>{status.replaceAll("_", " ")}</option>)}</select></label>
@@ -364,7 +349,7 @@ export function ProductionJobForm({
 
       {canManageFinance ? (
         <section className={styles.formPanel}>
-          <div className={styles.formSectionHeading}><div><span>09</span><h2>Cost / Profit</h2></div><p>Restricted to authorised finance staff.</p></div>
+          <div className={styles.formSectionHeading}><div><span>08</span><h2>Cost / Profit</h2></div><p>Restricted to authorised finance staff.</p></div>
           <div className={styles.formGrid}>
             <label><span>Artist fee (NZD)</span><input name="artistFee" type="number" min="0" step="0.01" defaultValue="0.00" required disabled={pending} /></label>
             <label><span>Material cost (NZD)</span><input name="materialCost" type="number" min="0" step="0.01" defaultValue="0.00" required disabled={pending} /></label>
@@ -374,7 +359,7 @@ export function ProductionJobForm({
       ) : null}
 
       {customFields.length ? <section className={styles.formPanel}>
-        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "10" : "08"}</span><h2>Custom information</h2></div><p>Additional studio fields configured by an administrator.</p></div>
+        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "09" : "07"}</span><h2>Custom information</h2></div><p>Additional studio fields configured by an administrator.</p></div>
         <div className={styles.formGrid}>{customFields.map((field) => {
           const name = `custom-${field.id}`;
           if (field.fieldType === "textarea") return <label className={styles.fullField} key={field.id}><span>{field.label}</span><textarea name={name} rows={3} required={field.required} maxLength={10000} disabled={pending} /></label>;
