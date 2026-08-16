@@ -916,6 +916,54 @@ describe("Drizzle payment repository", () => {
       .resolves.toEqual(sourceBefore);
   });
 
+  it("removes an unsent payment failure when a later attempt succeeds", async () => {
+    const order = await createOrder();
+    const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
+    const providerReference = `retry-success-${randomUUID()}`;
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+    const verifiedResult = {
+      providerReference,
+      providerStatus: "requires_payment_method",
+      amountCents: 7_475,
+      currency: "NZD" as const,
+      orderNumber: order.orderNumber,
+      status: "failed" as const,
+      sanitizedFailureCode: "payment_method_required",
+    };
+
+    await repository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      result: verifiedResult,
+      source: "reconciliation",
+    });
+    await expect(database.select().from(orderNotificationOutbox)
+      .where(eq(orderNotificationOutbox.orderId, order.orderId))).resolves.toEqual([
+      expect.objectContaining({ kind: "payment_failed", status: "pending" }),
+    ]);
+
+    await repository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      result: {
+        ...verifiedResult,
+        providerStatus: "succeeded",
+        status: "paid",
+        sanitizedFailureCode: undefined,
+      },
+      source: "reconciliation",
+    });
+
+    await expect(database.select().from(orderNotificationOutbox)
+      .where(eq(orderNotificationOutbox.orderId, order.orderId))).resolves.toEqual([
+      expect.objectContaining({ kind: "payment_confirmed", status: "pending" }),
+    ]);
+  });
+
   it.each(["after_event_insert", "after_transition", "before_processed_result"] as const)(
     "rolls back webhook fault at %s and permits replay",
     async (faultAt) => {

@@ -31,7 +31,9 @@ function bearerToken(headers: Headers) {
 
 function defaults(): Dependencies {
   return Object.freeze({
-    secret: process.env.CUSTOMER_NOTIFICATION_CRON_SECRET?.trim() || null,
+    secret: process.env.CRON_SECRET?.trim()
+      || process.env.CUSTOMER_NOTIFICATION_CRON_SECRET?.trim()
+      || null,
     deliverPending: getAllCustomerNotificationRuntime().deliverPending,
   });
 }
@@ -69,4 +71,5 @@ export function createCustomerNotificationCronRoute(dependencies?: Dependencies)
   };
 }
 
-export const POST = createCustomerNotificationCronRoute();
+export const GET = createCustomerNotificationCronRoute();
+export const POST = GET;

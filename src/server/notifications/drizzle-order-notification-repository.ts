@@ -23,6 +23,7 @@ export function createDrizzleOrderNotificationRepository(
           notification: orderNotificationOutbox,
           orderNumber: orders.orderNumber,
           currency: orders.currency,
+          paymentStatus: orders.paymentStatus,
           totalInclGstCents: orders.totalInclGstCents,
           trackingNumber: orders.trackingNumber,
           trackingCarrier: orders.trackingCarrier,
@@ -69,6 +70,7 @@ export function createDrizzleOrderNotificationRepository(
           customerName: row.customerName,
           recipientEmail: row.notification.recipientEmail,
           currency: row.currency,
+          paymentStatus: row.paymentStatus,
           totalInclGstCents: row.totalInclGstCents,
           trackingNumber: row.trackingNumber,
           trackingCarrier: row.trackingCarrier,
@@ -78,6 +80,15 @@ export function createDrizzleOrderNotificationRepository(
           createdAt: row.notification.createdAt,
         });
       });
+    },
+
+    async discard(id: string) {
+      const [deleted] = await database.delete(orderNotificationOutbox).where(and(
+        eq(orderNotificationOutbox.id, id),
+        eq(orderNotificationOutbox.kind, "payment_failed"),
+        eq(orderNotificationOutbox.status, "sending"),
+      )).returning({ id: orderNotificationOutbox.id });
+      return Boolean(deleted);
     },
 
     async markSent(id: string, providerMessageId: string, now: Date) {

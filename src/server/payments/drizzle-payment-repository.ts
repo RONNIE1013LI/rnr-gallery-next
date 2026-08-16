@@ -59,6 +59,7 @@ const NONTERMINAL_ATTEMPTS: PaymentAttemptStatus[] = [
 const RETURN_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const TERMINAL_ORDERS: OrderPaymentStatus[] = ["paid", "refunded"];
 const RECONCILIATION_STALE_MS = 60_000;
+const PAYMENT_FAILURE_NOTIFICATION_DELAY_MS = 5 * 60_000;
 
 export class PaymentRepositoryConflictError extends Error {
   constructor(message = "Payment attempt conflicts with the current state") {
@@ -297,6 +298,11 @@ async function applyLockedVerifiedResult(
     .where(eq(orders.id, order.id))
     .returning();
   if (orderStatus === "paid") {
+    await transaction.delete(orderNotificationOutbox).where(and(
+      eq(orderNotificationOutbox.orderId, order.id),
+      eq(orderNotificationOutbox.kind, "payment_failed"),
+      inArray(orderNotificationOutbox.status, ["pending", "failed"]),
+    ));
     await transaction.insert(orderNotificationOutbox).values({
       eventKey: `payment-confirmed:${order.id}`,
       kind: "payment_confirmed",
@@ -312,7 +318,7 @@ async function applyLockedVerifiedResult(
       kind: "payment_failed",
       orderId: order.id,
       recipientEmail: order.customerEmail,
-      availableAt: now,
+      availableAt: new Date(now.getTime() + PAYMENT_FAILURE_NOTIFICATION_DELAY_MS),
       createdAt: now,
       updatedAt: now,
     }).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });

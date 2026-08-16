@@ -1,6 +1,7 @@
 import type {
   OrderNotificationKind,
   OrderNotificationStatus,
+  OrderPaymentStatus,
 } from "@/server/db/schema";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { formatMarketMoney } from "@/domain/money";
@@ -19,6 +20,7 @@ export type OrderNotificationDelivery = Readonly<{
   customerName: string;
   recipientEmail: string;
   currency: MarketCurrency;
+  paymentStatus: OrderPaymentStatus;
   totalInclGstCents: number;
   trackingNumber: string | null;
   trackingCarrier: string | null;
@@ -30,6 +32,7 @@ export type OrderNotificationDelivery = Readonly<{
 
 export interface OrderNotificationRepository {
   claimNext(now: Date): Promise<OrderNotificationDelivery | null>;
+  discard(id: string): Promise<boolean>;
   markSent(id: string, providerMessageId: string, now: Date): Promise<boolean>;
   markFailed(id: string, errorCode: string, availableAt: Date, now: Date): Promise<boolean>;
 }
@@ -100,6 +103,10 @@ export function createOrderNotificationService(
 ) {
   async function deliver(event: OrderNotificationDelivery | null) {
     if (!event) return "empty" as const;
+    if (event.kind === "payment_failed" && event.paymentStatus !== "failed") {
+      await repository.discard(event.id);
+      return "discarded" as const;
+    }
     const now = dependencies.now?.() ?? new Date();
     try {
       const sent = await dependencies.provider.send(orderMessage(event, dependencies.siteUrl));

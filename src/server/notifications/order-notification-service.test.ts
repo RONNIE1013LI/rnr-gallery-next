@@ -15,6 +15,7 @@ const delivery = Object.freeze({
   customerName: "Aroha Ngata",
   recipientEmail: "aroha@example.test",
   currency: "NZD" as const,
+  paymentStatus: "paid" as const,
   totalInclGstCents: 12_075,
   trackingNumber: null,
   trackingCarrier: null,
@@ -29,6 +30,7 @@ function repository(): OrderNotificationRepository {
     claimNext: vi.fn().mockResolvedValueOnce(delivery).mockResolvedValue(null),
     markSent: vi.fn().mockResolvedValue(true),
     markFailed: vi.fn().mockResolvedValue(true),
+    discard: vi.fn().mockResolvedValue(true),
   };
 }
 
@@ -90,5 +92,32 @@ describe("order notification delivery", () => {
     expect(send).toHaveBeenCalledWith(expect.objectContaining({
       text: expect.stringContaining("A$120.75 AUD"),
     }));
+  });
+
+  it("discards an obsolete payment failure after the order becomes paid", async () => {
+    const staleFailure = {
+      ...delivery,
+      eventKey: "payment-failed:30000000-0000-4000-8000-000000000003",
+      kind: "payment_failed" as const,
+      paymentStatus: "paid" as const,
+    };
+    const repo: OrderNotificationRepository = {
+      ...repository(),
+      claimNext: vi.fn().mockResolvedValueOnce(staleFailure).mockResolvedValue(null),
+    };
+    const send = vi.fn();
+    const service = createOrderNotificationService(repo, {
+      provider: { configured: true, send },
+      siteUrl: "https://shop.example.test",
+      now: () => now,
+    });
+
+    await expect(service.deliverPending()).resolves.toEqual({
+      result: "processed",
+      sent: 0,
+      failed: 0,
+    });
+    expect(send).not.toHaveBeenCalled();
+    expect(repo.discard).toHaveBeenCalledWith(staleFailure.id);
   });
 });
