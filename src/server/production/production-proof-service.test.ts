@@ -9,6 +9,7 @@ import {
 } from "./production-proof-service";
 
 const actor = { userId: "user-1", email: "artist@example.com" };
+const jobId = "de31f47e-0fb9-438e-bef6-6bc45556d3bb";
 const reference = {
   id: "e23a9f59-bf54-4bb6-a7d0-9239c14cf819",
   originalName: "draft.jpg",
@@ -97,9 +98,30 @@ describe("production proof service", () => {
 
   it("keeps payment proof uploads behind finance permission", async () => {
     const service = createProductionProofService(repository());
-    await expect(service.registerFile(actor, "de31f47e-0fb9-438e-bef6-6bc45556d3bb", {
+    await expect(service.registerFile(actor, jobId, {
       kind: "payment_proof", idempotencyKey: "payment-proof-1", reference,
     }, { canManageFinance: false })).rejects.toBeInstanceOf(ProductionProofForbiddenError);
+  });
+
+  it("accepts PDF metadata only for finance-authorised payment proofs", async () => {
+    const service = createProductionProofService(repository());
+    const pdfReference = {
+      ...reference,
+      originalName: "bank-receipt.pdf",
+      mimeType: "application/pdf",
+    };
+
+    await expect(service.registerFile(actor, jobId, {
+      kind: "payment_proof",
+      idempotencyKey: "payment-proof-pdf-1",
+      reference: pdfReference,
+    }, { canManageFinance: true })).resolves.toMatchObject({ result: "created" });
+
+    await expect(service.registerFile(actor, jobId, {
+      kind: "customer_file",
+      idempotencyKey: "customer-file-pdf-1",
+      reference: pdfReference,
+    }, { canManageFinance: true })).rejects.toBeInstanceOf(ProductionProofValidationError);
   });
 
   it("records only valid immutable proof decisions", async () => {

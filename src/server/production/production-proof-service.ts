@@ -19,12 +19,20 @@ const fileSchema = z.object({
   reference: z.object({
     id: z.string().uuid(),
     originalName: z.string().trim().min(1).max(255),
-    mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif"]),
+    mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]),
     size: z.number().int().min(1).max(25 * 1024 * 1024),
     storageKey: z.string().regex(/^[0-9a-f-]{36}\.bin$/i),
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
   }).strict(),
-}).strict();
+}).strict().superRefine((file, context) => {
+  if (file.kind !== "payment_proof" && file.reference.mimeType === "application/pdf") {
+    context.addIssue({
+      code: "custom",
+      path: ["reference", "mimeType"],
+      message: "PDF is only allowed for payment proof",
+    });
+  }
+});
 
 const reviewSchema = z.object({
   fileId: z.string().uuid(),

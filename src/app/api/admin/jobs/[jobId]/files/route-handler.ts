@@ -76,7 +76,7 @@ export function createProductionJobFilesRoute(dependencies?: Dependencies) {
         if (typeof kind !== "string" || typeof idempotencyKey !== "string" || !file || typeof file === "string") {
           throw new ProductionProofValidationError();
         }
-        saved = await deps.save(file);
+        saved = await deps.save(file, { allowPdf: kind === "payment_proof" });
         const result = await deps.registerFile({
           userId: access.user.id,
           email: access.user.email ?? "unknown@invalid.local",

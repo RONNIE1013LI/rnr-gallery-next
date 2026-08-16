@@ -37,6 +37,7 @@ describe("production job files route", () => {
     });
     const response = await route.POST(request(), { params: Promise.resolve({ jobId }) });
     expect(response.status).toBe(201);
+    expect(save).toHaveBeenCalledWith(expect.any(File), { allowPdf: false });
     expect(registerFile).toHaveBeenCalledWith(
       { userId: "user-1", email: "staff@example.com" }, jobId,
       { kind: "design_draft", idempotencyKey: "upload-request-1", reference },
@@ -66,5 +67,29 @@ describe("production job files route", () => {
     const response = await route.POST(request("payment_proof"), { params: Promise.resolve({ jobId }) });
     expect(response.status).toBe(403);
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it("allows PDF validation only for a finance-authorised payment proof", async () => {
+    const save = vi.fn().mockResolvedValue({
+      ...reference,
+      originalName: "receipt.pdf",
+      mimeType: "application/pdf",
+    });
+    const route = createProductionJobFilesRoute({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: access.user,
+        adminRole: "admin" as const,
+      }),
+      save,
+      remove: vi.fn(),
+      registerFile: vi.fn().mockResolvedValue({ result: "created", file: { id: reference.id } }),
+      trustedOrigin: "https://shop.example.test",
+      parseForm: parseForm("payment_proof"),
+    });
+
+    const response = await route.POST(request("payment_proof"), { params: Promise.resolve({ jobId }) });
+
+    expect(response.status).toBe(201);
+    expect(save).toHaveBeenCalledWith(expect.any(File), { allowPdf: true });
   });
 });
