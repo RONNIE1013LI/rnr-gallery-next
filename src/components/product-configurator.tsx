@@ -356,7 +356,7 @@ export function ProductConfigurator({
           </button>
         </div>
         <div className={styles.artworkPreviewCopy}>
-          <p className={styles.eyebrow}>Your custom artwork</p>
+          <p className={styles.eyebrow}>Example shown</p>
           <h2>{product.title}</h2>
           <p>Preview your selection as you personalise your order.</p>
           <dl className={styles.previewDetails}>

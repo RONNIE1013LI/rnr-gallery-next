@@ -231,6 +231,8 @@ describe("ProductConfigurator", () => {
 
     const preview = screen.getByRole("region", { name: "Artwork preview" });
     expect(within(preview).getByRole("img", { name: product.image.alt })).toBeVisible();
+    expect(within(preview).getByText("Example shown")).toBeVisible();
+    expect(within(preview).queryByText("Your custom artwork")).not.toBeInTheDocument();
     expect(
       within(preview).getByText("Preview your selection as you personalise your order."),
     ).toBeVisible();
