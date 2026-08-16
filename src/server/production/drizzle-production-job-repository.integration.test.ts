@@ -5,6 +5,8 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   adminAuditLogs,
+  invoiceItems,
+  invoices,
   productionJobs,
   user,
 } from "@/server/db/schema";
@@ -43,6 +45,17 @@ describe("drizzle production job repository", () => {
 
   afterAll(async () => {
     if (jobIds.length) {
+      const savedInvoices = await database.select({ id: invoices.id }).from(invoices)
+        .where(inArray(invoices.jobId, jobIds));
+      const invoiceIds = savedInvoices.map((invoice) => invoice.id);
+      if (invoiceIds.length) {
+        await database.delete(adminAuditLogs).where(and(
+          eq(adminAuditLogs.resourceType, "invoice"),
+          inArray(adminAuditLogs.resourceId, invoiceIds),
+        ));
+        await database.delete(invoiceItems).where(inArray(invoiceItems.invoiceId, invoiceIds));
+        await database.delete(invoices).where(inArray(invoices.id, invoiceIds));
+      }
       await database.delete(adminAuditLogs).where(and(
         eq(adminAuditLogs.resourceType, "production_job"),
         inArray(adminAuditLogs.resourceId, jobIds),
@@ -92,8 +105,18 @@ describe("drizzle production job repository", () => {
         designText: "Happy birthday",
         notes: "Use main photo",
       }],
+      invoiceDraft: {
+        invoiceDate: "2026-08-04", dueDate: "2026-08-11", reference: "DRAFT",
+        businessName: "R&R Gallery", businessAddress: "11 Para Close", businessEmail: "customerservice@rnrgallery.com",
+        businessPhone: "+64 21 023 48948", businessWebsite: "https://rnrgallery.com/", gstNumber: "125-796-389", bankAccount: "04-2021-0317735-07",
+        customerName: "Manual Customer", customerEmail: "manual@example.test", customerAddress: "11 Example Street", deliveryAddress: "11 Example Street",
+        discountCents: 0, notes: "Thanks", terms: "Seven days", items: [{ code: "PRD", description: "Roll-Up Banner", quantityMilli: 1_000, rateInclGstCents: 23_000 }],
+      },
     }, { canUpdateFinance: true });
     jobIds.push(created.job.id);
+
+    await expect(database.select().from(invoices).where(eq(invoices.jobId, created.job.id)))
+      .resolves.toEqual([expect.objectContaining({ invoiceNumber: `INV-${created.job.jobNumber}`, reference: created.job.jobNumber, totalInclGstCents: 23_000 })]);
 
     const staffList = await listProductionJobs(
       database,

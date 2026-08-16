@@ -4,6 +4,8 @@ import { ClipboardEvent, FormEvent, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClientId } from "@/lib/client-id";
 import { parseCustomerBlock } from "@/domain/forms/customer-block-parser";
+import type { InvoiceBusiness } from "@/server/invoices/invoice-business";
+import { InvoiceWorkspace, invoiceRequestDraft, type InvoiceWorkspaceDraft } from "./invoice-workspace";
 import styles from "./admin.module.css";
 
 export type ProductionAssignee = Readonly<{
@@ -26,7 +28,22 @@ type Props = Readonly<{
   customFields?: readonly ProductionFormField[];
   endpoint?: string;
   detailBasePath?: string;
+  invoiceBusiness?: InvoiceBusiness;
 }>;
+
+const fallbackInvoiceBusiness: InvoiceBusiness = Object.freeze({
+  name: "R&R Gallery",
+  address: "11 Para Close\nFairview Heights\nAuckland 0632\nNew Zealand",
+  email: "customerservice@rnrgallery.com",
+  phone: "+64 21 023 48948",
+  website: "https://rnrgallery.com/",
+  gstNumber: "125-796-389",
+  bankAccount: "04-2021-0317735-07",
+});
+
+function dateValue(date: Date) {
+  return [date.getFullYear(), String(date.getMonth() + 1).padStart(2, "0"), String(date.getDate()).padStart(2, "0")].join("-");
+}
 
 function defaultNeededDate() {
   const date = new Date();
@@ -56,6 +73,7 @@ export function ProductionJobForm({
   customFields = [],
   endpoint = "/api/admin/jobs",
   detailBasePath = "/admin/jobs",
+  invoiceBusiness = fallbackInvoiceBusiness,
 }: Props) {
   const router = useRouter();
   const [itemKeys, setItemKeys] = useState([0]);
@@ -63,6 +81,9 @@ export function ProductionJobForm({
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [pasteFeedback, setPasteFeedback] = useState("");
+  const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [invoiceDraft, setInvoiceDraft] = useState<InvoiceWorkspaceDraft | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const customerNameRef = useRef<HTMLInputElement>(null);
   const customerEmailRef = useRef<HTMLInputElement>(null);
   const customerPhoneRef = useRef<HTMLInputElement>(null);
@@ -96,23 +117,59 @@ export function ProductionJobForm({
       : "No empty customer fields were changed; check the delivery address before submitting.");
   }
 
+  function openInvoice() {
+    if (!formRef.current) return;
+    if (!invoiceDraft) {
+      const form = new FormData(formRef.current);
+      const today = new Date();
+      const due = new Date(today);
+      due.setDate(due.getDate() + 7);
+      const product = String(form.get("item-0-product") ?? "").trim();
+      const size = String(form.get("item-0-size") ?? "").trim();
+      setInvoiceDraft({
+        invoiceDate: dateValue(today), dueDate: dateValue(due), reference: "DRAFT",
+        businessName: invoiceBusiness.name, businessAddress: invoiceBusiness.address,
+        businessEmail: invoiceBusiness.email, businessPhone: invoiceBusiness.phone,
+        businessWebsite: invoiceBusiness.website, gstNumber: invoiceBusiness.gstNumber,
+        bankAccount: invoiceBusiness.bankAccount,
+        customerName: String(form.get("customerName") ?? ""),
+        customerEmail: String(form.get("customerEmail") ?? ""),
+        customerAddress: String(form.get("deliveryAddress") ?? ""),
+        deliveryAddress: String(form.get("deliveryAddress") ?? ""),
+        discountCents: 0, notes: "Thank you for your business!", terms: "Payment is due within 7 days.",
+        items: [{ key: createClientId(), code: size || "PRD", description: [product, size].filter(Boolean).join(" — ") || "Order item", quantityMilli: 1_000, rateInclGstCents: canManageFinance ? cents(form.get("amountPayable")) : 0 }],
+      });
+    }
+    setInvoiceOpen(true);
+  }
+
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setPending(true);
     setFeedback("");
     try {
       const form = new FormData(event.currentTarget);
+      const customerName = String(form.get("customerName") ?? "");
+      const customerEmail = String(form.get("customerEmail") ?? "");
+      const deliveryAddress = String(form.get("deliveryAddress") ?? "");
+      const submittedInvoice = invoiceDraft ? invoiceRequestDraft({
+        ...invoiceDraft,
+        customerName: invoiceDraft.customerName || customerName,
+        customerEmail: invoiceDraft.customerEmail || customerEmail,
+        customerAddress: invoiceDraft.customerAddress || deliveryAddress,
+        deliveryAddress: invoiceDraft.deliveryAddress || deliveryAddress,
+      }) : undefined;
       const body = {
         idempotencyKey: createClientId(),
-        customerName: String(form.get("customerName") ?? ""),
-        customerEmail: String(form.get("customerEmail") ?? ""),
+        customerName,
+        customerEmail,
         customerPhone: String(form.get("customerPhone") ?? ""),
         customerSource: String(form.get("customerSource") ?? "other"),
         webOrderNumber: String(form.get("webOrderNumber") ?? ""),
         urgent: form.get("urgent") === "on",
         neededDate: String(form.get("neededDate") ?? ""),
         deliveryMethod: String(form.get("deliveryMethod") ?? "post"),
-        deliveryAddress: String(form.get("deliveryAddress") ?? ""),
+        deliveryAddress,
         paymentReconciliationStatus: canManageFinance
           ? String(form.get("paymentReconciliationStatus") ?? "Not checked")
           : "Not checked",
@@ -140,6 +197,7 @@ export function ProductionJobForm({
           designText: String(form.get(`item-${key}-design`) ?? ""),
           notes: String(form.get(`item-${key}-notes`) ?? ""),
         })),
+        ...(submittedInvoice ? { invoiceDraft: submittedInvoice } : {}),
       };
       const response = await fetch(endpoint, {
         method: "POST",
@@ -167,7 +225,9 @@ export function ProductionJobForm({
   }
 
   return (
-    <form className={styles.productionForm} onSubmit={submit}>
+    <>
+    <form ref={formRef} className={styles.productionForm} onSubmit={submit}>
+      {canManageFinance ? <div className={styles.formUtilityBar}><span>Data entry</span><button type="button" onClick={openInvoice}>Invoice</button></div> : null}
       <section className={styles.formPanel}>
         <div className={styles.formSectionHeading}>
           <div><span>01</span><h2>Customer</h2></div>
@@ -264,5 +324,7 @@ export function ProductionJobForm({
         <button type="submit" disabled={pending}>{pending ? "Creating…" : "Create production job"}</button>
       </div>
     </form>
+    {invoiceOpen && invoiceDraft ? <InvoiceWorkspace draft={invoiceDraft} onChange={setInvoiceDraft} onClose={() => setInvoiceOpen(false)} /> : null}
+    </>
   );
 }

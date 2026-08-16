@@ -7,6 +7,7 @@ import { requireAdminPage } from "@/server/auth/require-admin-page";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { getRegistryProducts } from "@/domain/catalogue/product-registry";
 import { getAdminProductionFieldRuntime } from "@/server/admin/admin-production-field-runtime";
+import { getInvoiceBusinessSettings } from "@/server/invoices/invoice-business";
 
 export const metadata = { title: "New manual job | R&R Gallery Admin" };
 
@@ -29,6 +30,7 @@ export default async function NewProductionJobPage() {
         canManageFinance={canManageFinance}
         productTitles={getRegistryProducts(registry).filter((product) => product.active).map((product) => product.title)}
         customFields={fieldDefinitions.filter((field) => field.enabled && field.showOnCreate && !field.legacyOnly && field.fieldType !== "file" && (field.section !== "finance" || canManageFinance)).map((field) => ({ id: field.id, label: field.label, fieldType: field.fieldType as ProductionFormField["fieldType"], options: field.options, required: field.required }))}
+        invoiceBusiness={getInvoiceBusinessSettings()}
       />
     </section>
   );

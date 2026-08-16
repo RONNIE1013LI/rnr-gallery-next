@@ -1,4 +1,6 @@
 import { createHash, randomBytes } from "node:crypto";
+import type { MarketCurrency } from "@/domain/markets/types";
+import { buildInvoiceNumber, calculateInvoiceTotals, parseInvoiceDraft, type InvoiceDraft } from "@/server/invoices/invoice-domain";
 import type {
   OrderFulfilmentStatus,
   OrderPaymentStatus,
@@ -196,6 +198,7 @@ const manualJobSchema = z.object({
   materialCostCents: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   artistPaid: z.boolean().default(false),
   completed: z.boolean().default(false),
+  invoiceDraft: z.unknown().optional(),
   customFields: z.array(customFieldValueSchema).max(100).default([]).superRefine((values, context) => {
     if (new Set(values.map((value) => value.fieldId)).size !== values.length) {
       context.addIssue({ code: "custom", message: "Custom fields must be unique" });
@@ -285,7 +288,7 @@ const jobUpdateSchema = z.object({
 
 type JobUpdate = z.output<typeof jobUpdateSchema>;
 
-export type CreateManualProductionJob = Readonly<Omit<ManualJob, "items" | "artistPaid" | "completed"> & {
+export type CreateManualProductionJob = Readonly<Omit<ManualJob, "items" | "artistPaid" | "completed" | "invoiceDraft"> & {
   requestDigest: string;
   jobNumber: string;
   actor: AdminActor;
@@ -294,6 +297,11 @@ export type CreateManualProductionJob = Readonly<Omit<ManualJob, "items" | "arti
   artistPaidAt: Date | null;
   completedAt: Date | null;
   items: readonly Readonly<z.output<typeof itemSchema> & { position: number }>[];
+  invoice: Readonly<InvoiceDraft & ReturnType<typeof calculateInvoiceTotals> & {
+    invoiceNumber: string;
+    currency: MarketCurrency;
+    gstRateBasisPoints: number;
+  }> | null;
 }>;
 
 export type UpdateProductionJob = Readonly<
@@ -392,6 +400,9 @@ export function createProductionJobService(
       )) {
         throw new ProductionJobValidationError("Finance permission is required");
       }
+      if (job.invoiceDraft !== undefined && !permissions.canUpdateFinance) {
+        throw new ProductionJobValidationError("Finance permission is required");
+      }
       const requestDigest = digestManualJob(job);
       const existing = await repository.findManualByIdempotencyKey(
         job.idempotencyKey,
@@ -404,17 +415,36 @@ export function createProductionJobService(
       }
 
       const createdAt = dependencies.now?.() ?? new Date();
-      const { artistPaid, completed, ...persistedJob } = job;
+      const jobNumber = await (dependencies.createJobNumber?.() ?? createManualJobNumber(createdAt));
+      let invoice: CreateManualProductionJob["invoice"] = null;
+      if (job.invoiceDraft !== undefined) {
+        try {
+          const parsed = parseInvoiceDraft(job.invoiceDraft);
+          invoice = Object.freeze({
+            ...parsed,
+            reference: parsed.reference === "DRAFT" ? jobNumber : parsed.reference,
+            ...calculateInvoiceTotals(parsed, 1_500),
+            invoiceNumber: buildInvoiceNumber(jobNumber),
+            currency: "NZD" as const,
+            gstRateBasisPoints: 1_500,
+          });
+        } catch {
+          throw new ProductionJobValidationError("Invoice data is invalid");
+        }
+      }
+      const { artistPaid, completed, invoiceDraft, ...persistedJob } = job;
+      void invoiceDraft;
       const created = await repository.createManual({
         ...persistedJob,
         requestDigest,
-        jobNumber: await (dependencies.createJobNumber?.() ?? createManualJobNumber(createdAt)),
+        jobNumber,
         actor,
         createdAt,
         canUpdateFinance: permissions.canUpdateFinance,
         artistPaidAt: artistPaid ? createdAt : null,
         completedAt: completed ? createdAt : null,
         items: job.items.map((item, position) => Object.freeze({ ...item, position })),
+        invoice,
       });
       return Object.freeze({ result: "created" as const, job: created });
     },

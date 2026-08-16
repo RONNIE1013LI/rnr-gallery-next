@@ -2799,6 +2799,31 @@
   gap: 18px;
 }
 
+.formUtilityBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 12px;
+  border-top: 6px solid #202830;
+  border-bottom: 1px solid var(--admin-border);
+  background: #fff;
+  font-size: 13px;
+  font-weight: 760;
+}
+
+.formUtilityBar button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid #173247;
+  border-radius: 4px;
+  color: #fff;
+  background: #173247;
+  font: inherit;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
 /* The standalone Forms portal mirrors the compact running order-system drawer. */
 :global([data-forms-editor]) .orderDetailLayout {
   grid-template-columns: 1fr;

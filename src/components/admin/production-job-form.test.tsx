@@ -135,6 +135,32 @@ describe("ProductionJobForm", () => {
     });
   });
 
+  it("edits an invoice before saving and submits it with the manual order", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "created", job: { id: "5b25574f-e1e4-4b29-927d-c24c5efc4d8b", jobNumber: "08000" },
+    }), { status: 201, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: vi.fn()
+      .mockReturnValueOnce("invoice-item-0001")
+      .mockReturnValueOnce("manual-job-request-0004") });
+    render(<ProductionJobForm assignees={assignees} canManageFinance />);
+    fireEvent.change(screen.getByLabelText("Customer name"), { target: { value: "Invoice Customer" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "invoice@example.test" } });
+    fireEvent.change(screen.getByLabelText("Product"), { target: { value: "Canvas" } });
+    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
+    fireEvent.change(screen.getByLabelText("Amount payable (NZD)"), { target: { value: "230.00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Invoice" }));
+    expect(screen.getByRole("dialog", { name: "Tax invoice preview" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Create production job" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(payload.invoiceDraft).toMatchObject({
+      reference: "DRAFT", customerName: "Invoice Customer", customerEmail: "invoice@example.test",
+      items: [{ code: "A2", description: "Canvas — A2", quantityMilli: 1_000, rateInclGstCents: 23_000 }],
+    });
+  });
+
   it("can reuse the mature form inside the dedicated forms portal", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       result: "created",

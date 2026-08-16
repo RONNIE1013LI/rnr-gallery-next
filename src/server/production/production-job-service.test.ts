@@ -215,6 +215,35 @@ describe("manual production job service", () => {
     }));
   });
 
+  it("validates and prepares an invoice draft for the same manual-job transaction", async () => {
+    const repo = repository();
+    const service = createProductionJobService(repo, { createJobNumber: () => "08000" });
+    await service.createManual(actor, {
+      ...validInput,
+      invoiceDraft: {
+        invoiceDate: "2026-08-16", dueDate: "2026-08-23", reference: "DRAFT",
+        businessName: "R&R Gallery", businessAddress: "11 Para Close", businessEmail: "customerservice@rnrgallery.com",
+        businessPhone: "+64 21 023 48948", businessWebsite: "https://rnrgallery.com/", gstNumber: "125-796-389", bankAccount: "04-2021-0317735-07",
+        customerName: "Ana Example", customerEmail: "ana@example.com", customerAddress: "11 Example Street", deliveryAddress: "11 Example Street",
+        discountCents: 0, notes: "Thanks", terms: "Seven days", items: [{ code: "PRD", description: "Canvas", quantityMilli: 1_000, rateInclGstCents: 23_000 }],
+      },
+    }, { canUpdateFinance: true });
+    expect(repo.createManual).toHaveBeenCalledWith(expect.objectContaining({
+      jobNumber: "08000",
+      invoice: expect.objectContaining({ invoiceNumber: "INV-08000", reference: "08000", totalInclGstCents: 23_000, gstCents: 3_000 }),
+    }));
+  });
+
+  it("requires finance permission for a pre-save invoice draft", async () => {
+    const service = createProductionJobService(repository());
+    await expect(service.createManual(actor, {
+      ...validInput,
+      manualPaymentStatus: "awaiting_payment", amountPayableCents: 0, amountPaidCents: 0,
+      artistFeeCents: 0, materialCostCents: 0, paymentReconciliationStatus: "Not checked", artistPaid: false,
+      invoiceDraft: {},
+    }, { canUpdateFinance: false })).rejects.toThrow("Finance permission is required");
+  });
+
   it("prevents staff without finance permission from entering payment or costs", async () => {
     const service = createProductionJobService(repository());
     await expect(service.createManual(actor, validInput, {

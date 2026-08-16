@@ -9,6 +9,7 @@ import { getAdminProductionRuntime } from "@/server/admin/admin-production-runti
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { hasFormPermission } from "@/server/forms/forms-permissions";
 import { requireFormsPage } from "@/server/forms/require-forms-page";
+import { getInvoiceBusinessSettings } from "@/server/invoices/invoice-business";
 
 export const metadata = { title: "Order entry" };
 
@@ -50,6 +51,7 @@ export default async function NewFormsJobPage() {
             options: field.options,
             required: field.required,
           }))}
+          invoiceBusiness={getInvoiceBusinessSettings()}
         />
       </div>
     </section>

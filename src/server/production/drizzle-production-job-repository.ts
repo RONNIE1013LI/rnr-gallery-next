@@ -13,6 +13,8 @@ import {
 import type { getDatabase } from "@/server/db/client";
 import {
   adminAuditLogs,
+  invoiceItems,
+  invoices,
   orders,
   productionJobItems,
   productionJobs,
@@ -450,6 +452,62 @@ export function createDrizzleProductionJobRepository(
             createdAt: input.createdAt,
             updatedAt: input.createdAt,
           })));
+        }
+        if (input.invoice) {
+          const [invoice] = await transaction.insert(invoices).values({
+            jobId: job.id,
+            invoiceNumber: input.invoice.invoiceNumber,
+            status: "draft",
+            invoiceDate: input.invoice.invoiceDate,
+            dueDate: input.invoice.dueDate,
+            reference: input.invoice.reference,
+            webOrderNumber: input.webOrderNumber,
+            businessName: input.invoice.businessName,
+            businessAddress: input.invoice.businessAddress,
+            businessEmail: input.invoice.businessEmail,
+            businessPhone: input.invoice.businessPhone,
+            businessWebsite: input.invoice.businessWebsite,
+            gstNumber: input.invoice.gstNumber,
+            bankAccount: input.invoice.bankAccount,
+            customerName: input.invoice.customerName,
+            customerEmail: input.invoice.customerEmail,
+            customerAddress: input.invoice.customerAddress,
+            deliveryAddress: input.invoice.deliveryAddress,
+            currency: input.invoice.currency,
+            gstRateBasisPoints: input.invoice.gstRateBasisPoints,
+            pricesIncludeGst: true,
+            grossCents: input.invoice.grossCents,
+            discountCents: input.invoice.discountCents,
+            subtotalExGstCents: input.invoice.subtotalExGstCents,
+            gstCents: input.invoice.gstCents,
+            totalInclGstCents: input.invoice.totalInclGstCents,
+            notes: input.invoice.notes,
+            terms: input.invoice.terms,
+            createdByUserId: input.actor.userId,
+            updatedByUserId: input.actor.userId,
+            createdAt: input.createdAt,
+            updatedAt: input.createdAt,
+          }).returning({ id: invoices.id });
+          await transaction.insert(invoiceItems).values(input.invoice.items.map((item, position) => ({
+            invoiceId: invoice.id,
+            position,
+            code: item.code,
+            description: item.description,
+            quantityMilli: item.quantityMilli,
+            rateInclGstCents: item.rateInclGstCents,
+            lineTotalInclGstCents: Math.round(item.quantityMilli * item.rateInclGstCents / 1_000),
+          })));
+          await transaction.insert(adminAuditLogs).values(buildAuditRecord({
+            actorUserId: input.actor.userId,
+            actorEmail: input.actor.email,
+            action: "invoice.created",
+            resourceType: "invoice",
+            resourceId: invoice.id,
+            afterSummary: { jobId: job.id, invoiceNumber: input.invoice.invoiceNumber, totalInclGstCents: input.invoice.totalInclGstCents },
+            requestSource: "admin.jobs.manual",
+            result: "success",
+            idempotencyKey: `invoice-created:${job.id}`,
+          }));
         }
         await transaction.insert(adminAuditLogs).values(buildAuditRecord({
           actorUserId: input.actor.userId,
