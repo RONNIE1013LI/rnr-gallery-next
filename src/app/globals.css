@@ -818,8 +818,8 @@ a:active {
 }
 
 .site-footer__payment-logo {
-  width: 5.625rem;
-  aspect-ratio: 155 / 100;
+  width: 1.875rem;
+  aspect-ratio: 151 / 96;
   flex: 0 0 auto;
 }
 
@@ -828,34 +828,36 @@ a:active {
   display: block;
   width: 100%;
   height: 100%;
+  aspect-ratio: 151 / 96;
   overflow: hidden;
   border-radius: 13% / 20%;
 }
 
 .site-footer__payment-sprite {
   position: absolute;
-  inset: 0 auto auto 0;
-  width: 755.4839%;
+  top: -2.0833%;
+  left: -1.3245%;
+  width: 775.4967%;
   max-width: none;
-  height: 100%;
+  height: 104.1667%;
   object-fit: fill;
   user-select: none;
 }
 
 .site-footer__payment-mark--mastercard .site-footer__payment-sprite {
-  transform: translateX(-14.5175%);
+  left: -113.9073%;
 }
 
 .site-footer__payment-mark--afterpay .site-footer__payment-sprite {
-  transform: translateX(-29.035%);
+  left: -226.4901%;
 }
 
 .site-footer__payment-mark--apple-pay .site-footer__payment-sprite {
-  transform: translateX(-72.3313%);
+  left: -562.2517%;
 }
 
 .site-footer__payment-mark--google-pay .site-footer__payment-sprite {
-  transform: translateX(-86.7635%);
+  left: -674.8344%;
 }
 
 .site-footer__legal {
@@ -1086,11 +1088,11 @@ a:active {
   }
 
   .site-footer__payment-logo {
-    width: auto;
-    min-width: 0;
+    width: 1.25rem;
+    min-width: 1.25rem;
     height: auto;
-    aspect-ratio: 155 / 100;
-    flex: 1 1 0;
+    aspect-ratio: 151 / 96;
+    flex: 0 0 auto;
   }
 
 }
