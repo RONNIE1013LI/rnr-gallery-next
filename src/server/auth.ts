@@ -36,6 +36,7 @@ export const auth = betterAuth({
     sendResetPassword: createPasswordResetEmailSender({
       RESEND_API_KEY: process.env.RESEND_API_KEY,
       EMAIL_FROM: process.env.EMAIL_FROM,
+      BETTER_AUTH_URL: process.env.BETTER_AUTH_URL,
     }),
   },
   socialProviders: getSocialProviderOptions(process.env),

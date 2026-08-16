@@ -81,4 +81,40 @@ describe("EmailTemplateForm", () => {
       action: "publish",
     }));
   });
+
+  it("edits signature fields through the same safe content endpoint", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: "saved" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetch);
+    render(<EmailTemplateForm entries={[{
+      key: "email.signature.team_name",
+      surface: "email",
+      group: "Customer email signature",
+      label: "Team name",
+      description: "Customer-facing team name.",
+      maxLength: 120,
+      multiline: false,
+      defaultValue: "Customer Service Team",
+      allowedVariables: [],
+      draftValue: "Customer Service Team",
+      publishedValue: "Customer Service Team",
+      updatedAt: null,
+      updatedByEmail: null,
+    }]} canPublish />);
+
+    expect(screen.getByText("No variables are available for this field.")).toBeInTheDocument();
+    fireEvent.change(screen.getByDisplayValue("Customer Service Team"), {
+      target: { value: "R&R Customer Care" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+    expect(fetch.mock.calls[0][0]).toBe("/api/admin/content/email.signature.team_name");
+    expect(JSON.parse(fetch.mock.calls[0][1].body)).toEqual(expect.objectContaining({
+      action: "save",
+      value: "R&R Customer Care",
+    }));
+  });
 });

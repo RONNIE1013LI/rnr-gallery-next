@@ -28,10 +28,26 @@ const entry = Object.freeze({
   updatedByEmail: "owner@example.test",
 });
 
+const signatureEntry = Object.freeze({
+  key: "email.signature.team_name",
+  surface: "email" as const,
+  group: "Customer email signature",
+  label: "Team name",
+  description: "Customer-facing team name.",
+  maxLength: 120,
+  multiline: false,
+  defaultValue: "Customer Service Team",
+  allowedVariables: [],
+  draftValue: "Customer Service Team",
+  publishedValue: "Customer Service Team",
+  updatedAt: null,
+  updatedByEmail: null,
+});
+
 describe("admin email templates page", () => {
   it("renders the email templates settings page for an administrator", async () => {
     requireAdminPage.mockResolvedValue({ user: { id: "admin-1" }, adminRole: "admin" });
-    listEmailTemplates.mockResolvedValue([entry]);
+    listEmailTemplates.mockResolvedValue([entry, signatureEntry]);
 
     render(await AdminEmailTemplatesPage());
 
@@ -41,7 +57,9 @@ describe("admin email templates page", () => {
     );
     expect(screen.getByRole("heading", { name: "Email templates" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Customer payment confirmed" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Publish" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Customer email signature" })).toBeInTheDocument();
+    expect(screen.getByDisplayValue("Customer Service Team")).toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Publish" })).toHaveLength(2);
   });
 
   it("allows staff to draft but not publish email wording", async () => {
