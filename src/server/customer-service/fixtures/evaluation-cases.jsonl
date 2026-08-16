@@ -98,4 +98,3 @@
 {"id":"realtime-18","category":"realtime_required","message":"How long does the design take?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
 {"id":"realtime-19","category":"realtime_required","message":"How long does printing take?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
 {"id":"realtime-20","category":"realtime_required","message":"When will the order be ready?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
-

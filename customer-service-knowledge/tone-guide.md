@@ -84,4 +84,3 @@ For memorial orders:
 - Send long feature lists when one question will qualify the request.
 - Sound automated, defensive, or annoyed.
 - Include internal classifications, placeholders, or private order data in customer replies.
-

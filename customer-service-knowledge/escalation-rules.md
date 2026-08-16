@@ -68,4 +68,3 @@ Only when no live order/customer data is required:
 > Thanks for checking. I need our team to confirm this against your order/current availability. Please send your order reference and we’ll get back to you as soon as possible.
 
 Ask only for data needed for the handoff, and collect personal data through an authenticated or secure channel.
-
