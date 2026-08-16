@@ -2,10 +2,10 @@ import {
   and,
   asc,
   eq,
-  inArray,
   isNotNull,
   isNull,
   lt,
+  lte,
   notExists,
   or,
   sql,
@@ -16,19 +16,6 @@ import type { AbandonedUploadCleanupRepository } from "./abandoned-upload-cleanu
 
 type Database = ReturnType<typeof getDatabase>;
 
-function eligibleSessions(database: Database, before: Date) {
-  return database
-    .select({ id: checkoutSessions.id })
-    .from(checkoutSessions)
-    .where(or(
-      lt(checkoutSessions.expiresAt, before),
-      and(
-        isNotNull(checkoutSessions.completedAt),
-        lt(checkoutSessions.completedAt, before),
-      ),
-    ));
-}
-
 const claimAvailable = () => or(
   isNull(checkoutUploads.cleanupClaimedAt),
   sql`${checkoutUploads.cleanupClaimedAt} < clock_timestamp() - interval '15 minutes'`,
@@ -37,16 +24,35 @@ const claimAvailable = () => or(
 export function createDrizzleAbandonedUploadCleanupRepository(
   database: Database,
 ): AbandonedUploadCleanupRepository {
+  const eligibleUploads = (before: Date) => and(
+    lte(checkoutUploads.createdAt, before),
+    isNull(checkoutUploads.purgedAt),
+    isNotNull(checkoutUploads.storageKey),
+    isNotNull(checkoutUploads.originalName),
+    isNotNull(checkoutUploads.mediaType),
+    isNotNull(checkoutUploads.sizeBytes),
+    isNotNull(checkoutUploads.sha256),
+    claimAvailable(),
+  );
+
   return Object.freeze({
+    async report(before) {
+      const [result] = await database
+        .select({
+          eligible: sql<number>`count(*)::int`,
+          eligibleBytes: sql<number>`coalesce(sum(${checkoutUploads.sizeBytes}), 0)::bigint`
+            .mapWith(Number),
+        })
+        .from(checkoutUploads)
+        .where(eligibleUploads(before));
+      return result ?? { eligible: 0, eligibleBytes: 0 };
+    },
+
     async listCandidates(before, limit) {
       return database
         .select({ id: checkoutUploads.id })
         .from(checkoutUploads)
-        .where(and(
-          isNull(checkoutUploads.claimedByOrderItemId),
-          claimAvailable(),
-          inArray(checkoutUploads.checkoutSessionId, eligibleSessions(database, before)),
-        ))
+        .where(eligibleUploads(before))
         .orderBy(asc(checkoutUploads.createdAt), asc(checkoutUploads.id))
         .limit(limit);
     },
@@ -57,24 +63,52 @@ export function createDrizzleAbandonedUploadCleanupRepository(
         .set({ cleanupClaimedAt: claimedAt })
         .where(and(
           eq(checkoutUploads.id, id),
-          isNull(checkoutUploads.claimedByOrderItemId),
-          claimAvailable(),
-          inArray(checkoutUploads.checkoutSessionId, eligibleSessions(database, before)),
+          eligibleUploads(before),
         ))
-        .returning({ id: checkoutUploads.id, storageKey: checkoutUploads.storageKey });
-      return claimed ?? null;
+        .returning({
+          id: checkoutUploads.id,
+          storageKey: checkoutUploads.storageKey,
+          claimedByOrderItemId: checkoutUploads.claimedByOrderItemId,
+        });
+      if (!claimed?.storageKey) return null;
+      return {
+        id: claimed.id,
+        storageKey: claimed.storageKey,
+        bound: claimed.claimedByOrderItemId !== null,
+      };
     },
 
-    async complete(id, claimedAt) {
+    async complete(id, claimedAt, purgedAt) {
+      const tombstoned = await database
+        .update(checkoutUploads)
+        .set({
+          storageKey: null,
+          originalName: null,
+          mediaType: null,
+          sizeBytes: null,
+          sha256: null,
+          cleanupClaimedAt: null,
+          purgedAt,
+        })
+        .where(and(
+          eq(checkoutUploads.id, id),
+          eq(checkoutUploads.cleanupClaimedAt, claimedAt),
+          isNotNull(checkoutUploads.claimedByOrderItemId),
+          isNull(checkoutUploads.purgedAt),
+        ))
+        .returning({ id: checkoutUploads.id });
+      if (tombstoned.length === 1) return "tombstoned";
+
       const deleted = await database
         .delete(checkoutUploads)
         .where(and(
           eq(checkoutUploads.id, id),
           eq(checkoutUploads.cleanupClaimedAt, claimedAt),
           isNull(checkoutUploads.claimedByOrderItemId),
+          isNull(checkoutUploads.purgedAt),
         ))
         .returning({ id: checkoutUploads.id });
-      return deleted.length === 1;
+      return deleted.length === 1 ? "deleted" : null;
     },
 
     async release(id, claimedAt) {
@@ -84,7 +118,7 @@ export function createDrizzleAbandonedUploadCleanupRepository(
         .where(and(
           eq(checkoutUploads.id, id),
           eq(checkoutUploads.cleanupClaimedAt, claimedAt),
-          isNull(checkoutUploads.claimedByOrderItemId),
+          isNull(checkoutUploads.purgedAt),
         ))
         .returning({ id: checkoutUploads.id });
       return released.length === 1;
