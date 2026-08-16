@@ -133,16 +133,6 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
         { name: "Design Gallery", path: "/design-gallery" },
         { name: title, path: `/designs/${canonicalSlug}` },
       ])} />
-      <nav className={styles.publicBreadcrumbs} aria-label="Breadcrumb">
-        <Link className={styles.breadcrumbHome} href="/">Home</Link>
-        <span className={styles.breadcrumbSeparator} aria-hidden="true">›</span>
-        <Link className={styles.breadcrumbGallery} href="/design-gallery">
-          <span className={styles.breadcrumbBackIcon} aria-hidden="true">‹</span>
-          Design Gallery
-        </Link>
-        <span className={styles.breadcrumbSeparator} aria-hidden="true">›</span>
-        <span className={styles.breadcrumbCurrent} aria-current="page">{title}</span>
-      </nav>
       <section className={styles.designDetailHero}>
         <div className={styles.designDetailMedia}>
           <Image
