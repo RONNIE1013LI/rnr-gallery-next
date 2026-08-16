@@ -222,6 +222,13 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       });
     },
 
+    async messageIdForAttempt(attemptId) {
+      const [row] = await database.select({ messageId: customerServiceAiAttempts.messageId })
+        .from(customerServiceAiAttempts)
+        .where(eq(customerServiceAiAttempts.id, attemptId)).limit(1);
+      return row?.messageId ?? null;
+    },
+
     async appendFeedback(input: FeedbackEventInput) {
       await database.insert(customerServiceFeedbackEvents).values(input).onConflictDoNothing();
     },
@@ -245,6 +252,36 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           ...row,
           receivedAt: row.receivedAt.toISOString(),
         })),
+      };
+    },
+
+    async metricCounts() {
+      const [messages, attempts, feedback] = await Promise.all([
+        database.select({ id: customerServiceMessages.id, pilotRunId: customerServiceMessages.pilotRunId }).from(customerServiceMessages),
+        database.select({
+          id: customerServiceAiAttempts.id,
+          status: customerServiceAiAttempts.status,
+          providerCalled: customerServiceAiAttempts.providerCalled,
+          validatorCodes: customerServiceAiAttempts.validatorCodes,
+          cost: customerServiceAiAttempts.estimatedCostMicrousd,
+          latency: customerServiceAiAttempts.latencyMs,
+        }).from(customerServiceAiAttempts),
+        database.select({ action: customerServiceFeedbackEvents.action }).from(customerServiceFeedbackEvents),
+      ]);
+      const generated = attempts.filter((attempt) => attempt.status === "draft_ready");
+      const policyCodes = new Set(["forbidden_commitment", "monetary_claim", "unconfirmed_policy_claim"]);
+      return {
+        totalIncomingEligible: messages.filter((message) => message.pilotRunId !== null).length,
+        draftsGenerated: generated.length,
+        acceptedUnchanged: feedback.filter((event) => event.action === "accepted_unchanged").length,
+        editedAccepted: feedback.filter((event) => event.action === "edited").length,
+        rejected: feedback.filter((event) => event.action === "rejected").length,
+        gateBlocked: attempts.filter((attempt) => attempt.status === "gate_blocked").length,
+        outputValidatorBlocked: attempts.filter((attempt) => attempt.status === "output_blocked").length,
+        providerCalls: attempts.filter((attempt) => attempt.providerCalled).length,
+        policyViolationAttempts: attempts.filter((attempt) => attempt.validatorCodes.some((code) => policyCodes.has(code))).length,
+        totalCostMicrousd: attempts.reduce((sum, attempt) => sum + (attempt.cost ?? 0), 0),
+        totalLatencyMs: attempts.reduce((sum, attempt) => sum + (attempt.latency ?? 0), 0),
       };
     },
   };

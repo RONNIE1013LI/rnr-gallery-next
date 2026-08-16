@@ -75,6 +75,20 @@ export type SafeQueuePage = Readonly<{
   }>[];
 }>;
 
+export type PilotMetricCounts = Readonly<{
+  totalIncomingEligible: number;
+  draftsGenerated: number;
+  acceptedUnchanged: number;
+  editedAccepted: number;
+  rejected: number;
+  gateBlocked: number;
+  outputValidatorBlocked: number;
+  providerCalls: number;
+  policyViolationAttempts: number;
+  totalCostMicrousd: number;
+  totalLatencyMs: number;
+}>;
+
 export interface CustomerServiceRepository {
   ingestFacebookMessage(input: HashedIncomingMessage): Promise<
     | Readonly<{ status: "created"; messageId: string; pilotSequence: number }>
@@ -88,6 +102,8 @@ export interface CustomerServiceRepository {
     | Readonly<{ status: "budget_blocked"; attemptId: string }>
   >;
   completeProviderAttempt(input: ProviderAttemptCompletion): Promise<void>;
+  messageIdForAttempt(attemptId: string): Promise<string | null>;
   appendFeedback(input: FeedbackEventInput): Promise<void>;
   listQueue(limit: number): Promise<SafeQueuePage>;
+  metricCounts(): Promise<PilotMetricCounts>;
 }
