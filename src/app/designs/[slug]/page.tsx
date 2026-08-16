@@ -155,13 +155,19 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
             <div><dt>Occasion</dt><dd>{occasion}</dd></div>
             <div>
               <dt>Available sizes</dt>
-              <dd>{registryProduct.configuration.sizes.map((size) => size.label).join(", ")}</dd>
+              <dd>
+                <ul className={styles.designDetailSizeList} aria-label="Available sizes">
+                  {registryProduct.configuration.sizes.map((size) => (
+                    <li key={size.key}>{size.label}</li>
+                  ))}
+                </ul>
+              </dd>
             </div>
           </dl>
           <p className={styles.productDetailPrice}>From {formatNzdExplicit(priceInclGstCents)} incl GST</p>
           <div className={styles.designDetailActions}>
             <Link className={styles.primaryButton} href={`/products/${product.slug}/configure?design=${design.id}`}>
-              Use This Design
+              Start With Your Photos
             </Link>
             <Link className={styles.secondaryButton} href={returnTo}>View Similar Designs</Link>
           </div>

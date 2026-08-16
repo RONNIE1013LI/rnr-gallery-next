@@ -60,7 +60,7 @@ describe("public design detail page", () => {
     expect(screen.getByText("85 × 200 cm")).toBeVisible();
     expect(screen.queryByText("Design image")).not.toBeInTheDocument();
     expect(screen.queryByText("1200 × 2400 px")).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Use This Design" }))
+    expect(screen.getByRole("link", { name: "Start With Your Photos" }))
       .toHaveAttribute("href", `/products/roll-up-banner/configure?design=${designId}`);
     expect(screen.getByRole("link", { name: "View Similar Designs" }))
       .toHaveAttribute("href", "/design-gallery?occasion=birthday&page=2");
@@ -75,6 +75,25 @@ describe("public design detail page", () => {
         { position: 3, name: "40th Birthday" },
       ],
     });
+  });
+
+  it("renders every configured size as a separate list item in registry order", async () => {
+    findByPublicSlug.mockResolvedValue({
+      ...design,
+      productTypeSlug: "canvas",
+      productSlug: "photo-print-canvas",
+    });
+
+    render(await DesignDetailPage(props));
+
+    const sizeList = screen.getByRole("list", { name: "Available sizes" });
+    expect(within(sizeList).getAllByRole("listitem").map((item) => item.textContent)).toEqual([
+      "A4 — 29.7 × 21 cm",
+      "A3 — 42 × 29.7 cm",
+      "A2 — 59.4 × 42 cm",
+      "A1 — 84.1 × 59.4 cm",
+      "A0 — 118.9 × 84.1 cm",
+    ]);
   });
 
   it("publishes metadata for the concrete artwork and its public canonical", async () => {
