@@ -145,7 +145,8 @@ describe("InvoicePanel", () => {
     await screen.findByText("INV-RRM-2026-ABC123");
 
     expect(screen.getByLabelText("Discount (AUD)")).toBeInTheDocument();
-    expect(screen.getAllByText("A$413.00 AUD")).toHaveLength(3);
+    expect(within(screen.getByTestId("invoice-totals")).getAllByText("A$413.00 AUD")).toHaveLength(3);
+    expect(screen.getByLabelText("Invoice live preview")).toBeInTheDocument();
     expect(screen.queryByText(/GST \(/)).not.toBeInTheDocument();
   });
 

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import { createClientId } from "@/lib/client-id";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { formatMarketMoney } from "@/domain/money";
+import { InvoicePreview } from "./invoice-preview";
 import styles from "./admin.module.css";
 
 type InvoiceItem = Readonly<{
@@ -112,6 +113,7 @@ function totals(draft: Draft, invoice: Invoice) {
   if (sameFinancialDraft(invoice, draft)) {
     return {
       grossCents: invoice.grossCents,
+      discountCents: draft.discountCents,
       subtotalExGstCents: invoice.subtotalExGstCents,
       gstCents: invoice.gstCents,
       totalInclGstCents: invoice.totalInclGstCents,
@@ -128,6 +130,7 @@ function totals(draft: Draft, invoice: Invoice) {
   );
   return {
     grossCents,
+    discountCents: draft.discountCents,
     subtotalExGstCents: totalInclGstCents - gstCents,
     gstCents,
     totalInclGstCents,
@@ -260,6 +263,8 @@ export function InvoicePanel({
 
   return (
     <section className={`${styles.panel} ${styles.invoicePanel}`}>
+      <div className={styles.persistedInvoiceWorkspace}>
+        <div className={styles.persistedInvoiceEditor}>
       <div className={styles.panelHeading}>
         <div><h2>Invoice</h2><strong>{invoice.invoiceNumber}</strong></div>
         <span className={styles.invoiceStatus} data-status={invoice.status}>{invoice.status === "draft" ? "Draft" : invoice.status === "issued" ? "Issued" : "Void"}</span>
@@ -315,6 +320,11 @@ export function InvoicePanel({
       </div>
       {invoice.status === "void" ? <p className={styles.authorityBanner}><strong>Voided:</strong> {invoice.voidReason}</p> : null}
       <p className={styles.formFeedback} aria-live="polite">{feedback}</p>
+        </div>
+        <div className={styles.persistedInvoicePreview}>
+          <InvoicePreview invoiceNumber={invoice.invoiceNumber} draft={draft} currency={invoice.currency} gstRateBasisPoints={invoice.gstRateBasisPoints} totals={calculated} />
+        </div>
+      </div>
     </section>
   );
 }
