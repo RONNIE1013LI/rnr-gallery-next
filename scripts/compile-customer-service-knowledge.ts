@@ -53,7 +53,7 @@ function parseRules(markdown: string): CompiledPolicyRule[] {
   const ids = new Set<string>();
 
   for (const line of markdown.split(/\r?\n/)) {
-    if (!/^\| [A-Z]+-[0-9]+ \|/.test(line)) continue;
+    if (!/^\| [A-Z]+(?:-[A-Z]+)*-[0-9]+ \|/.test(line)) continue;
     const values = cells(line);
     if (values.length !== 8) throw new Error(`Invalid policy row: ${line}`);
     const [id, text, rawStatus, source, lastConfirmed, realtime, automation, escalation] = values;

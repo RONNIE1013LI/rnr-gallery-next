@@ -1,0 +1,101 @@
+{"id":"product-01","category":"product_differences","message":"Which product format should I choose?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"product-02","category":"product_differences","message":"What is the difference between a canvas and a wall banner?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"product-03","category":"product_differences","message":"Is a canvas or banner better for a wall display?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"product-04","category":"product_differences","message":"Can you explain the difference between canvas and a roll-up banner?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"product-05","category":"product_differences","message":"Which product is best for a freestanding display?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"product-06","category":"product_differences","message":"Which product works better for wall or freestanding display?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"product-07","category":"product_differences","message":"I am choosing canvas vs banner. What is the difference?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"product-08","category":"product_differences","message":"Which product format suits a memorial display?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"product-09","category":"product_differences","message":"What is the difference between a wall banner and canvas?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"product-10","category":"product_differences","message":"Should I choose canvas or banner?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"quote-01","category":"quote_information_collection","message":"What details do you need to prepare a quote?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"quote-02","category":"quote_information_collection","message":"Can I get a quote please?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"quote-03","category":"quote_information_collection","message":"What information should I send for a quote?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"quote-04","category":"quote_information_collection","message":"I want a quote. What details do you need?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"quote-05","category":"quote_information_collection","message":"Could you prepare a quote if I send the photos?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"quote-06","category":"quote_information_collection","message":"Please tell me what information is needed for a quote.","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"quote-07","category":"quote_information_collection","message":"What details are needed to quote a custom canvas?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"quote-08","category":"quote_information_collection","message":"I would like to get a quote for a custom design.","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"quote-09","category":"quote_information_collection","message":"Can you prepare a quote after I send the originals?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"quote-10","category":"quote_information_collection","message":"Quote please. What should I provide first?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"design-01","category":"design_process","message":"How does the design process work?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"design-02","category":"design_process","message":"What happens during the design work?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"design-03","category":"design_process","message":"Can you explain how you design the artwork?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"design-04","category":"design_process","message":"What theme information should I send?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"design-05","category":"design_process","message":"Can I send a background idea with my photos?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"design-06","category":"design_process","message":"What wording do you need for the design?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"design-07","category":"design_process","message":"How do you turn the photos into a design?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"design-08","category":"design_process","message":"What happens after I send my theme and wording?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"design-09","category":"design_process","message":"I have a background idea. What should I send next?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"design-10","category":"design_process","message":"Can you guide me through the normal design process?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"photo-01","category":"photo_guidance","message":"Can you use blurry photos?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"photo-02","category":"photo_guidance","message":"My original photo is slightly blurred. Can you check it?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"photo-03","category":"photo_guidance","message":"What photo quality works best?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"photo-04","category":"photo_guidance","message":"Should I send the original file?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"photo-05","category":"photo_guidance","message":"Can you combine people from different photos?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"photo-06","category":"photo_guidance","message":"Can you use these photos if they are low resolution?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"photo-07","category":"photo_guidance","message":"Is an uncropped original photo better?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"photo-08","category":"photo_guidance","message":"The photo quality is not great. What should I send?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"photo-09","category":"photo_guidance","message":"Can you check whether my original photos are clear enough?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"photo-10","category":"photo_guidance","message":"Can you use my photos from separate files?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"production-01","category":"production_process","message":"Can you explain the general production process?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"production-02","category":"production_process","message":"How is a custom canvas made?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"production-03","category":"production_process","message":"How are custom banners produced?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"production-04","category":"production_process","message":"What happens after I send the photos and details?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"production-05","category":"production_process","message":"What is the normal production workflow?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"production-06","category":"production_process","message":"What happens after all design details are supplied?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"production-07","category":"production_process","message":"Could you explain how the canvas is produced?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"production-08","category":"production_process","message":"What are the normal production steps?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"production-09","category":"production_process","message":"How is the finished artwork made from my photo?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"production-10","category":"production_process","message":"Please explain the production process after the design details are ready.","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"payment-01","category":"payment_process","message":"How does the deposit process work?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"payment-02","category":"payment_process","message":"Do I need a deposit before work begins?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"payment-03","category":"payment_process","message":"Can you explain the general payment process?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"payment-04","category":"payment_process","message":"How do payments work for a new order?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"payment-05","category":"payment_process","message":"What happens after I pay the deposit?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"payment-06","category":"payment_process","message":"Is a deposit needed to start the design?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"payment-07","category":"payment_process","message":"When in the process is the deposit required?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"payment-08","category":"payment_process","message":"Could you explain how the deposit works?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"payment-09","category":"payment_process","message":"How does payment work before design starts?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"payment-10","category":"payment_process","message":"What is the general deposit process?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"risk-01","category":"high_risk","message":"I want a refund for this order.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-02","category":"high_risk","message":"Please cancel my custom order.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-03","category":"high_risk","message":"The item arrived damaged.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-04","category":"high_risk","message":"The canvas arrived broken.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-05","category":"high_risk","message":"The print is cracked and I need help.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-06","category":"high_risk","message":"The banner is torn.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-07","category":"high_risk","message":"This was misprinted.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-08","category":"high_risk","message":"I need a reprint because it is wrong.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-09","category":"high_risk","message":"I want compensation for the problem.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-10","category":"high_risk","message":"Can you give me a discount because of the complaint?","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-11","category":"high_risk","message":"Can I receive store credit instead?","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-12","category":"high_risk","message":"I expect a partial refund.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-13","category":"high_risk","message":"I am filing a chargeback.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-14","category":"high_risk","message":"I dispute this payment.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-15","category":"high_risk","message":"Can you guarantee delivery before the event?","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-16","category":"high_risk","message":"Will it arrive by Friday?","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-17","category":"high_risk","message":"Can you complete it tomorrow?","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-18","category":"high_risk","message":"Can you guarantee this urgent order?","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-19","category":"high_risk","message":"What are my consumer rights for this custom item?","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"risk-20","category":"high_risk","message":"The payment amount is disputed and I need a resolution.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
+{"id":"realtime-01","category":"realtime_required","message":"How much is an A1 canvas today?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-02","category":"realtime_required","message":"What is the current price for a roll-up banner?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-03","category":"realtime_required","message":"What is the cost of a wall banner?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-04","category":"realtime_required","message":"Can I get a quote for an A3 canvas?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-05","category":"realtime_required","message":"What is the shipping charge?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-06","category":"realtime_required","message":"How much is the delivery fee?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-07","category":"realtime_required","message":"What is my tracking number?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-08","category":"realtime_required","message":"What is my order status?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-09","category":"realtime_required","message":"What is my balance?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-10","category":"realtime_required","message":"What is the current ETA?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-11","category":"realtime_required","message":"When will my order arrive?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-12","category":"realtime_required","message":"How long will delivery take?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-13","category":"realtime_required","message":"What is the pickup address?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-14","category":"realtime_required","message":"What are your pickup hours?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-15","category":"realtime_required","message":"What pickup time is available?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-16","category":"realtime_required","message":"Do you have a current promotion?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-17","category":"realtime_required","message":"How long does production take?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-18","category":"realtime_required","message":"How long does the design take?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-19","category":"realtime_required","message":"How long does printing take?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-20","category":"realtime_required","message":"When will the order be ready?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+

@@ -1,6 +1,116 @@
 {
-  "knowledgeVersion": "20f239e062eeb134e01d450c0299ff44a09a8af5ef9ed8c87f848a95cc6ca179",
+  "knowledgeVersion": "44f2be6e9b161291c1caadad7d43e20d9cc006a1df19005795141ebbbe8800b1",
   "rules": [
+    {
+      "id": "AI-GOV-01",
+      "text": "Every AI reply is a suggestion requiring human review; AI has no send or mutation authority.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": false,
+      "source": "Ronnie Phase 3 approval",
+      "lastConfirmed": "2026-08-16",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "AI-GOV-02",
+      "text": "Real model calls must record model, token usage, estimated cost, latency, intent, gate result, and human-edit state without customer identity or secrets.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie Phase 3.1 approval",
+      "lastConfirmed": "2026-08-16",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "AI-GOV-03",
+      "text": "The OpenAI API key may be read only from the server environment and must never enter source, browser output, logs, feedback, or evaluation data.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie Phase 3.1 approval",
+      "lastConfirmed": "2026-08-16",
+      "mayAnswerAutomatically": false,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "AI-SCOPE-01",
+      "text": "AI may adjust tone without adding business facts.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": false,
+      "source": "Ronnie Phase 3 approval",
+      "lastConfirmed": "2026-08-16",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": false
+    },
+    {
+      "id": "AI-SCOPE-02",
+      "text": "AI may ask whether the display will be wall-mounted or freestanding. It must not state package contents, included hardware, or a product recommendation as fact unless a separate CONFIRMED rule permits it.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie Phase 3 approval; clarified during Phase 3.1 remediation",
+      "lastConfirmed": "2026-08-16",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "AI-SCOPE-03",
+      "text": "AI may collect the information needed for a quote without providing a price.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie Phase 3 approval",
+      "lastConfirmed": "2026-08-16",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "AI-SCOPE-04",
+      "text": "AI may collect product, size, original photos, wording, theme, and colour preferences and say the team will review them and guide the next step. It must not state arrangement, preview, revision, refund, or approval stages as policy unless separately CONFIRMED.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie Phase 3 approval; clarified during Phase 3.1 remediation",
+      "lastConfirmed": "2026-08-16",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "AI-SCOPE-05",
+      "text": "AI may request the original image and offer a photo-quality assessment. It must not guarantee restoration, improvement quality, or print suitability before review. Keep the customer-facing draft limited to those actions; conclusions require file review.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie Phase 3 approval; clarified by Ronnie during Phase 3.1 remediation",
+      "lastConfirmed": "2026-08-16",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "AI-SCOPE-06",
+      "text": "AI may explain the general production process without promising capacity or a completion date.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie Phase 3 approval",
+      "lastConfirmed": "2026-08-16",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
+    {
+      "id": "AI-SCOPE-07",
+      "text": "AI may explain confirmed general pickup/payment process without current amounts, options, address, hours, or status.",
+      "evidenceStatus": "CONFIRMED",
+      "highRisk": false,
+      "realtimeRequired": true,
+      "source": "Ronnie Phase 3 approval",
+      "lastConfirmed": "2026-08-16",
+      "mayAnswerAutomatically": true,
+      "requiresHumanEscalation": true
+    },
     {
       "id": "CANCEL-01",
       "text": "Cancellation treatment and deposit refund depend on order stage.",
@@ -465,6 +575,14 @@
     }
   ],
   "answerableFacts": [
+    "AI-GOV-01: Every AI reply is a suggestion requiring human review; AI has no send or mutation authority.",
+    "AI-SCOPE-01: AI may adjust tone without adding business facts.",
+    "AI-SCOPE-02: AI may ask whether the display will be wall-mounted or freestanding. It must not state package contents, included hardware, or a product recommendation as fact unless a separate CONFIRMED rule permits it.",
+    "AI-SCOPE-03: AI may collect the information needed for a quote without providing a price.",
+    "AI-SCOPE-04: AI may collect product, size, original photos, wording, theme, and colour preferences and say the team will review them and guide the next step. It must not state arrangement, preview, revision, refund, or approval stages as policy unless separately CONFIRMED.",
+    "AI-SCOPE-05: AI may request the original image and offer a photo-quality assessment. It must not guarantee restoration, improvement quality, or print suitability before review. Keep the customer-facing draft limited to those actions; conclusions require file review.",
+    "AI-SCOPE-06: AI may explain the general production process without promising capacity or a completion date.",
+    "AI-SCOPE-07: AI may explain confirmed general pickup/payment process without current amounts, options, address, hours, or status.",
     "DESIGN-04: For photo-quality questions, AI may request the original image and offer an assessment. It must not guarantee restoration, improvement quality, or print suitability before review. Keep the customer-facing draft limited to requesting the original image and offering an assessment; conclusions require file review.",
     "ORDER-01: Work begins after a 50% deposit is received.",
     "PRODUCT-01: Canvas is waterproof but sheltered outdoor use is recommended.",

@@ -27,6 +27,10 @@ describe("customer service knowledge compiler", () => {
       highRisk: true,
       mayAnswerAutomatically: false,
     });
+    expect(result.rules.find((rule) => rule.id === "AI-SCOPE-03")).toMatchObject({
+      evidenceStatus: "CONFIRMED",
+      mayAnswerAutomatically: true,
+    });
     expect(result.answerableFacts).not.toContain(
       expect.stringContaining("Custom orders become non-refundable"),
     );
