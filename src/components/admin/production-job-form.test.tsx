@@ -20,15 +20,42 @@ describe("ProductionJobForm", () => {
     const { rerender } = render(
       <ProductionJobForm assignees={assignees} canManageFinance />,
     );
-    expect(screen.getByRole("heading", { name: "Finance" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Payment" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Cost / Profit" })).toBeInTheDocument();
     expect(screen.getByLabelText("Amount payable (NZD)")) .toBeInTheDocument();
     expect(screen.getByLabelText("Payment reconciliation")).toBeInTheDocument();
     expect(screen.getByLabelText("Artist paid")).toBeInTheDocument();
 
     rerender(<ProductionJobForm assignees={assignees} canManageFinance={false} />);
-    expect(screen.queryByRole("heading", { name: "Finance" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Payment" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Cost / Profit" })).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Amount payable (NZD)")) .not.toBeInTheDocument();
     expect(screen.queryByLabelText("Payment reconciliation")).not.toBeInTheDocument();
+  });
+
+  it("uses the approved data-entry section order", () => {
+    render(
+      <ProductionJobForm
+        assignees={assignees}
+        canManageFinance
+        submittedBy="Ronnie"
+        backHref="/order-system"
+      />,
+    );
+
+    expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual([
+      "Record summary",
+      "Order info",
+      "Product / Size",
+      "Payment",
+      "Design & Notes",
+      "Delivery",
+      "Customer info",
+      "Internal Production Status",
+      "Cost / Profit",
+    ]);
+    expect(screen.getByText("Ronnie")).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Back" })).toHaveAttribute("href", "/order-system");
   });
 
   it("preserves active legacy customer and delivery fields", () => {
@@ -37,7 +64,7 @@ describe("ProductionJobForm", () => {
     expect(screen.getByLabelText("Delivery address")).toBeInTheDocument();
     expect(screen.getByLabelText("Customer source")).toHaveTextContent("R&R");
     expect(screen.getByLabelText("Customer source")).toHaveTextContent("WeChat");
-    expect(screen.getByLabelText("Delivery")).toHaveTextContent("Australia shipping");
+    expect(screen.getByLabelText("Delivery method")).toHaveTextContent("Australia shipping");
     expect(screen.getByLabelText("Completed")).toBeInTheDocument();
   });
 
@@ -121,6 +148,7 @@ describe("ProductionJobForm", () => {
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
     fireEvent.change(screen.getByLabelText("Amount payable (NZD)"), { target: { value: "230.50" } });
     fireEvent.change(screen.getByLabelText("Amount paid (NZD)"), { target: { value: "100" } });
+    expect(screen.getByLabelText("Amount owing (NZD)")).toHaveValue("130.50");
     fireEvent.change(screen.getByLabelText("Payment reconciliation"), { target: { value: "Arrive" } });
     fireEvent.click(screen.getByLabelText("Artist paid"));
     fireEvent.click(screen.getByRole("button", { name: "Create production job" }));

@@ -2812,16 +2812,32 @@
   font-weight: 760;
 }
 
-.formUtilityBar button {
+.formUtilityBar > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.formUtilityBar button,
+.formUtilityBar a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 40px;
   padding: 8px 14px;
   border: 1px solid #173247;
   border-radius: 4px;
-  color: #fff;
-  background: #173247;
+  color: #173247;
+  background: #fff;
   font: inherit;
   font-size: 12px;
+  text-decoration: none;
   text-transform: uppercase;
+}
+
+.formUtilityBar button {
+  color: #fff;
+  background: #173247;
 }
 
 /* The standalone Forms portal mirrors the compact running order-system drawer. */
@@ -2944,6 +2960,35 @@
   border: 1px solid var(--admin-border);
   border-radius: 12px;
   background: #fff;
+}
+
+.formRecordSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--admin-border);
+}
+
+.formRecordSummary > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-right: 1px solid var(--admin-border);
+}
+
+.formRecordSummary > div:last-child {
+  border-right: 0;
+}
+
+.formRecordSummary dt {
+  color: var(--admin-muted);
+  font-size: 11px;
+}
+
+.formRecordSummary dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .formSectionHeading {
@@ -3254,8 +3299,18 @@
   }
 
   .formGrid,
+  .formRecordSummary,
   .milestoneGrid {
     grid-template-columns: 1fr;
+  }
+
+  .formRecordSummary > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--admin-border);
+  }
+
+  .formRecordSummary > div:last-child {
+    border-bottom: 0;
   }
 
   .fullField {

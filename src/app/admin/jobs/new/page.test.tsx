@@ -15,6 +15,6 @@ describe("new production job page", () => {
     render(await NewProductionJobPage());
     expect(requireAdminPage).toHaveBeenCalledWith("/admin/jobs/new", "create_manual_jobs");
     expect(screen.getByRole("heading", { name: "New manual job" })).toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Finance" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Payment" })).not.toBeInTheDocument();
   });
 });

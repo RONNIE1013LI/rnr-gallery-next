@@ -1,6 +1,7 @@
 "use client";
 
 import { ClipboardEvent, FormEvent, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClientId } from "@/lib/client-id";
 import { parseCustomerBlock } from "@/domain/forms/customer-block-parser";
@@ -29,6 +30,8 @@ type Props = Readonly<{
   endpoint?: string;
   detailBasePath?: string;
   invoiceBusiness?: InvoiceBusiness;
+  submittedBy?: string;
+  backHref?: string;
 }>;
 
 const fallbackInvoiceBusiness: InvoiceBusiness = Object.freeze({
@@ -74,6 +77,8 @@ export function ProductionJobForm({
   endpoint = "/api/admin/jobs",
   detailBasePath = "/admin/jobs",
   invoiceBusiness = fallbackInvoiceBusiness,
+  submittedBy = "Current operator",
+  backHref = "/admin/jobs",
 }: Props) {
   const router = useRouter();
   const [itemKeys, setItemKeys] = useState([0]);
@@ -83,6 +88,8 @@ export function ProductionJobForm({
   const [pasteFeedback, setPasteFeedback] = useState("");
   const [invoiceOpen, setInvoiceOpen] = useState(false);
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceWorkspaceDraft | null>(null);
+  const [amountPayable, setAmountPayable] = useState("0.00");
+  const [amountPaid, setAmountPaid] = useState("0.00");
   const formRef = useRef<HTMLFormElement>(null);
   const customerNameRef = useRef<HTMLInputElement>(null);
   const customerEmailRef = useRef<HTMLInputElement>(null);
@@ -124,8 +131,10 @@ export function ProductionJobForm({
       const today = new Date();
       const due = new Date(today);
       due.setDate(due.getDate() + 7);
-      const product = String(form.get("item-0-product") ?? "").trim();
-      const size = String(form.get("item-0-size") ?? "").trim();
+      const firstItemKey = itemKeys[0] ?? 0;
+      const product = String(form.get(`item-${firstItemKey}-product`) ?? "").trim();
+      const size = String(form.get(`item-${firstItemKey}-size-other`) ?? "").trim()
+        || String(form.get(`item-${firstItemKey}-size`) ?? "").trim();
       setInvoiceDraft({
         invoiceDate: dateValue(today), dueDate: dateValue(due), reference: "DRAFT",
         businessName: invoiceBusiness.name, businessAddress: invoiceBusiness.address,
@@ -192,7 +201,8 @@ export function ProductionJobForm({
         })),
         items: itemKeys.map((key) => ({
           productTitle: String(form.get(`item-${key}-product`) ?? ""),
-          sizeLabel: String(form.get(`item-${key}-size`) ?? ""),
+          sizeLabel: String(form.get(`item-${key}-size-other`) ?? "").trim()
+            || String(form.get(`item-${key}-size`) ?? ""),
           quantity: Number(form.get(`item-${key}-quantity`) ?? 1),
           designText: String(form.get(`item-${key}-design`) ?? ""),
           notes: String(form.get(`item-${key}-notes`) ?? ""),
@@ -227,30 +237,37 @@ export function ProductionJobForm({
   return (
     <>
     <form ref={formRef} className={styles.productionForm} onSubmit={submit}>
-      {canManageFinance ? <div className={styles.formUtilityBar}><span>Data entry</span><button type="button" onClick={openInvoice}>Invoice</button></div> : null}
+      <div className={styles.formUtilityBar}>
+        <span>Data entry</span>
+        <div>
+          {canManageFinance ? <button type="button" onClick={openInvoice}>Invoice</button> : null}
+          <Link href={backHref}>Back</Link>
+        </div>
+      </div>
+
       <section className={styles.formPanel}>
         <div className={styles.formSectionHeading}>
-          <div><span>01</span><h2>Customer</h2></div>
-          <p>Manual orders remain independent from online checkout and payment records.</p>
+          <div><span>01</span><h2>Record summary</h2></div>
+          <p>The numeric order ID is assigned when this record is saved.</p>
         </div>
+        <dl className={styles.formRecordSummary}>
+          <div><dt>Submitted by</dt><dd>{submittedBy}</dd></div>
+          <div><dt>Ref No.</dt><dd>—</dd></div>
+          <div><dt>Submitted at</dt><dd>—</dd></div>
+          <div><dt>Updated at</dt><dd>—</dd></div>
+        </dl>
+      </section>
+
+      <section className={styles.formPanel}>
+        <div className={styles.formSectionHeading}><div><span>02</span><h2>Order info</h2></div></div>
         <div className={styles.formGrid}>
-          <label><span>Customer name</span><input ref={customerNameRef} name="customerName" required maxLength={190} disabled={pending} /></label>
-          <label><span>Email</span><input ref={customerEmailRef} name="customerEmail" type="email" maxLength={320} disabled={pending} /></label>
-          <label><span>Phone</span><input ref={customerPhoneRef} name="customerPhone" type="tel" maxLength={80} disabled={pending} /></label>
           <label><span>Web order number</span><input name="webOrderNumber" maxLength={190} disabled={pending} /></label>
-          <label><span>Customer source</span><select name="customerSource" defaultValue="messenger" disabled={pending}>
-            <option value="phone">Phone</option><option value="messenger">Messenger</option><option value="email">Email</option>
-            <option value="whatsapp">WhatsApp</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option>
-            <option value="market">Market</option><option value="walk_in">Walk in</option><option value="other">Other</option>
-            <option value="rnr">R&amp;R</option><option value="wechat">WeChat</option>
-          </select></label>
         </div>
-        <p className={styles.fieldHint}>Enter at least an email address or phone number.</p>
       </section>
 
       <section className={styles.formPanel}>
         <div className={styles.formSectionHeading}>
-          <div><span>02</span><h2>Products</h2></div>
+          <div><span>03</span><h2>Product / Size</h2></div>
           <button className={styles.secondaryAdminButton} type="button" onClick={addItem} disabled={pending || itemKeys.length >= 20}>Add item</button>
         </div>
         <datalist id="rnr-production-products">
@@ -264,52 +281,100 @@ export function ProductionJobForm({
               <div className={styles.formGrid}>
                 <label><span>Product</span><input name={`item-${key}-product`} list="rnr-production-products" required maxLength={190} disabled={pending} /></label>
                 <label><span>Size</span><input name={`item-${key}-size`} required maxLength={190} placeholder="e.g. A2 or 85 cm × 200 cm" disabled={pending} /></label>
+                <label><span>Size other</span><input name={`item-${key}-size-other`} maxLength={190} placeholder="Only if the standard size does not apply" disabled={pending} /></label>
                 <label className={styles.shortField}><span>Quantity</span><input name={`item-${key}-quantity`} type="number" min={1} max={100} defaultValue={1} required disabled={pending} /></label>
-                <label className={styles.fullField}><span>Artwork direction</span><textarea name={`item-${key}-design`} rows={3} maxLength={5000} disabled={pending} /></label>
-                <label className={styles.fullField}><span>Item notes</span><textarea name={`item-${key}-notes`} rows={2} maxLength={5000} disabled={pending} /></label>
               </div>
             </fieldset>
           ))}
         </div>
       </section>
 
+      {canManageFinance ? (
+        <section className={styles.formPanel}>
+          <div className={styles.formSectionHeading}><div><span>04</span><h2>Payment</h2></div><p>Restricted to authorised finance staff.</p></div>
+          <div className={styles.formGrid}>
+            <label><span>Payment status</span><select name="manualPaymentStatus" defaultValue="awaiting_payment" disabled={pending}>{["awaiting_payment", "processing", "paid", "failed", "cancelled", "refunded"].map((status) => <option value={status} key={status}>{status.replaceAll("_", " ")}</option>)}</select></label>
+            <label><span>Amount payable (NZD)</span><input name="amountPayable" type="number" min="0" step="0.01" value={amountPayable} onChange={(event) => setAmountPayable(event.target.value)} required disabled={pending} /></label>
+            <label><span>Amount paid (NZD)</span><input name="amountPaid" type="number" min="0" step="0.01" value={amountPaid} onChange={(event) => setAmountPaid(event.target.value)} required disabled={pending} /></label>
+            <label><span>Amount owing (NZD)</span><input value={Math.max(0, (Number(amountPayable) || 0) - (Number(amountPaid) || 0)).toFixed(2)} readOnly aria-readonly="true" /></label>
+            <label><span>Payment reconciliation</span><select name="paymentReconciliationStatus" defaultValue="Not checked" disabled={pending}>{["Not checked", "Arrive", "Afterpay", "ZIP PAY", "Stripe", "Wise", "waitting..", "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other"].map((status) => <option value={status} key={status}>{status}</option>)}</select></label>
+          </div>
+          <p className={styles.fieldHint}>Payment proof can be attached from the order record after saving.</p>
+        </section>
+      ) : null}
+
       <section className={styles.formPanel}>
-        <div className={styles.formSectionHeading}><div><span>03</span><h2>Production</h2></div></div>
+        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "05" : "04"}</span><h2>Design &amp; Notes</h2></div></div>
+        <div className={styles.productionItems}>
+          {itemKeys.map((key, index) => (
+            <fieldset className={styles.productionItem} key={key}>
+              <legend>Item {index + 1}</legend>
+              <div className={styles.formGrid}>
+                <label className={styles.fullField}><span>Artwork direction</span><textarea name={`item-${key}-design`} rows={3} maxLength={5000} disabled={pending} /></label>
+                <label className={styles.fullField}><span>Item notes</span><textarea name={`item-${key}-notes`} rows={2} maxLength={5000} disabled={pending} /></label>
+              </div>
+            </fieldset>
+          ))}
+        </div>
         <div className={styles.formGrid}>
-          <label><span>Needed date</span><input name="neededDate" type="date" defaultValue={defaultNeededDate()} required disabled={pending} /></label>
-          <label><span>Delivery</span><select ref={deliveryMethodRef} name="deliveryMethod" defaultValue="post" disabled={pending}>
-            <option value="post">Post</option><option value="pickup">Pickup</option>
-            <option value="delivery">Delivery</option><option value="courier">Courier</option>
-            <option value="australia_shipping">Australia shipping</option><option value="email">Email</option><option value="other">Other</option>
-          </select></label>
-          <label className={styles.fullField}><span>Delivery address</span><textarea ref={deliveryAddressRef} name="deliveryAddress" rows={3} maxLength={5000} onPaste={pasteCustomerDetails} disabled={pending} /></label>
-          {pasteFeedback ? <p className={`${styles.fieldHint} ${styles.fullField}`} role="status">{pasteFeedback}</p> : null}
-          <label><span>Assign to</span><select name="assignedUserId" defaultValue="" disabled={pending}><option value="">Unassigned</option>{assignees.map((person) => <option key={person.id} value={person.id}>{person.name} · {person.email}</option>)}</select></label>
-          <label><span>Production status</span><select name="manualStatus" defaultValue="new" disabled={pending}>{["new", "designing", "awaiting_customer", "ready_to_print", "printing", "on_hold", "shipped", "completed", "cancelled"].map((status) => <option value={status} key={status}>{status.replaceAll("_", " ")}</option>)}</select></label>
-          <label className={styles.checkboxField}><input name="urgent" type="checkbox" disabled={pending} /><span>Urgent order confirmed with customer</span></label>
-          <label className={styles.checkboxField}><input name="completed" type="checkbox" disabled={pending} /><span>Completed</span></label>
           <label className={styles.fullField}><span>Design requirements</span><textarea name="designRequirements" rows={4} maxLength={10000} disabled={pending} /></label>
           <label className={styles.fullField}><span>Internal notes</span><textarea name="internalNotes" rows={4} maxLength={10000} disabled={pending} /></label>
         </div>
       </section>
 
+      <section className={styles.formPanel}>
+        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "06" : "05"}</span><h2>Delivery</h2></div></div>
+        <div className={styles.formGrid}>
+          <label className={styles.checkboxField}><input name="urgent" type="checkbox" disabled={pending} /><span>Urgent order confirmed with customer</span></label>
+          <label><span>Delivery method</span><select ref={deliveryMethodRef} name="deliveryMethod" defaultValue="post" disabled={pending}>
+            <option value="post">Post</option><option value="pickup">Pickup</option>
+            <option value="delivery">Delivery</option><option value="courier">Courier</option>
+            <option value="australia_shipping">Australia shipping</option><option value="email">Email</option><option value="other">Other</option>
+          </select></label>
+          <label><span>Needed date</span><input name="neededDate" type="date" defaultValue={defaultNeededDate()} required disabled={pending} /></label>
+          <label className={styles.fullField}><span>Delivery address</span><textarea ref={deliveryAddressRef} name="deliveryAddress" rows={5} maxLength={5000} onPaste={pasteCustomerDetails} disabled={pending} /></label>
+          {pasteFeedback ? <p className={`${styles.fieldHint} ${styles.fullField}`} role="status">{pasteFeedback}</p> : null}
+        </div>
+      </section>
+
+      <section className={styles.formPanel}>
+        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "07" : "06"}</span><h2>Customer info</h2></div><p>Pasting a full customer block into Delivery address fills only empty fields.</p></div>
+        <div className={styles.formGrid}>
+          <label><span>Customer source</span><select name="customerSource" defaultValue="messenger" disabled={pending}>
+            <option value="phone">Phone</option><option value="messenger">Messenger</option><option value="email">Email</option>
+            <option value="whatsapp">WhatsApp</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option>
+            <option value="market">Market</option><option value="walk_in">Walk in</option><option value="other">Other</option>
+            <option value="rnr">R&amp;R</option><option value="wechat">WeChat</option>
+          </select></label>
+          <label><span>Customer name</span><input ref={customerNameRef} name="customerName" required maxLength={190} disabled={pending} /></label>
+          <label><span>Phone</span><input ref={customerPhoneRef} name="customerPhone" type="tel" maxLength={80} disabled={pending} /></label>
+          <label><span>Email</span><input ref={customerEmailRef} name="customerEmail" type="email" maxLength={320} disabled={pending} /></label>
+        </div>
+        <p className={styles.fieldHint}>Enter at least an email address or phone number.</p>
+      </section>
+
+      <section className={styles.formPanel}>
+        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "08" : "07"}</span><h2>Internal Production Status</h2></div></div>
+        <div className={styles.formGrid}>
+          <label><span>Assign to</span><select name="assignedUserId" defaultValue="" disabled={pending}><option value="">Unassigned</option>{assignees.map((person) => <option key={person.id} value={person.id}>{person.name} · {person.email}</option>)}</select></label>
+          <label><span>Production status</span><select name="manualStatus" defaultValue="new" disabled={pending}>{["new", "designing", "awaiting_customer", "ready_to_print", "printing", "on_hold", "shipped", "completed", "cancelled"].map((status) => <option value={status} key={status}>{status.replaceAll("_", " ")}</option>)}</select></label>
+          <label className={styles.checkboxField}><input name="completed" type="checkbox" disabled={pending} /><span>Completed</span></label>
+        </div>
+      </section>
+
       {canManageFinance ? (
         <section className={styles.formPanel}>
-          <div className={styles.formSectionHeading}><div><span>04</span><h2>Finance</h2></div><p>Restricted to administrators.</p></div>
+          <div className={styles.formSectionHeading}><div><span>09</span><h2>Cost / Profit</h2></div><p>Restricted to authorised finance staff.</p></div>
           <div className={styles.formGrid}>
-            <label><span>Payment status</span><select name="manualPaymentStatus" defaultValue="awaiting_payment" disabled={pending}>{["awaiting_payment", "processing", "paid", "failed", "cancelled", "refunded"].map((status) => <option value={status} key={status}>{status.replaceAll("_", " ")}</option>)}</select></label>
-            <label><span>Amount payable (NZD)</span><input name="amountPayable" type="number" min="0" step="0.01" defaultValue="0.00" required disabled={pending} /></label>
-            <label><span>Amount paid (NZD)</span><input name="amountPaid" type="number" min="0" step="0.01" defaultValue="0.00" required disabled={pending} /></label>
             <label><span>Artist fee (NZD)</span><input name="artistFee" type="number" min="0" step="0.01" defaultValue="0.00" required disabled={pending} /></label>
             <label><span>Material cost (NZD)</span><input name="materialCost" type="number" min="0" step="0.01" defaultValue="0.00" required disabled={pending} /></label>
-            <label><span>Payment reconciliation</span><select name="paymentReconciliationStatus" defaultValue="Not checked" disabled={pending}>{["Not checked", "Arrive", "Afterpay", "ZIP PAY", "Stripe", "Wise", "waitting..", "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other"].map((status) => <option value={status} key={status}>{status}</option>)}</select></label>
             <label className={styles.checkboxField}><input name="artistPaid" type="checkbox" disabled={pending} /><span>Artist paid</span></label>
           </div>
         </section>
       ) : null}
 
       {customFields.length ? <section className={styles.formPanel}>
-        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "05" : "04"}</span><h2>Custom information</h2></div><p>Additional studio fields configured by an administrator.</p></div>
+        <div className={styles.formSectionHeading}><div><span>{canManageFinance ? "10" : "08"}</span><h2>Custom information</h2></div><p>Additional studio fields configured by an administrator.</p></div>
         <div className={styles.formGrid}>{customFields.map((field) => {
           const name = `custom-${field.id}`;
           if (field.fieldType === "textarea") return <label className={styles.fullField} key={field.id}><span>{field.label}</span><textarea name={name} rows={3} required={field.required} maxLength={10000} disabled={pending} /></label>;

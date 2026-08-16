@@ -74,6 +74,66 @@ export function ProductionJobDetail({
 
         {job.source === "web" && job.orderId ? <section className={styles.authorityBanner}><div><strong>Linked online order</strong><p>Checkout pricing, payment and order status remain authoritative in {detail.orderNumber}.</p></div></section> : null}
 
+        <section className={styles.panel}>
+          <div className={styles.panelHeading}><h2>Order info</h2><span>{job.source === "web" ? "Online order" : "Manual order"}</span></div>
+          <dl className={styles.definitionGrid}>
+            <div><dt>Web order number</dt><dd>{job.webOrderNumber || detail.orderNumber || "Not supplied"}</dd></div>
+            <div><dt>Production reference</dt><dd>{job.jobNumber}</dd></div>
+            <div><dt>Created</dt><dd>{dateTime.format(job.createdAt)}</dd></div>
+            <div><dt>Updated</dt><dd>{dateTime.format(job.updatedAt)}</dd></div>
+          </dl>
+        </section>
+
+        <section className={styles.panel}>
+          <div className={styles.panelHeading}><h2>Product / Size</h2><span>{detail.items.length} item{detail.items.length === 1 ? "" : "s"}</span></div>
+          {detail.items.map((item) => <article className={styles.orderItem} key={item.id}>
+            <div className={styles.orderItemHeading}><div><h3>{item.productTitle}</h3><p>{item.sizeLabel}</p></div><strong>Qty {item.quantity}</strong></div>
+          </article>)}
+        </section>
+
+        {detail.finance ? <section className={styles.panel}>
+          <div className={styles.panelHeading}><h2>Payment</h2><span>{job.source === "web" ? "Read-only online total" : "Administrator only"}</span></div>
+          <div className={styles.orderTotals}>
+            <div><span>Payment status</span><strong>{label(detail.paymentStatus)}</strong></div>
+            <div><span>Amount payable</span><strong>{amount(detail.finance.amountPayableCents)}</strong></div>
+            <div><span>Amount paid</span><strong>{amount(detail.finance.amountPaidCents)}</strong></div>
+            <div><span>Amount owing</span><strong>{amount(detail.finance.amountOwingCents)}</strong></div>
+            <div><span>Payment reconciliation</span><strong>{job.paymentReconciliationStatus}</strong></div>
+          </div>
+        </section> : null}
+
+        <section className={styles.twoColumnPanels}>
+          <article className={styles.panel}>
+            <h2>Design &amp; Notes</h2>
+            {detail.items.map((item) => <div key={item.id}>
+              {item.designText ? <div className={styles.customerText}><strong>{item.productTitle} — artwork direction</strong><p>{item.designText}</p></div> : null}
+              {item.notes ? <div className={styles.customerText}><strong>{item.productTitle} — item notes</strong><p>{item.notes}</p></div> : null}
+            </div>)}
+            <p className={styles.preWrapText}>{job.designRequirements || "No separate requirements recorded."}</p>
+          </article>
+          <article className={styles.panel}><h2>Internal notes</h2><p className={styles.preWrapText}>{job.internalNotes || "No internal notes recorded."}</p></article>
+        </section>
+
+        <section className={styles.panel}>
+          <div className={styles.panelHeading}><h2>Delivery</h2><span>{job.urgent ? "Urgent" : "Standard"}</span></div>
+          <dl className={styles.definitionGrid}>
+            <div><dt>Delivery method</dt><dd>{label(job.deliveryMethod)}</dd></div>
+            <div><dt>Needed date</dt><dd>{job.neededDate}</dd></div>
+            <div><dt>Priority</dt><dd>{job.urgent ? "Urgent — customer confirmed" : "Standard"}</dd></div>
+            <div><dt>Delivery address</dt><dd className={styles.preWrapText}>{job.deliveryAddress || "Not supplied"}</dd></div>
+          </dl>
+        </section>
+
+        <section className={styles.panel}>
+          <div className={styles.panelHeading}><h2>Customer info</h2><span>{label(job.customerSource)}</span></div>
+          <dl className={styles.definitionGrid}>
+            <div><dt>Customer source</dt><dd>{label(job.customerSource)}</dd></div>
+            <div><dt>Name</dt><dd>{job.customerName}</dd></div>
+            <div><dt>Phone</dt><dd>{job.customerPhone || "Not supplied"}</dd></div>
+            <div><dt>Email</dt><dd>{job.customerEmail || "Not supplied"}</dd></div>
+          </dl>
+        </section>
+
         <ProductionFilesPanel
           jobId={job.id}
           files={files}
@@ -88,32 +148,22 @@ export function ProductionJobDetail({
         />
 
         <section className={styles.panel}>
-          <div className={styles.panelHeading}><h2>Customer</h2><span>{label(job.customerSource)}</span></div>
+          <div className={styles.panelHeading}><h2>Internal Production Status</h2><span>{label(detail.status)}</span></div>
           <dl className={styles.definitionGrid}>
-            <div><dt>Name</dt><dd>{job.customerName}</dd></div>
-            <div><dt>Email</dt><dd>{job.customerEmail || "Not supplied"}</dd></div>
-            <div><dt>Phone</dt><dd>{job.customerPhone || "Not supplied"}</dd></div>
-            <div><dt>Delivery</dt><dd>{label(job.deliveryMethod)}</dd></div>
-            <div><dt>Delivery address</dt><dd className={styles.preWrapText}>{job.deliveryAddress || "Not supplied"}</dd></div>
-            <div><dt>Web order number</dt><dd>{job.webOrderNumber || detail.orderNumber || "Not supplied"}</dd></div>
-            <div><dt>Priority</dt><dd>{job.urgent ? "Urgent — customer confirmed" : "Standard"}</dd></div>
-            <div><dt>Created</dt><dd>{dateTime.format(job.createdAt)}</dd></div>
+            <div><dt>Assigned</dt><dd>{detail.assignee?.name ?? "Unassigned"}</dd></div>
+            <div><dt>Status</dt><dd>{label(detail.status)}</dd></div>
           </dl>
+          <div className={styles.milestoneGrid}>{milestones.map(([name, value]) => <div key={name} data-complete={Boolean(value)}><span aria-hidden="true">{value ? "✓" : "—"}</span><strong>{name}</strong><small>{value ? dateTime.format(value) : "Not complete"}</small></div>)}</div>
         </section>
 
-        <section className={styles.panel}>
-          <div className={styles.panelHeading}><h2>Production items</h2><span>{detail.items.length} item{detail.items.length === 1 ? "" : "s"}</span></div>
-          {detail.items.map((item) => <article className={styles.orderItem} key={item.id}>
-            <div className={styles.orderItemHeading}><div><h3>{item.productTitle}</h3><p>{item.sizeLabel}</p></div><strong>Qty {item.quantity}</strong></div>
-            {item.designText ? <div className={styles.customerText}><strong>Artwork direction</strong><p>{item.designText}</p></div> : null}
-            {item.notes ? <div className={styles.customerText}><strong>Item notes</strong><p>{item.notes}</p></div> : null}
-          </article>)}
-        </section>
-
-        <section className={styles.twoColumnPanels}>
-          <article className={styles.panel}><h2>Design requirements</h2><p className={styles.preWrapText}>{job.designRequirements || "No separate requirements recorded."}</p></article>
-          <article className={styles.panel}><h2>Internal notes</h2><p className={styles.preWrapText}>{job.internalNotes || "No internal notes recorded."}</p></article>
-        </section>
+        {detail.finance ? <section className={styles.panel}>
+          <div className={styles.panelHeading}><h2>Cost / Profit</h2><span>Administrator only</span></div>
+          <div className={styles.orderTotals}>
+            {detail.finance.artistFeeCents !== null ? <div><span>Artist fee</span><strong>{amount(detail.finance.artistFeeCents)}</strong></div> : null}
+            {detail.finance.materialCostCents !== null ? <div><span>Material cost</span><strong>{amount(detail.finance.materialCostCents)}</strong></div> : null}
+            {detail.finance.actualProfitCents !== null ? <div><span>Actual profit</span><strong>{amount(detail.finance.actualProfitCents)}</strong></div> : null}
+          </div>
+        </section> : null}
 
         {currentCustomFields.length ? <section className={styles.panel}>
           <div className={styles.panelHeading}><h2>Custom fields</h2><span>Studio information</span></div>
@@ -124,24 +174,6 @@ export function ProductionJobDetail({
           <summary><strong>Legacy eTeams history</strong><span>{legacyFields.length} retained field{legacyFields.length === 1 ? "" : "s"}</span></summary>
           <dl className={styles.definitionGrid}>{legacyFields.map((field) => <div key={field.id}><dt>{field.label}</dt><dd className={styles.preWrapText}>{field.value || "—"}</dd></div>)}</dl>
         </details> : null}
-
-        <section className={styles.panel}>
-          <div className={styles.panelHeading}><h2>Milestone history</h2><span>Production handoff</span></div>
-          <div className={styles.milestoneGrid}>{milestones.map(([name, value]) => <div key={name} data-complete={Boolean(value)}><span aria-hidden="true">{value ? "✓" : "—"}</span><strong>{name}</strong><small>{value ? dateTime.format(value) : "Not complete"}</small></div>)}</div>
-        </section>
-
-        {detail.finance ? <section className={styles.panel}>
-          <div className={styles.panelHeading}><h2>Finance summary</h2><span>{job.source === "web" ? "Read-only online total" : "Administrator only"}</span></div>
-          <div className={styles.orderTotals}>
-            <div><span>Amount payable</span><strong>{amount(detail.finance.amountPayableCents)}</strong></div>
-            <div><span>Amount paid</span><strong>{amount(detail.finance.amountPaidCents)}</strong></div>
-            <div><span>Amount owing</span><strong>{amount(detail.finance.amountOwingCents)}</strong></div>
-            {detail.finance.artistFeeCents !== null ? <div><span>Artist fee</span><strong>{amount(detail.finance.artistFeeCents)}</strong></div> : null}
-            {detail.finance.materialCostCents !== null ? <div><span>Material cost</span><strong>{amount(detail.finance.materialCostCents)}</strong></div> : null}
-            {detail.finance.actualProfitCents !== null ? <div><span>Actual profit</span><strong>{amount(detail.finance.actualProfitCents)}</strong></div> : null}
-            <div><span>Payment reconciliation</span><strong>{job.paymentReconciliationStatus}</strong></div>
-          </div>
-        </section> : null}
 
         {detail.finance ? <InvoicePanel jobId={job.id} jobApiBase={jobApiBase} invoicePdfBase={invoicePdfBase} canEdit={canManageFinance} /> : null}
 

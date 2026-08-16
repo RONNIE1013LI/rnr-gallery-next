@@ -20,7 +20,7 @@ export default async function NewProductionJobPage() {
   ]);
   const canManageFinance = hasAdminPermission(access.adminRole, "update_production_finance");
   return (
-    <section className={`${styles.pageSection} ${styles.narrowPage}`}>
+    <section className={styles.pageSection}>
       <header className={styles.pageHeader}>
         <div><nav className={styles.breadcrumbs} aria-label="Breadcrumb"><Link href="/admin">Dashboard</Link><span>/</span><Link href="/admin/jobs">Production</Link><span>/</span><span>New manual job</span></nav><h1>New manual job</h1><p>Record phone, Messenger, email, market and walk-in work without creating a false online order.</p></div>
       </header>
@@ -28,6 +28,8 @@ export default async function NewProductionJobPage() {
       <ProductionJobForm
         assignees={assignees}
         canManageFinance={canManageFinance}
+        backHref="/admin/jobs"
+        submittedBy={access.user.email}
         productTitles={getRegistryProducts(registry).filter((product) => product.active).map((product) => product.title)}
         customFields={fieldDefinitions.filter((field) => field.enabled && field.showOnCreate && !field.legacyOnly && field.fieldType !== "file" && (field.section !== "finance" || canManageFinance)).map((field) => ({ id: field.id, label: field.label, fieldType: field.fieldType as ProductionFormField["fieldType"], options: field.options, required: field.required }))}
         invoiceBusiness={getInvoiceBusinessSettings()}

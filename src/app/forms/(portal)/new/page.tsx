@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { ProductionJobForm, type ProductionFormField } from "@/components/admin/production-job-form";
-import adminStyles from "@/components/admin/admin.module.css";
 import styles from "@/components/forms/forms.module.css";
 import { getRegistryProducts } from "@/domain/catalogue/product-registry";
 import { getAdminProductionFieldRuntime } from "@/server/admin/admin-production-field-runtime";
@@ -34,12 +33,14 @@ export default async function NewFormsJobPage() {
         <strong>Website orders are recorded automatically.</strong>
         <p>Use manual entry only for work received outside online checkout.</p>
       </div>
-      <div className={`${adminStyles.narrowPage} ${styles.formEntryPage}`}>
+      <div className={styles.formEntryPage}>
         <ProductionJobForm
           assignees={assignees}
           canManageFinance={canManageFinance}
           endpoint="/api/forms/jobs"
           detailBasePath="/order-system/jobs"
+          backHref="/order-system"
+          submittedBy={access.user.email}
           productTitles={getRegistryProducts(registry).filter((product) => product.active).map((product) => product.title)}
           customFields={fields.filter((field) =>
             field.enabled && field.showOnCreate && !field.legacyOnly && field.fieldType !== "file" &&

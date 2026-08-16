@@ -28,6 +28,7 @@ describe("forms manual entry page", () => {
     expect(screen.getByRole("heading", { name: "Order entry" })).toBeInTheDocument();
     expect(screen.getByLabelText("Customer name")).toBeInTheDocument();
     expect(screen.getByLabelText("Product")).toHaveAttribute("list", "rnr-production-products");
-    expect(screen.queryByRole("heading", { name: "Finance" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Payment" })).not.toBeInTheDocument();
+    expect(screen.getByText("operator@example.test")).toBeInTheDocument();
   });
 });
