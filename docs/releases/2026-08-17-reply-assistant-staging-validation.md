@@ -259,7 +259,7 @@ Recorded on 17 August 2026. This is implementation evidence only; it is not a St
 
 - Worktree: `/Users/ronnieli/Documents/海报制作/rnr-next-platform/.worktrees/reply-assistant-migration`
 - Base: `origin/main` at `2415fb198920b1958898cf05c06259bc0e3cdbc8`
-- Canonical local URL remains `http://192.168.4.199:3000`; no substitute local origin was used as browser evidence.
+- Reply Assistant local Staging ran independently at `http://192.168.4.199:3001`; the separate `payment-adapters` service on port 3000 remained untouched.
 - Knowledge check, TypeScript, ESLint, Drizzle check and `git diff --check`: passed.
 - Production build with the Reply Assistant feature disabled and synthetic build-only server settings: passed.
 - Focused Reply Assistant suite: 29 files passed, 1 database file initially skipped; 90 tests passed, 2 skipped.
@@ -291,19 +291,19 @@ Executed on 17 August 2026. This report records only checks actually run. `FAIL`
 
 | Item | Result | Evidence |
 | --- | --- | --- |
-| Worktree, branch and commit recorded | PASS | `/Users/ronnieli/Documents/海报制作/rnr-next-platform/.worktrees/reply-assistant-migration`, `docs/reply-assistant-migration`, `f39b44603c3ae499c633423a7c92d3996a895f9a` |
+| Worktree, branch and commit recorded | PASS | `/Users/ronnieli/Documents/海报制作/rnr-next-platform/.worktrees/reply-assistant-migration`, `docs/reply-assistant-migration`, code candidate `6dc1379323fe43021580804297a1e397c1ebc3af` |
 | Candidate based on `origin/main` | PASS | `git merge-base --is-ancestor origin/main HEAD` exited 0; recorded base `2415fb198920b1958898cf05c06259bc0e3cdbc8` |
-| Clean candidate | FAIL | Six focused Staging source/test fixes plus this validation report remain uncommitted: intent classification, missing-message API status and hydration-safe time formatting. No unrelated files are modified. |
-| Vercel Preview recorded | PASS | Deployment `dpl_3HJTJsa2ybCyvSBa2BY99UcjnZcy`; stable alias `https://rnr-gallery-reply-preview.vercel.app` |
+| Clean candidate | PASS | The seven reviewed Reply Assistant Staging files were committed without unrelated worktree changes. Final validation-report commit is recorded in the release output. |
+| Vercel Preview recorded | PASS | Deployment `dpl_23yTbFoQsyjeQZ3uHwTxjqGN8Ycf`; stable alias `https://rnr-gallery-reply-preview.vercel.app`; deployment state `READY`, target `preview` |
 | Isolated databases recorded | PASS | `rnr_reply_assistant_test_20260817` and `rnr_reply_assistant_staging_20260817` |
 | Knowledge version recorded | PASS | SHA-256 `273d01224b8bef026dc69459ad0456e800f328ee81f7703d8c9a3f4512da024d` |
-| Overall Staging decision | **FAIL - NOT STAGING READY** | Required local LAN, mobile browser, real Meta-origin event and human sign-off checks remain incomplete. |
+| Overall Staging decision | **FAIL - NOT STAGING READY** | Engineering, deployment and mobile blockers are closed. The approved test Meta App/Test Page event and required human sign-offs remain incomplete. |
 
 ### 1. Source and dependency baseline
 
 | Check | Result | Evidence |
 | --- | --- | --- |
-| Clean worktree | FAIL | Seven intended files, including this report, are uncommitted. |
+| Clean worktree | PASS | The reviewed Reply Assistant Staging changes were committed as an isolated candidate; no unrelated files were included. |
 | `origin/main` ancestor | PASS | Exit 0. |
 | `npm ci` | PASS WITH WARNING | Completed from committed lockfile; existing audit output reports four moderate dependency vulnerabilities and allow-scripts warnings. |
 | Knowledge check | PASS | Exit 0. |
@@ -335,7 +335,7 @@ Executed on 17 August 2026. This report records only checks actually run. `FAIL`
 | Mock-first then real provider | PASS | Mock/gate/database suite ran before real OpenAI validation. |
 | OpenAI key server-only | PASS | Present in Preview server environment; exact-value source/build scan found zero matches. |
 | Reviewed model and budgets | PASS | Model `gpt-5.6-luna`; daily warning/hard stop USD 0.25/1 and total warning/hard stop USD 2/5. |
-| Meta credentials belong to approved Staging/test setup | FAIL | Values are configured but ownership of the App/Page was not independently confirmed by a real Meta-origin Staging event. |
+| Meta credentials belong to approved Staging/test setup | FAIL | Preview `META_PAGE_ID` resolves to the Production R&R Page. The development App `27275765825366307` has no Messenger use case/subscription configured, while App `1336256958571071` is the published Production-connected App. No approved Test Page configuration is available for a real event. |
 | Hash secret server-only | PASS | Present only in server environment; no `NEXT_PUBLIC_` Reply Assistant secret. |
 | Page access token absent | PASS | Absent from source, Preview, Production and built Reply Assistant scope. |
 | Logs contain no environment value | PASS | Exact-secret and privacy scans found no secret values. |
@@ -371,8 +371,11 @@ Executed on 17 August 2026. This report records only checks actually run. `FAIL`
 | No local filesystem writes | PASS | Scoped runtime/build scan found no `fs`/`node:fs` write path or JSONL persistence. |
 | Core human-review workflow | PASS | Admin/staff saw queue, gate, risk and metrics. High-risk/realtime items had no textarea. Accept enabled Copy; Copy did not send. |
 | Staging provider latency | PASS | Three Staging calls: average 1,835 ms, slowest 2,597 ms. |
-| Browser console | FAIL | The deployed Preview logged React `#418` hydration text mismatches. Root cause was locale formatting without a fixed timezone. A TDD fix now uses `Pacific/Auckland`; focused tests, typecheck and lint pass, but deployment verification is pending. |
-| Hydration-fix Preview deployment | FAIL | Deployments `dpl_CtaB7mhtue7DoJMSQhKnoV5pCDKL` and `dpl_BFvTUKYFHnULpz7tMYamjCmdACxk` were created but blocked before build: `readyState=BLOCKED`, `buildingAt=null`, `seatBlock.blockCode=TEAM_ACCESS_REQUIRED`. Vercel reported that HEAD author `ronnieli@RonniedeMacBook-Pro.local` was not associated with the RRGallery team. A candidate commit with the authenticated team account email is required before retrying. |
+| Browser console | PASS | The hydration-safe `Pacific/Auckland` formatting is deployed. The authenticated Preview page and its 390 px layout produced zero console errors. |
+| Hydration-fix Preview deployment | PASS | Root cause of the earlier `UNKNOWN`/0 ms result was Vercel `TEAM_ACCESS_REQUIRED`: the prior commit author was not a member of the RRGallery team, so no build started (`buildingAt=null`). Candidate author identity was corrected without changing application code. Deployment `dpl_23yTbFoQsyjeQZ3uHwTxjqGN8Ycf` then built in 31 seconds and reached `READY`. |
+| Preview route and API | PASS | `vercel curl` returned 307 from `/reply-assistant` for an unauthenticated request and 401 from `/api/reply-assistant/messages`; authenticated Chrome rendered the staff UI, queue and persisted metrics. |
+| Preview logs/privacy | PASS WITH WARNING | 38 reviewed records had zero 5xx, no secret pattern and no raw Messenger identifier. The only error-level entry was the known PostgreSQL SSL future-compatibility warning on a successful redirect. |
+| 390 px Preview layout | PASS | Real Preview at 390x844 had `innerWidth=390`, document/body scroll width 375, no overflowing textarea/button/risk/main element, and all draft actions remained within x=33..342. |
 
 ### 7. Meta webhook
 
@@ -386,7 +389,7 @@ Executed on 17 August 2026. This report records only checks actually run. `FAIL`
 | Safe request logs | PASS | Logs showed method/path/status and no raw customer identity. |
 | DB-first plus `after()` ordering | PASS | Handler/unit tests and persisted signed-fixture results passed; gate-blocked messages persisted without provider calls. |
 | Background recovery/manual Generate | PASS | Recovery and same-gate generation tests passed. Missing-message generation now returns tested 404 `NOT_FOUND`. |
-| Real approved Meta App/Page event | FAIL | No real Meta-origin event was sent to this Preview callback. Production callback remained untouched. |
+| Real approved Meta App/Page event | FAIL | First failed layer is Meta test configuration. Preview is configured for the Production Page, the published Messenger App is Production-connected, and the development App has no Messenger setup. Changing the Production callback or testing against the Production Page would violate the approved boundary, so no real Meta-origin event was sent. |
 
 ### 8. Policy and output safety
 
@@ -437,10 +440,21 @@ Executed on 17 August 2026. This report records only checks actually run. `FAIL`
 
 ### 12. Exit blockers
 
-1. The candidate must be committed or otherwise made into a clean, immutable review candidate.
-2. A real signed event from the approved Staging/test Meta App and Page has not reached the Preview callback.
-3. The hydration fix passed 1,660 tests but has not been verified on a successful Preview deployment because the two attempted deployments were blocked before build by Vercel team-author verification.
-4. Ronnie's draft-quality review and explicit Staging approval are not recorded.
-5. Security/privacy sign-off and rollback/old-ngrok owners are not assigned.
+1. An approved Staging Meta App with Messenger configured and a non-Production Test Page must be supplied before a real Meta-origin event can reach the Preview callback.
+2. Ronnie's draft-quality review and explicit Staging approval are not recorded.
+3. Security/privacy sign-off and rollback/old-ngrok owners are not assigned.
+
+### Final sign-off matrix
+
+| Area | Result | Remaining requirement |
+| --- | --- | --- |
+| Engineering | PASS | None. |
+| Security | TECHNICAL PASS / HUMAN SIGN-OFF PENDING | Named security/privacy reviewer must sign. |
+| AI quality | TECHNICAL PASS / RONNIE SIGN-OFF PENDING | Ronnie must approve Staging draft quality. |
+| Database | PASS | None. |
+| Meta webhook | FAIL | Approved test App/Test Page configuration and one real Meta-origin event are required. |
+| Rollback | PENDING | Assign Production rollback owner and old-ngrok health owner; no rollout has occurred. |
+| Mobile | PASS | None; real Preview passed at 390 px. |
+| Deployment | PASS | Preview is `READY`; Production remains unchanged. |
 
 Production feature flags, Production database, Production domain and Production Meta callback were not changed. `META_PAGE_ACCESS_TOKEN` remains absent and autonomous sending remains impossible.
