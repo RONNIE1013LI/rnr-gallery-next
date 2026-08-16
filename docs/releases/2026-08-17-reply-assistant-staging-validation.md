@@ -444,6 +444,14 @@ Executed on 17 August 2026. This report records only checks actually run. `FAIL`
 2. Ronnie's draft-quality review and explicit Staging approval are not recorded.
 3. Security/privacy sign-off and rollback/old-ngrok owners are not assigned.
 
+Final blocker materials:
+
+- Meta test setup and real-chain evidence form: `2026-08-17-reply-assistant-meta-test-environment.md`
+- Ronnie's 20-draft human review: `2026-08-17-reply-assistant-ai-quality-signoff.md`
+- Security/privacy and rollback owner checklist: `2026-08-17-reply-assistant-security-privacy-rollback-signoff.md`
+
+All three documents intentionally remain unsigned. They do not change the Customer Service Engine, policy gate, output validator, Production feature flag, Production database or Production Meta callback.
+
 ### Final sign-off matrix
 
 | Area | Result | Remaining requirement |
