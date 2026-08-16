@@ -364,6 +364,7 @@ export function createDrizzleProductionJobRepository(
         id: productionJobs.id,
         jobNumber: productionJobs.jobNumber,
         requestDigest: productionJobs.requestDigest,
+        updatedAt: productionJobs.updatedAt,
       }).from(productionJobs)
         .where(eq(productionJobs.idempotencyKey, idempotencyKey))
         .limit(1);
@@ -371,6 +372,7 @@ export function createDrizzleProductionJobRepository(
         id: record.id,
         jobNumber: record.jobNumber,
         requestDigest: record.requestDigest,
+        updatedAt: record.updatedAt,
       } : null;
     },
 
@@ -439,6 +441,7 @@ export function createDrizzleProductionJobRepository(
           id: productionJobs.id,
           jobNumber: productionJobs.jobNumber,
           requestDigest: productionJobs.requestDigest,
+          updatedAt: productionJobs.updatedAt,
         });
         await transaction.insert(productionJobItems).values(
           input.items.map((item) => ({ ...item, jobId: job.id })),
@@ -530,6 +533,7 @@ export function createDrizzleProductionJobRepository(
           id: job.id,
           jobNumber: job.jobNumber,
           requestDigest: job.requestDigest!,
+          updatedAt: job.updatedAt,
         };
       }).catch(async (error) => {
         const existing = await this.findManualByIdempotencyKey(input.idempotencyKey);

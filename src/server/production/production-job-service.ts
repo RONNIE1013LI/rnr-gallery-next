@@ -28,6 +28,7 @@ export type ProductionJobIdentity = Readonly<{
   id: string;
   jobNumber: string;
   requestDigest: string;
+  updatedAt: Date;
 }>;
 
 const fulfilmentStatuses = [

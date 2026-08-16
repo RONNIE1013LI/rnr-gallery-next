@@ -49,6 +49,7 @@ function repository(overrides: Partial<ProductionJobRepository> = {}): Productio
       id: "00000000-0000-4000-8000-000000000001",
       jobNumber: "RRM-2026-TEST000001",
       requestDigest: "created-digest",
+      updatedAt: new Date("2026-08-04T10:00:00.000Z"),
     }),
     update: vi.fn().mockResolvedValue("updated"),
     ...overrides,
@@ -124,6 +125,7 @@ describe("manual production job service", () => {
       })],
     }));
     expect(result.job.jobNumber).toBe("RRM-2026-TEST000001");
+    expect(result.job.updatedAt).toEqual(new Date("2026-08-04T10:00:00.000Z"));
   });
 
   it("preserves R&R and WeChat sources and staff-only legacy delivery choices", async () => {
@@ -154,6 +156,7 @@ describe("manual production job service", () => {
         id: "00000000-0000-4000-8000-000000000001",
         jobNumber: "RRM-2026-TEST000001",
         requestDigest: firstCall.requestDigest,
+        updatedAt: new Date("2026-08-04T10:00:00.000Z"),
       }),
     });
     const duplicateService = createProductionJobService(duplicateRepo);
@@ -164,6 +167,7 @@ describe("manual production job service", () => {
         id: "00000000-0000-4000-8000-000000000001",
         jobNumber: "RRM-2026-TEST000001",
         requestDigest: firstCall.requestDigest,
+        updatedAt: new Date("2026-08-04T10:00:00.000Z"),
       },
     });
     expect(duplicateRepo.createManual).not.toHaveBeenCalled();
@@ -175,6 +179,7 @@ describe("manual production job service", () => {
         id: "00000000-0000-4000-8000-000000000001",
         jobNumber: "RRM-2026-TEST000001",
         requestDigest: "different",
+        updatedAt: new Date("2026-08-04T10:00:00.000Z"),
       }),
     });
     const service = createProductionJobService(repo);

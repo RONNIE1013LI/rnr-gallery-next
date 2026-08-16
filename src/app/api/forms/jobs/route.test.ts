@@ -43,7 +43,12 @@ describe("forms jobs route", () => {
   it("creates a manual job without creating a false ecommerce order", async () => {
     const createManual = vi.fn().mockResolvedValue({
       result: "created",
-      job: { id: "550e8400-e29b-41d4-a716-446655440000", jobNumber: "RRM-2026-001" },
+      job: {
+        id: "550e8400-e29b-41d4-a716-446655440000",
+        jobNumber: "RRM-2026-001",
+        requestDigest: "digest",
+        updatedAt: new Date("2026-08-17T00:00:00.000Z"),
+      },
     });
     const route = createFormsJobsRoute({
       requirePermission: vi.fn().mockResolvedValue({
@@ -62,6 +67,9 @@ describe("forms jobs route", () => {
       body: JSON.stringify(body),
     }));
     expect(response.status).toBe(201);
+    await expect(response.clone().json()).resolves.toMatchObject({
+      job: { updatedAt: "2026-08-17T00:00:00.000Z" },
+    });
     expect(createManual).toHaveBeenCalledWith(
       { userId: "operator-1", email: "operator@example.test" },
       body,

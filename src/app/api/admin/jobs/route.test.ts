@@ -55,7 +55,12 @@ describe("admin production jobs route", () => {
   it("creates a same-origin manual job with authenticated finance capability", async () => {
     const createManual = vi.fn().mockResolvedValue({
       result: "created",
-      job: { id: "job-1", jobNumber: "RRM-2026-ONE", requestDigest: "digest" },
+      job: {
+        id: "job-1",
+        jobNumber: "RRM-2026-ONE",
+        requestDigest: "digest",
+        updatedAt: new Date("2026-08-17T00:00:00.000Z"),
+      },
     });
     const route = createAdminJobsRoute({
       requirePermission: vi.fn().mockResolvedValue({
@@ -69,6 +74,9 @@ describe("admin production jobs route", () => {
     const body = { idempotencyKey: "manual-create-0001" };
     const response = await route.POST(postRequest(body));
     expect(response.status).toBe(201);
+    await expect(response.clone().json()).resolves.toMatchObject({
+      job: { updatedAt: "2026-08-17T00:00:00.000Z" },
+    });
     expect(createManual).toHaveBeenCalledWith(
       { userId: "admin-1", email: "owner@example.test" },
       body,

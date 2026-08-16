@@ -114,6 +114,7 @@ describe("drizzle production job repository", () => {
       },
     }, { canUpdateFinance: true });
     jobIds.push(created.job.id);
+    expect(created.job.updatedAt).toEqual(new Date("2026-08-04T10:00:00.000Z"));
 
     await expect(database.select().from(invoices).where(eq(invoices.jobId, created.job.id)))
       .resolves.toEqual([expect.objectContaining({ invoiceNumber: `INV-${created.job.jobNumber}`, reference: created.job.jobNumber, totalInclGstCents: 23_000 })]);
