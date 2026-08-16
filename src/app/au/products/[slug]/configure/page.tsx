@@ -13,7 +13,10 @@ import { ConfigurePageContent } from "@/app/products/[slug]/configure/page-conte
 
 type ConfigurePageProps = {
   params: Promise<{ slug: string }>;
-  searchParams: Promise<{ design?: string | string[] }>;
+  searchParams: Promise<{
+    design?: string | string[];
+    size?: string | string[];
+  }>;
 };
 
 export const dynamic = "force-dynamic";
@@ -47,7 +50,8 @@ export default async function AustraliaConfigurePage({ params, searchParams }: C
   }
   const schema = schemaFromRegistry(registry, product.key);
   if (!schema) notFound();
-  const rawDesign = (await searchParams).design;
+  const resolvedSearchParams = await searchParams;
+  const rawDesign = resolvedSearchParams.design;
   const designId = Array.isArray(rawDesign) ? rawDesign[0] : rawDesign;
   let selectedDesign: GalleryDesignSelection | null = null;
   try {
@@ -65,6 +69,14 @@ export default async function AustraliaConfigurePage({ params, searchParams }: C
       orderDate={getAucklandOrderDate()}
       selectedDesign={selectedDesign}
       relatedDesigns={[]}
+      initialSizeKey={(() => {
+        const requested = Array.isArray(resolvedSearchParams.size)
+          ? resolvedSearchParams.size[0]
+          : resolvedSearchParams.size;
+        return requested && schema.sizes.some((size) => size.key === requested)
+          ? requested
+          : undefined;
+      })()}
     />
   );
 }

@@ -21,6 +21,7 @@ export function ConfigurePageContent({
   orderDate,
   selectedDesign,
   relatedDesigns,
+  initialSizeKey,
 }: Readonly<{
   product: Product;
   schema: ProductConfigurationSchema;
@@ -30,6 +31,7 @@ export function ConfigurePageContent({
   orderDate: string;
   selectedDesign: GalleryDesignSelection | null;
   relatedDesigns: readonly ProductConfiguratorRelatedDesign[];
+  initialSizeKey?: string;
 }>) {
   return (
     <main id="main-content" className={styles.configurePage}>
@@ -48,6 +50,7 @@ export function ConfigurePageContent({
         orderDate={orderDate}
         selectedDesign={selectedDesign}
         relatedDesigns={relatedDesigns}
+        initialSizeKey={initialSizeKey}
       />
     </main>
   );

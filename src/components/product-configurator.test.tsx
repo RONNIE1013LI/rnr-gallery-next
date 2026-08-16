@@ -34,6 +34,20 @@ function enabledAustraliaRegistry() {
 }
 
 describe("ProductConfigurator", () => {
+  it("starts from a valid size supplied by the landing page", () => {
+    const product = getProductBySlug("photo-print-canvas")!;
+    const schema = getConfigurationSchema(product.key)!;
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+        initialSizeKey="a2"
+      />,
+    );
+
+    expect(screen.getByRole("radio", { name: /A2/i })).toBeChecked();
+  });
   beforeEach(() => localStorage.clear());
   afterEach(() => vi.unstubAllGlobals());
 

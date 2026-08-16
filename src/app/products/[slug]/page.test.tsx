@@ -94,4 +94,29 @@ describe("ProductPageContent", () => {
     });
     expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
   });
+
+  it("preserves a selected size when opening the configurator", () => {
+    const product = getProductBySlug("photo-print-canvas")!;
+    const { container } = render(
+      <ProductPageContent
+        product={product}
+        selection={null}
+        market="AU"
+        priceInclTaxCents={10_999}
+        selectedSizeKey="a2"
+      />,
+    );
+
+    expect(screen.getByText("From A$109.99 AUD")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Create your artwork" })).toHaveAttribute(
+      "href",
+      "/au/products/photo-print-canvas/configure?size=a2",
+    );
+    const data = JSON.parse(container.querySelector("#rnr-product-data")?.textContent ?? "{}");
+    expect(data.offers).toMatchObject({
+      price: "109.99",
+      priceCurrency: "AUD",
+      url: "https://rrgallery.co.nz/au/products/photo-print-canvas?size=a2",
+    });
+  });
 });

@@ -36,7 +36,26 @@ describe("merchant product data", () => {
     expect(item).toMatchObject({
       currency: "AUD",
       priceInclTaxCents: 20_000,
-      link: `https://shop.example.test/au/products/${registry.products[0].slug}`,
+      link: `https://shop.example.test/au/products/${registry.products[0].slug}?size=${registry.products[0].configuration.sizes[0].key}`,
+    });
+  });
+
+  it("includes the required default people or pet charge in variant feed prices", () => {
+    const registry = readyAustralianRegistry();
+    const product = registry.products.find(
+      (entry) => entry.configuration.peoplePetsMode === "required",
+    )!;
+    const size = product.configuration.sizes[0];
+    const item = buildMerchantProductData(
+      registry,
+      "AU",
+      new URL("https://shop.example.test"),
+    ).find((entry) => entry.productKey === product.key && entry.sizeKey === size.key);
+
+    expect(item).toMatchObject({
+      currency: "AUD",
+      priceInclTaxCents: 21_000,
+      link: `https://shop.example.test/au/products/${product.slug}?size=${size.key}`,
     });
   });
 

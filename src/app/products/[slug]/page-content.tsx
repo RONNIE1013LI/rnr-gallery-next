@@ -6,8 +6,15 @@ import { StructuredData } from "@/components/structured-data";
 import { notFound } from "next/navigation";
 import styles from "@/components/storefront.module.css";
 import { products } from "@/domain/catalogue/products";
-import { getRegistryProductBySlug } from "@/domain/catalogue/product-registry";
-import { getMarketStartingPriceInclTaxCents } from "@/domain/pricing/market-quote";
+import {
+  getRegistryProductBySlug,
+  schemaFromRegistry,
+  type ProductRegistryDocument,
+} from "@/domain/catalogue/product-registry";
+import {
+  getMarketStartingPriceInclTaxCents,
+  quoteMarketConfiguration,
+} from "@/domain/pricing/market-quote";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { addNzdGst, formatMarketMoney } from "@/domain/money";
 import { currencyForMarket } from "@/domain/markets/market";
@@ -24,6 +31,7 @@ export type ProductPageProps = {
     design?: string | string[];
     reviews?: string | string[];
     rnr_design?: string | string[];
+    size?: string | string[];
   }>;
 };
 
@@ -55,6 +63,7 @@ export function ProductPageContent({
   market = "NZ",
   priceInclTaxCents,
   taxRegistered,
+  selectedSizeKey,
 }: Readonly<{
   product: Product;
   selection: GalleryDesignSelection | null;
@@ -62,14 +71,20 @@ export function ProductPageContent({
   market?: Market;
   priceInclTaxCents?: number;
   taxRegistered?: boolean;
+  selectedSizeKey?: string;
 }>) {
   const marketPrefix = market === "AU" ? "/au" : "";
-  const configureHref = selection
-    ? `${marketPrefix}/products/${product.slug}/configure?design=${selection.id}`
-    : `${marketPrefix}/products/${product.slug}/configure`;
+  const configureParams = new URLSearchParams();
+  if (selection) configureParams.set("design", selection.id);
+  if (selectedSizeKey) configureParams.set("size", selectedSizeKey);
+  const configureQuery = configureParams.toString();
+  const configureHref = `${marketPrefix}/products/${product.slug}/configure${
+    configureQuery ? `?${configureQuery}` : ""
+  }`;
   const siteUrl = getSiteUrl();
   const productPath = `${marketPrefix}/products/${product.slug}`;
-  const productUrl = new URL(productPath, siteUrl).toString();
+  const productUrl = new URL(productPath, siteUrl);
+  if (selectedSizeKey) productUrl.searchParams.set("size", selectedSizeKey);
   const imageUrl = new URL(selection?.imageUrl ?? product.image.src, siteUrl).toString();
   const displayPrice = priceInclTaxCents ?? addNzdGst(product.startingPriceExGstCents);
   const currency = currencyForMarket(market);
@@ -85,7 +100,7 @@ export function ProductPageContent({
         brand: { "@type": "Brand", name: "R&R Gallery" },
         offers: {
           "@type": "Offer",
-          url: productUrl,
+          url: productUrl.toString(),
           priceCurrency: currency,
           price: (displayPrice / 100).toFixed(2),
           availability: "https://schema.org/InStock",
@@ -153,20 +168,46 @@ export async function resolveProductPageSearchSelection(productSlug: string, sea
   return { selection, designId };
 }
 
+export function resolveRequestedSizeKey(
+  registry: ProductRegistryDocument,
+  productKey: string,
+  rawSize: string | string[] | undefined,
+): string | undefined {
+  const requested = Array.isArray(rawSize) ? rawSize[0] : rawSize;
+  const schema = schemaFromRegistry(registry, productKey);
+  return requested && schema?.sizes.some((size) => size.key === requested)
+    ? requested
+    : undefined;
+}
+
 export default async function ProductPage({ params, searchParams }: ProductPageProps) {
   const { registry } = await getSafePublicProductRegistry();
   const product = getRegistryProductBySlug(registry, (await params).slug);
   if (!product) notFound();
   const { selection } = await resolveProductPageSearchSelection(product.slug, searchParams);
-  const rawReviewPage = (await searchParams).reviews;
+  const resolvedSearchParams = await searchParams;
+  const rawReviewPage = resolvedSearchParams.reviews;
   const reviewPage = Number(Array.isArray(rawReviewPage) ? rawReviewPage[0] : rawReviewPage);
+  const selectedSizeKey = resolveRequestedSizeKey(
+    registry,
+    product.key,
+    resolvedSearchParams.size,
+  );
+  const schema = schemaFromRegistry(registry, product.key);
+  if (!schema) notFound();
   return (
     <ProductPageContent
       product={product}
       reviewPage={Number.isInteger(reviewPage) ? reviewPage : 1}
       selection={selection}
-      priceInclTaxCents={getMarketStartingPriceInclTaxCents(registry, "NZ", product.key)}
+      priceInclTaxCents={selectedSizeKey
+        ? quoteMarketConfiguration(registry, "NZ", product.key, {
+            sizeKey: selectedSizeKey,
+            peoplePets: schema.defaultPeoplePets,
+          }).totalInclGstCents
+        : getMarketStartingPriceInclTaxCents(registry, "NZ", product.key)}
       taxRegistered={registry.markets.NZ.tax.registered}
+      selectedSizeKey={selectedSizeKey}
     />
   );
 }

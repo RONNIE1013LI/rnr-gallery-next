@@ -1,6 +1,7 @@
 import { assertMarketCheckoutReady } from "./market-price-book";
-import type { ProductRegistryDocument } from "./product-registry";
+import { schemaFromRegistry, type ProductRegistryDocument } from "./product-registry";
 import type { Market, MarketCurrency } from "@/domain/markets/types";
+import { quoteMarketConfiguration } from "@/domain/pricing/market-quote";
 
 export type MerchantProductData = Readonly<{
   id: string;
@@ -26,21 +27,23 @@ export function buildMerchantProductData(
 
   return Object.freeze(registry.products.flatMap((product) => {
     if (!product.active) return [];
-    const prices = book.products.find((entry) => entry.productKey === product.key);
-    if (!prices) return [];
+    const schema = schemaFromRegistry(registry, product.key);
+    if (!schema) return [];
     return product.configuration.sizes.map((size) => {
-      const price = prices.sizes.find((entry) => entry.sizeKey === size.key)
-        ?.amountInclTaxCents;
-      if (price === null || price === undefined) {
-        throw new Error(`Merchant price is missing for ${market}:${product.key}:${size.key}.`);
-      }
+      const price = quoteMarketConfiguration(registry, market, product.key, {
+        sizeKey: size.key,
+        peoplePets: schema.defaultPeoplePets,
+      }).totalInclGstCents;
       return Object.freeze({
         id: `${market.toLowerCase()}:${product.key}:${size.key}`,
         productKey: product.key,
         sizeKey: size.key,
         title: `${product.title} — ${size.label}`,
         description: product.summary,
-        link: new URL(`${prefix}/products/${product.slug}`, siteUrl).toString(),
+        link: new URL(
+          `${prefix}/products/${product.slug}?size=${encodeURIComponent(size.key)}`,
+          siteUrl,
+        ).toString(),
         imageLink: new URL(product.image.src, siteUrl).toString(),
         currency: book.currency,
         priceInclTaxCents: price,

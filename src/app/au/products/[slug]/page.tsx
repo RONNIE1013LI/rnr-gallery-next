@@ -2,13 +2,20 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { AustraliaUnavailable } from "@/components/market-unavailable";
 import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
-import { getRegistryProductBySlug } from "@/domain/catalogue/product-registry";
-import { getMarketStartingPriceInclTaxCents } from "@/domain/pricing/market-quote";
+import {
+  getRegistryProductBySlug,
+  schemaFromRegistry,
+} from "@/domain/catalogue/product-registry";
+import {
+  getMarketStartingPriceInclTaxCents,
+  quoteMarketConfiguration,
+} from "@/domain/pricing/market-quote";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { buildPublicMetadata } from "@/server/seo/metadata";
 import {
   ProductPageContent,
   resolveProductPageSearchSelection,
+  resolveRequestedSizeKey,
   type ProductPageProps,
 } from "@/app/products/[slug]/page-content";
 
@@ -41,16 +48,30 @@ export default async function AustraliaProductPage({ params, searchParams }: Pro
     return <AustraliaUnavailable />;
   }
   const { selection } = await resolveProductPageSearchSelection(product.slug, searchParams);
-  const rawReviewPage = (await searchParams).reviews;
+  const resolvedSearchParams = await searchParams;
+  const rawReviewPage = resolvedSearchParams.reviews;
   const reviewPage = Number(Array.isArray(rawReviewPage) ? rawReviewPage[0] : rawReviewPage);
+  const selectedSizeKey = resolveRequestedSizeKey(
+    registry,
+    product.key,
+    resolvedSearchParams.size,
+  );
+  const schema = schemaFromRegistry(registry, product.key);
+  if (!schema) notFound();
   return (
     <ProductPageContent
       product={product}
       selection={selection}
       reviewPage={Number.isInteger(reviewPage) ? reviewPage : 1}
       market="AU"
-      priceInclTaxCents={getMarketStartingPriceInclTaxCents(registry, "AU", product.key)}
+      priceInclTaxCents={selectedSizeKey
+        ? quoteMarketConfiguration(registry, "AU", product.key, {
+            sizeKey: selectedSizeKey,
+            peoplePets: schema.defaultPeoplePets,
+          }).totalInclGstCents
+        : getMarketStartingPriceInclTaxCents(registry, "AU", product.key)}
       taxRegistered={registry.markets.AU.tax.registered}
+      selectedSizeKey={selectedSizeKey}
     />
   );
 }

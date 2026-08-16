@@ -60,6 +60,7 @@ type ProductConfiguratorProps = Readonly<{
   createId?: () => string;
   selectedDesign?: GalleryDesignSelection | null;
   relatedDesigns?: readonly ProductConfiguratorRelatedDesign[];
+  initialSizeKey?: string;
 }>;
 
 type UploadedFile = Readonly<{
@@ -78,9 +79,14 @@ export function ProductConfigurator({
   createId = createClientId,
   selectedDesign = null,
   relatedDesigns = [],
+  initialSizeKey,
 }: ProductConfiguratorProps) {
   const designInspiration = selectedDesign;
-  const [sizeKey, setSizeKey] = useState(schema.defaultSizeKey);
+  const [sizeKey, setSizeKey] = useState(
+    initialSizeKey && schema.sizes.some((size) => size.key === initialSizeKey)
+      ? initialSizeKey
+      : schema.defaultSizeKey,
+  );
   const [orientation, setOrientation] = useState<Orientation | undefined>(
     schema.defaultOrientation,
   );
