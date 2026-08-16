@@ -153,7 +153,6 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
           <dl className={styles.designDetailFacts}>
             <div><dt>Product type</dt><dd>{productType}</dd></div>
             <div><dt>Occasion</dt><dd>{occasion}</dd></div>
-            <div><dt>Design image</dt><dd>{design.width} × {design.height} px</dd></div>
             <div>
               <dt>Available sizes</dt>
               <dd>{registryProduct.configuration.sizes.map((size) => size.label).join(", ")}</dd>
