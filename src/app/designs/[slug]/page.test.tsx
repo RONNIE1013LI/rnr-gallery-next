@@ -1,6 +1,7 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import styles from "@/components/storefront.module.css";
 import DesignDetailPage, { generateMetadata, revalidate } from "./page";
 
 const { findByPublicSlug, list, notFound } = vi.hoisted(() => ({
@@ -62,6 +63,14 @@ describe("public design detail page", () => {
       .toHaveAttribute("href", `/products/roll-up-banner/configure?design=${designId}`);
     expect(screen.getByRole("link", { name: "View Similar Designs" }))
       .toHaveAttribute("href", "/design-gallery?occasion=birthday&page=2");
+    const visibleBreadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
+    expect(within(visibleBreadcrumb).getByRole("link", { name: "Home" }))
+      .toHaveClass(styles.breadcrumbHome);
+    expect(within(visibleBreadcrumb).getByRole("link", { name: "Design Gallery" }))
+      .toHaveClass(styles.breadcrumbGallery);
+    expect(within(visibleBreadcrumb).getByText("40th Birthday"))
+      .toHaveClass(styles.breadcrumbCurrent);
+    expect(within(visibleBreadcrumb).getAllByText("›")).toHaveLength(2);
     const breadcrumbs = JSON.parse(container.querySelector("#rnr-design-breadcrumbs")?.textContent ?? "{}");
     expect(breadcrumbs).toMatchObject({
       "@type": "BreadcrumbList",

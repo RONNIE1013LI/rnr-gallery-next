@@ -39,7 +39,6 @@ export function ConfigurePageContent({
         <p className={styles.eyebrow}>Create your artwork</p>
         <h1>{product.title}</h1>
         <p>{product.summary}</p>
-        <a className={styles.primaryButton} href="#customise">Start Customising</a>
       </header>
       <ProductConfigurator
         product={product}

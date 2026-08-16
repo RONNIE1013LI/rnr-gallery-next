@@ -1546,16 +1546,29 @@
 }
 
 .publicBreadcrumbs {
+  min-width: 0;
   min-height: 44px;
   display: flex;
   align-items: center;
+  flex-wrap: nowrap;
   gap: 0.6rem;
   color: var(--muted);
   font-size: 0.875rem;
+  white-space: nowrap;
 }
 
 .publicBreadcrumbs a {
   color: inherit;
+}
+
+.breadcrumbCurrent {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.breadcrumbBackIcon {
+  display: none;
 }
 
 .designDetailHero {
@@ -1631,6 +1644,29 @@
 }
 
 @media (max-width: 820px) {
+  .publicBreadcrumbs {
+    min-height: 32px;
+    font-size: 0.95rem;
+  }
+
+  .breadcrumbHome,
+  .breadcrumbSeparator,
+  .breadcrumbCurrent {
+    display: none;
+  }
+
+  .breadcrumbGallery {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-weight: 650;
+  }
+
+  .breadcrumbBackIcon {
+    display: inline;
+    font-size: 1.25em;
+  }
+
   .designDetailHero {
     grid-template-columns: 1fr;
   }
@@ -1666,12 +1702,6 @@
   font-weight: 650;
   letter-spacing: -0.045em;
   line-height: 1.02;
-}
-
-.configureIntro > p:last-child {
-  max-width: 46rem;
-  margin-top: 1.25rem;
-  color: var(--muted);
 }
 
 .configureRelatedDesigns {

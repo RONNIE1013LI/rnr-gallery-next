@@ -6,7 +6,7 @@ import { getConfigurationSchema } from "@/domain/configuration/schemas";
 import { ConfigurePageContent } from "./page-content";
 
 describe("ConfigurePageContent", () => {
-  it("starts with a neutral customising CTA instead of requiring an immediate upload", () => {
+  it("opens directly into the customising form without a redundant introduction CTA", () => {
     const product = getProductBySlug("digital-oil-painting-canvas")!;
     const schema = getConfigurationSchema(product.key)!;
     render(<ConfigurePageContent
@@ -18,8 +18,8 @@ describe("ConfigurePageContent", () => {
       relatedDesigns={[]}
     />);
 
-    expect(screen.getByRole("link", { name: "Start Customising" }))
-      .toHaveAttribute("href", "#customise");
+    expect(screen.queryByRole("link", { name: "Start Customising" }))
+      .not.toBeInTheDocument();
     expect(document.querySelector("form#customise")).not.toBeNull();
     expect(screen.getByText("Upload Photos Now")).toBeVisible();
     expect(screen.getByText("Send Photos After Ordering")).toBeVisible();
