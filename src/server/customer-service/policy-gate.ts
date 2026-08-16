@@ -3,7 +3,7 @@ import { detectIntent, isGenericBannerQuoteEnquiry, type CustomerServiceIntent }
 export type PolicyRule = Readonly<{
   id: string;
   text: string;
-  evidenceStatus: "CONFIRMED" | "EVIDENCE-BASED" | "UNRESOLVED";
+  evidenceStatus: string;
   highRisk: boolean;
   realtimeRequired: boolean;
   mayAnswerAutomatically: boolean;
