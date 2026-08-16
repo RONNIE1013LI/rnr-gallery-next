@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { ProductionFilesPanel } from "./production-files-panel";
 
@@ -40,6 +40,34 @@ describe("production files panel", () => {
     expect(screen.getByText("Approved · Recorded by staff")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Record decision" })).not.toBeInTheDocument();
     expect(screen.getByRole("option", { name: "Payment proof" })).toBeInTheDocument();
+  });
+
+  it("accepts PDF only when the selected file purpose is payment proof", () => {
+    render(<ProductionFilesPanel
+      jobId={file.jobId}
+      files={[]}
+      revision={{ changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false }}
+      canManageFinance
+      canUploadFiles
+    />);
+
+    const purpose = screen.getByLabelText("File purpose");
+    expect(screen.getByLabelText("Image file")).toHaveAttribute(
+      "accept",
+      "image/jpeg,image/png,image/webp,image/heic,image/heif",
+    );
+
+    fireEvent.change(purpose, { target: { value: "payment_proof" } });
+    expect(screen.getByLabelText("Payment proof file")).toHaveAttribute(
+      "accept",
+      "image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf",
+    );
+
+    fireEvent.change(purpose, { target: { value: "design_draft" } });
+    expect(screen.getByLabelText("Image file")).toHaveAttribute(
+      "accept",
+      "image/jpeg,image/png,image/webp,image/heic,image/heif",
+    );
   });
 
   it("uses configured forms endpoints for private file downloads", () => {

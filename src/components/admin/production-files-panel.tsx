@@ -49,6 +49,7 @@ export function ProductionFilesPanel({
   const router = useRouter();
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
+  const [selectedKind, setSelectedKind] = useState("design_draft");
 
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -66,6 +67,7 @@ export function ProductionFilesPanel({
       } | null;
       if (!response.ok) throw new Error(result?.error || "The file could not be uploaded.");
       form.reset();
+      setSelectedKind("design_draft");
       setFeedback(
         result?.notification?.result === "sent"
           ? "File uploaded and the customer was notified."
@@ -133,6 +135,10 @@ export function ProductionFilesPanel({
   }
 
   const revisionLabel = `${revision.freeRevisionsRemaining} free revision${revision.freeRevisionsRemaining === 1 ? "" : "s"} remaining`;
+  const acceptsPdf = selectedKind === "payment_proof";
+  const acceptedFileTypes = acceptsPdf
+    ? "image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
+    : "image/jpeg,image/png,image/webp,image/heic,image/heif";
   return (
     <section className={styles.panel}>
       <div className={styles.panelHeading}>
@@ -145,13 +151,13 @@ export function ProductionFilesPanel({
       </div>
 
       {canUploadFiles ? <form className={`${styles.compactForm} ${styles.fileUploadForm}`} onSubmit={upload}>
-        <label><span>File purpose</span><select name="kind" defaultValue="design_draft" disabled={pending}>
+        <label><span>File purpose</span><select name="kind" value={selectedKind} onChange={(event) => setSelectedKind(event.target.value)} disabled={pending}>
           <option value="design_draft">Design draft</option>
           <option value="customer_file">Customer file</option>
           <option value="print_file">Print file</option>
           {canManageFinance ? <option value="payment_proof">Payment proof</option> : null}
         </select></label>
-        <label className={styles.fileInput}><span>Image file</span><input name="file" type="file" accept="image/jpeg,image/png,image/webp,image/heic,image/heif" required disabled={pending} /></label>
+        <label className={styles.fileInput}><span>{acceptsPdf ? "Payment proof file" : "Image file"}</span><input name="file" type="file" accept={acceptedFileTypes} required disabled={pending} /></label>
         <button type="submit" disabled={pending}>Upload private file</button>
       </form> : null}
 
