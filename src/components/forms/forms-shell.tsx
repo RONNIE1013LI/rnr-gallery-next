@@ -17,13 +17,14 @@ export function FormsShell({
   currentPath?: string;
   children: React.ReactNode;
 }>) {
+  const currentRoute = currentPath.split("?", 1)[0];
   return (
     <div className={styles.shell}>
       <header className={styles.header}>
         <div className={styles.brandRow}>
           <nav className={styles.primaryNav} aria-label="Forms workspace">
-            <Link href="/order-system" aria-current={currentPath === "/order-system" ? "page" : undefined}>Data list</Link>
-            {canViewStats ? <Link href="/order-system/stats" aria-current={currentPath.startsWith("/order-system/stats") ? "page" : undefined}>Custom stats</Link> : null}
+            <Link href="/order-system" aria-current={currentRoute === "/order-system" ? "page" : undefined}>Data list</Link>
+            {canViewStats ? <Link href="/order-system/stats" aria-current={currentRoute === "/order-system/stats" ? "page" : undefined}>Custom stats</Link> : null}
           </nav>
         </div>
         <Link className={styles.galleryLink} href="/">Gallery</Link>

@@ -21,7 +21,7 @@ describe("FormsShell", () => {
         operator={{ name: "Rosemary", email: "rosemary@example.test" }}
         canCreateJobs
         canViewStats
-        currentPath="/order-system"
+        currentPath="/order-system?q=07188&page=2"
       >
         <p>Workbench</p>
       </FormsShell>,
