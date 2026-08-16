@@ -40,6 +40,24 @@ describe("OpenAI Responses provider", () => {
     await expect(provider.generate({ instructions: "x", input: "y" })).rejects.toThrow("openai_http_429");
   });
 
+  it("reads output text from the raw Responses API content array", async () => {
+    const provider = new OpenAIResponsesProvider({
+      apiKey: "test-only-secret",
+      fetchImpl: async () => new Response(JSON.stringify({
+        model: "gpt-5.6-luna-2026-08-01",
+        output: [{
+          type: "message",
+          content: [{ type: "output_text", text: "Please send the original photo for assessment 😊" }],
+        }],
+        usage: { input_tokens: 12, output_tokens: 8 },
+      }), { status: 200 }),
+    });
+
+    await expect(provider.generate({ instructions: "rules", input: "message" })).resolves.toMatchObject({
+      text: "Please send the original photo for assessment 😊",
+    });
+  });
+
   it("requires a key before any fetch", async () => {
     const fetchSpy = vi.fn();
     const provider = new OpenAIResponsesProvider({ apiKey: "", fetchImpl: fetchSpy });

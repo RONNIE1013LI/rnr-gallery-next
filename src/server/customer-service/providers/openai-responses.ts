@@ -58,7 +58,19 @@ export class OpenAIResponsesProvider implements AiProvider {
     };
     const model = String(body.model ?? this.model);
     const directText = typeof body.output_text === "string" ? body.output_text : "";
-    const text = directText.trim();
+    const outputText = Array.isArray(body.output)
+      ? body.output.flatMap((item) => {
+        if (!item || typeof item !== "object") return [];
+        const content = (item as Record<string, unknown>).content;
+        if (!Array.isArray(content)) return [];
+        return content.flatMap((part) => {
+          if (!part || typeof part !== "object") return [];
+          const value = part as Record<string, unknown>;
+          return value.type === "output_text" && typeof value.text === "string" ? [value.text] : [];
+        });
+      }).join("\n")
+      : "";
+    const text = (directText || outputText).trim();
     if (!text) throw new Error("openai_empty_output");
     return {
       text,
