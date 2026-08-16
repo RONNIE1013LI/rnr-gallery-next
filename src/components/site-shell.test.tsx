@@ -327,23 +327,22 @@ describe("site shell", () => {
       .toHaveAttribute("href", "/shipping-delivery");
   });
 
-  it("shows every accepted payment brand inside the footer", () => {
+  it("shows only the approved payment brands in the requested order", () => {
     render(<SiteFooter />);
     const footer = screen.getByRole("contentinfo");
     const payments = within(footer).getByRole("region", {
       name: "Accepted payments",
     });
 
-    for (const name of [
+    expect(within(payments).getAllByRole("img").map((logo) =>
+      logo.getAttribute("aria-label"),
+    )).toEqual([
       "Visa",
       "Mastercard",
-      "American Express",
+      "Afterpay",
       "Apple Pay",
       "Google Pay",
-      "Afterpay",
-    ]) {
-      expect(within(payments).getByRole("img", { name })).toBeVisible();
-    }
+    ]);
 
     expect(footer.querySelector(".site-footer__grid")?.nextElementSibling)
       .toBe(payments);

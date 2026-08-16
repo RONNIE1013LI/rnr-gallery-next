@@ -1,6 +1,5 @@
 import Link from "next/link";
 import {
-  FaCcAmex,
   FaCcApplePay,
   FaCcMastercard,
   FaCcVisa,
@@ -110,20 +109,17 @@ export function SiteFooter({ content = defaultContent }: Readonly<{ content?: Si
           <li className="site-footer__payment-logo site-footer__payment-logo--mastercard">
             <FaCcMastercard role="img" aria-label="Mastercard" />
           </li>
-          <li className="site-footer__payment-logo site-footer__payment-logo--amex">
-            <FaCcAmex role="img" aria-label="American Express" />
+          <li className="site-footer__payment-logo site-footer__payment-logo--afterpay">
+            <span role="img" aria-label="Afterpay" className="site-footer__afterpay-mark">
+              <SiAfterpay aria-hidden="true" />
+              <span aria-hidden="true">afterpay</span>
+            </span>
           </li>
           <li className="site-footer__payment-logo site-footer__payment-logo--apple-pay">
             <FaCcApplePay role="img" aria-label="Apple Pay" />
           </li>
           <li className="site-footer__payment-logo site-footer__payment-logo--google-pay">
             <FaGooglePay role="img" aria-label="Google Pay" />
-          </li>
-          <li className="site-footer__payment-logo site-footer__payment-logo--afterpay">
-            <span role="img" aria-label="Afterpay" className="site-footer__afterpay-mark">
-              <SiAfterpay aria-hidden="true" />
-              <span aria-hidden="true">afterpay</span>
-            </span>
           </li>
         </ul>
       </section>

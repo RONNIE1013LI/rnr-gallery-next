@@ -838,10 +838,6 @@ a:active {
   color: #eb001b;
 }
 
-.site-footer__payment-logo--amex {
-  color: #2e77bc;
-}
-
 .site-footer__payment-logo--apple-pay,
 .site-footer__payment-logo--google-pay {
   color: #fff;
