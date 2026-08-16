@@ -2,9 +2,9 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Remove the redundant configuration-page CTA and replace the loose design-detail breadcrumb with a responsive, deliberate hierarchy.
+**Goal:** Remove the redundant configuration-page CTA and remove the visible design-detail breadcrumb while retaining its SEO structured data.
 
-**Architecture:** Keep the existing page components and shared storefront stylesheet. Change only visible markup and CSS; retain the current design URL, Gallery destination, structured-data breadcrumb, configurator form, pricing, uploads, cart, and checkout behavior.
+**Architecture:** Keep the existing page components and shared storefront stylesheet. Remove only the visible design-detail navigation and its private CSS hooks; retain the current design URL, `View Similar Designs`, structured-data breadcrumb, configurator form, pricing, uploads, cart, and checkout behavior.
 
 **Tech Stack:** Next.js App Router, React 19, CSS Modules, Vitest, Testing Library.
 
@@ -12,8 +12,7 @@
 
 - Remove the `Start Customising` link from the configuration-page introduction.
 - Preserve the `#customise` form anchor and all configuration behavior.
-- Desktop visible breadcrumb: `Home › Design Gallery › Current design`, single line with current-label truncation.
-- Mobile visible breadcrumb: one `‹ Design Gallery` link; hide the other visible levels.
+- No visible breadcrumb navigation on design detail pages at any viewport size.
 - Preserve the existing three-level Breadcrumb JSON-LD.
 - Do not change pricing, uploads, cart, checkout, payment, design URLs, metadata, or Gallery filters.
 
@@ -70,7 +69,7 @@ npm test -- --run 'src/app/products/[slug]/configure/page.test.tsx'
 
 Expected: PASS.
 
-### Task 2: Normalize the visible design-detail breadcrumb
+### Task 2: Remove the visible design-detail breadcrumb
 
 **Files:**
 - Modify: `src/app/designs/[slug]/page.test.tsx`
@@ -79,26 +78,16 @@ Expected: PASS.
 
 **Interfaces:**
 - Consumes: `title`, `/`, `/design-gallery`, and existing `buildBreadcrumbData()` JSON-LD.
-- Produces: semantic visible breadcrumb classes while leaving `rnr-design-breadcrumbs` unchanged.
+- Produces: no visible breadcrumb navigation while leaving `rnr-design-breadcrumbs` unchanged.
 
-- [ ] **Step 1: Add focused assertions for semantic desktop and mobile breadcrumb hooks**
-
-Import the existing CSS module in the test:
+- [ ] **Step 1: Update the focused test to require no visible breadcrumb**
 
 ```tsx
-import styles from "@/components/storefront.module.css";
+expect(screen.queryByRole("navigation", { name: "Breadcrumb" }))
+  .not.toBeInTheDocument();
 ```
 
-```tsx
-const visibleBreadcrumb = screen.getByRole("navigation", { name: "Breadcrumb" });
-expect(within(visibleBreadcrumb).getByRole("link", { name: "Home" }))
-  .toHaveClass(styles.breadcrumbHome);
-expect(within(visibleBreadcrumb).getByRole("link", { name: "Design Gallery" }))
-  .toHaveClass(styles.breadcrumbGallery);
-expect(within(visibleBreadcrumb).getByText("40th Birthday"))
-  .toHaveClass(styles.breadcrumbCurrent);
-expect(within(visibleBreadcrumb).getAllByText("›")).toHaveLength(2);
-```
+Keep the existing JSON-LD assertion requiring `Home`, `Design Gallery`, and the current design.
 
 - [ ] **Step 2: Run the design-detail test and confirm it fails**
 
@@ -108,71 +97,15 @@ Run:
 npm test -- --run 'src/app/designs/[slug]/page.test.tsx'
 ```
 
-Expected: FAIL because the semantic classes and `›` separators do not exist yet.
+Expected: FAIL because the visible breadcrumb navigation still exists.
 
-- [ ] **Step 3: Add explicit breadcrumb classes and consistent separators**
+- [ ] **Step 3: Delete only the visible breadcrumb markup**
 
-Use the existing navigation and add:
+Remove the `<nav aria-label="Breadcrumb">...</nav>` block from the design detail page. Keep `<StructuredData id="rnr-design-breadcrumbs">` unchanged.
 
-```tsx
-<Link className={styles.breadcrumbHome} href="/">Home</Link>
-<span className={styles.breadcrumbSeparator} aria-hidden="true">›</span>
-<Link className={styles.breadcrumbGallery} href="/design-gallery">
-  <span className={styles.breadcrumbBackIcon} aria-hidden="true">‹</span>
-  Design Gallery
-</Link>
-<span className={styles.breadcrumbSeparator} aria-hidden="true">›</span>
-<span className={styles.breadcrumbCurrent} aria-current="page">{title}</span>
-```
+- [ ] **Step 4: Remove CSS hooks used only by the deleted markup**
 
-- [ ] **Step 4: Implement responsive CSS in the existing stylesheet**
-
-Desktop requirements:
-
-```css
-.publicBreadcrumbs {
-  min-width: 0;
-  flex-wrap: nowrap;
-  white-space: nowrap;
-}
-
-.breadcrumbCurrent {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.breadcrumbBackIcon {
-  display: none;
-}
-```
-
-Mobile requirements inside the existing `@media (max-width: 820px)` block:
-
-```css
-.publicBreadcrumbs {
-  min-height: 32px;
-  font-size: 0.95rem;
-}
-
-.breadcrumbHome,
-.breadcrumbSeparator,
-.breadcrumbCurrent {
-  display: none;
-}
-
-.breadcrumbGallery {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  font-weight: 650;
-}
-
-.breadcrumbBackIcon {
-  display: inline;
-  font-size: 1.25em;
-}
-```
+Delete `.breadcrumbCurrent`, `.breadcrumbBackIcon`, and the mobile rules for `.breadcrumbHome`, `.breadcrumbSeparator`, `.breadcrumbCurrent`, `.breadcrumbGallery`, and `.breadcrumbBackIcon`. Keep `.publicBreadcrumbs` because `src/components/ad-landing-page.tsx` still consumes it.
 
 - [ ] **Step 5: Run focused tests**
 
@@ -202,4 +135,4 @@ Expected: TypeScript, ESLint, all tests, and production build pass. The build-on
 
 - [ ] **Step 7: Verify responsive rendering and deploy the exact commit**
 
-Check one public design detail at approximately 390px and desktop width. Confirm mobile shows only `‹ Design Gallery`; desktop shows all three levels on one line; the configuration page has no introductory CTA. Commit only the scoped files, deploy a clean candidate from the exact commit, smoke-test it, then promote that same deployment to `rrgallery.co.nz`.
+Check one public design detail at approximately 390px and desktop width. Confirm neither viewport shows a visible breadcrumb, `View Similar Designs` still exists, and the configuration page still has no introductory CTA. Commit only the scoped files, deploy a clean candidate from the exact commit, smoke-test it, then promote that same deployment to `rrgallery.co.nz`.

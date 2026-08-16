@@ -2,29 +2,29 @@
 
 ## Goal
 
-Remove the redundant introductory CTA from product configuration pages and make the visible breadcrumb on public design detail pages deliberate and readable on both mobile and desktop.
+Remove the redundant introductory CTA from product configuration pages and remove the redundant visible breadcrumb from public design detail pages.
 
 ## Scope
 
 - Remove the `Start Customising` link from the configuration-page introduction.
 - Keep the configuration form, `#customise` anchor, photo submission choices, pricing, cart, checkout, and analytics behavior unchanged.
+- Remove the visible breadcrumb navigation from design detail pages at every viewport size.
 - Keep the existing three-level Breadcrumb JSON-LD for search engines.
-- On desktop, show `Home › Design Gallery › Current design` on one line. Truncate an overlong current-design label instead of wrapping the navigation into multiple rows.
-- On mobile, show one compact back-style link: `‹ Design Gallery`. Hide `Home`, separators, and the current-design label from the visible breadcrumb only.
-- Preserve the Gallery return destination and all design-detail content below the breadcrumb.
+- Keep `View Similar Designs` as the single visible route back to comparable Gallery content.
+- Preserve all other design-detail content and actions.
 
 ## Implementation
 
-- Update the shared storefront stylesheet rather than adding a second breadcrumb component or design system.
-- Add semantic classes to the existing breadcrumb items so the mobile layout can hide nonessential levels without changing JSON-LD.
-- Update focused component tests for the removed CTA and responsive breadcrumb structure.
+- Delete the design-detail breadcrumb markup and the CSS hooks used only by that markup.
+- Keep the shared `.publicBreadcrumbs` styles because advertising landing pages still use them.
+- Update focused component tests to require no visible breadcrumb while still parsing the Breadcrumb JSON-LD.
 
 ## Verification
 
 - Focused Vitest tests for configuration and design-detail pages.
 - TypeScript, ESLint, and production build.
-- Mobile-width visual check for a design detail page.
-- Desktop visual check for the same page.
+- Mobile-width visual check for a design detail page with no top breadcrumb.
+- Desktop visual check for the same page with no top breadcrumb.
 - Production smoke check after deploying the exact tested commit.
 
 ## Non-goals
