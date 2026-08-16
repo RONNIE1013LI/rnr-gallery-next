@@ -1,21 +1,35 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { formOrderRow } from "@/components/forms/forms-test-data";
 import FormsDataListPage from "./page";
 
-const { requireFormsPage, listFormOrders, getDatabase } = vi.hoisted(() => ({
+const { requireFormsPage, listFormOrders, getDatabase, listFields, productRegistry, listAssignees } = vi.hoisted(() => ({
   requireFormsPage: vi.fn(),
   listFormOrders: vi.fn(),
   getDatabase: vi.fn(() => ({ kind: "database" })),
+  listFields: vi.fn(),
+  productRegistry: vi.fn(),
+  listAssignees: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 vi.mock("@/server/forms/require-forms-page", () => ({ requireFormsPage }));
 vi.mock("@/server/forms/drizzle-forms-workbench-repository", () => ({ listFormOrders }));
 vi.mock("@/server/db/client", () => ({ getDatabase }));
+vi.mock("@/server/admin/admin-production-field-runtime", () => ({ getAdminProductionFieldRuntime: () => ({ list: listFields }) }));
+vi.mock("@/server/admin/product-registry-runtime", () => ({ getSafePublicProductRegistry: productRegistry }));
+vi.mock("@/domain/catalogue/product-registry", () => ({ getRegistryProducts: () => [{ active: true, title: "Canvas" }, { active: false, title: "Hidden" }] }));
+vi.mock("@/server/production/drizzle-production-job-repository", () => ({ listProductionAssignees: listAssignees }));
 
 describe("forms data list page", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    listFields.mockResolvedValue([]);
+    productRegistry.mockResolvedValue({ registry: {} });
+    listAssignees.mockResolvedValue([{ id: "artist-1", name: "Artist", email: "artist@example.test", role: "staff" }]);
+  });
+
   it("loads the protected source-parity workbench with field-level access", async () => {
     requireFormsPage.mockResolvedValue({
       user: { id: "operator-1", email: "operator@example.test" },
@@ -69,5 +83,41 @@ describe("forms data list page", () => {
       "/order-system?match=or&filter=urgent%7Eequals%7Etrue&filter=status%7Eequals%7Edesigning",
       "view_jobs",
     );
+  });
+
+  it("loads manual-entry data only for an authorised drawer request", async () => {
+    requireFormsPage.mockResolvedValue({
+      user: { id: "operator-3", email: "entry@example.test" },
+      formRole: "form_staff",
+      formProfile: {
+        preset: "manager",
+        assignedOnly: false,
+        permissions: { view_jobs: true, create_jobs: true, update_finance: true },
+      },
+    });
+    listFormOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
+    listFields.mockResolvedValue([{ id: "field-1", label: "Source", fieldType: "text", options: [], required: false, enabled: true, showOnCreate: true, legacyOnly: false, section: "order" }]);
+
+    await FormsDataListPage({ searchParams: Promise.resolve({ q: "07188", entry: "new" }) });
+
+    expect(requireFormsPage).toHaveBeenCalledWith("/order-system?q=07188&entry=new", "view_jobs");
+    expect(productRegistry).toHaveBeenCalledOnce();
+    expect(listFields).toHaveBeenCalledOnce();
+    expect(listAssignees).toHaveBeenCalledOnce();
+  });
+
+  it("does not load manual-entry data when create permission is absent", async () => {
+    requireFormsPage.mockResolvedValue({
+      user: { id: "operator-4", email: "viewer@example.test" },
+      formRole: "form_staff",
+      formProfile: { preset: "readOnly", assignedOnly: false, permissions: { view_jobs: true } },
+    });
+    listFormOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
+
+    await FormsDataListPage({ searchParams: Promise.resolve({ entry: "new" }) });
+
+    expect(productRegistry).not.toHaveBeenCalled();
+    expect(listFields).not.toHaveBeenCalled();
+    expect(listAssignees).not.toHaveBeenCalled();
   });
 });

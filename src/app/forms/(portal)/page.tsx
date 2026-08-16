@@ -1,4 +1,8 @@
-import { FormsWorkbench } from "@/components/forms/forms-workbench";
+import { FormsWorkbench, type FormsOrderEntryData } from "@/components/forms/forms-workbench";
+import type { ProductionFormField } from "@/components/admin/production-job-form";
+import { getRegistryProducts } from "@/domain/catalogue/product-registry";
+import { getAdminProductionFieldRuntime } from "@/server/admin/admin-production-field-runtime";
+import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { getDatabase } from "@/server/db/client";
 import { listFormOrders } from "@/server/forms/drizzle-forms-workbench-repository";
 import { hasFormPermission } from "@/server/forms/forms-permissions";
@@ -6,6 +10,7 @@ import { parseFormWorkbenchQuery } from "@/server/forms/forms-workbench-service"
 import { requireFormsPage } from "@/server/forms/require-forms-page";
 import { getFormsSavedViewRuntime } from "@/server/forms/forms-saved-view-runtime";
 import { listProductionAssignees } from "@/server/production/drizzle-production-job-repository";
+import { getInvoiceBusinessSettings } from "@/server/invoices/invoice-business";
 
 type Props = Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -39,7 +44,10 @@ export default async function FormsDataListPage({ searchParams }: Props) {
   );
   const canManageViews = hasFormPermission(access.formRole, access.formProfile, "manage_views");
   const canUpdate = hasFormPermission(access.formRole, access.formProfile, "update_jobs");
-  const [result, savedViews, assignees] = await Promise.all([
+  const canCreate = hasFormPermission(access.formRole, access.formProfile, "create_jobs");
+  const canUpdateFinance = hasFormPermission(access.formRole, access.formProfile, "update_finance");
+  const entryRequested = raw.entry === "new" && canCreate;
+  const [result, savedViews, assignees, entryResources] = await Promise.all([
     listFormOrders(getDatabase(), query, {
       actorUserId: access.user.id,
       assignedOnly: access.formRole === "form_staff"
@@ -58,8 +66,30 @@ export default async function FormsDataListPage({ searchParams }: Props) {
           email: access.user.email ?? "unknown@invalid.local",
         })
       : Promise.resolve([]),
-    canUpdate ? listProductionAssignees(getDatabase()) : Promise.resolve([]),
+    canUpdate || entryRequested ? listProductionAssignees(getDatabase()) : Promise.resolve([]),
+    entryRequested
+      ? Promise.all([getSafePublicProductRegistry(), getAdminProductionFieldRuntime().list()])
+      : Promise.resolve(null),
   ]);
+  const orderEntry: FormsOrderEntryData | undefined = entryResources ? {
+    assignees,
+    canManageFinance: canUpdateFinance,
+    submittedBy: access.user.email ?? "Current operator",
+    productTitles: getRegistryProducts(entryResources[0].registry)
+      .filter((product) => product.active)
+      .map((product) => product.title),
+    customFields: entryResources[1].filter((field) =>
+      field.enabled && field.showOnCreate && !field.legacyOnly && field.fieldType !== "file" &&
+      (field.section !== "finance" || canUpdateFinance)
+    ).map((field) => ({
+      id: field.id,
+      label: field.label,
+      fieldType: field.fieldType as ProductionFormField["fieldType"],
+      options: field.options,
+      required: field.required,
+    })),
+    invoiceBusiness: getInvoiceBusinessSettings(),
+  } : undefined;
   return (
     <FormsWorkbench
       result={result}
@@ -69,12 +99,13 @@ export default async function FormsDataListPage({ searchParams }: Props) {
       canManageViews={canManageViews}
       savedViews={savedViews}
       canUpdate={canUpdate}
-      canUpdateFinance={hasFormPermission(access.formRole, access.formProfile, "update_finance")}
+      canUpdateFinance={canUpdateFinance}
       canUpdateProductionStatus={hasFormPermission(access.formRole, access.formProfile, "update_production_status")}
       canUpdateDeliveryStatus={hasFormPermission(access.formRole, access.formProfile, "update_delivery_status")}
       canUploadFiles={hasFormPermission(access.formRole, access.formProfile, "upload_files")}
       canReviewProofs={hasFormPermission(access.formRole, access.formProfile, "update_production_status")}
       assignees={assignees}
+      orderEntry={orderEntry}
     />
   );
 }

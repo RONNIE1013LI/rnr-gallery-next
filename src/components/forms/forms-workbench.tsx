@@ -16,7 +16,18 @@ import { FormsOrderCards } from "./forms-order-cards";
 import { FormsOrderTable } from "./forms-order-table";
 import { FormsSavedViews } from "./forms-saved-views";
 import type { ProductionSavedView } from "@/server/production/production-saved-view-service";
+import type { ProductionFormField } from "@/components/admin/production-job-form";
+import type { InvoiceBusiness } from "@/server/invoices/invoice-business";
 import styles from "./forms.module.css";
+
+export type FormsOrderEntryData = Readonly<{
+  assignees: readonly Readonly<{ id: string; name: string; email: string; role: "admin" | "staff" | "form_staff" }>[];
+  canManageFinance: boolean;
+  submittedBy: string;
+  productTitles: readonly string[];
+  customFields: readonly ProductionFormField[];
+  invoiceBusiness: InvoiceBusiness;
+}>;
 
 function queryString(query: FormWorkbenchQuery, page?: number) {
   const params = new URLSearchParams();
@@ -61,6 +72,7 @@ export function FormsWorkbench({
   canUploadFiles?: boolean;
   canReviewProofs?: boolean;
   assignees?: readonly Readonly<{ id: string; name: string; email: string; role: "admin" | "staff" | "form_staff" }>[];
+  orderEntry?: FormsOrderEntryData;
 }>) {
   const router = useRouter();
   const [showColumnStats, setShowColumnStats] = useState(false);

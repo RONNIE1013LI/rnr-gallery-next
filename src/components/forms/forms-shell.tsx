@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { FormsSignOut } from "./forms-sign-out";
+import { FormsOrderEntryLink } from "./forms-order-entry-link";
 import styles from "./forms.module.css";
 
 export function FormsShell({
@@ -31,7 +32,7 @@ export function FormsShell({
             {operator.name || operator.email || "Operator"}
           </span>
           <FormsSignOut />
-          {canCreateJobs ? <Link className={styles.orderEntry} href="/order-system/new">Order entry</Link> : null}
+          {canCreateJobs ? <FormsOrderEntryLink currentPath={currentPath} /> : null}
         </div>
       </header>
       <main id="main-content" className={styles.workspace}>{children}</main>
