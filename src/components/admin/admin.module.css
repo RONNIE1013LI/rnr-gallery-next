@@ -1256,11 +1256,16 @@
 
 .invoiceWorkspaceLayout {
   display: grid;
+  min-width: 0;
   min-height: 0;
   grid-template-columns: minmax(320px, 390px) minmax(620px, 1fr);
 }
 
 .invoiceWorkspaceEditor {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow: auto;
   padding: 14px;
   background: #fff;
@@ -1316,6 +1321,10 @@
 }
 
 .invoicePreviewStage {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
   overflow: auto;
   padding: 24px;
 }
@@ -1469,7 +1478,8 @@
 
   .invoiceWorkspaceLayout {
     grid-template-columns: 1fr;
-    overflow: auto;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .invoiceWorkspaceEditor,
@@ -3289,6 +3299,11 @@
 }
 
 @media (max-width: 680px) {
+  .formUtilityBar button,
+  .formUtilityBar a {
+    min-height: 44px;
+  }
+
   .formSectionHeading,
   .formSubmitBar {
     display: grid;
