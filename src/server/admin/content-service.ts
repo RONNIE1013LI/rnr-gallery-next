@@ -1,9 +1,10 @@
 import { eq } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import { adminAuditLogs, contentEntries, user } from "@/server/db/schema";
+import { orderEmailTemplateDefinitions } from "@/server/notifications/order-email-templates";
 import { buildAuditRecord } from "./audit-service";
 
-export const contentDefinitions = Object.freeze([
+const storefrontContentDefinitions = Object.freeze([
   { key: "home.hero.eyebrow", group: "Homepage", label: "Hero eyebrow", description: "Short line above the homepage title.", maxLength: 80, multiline: false, defaultValue: "Made around what matters" },
   { key: "home.hero.title", group: "Homepage", label: "Hero title", description: "Primary homepage heading.", maxLength: 200, multiline: false, defaultValue: "Art made from your story." },
   { key: "home.hero.subtitle", group: "Homepage", label: "Hero subtitle", description: "Homepage introductory message.", maxLength: 400, multiline: true, defaultValue: "Turn meaningful photos into personal canvas and banner artwork, created with care in New Zealand." },
@@ -30,6 +31,15 @@ export const contentDefinitions = Object.freeze([
   { key: "order.confirmation_notice", group: "Orders", label: "Order confirmation notice", description: "Message shown after an order is created.", maxLength: 800, multiline: true, defaultValue: "We will contact you if we need any additional files or details before preparing your draft." },
 ] as const);
 
+export const contentDefinitions = Object.freeze([
+  ...storefrontContentDefinitions.map((definition) => Object.freeze({
+    ...definition,
+    surface: "storefront" as const,
+    allowedVariables: Object.freeze([]) as readonly string[],
+  })),
+  ...orderEmailTemplateDefinitions,
+]);
+
 export type ContentKey = typeof contentDefinitions[number]["key"];
 type Database = ReturnType<typeof getDatabase>;
 
@@ -52,6 +62,18 @@ export function parseContentValue(key: string, input: unknown): string {
   if (!value) throw new ContentValidationError(`${definition.label} is required`);
   if (value.length > definition.maxLength) throw new ContentValidationError(`${definition.label} is too long`);
   if (/[<>]/.test(value)) throw new ContentValidationError("Plain text only");
+  if (definition.surface === "email") {
+    if (/https?:\/\//i.test(value) || /\bwww\./i.test(value)) {
+      throw new ContentValidationError("Email template URLs are managed by the system");
+    }
+    const variablePattern = /{{\s*([a-z_]+)\s*}}/g;
+    const variables = [...value.matchAll(variablePattern)].map((match) => match[1]);
+    if (value.replace(variablePattern, "").includes("{{") || value.replace(variablePattern, "").includes("}}")) {
+      throw new ContentValidationError("Malformed email template variable");
+    }
+    const unknown = variables.find((variable) => !definition.allowedVariables.includes(variable as never));
+    if (unknown) throw new ContentValidationError(`Unknown email template variable: ${unknown}`);
+  }
   return value;
 }
 
@@ -66,7 +88,10 @@ export function resolvePublishedContent<K extends ContentKey>(
   })) as Record<K, string>);
 }
 
-export async function listAdminContent(database: Database) {
+export async function listAdminContent(
+  database: Database,
+  surface: "storefront" | "email" = "storefront",
+) {
   const rows = await database
     .select({
       key: contentEntries.key,
@@ -78,7 +103,7 @@ export async function listAdminContent(database: Database) {
     .from(contentEntries)
     .leftJoin(user, eq(user.id, contentEntries.draftUpdatedBy));
 
-  return Object.freeze(contentDefinitions.map((definition) => {
+  return Object.freeze(contentDefinitions.filter((definition) => definition.surface === surface).map((definition) => {
     const row = rows.find((candidate) => candidate.key === definition.key);
     return Object.freeze({
       ...definition,

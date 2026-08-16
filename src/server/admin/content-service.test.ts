@@ -34,6 +34,33 @@ describe("admin content service", () => {
     expect(() => parseContentValue("home.hero.title", "x".repeat(201))).toThrow("too long");
   });
 
+  it("accepts allowlisted email variables and rejects unsafe template input", () => {
+    expect(parseContentValue(
+      "email.payment_confirmed.subject",
+      "  Payment received — {{order_number}}  ",
+    )).toBe("Payment received — {{order_number}}");
+    expect(() => parseContentValue(
+      "email.payment_confirmed.body",
+      "Hello {{email}}",
+    )).toThrow("Unknown email template variable: email");
+    expect(() => parseContentValue(
+      "email.payment_confirmed.body",
+      "Open https://example.test",
+    )).toThrow("Email template URLs are managed by the system");
+    expect(() => parseContentValue(
+      "email.payment_confirmed.body",
+      "Hello {{order_number",
+    )).toThrow("Malformed email template variable");
+  });
+
+  it("keeps storefront and email template definitions on separate admin surfaces", () => {
+    const storefront = contentDefinitions.filter((entry) => entry.surface === "storefront");
+    const email = contentDefinitions.filter((entry) => entry.surface === "email");
+    expect(storefront.some((entry) => entry.key.startsWith("email."))).toBe(false);
+    expect(email).toHaveLength(12);
+    expect(email.every((entry) => entry.key.startsWith("email."))).toBe(true);
+  });
+
   it("uses published values and safe code defaults for missing content", () => {
     expect(resolvePublishedContent([
       { key: "home.hero.title", publishedValue: "A published headline" },
