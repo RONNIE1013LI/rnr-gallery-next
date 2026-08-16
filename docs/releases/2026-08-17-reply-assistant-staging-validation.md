@@ -251,3 +251,33 @@ Staging decision: `PASS / FAIL`
 Reviewer and date: `________________________________`
 
 Open issues: `________________________________`
+
+## Local implementation verification record
+
+Recorded on 17 August 2026. This is implementation evidence only; it is not a Staging approval or Production rollout approval.
+
+- Worktree: `/Users/ronnieli/Documents/海报制作/rnr-next-platform/.worktrees/reply-assistant-migration`
+- Base: `origin/main` at `2415fb198920b1958898cf05c06259bc0e3cdbc8`
+- Canonical local URL remains `http://192.168.4.199:3000`; no substitute local origin was used as browser evidence.
+- Knowledge check, TypeScript, ESLint, Drizzle check and `git diff --check`: passed.
+- Production build with the Reply Assistant feature disabled and synthetic build-only server settings: passed.
+- Focused Reply Assistant suite: 29 files passed, 1 database file initially skipped; 90 tests passed, 2 skipped.
+- Disposable PostgreSQL migration: passed; exactly six `customer_service_*` tables were created.
+- Full repository suite on the disposable PostgreSQL database: 270 files passed, 4 conditionally skipped; 1,650 tests passed, 7 skipped.
+- Reply Assistant repository integration tests rerun with the dedicated-database safety guard active: 2/2 passed.
+- 100-case real-provider evaluation: 100 gate matches, 40 pre-provider blocks, 60 successful provider calls, 0 provider errors, 0 output-validator failures and 0 policy bypasses.
+- Real-provider quality heuristic: 56 directly usable, 4 likely light edits, 0 unacceptable.
+- Real-provider usage: 38,956 input tokens, 0 cached input tokens, 2,577 output tokens, estimated USD 0.010883, average latency 1,493 ms and slowest latency 3,682 ms.
+- Source secret/no-send/serverless scans: passed. No Page access token, Graph send client, active ngrok callback, loopback callback, client-side Customer Service secret or runtime JSONL/filesystem persistence was found in the scoped production source.
+- Temporary evaluation output was written only under `/tmp`; the disposable PostgreSQL container was removed after verification.
+- Production domain, Production feature flag and Production Meta callback were not changed. No Messenger message was sent.
+
+Still required before a Staging PASS:
+
+- deploy a Vercel Preview with the feature flag disabled first, then enable it only in the approved Staging environment;
+- apply the additive migration to an isolated Staging database;
+- run the Better Auth admin/staff/customer/unauthenticated browser matrix;
+- run signed webhook fixtures and an approved Staging/test Meta Page event through the deployed HTTPS endpoint;
+- verify browser layout at `http://192.168.4.199:3000/reply-assistant` and the exact Preview URL;
+- review Vercel logs, PostgreSQL persistence across restarts and the final built bundle secret scan;
+- obtain Ronnie's draft-quality review and explicit Staging approval.
