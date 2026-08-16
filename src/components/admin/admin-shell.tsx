@@ -22,6 +22,7 @@ const navigation = [
   { label: "Media", href: "/admin/media", permission: "delete_media" },
   { label: "Shipping", href: "/admin/settings/shipping", permission: "manage_shipping" },
   { label: "Payment", href: "/admin/settings/payment", permission: "manage_payment" },
+  { label: "Email templates", href: "/admin/settings/email-templates", permission: "manage_content" },
   { label: "Audit Log", href: "/admin/audit", permission: "view_audit" },
 ] as const;
 

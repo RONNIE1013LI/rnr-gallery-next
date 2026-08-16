@@ -56,4 +56,31 @@ describe("admin content route", () => {
     expect(blocked.status).toBe(403);
     expect(publish).not.toHaveBeenCalled();
   });
+
+  it("applies the same permission boundary to email template keys", async () => {
+    const requirePermission = vi.fn().mockImplementation(async (permission) => {
+      if (permission === "publish_content") throw new HttpError("Forbidden", 403);
+      return { user: { id: "staff-1", email: "staff@example.test" }, adminRole: "staff" };
+    });
+    const saveDraft = vi.fn().mockResolvedValue("saved");
+    const publish = vi.fn();
+    const route = createAdminContentRoute({ requirePermission, saveDraft, publish, trustedOrigin: origin });
+    const context = { params: Promise.resolve({ key: "email.payment_confirmed.subject" }) };
+
+    const saved = await route.PATCH(
+      request({ action: "save", value: "Receipt — {{order_number}}", idempotencyKey: "email-content-0001" }),
+      context,
+    );
+    expect(saved.status).toBe(200);
+    expect(saveDraft).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      key: "email.payment_confirmed.subject",
+    }));
+
+    const blocked = await route.PATCH(
+      request({ action: "publish", value: "Receipt — {{order_number}}", idempotencyKey: "email-content-0002" }),
+      context,
+    );
+    expect(blocked.status).toBe(403);
+    expect(publish).not.toHaveBeenCalled();
+  });
 });

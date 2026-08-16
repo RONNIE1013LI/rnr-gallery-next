@@ -25,6 +25,7 @@ describe("AdminShell", () => {
       ["Media", "/admin/media"],
       ["Shipping", "/admin/settings/shipping"],
       ["Payment", "/admin/settings/payment"],
+      ["Email templates", "/admin/settings/email-templates"],
       ["Audit Log", "/admin/audit"],
     ]) {
       expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
@@ -46,6 +47,7 @@ describe("AdminShell", () => {
     expect(screen.getByRole("link", { name: "Orders" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Production" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Design Gallery" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Email templates" })).toHaveAttribute("href", "/admin/settings/email-templates");
     expect(screen.queryByRole("link", { name: "Shipping" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Payment" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Audit Log" })).not.toBeInTheDocument();
