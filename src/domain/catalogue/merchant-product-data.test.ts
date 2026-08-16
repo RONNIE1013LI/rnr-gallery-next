@@ -1,0 +1,50 @@
+import { describe, expect, it } from "vitest";
+import { defaultProductRegistry } from "./product-registry";
+import { buildMerchantProductData } from "./merchant-product-data";
+
+function readyAustralianRegistry() {
+  const registry = structuredClone(defaultProductRegistry);
+  registry.markets.AU.enabled = true;
+  for (const product of registry.markets.AU.products) {
+    for (const [index, size] of product.sizes.entries()) {
+      size.amountInclTaxCents = 20_000 + index * 1_000;
+    }
+    for (const charge of product.charges) charge.amountInclTaxCents = 1_000;
+  }
+  for (const fee of registry.markets.AU.peoplePets.fees) fee.amountInclTaxCents = 1_000;
+  registry.markets.AU.peoplePets.additionalEachInclTaxCents = 500;
+  for (const fee of registry.markets.AU.urgentServiceFees) fee.amountInclTaxCents = 2_000;
+  for (const shipping of registry.markets.AU.shippingMethods) {
+    if (shipping.source === "fixed") shipping.amountInclTaxCents = 3_000;
+  }
+  return registry;
+}
+
+describe("merchant product data", () => {
+  it("uses fixed market price-book amounts without currency conversion", () => {
+    const registry = readyAustralianRegistry();
+    const items = buildMerchantProductData(
+      registry,
+      "AU",
+      new URL("https://shop.example.test"),
+    );
+    const item = items.find((entry) =>
+      entry.productKey === registry.products[0].key &&
+      entry.sizeKey === registry.products[0].configuration.sizes[0].key
+    );
+
+    expect(item).toMatchObject({
+      currency: "AUD",
+      priceInclTaxCents: 20_000,
+      link: `https://shop.example.test/au/products/${registry.products[0].slug}`,
+    });
+  });
+
+  it("does not generate Australian feed data while the market is closed", () => {
+    expect(() => buildMerchantProductData(
+      defaultProductRegistry,
+      "AU",
+      new URL("https://shop.example.test"),
+    )).toThrow("Australia market is disabled");
+  });
+});

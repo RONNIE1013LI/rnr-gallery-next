@@ -2,6 +2,8 @@ import type {
   OrderNotificationKind,
   OrderNotificationStatus,
 } from "@/server/db/schema";
+import type { MarketCurrency } from "@/domain/markets/types";
+import { formatMarketMoney } from "@/domain/money";
 import {
   EmailDeliveryError,
   type CustomerEmailMessage,
@@ -16,6 +18,7 @@ export type OrderNotificationDelivery = Readonly<{
   orderNumber: string;
   customerName: string;
   recipientEmail: string;
+  currency: MarketCurrency;
   totalInclGstCents: number;
   trackingNumber: string | null;
   trackingCarrier: string | null;
@@ -43,10 +46,6 @@ function escapeHtml(value: string) {
   })[character]!);
 }
 
-function formatNzd(cents: number) {
-  return `NZ$${(cents / 100).toFixed(2)}`;
-}
-
 function orderMessage(event: OrderNotificationDelivery, siteUrl: string): CustomerEmailMessage {
   const orderUrl = new URL(`/orders/${encodeURIComponent(event.orderNumber)}`, siteUrl);
   let subject: string;
@@ -55,7 +54,7 @@ function orderMessage(event: OrderNotificationDelivery, siteUrl: string): Custom
   if (event.kind === "payment_confirmed") {
     subject = `Payment confirmed — ${event.orderNumber}`;
     paragraphs = [
-      `We have confirmed your payment of ${formatNzd(event.totalInclGstCents)} for order ${event.orderNumber}.`,
+      `We have confirmed your payment of ${formatMarketMoney(event.totalInclGstCents, event.currency)} for order ${event.orderNumber}.`,
       "Production normally takes 5 business days from the order date. We will contact you if your artwork requires a design review.",
     ];
   } else if (event.kind === "payment_failed") {

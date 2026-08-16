@@ -40,6 +40,7 @@ export type AdminOrderListItem = Readonly<{
   customerName: string;
   customerEmail: string;
   country: "NZ" | "AU";
+  currency: typeof orders.$inferSelect.currency;
   productTitles: readonly string[];
   totalInclGstCents: number;
   paymentMethod: "card" | "afterpay" | "zip" | null;
@@ -111,6 +112,7 @@ export async function listAdminOrders(
         customerName: orderAddresses.fullName,
         customerEmail: orders.customerEmail,
         country: orderAddresses.country,
+        currency: orders.currency,
         totalInclGstCents: orders.totalInclGstCents,
         paymentStatus: orders.paymentStatus,
         fulfilmentStatus: orders.fulfilmentStatus,

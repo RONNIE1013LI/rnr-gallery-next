@@ -8,7 +8,8 @@ import {
 } from "@stripe/react-stripe-js";
 import { loadStripe } from "@stripe/stripe-js";
 import { useMemo, useState, type FormEvent } from "react";
-import { formatNzd } from "@/domain/money";
+import type { MarketCurrency } from "@/domain/markets/types";
+import { formatMarketMoney } from "@/domain/money";
 import {
   confirmCurrentOrderPayment,
   type ConfirmedPaymentStatus,
@@ -17,11 +18,13 @@ import styles from "./storefront.module.css";
 
 function StripeConfirmation({
   confirmationUrl,
+  currency,
   onPaymentUpdated,
   returnUrl,
   totalInclGstCents,
 }: {
   confirmationUrl: string;
+  currency: MarketCurrency;
   onPaymentUpdated?: (status: ConfirmedPaymentStatus) => void;
   returnUrl: string;
   totalInclGstCents?: number;
@@ -86,7 +89,7 @@ function StripeConfirmation({
     >
       {pending ? "Confirming payment…" : totalInclGstCents === undefined
         ? "Pay and place order"
-        : `Pay ${formatNzd(totalInclGstCents)} and place order`}
+        : `Pay ${formatMarketMoney(totalInclGstCents, currency)} and place order`}
     </button>
     {message ? <p aria-live="polite" className={styles.checkoutMessage}>{message}</p> : null}
   </form>;
@@ -95,6 +98,7 @@ function StripeConfirmation({
 export function StripePaymentForm({
   clientSecret,
   confirmationUrl,
+  currency = "NZD",
   onPaymentUpdated,
   publishableKey,
   returnUrl,
@@ -102,6 +106,7 @@ export function StripePaymentForm({
 }: {
   clientSecret: string;
   confirmationUrl: string;
+  currency?: MarketCurrency;
   onPaymentUpdated?: (status: ConfirmedPaymentStatus) => void;
   publishableKey: string;
   returnUrl: string;
@@ -119,6 +124,7 @@ export function StripePaymentForm({
   return <Elements stripe={stripe} options={{ clientSecret }}>
     <StripeConfirmation
       confirmationUrl={confirmationUrl}
+      currency={currency}
       onPaymentUpdated={onPaymentUpdated}
       returnUrl={returnUrl}
       totalInclGstCents={totalInclGstCents}

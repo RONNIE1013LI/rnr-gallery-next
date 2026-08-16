@@ -1,4 +1,5 @@
 import type { PublicOrder } from "@/server/orders/order-query-service";
+import type { MarketCurrency } from "@/domain/markets/types";
 
 export type AnalyticsItem = Readonly<{
   item_id: string;
@@ -10,7 +11,7 @@ export type AnalyticsItem = Readonly<{
 }>;
 
 type CommerceEventName = "view_item_list" | "select_item" | "view_item" | "add_to_cart" | "view_cart" | "begin_checkout";
-type CommerceEvent = Readonly<{ event: CommerceEventName; currency: "NZD"; value: number; items: readonly AnalyticsItem[] }>;
+type CommerceEvent = Readonly<{ event: CommerceEventName; currency: MarketCurrency; value: number; items: readonly AnalyticsItem[] }>;
 type SimpleEvent =
   | Readonly<{ event: "generate_lead"; method: string }>
   | Readonly<{ event: "messenger_click"; location: string }>
@@ -20,7 +21,7 @@ type SimpleEvent =
 export type PurchaseEvent = Readonly<{
   event: "purchase";
   transaction_id: string;
-  currency: "NZD";
+  currency: MarketCurrency;
   value: number;
   tax: number;
   shipping: number;
@@ -47,7 +48,7 @@ export function buildPurchaseEvent(order: PublicOrder): PurchaseEvent | null {
   return Object.freeze({
     event: "purchase",
     transaction_id: order.orderNumber,
-    currency: "NZD",
+    currency: order.currency,
     value: dollars(order.totals.totalInclGstCents),
     tax: dollars(order.totals.totalGstCents),
     shipping: dollars(order.shipping.amountInclGstCents),

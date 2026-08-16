@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import styles from "@/components/storefront.module.css";
-import { formatNzd } from "@/domain/money";
+import { formatMarketMoney } from "@/domain/money";
 import { formatOrderDate, orderPaymentStatusLabels } from "@/components/order-detail";
 import { requireAccountPage } from "@/server/auth/require-account-page";
 import { getDatabase } from "@/server/db/client";
@@ -53,7 +53,7 @@ export default async function AccountOrdersPage({
                   <strong>{order.orderNumber}</strong>
                   <span>{formatOrderDate(order.createdAt)}</span>
                   <span>{orderPaymentStatusLabels[order.paymentStatus]}</span>
-                  <span>{formatNzd(order.totals.totalInclGstCents)}</span>
+                  <span>{formatMarketMoney(order.totals.totalInclGstCents, order.currency)}</span>
                 </Link>
               </li>
             ))}

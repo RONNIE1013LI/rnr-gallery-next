@@ -2,19 +2,19 @@ import Image from "next/image";
 import Link from "next/link";
 import type { Product } from "@/domain/catalogue/types";
 import type { AdLandingPageContent } from "@/domain/ads/landing-pages";
-import { addNzdGst, formatNzd } from "@/domain/money";
+import { formatNzd } from "@/domain/money";
 import { buildBreadcrumbData } from "@/server/seo/metadata";
 import { getSiteUrl } from "@/server/seo/site-url";
 import { PurchaseTrustStrip } from "./purchase-trust-strip";
 import { StructuredData } from "./structured-data";
 import styles from "./storefront.module.css";
 
-export function AdLandingPage({ content, product }: Readonly<{
+export function AdLandingPage({ content, product, priceInclGstCents }: Readonly<{
   content: AdLandingPageContent;
   product: Product;
+  priceInclGstCents: number;
 }>) {
   const siteUrl = getSiteUrl();
-  const priceInclGstCents = addNzdGst(product.startingPriceExGstCents);
   const configureHref = `/products/${product.slug}/configure`;
   return (
     <main id="main-content" className={styles.adLandingPage}>

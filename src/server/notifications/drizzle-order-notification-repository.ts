@@ -22,6 +22,7 @@ export function createDrizzleOrderNotificationRepository(
         const [row] = await transaction.select({
           notification: orderNotificationOutbox,
           orderNumber: orders.orderNumber,
+          currency: orders.currency,
           totalInclGstCents: orders.totalInclGstCents,
           trackingNumber: orders.trackingNumber,
           trackingCarrier: orders.trackingCarrier,
@@ -67,6 +68,7 @@ export function createDrizzleOrderNotificationRepository(
           orderNumber: row.orderNumber,
           customerName: row.customerName,
           recipientEmail: row.notification.recipientEmail,
+          currency: row.currency,
           totalInclGstCents: row.totalInclGstCents,
           trackingNumber: row.trackingNumber,
           trackingCarrier: row.trackingCarrier,

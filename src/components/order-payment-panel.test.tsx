@@ -6,9 +6,10 @@ const push = vi.fn();
 const refresh = vi.fn();
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, refresh }) }));
 vi.mock("./stripe-payment-form", () => ({
-  StripePaymentForm: ({ clientSecret, confirmationUrl, publishableKey, returnUrl, totalInclGstCents, onPaymentUpdated }: {
+  StripePaymentForm: ({ clientSecret, confirmationUrl, currency, publishableKey, returnUrl, totalInclGstCents, onPaymentUpdated }: {
     clientSecret: string;
     confirmationUrl: string;
+    currency: "NZD" | "AUD";
     publishableKey: string;
     returnUrl: string;
     totalInclGstCents: number;
@@ -17,6 +18,7 @@ vi.mock("./stripe-payment-form", () => ({
       data-testid="stripe-payment-form"
       data-client-secret={clientSecret}
       data-confirmation-url={confirmationUrl}
+      data-currency={currency}
       data-publishable-key={publishableKey}
       data-return-url={returnUrl}
       data-total-incl-gst-cents={totalInclGstCents}
@@ -544,7 +546,7 @@ describe("OrderPaymentPanel", () => {
       payment: { method: "card", status: "processing", isTest: false, canRetry: false },
       action: { kind: "elements", method: "card", clientSecret: "pi_secret_123", returnUrl: "http://localhost:3000/api/payments/returns/stripe?state=safe" },
     }) }));
-    render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" totalInclGstCents={39725} />);
+    render(<OrderPaymentPanel orderNumber="RNR-2026-ABC" paymentStatus="awaiting_payment" methods={methods} orderHref="/orders/RNR-2026-ABC" currency="AUD" totalInclGstCents={39725} />);
     fireEvent.click(screen.getByRole("button", { name: /Continue to/ }));
     await screen.findByTestId("stripe-payment-form");
     expect(push).not.toHaveBeenCalled();
@@ -553,6 +555,7 @@ describe("OrderPaymentPanel", () => {
     expect(stored).not.toContain("pi_secret_123");
     expect(screen.getByTestId("stripe-payment-form")).toHaveAttribute("data-client-secret", "pi_secret_123");
     expect(screen.getByTestId("stripe-payment-form")).toHaveAttribute("data-confirmation-url", "/api/orders/RNR-2026-ABC/payment");
+    expect(screen.getByTestId("stripe-payment-form")).toHaveAttribute("data-currency", "AUD");
     expect(screen.getByTestId("stripe-payment-form")).toHaveAttribute("data-return-url", "http://localhost:3000/api/payments/returns/stripe?state=safe");
     expect(screen.getByTestId("stripe-payment-form")).toHaveAttribute("data-total-incl-gst-cents", "39725");
     expect(screen.queryByRole("button", { name: "Continue to secure card payment" })).not.toBeInTheDocument();

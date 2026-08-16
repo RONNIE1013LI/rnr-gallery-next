@@ -8,7 +8,7 @@ import {
   orderPaymentStatusLabels,
 } from "@/components/order-detail";
 import styles from "@/components/storefront.module.css";
-import { formatNzd } from "@/domain/money";
+import { formatMarketMoney } from "@/domain/money";
 import { createDrizzleAddressRepository } from "@/server/addresses/drizzle-address-repository";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
 import {
@@ -63,7 +63,7 @@ export default async function AccountPage() {
             </div>
             {latestOrder ? <Link className={styles.accountLatestOrder} href={`/account/orders/${latestOrder.orderNumber}`}>
               <strong>{latestOrder.orderNumber}</strong>
-              <span>{formatOrderDate(latestOrder.createdAt)} · {formatNzd(latestOrder.totals.totalInclGstCents)}</span>
+              <span>{formatOrderDate(latestOrder.createdAt)} · {formatMarketMoney(latestOrder.totals.totalInclGstCents, latestOrder.currency)}</span>
               <dl>
                 <div><dt>Payment</dt><dd>{orderPaymentStatusLabels[latestOrder.paymentStatus]}</dd></div>
                 <div><dt>Production</dt><dd>{latestOrder.paymentStatus === "paid"

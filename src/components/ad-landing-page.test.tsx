@@ -2,14 +2,21 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { defaultProductRegistry, getRegistryProductBySlug } from "@/domain/catalogue/product-registry";
 import { adLandingPages } from "@/domain/ads/landing-pages";
-import { addNzdGst, formatNzd } from "@/domain/money";
+import { formatNzd } from "@/domain/money";
 import { AdLandingPage } from "./ad-landing-page";
 
 describe("AdLandingPage", () => {
   it.each(Object.values(adLandingPages))("renders product-specific content for $path", (content) => {
     const product = getRegistryProductBySlug(defaultProductRegistry, content.productSlug)!;
-    const startingPrice = formatNzd(addNzdGst(product.startingPriceExGstCents));
-    const { container } = render(<AdLandingPage content={content} product={product} />);
+    const priceInclGstCents = 54_321;
+    const startingPrice = formatNzd(priceInclGstCents);
+    const { container } = render(
+      <AdLandingPage
+        content={content}
+        product={product}
+        priceInclGstCents={priceInclGstCents}
+      />,
+    );
 
     expect(screen.getByRole("heading", { level: 1, name: content.heading })).toBeVisible();
     expect(screen.getByText(content.sizeSummary)).toBeVisible();

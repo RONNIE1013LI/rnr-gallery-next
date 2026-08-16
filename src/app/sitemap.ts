@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
 import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
@@ -39,11 +40,21 @@ export function buildPublicSitemap(
     changeFrequency,
     lastModified: contentLastModified,
   });
+  const australiaReady = registry.markets.AU.enabled &&
+    getMarketCompleteness(registry, "AU").ready;
   return [
     ...pages.map(([pathname, priority, frequency]) => entry(pathname, priority, frequency)),
     ...registry.products.filter((product) => product.active).map((product) =>
       entry(`/products/${product.slug}`, 0.9, "weekly"),
     ),
+    ...(australiaReady
+      ? [
+          entry("/au", 0.8, "weekly"),
+          ...registry.products.filter((product) => product.active).map((product) =>
+            entry(`/au/products/${product.slug}`, 0.8, "weekly"),
+          ),
+        ]
+      : []),
     ...designs.map((design) => ({
       ...entry(`/designs/${design.slug}`, 0.7, "monthly"),
       lastModified: design.createdAt,

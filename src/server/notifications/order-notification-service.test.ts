@@ -14,6 +14,7 @@ const delivery = Object.freeze({
   orderNumber: "RNR-2026-ABC123",
   customerName: "Aroha Ngata",
   recipientEmail: "aroha@example.test",
+  currency: "NZD" as const,
   totalInclGstCents: 12_075,
   trackingNumber: null,
   trackingCarrier: null,
@@ -69,5 +70,25 @@ describe("order notification delivery", () => {
       failed: 0,
     });
     expect(repo.claimNext).not.toHaveBeenCalled();
+  });
+
+  it("uses the immutable AUD currency in Australian payment confirmations", async () => {
+    const australianDelivery = { ...delivery, currency: "AUD" as const };
+    const repo: OrderNotificationRepository = {
+      ...repository(),
+      claimNext: vi.fn().mockResolvedValueOnce(australianDelivery).mockResolvedValue(null),
+    };
+    const send = vi.fn().mockResolvedValue({ providerMessageId: "email-au-123" });
+    const service = createOrderNotificationService(repo, {
+      provider: { configured: true, send },
+      siteUrl: "https://shop.example.test",
+      now: () => now,
+    });
+
+    await service.deliverPending();
+
+    expect(send).toHaveBeenCalledWith(expect.objectContaining({
+      text: expect.stringContaining("A$120.75 AUD"),
+    }));
   });
 });

@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { AdLandingPage } from "@/components/ad-landing-page";
 import { getRegistryProductBySlug } from "@/domain/catalogue/product-registry";
+import { getMarketStartingPriceInclTaxCents } from "@/domain/pricing/market-quote";
 import { adLandingPages } from "@/domain/ads/landing-pages";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { buildPublicMetadata } from "@/server/seo/metadata";
@@ -19,5 +20,9 @@ export default async function CustomRollUpBannersPage() {
   const { registry } = await getSafePublicProductRegistry();
   const product = getRegistryProductBySlug(registry, content.productSlug);
   if (!product) notFound();
-  return <AdLandingPage content={content} product={product} />;
+  return <AdLandingPage
+    content={content}
+    product={product}
+    priceInclGstCents={getMarketStartingPriceInclTaxCents(registry, "NZ", product.key)}
+  />;
 }

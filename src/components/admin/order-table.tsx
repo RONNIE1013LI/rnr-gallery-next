@@ -1,11 +1,8 @@
 import Link from "next/link";
 import type { AdminOrderListItem } from "@/server/admin/drizzle-admin-order-repository";
+import { formatMarketMoney } from "@/domain/money";
 import styles from "./admin.module.css";
 
-const money = new Intl.NumberFormat("en-NZ", {
-  style: "currency",
-  currency: "NZD",
-});
 const dateTime = new Intl.DateTimeFormat("en-NZ", {
   dateStyle: "medium",
   timeStyle: "short",
@@ -64,7 +61,7 @@ export function AdminOrderTable({ orders }: Readonly<{
               </td>
               <td><span className={styles.statusBadge}>{label(order.fulfilmentStatus)}</span></td>
               <td>{label(order.deliveryMethod)}</td>
-              <td className={styles.numeric}>{money.format(order.totalInclGstCents / 100)}</td>
+              <td className={styles.numeric}>{formatMarketMoney(order.totalInclGstCents, order.currency)}</td>
               <td>
                 <Link
                   className={styles.tableAction}

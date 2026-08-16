@@ -416,6 +416,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       <StripePaymentForm
         clientSecret={paymentAction.clientSecret}
         confirmationUrl={`/api/orders/${encodeURIComponent(paymentIntent.orderNumber)}/payment`}
+        currency={reviewedCart?.currency ?? "NZD"}
         publishableKey={process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY ?? ""}
         returnUrl={paymentAction.returnUrl}
         totalInclGstCents={reviewedCart

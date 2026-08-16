@@ -1,19 +1,15 @@
 import { AdminOrderActions } from "./order-actions";
 import type { getAdminOrderDetail } from "@/server/admin/drizzle-admin-order-repository";
+import { formatMarketMoney } from "@/domain/money";
 import styles from "./admin.module.css";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof getAdminOrderDetail>>>;
 
-const money = new Intl.NumberFormat("en-NZ", { style: "currency", currency: "NZD" });
 const dateTime = new Intl.DateTimeFormat("en-NZ", {
   dateStyle: "medium",
   timeStyle: "short",
   timeZone: "Pacific/Auckland",
 });
-
-function amount(cents: number) {
-  return money.format(cents / 100);
-}
 
 function label(value: string) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
@@ -32,6 +28,7 @@ function addressLines(address: Detail["addresses"][number]) {
 
 export function AdminOrderDetail({ detail }: Readonly<{ detail: Detail }>) {
   const { order } = detail;
+  const amount = (cents: number) => formatMarketMoney(cents, order.currency);
   return (
     <div className={styles.orderDetailLayout}>
       <div className={styles.detailMain}>

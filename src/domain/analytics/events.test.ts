@@ -27,6 +27,23 @@ describe("privacy-safe analytics events", () => {
     expect(JSON.stringify(event)).not.toContain("PRIVATE");
   });
 
+  it("uses the immutable order currency for Australian purchases", () => {
+    const australianOrder = {
+      ...order("paid"),
+      currency: "AUD" as const,
+      addresses: {
+        billing: { ...order("paid").addresses.billing, country: "AU" as const },
+        delivery: { ...order("paid").addresses.delivery, country: "AU" as const },
+      },
+    };
+
+    expect(buildPurchaseEvent(australianOrder)).toMatchObject({
+      transaction_id: "RNR-2026-ABC123",
+      currency: "AUD",
+      value: 97.75,
+    });
+  });
+
   it("does nothing and makes no request while Google analytics is disabled", () => {
     vi.stubEnv("NEXT_PUBLIC_GOOGLE_ANALYTICS_ENABLED", "");
     const fetch = vi.fn();

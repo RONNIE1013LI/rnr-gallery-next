@@ -7,6 +7,7 @@ import { notFound } from "next/navigation";
 import styles from "@/components/storefront.module.css";
 import { products } from "@/domain/catalogue/products";
 import { getRegistryProductBySlug } from "@/domain/catalogue/product-registry";
+import { getMarketStartingPriceInclTaxCents } from "@/domain/pricing/market-quote";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { addNzdGst, formatMarketMoney } from "@/domain/money";
 import { currencyForMarket } from "@/domain/markets/market";
@@ -164,6 +165,8 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
       product={product}
       reviewPage={Number.isInteger(reviewPage) ? reviewPage : 1}
       selection={selection}
+      priceInclTaxCents={getMarketStartingPriceInclTaxCents(registry, "NZ", product.key)}
+      taxRegistered={registry.markets.NZ.tax.registered}
     />
   );
 }

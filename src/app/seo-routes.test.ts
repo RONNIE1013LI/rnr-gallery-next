@@ -47,6 +47,32 @@ describe("public SEO routes", () => {
     expect(urls.some((url) => /\/(?:admin|account|cart|checkout|orders)(?:\/|$)/.test(url))).toBe(false);
     expect(sitemap.every((entry) => entry.lastModified instanceof Date)).toBe(true);
     expect(urls.every((url) => !url.includes("?"))).toBe(true);
+    expect(urls.some((url) => url.includes("/au"))).toBe(false);
+  });
+
+  it("lists Australian routes only after the fixed AUD price book is complete and enabled", () => {
+    const registry = structuredClone(defaultProductRegistry);
+    registry.markets.AU.enabled = true;
+    for (const product of registry.markets.AU.products) {
+      for (const size of product.sizes) size.amountInclTaxCents = 20_000;
+      for (const charge of product.charges) charge.amountInclTaxCents = 1_000;
+    }
+    for (const fee of registry.markets.AU.peoplePets.fees) fee.amountInclTaxCents = 1_000;
+    registry.markets.AU.peoplePets.additionalEachInclTaxCents = 500;
+    for (const fee of registry.markets.AU.urgentServiceFees) fee.amountInclTaxCents = 2_000;
+    for (const shipping of registry.markets.AU.shippingMethods) {
+      if (shipping.source === "fixed") shipping.amountInclTaxCents = 3_000;
+    }
+
+    const urls = buildPublicSitemap(registry, new URL("https://shop.example.test"))
+      .map((entry) => entry.url);
+
+    expect(urls).toContain("https://shop.example.test/au");
+    for (const product of registry.products.filter((entry) => entry.active)) {
+      expect(urls).toContain(`https://shop.example.test/au/products/${product.slug}`);
+    }
+    expect(urls.some((url) => url.includes("/au/products/") && url.includes("configure")))
+      .toBe(false);
   });
 
   it("keeps private, transactional and duplicate legacy routes out of crawling", () => {

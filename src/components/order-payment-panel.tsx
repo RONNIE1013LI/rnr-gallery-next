@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { OrderPaymentStatus } from "@/server/db/schema/orders";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
+import type { MarketCurrency } from "@/domain/markets/types";
 import type { PaymentActionDTO, PublicPaymentDTO } from "@/server/payments/public-dto";
 import { createClientId } from "@/lib/client-id";
 import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
@@ -236,6 +237,7 @@ type OrderPaymentPanelProps = Readonly<{
   methods?: readonly PaymentMethodOption[];
   orderHref: string;
   totalInclGstCents?: number;
+  currency?: MarketCurrency;
 }>;
 
 function paymentActionLabel(method: PaymentMethodKey | null, pending: boolean) {
@@ -253,6 +255,7 @@ function OrderPaymentPanelState({
   methods: suppliedMethods,
   orderHref,
   totalInclGstCents,
+  currency = "NZD",
 }: OrderPaymentPanelProps) {
   const { push, refresh } = useRouter();
   const [initialAttempt] = useState(() => storedStartingAttempt(orderNumber));
@@ -423,6 +426,7 @@ function OrderPaymentPanelState({
       key={paymentAction.clientSecret}
       clientSecret={paymentAction.clientSecret}
       confirmationUrl={`/api/orders/${encodeURIComponent(orderNumber)}/payment`}
+      currency={currency}
       onPaymentUpdated={(status) => {
         if (status === "processing") return;
         if (status === "paid") {
@@ -444,7 +448,7 @@ function OrderPaymentPanelState({
 
 export function OrderPaymentPanel(props: OrderPaymentPanelProps) {
   return <OrderPaymentPanelState
-    key={`${props.orderNumber}:${props.paymentStatus}:${props.payment?.method ?? "none"}:${props.payment?.status ?? "none"}`}
+    key={`${props.orderNumber}:${props.currency ?? "NZD"}:${props.paymentStatus}:${props.payment?.method ?? "none"}:${props.payment?.status ?? "none"}`}
     {...props}
   />;
 }

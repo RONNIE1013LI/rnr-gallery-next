@@ -85,6 +85,13 @@ describe("StripePaymentForm", () => {
     expect(confirm).toBeEnabled();
   });
 
+  it("labels an Australian fixed-price payment in AUD", () => {
+    render(<StripePaymentForm {...props} currency="AUD" />);
+
+    expect(screen.getByRole("button", { name: "Pay A$397.25 AUD and place order" }))
+      .toBeDisabled();
+  });
+
   it("confirms with the trusted return URL and applies the server-verified result", async () => {
     const onPaymentUpdated = vi.fn();
     const fetchSpy = vi.fn().mockResolvedValue({
