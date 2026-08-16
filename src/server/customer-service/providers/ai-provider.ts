@@ -17,5 +17,7 @@ export type AiProviderResult = Readonly<{
 }>;
 
 export interface AiProvider {
+  readonly providerKind: "mock" | "openai";
+  readonly model: string;
   generate(request: AiProviderRequest): Promise<AiProviderResult>;
 }

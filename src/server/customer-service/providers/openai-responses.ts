@@ -4,8 +4,9 @@ import type { AiProvider, AiProviderRequest, AiProviderResult } from "./ai-provi
 type FetchImplementation = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
 export class OpenAIResponsesProvider implements AiProvider {
+  readonly providerKind = "openai" as const;
+  readonly model: string;
   private readonly apiKey: string;
-  private readonly model: string;
   private readonly fetchImpl: FetchImplementation;
   private readonly now: () => number;
 

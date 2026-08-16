@@ -1,6 +1,9 @@
 import type { AiProvider, AiProviderRequest } from "./ai-provider";
 
 export class MockAiProvider implements AiProvider {
+  readonly providerKind = "mock" as const;
+  readonly model = "mock";
+
   async generate(_request: AiProviderRequest) {
     return {
       text: "Please send the details and we can check them for you 😊",
