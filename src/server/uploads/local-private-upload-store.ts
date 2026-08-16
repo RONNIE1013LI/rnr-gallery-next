@@ -34,7 +34,9 @@ export function validatePrivateUpload(
       : "Choose a JPG, PNG, WebP, HEIC or HEIF image.");
   }
   if (!Number.isInteger(file.size) || file.size < 1 || file.size > MAX_UPLOAD_BYTES) {
-    throw new InvalidUploadError("Each file must be between 1 byte and 25 MB.");
+    throw new InvalidUploadError(options.allowPdf
+      ? "Each file must be between 1 byte and 25 MB."
+      : "Each image must be between 1 byte and 25 MB.");
   }
 }
 
