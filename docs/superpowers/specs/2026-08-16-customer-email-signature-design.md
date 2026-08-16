@@ -47,7 +47,7 @@ Only published values affect new messages. Drafts remain Admin-only. Missing or 
 
 ## Logo and Links
 
-- Use the existing official asset `/media/brand/rr-gallery-logo-2026.webp`.
+- Use the high-density email asset `/media/brand/rr-gallery-email-logo.png`, derived from the approved official Logo source.
 - Convert it to an absolute HTTPS URL from the trusted site origin supplied by the server.
 - Render it at an email-safe fixed display width with proportional height and `alt="R&R Gallery"`.
 - Do not accept an arbitrary image URL, HTML, CSS, tracking pixel, attachment, or data URI from Admin.

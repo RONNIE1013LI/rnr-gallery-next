@@ -13,7 +13,7 @@
 - Apply the signature to payment confirmed, payment failed, order shipped, proof ready, and password reset emails.
 - Do not apply it to `admin_order_received`.
 - Default visible website text is `rrgallery.co.nz`.
-- Use `/media/brand/rr-gallery-logo-2026.webp` resolved against the trusted site origin.
+- Use `/media/brand/rr-gallery-email-logo.png` resolved against the trusted site origin.
 - Admin may edit only sign-off, team name, company line, customer-service email, website label, and street address.
 - Reject invalid email, URLs, HTML, scripts, malformed variables, and arbitrary image sources.
 - Only published values affect new messages; field read failures use defaults.
@@ -46,7 +46,7 @@ expect(signature.text).toContain("customerservice@rnrgallery.com");
 expect(signature.text).toContain("rrgallery.co.nz");
 expect(signature.text).toContain("11 Para Close, Fairview Heights, Auckland 0632.");
 expect(signature.html).toContain(
-  'src="https://rrgallery.co.nz/media/brand/rr-gallery-logo-2026.webp"',
+  'src="https://rrgallery.co.nz/media/brand/rr-gallery-email-logo.png"',
 );
 expect(signature.html).toContain('alt="R&amp;R Gallery"');
 expect(signature.html).toContain('href="https://rrgallery.co.nz/"');

@@ -69,7 +69,7 @@ describe("customer proof notification delivery", () => {
     });
     expect(message.text).toContain("R&R Customer Care");
     expect(message.html).toContain(
-      "https://rnrgallery.example/media/brand/rr-gallery-logo-2026.webp",
+      "https://rnrgallery.example/media/brand/rr-gallery-email-logo.png",
     );
     const link = new URL(message.proofUrl);
     const expires = Number(link.searchParams.get("expires"));

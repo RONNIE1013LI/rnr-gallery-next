@@ -54,7 +54,7 @@ export function renderCustomerEmailSignature(
   const resolved = resolveValues(values);
   const origin = new URL(siteUrl).origin;
   const websiteUrl = new URL("/", origin).toString();
-  const logoUrl = new URL("/media/brand/rr-gallery-logo-2026.webp", origin).toString();
+  const logoUrl = new URL("/media/brand/rr-gallery-email-logo.png", origin).toString();
   const signoff = resolved["email.signature.signoff"];
   const teamName = resolved["email.signature.team_name"];
   const companyLine = resolved["email.signature.company_line"];

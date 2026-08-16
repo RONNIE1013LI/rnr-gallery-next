@@ -81,7 +81,7 @@ it("renders one complete live customer-signature preview", () => {
   expect(preview).toHaveTextContent("11 Para Close, Fairview Heights, Auckland 0632.");
   expect(preview.querySelector("img")).toHaveAttribute(
     "src",
-    "https://rrgallery.co.nz/media/brand/rr-gallery-logo-2026.webp",
+    "https://rrgallery.co.nz/media/brand/rr-gallery-email-logo.png",
   );
   expect(screen.queryByText("Sample preview")).not.toBeInTheDocument();
 });

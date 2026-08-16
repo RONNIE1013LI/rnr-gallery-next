@@ -29,7 +29,7 @@ The existing per-field sample preview will remain for order-template fields. It 
 - It is visually separated from editing controls and labelled `Live signature preview`.
 - The sign-off and team name remain above the contact block.
 - The round Logo appears to the left of the company, email, website and address lines.
-- The Logo is 72 by 72 pixels; the four contact lines use an 18-pixel line height so their total height is also 72 pixels.
+- The Logo displays at 72 by 72 pixels from a dedicated 288 by 288 lossless PNG for sharp Retina rendering; the four contact lines use an 18-pixel line height so their total height is also 72 pixels.
 - The email HTML uses a presentation table for dependable two-column rendering across email clients.
 - Desktop and mobile use the existing Admin design system.
 - Mobile uses normal document flow with no sticky or floating behavior.

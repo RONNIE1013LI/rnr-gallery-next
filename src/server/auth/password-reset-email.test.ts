@@ -28,7 +28,7 @@ describe("password reset email", () => {
     expect(request.text).toContain("https://shop.example.test/api/auth/reset-password/private-reset-token");
     expect(request.text).toContain("R&R Customer Care");
     expect(request.html).toContain(
-      "https://shop.example.test/media/brand/rr-gallery-logo-2026.webp",
+      "https://shop.example.test/media/brand/rr-gallery-email-logo.png",
     );
     expect(fetch.mock.calls[0][1].headers["Idempotency-Key"]).toBe(
       `password-reset:${createHash("sha256").update("private-reset-token").digest("hex")}`,
@@ -55,7 +55,7 @@ describe("password reset email", () => {
 
     const request = JSON.parse(fetch.mock.calls[0][1].body);
     expect(request.text).toContain("Customer Service Team");
-    expect(request.html).toContain("/media/brand/rr-gallery-logo-2026.webp");
+    expect(request.html).toContain("/media/brand/rr-gallery-email-logo.png");
   });
 
   it("fails without silently accepting reset requests when email is not configured", async () => {

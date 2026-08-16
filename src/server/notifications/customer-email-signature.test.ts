@@ -14,7 +14,7 @@ describe("customer email signature", () => {
     expect(signature.text).toContain("rrgallery.co.nz");
     expect(signature.text).toContain("11 Para Close, Fairview Heights, Auckland 0632.");
     expect(signature.html).toContain(
-      'src="https://rrgallery.co.nz/media/brand/rr-gallery-logo-2026.webp"',
+      'src="https://rrgallery.co.nz/media/brand/rr-gallery-email-logo.png"',
     );
     expect(signature.html).toContain('alt="R&amp;R Gallery"');
     expect(signature.html).toContain('href="https://rrgallery.co.nz/"');

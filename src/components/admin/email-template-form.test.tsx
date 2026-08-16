@@ -80,7 +80,7 @@ describe("EmailTemplateForm", () => {
     expect(previewRegion).toHaveTextContent("11 Para Close, Fairview Heights, Auckland 0632.");
     expect(previewRegion.querySelector("img")).toHaveAttribute(
       "src",
-      "https://rrgallery.co.nz/media/brand/rr-gallery-logo-2026.webp",
+      "https://rrgallery.co.nz/media/brand/rr-gallery-email-logo.png",
     );
     expect(screen.queryByText("Sample preview")).not.toBeInTheDocument();
   });

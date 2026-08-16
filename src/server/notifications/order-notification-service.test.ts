@@ -61,7 +61,7 @@ describe("order notification delivery", () => {
     }));
     const message = send.mock.calls[0][0];
     expect(message.text).toContain("Customer Service Team");
-    expect(message.html).toContain("/media/brand/rr-gallery-logo-2026.webp");
+    expect(message.html).toContain("/media/brand/rr-gallery-email-logo.png");
     const orderUrl = new URL(message.text.match(/https:\/\/\S+/)?.[0] ?? "");
     expect(verifyOrderEmailAccessToken(
       orderUrl.searchParams.get("access"),
@@ -137,7 +137,7 @@ describe("order notification delivery", () => {
     }));
     const message = send.mock.calls[0][0];
     expect(message.text).not.toContain("Customer Service Team");
-    expect(message.html).not.toContain("/media/brand/rr-gallery-logo-2026.webp");
+    expect(message.html).not.toContain("/media/brand/rr-gallery-email-logo.png");
   });
 
   it("adds the customer signature to payment-failure emails", async () => {
@@ -162,7 +162,7 @@ describe("order notification delivery", () => {
 
     expect(send.mock.calls[0][0].text).toContain("Customer Service Team");
     expect(send.mock.calls[0][0].html).toContain(
-      "https://shop.example.test/media/brand/rr-gallery-logo-2026.webp",
+      "https://shop.example.test/media/brand/rr-gallery-email-logo.png",
     );
   });
 
@@ -191,7 +191,7 @@ describe("order notification delivery", () => {
     expect(send.mock.calls[0][0]).toEqual(expect.objectContaining({
       idempotencyKey: shippedDelivery.eventKey,
       text: expect.stringContaining("Customer Service Team"),
-      html: expect.stringContaining("/media/brand/rr-gallery-logo-2026.webp"),
+      html: expect.stringContaining("/media/brand/rr-gallery-email-logo.png"),
     }));
   });
 
