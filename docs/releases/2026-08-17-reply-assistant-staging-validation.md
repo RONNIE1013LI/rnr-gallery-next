@@ -441,8 +441,7 @@ Executed on 17 August 2026. This report records only checks actually run. `FAIL`
 ### 12. Exit blockers
 
 1. An approved Staging Meta App with Messenger configured and a non-Production Test Page must be supplied before a real Meta-origin event can reach the Preview callback.
-2. Ronnie's draft-quality review and explicit Staging approval are not recorded.
-3. Security/privacy sign-off and rollback/old-ngrok owners are not assigned.
+2. Security/privacy sign-off and rollback/old-ngrok owners are not assigned.
 
 Final blocker materials:
 
@@ -450,7 +449,7 @@ Final blocker materials:
 - Ronnie's 20-draft human review: `2026-08-17-reply-assistant-ai-quality-signoff.md`
 - Security/privacy and rollback owner checklist: `2026-08-17-reply-assistant-security-privacy-rollback-signoff.md`
 
-All three documents intentionally remain unsigned. They do not change the Customer Service Engine, policy gate, output validator, Production feature flag, Production database or Production Meta callback.
+The Meta test and security/privacy/rollback documents intentionally remain unsigned. Ronnie completed the AI quality review with a PASS limited to human-review assistant use; it does not approve autonomous customer replies. None of these documents changes the Customer Service Engine, policy gate, output validator, Production feature flag, Production database or Production Meta callback.
 
 ### Final sign-off matrix
 
@@ -458,7 +457,7 @@ All three documents intentionally remain unsigned. They do not change the Custom
 | --- | --- | --- |
 | Engineering | PASS | None. |
 | Security | TECHNICAL PASS / HUMAN SIGN-OFF PENDING | Named security/privacy reviewer must sign. |
-| AI quality | TECHNICAL PASS / RONNIE SIGN-OFF PENDING | Ronnie must approve Staging draft quality. |
+| AI quality | PASS - HUMAN-REVIEW ASSISTANT ONLY | Ronnie reviewed 20 drafts: 10 approved unchanged, 10 edited, 0 rejected. This does not approve autonomous customer replies. |
 | Database | PASS | None. |
 | Meta webhook | FAIL | Approved test App/Test Page configuration and one real Meta-origin event are required. |
 | Rollback | PENDING | Assign Production rollback owner and old-ngrok health owner; no rollout has occurred. |
