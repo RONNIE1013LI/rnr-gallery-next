@@ -13,6 +13,7 @@
 - Remove the `Start Customising` link from the configuration-page introduction.
 - Preserve the `#customise` form anchor and all configuration behavior.
 - No visible breadcrumb navigation on design detail pages at any viewport size.
+- Do not render `Design image` or its pixel dimensions in the customer-facing facts list.
 - Preserve the existing three-level Breadcrumb JSON-LD.
 - Do not change pricing, uploads, cart, checkout, payment, design URLs, metadata, or Gallery filters.
 
@@ -127,7 +128,7 @@ npm run lint
 set -a; source .env.local; set +a; npm test -- --run
 set -a; source .vercel/.env.production.local; set +a; \
   BETTER_AUTH_URL='https://rrgallery.co.nz' \
-  BETTER_AUTH_SECRET='8f3a91c7d42e6b50a1f89c36e704bd25c9a81e6f43d702b598ca14e73f60bd92' \
+  BETTER_AUTH_SECRET="$(openssl rand -hex 32)" \
   npm run build
 ```
 
@@ -136,3 +137,54 @@ Expected: TypeScript, ESLint, all tests, and production build pass. The build-on
 - [ ] **Step 7: Verify responsive rendering and deploy the exact commit**
 
 Check one public design detail at approximately 390px and desktop width. Confirm neither viewport shows a visible breadcrumb, `View Similar Designs` still exists, and the configuration page still has no introductory CTA. Commit only the scoped files, deploy a clean candidate from the exact commit, smoke-test it, then promote that same deployment to `rrgallery.co.nz`.
+
+### Task 3: Hide source image dimensions from customers
+
+**Files:**
+- Modify: `src/app/designs/[slug]/page.test.tsx`
+- Modify: `src/app/designs/[slug]/page.tsx`
+
+**Interfaces:**
+- Consumes: the existing public design detail facts list and `design.width` / `design.height` used by `next/image`.
+- Produces: the same design detail page without a visible `Design image` fact row.
+
+- [ ] **Step 1: Add the failing visibility assertions**
+
+```tsx
+expect(screen.queryByText("Design image")).not.toBeInTheDocument();
+expect(screen.queryByText("1200 × 2400 px")).not.toBeInTheDocument();
+```
+
+- [ ] **Step 2: Run the focused test and confirm RED**
+
+Run:
+
+```bash
+npm test -- --run 'src/app/designs/[slug]/page.test.tsx'
+```
+
+Expected: FAIL because the current page still renders the `Design image` row.
+
+- [ ] **Step 3: Remove only the customer-facing fact row**
+
+Delete:
+
+```tsx
+<div><dt>Design image</dt><dd>{design.width} × {design.height} px</dd></div>
+```
+
+Keep the `width={design.width}` and `height={design.height}` props on the artwork image.
+
+- [ ] **Step 4: Run the focused test and confirm GREEN**
+
+Run:
+
+```bash
+npm test -- --run 'src/app/designs/[slug]/page.test.tsx'
+```
+
+Expected: all tests in the file PASS.
+
+- [ ] **Step 5: Run full verification and deploy the exact commit**
+
+Run TypeScript, ESLint, the full Vitest suite, and the production build. Check the design detail at 390px and desktop width, then deploy a clean archive from the tested commit and verify the public page contains no visible pixel dimensions.
