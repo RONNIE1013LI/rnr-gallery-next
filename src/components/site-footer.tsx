@@ -1,11 +1,5 @@
+import Image from "next/image";
 import Link from "next/link";
-import {
-  FaCcApplePay,
-  FaCcMastercard,
-  FaCcVisa,
-  FaGooglePay,
-} from "react-icons/fa6";
-import { SiAfterpay } from "react-icons/si";
 import { BrandMark } from "./brand-mark";
 
 export type SiteFooterContent = Readonly<{
@@ -20,6 +14,14 @@ const defaultContent: SiteFooterContent = Object.freeze({
   email: "customerservice@rnrgallery.com",
   phone: "+64 21 023 48948",
 });
+
+const paymentLogos = Object.freeze([
+  { name: "Visa", className: "visa" },
+  { name: "Mastercard", className: "mastercard" },
+  { name: "Afterpay", className: "afterpay" },
+  { name: "Apple Pay", className: "apple-pay" },
+  { name: "Google Pay", className: "google-pay" },
+] as const);
 
 function phoneHref(phone: string) {
   const normalized = phone.trim().replace(/(?!^\+)\D/g, "");
@@ -103,24 +105,26 @@ export function SiteFooter({ content = defaultContent }: Readonly<{ content?: Si
           Accepted payments
         </p>
         <ul className="site-footer__payment-list">
-          <li className="site-footer__payment-logo site-footer__payment-logo--visa">
-            <FaCcVisa role="img" aria-label="Visa" />
-          </li>
-          <li className="site-footer__payment-logo site-footer__payment-logo--mastercard">
-            <FaCcMastercard role="img" aria-label="Mastercard" />
-          </li>
-          <li className="site-footer__payment-logo site-footer__payment-logo--afterpay">
-            <span role="img" aria-label="Afterpay" className="site-footer__afterpay-mark">
-              <SiAfterpay aria-hidden="true" />
-              <span aria-hidden="true">afterpay</span>
-            </span>
-          </li>
-          <li className="site-footer__payment-logo site-footer__payment-logo--apple-pay">
-            <FaCcApplePay role="img" aria-label="Apple Pay" />
-          </li>
-          <li className="site-footer__payment-logo site-footer__payment-logo--google-pay">
-            <FaGooglePay role="img" aria-label="Google Pay" />
-          </li>
+          {paymentLogos.map((logo) => (
+            <li className="site-footer__payment-logo" key={logo.name}>
+              <span
+                role="img"
+                aria-label={logo.name}
+                className={`site-footer__payment-mark site-footer__payment-mark--${logo.className}`}
+              >
+                <Image
+                  src="/media/payments/footer-payment-methods.jpg"
+                  alt=""
+                  aria-hidden="true"
+                  className="site-footer__payment-sprite"
+                  width={1171}
+                  height={100}
+                  sizes="(max-width: 560px) 64px, 90px"
+                  unoptimized
+                />
+              </span>
+            </li>
+          ))}
         </ul>
       </section>
 

@@ -343,6 +343,11 @@ describe("site shell", () => {
       "Apple Pay",
       "Google Pay",
     ]);
+    expect(payments.querySelectorAll("img")).toHaveLength(5);
+    expect(Array.from(payments.querySelectorAll("img")).every((image) =>
+      image.getAttribute("src")?.includes("/media/payments/footer-payment-methods.jpg"),
+    )).toBe(true);
+    expect(payments.querySelectorAll("svg")).toHaveLength(0);
 
     expect(footer.querySelector(".site-footer__grid")?.nextElementSibling)
       .toBe(payments);
