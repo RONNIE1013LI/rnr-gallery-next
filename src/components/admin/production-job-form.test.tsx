@@ -33,6 +33,27 @@ describe("ProductionJobForm", () => {
     expect(screen.queryByLabelText("Payment reconciliation")).not.toBeInTheDocument();
   });
 
+  it("shows payment proof only when finance and file-upload permissions are both present", () => {
+    const { rerender } = render(
+      <ProductionJobForm assignees={assignees} canManageFinance canUploadFiles />,
+    );
+    expect(screen.getByLabelText("Payment proof")).toHaveAttribute(
+      "accept",
+      "image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf",
+    );
+    expect(screen.getByText("JPG, PNG, WebP, HEIC, HEIF or PDF. Maximum 25 MB.")).toBeInTheDocument();
+
+    rerender(
+      <ProductionJobForm assignees={assignees} canManageFinance canUploadFiles={false} />,
+    );
+    expect(screen.queryByLabelText("Payment proof")).not.toBeInTheDocument();
+
+    rerender(
+      <ProductionJobForm assignees={assignees} canManageFinance={false} canUploadFiles />,
+    );
+    expect(screen.queryByLabelText("Payment proof")).not.toBeInTheDocument();
+  });
+
   it("uses the approved data-entry section order", () => {
     render(
       <ProductionJobForm

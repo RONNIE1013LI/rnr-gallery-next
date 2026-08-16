@@ -19,6 +19,7 @@ export default async function NewProductionJobPage() {
     getAdminProductionFieldRuntime().list(),
   ]);
   const canManageFinance = hasAdminPermission(access.adminRole, "update_production_finance");
+  const canUploadFiles = hasAdminPermission(access.adminRole, "upload_production_files");
   return (
     <section className={styles.pageSection}>
       <header className={styles.pageHeader}>
@@ -28,6 +29,7 @@ export default async function NewProductionJobPage() {
       <ProductionJobForm
         assignees={assignees}
         canManageFinance={canManageFinance}
+        canUploadFiles={canUploadFiles}
         backHref="/admin/jobs"
         submittedBy={access.user.email}
         productTitles={getRegistryProducts(registry).filter((product) => product.active).map((product) => product.title)}

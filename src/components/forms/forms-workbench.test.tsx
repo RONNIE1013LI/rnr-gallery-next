@@ -65,6 +65,7 @@ describe("FormsWorkbench", () => {
       orderEntry={{
         assignees: [],
         canManageFinance: true,
+        canUploadFiles: true,
         submittedBy: "operator@example.test",
         productTitles: ["Canvas"],
         customFields: [],

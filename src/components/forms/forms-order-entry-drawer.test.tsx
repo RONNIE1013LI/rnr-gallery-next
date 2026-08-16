@@ -9,6 +9,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 const data: FormsOrderEntryData = {
   assignees: [{ id: "artist-1", name: "Artist", email: "artist@example.test", role: "staff" }],
   canManageFinance: true,
+  canUploadFiles: true,
   submittedBy: "operator@example.test",
   productTitles: ["Photo Print Canvas"],
   customFields: [],
@@ -35,6 +36,12 @@ afterEach(() => {
 });
 
 describe("FormsOrderEntryDrawer", () => {
+  it("passes payment-proof upload capability into Order Entry", () => {
+    render(<FormsOrderEntryDrawer data={data} onClose={vi.fn()} />);
+
+    expect(screen.getByLabelText("Payment proof")).toBeInTheDocument();
+  });
+
   it("resizes from its left edge and resets when reopened", () => {
     viewport(1_200);
     const first = render(<FormsOrderEntryDrawer data={data} onClose={vi.fn()} />);
@@ -78,5 +85,21 @@ describe("FormsOrderEntryDrawer", () => {
     confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Close order entry" }));
     expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it("treats a selected payment proof as unsaved drawer work", () => {
+    const onClose = vi.fn();
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+    render(<FormsOrderEntryDrawer data={data} onClose={onClose} />);
+
+    fireEvent.change(screen.getByLabelText("Payment proof"), {
+      target: {
+        files: [new File([new Uint8Array([0xff, 0xd8, 0xff])], "receipt.jpg", { type: "image/jpeg" })],
+      },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Close order entry" }));
+
+    expect(confirm).toHaveBeenCalledWith("Discard this unsaved manual order?");
+    expect(onClose).not.toHaveBeenCalled();
   });
 });

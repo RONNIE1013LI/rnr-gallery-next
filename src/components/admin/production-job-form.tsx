@@ -26,6 +26,7 @@ export type ProductionFormField = Readonly<{
 type Props = Readonly<{
   assignees: readonly ProductionAssignee[];
   canManageFinance: boolean;
+  canUploadFiles?: boolean;
   productTitles?: readonly string[];
   customFields?: readonly ProductionFormField[];
   endpoint?: string;
@@ -73,6 +74,7 @@ function cents(value: FormDataEntryValue | null) {
 export function ProductionJobForm({
   assignees,
   canManageFinance,
+  canUploadFiles = false,
   productTitles = [],
   customFields = [],
   endpoint = "/api/admin/jobs",
@@ -303,7 +305,18 @@ export function ProductionJobForm({
             <label><span>Amount owing (NZD)</span><input value={Math.max(0, (Number(amountPayable) || 0) - (Number(amountPaid) || 0)).toFixed(2)} readOnly aria-readonly="true" /></label>
             <label><span>Payment reconciliation</span><select name="paymentReconciliationStatus" defaultValue="Not checked" disabled={pending}>{["Not checked", "Arrive", "Afterpay", "ZIP PAY", "Stripe", "Wise", "waitting..", "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other"].map((status) => <option value={status} key={status}>{status}</option>)}</select></label>
           </div>
-          <p className={styles.fieldHint}>Payment proof can be attached from the order record after saving.</p>
+          {canUploadFiles ? <div className={styles.formGrid}>
+            <div className={styles.fullField}>
+              <label><span>Payment proof</span><input
+                name="paymentProof"
+                type="file"
+                accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf"
+                aria-describedby="payment-proof-help"
+                disabled={pending}
+              /></label>
+              <small id="payment-proof-help" className={styles.fieldHint}>JPG, PNG, WebP, HEIC, HEIF or PDF. Maximum 25 MB.</small>
+            </div>
+          </div> : null}
         </section>
       ) : null}
 

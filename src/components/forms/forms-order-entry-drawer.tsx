@@ -90,6 +90,7 @@ export function FormsOrderEntryDrawer({
             <ProductionJobForm
               assignees={data.assignees}
               canManageFinance={data.canManageFinance}
+              canUploadFiles={data.canUploadFiles}
               endpoint="/api/forms/jobs"
               detailBasePath="/order-system/jobs"
               backHref="/order-system"

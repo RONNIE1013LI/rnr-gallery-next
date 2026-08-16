@@ -46,6 +46,7 @@ export default async function FormsDataListPage({ searchParams }: Props) {
   const canUpdate = hasFormPermission(access.formRole, access.formProfile, "update_jobs");
   const canCreate = hasFormPermission(access.formRole, access.formProfile, "create_jobs");
   const canUpdateFinance = hasFormPermission(access.formRole, access.formProfile, "update_finance");
+  const canUploadFiles = hasFormPermission(access.formRole, access.formProfile, "upload_files");
   const entryRequested = raw.entry === "new" && canCreate;
   const [result, savedViews, assignees, entryResources] = await Promise.all([
     listFormOrders(getDatabase(), query, {
@@ -74,6 +75,7 @@ export default async function FormsDataListPage({ searchParams }: Props) {
   const orderEntry: FormsOrderEntryData | undefined = entryResources ? {
     assignees,
     canManageFinance: canUpdateFinance,
+    canUploadFiles,
     submittedBy: access.user.email ?? "Current operator",
     productTitles: getRegistryProducts(entryResources[0].registry)
       .filter((product) => product.active)
@@ -102,7 +104,7 @@ export default async function FormsDataListPage({ searchParams }: Props) {
       canUpdateFinance={canUpdateFinance}
       canUpdateProductionStatus={hasFormPermission(access.formRole, access.formProfile, "update_production_status")}
       canUpdateDeliveryStatus={hasFormPermission(access.formRole, access.formProfile, "update_delivery_status")}
-      canUploadFiles={hasFormPermission(access.formRole, access.formProfile, "upload_files")}
+      canUploadFiles={canUploadFiles}
       canReviewProofs={hasFormPermission(access.formRole, access.formProfile, "update_production_status")}
       assignees={assignees}
       orderEntry={orderEntry}

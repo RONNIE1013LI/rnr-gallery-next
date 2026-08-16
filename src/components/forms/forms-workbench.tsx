@@ -24,6 +24,7 @@ import styles from "./forms.module.css";
 export type FormsOrderEntryData = Readonly<{
   assignees: readonly Readonly<{ id: string; name: string; email: string; role: "admin" | "staff" | "form_staff" }>[];
   canManageFinance: boolean;
+  canUploadFiles: boolean;
   submittedBy: string;
   productTitles: readonly string[];
   customFields: readonly ProductionFormField[];

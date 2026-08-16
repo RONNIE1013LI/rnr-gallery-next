@@ -20,6 +20,7 @@ export default async function NewFormsJobPage() {
     getAdminProductionFieldRuntime().list(),
   ]);
   const canManageFinance = hasFormPermission(access.formRole, access.formProfile, "update_finance");
+  const canUploadFiles = hasFormPermission(access.formRole, access.formProfile, "upload_files");
   return (
     <section className={styles.formsPage}>
       <header className={styles.formsPageHeader}>
@@ -37,6 +38,7 @@ export default async function NewFormsJobPage() {
         <ProductionJobForm
           assignees={assignees}
           canManageFinance={canManageFinance}
+          canUploadFiles={canUploadFiles}
           endpoint="/api/forms/jobs"
           detailBasePath="/order-system/jobs"
           backHref="/order-system"
