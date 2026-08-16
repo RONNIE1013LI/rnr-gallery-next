@@ -227,6 +227,7 @@ export async function getAdminOrderDetail(database: Database, orderId: string) {
           originalName: checkoutUploads.originalName,
           mediaType: checkoutUploads.mediaType,
           sizeBytes: checkoutUploads.sizeBytes,
+          purgedAt: checkoutUploads.purgedAt,
         })
         .from(checkoutUploads)
         .where(inArray(checkoutUploads.claimedByOrderItemId, itemIds))

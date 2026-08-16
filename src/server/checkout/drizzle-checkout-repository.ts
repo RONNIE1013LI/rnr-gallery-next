@@ -64,8 +64,8 @@ export function createDrizzleCheckoutRepository(
       const [upload] = await database
         .insert(checkoutUploads)
         .values(input)
-        .returning();
-      return upload;
+        .returning({ createdAt: checkoutUploads.createdAt });
+      return { ...input, createdAt: upload.createdAt };
     },
 
     async findOwnedUploadIds(sessionId, uploadIds) {
@@ -78,6 +78,8 @@ export function createDrizzleCheckoutRepository(
             eq(checkoutUploads.checkoutSessionId, sessionId),
             inArray(checkoutUploads.id, uploadIds),
             isNull(checkoutUploads.cleanupClaimedAt),
+            isNull(checkoutUploads.purgedAt),
+            isNotNull(checkoutUploads.storageKey),
           ),
         );
       return uploads.map(({ id }) => id);

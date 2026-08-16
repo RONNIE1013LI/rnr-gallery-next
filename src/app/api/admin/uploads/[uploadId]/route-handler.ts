@@ -9,7 +9,12 @@ import { createPrivateUploadStore } from "@/server/uploads/private-upload-store"
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
 
-type UploadRecord = Readonly<{ storageKey: string; mediaType: string; originalName: string }>;
+type UploadRecord = Readonly<{
+  storageKey: string | null;
+  mediaType: string | null;
+  originalName: string | null;
+  purgedAt: Date | null;
+}>;
 type Dependencies = Readonly<{
   requirePermission: (permission: AdminPermission) => Promise<unknown>;
   find: (uploadId: string) => Promise<UploadRecord | null>;
@@ -28,7 +33,12 @@ export function createAdminUploadRoute(dependencies?: Dependencies) {
     return {
       requirePermission: requireAdminPermission,
       find: async (uploadId) => {
-        const [record] = await database.select({ storageKey: checkoutUploads.storageKey, mediaType: checkoutUploads.mediaType, originalName: checkoutUploads.originalName })
+        const [record] = await database.select({
+          storageKey: checkoutUploads.storageKey,
+          mediaType: checkoutUploads.mediaType,
+          originalName: checkoutUploads.originalName,
+          purgedAt: checkoutUploads.purgedAt,
+        })
           .from(checkoutUploads).where(eq(checkoutUploads.id, uploadId)).limit(1);
         return record ?? null;
       },
@@ -44,6 +54,15 @@ export function createAdminUploadRoute(dependencies?: Dependencies) {
         if (!/^[0-9a-f-]{36}$/i.test(uploadId)) return Response.json({ error: "Not found" }, { status: 404, headers: noStore });
         const record = await deps.find(uploadId);
         if (!record) return Response.json({ error: "Not found" }, { status: 404, headers: noStore });
+        if (record.purgedAt) {
+          return Response.json({ error: "Upload expired" }, { status: 410, headers: noStore });
+        }
+        if (!record.storageKey || !record.mediaType || !record.originalName) {
+          return Response.json({ error: "Upload is unavailable" }, {
+            status: 500,
+            headers: noStore,
+          });
+        }
         const bytes = await deps.read(record.storageKey);
         const attachment = new URL(request.url).searchParams.get("download") === "1";
         return new Response(new Blob([new Uint8Array(bytes)], { type: record.mediaType }), { headers: {

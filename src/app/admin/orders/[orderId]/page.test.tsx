@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import AdminOrderDetailPage from "./page";
 
@@ -86,7 +86,24 @@ describe("admin order detail page", () => {
         createdAt: new Date("2026-08-04T02:05:00.000Z"),
         updatedAt: new Date("2026-08-04T02:06:00.000Z"),
       }],
-      uploads: [{ id: "upload-1", orderItemId: "item-1", originalName: "family-photo.jpg", mediaType: "image/jpeg", sizeBytes: 123456 }],
+      uploads: [
+        {
+          id: "upload-1",
+          orderItemId: "item-1",
+          originalName: "family-photo.jpg",
+          mediaType: "image/jpeg",
+          sizeBytes: 123456,
+          purgedAt: null,
+        },
+        {
+          id: "upload-purged",
+          orderItemId: "item-1",
+          originalName: null,
+          mediaType: null,
+          sizeBytes: null,
+          purgedAt: new Date("2026-08-17T00:00:00Z"),
+        },
+      ],
       notes: [{ id: "note-1", visibility: "internal", body: "Check image quality", authorEmail: "owner@example.test", createdAt: new Date("2026-08-04T03:00:00.000Z") }],
       history: [{ id: "history-1", fromStatus: "new", toStatus: "designing", actorEmail: "owner@example.test", reason: "Assigned", createdAt: new Date("2026-08-04T03:00:00.000Z") }],
     });
@@ -98,6 +115,11 @@ describe("admin order detail page", () => {
     expect(screen.getByRole("heading", { name: "RNR-2026-ABC123" })).toBeInTheDocument();
     expect(screen.getByText(/A0 — 118\.9 × 84\.1 cm/)).toBeInTheDocument();
     expect(screen.getByText("family-photo.jpg")).toBeInTheDocument();
+    const tombstone = screen.getByText(
+      "Original photo deleted after the 5-day storage period.",
+    ).closest("li");
+    expect(tombstone).not.toBeNull();
+    expect(within(tombstone!).queryByRole("link")).not.toBeInTheDocument();
     expect(screen.getByText("Check image quality")).toBeInTheDocument();
     expect(screen.getByText("NZ Post Economy")).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Update order status" })).toBeInTheDocument();

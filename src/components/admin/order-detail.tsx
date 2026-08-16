@@ -79,8 +79,17 @@ export function AdminOrderDetail({ detail }: Readonly<{ detail: Detail }>) {
                   <ul>
                     {detail.uploads.filter((upload) => upload.orderItemId === item.id).map((upload) => (
                       <li key={upload.id}>
-                        <span><strong>{upload.originalName}</strong><span className={styles.uploadActions}><a href={`/api/admin/uploads/${upload.id}`} target="_blank" rel="noopener noreferrer">View</a><a href={`/api/admin/uploads/${upload.id}?download=1`}>Download</a></span></span>
-                        <small>{upload.mediaType} · {(upload.sizeBytes / 1024 / 1024).toFixed(1)} MB</small>
+                        {upload.purgedAt === null
+                          && upload.originalName
+                          && upload.mediaType
+                          && upload.sizeBytes !== null ? (
+                            <>
+                              <span><strong>{upload.originalName}</strong><span className={styles.uploadActions}><a href={`/api/admin/uploads/${upload.id}`} target="_blank" rel="noopener noreferrer">View</a><a href={`/api/admin/uploads/${upload.id}?download=1`}>Download</a></span></span>
+                              <small>{upload.mediaType} · {(upload.sizeBytes / 1024 / 1024).toFixed(1)} MB</small>
+                            </>
+                          ) : (
+                            <span>Original photo deleted after the 5-day storage period.</span>
+                          )}
                       </li>
                     ))}
                   </ul>
