@@ -74,6 +74,26 @@ describe("checkout and order schema contract", () => {
     ).toEqual(["checkout_session_id", "id"]);
   });
 
+  it("retains only a bound tombstone after source-photo purge", () => {
+    expect(columnNames(checkoutUploads)).toContain("purged_at");
+    expect(checkoutUploads.purgedAt.notNull).toBe(false);
+    for (const column of [
+      checkoutUploads.storageKey,
+      checkoutUploads.originalName,
+      checkoutUploads.mediaType,
+      checkoutUploads.sizeBytes,
+      checkoutUploads.sha256,
+    ]) {
+      expect(column.notNull).toBe(false);
+    }
+    expect(config(checkoutUploads).checks.map((check) => check.name)).toEqual(
+      expect.arrayContaining([
+        "checkout_uploads_size_bytes_positive",
+        "checkout_uploads_retention_consistent",
+      ]),
+    );
+  });
+
   it("enforces one order per checkout session and session-scoped idempotency", () => {
     expect(orders.checkoutSessionId.isUnique).toBe(true);
     expect(orders.idempotencyKey.isUnique).toBe(false);
