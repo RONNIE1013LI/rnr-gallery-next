@@ -34,7 +34,7 @@ Keep the Data list visible while entering a manual order, and make the invoice e
 
 ## Accessibility
 
-- The desktop separator uses `role="separator"`, an accessible label, horizontal orientation, and current/min/max values.
+- The desktop separator uses `role="separator"`, an accessible label, vertical orientation, and current/min/max values. It moves horizontally to resize the adjacent panels.
 - Keyboard resizing uses Arrow Left and Arrow Right and remains clamped to the valid range.
 - The mobile controls expose selected state with `aria-pressed` and move focus normally.
 
