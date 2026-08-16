@@ -2,6 +2,8 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { createClientId } from "@/lib/client-id";
+import type { MarketCurrency } from "@/domain/markets/types";
+import { formatMarketMoney } from "@/domain/money";
 import styles from "./admin.module.css";
 
 type InvoiceItem = Readonly<{
@@ -33,6 +35,8 @@ type Invoice = Readonly<{
   customerEmail: string;
   customerAddress: string;
   deliveryAddress: string;
+  currency: MarketCurrency;
+  gstRateBasisPoints: number;
   grossCents: number;
   discountCents: number;
   subtotalExGstCents: number;
@@ -68,8 +72,6 @@ type Draft = Readonly<{
   terms: string;
   items: readonly EditableItem[];
 }>;
-
-const money = new Intl.NumberFormat("en-NZ", { style: "currency", currency: "NZD" });
 
 function editable(invoice: Invoice): Draft {
   return {
@@ -120,7 +122,10 @@ function totals(draft: Draft, invoice: Invoice) {
     0,
   );
   const totalInclGstCents = Math.max(0, grossCents - draft.discountCents);
-  const gstCents = Math.round(totalInclGstCents * 15 / 115);
+  const gstCents = Math.round(
+    totalInclGstCents * invoice.gstRateBasisPoints /
+    (10_000 + invoice.gstRateBasisPoints),
+  );
   return {
     grossCents,
     subtotalExGstCents: totalInclGstCents - gstCents,
@@ -158,6 +163,9 @@ export function InvoicePanel({
   const [pending, setPending] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [voidReason, setVoidReason] = useState("");
+  const money = (cents: number) => invoice
+    ? formatMarketMoney(cents, invoice.currency)
+    : "";
 
   useEffect(() => {
     const controller = new AbortController();
@@ -289,13 +297,13 @@ export function InvoicePanel({
           <label><span>Terms</span><textarea rows={3} value={draft.terms} onChange={(event) => updateField("terms", event.target.value)} disabled={locked} /></label>
         </div>
         <div>
-          <label className={styles.invoiceDiscount}><span>Discount (NZD)</span><input type="number" min="0" step="0.01" value={(draft.discountCents / 100).toFixed(2)} onChange={(event) => updateField("discountCents", Math.max(0, Math.round(Number(event.target.value) * 100)))} disabled={locked} /></label>
+          <label className={styles.invoiceDiscount}><span>Discount ({invoice.currency})</span><input type="number" min="0" step="0.01" value={(draft.discountCents / 100).toFixed(2)} onChange={(event) => updateField("discountCents", Math.max(0, Math.round(Number(event.target.value) * 100)))} disabled={locked} /></label>
           <dl className={styles.invoiceTotals} data-testid="invoice-totals">
-            <div><dt>Gross incl GST</dt><dd>{money.format(calculated.grossCents / 100)}</dd></div>
-            <div><dt>Discount</dt><dd>−{money.format(draft.discountCents / 100)}</dd></div>
-            <div><dt>Subtotal ex GST</dt><dd>{money.format(calculated.subtotalExGstCents / 100)}</dd></div>
-            <div><dt>GST (15%)</dt><dd>{money.format(calculated.gstCents / 100)}</dd></div>
-            <div><dt>Total incl GST</dt><dd>{money.format(calculated.totalInclGstCents / 100)}</dd></div>
+            <div><dt>Gross{invoice.gstRateBasisPoints > 0 ? " incl GST" : ""}</dt><dd>{money(calculated.grossCents)}</dd></div>
+            <div><dt>Discount</dt><dd>−{money(draft.discountCents)}</dd></div>
+            <div><dt>{invoice.gstRateBasisPoints > 0 ? "Subtotal ex GST" : "Subtotal"}</dt><dd>{money(calculated.subtotalExGstCents)}</dd></div>
+            {invoice.gstRateBasisPoints > 0 ? <div><dt>GST ({invoice.gstRateBasisPoints / 100}%)</dt><dd>{money(calculated.gstCents)}</dd></div> : null}
+            <div><dt>Total{invoice.gstRateBasisPoints > 0 ? " incl GST" : ""}</dt><dd>{money(calculated.totalInclGstCents)}</dd></div>
           </dl>
         </div>
       </div>

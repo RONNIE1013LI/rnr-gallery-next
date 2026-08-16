@@ -1,4 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
+import { formatMarketMoney } from "@/domain/money";
 import type { InvoiceRecord } from "./invoice-service";
 
 const PAGE_WIDTH = 595.28;
@@ -17,13 +18,6 @@ function safeText(value: string) {
     .replace(/[“”]/g, '"')
     .replace(/[^\x20-\xFF\n\r\t]/g, "?")
     .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
-}
-
-function money(cents: number) {
-  return `NZ$${(cents / 100).toLocaleString("en-NZ", {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 2,
-  })}`;
 }
 
 function quantity(milli: number) {
@@ -81,6 +75,8 @@ function drawLines(page: PDFPage, lines: readonly string[], input: Readonly<{
 }
 
 export async function createInvoicePdf(invoice: InvoiceRecord) {
+  const money = (cents: number) => formatMarketMoney(cents, invoice.currency);
+  const hasTax = invoice.gstRateBasisPoints > 0;
   const document = await PDFDocument.create();
   document.setTitle(`Tax Invoice ${safeText(invoice.invoiceNumber)}`);
   document.setAuthor(safeText(invoice.businessName));
@@ -160,10 +156,10 @@ export async function createInvoicePdf(invoice: InvoiceRecord) {
 
   y -= 18;
   const totals = [
-    ["Gross incl GST", invoice.grossCents],
+    [hasTax ? "Gross incl GST" : "Gross", invoice.grossCents],
     ...(invoice.discountCents ? [["Discount", -invoice.discountCents] as const] : []),
-    ["Subtotal ex GST", invoice.subtotalExGstCents],
-    ["GST (15%)", invoice.gstCents],
+    [hasTax ? "Subtotal ex GST" : "Subtotal", invoice.subtotalExGstCents],
+    ...(hasTax ? [[`GST (${invoice.gstRateBasisPoints / 100}%)`, invoice.gstCents] as const] : []),
   ] as const;
   totals.forEach(([label, cents], index) => {
     const rowY = y - index * 15;
@@ -173,7 +169,7 @@ export async function createInvoicePdf(invoice: InvoiceRecord) {
   });
   y -= totals.length * 15 + 4;
   page.drawLine({ start: { x: 375, y: y + 9 }, end: { x: right, y: y + 9 }, thickness: 1, color: INK });
-  page.drawText("TOTAL INCL GST", { x: 375, y: y - 2, size: 10, font: bold, color: INK });
+  page.drawText(hasTax ? "TOTAL INCL GST" : "TOTAL", { x: 375, y: y - 2, size: 10, font: bold, color: INK });
   const total = money(invoice.totalInclGstCents);
   page.drawText(total, { x: right - bold.widthOfTextAtSize(total, 10), y: y - 2, size: 10, font: bold, color: INK });
 

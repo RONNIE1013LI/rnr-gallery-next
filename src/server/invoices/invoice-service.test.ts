@@ -140,6 +140,8 @@ describe("invoice service", () => {
         customerEmail: "ana@example.com",
         customerAddress: "1 George Street\nSydney\nNSW\n2000\nAU",
         deliveryAddress: "1 George Street\nSydney\nNSW\n2000\nAU",
+        currency: "AUD",
+        gstRateBasisPoints: 0,
         items: [
           { code: "A0", description: "Canvas — A0", quantityMilli: 1_000, rateInclGstCents: 36_800 },
           { code: "SHIPPING", description: "Shipping", quantityMilli: 1_000, rateInclGstCents: 4_500 },
@@ -162,6 +164,8 @@ describe("invoice service", () => {
       subtotalExGstCents: 36_500,
       gstCents: 4_800,
       totalInclGstCents: 41_300,
+      currency: "AUD",
+      gstRateBasisPoints: 0,
     }));
   });
 

@@ -1,7 +1,5 @@
 import { z } from "zod";
 
-const GST_RATE = 15;
-const GST_DIVISOR = 100 + GST_RATE;
 const isoDatePattern = /^\d{4}-\d{2}-\d{2}$/;
 
 function validCalendarDate(value: string) {
@@ -88,7 +86,7 @@ export function parseInvoiceDraft(input: unknown): InvoiceDraft {
 export function calculateInvoiceTotals(input: Readonly<{
   items: readonly Readonly<Pick<z.output<typeof invoiceItemSchema>, "quantityMilli" | "rateInclGstCents">>[];
   discountCents: number;
-}>) {
+}>, taxRateBasisPoints = 1_500) {
   const grossCents = input.items.reduce(
     (sum, item) => sum + Math.round(item.quantityMilli * item.rateInclGstCents / 1_000),
     0,
@@ -98,11 +96,16 @@ export function calculateInvoiceTotals(input: Readonly<{
     !Number.isSafeInteger(grossCents) ||
     !Number.isSafeInteger(input.discountCents) ||
     input.discountCents < 0 ||
-    totalInclGstCents < 0
+    totalInclGstCents < 0 ||
+    !Number.isInteger(taxRateBasisPoints) ||
+    taxRateBasisPoints < 0 ||
+    taxRateBasisPoints > 10_000
   ) {
     throw new InvoiceValidationError();
   }
-  const gstCents = Math.round(totalInclGstCents * GST_RATE / GST_DIVISOR);
+  const gstCents = Math.round(
+    totalInclGstCents * taxRateBasisPoints / (10_000 + taxRateBasisPoints),
+  );
   return Object.freeze({
     grossCents,
     discountCents: input.discountCents,

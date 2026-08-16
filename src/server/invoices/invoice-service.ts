@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { MarketCurrency } from "@/domain/markets/types";
 import {
   buildInvoiceNumber,
   calculateInvoiceTotals,
@@ -35,8 +36,8 @@ export type InvoiceRecord = Readonly<{
   customerEmail: string;
   customerAddress: string;
   deliveryAddress: string;
-  currency: "NZD";
-  gstRateBasisPoints: 1_500;
+  currency: MarketCurrency;
+  gstRateBasisPoints: number;
   pricesIncludeGst: true;
   grossCents: number;
   discountCents: number;
@@ -60,6 +61,8 @@ export type InvoiceSeed = Readonly<{
   customerEmail: string;
   customerAddress: string;
   deliveryAddress: string;
+  currency?: MarketCurrency;
+  gstRateBasisPoints?: number;
   items: readonly Readonly<{
     code: string;
     description: string;
@@ -95,8 +98,8 @@ export type CreateInvoiceDraft = Readonly<{
   businessWebsite: string;
   gstNumber: string;
   bankAccount: string;
-  currency: "NZD";
-  gstRateBasisPoints: 1_500;
+  currency: MarketCurrency;
+  gstRateBasisPoints: number;
   pricesIncludeGst: true;
   actor: Actor;
   createdAt: Date;
@@ -207,7 +210,7 @@ function unwrap(result: InvoiceMutationResult) {
 }
 
 function totalsFromSeed(seed: InvoiceSeed, draft: InvoiceDraft) {
-  if (!seed.totals) return calculateInvoiceTotals(draft);
+  if (!seed.totals) return calculateInvoiceTotals(draft, seed.gstRateBasisPoints ?? 1_500);
   const grossCents = draft.items.reduce(
     (sum, item) => sum + Math.round(item.quantityMilli * item.rateInclGstCents / 1_000),
     0,
@@ -232,7 +235,7 @@ function totalsForUpdate(existing: InvoiceRecord, draft: InvoiceDraft) {
       item.quantityMilli === draft.items[index]?.quantityMilli &&
       item.rateInclGstCents === draft.items[index]?.rateInclGstCents,
     );
-  if (!financialsUnchanged) return calculateInvoiceTotals(draft);
+  if (!financialsUnchanged) return calculateInvoiceTotals(draft, existing.gstRateBasisPoints);
   return Object.freeze({
     grossCents: existing.grossCents,
     discountCents: existing.discountCents,
@@ -284,8 +287,8 @@ export function createInvoiceService(
         businessWebsite: dependencies.business.website,
         gstNumber: dependencies.business.gstNumber,
         bankAccount: dependencies.business.bankAccount,
-        currency: "NZD",
-        gstRateBasisPoints: 1_500,
+        currency: seed.currency ?? "NZD",
+        gstRateBasisPoints: seed.gstRateBasisPoints ?? 1_500,
         pricesIncludeGst: true,
         actor,
         createdAt,

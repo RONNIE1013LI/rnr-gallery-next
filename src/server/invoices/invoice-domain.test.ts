@@ -93,6 +93,21 @@ describe("invoice totals", () => {
   ])("calculates $name", ({ items, discountCents, expected }) => {
     expect(calculateInvoiceTotals({ items, discountCents })).toEqual(expected);
   });
+
+  it("extracts the configured market tax without changing the gross total", () => {
+    const input = { items: [{ quantityMilli: 1_000, rateInclGstCents: 11_000 }], discountCents: 0 };
+
+    expect(calculateInvoiceTotals(input, 1_000)).toMatchObject({
+      subtotalExGstCents: 10_000,
+      gstCents: 1_000,
+      totalInclGstCents: 11_000,
+    });
+    expect(calculateInvoiceTotals(input, 0)).toMatchObject({
+      subtotalExGstCents: 11_000,
+      gstCents: 0,
+      totalInclGstCents: 11_000,
+    });
+  });
 });
 
 describe("invoice draft validation", () => {

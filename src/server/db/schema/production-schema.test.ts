@@ -197,8 +197,8 @@ describe("production job schema", () => {
     expect(getTableConfig(invoices).checks.map((item) => item.name)).toEqual(
       expect.arrayContaining([
         "invoices_status_valid",
-        "invoices_currency_nzd",
-        "invoices_gst_rate_fixed",
+        "invoices_currency_supported",
+        "invoices_tax_rate_valid",
         "invoices_totals_nonnegative",
         "invoices_totals_balance",
         "invoices_lifecycle_valid",

@@ -13,6 +13,7 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import { user } from "./auth";
+import type { MarketCurrency } from "@/domain/markets/types";
 import {
   orderItems,
   orders,
@@ -367,7 +368,7 @@ export const invoices = pgTable(
     customerEmail: text("customer_email").default("").notNull(),
     customerAddress: text("customer_address").default("").notNull(),
     deliveryAddress: text("delivery_address").default("").notNull(),
-    currency: text("currency").$type<"NZD">().default("NZD").notNull(),
+    currency: text("currency").$type<MarketCurrency>().default("NZD").notNull(),
     gstRateBasisPoints: integer("gst_rate_basis_points").default(1_500).notNull(),
     pricesIncludeGst: boolean("prices_include_gst").default(true).notNull(),
     grossCents: bigint("gross_cents", { mode: "number" }).notNull(),
@@ -398,10 +399,10 @@ export const invoices = pgTable(
     index("invoices_status_idx").on(table.status),
     index("invoices_created_at_idx").on(table.createdAt),
     check("invoices_status_valid", sql`${table.status} in ('draft', 'issued', 'void')`),
-    check("invoices_currency_nzd", sql`${table.currency} = 'NZD'`),
+    check("invoices_currency_supported", sql`${table.currency} in ('NZD', 'AUD')`),
     check(
-      "invoices_gst_rate_fixed",
-      sql`${table.gstRateBasisPoints} = 1500 and ${table.pricesIncludeGst} = true`,
+      "invoices_tax_rate_valid",
+      sql`${table.gstRateBasisPoints} >= 0 and ${table.gstRateBasisPoints} <= 10000 and ${table.pricesIncludeGst} = true`,
     ),
     check(
       "invoices_totals_nonnegative",

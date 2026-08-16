@@ -42,9 +42,7 @@ async function loadInvoice(database: Database, invoiceId: string): Promise<Invoi
     .orderBy(asc(invoiceItems.position));
   return Object.freeze({
     ...invoice,
-    gstRateBasisPoints: 1_500 as const,
     pricesIncludeGst: true as const,
-    currency: "NZD" as const,
     items: Object.freeze(items.map((item) => Object.freeze({
       position: item.position,
       code: item.code,
@@ -118,6 +116,8 @@ export function createDrizzleInvoiceRepository(database: Database): InvoiceRepos
         deliveryAddress: productionJobs.deliveryAddress,
         amountPayableCents: productionJobs.amountPayableCents,
         orderNumber: orders.orderNumber,
+        currency: orders.currency,
+        taxRateBasisPoints: orders.taxRateBasisPoints,
         shippingTotalInclGstCents: orders.shippingTotalInclGstCents,
         totalExGstCents: orders.totalExGstCents,
         totalGstCents: orders.totalGstCents,
@@ -161,6 +161,8 @@ export function createDrizzleInvoiceRepository(database: Database): InvoiceRepos
           customerEmail: job.customerEmail,
           customerAddress: addressText(billing),
           deliveryAddress: addressText(delivery ?? billing),
+          currency: job.currency ?? "NZD",
+          gstRateBasisPoints: job.taxRateBasisPoints ?? 1_500,
           items: Object.freeze(seededItems.map((item) => Object.freeze(item))),
           totals: Object.freeze({
             grossCents: job.totalInclGstCents ?? 0,

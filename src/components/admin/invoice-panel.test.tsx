@@ -123,7 +123,30 @@ describe("InvoicePanel", () => {
 
     const values = within(screen.getByTestId("invoice-totals")).getAllByRole("definition")
       .map((element) => element.textContent);
-    expect(values).toEqual(["$413.00", "−$0.00", "$365.00", "$48.00", "$413.00"]);
+    expect(values).toEqual(["NZ$413.00", "−NZ$0.00", "NZ$365.00", "NZ$48.00", "NZ$413.00"]);
+  });
+
+  it("renders an unregistered Australian invoice in AUD without NZ GST", async () => {
+    const australian = {
+      ...invoice,
+      currency: "AUD",
+      gstRateBasisPoints: 0,
+      grossCents: 41_300,
+      subtotalExGstCents: 41_300,
+      gstCents: 0,
+      totalInclGstCents: 41_300,
+    };
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ invoice: australian }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })));
+
+    render(<InvoicePanel jobId={invoice.jobId} />);
+    await screen.findByText("INV-RRM-2026-ABC123");
+
+    expect(screen.getByLabelText("Discount (AUD)")).toBeInTheDocument();
+    expect(screen.getAllByText("A$413.00 AUD")).toHaveLength(3);
+    expect(screen.queryByText(/GST \(/)).not.toBeInTheDocument();
   });
 
   it("recalculates GST-inclusive totals and persists the draft", async () => {
@@ -136,8 +159,8 @@ describe("InvoicePanel", () => {
     await screen.findByText("INV-RRM-2026-ABC123");
     fireEvent.change(screen.getByLabelText("Discount (NZD)"), { target: { value: "23.00" } });
     const totals = screen.getByTestId("invoice-totals");
-    expect(within(totals).getByText("$207.00")).toBeInTheDocument();
-    expect(within(totals).getByText("$27.00")).toBeInTheDocument();
+    expect(within(totals).getByText("NZ$207.00")).toBeInTheDocument();
+    expect(within(totals).getByText("NZ$27.00")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Save draft" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
     const payload = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
