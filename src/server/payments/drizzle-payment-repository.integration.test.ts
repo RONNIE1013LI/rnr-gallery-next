@@ -26,6 +26,31 @@ const orderIds: string[] = [];
 const sessionIds: string[] = [];
 const customerIds: string[] = [];
 
+const nzPricingSnapshot = {
+  schemaVersion: 1,
+  market: "NZ",
+  currency: "NZD",
+  priceBookRevision: 0,
+  taxJurisdiction: "NZ_GST",
+  taxRateBasisPoints: 1_500,
+  items: [],
+  productSubtotalExTaxCents: 6_500,
+  productTaxCents: 975,
+  productTotalInclTaxCents: 7_475,
+  designSurchargeCents: 0,
+  discountCents: 0,
+  shipping: {
+    method: "pickup",
+    serviceCode: "pickup",
+    currency: "NZD",
+    amountExTaxCents: 0,
+    taxCents: 0,
+    amountInclTaxCents: 0,
+  },
+  taxAmountCents: 975,
+  finalTotalCents: 7_475,
+} as const;
+
 async function createOrder(input: {
   owner?: "guest" | "customer";
   billingCountry?: "NZ" | "AU";
@@ -60,11 +85,18 @@ async function createOrder(input: {
       product_total_incl_gst_cents, shipping_ex_gst_cents,
       shipping_gst_cents, shipping_total_incl_gst_cents,
       total_ex_gst_cents, total_gst_cents, total_incl_gst_cents,
-      payment_status
+      pricing_snapshot, payment_status
     ) values ($1, $2, 1, $3, $4, 'payer@example.test', 'pickup',
-      'pickup', 'Pickup', 6500, 975, 7475, 0, 0, 0, 6500, 975, 7475, $5)
+      'pickup', 'Pickup', 6500, 975, 7475, 0, 0, 0, 6500, 975, 7475, $5, $6)
     returning id`,
-    [orderNumber, sessionId, randomUUID(), customerId, input.paymentStatus ?? "awaiting_payment"],
+    [
+      orderNumber,
+      sessionId,
+      randomUUID(),
+      customerId,
+      JSON.stringify(nzPricingSnapshot),
+      input.paymentStatus ?? "awaiting_payment",
+    ],
   );
   const orderId = order.rows[0].id;
   orderIds.push(orderId);

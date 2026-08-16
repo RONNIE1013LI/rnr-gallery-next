@@ -6,7 +6,7 @@ Updated: 16 August 2026. This document records code readiness only. It does not 
 
 - Unique absolute metadata, canonical URLs, Open Graph, Twitter cards and robots directives for public storefront, product, design and help pages.
 - `robots.txt` and a public-only sitemap containing active products and active, available design detail URLs.
-- Server-rendered Organization/WebSite, Breadcrumb and Product/Offer JSON-LD sourced from the current product registry. Currency is NZD and Offer prices use the same product data as the visible page.
+- Server-rendered Organization/WebSite, Breadcrumb and Product/Offer JSON-LD sourced from the current product registry. NZ pages use NZD; enabled AU pages use fixed AUD values from the same market quote as the visible page and checkout.
 - Public `/designs/[slug]` pages with stable readable slug plus short design ID, real 404 handling, metadata, breadcrumbs, related designs and a product-specific `Use This Design` route.
 - Consumer-facing prices use the shared integer-cent formatter and show `NZ$… incl GST` as the primary amount with excl-GST secondary copy where appropriate.
 - The configurator presents `Upload Photos Now` and `Send Photos After Ordering` as separate valid methods. Switching to send later does not delete existing uploaded references. Upload count pricing beyond 20 remains covered by automated pricing tests.
@@ -17,6 +17,11 @@ Updated: 16 August 2026. This document records code readiness only. It does not 
 - Purchase events are built only from a server-authorized order with `paymentStatus=paid`, use the real order number, exclude customer/design/upload data and are deduplicated by transaction ID in the browser session.
 - Public Gallery, design detail and configuration previews use responsive Next image output rather than downloading print-source images as thumbnails. Gallery remains server-paginated at 24 designs.
 - Existing Guest/User cart, checkout draft and payment recovery identity isolation remains covered by regression tests.
+- Separate versioned NZD and AUD price books cover products, sizes, options, photo charges, people/pet charges, urgent fees, design surcharges, discounts and shipping. No live conversion or NZ-to-AU fallback exists.
+- Stable `/au` and `/au/products/[slug]` routes, market cookie and visible country/currency selector are implemented. AU is disabled by default, noindex, absent from the sitemap and non-purchasable until every fixed AUD value is complete and Admin enables it.
+- Checkout treats shipping country as authoritative, reprices the full cart and shipping from one price-book revision, and stores an immutable market/currency/tax/line/shipping/discount/final-total order snapshot.
+- Stripe and payment attempts derive `nzd` or `aud` only from the stored order. Payment buttons, customer order pages, confirmation emails, Admin order views and web-order invoices format the stored currency.
+- Merchant-compatible product records are generated per market and size from the same fixed price-book cells. No Merchant feed is published.
 
 ### Performance evidence
 
@@ -70,6 +75,9 @@ Noindex and robots rules are discovery controls, not access control. Authenticat
 - Typed analytics/dataLayer adapter and purchase payload generation. `NEXT_PUBLIC_GOOGLE_ANALYTICS_ENABLED` defaults to `false`; no Google script is installed and no request is made.
 - Order-level attribution JSON storage and database migration `0022_lame_madame_masque.sql`.
 - Dynamic sitemap and Merchant-feed-compatible product facts sourced from the product registry. No Shopping feed is published.
+- AU storefront and AUD Stripe support are code-ready but remain closed. The default AU price book has no invented values and cannot be enabled while incomplete.
+- AU GST is Admin-configurable, defaults to unregistered with a 10% reference rate, and extracts included tax only when registration is enabled; it never increases a stored AUD gross price at checkout.
+- Database migrations `0023_gifted_runaways.sql`, `0024_nice_viper.sql` and `0025_unknown_turbo.sql` are prepared but not applied by this code-only run.
 - `docs/seo/legacy-url-map.csv` template. No redirect is active.
 
 ## Waiting for account access
@@ -86,7 +94,9 @@ Noindex and robots rules are discovery controls, not access control. Authenticat
 - Campaign budget, bidding, keywords, negatives, geographic targeting and Performance Max scope.
 - Guest-to-user marketing attribution policy beyond strict identity isolation.
 - Old WordPress URL disposition where no equivalent new content exists (404 versus 410).
-- AUD settlement or automatic currency display.
+- Complete fixed AUD product/option/charge/shipping price approval and explicit AU market enablement.
+- Confirm whether R&R Gallery is registered for Australian GST before enabling `AU_GST_REGISTERED`.
+- Confirm the production Stripe account can settle AUD and the desired AU Afterpay/Zip account configuration.
 
 ## Waiting for legal/policy approval
 
@@ -110,4 +120,8 @@ npm run db:check
 BETTER_AUTH_URL=https://rrgallery.co.nz BETTER_AUTH_SECRET='<build-only-secret>' npm run build
 ```
 
+Latest local verification on 16 August 2026: 270 Vitest files and 1,715 tests passed; TypeScript, ESLint, Drizzle migration consistency and the Next.js production build all exited successfully. Migrations were applied only to the dedicated local test database for integration testing, not to production.
+
 Playwright browser acceptance uses only `http://192.168.4.199:3000`; provider settlement and real payment are excluded until Ronnie performs the authorized real-payment check.
+
+The 16 August 2026 market-pricing browser check confirmed the visible selector, unchanged `NZ$264.50 incl GST` Roll-Up Banner price at 390px, and the closed AU page with no purchase CTA. `/au` returned `noindex, nofollow` and no AU URL appeared in the sitemap. Enabled-AU amounts and AUD provider sessions were verified with isolated automated fixtures only; no fictional AUD values were written to the live registry and no real payment was attempted.

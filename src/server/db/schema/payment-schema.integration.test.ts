@@ -9,6 +9,30 @@ const pool = new Pool({ connectionString: testDatabaseUrl });
 const sessionIds: string[] = [];
 const orderIds: string[] = [];
 const suffix = randomUUID();
+const nzPricingSnapshot = JSON.stringify({
+  schemaVersion: 1,
+  market: "NZ",
+  currency: "NZD",
+  priceBookRevision: 0,
+  taxJurisdiction: "NZ_GST",
+  taxRateBasisPoints: 1_500,
+  items: [],
+  productSubtotalExTaxCents: 6_500,
+  productTaxCents: 975,
+  productTotalInclTaxCents: 7_475,
+  designSurchargeCents: 0,
+  discountCents: 0,
+  shipping: {
+    method: "pickup",
+    serviceCode: "pickup",
+    currency: "NZD",
+    amountExTaxCents: 0,
+    taxCents: 0,
+    amountInclTaxCents: 0,
+  },
+  taxAmountCents: 975,
+  finalTotalCents: 7_475,
+});
 
 async function createOrder(label: string, totalInclGstCents = 7_475) {
   const session = await pool.query<{ id: string }>(
@@ -27,15 +51,17 @@ async function createOrder(label: string, totalInclGstCents = 7_475) {
        product_subtotal_ex_gst_cents, product_gst_cents,
        product_total_incl_gst_cents, shipping_ex_gst_cents,
        shipping_gst_cents, shipping_total_incl_gst_cents,
-       total_ex_gst_cents, total_gst_cents, total_incl_gst_cents
+       total_ex_gst_cents, total_gst_cents, total_incl_gst_cents,
+       pricing_snapshot
      ) VALUES ($1, $2, 1, $3, 'payment@example.test', 'pickup', 'pickup', 'Pickup',
-       6500, 975, 7475, 0, 0, 0, 6500, 975, $4)
+       6500, 975, 7475, 0, 0, 0, 6500, 975, $4, $5)
      RETURNING id`,
     [
       `RNR-${randomUUID()}`,
       sessionId,
       `payment-order-${label}-${suffix}`,
       totalInclGstCents,
+      nzPricingSnapshot,
     ],
   );
   const orderId = order.rows[0].id;
