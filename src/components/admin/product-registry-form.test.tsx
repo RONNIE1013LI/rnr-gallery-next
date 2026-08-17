@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
@@ -122,9 +122,11 @@ describe("product registry editor", () => {
 
     expect(screen.getByRole("heading", { name: "Australia — AUD" })).toBeInTheDocument();
     expect(screen.getByLabelText("Enable Australia checkout")).toBeDisabled();
+    expect(
+      within(screen.getByRole("group", { name: "Australia shipping" })).queryAllByRole("textbox"),
+    ).toHaveLength(0);
     expect(screen.getByText("GoSweetSpot live delivery")).toBeVisible();
     expect(screen.getByText("Calculated from the delivery address and package sizes at checkout.")).toBeVisible();
-    expect(screen.queryByLabelText(/shipping.*final price/i)).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Roll-Up Banner · standard final price (AUD)"), {
       target: { value: "320.00" },
     });
