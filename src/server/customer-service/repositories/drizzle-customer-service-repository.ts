@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, gte, lte, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, lte, max, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { getDatabase } from "@/server/db/client";
 import {
@@ -77,6 +77,15 @@ async function validatedAnalysisSummary(
   messageId: string,
   attachmentIds: readonly string[],
 ) {
+  const assessment = await validatedImageAssessment(database, messageId, attachmentIds);
+  return assessment?.status === "assessed" ? assessment.summary : null;
+}
+
+async function validatedImageAssessment(
+  database: Database,
+  messageId: string,
+  attachmentIds: readonly string[],
+) {
   const attempts = await database.select({
     id: customerServiceImageAnalysisAttempts.id,
     analysisResult: customerServiceImageAnalysisAttempts.analysisResult,
@@ -103,7 +112,10 @@ async function validatedAnalysisSummary(
         attempt.analysisResult,
         inputs.map((input) => input.ordinal),
       );
-      if (analysis.overallStatus === "assessed") return analysis.safeSummary;
+      return {
+        status: analysis.overallStatus === "assessed" ? "assessed" as const : "human_review_required" as const,
+        summary: analysis.safeSummary,
+      };
     } catch {
       // Invalid historical results are never reused in a new draft.
     }
@@ -586,10 +598,40 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         .orderBy(desc(customerServiceMessages.receivedAt), desc(customerServiceAiAttempts.attemptNumber))
         .limit(Math.max(1, Math.min(100, limit)));
       const seen = new Set<string>();
+      const items = rows.filter((row) => !seen.has(row.messageId) && Boolean(seen.add(row.messageId))).map((row) => ({
+        ...row,
+        receivedAt: row.receivedAt.toISOString(),
+      }));
+      const attachmentRows = items.length
+        ? await database.select({
+          messageId: customerServiceAttachments.messageId,
+          attachmentId: customerServiceAttachments.id,
+        }).from(customerServiceAttachments).where(inArray(
+          customerServiceAttachments.messageId,
+          items.map((item) => item.messageId),
+        )).orderBy(asc(customerServiceAttachments.ordinal))
+        : [];
+      const attachmentIdsByMessage = new Map<string, string[]>();
+      for (const attachment of attachmentRows) {
+        attachmentIdsByMessage.set(attachment.messageId, [
+          ...(attachmentIdsByMessage.get(attachment.messageId) ?? []),
+          attachment.attachmentId,
+        ]);
+      }
       return {
-        items: rows.filter((row) => !seen.has(row.messageId) && Boolean(seen.add(row.messageId))).map((row) => ({
-          ...row,
-          receivedAt: row.receivedAt.toISOString(),
+        items: await Promise.all(items.map(async (item) => {
+          const attachmentIds = attachmentIdsByMessage.get(item.messageId) ?? [];
+          const assessment = attachmentIds.length
+            ? await validatedImageAssessment(database, item.messageId, attachmentIds)
+            : null;
+          return {
+            ...item,
+            attachmentCount: attachmentIds.length,
+            imageAnalysisStatus: attachmentIds.length
+              ? assessment?.status ?? "human_review_required"
+              : "not_applicable",
+            imageAssessmentSummary: assessment?.summary ?? null,
+          };
         })),
       };
     },

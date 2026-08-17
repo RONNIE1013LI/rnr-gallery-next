@@ -10,6 +10,9 @@ const item = {
   latestAttemptId: "22222222-2222-4222-8222-222222222222",
   draftText: "Please send the original photo and we can assess it for you 😊",
   gateResult: "allowed",
+  attachmentCount: 0,
+  imageAnalysisStatus: "not_applicable" as const,
+  imageAssessmentSummary: null,
 };
 
 describe("ReplyAssistantClient", () => {
@@ -45,5 +48,49 @@ describe("ReplyAssistantClient", () => {
     render(<ReplyAssistantClient initialItems={[{ ...item, status: "blocked", draftText: null, gateResult: "high_risk" }]} />);
     expect(screen.getByText("Human review required")).toBeInTheDocument();
     expect(screen.queryByLabelText("Reply draft")).not.toBeInTheDocument();
+  });
+
+  it("shows only the validated image assessment summary", () => {
+    render(<ReplyAssistantClient initialItems={[{
+      ...item,
+      attachmentCount: 1,
+      imageAnalysisStatus: "assessed",
+      imageAssessmentSummary: "Image 0 appears cropped; request an uncropped version.",
+    }]} />);
+
+    expect(screen.getByText("Image assessment")).toBeInTheDocument();
+    expect(screen.getByText("Image 0 appears cropped; request an uncropped version.")).toBeInTheDocument();
+    expect(screen.queryByRole("img")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link")).not.toBeInTheDocument();
+  });
+
+  it("keeps image-only messages in human review and disables generation", () => {
+    render(<ReplyAssistantClient initialItems={[{
+      ...item,
+      body: "[Image attachment]",
+      status: "blocked",
+      draftText: null,
+      gateResult: "unresolved",
+      attachmentCount: 1,
+      imageAnalysisStatus: "human_review_required",
+      imageAssessmentSummary: null,
+    }]} />);
+
+    expect(screen.getByText("Human review required")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Generate AI Reply" })).toBeDisabled();
+  });
+
+  it("disables visual regeneration while retaining the manual copy flow", async () => {
+    render(<ReplyAssistantClient initialItems={[{
+      ...item,
+      attachmentCount: 1,
+      imageAnalysisStatus: "human_review_required",
+      imageAssessmentSummary: null,
+    }]} />);
+
+    expect(screen.getByText("Human review required")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Regenerate" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Accept unchanged" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled());
   });
 });

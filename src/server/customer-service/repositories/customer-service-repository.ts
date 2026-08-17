@@ -95,6 +95,9 @@ export type SafeQueuePage = Readonly<{
     latestAttemptId: string | null;
     draftText: string | null;
     gateResult: string | null;
+    attachmentCount: number;
+    imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
+    imageAssessmentSummary: string | null;
   }>[];
 }>;
 

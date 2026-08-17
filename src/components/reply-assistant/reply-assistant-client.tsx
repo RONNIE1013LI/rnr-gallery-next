@@ -11,6 +11,9 @@ export type ReplyQueueItem = Readonly<{
   latestAttemptId: string | null;
   draftText: string | null;
   gateResult: string | null;
+  attachmentCount: number;
+  imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
+  imageAssessmentSummary: string | null;
 }>;
 
 type ReviewState = Readonly<{ mode: "pending" | "editing" | "accepted" | "edited" | "rejected"; text: string }>;
@@ -92,18 +95,30 @@ export function ReplyAssistantClient({ initialItems }: Readonly<{ initialItems?:
       {items.length === 0 ? <p className={styles.empty}>No pilot messages yet.</p> : null}
       {items.map((item) => {
         const current = review(item);
-        const blocked = !item.draftText && item.gateResult !== null && item.gateResult !== "allowed";
+        const gateBlocked = !item.draftText && item.gateResult !== null && item.gateResult !== "allowed";
+        const imageOnly = item.attachmentCount > 0 && item.body === "[Image attachment]";
+        const visualReviewRequired = imageOnly || item.imageAnalysisStatus === "human_review_required";
+        const requiresHumanReview = gateBlocked || visualReviewRequired;
         const approved = current.mode === "accepted" || current.mode === "edited";
         return (
           <article className={styles.message} key={item.messageId}>
             <header>
               <time>{formatReplyReceivedAt(item.receivedAt)}</time>
-              <span data-risk={blocked}>{blocked ? "Human review required" : item.status.replaceAll("_", " ")}</span>
+              <span data-risk={requiresHumanReview}>{requiresHumanReview ? "Human review required" : item.status.replaceAll("_", " ")}</span>
             </header>
             <div className={styles.customerText}><strong>Customer</strong><p>{item.body}</p></div>
+            {item.attachmentCount > 0 ? (
+              <section className={styles.imageAssessment}>
+                <strong>Image assessment</strong>
+                <p>{item.imageAssessmentSummary ?? "No safe image assessment is available."}</p>
+              </section>
+            ) : null}
 
-            {blocked ? (
-              <div className={styles.blocked}>Risk: {item.gateResult?.replaceAll("_", " ")}</div>
+            {gateBlocked ? (
+              <>
+                <div className={styles.blocked}>Risk: {item.gateResult?.replaceAll("_", " ")}</div>
+                <button className={styles.generate} type="button" disabled>Generate AI Reply</button>
+              </>
             ) : item.draftText ? (
               <div className={styles.draftArea}>
                 <label htmlFor={`draft-${item.messageId}`}>Reply draft</label>
@@ -130,7 +145,7 @@ export function ReplyAssistantClient({ initialItems }: Readonly<{ initialItems?:
                     await feedback(item, "rejected", null, "human_rejected");
                     update(item, { mode: "rejected", text: current.text });
                   }}>Reject</button>
-                  <button type="button" disabled={busy === item.messageId} onClick={() => void generate(item, true)}>Regenerate</button>
+                  <button type="button" disabled={busy === item.messageId || visualReviewRequired} onClick={() => void generate(item, true)}>Regenerate</button>
                   <button type="button" disabled={!approved} onClick={async () => {
                     await navigator.clipboard.writeText(current.text);
                     await feedback(item, "copied", current.text, null);
@@ -139,7 +154,7 @@ export function ReplyAssistantClient({ initialItems }: Readonly<{ initialItems?:
                 </div>
               </div>
             ) : (
-              <button className={styles.generate} type="button" disabled={busy === item.messageId} onClick={() => void generate(item)}>Generate AI Reply</button>
+              <button className={styles.generate} type="button" disabled={busy === item.messageId || visualReviewRequired} onClick={() => void generate(item)}>Generate AI Reply</button>
             )}
           </article>
         );
