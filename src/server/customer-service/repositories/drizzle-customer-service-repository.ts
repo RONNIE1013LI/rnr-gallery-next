@@ -398,7 +398,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           }).from(customerServiceTurns).where(and(
             eq(customerServiceTurns.conversationId, conversation.id),
             eq(customerServiceTurns.status, "open"),
-            lte(customerServiceTurns.lastEventAt, input.receivedAt),
+            sql`${customerServiceTurns.openedAt} <= ${debounceUntil}`,
             sql`${customerServiceTurns.debounceUntil} >= ${input.receivedAt}`,
             sql`not exists (
               select 1 from ${customerServiceAttachments}
@@ -412,10 +412,10 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           && combinedBody.length <= 2_400;
         const [turn] = mayExtend && openTurn
           ? await transaction.update(customerServiceTurns).set({
-            body: combinedBody,
-            lastEventAt: input.receivedAt,
-            debounceUntil,
-            fragmentCount: openTurn.fragmentCount + 1,
+            openedAt: sql`least(${customerServiceTurns.openedAt}, ${input.receivedAt})`,
+            lastEventAt: sql`greatest(${customerServiceTurns.lastEventAt}, ${input.receivedAt})`,
+            debounceUntil: sql`greatest(${customerServiceTurns.debounceUntil}, ${debounceUntil})`,
+            fragmentCount: sql`${customerServiceTurns.fragmentCount} + 1`,
           }).where(and(
             eq(customerServiceTurns.id, openTurn.id),
             eq(customerServiceTurns.status, "open"),
@@ -429,12 +429,6 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             openedAt: input.receivedAt,
             lastEventAt: input.receivedAt,
           }).returning({ id: customerServiceTurns.id });
-        if (mayExtend && openTurn?.representativeMessageId) {
-          await transaction.update(customerServiceMessages).set({
-            body: combinedBody,
-            customerText: combinedBody,
-          }).where(eq(customerServiceMessages.id, openTurn.representativeMessageId));
-        }
         await transaction.insert(customerServiceConversationEvents).values({
           conversationId: conversation.id,
           turnId: turn.id,
@@ -445,6 +439,35 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           body,
           receivedAt: input.receivedAt,
         });
+        let representativeMessageId = message.id;
+        if (canAggregate) {
+          const orderedEvents = await transaction.select({
+            body: customerServiceConversationEvents.body,
+            legacyMessageId: customerServiceConversationEvents.legacyMessageId,
+            receivedAt: customerServiceConversationEvents.receivedAt,
+          }).from(customerServiceConversationEvents).where(
+            eq(customerServiceConversationEvents.turnId, turn.id),
+          ).orderBy(
+            asc(customerServiceConversationEvents.receivedAt),
+            asc(customerServiceConversationEvents.createdAt),
+            asc(customerServiceConversationEvents.id),
+          );
+          const firstEvent = orderedEvents[0];
+          const lastEvent = orderedEvents.at(-1);
+          representativeMessageId = firstEvent?.legacyMessageId ?? message.id;
+          const orderedBody = orderedEvents.map((event) => event.body).join("\n");
+          await transaction.update(customerServiceTurns).set({
+            representativeMessageId,
+            body: orderedBody,
+            openedAt: firstEvent?.receivedAt ?? input.receivedAt,
+            lastEventAt: lastEvent?.receivedAt ?? input.receivedAt,
+            fragmentCount: orderedEvents.length,
+          }).where(eq(customerServiceTurns.id, turn.id));
+          await transaction.update(customerServiceMessages).set({
+            body: orderedBody,
+            customerText: orderedBody,
+          }).where(eq(customerServiceMessages.id, representativeMessageId));
+        }
         if (input.attachments.length) {
           await transaction.insert(customerServiceAttachments).values(input.attachments.map((attachment) => ({
             messageId: message.id,
@@ -473,7 +496,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         }
         return {
           status: "turn_pending" as const,
-          messageId: openTurn?.representativeMessageId ?? message.id,
+          messageId: representativeMessageId,
           turnId: turn.id,
           debounceUntil,
         };
@@ -1528,6 +1551,21 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         gateResult: customerServiceAiAttempts.gateResult,
       }).from(customerServiceMessages)
         .leftJoin(customerServiceAiAttempts, eq(customerServiceAiAttempts.messageId, customerServiceMessages.id))
+        .where(sql`
+          exists (
+            select 1 from customer_service_turns turns
+            where turns.representative_message_id = ${customerServiceMessages.id}
+              and turns.status in ('sealed', 'pilot_complete')
+          )
+          or exists (
+            select 1 from customer_service_attachments attachments
+            where attachments.message_id = ${customerServiceMessages.id}
+          )
+          or not exists (
+            select 1 from customer_service_conversation_events events
+            where events.legacy_message_id = ${customerServiceMessages.id}
+          )
+        `)
         .orderBy(desc(customerServiceMessages.receivedAt), desc(customerServiceAiAttempts.attemptNumber))
         .limit(Math.max(1, Math.min(100, limit)));
       const seen = new Set<string>();
@@ -1572,6 +1610,12 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       const result = await database.execute(sql`
         select
           (select count(*) from customer_service_messages where pilot_run_id is not null) as total_incoming_eligible,
+          (select count(*) from customer_service_conversation_events where role = 'customer') as raw_customer_events,
+          (select count(*) from customer_service_conversation_events where role = 'staff') as staff_context_events,
+          (select count(*) from customer_service_turns where status in ('sealed', 'pilot_complete')) as meaningful_turns,
+          (select coalesce(sum(greatest(fragment_count - 1, 0)), 0) from customer_service_turns) as aggregated_fragments,
+          (select count(*) from customer_service_turns
+            where status = 'suppressed' and suppression_reason = 'completed_acknowledgement') as acknowledgements_suppressed,
           (select count(*) from customer_service_ai_attempts where status = 'draft_ready') as drafts_generated,
           (select count(*) from customer_service_feedback_events where action = 'accepted_unchanged') as accepted_unchanged,
           (select count(*) from customer_service_feedback_events where action = 'edited') as edited_accepted,
@@ -1622,6 +1666,11 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       const count = (name: string) => Number(row[name] ?? 0);
       return {
         totalIncomingEligible: count("total_incoming_eligible"),
+        rawCustomerEvents: count("raw_customer_events"),
+        staffContextEvents: count("staff_context_events"),
+        meaningfulTurns: count("meaningful_turns"),
+        aggregatedFragments: count("aggregated_fragments"),
+        acknowledgementsSuppressed: count("acknowledgements_suppressed"),
         draftsGenerated: count("drafts_generated"),
         acceptedUnchanged: count("accepted_unchanged"),
         editedAccepted: count("edited_accepted"),

@@ -148,6 +148,11 @@ export type SafeQueuePage = Readonly<{
 
 export type PilotMetricCounts = Readonly<{
   totalIncomingEligible: number;
+  rawCustomerEvents: number;
+  staffContextEvents: number;
+  meaningfulTurns: number;
+  aggregatedFragments: number;
+  acknowledgementsSuppressed: number;
   draftsGenerated: number;
   acceptedUnchanged: number;
   editedAccepted: number;

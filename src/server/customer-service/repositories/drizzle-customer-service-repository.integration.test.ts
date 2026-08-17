@@ -224,6 +224,55 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(pilotAfter.nextSequence).toBe(2);
   });
 
+  it("lists and counts a fragmented conversation as one meaningful customer turn", async () => {
+    await activateFacebookPilot("context-turn-metrics");
+    const conversationHash = "0".repeat(64);
+    await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "1".repeat(64),
+      text: "Which banner size and how many photos would you like?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    const fragments = await Promise.all([
+      ["2", "The 200 x 100 one", "2026-08-18T00:00:01.000Z"],
+      ["3", "around 5 photos", "2026-08-18T00:00:01.500Z"],
+      ["4", "for next Saturday", "2026-08-18T00:00:02.000Z"],
+    ].map(([key, text, receivedAt]) => repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: key.repeat(64),
+      text,
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date(receivedAt),
+    })));
+    expect(fragments.every((fragment) => fragment.status === "turn_pending")).toBe(true);
+    const turnId = fragments[0].status === "turn_pending" ? fragments[0].turnId : "";
+    await expect(repository.sealDueCustomerTurn({
+      turnId,
+      now: new Date("2026-08-18T00:00:04.000Z"),
+    })).resolves.toMatchObject({ status: "sealed", pilotSequence: 1 });
+
+    await expect(repository.listQueue(100)).resolves.toMatchObject({
+      items: [{
+        body: "The 200 x 100 one\naround 5 photos\nfor next Saturday",
+      }],
+    });
+    await expect(repository.metricCounts()).resolves.toMatchObject({
+      totalIncomingEligible: 1,
+      rawCustomerEvents: 3,
+      staffContextEvents: 1,
+      meaningfulTurns: 1,
+      aggregatedFragments: 2,
+      acknowledgementsSuppressed: 0,
+    });
+  });
+
   it("suppresses a completed acknowledgement before pilot allocation", async () => {
     await activateFacebookPilot("context-acknowledgement");
     const pending = await repository.ingestConversationEvent({

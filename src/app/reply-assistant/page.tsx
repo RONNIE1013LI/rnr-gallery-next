@@ -16,6 +16,8 @@ export default async function ReplyAssistantPage() {
     ? await Promise.all([runtime.repository.listQueue(100), runtime.repository.metricCounts()])
     : [emptyQueue, {
       totalIncomingEligible: 0, draftsGenerated: 0, acceptedUnchanged: 0, editedAccepted: 0,
+      rawCustomerEvents: 0, staffContextEvents: 0, meaningfulTurns: 0,
+      aggregatedFragments: 0, acknowledgementsSuppressed: 0,
       rejected: 0, gateBlocked: 0, outputValidatorBlocked: 0, providerCalls: 0,
       policyViolationAttempts: 0, totalCostMicrousd: 0, totalLatencyMs: 0,
       imageProviderCalls: 0, imageInputTokens: 0, imageCachedInputTokens: 0, imageOutputTokens: 0,
@@ -29,6 +31,10 @@ export default async function ReplyAssistantPage() {
   const metrics = calculatePilotMetrics(rawMetrics);
   const cards = [
     ["Incoming", metrics.totalIncomingEligible],
+    ["Raw customer events", rawMetrics.rawCustomerEvents],
+    ["Meaningful turns", rawMetrics.meaningfulTurns],
+    ["Aggregated fragments", rawMetrics.aggregatedFragments],
+    ["Acknowledgements suppressed", rawMetrics.acknowledgementsSuppressed],
     ["Drafts", metrics.draftsGenerated],
     ["Direct acceptance", `${Math.round(metrics.directAcceptanceRate * 100)}%`],
     ["Assisted acceptance", `${Math.round(metrics.assistedAcceptanceRate * 100)}%`],

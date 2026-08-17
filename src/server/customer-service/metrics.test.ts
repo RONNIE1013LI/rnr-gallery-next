@@ -5,6 +5,11 @@ describe("reply assistant pilot metrics", () => {
   it("uses explicit stable denominators", () => {
     expect(calculatePilotMetrics({
       totalIncomingEligible: 20,
+      rawCustomerEvents: 24,
+      staffContextEvents: 8,
+      meaningfulTurns: 20,
+      aggregatedFragments: 4,
+      acknowledgementsSuppressed: 2,
       draftsGenerated: 10,
       acceptedUnchanged: 4,
       editedAccepted: 3,
@@ -56,6 +61,8 @@ describe("reply assistant pilot metrics", () => {
   it("returns zero for zero denominators", () => {
     expect(calculatePilotMetrics({
       totalIncomingEligible: 0, draftsGenerated: 0, acceptedUnchanged: 0, editedAccepted: 0,
+      rawCustomerEvents: 0, staffContextEvents: 0, meaningfulTurns: 0,
+      aggregatedFragments: 0, acknowledgementsSuppressed: 0,
       rejected: 0, gateBlocked: 0, outputValidatorBlocked: 0, providerCalls: 0,
       policyViolationAttempts: 0, totalCostMicrousd: 0, totalLatencyMs: 0,
       imageProviderCalls: 0, imageInputTokens: 0, imageCachedInputTokens: 0,
