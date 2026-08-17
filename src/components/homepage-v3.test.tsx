@@ -525,6 +525,23 @@ describe("HomepageV3", () => {
     expect(container.querySelector('a[href="#"]')).not.toBeInTheDocument();
   });
 
+  it("keeps Australian homepage shopping links on direct AUD configuration routes", () => {
+    render(<HomepageV3 registry={defaultProductRegistry} market="AU" />);
+
+    expect(screen.getAllByRole("link", { name: "Start With Your Photos" })[0])
+      .toHaveAttribute("href", "/au/shop");
+    expect(screen.getByRole("link", { name: "Shop Custom Canvas" }))
+      .toHaveAttribute("href", "/au/canvas");
+    expect(screen.getByRole("link", { name: "Shop Wall Banners" }))
+      .toHaveAttribute("href", "/au/products/custom-themed-wall-banner/configure");
+    expect(screen.getByRole("link", { name: "Shop Roll-up Banners" }))
+      .toHaveAttribute("href", "/au/products/roll-up-banner/configure");
+    expect(screen.getByRole("link", { name: "Shop Grave Covers" }))
+      .toHaveAttribute("href", "/au/products/grave-cover/configure");
+    expect(screen.getByRole("link", { name: "View all products" }))
+      .toHaveAttribute("href", "/au/shop");
+  });
+
   it("preserves the approved physical product proportions", () => {
     const { container } = render(<HomepageV3 registry={defaultProductRegistry} />);
 

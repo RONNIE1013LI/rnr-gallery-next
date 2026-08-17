@@ -85,36 +85,36 @@ describe("site shell", () => {
     expect(screen.getByRole("link", { name: /r&r gallery home/i }))
       .toHaveAttribute("href", "/au");
     expect(screen.getAllByRole("link", { name: "Shop" })[0])
-      .toHaveAttribute("href", "/au");
+      .toHaveAttribute("href", "/au/shop");
     expect(screen.getAllByRole("link", { name: "Start a Design" })[0])
-      .toHaveAttribute("href", "/au");
+      .toHaveAttribute("href", "/au/shop");
 
     const shopMenu = screen.getByRole("navigation", { name: "Shop menu" });
     expect(within(shopMenu).getByRole("link", { name: "All products" }))
-      .toHaveAttribute("href", "/au");
-    expect(within(shopMenu).queryByRole("link", { name: "Canvas" }))
-      .not.toBeInTheDocument();
-    expect(within(shopMenu).queryByRole("link", { name: "Banners" }))
-      .not.toBeInTheDocument();
+      .toHaveAttribute("href", "/au/shop");
+    expect(within(shopMenu).getByRole("link", { name: "Canvas" }))
+      .toHaveAttribute("href", "/au/canvas");
+    expect(within(shopMenu).getByRole("link", { name: "Banners" }))
+      .toHaveAttribute("href", "/au/banners");
 
     fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
     const mobileMenu = screen.getByRole("navigation", { name: "Mobile navigation" });
     expect(within(mobileMenu).getByRole("link", { name: "Home" }))
       .toHaveAttribute("href", "/au");
     expect(within(mobileMenu).getByRole("link", { name: "Shop" }))
-      .toHaveAttribute("href", "/au");
-    expect(within(mobileMenu).queryByRole("link", { name: "Canvas" }))
-      .not.toBeInTheDocument();
-    expect(within(mobileMenu).queryByRole("link", { name: "Banners" }))
-      .not.toBeInTheDocument();
+      .toHaveAttribute("href", "/au/shop");
+    expect(within(mobileMenu).getByRole("link", { name: "Canvas" }))
+      .toHaveAttribute("href", "/au/canvas");
+    expect(within(mobileMenu).getByRole("link", { name: "Banners" }))
+      .toHaveAttribute("href", "/au/banners");
 
     const footer = screen.getByRole("contentinfo");
     expect(within(footer).getByRole("link", { name: "All products" }))
-      .toHaveAttribute("href", "/au");
-    expect(within(footer).queryByRole("link", { name: "Canvas" }))
-      .not.toBeInTheDocument();
-    expect(within(footer).queryByRole("link", { name: "Banners" }))
-      .not.toBeInTheDocument();
+      .toHaveAttribute("href", "/au/shop");
+    expect(within(footer).getByRole("link", { name: "Canvas" }))
+      .toHaveAttribute("href", "/au/canvas");
+    expect(within(footer).getByRole("link", { name: "Banners" }))
+      .toHaveAttribute("href", "/au/banners");
   });
 
   it("marks the current primary navigation destination", () => {

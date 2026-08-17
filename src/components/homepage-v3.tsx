@@ -11,6 +11,7 @@ import {
   publicDesignTitle,
 } from "@/domain/gallery/public-design-slug";
 import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
+import type { Market } from "@/domain/markets/types";
 import { getSiteUrl } from "@/server/seo/site-url";
 import {
   selectHomepageGalleryItems,
@@ -142,11 +143,16 @@ function GalleryArtworkCard({
 export function HomepageV3({
   registry,
   galleryItems = [],
+  market = "NZ",
 }: Readonly<{
   registry: ProductRegistryDocument;
   galleryItems?: readonly PublicGalleryItem[];
+  market?: Market;
 }>) {
   const products = getRegistryProducts(registry);
+  const shopHref = market === "AU" ? "/au/shop" : "/shop";
+  const canvasHref = market === "AU" ? "/au/canvas" : "/canvas";
+  const configureHref = (slug: string) => `${market === "AU" ? "/au" : ""}/products/${slug}/configure`;
   const homepageGalleryItems = selectHomepageGalleryItems(galleryItems);
   const galleryClassNames: Readonly<Record<HomepageGallerySlot, string>> = {
     "canvas-landscape": styles.galleryCanvasLandscape,
@@ -228,7 +234,7 @@ export function HomepageV3({
               from your photos and approved by you before printing.
             </p>
             <div className={styles.heroActions}>
-              <Link className={`${styles.button} ${styles.buttonPrimary}`} href="/shop">
+              <Link className={`${styles.button} ${styles.buttonPrimary}`} href={shopHref}>
                 Start With Your Photos
               </Link>
               <a className={styles.textLink} href="#transformation">
@@ -340,29 +346,29 @@ export function HomepageV3({
             {hasActiveCanvas ? (
               <article className={styles.productFeature}>
                 <Artwork slot={homepageV3ImageSlots.canvasProductImage} tone="sage" ratio="five-four" people={4} className={styles.productMedia} productRatio="canvas-5-4" />
-                <div className={styles.productCopy}><h3>Custom Canvas</h3><p>For family portraits, memorial compositions and artwork designed to live in the home.</p><Link className={styles.textLink} href="/canvas">Shop Custom Canvas <Arrow /></Link></div>
+                <div className={styles.productCopy}><h3>Custom Canvas</h3><p>For family portraits, memorial compositions and artwork designed to live in the home.</p><Link className={styles.textLink} href={canvasHref}>Shop Custom Canvas <Arrow /></Link></div>
               </article>
             ) : null}
             {hasActiveProduct("custom-themed-wall-banner") ? (
               <article className={styles.productFeature}>
                 <Artwork slot={homepageV3ImageSlots.wallBannerProductImage} tone="clay" ratio="five-four" people={4} className={styles.productMedia} productRatio="wall-banner-5-4" />
-                <div className={styles.productCopy}><h3>Wall Banner</h3><p>A large horizontal format for birthdays, memorials, family events and cultural celebrations.</p><Link className={styles.textLink} href="/products/custom-themed-wall-banner/configure">Shop Wall Banners <Arrow /></Link></div>
+                <div className={styles.productCopy}><h3>Wall Banner</h3><p>A large horizontal format for birthdays, memorials, family events and cultural celebrations.</p><Link className={styles.textLink} href={configureHref("custom-themed-wall-banner")}>Shop Wall Banners <Arrow /></Link></div>
               </article>
             ) : null}
             {hasActiveProduct("roll-up-banner") ? (
               <article className={styles.productVertical}>
                 <Artwork slot={homepageV3ImageSlots.rollupProductImage} tone="blue" ratio="four-five" people={2} className={styles.productMedia} productRatio="roll-up-4-5" sizes="380px" />
-                <div className={styles.productCopy}><h3>Roll-up Banner</h3><p>A custom-designed 85 × 200 cm printed roll-up banner supplied with its stand, carry bag, pegs and box.</p><Link className={styles.textLink} href="/products/roll-up-banner/configure">Shop Roll-up Banners <Arrow /></Link></div>
+                <div className={styles.productCopy}><h3>Roll-up Banner</h3><p>A custom-designed 85 × 200 cm printed roll-up banner supplied with its stand, carry bag, pegs and box.</p><Link className={styles.textLink} href={configureHref("roll-up-banner")}>Shop Roll-up Banners <Arrow /></Link></div>
               </article>
             ) : null}
             {hasActiveProduct("grave-cover") ? (
               <article className={styles.productVertical}>
                 <Artwork slot={homepageV3ImageSlots.graveCoverProductImage} tone="olive" ratio="four-five" people={2} className={styles.productMedia} productRatio="grave-cover-4-5" sizes="380px" />
-                <div className={styles.productCopy}><h3>Grave Cover</h3><p>A complete 100 cm × 200 cm vertical memorial format shown without horizontal cropping.</p><Link className={styles.textLink} href="/products/grave-cover/configure">Shop Grave Covers <Arrow /></Link></div>
+                <div className={styles.productCopy}><h3>Grave Cover</h3><p>A complete 100 cm × 200 cm vertical memorial format shown without horizontal cropping.</p><Link className={styles.textLink} href={configureHref("grave-cover")}>Shop Grave Covers <Arrow /></Link></div>
               </article>
             ) : null}
           </div>
-          <Link className={`${styles.textLink} ${styles.viewAllProducts}`} href="/shop">View all products <Arrow /></Link>
+          <Link className={`${styles.textLink} ${styles.viewAllProducts}`} href={shopHref}>View all products <Arrow /></Link>
           <div className={styles.discoverySupport} aria-label="Other ways to begin">
             <article className={styles.discoverySupportItem}>
               <p className={styles.eyebrow}>BROWSE BY OCCASION</p>
@@ -374,7 +380,7 @@ export function HomepageV3({
               <p className={styles.eyebrow}>START WITH YOUR PHOTOS</p>
               <h3>Use the photos you have.</h3>
               <p>You don&apos;t need perfect photos. We&apos;ll help you choose a suitable product and format.</p>
-              <Link className={styles.textLink} href="/shop">Start with your photos <Arrow /></Link>
+              <Link className={styles.textLink} href={shopHref}>Start with your photos <Arrow /></Link>
             </article>
             <article className={styles.discoverySupportItem}>
               <p className={styles.eyebrow}>DESIGN HELP</p>
@@ -486,7 +492,7 @@ export function HomepageV3({
       <section id="final-cta" className={`${styles.finalCta} ${styles.sectionDark}`}>
         <div className={`${styles.shell} ${styles.finalCtaGrid}`}>
           <div><p className={`${styles.eyebrow} ${styles.eyebrowLight}`}>A PLACE TO START</p><h2>You don&apos;t need perfect photos.<br />You just need a place to start.</h2><p>Upload what you have, tell us what the piece is for, and we&apos;ll guide you from there.</p></div>
-          <div className={styles.finalActions}><Link className={`${styles.button} ${styles.buttonLight}`} href="/shop">Start With Your Photos</Link><a className={`${styles.textLink} ${styles.textLinkLight}`} href="#products">Get product guidance <Arrow /></a></div>
+          <div className={styles.finalActions}><Link className={`${styles.button} ${styles.buttonLight}`} href={shopHref}>Start With Your Photos</Link><a className={`${styles.textLink} ${styles.textLinkLight}`} href="#products">Get product guidance <Arrow /></a></div>
         </div>
       </section>
     </main>

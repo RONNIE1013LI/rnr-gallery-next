@@ -18,7 +18,7 @@ export function ProductCard({
   priceInclTaxCents?: number;
 }>) {
   const destination = market === "AU"
-    ? `/au/products/${product.slug}`
+    ? `/au/products/${product.slug}/configure`
     : `/products/${product.slug}/configure`;
   const displayPrice = priceInclTaxCents ?? addNzdGst(product.startingPriceExGstCents);
   const taxLabel = market === "NZ" ? " incl GST" : "";

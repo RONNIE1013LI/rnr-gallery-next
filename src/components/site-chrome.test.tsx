@@ -16,9 +16,9 @@ import { SiteChrome } from "./site-chrome";
 describe("SiteChrome", () => {
   it.each([
     ["/", "/au"],
-    ["/shop", "/au"],
-    ["/canvas", "/au"],
-    ["/banners", "/au"],
+    ["/shop", "/au/shop"],
+    ["/canvas", "/au/canvas"],
+    ["/banners", "/au/banners"],
     ["/products/roll-up-banner/configure", "/au/products/roll-up-banner/configure"],
   ])("replaces stale NZ commerce route %s when AU is selected", async (pathname, destination) => {
     state.pathname = pathname;

@@ -23,14 +23,18 @@ export function marketSwitchDestination(pathname: string, market: Market): strin
     return stripped || "/";
   }
   if (pathname === "/") return "/au";
+  if (pathname === "/shop") return "/au/shop";
+  if (pathname === "/canvas") return "/au/canvas";
+  if (pathname === "/banners") return "/au/banners";
   if (pathname.startsWith("/products/")) return `/au${pathname}`;
   return "/au";
 }
 
 export function australianCommerceDestination(pathname: string): string | null {
-  if (pathname === "/" || pathname === "/shop" || pathname === "/canvas" || pathname === "/banners") {
-    return "/au";
-  }
+  if (pathname === "/") return "/au";
+  if (pathname === "/shop") return "/au/shop";
+  if (pathname === "/canvas") return "/au/canvas";
+  if (pathname === "/banners") return "/au/banners";
   if (pathname.startsWith("/products/")) return `/au${pathname}`;
   return null;
 }

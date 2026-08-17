@@ -72,6 +72,9 @@ describe("public SEO routes", () => {
       .map((entry) => entry.url);
 
     expect(urls).toContain("https://shop.example.test/au");
+    expect(urls).toContain("https://shop.example.test/au/shop");
+    expect(urls).toContain("https://shop.example.test/au/canvas");
+    expect(urls).toContain("https://shop.example.test/au/banners");
     for (const product of registry.products.filter((entry) => entry.active)) {
       expect(urls).toContain(`https://shop.example.test/au/products/${product.slug}`);
     }

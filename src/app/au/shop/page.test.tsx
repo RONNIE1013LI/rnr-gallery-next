@@ -4,7 +4,7 @@ import {
   defaultProductRegistry,
   parseProductRegistry,
 } from "@/domain/catalogue/product-registry";
-import AustraliaPage, { generateMetadata } from "./page";
+import AustraliaShopPage, { generateMetadata } from "./page";
 
 const state = vi.hoisted(() => ({ registry: undefined as unknown }));
 
@@ -22,9 +22,7 @@ function enabledAustraliaRegistry() {
     (product) => product.productKey === "roll-up-banner",
   )!;
   rollUp.sizes.find((size) => size.sizeKey === "standard")!.amountInclTaxCents = 32_000;
-  for (const fee of registry.markets.AU.peoplePets.fees) {
-    fee.amountInclTaxCents = fee.count * 6_000;
-  }
+  for (const fee of registry.markets.AU.peoplePets.fees) fee.amountInclTaxCents = fee.count * 6_000;
   registry.markets.AU.peoplePets.additionalEachInclTaxCents = 4_000;
   for (const fee of registry.markets.AU.urgentServiceFees) fee.amountInclTaxCents = 10_000;
   for (const shipping of registry.markets.AU.shippingMethods) shipping.amountInclTaxCents = 4_500;
@@ -32,40 +30,33 @@ function enabledAustraliaRegistry() {
   return parseProductRegistry(registry);
 }
 
-describe("Australia storefront", () => {
+describe("Australia shop", () => {
   beforeEach(() => {
     state.registry = defaultProductRegistry;
   });
 
-  it("keeps the stable AU URL closed and noindex while pricing is disabled", async () => {
-    render(await AustraliaPage());
+  it("keeps the catalogue unavailable while AU pricing is disabled", async () => {
+    render(await AustraliaShopPage());
 
     expect(screen.getByRole("heading", {
       name: "Australia ordering is not available yet.",
     })).toBeVisible();
-    expect(screen.queryByText(/A\$\d/)).not.toBeInTheDocument();
     expect(await generateMetadata()).toMatchObject({
       robots: { index: false, follow: false },
     });
   });
 
-  it("publishes only explicit AUD prices after the complete book is enabled", async () => {
+  it("shows AUD products and sends product clicks directly to configuration", async () => {
     state.registry = enabledAustraliaRegistry();
-    render(await AustraliaPage());
+    render(await AustraliaShopPage());
 
-    expect(screen.getByRole("heading", {
-      name: "From the photos you have to the piece you imagined.",
-    })).toBeVisible();
-    expect(screen.queryByRole("heading", { name: "Custom artwork for Australia." }))
-      .not.toBeInTheDocument();
-    expect(screen.getAllByRole("link", { name: "Start With Your Photos" })[0])
-      .toHaveAttribute("href", "/au/shop");
-    expect(screen.getByRole("link", { name: "Shop Roll-up Banners" })).toHaveAttribute(
-      "href",
-      "/au/products/roll-up-banner/configure",
-    );
+    expect(screen.getByRole("heading", { name: "Custom artwork for Australia." })).toBeVisible();
+    expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
+    expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Roll-Up Banner" }).closest("a"))
+      .toHaveAttribute("href", "/au/products/roll-up-banner/configure");
     expect(await generateMetadata()).toMatchObject({
-      alternates: { canonical: "https://rrgallery.co.nz/au" },
+      alternates: { canonical: "https://rrgallery.co.nz/au/shop" },
       robots: { index: true, follow: true },
     });
   });

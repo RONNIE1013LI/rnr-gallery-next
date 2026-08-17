@@ -144,15 +144,16 @@ export function SiteHeader({
     ? "AU"
     : initialMarket;
   const homeHref = market === "AU" ? "/au" : "/";
-  const shopHref = market === "AU" ? "/au" : "/shop";
+  const shopHref = market === "AU" ? "/au/shop" : "/shop";
   const visibleShopMenu = market === "AU"
-    ? [{ ...shopMenu[0], href: "/au" }] as const
+    ? shopMenu.map((item) => ({ ...item, href: `/au${item.href}` }))
     : shopMenu;
   const visibleMobileNavigation = market === "AU"
     ? mobileNavigation
-        .filter((item) => item.label !== "Canvas" && item.label !== "Banners")
-        .map((item) => item.label === "Home" || item.label === "Shop"
+        .map((item) => item.label === "Home"
           ? { ...item, href: "/au" }
+          : ["Shop", "Canvas", "Banners"].includes(item.label)
+            ? { ...item, href: `/au${item.href}` }
           : item)
     : mobileNavigation;
   const mobileMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);

@@ -33,7 +33,9 @@ export function SiteFooter({
   content = defaultContent,
   market = "NZ",
 }: Readonly<{ content?: SiteFooterContent; market?: Market }>) {
-  const shopHref = market === "AU" ? "/au" : "/shop";
+  const shopHref = market === "AU" ? "/au/shop" : "/shop";
+  const canvasHref = market === "AU" ? "/au/canvas" : "/canvas";
+  const bannersHref = market === "AU" ? "/au/banners" : "/banners";
   return (
     <footer className="site-footer">
       <div className="site-footer__grid">
@@ -81,8 +83,8 @@ export function SiteFooter({
           <p className="site-footer__title">Shop</p>
           <ul>
             <li><Link href={shopHref}>All products</Link></li>
-            {market === "NZ" ? <li><Link href="/canvas">Canvas</Link></li> : null}
-            {market === "NZ" ? <li><Link href="/banners">Banners</Link></li> : null}
+            <li><Link href={canvasHref}>Canvas</Link></li>
+            <li><Link href={bannersHref}>Banners</Link></li>
           </ul>
         </div>
 

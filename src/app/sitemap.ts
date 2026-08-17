@@ -52,6 +52,9 @@ export function buildPublicSitemap(
     ...(australiaReady
       ? [
           entry("/au", 0.8, "weekly"),
+          entry("/au/shop", 0.8, "weekly"),
+          entry("/au/canvas", 0.8, "weekly"),
+          entry("/au/banners", 0.8, "weekly"),
           ...registry.products.filter((product) => product.active).map((product) =>
             entry(`/au/products/${product.slug}`, 0.8, "weekly"),
           ),

@@ -44,7 +44,7 @@ describe("ProductCard", () => {
 
     expect(screen.getByRole("link")).toHaveAttribute(
       "href",
-      `/au/products/${product.slug}`,
+      `/au/products/${product.slug}/configure`,
     );
     expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
     expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
