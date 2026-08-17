@@ -108,3 +108,40 @@ Addressed all four findings from `task-7-review.md` in the scoped fix commit (`f
 ### Concerns
 
 Historical pre-migration image attempts intentionally receive no attempt-owned deletion proof and are therefore not reusable. Backfilling `deleted` from the old shared attachment row would recreate the reviewed concurrency vulnerability; affected manual regenerations fail closed until a new safe analysis is available. Task 8 remains responsible for the ephemeral Meta handoff. No live OpenAI request was made.
+
+## Fix Round 2
+
+### Status
+
+Addressed both remaining findings from the scoped Task 7 re-review in the fix-round-2 commit (`fix: guard legacy image migration state`).
+
+### TDD Evidence
+
+- Six exact advisory/negated assessment sentences first returned additive validator blocks, including `We need to assess whether this photo can be fully restored.` and the equivalent print-assessment form.
+- Two `whether ... depends on ...` conditional assessment cases first returned blocks.
+- An introductory negated clause first suppressed a later definitive print claim. Comma and contrast boundaries now isolate the clauses, and the later claim remains blocked.
+- Independent review found the same suppression when clauses were joined with `and`; the exact regression first passed incorrectly and now blocks the later definitive assertion.
+- The migration contract first failed because `0024` had no legacy `provider_pending` precondition before its first schema change.
+- Against a disposable database stopped at migration `0023`, `0024` first aborted with `customer_service_legacy_provider_pending_image_attempts`; zero new reservation columns were added and both aggregate reservations remained untouched. After explicitly draining the fixture and zeroing its test reservations, the same migration succeeded.
+
+### Changes
+
+- The additive visual validator now evaluates sentence clauses and exempts only questions, explicit assessment deferrals, withheld confirmations/guarantees, and `whether ... depends on ...` conditions.
+- Prior definitive restoration and print examples remain blocked, including a definitive claim after a negated contrast clause.
+- Migration `0024` now executes a fail-closed `provider_pending` image-attempt guard before any `ALTER TABLE` statement.
+- The migration does not infer, backfill, decrement, or otherwise invent a legacy reservation amount or daily scope.
+
+### Migration Behavior
+
+If any legacy image attempt is still `provider_pending`, migration `0024` aborts before changing the schema with `customer_service_legacy_provider_pending_image_attempts`. Operators must reconcile the in-flight attempt and its shared daily/total reservation under the pre-migration system, then rerun the migration. This is the safe transition because image analysis has not been Production-enabled and the old schema cannot prove ownership of an aggregate reservation.
+
+### Verification
+
+- Additive image validator: 29 tests passed.
+- Isolated PostgreSQL repository and schema contract: 2 files passed, 25 tests passed.
+- Disposable pre-`0024` migration guard: abort-before-change and post-reconciliation success both verified without printing credentials.
+- Full focused orchestration/policy/public-route/no-send checks, typecheck, scoped ESLint, Drizzle consistency, diff checks, and unchanged-validator hash were rerun before commit.
+
+### Concerns
+
+The migration intentionally requires manual reconciliation if a legacy image attempt is `provider_pending`; it cannot safely infer ownership from aggregate budget rows. No Production or send behavior changed, and no live OpenAI request was made.

@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { getTableColumns, getTableName } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { Client } from "pg";
@@ -28,6 +30,20 @@ const tables = [
 ];
 
 describe("customer service schema contract", () => {
+  it("guards legacy provider-pending image attempts before migration changes", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0024_shocking_silver_surfer.sql"),
+      "utf8",
+    );
+    const guard = migration.indexOf("customer_service_legacy_provider_pending_image_attempts");
+    const firstSchemaChange = migration.indexOf("ALTER TABLE");
+
+    expect(guard).toBeGreaterThanOrEqual(0);
+    expect(guard).toBeLessThan(firstSchemaChange);
+    expect(migration).toContain("status = 'provider_pending'");
+    expect(migration).toContain("RAISE EXCEPTION");
+  });
+
   it("defines the nine additive reply assistant tables", () => {
     expect(tables.map(getTableName)).toEqual([
       "customer_service_pilot_runs",

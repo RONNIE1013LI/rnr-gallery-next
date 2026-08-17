@@ -42,4 +42,30 @@ describe("image draft validator", () => {
       "We can review whether the file may be suitable for printing and assess what restoration is possible.",
     )).toEqual({ ok: true, codes: [] });
   });
+
+  it.each([
+    "We need to assess whether this photo can be fully restored.",
+    "We need to assess whether this photo is suitable for print.",
+    "We cannot confirm this photo is suitable for print without reviewing the original.",
+    "We cannot say we will restore it.",
+    "We cannot guarantee that this photo can be fully restored.",
+    "It is not yet possible to say whether this file will be perfect for printing.",
+    "Could this file be suitable for printing?",
+    "Whether this photo can be fully restored depends on assessing the original file.",
+    "Whether this photo is suitable for print depends on reviewing the original file.",
+  ])("accepts assessment-dependent or explicitly withheld claim: %s", (draft) => {
+    expect(validateImageDraft(draft)).toEqual({ ok: true, codes: [] });
+  });
+
+  it("still blocks a definitive claim in a contrast clause", () => {
+    expect(validateImageDraft(
+      "We cannot confirm the source resolution, but this photo is suitable for print.",
+    )).toEqual({ ok: false, codes: ["visual_print_suitability_claim"] });
+    expect(validateImageDraft(
+      "Although we cannot confirm the source resolution, this photo is suitable for print.",
+    )).toEqual({ ok: false, codes: ["visual_print_suitability_claim"] });
+    expect(validateImageDraft(
+      "We cannot confirm the source resolution and this photo is suitable for print.",
+    )).toEqual({ ok: false, codes: ["visual_print_suitability_claim"] });
+  });
 });

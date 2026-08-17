@@ -1,3 +1,13 @@
+DO $$
+BEGIN
+	IF EXISTS (
+		SELECT 1
+		FROM "customer_service_image_analysis_attempts"
+		WHERE status = 'provider_pending'
+	) THEN
+		RAISE EXCEPTION 'customer_service_legacy_provider_pending_image_attempts';
+	END IF;
+END $$;--> statement-breakpoint
 ALTER TABLE "customer_service_image_analysis_attempts" ADD COLUMN "reserved_cost_microusd" bigint DEFAULT 0 NOT NULL;--> statement-breakpoint
 ALTER TABLE "customer_service_image_analysis_attempts" ADD COLUMN "budget_daily_scope_key" text;--> statement-breakpoint
 ALTER TABLE "customer_service_image_analysis_inputs" ADD COLUMN "external_attachment_key_hash" text;--> statement-breakpoint
