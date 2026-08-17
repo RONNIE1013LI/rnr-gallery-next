@@ -36,6 +36,29 @@ const fixturePath = resolve("src/server/customer-service/fixtures/image-evaluati
 const manifestPath = resolve("src/server/customer-service/fixtures/image-evaluation-assets/manifest.json");
 
 describe("reply assistant image evaluation", () => {
+  it("documents realistic image quality as human-only and never satisfied by the mock harness", () => {
+    const plan = readFileSync(
+      resolve("docs/testing/2026-08-17-realistic-image-quality-eval.md"),
+      "utf8",
+    );
+
+    expect(plan).toContain("Runtime status: HUMAN_ONLY");
+    expect(plan).toContain("Realistic automated quality validation: NOT RUN");
+    expect(plan).toContain("Mock 80-case result: DETERMINISTIC REGRESSION ONLY");
+    for (const category of [
+      "blurry portrait",
+      "screenshot",
+      "small face",
+      "cropped face",
+      "group photo",
+      "low-resolution image",
+      "reference banner/design",
+    ]) expect(plan).toContain(category);
+    expect(plan).toMatch(/approved.*real vision provider/i);
+    expect(plan).toMatch(/Ronnie.*human review/i);
+    expect(plan).not.toContain("Realistic automated quality validation: PASS");
+  });
+
   it("loads exactly 80 privacy-safe cases with the required distribution and verified provenance", async () => {
     const dataset = await loadImageEvaluationDataset({ fixturePath, manifestPath });
 
