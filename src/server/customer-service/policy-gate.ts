@@ -60,7 +60,7 @@ const INTENT_RULES: Record<CustomerServiceIntent, readonly string[]> = {
 function realtimeReason(message: string, intent: CustomerServiceIntent) {
   if (intent === "quote_information_collection") {
     if (isGenericBannerQuoteEnquiry(message)) return "";
-    return /\bhow much\b|\bcurrent price\b|\bprice (?:is|for)\b|\bcost (?:is|of|for)\b|\bA[0-4]\b|\b\d+\s*[x×]\s*\d+\b/i.test(message)
+    return /\bhow much\b|\bcurrent price\b|\bprice (?:is|for)\b|\bcost (?:is|of|for)\b|\bquote for\b/i.test(message)
       ? "realtime_data_required"
       : "";
   }

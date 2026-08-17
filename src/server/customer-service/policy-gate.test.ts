@@ -60,6 +60,16 @@ describe("customer service policy gate", () => {
       intentOverride: "quote_information_collection",
       knowledge: compiledKnowledge,
     })).toMatchObject({ providerAllowed: true, intent: "quote_information_collection" });
+    expect(evaluatePolicyGate({
+      message: "A1",
+      intentOverride: "quote_information_collection",
+      knowledge: compiledKnowledge,
+    })).toMatchObject({ providerAllowed: true, intent: "quote_information_collection" });
+    expect(evaluatePolicyGate({
+      message: "How much is A1?",
+      intentOverride: "quote_information_collection",
+      knowledge: compiledKnowledge,
+    })).toMatchObject({ providerAllowed: false, reason: "realtime_data_required" });
   });
 
   it("blocks evidence-based and unresolved supporting rules", () => {
