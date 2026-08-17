@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   customerServiceAiAttempts,
@@ -365,6 +365,54 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
         messageId: afterTextId,
         conversationId,
         externalAttachmentKeyHash: "g".repeat(64),
+        ordinal: 0,
+      },
+    ]);
+
+    await expect(repository.selectImageContext(currentId)).resolves.toEqual({
+      messageId: currentId,
+      attachmentIds: [afterTextAttachmentId],
+      analysisSummary: null,
+    });
+  });
+
+  it("keeps microsecond createdAt ordering in PostgreSQL for image context boundaries", async () => {
+    const receivedAt = new Date("2026-08-17T00:00:00.000Z");
+    const conversationId = "00000000-0000-0000-0000-000000000002";
+    const beforeTextId = "00000000-0000-0000-0000-000000000110";
+    const textBoundaryId = "00000000-0000-0000-0000-000000000120";
+    const afterTextId = "00000000-0000-0000-0000-000000000130";
+    const currentId = "00000000-0000-0000-0000-000000000140";
+    const beforeTextAttachmentId = "00000000-0000-0000-0000-000000000201";
+    const afterTextAttachmentId = "00000000-0000-0000-0000-000000000203";
+
+    await database.insert(customerServiceConversations).values({
+      id: conversationId,
+      channel: "facebook",
+      externalKeyHash: "h".repeat(64),
+    });
+    await database.execute(sql`
+      insert into customer_service_messages (
+        id, conversation_id, channel, external_message_key_hash, body, customer_text, received_at, created_at
+      ) values
+        (${beforeTextId}, ${conversationId}, 'facebook', ${"i".repeat(64)}, '[Image attachment]', null, ${receivedAt}, '2026-08-17 00:00:01.000001+00'),
+        (${textBoundaryId}, ${conversationId}, 'facebook', ${"j".repeat(64)}, 'A new request', 'A new request', ${receivedAt}, '2026-08-17 00:00:01.000002+00'),
+        (${afterTextId}, ${conversationId}, 'facebook', ${"k".repeat(64)}, '[Image attachment]', null, ${receivedAt}, '2026-08-17 00:00:01.000003+00'),
+        (${currentId}, ${conversationId}, 'facebook', ${"l".repeat(64)}, 'Can you use it?', 'Can you use it?', ${receivedAt}, '2026-08-17 00:00:01.000004+00')
+    `);
+    await database.insert(customerServiceAttachments).values([
+      {
+        id: beforeTextAttachmentId,
+        messageId: beforeTextId,
+        conversationId,
+        externalAttachmentKeyHash: "m".repeat(64),
+        ordinal: 0,
+      },
+      {
+        id: afterTextAttachmentId,
+        messageId: afterTextId,
+        conversationId,
+        externalAttachmentKeyHash: "n".repeat(64),
         ordinal: 0,
       },
     ]);

@@ -1,4 +1,5 @@
-import { and, asc, desc, eq, gte, lt, lte, max, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lte, max, sql } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import type { getDatabase } from "@/server/db/client";
 import {
   customerServiceAiAttempts,
@@ -158,8 +159,6 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       const [current] = await database.select({
         id: customerServiceMessages.id,
         conversationId: customerServiceMessages.conversationId,
-        receivedAt: customerServiceMessages.receivedAt,
-        createdAt: customerServiceMessages.createdAt,
       }).from(customerServiceMessages).where(eq(customerServiceMessages.id, messageId)).limit(1);
       if (!current) return null;
 
@@ -178,29 +177,20 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         };
       }
 
+      const currentMessage = alias(customerServiceMessages, "current_image_context_message");
+      const candidateMessage = alias(customerServiceMessages, "candidate_image_context_message");
       const preceding = await database.select({
-        id: customerServiceMessages.id,
-        customerText: customerServiceMessages.customerText,
-      }).from(customerServiceMessages).where(and(
-        eq(customerServiceMessages.conversationId, current.conversationId),
-        gte(customerServiceMessages.receivedAt, new Date(current.receivedAt.getTime() - 5 * 60_000)),
-        or(
-          lt(customerServiceMessages.receivedAt, current.receivedAt),
-          and(
-            eq(customerServiceMessages.receivedAt, current.receivedAt),
-            or(
-              lt(customerServiceMessages.createdAt, current.createdAt),
-              and(
-                eq(customerServiceMessages.createdAt, current.createdAt),
-                lt(customerServiceMessages.id, current.id),
-              ),
-            ),
-          ),
-        ),
-      )).orderBy(
-        desc(customerServiceMessages.receivedAt),
-        desc(customerServiceMessages.createdAt),
-        desc(customerServiceMessages.id),
+        id: candidateMessage.id,
+        customerText: candidateMessage.customerText,
+      }).from(currentMessage).innerJoin(candidateMessage, and(
+        eq(candidateMessage.conversationId, currentMessage.conversationId),
+        gte(candidateMessage.receivedAt, sql`${currentMessage.receivedAt} - interval '5 minutes'`),
+        sql`(${candidateMessage.receivedAt}, ${candidateMessage.createdAt}, ${candidateMessage.id})
+          < (${currentMessage.receivedAt}, ${currentMessage.createdAt}, ${currentMessage.id})`,
+      )).where(eq(currentMessage.id, messageId)).orderBy(
+        desc(candidateMessage.receivedAt),
+        desc(candidateMessage.createdAt),
+        desc(candidateMessage.id),
       );
       const attachmentIds: string[] = [];
       for (const message of preceding) {
