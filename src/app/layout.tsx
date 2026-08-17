@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
-import { GoogleAnalytics } from "@next/third-parties/google";
+import { AnalyticsRuntimeController } from "@/components/analytics-runtime-controller";
 import { SiteChrome } from "@/components/site-chrome";
-import { GA4_MEASUREMENT_ID, isGa4Production } from "@/domain/analytics/runtime";
+import { isGa4Production } from "@/domain/analytics/runtime";
 import { getSafePublicContent } from "@/server/admin/admin-content-runtime";
 import { getSiteUrl } from "@/server/seo/site-url";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
@@ -70,7 +70,6 @@ export default async function RootLayout({
     <html
       lang="en"
       data-scroll-behavior="smooth"
-      data-ga4-enabled={ga4Enabled ? "true" : undefined}
     >
       <body>
         <a className="skip-link" href="#main-content">Skip to content</a>
@@ -87,7 +86,7 @@ export default async function RootLayout({
           {children}
         </SiteChrome>
       </body>
-      {ga4Enabled ? <GoogleAnalytics gaId={GA4_MEASUREMENT_ID} /> : null}
+      <AnalyticsRuntimeController production={ga4Enabled} />
     </html>
   );
 }

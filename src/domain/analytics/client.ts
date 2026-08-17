@@ -2,7 +2,11 @@
 
 import { sendGAEvent } from "@next/third-parties/google";
 import type { AnalyticsEvent, AnalyticsItem } from "./events";
-import { GA4_DEBUG_SESSION_KEY } from "./runtime";
+import {
+  GA4_DEBUG_SESSION_KEY,
+  GA4_DISABLE_WINDOW_KEY,
+  GA4_SAFE_PURCHASE_PATH,
+} from "./runtime";
 
 function allowlistedItem(item: AnalyticsItem): Record<string, unknown> {
   return {
@@ -85,32 +89,48 @@ function hasReadyDataLayer(): boolean {
 }
 
 function isDebugSession(): boolean {
-  const control = new URLSearchParams(window.location.search).get("ga_debug");
-  if (control === "1") {
-    window.sessionStorage.setItem(GA4_DEBUG_SESSION_KEY, "true");
-  } else if (control === "0") {
-    window.sessionStorage.removeItem(GA4_DEBUG_SESSION_KEY);
-  }
   return window.sessionStorage.getItem(GA4_DEBUG_SESSION_KEY) === "true";
+}
+
+function isPrivatePurchaseReady(event: AnalyticsEvent): event is Extract<AnalyticsEvent, { event: "purchase" }> {
+  return event.event === "purchase"
+    && document.documentElement.dataset.ga4PrivatePurchase === "true"
+    && document.documentElement.dataset.ga4Loaded === "true";
 }
 
 export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
   try {
-    if (
-      !event
-      || typeof document === "undefined"
-      || document.documentElement.dataset.ga4Enabled !== "true"
-      || !hasReadyDataLayer()
-    ) {
+    if (!event || typeof document === "undefined" || !hasReadyDataLayer()) {
+      return false;
+    }
+
+    const privatePurchase = isPrivatePurchaseReady(event);
+    if (!privatePurchase && document.documentElement.dataset.ga4Enabled !== "true") {
       return false;
     }
 
     const payload = allowlistedPayload(event);
     if (!payload) return false;
-    sendGAEvent("event", event.event, {
+
+    const eventPayload = {
       ...payload,
+      ...(privatePurchase ? {
+        page_location: new URL(GA4_SAFE_PURCHASE_PATH, window.location.origin).href,
+        page_referrer: "",
+      } : {}),
       ...(isDebugSession() ? { debug_mode: true } : {}),
-    });
+    };
+    if (privatePurchase) {
+      const ga4Window = window as Window & Record<string, unknown>;
+      ga4Window[GA4_DISABLE_WINDOW_KEY] = false;
+      try {
+        sendGAEvent("event", event.event, eventPayload);
+      } finally {
+        ga4Window[GA4_DISABLE_WINDOW_KEY] = true;
+      }
+    } else {
+      sendGAEvent("event", event.event, eventPayload);
+    }
     return true;
   } catch {
     return false;

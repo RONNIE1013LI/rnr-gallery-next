@@ -2,7 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sendGAEvent } from "@next/third-parties/google";
 import { emitAnalyticsEvent } from "./client";
-import { GA4_DEBUG_SESSION_KEY } from "./runtime";
+import type { PurchaseEvent } from "./events";
+import {
+  GA4_DEBUG_SESSION_KEY,
+  GA4_DISABLE_WINDOW_KEY,
+} from "./runtime";
 
 vi.mock("@next/third-parties/google", () => ({ sendGAEvent: vi.fn() }));
 
@@ -19,10 +23,23 @@ const event = {
   }],
 } as const;
 
+const purchase: PurchaseEvent = {
+  event: "purchase",
+  transaction_id: "RNR-2026-PRIVATE",
+  currency: "NZD",
+  value: 65,
+  tax: 12.75,
+  shipping: 23,
+  items: event.items,
+};
+
 describe("emitAnalyticsEvent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     document.documentElement.removeAttribute("data-ga4-enabled");
+    document.documentElement.removeAttribute("data-ga4-private-purchase");
+    document.documentElement.removeAttribute("data-ga4-loaded");
+    delete (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY];
     window.history.replaceState({}, "", "/");
     sessionStorage.clear();
     localStorage.clear();
@@ -60,10 +77,9 @@ describe("emitAnalyticsEvent", () => {
     expect(sendGAEvent).toHaveBeenCalledTimes(1);
   });
 
-  it("fails open when debug session storage throws", () => {
+  it("fails open when reading debug session storage throws", () => {
     document.documentElement.dataset.ga4Enabled = "true";
-    window.history.replaceState({}, "", "/?ga_debug=1");
-    const setItem = vi.spyOn(Storage.prototype, "setItem")
+    const getItem = vi.spyOn(Storage.prototype, "getItem")
       .mockImplementationOnce(() => {
         throw new Error("storage unavailable");
       });
@@ -74,7 +90,7 @@ describe("emitAnalyticsEvent", () => {
         result = emitAnalyticsEvent(event);
       }).not.toThrow();
     } finally {
-      setItem.mockRestore();
+      getItem.mockRestore();
     }
 
     expect(result).toBe(false);
@@ -127,9 +143,10 @@ describe("emitAnalyticsEvent", () => {
     });
   });
 
-  it("persists controlled debug mode only in sessionStorage", () => {
+  it("uses the root-controlled debug session without reading the query", () => {
     document.documentElement.dataset.ga4Enabled = "true";
-    window.history.replaceState({}, "", "/?ga_debug=1");
+    sessionStorage.setItem(GA4_DEBUG_SESSION_KEY, "true");
+    window.history.replaceState({}, "", "/?ga_debug=0");
 
     expect(emitAnalyticsEvent(event)).toBe(true);
     expect(sessionStorage.getItem(GA4_DEBUG_SESSION_KEY)).toBe("true");
@@ -140,21 +157,12 @@ describe("emitAnalyticsEvent", () => {
       items: event.items,
       debug_mode: true,
     });
-
-    window.history.replaceState({}, "", "/");
-    emitAnalyticsEvent(event);
-    expect(sendGAEvent).toHaveBeenLastCalledWith("event", "view_cart", {
-      currency: "NZD",
-      value: 65,
-      items: event.items,
-      debug_mode: true,
-    });
   });
 
-  it("clears the controlled debug session with ga_debug=0", () => {
+  it("omits debug mode after the root controller clears its session", () => {
     document.documentElement.dataset.ga4Enabled = "true";
     sessionStorage.setItem(GA4_DEBUG_SESSION_KEY, "true");
-    window.history.replaceState({}, "", "/?ga_debug=0");
+    sessionStorage.removeItem(GA4_DEBUG_SESSION_KEY);
 
     expect(emitAnalyticsEvent(event)).toBe(true);
     expect(sessionStorage.getItem(GA4_DEBUG_SESSION_KEY)).toBeNull();
@@ -163,5 +171,59 @@ describe("emitAnalyticsEvent", () => {
       value: 65,
       items: event.items,
     });
+  });
+
+  it("permits only purchase on a private order location after the tag loaded", () => {
+    document.documentElement.dataset.ga4PrivatePurchase = "true";
+    document.documentElement.dataset.ga4Loaded = "true";
+    (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] = true;
+    window.history.replaceState(
+      {},
+      "",
+      "/orders/RNR-2026-PRIVATE?access=private-email-token",
+    );
+    let disabledDuringSend: unknown;
+    vi.mocked(sendGAEvent).mockImplementationOnce(() => {
+      disabledDuringSend = (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY];
+    });
+
+    expect(emitAnalyticsEvent(event)).toBe(false);
+    expect(emitAnalyticsEvent(purchase)).toBe(true);
+    expect(disabledDuringSend).toBe(false);
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "purchase", {
+      transaction_id: "RNR-2026-PRIVATE",
+      currency: "NZD",
+      value: 65,
+      tax: 12.75,
+      shipping: 23,
+      items: purchase.items,
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
+    });
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-email-token");
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+  });
+
+  it("does not send a private purchase before the disabled tag has loaded", () => {
+    document.documentElement.dataset.ga4PrivatePurchase = "true";
+    (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] = true;
+
+    expect(emitAnalyticsEvent(purchase)).toBe(false);
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+  });
+
+  it("restores private collection disablement when purchase transport throws", () => {
+    document.documentElement.dataset.ga4PrivatePurchase = "true";
+    document.documentElement.dataset.ga4Loaded = "true";
+    (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] = true;
+    vi.mocked(sendGAEvent).mockImplementationOnce(() => {
+      expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
+      throw new Error("transport unavailable");
+    });
+
+    expect(emitAnalyticsEvent(purchase)).toBe(false);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
   });
 });

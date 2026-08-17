@@ -1,5 +1,5 @@
-import { render, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { act, render, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sendGAEvent } from "@next/third-parties/google";
 import { AnalyticsEventTracker } from "./analytics-event-tracker";
@@ -28,6 +28,11 @@ describe("AnalyticsEventTracker", () => {
     Object.assign(window, { dataLayer: [] });
   });
 
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   it("does not emit the same scoped event again on rerender", async () => {
     const view = render(<AnalyticsEventTracker event={event} scopeKey="NZ:canvas:a4" />);
     await waitFor(() => expect(sendGAEvent).toHaveBeenCalledTimes(1));
@@ -53,5 +58,63 @@ describe("AnalyticsEventTracker", () => {
     render(<AnalyticsEventTracker event={null} scopeKey="NZ:canvas:a4" />);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sendGAEvent).not.toHaveBeenCalled();
+  });
+
+  it("retries cold-start readiness without a prop rerender and deduplicates success", async () => {
+    vi.useFakeTimers();
+    Object.assign(window, { dataLayer: undefined });
+    render(<AnalyticsEventTracker event={event} scopeKey="NZ:canvas:a4" />);
+
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(1);
+
+    Object.assign(window, { dataLayer: [] });
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
+
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(vi.getTimerCount()).toBe(0);
+    await act(async () => {
+      vi.runAllTimers();
+    });
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancels a pending retry on unmount", async () => {
+    vi.useFakeTimers();
+    Object.assign(window, { dataLayer: undefined });
+    const view = render(<AnalyticsEventTracker event={event} scopeKey="NZ:canvas:a4" />);
+    expect(vi.getTimerCount()).toBe(1);
+
+    view.unmount();
+    expect(vi.getTimerCount()).toBe(0);
+    Object.assign(window, { dataLayer: [] });
+    await act(async () => {
+      vi.runAllTimers();
+    });
+    expect(sendGAEvent).not.toHaveBeenCalled();
+  });
+
+  it("replaces a pending retry when its identity scope changes", async () => {
+    vi.useFakeTimers();
+    Object.assign(window, { dataLayer: undefined });
+    const view = render(<AnalyticsEventTracker event={event} scopeKey="guest:canvas:a4" />);
+    expect(vi.getTimerCount()).toBe(1);
+
+    view.rerender(<AnalyticsEventTracker event={{ ...event }} scopeKey="customer:canvas:a4" />);
+    expect(vi.getTimerCount()).toBe(1);
+
+    Object.assign(window, { dataLayer: [] });
+    await act(async () => {
+      vi.advanceTimersByTime(250);
+    });
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+
+    view.rerender(<AnalyticsEventTracker event={{ ...event }} scopeKey="customer:canvas:a4" />);
+    await act(async () => {
+      vi.runAllTimers();
+    });
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
   });
 });

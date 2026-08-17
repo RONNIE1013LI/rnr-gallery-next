@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { metadata } from "./layout";
@@ -13,14 +13,41 @@ function cssRule(source: string, selector: string) {
   return source.slice(start, source.indexOf("}", start) + 1);
 }
 
+function productionSource(root: string): string {
+  return readdirSync(join(process.cwd(), root), { withFileTypes: true })
+    .flatMap((entry) => {
+      const path = join(root, entry.name);
+      if (entry.isDirectory()) return [productionSource(path)];
+      if (!/\.[cm]?[jt]sx?$/.test(entry.name) || /\.(?:test|spec)\.[cm]?[jt]sx?$/.test(entry.name)) {
+        return [];
+      }
+      return [readFileSync(join(process.cwd(), path), "utf8")];
+    })
+    .join("\n");
+}
+
 describe("root layout metadata", () => {
   it("installs one production-only official GA4 root tag", () => {
     const layout = readFileSync(join(process.cwd(), "src/app/layout.tsx"), "utf8");
+    const controller = readFileSync(
+      join(process.cwd(), "src/components/analytics-runtime-controller.tsx"),
+      "utf8",
+    );
+    const source = productionSource("src");
 
-    expect(layout.match(/<GoogleAnalytics\b/g)).toHaveLength(1);
-    expect(layout).not.toContain("GoogleTagManager");
-    expect(layout).not.toContain("googletagmanager.com");
+    expect(layout).toContain("<AnalyticsRuntimeController production={ga4Enabled} />");
+    expect(controller).toContain("<GoogleAnalytics gaId={GA4_MEASUREMENT_ID}");
+    expect(source.match(/<GoogleAnalytics\b/g)).toHaveLength(1);
+    expect(source.match(/G-RE5Z5B58TJ/g)).toHaveLength(1);
+    expect(source).not.toContain("GoogleTagManager");
+    expect(source).not.toContain("googletagmanager.com");
+    expect(source).not.toContain("gtag.js");
     expect(layout).toContain("isGa4Production(process.env.VERCEL_ENV)");
+  });
+
+  it("does not document the replaced public analytics feature flag", () => {
+    const example = readFileSync(join(process.cwd(), ".env.example"), "utf8");
+    expect(example).not.toContain("NEXT_PUBLIC_GOOGLE_ANALYTICS_ENABLED");
   });
 
   it("uses the current R&R Gallery mark for browser and Apple icons", () => {
