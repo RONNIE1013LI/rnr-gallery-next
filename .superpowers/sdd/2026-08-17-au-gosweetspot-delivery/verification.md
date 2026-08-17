@@ -1,6 +1,6 @@
 # AU GoSweetSpot delivery verification
 
-Code commit range verified: `afaad69c046bd37be9cccefde7ed2150f22f9125..8af251051f72ef81823f46b98b515d0b603f1959`.
+Code commit range verified: `afaad69c046bd37be9cccefde7ed2150f22f9125..5a721d2`.
 
 ## Environment safety gate
 
@@ -111,3 +111,25 @@ Exit `0`: Next.js compiled, type-checked, collected route data, and generated
 - Automated provider tests used mocked GoSweetSpot responses.
 - Production GoSweetSpot AU rating remains a post-deployment smoke check after the code is released while AU stays closed.
 - No deployment was performed from this verification task.
+
+## Post-review compatibility-fix verification
+
+The final review found that existing schema-v2 registry snapshots could still
+contain the legacy AU fixed shipping row. Commit `5a721d2` added an in-memory
+compatibility migration that changes only that row to the carrier-backed
+GoSweetSpot structure while retaining the saved NZ/AU price books, tax policy,
+product configuration and disabled AU state.
+
+Fresh verification after that fix:
+
+- Focused registry, pricing, admin, shipping, configurator, checkout and AU
+  closed/noindex coverage: exit `0`, 17 files and 226 tests passed.
+- `npm run typecheck`: exit `0`.
+- `npm run lint`: exit `0`.
+- `git diff --check afaad69..HEAD`: exit `0`.
+- Full suite with the verified isolated test database: exit `0`, 297 files and
+  1,979 tests passed in 211.96 seconds.
+- Production build using the same safe build-only auth overrides described
+  above: exit `0`; 89 static pages generated.
+- Scoped final re-review: the compatibility blocker is fixed, with no remaining
+  Critical, Important or Minor finding in this feature scope.
