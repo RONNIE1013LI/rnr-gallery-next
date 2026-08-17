@@ -315,7 +315,7 @@ describe("owner-scoped order pages", () => {
 
     render(await AccountOrderPage({ params: Promise.resolve({ orderNumber: order.orderNumber }) }));
 
-    expect(await screen.findByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
+    expect(await screen.findByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
   });
 
   it("fails closed when an immutable order snapshot cannot be validated", async () => {
