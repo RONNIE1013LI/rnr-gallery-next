@@ -302,6 +302,17 @@ function absentResult(order: PaymentOrder, providerReference: string) {
   });
 }
 
+function cancelledAbsentResult(order: PaymentOrder, providerReference: string) {
+  return Object.freeze({
+    providerReference,
+    providerStatus: "CANCELLED:NOT_FOUND",
+    amountCents: order.amountCents,
+    currency: order.currency,
+    orderNumber: order.orderNumber,
+    status: "cancelled" as const,
+  });
+}
+
 export function createAfterpayProvider({
   config,
   fetchImpl,
@@ -439,13 +450,14 @@ export function createAfterpayProvider({
       if (browserStatus === "SUCCESS") {
         return capture(input.order, input.providerReference, input.idempotencyKey);
       }
+      if (browserStatus !== "CANCELLED") throw verificationFailure();
       const authority = await retrieveAuthority(
         input.order,
         input.providerReference,
       );
       return authority.kind === "found"
         ? authority.result
-        : absentResult(input.order, input.providerReference);
+        : cancelledAbsentResult(input.order, input.providerReference);
     },
 
     async retrieve(input) {

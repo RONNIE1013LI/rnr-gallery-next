@@ -313,15 +313,15 @@ describe("Afterpay provider", () => {
       .resolves.toMatchObject({ status: expectedStatus });
   });
 
-  it("treats a forged browser cancellation with authoritative absence as processing", async () => {
+  it("treats an official cancellation with authoritative absence as cancelled", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ error: "not found" }, 404));
     const provider = createAfterpayProvider({ config: config(), fetchImpl });
 
     await expect(provider.completeReturn(completeInput(order(), "CANCELLED")))
       .resolves.toMatchObject({
         providerReference: token,
-        providerStatus: "NOT_FOUND",
-        status: "processing",
+        providerStatus: "CANCELLED:NOT_FOUND",
+        status: "cancelled",
       });
     expect(fetchImpl).toHaveBeenCalledOnce();
     expect(fetchImpl.mock.calls[0]?.[0]).toContain("/v2/payments/token/");
