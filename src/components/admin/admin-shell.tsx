@@ -24,6 +24,7 @@ const navigation = [
   { label: "Payment", href: "/admin/settings/payment", permission: "manage_payment" },
   { label: "Email templates", href: "/admin/settings/email-templates", permission: "manage_content" },
   { label: "Audit Log", href: "/admin/audit", permission: "view_audit" },
+  { label: "Reply Assistant", href: "/reply-assistant", permission: "use_reply_assistant" },
 ] as const;
 
 function Navigation({ ariaLabel = "Administration", role, onNavigate }: Readonly<{
