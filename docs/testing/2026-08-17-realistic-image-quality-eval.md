@@ -38,4 +38,3 @@ Future automated image assessment requires all of the following before it can be
 6. Measured accuracy, false-positive/false-negative analysis, latency, token usage, and API cost.
 
 No approved real customer-image set or approved real vision-provider run is recorded for this candidate. Therefore the realistic automated quality result remains NOT RUN, never PASS.
-

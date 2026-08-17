@@ -311,6 +311,7 @@ describe("CustomerServiceEngine", () => {
     expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
       status: "provider_error",
       providerErrorCode: "provider_request_failed",
+      estimatedCostMicrousd: null,
     }));
   });
 

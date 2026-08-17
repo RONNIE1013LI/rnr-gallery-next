@@ -127,3 +127,24 @@
 ### Concerns
 
 - No Production, deployment, schema, migration, or accounting-path changes were made. Unknown provider usage intentionally remains conservative and can consume the reservation ceiling.
+
+## Fix Round 3: Text Provider Exception Settlement
+
+### Root Cause
+
+The text engine exception path called `completeProviderAttempt` with `estimatedCostMicrousd: 0` after `reserveProviderAttempt` had durably marked the provider as called. A timeout or transport failure after dispatch therefore looked like authoritative zero cost and released the reservation instead of conservatively consuming it.
+
+### RED / GREEN
+
+- RED: the existing safe provider-error unit test was tightened to require `estimatedCostMicrousd: null` and failed on the persisted zero.
+- GREEN: the engine now preserves unknown cost as `null`; focused provider/engine tests passed `26/26`.
+- A database integration regression now races two identical unknown-result completions and requires the 100-microusd reservation to be charged exactly once. It compiles and is ready for the dedicated test database; the current local environment correctly skips it because no safe dedicated `TEST_DATABASE_URL` is available.
+- TypeScript, focused ESLint, and `git diff --check` passed.
+
+### Changed Files
+
+- `src/server/customer-service/engine.ts`
+- `src/server/customer-service/engine.test.ts`
+- `src/server/customer-service/repositories/drizzle-customer-service-repository.integration.test.ts`
+
+No policy gate, output validator, provider parser, schema, migration, Production configuration, or send capability changed.

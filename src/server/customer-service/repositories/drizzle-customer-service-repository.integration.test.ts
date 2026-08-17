@@ -1109,6 +1109,67 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
   });
 
+  it("charges an unknown text provider result at the reservation ceiling exactly once", async () => {
+    await activateFacebookPilot("unknown-text-provider-result");
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "9".repeat(64),
+      externalMessageKeyHash: "a".repeat(64),
+      text: "How should I prepare my photos?",
+      attachments: [],
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    if (created.status === "duplicate") return;
+
+    const reserved = await repository.reserveProviderAttempt({
+      messageId: created.messageId,
+      trigger: "manual_generate",
+      intent: "photo_preparation",
+      riskLevel: "low",
+      gateReasons: ["confirmed_draft_scope"],
+      knowledgeSources: ["AI-SCOPE-05"],
+      knowledgeVersion: "test-v1",
+      reservationMicrousd: 100,
+      dailyScopeKey: "daily:2026-08-17",
+      dailyHardStopMicrousd: 1_000,
+      totalHardStopMicrousd: 1_000,
+    });
+    expect(reserved.status).toBe("reserved");
+
+    const completion = {
+      attemptId: reserved.attemptId,
+      status: "provider_error" as const,
+      provider: "openai" as const,
+      model: "test-model",
+      validatorCodes: [],
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      estimatedCostMicrousd: null,
+      latencyMs: 0,
+      providerErrorCode: "provider_request_failed",
+      dailyScopeKey: "daily:2026-08-17",
+    };
+    await Promise.all([
+      repository.completeProviderAttempt(completion),
+      repository.completeProviderAttempt(completion),
+    ]);
+
+    const [attempt] = await database.select().from(customerServiceAiAttempts)
+      .where(eq(customerServiceAiAttempts.id, reserved.attemptId));
+    const budgets = await database.select().from(customerServiceBudgetState);
+    expect(attempt).toMatchObject({
+      status: "provider_error",
+      providerCalled: true,
+      estimatedCostMicrousd: null,
+      reservedCostMicrousd: 0,
+    });
+    expect(budgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeKey: "daily:2026-08-17", reservedMicrousd: 0, spentMicrousd: 100 }),
+      expect.objectContaining({ scopeKey: "total", reservedMicrousd: 0, spentMicrousd: 100 }),
+    ]));
+  });
+
   it("keeps a durable provider start while contradictory completions race", async () => {
     const externalAttachmentKeyHash = sourceHash("monotonic-provider-start");
     const created = await repository.ingestFacebookMessage({
