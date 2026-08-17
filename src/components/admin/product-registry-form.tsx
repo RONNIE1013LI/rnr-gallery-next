@@ -194,7 +194,7 @@ export function ProductRegistryForm({
 
   async function publishAustralia(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!window.confirm("Save the fixed Australia AUD price book now?")) return;
+    if (!window.confirm("Save the Australia AUD price book now?")) return;
     const key = "AU";
     setPending(key);
     setFeedback((current) => ({ ...current, [key]: "" }));
@@ -249,16 +249,7 @@ export function ProductRegistryForm({
             "AUD",
           ),
         })),
-        shippingMethods: markets.AU.shippingMethods.map((method) => ({
-          ...method,
-          label: String(form.get(`au-shipping-${method.key}-label`) ?? ""),
-          active: form.get(`au-shipping-${method.key}-active`) === "on",
-          amountInclTaxCents: cents(
-            form.get(`au-shipping-${method.key}-amount`),
-            true,
-            "AUD",
-          ),
-        })),
+        shippingMethods: markets.AU.shippingMethods,
       };
       const response = await fetch("/api/admin/products/market-pricing", {
         method: "PATCH",
@@ -398,15 +389,8 @@ export function ProductRegistryForm({
 
           <fieldset className={styles.formPanel}>
             <legend>Australia shipping</legend>
-            <div className={styles.formGrid}>
-              {markets.AU.shippingMethods.map((method) => (
-                <div key={method.key} className={styles.registrySizeRow}>
-                  <label><span>{method.key} label</span><input name={`au-shipping-${method.key}-label`} defaultValue={method.label} required disabled={pending !== null} /></label>
-                  <label><span>{method.key} final price (AUD)</span><input name={`au-shipping-${method.key}-amount`} inputMode="decimal" defaultValue={moneyInput(method.amountInclTaxCents)} disabled={pending !== null} /></label>
-                  <label className={styles.checkboxField}><input name={`au-shipping-${method.key}-active`} type="checkbox" defaultChecked={method.active} disabled={pending !== null} /><span>Active</span></label>
-                </div>
-              ))}
-            </div>
+            <p><strong>GoSweetSpot live delivery</strong></p>
+            <p>Calculated from the delivery address and package sizes at checkout.</p>
           </fieldset>
 
           <div className={styles.registryFormActions}>

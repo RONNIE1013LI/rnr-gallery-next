@@ -347,10 +347,10 @@ export function createDefaultMarketPriceBooks(
       designSurcharges: [],
       discounts: [],
       shippingMethods: [{
-        key: "au-standard",
-        label: "Australia standard delivery",
+        key: "au-live-carrier",
+        label: "GoSweetSpot live delivery",
         method: "post",
-        source: "fixed",
+        source: "carrier",
         active: true,
         amountInclTaxCents: null,
       }],
@@ -423,8 +423,12 @@ export function assertMarketPriceBookStructure(registry: RegistryWithMarkets): v
     if (!book.shippingMethods.some((method) => method.active)) {
       throw new MarketPriceBookValidationError("At least one shipping method must be active.");
     }
-    if (market === "AU" && book.shippingMethods.some((method) => method.source !== "fixed")) {
-      throw new MarketPriceBookValidationError("Australia shipping prices must be fixed AUD values.");
+    if (market === "AU" && book.shippingMethods.some((method) =>
+      method.method !== "post" || method.source !== "carrier"
+    )) {
+      throw new MarketPriceBookValidationError(
+        "Australia shipping must use carrier-backed delivery.",
+      );
     }
     if (book.designSurcharges.length > 0 || book.discounts.length > 0) {
       throw new MarketPriceBookValidationError("Unconfigured charges cannot be introduced.");

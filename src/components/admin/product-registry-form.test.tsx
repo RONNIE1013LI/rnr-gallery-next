@@ -122,6 +122,9 @@ describe("product registry editor", () => {
 
     expect(screen.getByRole("heading", { name: "Australia — AUD" })).toBeInTheDocument();
     expect(screen.getByLabelText("Enable Australia checkout")).toBeDisabled();
+    expect(screen.getByText("GoSweetSpot live delivery")).toBeVisible();
+    expect(screen.getByText("Calculated from the delivery address and package sizes at checkout.")).toBeVisible();
+    expect(screen.queryByLabelText(/shipping.*final price/i)).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Roll-Up Banner · standard final price (AUD)"), {
       target: { value: "320.00" },
     });
@@ -147,5 +150,13 @@ describe("product registry editor", () => {
         (size: { sizeKey: string }) => size.sizeKey === "standard",
       ).amountInclTaxCents,
     ).toBe(32_000);
+    expect(payload.priceBook.shippingMethods).toEqual([{
+      key: "au-live-carrier",
+      label: "GoSweetSpot live delivery",
+      method: "post",
+      source: "carrier",
+      active: true,
+      amountInclTaxCents: null,
+    }]);
   });
 });

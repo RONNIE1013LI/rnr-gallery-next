@@ -25,14 +25,22 @@ function completeAustraliaDraft(): typeof defaultProductRegistry {
   for (const fee of australia.peoplePets.fees) fee.amountInclTaxCents = 5_000;
   australia.peoplePets.additionalEachInclTaxCents = 3_000;
   for (const fee of australia.urgentServiceFees) fee.amountInclTaxCents = 9_000;
-  for (const shipping of australia.shippingMethods) {
-    if (shipping.source === "fixed") shipping.amountInclTaxCents = 3_500;
-  }
   australia.enabled = true;
   return draft;
 }
 
 describe("market price books", () => {
+  it("uses a carrier-backed delivery method for Australia", () => {
+    expect(defaultProductRegistry.markets.AU.shippingMethods).toEqual([{
+      key: "au-live-carrier",
+      label: "GoSweetSpot live delivery",
+      method: "post",
+      source: "carrier",
+      active: true,
+      amountInclTaxCents: null,
+    }]);
+  });
+
   it("uses fixed Bundle retail prices for NZ and AU without conversion", () => {
     const nzBundle = defaultProductRegistry.markets.NZ.products.find(
       (product) => product.productKey === "banner-bundle",
@@ -104,6 +112,8 @@ describe("market price books", () => {
   it("accepts an explicitly completed Australian price book", () => {
     const parsed = parseProductRegistry(completeAustraliaDraft());
 
+    expect(getMarketCompleteness(completeAustraliaDraft(), "AU").missingKeys)
+      .not.toEqual(expect.arrayContaining([expect.stringContaining("shippingMethods")]));
     expect(getMarketCompleteness(parsed, "AU")).toEqual({
       ready: true,
       missingKeys: [],
