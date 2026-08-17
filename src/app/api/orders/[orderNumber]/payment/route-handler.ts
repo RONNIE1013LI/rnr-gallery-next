@@ -32,7 +32,7 @@ const startInputSchema = z.object({
 }).strict();
 const inputSchema = z.union([
   startInputSchema,
-  z.object({ action: z.literal("confirm") }).strict(),
+  z.object({ action: z.enum(["confirm", "change_method"]) }).strict(),
 ]);
 
 type PaymentStarter = {
@@ -42,6 +42,12 @@ type PaymentStarter = {
     idempotencyKey: string,
   ): Promise<PaymentStartResult>;
   confirmPayment(
+    access: PaymentOrderAccess,
+  ): Promise<{
+    payment: PublicPaymentDTO;
+    orderNumber: string;
+  }>;
+  changePaymentMethod(
     access: PaymentOrderAccess,
   ): Promise<{
     payment: PublicPaymentDTO;
@@ -181,7 +187,9 @@ export function createOrderPaymentRoute(dependencies?: Dependencies) {
       for (const [index, access] of accesses.entries()) {
         try {
           if ("action" in input) {
-            const result = await deps.paymentService.confirmPayment(access);
+            const result = input.action === "change_method"
+              ? await deps.paymentService.changePaymentMethod(access)
+              : await deps.paymentService.confirmPayment(access);
             return json({
               payment: publicPayment(result.payment),
               orderNumber: result.orderNumber,
