@@ -6,6 +6,7 @@ import {
   type ShippingQuoteProvider,
   type ShippingQuoteRequest,
 } from "./types";
+import { currencyForMarket, includedTaxFromGross } from "@/domain/markets/market";
 import { normalizeShippingServiceName } from "@/domain/shipping/service-name";
 
 const rateSchema = z.object({
@@ -61,20 +62,10 @@ function safeCents(value: number): number {
   return cents;
 }
 
-function taxAmounts(rate: number, mode: RateTaxMode) {
-  if (mode === "incl_gst") {
-    const amountInclGstCents = safeCents(rate);
-    const amountExGstCents = Math.round((amountInclGstCents * 100) / 115);
-    return {
-      amountExGstCents,
-      gstCents: amountInclGstCents - amountExGstCents,
-      amountInclGstCents,
-    };
-  }
-
-  const amountExGstCents = safeCents(rate);
-  const gstCents = Math.round((amountExGstCents * 15) / 100);
-  return { amountExGstCents, gstCents, amountInclGstCents: amountExGstCents + gstCents };
+function grossCentsForRate(rate: number, mode: RateTaxMode, market: ShippingQuoteRequest["market"]): number {
+  const rateCents = safeCents(rate);
+  if (market !== "NZ" || mode === "incl_gst") return rateCents;
+  return rateCents + Math.round((rateCents * 15) / 100);
 }
 
 function normalizeGoSweetSpotText(value: string): string {
@@ -103,6 +94,12 @@ export function createGoSweetSpotShippingProvider(
     async quote(request: ShippingQuoteRequest) {
       if (!availability.available || !options.appId || !options.secret || !options.rateTaxMode) {
         throw new ShippingProviderError("GoSweetSpot shipping is unavailable.");
+      }
+      if (
+        request.market !== request.destination.countryCode ||
+        request.currency !== currencyForMarket(request.market)
+      ) {
+        throw new ShippingProviderError("The shipping market context is invalid.");
       }
       if (!Number.isSafeInteger(request.cartValueInclGstCents) || request.cartValueInclGstCents < 0) {
         throw new ShippingProviderError("The authoritative cart value is invalid.");
@@ -180,15 +177,18 @@ export function createGoSweetSpotShippingProvider(
         if (!selected) {
           throw new ShippingProviderError("GoSweetSpot returned no positive shipping rate.");
         }
-        const amounts = taxAmounts(selected.rate, options.rateTaxMode);
+        const grossCents = grossCentsForRate(selected.rate, options.rateTaxMode, request.market);
+        const tax = includedTaxFromGross(grossCents, request.taxPolicy);
         const rawResponseHash = createHash("sha256").update(rawResponse).digest("hex");
 
         return Object.freeze({
           provider: "gosweetspot" as const,
           serviceCode: selected.shortcode,
           serviceName: normalizeShippingServiceName(selected.description),
-          ...amounts,
-          currency: "NZD" as const,
+          amountExGstCents: tax.amountExTaxCents,
+          gstCents: tax.taxCents,
+          amountInclGstCents: tax.amountInclTaxCents,
+          currency: request.currency,
           providerReference: `${selected.shortcode}:${rawResponseHash.slice(0, 16)}`,
           expiresAt: new Date(now().getTime() + 15 * 60 * 1_000),
           rawResponseHash,

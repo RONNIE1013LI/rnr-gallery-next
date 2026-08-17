@@ -4,6 +4,9 @@ import { createGoSweetSpotShippingProvider } from "./gosweetspot-provider";
 import type { ShippingQuoteRequest } from "./types";
 
 const request: ShippingQuoteRequest = {
+  market: "NZ",
+  currency: "NZD",
+  taxPolicy: { jurisdiction: "NZ_GST", registered: true, rateBasisPoints: 1_500 },
   cartValueInclGstCents: 35_999,
   packages: [
     {
@@ -32,6 +35,19 @@ const request: ShippingQuoteRequest = {
     city: "Auckland",
     postcode: "1010",
     countryCode: "NZ",
+  },
+};
+
+const auRequest: ShippingQuoteRequest = {
+  ...request,
+  market: "AU",
+  currency: "AUD",
+  taxPolicy: { jurisdiction: "NONE", registered: false, rateBasisPoints: 1_000 },
+  destination: {
+    ...request.destination,
+    city: "NSW",
+    postcode: "2000",
+    countryCode: "AU",
   },
 };
 
@@ -197,6 +213,67 @@ describe("GoSweetSpot shipping provider", () => {
       gstCents: 300,
       amountInclGstCents: 2_300,
     });
+  });
+
+  it("keeps an Australian carrier rate as the same AUD gross amount without GST", async () => {
+    const provider = createGoSweetSpotShippingProvider({
+      appId: "app",
+      secret: "secret",
+      rateTaxMode: "ex_gst",
+      fetchImpl: (async () => new Response(JSON.stringify([
+        { description: "Standard", shortcode: "STD", rate: 30 },
+      ]), { status: 200 })) as typeof fetch,
+    });
+
+    await expect(provider.quote(auRequest)).resolves.toMatchObject({
+      amountExGstCents: 3_000,
+      gstCents: 0,
+      amountInclGstCents: 3_000,
+      currency: "AUD",
+    });
+  });
+
+  it("extracts registered Australian GST from the unchanged AUD gross amount", async () => {
+    const provider = createGoSweetSpotShippingProvider({
+      appId: "app",
+      secret: "secret",
+      rateTaxMode: "ex_gst",
+      fetchImpl: (async () => new Response(JSON.stringify([
+        { description: "Standard", shortcode: "STD", rate: 30 },
+      ]), { status: 200 })) as typeof fetch,
+    });
+
+    await expect(provider.quote({
+      ...auRequest,
+      taxPolicy: { jurisdiction: "AU_GST", registered: true, rateBasisPoints: 1_000 },
+    })).resolves.toMatchObject({
+      amountExGstCents: 2_727,
+      gstCents: 273,
+      amountInclGstCents: 3_000,
+      currency: "AUD",
+    });
+  });
+
+  it.each([
+    ["market conflicts with destination", { ...auRequest, market: "NZ" as const }],
+    ["currency conflicts with market", { ...auRequest, currency: "NZD" as const }],
+    ["destination conflicts with market", {
+      ...auRequest,
+      destination: { ...auRequest.destination, countryCode: "NZ" as const },
+    }],
+  ])("rejects when the %s", async (_label, invalidRequest) => {
+    const provider = createGoSweetSpotShippingProvider({
+      appId: "app",
+      secret: "secret",
+      rateTaxMode: "incl_gst",
+      fetchImpl: (async () => new Response(JSON.stringify([
+        { description: "Standard", shortcode: "STD", rate: 30 },
+      ]), { status: 200 })) as typeof fetch,
+    });
+
+    await expect(provider.quote(invalidRequest)).rejects.toThrow(
+      "The shipping market context is invalid.",
+    );
   });
 
   it.each([

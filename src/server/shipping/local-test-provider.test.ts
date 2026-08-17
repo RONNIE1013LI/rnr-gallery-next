@@ -3,6 +3,9 @@ import { createLocalTestShippingProvider } from "./local-test-provider";
 import type { ShippingQuoteRequest } from "./types";
 
 const request: ShippingQuoteRequest = {
+  market: "NZ",
+  currency: "NZD",
+  taxPolicy: { jurisdiction: "NZ_GST", registered: true, rateBasisPoints: 1_500 },
   cartValueInclGstCents: 12_075,
   packages: [{
     productKey: "digital-oil-painting-canvas",
@@ -43,6 +46,28 @@ describe("local test shipping provider", () => {
       amountInclGstCents: 2_300,
       currency: "NZD",
       isTest: true,
+    });
+  });
+
+  it("returns an AUD zero-tax quote when Australian GST is disabled", async () => {
+    const provider = createLocalTestShippingProvider();
+
+    await expect(provider.quote({
+      ...request,
+      market: "AU",
+      currency: "AUD",
+      taxPolicy: { jurisdiction: "NONE", registered: false, rateBasisPoints: 1_000 },
+      destination: {
+        ...request.destination,
+        city: "NSW",
+        postcode: "2000",
+        countryCode: "AU",
+      },
+    })).resolves.toMatchObject({
+      amountExGstCents: 4_500,
+      gstCents: 0,
+      amountInclGstCents: 4_500,
+      currency: "AUD",
     });
   });
 

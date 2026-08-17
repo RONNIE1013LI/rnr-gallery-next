@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { NormalizedAddress } from "@/domain/address/types";
 import type { MarketPriceBook } from "@/domain/catalogue/market-price-book";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
-import { includedTaxFromGross, marketTaxPolicy } from "@/domain/markets/market";
+import { currencyForMarket, includedTaxFromGross, marketTaxPolicy } from "@/domain/markets/market";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { createGoSweetSpotShippingProvider } from "./gosweetspot-provider";
 import { createLocalTestShippingProvider } from "./local-test-provider";
@@ -198,6 +198,9 @@ export function createShippingService({
         }
 
         const request: ShippingQuoteRequest = Object.freeze({
+          market: cart.market,
+          currency: currencyForMarket(cart.market),
+          taxPolicy: marketTaxPolicy(cart.market),
           cartValueInclGstCents: cart.totalInclGstCents,
           packages: Object.freeze(packages),
           destination,

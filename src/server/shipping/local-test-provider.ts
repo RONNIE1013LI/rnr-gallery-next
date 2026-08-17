@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { includedTaxFromGross } from "@/domain/markets/market";
 import type { ShippingQuoteProvider, ShippingQuoteRequest } from "./types";
 
 type LocalTestProviderOptions = Readonly<{
@@ -7,9 +8,8 @@ type LocalTestProviderOptions = Readonly<{
 
 function createQuote(request: ShippingQuoteRequest, now: Date) {
   const isNewZealand = request.destination.countryCode === "NZ";
-  const amountExGstCents = isNewZealand ? 2_000 : 4_500;
-  const gstCents = isNewZealand ? 300 : 0;
-  const amountInclGstCents = amountExGstCents + gstCents;
+  const amountInclGstCents = isNewZealand ? 2_300 : 4_500;
+  const tax = includedTaxFromGross(amountInclGstCents, request.taxPolicy);
   const rawResponseHash = createHash("sha256")
     .update(JSON.stringify({ country: request.destination.countryCode, amountInclGstCents }))
     .digest("hex");
@@ -18,10 +18,10 @@ function createQuote(request: ShippingQuoteRequest, now: Date) {
     provider: "local-test" as const,
     serviceCode: isNewZealand ? "test-post-nz" : "test-post-au",
     serviceName: "Test Post — not a live carrier rate",
-    amountExGstCents,
-    gstCents,
-    amountInclGstCents,
-    currency: "NZD" as const,
+    amountExGstCents: tax.amountExTaxCents,
+    gstCents: tax.taxCents,
+    amountInclGstCents: tax.amountInclTaxCents,
+    currency: request.currency,
     providerReference: `local-test:${rawResponseHash.slice(0, 16)}`,
     expiresAt: new Date(now.getTime() + 15 * 60 * 1_000),
     rawResponseHash,

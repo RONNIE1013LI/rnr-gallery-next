@@ -1,5 +1,5 @@
 import type { SupportedCountry } from "@/domain/address/types";
-import type { MarketCurrency } from "@/domain/markets/types";
+import type { Market, MarketCurrency, MarketTaxPolicy } from "@/domain/markets/types";
 
 export type PackageProfile = Readonly<{
   productKey: string;
@@ -24,6 +24,9 @@ export type ShippingDestination = Readonly<{
 }>;
 
 export type ShippingQuoteRequest = Readonly<{
+  market: Market;
+  currency: MarketCurrency;
+  taxPolicy: MarketTaxPolicy;
   cartValueInclGstCents: number;
   packages: readonly ShippingPackage[];
   destination: ShippingDestination;
