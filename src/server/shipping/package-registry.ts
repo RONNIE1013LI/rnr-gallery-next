@@ -81,3 +81,28 @@ export function getPackageProfile(productKey: string, sizeKey: string): PackageP
   }
   return profile;
 }
+
+const bannerBundleWallSizeKeys = Object.freeze({
+  "rollup-wall-200x100": "200x100",
+  "rollup-wall-300x150": "300x150",
+} satisfies Readonly<Record<string, string>>);
+
+export function getPackageProfiles(
+  productKey: string,
+  sizeKey: string,
+): readonly PackageProfile[] {
+  if (productKey !== "banner-bundle") {
+    return Object.freeze([getPackageProfile(productKey, sizeKey)]);
+  }
+
+  const wallSizeKey = bannerBundleWallSizeKeys[
+    sizeKey as keyof typeof bannerBundleWallSizeKeys
+  ];
+  if (!wallSizeKey) {
+    throw new Error(`No shipping package profile exists for ${productKey}:${sizeKey}.`);
+  }
+  return Object.freeze([
+    getPackageProfile("roll-up-banner", "standard"),
+    getPackageProfile("custom-themed-wall-banner", wallSizeKey),
+  ]);
+}

@@ -4,25 +4,25 @@ import { createGoSweetSpotShippingProvider } from "./gosweetspot-provider";
 import type { ShippingQuoteRequest } from "./types";
 
 const request: ShippingQuoteRequest = {
-  cartValueInclGstCents: 12_075,
+  cartValueInclGstCents: 35_999,
   packages: [
     {
-      productKey: "digital-oil-painting-canvas",
-      sizeKey: "a4",
-      lengthMm: 220,
-      widthMm: 300,
-      heightMm: 30,
-      weightGrams: 500,
-      unitPriceInclGstCents: 6_325,
+      productKey: "roll-up-banner",
+      sizeKey: "standard",
+      lengthMm: 900,
+      widthMm: 110,
+      heightMm: 110,
+      weightGrams: 3_000,
+      unitPriceInclGstCents: 27_000,
     },
     {
-      productKey: "photo-print-canvas",
-      sizeKey: "a3",
-      lengthMm: 300,
-      widthMm: 430,
-      heightMm: 30,
+      productKey: "custom-themed-wall-banner",
+      sizeKey: "200x100",
+      lengthMm: 1_040,
+      widthMm: 60,
+      heightMm: 60,
       weightGrams: 1_000,
-      unitPriceInclGstCents: 5_750,
+      unitPriceInclGstCents: 8_999,
     },
   ],
   destination: {
@@ -40,8 +40,8 @@ describe("GoSweetSpot shipping provider", () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = String(init?.body);
       expect(JSON.parse(body)).toEqual({
-        weight: 1.5,
-        cartvalue: 120.75,
+        weight: 4,
+        cartvalue: 359.99,
         destination: {
           Contact: "Aroha Smith",
           street: "1 Queen Street",
@@ -53,19 +53,19 @@ describe("GoSweetSpot shipping provider", () => {
         Products: [
           {
             Quantity: 1,
-            UnitWeightKg: 0.5,
-            UnitPrice: 63.25,
-            UnitLengthCm: 22,
-            UnitWidthCm: 30,
-            UnitHeightCm: 3,
+            UnitWeightKg: 3,
+            UnitPrice: 270,
+            UnitLengthCm: 90,
+            UnitWidthCm: 11,
+            UnitHeightCm: 11,
           },
           {
             Quantity: 1,
             UnitWeightKg: 1,
-            UnitPrice: 57.5,
-            UnitLengthCm: 30,
-            UnitWidthCm: 43,
-            UnitHeightCm: 3,
+            UnitPrice: 89.99,
+            UnitLengthCm: 104,
+            UnitWidthCm: 6,
+            UnitHeightCm: 6,
           },
         ],
       });

@@ -1,15 +1,38 @@
 import { describe, expect, it } from "vitest";
 import { configurationSchemas } from "@/domain/configuration/schemas";
-import { getPackageProfile, packageProfiles } from "./package-registry";
+import { getPackageProfile, getPackageProfiles } from "./package-registry";
 
 describe("shipping package registry", () => {
   it("covers every active product and size", () => {
-    const expected = configurationSchemas.flatMap((schema) =>
-      schema.sizes.map((size) => `${schema.productKey}:${size.key}`),
+    const resolved = configurationSchemas.flatMap((schema) =>
+      schema.sizes.map((size) => ({
+        productKey: schema.productKey,
+        sizeKey: size.key,
+        packageCount: getPackageProfiles(schema.productKey, size.key).length,
+      })),
     );
 
-    expect(packageProfiles.map((profile) => `${profile.productKey}:${profile.sizeKey}`).sort())
-      .toEqual(expected.sort());
+    expect(resolved).toEqual(configurationSchemas.flatMap((schema) =>
+      schema.sizes.map((size) => ({
+        productKey: schema.productKey,
+        sizeKey: size.key,
+        packageCount: schema.productKey === "banner-bundle" ? 2 : 1,
+      })),
+    ));
+  });
+
+  it.each([
+    ["rollup-wall-200x100", 1_040, 1_000],
+    ["rollup-wall-300x150", 1_550, 3_000],
+  ])("expands Bundle size %s into its Roll-Up and Wall Banner packages", (
+    sizeKey,
+    wallLengthMm,
+    wallWeightGrams,
+  ) => {
+    expect(getPackageProfiles("banner-bundle", sizeKey)).toEqual([
+      expect.objectContaining({ lengthMm: 900, weightGrams: 3_000 }),
+      expect.objectContaining({ lengthMm: wallLengthMm, weightGrams: wallWeightGrams }),
+    ]);
   });
 
   it.each([

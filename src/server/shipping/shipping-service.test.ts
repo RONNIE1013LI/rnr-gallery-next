@@ -67,7 +67,7 @@ function provider(overrides: Partial<ShippingQuoteProvider> = {}): ShippingQuote
   };
 }
 
-function australianFixture() {
+function australianFixture(input: unknown = cartInput()) {
   const registry = structuredClone(defaultProductRegistry);
   for (const product of registry.markets.AU.products) {
     for (const size of product.sizes) size.amountInclTaxCents = 40_000;
@@ -81,7 +81,7 @@ function australianFixture() {
   const parsed = parseProductRegistry(registry);
   return {
     registry: parsed,
-    cart: repriceCart(cartInput(), { now, registry: parsed, market: "AU", registryRevision: 9 }),
+    cart: repriceCart(input, { now, registry: parsed, market: "AU", registryRevision: 9 }),
     address: { ...address, country: "AU" as const, region: "NSW", phone: "+61412345678" },
   };
 }
@@ -104,6 +104,45 @@ function cartInput() {
       uploadReferences: [],
     }],
   };
+}
+
+function bannerBundleCartInput(quantity = 1, sizeKey = "rollup-wall-200x100") {
+  return {
+    version: 1 as const,
+    items: [{
+      clientItemId: "00000000-0000-4000-8000-000000000010",
+      productKey: "banner-bundle",
+      sizeKey,
+      peoplePets: 0,
+      photoSubmissionMethod: "later" as const,
+      designText: "",
+      notes: "",
+      neededDate: "2026-08-10",
+      urgentServiceConfirmed: false,
+      quantity,
+      uploadReferences: [],
+      bundleComponents: [
+        {
+          componentKey: "roll-up" as const,
+          photoSubmissionMethod: "later" as const,
+          designText: "Roll-Up wording",
+          notes: "Roll-Up instructions",
+          uploadReferences: [],
+        },
+        {
+          componentKey: "wall-banner" as const,
+          photoSubmissionMethod: "later" as const,
+          designText: "Wall Banner wording",
+          notes: "Wall Banner instructions",
+          uploadReferences: [],
+        },
+      ],
+    }],
+  };
+}
+
+function bannerBundleCart(quantity = 1, sizeKey = "rollup-wall-200x100") {
+  return repriceCart(bannerBundleCartInput(quantity, sizeKey), { now });
 }
 
 describe("shipping service", () => {
@@ -165,6 +204,48 @@ describe("shipping service", () => {
     });
   });
 
+  it("sends one Roll-Up and one Wall Banner package per Bundle quantity", async () => {
+    const quoteProvider = provider();
+    const service = createShippingService({ provider: quoteProvider, now: () => now });
+
+    await service.quotePost(bannerBundleCart(2), address);
+
+    expect(quoteProvider.quote).toHaveBeenCalledWith(expect.objectContaining({
+      cartValueInclGstCents: 71_998,
+      packages: [
+        expect.objectContaining({
+          productKey: "roll-up-banner",
+          sizeKey: "standard",
+          lengthMm: 900,
+          weightGrams: 3_000,
+          unitPriceInclGstCents: 27_000,
+        }),
+        expect.objectContaining({
+          productKey: "custom-themed-wall-banner",
+          sizeKey: "200x100",
+          lengthMm: 1_040,
+          weightGrams: 1_000,
+          unitPriceInclGstCents: 8_999,
+        }),
+        expect.objectContaining({
+          productKey: "roll-up-banner",
+          sizeKey: "standard",
+          unitPriceInclGstCents: 27_000,
+        }),
+        expect.objectContaining({
+          productKey: "custom-themed-wall-banner",
+          sizeKey: "200x100",
+          unitPriceInclGstCents: 8_999,
+        }),
+      ],
+    }));
+    const sentPackages = vi.mocked(quoteProvider.quote).mock.calls[0][0].packages;
+    expect([
+      sentPackages.slice(0, 2).reduce((sum, item) => sum + item.unitPriceInclGstCents, 0),
+      sentPackages.slice(2, 4).reduce((sum, item) => sum + item.unitPriceInclGstCents, 0),
+    ]).toEqual([35_999, 35_999]);
+  });
+
   it("invalidates the request digest when cart, destination or package profiles change", async () => {
     const service = createShippingService({ provider: provider(), now: () => now });
     const base = await service.quotePost(cart(), address);
@@ -183,9 +264,9 @@ describe("shipping service", () => {
     ]).size).toBe(3);
   });
 
-  it("uses the manually stored fixed AUD shipping price without calling the NZ carrier", async () => {
+  it("uses fixed AUD shipping for a Bundle without calling the NZ carrier", async () => {
     const quoteProvider = provider();
-    const fixture = australianFixture();
+    const fixture = australianFixture(bannerBundleCartInput(2));
     const service = createShippingService({ provider: quoteProvider, now: () => now });
 
     const result = await service.quotePost(
@@ -194,6 +275,7 @@ describe("shipping service", () => {
       fixture.registry.markets.AU,
     );
 
+    expect(quoteProvider.availability).not.toHaveBeenCalled();
     expect(quoteProvider.quote).not.toHaveBeenCalled();
     expect(result).toMatchObject({
       quote: {

@@ -6,7 +6,7 @@ import { includedTaxFromGross, marketTaxPolicy } from "@/domain/markets/market";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { createGoSweetSpotShippingProvider } from "./gosweetspot-provider";
 import { createLocalTestShippingProvider } from "./local-test-provider";
-import { getPackageProfile } from "./package-registry";
+import { getPackageProfiles } from "./package-registry";
 import type {
   PackageProfile,
   ProviderShippingQuote,
@@ -39,12 +39,28 @@ export class ShippingUnavailableError extends Error {
 }
 
 function packagesFor(cart: RepricedCheckoutCart): ShippingPackage[] {
-  return cart.items.flatMap((item) =>
-    Array.from({ length: item.quantity }, () => Object.freeze({
-      ...getPackageProfile(item.productKey, item.sizeKey),
-      unitPriceInclGstCents: item.unitPrice.totalInclGstCents,
-    })),
-  );
+  return cart.items.flatMap((item) => {
+    const profiles = getPackageProfiles(item.productKey, item.sizeKey);
+    const totalWeightGrams = profiles.reduce(
+      (total, profile) => total + profile.weightGrams,
+      0,
+    );
+    const unitTotal = item.unitPrice.totalInclGstCents;
+    const allocated = profiles.map((profile) => Number(
+      (BigInt(unitTotal) * BigInt(profile.weightGrams)) / BigInt(totalWeightGrams),
+    ));
+    allocated[0] += unitTotal - allocated.reduce((sum, value) => sum + value, 0);
+    if (allocated.reduce((sum, value) => sum + value, 0) !== unitTotal) {
+      throw new Error("Shipping package values must equal the authoritative item unit total.");
+    }
+
+    return Array.from({ length: item.quantity }, () =>
+      profiles.map((profile, index) => Object.freeze({
+        ...profile,
+        unitPriceInclGstCents: allocated[index],
+      })),
+    ).flat();
+  });
 }
 
 function destinationFor(address: NormalizedAddress): ShippingDestination {
