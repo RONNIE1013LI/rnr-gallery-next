@@ -421,7 +421,7 @@ export function ProductConfigurator({
                 <legend>Size</legend>
                 <div className={styles.sizeOptions}>
                   {sizeChoices.map((option) => {
-                  const priceLabel = `From ${formatMarketMoney(option.minimumPriceInclTaxCents, currency)}${taxSuffix}`;
+                    const priceLabel = `From ${formatMarketMoney(option.minimumPriceInclTaxCents, currency)}`;
                     return (
                       <label className={styles.sizeOption} key={option.key}>
                         <input

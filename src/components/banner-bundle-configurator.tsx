@@ -39,6 +39,11 @@ import { useContainedDialog } from "./forms/use-contained-dialog";
 
 export type BannerBundleConfiguratorProps = ProductConfiguratorProps;
 
+const BANNER_BUNDLE_SIZE_OPTION_LABELS: Record<string, string> = {
+  "rollup-wall-200x100": "Roll Up Banner + 200 x 100 cm Wall Banner",
+  "rollup-wall-300x150": "Roll Up Banner + 300 x 150 cm Wall Banner",
+};
+
 function initialCustomisation(
   photoSubmissionMethod: SourcePhotoCustomisationValue["photoSubmissionMethod"],
 ): SourcePhotoCustomisationValue {
@@ -181,7 +186,8 @@ export function BannerBundleConfigurator({
   const sizeChoices = useMemo(
     () => schema.sizes.map((option) => ({
       key: option.key,
-      label: formatConfigurationSizeLabel(option),
+      label: BANNER_BUNDLE_SIZE_OPTION_LABELS[option.key]
+        ?? formatConfigurationSizeLabel(option),
       minimumPriceInclTaxCents: quoteMarketConfiguration(
         registry,
         market,
@@ -414,7 +420,7 @@ export function BannerBundleConfigurator({
               <legend>Size</legend>
               <div className={styles.sizeOptions}>
                 {sizeChoices.map((option) => {
-                  const priceLabel = `From ${formatMarketMoney(option.minimumPriceInclTaxCents, currency)}${taxSuffix}`;
+                  const priceLabel = `From ${formatMarketMoney(option.minimumPriceInclTaxCents, currency)}`;
                   return (
                     <label className={styles.sizeOption} key={option.key}>
                       <input

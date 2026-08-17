@@ -70,7 +70,10 @@ describe("ProductConfigurator", () => {
       />,
     );
 
-    expect(screen.getByRole("radio", { name: /^A4.*From NZ\$120\.75 incl GST$/ })).toBeChecked();
+    expect(screen.getByRole("radio", { name: /^A4.*From NZ\$120\.75$/ })).toBeChecked();
+    expect(screen.queryByRole("radio", {
+      name: /From NZ\$120\.75 incl GST/,
+    })).not.toBeInTheDocument();
     expect(screen.getByLabelText("Landscape")).toBeChecked();
     expect(screen.getByLabelText("People or pets in artwork")).toHaveValue("1");
     const orderSummary = screen.getByRole("complementary", { name: "Order summary" });
@@ -116,19 +119,19 @@ describe("ProductConfigurator", () => {
     expect(within(sizePicker).getAllByRole("radio")).toHaveLength(5);
     expect(
       within(sizePicker).getByRole("radio", {
-        name: /^A0.*From NZ\$368\.00 incl GST$/,
+        name: /^A0.*From NZ\$368\.00$/,
       }),
     ).not.toBeChecked();
 
     fireEvent.click(
       within(sizePicker).getByRole("radio", {
-        name: /^A0.*From NZ\$368\.00 incl GST$/,
+        name: /^A0.*From NZ\$368\.00$/,
       }),
     );
 
     expect(
       within(sizePicker).getByRole("radio", {
-        name: /^A0.*From NZ\$368\.00 incl GST$/,
+        name: /^A0.*From NZ\$368\.00$/,
       }),
     ).toBeChecked();
     expect(
@@ -328,7 +331,7 @@ describe("ProductConfigurator", () => {
     expect(screen.getByText("Dimensions are always shown as width × height.")).toBeInTheDocument();
     fireEvent.click(screen.getByLabelText("Portrait"));
     expect(screen.getByRole("radio", {
-      name: /^A4 — 21 × 29\.7 cm.*From NZ\$120\.75 incl GST$/,
+      name: /^A4 — 21 × 29\.7 cm.*From NZ\$120\.75$/,
     })).toBeChecked();
     expect(within(screen.getByRole("complementary", { name: "Order summary" }))
       .getByText("A4 — 21 × 29.7 cm")).toBeInTheDocument();

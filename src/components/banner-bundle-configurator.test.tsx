@@ -40,6 +40,34 @@ describe("BannerBundleConfigurator", () => {
     expect(document.querySelector("form#customise")).not.toBeNull();
   });
 
+  it("simplifies Bundle size labels and omits GST only from size-card prices", () => {
+    render(
+      <BannerBundleConfigurator
+        product={product}
+        schema={schema}
+        registry={defaultProductRegistry}
+        pricing={defaultProductRegistry.pricing}
+        orderDate="2026-08-17"
+      />,
+    );
+
+    expect(screen.getByRole("radio", {
+      name: "Roll Up Banner + 200 x 100 cm Wall Banner, From NZ$359.99",
+    })).toBeChecked();
+    expect(screen.getByRole("radio", {
+      name: "Roll Up Banner + 300 x 150 cm Wall Banner, From NZ$489.99",
+    })).not.toBeChecked();
+    expect(screen.queryByRole("radio", {
+      name: /85 × 200 cm Roll-Up/,
+    })).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", {
+      name: /incl GST/,
+    })).not.toBeInTheDocument();
+
+    const orderSummary = screen.getByRole("complementary", { name: "Order summary" });
+    expect(within(orderSummary).getByText("NZ$359.99 incl GST")).toBeInTheDocument();
+  });
+
   it("shows the fixed five-photo component allowance even if an untrusted schema differs", () => {
     render(
       <BannerBundleConfigurator
