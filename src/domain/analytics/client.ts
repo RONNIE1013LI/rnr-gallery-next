@@ -5,6 +5,7 @@ import type { AnalyticsEvent, AnalyticsItem } from "./events";
 import {
   GA4_DEBUG_SESSION_KEY,
   GA4_DISABLE_WINDOW_KEY,
+  GA4_SAFE_CHECKOUT_PATH,
   GA4_SAFE_PURCHASE_PATH,
 } from "./runtime";
 
@@ -98,6 +99,12 @@ function isPrivatePurchaseReady(event: AnalyticsEvent): event is Extract<Analyti
     && document.documentElement.dataset.ga4Loaded === "true";
 }
 
+function isPrivateCheckoutReady(event: AnalyticsEvent): boolean {
+  return ["begin_checkout", "add_shipping_info", "add_payment_info"].includes(event.event)
+    && document.documentElement.dataset.ga4PrivateCommerce === "true"
+    && document.documentElement.dataset.ga4Loaded === "true";
+}
+
 export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
   try {
     if (!event || typeof document === "undefined" || !hasReadyDataLayer()) {
@@ -105,7 +112,8 @@ export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
     }
 
     const privatePurchase = isPrivatePurchaseReady(event);
-    if (!privatePurchase && document.documentElement.dataset.ga4Enabled !== "true") {
+    const privateCheckout = isPrivateCheckoutReady(event);
+    if (!privatePurchase && !privateCheckout && document.documentElement.dataset.ga4Enabled !== "true") {
       return false;
     }
 
@@ -114,13 +122,16 @@ export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
 
     const eventPayload = {
       ...payload,
-      ...(privatePurchase ? {
-        page_location: new URL(GA4_SAFE_PURCHASE_PATH, window.location.origin).href,
+      ...(privatePurchase || privateCheckout ? {
+        page_location: new URL(
+          privatePurchase ? GA4_SAFE_PURCHASE_PATH : GA4_SAFE_CHECKOUT_PATH,
+          window.location.origin,
+        ).href,
         page_referrer: "",
       } : {}),
       ...(isDebugSession() ? { debug_mode: true } : {}),
     };
-    if (privatePurchase) {
+    if (privatePurchase || privateCheckout) {
       const ga4Window = window as Window & Record<string, unknown>;
       ga4Window[GA4_DISABLE_WINDOW_KEY] = false;
       try {

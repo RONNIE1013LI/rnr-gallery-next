@@ -45,6 +45,7 @@ describe("AnalyticsRuntimeController", () => {
     localStorage.clear();
     document.documentElement.removeAttribute("data-ga4-enabled");
     document.documentElement.removeAttribute("data-ga4-private-purchase");
+    document.documentElement.removeAttribute("data-ga4-private-commerce");
     document.documentElement.removeAttribute("data-ga4-loaded");
     delete (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY];
     setLocation("/");
@@ -95,6 +96,20 @@ describe("AnalyticsRuntimeController", () => {
     expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
     expect(document.documentElement.dataset.ga4PrivatePurchase).toBe("true");
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+  });
+
+  it("marks checkout for allowlisted commerce while keeping automatic collection disabled", async () => {
+    setLocation("/checkout");
+    const view = render(<AnalyticsRuntimeController production />);
+
+    await waitFor(() => expect(googleAnalytics.mounts).toBe(1));
+    const script = await view.findByTestId("official-google-analytics");
+    act(() => script.dispatchEvent(new Event("load")));
+
+    expect(document.documentElement.dataset.ga4PrivateCommerce).toBe("true");
+    expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+    expect(sendGAEvent).not.toHaveBeenCalled();
   });
 
   it("keeps private-to-public history disabled until a safe pageview replaces referrer context", async () => {

@@ -2,8 +2,9 @@ export const GA4_MEASUREMENT_ID = "G-RE5Z5B58TJ";
 export const GA4_DEBUG_SESSION_KEY = "rnr:analytics:v1:debug";
 export const GA4_DISABLE_WINDOW_KEY = `ga-disable-${GA4_MEASUREMENT_ID}`;
 export const GA4_SAFE_PURCHASE_PATH = "/";
+export const GA4_SAFE_CHECKOUT_PATH = "/checkout";
 
-export type Ga4LocationPolicy = "public" | "private" | "private-order";
+export type Ga4LocationPolicy = "public" | "private" | "private-checkout" | "private-order";
 
 const PRIVATE_PATH_PREFIXES = [
   "/account",
@@ -31,6 +32,7 @@ export function classifyGa4Location(
   searchParams: URLSearchParams,
 ): Ga4LocationPolicy {
   if (pathMatchesPrefix(pathname, "/orders")) return "private-order";
+  if (pathMatchesPrefix(pathname, "/checkout")) return "private-checkout";
   if (PRIVATE_PATH_PREFIXES.some((prefix) => pathMatchesPrefix(pathname, prefix))) {
     return "private";
   }

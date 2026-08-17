@@ -40,6 +40,7 @@ export function applyGa4LocationPolicy(
 
   if (!production) {
     root.removeAttribute("data-ga4-enabled");
+    root.removeAttribute("data-ga4-private-commerce");
     root.removeAttribute("data-ga4-private-purchase");
     root.removeAttribute("data-ga4-loaded");
     setCollectionDisabled(true);
@@ -48,6 +49,7 @@ export function applyGa4LocationPolicy(
 
   const debugMode = controlledDebugMode(url);
   if (policy === "public") {
+    root.removeAttribute("data-ga4-private-commerce");
     root.removeAttribute("data-ga4-private-purchase");
     if (collectionReady) {
       root.dataset.ga4Enabled = "true";
@@ -58,6 +60,11 @@ export function applyGa4LocationPolicy(
     }
   } else {
     root.removeAttribute("data-ga4-enabled");
+    if (policy === "private-checkout") {
+      root.dataset.ga4PrivateCommerce = "true";
+    } else {
+      root.removeAttribute("data-ga4-private-commerce");
+    }
     if (policy === "private-order") {
       root.dataset.ga4PrivatePurchase = "true";
     } else {
@@ -174,6 +181,7 @@ export function AnalyticsRuntimeController({
       removeHistoryGuard();
       document.removeEventListener("load", handleScriptLoad, true);
       document.documentElement.removeAttribute("data-ga4-enabled");
+      document.documentElement.removeAttribute("data-ga4-private-commerce");
       document.documentElement.removeAttribute("data-ga4-private-purchase");
       document.documentElement.removeAttribute("data-ga4-loaded");
       tagLoaded.current = false;

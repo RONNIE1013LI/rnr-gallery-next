@@ -67,4 +67,11 @@ describe("GA4 runtime boundary", () => {
       new URLSearchParams("access=private-email-token"),
     )).toBe("private-order");
   });
+
+  it("classifies checkout separately so only allowlisted commerce events can cross the private boundary", () => {
+    expect(classifyGa4Location(
+      "/checkout",
+      new URLSearchParams(),
+    )).toBe("private-checkout");
+  });
 });

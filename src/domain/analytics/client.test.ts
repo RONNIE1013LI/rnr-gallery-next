@@ -38,6 +38,7 @@ describe("emitAnalyticsEvent", () => {
     vi.clearAllMocks();
     document.documentElement.removeAttribute("data-ga4-enabled");
     document.documentElement.removeAttribute("data-ga4-private-purchase");
+    document.documentElement.removeAttribute("data-ga4-private-commerce");
     document.documentElement.removeAttribute("data-ga4-loaded");
     delete (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY];
     window.history.replaceState({}, "", "/");
@@ -211,6 +212,58 @@ describe("emitAnalyticsEvent", () => {
 
     expect(emitAnalyticsEvent(purchase)).toBe(false);
     expect(sendGAEvent).not.toHaveBeenCalled();
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+  });
+
+  it("sends only allowlisted checkout events with a safe location while automatic collection stays disabled", () => {
+    document.documentElement.dataset.ga4PrivateCommerce = "true";
+    document.documentElement.dataset.ga4Loaded = "true";
+    (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] = true;
+    window.history.replaceState({}, "", "/checkout?client_secret=private-checkout-secret");
+    const beginCheckout = { ...event, event: "begin_checkout" } as const;
+    let disabledDuringSend: unknown;
+    vi.mocked(sendGAEvent).mockImplementation(() => {
+      disabledDuringSend = (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY];
+    });
+
+    expect(emitAnalyticsEvent(event)).toBe(false);
+    expect(emitAnalyticsEvent(beginCheckout)).toBe(true);
+    expect(emitAnalyticsEvent({
+      ...event,
+      event: "add_shipping_info",
+      shipping_tier: "Standard delivery",
+    })).toBe(true);
+    expect(emitAnalyticsEvent({
+      ...event,
+      event: "add_payment_info",
+      payment_type: "afterpay",
+    })).toBe(true);
+    expect(disabledDuringSend).toBe(false);
+    expect(sendGAEvent).toHaveBeenCalledTimes(3);
+    expect(sendGAEvent).toHaveBeenNthCalledWith(1, "event", "begin_checkout", {
+      currency: "NZD",
+      value: 65,
+      items: beginCheckout.items,
+      page_location: "http://localhost:3000/checkout",
+      page_referrer: "",
+    });
+    expect(sendGAEvent).toHaveBeenNthCalledWith(2, "event", "add_shipping_info", {
+      currency: "NZD",
+      value: 65,
+      items: beginCheckout.items,
+      shipping_tier: "Standard delivery",
+      page_location: "http://localhost:3000/checkout",
+      page_referrer: "",
+    });
+    expect(sendGAEvent).toHaveBeenNthCalledWith(3, "event", "add_payment_info", {
+      currency: "NZD",
+      value: 65,
+      items: beginCheckout.items,
+      payment_type: "afterpay",
+      page_location: "http://localhost:3000/checkout",
+      page_referrer: "",
+    });
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-checkout-secret");
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
   });
 
