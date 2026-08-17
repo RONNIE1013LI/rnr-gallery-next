@@ -81,4 +81,16 @@ describe("image draft validator", () => {
       "We cannot confirm the source resolution and this photo is suitable for print.",
     )).toEqual({ ok: false, codes: ["visual_print_suitability_claim"] });
   });
+
+  it.each([
+    "We need to assess if restoration is possible: this image is suitable for print.",
+    "We need to assess if restoration is possible - this image is suitable for print.",
+    "We need to assess if restoration is possible \u2013 this image is suitable for print.",
+    "We need to assess if restoration is possible \u2014 this image is suitable for print.",
+  ])("blocks a definitive claim after a hard punctuation boundary: %s", (draft) => {
+    expect(validateImageDraft(draft)).toEqual({
+      ok: false,
+      codes: ["visual_print_suitability_claim"],
+    });
+  });
 });

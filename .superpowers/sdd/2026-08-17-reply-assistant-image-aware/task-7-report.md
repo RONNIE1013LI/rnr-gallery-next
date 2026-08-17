@@ -179,3 +179,35 @@ Resolved the remaining additive image-validator boundary from the updated scoped
 ### Concerns
 
 The classifier is intentionally deterministic and English-phrase bounded; newly introduced claim grammar should receive an exact regression before expanding it. No live provider request was made.
+
+## Fix Round 4
+
+### Status
+
+Resolved the final candidate-context punctuation boundary from the updated Task 7 review.
+
+### TDD Evidence
+
+- The exact colon regression `We need to assess if restoration is possible: this image is suitable for print.` first passed incorrectly.
+- Direct sibling probes showed that semicolon already isolated the later claim, while spaced ASCII hyphen, en dash, and em dash had the same shielding failure as colon.
+- The focused red run had only the four new punctuation regressions failing, with all 39 prior validator cases passing. After the narrow boundary fix, all 43 validator tests passed.
+- Direct safe-advisory probes after colon and em dash remained accepted.
+
+### Changes
+
+- Added colon, en dash, and em dash to the existing clause punctuation boundaries, plus a whitespace-delimited ASCII hyphen boundary so hyphenated words are not split.
+- Added regressions for the exact reviewed colon sentence and the three dash forms that reproduced the same failure.
+- Left claim patterns, qualification rules, `output-validator.ts`, orchestration, policy, send behavior, Production configuration, public APIs, migration code, and Task 8 unchanged.
+
+### Verification
+
+- Additive image validator: 43 tests passed.
+- Task 7 validators, policy gate/regression, no-send, prompt/text provider, image provider, and engine boundaries: 9 files passed, 88 tests passed.
+- `npm run typecheck`: passed.
+- Targeted ESLint for the two changed TypeScript files: passed with zero warnings or errors.
+- `git diff --check`: passed.
+- `output-validator.ts` SHA-256 remains `3e95c2af99e18b91cbaa8351df5c3907aa64066fbf21ee795c262a5852581a76`.
+
+### Concerns
+
+No Task 7 blocker remains. The ASCII hyphen is treated as a clause boundary only when surrounded by whitespace; ordinary hyphenated words retain their existing behavior. No live provider request was made.

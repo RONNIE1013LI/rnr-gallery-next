@@ -102,7 +102,7 @@ export function validateImageDraft(draft: string): ImageDraftValidationResult {
   const sentences = value.match(/[^.!?;\n]+[.!?]?/g) ?? [];
   for (const sentence of sentences) {
     const clauses = sentence.split(
-      /,|\b(?:and|but|however|because|even\s+though|although|though|while|whereas|then|so)\b/i,
+      /[,:\u2013\u2014]|\s+-\s+|\b(?:and|but|however|because|even\s+though|although|though|while|whereas|then|so)\b/i,
     );
     for (const item of clauses) {
       const clause = item.trim();
