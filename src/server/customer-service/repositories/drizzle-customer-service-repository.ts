@@ -5,6 +5,7 @@ import {
   customerServiceAiAttempts,
   customerServiceAttachments,
   customerServiceBudgetState,
+  customerServiceConversationEvents,
   customerServiceConversations,
   customerServiceFeedbackEvents,
   customerServiceImageAnalysisAttempts,
@@ -12,12 +13,14 @@ import {
   customerServiceImageJobs,
   customerServiceMessages,
   customerServicePilotRuns,
+  customerServiceTurns,
 } from "@/server/db/schema";
 import type {
   CustomerServiceRepository,
   FeedbackEventInput,
   GateBlockedAttemptInput,
   HashedIncomingMessage,
+  HashedConversationEvent,
   ProviderAttemptCompletion,
   ProviderAttemptReservation,
 } from "./customer-service-repository";
@@ -339,6 +342,95 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
   }
 
   return {
+    async ingestConversationEvent(input: HashedConversationEvent) {
+      return database.transaction(async (transaction) => {
+        const insertedConversation = await transaction.insert(customerServiceConversations).values({
+          channel: input.channel,
+          externalKeyHash: input.externalConversationKeyHash,
+        }).onConflictDoNothing().returning({ id: customerServiceConversations.id });
+        const [conversation] = insertedConversation.length
+          ? insertedConversation
+          : await transaction.select({ id: customerServiceConversations.id })
+            .from(customerServiceConversations)
+            .where(and(
+              eq(customerServiceConversations.channel, input.channel),
+              eq(customerServiceConversations.externalKeyHash, input.externalConversationKeyHash),
+            )).limit(1);
+
+        const body = input.text?.trim() || "[Image attachment]";
+        if (input.role === "staff") {
+          const inserted = await transaction.insert(customerServiceConversationEvents).values({
+            conversationId: conversation.id,
+            channel: input.channel,
+            externalMessageKeyHash: input.externalMessageKeyHash,
+            role: "staff",
+            body,
+            receivedAt: input.receivedAt,
+          }).onConflictDoNothing().returning({ id: customerServiceConversationEvents.id });
+          return inserted.length ? { status: "context_only" as const } : { status: "duplicate" as const };
+        }
+
+        const customerText = input.text?.trim() || null;
+        const [message] = await transaction.insert(customerServiceMessages).values({
+          conversationId: conversation.id,
+          channel: input.channel,
+          externalMessageKeyHash: input.externalMessageKeyHash,
+          body,
+          customerText,
+          receivedAt: input.receivedAt,
+        }).onConflictDoNothing().returning({ id: customerServiceMessages.id });
+        if (!message) return { status: "duplicate" as const };
+
+        const debounceUntil = new Date(input.receivedAt.getTime() + 2_000);
+        const [turn] = await transaction.insert(customerServiceTurns).values({
+          conversationId: conversation.id,
+          channel: input.channel,
+          representativeMessageId: message.id,
+          body,
+          debounceUntil,
+          openedAt: input.receivedAt,
+          lastEventAt: input.receivedAt,
+        }).returning({ id: customerServiceTurns.id });
+        await transaction.insert(customerServiceConversationEvents).values({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          legacyMessageId: message.id,
+          channel: input.channel,
+          externalMessageKeyHash: input.externalMessageKeyHash,
+          role: "customer",
+          body,
+          receivedAt: input.receivedAt,
+        });
+        if (input.attachments.length) {
+          await transaction.insert(customerServiceAttachments).values(input.attachments.map((attachment) => ({
+            messageId: message.id,
+            conversationId: conversation.id,
+            externalAttachmentKeyHash: attachment.externalAttachmentKeyHash,
+            ordinal: attachment.ordinal,
+            kind: "image" as const,
+            normalizedKind: attachment.kind,
+            mimeTypeHint: attachment.mimeTypeHint,
+            status: attachment.kind === "unsupported" ? "rejected" as const : "metadata_received" as const,
+            failureCode: attachment.failureCode ?? null,
+          })));
+        }
+        if (input.imageJob) {
+          await transaction.insert(customerServiceImageJobs).values({
+            id: input.imageJob.id,
+            messageId: message.id,
+            conversationId: conversation.id,
+            status: input.imageJob.status,
+            sourceCiphertext: input.imageJob.sourceCiphertext,
+            sourceExpiresAt: input.imageJob.sourceExpiresAt,
+            failureCode: input.imageJob.failureCode,
+            nextRunAt: input.receivedAt,
+            ...(input.imageJob.status === "human_review_required" ? { completedAt: input.receivedAt } : {}),
+          });
+        }
+        return { status: "turn_pending" as const, messageId: message.id, turnId: turn.id, debounceUntil };
+      });
+    },
+
     async ingestFacebookMessage(input: HashedIncomingMessage) {
       return database.transaction(async (transaction) => {
         const insertedConversation = await transaction.insert(customerServiceConversations).values({

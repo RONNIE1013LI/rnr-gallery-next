@@ -6,6 +6,7 @@ import {
   customerServiceAiAttempts,
   customerServiceAttachments,
   customerServiceBudgetState,
+  customerServiceConversationEvents,
   customerServiceConversations,
   customerServiceFeedbackEvents,
   customerServiceImageAnalysisAttempts,
@@ -13,6 +14,7 @@ import {
   customerServiceImageJobs,
   customerServiceMessages,
   customerServicePilotRuns,
+  customerServiceTurns,
 } from "@/server/db/schema";
 import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
 import { createDrizzleCustomerServiceRepository } from "./drizzle-customer-service-repository";
@@ -74,6 +76,8 @@ async function clearTables() {
   await database.delete(customerServiceImageAnalysisInputs);
   await database.delete(customerServiceImageAnalysisAttempts);
   await database.delete(customerServiceAttachments);
+  await database.delete(customerServiceConversationEvents);
+  await database.delete(customerServiceTurns);
   await database.delete(customerServiceMessages);
   await database.delete(customerServiceConversations);
   await database.delete(customerServiceBudgetState);
@@ -93,6 +97,67 @@ async function activateFacebookPilot(name: string) {
 describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   beforeEach(clearTables);
   afterAll(clearTables);
+
+  it("persists customer and staff events in one isolated conversation", async () => {
+    const contextualRepository = repository as typeof repository & {
+      ingestConversationEvent(input: {
+        channel: "facebook";
+        role: "customer" | "staff";
+        externalConversationKeyHash: string;
+        externalMessageKeyHash: string;
+        text: string;
+        attachments: [];
+        imageJob: null;
+        receivedAt: Date;
+      }): Promise<{ status: string; messageId?: string; turnId?: string }>;
+    };
+    const conversationHash = "a".repeat(64);
+    const customer = await contextualRepository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "b".repeat(64),
+      text: "How much are your banners?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    const staff = await contextualRepository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "c".repeat(64),
+      text: "Which type of banner do you need?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:01.000Z"),
+    });
+    const duplicate = await contextualRepository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "c".repeat(64),
+      text: "Which type of banner do you need?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:01.000Z"),
+    });
+
+    expect(customer).toMatchObject({ status: "turn_pending", messageId: expect.any(String), turnId: expect.any(String) });
+    expect(staff).toEqual({ status: "context_only" });
+    expect(duplicate).toEqual({ status: "duplicate" });
+    const conversations = await database.execute(sql`select count(*)::int as count from customer_service_conversations`);
+    const events = await database.execute(sql`
+      select role, body from customer_service_conversation_events order by received_at, created_at, id
+    `);
+    const messages = await database.execute(sql`select count(*)::int as count from customer_service_messages`);
+    expect(conversations.rows[0]).toEqual({ count: 1 });
+    expect(events.rows).toEqual([
+      { role: "customer", body: "How much are your banners?" },
+      { role: "staff", body: "Which type of banner do you need?" },
+    ]);
+    expect(messages.rows[0]).toEqual({ count: 1 });
+  });
 
   it("deduplicates concurrent webhook ingestion and allocates one pilot slot", async () => {
     await database.insert(customerServicePilotRuns).values({

@@ -111,6 +111,77 @@ export const customerServiceMessages = pgTable(
   ],
 );
 
+export const customerServiceTurns = pgTable(
+  "customer_service_turns",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversationId: uuid("conversation_id").notNull().references(() => customerServiceConversations.id, { onDelete: "restrict" }),
+    channel: text("channel").$type<"facebook" | "website">().notNull(),
+    representativeMessageId: uuid("representative_message_id").references(() => customerServiceMessages.id, { onDelete: "restrict" }),
+    body: text("body").notNull(),
+    status: text("status").$type<"open" | "sealed" | "suppressed" | "pilot_complete">().default("open").notNull(),
+    debounceUntil: timestamp("debounce_until", { withTimezone: true }).notNull(),
+    openedAt: timestamp("opened_at", { withTimezone: true }).notNull(),
+    lastEventAt: timestamp("last_event_at", { withTimezone: true }).notNull(),
+    sealedAt: timestamp("sealed_at", { withTimezone: true }),
+    suppressionReason: text("suppression_reason"),
+    fragmentCount: integer("fragment_count").default(1).notNull(),
+    pilotRunId: uuid("pilot_run_id").references(() => customerServicePilotRuns.id, { onDelete: "restrict" }),
+    pilotSequence: integer("pilot_sequence"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: updatedTimestamp(),
+  },
+  (table) => [
+    uniqueIndex("customer_service_turns_open_conversation_unique")
+      .on(table.conversationId)
+      .where(sql`${table.status} = 'open'`),
+    uniqueIndex("customer_service_turns_pilot_sequence_unique")
+      .on(table.pilotRunId, table.pilotSequence)
+      .where(sql`${table.pilotRunId} is not null and ${table.pilotSequence} is not null`),
+    index("customer_service_turns_conversation_last_event_idx").on(table.conversationId, table.lastEventAt),
+    index("customer_service_turns_status_debounce_idx").on(table.status, table.debounceUntil),
+    check("customer_service_turns_channel_valid", sql`${table.channel} in ('facebook', 'website')`),
+    check("customer_service_turns_status_valid", sql`${table.status} in ('open', 'sealed', 'suppressed', 'pilot_complete')`),
+    check("customer_service_turns_body_valid", sql`length(trim(${table.body})) > 0`),
+    check("customer_service_turns_fragment_count_valid", sql`${table.fragmentCount} > 0`),
+    check(
+      "customer_service_turns_pilot_pair_valid",
+      sql`(${table.pilotRunId} is null and ${table.pilotSequence} is null) or (${table.pilotRunId} is not null and ${table.pilotSequence} is not null and ${table.pilotSequence} > 0)`,
+    ),
+  ],
+);
+
+export const customerServiceConversationEvents = pgTable(
+  "customer_service_conversation_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversationId: uuid("conversation_id").notNull().references(() => customerServiceConversations.id, { onDelete: "restrict" }),
+    turnId: uuid("turn_id").references(() => customerServiceTurns.id, { onDelete: "restrict" }),
+    legacyMessageId: uuid("legacy_message_id").references(() => customerServiceMessages.id, { onDelete: "restrict" }),
+    channel: text("channel").$type<"facebook" | "website">().notNull(),
+    externalMessageKeyHash: text("external_message_key_hash").notNull(),
+    role: text("role").$type<"customer" | "staff">().notNull(),
+    body: text("body").notNull(),
+    receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("customer_service_conversation_events_channel_external_unique")
+      .on(table.channel, table.externalMessageKeyHash),
+    index("customer_service_conversation_events_conversation_received_idx")
+      .on(table.conversationId, table.receivedAt, table.createdAt),
+    index("customer_service_conversation_events_turn_idx").on(table.turnId),
+    check("customer_service_conversation_events_channel_valid", sql`${table.channel} in ('facebook', 'website')`),
+    check("customer_service_conversation_events_role_valid", sql`${table.role} in ('customer', 'staff')`),
+    check("customer_service_conversation_events_body_valid", sql`length(trim(${table.body})) > 0`),
+    check("customer_service_conversation_events_external_hash_valid", sql`length(trim(${table.externalMessageKeyHash})) > 0`),
+    check(
+      "customer_service_conversation_events_customer_message_valid",
+      sql`(${table.role} = 'customer' and ${table.legacyMessageId} is not null) or (${table.role} = 'staff' and ${table.legacyMessageId} is null)`,
+    ),
+  ],
+);
+
 export const customerServiceAiAttempts = pgTable(
   "customer_service_ai_attempts",
   {

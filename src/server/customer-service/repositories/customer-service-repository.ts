@@ -1,4 +1,4 @@
-import type { CustomerServiceChannel, DraftGenerationRequest } from "../types";
+import type { ConversationRole, CustomerServiceChannel, DraftGenerationRequest } from "../types";
 import type { ImageAnalysisResult } from "../image-analysis-schema";
 import type { ProtectedAttachmentSource } from "../attachments/attachment-source-protector";
 
@@ -47,6 +47,10 @@ export type HashedIncomingMessage = Readonly<{
     failureCode: string | null;
   }> | null;
   receivedAt: Date;
+}>;
+
+export type HashedConversationEvent = HashedIncomingMessage & Readonly<{
+  role: ConversationRole;
 }>;
 
 export type DraftInput = Readonly<{
@@ -168,6 +172,11 @@ export type PilotMetricCounts = Readonly<{
 }>;
 
 export interface CustomerServiceRepository {
+  ingestConversationEvent(input: HashedConversationEvent): Promise<
+    | Readonly<{ status: "turn_pending"; messageId: string; turnId: string; debounceUntil: Date }>
+    | Readonly<{ status: "context_only" }>
+    | Readonly<{ status: "duplicate" }>
+  >;
   ingestFacebookMessage(input: HashedIncomingMessage): Promise<
     | Readonly<{ status: "created"; messageId: string; pilotSequence: number }>
     | Readonly<{ status: "duplicate"; messageId: string }>
