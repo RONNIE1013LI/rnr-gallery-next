@@ -44,6 +44,11 @@ const BANNER_BUNDLE_SIZE_OPTION_LABELS: Record<string, string> = {
   "rollup-wall-300x150": "Roll Up Banner + 300 x 150 cm Wall Banner",
 };
 
+const BANNER_BUNDLE_WALL_SIZE_LABELS: Record<string, string> = {
+  "rollup-wall-200x100": "200 x 100 cm",
+  "rollup-wall-300x150": "300 x 150 cm",
+};
+
 function initialCustomisation(
   photoSubmissionMethod: SourcePhotoCustomisationValue["photoSubmissionMethod"],
 ): SourcePhotoCustomisationValue {
@@ -187,6 +192,8 @@ export function BannerBundleConfigurator({
     () => schema.sizes.map((option) => ({
       key: option.key,
       label: BANNER_BUNDLE_SIZE_OPTION_LABELS[option.key]
+        ?? formatConfigurationSizeLabel(option),
+      wallBannerSize: BANNER_BUNDLE_WALL_SIZE_LABELS[option.key]
         ?? formatConfigurationSizeLabel(option),
       minimumPriceInclTaxCents: quoteMarketConfiguration(
         registry,
@@ -417,7 +424,11 @@ export function BannerBundleConfigurator({
               </div>
             </div>
             <fieldset className={styles.sizePicker} role="radiogroup">
-              <legend>Size</legend>
+              <legend className="sr-only">Size</legend>
+              <div className={styles.bundleSizeHeader} aria-hidden="true">
+                <span>Size</span>
+                <strong>Roll Up Banner +</strong>
+              </div>
               <div className={styles.sizeOptions}>
                 {sizeChoices.map((option) => {
                   const priceLabel = `From ${formatMarketMoney(option.minimumPriceInclTaxCents, currency)}`;
@@ -431,8 +442,11 @@ export function BannerBundleConfigurator({
                         onChange={() => setSizeKey(option.key)}
                         aria-label={`${option.label}, ${priceLabel}`}
                       />
-                      <span className={styles.sizeOptionBody}>
-                        <strong>{option.label}</strong>
+                      <span className={`${styles.sizeOptionBody} ${styles.bundleSizeOptionBody}`}>
+                        <span className={styles.bundleSizeDescription}>
+                          <strong>Wall Banner</strong>
+                          <small>{option.wallBannerSize}</small>
+                        </span>
                         <span>{priceLabel}</span>
                       </span>
                     </label>

@@ -2058,6 +2058,22 @@
   line-height: 1.45;
 }
 
+.bundleSizeHeader {
+  display: grid;
+  grid-template-columns: 5.5rem minmax(0, 1fr);
+  gap: 0.5rem;
+  align-items: end;
+  margin-bottom: 0.45rem;
+  color: var(--ink);
+}
+
+.bundleSizeHeader span,
+.bundleSizeHeader strong {
+  font-size: 0.875rem;
+  font-weight: 750;
+  line-height: 1.35;
+}
+
 .sizeOptions {
   display: grid;
   gap: 0.75rem;
@@ -2113,6 +2129,39 @@
   line-height: 1.25;
   text-align: right;
   white-space: nowrap;
+}
+
+.bundleSizeOptionBody {
+  padding-inline: 3rem 1.5rem;
+}
+
+.bundleSizeOptionBody > .bundleSizeDescription {
+  display: grid;
+  gap: 0.15rem;
+  color: var(--ink);
+  text-align: left;
+  white-space: normal;
+}
+
+.bundleSizeDescription small {
+  font-size: 0.78rem;
+  font-weight: 500;
+  line-height: 1.3;
+}
+
+@media (max-width: 520px) {
+  .bundleSizeHeader {
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+  }
+
+  .bundleSizeOptionBody {
+    gap: 0.75rem;
+    padding-inline: 1rem;
+  }
+
+  .bundleSizeOptionBody > span:last-child {
+    font-size: 0.8rem;
+  }
 }
 
 .sizeOption:hover .sizeOptionBody {

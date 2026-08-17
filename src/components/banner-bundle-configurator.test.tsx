@@ -64,6 +64,14 @@ describe("BannerBundleConfigurator", () => {
       name: /incl GST/,
     })).not.toBeInTheDocument();
 
+    const sizePicker = screen.getByRole("radiogroup", { name: "Size" });
+    expect(within(sizePicker).getByText("Roll Up Banner +")).toBeVisible();
+    expect(within(sizePicker).getAllByText("Wall Banner")).toHaveLength(2);
+    expect(within(sizePicker).getByText("200 x 100 cm")).toBeVisible();
+    expect(within(sizePicker).getByText("300 x 150 cm")).toBeVisible();
+    expect(within(sizePicker).getByText("From NZ$359.99")).toBeVisible();
+    expect(within(sizePicker).getByText("From NZ$489.99")).toBeVisible();
+
     const orderSummary = screen.getByRole("complementary", { name: "Order summary" });
     expect(within(orderSummary).getByText("NZ$359.99 incl GST")).toBeInTheDocument();
   });
