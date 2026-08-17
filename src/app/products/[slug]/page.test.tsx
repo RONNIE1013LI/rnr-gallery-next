@@ -8,15 +8,25 @@ import { getProductBySlug } from "@/domain/catalogue/products";
 import AustraliaProductPage from "@/app/au/products/[slug]/page";
 import ProductPage, { ProductPageContent } from "./page-content";
 
-const state = vi.hoisted(() => ({ registry: undefined as unknown }));
+const state = vi.hoisted(() => ({
+  registry: undefined as unknown,
+  selection: null as unknown,
+  track: vi.fn(),
+}));
 
 vi.mock("@/server/admin/product-registry-runtime", () => ({
   getSafePublicProductRegistry: async () => ({ registry: state.registry }),
 }));
 vi.mock("@/server/gallery/gallery-runtime", () => ({
   getGalleryRuntime: () => ({
-    selectionService: { resolve: vi.fn().mockResolvedValue(null) },
+    selectionService: { resolve: vi.fn().mockImplementation(async () => state.selection) },
   }),
+}));
+vi.mock("@/components/analytics-event-tracker", () => ({
+  AnalyticsEventTracker: (props: unknown) => {
+    state.track(props);
+    return null;
+  },
 }));
 
 function enabledAustraliaRegistry() {
@@ -47,6 +57,47 @@ const bundleProps = {
 describe("ProductPageContent", () => {
   beforeEach(() => {
     state.registry = defaultProductRegistry;
+    state.selection = null;
+    state.track.mockClear();
+  });
+
+  it("tracks the default NZ product quote in NZD without selected-design details", async () => {
+    const designId = "a".repeat(64);
+    state.selection = {
+      id: designId,
+      title: "Private memorial wording",
+      altText: "Private selected design alt text",
+      imageUrl: `/gallery-images/${designId}?v=${"b".repeat(64)}`,
+      contentHash: "b".repeat(64),
+      productSlug: "digital-oil-painting-canvas",
+      width: 1200,
+      height: 1600,
+    };
+
+    render(await ProductPage({
+      params: Promise.resolve({ slug: "digital-oil-painting-canvas" }),
+      searchParams: Promise.resolve({ design: designId }),
+    }));
+
+    expect(state.track).toHaveBeenCalledWith({
+      event: {
+        event: "view_item",
+        currency: "NZD",
+        value: 105,
+        items: [{
+          item_id: "digital-oil-painting-canvas",
+          item_name: "Digital Oil Painting Canvas",
+          item_category: "canvas",
+          item_variant: "a4",
+          price: 105,
+          quantity: 1,
+        }],
+      },
+      scopeKey: "NZ:digital-oil-painting-canvas:a4",
+    });
+    const payload = JSON.stringify(state.track.mock.calls);
+    expect(payload).not.toContain("Private memorial wording");
+    expect(payload).not.toContain("gallery-images");
   });
   it("shows a validated inspiration and preserves it in the create link", () => {
     const product = getProductBySlug("digital-oil-painting-canvas")!;

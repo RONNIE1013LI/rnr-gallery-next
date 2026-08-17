@@ -1,8 +1,14 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { calculateFixedPackage } from "@/domain/pricing/calculate-fixed-package";
 import type { CartItem } from "@/domain/cart/types";
 import { CartView } from "./cart-view";
+
+const analytics = vi.hoisted(() => ({
+  emitAnalyticsEvent: vi.fn<(event: unknown) => boolean>(() => true),
+}));
+
+vi.mock("@/domain/analytics/client", () => analytics);
 
 const cartItem: CartItem = {
   id: "item-1",
@@ -65,7 +71,10 @@ function seedCart() {
 }
 
 describe("CartView", () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    analytics.emitAnalyticsEvent.mockClear();
+  });
 
   it("shows a useful empty state", () => {
     render(<CartView />);
@@ -93,6 +102,26 @@ describe("CartView", () => {
       "href",
       "/checkout/start",
     );
+  });
+
+  it("tracks the hydrated identity-scoped cart without exposing its storage key", async () => {
+    seedCart();
+    render(<CartView />);
+
+    await waitFor(() => expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
+      event: "view_cart",
+      currency: "NZD",
+      value: 65,
+      items: [{
+        item_id: "photo-print-canvas",
+        item_name: "Photo Print Canvas",
+        item_variant: "a4",
+        price: 65,
+        quantity: 1,
+      }],
+    }));
+    expect(JSON.stringify(analytics.emitAnalyticsEvent.mock.calls))
+      .not.toContain("rnr:commerce:v1:guest:cart");
   });
 
   it("shows the chosen design inspiration and preserves its product route", async () => {
@@ -143,9 +172,24 @@ describe("CartView", () => {
     expect(screen.getAllByText("NZ$149.50")).toHaveLength(2);
     expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0].quantity).toBe(2);
 
+    analytics.emitAnalyticsEvent.mockClear();
+
     fireEvent.click(screen.getByRole("button", { name: "Remove Photo Print Canvas" }));
     expect(screen.getByRole("heading", { name: "Your cart is empty" })).toBeInTheDocument();
     expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items).toEqual([]);
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledTimes(1);
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
+      event: "remove_from_cart",
+      currency: "NZD",
+      value: 130,
+      items: [{
+        item_id: "photo-print-canvas",
+        item_name: "Photo Print Canvas",
+        item_variant: "a4",
+        price: 65,
+        quantity: 2,
+      }],
+    });
   });
 
   it("re-reads storage before editing so another tab's new item is preserved", async () => {

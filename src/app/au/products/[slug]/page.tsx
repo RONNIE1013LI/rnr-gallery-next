@@ -7,7 +7,6 @@ import {
   schemaFromRegistry,
 } from "@/domain/catalogue/product-registry";
 import {
-  getMarketStartingPriceInclTaxCents,
   quoteMarketConfiguration,
 } from "@/domain/pricing/market-quote";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
@@ -58,18 +57,20 @@ export default async function AustraliaProductPage({ params, searchParams }: Pro
   );
   const schema = schemaFromRegistry(registry, product.key);
   if (!schema) notFound();
+  const analyticsSizeKey = selectedSizeKey ?? schema.defaultSizeKey;
+  const quote = quoteMarketConfiguration(registry, "AU", product.key, {
+    sizeKey: analyticsSizeKey,
+    peoplePets: schema.defaultPeoplePets,
+  });
   return (
     <ProductPageContent
       product={product}
       selection={selection}
       reviewPage={Number.isInteger(reviewPage) ? reviewPage : 1}
       market="AU"
-      priceInclTaxCents={selectedSizeKey
-        ? quoteMarketConfiguration(registry, "AU", product.key, {
-            sizeKey: selectedSizeKey,
-            peoplePets: schema.defaultPeoplePets,
-          }).totalInclGstCents
-        : getMarketStartingPriceInclTaxCents(registry, "AU", product.key)}
+      priceInclTaxCents={quote.totalInclGstCents}
+      analyticsSubtotalExGstCents={quote.subtotalExGstCents}
+      analyticsSizeKey={analyticsSizeKey}
       taxRegistered={registry.markets.AU.tax.registered}
       selectedSizeKey={selectedSizeKey}
     />

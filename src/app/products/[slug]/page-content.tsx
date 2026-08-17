@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { AnalyticsEventTracker } from "@/components/analytics-event-tracker";
 import { FacebookReviews } from "@/components/facebook-reviews";
 import { StructuredData } from "@/components/structured-data";
 import { notFound } from "next/navigation";
@@ -12,9 +13,9 @@ import {
   type ProductRegistryDocument,
 } from "@/domain/catalogue/product-registry";
 import {
-  getMarketStartingPriceInclTaxCents,
   quoteMarketConfiguration,
 } from "@/domain/pricing/market-quote";
+import { buildProductViewEvent } from "@/domain/analytics/events";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { addNzdGst, formatMarketMoney } from "@/domain/money";
 import { currencyForMarket } from "@/domain/markets/market";
@@ -62,6 +63,8 @@ export function ProductPageContent({
   reviewPage = 1,
   market = "NZ",
   priceInclTaxCents,
+  analyticsSubtotalExGstCents,
+  analyticsSizeKey,
   taxRegistered,
   selectedSizeKey,
 }: Readonly<{
@@ -70,6 +73,8 @@ export function ProductPageContent({
   reviewPage?: number;
   market?: Market;
   priceInclTaxCents?: number;
+  analyticsSubtotalExGstCents?: number;
+  analyticsSizeKey?: string;
   taxRegistered?: boolean;
   selectedSizeKey?: string;
 }>) {
@@ -91,6 +96,19 @@ export function ProductPageContent({
   const taxLabel = market === "NZ" || taxRegistered ? " incl GST" : "";
   return (
     <main id="main-content" className={styles.productDetail}>
+      {analyticsSubtotalExGstCents !== undefined && analyticsSizeKey ? (
+        <AnalyticsEventTracker
+          event={buildProductViewEvent({
+            productKey: product.key,
+            productName: product.title,
+            category: product.category,
+            sizeKey: analyticsSizeKey,
+            currency,
+            unitSubtotalExTaxCents: analyticsSubtotalExGstCents,
+          })}
+          scopeKey={`${market}:${product.key}:${analyticsSizeKey}`}
+        />
+      ) : null}
       <StructuredData id="rnr-product-data" data={{
         "@context": "https://schema.org",
         "@type": "Product",
@@ -195,17 +213,19 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   );
   const schema = schemaFromRegistry(registry, product.key);
   if (!schema) notFound();
+  const analyticsSizeKey = selectedSizeKey ?? schema.defaultSizeKey;
+  const quote = quoteMarketConfiguration(registry, "NZ", product.key, {
+    sizeKey: analyticsSizeKey,
+    peoplePets: schema.defaultPeoplePets,
+  });
   return (
     <ProductPageContent
       product={product}
       reviewPage={Number.isInteger(reviewPage) ? reviewPage : 1}
       selection={selection}
-      priceInclTaxCents={selectedSizeKey
-        ? quoteMarketConfiguration(registry, "NZ", product.key, {
-            sizeKey: selectedSizeKey,
-            peoplePets: schema.defaultPeoplePets,
-          }).totalInclGstCents
-        : getMarketStartingPriceInclTaxCents(registry, "NZ", product.key)}
+      priceInclTaxCents={quote.totalInclGstCents}
+      analyticsSubtotalExGstCents={quote.subtotalExGstCents}
+      analyticsSizeKey={analyticsSizeKey}
       taxRegistered={registry.markets.NZ.tax.registered}
       selectedSizeKey={selectedSizeKey}
     />

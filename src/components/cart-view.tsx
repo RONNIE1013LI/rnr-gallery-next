@@ -3,6 +3,9 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useSyncExternalStore } from "react";
+import { AnalyticsEventTracker } from "@/components/analytics-event-tracker";
+import { emitAnalyticsEvent } from "@/domain/analytics/client";
+import { buildCartEvent, buildCartItemEvent } from "@/domain/analytics/events";
 import {
   createBrowserCartRepository,
   parseStoredCart,
@@ -20,6 +23,7 @@ import {
   setCartItemQuantity,
 } from "@/domain/cart/cart";
 import type { Cart } from "@/domain/cart/types";
+import { getActiveCartStorageKey } from "@/domain/cart/browser-cart-scope";
 import { formatMarketMoney } from "@/domain/money";
 import styles from "./storefront.module.css";
 
@@ -27,6 +31,15 @@ function updateCart(update: (cart: Cart) => Cart) {
   const repository = createBrowserCartRepository(window.localStorage);
   repository.save(update(repository.load()));
   notifyCartChanged();
+}
+
+function removeItemFromCart(itemId: string) {
+  const repository = createBrowserCartRepository(window.localStorage);
+  const current = repository.load();
+  const item = current.items.find((candidate) => candidate.id === itemId);
+  repository.save(removeCartItem(current, itemId));
+  notifyCartChanged();
+  if (item) emitAnalyticsEvent(buildCartItemEvent("remove_from_cart", item));
 }
 
 function labelFor(value: string): string {
@@ -67,6 +80,10 @@ export function CartView() {
 
   return (
     <div className={styles.cartLayout}>
+      <AnalyticsEventTracker
+        event={buildCartEvent("view_cart", cart)}
+        scopeKey={getActiveCartStorageKey()}
+      />
       <section className={styles.cartItems} aria-label="Cart items">
         {cart.items.map((item) => (
           <article className={styles.cartItem} key={item.id}>
@@ -74,7 +91,7 @@ export function CartView() {
               className={styles.removeItem}
               type="button"
               aria-label={`Remove ${item.productTitle}`}
-              onClick={() => updateCart((current) => removeCartItem(current, item.id))}
+              onClick={() => removeItemFromCart(item.id)}
             >×</button>
             <div className={styles.cartItemMedia}>
               <Image src={item.imageSrc} alt="" fill sizes="96px" />

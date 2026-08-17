@@ -14,6 +14,9 @@ import {
 import { createBrowserCartRepository } from "@/domain/cart/browser-cart-repository";
 import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
 import { addCartItem, setCartDeliveryPreference } from "@/domain/cart/cart";
+import type { CartItem } from "@/domain/cart/types";
+import { emitAnalyticsEvent } from "@/domain/analytics/client";
+import { buildCartItemEvent } from "@/domain/analytics/events";
 import type { DeliveryPreference } from "@/domain/configuration/types";
 import { formatConfigurationSizeLabel } from "@/domain/configuration/size-label";
 import { currencyForMarket } from "@/domain/markets/market";
@@ -244,7 +247,7 @@ export function BannerBundleConfigurator({
     ]);
     const uploadReferences = flattenBannerBundleUploadReferences(bundleComponents);
     const repository = createBrowserCartRepository(window.localStorage);
-    const cart = setCartDeliveryPreference(addCartItem(repository.load(), {
+    const item: CartItem = {
       id: createId(),
       productKey: product.key,
       productSlug: product.slug,
@@ -265,9 +268,14 @@ export function BannerBundleConfigurator({
       price: quote,
       uploadReferences,
       bundleComponents,
-    }), deliveryPreference);
+    };
+    const cart = setCartDeliveryPreference(
+      addCartItem(repository.load(), item),
+      deliveryPreference,
+    );
     repository.save(cart);
     notifyCartChanged();
+    emitAnalyticsEvent(buildCartItemEvent("add_to_cart", item));
     setAdded(true);
   }
 

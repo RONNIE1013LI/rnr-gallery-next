@@ -6,11 +6,20 @@ import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import { getConfigurationSchema } from "@/domain/configuration/schemas";
 import { BannerBundleConfigurator } from "./banner-bundle-configurator";
 
+const analytics = vi.hoisted(() => ({
+  emitAnalyticsEvent: vi.fn<(event: unknown) => boolean>(() => true),
+}));
+
+vi.mock("@/domain/analytics/client", () => analytics);
+
 const product = getProductBySlug("banner-bundle")!;
 const schema = getConfigurationSchema(product.key)!;
 
 describe("BannerBundleConfigurator", () => {
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    analytics.emitAnalyticsEvent.mockClear();
+  });
   afterEach(() => vi.unstubAllGlobals());
 
   it("renders one shared configurator around two vertical customisation groups", () => {
@@ -132,6 +141,21 @@ describe("BannerBundleConfigurator", () => {
         },
       ],
     });
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledTimes(1);
+    const event = analytics.emitAnalyticsEvent.mock.calls[0]?.[0];
+    expect(event).toMatchObject({
+      event: "add_to_cart",
+      currency: "NZD",
+      items: [{ item_id: "banner-bundle", item_variant: "rollup-wall-200x100" }],
+    });
+    const payload = JSON.stringify(event);
+    expect(payload).not.toContain("bundleComponents");
+    expect(payload).not.toContain("Roll-Up wording");
+    expect(payload).not.toContain("Roll-Up instructions");
+    expect(payload).not.toContain("Wall wording");
+    expect(payload).not.toContain("Wall instructions");
+    expect(payload).not.toContain("roll-one.jpg");
+    expect(payload).not.toContain("roll-one.jpg-reference");
   });
 
   it("omits inactive references without deleting files retained in that group", async () => {

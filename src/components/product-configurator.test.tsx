@@ -10,6 +10,12 @@ import {
 } from "@/domain/catalogue/product-registry";
 import styles from "./storefront.module.css";
 
+const analytics = vi.hoisted(() => ({
+  emitAnalyticsEvent: vi.fn<(event: unknown) => boolean>(() => true),
+}));
+
+vi.mock("@/domain/analytics/client", () => analytics);
+
 const product = getProductBySlug("digital-oil-painting-canvas")!;
 const schema = getConfigurationSchema(product.key)!;
 
@@ -48,7 +54,10 @@ describe("ProductConfigurator", () => {
 
     expect(screen.getByRole("radio", { name: /A2/i })).toBeChecked();
   });
-  beforeEach(() => localStorage.clear());
+  beforeEach(() => {
+    localStorage.clear();
+    analytics.emitAnalyticsEvent.mockClear();
+  });
   afterEach(() => vi.unstubAllGlobals());
 
   it("shows the default configuration and exact price", () => {
@@ -461,6 +470,36 @@ describe("ProductConfigurator", () => {
       "class",
       expect.stringContaining("addedMessageAction"),
     );
+  });
+
+  it("tracks the persisted configured item as an NZD add_to_cart", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+        createId={() => "analytics-item"}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+
+    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items)
+      .toHaveLength(1);
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledTimes(1);
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
+      event: "add_to_cart",
+      currency: "NZD",
+      value: 105,
+      items: [{
+        item_id: "digital-oil-painting-canvas",
+        item_name: "Digital Oil Painting Canvas",
+        item_variant: "a4",
+        price: 105,
+        quantity: 1,
+      }],
+    });
   });
 
   it("keeps pasted artwork text within the server checkout boundary", () => {
