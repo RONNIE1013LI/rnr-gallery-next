@@ -224,6 +224,66 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(pilotAfter.nextSequence).toBe(2);
   });
 
+  it("suppresses a completed acknowledgement before pilot allocation", async () => {
+    await activateFacebookPilot("context-acknowledgement");
+    const pending = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: "1".repeat(64),
+      externalMessageKeyHash: "2".repeat(64),
+      text: "Thanks 😊",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    expect(pending.status).toBe("turn_pending");
+    if (pending.status !== "turn_pending") return;
+
+    await expect(repository.sealDueCustomerTurn({
+      turnId: pending.turnId,
+      now: new Date("2026-08-18T00:00:02.000Z"),
+    })).resolves.toEqual({
+      status: "suppressed",
+      turnId: pending.turnId,
+      reason: "completed_acknowledgement",
+    });
+    const [pilot] = await database.select().from(customerServicePilotRuns);
+    expect(pilot.nextSequence).toBe(1);
+    const [message] = await database.select().from(customerServiceMessages).where(eq(customerServiceMessages.id, pending.messageId));
+    expect(message.pilotSequence).toBeNull();
+  });
+
+  it("keeps yes as a meaningful turn when it answers a staff question", async () => {
+    await activateFacebookPilot("context-yes-answer");
+    const conversation = "3".repeat(64);
+    await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      externalConversationKeyHash: conversation,
+      externalMessageKeyHash: "4".repeat(64),
+      text: "Would you like a roll-up banner?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    const pending = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: conversation,
+      externalMessageKeyHash: "5".repeat(64),
+      text: "yes",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:01.000Z"),
+    });
+    expect(pending.status).toBe("turn_pending");
+    if (pending.status !== "turn_pending") return;
+    await expect(repository.sealDueCustomerTurn({
+      turnId: pending.turnId,
+      now: new Date("2026-08-18T00:00:03.000Z"),
+    })).resolves.toMatchObject({ status: "sealed", pilotSequence: 1 });
+  });
+
   it("deduplicates concurrent webhook ingestion and allocates one pilot slot", async () => {
     await database.insert(customerServicePilotRuns).values({
       name: "test-facebook",

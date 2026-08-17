@@ -26,6 +26,7 @@ import type {
 } from "./customer-service-repository";
 import { parseImageAnalysisResult } from "../image-analysis-schema";
 import { IMAGE_LIMITS } from "../attachments/limits";
+import { classifyAcknowledgement } from "../conversation/acknowledgement";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -488,6 +489,37 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         }
         if (turn.debounceUntil.getTime() > input.now.getTime()) {
           return { status: "not_due" as const };
+        }
+        const historyRows = await transaction.select({
+          role: customerServiceConversationEvents.role,
+          text: customerServiceConversationEvents.body,
+        }).from(customerServiceConversationEvents).where(and(
+          eq(customerServiceConversationEvents.conversationId, turn.conversationId),
+          sql`${customerServiceConversationEvents.turnId} is distinct from ${turn.id}`,
+          lte(customerServiceConversationEvents.receivedAt, turn.openedAt),
+        )).orderBy(
+          desc(customerServiceConversationEvents.receivedAt),
+          desc(customerServiceConversationEvents.createdAt),
+          desc(customerServiceConversationEvents.id),
+        ).limit(6);
+        const acknowledgement = classifyAcknowledgement({
+          currentText: turn.body,
+          recentHistory: historyRows.reverse(),
+        });
+        if (acknowledgement.suppress) {
+          await transaction.update(customerServiceTurns).set({
+            status: "suppressed",
+            sealedAt: input.now,
+            suppressionReason: acknowledgement.reason,
+          }).where(and(
+            eq(customerServiceTurns.id, turn.id),
+            eq(customerServiceTurns.status, "open"),
+          ));
+          return {
+            status: "suppressed" as const,
+            turnId: turn.id,
+            reason: acknowledgement.reason,
+          };
         }
         const [pilot] = await transaction.select().from(customerServicePilotRuns)
           .where(and(

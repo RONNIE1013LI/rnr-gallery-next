@@ -181,6 +181,7 @@ export interface CustomerServiceRepository {
   sealDueCustomerTurn(input: Readonly<{ turnId: string; now: Date }>): Promise<
     | Readonly<{ status: "not_due" }>
     | Readonly<{ status: "already_terminal" }>
+    | Readonly<{ status: "suppressed"; turnId: string; reason: "completed_acknowledgement" }>
     | Readonly<{ status: "pilot_complete"; turnId: string; messageId: string }>
     | Readonly<{ status: "sealed"; turnId: string; messageId: string; pilotSequence: number }>
   >;
