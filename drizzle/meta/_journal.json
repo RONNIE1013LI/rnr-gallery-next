@@ -162,6 +162,13 @@
       "when": 1786884074693,
       "tag": "0022_reply_assistant",
       "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1786925476506,
+      "tag": "0023_reply_assistant_images",
+      "breakpoints": true
     }
   ]
 }

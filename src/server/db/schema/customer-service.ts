@@ -74,6 +74,7 @@ export const customerServiceMessages = pgTable(
     externalMessageKeyHash: text("external_message_key_hash").notNull(),
     direction: text("direction").$type<"incoming">().default("incoming").notNull(),
     body: text("body").notNull(),
+    customerText: text("customer_text"),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
     ingestStatus: text("ingest_status")
       .$type<"received" | "processing" | "draft_ready" | "blocked" | "provider_error" | "output_blocked">()
@@ -187,5 +188,96 @@ export const customerServiceBudgetState = pgTable(
   (table) => [
     check("customer_service_budget_state_scope_valid", sql`${table.scopeKey} = 'total' or ${table.scopeKey} ~ '^daily:[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
     check("customer_service_budget_state_amounts_valid", sql`${table.spentMicrousd} >= 0 and ${table.reservedMicrousd} >= 0`),
+  ],
+);
+
+export const customerServiceAttachments = pgTable(
+  "customer_service_attachments",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    messageId: uuid("message_id").notNull().references(() => customerServiceMessages.id, { onDelete: "restrict" }),
+    externalAttachmentKeyHash: text("external_attachment_key_hash").notNull(),
+    ordinal: integer("ordinal").notNull(),
+    kind: text("kind").$type<"image">().default("image").notNull(),
+    status: text("status")
+      .$type<"metadata_received" | "stored" | "analyzed" | "rejected" | "failed" | "deleted">()
+      .default("metadata_received")
+      .notNull(),
+    mimeTypeHint: text("mime_type_hint"),
+    verifiedMimeType: text("verified_mime_type").$type<"image/jpeg" | "image/png" | "image/webp">(),
+    width: integer("width"),
+    height: integer("height"),
+    byteSize: integer("byte_size"),
+    privateStorageKey: text("private_storage_key"),
+    sha256: text("sha256"),
+    failureCode: text("failure_code"),
+    deleteDueAt: timestamp("delete_due_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: updatedTimestamp(),
+  },
+  (table) => [
+    uniqueIndex("customer_service_attachments_message_external_unique")
+      .on(table.messageId, table.externalAttachmentKeyHash),
+    uniqueIndex("customer_service_attachments_message_ordinal_unique").on(table.messageId, table.ordinal),
+    index("customer_service_attachments_status_delete_due_idx").on(table.status, table.deleteDueAt),
+    check("customer_service_attachments_external_hash_valid", sql`length(trim(${table.externalAttachmentKeyHash})) > 0`),
+    check("customer_service_attachments_ordinal_valid", sql`${table.ordinal} >= 0`),
+    check("customer_service_attachments_kind_valid", sql`${table.kind} = 'image'`),
+    check("customer_service_attachments_status_valid", sql`${table.status} in ('metadata_received', 'stored', 'analyzed', 'rejected', 'failed', 'deleted')`),
+    check("customer_service_attachments_mime_valid", sql`${table.verifiedMimeType} is null or ${table.verifiedMimeType} in ('image/jpeg', 'image/png', 'image/webp')`),
+    check("customer_service_attachments_dimensions_valid", sql`coalesce(${table.width}, 0) >= 0 and coalesce(${table.height}, 0) >= 0 and coalesce(${table.byteSize}, 0) >= 0`),
+  ],
+);
+
+export const customerServiceImageAnalysisAttempts = pgTable(
+  "customer_service_image_analysis_attempts",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    messageId: uuid("message_id").notNull().references(() => customerServiceMessages.id, { onDelete: "restrict" }),
+    attemptNumber: integer("attempt_number").notNull(),
+    status: text("status")
+      .$type<"pending" | "provider_pending" | "analyzed" | "input_rejected" | "provider_error" | "schema_blocked">()
+      .notNull(),
+    providerCalled: boolean("provider_called").default(false).notNull(),
+    provider: text("provider").$type<"mock" | "openai">(),
+    model: text("model"),
+    schemaVersion: text("schema_version").notNull(),
+    analysisResult: jsonb("analysis_result"),
+    validatorCodes: jsonb("validator_codes").$type<readonly string[]>().default([]).notNull(),
+    inputTokens: integer("input_tokens"),
+    cachedInputTokens: integer("cached_input_tokens"),
+    outputTokens: integer("output_tokens"),
+    estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }),
+    latencyMs: integer("latency_ms"),
+    providerErrorCode: text("provider_error_code"),
+    startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+  },
+  (table) => [
+    uniqueIndex("customer_service_image_analysis_attempts_message_number_unique").on(table.messageId, table.attemptNumber),
+    index("customer_service_image_analysis_attempts_message_started_idx").on(table.messageId, table.startedAt),
+    index("customer_service_image_analysis_attempts_status_started_idx").on(table.status, table.startedAt),
+    check("customer_service_image_analysis_attempts_number_valid", sql`${table.attemptNumber} > 0`),
+    check("customer_service_image_analysis_attempts_status_valid", sql`${table.status} in ('pending', 'provider_pending', 'analyzed', 'input_rejected', 'provider_error', 'schema_blocked')`),
+    check("customer_service_image_analysis_attempts_usage_valid", sql`coalesce(${table.inputTokens}, 0) >= 0 and coalesce(${table.cachedInputTokens}, 0) >= 0 and coalesce(${table.outputTokens}, 0) >= 0 and coalesce(${table.estimatedCostMicrousd}, 0) >= 0 and coalesce(${table.latencyMs}, 0) >= 0`),
+    check("customer_service_image_analysis_attempts_terminal_valid", sql`${table.status} in ('pending', 'provider_pending') or ${table.completedAt} is not null`),
+  ],
+);
+
+export const customerServiceImageAnalysisInputs = pgTable(
+  "customer_service_image_analysis_inputs",
+  {
+    analysisAttemptId: uuid("analysis_attempt_id").notNull().references(() => customerServiceImageAnalysisAttempts.id, { onDelete: "restrict" }),
+    attachmentId: uuid("attachment_id").notNull().references(() => customerServiceAttachments.id, { onDelete: "restrict" }),
+    ordinal: integer("ordinal").notNull(),
+  },
+  (table) => [
+    uniqueIndex("customer_service_image_analysis_inputs_attempt_attachment_unique")
+      .on(table.analysisAttemptId, table.attachmentId),
+    uniqueIndex("customer_service_image_analysis_inputs_attempt_ordinal_unique")
+      .on(table.analysisAttemptId, table.ordinal),
+    index("customer_service_image_analysis_inputs_attachment_idx").on(table.attachmentId),
+    check("customer_service_image_analysis_inputs_ordinal_valid", sql`${table.ordinal} >= 0`),
   ],
 );
