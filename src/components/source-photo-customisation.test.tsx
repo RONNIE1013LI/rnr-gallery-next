@@ -114,27 +114,56 @@ describe("SourcePhotoCustomisation", () => {
     expect(await within(rollUp).findByText("Photo 2")).toBeVisible();
     expect(await within(wallBanner).findByText("Photo 2")).toBeVisible();
 
-    fireEvent.click(within(rollUp).getByRole("button", { name: /^Remove background/ }));
-    expect(within(rollUp).getByRole("button", { name: /Background removal/ }))
+    expect(screen.getByRole("button", {
+      name: "Roll-Up Banner customisation: Remove Photo 1",
+    })).toBeVisible();
+    expect(screen.getByRole("button", {
+      name: "Wall Banner customisation: Remove Photo 1",
+    })).toBeVisible();
+    expect(screen.getByRole("button", {
+      name: "Roll-Up Banner customisation: Set Photo 2 as main",
+    })).toBeVisible();
+    expect(screen.getByRole("button", {
+      name: "Wall Banner customisation: Set Photo 2 as main",
+    })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", {
+      name: "Roll-Up Banner customisation: Toggle background removal for Photo 2",
+    }));
+    expect(screen.getByRole("button", {
+      name: "Roll-Up Banner customisation: Toggle background removal for Photo 2",
+    }))
       .toHaveAttribute("aria-pressed", "true");
-    expect(within(wallBanner).getByRole("button", { name: /^Remove background/ }))
+    expect(screen.getByRole("button", {
+      name: "Wall Banner customisation: Toggle background removal for Photo 2",
+    }))
       .toHaveAttribute("aria-pressed", "false");
 
-    fireEvent.click(within(rollUp).getByRole("button", { name: "Set as main" }));
+    fireEvent.click(screen.getByRole("button", {
+      name: "Roll-Up Banner customisation: Set Photo 2 as main",
+    }));
     expect(within(rollUp).getAllByText("Main photo")).toHaveLength(2);
-    expect(within(wallBanner).getByRole("button", { name: "Remove Photo 1" }).closest("article"))
+    expect(screen.getByRole("button", {
+      name: "Wall Banner customisation: Remove Photo 1",
+    }).closest("article"))
       .toHaveTextContent("Main photo");
 
-    fireEvent.click(within(rollUp).getByRole("button", { name: "Remove Photo 1" }));
+    fireEvent.click(screen.getByRole("button", {
+      name: "Roll-Up Banner customisation: Remove Photo 1",
+    }));
     expect(within(rollUp).queryByText("Photo 2")).not.toBeInTheDocument();
     expect(within(wallBanner).getByText("Photo 2")).toBeVisible();
 
     fireEvent.click(within(rollUp).getByText("Send Photos After Ordering"));
     expect(within(rollUp).queryByText("Photo 1")).not.toBeInTheDocument();
-    expect(within(wallBanner).getByRole("button", { name: "Remove Photo 1" }))
+    expect(screen.getByRole("button", {
+      name: "Wall Banner customisation: Remove Photo 1",
+    }))
       .toBeVisible();
     fireEvent.click(within(rollUp).getByText("Upload Photos Now"));
-    expect(within(rollUp).getByRole("button", { name: "Remove Photo 1" }))
+    expect(screen.getByRole("button", {
+      name: "Roll-Up Banner customisation: Remove Photo 1",
+    }))
       .toBeVisible();
   });
 
@@ -149,11 +178,13 @@ describe("SourcePhotoCustomisation", () => {
       target: { files: [new File(["bad"], "bad.jpg", { type: "image/jpeg" })] },
     });
 
-    const rollUp = screen.getByRole("region", { name: "Roll-Up Banner customisation" });
-    const wallBanner = screen.getByRole("region", { name: "Wall Banner customisation" });
-    expect(await within(rollUp).findByRole("alert")).toHaveTextContent(
+    expect(await screen.findByRole("alert", {
+      name: "Roll-Up Banner customisation: Upload error",
+    })).toHaveTextContent(
       "The image contents do not match the selected file type.",
     );
-    expect(within(wallBanner).queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("alert", {
+      name: "Wall Banner customisation: Upload error",
+    })).not.toBeInTheDocument();
   });
 });

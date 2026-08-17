@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type {
   PhotoSubmissionMethod,
   ProductConfigurationSchema,
@@ -57,6 +57,10 @@ export function SourcePhotoCustomisation({
 }: SourcePhotoCustomisationProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
   const supportsBackgroundRemoval =
     backgroundRemovalFeeInclTaxCents !== undefined;
   const activeBackgroundRemovalUploadIds =
@@ -68,8 +72,13 @@ export function SourcePhotoCustomisation({
   const controlLabel = (label: string) =>
     groupLabel ? `${groupLabel}: ${label}` : label;
 
+  function changeValue(nextValue: SourcePhotoCustomisationValue) {
+    valueRef.current = nextValue;
+    onChange(nextValue);
+  }
+
   function setPhotoSubmissionMethod(photoSubmissionMethod: PhotoSubmissionMethod) {
-    onChange({ ...value, photoSubmissionMethod });
+    changeValue({ ...value, photoSubmissionMethod });
   }
 
   async function uploadSourceFiles(files: FileList | null) {
@@ -103,10 +112,11 @@ export function SourcePhotoCustomisation({
             : {}),
         });
       }
-      onChange({
-        ...value,
-        uploadedFiles: [...value.uploadedFiles, ...uploaded],
-        mainPhotoUploadId: value.mainPhotoUploadId ?? uploaded[0]?.id,
+      const latestValue = valueRef.current;
+      changeValue({
+        ...latestValue,
+        uploadedFiles: [...latestValue.uploadedFiles, ...uploaded],
+        mainPhotoUploadId: latestValue.mainPhotoUploadId ?? uploaded[0]?.id,
       });
     } catch (error) {
       setUploadError(
@@ -124,7 +134,7 @@ export function SourcePhotoCustomisation({
       URL.revokeObjectURL(removed.previewUrl);
     }
     const remaining = value.uploadedFiles.filter((file) => file.id !== id);
-    onChange({
+    changeValue({
       ...value,
       uploadedFiles: remaining,
       mainPhotoUploadId:
@@ -137,7 +147,7 @@ export function SourcePhotoCustomisation({
   }
 
   function selectMainPhoto(id: string) {
-    onChange({
+    changeValue({
       ...value,
       mainPhotoUploadId: id,
       extraBackgroundRemovalUploadIds:
@@ -146,7 +156,7 @@ export function SourcePhotoCustomisation({
   }
 
   function toggleBackgroundRemoval(id: string) {
-    onChange({
+    changeValue({
       ...value,
       extraBackgroundRemovalUploadIds:
         value.extraBackgroundRemovalUploadIds.includes(id)
@@ -227,7 +237,7 @@ export function SourcePhotoCustomisation({
                     <button
                       type="button"
                       className={styles.uploadPreviewRemove}
-                      aria-label={`Remove Photo ${index + 1}`}
+                      aria-label={controlLabel(`Remove Photo ${index + 1}`)}
                       onClick={() => removeUploadedFile(file.id)}
                     >
                       <span className={styles.uploadPreviewRemoveIcon} aria-hidden="true">×</span>
@@ -235,8 +245,22 @@ export function SourcePhotoCustomisation({
                   </div>
                   <strong>Photo {index + 1}</strong>
                   {isMain ? <><span className={styles.mainPhotoBadge}>Main photo</span><span className={styles.backgroundIncluded}>Background removal included</span></> : supportsBackgroundRemoval ? <div className={styles.uploadPreviewActions}>
-                    <button type="button" onClick={() => selectMainPhoto(file.id)}>Set as main</button>
-                    <button type="button" className={backgroundRemovalSelected ? styles.backgroundSelected : undefined} aria-pressed={backgroundRemovalSelected} onClick={() => toggleBackgroundRemoval(file.id)}><span>{backgroundRemovalSelected ? "Background removal ✓" : "Remove background"}</span><strong>+{formatMarketMoney(backgroundRemovalFeeInclTaxCents, currency)}{taxSuffix}</strong></button>
+                    <button
+                      type="button"
+                      aria-label={groupLabel
+                        ? controlLabel(`Set Photo ${index + 1} as main`)
+                        : undefined}
+                      onClick={() => selectMainPhoto(file.id)}
+                    >Set as main</button>
+                    <button
+                      type="button"
+                      className={backgroundRemovalSelected ? styles.backgroundSelected : undefined}
+                      aria-label={groupLabel
+                        ? controlLabel(`Toggle background removal for Photo ${index + 1}`)
+                        : undefined}
+                      aria-pressed={backgroundRemovalSelected}
+                      onClick={() => toggleBackgroundRemoval(file.id)}
+                    ><span>{backgroundRemovalSelected ? "Background removal ✓" : "Remove background"}</span><strong>+{formatMarketMoney(backgroundRemovalFeeInclTaxCents, currency)}{taxSuffix}</strong></button>
                   </div> : null}
                 </article>;
               })}
@@ -246,7 +270,11 @@ export function SourcePhotoCustomisation({
               <div><dt>Extra background removals</dt><dd>{activeBackgroundRemovalUploadIds.length}</dd></div>
               <div><dt>Background removal charge</dt><dd>{activeBackgroundRemovalUploadIds.length > 0 ? `${activeBackgroundRemovalUploadIds.length} × ${formatMarketMoney(backgroundRemovalFeeInclTaxCents, currency)}${taxSuffix}` : "None"}</dd></div>
             </dl>}
-            {uploadError && <p className={styles.formError} role="alert">{uploadError}</p>}
+            {uploadError && <p
+              className={styles.formError}
+              role="alert"
+              aria-label={groupLabel ? controlLabel("Upload error") : undefined}
+            >{uploadError}</p>}
           </div>
         )}
       </section>
@@ -271,7 +299,7 @@ export function SourcePhotoCustomisation({
               maxLength={MAX_CHECKOUT_TEXT_LENGTH}
               aria-label={controlLabel("Text for your design")}
               placeholder={"e.g. Top text: HAPPY 1ST BIRTHDAY\nBottom text: ETI JUNIOR COLLINS"}
-              onChange={(event) => onChange({
+              onChange={(event) => changeValue({
                 ...value,
                 designText: event.target.value.slice(0, MAX_CHECKOUT_TEXT_LENGTH),
               })}
@@ -285,7 +313,7 @@ export function SourcePhotoCustomisation({
               maxLength={MAX_CHECKOUT_TEXT_LENGTH}
               aria-label={controlLabel("Design notes")}
               placeholder="e.g. Background: Orange and white Polynesian pattern design"
-              onChange={(event) => onChange({
+              onChange={(event) => changeValue({
                 ...value,
                 notes: event.target.value.slice(0, MAX_CHECKOUT_TEXT_LENGTH),
               })}
