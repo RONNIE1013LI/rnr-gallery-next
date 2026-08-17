@@ -72,7 +72,17 @@ describe("BannerBundleConfigurator", () => {
     expect(within(sizePicker).getByText("From NZ$359.99")).toBeVisible();
     expect(within(sizePicker).getByText("From NZ$489.99")).toBeVisible();
 
+    const artworkPreview = screen.getByRole("region", { name: "Artwork preview" });
+    expect(within(artworkPreview).getByText(
+      "Roll Up Banner + 200 x 100 cm Wall Banner",
+    )).toBeVisible();
+    expect(within(artworkPreview).queryByText(/85 × 200 cm Roll-Up/))
+      .not.toBeInTheDocument();
+
     const orderSummary = screen.getByRole("complementary", { name: "Order summary" });
+    expect(within(orderSummary).getByText(
+      "Roll Up Banner + 200 x 100 cm Wall Banner",
+    )).toBeVisible();
     expect(within(orderSummary).getByText("NZ$359.99 incl GST")).toBeInTheDocument();
   });
 
@@ -153,6 +163,8 @@ describe("BannerBundleConfigurator", () => {
 
     const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
     expect(stored.items).toHaveLength(1);
+    expect(stored.items[0].sizeLabel)
+      .toBe("85 × 200 cm Roll-Up + 200 × 100 cm Wall Banner");
     expect(stored.items[0]).toMatchObject({
       id: "bundle-item",
       productKey: "banner-bundle",

@@ -152,6 +152,7 @@ export function BannerBundleConfigurator({
 
   const size = schema.sizes.find((option) => option.key === sizeKey)!;
   const sizeLabel = formatConfigurationSizeLabel(size);
+  const displaySizeLabel = BANNER_BUNDLE_SIZE_OPTION_LABELS[size.key] ?? sizeLabel;
   const previewImage = selectedDesign?.imageUrl ?? product.image.src;
   const previewAlt = selectedDesign?.altText ?? product.image.alt;
   const currency = currencyForMarket(market);
@@ -324,7 +325,7 @@ export function BannerBundleConfigurator({
               <h2>{product.title}</h2>
               <p>Preview your selection as you personalise your order.</p>
               <dl className={styles.previewDetails}>
-                <div><dt>Format</dt><dd>{sizeLabel}</dd></div>
+                <div><dt>Format</dt><dd>{displaySizeLabel}</dd></div>
               </dl>
             </div>
           </section>
@@ -367,7 +368,7 @@ export function BannerBundleConfigurator({
             <h2>Order summary</h2>
             <p>{product.title}</p>
             <dl className={styles.summaryDetails}>
-              <div><dt>Size</dt><dd>{sizeLabel}</dd></div>
+              <div><dt>Size</dt><dd>{displaySizeLabel}</dd></div>
             </dl>
             <dl className={styles.priceLines}>
               {quote.lines.map((line) => (
