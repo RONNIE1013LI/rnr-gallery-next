@@ -2,13 +2,15 @@
 
 ## Status
 
-Review remediation complete. The first implementation in `52cbfc3` blocked the five recorded I6 strings but failed the Task 4 semantic review. The remediated additive image-draft validator now blocks the reviewer's novel and systematic unsafe matrix while preserving cautious assessment language and the exact Ronnie-approved replies. The unchanged general text validator was not edited.
+Fix round 2 complete. The image-draft validator now uses deterministic token and proposition analysis instead of bounded sentence-shape claim regexes. It blocks the original, round-one, round-two, and broader reviewer unsafe matrices while preserving cautious assessment language, ordinary design edits, and the exact Ronnie-approved replies. The unchanged general text validator was not edited.
 
 ## Root Cause
 
 The first implementation retained closed lists of singular image nouns, selected actors, ASCII contractions, verbs, and word orders. Nearby plural, role-subject, curly-contraction, synonym, quality, and missing-detail forms therefore bypassed candidate discovery.
 
 Qualification was also too broad and too narrow at once. A question mark on the whole clause qualified an embedded affirmative premise, while natural uncertainty, assessment, negated speech acts, and original-file review wording outside short allowlists were overblocked. The remediation normalizes contraction syntax, detects bounded grammatical claim families, splits contrast/subordinate boundaries, and evaluates uncertainty, assessment, negation, direct questions, and source dependency immediately around each matched candidate.
+
+Fix round 1 still encoded complete sentence shapes and short local regex windows. Tense changes, progressive/passive forms, coordinated verbs, target reordering, and close lexical substitutions could therefore bypass discovery. Its qualification windows also leaked a modal or question from one proposition into a later affirmative premise. Fix round 2 separates lexical risk triggers, semantic targets, proposition boundaries, and qualification operators so each risky proposition is classified compositionally.
 
 ## RED
 
@@ -232,3 +234,127 @@ Passed.
 
 - This is still a conservative English validator. Future semantic families should begin with unsafe/safe paired tables and local-governance tests.
 - The remediation intentionally reuses the existing two result codes. No template, feature, schema, provider, deployment, or Production change was made.
+
+## Fix Round 2
+
+### Root Cause
+
+The round-one validator combined target nouns, verb forms, modals, outcomes, and qualifiers into bounded sentence-shape regexes. This made discovery dependent on fixed word order and caused `and`/`or` splitting to discard shared modality or targets. Qualification then operated on local character windows rather than the proposition governed by a question, uncertainty marker, assessment verb, negation, or source dependency.
+
+### RED
+
+After adding every focused re-review probe and the form-crossing controls, before changing production code:
+
+```bash
+npm run test:run -- src/server/customer-service/image-draft-validator.test.ts
+```
+
+Result: `1` file failed; `43` tests failed and `180` passed out of `223`. All `17` new unsafe probes, all `14` new semantic-safe controls, and all `5` ordinary design-edit controls reproduced the review failures. Seven additional tense/voice/coordination probes also failed as intended.
+
+After the first compositional GREEN, a broader `44` unsafe / `31` safe reviewer pool found three residual categories. Promoting them to tests produced a second RED: `3` failed and `223` passed out of `226` for implicit gaps, `work out` assessment, and nominal `no assurance` negation.
+
+### Reviewer Unsafe Probes
+
+| Family | Draft |
+| --- | --- |
+| Restoration | `We are going to restore your photograph.` |
+| Restoration | `This photo is capable of being restored.` |
+| Restoration | `We can make the picture look as good as new.` |
+| Restoration | `We'll be enhancing your photo.` |
+| Restoration | `We'll retouch your photo.` |
+| Print | `This photo is suitable to be printed.` |
+| Print | `We can get it ready to be printed.` |
+| Print | `The resolution of this image is sufficient for printing.` |
+| Print | `This image has adequate resolution for printing.` |
+| Print | `This photo is fit for printing.` |
+| Enhancement | `Your photo will look much clearer.` |
+| Enhancement | `We'll sharpen and enhance your image.` |
+| Restoration | `We can repair or restore this photo.` |
+| Missing detail | `We can recover the facial detail that's missing.` |
+| Missing detail | `We can reconstruct the missing eyes.` |
+| Embedded assertion | `Could you approve the order since this photo is print-ready?` |
+| Embedded assertion | `You could choose matte since this photo is print-ready.` |
+
+### Reviewer Safe Controls
+
+| Family | Draft |
+| --- | --- |
+| Question | `Do you think this photo is printable?` |
+| Question | `Would you say this image is print-ready?` |
+| Question | `Can this photo be restored because it is blurry?` |
+| Question | `Is this image print-ready, please?` |
+| Uncertainty | `We are not sure whether this photo is printable.` |
+| Uncertainty | `We don't think this photo is printable.` |
+| Uncertainty | `It is hard to know whether this image can be restored.` |
+| Assessment | `We need to verify whether this photo is printable.` |
+| Assessment | `We'll examine the original to establish whether the image can be restored.` |
+| Original assessment | `Please send the original so we can advise whether it will print well.` |
+| Negation | `We never claim this photo is print-ready.` |
+| Negation | `This does not mean the image is print-ready.` |
+| Dependency | `Whether this photo is printable will depend on the original.` |
+| Dependency | `This photo is restorable subject to reviewing the source file.` |
+
+### Ordinary Design-Edit Controls
+
+| Edit | Draft |
+| --- | --- |
+| Image size | `We can fix the image size in the layout.` |
+| Photo placement | `We can improve the photo placement in the design.` |
+| Wording and colours | `We'll enhance the image with your wording and colours.` |
+| File naming | `We can clean up the file naming before upload.` |
+| Photo border | `We'll add back the photo border.` |
+
+### Implementation
+
+- Normalize contractions and punctuation into deterministic tokens without changing the public validator interface.
+- Discover restoration, reconstruction, missing-detail, enhancement, and print-suitability triggers independently from their visual or quality targets.
+- Preserve shared subjects, targets, and modality across coordinated verbs while recognizing `and`/`or`, commas, `if`, `since`, `now that`, and contrast markers as boundaries only when they start a distinct proposition.
+- Apply questions, uncertainty, assessment complements, direct and speech-act negation, and original/source dependency only inside the proposition containing the risky trigger.
+- Classify image size, placement, wording/colour, naming, border, layout, and design objects as ordinary edits rather than restoration outcomes.
+- Keep `src/server/customer-service/output-validator.ts` unchanged and reuse the two existing image-claim codes.
+
+### GREEN
+
+```bash
+npm run test:run -- src/server/customer-service/image-draft-validator.test.ts
+```
+
+Passed: `1` file, `226/226` tests.
+
+The independent broader reviewer pool also passed: `44/44` unsafe drafts blocked and `31/31` safe/ordinary controls allowed.
+
+```bash
+npm run test:run -- src/server/customer-service/engine.test.ts
+```
+
+Passed: `1` file, `20/20` tests.
+
+```bash
+npm run test:run -- scripts/evaluate-reply-assistant-quality.test.ts src/server/customer-service/policy-gate.test.ts src/server/customer-service/prompt-builder.test.ts src/server/customer-service/output-validator.test.ts src/server/customer-service/engine.test.ts
+```
+
+Phase 3.3 text-path regression passed: `5` files, `40/40` tests.
+
+```bash
+npx eslint src/server/customer-service/image-draft-validator.ts src/server/customer-service/image-draft-validator.test.ts
+npm run typecheck
+git diff --check
+```
+
+Passed. The general validator blob remains `b0cdd1a18207ef94208bfb9883bd1bc2687b8485`, matching `777e3b9`.
+
+### Changed Files
+
+- `src/server/customer-service/image-draft-validator.ts`
+- `src/server/customer-service/image-draft-validator.test.ts`
+- `.superpowers/sdd/2026-08-17-reply-assistant-image-aware-final-safety-remediation/task-4-report.md`
+
+### Commit
+
+- `fix: analyze image claims compositionally` (this report is included in the same commit)
+
+### Concerns
+
+- The analyzer is deterministic and proposition-local but remains an English lexical guard, not a general parser. New risk concepts still require paired unsafe/safe adversarial tests.
+- Design-edit exclusions are based on the requested edit object, not approved reply strings. Ambiguous wording that promises both a design edit and a visual-quality outcome is intentionally blocked.
+- No NLP dependency, general-validator edit, schema/provider change, deployment, or Production access was introduced.

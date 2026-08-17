@@ -133,6 +133,38 @@ const systematicUnsafeClaims = [
   ["compound negation boundary", "We cannot guarantee the colours yet this photo is print-ready.", "visual_print_suitability_claim"],
 ] as const;
 
+const roundTwoReviewerUnsafeClaims = [
+  ["restoration/going-to", "We are going to restore your photograph.", "visual_restoration_claim"],
+  ["restoration/passive capability", "This photo is capable of being restored.", "visual_restoration_claim"],
+  ["restoration/outcome syntax", "We can make the picture look as good as new.", "visual_restoration_claim"],
+  ["restoration/progressive promise", "We'll be enhancing your photo.", "visual_restoration_claim"],
+  ["restoration/synonym", "We'll retouch your photo.", "visual_restoration_claim"],
+  ["print/passive purpose", "This photo is suitable to be printed.", "visual_print_suitability_claim"],
+  ["print/causative passive", "We can get it ready to be printed.", "visual_print_suitability_claim"],
+  ["print/resolution order", "The resolution of this image is sufficient for printing.", "visual_print_suitability_claim"],
+  ["print/adequate resolution", "This image has adequate resolution for printing.", "visual_print_suitability_claim"],
+  ["print/suitability synonym", "This photo is fit for printing.", "visual_print_suitability_claim"],
+  ["enhancement/result promise", "Your photo will look much clearer.", "visual_restoration_claim"],
+  ["enhancement/coordinated actions", "We'll sharpen and enhance your image.", "visual_restoration_claim"],
+  ["restoration/coordinated actions", "We can repair or restore this photo.", "visual_restoration_claim"],
+  ["detail/postpositive contraction", "We can recover the facial detail that's missing.", "visual_restoration_claim"],
+  ["detail/body part", "We can reconstruct the missing eyes.", "visual_restoration_claim"],
+  ["compound/interrogative premise", "Could you approve the order since this photo is print-ready?", "visual_print_suitability_claim"],
+  ["compound/modal leakage", "You could choose matte since this photo is print-ready.", "visual_print_suitability_claim"],
+] as const;
+
+const compositionalUnsafeClaims = [
+  ["enhancement/clarify", "We'll clarify your image.", "visual_restoration_claim"],
+  ["print/safe", "This photo is safe to print.", "visual_print_suitability_claim"],
+  ["detail/past passive", "The missing background was recreated.", "visual_restoration_claim"],
+  ["detail/present progressive", "We are reconstructing the missing detail.", "visual_restoration_claim"],
+  ["detail/simple present role", "Ronnie restores the missing facial features.", "visual_restoration_claim"],
+  ["detail/implicit gap", "We'll fill the gaps in the background.", "visual_restoration_claim"],
+  ["enhancement/past coordinated passive", "Your image was sharpened and upscaled.", "visual_restoration_claim"],
+  ["compound/qualified then affirmative", "We can't promise restoration, but we'll sharpen your photo.", "visual_restoration_claim"],
+  ["compound/interrogative if premise", "Could you confirm the size if this image is suitable for print?", "visual_print_suitability_claim"],
+] as const;
+
 const reviewerSafeControls = [
   ["uncertainty", "It is unclear whether this photo is printable."],
   ["uncertainty", "We are unsure whether the image can be restored."],
@@ -162,6 +194,40 @@ const systematicSafeControls = [
   ["ordinary/file quality", "The original file gives us the best quality to work with."],
   ["ordinary/design enhancement", "We can enhance the design with your wording and colours."],
   ["ordinary/layout improvement", "We can improve the layout around your photo."],
+] as const;
+
+const roundTwoReviewerSafeControls = [
+  ["question/wrapper", "Do you think this photo is printable?"],
+  ["question/say wrapper", "Would you say this image is print-ready?"],
+  ["question/reason", "Can this photo be restored because it is blurry?"],
+  ["question/polite tail", "Is this image print-ready, please?"],
+  ["uncertainty/not sure", "We are not sure whether this photo is printable."],
+  ["uncertainty/think", "We don't think this photo is printable."],
+  ["uncertainty/hard to know", "It is hard to know whether this image can be restored."],
+  ["assessment/verify", "We need to verify whether this photo is printable."],
+  ["assessment/examine", "We'll examine the original to establish whether the image can be restored."],
+  ["original/advise", "Please send the original so we can advise whether it will print well."],
+  ["negation/never claim", "We never claim this photo is print-ready."],
+  ["negation/not mean", "This does not mean the image is print-ready."],
+  ["dependency/future", "Whether this photo is printable will depend on the original."],
+  ["dependency/subject to", "This photo is restorable subject to reviewing the source file."],
+] as const;
+
+const ordinaryDesignEditControls = [
+  ["image size", "We can fix the image size in the layout."],
+  ["photo placement", "We can improve the photo placement in the design."],
+  ["image wording", "We'll enhance the image with your wording and colours."],
+  ["file naming", "We can clean up the file naming before upload."],
+  ["photo border", "We'll add back the photo border."],
+] as const;
+
+const compositionalSafeControls = [
+  ["coordinated uncertainty", "We may sharpen and upscale the image after assessment."],
+  ["detail question", "Can the missing background be reconstructed?"],
+  ["coordinated negation", "We cannot clarify or sharpen this image."],
+  ["print dependency", "Whether this image is safe to print depends on the original file."],
+  ["assessment/phrasal verb", "Please send the original so we can work out if it is suitable for printing."],
+  ["negation/nominal assurance", "No assurance can be given that this photo is printable."],
 ] as const;
 
 const ronnieApprovedReplies = [
@@ -208,6 +274,14 @@ describe("image draft validator", () => {
   });
 
   it.each(systematicUnsafeClaims)("blocks systematic variant $0: $1", (_form, draft, code) => {
+    expect(validateImageDraft(draft)).toEqual({ ok: false, codes: [code] });
+  });
+
+  it.each(roundTwoReviewerUnsafeClaims)("blocks round-two reviewer probe $0: $1", (_form, draft, code) => {
+    expect(validateImageDraft(draft)).toEqual({ ok: false, codes: [code] });
+  });
+
+  it.each(compositionalUnsafeClaims)("blocks compositional variant $0: $1", (_form, draft, code) => {
     expect(validateImageDraft(draft)).toEqual({ ok: false, codes: [code] });
   });
 
@@ -261,6 +335,18 @@ describe("image draft validator", () => {
   });
 
   it.each(systematicSafeControls)("accepts systematic control $0: $1", (_form, draft) => {
+    expect(validateImageDraft(draft)).toEqual({ ok: true, codes: [] });
+  });
+
+  it.each(roundTwoReviewerSafeControls)("accepts round-two reviewer control $0: $1", (_form, draft) => {
+    expect(validateImageDraft(draft)).toEqual({ ok: true, codes: [] });
+  });
+
+  it.each(ordinaryDesignEditControls)("accepts ordinary design edit $0: $1", (_form, draft) => {
+    expect(validateImageDraft(draft)).toEqual({ ok: true, codes: [] });
+  });
+
+  it.each(compositionalSafeControls)("accepts compositional control $0: $1", (_form, draft) => {
     expect(validateImageDraft(draft)).toEqual({ ok: true, codes: [] });
   });
 
