@@ -291,17 +291,6 @@ function stableRequestId(idempotencyKey: string) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function absentResult(order: PaymentOrder, providerReference: string) {
-  return Object.freeze({
-    providerReference,
-    providerStatus: "NOT_FOUND",
-    amountCents: order.amountCents,
-    currency: order.currency,
-    orderNumber: order.orderNumber,
-    status: "processing" as const,
-  });
-}
-
 function cancelledAbsentResult(order: PaymentOrder, providerReference: string) {
   return Object.freeze({
     providerReference,
