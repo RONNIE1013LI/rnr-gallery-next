@@ -39,6 +39,37 @@ function uploadIds(count: number) {
   );
 }
 
+function bundleComponent(
+  componentKey: "roll-up" | "wall-banner",
+  references: readonly string[],
+) {
+  return {
+    componentKey,
+    photoSubmissionMethod: references.length > 0 ? "upload" : "later",
+    designText: `${componentKey} wording`,
+    notes: `${componentKey} instructions`,
+    uploadReferences: references,
+  };
+}
+
+function bundle(overrides: Record<string, unknown> = {}) {
+  return cart({
+    productKey: "banner-bundle",
+    sizeKey: "rollup-wall-200x100",
+    orientation: undefined,
+    peoplePets: 0,
+    photoSubmissionMethod: "later",
+    designText: "",
+    notes: "",
+    uploadReferences: [],
+    bundleComponents: [
+      bundleComponent("roll-up", uploadIds(6)),
+      bundleComponent("wall-banner", uploadIds(7).map((id) => id.replace("8000", "8001"))),
+    ],
+    ...overrides,
+  });
+}
+
 function withA4RegistryPrice(
   priceExGstCents: number,
   assertion: (registry: ProductRegistryDocument) => void,
@@ -55,6 +86,68 @@ function withA4RegistryPrice(
 }
 
 describe("authoritative checkout repricing", () => {
+  it("keeps one Bundle item while authoritatively pricing and flattening two component customisations", () => {
+    const result = repriceCart(bundle(), { now: MONDAY_IN_AUCKLAND });
+
+    expect(result.items).toHaveLength(1);
+    expect(result.items[0].bundleComponents).toEqual([
+      expect.objectContaining({ componentKey: "roll-up", mainPhotoUploadId: uploadIds(6)[0] }),
+      expect.objectContaining({
+        componentKey: "wall-banner",
+        mainPhotoUploadId: uploadIds(7)[0].replace("8000", "8001"),
+      }),
+    ]);
+    expect(result.items[0].uploadReferences).toHaveLength(13);
+    expect(result.items[0].unitPrice.lines.map((line) => line.key)).toEqual([
+      "product-size",
+      "roll-up-extra-photos",
+      "wall-banner-extra-photos",
+    ]);
+    expect(result.items[0].unitPrice.totalInclGstCents).toBe(37_724);
+    expect(Object.isFrozen(result.items[0].bundleComponents)).toBe(true);
+  });
+
+  it.each([
+    ["missing Bundle components", bundle({ bundleComponents: undefined })],
+    ["one Bundle component", bundle({ bundleComponents: [bundleComponent("roll-up", [])] })],
+    ["duplicate Bundle keys", bundle({
+      bundleComponents: [bundleComponent("roll-up", []), bundleComponent("roll-up", [])],
+    })],
+    ["Bundle components on another product", cart({
+      photoSubmissionMethod: "later",
+      uploadReferences: [],
+      bundleComponents: [bundleComponent("roll-up", []), bundleComponent("wall-banner", [])],
+    })],
+  ])("rejects %s", (_label, value) => {
+    expect(() => repriceCart(value, { now: MONDAY_IN_AUCKLAND })).toThrow(
+      InvalidCheckoutCartError,
+    );
+  });
+
+  it("rejects an upload ID duplicated across Bundle component groups", () => {
+    const shared = uploadIds(1)[0];
+    expect(() => repriceCart(bundle({
+      bundleComponents: [
+        bundleComponent("roll-up", [shared]),
+        bundleComponent("wall-banner", [shared]),
+      ],
+    }), { now: MONDAY_IN_AUCKLAND })).toThrow(InvalidCheckoutCartError);
+  });
+
+  it("accepts the full 50-reference allowance for each Bundle component", () => {
+    const result = repriceCart(bundle({
+      bundleComponents: [
+        bundleComponent("roll-up", uploadIds(50)),
+        bundleComponent(
+          "wall-banner",
+          uploadIds(50).map((id) => id.replace("8000", "8001")),
+        ),
+      ],
+    }), { now: MONDAY_IN_AUCKLAND });
+
+    expect(result.items[0].uploadReferences).toHaveLength(100);
+  });
+
   it("uses one supplied registry for product, people and urgent prices", () => {
     const registry = structuredClone(defaultProductRegistry);
     const product = registry.products.find(

@@ -1,3 +1,4 @@
+import type { BannerBundleComponentCustomization } from "@/domain/bundles/banner-bundle";
 import type {
   DeliveryPreference,
   Orientation,
@@ -31,6 +32,7 @@ export type CartItem = Readonly<{
   uploadReferences: readonly string[];
   mainPhotoUploadId?: string;
   extraBackgroundRemovalUploadIds?: readonly string[];
+  bundleComponents?: readonly BannerBundleComponentCustomization[];
 }>;
 
 export type Cart = Readonly<{

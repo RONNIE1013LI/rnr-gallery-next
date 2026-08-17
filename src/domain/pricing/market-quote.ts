@@ -23,6 +23,12 @@ type MarketQuoteSelection = Readonly<{
   urgentWorkingDays?: number;
   sourcePhotoCount?: number;
   extraBackgroundRemovalCount?: number;
+  bundleCounts?: Readonly<{
+    rollUpExtraPhotos: number;
+    wallBannerExtraPhotos: number;
+    rollUpBackgroundRemovals: number;
+    wallBannerBackgroundRemovals: number;
+  }>;
 }>;
 
 function requiredPrice(value: MarketPriceCell | undefined, label: string): number {
@@ -56,6 +62,13 @@ function peoplePetsGross(
     book.peoplePets.additionalEachInclTaxCents,
     "Additional people / pets price",
   );
+}
+
+function bundleCount(value: number, label: string): number {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new InvalidPricingInputError(`${label} must be a non-negative safe integer.`);
+  }
+  return value;
 }
 
 export function quoteMarketConfiguration(
@@ -99,6 +112,71 @@ export function quoteMarketConfiguration(
     throw new InvalidPricingInputError(
       `People / pets pricing is unavailable for ${productKey}.`,
     );
+  }
+
+  if (productKey !== "banner-bundle" && selection.bundleCounts !== undefined) {
+    throw new InvalidPricingInputError(
+      `Banner Bundle component pricing is unavailable for ${productKey}.`,
+    );
+  }
+  if (productKey === "banner-bundle" && selection.bundleCounts !== undefined) {
+    const componentLines = [
+      {
+        count: bundleCount(
+          selection.bundleCounts.rollUpExtraPhotos,
+          "Roll-Up Banner extra photo count",
+        ),
+        chargeKey: "roll-up-extra-photo",
+        lineKey: "roll-up-extra-photos",
+        label: "Roll-Up Banner extra photos",
+        preserveGross: market === "AU",
+      },
+      {
+        count: bundleCount(
+          selection.bundleCounts.wallBannerExtraPhotos,
+          "Wall Banner extra photo count",
+        ),
+        chargeKey: "wall-banner-extra-photo",
+        lineKey: "wall-banner-extra-photos",
+        label: "Wall Banner extra photos",
+        preserveGross: market === "AU",
+      },
+      {
+        count: bundleCount(
+          selection.bundleCounts.rollUpBackgroundRemovals,
+          "Roll-Up Banner background removal count",
+        ),
+        chargeKey: "roll-up-background-removal",
+        lineKey: "roll-up-background-removals",
+        label: "Roll-Up Banner background removals",
+        preserveGross: true,
+      },
+      {
+        count: bundleCount(
+          selection.bundleCounts.wallBannerBackgroundRemovals,
+          "Wall Banner background removal count",
+        ),
+        chargeKey: "wall-banner-background-removal",
+        lineKey: "wall-banner-background-removals",
+        label: "Wall Banner background removals",
+        preserveGross: true,
+      },
+    ] as const;
+    for (const componentLine of componentLines) {
+      if (componentLine.count === 0) continue;
+      const each = productPrices.charges.find(
+        (charge) => charge.key === componentLine.chargeKey,
+      );
+      grossLines.push({
+        key: componentLine.lineKey,
+        label: componentLine.label,
+        amountInclTaxCents: componentLine.count * requiredPrice(
+          each?.amountInclTaxCents,
+          componentLine.label,
+        ),
+        preserveGross: componentLine.preserveGross,
+      });
+    }
   }
 
   const extraPhotoCount = Math.max(

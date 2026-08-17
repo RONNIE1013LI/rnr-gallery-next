@@ -18,6 +18,12 @@ import { getUrgentService } from "@/domain/scheduling/urgent-service";
 import { parseCheckoutCartInput } from "./input-schema";
 import { MAX_SOURCE_PHOTOS_PER_ITEM } from "@/domain/configuration/types";
 import {
+  flattenBannerBundleUploadReferences,
+  getBannerBundleCounts,
+  validateBannerBundleComponents,
+  type BannerBundleComponentCustomization,
+} from "@/domain/bundles/banner-bundle";
+import {
   InvalidCheckoutCartError,
   type CanonicalCheckoutItemInput,
   type GalleryDesignSnapshot,
@@ -32,6 +38,32 @@ type RepriceCartOptions = Readonly<{
   market?: Market;
   registryRevision?: number;
 }>;
+
+function validateBundlePayload(
+  item: CanonicalCheckoutItemInput,
+): readonly BannerBundleComponentCustomization[] | undefined {
+  if (item.productKey !== "banner-bundle") {
+    if (item.bundleComponents !== undefined) {
+      throw new InvalidCheckoutCartError(
+        "Banner Bundle component customisations are unavailable for this product.",
+      );
+    }
+    return undefined;
+  }
+  if (item.bundleComponents === undefined) {
+    throw new InvalidCheckoutCartError(
+      "A Banner Bundle requires both component customisations.",
+    );
+  }
+  try {
+    return validateBannerBundleComponents(item.bundleComponents);
+  } catch (error) {
+    throw new InvalidCheckoutCartError(
+      error instanceof Error ? error.message : "The Banner Bundle customisations are invalid.",
+      { cause: error },
+    );
+  }
+}
 
 function assertSafeCents(label: string, ...values: readonly number[]): void {
   if (values.some((value) => !Number.isSafeInteger(value) || value < 0)) {
@@ -224,8 +256,17 @@ function repriceItem(
 
   validateOrientation(schema, normalizedItem);
   validatePeoplePets(schema, normalizedItem);
-  validateUploads(schema, normalizedItem);
-  const photoSelections = validatePhotoSelections(schema, normalizedItem);
+  const bundleComponents = validateBundlePayload(normalizedItem);
+  const uploadReferences = bundleComponents
+    ? flattenBannerBundleUploadReferences(bundleComponents)
+    : normalizedItem.uploadReferences;
+  if (!bundleComponents) validateUploads(schema, normalizedItem);
+  const photoSelections: Readonly<{
+    mainPhotoUploadId?: string;
+    extraBackgroundRemovalUploadIds: readonly string[];
+  }> = bundleComponents
+    ? Object.freeze({ extraBackgroundRemovalUploadIds: Object.freeze([]) })
+    : validatePhotoSelections(schema, normalizedItem);
 
   const marketUrgentFees = registry.markets[market].urgentServiceFees.map((fee) => {
     if (!Number.isSafeInteger(fee.amountInclTaxCents)) {
@@ -252,6 +293,9 @@ function repriceItem(
         peoplePets: normalizedItem.peoplePets,
         sourcePhotoCount: normalizedItem.uploadReferences.length,
         extraBackgroundRemovalCount: photoSelections.extraBackgroundRemovalUploadIds.length,
+        ...(bundleComponents
+          ? { bundleCounts: getBannerBundleCounts(bundleComponents) }
+          : {}),
         ...(normalizedItem.urgentServiceConfirmed === true
           ? { urgentWorkingDays: urgentService.workingDays }
           : {}),
@@ -288,13 +332,14 @@ function repriceItem(
       feeInclGstCents: urgentService.feeInclGstCents,
     }),
     quantity: normalizedItem.quantity,
-    uploadReferences: Object.freeze([...normalizedItem.uploadReferences]),
+    uploadReferences: Object.freeze([...uploadReferences]),
     ...(photoSelections.mainPhotoUploadId
       ? { mainPhotoUploadId: photoSelections.mainPhotoUploadId }
       : {}),
     ...(photoSelections.extraBackgroundRemovalUploadIds.length > 0
       ? { extraBackgroundRemovalUploadIds: photoSelections.extraBackgroundRemovalUploadIds }
       : {}),
+    ...(bundleComponents ? { bundleComponents } : {}),
     unitPrice,
     lineSubtotalExGstCents,
     lineGstCents,
@@ -342,7 +387,12 @@ export function repriceCart(
     if (new Set(input.items.map((item) => item.clientItemId)).size !== input.items.length) {
       throw new InvalidCheckoutCartError("Client item IDs must be unique.");
     }
-    const allUploadReferences = input.items.flatMap((item) => item.uploadReferences);
+    const allUploadReferences = input.items.flatMap((item) => {
+      const bundleComponents = validateBundlePayload(item);
+      return bundleComponents
+        ? flattenBannerBundleUploadReferences(bundleComponents)
+        : item.uploadReferences;
+    });
     if (new Set(allUploadReferences).size !== allUploadReferences.length) {
       throw new InvalidCheckoutCartError(
         "Upload references cannot be shared between cart items.",

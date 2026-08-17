@@ -6,6 +6,19 @@ import { MAX_SOURCE_PHOTOS_PER_ITEM } from "@/domain/configuration/types";
 export const MAX_PEOPLE_PETS_PER_ITEM = 20;
 export const MAX_CHECKOUT_TEXT_LENGTH = 5_000;
 
+const bannerBundleComponentSchema = z.object({
+  componentKey: z.enum(["roll-up", "wall-banner"]),
+  photoSubmissionMethod: z.enum(["upload", "later"]),
+  designText: z.string().max(MAX_CHECKOUT_TEXT_LENGTH),
+  notes: z.string().max(MAX_CHECKOUT_TEXT_LENGTH),
+  uploadReferences: z.array(z.uuid()).max(MAX_SOURCE_PHOTOS_PER_ITEM),
+  mainPhotoUploadId: z.uuid().optional(),
+  extraBackgroundRemovalUploadIds: z
+    .array(z.uuid())
+    .max(MAX_SOURCE_PHOTOS_PER_ITEM - 1)
+    .optional(),
+});
+
 const checkoutItemInputSchema = z.object({
   clientItemId: z.uuid(),
   productKey: z.string().trim().min(1).max(100),
@@ -22,6 +35,7 @@ const checkoutItemInputSchema = z.object({
   uploadReferences: z.array(z.uuid()).max(MAX_SOURCE_PHOTOS_PER_ITEM),
   mainPhotoUploadId: z.uuid().optional(),
   extraBackgroundRemovalUploadIds: z.array(z.uuid()).max(MAX_SOURCE_PHOTOS_PER_ITEM - 1).optional(),
+  bundleComponents: z.array(bannerBundleComponentSchema).length(2).optional(),
 });
 
 export const checkoutCartInputSchema = z.object({

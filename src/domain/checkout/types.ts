@@ -1,3 +1,4 @@
+import type { BannerBundleComponentCustomization } from "@/domain/bundles/banner-bundle";
 import type {
   Orientation,
   PhotoSubmissionMethod,
@@ -36,6 +37,7 @@ export type CanonicalCheckoutItemInput = Readonly<{
   uploadReferences: readonly string[];
   mainPhotoUploadId?: string;
   extraBackgroundRemovalUploadIds?: readonly string[];
+  bundleComponents?: readonly BannerBundleComponentCustomization[];
 }>;
 
 export type CanonicalCheckoutCartInput = Readonly<{
@@ -66,6 +68,7 @@ export type RepricedCheckoutItem = Readonly<{
   uploadReferences: readonly string[];
   mainPhotoUploadId?: string;
   extraBackgroundRemovalUploadIds?: readonly string[];
+  bundleComponents?: readonly BannerBundleComponentCustomization[];
   unitPrice: MarketPriceBreakdown;
   lineSubtotalExGstCents: number;
   lineGstCents: number;
