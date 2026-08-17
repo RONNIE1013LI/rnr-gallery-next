@@ -11,6 +11,7 @@ import type { Cart } from "@/domain/cart/types";
 import { getAttributionStorageKey } from "@/domain/analytics/attribution";
 import { AccountSignOut } from "./account-sign-out";
 import { CartCount } from "./cart-count";
+import { CheckoutEntrySummary } from "./checkout-entry-summary";
 import { CommerceIdentityProvider, useCommerceIdentity } from "./commerce-identity-provider";
 
 const { replace } = vi.hoisted(() => ({ replace: vi.fn() }));
@@ -35,6 +36,39 @@ function IdentityControls() {
     <button onClick={signOutToGuest}>Guest</button>
     <CartCount />
   </>;
+}
+
+function bundleCart(
+  id: string,
+  rollUpMethod: "upload" | "later",
+  wallMethod: "upload" | "later",
+  uploadCount: number,
+): Cart {
+  const uploads = Array.from(
+    { length: uploadCount },
+    (_, index) => `blob:${id}-private-${index + 1}.jpg`,
+  );
+  const component = (componentKey: "roll-up" | "wall-banner", method: "upload" | "later") => ({
+    componentKey,
+    photoSubmissionMethod: method,
+    designText: `${id} private wording`,
+    notes: `${id} private notes`,
+    uploadReferences: method === "upload" ? uploads : [],
+    ...(method === "upload" ? { mainPhotoUploadId: uploads[0] } : {}),
+  });
+  return {
+    version: 1,
+    items: [{
+      ...cart("Banner Bundle").items[0],
+      id,
+      productKey: "banner-bundle",
+      productSlug: "banner-bundle",
+      productTitle: "Banner Bundle",
+      photoSubmissionMethod: rollUpMethod === "upload" || wallMethod === "upload" ? "upload" : "later",
+      uploadReferences: uploads,
+      bundleComponents: [component("roll-up", rollUpMethod), component("wall-banner", wallMethod)],
+    }],
+  };
 }
 
 describe("same-browser identity transitions", () => {
@@ -85,6 +119,55 @@ describe("same-browser identity transitions", () => {
     expect(screen.getByRole("link", { name: "Cart, 2 items" })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "User A" }));
     expect(screen.getByRole("link", { name: "Cart, 1 items" })).toBeInTheDocument();
+  });
+
+  it("never exposes another identity's Bundle customisations across Guest, A, sign out, and B", () => {
+    localStorage.setItem(
+      getCartStorageKey(null),
+      JSON.stringify(bundleCart("guest-bundle", "later", "later", 0)),
+    );
+    localStorage.setItem(
+      getCartStorageKey("customer-a"),
+      JSON.stringify(bundleCart("a-bundle", "upload", "later", 1)),
+    );
+    localStorage.setItem(
+      getCartStorageKey("customer-b"),
+      JSON.stringify(bundleCart("b-bundle", "later", "upload", 2)),
+    );
+    render(
+      <CommerceIdentityProvider initialCustomerId={null}>
+        <IdentityControls />
+        <CheckoutEntrySummary />
+      </CommerceIdentityProvider>,
+    );
+
+    let rollUp = screen.getByLabelText("Roll-Up Banner customisation summary");
+    let wallBanner = screen.getByLabelText("Wall Banner customisation summary");
+    expect(rollUp).toHaveTextContent("Send Later");
+    expect(wallBanner).toHaveTextContent("Send Later");
+
+    fireEvent.click(screen.getByRole("button", { name: "User A" }));
+    rollUp = screen.getByLabelText("Roll-Up Banner customisation summary");
+    wallBanner = screen.getByLabelText("Wall Banner customisation summary");
+    expect(rollUp).toHaveTextContent("Upload Now");
+    expect(rollUp).toHaveTextContent("1 photo");
+    expect(wallBanner).toHaveTextContent("Send Later");
+
+    fireEvent.click(screen.getByRole("button", { name: "Guest" }));
+    expect(screen.getByLabelText("Roll-Up Banner customisation summary")).toHaveTextContent(
+      "Send Later",
+    );
+    expect(screen.getByLabelText("Wall Banner customisation summary")).toHaveTextContent(
+      "Send Later",
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "User B" }));
+    rollUp = screen.getByLabelText("Roll-Up Banner customisation summary");
+    wallBanner = screen.getByLabelText("Wall Banner customisation summary");
+    expect(rollUp).toHaveTextContent("Send Later");
+    expect(wallBanner).toHaveTextContent("Upload Now");
+    expect(wallBanner).toHaveTextContent("2 photos");
+    expect(screen.queryByText(/private wording|private notes|blob:/)).not.toBeInTheDocument();
   });
 
   it("follows authenticated identity prop changes without remounting the layout", async () => {

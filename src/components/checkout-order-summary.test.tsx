@@ -42,6 +42,59 @@ describe("CheckoutOrderSummary", () => {
     expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
   });
 
+  it("shows privacy-safe Banner Bundle component methods and photo counts", () => {
+    const privateUpload = "blob:private-order-photo.jpg";
+    const cart = {
+      version: 1,
+      market: "NZ", currency: "NZD", taxJurisdiction: "NZ_GST",
+      taxRateBasisPoints: 1_500, priceBookRevision: 1, orderDate: "2026-08-17",
+      items: [{
+        clientItemId: "30000000-0000-4000-8000-000000000002",
+        productKey: "banner-bundle", productSlug: "banner-bundle",
+        productTitle: "Banner Bundle", sizeKey: "rollup-wall-200x100",
+        sizeLabel: "Roll-Up + Wall Banner", peoplePets: 0,
+        photoSubmissionMethod: "upload", designText: "Customer secret combined wording",
+        notes: "Customer secret combined notes", neededDate: "2026-08-20",
+        urgentServiceConfirmed: false, urgentService: { workingDays: 5, feeInclGstCents: 0 },
+        quantity: 1, uploadReferences: [privateUpload, "blob:second-private.jpg"],
+        bundleComponents: [
+          {
+            componentKey: "roll-up", photoSubmissionMethod: "upload",
+            designText: "Customer secret Roll-Up wording", notes: "Customer secret notes",
+            uploadReferences: [privateUpload, "blob:second-private.jpg"],
+            mainPhotoUploadId: privateUpload,
+            extraBackgroundRemovalUploadIds: ["blob:second-private.jpg"],
+          },
+          {
+            componentKey: "wall-banner", photoSubmissionMethod: "later",
+            designText: "Customer secret Wall wording", notes: "Customer secret notes",
+            uploadReferences: [],
+          },
+        ],
+        unitPrice: {
+          market: "NZ", currency: "NZD", taxJurisdiction: "NZ_GST",
+          taxRateBasisPoints: 1_500, discountCents: 0, designSurchargeCents: 0,
+          lines: [], subtotalExGstCents: 29_999, gstCents: 4_500, totalInclGstCents: 34_499,
+        },
+        lineSubtotalExGstCents: 29_999, lineGstCents: 4_500, lineTotalInclGstCents: 34_499,
+      }],
+      subtotalExGstCents: 29_999, gstCents: 4_500, totalInclGstCents: 34_499,
+      discountCents: 0, designSurchargeCents: 0, itemCount: 1, cartDigest: "d".repeat(64),
+    } as const satisfies RepricedCheckoutCart;
+
+    render(<CheckoutOrderSummary cart={cart} shipping={null} />);
+
+    const rollUp = screen.getByLabelText("Roll-Up Banner customisation summary");
+    expect(rollUp).toHaveTextContent("Upload Now");
+    expect(rollUp).toHaveTextContent("2 photos");
+    expect(rollUp).toHaveTextContent("Additional background removal: Yes");
+    const wallBanner = screen.getByLabelText("Wall Banner customisation summary");
+    expect(wallBanner).toHaveTextContent("Send Later");
+    expect(wallBanner).toHaveTextContent("0 photos");
+    expect(wallBanner).toHaveTextContent("Additional background removal: No");
+    expect(screen.queryByText(/private-order-photo\.jpg|blob:|Customer secret/)).not.toBeInTheDocument();
+  });
+
   it("uses one concise test-rate disclosure", () => {
     const cart = {
       version: 1,

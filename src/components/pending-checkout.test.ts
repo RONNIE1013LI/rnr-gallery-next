@@ -1,4 +1,8 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  getPendingCheckoutStorageKey,
+  setActiveCustomerId,
+} from "@/domain/cart/browser-cart-scope";
 import { CART_STORAGE_KEY, type Cart } from "@/domain/cart/types";
 import type {
   CheckoutStartingPaymentIntent,
@@ -64,8 +68,38 @@ const placingIntent: PlacingOrderIntent = {
   shipping: intent.shipping,
 };
 
+const bundleCart: Cart = {
+  version: 1,
+  items: [{
+    ...cart.items[0],
+    id: "30000000-0000-4000-8000-000000000002",
+    productKey: "banner-bundle",
+    productSlug: "banner-bundle",
+    productTitle: "Banner Bundle",
+    sizeKey: "rollup-wall-200x100",
+    sizeLabel: "Roll-Up + Wall Banner",
+    photoSubmissionMethod: "upload",
+    uploadReferences: ["blob:pending-private.jpg", "blob:pending-extra.jpg"],
+    bundleComponents: [
+      {
+        componentKey: "roll-up", photoSubmissionMethod: "upload",
+        designText: "Private Roll-Up wording", notes: "Private Roll-Up notes",
+        uploadReferences: ["blob:pending-private.jpg", "blob:pending-extra.jpg"],
+        mainPhotoUploadId: "blob:pending-private.jpg",
+        extraBackgroundRemovalUploadIds: ["blob:pending-extra.jpg"],
+      },
+      {
+        componentKey: "wall-banner", photoSubmissionMethod: "later",
+        designText: "Private Wall wording", notes: "Private Wall notes",
+        uploadReferences: [],
+      },
+    ],
+  }],
+};
+
 describe("pending checkout", () => {
   beforeEach(() => localStorage.clear());
+  afterEach(() => setActiveCustomerId(null));
 
   it("keeps the cart and resumable order in durable browser storage", () => {
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
@@ -88,6 +122,55 @@ describe("pending checkout", () => {
       cart,
     });
     expect(localStorage.getItem(CART_STORAGE_KEY)).toBe(JSON.stringify(cart));
+  });
+
+  it("recovers frozen Bundle groups only from the current identity namespace", () => {
+    setActiveCustomerId(null);
+    savePendingCheckout(localStorage, intent, bundleCart);
+    setActiveCustomerId("customer-a");
+    expect(readPendingCheckout(localStorage)).toBeNull();
+
+    savePendingCheckout(localStorage, intent, {
+      ...bundleCart,
+      items: [{ ...bundleCart.items[0], id: "bundle-a" }],
+    });
+    const customerA = readPendingCheckout(localStorage)!;
+    expect(customerA.cart.items[0].id).toBe("bundle-a");
+    expect(Object.isFrozen(customerA.cart.items[0].bundleComponents)).toBe(true);
+    expect(Object.isFrozen(
+      customerA.cart.items[0].bundleComponents?.[0].uploadReferences,
+    )).toBe(true);
+
+    setActiveCustomerId(null);
+    expect(readPendingCheckout(localStorage)?.cart.items[0].id).toBe(
+      "30000000-0000-4000-8000-000000000002",
+    );
+    setActiveCustomerId("customer-b");
+    expect(readPendingCheckout(localStorage)).toBeNull();
+  });
+
+  it("removes an invalid partial Bundle pending checkout without touching another identity", () => {
+    const customerAKey = getPendingCheckoutStorageKey("customer-a");
+    const customerBKey = getPendingCheckoutStorageKey("customer-b");
+    localStorage.setItem(customerAKey, JSON.stringify({
+      schemaVersion: 1,
+      intent,
+      cart: {
+        ...bundleCart,
+        items: [{
+          ...bundleCart.items[0],
+          bundleComponents: [bundleCart.items[0].bundleComponents![0]],
+        }],
+      },
+    }));
+    setActiveCustomerId("customer-b");
+    savePendingCheckout(localStorage, intent, bundleCart);
+    const customerBRaw = localStorage.getItem(customerBKey);
+
+    setActiveCustomerId("customer-a");
+    expect(readPendingCheckout(localStorage)).toBeNull();
+    expect(localStorage.getItem(customerAKey)).toBeNull();
+    expect(localStorage.getItem(customerBKey)).toBe(customerBRaw);
   });
 
   it("keeps a legacy Grave Cover checkout resumable after format normalization", () => {

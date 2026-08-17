@@ -24,6 +24,39 @@ const cartItem: CartItem = {
   uploadReferences: [],
 };
 
+const bundleItem: CartItem = {
+  ...cartItem,
+  id: "bundle-item",
+  productKey: "banner-bundle",
+  productSlug: "banner-bundle",
+  productTitle: "Banner Bundle",
+  imageSrc: "/media/products/banner-bundle.png",
+  sizeKey: "rollup-wall-200x100",
+  sizeLabel: "85 × 200 cm Roll-Up + 200 × 100 cm Wall Banner",
+  photoSubmissionMethod: "upload",
+  designText: "Customer secret combined wording",
+  notes: "Customer secret combined notes",
+  uploadReferences: ["blob:family-secret.jpg", "blob:second-secret.jpg"],
+  bundleComponents: [
+    {
+      componentKey: "roll-up",
+      photoSubmissionMethod: "upload",
+      designText: "Customer secret Roll-Up wording",
+      notes: "Customer secret Roll-Up notes",
+      uploadReferences: ["blob:family-secret.jpg", "blob:second-secret.jpg"],
+      mainPhotoUploadId: "blob:family-secret.jpg",
+      extraBackgroundRemovalUploadIds: ["blob:second-secret.jpg"],
+    },
+    {
+      componentKey: "wall-banner",
+      photoSubmissionMethod: "later",
+      designText: "Customer secret Wall wording",
+      notes: "Customer secret Wall notes",
+      uploadReferences: [],
+    },
+  ],
+};
+
 function seedCart() {
   localStorage.setItem(
     "rnr:commerce:v1:guest:cart",
@@ -77,6 +110,26 @@ describe("CartView", () => {
       "href",
       `/products/photo-print-canvas/configure?design=${"a".repeat(64)}`,
     );
+  });
+
+  it("shows privacy-safe Banner Bundle component methods and photo counts", async () => {
+    localStorage.setItem(
+      "rnr:commerce:v1:guest:cart",
+      JSON.stringify({ version: 1, items: [bundleItem] }),
+    );
+    render(<CartView />);
+
+    const rollUp = await screen.findByLabelText("Roll-Up Banner customisation summary");
+    expect(rollUp).toHaveTextContent("Upload Now");
+    expect(rollUp).toHaveTextContent("2 photos");
+    expect(rollUp).toHaveTextContent("Additional background removal: Yes");
+    const wallBanner = screen.getByLabelText("Wall Banner customisation summary");
+    expect(wallBanner).toHaveTextContent("Send Later");
+    expect(wallBanner).toHaveTextContent("0 photos");
+    expect(wallBanner).toHaveTextContent("Additional background removal: No");
+    expect(screen.queryByText(/family-secret\.jpg/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/blob:/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Customer secret/)).not.toBeInTheDocument();
   });
 
   it("updates quantity and removes an item persistently", async () => {

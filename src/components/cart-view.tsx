@@ -103,6 +103,21 @@ export function CartView() {
                 )}
                 <div><dt>Delivery</dt><dd>{labelFor(item.deliveryPreference)}</dd></div>
               </dl>
+              {item.bundleComponents?.map((component) => {
+                const componentLabel = component.componentKey === "roll-up"
+                  ? "Roll-Up Banner"
+                  : "Wall Banner";
+                const photoCount = component.uploadReferences.length;
+                return <dl
+                  aria-label={`${componentLabel} customisation summary`}
+                  key={component.componentKey}
+                >
+                  <div><dt>Component</dt><dd>{componentLabel}</dd></div>
+                  <div><dt>Photo method</dt><dd>{component.photoSubmissionMethod === "upload" ? "Upload Now" : "Send Later"}</dd></div>
+                  <div><dt>Photos</dt><dd>{photoCount} {photoCount === 1 ? "photo" : "photos"}</dd></div>
+                  <div><dt>Additional background removal: </dt><dd>{component.extraBackgroundRemovalUploadIds?.length ? "Yes" : "No"}</dd></div>
+                </dl>;
+              })}
             </div>
             <div className={styles.cartItemActions}>
               <label>

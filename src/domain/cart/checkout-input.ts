@@ -1,4 +1,25 @@
 import type { Cart } from "./types";
+import {
+  validateBannerBundleComponents,
+  type BannerBundleComponentCustomization,
+} from "@/domain/bundles/banner-bundle";
+
+function copyBundleComponents(
+  components: readonly BannerBundleComponentCustomization[],
+) {
+  validateBannerBundleComponents(components);
+  return Object.freeze(components.map((component) => Object.freeze({
+    ...component,
+    uploadReferences: Object.freeze([...component.uploadReferences]),
+    ...(component.extraBackgroundRemovalUploadIds
+      ? {
+          extraBackgroundRemovalUploadIds: Object.freeze([
+            ...component.extraBackgroundRemovalUploadIds,
+          ]),
+        }
+      : {}),
+  })));
+}
 
 export function cartToCheckoutInput(cart: Cart) {
   return {
@@ -16,24 +37,18 @@ export function cartToCheckoutInput(cart: Cart) {
       neededDate: item.neededDate,
       urgentServiceConfirmed: item.urgentServiceConfirmed === true,
       quantity: item.quantity,
-      uploadReferences: [...item.uploadReferences],
+      uploadReferences: Object.freeze([...item.uploadReferences]),
       ...(item.mainPhotoUploadId ? { mainPhotoUploadId: item.mainPhotoUploadId } : {}),
       ...(item.extraBackgroundRemovalUploadIds
-        ? { extraBackgroundRemovalUploadIds: [...item.extraBackgroundRemovalUploadIds] }
+        ? {
+            extraBackgroundRemovalUploadIds: Object.freeze([
+              ...item.extraBackgroundRemovalUploadIds,
+            ]),
+          }
         : {}),
       ...(item.bundleComponents
         ? {
-            bundleComponents: item.bundleComponents.map((component) => ({
-              ...component,
-              uploadReferences: [...component.uploadReferences],
-              ...(component.extraBackgroundRemovalUploadIds
-                ? {
-                    extraBackgroundRemovalUploadIds: [
-                      ...component.extraBackgroundRemovalUploadIds,
-                    ],
-                  }
-                : {}),
-            })),
+            bundleComponents: copyBundleComponents(item.bundleComponents),
           }
         : {}),
     })),

@@ -1,4 +1,8 @@
 import { emptyCart } from "./cart";
+import {
+  validateBannerBundleComponents,
+  type BannerBundleComponentCustomization,
+} from "@/domain/bundles/banner-bundle";
 import { getActiveCartStorageKey } from "./browser-cart-scope";
 import {
   type Cart,
@@ -66,6 +70,51 @@ function isCartItem(value: unknown): value is CartItem {
   );
 }
 
+function isBannerBundleComponent(
+  value: unknown,
+): value is BannerBundleComponentCustomization {
+  if (!value || typeof value !== "object") return false;
+  const component = value as Record<string, unknown>;
+  return (
+    (component.componentKey === "roll-up" || component.componentKey === "wall-banner") &&
+    (component.photoSubmissionMethod === "upload" ||
+      component.photoSubmissionMethod === "later") &&
+    typeof component.designText === "string" &&
+    typeof component.notes === "string" &&
+    Array.isArray(component.uploadReferences) &&
+    component.uploadReferences.every((reference) => typeof reference === "string") &&
+    (component.mainPhotoUploadId === undefined ||
+      typeof component.mainPhotoUploadId === "string") &&
+    (component.extraBackgroundRemovalUploadIds === undefined ||
+      (Array.isArray(component.extraBackgroundRemovalUploadIds) &&
+        component.extraBackgroundRemovalUploadIds.every(
+          (reference) => typeof reference === "string",
+        )))
+  );
+}
+
+function freezeStoredCartItem(item: CartItem): CartItem | null {
+  if (item.productKey !== "banner-bundle") {
+    return item.bundleComponents === undefined
+      ? Object.freeze({ ...item })
+      : null;
+  }
+  if (
+    !Array.isArray(item.bundleComponents) ||
+    !item.bundleComponents.every(isBannerBundleComponent)
+  ) {
+    return null;
+  }
+  try {
+    return Object.freeze({
+      ...item,
+      bundleComponents: validateBannerBundleComponents(item.bundleComponents),
+    });
+  } catch {
+    return null;
+  }
+}
+
 export function parseStoredCart(value: string | null): Cart {
   if (!value) return emptyCart();
 
@@ -78,17 +127,19 @@ export function parseStoredCart(value: string | null): Cart {
     ) {
       return emptyCart();
     }
-    const items = parsed.items.map((value) => {
+    const items = parsed.items.flatMap((value) => {
       const item = value as CartItem;
+      const frozenItem = freezeStoredCartItem(item);
+      if (!frozenItem) return [];
       if (
-        item.galleryDesignId === undefined ||
-        galleryDesignIdPattern.test(item.galleryDesignId)
+        frozenItem.galleryDesignId === undefined ||
+        galleryDesignIdPattern.test(frozenItem.galleryDesignId)
       ) {
-        return Object.freeze({ ...item });
+        return [frozenItem];
       }
-      const safeItem = { ...item };
+      const safeItem = { ...frozenItem };
       delete safeItem.galleryDesignId;
-      return Object.freeze(safeItem);
+      return [Object.freeze(safeItem)];
     });
     return normalizeLegacyGraveCoverCart({ version: 1, items });
   } catch {
@@ -102,7 +153,10 @@ export function createBrowserCartRepository(
 ): CartRepository {
   return {
     load: () => parseStoredCart(storage.getItem(storageKey)),
-    save: (cart) => storage.setItem(storageKey, JSON.stringify(cart)),
+    save: (cart) => {
+      const safeCart = parseStoredCart(JSON.stringify(cart));
+      storage.setItem(storageKey, JSON.stringify(safeCart));
+    },
     clear: () => storage.removeItem(storageKey),
   };
 }

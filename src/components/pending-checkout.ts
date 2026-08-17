@@ -41,7 +41,9 @@ export function savePendingCheckout(
   cart: Cart,
 ) {
   if (cart.items.length === 0) return;
-  const pending: PendingCheckout = { schemaVersion: 1, intent, cart };
+  const safeCart = parseStoredCart(JSON.stringify(cart));
+  if (safeCart.items.length === 0) return;
+  const pending: PendingCheckout = { schemaVersion: 1, intent, cart: safeCart };
   storage.setItem(getActivePendingCheckoutStorageKey(), JSON.stringify(pending));
 }
 
