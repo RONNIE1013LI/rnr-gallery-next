@@ -6,4 +6,10 @@ describe("Meta webhook route runtime", () => {
     expect(runtime).toBe("nodejs");
     expect(maxDuration).toBe(30);
   });
+
+  it("exports only the webhook handlers from the route module", async () => {
+    const route = await import("./route");
+    expect(typeof route.GET).toBe("function");
+    expect(typeof route.POST).toBe("function");
+  });
 });

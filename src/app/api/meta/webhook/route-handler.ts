@@ -7,10 +7,13 @@ const config = parseCustomerServiceConfig();
 const handlers = createMetaWebhookHandlers({
   config,
   ingest: (message) => createCustomerServiceRuntime().repository.ingestFacebookMessage(message),
-  generateDraft: (messageId) => createCustomerServiceRuntime().engine.generateDraft({
-    messageId,
-    trigger: "webhook_after",
-  }),
+  generateDraft: (messageId, attachmentSourceContext) => createCustomerServiceRuntime().engine.generateDraft(
+    {
+      messageId,
+      trigger: "webhook_after",
+    },
+    attachmentSourceContext,
+  ),
   scheduleAfter: (task) => after(task),
 });
 

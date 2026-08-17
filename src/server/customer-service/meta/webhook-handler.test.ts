@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import * as facebookAdapter from "../adapters/facebook";
 import { createMetaWebhookHandlers } from "./webhook-handler";
 
 const config = {
@@ -35,13 +36,15 @@ function messagePayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function setup(ingestResult: { status: "created"; messageId: string; pilotSequence: number } | { status: "duplicate"; messageId: string } = { status: "created", messageId: "internal-1", pilotSequence: 1 }) {
+function setup(ingestResult: { status: "created"; messageId: string; pilotSequence: number } | { status: "duplicate"; messageId: string } | { status: "pilot_complete"; messageId: string } = { status: "created", messageId: "internal-1", pilotSequence: 1 }) {
   const events: string[] = [];
+  const scheduledTasks: Array<() => Promise<void>> = [];
   const ingest = vi.fn(async () => { events.push("persist:commit"); return ingestResult; });
   const generateDraft = vi.fn(async () => undefined);
-  const scheduleAfter = vi.fn((task: () => Promise<void>) => { events.push("after:schedule"); void task(); });
+  const scheduleAfter = vi.fn((task: () => Promise<void>) => { events.push("after:schedule"); scheduledTasks.push(task); });
   return {
     events,
+    scheduledTasks,
     ingest,
     generateDraft,
     scheduleAfter,
@@ -57,16 +60,20 @@ describe("Meta webhook handler", () => {
     expect(await response.text()).toBe("123");
   });
 
-  it("rejects invalid signature and wrong Page before persistence", async () => {
+  it("rejects invalid signature and wrong Page before adapter parsing or persistence", async () => {
+    const adapterFactory = vi.spyOn(facebookAdapter, "createFacebookChannelAdapter");
     const invalid = setup();
     const request = signedRequest(messagePayload());
     request.headers.set("x-hub-signature-256", "sha256=00");
     expect((await invalid.handlers.POST(request)).status).toBe(401);
     expect(invalid.ingest).not.toHaveBeenCalled();
+    expect(adapterFactory).not.toHaveBeenCalled();
 
     const wrongPage = setup();
     expect((await wrongPage.handlers.POST(signedRequest({ ...messagePayload(), entry: [{ ...messagePayload().entry[0], id: "other-page" }] }))).status).toBe(403);
     expect(wrongPage.ingest).not.toHaveBeenCalled();
+    expect(adapterFactory).not.toHaveBeenCalled();
+    adapterFactory.mockRestore();
   });
 
   it("filters echoes without persistence or scheduling", async () => {
@@ -76,13 +83,15 @@ describe("Meta webhook handler", () => {
     expect(current.scheduleAfter).not.toHaveBeenCalled();
   });
 
-  it("persists image-only messages before scheduling", async () => {
+  it("persists image-only metadata before scheduling ephemeral attachment analysis", async () => {
     const current = setup();
-    expect((await current.handlers.POST(signedRequest(messagePayload({
+    const response = await current.handlers.POST(signedRequest(messagePayload({
       text: undefined,
       attachments: [{ type: "image", payload: { url: "https://scontent.test/image.jpg" } }],
-    })))).status).toBe(200);
+    })));
+    expect(response.status).toBe(200);
     expect(current.events).toEqual(["persist:commit", "after:schedule"]);
+    expect(current.ingest.mock.invocationCallOrder[0]).toBeLessThan(current.scheduleAfter.mock.invocationCallOrder[0]);
     expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
       text: null,
       attachments: [{
@@ -93,6 +102,19 @@ describe("Meta webhook handler", () => {
       }],
     }));
     expect(JSON.stringify(current.ingest.mock.calls)).not.toContain("https://scontent.test/image.jpg");
+    expect(await response.text()).not.toContain("https://scontent.test/image.jpg");
+
+    await current.scheduledTasks[0]();
+    expect(current.generateDraft).toHaveBeenCalledWith(
+      "internal-1",
+      [{
+        externalAttachmentKey: "mid-1:0",
+        ordinal: 0,
+        kind: "image",
+        sourceRef: { kind: "facebook_remote", url: "https://scontent.test/image.jpg" },
+        mimeTypeHint: null,
+      }],
+    );
   });
 
   it("persists before scheduling one new message", async () => {
@@ -119,6 +141,10 @@ describe("Meta webhook handler", () => {
     expect((await duplicate.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
     expect(duplicate.scheduleAfter).not.toHaveBeenCalled();
 
+    const pilotComplete = setup({ status: "pilot_complete", messageId: "internal-1" });
+    expect((await pilotComplete.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
+    expect(pilotComplete.scheduleAfter).not.toHaveBeenCalled();
+
     const disabled = setup();
     disabled.handlers = createMetaWebhookHandlers({
       config: { ...config, enabled: false },
@@ -128,5 +154,18 @@ describe("Meta webhook handler", () => {
     });
     expect((await disabled.handlers.POST(signedRequest(messagePayload()))).status).toBe(503);
     expect(disabled.ingest).not.toHaveBeenCalled();
+  });
+
+  it("keeps the committed webhook response successful when deferred generation fails", async () => {
+    const current = setup();
+    current.generateDraft.mockRejectedValueOnce(new Error("private deferred failure"));
+
+    const response = await current.handlers.POST(signedRequest(messagePayload({
+      attachments: [{ type: "image", payload: { url: "https://scontent.test/image.jpg" } }],
+    })));
+
+    expect(response.status).toBe(200);
+    await expect(current.scheduledTasks[0]()).resolves.toBeUndefined();
+    expect(response.status).toBe(200);
   });
 });

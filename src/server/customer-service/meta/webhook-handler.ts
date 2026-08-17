@@ -1,5 +1,6 @@
 import { createHmac } from "node:crypto";
 import { createFacebookChannelAdapter } from "../adapters/facebook";
+import type { NormalizedAttachment } from "../attachments/types";
 import type { HashedIncomingMessage } from "../repositories/customer-service-repository";
 import { verifyMetaSignature } from "./signature";
 
@@ -34,7 +35,10 @@ function hashExternalId(value: string, secret: string) {
 export function createMetaWebhookHandlers(dependencies: Readonly<{
   config: WebhookConfig;
   ingest: (message: HashedIncomingMessage) => Promise<IngestResult>;
-  generateDraft: (messageId: string) => Promise<unknown>;
+  generateDraft: (
+    messageId: string,
+    attachmentSourceContext: readonly NormalizedAttachment[],
+  ) => Promise<unknown>;
   scheduleAfter: (task: () => Promise<void>) => void;
 }>) {
   return {
@@ -84,9 +88,10 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
           receivedAt: message.receivedAt,
         });
         if (result.status === "created") {
+          const attachmentSourceContext = message.attachments;
           dependencies.scheduleAfter(async () => {
             try {
-              await dependencies.generateDraft(result.messageId);
+              await dependencies.generateDraft(result.messageId, attachmentSourceContext);
             } catch {
               // The webhook has already committed; operators can retry from the review UI.
             }
