@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import { buildRobots } from "./robots";
-import { buildPublicSitemap } from "./sitemap";
+import { buildPublicSitemap, dynamic as sitemapDynamic } from "./sitemap";
 import { metadata as homeMetadata } from "./page";
 import { metadata as shopMetadata } from "./shop/page";
 import { metadata as canvasMetadata } from "./canvas/page";
@@ -24,6 +24,10 @@ import { metadata as orderMetadata } from "./orders/[orderNumber]/page";
 import { metadata as proofMetadata } from "./orders/[orderNumber]/proof/page";
 
 describe("public SEO routes", () => {
+  it("renders the sitemap from the current market registry instead of a build-time snapshot", () => {
+    expect(sitemapDynamic).toBe("force-dynamic");
+  });
+
   it("lists active public products and excludes private commerce surfaces", () => {
     const registry = structuredClone(defaultProductRegistry);
     registry.products[0].active = false;

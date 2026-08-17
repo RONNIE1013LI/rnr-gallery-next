@@ -5,6 +5,8 @@ import { getSafePublicProductRegistry } from "@/server/admin/product-registry-ru
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 import { getSiteUrl } from "@/server/seo/site-url";
 
+export const dynamic = "force-dynamic";
+
 const pages = [
   ["/", 1, "weekly"],
   ["/shop", 0.9, "weekly"],
