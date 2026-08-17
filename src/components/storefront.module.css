@@ -3017,12 +3017,13 @@
   border-left: 1px solid var(--border);
 }
 
-.checkoutGuestPanel > p {
-  max-width: 15rem;
+.checkoutGuestDescription {
+  max-width: none;
   margin: 0.65rem auto 0;
   color: var(--muted);
   font-size: 1rem;
   line-height: 1.45;
+  white-space: nowrap;
 }
 
 .checkoutGuestPanel .primaryButton {
@@ -3917,6 +3918,10 @@
 
   .checkoutGuestPanel .primaryButton {
     width: min(100%, 14.5rem);
+  }
+
+  .checkoutGuestDescription {
+    font-size: clamp(0.875rem, 4vw, 1rem);
   }
 
   .checkoutEntryPage {

@@ -1,5 +1,9 @@
+import { readFileSync } from "node:fs";
+
 import { fireEvent, render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import styles from "@/components/storefront.module.css";
 
 const { getConfiguredSocialProviderIds, getOptionalSession, redirect } = vi.hoisted(() => ({
   getConfiguredSocialProviderIds: vi.fn(() => ["google"]),
@@ -49,7 +53,9 @@ describe("CheckoutStartPage", () => {
     expect(google).toBeEnabled();
     expect(email).toBeEnabled();
 
-    expect(screen.getByText("Proceed now and create an account later.")).toBeInTheDocument();
+    expect(screen.getByText("Proceed now and create an account later.")).toHaveClass(
+      styles.checkoutGuestDescription,
+    );
     expect(screen.queryByRole("complementary", { name: "Order summary" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Back to cart" })).toHaveAttribute("href", "/cart");
 
@@ -65,6 +71,14 @@ describe("CheckoutStartPage", () => {
 
     await expect(CheckoutStartPage()).rejects.toThrow("REDIRECT:/checkout");
     expect(redirect).toHaveBeenCalledWith("/checkout");
+  });
+
+  it("keeps the guest checkout description on one line", () => {
+    const css = readFileSync("src/components/storefront.module.css", "utf8");
+
+    expect(css).toMatch(
+      /\.checkoutGuestDescription\s*\{[\s\S]*?white-space:\s*nowrap;/,
+    );
   });
 
 });

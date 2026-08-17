@@ -53,7 +53,9 @@ export default async function CheckoutStartPage() {
             className={styles.checkoutGuestPanel}
           >
             <h2 id="guest-checkout-title">Guest Checkout</h2>
-            <p>Proceed now and create an account later.</p>
+            <p className={styles.checkoutGuestDescription}>
+              Proceed now and create an account later.
+            </p>
             <Link className={styles.primaryButton} href="/checkout">
               Continue as Guest
             </Link>
