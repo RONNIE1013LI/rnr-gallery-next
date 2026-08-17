@@ -95,6 +95,37 @@ describe("ProductPageContent", () => {
     expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
   });
 
+  it.each([
+    ["NZ", 35_999, "NZD", "359.99", "From NZ$359.99 incl GST"],
+    ["AU", 33_999, "AUD", "339.99", "From A$339.99 AUD"],
+  ] as const)(
+    "publishes the Banner Bundle %s starting amount in Product JSON-LD",
+    (market, priceInclTaxCents, currency, price, visiblePrice) => {
+      const product = getProductBySlug("banner-bundle")!;
+      const { container } = render(
+        <ProductPageContent
+          product={product}
+          selection={null}
+          market={market}
+          priceInclTaxCents={priceInclTaxCents}
+        />,
+      );
+
+      expect(screen.getByText(visiblePrice)).toBeVisible();
+      expect(JSON.parse(
+        container.querySelector("#rnr-product-data")?.textContent ?? "{}",
+      )).toMatchObject({
+        "@type": "Product",
+        name: "Banner Bundle",
+        image: ["https://rrgallery.co.nz/media/products/banner-bundle.png"],
+        offers: {
+          price,
+          priceCurrency: currency,
+        },
+      });
+    },
+  );
+
   it("preserves a selected size when opening the configurator", () => {
     const product = getProductBySlug("photo-print-canvas")!;
     const { container } = render(

@@ -384,7 +384,7 @@ describe("payment service", () => {
     );
   });
 
-  it("starts an Australian order with the immutable AUD amount and currency", async () => {
+  it("starts an Australian order with the immutable Banner Bundle total and AUD currency", async () => {
     const australianAddress: NormalizedAddress = {
       ...address,
       country: "AU",
@@ -394,7 +394,7 @@ describe("payment service", () => {
     };
     const australianOrder: PaymentOrder = {
       ...order,
-      amountCents: 13_500,
+      amountCents: 33_999,
       currency: "AUD",
       customer: {
         fullName: australianAddress.fullName,
@@ -433,12 +433,12 @@ describe("payment service", () => {
       orderId: australianOrder.id,
       provider: "local-test",
       method: "card",
-      expectedAmountCents: 13_500,
+      expectedAmountCents: 33_999,
       currency: "AUD",
       clientKey: browserKey,
     });
     expect(card.createOrReuse).toHaveBeenCalledWith(expect.objectContaining({
-      order: australianOrder,
+      order: expect.objectContaining({ amountCents: 33_999, currency: "AUD" }),
     }));
   });
 

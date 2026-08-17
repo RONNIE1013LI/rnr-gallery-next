@@ -59,15 +59,21 @@ describe("merchant product data", () => {
     });
   });
 
-  it("excludes Banner Bundle while retaining other active products", () => {
-    const registry = readyAustralianRegistry();
+  it.each([
+    ["NZ", defaultProductRegistry],
+    ["AU", readyAustralianRegistry()],
+  ] as const)("excludes Banner Bundle from the %s Merchant feed while retaining other active products", (
+    market,
+    registry,
+  ) => {
     const items = buildMerchantProductData(
       registry,
-      "AU",
+      market,
       new URL("https://shop.example.test"),
     );
 
     expect(items.some((entry) => entry.productKey === "banner-bundle")).toBe(false);
+    expect(items.some((entry) => entry.link.includes("banner-bundle"))).toBe(false);
     expect(items.some((entry) => entry.productKey === "roll-up-banner")).toBe(true);
   });
 

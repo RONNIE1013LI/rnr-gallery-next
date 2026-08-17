@@ -231,6 +231,32 @@ describe("Afterpay provider", () => {
     expect(input.order.billingAddress).toEqual(address());
   });
 
+  it("sends the authoritative stored Australian Banner Bundle total in AUD", async () => {
+    const australianOrder = Object.freeze({
+      ...order("AU"),
+      amountCents: 33_999,
+    });
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(configuration("AUD")))
+      .mockResolvedValueOnce(jsonResponse({
+        ...checkoutResponse("sandbox", "AU"),
+        amount: { amount: "339.99", currency: "AUD" },
+        merchantReference: australianOrder.orderNumber,
+      }));
+    const provider = createAfterpayProvider({
+      config: config("sandbox", "AU"),
+      fetchImpl,
+    });
+
+    await expect(provider.createOrReuse(sessionInput(australianOrder)))
+      .resolves.toMatchObject({ providerReference: token });
+    const request = fetchImpl.mock.calls[1]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      amount: { amount: "339.99", currency: "AUD" },
+      merchantReference: australianOrder.orderNumber,
+    });
+  });
+
   it("enforces remote inclusive limits before checkout", async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(jsonResponse(configuration()))

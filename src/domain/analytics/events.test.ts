@@ -27,6 +27,59 @@ describe("privacy-safe analytics events", () => {
     expect(JSON.stringify(event)).not.toContain("PRIVATE");
   });
 
+  it("identifies Banner Bundle purchases without exposing customisation content or file data", () => {
+    const paidOrder = order("paid");
+    const bundleItem = {
+      ...paidOrder.items[0],
+      productTitle: "Banner Bundle",
+      sizeLabel: "85 × 200 cm Roll-Up + 200 × 100 cm Wall Banner",
+      designText: "PRIVATE BUNDLE WORDING",
+      notes: "PRIVATE BUNDLE NOTES",
+      galleryDesign: {
+        id: "a".repeat(64),
+        title: "PRIVATE INSPIRATION",
+        contentHash: "b".repeat(64),
+        productSlug: "banner-bundle",
+        imageUrl: "/gallery-images/private-banner-file.jpg",
+      },
+      uploadReferences: ["private-banner-filename.png"],
+      bundleComponents: [{
+        componentKey: "roll-up" as const,
+        photoSubmissionMethod: "upload" as const,
+        designText: "PRIVATE ROLL-UP WORDING",
+        notes: "PRIVATE ROLL-UP NOTES",
+        photoCount: 2,
+        backgroundRemovalCount: 1,
+      }, {
+        componentKey: "wall-banner" as const,
+        photoSubmissionMethod: "later" as const,
+        designText: "PRIVATE WALL WORDING",
+        notes: "PRIVATE WALL NOTES",
+        photoCount: 0,
+        backgroundRemovalCount: 0,
+      }],
+    } satisfies PublicOrder["items"][number] & {
+      uploadReferences: readonly string[];
+    };
+    const bundleOrder = {
+      ...paidOrder,
+      items: [bundleItem],
+    } satisfies PublicOrder;
+
+    const event = buildPurchaseEvent(bundleOrder);
+
+    expect(event?.items).toEqual([{
+      item_id: "banner-bundle",
+      item_name: "Banner Bundle",
+      item_variant: "85 × 200 cm Roll-Up + 200 × 100 cm Wall Banner",
+      price: 74.75,
+      quantity: 1,
+    }]);
+    expect(JSON.stringify(event)).not.toMatch(
+      /PRIVATE|bundleComponents|designText|notes|uploadReferences|filename|imageUrl|gallery-images/i,
+    );
+  });
+
   it("uses the immutable order currency for Australian purchases", () => {
     const australianOrder = {
       ...order("paid"),

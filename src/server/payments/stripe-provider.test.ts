@@ -128,7 +128,7 @@ describe("Stripe payment provider", () => {
       .not.toHaveProperty("automatic_payment_methods");
   });
 
-  it("creates Australian PaymentIntents in AUD without converting the fixed amount", async () => {
+  it("sends the authoritative stored Australian Banner Bundle total in AUD", async () => {
     const australianAddress: NormalizedAddress = {
       ...address,
       country: "AU",
@@ -138,7 +138,7 @@ describe("Stripe payment provider", () => {
     };
     const australianOrder: PaymentOrder = {
       ...order,
-      amountCents: 13_500,
+      amountCents: 33_999,
       currency: "AUD",
       customer: {
         fullName: australianAddress.fullName,
@@ -160,7 +160,7 @@ describe("Stripe payment provider", () => {
     await expect(provider.createOrReuse({ ...sessionInput, order: australianOrder }))
       .resolves.toMatchObject({ providerReference: australianIntent.id });
     expect(stripe.paymentIntents.create).toHaveBeenCalledWith({
-      amount: 13_500,
+      amount: 33_999,
       currency: "aud",
       payment_method_types: ["card"],
       metadata: { order_number: australianOrder.orderNumber },
