@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect } from "react";
-import { emitAnalyticsEvent, type PurchaseEvent } from "@/domain/analytics/events";
+import { emitAnalyticsEvent } from "@/domain/analytics/client";
+import type { PurchaseEvent } from "@/domain/analytics/events";
 
 export function PurchaseTracker({ event }: Readonly<{ event: PurchaseEvent | null }>) {
   useEffect(() => {

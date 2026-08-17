@@ -1,23 +1,64 @@
 import { render, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+
+import { sendGAEvent } from "@next/third-parties/google";
 import type { PurchaseEvent } from "@/domain/analytics/events";
 import { PurchaseTracker } from "./purchase-tracker";
 
-const event: PurchaseEvent = { event: "purchase", transaction_id: "RNR-2026-ONE", currency: "NZD", value: 97.75, tax: 12.75, shipping: 23, items: [] };
+vi.mock("@next/third-parties/google", () => ({ sendGAEvent: vi.fn() }));
+
+const event: PurchaseEvent = {
+  event: "purchase",
+  transaction_id: "RNR-2026-ONE",
+  currency: "NZD",
+  value: 65,
+  tax: 12.75,
+  shipping: 23,
+  items: [],
+};
+
+const storageKey = "rnr:analytics:v1:purchase:RNR-2026-ONE";
 
 describe("PurchaseTracker", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     sessionStorage.clear();
-    Object.assign(window, { dataLayer: [] });
-    vi.stubEnv("NEXT_PUBLIC_GOOGLE_ANALYTICS_ENABLED", "true");
+    document.documentElement.removeAttribute("data-ga4-enabled");
+    window.history.replaceState({}, "", "/");
   });
 
-  it("emits one stable purchase per real order across repeated renders", async () => {
+  it("records a purchase only after the official production transport emits", async () => {
+    const view = render(<PurchaseTracker event={event} />);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(storageKey)).toBeNull();
+
+    document.documentElement.dataset.ga4Enabled = "true";
+    view.rerender(<PurchaseTracker event={{ ...event }} />);
+    await waitFor(() => expect(sendGAEvent).toHaveBeenCalledWith(
+      "event",
+      "purchase",
+      {
+        transaction_id: "RNR-2026-ONE",
+        currency: "NZD",
+        value: 65,
+        tax: 12.75,
+        shipping: 23,
+        items: [],
+      },
+    ));
+    expect(sessionStorage.getItem(storageKey)).toBe("sent");
+  });
+
+  it("emits one stable purchase per real order across repeated mounts", async () => {
+    document.documentElement.dataset.ga4Enabled = "true";
     const first = render(<PurchaseTracker event={event} />);
-    await waitFor(() => expect(window.dataLayer).toEqual([event]));
+    await waitFor(() => expect(sendGAEvent).toHaveBeenCalledTimes(1));
+
     first.unmount();
     render(<PurchaseTracker event={event} />);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(window.dataLayer).toEqual([event]);
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem(storageKey)).toBe("sent");
   });
 });
