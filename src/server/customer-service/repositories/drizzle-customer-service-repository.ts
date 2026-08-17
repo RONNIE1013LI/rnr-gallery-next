@@ -1,7 +1,8 @@
-import { and, asc, desc, eq, lte, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, lte, max, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import {
   customerServiceAiAttempts,
+  customerServiceAttachments,
   customerServiceBudgetState,
   customerServiceConversations,
   customerServiceFeedbackEvents,
@@ -75,11 +76,13 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
               eq(customerServiceConversations.externalKeyHash, input.externalConversationKeyHash),
             )).limit(1);
 
+        const customerText = input.text?.trim() || null;
         const inserted = await transaction.insert(customerServiceMessages).values({
           conversationId: conversation.id,
           channel: input.channel,
           externalMessageKeyHash: input.externalMessageKeyHash,
-          body: input.text.trim(),
+          body: customerText ?? "[Image attachment]",
+          customerText,
           receivedAt: input.receivedAt,
         }).onConflictDoNothing().returning({ id: customerServiceMessages.id });
         if (!inserted.length) {
@@ -93,6 +96,16 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         }
 
         const messageId = inserted[0].id;
+        if (input.attachments.length) {
+          await transaction.insert(customerServiceAttachments).values(input.attachments.map((attachment) => ({
+            messageId,
+            conversationId: conversation.id,
+            externalAttachmentKeyHash: attachment.externalAttachmentKeyHash,
+            ordinal: attachment.ordinal,
+            kind: attachment.kind,
+            mimeTypeHint: attachment.mimeTypeHint,
+          })));
+        }
         const [pilot] = await transaction.select().from(customerServicePilotRuns)
           .where(and(
             eq(customerServicePilotRuns.channel, input.channel),
@@ -139,6 +152,56 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         current: { id: current.id, body: current.body, channel: current.channel },
         context: context.reverse().map((row) => row.body),
       };
+    },
+
+    async selectImageContext(messageId) {
+      const [current] = await database.select({
+        id: customerServiceMessages.id,
+        conversationId: customerServiceMessages.conversationId,
+        receivedAt: customerServiceMessages.receivedAt,
+      }).from(customerServiceMessages).where(eq(customerServiceMessages.id, messageId)).limit(1);
+      if (!current) return null;
+
+      const ownAttachments = await database.select({ id: customerServiceAttachments.id })
+        .from(customerServiceAttachments)
+        .where(and(
+          eq(customerServiceAttachments.messageId, current.id),
+          eq(customerServiceAttachments.conversationId, current.conversationId),
+        ))
+        .orderBy(asc(customerServiceAttachments.ordinal));
+      if (ownAttachments.length) {
+        return {
+          messageId: current.id,
+          attachmentIds: ownAttachments.slice(0, 5).map((attachment) => attachment.id),
+          analysisSummary: null,
+        };
+      }
+
+      const preceding = await database.select({
+        id: customerServiceMessages.id,
+        customerText: customerServiceMessages.customerText,
+      }).from(customerServiceMessages).where(and(
+        eq(customerServiceMessages.conversationId, current.conversationId),
+        lt(customerServiceMessages.receivedAt, current.receivedAt),
+        gte(customerServiceMessages.receivedAt, new Date(current.receivedAt.getTime() - 5 * 60_000)),
+      )).orderBy(desc(customerServiceMessages.receivedAt), desc(customerServiceMessages.id));
+      const attachmentIds: string[] = [];
+      for (const message of preceding) {
+        if (message.customerText !== null) break;
+        const attachments = await database.select({ id: customerServiceAttachments.id })
+          .from(customerServiceAttachments)
+          .where(and(
+            eq(customerServiceAttachments.messageId, message.id),
+            eq(customerServiceAttachments.conversationId, current.conversationId),
+          ))
+          .orderBy(asc(customerServiceAttachments.ordinal))
+          .limit(5 - attachmentIds.length);
+        attachmentIds.push(...attachments.map((attachment) => attachment.id));
+        if (attachmentIds.length === 5) break;
+      }
+      return attachmentIds.length
+        ? { messageId: current.id, attachmentIds, analysisSummary: null }
+        : null;
     },
 
     async createGateBlockedAttempt(input) {

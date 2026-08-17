@@ -76,15 +76,23 @@ describe("Meta webhook handler", () => {
     expect(current.scheduleAfter).not.toHaveBeenCalled();
   });
 
-  it("ignores image-only messages while image ingestion is disabled", async () => {
+  it("persists image-only messages before scheduling", async () => {
     const current = setup();
     expect((await current.handlers.POST(signedRequest(messagePayload({
       text: undefined,
       attachments: [{ type: "image", payload: { url: "https://scontent.test/image.jpg" } }],
     })))).status).toBe(200);
-    expect(current.ingest).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
-    expect(current.scheduleAfter).not.toHaveBeenCalled();
+    expect(current.events).toEqual(["persist:commit", "after:schedule"]);
+    expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      text: null,
+      attachments: [{
+        externalAttachmentKeyHash: createHmac("sha256", config.idHashSecret).update("mid-1:0").digest("hex"),
+        ordinal: 0,
+        kind: "image",
+        mimeTypeHint: null,
+      }],
+    }));
+    expect(JSON.stringify(current.ingest.mock.calls)).not.toContain("https://scontent.test/image.jpg");
   });
 
   it("persists before scheduling one new message", async () => {
@@ -97,6 +105,12 @@ describe("Meta webhook handler", () => {
       externalConversationKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       externalMessageKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       text: "How do I prepare my photos?",
+      attachments: [{
+        externalAttachmentKeyHash: createHmac("sha256", config.idHashSecret).update("mid-1:0").digest("hex"),
+        ordinal: 0,
+        kind: "image",
+        mimeTypeHint: null,
+      }],
     }));
   });
 

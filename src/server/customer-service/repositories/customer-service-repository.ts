@@ -4,7 +4,13 @@ export type HashedIncomingMessage = Readonly<{
   channel: CustomerServiceChannel;
   externalConversationKeyHash: string;
   externalMessageKeyHash: string;
-  text: string;
+  text: string | null;
+  attachments: readonly Readonly<{
+    externalAttachmentKeyHash: string;
+    ordinal: number;
+    kind: "image";
+    mimeTypeHint: string | null;
+  }>[];
   receivedAt: Date;
 }>;
 
@@ -96,6 +102,11 @@ export interface CustomerServiceRepository {
     | Readonly<{ status: "pilot_complete"; messageId: string }>
   >;
   loadDraftInput(messageId: string, contextLimit: number): Promise<DraftInput | null>;
+  selectImageContext(messageId: string): Promise<Readonly<{
+    messageId: string;
+    attachmentIds: readonly string[];
+    analysisSummary: string | null;
+  }> | null>;
   createGateBlockedAttempt(input: GateBlockedAttemptInput): Promise<string>;
   reserveProviderAttempt(input: ProviderAttemptReservation): Promise<
     | Readonly<{ status: "reserved"; attemptId: string }>

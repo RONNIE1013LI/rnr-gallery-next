@@ -70,12 +70,17 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
 
       const adapter = createFacebookChannelAdapter();
       for (const message of adapter.normalize(payload)) {
-        if (message.text === null) continue;
         const result = await dependencies.ingest({
           channel: message.channel,
           externalConversationKeyHash: hashExternalId(message.externalConversationKey, dependencies.config.idHashSecret),
           externalMessageKeyHash: hashExternalId(message.externalMessageKey, dependencies.config.idHashSecret),
           text: message.text,
+          attachments: message.attachments.map((attachment) => ({
+            externalAttachmentKeyHash: hashExternalId(attachment.externalAttachmentKey, dependencies.config.idHashSecret),
+            ordinal: attachment.ordinal,
+            kind: attachment.kind,
+            mimeTypeHint: attachment.mimeTypeHint,
+          })),
           receivedAt: message.receivedAt,
         });
         if (result.status === "created") {
