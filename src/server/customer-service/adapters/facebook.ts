@@ -1,3 +1,5 @@
+import { IMAGE_LIMITS } from "../attachments/limits";
+import type { NormalizedAttachment } from "../attachments/types";
 import type { ChannelAdapter, NormalizedIncomingMessage } from "../types";
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -8,6 +10,38 @@ function record(value: unknown): Record<string, unknown> | null {
 
 function list(value: unknown): readonly unknown[] {
   return Array.isArray(value) ? value : [];
+}
+
+function httpsUrl(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const url = value.trim();
+  if (!url) return null;
+  try {
+    return new URL(url).protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+function imageAttachments(message: Record<string, unknown>, messageId: string): readonly NormalizedAttachment[] {
+  const attachments: NormalizedAttachment[] = [];
+  for (const rawAttachment of list(message.attachments)) {
+    if (attachments.length >= IMAGE_LIMITS.maxCount) break;
+    const attachment = record(rawAttachment);
+    const payload = record(attachment?.payload);
+    if (attachment?.type !== "image") continue;
+    const url = httpsUrl(payload?.url);
+    if (!url) continue;
+    const ordinal = attachments.length;
+    attachments.push(Object.freeze({
+      externalAttachmentKey: `${messageId}:${ordinal}`,
+      ordinal,
+      kind: "image" as const,
+      sourceRef: Object.freeze({ kind: "facebook_remote" as const, url }),
+      mimeTypeHint: null,
+    }));
+  }
+  return Object.freeze(attachments);
 }
 
 export function createFacebookChannelAdapter(): ChannelAdapter<unknown> {
@@ -26,8 +60,9 @@ export function createFacebookChannelAdapter(): ChannelAdapter<unknown> {
           const message = record(event?.message);
           const senderId = typeof sender?.id === "string" ? sender.id.trim() : "";
           const messageId = typeof message?.mid === "string" ? message.mid.trim() : "";
-          const text = typeof message?.text === "string" ? message.text.trim() : "";
-          if (!senderId || !messageId || !text || message?.is_echo === true) continue;
+          const textValue = typeof message?.text === "string" ? message.text.trim() : "";
+          const attachments = message ? imageAttachments(message, messageId) : [];
+          if (!senderId || !messageId || message?.is_echo === true || (!textValue && !attachments.length)) continue;
           const timestamp = typeof event?.timestamp === "number"
             ? event.timestamp
             : typeof entry.time === "number"
@@ -37,7 +72,8 @@ export function createFacebookChannelAdapter(): ChannelAdapter<unknown> {
             channel: "facebook",
             externalConversationKey: senderId,
             externalMessageKey: messageId,
-            text,
+            text: textValue || null,
+            attachments,
             receivedAt: new Date(timestamp),
           }));
         }

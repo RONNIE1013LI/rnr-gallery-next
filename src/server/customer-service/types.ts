@@ -1,10 +1,13 @@
+import type { NormalizedAttachment } from "./attachments/types";
+
 export type CustomerServiceChannel = "facebook" | "website";
 
 export type NormalizedIncomingMessage = Readonly<{
   channel: CustomerServiceChannel;
   externalConversationKey: string;
   externalMessageKey: string;
-  text: string;
+  text: string | null;
+  attachments: readonly NormalizedAttachment[];
   receivedAt: Date;
 }>;
 
