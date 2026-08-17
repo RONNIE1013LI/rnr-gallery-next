@@ -2,6 +2,7 @@ import {
   ProductConfigurator,
   type ProductConfiguratorRelatedDesign,
 } from "@/components/product-configurator";
+import { BannerBundleConfigurator } from "@/components/banner-bundle-configurator";
 import styles from "@/components/storefront.module.css";
 import type {
   ProductRegistryDocument,
@@ -33,6 +34,18 @@ export function ConfigurePageContent({
   relatedDesigns: readonly ProductConfiguratorRelatedDesign[];
   initialSizeKey?: string;
 }>) {
+  const sharedProps = {
+    product,
+    schema,
+    pricing,
+    registry,
+    market,
+    orderDate,
+    selectedDesign,
+    relatedDesigns,
+    initialSizeKey,
+  };
+
   return (
     <main id="main-content" className={styles.configurePage}>
       <header className={styles.configureIntro}>
@@ -40,17 +53,11 @@ export function ConfigurePageContent({
         <h1>{product.title}</h1>
         <p>{product.summary}</p>
       </header>
-      <ProductConfigurator
-        product={product}
-        schema={schema}
-        pricing={pricing}
-        registry={registry}
-        market={market}
-        orderDate={orderDate}
-        selectedDesign={selectedDesign}
-        relatedDesigns={relatedDesigns}
-        initialSizeKey={initialSizeKey}
-      />
+      {product.key === "banner-bundle" ? (
+        <BannerBundleConfigurator {...sharedProps} />
+      ) : (
+        <ProductConfigurator {...sharedProps} />
+      )}
     </main>
   );
 }

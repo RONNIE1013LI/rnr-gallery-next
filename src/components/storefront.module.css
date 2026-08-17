@@ -1943,6 +1943,10 @@
   background: #eee9df;
 }
 
+.bundleCustomisationGroup {
+  min-width: 0;
+}
+
 .stepHeading {
   margin-bottom: 1.8rem;
   display: grid;
@@ -4930,6 +4934,12 @@
 
   .cartItemDetails dd {
     text-align: right;
+  }
+}
+
+@media (max-width: 390px) {
+  .bundleCustomisationGroup .uploadPreviewGrid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

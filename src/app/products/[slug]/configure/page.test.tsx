@@ -24,4 +24,24 @@ describe("ConfigurePageContent", () => {
     expect(screen.getByText("Upload Photos Now")).toBeVisible();
     expect(screen.getByText("Send Photos After Ordering")).toBeVisible();
   });
+
+  it("dispatches only the Banner Bundle route to two customisation groups", () => {
+    const product = getProductBySlug("banner-bundle")!;
+    const schema = getConfigurationSchema(product.key)!;
+    render(<ConfigurePageContent
+      product={product}
+      schema={schema}
+      pricing={defaultProductRegistry.pricing}
+      registry={defaultProductRegistry}
+      orderDate="2026-08-17"
+      selectedDesign={null}
+      relatedDesigns={[]}
+    />);
+
+    expect(screen.getByRole("region", { name: "Roll-Up Banner customisation" }))
+      .toBeVisible();
+    expect(screen.getByRole("region", { name: "Wall Banner customisation" }))
+      .toBeVisible();
+    expect(screen.getAllByRole("complementary", { name: "Order summary" })).toHaveLength(1);
+  });
 });
