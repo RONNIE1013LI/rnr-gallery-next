@@ -119,17 +119,7 @@ function setup(claimed: ClaimedImageJob) {
   const runner = createImageJobRunner({
     repository,
     policyCheck,
-    sourceProtector,
-    sourceReader,
     store,
-    imageProvider,
-    generateDraft,
-    budget: {
-      imageReservationMicrousd: 1_000,
-      textReservationMicrousd: 1_000,
-      dailyHardStopMicrousd: 10_000,
-      totalHardStopMicrousd: 20_000,
-    },
     now: () => now,
   });
   return { events, repository, policyCheck, sourceProtector, sourceReader, store, imageProvider, generateDraft, runner };

@@ -61,6 +61,20 @@ describe("reply assistant security regression", () => {
     )).toEqual([]);
   });
 
+  it("keeps the human-only image worker free of download, vision, and draft providers", () => {
+    const runner = readFileSync(
+      resolve(process.cwd(), "src/server/customer-service/image-job-runner.ts"),
+      "utf8",
+    );
+    const runtime = readFileSync(
+      resolve(process.cwd(), "src/server/customer-service/runtime.ts"),
+      "utf8",
+    );
+
+    expect(runner).not.toMatch(/AttachmentSourceReader|ImageAnalysisProvider|sourceProtector|sourceReader|generateDraft|\.analyze\(/);
+    expect(runtime).not.toMatch(/facebook-source-reader|attachment-source-protector|mock-image-analysis|openai-image-analysis|generateImageAwareDraft/);
+  });
+
   it("keeps raw attachment locations out of persistence and browser DTOs", () => {
     const schema = readFileSync(
       resolve(process.cwd(), "src/server/db/schema/customer-service.ts"),

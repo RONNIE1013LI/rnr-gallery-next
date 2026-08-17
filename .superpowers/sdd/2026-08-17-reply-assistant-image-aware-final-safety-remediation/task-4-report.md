@@ -130,6 +130,58 @@ Passed.
 - Enhancement and missing-detail promises reuse the existing `visual_restoration_claim` code to preserve the validator interface.
 - No hard-coded answer template, general-validator change, feature expansion, deployment, or Production access was made.
 
+## Fix Round 3: Human-Only Image Quality Decision
+
+Ronnie confirmed that image-quality judgement belongs to a human reviewer. The executable safety boundary no longer depends on semantic image-claim detection:
+
+- Meta persists attachment metadata with `human_review_required`, retains no source URL/ciphertext, and schedules no image work.
+- Manual Generate and Regenerate return `image_review_required` before attachment read/download, image-provider use, or text-provider use.
+- The durable image-aware draft entry point is provider-free.
+- Recovered legacy `policy`, `download`, `vision`, and `draft` jobs are forced to human review before source decryption/read or provider use.
+- A recovered `cleanup` job may delete already-stored private bytes, then terminates as human review.
+- Text-only drafting remains unchanged. The existing image draft validator remains defense in depth, but is no longer the safety boundary for customer messages containing images.
+
+TDD RED reproduced eight failures across engine, durable runner, and webhook. GREEN results:
+
+```text
+Focused human-only boundary: 4 files, 39/39 tests
+Phase 3.3 text regression: 5 files, 36/36 tests
+Image validator defense-in-depth regression: 1 file, 226/226 tests
+TypeScript: PASS
+Focused ESLint: PASS
+git diff --check: PASS
+```
+
+No policy gate, general output validator, Production configuration, Meta callback, Website Chat, or send capability was changed.
+
+## Fix Round 4: Remove the Inactive Image Provider Pipeline
+
+The independent review accepted the human-only boundary but found one Important maintainability/safety issue: the old decrypt, download, vision, and draft pipeline still compiled immediately behind the early human-review guard.
+
+### RED
+
+A source-boundary regression test failed while the durable runner and runtime still referenced source readers, source protection, image providers, and image-aware draft generation.
+
+### GREEN
+
+- `image-job-runner.ts` now contains only policy evaluation, legacy private-input cleanup, and human-review termination.
+- `runtime.ts` no longer imports or constructs attachment source readers, source protectors, image providers, or image-aware draft callbacks.
+- Previously persisted legacy jobs in `download`, `vision`, or `draft` stages transition to cleanup without reading customer content or calling a provider.
+- Previously stored private image bytes may only be deleted, after which the job terminates as `human_review_required`.
+- Standalone image components remain unreferenced by the production runtime and cannot be reached by the worker.
+
+Verification:
+
+```text
+Focused engine/webhook/runner/security: 4 files, 40/40 tests
+Phase 3.3 text regression: 5 files, 36/36 tests
+TypeScript: PASS
+Focused ESLint: PASS
+git diff --check: PASS
+```
+
+No policy gate, output validator, Production configuration, Meta callback, Website Chat, or send capability was changed.
+
 ## Review Remediation
 
 ### RED
