@@ -143,4 +143,24 @@ describe("ImageAnalysisResultSchema", () => {
 
     expect(renderImageAnalysisSafeSummary(candidate)).toBe("Request an uncropped image version.");
   });
+
+  it("renders a zero-based main-candidate ordinal", () => {
+    const candidate = {
+      ...validResult,
+      images: [{
+        ...validResult.images[0],
+        ordinal: 0,
+        issueCodes: [],
+        recommendedRole: "main_candidate",
+      }],
+      comparison: {
+        ...validResult.comparison,
+        likelyMainOrdinal: 0,
+      },
+      recommendationCodes: ["use_as_main_candidate"],
+      safeSummary: "model prose is discarded",
+    };
+
+    expect(renderImageAnalysisSafeSummary(candidate)).toBe("Image 0 is the likely main candidate.");
+  });
 });

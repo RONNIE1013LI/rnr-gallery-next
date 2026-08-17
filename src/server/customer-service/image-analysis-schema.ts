@@ -132,7 +132,7 @@ export function renderImageAnalysisSafeSummary(value: unknown): string {
     if (code === "send_uncropped_version") return ["Request an uncropped image version."];
     if (code === "send_closer_photo") return ["Request a closer photo of the subject."];
     if (code === "send_alternative_photo") return ["Request an alternative photo."];
-    if (code === "use_as_main_candidate" && mainOrdinal) {
+    if (code === "use_as_main_candidate" && mainOrdinal !== undefined) {
       return [`Image ${mainOrdinal} is the likely main candidate.`];
     }
     if (code === "use_as_side_candidate") {
