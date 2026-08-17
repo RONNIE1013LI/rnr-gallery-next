@@ -89,3 +89,41 @@
 ### Commit
 
 - Review remediation implementation: `8be7a7f fix: preserve unknown provider usage costs`
+
+## Fix Round 2
+
+### Root Cause
+
+- Both provider parsers accepted `cached_tokens` greater than `input_tokens`. The cost estimator then clamped the impossible cached count and returned a numeric zero, making unusable usage authoritative instead of preserving the unknown-cost signal.
+
+### RED Evidence
+
+- Exact text and image provider regressions: 2 files, 18 tests, 2 intended failures. A successful response with `input_tokens=0`, `cached_tokens=1`, and `output_tokens=0` returned `estimatedCostMicrousd: 0` in each provider instead of `null`.
+- The paired equality-boundary cases (`cached_tokens === input_tokens`) passed before the fix, proving that complete valid usage remained usable.
+
+### GREEN Evidence
+
+- Exact text and image provider regressions: 2 files, 18 tests passed.
+- Focused provider/accounting matrix on the dedicated disposable PostgreSQL database: 8 files, 88 tests passed, zero skips.
+- `npm run typecheck`: passed.
+
+### Changes And DB/Accounting Invariants
+
+- Both existing provider-local usage parsers now accept cached usage only when `0 <= cached_tokens <= input_tokens`; their existing non-negative safe-integer validation continues to reject other unusable token values.
+- An internally inconsistent usage tuple returns `estimatedCostMicrousd: null`, preserving the durable unknown-cost signal through the existing repository path. A durable `providerCalled=true` with that absent actual cost consumes the applicable reservation ceiling exactly once under the existing transaction/CAS settlement.
+- Complete equality-boundary usage remains authoritative and is charged from its actual calculated cost. No repository, schema, or settlement behavior changed in this round.
+
+### Changed Files
+
+- `src/server/customer-service/providers/openai-responses.ts`
+- `src/server/customer-service/providers/openai-image-analysis.ts`
+- `src/server/customer-service/providers/openai-responses.test.ts`
+- `src/server/customer-service/providers/openai-image-analysis.test.ts`
+
+### Commit
+
+- Implementation: `f961303 fix: reject inconsistent provider usage`
+
+### Concerns
+
+- No Production, deployment, schema, migration, or accounting-path changes were made. Unknown provider usage intentionally remains conservative and can consume the reservation ceiling.
