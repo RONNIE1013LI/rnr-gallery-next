@@ -70,6 +70,7 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
 
       const adapter = createFacebookChannelAdapter();
       for (const message of adapter.normalize(payload)) {
+        if (message.text === null) continue;
         const result = await dependencies.ingest({
           channel: message.channel,
           externalConversationKeyHash: hashExternalId(message.externalConversationKey, dependencies.config.idHashSecret),

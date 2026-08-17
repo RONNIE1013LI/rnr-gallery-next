@@ -76,13 +76,27 @@ describe("Meta webhook handler", () => {
     expect(current.scheduleAfter).not.toHaveBeenCalled();
   });
 
+  it("ignores image-only messages while image ingestion is disabled", async () => {
+    const current = setup();
+    expect((await current.handlers.POST(signedRequest(messagePayload({
+      text: undefined,
+      attachments: [{ type: "image", payload: { url: "https://scontent.test/image.jpg" } }],
+    })))).status).toBe(200);
+    expect(current.ingest).not.toHaveBeenCalled();
+    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.scheduleAfter).not.toHaveBeenCalled();
+  });
+
   it("persists before scheduling one new message", async () => {
     const current = setup();
-    expect((await current.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
+    expect((await current.handlers.POST(signedRequest(messagePayload({
+      attachments: [{ type: "image", payload: { url: "https://scontent.test/image.jpg" } }],
+    })))).status).toBe(200);
     expect(current.events).toEqual(["persist:commit", "after:schedule"]);
     expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
       externalConversationKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       externalMessageKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      text: "How do I prepare my photos?",
     }));
   });
 
