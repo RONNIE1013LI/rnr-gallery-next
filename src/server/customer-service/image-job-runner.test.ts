@@ -297,6 +297,21 @@ describe("durable image job runner", () => {
     expect(current.generateDraft).not.toHaveBeenCalled();
   });
 
+  it("preserves an unknown actual cost when a started vision call times out", async () => {
+    const current = setup(job("vision"));
+    current.imageProvider.analyze.mockRejectedValueOnce(new Error("image_provider_timeout"));
+
+    await expect(current.runner.runOnce({ jobId: "00000000-0000-4000-8000-000000000101" }))
+      .resolves.toMatchObject({ claimed: 1, humanReviewRequired: 1 });
+
+    expect(current.repository.completeImageAnalysisAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      status: "provider_error",
+      providerCalled: true,
+      estimatedCostMicrousd: null,
+      providerErrorCode: "image_provider_error",
+    }));
+  });
+
   it("runs stale reconciliation before a bounded claim and settles a terminal draft once", async () => {
     const current = setup(job("draft"));
 

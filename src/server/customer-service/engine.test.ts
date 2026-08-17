@@ -378,6 +378,25 @@ describe("CustomerServiceEngine", () => {
     }));
   });
 
+  it("preserves an unknown actual cost when image-aware text generation fails", async () => {
+    const current = setup("Can you use my blurry original photo?", { withImage: true });
+    current.provider.generate.mockRejectedValueOnce(new Error("provider_timeout"));
+
+    await expect(current.engine.generateImageAwareDraft({
+      messageId: "message-1",
+      imageJobId: "image-job-1",
+      leaseToken: "lease-1",
+      visualAssessment: safeAnalysis.safeSummary,
+    })).resolves.toEqual({ status: "provider_error", attemptId: "attempt-image-text-1" });
+
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      attemptId: "attempt-image-text-1",
+      status: "provider_error",
+      estimatedCostMicrousd: null,
+      providerErrorCode: "provider_request_failed",
+    }));
+  });
+
   it("fails closed without repeating an ambiguous image-aware text provider call", async () => {
     const current = setup("Can you use my blurry original photo?", { withImage: true });
     current.repository.createImageJobProviderAttempt.mockResolvedValueOnce({

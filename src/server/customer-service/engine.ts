@@ -197,7 +197,7 @@ export class CustomerServiceEngine {
         inputTokens: 0,
         cachedInputTokens: 0,
         outputTokens: 0,
-        estimatedCostMicrousd: 0,
+        estimatedCostMicrousd: null,
         latencyMs: 0,
         providerErrorCode: "provider_request_failed",
         dailyScopeKey,

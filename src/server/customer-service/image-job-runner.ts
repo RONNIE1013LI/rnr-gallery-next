@@ -126,7 +126,7 @@ function completion(input: Readonly<{
     inputTokens: input.result?.usage.inputTokens ?? 0,
     cachedInputTokens: input.result?.usage.cachedInputTokens ?? 0,
     outputTokens: input.result?.usage.outputTokens ?? 0,
-    estimatedCostMicrousd: input.result?.estimatedCostMicrousd ?? 0,
+    estimatedCostMicrousd: input.result?.estimatedCostMicrousd ?? null,
     latencyMs: input.result?.latencyMs ?? 0,
     ...(input.status === "provider_error" ? { providerErrorCode: input.code ?? "image_provider_error" } : {}),
   };

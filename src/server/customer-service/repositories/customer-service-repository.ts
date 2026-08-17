@@ -89,7 +89,7 @@ export type ProviderAttemptCompletion = Readonly<{
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
-  estimatedCostMicrousd: number;
+  estimatedCostMicrousd: number | null;
   latencyMs: number;
   providerErrorCode?: string;
   dailyScopeKey: string;
@@ -106,7 +106,7 @@ export type ImageAnalysisAttemptCompletion = Readonly<{
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
-  estimatedCostMicrousd: number;
+  estimatedCostMicrousd: number | null;
   latencyMs: number;
   providerErrorCode?: string;
 }>;

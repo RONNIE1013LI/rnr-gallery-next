@@ -206,32 +206,44 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     textAttemptId = job.textAttemptId,
   ) {
     if (job.budgetSettledAt) return false;
-    if (job.reservedCostMicrousd > 0) {
-      if (!job.budgetDailyScopeKey) throw new Error("customer_service_image_job_reservation_invalid");
-      await ensureBudgetRows(transaction, [job.budgetDailyScopeKey, "total"].sort());
-      const [imageUsage] = job.imageAnalysisAttemptId
-        ? await transaction.select({ cost: customerServiceImageAnalysisAttempts.estimatedCostMicrousd })
-          .from(customerServiceImageAnalysisAttempts)
-          .where(eq(customerServiceImageAnalysisAttempts.id, job.imageAnalysisAttemptId)).limit(1)
-        : [];
-      const [textUsage] = textAttemptId
-        ? await transaction.select({ cost: customerServiceAiAttempts.estimatedCostMicrousd })
-          .from(customerServiceAiAttempts)
-          .where(eq(customerServiceAiAttempts.id, textAttemptId)).limit(1)
-        : [];
-      const actualCost = (imageUsage?.cost ?? 0) + (textUsage?.cost ?? 0);
-      await transaction.update(customerServiceBudgetState).set({
-        reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${job.reservedCostMicrousd})`,
-        spentMicrousd: sql`${customerServiceBudgetState.spentMicrousd} + ${actualCost}`,
-      }).where(sql`${customerServiceBudgetState.scopeKey} in (${job.budgetDailyScopeKey}, 'total')`);
-    }
-    await transaction.update(customerServiceImageJobs).set({
+    const settled = await transaction.update(customerServiceImageJobs).set({
       reservedCostMicrousd: 0,
       budgetSettledAt: new Date(),
     }).where(and(
       eq(customerServiceImageJobs.id, job.id),
       isNull(customerServiceImageJobs.budgetSettledAt),
-    ));
+    )).returning({ id: customerServiceImageJobs.id });
+    if (!settled.length) return false;
+    if (job.reservedCostMicrousd > 0) {
+      if (!job.budgetDailyScopeKey) throw new Error("customer_service_image_job_reservation_invalid");
+      await ensureBudgetRows(transaction, [job.budgetDailyScopeKey, "total"].sort());
+      const [imageUsage] = job.imageAnalysisAttemptId
+        ? await transaction.select({
+          cost: customerServiceImageAnalysisAttempts.estimatedCostMicrousd,
+          providerCalled: customerServiceImageAnalysisAttempts.providerCalled,
+        })
+          .from(customerServiceImageAnalysisAttempts)
+          .where(eq(customerServiceImageAnalysisAttempts.id, job.imageAnalysisAttemptId)).limit(1)
+        : [];
+      const [textUsage] = textAttemptId
+        ? await transaction.select({
+          cost: customerServiceAiAttempts.estimatedCostMicrousd,
+          providerCalled: customerServiceAiAttempts.providerCalled,
+        })
+          .from(customerServiceAiAttempts)
+          .where(eq(customerServiceAiAttempts.id, textAttemptId)).limit(1)
+        : [];
+      const actualCost = (imageUsage?.cost ?? 0) + (textUsage?.cost ?? 0);
+      const hasUnknownProviderCost = (imageUsage?.providerCalled && imageUsage.cost === null)
+        || (textUsage?.providerCalled && textUsage.cost === null);
+      const settledCost = hasUnknownProviderCost
+        ? Math.max(job.reservedCostMicrousd, actualCost)
+        : actualCost;
+      await transaction.update(customerServiceBudgetState).set({
+        reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${job.reservedCostMicrousd})`,
+        spentMicrousd: sql`${customerServiceBudgetState.spentMicrousd} + ${settledCost}`,
+      }).where(sql`${customerServiceBudgetState.scopeKey} in (${job.budgetDailyScopeKey}, 'total')`);
+    }
     return true;
   }
 
@@ -983,9 +995,12 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         if (attempt.reservedCostMicrousd > 0) {
           if (!attempt.budgetDailyScopeKey) throw new Error("customer_service_image_reservation_invalid");
           await ensureBudgetRows(transaction, [attempt.budgetDailyScopeKey, "total"].sort());
+          const settledCost = input.estimatedCostMicrousd ?? (
+            input.providerCalled ? attempt.reservedCostMicrousd : 0
+          );
           await transaction.update(customerServiceBudgetState).set({
             reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${attempt.reservedCostMicrousd})`,
-            spentMicrousd: sql`${customerServiceBudgetState.spentMicrousd} + ${input.estimatedCostMicrousd}`,
+            spentMicrousd: sql`${customerServiceBudgetState.spentMicrousd} + ${settledCost}`,
           }).where(sql`${customerServiceBudgetState.scopeKey} in (${attempt.budgetDailyScopeKey}, 'total')`);
         }
         await transaction.update(customerServiceImageAnalysisAttempts).set({
@@ -1159,9 +1174,10 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           .where(eq(customerServiceImageJobs.textAttemptId, input.attemptId)).limit(1);
         if (!imageJob) {
           await ensureBudgetRows(transaction, [input.dailyScopeKey, "total"].sort());
+          const settledCost = input.estimatedCostMicrousd ?? attempt.reserved;
           await transaction.update(customerServiceBudgetState).set({
             reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${attempt.reserved})`,
-            spentMicrousd: sql`${customerServiceBudgetState.spentMicrousd} + ${input.estimatedCostMicrousd}`,
+            spentMicrousd: sql`${customerServiceBudgetState.spentMicrousd} + ${settledCost}`,
           }).where(sql`${customerServiceBudgetState.scopeKey} in (${input.dailyScopeKey}, 'total')`);
         }
         await transaction.update(customerServiceAiAttempts).set({

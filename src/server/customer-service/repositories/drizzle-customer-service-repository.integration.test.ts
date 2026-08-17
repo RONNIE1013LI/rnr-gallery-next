@@ -1253,7 +1253,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     ]));
   });
 
-  it("reconciles a stale post-reservation job exactly once and leaves cleanup retryable", async () => {
+  it("releases a stale vision reservation only when the provider did not start", async () => {
     await activateFacebookPilot("stale-vision-job");
     const jobId = "00000000-0000-4000-8000-000000000333";
     const externalAttachmentKeyHash = "3".repeat(64);
@@ -1319,7 +1319,70 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       completedAt: expect.any(Date),
     });
     const budgets = await database.select().from(customerServiceBudgetState);
-    expect(budgets.every((budget) => budget.reservedMicrousd === 0)).toBe(true);
+    expect(budgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeKey: "daily:2026-08-17", reservedMicrousd: 0, spentMicrousd: 0 }),
+      expect.objectContaining({ scopeKey: "total", reservedMicrousd: 0, spentMicrousd: 0 }),
+    ]));
+  });
+
+  it("charges a stale started vision timeout at its combined reservation ceiling exactly once", async () => {
+    await activateFacebookPilot("stale-started-vision-job");
+    const jobId = "00000000-0000-4000-8000-000000000343";
+    const externalAttachmentKeyHash = "d".repeat(64);
+    await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "e".repeat(64),
+      externalMessageKeyHash: "f".repeat(64),
+      text: "Can I use this photo?",
+      attachments: [{ externalAttachmentKeyHash, ordinal: 0, kind: "image", mimeTypeHint: null }],
+      imageJob: {
+        id: jobId,
+        status: "pending",
+        sourceCiphertext: "v1.encrypted",
+        sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
+        failureCode: null,
+      },
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    const [message] = await database.select().from(customerServiceMessages);
+    const [attachment] = await database.select().from(customerServiceAttachments);
+    const attemptId = await repository.createImageAnalysisAttempt({
+      messageId: message.id,
+      schemaVersion: "1",
+      attachments: [{ attachmentId: attachment.id, ordinal: 0, externalAttachmentKeyHash }],
+    });
+    await database.update(customerServiceImageAnalysisAttempts).set({
+      status: "provider_pending",
+      providerCalled: true,
+    }).where(eq(customerServiceImageAnalysisAttempts.id, attemptId));
+    await database.update(customerServiceImageJobs).set({
+      imageAnalysisAttemptId: attemptId,
+      stage: "vision",
+      status: "running",
+      leaseToken: "00000000-0000-4000-8000-000000000344",
+      leaseExpiresAt: new Date("2026-08-16T23:59:00.000Z"),
+      reservedCostMicrousd: 2_000,
+      budgetDailyScopeKey: "daily:2026-08-17",
+    }).where(eq(customerServiceImageJobs.id, jobId));
+    await database.insert(customerServiceBudgetState).values([
+      { scopeKey: "daily:2026-08-17", reservedMicrousd: 2_000 },
+      { scopeKey: "total", reservedMicrousd: 2_000 },
+    ]);
+
+    await expect(repository.reconcileStaleImageJobs({
+      now: new Date("2026-08-17T00:00:00.000Z"),
+      limit: 10,
+    })).resolves.toMatchObject({ examined: 1, terminal: 1, reservationsReleased: 1 });
+    await expect(repository.reconcileStaleImageJobs({
+      now: new Date("2026-08-17T00:00:00.000Z"),
+      limit: 10,
+    })).resolves.toMatchObject({ examined: 0, reservationsReleased: 0 });
+
+    const budgets = await database.select().from(customerServiceBudgetState);
+    expect(budgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeKey: "daily:2026-08-17", reservedMicrousd: 0, spentMicrousd: 2_000 }),
+      expect.objectContaining({ scopeKey: "total", reservedMicrousd: 0, spentMicrousd: 2_000 }),
+    ]));
   });
 
   it("resumes a stale download with its preallocated cleanup key", async () => {
@@ -1394,7 +1457,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
   });
 
-  it("abandons an ambiguous stale text attempt while settling its combined reservation once", async () => {
+  it("charges an ambiguous stale draft at its combined reservation ceiling exactly once", async () => {
     await activateFacebookPilot("stale-draft-job");
     const jobId = "00000000-0000-4000-8000-000000000451";
     const created = await repository.ingestFacebookMessage({
@@ -1444,6 +1507,10 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       now: new Date("2026-08-17T00:00:00.000Z"),
       limit: 10,
     })).resolves.toMatchObject({ examined: 1, terminal: 1, reservationsReleased: 1 });
+    await expect(repository.reconcileStaleImageJobs({
+      now: new Date("2026-08-17T00:00:00.000Z"),
+      limit: 10,
+    })).resolves.toMatchObject({ examined: 0, reservationsReleased: 0 });
 
     const [persistedAttempt] = await database.select().from(customerServiceAiAttempts)
       .where(eq(customerServiceAiAttempts.id, textAttempt.id));
@@ -1453,7 +1520,78 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerErrorCode: "text_provider_state_ambiguous",
       completedAt: expect.any(Date),
     });
-    expect(budgets.every((budget) => budget.reservedMicrousd === 0)).toBe(true);
+    expect(budgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeKey: "daily:2026-08-17", reservedMicrousd: 0, spentMicrousd: 2_000 }),
+      expect.objectContaining({ scopeKey: "total", reservedMicrousd: 0, spentMicrousd: 2_000 }),
+    ]));
+  });
+
+  it("charges an image provider error with no durable usage at its combined reservation ceiling", async () => {
+    await activateFacebookPilot("unknown-image-provider-result");
+    const jobId = "00000000-0000-4000-8000-000000000461";
+    const leaseToken = "00000000-0000-4000-8000-000000000462";
+    const externalAttachmentKeyHash = "a".repeat(64);
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "b".repeat(64),
+      externalMessageKeyHash: "c".repeat(64),
+      text: "Can I use this photo?",
+      attachments: [{ externalAttachmentKeyHash, ordinal: 0, kind: "image", mimeTypeHint: null }],
+      imageJob: {
+        id: jobId,
+        status: "pending",
+        sourceCiphertext: "v1.encrypted",
+        sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
+        failureCode: null,
+      },
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    const [attachment] = await database.select().from(customerServiceAttachments);
+    const attemptId = await repository.createImageAnalysisAttempt({
+      messageId: created.messageId,
+      schemaVersion: "1",
+      attachments: [{ attachmentId: attachment.id, ordinal: 0, externalAttachmentKeyHash }],
+    });
+    await database.update(customerServiceImageAnalysisAttempts).set({
+      status: "provider_error",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-image",
+      providerErrorCode: "image_provider_error",
+      completedAt: new Date("2026-08-17T00:00:00.000Z"),
+    }).where(eq(customerServiceImageAnalysisAttempts.id, attemptId));
+    await database.update(customerServiceImageJobs).set({
+      imageAnalysisAttemptId: attemptId,
+      stage: "cleanup",
+      status: "running",
+      leaseToken,
+      leaseExpiresAt: new Date("2026-08-17T00:00:25.000Z"),
+      reservedCostMicrousd: 2_000,
+      budgetDailyScopeKey: "daily:2026-08-17",
+    }).where(eq(customerServiceImageJobs.id, jobId));
+    await database.insert(customerServiceBudgetState).values([
+      { scopeKey: "daily:2026-08-17", reservedMicrousd: 2_000 },
+      { scopeKey: "total", reservedMicrousd: 2_000 },
+    ]);
+
+    await expect(repository.finishImageJob({
+      jobId,
+      leaseToken,
+      status: "human_review_required",
+      failureCode: "image_provider_error",
+    })).resolves.toBe(true);
+    await expect(repository.finishImageJob({
+      jobId,
+      leaseToken,
+      status: "human_review_required",
+      failureCode: "image_provider_error",
+    })).resolves.toBe(false);
+
+    const budgets = await database.select().from(customerServiceBudgetState);
+    expect(budgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeKey: "daily:2026-08-17", reservedMicrousd: 0, spentMicrousd: 2_000 }),
+      expect.objectContaining({ scopeKey: "total", reservedMicrousd: 0, spentMicrousd: 2_000 }),
+    ]));
   });
 
   it("settles separate image and text actuals against one combined reservation exactly once", async () => {
