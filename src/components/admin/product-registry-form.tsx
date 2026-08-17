@@ -99,11 +99,26 @@ export function ProductRegistryForm({
           imageAlt: String(form.get("imageAlt") ?? ""),
           active: form.get("active") === "on",
           featured: form.get("featured") === "on",
-          sizes: product.sizes.map((size) => ({
-            key: size.key,
-            label: String(form.get(`size-${size.key}-label`) ?? ""),
-            priceExGstCents: cents(form.get(`size-${size.key}-price`)),
-          })),
+          sizes: product.sizes.map((size) => {
+            const label = String(form.get(`size-${size.key}-label`) ?? "");
+            if (size.nzAmountInclTaxCents !== undefined) {
+              const nzAmountInclTaxCents = cents(
+                form.get(`size-${size.key}-final-price`),
+              );
+              if (nzAmountInclTaxCents === null) throw new Error("Enter a valid NZD amount.");
+              return {
+                key: size.key,
+                label,
+                priceExGstCents: Math.round((nzAmountInclTaxCents * 100) / 115),
+                nzAmountInclTaxCents,
+              };
+            }
+            return {
+              key: size.key,
+              label,
+              priceExGstCents: cents(form.get(`size-${size.key}-price`)),
+            };
+          }),
           includedPhotos: Number(form.get("includedPhotos")),
           extraPhotoPriceExGstCents: cents(form.get("extraPhotoPrice"), true),
           extraBackgroundRemovalFeeInclGstCents: cents(
@@ -424,7 +439,11 @@ export function ProductRegistryForm({
               {product.sizes.map((size) => (
                 <div className={styles.registrySizeRow} key={size.key}>
                   <label><span>{size.key} display label</span><input name={`size-${size.key}-label`} defaultValue={size.label} maxLength={120} required disabled={pending !== null} /></label>
-                  <label><span>{size.key} price ex GST (NZD)</span><input name={`size-${size.key}-price`} inputMode="decimal" defaultValue={moneyInput(size.priceExGstCents)} required disabled={pending !== null} /></label>
+                  {size.nzAmountInclTaxCents !== undefined ? (
+                    <label><span>{size.key} final price incl GST (NZD)</span><input name={`size-${size.key}-final-price`} inputMode="decimal" defaultValue={moneyInput(size.nzAmountInclTaxCents)} required disabled={pending !== null} /></label>
+                  ) : (
+                    <label><span>{size.key} price ex GST (NZD)</span><input name={`size-${size.key}-price`} inputMode="decimal" defaultValue={moneyInput(size.priceExGstCents)} required disabled={pending !== null} /></label>
+                  )}
                 </div>
               ))}
               <label><span>Included photos</span><input name="includedPhotos" type="number" min={0} max={20} defaultValue={product.includedPhotos} required disabled={pending !== null} /></label>

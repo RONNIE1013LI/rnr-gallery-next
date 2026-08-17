@@ -37,6 +37,7 @@ const productPatchSchema = mutationBase.extend({
     key: z.string().trim().min(1).max(120),
     label: z.string().trim().min(1).max(120),
     priceExGstCents: cents,
+    nzAmountInclTaxCents: cents.optional(),
   }).strict()).min(1),
   includedPhotos: z.number().int().min(0).max(20),
   extraPhotoPriceExGstCents: cents.nullable(),
@@ -150,7 +151,12 @@ export function createProductRegistryService(
       product.image = { src: parsed.data.imageSrc, alt: parsed.data.imageAlt };
       product.active = parsed.data.active;
       product.featured = parsed.data.featured;
-      product.configuration.sizes = parsed.data.sizes.map((size) => ({ ...size }));
+      product.configuration.sizes = parsed.data.sizes.map((size) => {
+        const { nzAmountInclTaxCents, ...legacySize } = size;
+        return nzAmountInclTaxCents === undefined
+          ? legacySize
+          : { ...legacySize, nzAmountInclTaxCents };
+      });
       product.configuration.includedPhotos = parsed.data.includedPhotos;
       if (parsed.data.extraPhotoPriceExGstCents === null) {
         delete product.configuration.extraPhotoPriceExGstCents;

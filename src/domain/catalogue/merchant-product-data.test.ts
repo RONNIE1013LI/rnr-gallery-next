@@ -59,6 +59,18 @@ describe("merchant product data", () => {
     });
   });
 
+  it("excludes Banner Bundle while retaining other active products", () => {
+    const registry = readyAustralianRegistry();
+    const items = buildMerchantProductData(
+      registry,
+      "AU",
+      new URL("https://shop.example.test"),
+    );
+
+    expect(items.some((entry) => entry.productKey === "banner-bundle")).toBe(false);
+    expect(items.some((entry) => entry.productKey === "roll-up-banner")).toBe(true);
+  });
+
   it("does not generate Australian feed data while the market is closed", () => {
     expect(() => buildMerchantProductData(
       defaultProductRegistry,

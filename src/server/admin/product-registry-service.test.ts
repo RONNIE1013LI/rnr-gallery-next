@@ -88,6 +88,45 @@ describe("product registry administration", () => {
     }));
   });
 
+  it("publishes an exact NZD final price for a Bundle size", async () => {
+    const repository = memoryRepository();
+    const service = createProductRegistryService(repository);
+    const bundle = defaultProductRegistry.products.find(
+      (product) => product.key === "banner-bundle",
+    )!;
+
+    const result = await service.publishProduct(actor, {
+      productKey: bundle.key,
+      expectedRevision: 0,
+      idempotencyKey: "bundle-nz-price-publish-0001",
+      title: bundle.title,
+      summary: bundle.summary,
+      imageSrc: bundle.image.src,
+      imageAlt: bundle.image.alt,
+      active: bundle.active,
+      featured: bundle.featured,
+      sizes: bundle.configuration.sizes.map((size) => ({
+        key: size.key,
+        label: size.label,
+        priceExGstCents: size.key === "rollup-wall-200x100" ? 31_303 : size.priceExGstCents,
+        nzAmountInclTaxCents: size.key === "rollup-wall-200x100"
+          ? 35_999
+          : size.nzAmountInclTaxCents,
+      })),
+      includedPhotos: bundle.configuration.includedPhotos,
+      extraPhotoPriceExGstCents: null,
+      extraBackgroundRemovalFeeInclGstCents: null,
+    });
+
+    expect(result.registry.products.find((product) => product.key === bundle.key)
+      ?.configuration.sizes.find((size) => size.key === "rollup-wall-200x100"))
+      .toMatchObject({ priceExGstCents: 31_303, nzAmountInclTaxCents: 35_999 });
+    expect(result.registry.markets.NZ.products.find(
+      (product) => product.productKey === bundle.key,
+    )?.sizes.find((size) => size.sizeKey === "rollup-wall-200x100"))
+      .toMatchObject({ amountInclTaxCents: 35_999 });
+  });
+
   it("rejects a stale editor before it can overwrite a newer revision", async () => {
     const repository = memoryRepository({ revision: 3, snapshot: defaultProductRegistry });
     const service = createProductRegistryService(repository);

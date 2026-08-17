@@ -45,6 +45,39 @@ describe("product registry editor", () => {
     expect(refresh).toHaveBeenCalled();
   });
 
+  it("publishes Banner Bundle exact NZD final prices and exposes its AUD row", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "published",
+      revision: 3,
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("confirm", vi.fn(() => true));
+    vi.stubGlobal("crypto", { randomUUID: () => "bundle-form-request-0001" });
+    render(<ProductRegistryForm
+      products={listAdminProducts(defaultProductRegistry).filter((product) => product.key === "banner-bundle")}
+      pricing={defaultProductRegistry.pricing}
+      markets={defaultProductRegistry.markets}
+      australiaCompleteness={getMarketCompleteness(defaultProductRegistry, "AU")}
+      revision={2}
+    />);
+
+    expect(screen.getByLabelText("rollup-wall-200x100 final price incl GST (NZD)")).toBeInTheDocument();
+    expect(screen.getByLabelText("Banner Bundle · rollup-wall-200x100 final price (AUD)")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("rollup-wall-200x100 final price incl GST (NZD)"), {
+      target: { value: "359.99" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Publish Banner Bundle" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(payload.sizes).toContainEqual({
+      key: "rollup-wall-200x100",
+      label: "85 × 200 cm Roll-Up + 200 × 100 cm Wall Banner",
+      priceExGstCents: 31_303,
+      nzAmountInclTaxCents: 35_999,
+    });
+  });
+
   it("does not publish when confirmation is cancelled", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);

@@ -3,6 +3,8 @@ import { schemaFromRegistry, type ProductRegistryDocument } from "./product-regi
 import type { Market, MarketCurrency } from "@/domain/markets/types";
 import { quoteMarketConfiguration } from "@/domain/pricing/market-quote";
 
+const MERCHANT_EXCLUDED_PRODUCT_KEYS = new Set(["banner-bundle"]);
+
 export type MerchantProductData = Readonly<{
   id: string;
   productKey: string;
@@ -26,7 +28,7 @@ export function buildMerchantProductData(
   const prefix = market === "AU" ? "/au" : "";
 
   return Object.freeze(registry.products.flatMap((product) => {
-    if (!product.active) return [];
+    if (!product.active || MERCHANT_EXCLUDED_PRODUCT_KEYS.has(product.key)) return [];
     const schema = schemaFromRegistry(registry, product.key);
     if (!schema) return [];
     return product.configuration.sizes.map((size) => {
