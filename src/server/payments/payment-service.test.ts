@@ -901,6 +901,193 @@ describe("payment service", () => {
     });
   });
 
+  it("abandons an unresolved Afterpay attempt only after authoritative absence", async () => {
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt,
+      provider: "afterpay",
+      method: "afterpay",
+      providerReference: "afterpay_abandoned_123",
+      status: "requires_action",
+    };
+    const findCurrentPayment = vi.fn().mockResolvedValue({
+      attempt: boundAttempt,
+      order: { ...order, paymentStatus: "awaiting_payment" },
+    });
+    const applyVerifiedResult = vi.fn().mockResolvedValue({
+      attempt: { ...boundAttempt, status: "cancelled" },
+      order: { ...order, paymentStatus: "cancelled" },
+    });
+    const repo = repository({ findCurrentPayment, applyVerifiedResult });
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"),
+      key: "afterpay",
+      method: "afterpay",
+      retrieve: vi.fn().mockResolvedValue({ kind: "authoritative_not_found" }),
+    };
+    const paymentService = service({
+      repository: repo,
+      providers: [{ method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay }],
+    });
+    const changePaymentMethod = (paymentService as unknown as {
+      changePaymentMethod?: (ownedAccess: typeof access) => Promise<unknown>;
+    }).changePaymentMethod;
+
+    expect(changePaymentMethod).toBeDefined();
+    if (!changePaymentMethod) return;
+    await expect(changePaymentMethod(access)).resolves.toEqual({
+      payment: { method: "afterpay", status: "cancelled", isTest: false, canRetry: true },
+      orderNumber: order.orderNumber,
+    });
+    expect(afterpay.retrieve).toHaveBeenCalledWith({
+      order,
+      providerReference: boundAttempt.providerReference,
+    });
+    expect(applyVerifiedResult).toHaveBeenCalledWith({
+      attemptId: boundAttempt.id,
+      result: {
+        providerReference: boundAttempt.providerReference,
+        providerStatus: "ABANDONED:NOT_FOUND",
+        amountCents: order.amountCents,
+        currency: order.currency,
+        orderNumber: order.orderNumber,
+        status: "cancelled",
+      },
+      source: "reconciliation",
+    });
+  });
+
+  it("applies verified Afterpay authority instead of abandoning it", async () => {
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt,
+      provider: "afterpay",
+      method: "afterpay",
+      providerReference: "afterpay_processing_123",
+      status: "processing",
+    };
+    const processingResult: VerifiedPaymentResult = {
+      providerReference: boundAttempt.providerReference!,
+      providerStatus: "ACTIVE",
+      amountCents: order.amountCents,
+      currency: order.currency,
+      orderNumber: order.orderNumber,
+      status: "processing",
+    };
+    const applyVerifiedResult = vi.fn().mockResolvedValue({
+      attempt: boundAttempt,
+      order: { ...order, paymentStatus: "processing" },
+    });
+    const repo = repository({
+      findCurrentPayment: vi.fn().mockResolvedValue({
+        attempt: boundAttempt,
+        order: { ...order, paymentStatus: "awaiting_payment" },
+      }),
+      applyVerifiedResult,
+    });
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"),
+      key: "afterpay",
+      method: "afterpay",
+      retrieve: vi.fn().mockResolvedValue({ kind: "verified", result: processingResult }),
+    };
+    const paymentService = service({
+      repository: repo,
+      providers: [{ method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay }],
+    });
+    const changePaymentMethod = (paymentService as unknown as {
+      changePaymentMethod?: (ownedAccess: typeof access) => Promise<unknown>;
+    }).changePaymentMethod;
+
+    expect(changePaymentMethod).toBeDefined();
+    if (!changePaymentMethod) return;
+    await expect(changePaymentMethod(access)).resolves.toEqual({
+      payment: { method: "afterpay", status: "processing", isTest: false, canRetry: false },
+      orderNumber: order.orderNumber,
+    });
+    expect(applyVerifiedResult).toHaveBeenCalledWith({
+      attemptId: boundAttempt.id,
+      result: processingResult,
+      source: "reconciliation",
+    });
+  });
+
+  it("fails closed when Afterpay abandonment authority is ambiguous", async () => {
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt,
+      provider: "afterpay",
+      method: "afterpay",
+      providerReference: "afterpay_unknown_123",
+      status: "requires_action",
+    };
+    const applyVerifiedResult = vi.fn();
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"),
+      key: "afterpay",
+      method: "afterpay",
+      retrieve: vi.fn().mockResolvedValue({ kind: "authoritative_not_received" }),
+    };
+    const paymentService = service({
+      repository: repository({
+        findCurrentPayment: vi.fn().mockResolvedValue({ attempt: boundAttempt, order }),
+        applyVerifiedResult,
+      }),
+      providers: [{ method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay }],
+    });
+    const changePaymentMethod = (paymentService as unknown as {
+      changePaymentMethod?: (ownedAccess: typeof access) => Promise<unknown>;
+    }).changePaymentMethod;
+
+    expect(changePaymentMethod).toBeDefined();
+    if (!changePaymentMethod) return;
+    await expect(changePaymentMethod(access)).rejects.toMatchObject({
+      code: "PAYMENT_UNAVAILABLE",
+    });
+    expect(applyVerifiedResult).not.toHaveBeenCalled();
+  });
+
+  it("does not capture a browser return for an already abandoned Afterpay attempt", async () => {
+    const state = "9".repeat(64);
+    const reference = "afterpay_abandoned_return_123";
+    const boundAttempt: PaymentAttemptRecord = {
+      ...attempt,
+      provider: "afterpay",
+      method: "afterpay",
+      providerReference: reference,
+      returnStateDigest: createHash("sha256").update(state).digest("hex"),
+      status: "cancelled",
+    };
+    const afterpay: PaymentProvider = {
+      ...provider("afterpay"),
+      key: "afterpay",
+      method: "afterpay",
+      completeReturn: vi.fn(),
+    };
+    const applyVerifiedResult = vi.fn();
+    const paymentService = service({
+      repository: repository({
+        consumeReturnState: vi.fn().mockResolvedValue({
+          outcome: "consumed",
+          attempt: boundAttempt,
+          order,
+        }),
+        applyVerifiedResult,
+      }),
+      providers: [{ method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay }],
+    });
+
+    await expect(paymentService.handleReturn({
+      provider: "afterpay",
+      method: "afterpay",
+      orderNumber: order.orderNumber,
+      returnState: state,
+      providerReference: reference,
+      returnUrl: new URL(
+        `https://trusted.example.test/api/payments/returns/afterpay?flow=return&orderNumber=${order.orderNumber}&method=afterpay&state=${state}`,
+      ),
+    })).resolves.toEqual({ orderNumber: order.orderNumber });
+    expect(afterpay.completeReturn).not.toHaveBeenCalled();
+    expect(applyVerifiedResult).not.toHaveBeenCalled();
+  });
+
   it("lets only the first Afterpay return capture with immutable persisted authority", async () => {
     const state = "c".repeat(64);
     const reference = "afterpay_persisted_123";

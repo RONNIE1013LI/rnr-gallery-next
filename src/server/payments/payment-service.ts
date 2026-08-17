@@ -308,6 +308,65 @@ export function createPaymentService({
   }
 
   return {
+    async changePaymentMethod(
+      access: PaymentOrderAccess,
+    ): Promise<PaymentConfirmationResult> {
+      const current = await repository.findCurrentPayment(access);
+      if (
+        !current ||
+        current.attempt.provider !== "afterpay" ||
+        current.attempt.method !== "afterpay" ||
+        !current.attempt.providerReference ||
+        !["created", "requires_action", "processing"].includes(current.attempt.status)
+      ) {
+        throw unavailableStart();
+      }
+      const registration = byMethod.get("afterpay");
+      if (!registration || registration.provider.key !== "afterpay") {
+        throw unavailableStart();
+      }
+
+      let authority;
+      try {
+        authority = await registration.provider.retrieve({
+          order: providerPaymentOrder(current.order),
+          providerReference: current.attempt.providerReference,
+        });
+      } catch {
+        throw unavailableStart();
+      }
+
+      let result: VerifiedPaymentResult;
+      if (authority.kind === "verified") {
+        result = authority.result;
+      } else if (authority.kind === "authoritative_not_found") {
+        result = Object.freeze({
+          providerReference: current.attempt.providerReference,
+          providerStatus: "ABANDONED:NOT_FOUND",
+          amountCents: current.attempt.expectedAmountCents,
+          currency: current.attempt.currency,
+          orderNumber: current.order.orderNumber,
+          status: "cancelled" as const,
+        });
+      } else {
+        throw unavailableStart();
+      }
+
+      const applied = await repository.applyVerifiedResult({
+        attemptId: current.attempt.id,
+        result,
+        source: "reconciliation",
+      });
+      return Object.freeze({
+        payment: publicPayment(
+          applied.attempt.method,
+          applied.attempt.status,
+          registration.isTest,
+        ),
+        orderNumber: applied.order.orderNumber,
+      });
+    },
+
     async confirmPayment(
       access: PaymentOrderAccess,
     ): Promise<PaymentConfirmationResult> {
@@ -509,6 +568,10 @@ export function createPaymentService({
         storedAttempt.currency !== storedOrder.currency
       ) {
         throw unavailableReturn();
+      }
+
+      if (storedAttempt.status === "cancelled") {
+        return Object.freeze({ orderNumber: storedOrder.orderNumber });
       }
 
       if (
