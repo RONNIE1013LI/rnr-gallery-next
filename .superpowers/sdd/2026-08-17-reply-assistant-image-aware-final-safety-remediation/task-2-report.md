@@ -148,3 +148,17 @@ The text engine exception path called `completeProviderAttempt` with `estimatedC
 - `src/server/customer-service/repositories/drizzle-customer-service-repository.integration.test.ts`
 
 No policy gate, output validator, provider parser, schema, migration, Production configuration, or send capability changed.
+
+### Independent Re-review
+
+Commit `6da4ed6` was reviewed independently by the reviewer who identified the text-provider exception gap.
+
+```text
+Critical findings: 0
+Important findings: 0
+Unknown text-provider cost finding: CLOSED
+SPEC: PASS
+QUALITY: PASS
+```
+
+The reviewer confirmed that `null` reaches the locked repository transaction, consumes the reservation ceiling once, and repeated or concurrent completion cannot charge again after the attempt leaves `provider_pending`.
