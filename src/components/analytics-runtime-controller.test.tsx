@@ -1,5 +1,6 @@
 import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { sendGAEvent } from "@next/third-parties/google";
 
 import {
   GA4_DEBUG_SESSION_KEY,
@@ -36,6 +37,7 @@ function setLocation(pathname: string, search = "") {
 
 describe("AnalyticsRuntimeController", () => {
   beforeEach(() => {
+    vi.clearAllMocks();
     googleAnalytics.automaticPageLocations.length = 0;
     googleAnalytics.mounts = 0;
     googleAnalytics.props.length = 0;
@@ -52,16 +54,33 @@ describe("AnalyticsRuntimeController", () => {
     vi.restoreAllMocks();
   });
 
-  it("sets the public marker before mounting one exact official tag", async () => {
+  it("suppresses automatic config collection and sends one safe public pageview", async () => {
     const view = render(<AnalyticsRuntimeController production />);
 
     await waitFor(() => expect(googleAnalytics.mounts).toBe(1));
+    expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+    expect(googleAnalytics.automaticPageLocations).toEqual([]);
+
+    const script = await view.findByTestId("official-google-analytics");
+    act(() => script.dispatchEvent(new Event("load")));
+
     expect(document.documentElement.dataset.ga4Enabled).toBe("true");
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
     expect(googleAnalytics.props.at(-1)).toMatchObject({ gaId: GA4_MEASUREMENT_ID });
-    expect(googleAnalytics.automaticPageLocations).toEqual(["http://localhost:3000/"]);
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
+    });
 
-    act(() => window.history.pushState({}, "", "/products/photo-print-canvas"));
+    await act(async () => {
+      window.history.pushState({}, "", "/products/photo-print-canvas");
+      await Promise.resolve();
+    });
+    expect(sendGAEvent).toHaveBeenLastCalledWith("event", "page_view", {
+      page_location: "http://localhost:3000/products/photo-print-canvas",
+      page_referrer: "",
+    });
     expect(googleAnalytics.mounts).toBe(1);
     view.unmount();
   });
@@ -78,9 +97,12 @@ describe("AnalyticsRuntimeController", () => {
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
   });
 
-  it("updates the privacy flag before SPA history observers can collect a location", async () => {
+  it("keeps private-to-public history disabled until a safe pageview replaces referrer context", async () => {
     const view = render(<AnalyticsRuntimeController production />);
     await waitFor(() => expect(googleAnalytics.mounts).toBe(1));
+    const script = await view.findByTestId("official-google-analytics");
+    act(() => script.dispatchEvent(new Event("load")));
+    vi.mocked(sendGAEvent).mockClear();
 
     const guardedPushState = window.history.pushState;
     const observedPageLocations: string[] = [];
@@ -92,18 +114,29 @@ describe("AnalyticsRuntimeController", () => {
       return result;
     };
 
-    act(() => window.history.pushState(
-      {},
-      "",
-      "/orders/RNR-2026-PRIVATE?access=private-spa-token",
-    ));
+    await act(async () => {
+      window.history.pushState(
+        {},
+        "",
+        "/orders/RNR-2026-PRIVATE?access=private-spa-token",
+      );
+      await Promise.resolve();
+    });
     expect(observedPageLocations).toEqual([]);
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
     expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
 
-    act(() => window.history.pushState({}, "", "/shop"));
-    expect(observedPageLocations).toEqual(["http://localhost:3000/shop"]);
-    expect(observedPageLocations.join(" ")).not.toContain("private-spa-token");
+    await act(async () => {
+      window.history.pushState({}, "", "/shop");
+      await Promise.resolve();
+    });
+    expect(observedPageLocations).toEqual([]);
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
+      page_location: "http://localhost:3000/shop",
+      page_referrer: "",
+    });
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-spa-token");
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
     expect(document.documentElement.dataset.ga4Enabled).toBe("true");
     expect(googleAnalytics.mounts).toBe(1);
@@ -117,12 +150,23 @@ describe("AnalyticsRuntimeController", () => {
 
     await waitFor(() => expect(sessionStorage.getItem(GA4_DEBUG_SESSION_KEY)).toBe("true"));
     expect(localStorage.getItem(GA4_DEBUG_SESSION_KEY)).toBeNull();
-    expect(googleAnalytics.props.at(-1)).toMatchObject({ debugMode: true });
+    expect(googleAnalytics.props.at(-1)).not.toHaveProperty("debugMode");
+    const script = await view.findByTestId("official-google-analytics");
+    act(() => script.dispatchEvent(new Event("load")));
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
+      debug_mode: true,
+    });
 
-    act(() => window.history.replaceState({}, "", "/?ga_debug=0"));
+    await act(async () => {
+      window.history.replaceState({}, "", "/?ga_debug=0");
+      await Promise.resolve();
+    });
 
     await waitFor(() => expect(sessionStorage.getItem(GA4_DEBUG_SESSION_KEY)).toBeNull());
-    expect(googleAnalytics.props.at(-1)?.debugMode).toBe(false);
+    expect(googleAnalytics.props.at(-1)).not.toHaveProperty("debugMode");
+    expect(googleAnalytics.mounts).toBe(1);
     view.unmount();
   });
 

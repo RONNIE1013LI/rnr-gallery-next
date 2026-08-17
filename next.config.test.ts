@@ -39,7 +39,7 @@ describe("Next.js workspace configuration", () => {
 
     expect(headers["Content-Security-Policy"]).toContain("frame-ancestors 'none'");
     expect(headers["X-Content-Type-Options"]).toBe("nosniff");
-    expect(headers["Referrer-Policy"]).toBe("strict-origin-when-cross-origin");
+    expect(headers["Referrer-Policy"]).toBe("origin");
     expect(headers["Permissions-Policy"]).toContain("camera=()");
     expect(headers["Strict-Transport-Security"]).toContain("max-age=31536000");
   });

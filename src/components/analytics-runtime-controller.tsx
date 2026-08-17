@@ -1,7 +1,7 @@
 "use client";
 
-import { GoogleAnalytics } from "@next/third-parties/google";
-import { useLayoutEffect, useState } from "react";
+import { GoogleAnalytics, sendGAEvent } from "@next/third-parties/google";
+import { useLayoutEffect, useRef, useState } from "react";
 import {
   classifyGa4Location,
   GA4_DEBUG_SESSION_KEY,
@@ -33,6 +33,7 @@ function controlledDebugMode(url: URL): boolean {
 export function applyGa4LocationPolicy(
   url: URL,
   production: boolean,
+  collectionReady = true,
 ): Readonly<{ debugMode: boolean; policy: Ga4LocationPolicy }> {
   const root = document.documentElement;
   const policy = classifyGa4Location(url.pathname, url.searchParams);
@@ -47,9 +48,14 @@ export function applyGa4LocationPolicy(
 
   const debugMode = controlledDebugMode(url);
   if (policy === "public") {
-    root.dataset.ga4Enabled = "true";
     root.removeAttribute("data-ga4-private-purchase");
-    setCollectionDisabled(false);
+    if (collectionReady) {
+      root.dataset.ga4Enabled = "true";
+      setCollectionDisabled(false);
+    } else {
+      root.removeAttribute("data-ga4-enabled");
+      setCollectionDisabled(true);
+    }
   } else {
     root.removeAttribute("data-ga4-enabled");
     if (policy === "private-order") {
@@ -69,19 +75,33 @@ function resolveHistoryUrl(url: string | URL | null | undefined): URL {
     : new URL(String(url), window.location.href);
 }
 
-export function installGa4HistoryGuard(onLocation: (url: URL) => void): () => void {
+export function installGa4HistoryGuard(
+  beforeLocation: (url: URL) => void,
+  afterLocation: (url: URL) => void,
+): () => void {
   const originalPushState = window.history.pushState;
   const originalReplaceState = window.history.replaceState;
 
+  const finishLocation = () => {
+    queueMicrotask(() => afterLocation(new URL(window.location.href)));
+  };
+
   const guardedPushState: History["pushState"] = function (data, unused, url) {
-    onLocation(resolveHistoryUrl(url));
-    return originalPushState.call(window.history, data, unused, url);
+    beforeLocation(resolveHistoryUrl(url));
+    const result = originalPushState.call(window.history, data, unused, url);
+    finishLocation();
+    return result;
   };
   const guardedReplaceState: History["replaceState"] = function (data, unused, url) {
-    onLocation(resolveHistoryUrl(url));
-    return originalReplaceState.call(window.history, data, unused, url);
+    beforeLocation(resolveHistoryUrl(url));
+    const result = originalReplaceState.call(window.history, data, unused, url);
+    finishLocation();
+    return result;
   };
-  const handleBrowserNavigation = () => onLocation(new URL(window.location.href));
+  const handleBrowserNavigation = () => {
+    beforeLocation(new URL(window.location.href));
+    finishLocation();
+  };
 
   window.history.pushState = guardedPushState;
   window.history.replaceState = guardedReplaceState;
@@ -106,26 +126,45 @@ export function AnalyticsRuntimeController({
   production: boolean;
 }>) {
   const [ready, setReady] = useState(false);
-  const [debugMode, setDebugMode] = useState(false);
+  const tagLoaded = useRef(false);
+  const lastPageView = useRef<string | null>(null);
 
   useLayoutEffect(() => {
-    const updateLocation = (url: URL) => {
-      const state = applyGa4LocationPolicy(url, production);
-      setDebugMode(state.debugMode);
+    let active = true;
+    const prepareLocation = (url: URL) => {
+      applyGa4LocationPolicy(url, production, false);
+    };
+    const settleLocation = (url: URL) => {
+      if (!active) return;
+      const state = applyGa4LocationPolicy(url, production, tagLoaded.current);
+      if (state.policy !== "public" || !tagLoaded.current) return;
+
+      const pageLocation = new URL(url.pathname || "/", url.origin).href;
+      if (lastPageView.current === pageLocation) return;
+      lastPageView.current = pageLocation;
+      sendGAEvent("event", "page_view", {
+        page_location: pageLocation,
+        page_referrer: "",
+        ...(state.debugMode ? { debug_mode: true } : {}),
+      });
     };
 
-    updateLocation(new URL(window.location.href));
+    prepareLocation(new URL(window.location.href));
     if (!production) return;
 
     const handleScriptLoad = (event: Event) => {
       const target = event.target;
       if (target instanceof HTMLScriptElement && target.id === "_next-ga") {
+        tagLoaded.current = true;
         document.documentElement.dataset.ga4Loaded = "true";
+        settleLocation(new URL(window.location.href));
       }
     };
     document.addEventListener("load", handleScriptLoad, true);
-    const removeHistoryGuard = installGa4HistoryGuard(updateLocation);
-    let active = true;
+    const removeHistoryGuard = installGa4HistoryGuard(
+      prepareLocation,
+      settleLocation,
+    );
     queueMicrotask(() => {
       if (active) setReady(true);
     });
@@ -136,11 +175,14 @@ export function AnalyticsRuntimeController({
       document.removeEventListener("load", handleScriptLoad, true);
       document.documentElement.removeAttribute("data-ga4-enabled");
       document.documentElement.removeAttribute("data-ga4-private-purchase");
+      document.documentElement.removeAttribute("data-ga4-loaded");
+      tagLoaded.current = false;
+      lastPageView.current = null;
       setCollectionDisabled(true);
     };
   }, [production]);
 
   return production && ready
-    ? <GoogleAnalytics gaId={GA4_MEASUREMENT_ID} debugMode={debugMode} />
+    ? <GoogleAnalytics gaId={GA4_MEASUREMENT_ID} />
     : null;
 }

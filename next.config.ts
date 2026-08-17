@@ -12,7 +12,7 @@ export function buildSecurityHeaders(nodeEnv: string | undefined) {
     },
     { key: "X-Content-Type-Options", value: "nosniff" },
     { key: "X-Frame-Options", value: "DENY" },
-    { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+    { key: "Referrer-Policy", value: "origin" },
     {
       key: "Permissions-Policy",
       value: "camera=(), microphone=(), geolocation=(self)",
