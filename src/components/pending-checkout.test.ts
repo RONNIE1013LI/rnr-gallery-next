@@ -97,6 +97,13 @@ const bundleCart: Cart = {
   }],
 };
 
+function invalidPartialBundleItem() {
+  return {
+    ...bundleCart.items[0],
+    bundleComponents: [bundleCart.items[0].bundleComponents![0]],
+  };
+}
+
 describe("pending checkout", () => {
   beforeEach(() => localStorage.clear());
   afterEach(() => setActiveCustomerId(null));
@@ -149,18 +156,15 @@ describe("pending checkout", () => {
     expect(readPendingCheckout(localStorage)).toBeNull();
   });
 
-  it("removes an invalid partial Bundle pending checkout without touching another identity", () => {
+  it("keeps valid pending items while removing a partial Bundle only in the current identity", () => {
     const customerAKey = getPendingCheckoutStorageKey("customer-a");
     const customerBKey = getPendingCheckoutStorageKey("customer-b");
     localStorage.setItem(customerAKey, JSON.stringify({
       schemaVersion: 1,
       intent,
       cart: {
-        ...bundleCart,
-        items: [{
-          ...bundleCart.items[0],
-          bundleComponents: [bundleCart.items[0].bundleComponents![0]],
-        }],
+        version: 1,
+        items: [cart.items[0], invalidPartialBundleItem()],
       },
     }));
     setActiveCustomerId("customer-b");
@@ -168,9 +172,25 @@ describe("pending checkout", () => {
     const customerBRaw = localStorage.getItem(customerBKey);
 
     setActiveCustomerId("customer-a");
+    const recovered = readPendingCheckout(localStorage);
+    expect(recovered?.cart.items).toEqual([cart.items[0]]);
+    expect(
+      JSON.parse(localStorage.getItem(customerAKey)!).cart.items,
+    ).toEqual([cart.items[0]]);
+    expect(localStorage.getItem(customerBKey)).toBe(customerBRaw);
+  });
+
+  it("removes a pending checkout when its sole Bundle item is invalid", () => {
+    const customerAKey = getPendingCheckoutStorageKey("customer-a");
+    localStorage.setItem(customerAKey, JSON.stringify({
+      schemaVersion: 1,
+      intent,
+      cart: { version: 1, items: [invalidPartialBundleItem()] },
+    }));
+
+    setActiveCustomerId("customer-a");
     expect(readPendingCheckout(localStorage)).toBeNull();
     expect(localStorage.getItem(customerAKey)).toBeNull();
-    expect(localStorage.getItem(customerBKey)).toBe(customerBRaw);
   });
 
   it("keeps a legacy Grave Cover checkout resumable after format normalization", () => {

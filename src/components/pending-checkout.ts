@@ -1,6 +1,5 @@
 import {
   createBrowserCartRepository,
-  normalizeLegacyGraveCoverCart,
   parseStoredCart,
 } from "@/domain/cart/browser-cart-repository";
 import {
@@ -60,19 +59,20 @@ export function readPendingCheckout(storage: StorageLike): PendingCheckout | nul
     ) throw new Error("Invalid pending checkout");
     const parsedIntent = parsePaymentRecoveryIntent(JSON.stringify(value.intent));
     const cart = parseStoredCart(JSON.stringify(value.cart));
-    const normalizedStoredCart = normalizeLegacyGraveCoverCart(value.cart as Cart);
     if (
       !parsedIntent ||
       !("orderIdempotencyKey" in parsedIntent) ||
       (parsedIntent.phase !== "placing_order" && parsedIntent.phase !== "starting_payment") ||
-      cart.items.length === 0 ||
-      JSON.stringify(cart) !== JSON.stringify(normalizedStoredCart)
+      cart.items.length === 0
     ) throw new Error("Invalid pending checkout");
-    return Object.freeze({
+    const pending = Object.freeze({
       schemaVersion: 1,
       intent: parsedIntent,
       cart,
     });
+    const sanitized = JSON.stringify(pending);
+    if (sanitized !== raw) storage.setItem(storageKey, sanitized);
+    return pending;
   } catch {
     storage.removeItem(storageKey);
     return null;
