@@ -8,9 +8,9 @@ and release-boundary checks are recorded below. Production deployment,
 production browser/network inspection, GA4 Realtime, GA4 DebugView, NZD/AUD
 payload observation, and live purchase confirmation remain **pending**.
 
-`TEST_DATABASE_URL` was absent in this verification environment. No database
-integration tests were run, and no application, staging, or production database
-was used as a substitute.
+The first non-database run did not have `TEST_DATABASE_URL`; the isolated test
+database was subsequently verified and the 18 required database suites passed.
+No application, staging, or production database was used as a substitute.
 
 ## Automated checks
 
@@ -18,10 +18,16 @@ was used as a substitute.
 | --- | --- | --- |
 | `npm run typecheck` | PASS | Exit 0. |
 | `npm run lint` | PASS | Exit 0. |
-| `npm test -- --run` | BLOCKED | Exit 1 because 18 database suites require an absent `TEST_DATABASE_URL`; 278 files and 1,855 tests passed before those setup failures. |
+| Initial `npm test -- --run` | Historical preflight result | Exit 1 because 18 database suites required an absent `TEST_DATABASE_URL`; 278 files and 1,855 tests passed before those setup failures. |
 | `npm test -- --run --exclude '**/*.integration.test.ts' --exclude 'src/server/addresses/drizzle-address-repository.test.ts' --exclude 'src/server/checkout/drizzle-checkout-repository.test.ts'` | PASS | Exit 0: 278 test files and 1,855 tests passed. This is the complete executable non-database suite. |
+| Dedicated database suite using `node --env-file=<approved payment-adapters .env.local> node_modules/vitest/vitest.mjs --run <18 specified files>` | PASS | The safe gate confirmed only these labels: `TEST_DATABASE_URL` present, PostgreSQL, separately test-named, and different from `DATABASE_URL`. Exit 0: 18 test files and 89 tests passed in 97.72s. No URL, host, user, password, or database name was printed. |
 | `DATABASE_URL='postgresql://build:build@127.0.0.1:1/rnr_build' BETTER_AUTH_SECRET='<build-only non-secret>' BETTER_AUTH_URL='https://build.invalid' npm run build` | PASS | Exit 0. The build generated 89/89 static pages. The loopback database URL and auth values were build-only placeholders; no external service was contacted. |
 | `git diff --check` | PASS | Exit 0; no whitespace errors. |
+
+Across the two passing test invocations, all 296 test files and 1,944 tests in
+the non-database and specified database suites passed. The initial full-suite
+attempt is retained above as historical evidence; it was not rerun as a single
+combined command after the test environment became available.
 
 The first build attempt used an HTTP build-only `BETTER_AUTH_URL` and was
 correctly rejected by the production-only HTTPS validation. Re-running with the
@@ -78,5 +84,5 @@ The following must be appended after the exact verified commit is deployed:
   production payload privacy check.
 - Confirmation that `?ga_debug=0` removes debug mode.
 
-Until those checks and the isolated database integration suite are completed,
-this record is not production-release evidence.
+Until the production checks above are completed, this record is not
+production-release evidence.
