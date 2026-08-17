@@ -120,27 +120,11 @@ function pathMimeType(url: URL): ResolvedAttachment["mimeType"] {
   throw new Error("Unsupported Facebook attachment path");
 }
 
-function hasExplicitPort(value: string) {
-  const authority = /^(?:[a-z][a-z\d+.-]*:)?\/\/([^/?#]*)/i.exec(value)?.[1];
-  if (authority === undefined) return false;
-  const hostAndPort = authority.slice(authority.lastIndexOf("@") + 1);
-  if (hostAndPort.startsWith("[")) {
-    const closingBracket = hostAndPort.indexOf("]");
-    return closingBracket >= 0 && hostAndPort.slice(closingBracket + 1).startsWith(":");
-  }
-  return hostAndPort.includes(":");
+function unsafeUrl(): never {
+  throw new Error("Unsafe Facebook attachment URL");
 }
 
-function safeUrl(value: string, allowedHosts: ReadonlySet<string>, base?: URL) {
-  let url: URL;
-  try {
-    if (value.includes("\\") || hasExplicitPort(value)) {
-      throw new Error("Unsafe Facebook attachment URL");
-    }
-    url = new URL(value, base);
-  } catch {
-    throw new Error("Unsafe Facebook attachment URL");
-  }
+function validateParsedUrl(url: URL, allowedHosts: ReadonlySet<string>) {
   const hostname = normalizedHostname(url);
   if (
     url.protocol !== "https:" ||
@@ -150,9 +134,48 @@ function safeUrl(value: string, allowedHosts: ReadonlySet<string>, base?: URL) {
     isIP(hostname) !== 0 ||
     !allowedHosts.has(hostname.toLowerCase())
   ) {
-    throw new Error("Unsafe Facebook attachment URL");
+    unsafeUrl();
   }
   return Object.freeze({ url, mimeType: pathMimeType(url) });
+}
+
+function validateRawUrl(value: string) {
+  if (value !== value.trim() || /[\u0000-\u0020\u007f\\]/.test(value)) unsafeUrl();
+}
+
+function safeAbsoluteUrl(value: string, allowedHosts: ReadonlySet<string>) {
+  validateRawUrl(value);
+  const authority = /^https:\/\/([^/?#]+)(?:[/?#]|$)/.exec(value)?.[1];
+  if (!authority || authority.includes("@") || authority.includes(":")) unsafeUrl();
+
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    unsafeUrl();
+  }
+  return validateParsedUrl(url, allowedHosts);
+}
+
+function safeRedirectUrl(
+  value: string,
+  allowedHosts: ReadonlySet<string>,
+  current: URL,
+) {
+  validateRawUrl(value);
+  if (value.startsWith("//")) unsafeUrl();
+  if (/^[a-z][a-z\d+.-]*:/i.test(value)) {
+    return safeAbsoluteUrl(value, allowedHosts);
+  }
+
+  let url: URL;
+  try {
+    url = new URL(value, current);
+  } catch {
+    unsafeUrl();
+  }
+  if (url.origin !== current.origin) unsafeUrl();
+  return validateParsedUrl(url, allowedHosts);
 }
 
 function isNonPublicAddress({ address, family }: DnsAddress) {
@@ -215,7 +238,7 @@ export function createFacebookSourceReader({
         throw new Error("Unsupported Facebook attachment source");
       }
 
-      let current = safeUrl(source.url, allowedHostSet);
+      let current = safeAbsoluteUrl(source.url, allowedHostSet);
       for (let redirects = 0; ; redirects += 1) {
         const hostname = normalizedHostname(current.url);
         const addresses = await lookup(hostname);
@@ -235,7 +258,7 @@ export function createFacebookSourceReader({
           }
           const location = response.headers.get("location");
           if (!location) throw new Error("Invalid Facebook attachment redirect");
-          current = safeUrl(location, allowedHostSet, current.url);
+          current = safeRedirectUrl(location, allowedHostSet, current.url);
           continue;
         }
         if (response.status < 200 || response.status >= 300) {

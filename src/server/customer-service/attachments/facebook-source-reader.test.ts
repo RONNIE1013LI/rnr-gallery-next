@@ -43,6 +43,18 @@ function cancellableResponse(status: number, headers: HeadersInit = {}) {
   };
 }
 
+function rawRedirectResponse(location: string) {
+  const response = new Response(null, { status: 302 });
+  Object.defineProperty(response, "headers", {
+    value: {
+      get(name: string) {
+        return name.toLowerCase() === "location" ? location : null;
+      },
+    },
+  });
+  return response;
+}
+
 function reader(options: {
   lookup?: ReturnType<typeof publicLookup>;
   fetch?: typeof fetch;
@@ -66,6 +78,9 @@ describe("Facebook attachment URL validation", () => {
     "https://cdn.facebook.test.evil.test/image.png",
     "https://cdn.facebook.test:443/image.png",
     "https://cdn.facebook.test:444/image.png",
+    " https://cdn.facebook.test/image.png",
+    "https://cdn.facebook.test/image.png ",
+    "https:////cdn.facebook.test:443/image.png",
   ])("rejects unsafe source URL %s", async (url) => {
     await expect(reader().read(
       { kind: "facebook_remote", url },
@@ -161,6 +176,21 @@ describe("Facebook attachment URL validation", () => {
         status: 302,
         headers: { location: "https://redirect.facebook.test:443/image.png" },
       }))
+      .mockResolvedValueOnce(imageResponse());
+
+    await expect(reader({ fetch: fetchMock }).read(
+      { kind: "facebook_remote", url: "https://cdn.facebook.test/start.png" },
+      new AbortController().signal,
+    )).rejects.toThrow("Unsafe Facebook attachment URL");
+  });
+
+  it.each([
+    " https://redirect.facebook.test/image.png",
+    "https:////redirect.facebook.test:443/image.png",
+    "//redirect.facebook.test/image.png",
+  ])("rejects a non-canonical redirect Location: %s", async (location) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(rawRedirectResponse(location))
       .mockResolvedValueOnce(imageResponse());
 
     await expect(reader({ fetch: fetchMock }).read(
