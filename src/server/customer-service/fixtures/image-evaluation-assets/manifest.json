@@ -1,0 +1,835 @@
+{
+  "schemaVersion": "1",
+  "generatedAt": "2026-08-17T00:00:00.000Z",
+  "generator": "deterministic Sharp geometric fixtures; no people, customer data, or external source material",
+  "assets": [
+    {
+      "assetId": "asset-blur-01",
+      "relativePath": "asset-blur-01.png",
+      "sha256": "2237fb024425a3a0da83f6e5559c19f288bf81a78f9da28224aab83d63ae0a32",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blur-02",
+      "relativePath": "asset-blur-02.png",
+      "sha256": "43689535eeb4d803f5acc3f48642f4f3ed9b32dc2c41f859fbaead1d77a75695",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blur-03",
+      "relativePath": "asset-blur-03.png",
+      "sha256": "c1d9a8a288d6e3c150d9715b5af26f87f7aebdd317115e6836302bb3c20c2ac0",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blur-04",
+      "relativePath": "asset-blur-04.png",
+      "sha256": "6cac3d864e05b4ec7713b44499e5dc5a2676799d955cffde8a8f66120708cd24",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blur-05",
+      "relativePath": "asset-blur-05.png",
+      "sha256": "dd352cb2547fd278a932efb78de6e6a489054344658499cb7861cf59b4681f1c",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blur-06",
+      "relativePath": "asset-blur-06.png",
+      "sha256": "485da9c7f56aa25fee5ef5c277c68faef87338f26150c2f983aae76ee1c03599",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blur-07",
+      "relativePath": "asset-blur-07.png",
+      "sha256": "c937c1be6277b04259e8886f3534bb956420a6b0f559cb5d997b5d0cda9e1d5a",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blur-08",
+      "relativePath": "asset-blur-08.png",
+      "sha256": "9982b8dd534a8e361da6ec5b8d4d5f2e2cc9f043922fb6ddf012b0c38028a83e",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blur-09",
+      "relativePath": "asset-blur-09.png",
+      "sha256": "48c5a57803494306dc03d3a52613a2be77bf0678ba783bcca3d6cb58ef082f01",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blur-10",
+      "relativePath": "asset-blur-10.png",
+      "sha256": "bb196d7009337c074e553dedb88642726a4fc3b0015ffad762c44e0eb9654767",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blur-11",
+      "relativePath": "asset-blur-11.png",
+      "sha256": "486045547d60aa49afc7547d9de2cc5ec92a6e45b7f2ca64937d8e4e3b473f65",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blur-12",
+      "relativePath": "asset-blur-12.png",
+      "sha256": "4daa365abd0a20f77285d8c1f384b89ef8fe423377d2ebea758602e41186c719",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-screenshot-01",
+      "relativePath": "asset-screenshot-01.png",
+      "sha256": "8810c16cdd3cb8125c5d89fa4200a3c47337ab54725a99f816d0fc090a630386",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-screenshot-02",
+      "relativePath": "asset-screenshot-02.png",
+      "sha256": "c081481fc1b4b780c7cf824252c8f6ff5c2c1f16a413f10f89f07a4d977a3633",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-screenshot-03",
+      "relativePath": "asset-screenshot-03.png",
+      "sha256": "f2d1a448077dc1e4b167bf67bba94fcd073990df02e0afc3f1c4f6a4a0e9d14b",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-screenshot-04",
+      "relativePath": "asset-screenshot-04.png",
+      "sha256": "866d00d9b8f2e13696b9e12d54d8de89c81205d5820892021b3019ca4891c6c0",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-screenshot-05",
+      "relativePath": "asset-screenshot-05.png",
+      "sha256": "a3afa5b6afc2e9bb5b9612ca5df906b59bba24fb9e34c9bd8157f9670a8cb5fe",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-screenshot-06",
+      "relativePath": "asset-screenshot-06.png",
+      "sha256": "995d7fa691ca11acc7d264bbad13701a92790a00cc8c24e76e89f43b3b1df620",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-screenshot-07",
+      "relativePath": "asset-screenshot-07.png",
+      "sha256": "af4244da6859986341ea51614b3471f0d0a60e4add4cf8aacceeb7685c19e252",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-screenshot-08",
+      "relativePath": "asset-screenshot-08.png",
+      "sha256": "dc59b3339a9c6cf92b3bce07a1f7ce1b6ded3bae796afaf0c8d535b06f24004d",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-screenshot-09",
+      "relativePath": "asset-screenshot-09.png",
+      "sha256": "b9ca9b15da547008400d1f945d09364ace49cb9da991d8586073139c77cfb64f",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-screenshot-10",
+      "relativePath": "asset-screenshot-10.png",
+      "sha256": "898f77813a539c1e498f6cbcaf5d7d7674580a5912c4adc5fa2de731a4cf0e03",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-small-01",
+      "relativePath": "asset-small-01.png",
+      "sha256": "26ac84271fc27f3d43873c3b3df2e70be4efae17ee7c4880696eadf5def79483",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-small-02",
+      "relativePath": "asset-small-02.png",
+      "sha256": "1d8c4e9e2b7e3a65b3dc29672dbfcdd8728312d25278f56fe95b9ebc6249f1d3",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-small-03",
+      "relativePath": "asset-small-03.png",
+      "sha256": "bcfeb48fa99d680c214942c8b4a28868b6f8676b3a5b694adae9880758ad2998",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-small-04",
+      "relativePath": "asset-small-04.png",
+      "sha256": "ada73e6806d4738be9c3af532decf098b64d8c72c2ab37a79d75920f11ba7d35",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-small-05",
+      "relativePath": "asset-small-05.png",
+      "sha256": "d2132f040232d350f37bc9241987a55a3345ed9622139b52866d6113a55de173",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-small-06",
+      "relativePath": "asset-small-06.png",
+      "sha256": "8afd00a07da67d4205c0a94e42a6a1636ee8c7b8cc14a5454288866881843b91",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-small-07",
+      "relativePath": "asset-small-07.png",
+      "sha256": "03828a8b942494db62f32e6161dbe3f82c1d015ac18764669757783e57aa3565",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-small-08",
+      "relativePath": "asset-small-08.png",
+      "sha256": "765aa47c7f435c2d90cb6210992e9210f0caf2eb70ed723fa344cf37fb89674f",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-crop-01",
+      "relativePath": "asset-crop-01.png",
+      "sha256": "4f5b400b6bad9cef288b3572a9e239e8d3cdc8208a6576496935c597b3451c06",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-crop-02",
+      "relativePath": "asset-crop-02.png",
+      "sha256": "d5960e9da06538fb02bb48d733ad1face8b7f7bd4bde7a800612c60241e78672",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-crop-03",
+      "relativePath": "asset-crop-03.png",
+      "sha256": "9759c655720bd809a5921494f955049b2a1179179d749de2ae61ab2b8b8633a1",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-crop-04",
+      "relativePath": "asset-crop-04.png",
+      "sha256": "fd3224b3102beaf10da00822a2dab9659bf9fc99095a7a32c8ac509ae08d4bab",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-crop-05",
+      "relativePath": "asset-crop-05.png",
+      "sha256": "6585fd98a852c376afddb94bced8e855062130fe5d2c9cc7db4567cfc7b30b60",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-crop-06",
+      "relativePath": "asset-crop-06.png",
+      "sha256": "07a0bebce13978e174d12a6322d33d27e6679708ca276623d669e9825ef9e567",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-crop-07",
+      "relativePath": "asset-crop-07.png",
+      "sha256": "37124baf40002f16cc1d42f5b62a8eb2d286437d4fb654a17855809bd9844f1f",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-crop-08",
+      "relativePath": "asset-crop-08.png",
+      "sha256": "6734cc6d5ee868ca0e35b17e6f92ecf7f3c165495e0108c3709d0dc19e6fae42",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-obstruction-01",
+      "relativePath": "asset-obstruction-01.png",
+      "sha256": "0940dd0c1202f739698272abe5be9bd7e683e771a74d318e7d0507dcf5c17120",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-obstruction-02",
+      "relativePath": "asset-obstruction-02.png",
+      "sha256": "1c68d20b7d2a58f7702f95509a834ac58f33b16da1bb4128f1be7a5a6c0e727c",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-obstruction-03",
+      "relativePath": "asset-obstruction-03.png",
+      "sha256": "59b90155073032eea10866203ff307515335afde4e7a05f2e9ad3b10147d5c2a",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-obstruction-04",
+      "relativePath": "asset-obstruction-04.png",
+      "sha256": "8917c43919aa720136e31aea5479904e465e3922569ec97c57acc0b5c9f6c53a",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-obstruction-05",
+      "relativePath": "asset-obstruction-05.png",
+      "sha256": "deb597edc28838c555adbc5d97ddc11107432a2922dbf5dddd0321478b019fab",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-obstruction-06",
+      "relativePath": "asset-obstruction-06.png",
+      "sha256": "9c25cbc5b5e9d08557280bd595e6f64574f50d2ea0b4fc88944544da32367812",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-obstruction-07",
+      "relativePath": "asset-obstruction-07.png",
+      "sha256": "11f61e66a08753c1a2d4b43dfbf7e0c6a4d91968cf463ab2423525f049b1800b",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-obstruction-08",
+      "relativePath": "asset-obstruction-08.png",
+      "sha256": "53d9786e2ae94e3c5a2033be668466314a21b047223685d35e503f43e68e3f08",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-classification-01",
+      "relativePath": "asset-classification-01.png",
+      "sha256": "447b634f33ebefd84ba76534872f45b9f22404c7ea2e64fbfedbcbdae1e98823",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-classification-02",
+      "relativePath": "asset-classification-02.png",
+      "sha256": "39ca8cc6c5a1397f845eb03c09af7143b18276396a9f8dd7e026e0c983e0d712",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-classification-03",
+      "relativePath": "asset-classification-03.png",
+      "sha256": "722d5820be3f3322860bc2278605e95bf196201c6f798353d0f41ec7d1181554",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-classification-04",
+      "relativePath": "asset-classification-04.png",
+      "sha256": "5f7e66c3cc5fe7e70cf3f38fba2fee4e433783961d218fdced341acae0499055",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-classification-05",
+      "relativePath": "asset-classification-05.png",
+      "sha256": "8be688a2e62d37455582a362fe5fc5e3d1cc1243060335c3b41fc1478499586e",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-classification-06",
+      "relativePath": "asset-classification-06.png",
+      "sha256": "ad40615fc6b2a0b80f87dc5b4ec0b32f2fb9803a7c0c4c03b1e0ab7b34e6f38d",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-classification-07",
+      "relativePath": "asset-classification-07.png",
+      "sha256": "5a32c960080912459cd8610c0a00f311a28b4ff7af1d6c2ecb3b31e8d356f60e",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-classification-08",
+      "relativePath": "asset-classification-08.png",
+      "sha256": "60a3869db2eb2620d83f942ba0144d0944d8a6317a6fbadf0fdc5ede4cb2b005",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-classification-09",
+      "relativePath": "asset-classification-09.png",
+      "sha256": "c5558c0f102acb10daba6ec5dec2421fff4ea644d72e1840ff28f7e27756f32c",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-classification-10",
+      "relativePath": "asset-classification-10.png",
+      "sha256": "8e5a445c9dce3747f40ae01c3c68dd07b42caf72330bee7fde38b48b7bb7500d",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-01-main",
+      "relativePath": "asset-comparison-01-main.png",
+      "sha256": "6888ddfc1f1d80fe07ba352c9a2be092b1702e6a7df6820363c9ce7ee8fa3881",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-01-side",
+      "relativePath": "asset-comparison-01-side.png",
+      "sha256": "0e35a4075bf7e6584497bdb569332cabcb40f5c2c35b8093f37c56c9e6685800",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-02-main",
+      "relativePath": "asset-comparison-02-main.png",
+      "sha256": "64a2f0517c6f1c5e743fb4444edfeb629cd48d34ae08cca09b0f08432f88c641",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-02-side",
+      "relativePath": "asset-comparison-02-side.png",
+      "sha256": "fb02b4e54127bddd42636c090d8a6975c265cb2b38c16864e3a0262f84cb155a",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-03-main",
+      "relativePath": "asset-comparison-03-main.png",
+      "sha256": "d0f0dc2914d9936885cb5b0d552dfd8add42c6a6261c1969a054a0894b9ed3d0",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-03-side",
+      "relativePath": "asset-comparison-03-side.png",
+      "sha256": "b2484365d1cec5e662333a98f57e49809e142f4f0e0bda7e5f5e15a4c701a445",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-04-main",
+      "relativePath": "asset-comparison-04-main.png",
+      "sha256": "c20fa354fb16c90cbc4d2801ac54384ec4d603794c50fe28e45396a376b96cb7",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-04-side",
+      "relativePath": "asset-comparison-04-side.png",
+      "sha256": "41ee49d71007bb914f200856f6b25316ee78b3d1d96b353d333f2a07c8c41ea9",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-05-main",
+      "relativePath": "asset-comparison-05-main.png",
+      "sha256": "4cb98bf79a3b3a59fcb01101c66fa0d49d4114b48bc07fa6cf8eea85e308132b",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-05-side",
+      "relativePath": "asset-comparison-05-side.png",
+      "sha256": "182310130337f2d4fb66b38702a2430461573f5ade97fa35e4f73c4832f7e26d",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-06-main",
+      "relativePath": "asset-comparison-06-main.png",
+      "sha256": "a58cf9c4a40acf11d4c83b55502e00c75e5b8117955403402f3ddd8c22c86d6e",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-06-side",
+      "relativePath": "asset-comparison-06-side.png",
+      "sha256": "6ae80b012a18d34bb3b6104ebaf85db4db6345a769e65bc11d0e6b35dfb0afa3",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-07-main",
+      "relativePath": "asset-comparison-07-main.png",
+      "sha256": "b46933c8dab9376f5895a34882ea7799dff3edec29b2de4d8d40e750f457d650",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-07-side",
+      "relativePath": "asset-comparison-07-side.png",
+      "sha256": "e93fee9ac04b6f17ae822dc499550dee66e92d13048e24c4dfbd24cf96bc5f55",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-08-main",
+      "relativePath": "asset-comparison-08-main.png",
+      "sha256": "fff776e8090ee4cfea73aea35eb65eac3123ee79ca840cc7e459fc4134872ade",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-08-side",
+      "relativePath": "asset-comparison-08-side.png",
+      "sha256": "82edb5f6c0258314a656b27ca0e8deb8bbc9c68bc8afe086203342f827725eca",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-09-main",
+      "relativePath": "asset-comparison-09-main.png",
+      "sha256": "0f30cb358229ed6c86d547b4cc7595ed83909967805ee20be63a41df6cfd05c2",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-09-side",
+      "relativePath": "asset-comparison-09-side.png",
+      "sha256": "e7a0015edf0a8f285bbff7c4322b00981a1fb7e5568d85a3b7d779eee4c6e04f",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-10-main",
+      "relativePath": "asset-comparison-10-main.png",
+      "sha256": "ba2d8873ffc5f81b3db161356331bff5c043635eb869afa51feb320c9ca1a494",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-10-side",
+      "relativePath": "asset-comparison-10-side.png",
+      "sha256": "95ca864b56f9f6c2e82f4a199d56389cfd0a923b669c10032b34b5bbf719e047",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-11-main",
+      "relativePath": "asset-comparison-11-main.png",
+      "sha256": "f8c469d64c8161417c0198663fe3f9542cdddb83bcd671089362ec1bc36d2ab3",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-11-side",
+      "relativePath": "asset-comparison-11-side.png",
+      "sha256": "9de54f6aba04d88d56275aeeb170fa19fe4d34e09814cad0c6200c11ab95082f",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-12-main",
+      "relativePath": "asset-comparison-12-main.png",
+      "sha256": "e0d5370be5ebddc84065e1c77be67e0b42ee6e9ff4598adca8fef2cbb59de854",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-comparison-12-side",
+      "relativePath": "asset-comparison-12-side.png",
+      "sha256": "7aa5a40117ecf616b203e047c7f0a598a9c698a91b5fbbf754ed353d4103d4df",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blocked-01",
+      "relativePath": "asset-blocked-01.png",
+      "sha256": "6c61197826b35d925b8b754db9fb7df7821e967262cd1dab04527e6d0b2bdecd",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blocked-02",
+      "relativePath": "asset-blocked-02.png",
+      "sha256": "f35ceb618a3b044b5c5fe99f20893ae33d2be6d3f25973878d85719b3caea6ff",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blocked-03",
+      "relativePath": "asset-blocked-03.png",
+      "sha256": "29008af60b94fceffc2c532a4ee4dc3eedd31c125ec747b88a063a140251f203",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blocked-04",
+      "relativePath": "asset-blocked-04.png",
+      "sha256": "038abb7ce4e27369c92d5bd8e686c03d77284cc653355827bef861fcacd899db",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blocked-05",
+      "relativePath": "asset-blocked-05.png",
+      "sha256": "cbfcedbbf57723370f56d2c658adb24a13c15f4aafe9cae0c6157ddd185f9491",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-blocked-06",
+      "relativePath": "asset-blocked-06.png",
+      "sha256": "ee5f481d3eb0131e94ce3cfe9cdc03c90d6c94b37e8dd0a347c71e04280b7234",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-failure-01",
+      "relativePath": "asset-failure-01.png",
+      "sha256": "4d02ca7fc42d0cbeea7727e5e8f5844936c6b2b209f2b1462c06c48c895e18aa",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-failure-02",
+      "relativePath": "asset-failure-02.gif",
+      "sha256": "9f9cf11f96ad64b08a039b1585c7af45ae42c3076a6f02551d9dc0c6f649d35a",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/gif"
+    },
+    {
+      "assetId": "asset-failure-03",
+      "relativePath": "asset-failure-03.png",
+      "sha256": "79020d07a296bbf49c03cb0ae095af54f59306560c4d9cda7f4b76fa24c5f935",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-failure-04",
+      "relativePath": "asset-failure-04.png",
+      "sha256": "931c23fa27114b22402848ab6219e807ec9e5eaba0ccf35d6eabe92a82ae4a63",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-failure-05",
+      "relativePath": "asset-failure-05.png",
+      "sha256": "e3b5a3c58cb9d772fd5091a08d3b57b4698a64d47fa96278988c116dfeb497c3",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    },
+    {
+      "assetId": "asset-failure-06",
+      "relativePath": "asset-failure-06.png",
+      "sha256": "a0b00797696432f8a5248b3bbbcbdf6ce62dacdc56442225dd7ac4fc97f1eec1",
+      "provenanceCategory": "deterministic_generated_fixture",
+      "consentStatus": "not_applicable_generated",
+      "permittedUse": "internal_reply_assistant_image_evaluation",
+      "mimeType": "image/png"
+    }
+  ]
+}
