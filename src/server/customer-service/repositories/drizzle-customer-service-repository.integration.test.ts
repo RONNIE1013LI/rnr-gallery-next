@@ -292,4 +292,87 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
 
     await expect(repository.selectImageContext(current.messageId)).resolves.toBeNull();
   });
+
+  it("uses createdAt and id to order same-timestamp predecessors and stop at text", async () => {
+    const receivedAt = new Date("2026-08-17T00:00:00.000Z");
+    const createdAt = new Date("2026-08-17T00:00:01.000Z");
+    const conversationId = "00000000-0000-0000-0000-000000000001";
+    const beforeTextId = "00000000-0000-0000-0000-000000000010";
+    const textBoundaryId = "00000000-0000-0000-0000-000000000020";
+    const afterTextId = "00000000-0000-0000-0000-000000000030";
+    const currentId = "00000000-0000-0000-0000-000000000040";
+    const beforeTextAttachmentId = "00000000-0000-0000-0000-000000000101";
+    const afterTextAttachmentId = "00000000-0000-0000-0000-000000000103";
+
+    await database.insert(customerServiceConversations).values({
+      id: conversationId,
+      channel: "facebook",
+      externalKeyHash: "a".repeat(64),
+      createdAt,
+    });
+    await database.insert(customerServiceMessages).values([
+      {
+        id: beforeTextId,
+        conversationId,
+        channel: "facebook",
+        externalMessageKeyHash: "b".repeat(64),
+        body: "[Image attachment]",
+        customerText: null,
+        receivedAt,
+        createdAt,
+      },
+      {
+        id: textBoundaryId,
+        conversationId,
+        channel: "facebook",
+        externalMessageKeyHash: "c".repeat(64),
+        body: "A new request",
+        customerText: "A new request",
+        receivedAt,
+        createdAt,
+      },
+      {
+        id: afterTextId,
+        conversationId,
+        channel: "facebook",
+        externalMessageKeyHash: "d".repeat(64),
+        body: "[Image attachment]",
+        customerText: null,
+        receivedAt,
+        createdAt,
+      },
+      {
+        id: currentId,
+        conversationId,
+        channel: "facebook",
+        externalMessageKeyHash: "e".repeat(64),
+        body: "Can you use it?",
+        customerText: "Can you use it?",
+        receivedAt,
+        createdAt,
+      },
+    ]);
+    await database.insert(customerServiceAttachments).values([
+      {
+        id: beforeTextAttachmentId,
+        messageId: beforeTextId,
+        conversationId,
+        externalAttachmentKeyHash: "f".repeat(64),
+        ordinal: 0,
+      },
+      {
+        id: afterTextAttachmentId,
+        messageId: afterTextId,
+        conversationId,
+        externalAttachmentKeyHash: "g".repeat(64),
+        ordinal: 0,
+      },
+    ]);
+
+    await expect(repository.selectImageContext(currentId)).resolves.toEqual({
+      messageId: currentId,
+      attachmentIds: [afterTextAttachmentId],
+      analysisSummary: null,
+    });
+  });
 });

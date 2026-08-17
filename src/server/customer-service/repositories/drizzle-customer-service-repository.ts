@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, gte, lt, lte, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, lt, lte, max, or, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import {
   customerServiceAiAttempts,
@@ -159,6 +159,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         id: customerServiceMessages.id,
         conversationId: customerServiceMessages.conversationId,
         receivedAt: customerServiceMessages.receivedAt,
+        createdAt: customerServiceMessages.createdAt,
       }).from(customerServiceMessages).where(eq(customerServiceMessages.id, messageId)).limit(1);
       if (!current) return null;
 
@@ -182,9 +183,25 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         customerText: customerServiceMessages.customerText,
       }).from(customerServiceMessages).where(and(
         eq(customerServiceMessages.conversationId, current.conversationId),
-        lt(customerServiceMessages.receivedAt, current.receivedAt),
         gte(customerServiceMessages.receivedAt, new Date(current.receivedAt.getTime() - 5 * 60_000)),
-      )).orderBy(desc(customerServiceMessages.receivedAt), desc(customerServiceMessages.id));
+        or(
+          lt(customerServiceMessages.receivedAt, current.receivedAt),
+          and(
+            eq(customerServiceMessages.receivedAt, current.receivedAt),
+            or(
+              lt(customerServiceMessages.createdAt, current.createdAt),
+              and(
+                eq(customerServiceMessages.createdAt, current.createdAt),
+                lt(customerServiceMessages.id, current.id),
+              ),
+            ),
+          ),
+        ),
+      )).orderBy(
+        desc(customerServiceMessages.receivedAt),
+        desc(customerServiceMessages.createdAt),
+        desc(customerServiceMessages.id),
+      );
       const attachmentIds: string[] = [];
       for (const message of preceding) {
         if (message.customerText !== null) break;
