@@ -406,8 +406,11 @@ function addMissingBaselineProducts(value: unknown): unknown {
       (key): key is string => typeof key === "string",
     ),
   );
-  for (const baseline of defaultProductRegistry.products) {
-    if (!productKeys.has(baseline.key)) products.push(structuredClone(baseline));
+  const bundle = defaultProductRegistry.products.find(
+    (product) => product.key === "banner-bundle",
+  );
+  if (bundle && !productKeys.has(bundle.key)) {
+    products.push(structuredClone(bundle));
   }
 
   const markets = isRecord(normalized.markets) ? normalized.markets : undefined;
@@ -420,13 +423,8 @@ function addMissingBaselineProducts(value: unknown): unknown {
         (key): key is string => typeof key === "string",
       ),
     );
-    for (const baseline of defaultProductRegistry.markets[market].products) {
-      if (marketProductKeys.has(baseline.productKey)) continue;
-      marketProducts.push(
-        baseline.productKey === "banner-bundle"
-          ? missingBundleMarketRow(market, products, marketProducts)
-          : structuredClone(baseline),
-      );
+    if (!marketProductKeys.has("banner-bundle")) {
+      marketProducts.push(missingBundleMarketRow(market, products, marketProducts));
     }
   }
 

@@ -42,6 +42,15 @@ describe("authoritative product registry", () => {
       "rollup-wall-200x100",
       "rollup-wall-300x150",
     ]);
+    expect(parsed.products.map((product) => product.key)).toEqual(
+      defaultProductRegistry.products.map((product) => product.key),
+    );
+    expect(parsed.markets.NZ.products.map((product) => product.productKey)).toEqual(
+      defaultProductRegistry.markets.NZ.products.map((product) => product.productKey),
+    );
+    expect(parsed.markets.AU.products.map((product) => product.productKey)).toEqual(
+      defaultProductRegistry.markets.AU.products.map((product) => product.productKey),
+    );
     expect(parsed.markets.AU.tax).toEqual({ registered: true, rateBasisPoints: 1_234 });
     expect(
       parsed.markets.AU.products.find(
@@ -60,6 +69,25 @@ describe("authoritative product registry", () => {
         { key: "wall-banner-background-removal", amountInclTaxCents: 4_567 },
       ],
     });
+  });
+
+  it("does not restore missing non-Bundle baseline products or market rows", () => {
+    const missingProduct = structuredClone(defaultProductRegistry);
+    missingProduct.products = missingProduct.products.filter(
+      (product) => product.key !== "grave-cover" && product.key !== "banner-bundle",
+    );
+    expect(() => parseProductRegistry(missingProduct)).toThrow(
+      "Product structure cannot be changed",
+    );
+
+    const missingMarketRow = structuredClone(defaultProductRegistry);
+    missingMarketRow.markets.NZ.products = missingMarketRow.markets.NZ.products.filter(
+      (product) =>
+        product.productKey !== "grave-cover" && product.productKey !== "banner-bundle",
+    );
+    expect(() => parseProductRegistry(missingMarketRow)).toThrow(
+      "Market product price structure cannot be changed",
+    );
   });
 
   it("ships a complete NZ price book and a disabled empty AU price book", () => {
