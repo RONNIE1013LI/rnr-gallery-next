@@ -21,6 +21,21 @@ export function cartToCheckoutInput(cart: Cart) {
       ...(item.extraBackgroundRemovalUploadIds
         ? { extraBackgroundRemovalUploadIds: [...item.extraBackgroundRemovalUploadIds] }
         : {}),
+      ...(item.bundleComponents
+        ? {
+            bundleComponents: item.bundleComponents.map((component) => ({
+              ...component,
+              uploadReferences: [...component.uploadReferences],
+              ...(component.extraBackgroundRemovalUploadIds
+                ? {
+                    extraBackgroundRemovalUploadIds: [
+                      ...component.extraBackgroundRemovalUploadIds,
+                    ],
+                  }
+                : {}),
+            })),
+          }
+        : {}),
     })),
   };
 }
