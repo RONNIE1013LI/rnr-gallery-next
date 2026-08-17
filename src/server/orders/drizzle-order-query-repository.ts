@@ -4,7 +4,11 @@ import { checkoutSessions, orderAddresses, orderItems, orders, paymentAttempts }
 import { normalizeAddress } from "@/domain/address/schema";
 import { validateBannerBundleComponents } from "@/domain/bundles/banner-bundle";
 import { toPublicPaymentDTO } from "@/server/payments/public-dto";
-import type { OrderQueryRepository, PublicOrder } from "./order-query-service";
+import type {
+  OrderQueryRepository,
+  PublicOrder,
+  PublicOrderSummary,
+} from "./order-query-service";
 
 type Database = ReturnType<typeof getDatabase>;
 type ReadExecutor = Pick<Database, "select">;
@@ -245,6 +249,28 @@ export function buildPublicOrders(
   });
 }
 
+export function buildPublicOrderSummaries(
+  rows: OrderRow[],
+): PublicOrderSummary[] {
+  return rows.map((row) => {
+    try {
+      validateOrderRow(row);
+      return Object.freeze({
+        orderNumber: row.orderNumber,
+        createdAt: row.createdAt.toISOString(),
+        paymentStatus: row.paymentStatus,
+        fulfilmentStatus: row.fulfilmentStatus,
+        currency: row.currency,
+        totals: Object.freeze({
+          totalInclGstCents: row.totalInclGstCents,
+        }),
+      });
+    } catch {
+      throw new OrderSnapshotIntegrityError();
+    }
+  });
+}
+
 export function createDrizzleOrderQueryRepository(database: Database): OrderQueryRepository {
   async function hydrate(executor: ReadExecutor, rows: OrderRow[]): Promise<PublicOrder[]> {
     if (!rows.length) return [];
@@ -290,7 +316,7 @@ export function createDrizzleOrderQueryRepository(database: Database): OrderQuer
     async listByCustomer(customerId) {
       return snapshot(async (transaction) => {
         const rows = await transaction.select().from(orders).where(eq(orders.customerId, customerId)).orderBy(desc(orders.createdAt), desc(orders.orderNumber));
-        return hydrate(transaction, rows);
+        return buildPublicOrderSummaries(rows);
       });
     },
     async listPageByCustomer(customerId: string, requestedPage: number, pageSize = 20) {
@@ -312,7 +338,7 @@ export function createDrizzleOrderQueryRepository(database: Database): OrderQuer
           .limit(pageSize)
           .offset((page - 1) * pageSize);
         return Object.freeze({
-          items: Object.freeze(await hydrate(transaction, rows)),
+          items: Object.freeze(buildPublicOrderSummaries(rows)),
           total,
           page,
           pageSize,

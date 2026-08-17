@@ -19,8 +19,16 @@ export type PublicOrderBundleComponent = Readonly<{
 }>;
 export type PublicOrderItem = Readonly<{ productTitle: string; galleryDesign?: Readonly<{ id: string; title: string; contentHash: string; productSlug: string; imageUrl: string }>; sizeLabel: string; orientation?: Orientation; peoplePets: number; photoSubmissionMethod: PhotoSubmissionMethod; designText: string; notes: string; neededDate: string; urgentServiceConfirmed: boolean; urgentWorkingDays: number; quantity: number; priceLines: readonly PublicOrderPriceLine[]; bundleComponents?: readonly PublicOrderBundleComponent[]; unitSubtotalExGstCents: number; unitGstCents: number; unitTotalInclGstCents: number; lineSubtotalExGstCents: number; lineGstCents: number; lineTotalInclGstCents: number }>;
 export type PublicOrder = Readonly<{ orderNumber: string; createdAt: string; paymentStatus: OrderPaymentStatus; fulfilmentStatus: OrderFulfilmentStatus; currency: MarketCurrency; deliveryMethod: DeliveryPreference; shipping: Readonly<{ provider: ProviderShippingQuote["provider"] | null; serviceName: string; isTest: boolean; amountExGstCents: number; gstCents: number; amountInclGstCents: number }>; totals: Readonly<{ productSubtotalExGstCents: number; productGstCents: number; productTotalInclGstCents: number; totalExGstCents: number; totalGstCents: number; totalInclGstCents: number }>; items: readonly PublicOrderItem[]; addresses: Readonly<{ billing: NormalizedAddress; delivery: NormalizedAddress }>; payment: PublicPaymentDTO | null }>;
+export type PublicOrderSummary = Readonly<{
+  orderNumber: string;
+  createdAt: string;
+  paymentStatus: OrderPaymentStatus;
+  fulfilmentStatus: OrderFulfilmentStatus;
+  currency: MarketCurrency;
+  totals: Readonly<{ totalInclGstCents: number }>;
+}>;
 export type PublicOrderPage = Readonly<{
-  items: readonly PublicOrder[];
+  items: readonly PublicOrderSummary[];
   total: number;
   page: number;
   pageSize: number;
@@ -31,7 +39,7 @@ export interface OrderQueryRepository {
   findByCheckoutToken(orderNumber: string, tokenDigest: string): Promise<PublicOrder | null>;
   findByCustomer(orderNumber: string, customerId: string): Promise<PublicOrder | null>;
   findByEmailAccess(orderNumber: string): Promise<PublicOrder | null>;
-  listByCustomer(customerId: string): Promise<readonly PublicOrder[]>;
+  listByCustomer(customerId: string): Promise<readonly PublicOrderSummary[]>;
   listPageByCustomer(customerId: string, page: number, pageSize?: number): Promise<PublicOrderPage>;
 }
 

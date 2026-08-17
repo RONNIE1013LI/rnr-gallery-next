@@ -98,6 +98,32 @@ const itemRow: ItemRow = {
   lineTotalInclGstCents: 7475,
   createdAt,
 };
+const bundleItemRow: ItemRow = {
+  ...itemRow,
+  productKey: "banner-bundle",
+  productSlug: "banner-bundle",
+  productTitle: "Banner Bundle",
+  sizeKey: "rollup-wall-200x100",
+  sizeLabel: "Roll-Up + Wall Banner",
+  orientation: null,
+  bundleComponents: [
+    {
+      componentKey: "roll-up",
+      photoSubmissionMethod: "upload",
+      designText: "Roll-up private wording",
+      notes: "Keep the private logo clear",
+      uploadReferences: ["upload-private-roll-up"],
+      mainPhotoUploadId: "upload-private-roll-up",
+    },
+    {
+      componentKey: "wall-banner",
+      photoSubmissionMethod: "later",
+      designText: "Wall private wording",
+      notes: "Private wide layout",
+      uploadReferences: [],
+    },
+  ],
+};
 const addressBase = {
   orderId: orderRow.id,
   country: "NZ",
@@ -126,7 +152,7 @@ const attemptRow: PaymentReadRow = {
 };
 
 describe("Drizzle order query read model", () => {
-  it.each(["guest", "customer", "email", "list"] as const)(
+  it.each(["guest", "customer", "email"] as const)(
     "reads the authorized %s order and its payment snapshot in one read-only repeatable-read transaction",
     async (kind) => {
       const results = kind === "guest"
@@ -174,9 +200,7 @@ describe("Drizzle order query read model", () => {
         ? await repository.findByCheckoutToken(orderRow.orderNumber, "token-digest")
         : kind === "customer"
           ? await repository.findByCustomer(orderRow.orderNumber, "user-1")
-          : kind === "email"
-            ? await repository.findByEmailAccess(orderRow.orderNumber)
-          : await repository.listByCustomer("user-1");
+          : await repository.findByEmailAccess(orderRow.orderNumber);
 
       expect(result).toBeTruthy();
       expect(database.transaction).toHaveBeenCalledTimes(1);
@@ -193,6 +217,59 @@ describe("Drizzle order query read model", () => {
         id: paymentAttempts.id,
       });
       expect(transactionSelect.mock.calls[3]?.[0]).not.toHaveProperty("updatedAt");
+    },
+  );
+
+  it.each(["list", "page"] as const)(
+    "returns a minimized %s DTO without loading private order details",
+    async (kind) => {
+      const results: unknown[][] = kind === "page"
+        ? [[{ value: 1 }], [orderRow], [bundleItemRow], addresses, [attemptRow]]
+        : [[orderRow], [bundleItemRow], addresses, [attemptRow]];
+      const transactionSelect = vi.fn(() => {
+        const value = results.shift() ?? [];
+        const query = {
+          from: () => query,
+          where: () => query,
+          orderBy: () => query,
+          limit: () => query,
+          offset: () => query,
+          then: (resolve: (rows: unknown[]) => unknown) => Promise.resolve(value).then(resolve),
+        };
+        return query;
+      });
+      const transaction = { select: transactionSelect };
+      const database = {
+        transaction: vi.fn(async (
+          callback: (tx: typeof transaction) => Promise<unknown>,
+        ) => callback(transaction)),
+      };
+      const repository = createDrizzleOrderQueryRepository(
+        database as unknown as Parameters<typeof createDrizzleOrderQueryRepository>[0],
+      );
+
+      const list = kind === "page"
+        ? (await repository.listPageByCustomer("user-1", 1)).items
+        : await repository.listByCustomer("user-1");
+      const summary = list[0];
+
+      expect(Object.keys(summary)).toEqual([
+        "orderNumber",
+        "createdAt",
+        "paymentStatus",
+        "fulfilmentStatus",
+        "currency",
+        "totals",
+      ]);
+      expect(Object.keys(summary.totals)).toEqual(["totalInclGstCents"]);
+      expect(JSON.stringify(list)).not.toMatch(
+        /private|bundleComponents|uploadReferences|mainPhotoUploadId|filename|imageUrl|addresses/,
+      );
+      expect(summary).not.toHaveProperty("items");
+      expect(summary).not.toHaveProperty("payment");
+      expect(transactionSelect).toHaveBeenCalledTimes(kind === "page" ? 2 : 1);
+      expect(Object.isFrozen(summary)).toBe(true);
+      expect(Object.isFrozen(summary.totals)).toBe(true);
     },
   );
 
@@ -252,50 +329,23 @@ describe("Drizzle order query read model", () => {
     );
   });
 
-  it("maps Bundle groups to a frozen public snapshot without upload references", () => {
-    const bundleItem: ItemRow = {
-      ...itemRow,
-      productKey: "banner-bundle",
-      productSlug: "banner-bundle",
-      productTitle: "Banner Bundle",
-      sizeKey: "rollup-wall-200x100",
-      sizeLabel: "Roll-Up + Wall Banner",
-      orientation: null,
-      bundleComponents: [
-        {
-          componentKey: "roll-up",
-          photoSubmissionMethod: "upload",
-          designText: "Roll-up wording",
-          notes: "Keep the logo clear",
-          uploadReferences: ["upload-private-roll-up"],
-          mainPhotoUploadId: "upload-private-roll-up",
-        },
-        {
-          componentKey: "wall-banner",
-          photoSubmissionMethod: "later",
-          designText: "Wall wording",
-          notes: "Wide layout",
-          uploadReferences: [],
-        },
-      ],
-    };
-
-    const [result] = buildPublicOrders([orderRow], [bundleItem], addresses, []);
+  it("keeps wording and notes in an authorized Bundle detail without upload references", () => {
+    const [result] = buildPublicOrders([orderRow], [bundleItemRow], addresses, []);
 
     expect(result.items[0].bundleComponents).toEqual([
       {
         componentKey: "roll-up",
         photoSubmissionMethod: "upload",
-        designText: "Roll-up wording",
-        notes: "Keep the logo clear",
+        designText: "Roll-up private wording",
+        notes: "Keep the private logo clear",
         photoCount: 1,
         backgroundRemovalCount: 0,
       },
       {
         componentKey: "wall-banner",
         photoSubmissionMethod: "later",
-        designText: "Wall wording",
-        notes: "Wide layout",
+        designText: "Wall private wording",
+        notes: "Private wide layout",
         photoCount: 0,
         backgroundRemovalCount: 0,
       },
