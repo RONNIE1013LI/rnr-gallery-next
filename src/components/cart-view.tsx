@@ -39,7 +39,13 @@ function removeItemFromCart(itemId: string) {
   const item = current.items.find((candidate) => candidate.id === itemId);
   repository.save(removeCartItem(current, itemId));
   notifyCartChanged();
-  if (item) emitAnalyticsEvent(buildCartItemEvent("remove_from_cart", item));
+  if (item) {
+    try {
+      emitAnalyticsEvent(buildCartItemEvent("remove_from_cart", item));
+    } catch {
+      // Analytics must never change a successfully persisted cart action.
+    }
+  }
 }
 
 function labelFor(value: string): string {

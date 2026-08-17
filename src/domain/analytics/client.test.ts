@@ -60,6 +60,42 @@ describe("emitAnalyticsEvent", () => {
     expect(sendGAEvent).toHaveBeenCalledTimes(1);
   });
 
+  it("fails open when debug session storage throws", () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+    window.history.replaceState({}, "", "/?ga_debug=1");
+    const setItem = vi.spyOn(Storage.prototype, "setItem")
+      .mockImplementationOnce(() => {
+        throw new Error("storage unavailable");
+      });
+    let result: boolean | undefined;
+
+    try {
+      expect(() => {
+        result = emitAnalyticsEvent(event);
+      }).not.toThrow();
+    } finally {
+      setItem.mockRestore();
+    }
+
+    expect(result).toBe(false);
+    expect(sendGAEvent).not.toHaveBeenCalled();
+  });
+
+  it("fails open when the official analytics helper throws", () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+    vi.mocked(sendGAEvent).mockImplementationOnce(() => {
+      throw new Error("transport unavailable");
+    });
+    let result: boolean | undefined;
+
+    expect(() => {
+      result = emitAnalyticsEvent(event);
+    }).not.toThrow();
+
+    expect(result).toBe(false);
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+  });
+
   it("rebuilds the payload from the runtime allowlist before transport", () => {
     document.documentElement.dataset.ga4Enabled = "true";
     const eventWithPrivateFields = {

@@ -158,6 +158,34 @@ describe("BannerBundleConfigurator", () => {
     expect(payload).not.toContain("roll-one.jpg-reference");
   });
 
+  it("keeps the persisted Bundle and success UI when analytics throws", () => {
+    analytics.emitAnalyticsEvent.mockImplementationOnce(() => {
+      throw new Error("analytics unavailable");
+    });
+    render(
+      <BannerBundleConfigurator
+        product={product}
+        schema={schema}
+        registry={defaultProductRegistry}
+        pricing={defaultProductRegistry.pricing}
+        orderDate="2026-08-17"
+        createId={() => "fail-open-bundle"}
+      />,
+    );
+
+    fireEvent.click(within(screen.getByRole("region", {
+      name: "Roll-Up Banner customisation",
+    })).getByText("Send Photos After Ordering"));
+    fireEvent.click(within(screen.getByRole("region", {
+      name: "Wall Banner customisation",
+    })).getByText("Send Photos After Ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+
+    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items)
+      .toEqual([expect.objectContaining({ id: "fail-open-bundle" })]);
+    expect(screen.getByRole("link", { name: "View cart" })).toBeVisible();
+  });
+
   it("omits inactive references without deleting files retained in that group", async () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
       ok: true,

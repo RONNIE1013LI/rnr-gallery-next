@@ -272,8 +272,12 @@ export function ProductConfigurator({
     );
     repository.save(cart);
     notifyCartChanged();
-    emitAnalyticsEvent(buildCartItemEvent("add_to_cart", item));
     setAdded(true);
+    try {
+      emitAnalyticsEvent(buildCartItemEvent("add_to_cart", item));
+    } catch {
+      // Analytics must never change a successfully persisted cart action.
+    }
   }
 
   return (

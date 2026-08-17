@@ -502,6 +502,27 @@ describe("ProductConfigurator", () => {
     });
   });
 
+  it("keeps the persisted cart and success UI when analytics throws", () => {
+    analytics.emitAnalyticsEvent.mockImplementationOnce(() => {
+      throw new Error("analytics unavailable");
+    });
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        orderDate="2026-08-03"
+        createId={() => "fail-open-item"}
+      />,
+    );
+
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+
+    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items)
+      .toEqual([expect.objectContaining({ id: "fail-open-item" })]);
+    expect(screen.getByRole("link", { name: "View cart" })).toBeVisible();
+  });
+
   it("keeps pasted artwork text within the server checkout boundary", () => {
     render(
       <ProductConfigurator

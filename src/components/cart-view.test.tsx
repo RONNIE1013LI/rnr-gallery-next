@@ -192,6 +192,24 @@ describe("CartView", () => {
     });
   });
 
+  it("keeps a successful removal when analytics throws", async () => {
+    seedCart();
+    render(<CartView />);
+    await waitFor(() => expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({ event: "view_cart" }),
+    ));
+    analytics.emitAnalyticsEvent.mockClear();
+    analytics.emitAnalyticsEvent.mockImplementationOnce(() => {
+      throw new Error("analytics unavailable");
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove Photo Print Canvas" }));
+
+    expect(screen.getByRole("heading", { name: "Your cart is empty" })).toBeVisible();
+    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items)
+      .toEqual([]);
+  });
+
   it("re-reads storage before editing so another tab's new item is preserved", async () => {
     seedCart();
     render(<CartView />);

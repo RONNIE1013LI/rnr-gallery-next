@@ -95,20 +95,24 @@ function isDebugSession(): boolean {
 }
 
 export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
-  if (
-    !event
-    || typeof document === "undefined"
-    || document.documentElement.dataset.ga4Enabled !== "true"
-    || !hasReadyDataLayer()
-  ) {
+  try {
+    if (
+      !event
+      || typeof document === "undefined"
+      || document.documentElement.dataset.ga4Enabled !== "true"
+      || !hasReadyDataLayer()
+    ) {
+      return false;
+    }
+
+    const payload = allowlistedPayload(event);
+    if (!payload) return false;
+    sendGAEvent("event", event.event, {
+      ...payload,
+      ...(isDebugSession() ? { debug_mode: true } : {}),
+    });
+    return true;
+  } catch {
     return false;
   }
-
-  const payload = allowlistedPayload(event);
-  if (!payload) return false;
-  sendGAEvent("event", event.event, {
-    ...payload,
-    ...(isDebugSession() ? { debug_mode: true } : {}),
-  });
-  return true;
 }
