@@ -105,6 +105,10 @@ type PolicyResult = Readonly<{ status: "allowed" }> | Readonly<{ status: "blocke
 type RunnerResult = Readonly<{ claimed: number; completed: number; humanReviewRequired: number }>;
 const emptyResult: RunnerResult = { claimed: 0, completed: 0, humanReviewRequired: 0 };
 
+function requiresManualImageReview(stage: ImageJobStage): boolean {
+  return stage === "download" || stage === "vision" || stage === "draft";
+}
+
 function completion(input: Readonly<{
   attemptId: string;
   provider: ImageAnalysisProvider;
@@ -180,21 +184,19 @@ export function createImageJobRunner(input: Readonly<{
 
       if (job.stage === "policy") {
         const policy = await input.policyCheck(job.messageId);
-        if (job.hasUnsupportedAttachments || policy.status === "blocked") {
-          const failureCode = job.hasUnsupportedAttachments
-            ? "unsupported_attachment"
-            : policy.status === "blocked" ? policy.code : "policy_blocked";
-          await input.repository.finishImageJob({
-            jobId: job.id,
-            leaseToken: job.leaseToken,
-            status: "human_review_required",
-            failureCode,
-          });
-          return { claimed: 1, completed: 0, humanReviewRequired: 1 };
-        }
-        await input.repository.completeImageJobStage({ jobId: job.id, leaseToken: job.leaseToken, nextStage: "download" });
-        return { claimed: 1, completed: 0, humanReviewRequired: 0 };
+        const failureCode = job.hasUnsupportedAttachments
+          ? "unsupported_attachment"
+          : policy.status === "blocked" ? policy.code : "image_manual_review_required";
+        await input.repository.finishImageJob({
+          jobId: job.id,
+          leaseToken: job.leaseToken,
+          status: "human_review_required",
+          failureCode,
+        });
+        return { claimed: 1, completed: 0, humanReviewRequired: 1 };
       }
+
+      if (requiresManualImageReview(job.stage)) return failAfterCleanup(job, "image_manual_review_required");
 
       if (job.stage === "download") {
         if (!job.sourceCiphertext || !job.sourceExpiresAt) return failAfterCleanup(job, "image_source_unavailable");
@@ -380,22 +382,18 @@ export function createImageJobRunner(input: Readonly<{
             jobId: job.id,
             leaseToken: job.leaseToken,
             nextStage: "cleanup",
-            terminalAfterCleanup: job.terminalAfterCleanup,
-            failureCode: job.failureCode,
-          });
-          return { claimed: 1, completed: 0, humanReviewRequired: job.terminalAfterCleanup ? 1 : 0 };
-        }
-        if (job.terminalAfterCleanup) {
-          await input.repository.finishImageJob({
-            jobId: job.id,
-            leaseToken: job.leaseToken,
-            status: "human_review_required",
-            failureCode: job.failureCode ?? "image_review_required",
+            terminalAfterCleanup: true,
+            failureCode: job.failureCode ?? "image_manual_review_required",
           });
           return { claimed: 1, completed: 0, humanReviewRequired: 1 };
         }
-        await input.repository.completeImageJobStage({ jobId: job.id, leaseToken: job.leaseToken, nextStage: "draft" });
-        return { claimed: 1, completed: 0, humanReviewRequired: 0 };
+        await input.repository.finishImageJob({
+          jobId: job.id,
+          leaseToken: job.leaseToken,
+          status: "human_review_required",
+          failureCode: job.failureCode ?? "image_manual_review_required",
+        });
+        return { claimed: 1, completed: 0, humanReviewRequired: 1 };
       }
 
       const visualAssessment = await input.repository.loadImageJobAssessment(job.id);

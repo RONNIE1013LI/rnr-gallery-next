@@ -157,12 +157,12 @@ describe("Meta webhook handler", () => {
     expect(current.kickImageJob).not.toHaveBeenCalled();
   });
 
-  it("commits an encrypted durable job before scheduling a best-effort kick", async () => {
+  it("persists image metadata for manual review without retaining the source or scheduling providers", async () => {
     const current = setup();
     expect((await current.handlers.POST(signedRequest(messagePayload({
       attachments: [{ type: "image", payload: { url: "https://scontent.test/image.jpg" } }],
     })))).status).toBe(200);
-    expect(current.events).toEqual(["persist:commit", "after:schedule"]);
+    expect(current.events).toEqual(["persist:commit"]);
     expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
       externalConversationKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       externalMessageKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
@@ -176,16 +176,15 @@ describe("Meta webhook handler", () => {
       }],
       imageJob: expect.objectContaining({
         id: "00000000-0000-4000-8000-000000000101",
-        status: "pending",
-        sourceCiphertext: expect.stringMatching(/^v1\./),
-        sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
-        failureCode: null,
+        status: "human_review_required",
+        sourceCiphertext: null,
+        sourceExpiresAt: null,
+        failureCode: "image_manual_review_required",
       }),
     }));
-    expect(current.ingest.mock.invocationCallOrder[0]).toBeLessThan(current.scheduleAfter.mock.invocationCallOrder[0]);
     expect(JSON.stringify(current.ingest.mock.calls)).not.toContain("https://scontent.test/image.jpg");
-    await current.scheduledTasks[0]();
-    expect(current.kickImageJob).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000101");
+    expect(current.scheduleAfter).not.toHaveBeenCalled();
+    expect(current.kickImageJob).not.toHaveBeenCalled();
     expect(current.generateDraft).not.toHaveBeenCalled();
   });
 
@@ -272,7 +271,7 @@ describe("Meta webhook handler", () => {
     expect(disabled.ingest).not.toHaveBeenCalled();
   });
 
-  it("keeps the committed webhook response successful when deferred generation fails", async () => {
+  it("keeps an image webhook successful without creating deferred work", async () => {
     const current = setup();
     current.kickImageJob.mockRejectedValueOnce(new Error("private deferred failure"));
 
@@ -281,7 +280,8 @@ describe("Meta webhook handler", () => {
     })));
 
     expect(response.status).toBe(200);
-    await expect(current.scheduledTasks[0]()).resolves.toBeUndefined();
-    expect(response.status).toBe(200);
+    expect(current.scheduledTasks).toHaveLength(0);
+    expect(current.kickImageJob).not.toHaveBeenCalled();
+    expect(current.generateDraft).not.toHaveBeenCalled();
   });
 });

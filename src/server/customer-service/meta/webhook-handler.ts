@@ -1,7 +1,5 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { createFacebookChannelAdapter } from "../adapters/facebook";
-import { createAttachmentSourceProtector } from "../attachments/attachment-source-protector";
-import { IMAGE_LIMITS } from "../attachments/limits";
 import type { HashedIncomingMessage } from "../repositories/customer-service-repository";
 import { verifyMetaSignature } from "./signature";
 
@@ -44,7 +42,6 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
   createJobId?: () => string;
   now?: () => Date;
 }>) {
-  const now = dependencies.now ?? (() => new Date());
   const createJobId = dependencies.createJobId ?? randomUUID;
   return {
     async GET(request: Request) {
@@ -96,35 +93,14 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
             ? "image_only_without_text"
             : unsupported
               ? "unsupported_attachment"
-              : !dependencies.config.imageAnalysisEnabled
-                ? "image_analysis_unavailable"
-                : null;
-          if (failureCode) {
-            imageJob = {
-              id: jobId,
-              status: "human_review_required",
-              sourceCiphertext: null,
-              sourceExpiresAt: null,
-              failureCode,
-            };
-          } else {
-            const sourceExpiresAt = new Date(now().getTime() + IMAGE_LIMITS.sourceRefRetentionMs);
-            const protector = createAttachmentSourceProtector(dependencies.config.attachmentSourceEncryptionKey, { now });
-            const supported = message.attachments.flatMap((attachment, index) => (
-              attachment.kind === "image" && attachment.sourceRef.kind === "facebook_remote" ? [{
-                ordinal: attachment.ordinal,
-                externalAttachmentKeyHash: attachments[index].externalAttachmentKeyHash,
-                sourceRef: attachment.sourceRef,
-              }] : []
-            ));
-            imageJob = {
-              id: jobId,
-              status: "pending",
-              sourceCiphertext: protector.seal({ jobId, sources: supported, expiresAt: sourceExpiresAt }),
-              sourceExpiresAt,
-              failureCode: null,
-            };
-          }
+              : "image_manual_review_required";
+          imageJob = {
+            id: jobId,
+            status: "human_review_required",
+            sourceCiphertext: null,
+            sourceExpiresAt: null,
+            failureCode,
+          };
         }
         const result = await dependencies.ingest({
           channel: message.channel,

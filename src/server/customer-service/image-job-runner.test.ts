@@ -136,6 +136,22 @@ function setup(claimed: ClaimedImageJob) {
 }
 
 describe("durable image job runner", () => {
+  it.each(["policy", "download", "vision", "draft"] as const)(
+    "routes a recovered %s image job to human review before source or provider access",
+    async (stage) => {
+      const current = setup(job(stage));
+
+      await expect(current.runner.runOnce({ jobId: "00000000-0000-4000-8000-000000000101" }))
+        .resolves.toMatchObject({ claimed: 1, completed: 0, humanReviewRequired: 1 });
+
+      expect(current.sourceProtector.open).not.toHaveBeenCalled();
+      expect(current.sourceReader.read).not.toHaveBeenCalled();
+      expect(current.store.read).not.toHaveBeenCalled();
+      expect(current.imageProvider.analyze).not.toHaveBeenCalled();
+      expect(current.generateDraft).not.toHaveBeenCalled();
+    },
+  );
+
   it("blocks policy and unsupported jobs before decrypting or calling either provider", async () => {
     const current = setup(job("policy", { hasUnsupportedAttachments: true }));
 
@@ -152,185 +168,18 @@ describe("durable image job runner", () => {
     }));
   });
 
-  it("persists an attempt-owned key before upload and advances only the download stage", async () => {
-    const current = setup(job("download"));
-
-    await current.runner.runOnce({ jobId: "00000000-0000-4000-8000-000000000101" });
-
-    expect(current.events).toEqual([
-      "storage:prepared",
-      "storage:uploaded",
-      "storage:recorded",
-      "stage:vision",
-    ]);
-    expect(current.repository.prepareImageAttachmentStorage).toHaveBeenCalledWith(expect.objectContaining({
-      privateStorageKey: storageKey,
-      deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
-    }));
-    expect(current.store.save).toHaveBeenCalledWith(storageKey, expect.anything(), expect.any(AbortSignal));
-    expect(current.imageProvider.analyze).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
-  });
-
-  it("downloads at most one attachment per invocation and persists the remaining download stage", async () => {
-    const current = setup(job("download"));
-    const secondSource = {
-      ordinal: 1,
-      externalAttachmentKeyHash: "b".repeat(64),
-      sourceRef: { kind: "facebook_remote" as const, url: "https://scontent.test/private-2.png" },
-    };
-    current.sourceProtector.open.mockReturnValue([source, secondSource]);
-    current.repository.ensureImageAnalysisAttemptForJob.mockResolvedValue({
-      attemptId: "image-attempt-1",
-      inputs: [
-        {
-          attachmentId: "attachment-1",
-          ordinal: 0,
-          externalAttachmentKeyHash: source.externalAttachmentKeyHash,
-          cleanupStatus: "pending" as const,
-          privateStorageKey: null,
-          verifiedMimeType: null,
-          byteSize: null,
-          sha256: null,
-        },
-        {
-          attachmentId: "attachment-2",
-          ordinal: 1,
-          externalAttachmentKeyHash: secondSource.externalAttachmentKeyHash,
-          cleanupStatus: "pending" as const,
-          privateStorageKey: null,
-          verifiedMimeType: null,
-          byteSize: null,
-          sha256: null,
-        },
-      ],
-    });
-
-    await current.runner.runOnce({ jobId: "00000000-0000-4000-8000-000000000101" });
-
-    expect(current.sourceReader.read).toHaveBeenCalledOnce();
-    expect(current.store.save).toHaveBeenCalledOnce();
-    expect(current.repository.completeImageJobStage).toHaveBeenCalledWith(expect.objectContaining({
-      nextStage: "download",
-    }));
-  });
-
-  it("enforces the aggregate byte limit across persisted download stages", async () => {
-    const current = setup(job("download"));
-    const secondSource = {
-      ordinal: 1,
-      externalAttachmentKeyHash: "b".repeat(64),
-      sourceRef: { kind: "facebook_remote" as const, url: "https://scontent.test/private-2.png" },
-    };
-    current.sourceProtector.open.mockReturnValue([source, secondSource]);
-    current.repository.ensureImageAnalysisAttemptForJob.mockResolvedValue({
-      attemptId: "image-attempt-1",
-      inputs: [
-        {
-          attachmentId: "attachment-1",
-          ordinal: 0,
-          externalAttachmentKeyHash: source.externalAttachmentKeyHash,
-          cleanupStatus: "stored" as const,
-          privateStorageKey: storageKey,
-          verifiedMimeType: "image/png" as const,
-          byteSize: 9 * 1024 * 1024,
-          sha256,
-        },
-        {
-          attachmentId: "attachment-2",
-          ordinal: 1,
-          externalAttachmentKeyHash: secondSource.externalAttachmentKeyHash,
-          cleanupStatus: "pending" as const,
-          privateStorageKey: null,
-          verifiedMimeType: null,
-          byteSize: null,
-          sha256: null,
-        },
-      ],
-    });
-    const oversizedBatchMember = Buffer.alloc(4 * 1024 * 1024);
-    current.sourceReader.read.mockResolvedValue({
-      bytes: oversizedBatchMember,
-      mimeType: "image/png",
-      width: 100,
-      height: 100,
-      sha256: createHash("sha256").update(oversizedBatchMember).digest("hex"),
-    });
-
-    await current.runner.runOnce({ jobId: "00000000-0000-4000-8000-000000000101" });
-
-    expect(current.store.save).not.toHaveBeenCalled();
-    expect(current.repository.completeImageAnalysisAttempt).toHaveBeenCalledWith(expect.objectContaining({
-      status: "input_rejected",
-    }));
-    expect(current.repository.completeImageJobStage).toHaveBeenCalledWith(expect.objectContaining({
-      nextStage: "cleanup",
-      terminalAfterCleanup: true,
-    }));
-  });
-
-  it("leaves the preallocated cleanup record discoverable when persistence is interrupted after upload", async () => {
-    const current = setup(job("download"));
-    current.repository.markImageAttachmentStored.mockRejectedValueOnce(new Error("simulated_process_termination"));
-
-    await current.runner.runOnce({ jobId: "00000000-0000-4000-8000-000000000101" });
-
-    expect(current.events.slice(0, 2)).toEqual(["storage:prepared", "storage:uploaded"]);
-    expect(current.repository.prepareImageAttachmentStorage).toHaveBeenCalledBefore(current.store.save);
-    expect(current.repository.completeImageJobStage).toHaveBeenCalledWith(expect.objectContaining({
-      nextStage: "cleanup",
-      terminalAfterCleanup: true,
-    }));
-  });
-
-  it("reserves the combined ceiling before vision and never shares the invocation with text generation", async () => {
-    const current = setup(job("vision"));
-
-    await current.runner.runOnce({ jobId: "00000000-0000-4000-8000-000000000101" });
-
-    expect(current.repository.reserveImageJobBudget).toHaveBeenCalledWith(expect.objectContaining({
-      reservationMicrousd: 2_000,
-    }));
-    expect(current.store.read).toHaveBeenCalledWith(storageKey, expect.any(AbortSignal));
-    expect(current.events.indexOf("budget:reserved")).toBeLessThan(current.events.indexOf("vision:called"));
-    expect(current.repository.completeImageJobStage).toHaveBeenCalledWith(expect.objectContaining({ nextStage: "cleanup" }));
-    expect(current.generateDraft).not.toHaveBeenCalled();
-  });
-
-  it("preserves an unknown actual cost when a started vision call times out", async () => {
-    const current = setup(job("vision"));
-    current.imageProvider.analyze.mockRejectedValueOnce(new Error("image_provider_timeout"));
+  it("cleans any previously stored image input before closing a recovered cleanup job", async () => {
+    const current = setup(job("cleanup"));
 
     await expect(current.runner.runOnce({ jobId: "00000000-0000-4000-8000-000000000101" }))
-      .resolves.toMatchObject({ claimed: 1, humanReviewRequired: 1 });
+      .resolves.toMatchObject({ claimed: 1, completed: 0, humanReviewRequired: 1 });
 
-    expect(current.repository.completeImageAnalysisAttempt).toHaveBeenCalledWith(expect.objectContaining({
-      status: "provider_error",
-      providerCalled: true,
-      estimatedCostMicrousd: null,
-      providerErrorCode: "image_provider_error",
-    }));
-  });
-
-  it("runs stale reconciliation before a bounded claim and settles a terminal draft once", async () => {
-    const current = setup(job("draft"));
-
-    await current.runner.runOnce({ jobId: "00000000-0000-4000-8000-000000000101" });
-
-    expect(current.repository.reconcileStaleImageJobs.mock.invocationCallOrder[0])
-      .toBeLessThan(current.repository.claimImageJob.mock.invocationCallOrder[0]);
-    expect(current.repository.claimImageJob).toHaveBeenCalledWith(expect.objectContaining({
-      leaseExpiresAt: new Date("2026-08-17T00:00:35.000Z"),
-    }));
-    expect(current.generateDraft).toHaveBeenCalledWith({
-      messageId: "00000000-0000-4000-8000-000000000102",
-      imageJobId: "00000000-0000-4000-8000-000000000101",
-      leaseToken,
-      visualAssessment: "Image 0 appears to be a screenshot; request the original file.",
-    });
+    expect(current.repository.cleanupImageAttemptInputs).toHaveBeenCalledOnce();
     expect(current.repository.finishImageJob).toHaveBeenCalledWith(expect.objectContaining({
-      status: "completed",
-      textAttemptId: "text-attempt-1",
+      status: "human_review_required",
+      failureCode: "image_manual_review_required",
     }));
+    expect(current.imageProvider.analyze).not.toHaveBeenCalled();
+    expect(current.generateDraft).not.toHaveBeenCalled();
   });
 });

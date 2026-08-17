@@ -167,6 +167,43 @@ const attachmentContext = [{
 }];
 
 describe("CustomerServiceEngine", () => {
+  it.each(["manual_generate", "manual_regenerate"] as const)(
+    "routes image-bearing messages to human review without image or text providers: %s",
+    async (trigger) => {
+      const current = setup("Can you use my blurry original photo?", {
+        withImage: true,
+        previousAnalysis: safeAnalysis.safeSummary,
+      });
+
+      await expect(current.engine.generateDraft(
+        { messageId: "message-1", trigger },
+        attachmentContext,
+      )).resolves.toEqual({ status: "image_review_required", attemptId: "attempt-blocked" });
+
+      expect(current.repository.createGateBlockedAttempt).toHaveBeenCalledWith(expect.objectContaining({
+        gateReasons: ["image_manual_review_required"],
+      }));
+      expect(current.image.sourceReader.read).not.toHaveBeenCalled();
+      expect(current.image.attachmentStore.read).not.toHaveBeenCalled();
+      expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
+      expect(current.provider.generate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("keeps the durable image-aware draft entry point provider-free", async () => {
+    const current = setup("Can you use my blurry original photo?", { withImage: true });
+
+    await expect(current.engine.generateImageAwareDraft({
+      messageId: "message-1",
+      imageJobId: "image-job-1",
+      leaseToken: "lease-1",
+      visualAssessment: safeAnalysis.safeSummary,
+    })).resolves.toEqual({ status: "image_review_required", attemptId: "attempt-blocked" });
+
+    expect(current.repository.createImageJobProviderAttempt).not.toHaveBeenCalled();
+    expect(current.provider.generate).not.toHaveBeenCalled();
+  });
+
   it.each([
     ["I want a refund", "gate_blocked"],
     ["How much is an A1 canvas today?", "realtime_required"],
@@ -181,18 +218,6 @@ describe("CustomerServiceEngine", () => {
     expect(current.image.sourceReader.read).not.toHaveBeenCalled();
     expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
     expect(current.provider.generate).not.toHaveBeenCalled();
-  });
-
-  it("runs policy, source read, image analysis, text generation and output validation in order", async () => {
-    const current = setup("Can you use my blurry original photo?", { withImage: true });
-    await expect(current.engine.generateDraft(
-      { messageId: "message-1", trigger: "webhook_after" },
-      attachmentContext,
-    )).resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
-    expect(current.policyGate).toHaveBeenCalledBefore(current.image.sourceReader.read);
-    expect(current.image.sourceReader.read).toHaveBeenCalledBefore(current.image.imageProvider.analyze);
-    expect(current.image.imageProvider.analyze).toHaveBeenCalledBefore(current.provider.generate);
-    expect(current.outputValidator).toHaveBeenCalledAfter(current.provider.generate);
   });
 
   it("uses no image dependency on the frozen text-only path", async () => {
@@ -230,28 +255,12 @@ describe("CustomerServiceEngine", () => {
 
       expect(current.policyGate).toHaveBeenCalledBefore(current.repository.selectImageContext);
       expect(current.repository.createGateBlockedAttempt).toHaveBeenCalledWith(expect.objectContaining({
-        gateReasons: ["image_analysis_unavailable"],
+        gateReasons: ["image_manual_review_required"],
       }));
       expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
       expect(current.provider.generate).not.toHaveBeenCalled();
     },
   );
-
-  it("reuses a validated image summary for manual regeneration when analysis is disabled", async () => {
-    const current = setup("Can you use my blurry original photo?", {
-      withImage: true,
-      previousAnalysis: safeAnalysis.safeSummary,
-      imageAnalysisEnabled: false,
-    });
-
-    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_regenerate" }))
-      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
-
-    expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
-    expect(current.provider.generate).toHaveBeenCalledWith(expect.objectContaining({
-      instructions: expect.stringContaining(`VISUAL ASSESSMENT:\n${safeAnalysis.safeSummary}`),
-    }));
-  });
 
   it("keeps image-only messages away from both providers", async () => {
     const current = setup(null, { withImage: true });
@@ -275,29 +284,15 @@ describe("CustomerServiceEngine", () => {
     expect(current.provider.generate).not.toHaveBeenCalled();
   });
 
-  it("fails closed without retry or text generation when the image provider fails", async () => {
+  it("does not invoke a configured image provider for an image-bearing message", async () => {
     const current = setup("Can you use my blurry original photo?", { withImage: true });
     current.image.imageProvider.analyze.mockRejectedValueOnce(new Error("private provider body"));
     await expect(current.engine.generateDraft(
       { messageId: "message-1", trigger: "webhook_after" },
       attachmentContext,
     )).resolves.toEqual({ status: "image_review_required", attemptId: "attempt-blocked" });
-    expect(current.image.imageProvider.analyze).toHaveBeenCalledTimes(1);
-    expect(current.provider.generate).not.toHaveBeenCalled();
-  });
-
-  it("reuses a validated previous summary only on manual regenerate", async () => {
-    const current = setup("Can you use my blurry original photo?", {
-      withImage: true,
-      previousAnalysis: safeAnalysis.safeSummary,
-    });
-    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_regenerate" }))
-      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
-    expect(current.image.sourceReader.read).not.toHaveBeenCalled();
     expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
-    expect(current.provider.generate).toHaveBeenCalledWith(expect.objectContaining({
-      instructions: expect.stringContaining(`VISUAL ASSESSMENT:\n${safeAnalysis.safeSummary}`),
-    }));
+    expect(current.provider.generate).not.toHaveBeenCalled();
   });
 
   it("requires human review when selected attachments have no safe source or prior analysis", async () => {
@@ -306,22 +301,6 @@ describe("CustomerServiceEngine", () => {
       .resolves.toEqual({ status: "image_review_required", attemptId: "attempt-blocked" });
     expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
     expect(current.provider.generate).not.toHaveBeenCalled();
-  });
-
-  it("requires both text and visual validators to accept an image-aware draft", async () => {
-    const current = setup("Can you use my blurry original photo?", {
-      withImage: true,
-      reply: "This photo is suitable for print.",
-    });
-    await expect(current.engine.generateDraft(
-      { messageId: "message-1", trigger: "webhook_after" },
-      attachmentContext,
-    )).resolves.toEqual({ status: "output_blocked", attemptId: "attempt-1" });
-    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
-      status: "output_blocked",
-      validatorCodes: ["visual_print_suitability_claim"],
-      rejectedOutputHash: expect.stringMatching(/^[a-f0-9]{64}$/),
-    }));
   });
 
   it("returns a safe text provider error and persists no raw error", async () => {
@@ -353,63 +332,4 @@ describe("CustomerServiceEngine", () => {
     expect(current.provider.generate).not.toHaveBeenCalled();
   });
 
-  it("generates an image-aware draft against the combined job reservation without a second reserve", async () => {
-    const current = setup("Can you use my blurry original photo?", { withImage: true });
-
-    await expect(current.engine.generateImageAwareDraft({
-      messageId: "message-1",
-      imageJobId: "image-job-1",
-      leaseToken: "lease-1",
-      visualAssessment: safeAnalysis.safeSummary,
-    })).resolves.toEqual({ status: "draft_ready", attemptId: "attempt-image-text-1" });
-
-    expect(current.repository.createImageJobProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
-      jobId: "image-job-1",
-      leaseToken: "lease-1",
-      messageId: "message-1",
-    }));
-    expect(current.repository.reserveProviderAttempt).not.toHaveBeenCalled();
-    expect(current.provider.generate).toHaveBeenCalledWith(expect.objectContaining({
-      instructions: expect.stringContaining(`VISUAL ASSESSMENT:\n${safeAnalysis.safeSummary}`),
-    }));
-    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
-      attemptId: "attempt-image-text-1",
-      status: "draft_ready",
-    }));
-  });
-
-  it("preserves an unknown actual cost when image-aware text generation fails", async () => {
-    const current = setup("Can you use my blurry original photo?", { withImage: true });
-    current.provider.generate.mockRejectedValueOnce(new Error("provider_timeout"));
-
-    await expect(current.engine.generateImageAwareDraft({
-      messageId: "message-1",
-      imageJobId: "image-job-1",
-      leaseToken: "lease-1",
-      visualAssessment: safeAnalysis.safeSummary,
-    })).resolves.toEqual({ status: "provider_error", attemptId: "attempt-image-text-1" });
-
-    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
-      attemptId: "attempt-image-text-1",
-      status: "provider_error",
-      estimatedCostMicrousd: null,
-      providerErrorCode: "provider_request_failed",
-    }));
-  });
-
-  it("fails closed without repeating an ambiguous image-aware text provider call", async () => {
-    const current = setup("Can you use my blurry original photo?", { withImage: true });
-    current.repository.createImageJobProviderAttempt.mockResolvedValueOnce({
-      status: "ambiguous",
-      attemptId: "attempt-image-text-1",
-    });
-
-    await expect(current.engine.generateImageAwareDraft({
-      messageId: "message-1",
-      imageJobId: "image-job-1",
-      leaseToken: "lease-1",
-      visualAssessment: safeAnalysis.safeSummary,
-    })).resolves.toEqual({ status: "provider_error", attemptId: "attempt-image-text-1" });
-    expect(current.provider.generate).not.toHaveBeenCalled();
-  });
 });

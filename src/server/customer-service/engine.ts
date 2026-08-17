@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { evaluatePolicyGate, type PolicyKnowledge } from "./policy-gate";
 import { retrieveKnowledge, type AnswerQualityGuide } from "./knowledge-retrieval";
 import { validateDraft } from "./output-validator";
-import { validateImageDraft } from "./image-draft-validator";
 import { buildDraftPrompt } from "./prompt-builder";
 import { localDateScopeKey } from "./usage-cost";
 import type { AttachmentProcessor } from "./attachments/attachment-processor";
@@ -32,7 +31,6 @@ type EngineKnowledge = PolicyKnowledge & Readonly<{
 export class CustomerServiceEngine {
   private readonly repository: CustomerServiceRepository;
   private readonly provider: AiProvider;
-  private readonly attachmentProcessor?: AttachmentProcessor;
   private readonly policyGate: typeof evaluatePolicyGate;
   private readonly outputValidator: typeof validateDraft;
   private readonly knowledge: EngineKnowledge;
@@ -57,7 +55,6 @@ export class CustomerServiceEngine {
   }>) {
     this.repository = input.repository;
     this.provider = input.provider;
-    this.attachmentProcessor = input.attachmentProcessor;
     this.policyGate = input.policyGate ?? evaluatePolicyGate;
     this.outputValidator = input.outputValidator ?? validateDraft;
     this.knowledge = input.knowledge;
@@ -136,74 +133,16 @@ export class CustomerServiceEngine {
         attemptId,
       };
     }
-    const sources = retrieveKnowledge({ gate, knowledge: this.knowledge });
-    const reservation = await this.repository.createImageJobProviderAttempt({
-      jobId: input.imageJobId,
-      leaseToken: input.leaseToken,
+    const attemptId = await this.repository.createGateBlockedAttempt({
       messageId: input.messageId,
       trigger: "webhook_after",
       intent: gate.intent,
-      riskLevel: gate.riskLevel,
-      gateReasons: [gate.reason],
-      knowledgeSources: sources.rules.map((rule) => rule.id),
+      riskLevel: "high",
+      gateResult: "pilot_limit",
+      gateReasons: ["image_manual_review_required"],
       knowledgeVersion: this.knowledge.knowledgeVersion,
     });
-    if (reservation.status === "ambiguous") {
-      return { status: "provider_error", attemptId: reservation.attemptId };
-    }
-    const prompt = buildDraftPrompt({
-      intent: gate.intent,
-      context: draftInput.context,
-      rules: sources.rules,
-      examples: sources.examples,
-      goldenExamples: sources.goldenExamples,
-      qualityGuide: sources.qualityGuide,
-      toneGuide: this.knowledge.toneGuide,
-      visualAssessment: input.visualAssessment,
-    });
-    const dailyScopeKey = localDateScopeKey();
-    try {
-      const generated = await this.provider.generate(prompt);
-      const textValidation = this.outputValidator(generated.text, { intent: gate.intent });
-      const imageValidation = validateImageDraft(generated.text);
-      const validation = {
-        ok: textValidation.ok && imageValidation.ok,
-        codes: [...textValidation.codes, ...imageValidation.codes],
-      };
-      await this.repository.completeProviderAttempt({
-        attemptId: reservation.attemptId,
-        status: validation.ok ? "draft_ready" : "output_blocked",
-        provider: generated.provider,
-        model: generated.model,
-        ...(validation.ok ? { draftText: generated.text } : {
-          rejectedOutputHash: createHash("sha256").update(generated.text).digest("hex"),
-        }),
-        validatorCodes: validation.codes,
-        inputTokens: generated.usage.inputTokens,
-        cachedInputTokens: generated.usage.cachedInputTokens,
-        outputTokens: generated.usage.outputTokens,
-        estimatedCostMicrousd: generated.estimatedCostMicrousd,
-        latencyMs: generated.latencyMs,
-        dailyScopeKey,
-      });
-      return { status: validation.ok ? "draft_ready" : "output_blocked", attemptId: reservation.attemptId };
-    } catch {
-      await this.repository.completeProviderAttempt({
-        attemptId: reservation.attemptId,
-        status: "provider_error",
-        provider: this.provider.providerKind,
-        model: this.provider.model,
-        validatorCodes: [],
-        inputTokens: 0,
-        cachedInputTokens: 0,
-        outputTokens: 0,
-        estimatedCostMicrousd: null,
-        latencyMs: 0,
-        providerErrorCode: "provider_request_failed",
-        dailyScopeKey,
-      });
-      return { status: "provider_error", attemptId: reservation.attemptId };
-    }
+    return { status: "image_review_required", attemptId };
   }
 
   async generateDraft(
@@ -246,74 +185,17 @@ export class CustomerServiceEngine {
       };
     }
 
-    let visualAssessment: string | undefined;
     const imageContext = await this.repository.selectImageContext(request.messageId);
-    if (imageContext) {
-      if (imageContext.hasUnsupportedAttachments) {
-        const attemptId = await this.repository.createGateBlockedAttempt({
-          messageId: request.messageId,
-          trigger: request.trigger,
-          intent: gate.intent,
-          riskLevel: "high",
-          gateResult: "unresolved",
-          gateReasons: ["unsupported_attachment"],
-          knowledgeVersion: this.knowledge.knowledgeVersion,
-        });
-        return { status: "image_review_required", attemptId };
-      }
-      if (request.trigger === "manual_regenerate" && imageContext.analysisSummary) {
-        visualAssessment = imageContext.analysisSummary;
-      } else if (!this.attachmentProcessor) {
-        const attemptId = await this.repository.createGateBlockedAttempt({
-          messageId: request.messageId,
-          trigger: request.trigger,
-          intent: gate.intent,
-          riskLevel: "high",
-          gateResult: "pilot_limit",
-          gateReasons: ["image_analysis_unavailable"],
-          knowledgeVersion: this.knowledge.knowledgeVersion,
-        });
-        return { status: "image_review_required", attemptId };
-      } else if (attachmentSourceContext?.length) {
-          const processed = await this.attachmentProcessor.process({
-            messageId: imageContext.messageId,
-            attachmentIds: imageContext.attachmentIds,
-            sources: attachmentSourceContext,
-          });
-          if (processed.status === "analyzed") {
-            visualAssessment = processed.summary;
-          } else {
-            const attemptId = await this.repository.createGateBlockedAttempt({
-              messageId: request.messageId,
-              trigger: request.trigger,
-              intent: gate.intent,
-              riskLevel: "high",
-              gateResult: "pilot_limit",
-              gateReasons: [processed.code],
-              knowledgeVersion: this.knowledge.knowledgeVersion,
-            });
-            return { status: "image_review_required", attemptId };
-          }
-      } else {
-        const attemptId = await this.repository.createGateBlockedAttempt({
-          messageId: request.messageId,
-          trigger: request.trigger,
-          intent: gate.intent,
-          riskLevel: "high",
-          gateResult: "pilot_limit",
-          gateReasons: ["image_context_mismatch"],
-          knowledgeVersion: this.knowledge.knowledgeVersion,
-        });
-        return { status: "image_review_required", attemptId };
-      }
-    } else if (attachmentSourceContext?.length) {
+    if (imageContext || attachmentSourceContext?.length) {
       const attemptId = await this.repository.createGateBlockedAttempt({
         messageId: request.messageId,
         trigger: request.trigger,
         intent: gate.intent,
         riskLevel: "high",
         gateResult: "pilot_limit",
-        gateReasons: ["image_context_mismatch"],
+        gateReasons: [imageContext?.hasUnsupportedAttachments
+          ? "unsupported_attachment"
+          : "image_manual_review_required"],
         knowledgeVersion: this.knowledge.knowledgeVersion,
       });
       return { status: "image_review_required", attemptId };
@@ -346,17 +228,13 @@ export class CustomerServiceEngine {
       goldenExamples: sources.goldenExamples,
       qualityGuide: sources.qualityGuide,
       toneGuide: this.knowledge.toneGuide,
-      visualAssessment,
     });
     try {
       const generated = await this.provider.generate(prompt);
       const textValidation = this.outputValidator(generated.text, { intent: gate.intent });
-      const imageValidation = visualAssessment
-        ? validateImageDraft(generated.text)
-        : { ok: true, codes: [] as readonly string[] };
       const validation = {
-        ok: textValidation.ok && imageValidation.ok,
-        codes: [...textValidation.codes, ...imageValidation.codes],
+        ok: textValidation.ok,
+        codes: textValidation.codes,
       };
       await this.repository.completeProviderAttempt({
         attemptId: reservation.attemptId,
