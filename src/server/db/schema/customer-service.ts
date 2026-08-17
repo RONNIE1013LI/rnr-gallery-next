@@ -3,12 +3,14 @@ import {
   bigint,
   boolean,
   check,
+  foreignKey,
   index,
   integer,
   jsonb,
   pgTable,
   text,
   timestamp,
+  unique,
   uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
@@ -220,6 +222,7 @@ export const customerServiceAttachments = pgTable(
     uniqueIndex("customer_service_attachments_message_external_unique")
       .on(table.messageId, table.externalAttachmentKeyHash),
     uniqueIndex("customer_service_attachments_message_ordinal_unique").on(table.messageId, table.ordinal),
+    unique("customer_service_attachments_id_message_unique").on(table.id, table.messageId),
     index("customer_service_attachments_status_delete_due_idx").on(table.status, table.deleteDueAt),
     check("customer_service_attachments_external_hash_valid", sql`length(trim(${table.externalAttachmentKeyHash})) > 0`),
     check("customer_service_attachments_ordinal_valid", sql`${table.ordinal} >= 0`),
@@ -256,6 +259,7 @@ export const customerServiceImageAnalysisAttempts = pgTable(
   },
   (table) => [
     uniqueIndex("customer_service_image_analysis_attempts_message_number_unique").on(table.messageId, table.attemptNumber),
+    unique("customer_service_image_analysis_attempts_id_message_unique").on(table.id, table.messageId),
     index("customer_service_image_analysis_attempts_message_started_idx").on(table.messageId, table.startedAt),
     index("customer_service_image_analysis_attempts_status_started_idx").on(table.status, table.startedAt),
     check("customer_service_image_analysis_attempts_number_valid", sql`${table.attemptNumber} > 0`),
@@ -268,8 +272,9 @@ export const customerServiceImageAnalysisAttempts = pgTable(
 export const customerServiceImageAnalysisInputs = pgTable(
   "customer_service_image_analysis_inputs",
   {
-    analysisAttemptId: uuid("analysis_attempt_id").notNull().references(() => customerServiceImageAnalysisAttempts.id, { onDelete: "restrict" }),
-    attachmentId: uuid("attachment_id").notNull().references(() => customerServiceAttachments.id, { onDelete: "restrict" }),
+    analysisAttemptId: uuid("analysis_attempt_id").notNull(),
+    attachmentId: uuid("attachment_id").notNull(),
+    messageId: uuid("message_id").notNull(),
     ordinal: integer("ordinal").notNull(),
   },
   (table) => [
@@ -278,6 +283,16 @@ export const customerServiceImageAnalysisInputs = pgTable(
     uniqueIndex("customer_service_image_analysis_inputs_attempt_ordinal_unique")
       .on(table.analysisAttemptId, table.ordinal),
     index("customer_service_image_analysis_inputs_attachment_idx").on(table.attachmentId),
+    foreignKey({
+      name: "customer_service_image_analysis_inputs_attempt_message_fk",
+      columns: [table.analysisAttemptId, table.messageId],
+      foreignColumns: [customerServiceImageAnalysisAttempts.id, customerServiceImageAnalysisAttempts.messageId],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "customer_service_image_analysis_inputs_attachment_message_fk",
+      columns: [table.attachmentId, table.messageId],
+      foreignColumns: [customerServiceAttachments.id, customerServiceAttachments.messageId],
+    }).onDelete("restrict"),
     check("customer_service_image_analysis_inputs_ordinal_valid", sql`${table.ordinal} >= 0`),
   ],
 );

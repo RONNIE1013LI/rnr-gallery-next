@@ -1,5 +1,5 @@
 {
-  "id": "c9c3e720-2063-4767-a20a-01798a8bafa3",
+  "id": "a2675f36-ad21-4a72-832b-729a9f545752",
   "prevId": "8266e76c-a8cf-4a8e-85e5-647b0fac1b20",
   "version": "7",
   "dialect": "postgresql",
@@ -2180,7 +2180,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "customer_service_attachments_id_message_unique": {
+          "name": "customer_service_attachments_id_message_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "message_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "customer_service_attachments_external_hash_valid": {
@@ -2692,7 +2701,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "customer_service_image_analysis_attempts_id_message_unique": {
+          "name": "customer_service_image_analysis_attempts_id_message_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "message_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "customer_service_image_analysis_attempts_number_valid": {
@@ -2726,6 +2744,12 @@
         },
         "attachment_id": {
           "name": "attachment_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -2797,28 +2821,32 @@
         }
       },
       "foreignKeys": {
-        "customer_service_image_analysis_inputs_analysis_attempt_id_customer_service_image_analysis_attempts_id_fk": {
-          "name": "customer_service_image_analysis_inputs_analysis_attempt_id_customer_service_image_analysis_attempts_id_fk",
+        "customer_service_image_analysis_inputs_attempt_message_fk": {
+          "name": "customer_service_image_analysis_inputs_attempt_message_fk",
           "tableFrom": "customer_service_image_analysis_inputs",
           "tableTo": "customer_service_image_analysis_attempts",
           "columnsFrom": [
-            "analysis_attempt_id"
+            "analysis_attempt_id",
+            "message_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "message_id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "customer_service_image_analysis_inputs_attachment_id_customer_service_attachments_id_fk": {
-          "name": "customer_service_image_analysis_inputs_attachment_id_customer_service_attachments_id_fk",
+        "customer_service_image_analysis_inputs_attachment_message_fk": {
+          "name": "customer_service_image_analysis_inputs_attachment_message_fk",
           "tableFrom": "customer_service_image_analysis_inputs",
           "tableTo": "customer_service_attachments",
           "columnsFrom": [
-            "attachment_id"
+            "attachment_id",
+            "message_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "message_id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
