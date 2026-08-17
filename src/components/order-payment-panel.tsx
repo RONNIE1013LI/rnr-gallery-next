@@ -32,6 +32,11 @@ export type PaymentStartResponse = Readonly<{
   action: PaymentActionDTO | null;
 }>;
 
+type PaymentMethodChangeResponse = Readonly<{
+  payment: PublicPaymentDTO;
+  orderNumber: string;
+}>;
+
 export class PaymentStartError extends Error {
   constructor(message: string, readonly status: number) {
     super(message);
@@ -230,6 +235,46 @@ export async function startOrderPayment(
   });
 }
 
+function parsePaymentMethodChangeResponse(
+  payload: unknown,
+  orderNumber: string,
+): PaymentMethodChangeResponse {
+  const result = record(payload);
+  const payment = record(result?.payment);
+  const statuses = ["created", "requires_action", "processing", "paid", "failed", "cancelled", "refunded"];
+  if (
+    !result ||
+    !hasExactKeys(result, ["payment", "orderNumber"]) ||
+    result.orderNumber !== orderNumber ||
+    !payment ||
+    !hasExactKeys(payment, ["method", "status", "isTest", "canRetry"]) ||
+    payment.method !== "afterpay" ||
+    !statuses.includes(String(payment.status)) ||
+    typeof payment.isTest !== "boolean" ||
+    typeof payment.canRetry !== "boolean" ||
+    payment.canRetry !== (payment.status === "failed" || payment.status === "cancelled")
+  ) {
+    throw new Error("Payment response is invalid");
+  }
+  return result as PaymentMethodChangeResponse;
+}
+
+async function changeOrderPaymentMethod(orderNumber: string) {
+  const response = await fetch(`/api/orders/${encodeURIComponent(orderNumber)}/payment`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "change_method" }),
+  });
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error("Payment response is invalid");
+  }
+  if (!response.ok) throw new Error("Payment status could not be confirmed");
+  return parsePaymentMethodChangeResponse(payload, orderNumber);
+}
+
 type OrderPaymentPanelProps = Readonly<{
   orderNumber: string;
   paymentStatus: OrderPaymentStatus;
@@ -265,7 +310,11 @@ function OrderPaymentPanelState({
     ["created", "requires_action", "processing"].includes(payment.status)
     ? payment.method
     : null;
-  const preferredMethod = lockedMethod ?? (payment?.canRetry ? payment.method : null);
+  const preferredMethod = lockedMethod ?? (
+    payment?.canRetry && !(payment.method === "afterpay" && payment.status === "cancelled")
+      ? payment.method
+      : null
+  );
   const visibleMethods = useMemo(
     () => lockedMethod ? methods.filter(({ method }) => method === lockedMethod) : methods,
     [lockedMethod, methods],
@@ -273,6 +322,7 @@ function OrderPaymentPanelState({
   const resumableAttempt =
     (paymentStatus === "awaiting_payment" || paymentStatus === "processing") &&
     initialAttempt &&
+    !payment?.canRetry &&
     (!payment || payment.method === initialAttempt.method)
       ? initialAttempt
       : null;
@@ -409,6 +459,35 @@ function OrderPaymentPanelState({
     await runPayment(selected, paymentKey.current);
   }
 
+  async function changeMethod() {
+    if (pending || lockedMethod !== "afterpay") return;
+    setPending(true);
+    setMessage("");
+    try {
+      const result = await changeOrderPaymentMethod(orderNumber);
+      if (result.payment.status === "paid" || result.payment.status === "refunded") {
+        if (completePendingCheckout(window.localStorage, orderNumber)) notifyCartChanged();
+        window.sessionStorage.removeItem(getActivePaymentIntentStorageKey());
+        paymentKey.current = null;
+        setPaymentAction(null);
+        refresh();
+        return;
+      }
+      if (result.payment.status === "failed" || result.payment.status === "cancelled") {
+        clearStoredStartingAttempt(orderNumber);
+        paymentKey.current = null;
+        setPaymentAction(null);
+        refresh();
+        return;
+      }
+      setMessage("Payment is still in progress. Try again shortly.");
+    } catch {
+      setMessage("Payment status could not be confirmed. Try again shortly.");
+    } finally {
+      setPending(false);
+    }
+  }
+
   return <section id="payment" className={styles.orderPaymentPanel}>
     <h2>Payment</h2>
     {canStart ? <>
@@ -421,6 +500,12 @@ function OrderPaymentPanelState({
           setMessage("");
         }} disabled={pending} />}
       {paymentAction?.kind !== "elements" ? <button className={styles.primaryButton} type="button" disabled={!methodsLoaded || !selected || pending || visibleMethods.length === 0} onClick={start}>{paymentActionLabel(selected, pending)}</button> : null}
+      {lockedMethod === "afterpay" ? <button
+        className={styles.secondaryButton}
+        type="button"
+        disabled={pending}
+        onClick={changeMethod}
+      >Change payment method</button> : null}
     </> : null}
     {paymentAction?.kind === "elements" ? <StripePaymentForm
       key={paymentAction.clientSecret}

@@ -332,6 +332,70 @@ describe("OrderPaymentPanel", () => {
     expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
     expect(screen.queryByRole("radio", { name: "Test card — no real payment" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /Continue to/ })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Change payment method" })).toBeEnabled();
+  });
+
+  it("abandons an incomplete Afterpay attempt without clearing checkout recovery", async () => {
+    seedDurablePendingCheckout();
+    let resolveRequest!: (response: unknown) => void;
+    const fetchMock = vi.fn().mockImplementation(() => new Promise((resolve) => {
+      resolveRequest = resolve;
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="awaiting_payment"
+      payment={{ method: "afterpay", status: "requires_action", isTest: false, canRetry: false }}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
+    window.sessionStorage.setItem("rnr:commerce:v1:guest:checkout:payment-intent", JSON.stringify({
+      schemaVersion: 1,
+      phase: "starting_payment",
+      orderNumber: "RNR-2026-ABC",
+      paymentIdempotencyKey: "70000000-0000-4000-8000-000000000002",
+      method: "afterpay",
+    }));
+
+    const changeButton = screen.getByRole("button", { name: "Change payment method" });
+    fireEvent.click(changeButton);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(changeButton).toBeDisabled();
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({ action: "change_method" });
+
+    resolveRequest({ ok: true, json: async () => ({
+      payment: { method: "afterpay", status: "cancelled", isTest: false, canRetry: true },
+      orderNumber: "RNR-2026-ABC",
+    }) });
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(window.sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent")).toBeNull();
+    expect(window.localStorage.getItem("rnr:commerce:v1:guest:checkout:pending")).not.toBeNull();
+    expect(window.localStorage.getItem("rnr:commerce:v1:guest:cart")).toBe(JSON.stringify(pendingCart));
+  });
+
+  it("keeps Afterpay locked when its payment status cannot be confirmed", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: false,
+      status: 503,
+      json: async () => ({ error: { code: "PAYMENT_UNAVAILABLE" } }),
+    }));
+    render(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="awaiting_payment"
+      payment={{ method: "afterpay", status: "requires_action", isTest: false, canRetry: false }}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Change payment method" }));
+
+    expect(await screen.findByText(
+      "Payment status could not be confirmed. Try again shortly.",
+    )).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
+    expect(screen.queryByRole("radio", { name: "Test card — no real payment" })).not.toBeInTheDocument();
+    expect(refresh).not.toHaveBeenCalled();
   });
 
   it("rebinds the controls when an authoritative attempt appears without changing order status", () => {
@@ -356,21 +420,31 @@ describe("OrderPaymentPanel", () => {
     expect(screen.queryByRole("radio", { name: "Test card — no real payment" })).not.toBeInTheDocument();
   });
 
-  it.each(["failed", "cancelled"] as const)(
-    "defaults a retryable %s attempt to the method that failed",
-    (status) => {
-      render(<OrderPaymentPanel
-        orderNumber="RNR-2026-ABC"
-        paymentStatus={status}
-        payment={{ method: "afterpay", status, isTest: true, canRetry: true }}
-        methods={methods}
-        orderHref="/orders/RNR-2026-ABC"
-      />);
+  it("defaults a failed retry to the method that failed", () => {
+    render(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="failed"
+      payment={{ method: "afterpay", status: "failed", isTest: true, canRetry: true }}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
 
-      expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
-      expect(screen.getByRole("button", { name: /Continue to/ })).toBeEnabled();
-    },
-  );
+    expect(screen.getByRole("radio", { name: "Test Afterpay — no real payment" })).toBeChecked();
+    expect(screen.getByRole("button", { name: /Continue to/ })).toBeEnabled();
+  });
+
+  it("defaults a cancelled Afterpay attempt to Card", () => {
+    render(<OrderPaymentPanel
+      orderNumber="RNR-2026-ABC"
+      paymentStatus="cancelled"
+      payment={{ method: "afterpay", status: "cancelled", isTest: false, canRetry: true }}
+      methods={methods}
+      orderHref="/orders/RNR-2026-ABC"
+    />);
+
+    expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Continue to secure card payment" })).toBeEnabled();
+  });
 
   it.each(["paid", "refunded"] as const)(
     "lets authoritative order status %s suppress retry even if a stale attempt says failed",

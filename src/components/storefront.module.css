@@ -3826,7 +3826,8 @@
   grid-column: 1 / -1;
 }
 
-.orderPaymentPanel .primaryButton {
+.orderPaymentPanel .primaryButton,
+.orderPaymentPanel .secondaryButton {
   justify-self: start;
   margin-top: 1.25rem;
 }
@@ -3991,7 +3992,8 @@
     white-space: nowrap;
   }
 
-  .orderPaymentPanel .primaryButton {
+  .orderPaymentPanel .primaryButton,
+  .orderPaymentPanel .secondaryButton {
     width: 100%;
   }
 
