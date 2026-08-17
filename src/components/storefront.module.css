@@ -2226,6 +2226,12 @@
   font-weight: 800;
 }
 
+.urgentConfirmation .urgentDateClarification {
+  color: var(--muted);
+  font-weight: 500;
+  line-height: 1.4;
+}
+
 .timingPolicy {
   margin-top: 1rem;
   padding: 0.9rem 1rem;

@@ -550,8 +550,11 @@ export function ProductConfigurator({
                   aria-label="Confirm urgent service"
                 />
                 <span>
-                  <strong>I need this order by the selected date and confirm urgent service.</strong>
+                  <strong>I need production completed by the selected date and confirm urgent service.</strong>
                   <small>{formatMarketMoney(urgentService.feeInclGstCents, currency)}{taxSuffix}</small>
+                  <small className={styles.urgentDateClarification}>
+                    Delivery time is not included in this timeframe.
+                  </small>
                 </span>
               </label>
             )}

@@ -62,6 +62,34 @@ describe("BannerBundleConfigurator", () => {
       .not.toBeInTheDocument();
   });
 
+  it("makes clear that an urgent date is for production, not delivery", () => {
+    render(
+      <BannerBundleConfigurator
+        product={product}
+        schema={schema}
+        registry={defaultProductRegistry}
+        pricing={defaultProductRegistry.pricing}
+        orderDate="2026-08-17"
+      />,
+    );
+
+    fireEvent.change(screen.getByLabelText("Production completion date"), {
+      target: { value: "2026-08-18" },
+    });
+
+    expect(screen.getByText(
+      "I need production completed by the selected date and confirm urgent service.",
+    )).toBeInTheDocument();
+    const urgentConfirmation = screen
+      .getByLabelText("Confirm urgent service")
+      .closest("label");
+    const urgentDetails = urgentConfirmation?.querySelectorAll("small");
+    expect(urgentDetails).toHaveLength(2);
+    expect(urgentDetails?.[1]).toHaveTextContent(
+      "Delivery time is not included in this timeframe.",
+    );
+  });
+
   it("simplifies Bundle size labels and omits GST only from size-card prices", () => {
     render(
       <BannerBundleConfigurator

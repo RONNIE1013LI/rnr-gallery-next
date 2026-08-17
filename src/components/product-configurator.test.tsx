@@ -802,6 +802,15 @@ describe("ProductConfigurator", () => {
       .closest("label");
     const delivery = screen.getByRole("radiogroup", { name: "Delivery" });
 
+    expect(screen.getByText(
+      "I need production completed by the selected date and confirm urgent service.",
+    )).toBeInTheDocument();
+    const urgentDetails = urgentConfirmation?.querySelectorAll("small");
+    expect(urgentDetails).toHaveLength(2);
+    expect(urgentDetails?.[0]).toHaveTextContent("NZ$50.00 incl GST");
+    expect(urgentDetails?.[1]).toHaveTextContent(
+      "Delivery time is not included in this timeframe.",
+    );
     expect(completionDateField?.nextElementSibling).toBe(urgentConfirmation);
     expect(urgentConfirmation?.nextElementSibling).toBe(delivery);
     const css = readFileSync("src/components/storefront.module.css", "utf8");
