@@ -86,6 +86,28 @@ describe("ImageAnalysisResultSchema", () => {
     expect(() => parseImageAnalysisResult(validResult, [1, 2])).toThrow("image_analysis_ordinal_mismatch");
   });
 
+  it("accepts an exact zero-based submitted attachment set", () => {
+    const candidate = {
+      ...validResult,
+      images: [{ ...validResult.images[0], ordinal: 0 }],
+      comparison: { ...validResult.comparison, likelyMainOrdinal: 0 },
+      safeSummary: "Image 0 appears to be a screenshot; request the original file.",
+    };
+
+    expect(parseImageAnalysisResult(candidate, [0])).toEqual(candidate);
+  });
+
+  it("preserves exact submitted-set isolation for zero-based results", () => {
+    const candidate = {
+      ...validResult,
+      images: [{ ...validResult.images[0], ordinal: 0 }],
+      comparison: { ...validResult.comparison, likelyMainOrdinal: 0 },
+      safeSummary: "Image 0 appears to be a screenshot; request the original file.",
+    };
+
+    expect(() => parseImageAnalysisResult(candidate, [1])).toThrow("image_analysis_ordinal_mismatch");
+  });
+
   it("rejects comparison ordinals outside the submitted attachment set", () => {
     const candidate = {
       ...validResult,

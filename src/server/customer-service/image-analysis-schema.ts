@@ -61,7 +61,7 @@ export type ImageAnalysisResult = Readonly<{
 }>;
 
 const ImageRecordSchema = z.object({
-  ordinal: z.number().int().positive(),
+  ordinal: z.number().int().nonnegative(),
   classification: z.enum(CLASSIFICATIONS),
   blur: z.enum(["none_visible", "mild", "strong", "unclear"]),
   sourceResolutionSignal: z.enum(["normal", "low", "very_low", "unclear"]),
@@ -74,8 +74,8 @@ const ImageRecordSchema = z.object({
 }).strict();
 
 const ComparisonSchema = z.object({
-  likelyMainOrdinal: z.number().int().positive().nullable(),
-  likelySideOrdinals: z.array(z.number().int().positive()),
+  likelyMainOrdinal: z.number().int().nonnegative().nullable(),
+  likelySideOrdinals: z.array(z.number().int().nonnegative()),
   confidence: z.enum(["low", "medium"]),
   reasonCodes: z.array(z.enum([
     "larger_subject",

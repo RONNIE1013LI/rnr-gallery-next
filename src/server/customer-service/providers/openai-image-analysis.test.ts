@@ -22,6 +22,105 @@ const providerOutput = {
 };
 
 describe("OpenAI image-analysis provider", () => {
+  it("accepts the established zero-based attachment ordinal", async () => {
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({
+      output_text: JSON.stringify({
+        ...providerOutput,
+        images: [{ ...providerOutput.images[0], ordinal: 0 }],
+      }),
+      usage: {},
+    }), { status: 200 }));
+    const provider = new OpenAIImageAnalysisProvider({
+      apiKey: "test-only-secret",
+      model: "approved-vision-model",
+      fetchImpl: fetchSpy,
+      pricing: {
+        inputUsdPerMillion: 1,
+        cachedInputUsdPerMillion: 0.1,
+        outputUsdPerMillion: 2,
+      },
+    });
+
+    await expect(provider.analyze({
+      images: [{ ordinal: 0, mimeType: "image/png", bytes: Buffer.from("private") }],
+    })).resolves.toMatchObject({ analysis: { images: [{ ordinal: 0 }] } });
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps each batched image input to its non-contiguous submitted ordinal", async () => {
+    const fetchImpl: (input: string | URL | Request, init?: RequestInit) => Promise<Response> = async () => new Response(JSON.stringify({
+      output_text: JSON.stringify({
+        ...providerOutput,
+        images: [
+          { ...providerOutput.images[0], ordinal: 0, recommendedRole: "main_candidate" },
+          { ...providerOutput.images[0], ordinal: 4, recommendedRole: "side_candidate" },
+        ],
+        comparison: {
+          likelyMainOrdinal: 0,
+          likelySideOrdinals: [4],
+          confidence: "medium",
+          reasonCodes: ["larger_subject"],
+        },
+      }),
+      usage: {},
+    }), { status: 200 });
+    const fetchSpy = vi.fn(fetchImpl);
+    const provider = new OpenAIImageAnalysisProvider({
+      apiKey: "test-only-secret",
+      model: "approved-vision-model",
+      fetchImpl: fetchSpy,
+      pricing: {
+        inputUsdPerMillion: 1,
+        cachedInputUsdPerMillion: 0.1,
+        outputUsdPerMillion: 2,
+      },
+    });
+
+    await provider.analyze({
+      images: [
+        { ordinal: 0, mimeType: "image/png", bytes: Buffer.from("first-private-image") },
+        { ordinal: 4, mimeType: "image/jpeg", bytes: Buffer.from("second-private-image") },
+      ],
+    });
+
+    const body = JSON.parse(String(fetchSpy.mock.calls[0][1]?.body));
+    const content = body.input[0].content as Array<Record<string, unknown>>;
+    const instruction = content.find((item) => item.type === "input_text");
+    expect(instruction?.text).toContain(
+      "Image-to-ordinal mapping:\nImage input 1: attachment ordinal 0\nImage input 2: attachment ordinal 4",
+    );
+    expect(content.filter((item) => item.type === "input_image")).toHaveLength(2);
+  });
+
+  it("rejects an unsupported runtime MIME type before fetch", async () => {
+    const fetchSpy = vi.fn(async () => new Response(JSON.stringify({
+      output_text: JSON.stringify({
+        ...providerOutput,
+        images: [{ ...providerOutput.images[0], ordinal: 0 }],
+      }),
+      usage: {},
+    }), { status: 200 }));
+    const provider = new OpenAIImageAnalysisProvider({
+      apiKey: "test-only-secret",
+      model: "approved-vision-model",
+      fetchImpl: fetchSpy,
+      pricing: {
+        inputUsdPerMillion: 1,
+        cachedInputUsdPerMillion: 0.1,
+        outputUsdPerMillion: 2,
+      },
+    });
+
+    await expect(provider.analyze({
+      images: [{
+        ordinal: 0,
+        mimeType: "image/svg+xml" as never,
+        bytes: Buffer.from("private-svg"),
+      }],
+    })).rejects.toThrow("image_analysis_invalid_request");
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("sends one private, tool-free Responses API request for the image batch", async () => {
     const fetchImpl: (input: string | URL | Request, init?: RequestInit) => Promise<Response> = async () => new Response(JSON.stringify({
       model: "approved-vision-model-2026-08-01",

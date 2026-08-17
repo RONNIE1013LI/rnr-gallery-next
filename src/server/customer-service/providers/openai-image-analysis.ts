@@ -14,6 +14,8 @@ import type {
 
 type FetchImplementation = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
 
+const SUPPORTED_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+
 const ANALYSIS_INSTRUCTIONS = [
   "Assess only visible image properties using the supplied JSON schema.",
   "Do not identify people or infer age, ethnicity, health, emotion, or attractiveness.",
@@ -42,7 +44,12 @@ function validateRequest(request: ImageAnalysisProviderRequest) {
   }
   const ordinals = new Set<number>();
   for (const image of request.images) {
-    if (!Number.isInteger(image.ordinal) || image.ordinal < 1 || image.bytes.byteLength < 1) {
+    if (
+      !Number.isInteger(image.ordinal)
+      || image.ordinal < 0
+      || image.bytes.byteLength < 1
+      || !SUPPORTED_IMAGE_MIME_TYPES.has(image.mimeType)
+    ) {
       throw new Error("image_analysis_invalid_request");
     }
     if (ordinals.has(image.ordinal)) throw new Error("image_analysis_invalid_request");
@@ -82,6 +89,9 @@ export class OpenAIImageAnalysisProvider implements ImageAnalysisProvider {
     if (!this.apiKey || !this.model) throw new Error("image_analysis_configuration_error");
     validateRequest(request);
     const startedAt = this.now();
+    const ordinalMapping = request.images
+      .map((image, index) => `Image input ${index + 1}: attachment ordinal ${image.ordinal}`)
+      .join("\n");
 
     let response: Response;
     try {
@@ -99,7 +109,10 @@ export class OpenAIImageAnalysisProvider implements ImageAnalysisProvider {
           input: [{
             role: "user",
             content: [
-              { type: "input_text", text: ANALYSIS_INSTRUCTIONS },
+              {
+                type: "input_text",
+                text: `${ANALYSIS_INSTRUCTIONS}\n\nImage-to-ordinal mapping:\n${ordinalMapping}\nReturn each attachment ordinal exactly as listed.`,
+              },
               ...request.images.map((image) => ({
                 type: "input_image",
                 image_url: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString("base64")}`,
