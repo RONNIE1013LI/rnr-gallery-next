@@ -1,6 +1,6 @@
 import { createHmac } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { eq, sql } from "drizzle-orm";
+import { eq, inArray, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   customerServiceAiAttempts,
@@ -190,6 +190,75 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     })).rejects.toThrow();
     expect(await database.select().from(customerServiceMessages)).toHaveLength(1);
     expect(await database.select().from(customerServiceAttachments)).toHaveLength(1);
+  });
+
+  it("projects up to 100 queue image assessments with a fixed number of reads", async () => {
+    const created = await Promise.all(["a", "b"].map((key, index) => repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: key.repeat(64),
+      externalMessageKeyHash: String(index + 1).repeat(64),
+      text: "Can you assess this photo?",
+      attachments: [{
+        externalAttachmentKeyHash: String(index + 3).repeat(64),
+        ordinal: 0,
+        kind: "image",
+        mimeTypeHint: "image/png",
+      }],
+      receivedAt: new Date(`2026-08-17T00:00:0${index}.000Z`),
+    })));
+    if (created.some((result) => result.status === "duplicate")) return;
+    const messageIds = created.map((result) => result.messageId);
+    const attachments = await database.select({
+      id: customerServiceAttachments.id,
+      messageId: customerServiceAttachments.messageId,
+      externalAttachmentKeyHash: customerServiceAttachments.externalAttachmentKeyHash,
+    }).from(customerServiceAttachments).where(inArray(customerServiceAttachments.messageId, messageIds));
+
+    for (const [index, attachment] of attachments.entries()) {
+      for (const cleanupFailed of index === 0 ? [true, false] : [false]) {
+        const attemptId = await repository.createImageAnalysisAttempt({
+          messageId: attachment.messageId,
+          schemaVersion: "1",
+          attachments: [{
+            attachmentId: attachment.id,
+            ordinal: 0,
+            externalAttachmentKeyHash: attachment.externalAttachmentKeyHash,
+          }],
+        });
+        const storageKey = `customer-service-attachments/test-${index}-${cleanupFailed ? "stale" : "valid"}.bin`;
+        await repository.markImageAttachmentStored({
+          attemptId,
+          attachmentId: attachment.id,
+          verifiedMimeType: "image/png",
+          width: 100,
+          height: 80,
+          byteSize: 64,
+          sha256: "e".repeat(64),
+          privateStorageKey: storageKey,
+          deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
+        });
+        await repository.completeImageAnalysisAttempt(imageCompletion(attemptId, "analyzed"));
+        await repository.markImageAttachmentDeleted({
+          attemptId,
+          attachmentId: attachment.id,
+          privateStorageKey: storageKey,
+          deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
+          deleted: !cleanupFailed,
+          failureCode: cleanupFailed ? "image_cleanup_failed" : null,
+        });
+      }
+    }
+
+    let queryCount = 0;
+    const countedRepository = createDrizzleCustomerServiceRepository(drizzle(testDatabaseUrl!, {
+      logger: { logQuery: () => { queryCount += 1; } },
+    }));
+    const page = await countedRepository.listQueue(100);
+
+    expect(page.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ attachmentCount: 1, imageAnalysisStatus: "assessed" }),
+    ]));
+    expect(queryCount).toBeLessThanOrEqual(4);
   });
 
   it("selects current-message attachments in stable ordinal order", async () => {

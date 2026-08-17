@@ -93,12 +93,22 @@ export class CustomerServiceEngine {
     }
 
     let visualAssessment: string | undefined;
-    if (this.attachmentProcessor) {
-      const imageContext = await this.repository.selectImageContext(request.messageId);
-      if (imageContext) {
-        if (request.trigger === "manual_regenerate" && imageContext.analysisSummary) {
-          visualAssessment = imageContext.analysisSummary;
-        } else if (attachmentSourceContext?.length) {
+    const imageContext = await this.repository.selectImageContext(request.messageId);
+    if (imageContext) {
+      if (request.trigger === "manual_regenerate" && imageContext.analysisSummary) {
+        visualAssessment = imageContext.analysisSummary;
+      } else if (!this.attachmentProcessor) {
+        const attemptId = await this.repository.createGateBlockedAttempt({
+          messageId: request.messageId,
+          trigger: request.trigger,
+          intent: gate.intent,
+          riskLevel: "high",
+          gateResult: "pilot_limit",
+          gateReasons: ["image_analysis_unavailable"],
+          knowledgeVersion: this.knowledge.knowledgeVersion,
+        });
+        return { status: "image_review_required", attemptId };
+      } else if (attachmentSourceContext?.length) {
           const processed = await this.attachmentProcessor.process({
             messageId: imageContext.messageId,
             attachmentIds: imageContext.attachmentIds,
@@ -118,19 +128,7 @@ export class CustomerServiceEngine {
             });
             return { status: "image_review_required", attemptId };
           }
-        } else {
-          const attemptId = await this.repository.createGateBlockedAttempt({
-            messageId: request.messageId,
-            trigger: request.trigger,
-            intent: gate.intent,
-            riskLevel: "high",
-            gateResult: "pilot_limit",
-            gateReasons: ["image_source_unavailable"],
-            knowledgeVersion: this.knowledge.knowledgeVersion,
-          });
-          return { status: "image_review_required", attemptId };
-        }
-      } else if (attachmentSourceContext?.length) {
+      } else {
         const attemptId = await this.repository.createGateBlockedAttempt({
           messageId: request.messageId,
           trigger: request.trigger,
@@ -142,6 +140,17 @@ export class CustomerServiceEngine {
         });
         return { status: "image_review_required", attemptId };
       }
+    } else if (attachmentSourceContext?.length) {
+      const attemptId = await this.repository.createGateBlockedAttempt({
+        messageId: request.messageId,
+        trigger: request.trigger,
+        intent: gate.intent,
+        riskLevel: "high",
+        gateResult: "pilot_limit",
+        gateReasons: ["image_context_mismatch"],
+        knowledgeVersion: this.knowledge.knowledgeVersion,
+      });
+      return { status: "image_review_required", attemptId };
     }
 
     const sources = retrieveKnowledge({ gate, knowledge: this.knowledge });

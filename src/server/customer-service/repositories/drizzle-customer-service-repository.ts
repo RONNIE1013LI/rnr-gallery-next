@@ -123,6 +123,74 @@ async function validatedImageAssessment(
   return null;
 }
 
+async function validatedQueueImageAssessments(
+  database: Database,
+  attachmentIdsByMessage: ReadonlyMap<string, readonly string[]>,
+) {
+  const messageIds = [...attachmentIdsByMessage.keys()];
+  if (!messageIds.length) return new Map<string, NonNullable<Awaited<ReturnType<typeof validatedImageAssessment>>>>();
+  const attempts = await database.select({
+    id: customerServiceImageAnalysisAttempts.id,
+    messageId: customerServiceImageAnalysisAttempts.messageId,
+    attemptNumber: customerServiceImageAnalysisAttempts.attemptNumber,
+    analysisResult: customerServiceImageAnalysisAttempts.analysisResult,
+    startedAt: customerServiceImageAnalysisAttempts.startedAt,
+  }).from(customerServiceImageAnalysisAttempts).where(and(
+    inArray(customerServiceImageAnalysisAttempts.messageId, messageIds),
+    eq(customerServiceImageAnalysisAttempts.status, "analyzed"),
+  )).orderBy(
+    desc(customerServiceImageAnalysisAttempts.startedAt),
+    desc(customerServiceImageAnalysisAttempts.attemptNumber),
+  );
+  const inputs = attempts.length
+    ? await database.select({
+      attemptId: customerServiceImageAnalysisInputs.analysisAttemptId,
+      attachmentId: customerServiceImageAnalysisInputs.attachmentId,
+      ordinal: customerServiceImageAnalysisInputs.ordinal,
+      cleanupStatus: customerServiceImageAnalysisInputs.cleanupStatus,
+    }).from(customerServiceImageAnalysisInputs).where(inArray(
+      customerServiceImageAnalysisInputs.analysisAttemptId,
+      attempts.map((attempt) => attempt.id),
+    )).orderBy(
+      asc(customerServiceImageAnalysisInputs.analysisAttemptId),
+      asc(customerServiceImageAnalysisInputs.ordinal),
+    )
+    : [];
+  const inputsByAttempt = new Map<string, typeof inputs>();
+  for (const input of inputs) {
+    inputsByAttempt.set(input.attemptId, [...(inputsByAttempt.get(input.attemptId) ?? []), input]);
+  }
+  const attemptsByMessage = new Map<string, typeof attempts>();
+  for (const attempt of attempts) {
+    attemptsByMessage.set(attempt.messageId, [...(attemptsByMessage.get(attempt.messageId) ?? []), attempt]);
+  }
+  const assessments = new Map<string, NonNullable<Awaited<ReturnType<typeof validatedImageAssessment>>>>();
+  for (const [messageId, attachmentIds] of attachmentIdsByMessage) {
+    for (const attempt of attemptsByMessage.get(messageId) ?? []) {
+      const inputsForAttempt = inputsByAttempt.get(attempt.id) ?? [];
+      if (
+        inputsForAttempt.length !== attachmentIds.length
+        || inputsForAttempt.some((input, index) => input.attachmentId !== attachmentIds[index])
+        || inputsForAttempt.some((input) => input.cleanupStatus !== "deleted")
+      ) continue;
+      try {
+        const analysis = parseImageAnalysisResult(
+          attempt.analysisResult,
+          inputsForAttempt.map((input) => input.ordinal),
+        );
+        assessments.set(messageId, {
+          status: analysis.overallStatus === "assessed" ? "assessed" : "human_review_required",
+          summary: analysis.safeSummary,
+        });
+        break;
+      } catch {
+        // Invalid historical results are never exposed to the review queue.
+      }
+    }
+  }
+  return assessments;
+}
+
 export function createDrizzleCustomerServiceRepository(database: Database): CustomerServiceRepository {
   return {
     async ingestFacebookMessage(input: HashedIncomingMessage) {
@@ -618,12 +686,11 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           attachment.attachmentId,
         ]);
       }
+      const assessments = await validatedQueueImageAssessments(database, attachmentIdsByMessage);
       return {
-        items: await Promise.all(items.map(async (item) => {
+        items: items.map((item) => {
           const attachmentIds = attachmentIdsByMessage.get(item.messageId) ?? [];
-          const assessment = attachmentIds.length
-            ? await validatedImageAssessment(database, item.messageId, attachmentIds)
-            : null;
+          const assessment = assessments.get(item.messageId);
           return {
             ...item,
             attachmentCount: attachmentIds.length,
@@ -632,7 +699,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
               : "not_applicable",
             imageAssessmentSummary: assessment?.summary ?? null,
           };
-        })),
+        }),
       };
     },
 

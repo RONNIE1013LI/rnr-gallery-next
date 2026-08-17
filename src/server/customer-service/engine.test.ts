@@ -116,6 +116,7 @@ function setup(body: string, input: Readonly<{
   reply?: string;
   withImage?: boolean;
   previousAnalysis?: string;
+  imageAnalysisEnabled?: boolean;
 }> = {}) {
   const repository = repositoryFor(body, input.withImage);
   if (input.previousAnalysis) {
@@ -138,7 +139,7 @@ function setup(body: string, input: Readonly<{
     engine: new CustomerServiceEngine({
       repository,
       provider,
-      attachmentProcessor: image.processor,
+      attachmentProcessor: input.imageAnalysisEnabled === false ? undefined : image.processor,
       policyGate,
       outputValidator,
       knowledge: compiledKnowledge,
@@ -197,6 +198,53 @@ describe("CustomerServiceEngine", () => {
     expect(current.image.attachmentStore.save).not.toHaveBeenCalled();
     expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
     expect(current.provider.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves the text-only path when image analysis is disabled", async () => {
+    const current = setup("Can you use my blurry original photo?", { imageAnalysisEnabled: false });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+
+    expect(current.repository.selectImageContext).toHaveBeenCalledTimes(1);
+    expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
+    expect(current.provider.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["manual_generate", "manual_regenerate"] as const)(
+    "fails closed after policy when image analysis is disabled for an attachment context: %s",
+    async (trigger) => {
+      const current = setup("Can you use my blurry original photo?", {
+        withImage: true,
+        imageAnalysisEnabled: false,
+      });
+
+      await expect(current.engine.generateDraft({ messageId: "message-1", trigger }))
+        .resolves.toEqual({ status: "image_review_required", attemptId: "attempt-blocked" });
+
+      expect(current.policyGate).toHaveBeenCalledBefore(current.repository.selectImageContext);
+      expect(current.repository.createGateBlockedAttempt).toHaveBeenCalledWith(expect.objectContaining({
+        gateReasons: ["image_analysis_unavailable"],
+      }));
+      expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
+      expect(current.provider.generate).not.toHaveBeenCalled();
+    },
+  );
+
+  it("reuses a validated image summary for manual regeneration when analysis is disabled", async () => {
+    const current = setup("Can you use my blurry original photo?", {
+      withImage: true,
+      previousAnalysis: safeAnalysis.safeSummary,
+      imageAnalysisEnabled: false,
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_regenerate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+
+    expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
+    expect(current.provider.generate).toHaveBeenCalledWith(expect.objectContaining({
+      instructions: expect.stringContaining(`VISUAL ASSESSMENT:\n${safeAnalysis.safeSummary}`),
+    }));
   });
 
   it("keeps image-only messages away from both providers", async () => {
