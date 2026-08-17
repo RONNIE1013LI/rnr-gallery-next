@@ -1,11 +1,26 @@
-import { mkdtempSync, readFileSync, statSync } from "node:fs";
+import {
+  copyFileSync,
+  cpSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  symlinkSync,
+  unlinkSync,
+  statSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
+import compiledKnowledge from "../src/server/customer-service/knowledge/compiled-knowledge.json";
+import { buildDraftPrompt } from "../src/server/customer-service/prompt-builder";
+import { retrieveKnowledge } from "../src/server/customer-service/knowledge-retrieval";
+import { evaluatePolicyGate } from "../src/server/customer-service/policy-gate";
 import {
   createDeterministicImageEvaluationProviders,
+  createOpenAIEvaluationProviders,
   evaluateReplyAssistantImageCases,
   loadImageEvaluationDataset,
+  requireOpenAIEvaluationEnvironment,
   writeImageEvaluationReport,
   type EvaluationTextProvider,
   type EvaluationVisionRequest,
@@ -42,16 +57,40 @@ describe("reply assistant image evaluation", () => {
     ))).toBe(true);
   });
 
+  it("rejects a manifest asset that escapes through a filesystem symlink", async () => {
+    const tempRoot = mkdtempSync(join(tmpdir(), "image-eval-symlink-"));
+    const copiedFixtureRoot = join(tempRoot, "fixtures");
+    const copiedAssetRoot = join(copiedFixtureRoot, "image-evaluation-assets");
+    mkdirSync(copiedFixtureRoot, { recursive: true });
+    copyFileSync(fixturePath, join(copiedFixtureRoot, "image-evaluation-cases.jsonl"));
+    cpSync(resolve(manifestPath, ".."), copiedAssetRoot, { recursive: true });
+    const manifest = JSON.parse(readFileSync(join(copiedAssetRoot, "manifest.json"), "utf8")) as {
+      assets: Array<{ relativePath: string }>;
+    };
+    const escapedAssetPath = join(copiedAssetRoot, manifest.assets[0].relativePath);
+    const outsidePath = join(tempRoot, "outside-asset.png");
+    copyFileSync(escapedAssetPath, outsidePath);
+    unlinkSync(escapedAssetPath);
+    symlinkSync(outsidePath, escapedAssetPath);
+
+    await expect(loadImageEvaluationDataset({
+      fixturePath: join(copiedFixtureRoot, "image-evaluation-cases.jsonl"),
+      manifestPath: join(copiedAssetRoot, "manifest.json"),
+    })).rejects.toThrowError("image_evaluation_unsafe_asset_path");
+  });
+
   it("makes zero vision and text calls for blocked policy controls", async () => {
     const dataset = await loadImageEvaluationDataset({ fixturePath, manifestPath });
     const visionProvider: EvaluationVisionProvider = {
       kind: "mock",
       model: "must-not-run",
+      networked: false,
       analyze: vi.fn(async () => { throw new Error("unexpected_vision_call"); }),
     };
     const textProvider: EvaluationTextProvider = {
       kind: "mock",
       model: "must-not-run",
+      networked: false,
       generate: vi.fn(async () => { throw new Error("unexpected_text_call"); }),
     };
 
@@ -66,11 +105,12 @@ describe("reply assistant image evaluation", () => {
 
     expect(visionProvider.analyze).not.toHaveBeenCalled();
     expect(textProvider.generate).not.toHaveBeenCalled();
-    expect(report.summary.blockedProviderCalls).toEqual({ vision: 0, text: 0, total: 0 });
+    expect(report.summary.blockedProviderAttempts).toEqual({ vision: 0, text: 0, total: 0 });
+    expect(report.summary.blockedNetworkCalls).toEqual({ vision: 0, text: 0, total: 0 });
     expect(report.summary.gateBypasses).toBe(0);
   });
 
-  it("runs all 80 deterministic mock cases with zero privacy and policy failures", async () => {
+  it("runs all 80 deterministic mock cases as harness evidence without fake quality metrics", async () => {
     const dataset = await loadImageEvaluationDataset({ fixturePath, manifestPath });
     const providers = createDeterministicImageEvaluationProviders();
     const report = await evaluateReplyAssistantImageCases({ dataset, ...providers });
@@ -82,19 +122,33 @@ describe("reply assistant image evaluation", () => {
       rejectedUnsupportedClaims: 0,
       crossCustomerExposures: 0,
       automaticSends: 0,
-      blockedProviderCalls: { vision: 0, text: 0, total: 0 },
+      blockedProviderAttempts: { vision: 0, text: 0, total: 0 },
+      blockedNetworkCalls: { vision: 0, text: 0, total: 0 },
       inputFailures: 3,
       visionProviderFailures: 2,
       textProviderFailures: 1,
-      classificationAccuracyPct: 100,
-      comparisonAccuracyPct: 100,
-      gatePassed: true,
+      harnessGatePassed: true,
+      overallGatePassed: false,
+      quality: {
+        status: "unavailable_mock_provider",
+        visualIssueCoveragePct: null,
+        requestOriginalRecallPct: null,
+        classificationAccuracyPct: null,
+        comparisonAccuracyPct: null,
+        requiredPointCoveragePct: null,
+        automatedDraftAcceptancePct: null,
+        humanAssistedAcceptancePct: null,
+        humanReviewedCases: 0,
+        gatePassed: null,
+      },
     });
-    expect(report.summary.visualIssueCoveragePct).toBeGreaterThanOrEqual(90);
-    expect(report.summary.requestOriginalRecallPct).toBeGreaterThanOrEqual(90);
-    expect(report.summary.assistedAcceptancePct).toBeGreaterThanOrEqual(95);
     expect(report.results).toHaveLength(80);
     expect(report.results.every((result) => result.assetIds.every((assetId) => !assetId.includes("/")))).toBe(true);
+    expect(report.results.every((result) => result.requiredPointCoveragePct === null)).toBe(true);
+    expect(report.summary.usage).toMatchObject({
+      vision: { attempts: 71, networkCalls: 0, successfulCalls: 69, inputTokens: 0, outputTokens: 0, costMicrousd: 0 },
+      text: { attempts: 69, networkCalls: 0, successfulCalls: 68, inputTokens: 0, outputTokens: 0, costMicrousd: 0 },
+    });
   });
 
   it("detects an expected policy block that reaches providers as a bypass", async () => {
@@ -110,7 +164,11 @@ describe("reply assistant image evaluation", () => {
     });
 
     expect(report.summary.gateBypasses).toBe(1);
-    expect(report.results[0]).toMatchObject({ gateBypass: true, providerCalls: { vision: true, text: true } });
+    expect(report.results[0]).toMatchObject({
+      gateBypass: true,
+      providerAttempts: { vision: true, text: true },
+      networkCalls: { vision: false, text: false },
+    });
   });
 
   it("calculates original-file recall from recommendations, not issue codes alone", async () => {
@@ -119,6 +177,7 @@ describe("reply assistant image evaluation", () => {
     const providers = createDeterministicImageEvaluationProviders();
     const visionProvider: EvaluationVisionProvider = {
       ...providers.visionProvider,
+      kind: "openai",
       async analyze(request) {
         const result = await providers.visionProvider.analyze(request);
         return {
@@ -130,10 +189,138 @@ describe("reply assistant image evaluation", () => {
     const report = await evaluateReplyAssistantImageCases({
       dataset: { ...dataset, cases: [screenshot] },
       visionProvider,
-      textProvider: providers.textProvider,
+      textProvider: { ...providers.textProvider, kind: "openai" },
     });
 
-    expect(report.summary.requestOriginalRecallPct).toBe(0);
+    expect(report.summary.quality.requestOriginalRecallPct).toBe(0);
+  });
+
+  it("does not expose fixture expectations to deterministic providers", async () => {
+    const dataset = await loadImageEvaluationDataset({ fixturePath, manifestPath });
+    const providers = createDeterministicImageEvaluationProviders();
+    const item = dataset.cases.find((candidate) => candidate.category === "classification")!;
+    const visionProvider: EvaluationVisionProvider = {
+      ...providers.visionProvider,
+      analyze: vi.fn(async (request) => {
+        expect(request).not.toHaveProperty("expected");
+        return providers.visionProvider.analyze(request);
+      }),
+    };
+    const textProvider: EvaluationTextProvider = {
+      ...providers.textProvider,
+      generate: vi.fn(async (request) => {
+        expect(request).not.toHaveProperty("expected");
+        return providers.textProvider.generate(request);
+      }),
+    };
+
+    await evaluateReplyAssistantImageCases({
+      dataset: { ...dataset, cases: [item] },
+      visionProvider,
+      textProvider,
+    });
+
+    expect(visionProvider.analyze).toHaveBeenCalledOnce();
+    expect(textProvider.generate).toHaveBeenCalledOnce();
+  });
+
+  it("requires explicit existing image and text models for real evaluation", () => {
+    expect(() => requireOpenAIEvaluationEnvironment({
+      OPENAI_API_KEY: "test-key",
+      OPENAI_IMAGE_ANALYSIS_MODEL: "image-model",
+    })).toThrowError("openai_evaluation_environment_unavailable");
+
+    expect(requireOpenAIEvaluationEnvironment({
+      OPENAI_API_KEY: "test-key",
+      OPENAI_IMAGE_ANALYSIS_MODEL: "image-model",
+      OPENAI_MODEL: "text-model",
+    })).toEqual({ apiKey: "test-key", imageModel: "image-model", textModel: "text-model" });
+  });
+
+  it("keeps the production image and text models separate in real mode", () => {
+    const providers = createOpenAIEvaluationProviders({
+      apiKey: "test-key",
+      imageModel: "image-model",
+      textModel: "text-model",
+    });
+
+    expect(providers.visionProvider.model).toBe("image-model");
+    expect(providers.textProvider.model).toBe("text-model");
+  });
+
+  it("builds the unchanged production text prompt with additive visual context", async () => {
+    const dataset = await loadImageEvaluationDataset({ fixturePath, manifestPath });
+    const item = dataset.cases.find((candidate) => candidate.id === "classification-01")!;
+    const providers = createDeterministicImageEvaluationProviders();
+    let visualSummary = "";
+    let observedPrompt: unknown;
+    const visionProvider: EvaluationVisionProvider = {
+      ...providers.visionProvider,
+      async analyze(request) {
+        const result = await providers.visionProvider.analyze(request);
+        visualSummary = result.analysis.safeSummary;
+        return result;
+      },
+    };
+    const textProvider: EvaluationTextProvider = {
+      ...providers.textProvider,
+      async generate(request) {
+        observedPrompt = (request as unknown as { prompt: unknown }).prompt;
+        return providers.textProvider.generate(request);
+      },
+    };
+
+    await evaluateReplyAssistantImageCases({
+      dataset: { ...dataset, cases: [item] },
+      visionProvider,
+      textProvider,
+    });
+
+    const gate = evaluatePolicyGate({ message: item.customerText, knowledge: compiledKnowledge });
+    const sources = retrieveKnowledge({ gate, knowledge: compiledKnowledge });
+    expect(observedPrompt).toEqual(buildDraftPrompt({
+      intent: gate.intent,
+      context: [item.customerText],
+      rules: sources.rules,
+      examples: sources.examples,
+      goldenExamples: sources.goldenExamples,
+      qualityGuide: sources.qualityGuide,
+      toneGuide: compiledKnowledge.toneGuide,
+      visualAssessment: visualSummary,
+    }));
+  });
+
+  it("runs the unchanged production text validator and additive image validator", async () => {
+    const dataset = await loadImageEvaluationDataset({ fixturePath, manifestPath });
+    const selected = dataset.cases.filter((item) => (
+      item.id === "classification-01" || item.id === "classification-02"
+    ));
+    const providers = createDeterministicImageEvaluationProviders();
+    const textProvider: EvaluationTextProvider = {
+      ...providers.textProvider,
+      async generate(request) {
+        return {
+          draft: request.caseId === "classification-01"
+            ? "As an AI assistant, this is a design reference for review."
+            : "This image will print perfectly.",
+          usage: { inputTokens: 1, cachedInputTokens: 0, outputTokens: 1, costMicrousd: 0, latencyMs: 1 },
+        };
+      },
+    };
+    const report = await evaluateReplyAssistantImageCases({
+      dataset: { ...dataset, cases: selected },
+      visionProvider: providers.visionProvider,
+      textProvider,
+    });
+
+    expect(report.results.find((item) => item.id === "classification-01")).toMatchObject({
+      outputAccepted: false,
+      policyViolations: expect.arrayContaining(["ai_style"]),
+    });
+    expect(report.results.find((item) => item.id === "classification-02")).toMatchObject({
+      outputAccepted: false,
+      policyViolations: expect.arrayContaining(["visual_print_suitability_claim"]),
+    });
   });
 
   it("keeps customer assets isolated and writes a redacted 0600 report", async () => {
@@ -174,13 +361,73 @@ describe("reply assistant image evaluation", () => {
     const report = await evaluateReplyAssistantImageCases({ dataset, ...providers });
 
     expect(report.summary.usage).toEqual({
-      vision: expect.objectContaining({ calls: expect.any(Number), costMicrousd: expect.any(Number) }),
-      text: expect.objectContaining({ calls: expect.any(Number), costMicrousd: expect.any(Number) }),
+      vision: expect.objectContaining({ attempts: expect.any(Number), networkCalls: expect.any(Number), costMicrousd: expect.any(Number) }),
+      text: expect.objectContaining({ attempts: expect.any(Number), networkCalls: expect.any(Number), costMicrousd: expect.any(Number) }),
       totalCostMicrousd: expect.any(Number),
     });
     expect(report.summary.latency).toEqual({
       vision: expect.objectContaining({ p50Ms: expect.any(Number), p95Ms: expect.any(Number), p99Ms: expect.any(Number) }),
       text: expect.objectContaining({ p50Ms: expect.any(Number), p95Ms: expect.any(Number), p99Ms: expect.any(Number) }),
     });
+  });
+
+  it("records each deterministic failure control as an observed attempted call", async () => {
+    const dataset = await loadImageEvaluationDataset({ fixturePath, manifestPath });
+    const providers = createDeterministicImageEvaluationProviders();
+    const report = await evaluateReplyAssistantImageCases({ dataset, ...providers });
+
+    expect(report.results.find((item) => item.id === "failure-04")).toMatchObject({
+      providerAttempts: { vision: true, text: false },
+      networkCalls: { vision: false, text: false },
+      providerFailure: "vision_timeout",
+    });
+    expect(report.results.find((item) => item.id === "failure-05")).toMatchObject({
+      providerAttempts: { vision: true, text: false },
+      networkCalls: { vision: false, text: false },
+      providerFailure: "vision_invalid_output",
+    });
+    expect(report.results.find((item) => item.id === "failure-06")).toMatchObject({
+      providerAttempts: { vision: true, text: true },
+      networkCalls: { vision: false, text: false },
+      providerFailure: "text_provider_error",
+    });
+  });
+
+  it("measures elapsed latency around successful and failed attempts", async () => {
+    const dataset = await loadImageEvaluationDataset({ fixturePath, manifestPath });
+    const item = dataset.cases.find((candidate) => candidate.id === "failure-06")!;
+    const providers = createDeterministicImageEvaluationProviders();
+    const visionProvider: EvaluationVisionProvider = {
+      ...providers.visionProvider,
+      networked: false,
+      async analyze(request) {
+        const result = await providers.visionProvider.analyze(request);
+        return { ...result, usage: { ...result.usage, latencyMs: 999 } };
+      },
+    };
+    const textProvider: EvaluationTextProvider = {
+      ...providers.textProvider,
+      networked: false,
+      async generate() {
+        throw Object.assign(new Error("provider failed"), {
+          code: "observed_text_failure",
+          networkCallMade: false,
+        });
+      },
+    };
+    const timestamps = [0, 7, 10, 25];
+    const report = await evaluateReplyAssistantImageCases({
+      dataset: { ...dataset, cases: [item] },
+      visionProvider,
+      textProvider,
+      now: () => timestamps.shift() ?? 25,
+    });
+
+    expect(report.results[0]).toMatchObject({
+      providerFailure: "observed_text_failure",
+      observedLatencyMs: { vision: 7, text: 15 },
+    });
+    expect(report.summary.latency.vision.p50Ms).toBe(7);
+    expect(report.summary.latency.text.p50Ms).toBe(15);
   });
 });

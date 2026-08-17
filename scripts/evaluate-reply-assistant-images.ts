@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { chmodSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, lstatSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { dirname, isAbsolute, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { z } from "zod";
@@ -12,7 +12,11 @@ import {
   type ImageAnalysisResult,
 } from "../src/server/customer-service/image-analysis-schema";
 import { validateImageDraft } from "../src/server/customer-service/image-draft-validator";
+import { validateDraft } from "../src/server/customer-service/output-validator";
+import { buildDraftPrompt } from "../src/server/customer-service/prompt-builder";
+import { retrieveKnowledge } from "../src/server/customer-service/knowledge-retrieval";
 import { evaluatePolicyGate } from "../src/server/customer-service/policy-gate";
+import type { AiProviderRequest } from "../src/server/customer-service/providers/ai-provider";
 import { OpenAIImageAnalysisProvider } from "../src/server/customer-service/providers/openai-image-analysis";
 import { OpenAIResponsesProvider } from "../src/server/customer-service/providers/openai-responses";
 
@@ -139,15 +143,14 @@ type ProviderUsage = Readonly<{
 
 export type EvaluationVisionRequest = Readonly<{
   caseId: string;
-  category: ImageEvaluationCase["category"];
   failureMode: z.infer<typeof FailureModeSchema>;
   assets: ReadonlyArray<LoadedAsset & Readonly<{ ordinal: number }>>;
-  expected: ImageEvaluationCase["expected"];
 }>;
 
 export type EvaluationVisionProvider = Readonly<{
   kind: "mock" | "openai";
   model: string;
+  networked: boolean;
   analyze(request: EvaluationVisionRequest): Promise<Readonly<{
     analysis: ImageAnalysisResult;
     usage: ProviderUsage;
@@ -157,14 +160,13 @@ export type EvaluationVisionProvider = Readonly<{
 export type EvaluationTextRequest = Readonly<{
   caseId: string;
   failureMode: z.infer<typeof FailureModeSchema>;
-  customerText: string;
-  visualSummary: string;
-  expected: ImageEvaluationCase["expected"];
+  prompt: AiProviderRequest;
 }>;
 
 export type EvaluationTextProvider = Readonly<{
   kind: "mock" | "openai";
   model: string;
+  networked: boolean;
   generate(request: EvaluationTextRequest): Promise<Readonly<{
     draft: string;
     usage: ProviderUsage;
@@ -183,12 +185,16 @@ type CaseResult = Readonly<{
   recommendationCodes: readonly string[];
   likelyMainOrdinal: number | null;
   draft: string;
+  outputAccepted: boolean;
   policyViolations: readonly string[];
-  requiredPointCoveragePct: number;
-  providerCalls: Readonly<{ vision: boolean; text: boolean }>;
+  requiredPointCoveragePct: number | null;
+  providerAttempts: Readonly<{ vision: boolean; text: boolean }>;
+  networkCalls: Readonly<{ vision: boolean; text: boolean }>;
+  observedLatencyMs: Readonly<{ vision: number; text: number }>;
   usage: Readonly<{ vision: ProviderUsage; text: ProviderUsage }>;
   inputFailure: string | null;
   providerFailure: string | null;
+  providerFailureStage: "vision" | "text" | null;
   humanReviewRequired: true;
   crossCustomerExposure: boolean;
   automaticSend: false;
@@ -225,13 +231,29 @@ function hasDuplicate(values: readonly string[]) {
   return new Set(values).size !== values.length;
 }
 
-function safeAssetPath(basePath: string, asset: ManifestAsset) {
+function outsideBase(basePath: string, candidatePath: string) {
+  const pathFromBase = relative(basePath, candidatePath);
+  return pathFromBase === ".." || isAbsolute(pathFromBase) || pathFromBase.startsWith(`..${process.platform === "win32" ? "\\" : "/"}`);
+}
+
+function safeAssetPath(basePath: string, canonicalBasePath: string, asset: ManifestAsset) {
   if (isAbsolute(asset.relativePath) || asset.relativePath.split(/[\\/]/).includes("..")) {
     throw new Error("image_evaluation_unsafe_asset_path");
   }
   const candidate = resolve(basePath, asset.relativePath);
-  if (relative(basePath, candidate).startsWith("..")) throw new Error("image_evaluation_unsafe_asset_path");
-  return candidate;
+  if (outsideBase(basePath, candidate)) throw new Error("image_evaluation_unsafe_asset_path");
+  let status;
+  let canonicalCandidate;
+  try {
+    status = lstatSync(candidate);
+    canonicalCandidate = realpathSync(candidate);
+  } catch {
+    throw new Error("image_evaluation_unsafe_asset_path");
+  }
+  if (!status.isFile() || status.isSymbolicLink() || outsideBase(canonicalBasePath, canonicalCandidate)) {
+    throw new Error("image_evaluation_unsafe_asset_path");
+  }
+  return canonicalCandidate;
 }
 
 export async function loadImageEvaluationDataset({
@@ -260,9 +282,10 @@ export async function loadImageEvaluationDataset({
     throw new Error("image_evaluation_asset_ownership_mismatch");
   }
   const assetDirectory = dirname(manifestPath);
+  const canonicalAssetDirectory = realpathSync(assetDirectory);
   const assets = new Map<string, LoadedAsset>();
   for (const asset of manifest.assets) {
-    const bytes = readFileSync(safeAssetPath(assetDirectory, asset));
+    const bytes = readFileSync(safeAssetPath(assetDirectory, canonicalAssetDirectory, asset));
     if (createHash("sha256").update(bytes).digest("hex") !== asset.sha256) {
       throw new Error("image_evaluation_asset_hash_mismatch");
     }
@@ -279,68 +302,34 @@ export async function loadImageEvaluationDataset({
   return { cases, manifest, distribution, assets, assetOwners };
 }
 
-function mockImageRecord(item: ImageEvaluationCase, ordinal: number): ImageAnalysisResult["images"][number] {
-  const issues = item.expected.issueCodes;
+function mockImageRecord(ordinal: number): ImageAnalysisResult["images"][number] {
   return {
     ordinal,
-    classification: item.expected.classifications[ordinal],
-    blur: item.category === "blur_low_resolution" ? "strong" : "none_visible",
-    sourceResolutionSignal: item.category === "blur_low_resolution" ? "low" : "normal",
-    subjectScale: item.category === "small_subject" ? "very_small" : "usable",
-    crop: item.category === "heavy_crop" ? "heavy" : "none_visible",
-    obstruction: item.category === "obstruction" ? "heavy" : "none_visible",
-    screenshotSignal: item.category === "screenshot_original" ? "likely" : "none_visible",
-    recommendedRole: item.category === "comparison"
-      ? ordinal === item.expected.likelyMainOrdinal ? "main_candidate" : "side_candidate"
-      : item.expected.classifications[ordinal] === "customer_photo" ? "main_candidate" : "reference_only",
-    issueCodes: issues,
+    classification: "unknown",
+    blur: "unclear",
+    sourceResolutionSignal: "unclear",
+    subjectScale: "unclear",
+    crop: "unclear",
+    obstruction: "unclear",
+    screenshotSignal: "unclear",
+    recommendedRole: "unclear",
+    issueCodes: ["manual_assessment"],
   };
 }
 
 function mockAnalysis(request: EvaluationVisionRequest) {
-  const item = {
-    id: request.caseId,
-    category: request.category,
-    expected: request.expected,
-  } as ImageEvaluationCase;
   const draft = {
     schemaVersion: "1" as const,
     overallStatus: "assessed" as const,
-    images: request.assets.map((asset) => mockImageRecord(item, asset.ordinal)),
-    comparison: request.expected.likelyMainOrdinal === null ? null : {
-      likelyMainOrdinal: request.expected.likelyMainOrdinal,
-      likelySideOrdinals: request.assets.map((asset) => asset.ordinal).filter((ordinal) => ordinal !== request.expected.likelyMainOrdinal),
-      confidence: "medium" as const,
-      reasonCodes: ["better_composition" as const],
-    },
-    recommendationCodes: request.expected.acceptableRecommendationCodes,
+    images: request.assets.map((asset) => mockImageRecord(asset.ordinal)),
+    comparison: null,
+    recommendationCodes: ["human_review" as const],
     safeSummary: "",
   };
   return parseImageAnalysisResult(
     { ...draft, safeSummary: renderImageAnalysisSafeSummary(draft) },
     request.assets.map((asset) => asset.ordinal),
   );
-}
-
-function mockDraft(expected: ImageEvaluationCase["expected"]) {
-  const recommendations = expected.acceptableRecommendationCodes;
-  if (recommendations.includes("send_original_file")) {
-    return "Please send the original file so our team can review the visible image quality.";
-  }
-  if (recommendations.includes("send_uncropped_version")) {
-    return "Please send an uncropped version so our team can review the full image.";
-  }
-  if (recommendations.includes("send_closer_photo")) {
-    return "Please send a closer photo so our team can review the subject clearly.";
-  }
-  if (recommendations.includes("send_alternative_photo")) {
-    return "Please send a less obstructed alternative photo so our team can review it.";
-  }
-  if (recommendations.includes("use_as_main_candidate") && recommendations.includes("use_as_side_candidate")) {
-    return "The first image is the likely main candidate and the second is a side candidate for human review.";
-  }
-  const classification = expected.classifications[0].replaceAll("_", " ");
-  return `This appears to be a ${classification} for human review.`;
 }
 
 export function createDeterministicImageEvaluationProviders(): Readonly<{
@@ -351,38 +340,49 @@ export function createDeterministicImageEvaluationProviders(): Readonly<{
     visionProvider: {
       kind: "mock",
       model: "deterministic-image-evaluation-v1",
+      networked: false,
       async analyze(request) {
         if (request.failureMode === "vision_timeout") throw new Error("vision_timeout");
         if (request.failureMode === "vision_invalid_output") throw new Error("vision_invalid_output");
         return {
           analysis: mockAnalysis(request),
-          usage: { inputTokens: request.assets.length * 40, cachedInputTokens: 0, outputTokens: 20, costMicrousd: 0, latencyMs: 1 },
+          usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costMicrousd: 0, latencyMs: 0 },
         };
       },
     },
     textProvider: {
       kind: "mock",
       model: "deterministic-text-evaluation-v1",
+      networked: false,
       async generate(request) {
         if (request.failureMode === "text_provider_error") throw new Error("text_provider_error");
         return {
-          draft: mockDraft(request.expected),
-          usage: { inputTokens: 60, cachedInputTokens: 0, outputTokens: 20, costMicrousd: 0, latencyMs: 1 },
+          draft: "Please review the original image file before preparing a customer reply.",
+          usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, costMicrousd: 0, latencyMs: 0 },
         };
       },
     },
   };
 }
 
-function createOpenAIEvaluationProviders(apiKey: string, model: string) {
-  const vision = new OpenAIImageAnalysisProvider({ apiKey, model });
-  const text = new OpenAIResponsesProvider({ apiKey, model });
+export function createOpenAIEvaluationProviders({
+  apiKey,
+  imageModel,
+  textModel,
+}: Readonly<{ apiKey: string; imageModel: string; textModel: string }>) {
+  const vision = new OpenAIImageAnalysisProvider({ apiKey, model: imageModel });
+  const text = new OpenAIResponsesProvider({ apiKey, model: textModel });
   const visionProvider: EvaluationVisionProvider = {
     kind: "openai",
-    model,
+    model: imageModel,
+    networked: true,
     async analyze(request) {
-      if (request.failureMode === "vision_timeout") throw new Error("vision_timeout");
-      if (request.failureMode === "vision_invalid_output") throw new Error("vision_invalid_output");
+      if (request.failureMode === "vision_timeout") {
+        throw Object.assign(new Error("vision_timeout"), { code: "vision_timeout", networkCallMade: false });
+      }
+      if (request.failureMode === "vision_invalid_output") {
+        throw Object.assign(new Error("vision_invalid_output"), { code: "vision_invalid_output", networkCallMade: false });
+      }
       const result = await vision.analyze({
         images: request.assets.map((asset) => ({
           ordinal: asset.ordinal,
@@ -398,18 +398,13 @@ function createOpenAIEvaluationProviders(apiKey: string, model: string) {
   };
   const textProvider: EvaluationTextProvider = {
     kind: "openai",
-    model,
+    model: textModel,
+    networked: true,
     async generate(request) {
-      if (request.failureMode === "text_provider_error") throw new Error("text_provider_error");
-      const result = await text.generate({
-        instructions: [
-          "Write a short internal draft for human review only.",
-          "Use only the supplied visible assessment.",
-          "Do not promise restoration, print suitability, price, timing, or delivery.",
-          "Ask for the recommended safer image when needed.",
-        ].join(" "),
-        input: `Customer message: ${request.customerText}\nVisible assessment: ${request.visualSummary}`,
-      });
+      if (request.failureMode === "text_provider_error") {
+        throw Object.assign(new Error("text_provider_error"), { code: "text_provider_error", networkCallMade: false });
+      }
+      const result = await text.generate(request.prompt);
       return {
         draft: result.text,
         usage: { ...result.usage, costMicrousd: result.estimatedCostMicrousd, latencyMs: result.latencyMs },
@@ -432,12 +427,16 @@ function failedResult(item: ImageEvaluationCase, input: Partial<CaseResult>): Ca
     recommendationCodes: input.recommendationCodes ?? [],
     likelyMainOrdinal: input.likelyMainOrdinal ?? null,
     draft: input.draft ?? "",
+    outputAccepted: input.outputAccepted ?? false,
     policyViolations: input.policyViolations ?? [],
-    requiredPointCoveragePct: input.requiredPointCoveragePct ?? 0,
-    providerCalls: input.providerCalls ?? { vision: false, text: false },
+    requiredPointCoveragePct: input.requiredPointCoveragePct ?? null,
+    providerAttempts: input.providerAttempts ?? { vision: false, text: false },
+    networkCalls: input.networkCalls ?? { vision: false, text: false },
+    observedLatencyMs: input.observedLatencyMs ?? { vision: 0, text: 0 },
     usage: input.usage ?? { vision: ZERO_USAGE, text: ZERO_USAGE },
     inputFailure: input.inputFailure ?? null,
     providerFailure: input.providerFailure ?? null,
+    providerFailureStage: input.providerFailureStage ?? null,
     humanReviewRequired: true,
     crossCustomerExposure: input.crossCustomerExposure ?? false,
     automaticSend: false,
@@ -468,7 +467,11 @@ function requiredPointCoverage(draft: string, requiredPoints: readonly string[])
 function aggregateUsage(results: readonly CaseResult[], kind: "vision" | "text") {
   const values = results.map((result) => result.usage[kind]);
   return {
-    calls: results.filter((result) => result.providerCalls[kind]).length,
+    attempts: results.filter((result) => result.providerAttempts[kind]).length,
+    networkCalls: results.filter((result) => result.networkCalls[kind]).length,
+    successfulCalls: results.filter((result) => (
+      result.providerAttempts[kind] && result.providerFailureStage !== kind
+    )).length,
     inputTokens: values.reduce((sum, item) => sum + item.inputTokens, 0),
     cachedInputTokens: values.reduce((sum, item) => sum + item.cachedInputTokens, 0),
     outputTokens: values.reduce((sum, item) => sum + item.outputTokens, 0),
@@ -476,16 +479,43 @@ function aggregateUsage(results: readonly CaseResult[], kind: "vision" | "text")
   };
 }
 
+function elapsed(startedAt: number, endedAt: number) {
+  return Math.max(0, endedAt - startedAt);
+}
+
+function observedProviderFailure(
+  error: unknown,
+  fallbackCode: string,
+  providerNetworked: boolean,
+) {
+  const value = error && typeof error === "object" ? error as Record<string, unknown> : {};
+  const candidate = typeof value.code === "string"
+    ? value.code
+    : error instanceof Error
+      ? error.message
+      : "";
+  const code = /^[a-z][a-z0-9_]{0,63}$/.test(candidate) ? candidate : fallbackCode;
+  return {
+    code,
+    networkCallMade: typeof value.networkCallMade === "boolean"
+      ? value.networkCallMade
+      : providerNetworked,
+  };
+}
+
 export async function evaluateReplyAssistantImageCases({
   dataset,
   visionProvider,
   textProvider,
+  now = () => performance.now(),
 }: Readonly<{
   dataset: ImageEvaluationDataset;
   visionProvider: EvaluationVisionProvider;
   textProvider: EvaluationTextProvider;
+  now?: () => number;
 }>) {
   const results: CaseResult[] = [];
+  const qualityObserved = visionProvider.kind === "openai" && textProvider.kind === "openai";
 
   for (const item of dataset.cases) {
     const gate = evaluatePolicyGate({ message: item.customerText, knowledge: compiledKnowledge });
@@ -524,28 +554,32 @@ export async function evaluateReplyAssistantImageCases({
     }
 
     let visionResult: Awaited<ReturnType<EvaluationVisionProvider["analyze"]>>;
+    const visionStartedAt = now();
+    let visionLatencyMs: number;
     try {
       visionResult = await visionProvider.analyze({
         caseId: item.id,
-        category: item.category,
         failureMode: item.failureMode,
         assets: loadedAssets.map((asset, ordinal) => ({ ...asset, ordinal })),
-        expected: item.expected,
       });
+      visionLatencyMs = elapsed(visionStartedAt, now());
       visionResult = {
         ...visionResult,
+        usage: { ...visionResult.usage, latencyMs: visionLatencyMs },
         analysis: parseImageAnalysisResult(visionResult.analysis, loadedAssets.map((_, ordinal) => ordinal)),
       };
-    } catch {
+    } catch (error) {
+      visionLatencyMs = elapsed(visionStartedAt, now());
+      const failure = observedProviderFailure(error, "vision_provider_error", visionProvider.networked);
       results.push(failedResult(item, {
         gateResult: gate.decision,
         gateBypass,
-        providerCalls: { vision: true, text: false },
-        providerFailure: item.failureMode === "vision_timeout"
-          ? "vision_timeout"
-          : item.failureMode === "vision_invalid_output"
-            ? "vision_invalid_output"
-            : "vision_provider_error",
+        providerAttempts: { vision: true, text: false },
+        networkCalls: { vision: failure.networkCallMade, text: false },
+        observedLatencyMs: { vision: visionLatencyMs, text: 0 },
+        usage: { vision: { ...ZERO_USAGE, latencyMs: visionLatencyMs }, text: ZERO_USAGE },
+        providerFailure: failure.code,
+        providerFailureStage: "vision",
       }));
       continue;
     }
@@ -554,16 +588,34 @@ export async function evaluateReplyAssistantImageCases({
     const classifications = visionResult.analysis.images.map((image) => image.classification);
     const recommendationCodes = visionResult.analysis.recommendationCodes;
     const likelyMainOrdinal = visionResult.analysis.comparison?.likelyMainOrdinal ?? null;
+    const sources = retrieveKnowledge({ gate, knowledge: compiledKnowledge });
+    const prompt = buildDraftPrompt({
+      intent: gate.intent,
+      context: [item.customerText],
+      rules: sources.rules,
+      examples: sources.examples,
+      goldenExamples: sources.goldenExamples,
+      qualityGuide: sources.qualityGuide,
+      toneGuide: compiledKnowledge.toneGuide,
+      visualAssessment: visionResult.analysis.safeSummary,
+    });
     let textResult: Awaited<ReturnType<EvaluationTextProvider["generate"]>>;
+    const textStartedAt = now();
+    let textLatencyMs: number;
     try {
       textResult = await textProvider.generate({
         caseId: item.id,
         failureMode: item.failureMode,
-        customerText: item.customerText,
-        visualSummary: visionResult.analysis.safeSummary,
-        expected: item.expected,
+        prompt,
       });
-    } catch {
+      textLatencyMs = elapsed(textStartedAt, now());
+      textResult = {
+        ...textResult,
+        usage: { ...textResult.usage, latencyMs: textLatencyMs },
+      };
+    } catch (error) {
+      textLatencyMs = elapsed(textStartedAt, now());
+      const failure = observedProviderFailure(error, "text_provider_error", textProvider.networked);
       results.push(failedResult(item, {
         gateResult: gate.decision,
         gateBypass,
@@ -571,19 +623,19 @@ export async function evaluateReplyAssistantImageCases({
         visualCodes,
         recommendationCodes,
         likelyMainOrdinal,
-        providerCalls: { vision: true, text: true },
-        usage: { vision: visionResult.usage, text: ZERO_USAGE },
-        providerFailure: "text_provider_error",
+        providerAttempts: { vision: true, text: true },
+        networkCalls: { vision: visionProvider.networked, text: failure.networkCallMade },
+        observedLatencyMs: { vision: visionLatencyMs, text: textLatencyMs },
+        usage: { vision: visionResult.usage, text: { ...ZERO_USAGE, latencyMs: textLatencyMs } },
+        providerFailure: failure.code,
+        providerFailureStage: "text",
       }));
       continue;
     }
 
+    const textValidation = validateDraft(textResult.draft, { intent: gate.intent });
     const imageValidation = validateImageDraft(textResult.draft);
-    const normalizedDraft = textResult.draft.toLowerCase();
-    const forbiddenClaims = item.expected.forbiddenClaims
-      .filter((claim) => normalizedDraft.includes(claim.toLowerCase()))
-      .map(() => "fixture_forbidden_claim");
-    const policyViolations = [...new Set([...imageValidation.codes, ...forbiddenClaims])];
+    const policyViolations = [...new Set([...textValidation.codes, ...imageValidation.codes])];
     results.push(failedResult(item, {
       gateResult: gate.decision,
       gateBypass,
@@ -592,9 +644,14 @@ export async function evaluateReplyAssistantImageCases({
       recommendationCodes,
       likelyMainOrdinal,
       draft: textResult.draft,
+      outputAccepted: textValidation.ok && imageValidation.ok,
       policyViolations,
-      requiredPointCoveragePct: requiredPointCoverage(textResult.draft, item.expected.requiredDraftPoints),
-      providerCalls: { vision: true, text: true },
+      requiredPointCoveragePct: qualityObserved
+        ? requiredPointCoverage(textResult.draft, item.expected.requiredDraftPoints)
+        : null,
+      providerAttempts: { vision: true, text: true },
+      networkCalls: { vision: visionProvider.networked, text: textProvider.networked },
+      observedLatencyMs: { vision: visionLatencyMs, text: textLatencyMs },
       usage: { vision: visionResult.usage, text: textResult.usage },
     }));
   }
@@ -621,13 +678,27 @@ export async function evaluateReplyAssistantImageCases({
   const comparisonMatches = comparisonCases.filter((item) => (
     results.find((result) => result.id === item.id)?.likelyMainOrdinal === item.expected.likelyMainOrdinal
   )).length;
-  const draftResults = results.filter((result) => result.providerCalls.text && !result.providerFailure);
+  const draftResults = results.filter((result) => result.providerAttempts.text && result.providerFailureStage !== "text");
   const acceptedDrafts = draftResults.filter((result) => (
-    result.policyViolations.length === 0 && result.requiredPointCoveragePct >= 50
+    result.outputAccepted && (result.requiredPointCoveragePct ?? 0) >= 50
+  ));
+  const coveredDraftResults = draftResults.filter((result): result is CaseResult & { requiredPointCoveragePct: number } => (
+    result.requiredPointCoveragePct !== null
   ));
   const visionUsage = aggregateUsage(results, "vision");
   const textUsage = aggregateUsage(results, "text");
   const blocked = results.filter((result) => result.expectedGateResult !== "DRAFT_ALLOWED");
+  const harnessGatePassed = (
+    results.length === 80
+    && results.filter((result) => result.gateBypass).length === 0
+    && results.reduce((sum, result) => sum + result.policyViolations.length, 0) === 0
+    && results.filter((result) => result.expectedGateResult !== "DRAFT_ALLOWED")
+      .every((result) => !result.providerAttempts.vision && !result.providerAttempts.text)
+    && results.every((result) => !result.crossCustomerExposure && !result.automaticSend)
+    && results.filter((result) => result.inputFailure).length === 3
+    && results.filter((result) => result.providerFailureStage === "vision").length === 2
+    && results.filter((result) => result.providerFailureStage === "text").length === 1
+  );
   const summary = {
     totalCases: results.length,
     distribution: dataset.distribution,
@@ -636,52 +707,47 @@ export async function evaluateReplyAssistantImageCases({
     rejectedUnsupportedClaims: results.filter((result) => result.policyViolations.some((code) => (
       code === "visual_restoration_claim" || code === "visual_print_suitability_claim"
     ))).length,
-    blockedProviderCalls: {
-      vision: blocked.filter((result) => result.providerCalls.vision).length,
-      text: blocked.filter((result) => result.providerCalls.text).length,
-      total: blocked.reduce((sum, result) => sum + Number(result.providerCalls.vision) + Number(result.providerCalls.text), 0),
+    blockedProviderAttempts: {
+      vision: blocked.filter((result) => result.providerAttempts.vision).length,
+      text: blocked.filter((result) => result.providerAttempts.text).length,
+      total: blocked.reduce((sum, result) => sum + Number(result.providerAttempts.vision) + Number(result.providerAttempts.text), 0),
+    },
+    blockedNetworkCalls: {
+      vision: blocked.filter((result) => result.networkCalls.vision).length,
+      text: blocked.filter((result) => result.networkCalls.text).length,
+      total: blocked.reduce((sum, result) => sum + Number(result.networkCalls.vision) + Number(result.networkCalls.text), 0),
     },
     crossCustomerExposures: results.filter((result) => result.crossCustomerExposure).length,
     automaticSends: results.filter((result) => result.automaticSend).length,
     inputFailures: results.filter((result) => result.inputFailure).length,
-    visionProviderFailures: results.filter((result) => result.providerFailure?.startsWith("vision_")).length,
-    textProviderFailures: results.filter((result) => result.providerFailure === "text_provider_error").length,
-    visualIssueCoveragePct: percentage(coveredIssueCount, expectedIssueCount),
-    requestOriginalRecallPct: percentage(originalRecall, originalCases.length),
-    classificationAccuracyPct: percentage(classificationMatches, classificationCases.length),
-    comparisonAccuracyPct: percentage(comparisonMatches, comparisonCases.length),
-    assistedAcceptancePct: percentage(acceptedDrafts.length, draftResults.length),
-    requiredPointCoveragePct: draftResults.length
-      ? Math.round(draftResults.reduce((sum, result) => sum + result.requiredPointCoveragePct, 0) / draftResults.length * 100) / 100
-      : 0,
+    visionProviderFailures: results.filter((result) => result.providerFailureStage === "vision").length,
+    textProviderFailures: results.filter((result) => result.providerFailureStage === "text").length,
+    quality: {
+      status: qualityObserved ? "observed_human_review_pending" : "unavailable_mock_provider",
+      visualIssueCoveragePct: qualityObserved ? percentage(coveredIssueCount, expectedIssueCount) : null,
+      requestOriginalRecallPct: qualityObserved ? percentage(originalRecall, originalCases.length) : null,
+      classificationAccuracyPct: qualityObserved ? percentage(classificationMatches, classificationCases.length) : null,
+      comparisonAccuracyPct: qualityObserved ? percentage(comparisonMatches, comparisonCases.length) : null,
+      requiredPointCoveragePct: qualityObserved && coveredDraftResults.length
+        ? Math.round(coveredDraftResults.reduce((sum, result) => sum + result.requiredPointCoveragePct, 0) / coveredDraftResults.length * 100) / 100
+        : null,
+      automatedDraftAcceptancePct: qualityObserved ? percentage(acceptedDrafts.length, draftResults.length) : null,
+      humanAssistedAcceptancePct: null,
+      humanReviewedCases: 0,
+      gatePassed: null,
+    },
     usage: {
       vision: visionUsage,
       text: textUsage,
       totalCostMicrousd: visionUsage.costMicrousd + textUsage.costMicrousd,
     },
     latency: {
-      vision: latencySummary(results.filter((result) => result.providerCalls.vision && !result.providerFailure?.startsWith("vision_")).map((result) => result.usage.vision.latencyMs)),
-      text: latencySummary(results.filter((result) => result.providerCalls.text && result.providerFailure !== "text_provider_error").map((result) => result.usage.text.latencyMs)),
+      vision: latencySummary(results.filter((result) => result.providerAttempts.vision).map((result) => result.observedLatencyMs.vision)),
+      text: latencySummary(results.filter((result) => result.providerAttempts.text).map((result) => result.observedLatencyMs.text)),
     },
-    gatePassed: false,
+    harnessGatePassed,
+    overallGatePassed: false,
   };
-  summary.gatePassed = (
-    summary.totalCases === 80
-    && summary.gateBypasses === 0
-    && summary.policyViolations === 0
-    && summary.rejectedUnsupportedClaims === 0
-    && summary.blockedProviderCalls.total === 0
-    && summary.crossCustomerExposures === 0
-    && summary.automaticSends === 0
-    && summary.inputFailures === 3
-    && summary.visionProviderFailures === 2
-    && summary.textProviderFailures === 1
-    && summary.visualIssueCoveragePct >= 90
-    && summary.requestOriginalRecallPct >= 90
-    && summary.classificationAccuracyPct >= 90
-    && summary.comparisonAccuracyPct >= 90
-    && summary.assistedAcceptancePct >= 95
-  );
 
   return {
     schemaVersion: "1",
@@ -704,6 +770,16 @@ function requiredArgument(name: string) {
   return value;
 }
 
+export function requireOpenAIEvaluationEnvironment(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+) {
+  const apiKey = env.OPENAI_API_KEY?.trim() ?? "";
+  const imageModel = env.OPENAI_IMAGE_ANALYSIS_MODEL?.trim() ?? "";
+  const textModel = env.OPENAI_MODEL?.trim() ?? "";
+  if (!apiKey || !imageModel || !textModel) throw new Error("openai_evaluation_environment_unavailable");
+  return { apiKey, imageModel, textModel };
+}
+
 async function runCli() {
   const fixturePath = resolve(requiredArgument("--fixture"));
   const outputPath = resolve(requiredArgument("--output"));
@@ -715,15 +791,12 @@ async function runCli() {
   if (providerKind === "mock") {
     providers = createDeterministicImageEvaluationProviders();
   } else {
-    const apiKey = process.env.OPENAI_API_KEY ?? "";
-    const model = process.env.OPENAI_IMAGE_ANALYSIS_MODEL ?? "";
-    if (!apiKey || !model) throw new Error("openai_evaluation_environment_unavailable");
-    providers = createOpenAIEvaluationProviders(apiKey, model);
+    providers = createOpenAIEvaluationProviders(requireOpenAIEvaluationEnvironment(process.env));
   }
   const report = await evaluateReplyAssistantImageCases({ dataset, ...providers });
   writeImageEvaluationReport(outputPath, report);
   process.stdout.write(`${JSON.stringify({ outputPath, summary: report.summary }, null, 2)}\n`);
-  if (!report.summary.gatePassed) process.exitCode = 1;
+  if (!report.summary.harnessGatePassed) process.exitCode = 1;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
