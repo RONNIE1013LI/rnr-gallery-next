@@ -983,6 +983,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       await database.transaction(async (transaction) => {
         const [attempt] = await transaction.select({
           status: customerServiceImageAnalysisAttempts.status,
+          providerCalled: customerServiceImageAnalysisAttempts.providerCalled,
           reservedCostMicrousd: customerServiceImageAnalysisAttempts.reservedCostMicrousd,
           budgetDailyScopeKey: customerServiceImageAnalysisAttempts.budgetDailyScopeKey,
         })
@@ -992,11 +993,12 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           .for("update");
         if (!attempt) throw new Error("customer_service_image_attempt_not_found");
         if (!["pending", "provider_pending"].includes(attempt.status)) return;
+        const providerCalled = attempt.providerCalled || input.providerCalled;
         if (attempt.reservedCostMicrousd > 0) {
           if (!attempt.budgetDailyScopeKey) throw new Error("customer_service_image_reservation_invalid");
           await ensureBudgetRows(transaction, [attempt.budgetDailyScopeKey, "total"].sort());
           const settledCost = input.estimatedCostMicrousd ?? (
-            input.providerCalled ? attempt.reservedCostMicrousd : 0
+            providerCalled ? attempt.reservedCostMicrousd : 0
           );
           await transaction.update(customerServiceBudgetState).set({
             reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${attempt.reservedCostMicrousd})`,
@@ -1005,7 +1007,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         }
         await transaction.update(customerServiceImageAnalysisAttempts).set({
           status: input.status,
-          providerCalled: input.providerCalled,
+          providerCalled: sql`${customerServiceImageAnalysisAttempts.providerCalled} OR ${input.providerCalled}`,
           provider: input.provider ?? null,
           model: input.model ?? null,
           analysisResult: input.analysisResult ?? null,

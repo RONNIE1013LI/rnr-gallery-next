@@ -33,7 +33,7 @@ type EvaluationResult = Readonly<{
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
-  estimatedCostMicrousd: number;
+  estimatedCostMicrousd: number | null;
   latencyMs: number;
 }>;
 
@@ -157,7 +157,9 @@ export async function evaluateReplyAssistantCases({
     inputTokens: generated.reduce((sum, result) => sum + result.inputTokens, 0),
     cachedInputTokens: generated.reduce((sum, result) => sum + result.cachedInputTokens, 0),
     outputTokens: generated.reduce((sum, result) => sum + result.outputTokens, 0),
-    estimatedCostMicrousd: generated.reduce((sum, result) => sum + result.estimatedCostMicrousd, 0),
+    estimatedCostMicrousd: generated.some((result) => result.estimatedCostMicrousd === null)
+      ? null
+      : generated.reduce((sum, result) => sum + (result.estimatedCostMicrousd ?? 0), 0),
     averageLatencyMs: generated.length ? Math.round(latencyTotal / generated.length) : 0,
     slowestLatencyMs: Math.max(0, ...generated.map((result) => result.latencyMs)),
   };

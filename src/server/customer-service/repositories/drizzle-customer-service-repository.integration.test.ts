@@ -1109,6 +1109,71 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
   });
 
+  it("keeps a durable provider start while contradictory completions race", async () => {
+    const externalAttachmentKeyHash = sourceHash("monotonic-provider-start");
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "c".repeat(64),
+      externalMessageKeyHash: "d".repeat(64),
+      text: "Please assess this image",
+      attachments: [{ externalAttachmentKeyHash, ordinal: 0, kind: "image", mimeTypeHint: null }],
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    if (created.status === "duplicate") return;
+    const [attachment] = await database.select({ id: customerServiceAttachments.id })
+      .from(customerServiceAttachments)
+      .where(eq(customerServiceAttachments.messageId, created.messageId));
+    const attemptId = await repository.createImageAnalysisAttempt({
+      messageId: created.messageId,
+      schemaVersion: "1",
+      attachments: [{ attachmentId: attachment.id, ordinal: 0, externalAttachmentKeyHash }],
+    });
+    await expect(repository.reserveImageAnalysisAttempt({
+      attemptId,
+      reservationMicrousd: 100,
+      dailyScopeKey: "daily:2026-08-17",
+      dailyHardStopMicrousd: 1_000,
+      totalHardStopMicrousd: 1_000,
+    })).resolves.toEqual({ status: "reserved" });
+
+    const contradictoryCompletion = {
+      attemptId,
+      status: "provider_error" as const,
+      providerCalled: false,
+      validatorCodes: [],
+      inputTokens: 0,
+      cachedInputTokens: 0,
+      outputTokens: 0,
+      estimatedCostMicrousd: null,
+      latencyMs: 0,
+      providerErrorCode: "contradictory_completion",
+    };
+    await Promise.all([
+      repository.completeImageAnalysisAttempt(contradictoryCompletion),
+      repository.completeImageAnalysisAttempt(contradictoryCompletion),
+    ]);
+
+    const [attempt] = await database.select().from(customerServiceImageAnalysisAttempts)
+      .where(eq(customerServiceImageAnalysisAttempts.id, attemptId));
+    const budgets = await database.select().from(customerServiceBudgetState);
+    expect(attempt).toMatchObject({
+      status: "provider_error",
+      providerCalled: true,
+      estimatedCostMicrousd: null,
+      reservedCostMicrousd: 0,
+    });
+    expect(budgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeKey: "daily:2026-08-17", reservedMicrousd: 0, spentMicrousd: 100 }),
+      expect.objectContaining({ scopeKey: "total", reservedMicrousd: 0, spentMicrousd: 100 }),
+    ]));
+    await repository.completeImageAnalysisAttempt(contradictoryCompletion);
+    const budgetsAfterRetry = await database.select().from(customerServiceBudgetState);
+    expect(budgetsAfterRetry).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeKey: "daily:2026-08-17", reservedMicrousd: 0, spentMicrousd: 100 }),
+      expect.objectContaining({ scopeKey: "total", reservedMicrousd: 0, spentMicrousd: 100 }),
+    ]));
+  });
+
   it("claims durable image jobs once and advances stages only with the active lease", async () => {
     await activateFacebookPilot("claim-image-job");
     const jobId = "00000000-0000-4000-8000-000000000101";

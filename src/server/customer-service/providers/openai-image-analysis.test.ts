@@ -43,8 +43,38 @@ describe("OpenAI image-analysis provider", () => {
 
     await expect(provider.analyze({
       images: [{ ordinal: 0, mimeType: "image/png", bytes: Buffer.from("private") }],
-    })).resolves.toMatchObject({ analysis: { images: [{ ordinal: 0 }] } });
+    })).resolves.toMatchObject({
+      analysis: { images: [{ ordinal: 0 }] },
+      estimatedCostMicrousd: null,
+    });
     expect(fetchSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves an unknown cost when successful image usage is malformed", async () => {
+    const provider = new OpenAIImageAnalysisProvider({
+      apiKey: "test-only-secret",
+      model: "approved-vision-model",
+      fetchImpl: async () => new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          ...providerOutput,
+          images: [{ ...providerOutput.images[0], ordinal: 0 }],
+        }),
+        usage: {
+          input_tokens: 12,
+          output_tokens: 8,
+          input_tokens_details: { cached_tokens: null },
+        },
+      }), { status: 200 }),
+      pricing: {
+        inputUsdPerMillion: 1,
+        cachedInputUsdPerMillion: 0.1,
+        outputUsdPerMillion: 2,
+      },
+    });
+
+    await expect(provider.analyze({
+      images: [{ ordinal: 0, mimeType: "image/png", bytes: Buffer.from("private") }],
+    })).resolves.toMatchObject({ estimatedCostMicrousd: null });
   });
 
   it("maps each batched image input to its non-contiguous submitted ordinal", async () => {

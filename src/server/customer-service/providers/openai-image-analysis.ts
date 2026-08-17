@@ -16,6 +16,27 @@ type FetchImplementation = (input: string | URL | Request, init?: RequestInit) =
 
 const SUPPORTED_IMAGE_MIME_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
+function asNonNegativeInteger(value: unknown) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+function usageFrom(body: Record<string, unknown>) {
+  const usageBody = body.usage;
+  if (!usageBody || typeof usageBody !== "object" || Array.isArray(usageBody)) return null;
+  const usage = usageBody as Record<string, unknown>;
+  const inputTokens = asNonNegativeInteger(usage.input_tokens);
+  const outputTokens = asNonNegativeInteger(usage.output_tokens);
+  if (inputTokens === null || outputTokens === null) return null;
+  const details = usage.input_tokens_details;
+  if (details !== undefined && (!details || typeof details !== "object" || Array.isArray(details))) return null;
+  const cachedValue = details && typeof details === "object"
+    ? (details as Record<string, unknown>).cached_tokens
+    : undefined;
+  const cachedTokens = cachedValue === undefined ? 0 : asNonNegativeInteger(cachedValue);
+  if (cachedTokens === null) return null;
+  return { inputTokens, cachedInputTokens: cachedTokens, outputTokens };
+}
+
 const ANALYSIS_INSTRUCTIONS = [
   "Assess only visible image properties using the supplied JSON schema.",
   "Do not identify people or infer age, ethnicity, health, emotion, or attractiveness.",
@@ -157,22 +178,19 @@ export class OpenAIImageAnalysisProvider implements ImageAnalysisProvider {
       throw new Error("image_analysis_invalid_output");
     }
 
-    const usageBody = (body.usage ?? {}) as Record<string, unknown>;
-    const inputDetails = (usageBody.input_tokens_details ?? {}) as Record<string, unknown>;
-    const usage = {
-      inputTokens: Number(usageBody.input_tokens ?? 0),
-      cachedInputTokens: Number(inputDetails.cached_tokens ?? 0),
-      outputTokens: Number(usageBody.output_tokens ?? 0),
-    };
-    let estimatedCostMicrousd: number;
-    try {
-      estimatedCostMicrousd = estimateCostMicrousd({
-        model: this.model,
-        ...usage,
-        pricing: this.pricing,
-      });
-    } catch {
-      throw new Error("image_analysis_configuration_error");
+    const knownUsage = usageFrom(body);
+    const usage = knownUsage ?? { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
+    let estimatedCostMicrousd: number | null = null;
+    if (knownUsage) {
+      try {
+        estimatedCostMicrousd = estimateCostMicrousd({
+          model: this.model,
+          ...knownUsage,
+          pricing: this.pricing,
+        });
+      } catch {
+        throw new Error("image_analysis_configuration_error");
+      }
     }
 
     return {

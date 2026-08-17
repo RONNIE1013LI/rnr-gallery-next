@@ -83,7 +83,9 @@ function completion(input: Readonly<{
     inputTokens: providerResult?.usage.inputTokens ?? 0,
     cachedInputTokens: providerResult?.usage.cachedInputTokens ?? 0,
     outputTokens: providerResult?.usage.outputTokens ?? 0,
-    estimatedCostMicrousd: providerResult?.estimatedCostMicrousd ?? 0,
+    estimatedCostMicrousd: input.failure.providerCalled
+      ? providerResult?.estimatedCostMicrousd ?? null
+      : 0,
     latencyMs: providerResult?.latencyMs ?? 0,
     ...(input.failure.status === "provider_error" ? { providerErrorCode: input.failure.code } : {}),
   };

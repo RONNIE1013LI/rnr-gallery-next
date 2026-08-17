@@ -17,7 +17,7 @@ export type ImageAnalysisProviderResult = Readonly<{
     cachedInputTokens: number;
     outputTokens: number;
   }>;
-  estimatedCostMicrousd: number;
+  estimatedCostMicrousd: number | null;
   latencyMs: number;
 }>;
 

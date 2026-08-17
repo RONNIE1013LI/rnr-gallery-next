@@ -58,6 +58,34 @@ describe("OpenAI Responses provider", () => {
     });
   });
 
+  it("preserves an unknown cost when a successful response omits usage", async () => {
+    const provider = new OpenAIResponsesProvider({
+      apiKey: "test-only-secret",
+      fetchImpl: async () => new Response(JSON.stringify({
+        output_text: "Please send the original photo for assessment 😊",
+      }), { status: 200 }),
+    });
+
+    await expect(provider.generate({ instructions: "rules", input: "message" })).resolves.toMatchObject({
+      usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
+      estimatedCostMicrousd: null,
+    });
+  });
+
+  it("preserves an unknown cost when successful usage is malformed", async () => {
+    const provider = new OpenAIResponsesProvider({
+      apiKey: "test-only-secret",
+      fetchImpl: async () => new Response(JSON.stringify({
+        output_text: "Please send the original photo for assessment 😊",
+        usage: { input_tokens: "not-a-number", output_tokens: 8 },
+      }), { status: 200 }),
+    });
+
+    await expect(provider.generate({ instructions: "rules", input: "message" })).resolves.toMatchObject({
+      estimatedCostMicrousd: null,
+    });
+  });
+
   it("requires a key before any fetch", async () => {
     const fetchSpy = vi.fn();
     const provider = new OpenAIResponsesProvider({ apiKey: "", fetchImpl: fetchSpy });

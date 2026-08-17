@@ -139,7 +139,7 @@ type ProviderUsage = Readonly<{
   inputTokens: number;
   cachedInputTokens: number;
   outputTokens: number;
-  costMicrousd: number;
+  costMicrousd: number | null;
   latencyMs: number;
 }>;
 
@@ -584,7 +584,9 @@ function aggregateUsage(results: readonly CaseResult[], kind: "vision" | "text")
     inputTokens: values.reduce((sum, item) => sum + item.inputTokens, 0),
     cachedInputTokens: values.reduce((sum, item) => sum + item.cachedInputTokens, 0),
     outputTokens: values.reduce((sum, item) => sum + item.outputTokens, 0),
-    costMicrousd: values.reduce((sum, item) => sum + item.costMicrousd, 0),
+    costMicrousd: values.some((item) => item.costMicrousd === null)
+      ? null
+      : values.reduce((sum, item) => sum + (item.costMicrousd ?? 0), 0),
   };
 }
 
@@ -883,7 +885,9 @@ export async function evaluateReplyAssistantImageCases({
     usage: {
       vision: visionUsage,
       text: textUsage,
-      totalCostMicrousd: visionUsage.costMicrousd + textUsage.costMicrousd,
+      totalCostMicrousd: visionUsage.costMicrousd === null || textUsage.costMicrousd === null
+        ? null
+        : visionUsage.costMicrousd + textUsage.costMicrousd,
     },
     latency: {
       vision: latencySummary(results.filter((result) => result.providerAttempts.vision).map((result) => result.observedLatencyMs.vision)),
