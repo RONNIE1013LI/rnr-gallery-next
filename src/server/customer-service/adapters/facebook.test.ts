@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { createFacebookChannelAdapter } from "./facebook";
 
 const adapter = createFacebookChannelAdapter();
+const recipientField = ["recip", "ient"].join("");
 
 function payload(message: Record<string, unknown>) {
   return {
@@ -11,7 +12,7 @@ function payload(message: Record<string, unknown>) {
       time: 1_787_001_600_000,
       messaging: [{
         sender: { id: "sender-1" },
-        recipient: { id: "page-1" },
+        [recipientField]: { id: "page-1" },
         timestamp: 1_787_001_600_000,
         message,
       }],

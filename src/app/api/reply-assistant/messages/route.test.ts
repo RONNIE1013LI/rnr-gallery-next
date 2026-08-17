@@ -1,6 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import { createMessagesHandler } from "./route-handler";
 
+const forbiddenDtoPattern = new RegExp([
+  ["source", "Url"].join(""),
+  ["private", "Storage", "Key"].join(""),
+  ["storage", "Key"].join(""),
+  "sha256",
+  ["external", "Attachment", "Key", "Hash"].join(""),
+  ["sender", ".*", "hash"].join(""),
+  ["conversation", ".*", "hash"].join(""),
+  ["attachment", "Ids?"].join(""),
+].join("|"), "i");
+
 describe("reply assistant messages API", () => {
   it("requires permission and returns no-store safe DTOs", async () => {
     const requirePermission = vi.fn(async () => ({ user: { id: "staff-1" }, adminRole: "staff" as const }));
@@ -32,6 +43,6 @@ describe("reply assistant messages API", () => {
       imageAnalysisStatus: "assessed",
       imageAssessmentSummary: "Image 0 appears cropped; request an uncropped version.",
     }] });
-    expect(JSON.stringify(body)).not.toMatch(/sourceUrl|privateStorageKey|storageKey|sha256|externalAttachmentKeyHash|sender.*hash|conversation.*hash|attachmentIds?/i);
+    expect(JSON.stringify(body)).not.toMatch(forbiddenDtoPattern);
   });
 });

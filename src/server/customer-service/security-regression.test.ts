@@ -1,37 +1,13 @@
 import { readFileSync } from "node:fs";
-import { relative, resolve } from "node:path";
-import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import {
+  loadProductionRuntimeSourceInventory,
+  productionSourcePathsMatching,
+} from "./test-support/production-runtime-source";
 
-const SOURCE_FILE = /\.(?:c|m)?(?:j|t)sx?$|\.json$/;
 const PAGE_ACCESS_TOKEN_NAME = ["META", "PAGE", "ACCESS", "TOKEN"].join("_");
 const PUBLIC_ENV_PREFIX = `${["NEXT", "PUBLIC"].join("_")}_`;
-
-function sourceFiles(root: string) {
-  return execFileSync("rg", ["--files", root], { encoding: "utf8" }).trim().split("\n")
-    .filter((file) => SOURCE_FILE.test(file))
-    .filter((file) => !/\.test\.[^.]+$/.test(file));
-}
-
-function sourceText(files: readonly string[]) {
-  return files.map((file) => readFileSync(file, "utf8")).join("\n");
-}
-
-function applicationSource() {
-  const root = resolve(process.cwd(), "src");
-  return sourceText(sourceFiles(root));
-}
-
-function browserReplyAssistantSource() {
-  const root = resolve(process.cwd(), "src");
-  const files = sourceFiles(root).filter((file) => {
-    const path = relative(root, file);
-    return path.startsWith("components/reply-assistant/")
-      || path.startsWith("app/reply-assistant/")
-      || path.startsWith("app/api/reply-assistant/");
-  });
-  return sourceText(files);
-}
 
 afterEach(() => {
   vi.doUnmock("@/server/db/client");
@@ -47,32 +23,42 @@ afterEach(() => {
 
 describe("reply assistant security regression", () => {
   it("contains no Messenger sending capability or page token", () => {
-    expect(applicationSource()).not.toContain(PAGE_ACCESS_TOKEN_NAME);
-    expect(applicationSource()).not.toMatch(
+    const files = loadProductionRuntimeSourceInventory().files;
+    expect(productionSourcePathsMatching(files, PAGE_ACCESS_TOKEN_NAME)).toEqual([]);
+    expect(productionSourcePathsMatching(files,
       /sendMessenger|sendToMeta|graph\.facebook\.com\/.+\/messages|recipient\s*:/i,
-    );
+    )).toEqual([]);
   });
 
   it("contains no hard-coded ngrok or loopback callback", () => {
-    expect(applicationSource()).not.toMatch(/ngrok-free\.(?:app|dev)|localhost:8787|127\.0\.0\.1:8787/i);
+    expect(productionSourcePathsMatching(
+      loadProductionRuntimeSourceInventory().files,
+      /ngrok-free\.(?:app|dev)|localhost:8787|127\.0\.0\.1:8787/i,
+    )).toEqual([]);
   });
 
   it("keeps every customer service secret server-only", () => {
-    expect(applicationSource()).not.toMatch(
+    const inventory = loadProductionRuntimeSourceInventory();
+    expect(productionSourcePathsMatching(
+      inventory.files,
       new RegExp(`${PUBLIC_ENV_PREFIX}(?:OPENAI|META|CUSTOMER_SERVICE)`, "i"),
-    );
-    expect(browserReplyAssistantSource()).not.toMatch(
+    )).toEqual([]);
+    expect(productionSourcePathsMatching(
+      inventory.browserBoundaryFiles,
       /(?:client_?secret|clientSecret|OPENAI_API_KEY|META_APP_SECRET|META_VERIFY_TOKEN|BLOB_READ_WRITE_TOKEN)/i,
-    );
+    )).toEqual([]);
   });
 
   it("uses image analysis without enabling an image-generation tool", () => {
-    const provider = readFileSync(
-      resolve(process.cwd(), "src/server/customer-service/providers/openai-image-analysis.ts"),
-      "utf8",
-    );
-    expect(provider).toContain("store: false");
-    expect(provider).not.toMatch(/\bimage_generation\b|images\.generate|\btools\s*:/i);
+    const inventory = loadProductionRuntimeSourceInventory();
+    const provider = inventory.files.find(
+      (file) => file.relativePath === "src/server/customer-service/providers/openai-image-analysis.ts",
+    )?.source;
+    expect(provider).toBeDefined();
+    expect(provider ?? "").toContain("store: false");
+    expect(productionSourcePathsMatching(inventory.files,
+      /\bimage_generation\b|images\.generate|\btools\s*:/i,
+    )).toEqual([]);
   });
 
   it("keeps raw attachment locations out of persistence and browser DTOs", () => {
@@ -81,9 +67,10 @@ describe("reply assistant security regression", () => {
       "utf8",
     );
     expect(schema).not.toMatch(/\b(?:raw|source|attachment|remote)_?url\b/i);
-    expect(browserReplyAssistantSource()).not.toMatch(
+    expect(productionSourcePathsMatching(
+      loadProductionRuntimeSourceInventory().browserBoundaryFiles,
       /sourceRef|(?:raw|source|attachment|remote)Url|storageKey|attachmentIds?|externalAttachmentKey|externalKeyHash|privateStorageKey|sha256|senderHash|conversationKeyHash/i,
-    );
+    )).toEqual([]);
   });
 
   it("makes zero image calls when image analysis is disabled", async () => {

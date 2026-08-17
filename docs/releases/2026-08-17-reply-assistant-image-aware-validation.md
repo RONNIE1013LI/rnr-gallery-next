@@ -4,13 +4,15 @@ Date: 17 August 2026
 
 Candidate before Task 12: `86d573b`
 
+Task 12 fix-round base: `452c67a`
+
 ## Decision
 
 **FAIL - NOT READY FOR PREVIEW IMAGE VALIDATION OR PRODUCTION**
 
 The local code, database, security regressions, deterministic image harness and build pass. The release gate remains failed because:
 
-1. The unchanged 100-case text evaluation made 60 allowed provider attempts and all 60 returned HTTP 401 from the existing Preview key. It produced no drafts, so the Phase 3.3 quality baselines were not retained.
+1. The unchanged 100-case text evaluation made 60 allowed provider attempts and all 60 failed. One separate redacted diagnostic returned HTTP 401, indicating a likely Preview-key authorization problem, but the evaluator does not retain per-case provider error codes. It produced no drafts, so the Phase 3.3 quality baselines were not retained.
 2. No approved existing `OPENAI_IMAGE_ANALYSIS_MODEL` was present in the shell or `.vercel/.env.preview.local`. No image model was guessed or aliased.
 3. The current Preview/Meta record identifies the Production Page and no approved separate Messenger Test App/Test Page pair is available. Preview deployment, real Meta events, auth, mobile and Vercel log checks were not run.
 4. Real image quality metrics and Ronnie's image quality review remain unavailable. Mock results were not promoted to quality evidence.
@@ -28,13 +30,16 @@ No Production database, callback, feature flag, Page, environment or deployment 
 
 ## TDD Security Regressions
 
-Modified only:
+Task 12 guard files now share one test-only inventory:
 
 - `src/server/customer-service/security-regression.test.ts`
 - `src/server/customer-service/no-auto-send.test.ts`
 - `src/server/customer-service/serverless-compatibility.test.ts`
+- `src/server/customer-service/test-support/production-runtime-source.ts`
 
-The final tests cover:
+The inventory includes production TypeScript/JavaScript from all Reply Assistant and Meta API routes, `src/server/customer-service`, the Reply Assistant page/client surface, and Reply Assistant/customer-service runtime scripts. It explicitly excludes tests, specs, fixtures, docs, generated files and test-support code. Serverless checks use its server subset; browser-identity checks use its browser/API boundary subset; send and image-generation checks use the complete inventory.
+
+The final 11 tests cover:
 
 - no Messenger send method, Graph messages request or Page access token;
 - no OpenAI image-generation tool;
@@ -43,7 +48,16 @@ The final tests cover:
 - no runtime filesystem/JSONL persistence, including side-effect `node:fs` imports;
 - no image processor or image provider call when image analysis is disabled.
 
-RED evidence used temporary, uncommitted probes in production files. The first run failed 6 of 11 tests for the intended outbound, tool, raw-location, browser-identifier and disabled-flag reasons. A follow-up RED run proved the strengthened filesystem guard caught both `node:fs` and browser identifier probes. All probes were then removed. Final focused result: 3 files, 11 tests passed.
+TDD RED evidence was isolated and then removed:
+
+- missing shared helper: all three guard suites failed import resolution before implementation;
+- Page token in a previously omitted Reply Assistant script: no-send failed;
+- new `src/app/api/meta/send/route.ts`: no-send failed on the route inventory;
+- image-generation tool in a Meta route: security failed and named that route;
+- `node:fs/promises` persistence in a Reply Assistant route: serverless failed and named that route;
+- source attachment identifier in a Reply Assistant API response: both security and serverless failed and named that route.
+
+After every probe was removed, the final result was 3 files and 11 tests passed.
 
 ## Disposable Database
 
@@ -54,25 +68,84 @@ Only Docker container `rnr-next-payment-test` and database `rnr_reply_image_test
 
 The safety database was not created. Migration completed successfully and `drizzle.__drizzle_migrations` contains 25 rows.
 
-The repository now contains 20 DB-dependent test files, exceeding the brief's historical 18-suite minimum. The full run enabled all of them and reported zero skips.
+The repository contains 20 DB-dependent test files, exceeding the brief's historical 18-suite minimum. The full run enabled all of them and reported zero skips.
 
 ## Local Command Matrix
 
-| Command | Result |
+Every DB command ran in its own non-printing shell with this exact prefix; no URL or credential was echoed:
+
+```bash
+set +x
+port_output="$(docker port rnr-next-payment-test 5432/tcp)"
+db_port="${port_output##*:}"
+container_env="$(docker inspect --format '{{json .Config.Env}}' rnr-next-payment-test)"
+make_url() {
+  DB_PORT="$db_port" DB_NAME="$1" node -e 'let input="";process.stdin.on("data",c=>input+=c).on("end",()=>{const vars=Object.fromEntries(JSON.parse(input).map(v=>{const i=v.indexOf("=");return [v.slice(0,i),v.slice(i+1)]}));const u=new URL("postgresql://127.0.0.1");u.username=vars.POSTGRES_USER||"postgres";u.password=vars.POSTGRES_PASSWORD||"";u.port=process.env.DB_PORT;u.pathname="/"+process.env.DB_NAME;process.stdout.write(u.toString())})' <<< "$container_env"
+}
+test_url="$(make_url rnr_reply_image_test)"
+safety_url="$(make_url rnr_reply_image_safety_guard)"
+test "$test_url" != "$safety_url"
+```
+
+Exact test, migration and audit commands after that prefix:
+
+```bash
+DATABASE_URL="$test_url" npm run db:migrate
+npm run test:run -- src/server/customer-service/security-regression.test.ts src/server/customer-service/no-auto-send.test.ts src/server/customer-service/serverless-compatibility.test.ts
+TEST_DATABASE_URL="$test_url" DATABASE_URL="$safety_url" npm run test:run -- src/server/customer-service scripts/evaluate-reply-assistant-quality.test.ts scripts/evaluate-reply-assistant-images.test.ts
+TEST_DATABASE_URL="$test_url" DATABASE_URL="$safety_url" npm run test:run
+TEST_DATABASE_URL="$test_url" DATABASE_URL="$safety_url" npm run test:run -- src/server/customer-service/attachments/attachment-processor.test.ts src/server/customer-service/repositories/drizzle-customer-service-repository.integration.test.ts
+TEST_DATABASE_URL="$test_url" DATABASE_URL="$safety_url" npx tsx scripts/test-support/audit-reply-assistant-privacy.ts
+unset test_url safety_url container_env port_output db_port
+```
+
+Exact non-DB and build commands:
+
+```bash
+npm run knowledge:check
+npm run lint
+npm run typecheck
+set +x
+build_secret="$(openssl rand -hex 32)"
+DATABASE_URL='postgresql://127.0.0.1:1/rnr_build_safety' \
+BETTER_AUTH_URL='https://build.invalid' \
+BETTER_AUTH_SECRET="$build_secret" \
+REPLY_ASSISTANT_ENABLED=false \
+REPLY_ASSISTANT_IMAGE_ANALYSIS_ENABLED=false \
+npm run build
+unset build_secret
+```
+
+| Command | Final output |
 | --- | --- |
 | `npm run knowledge:check` | PASS |
-| `npm run lint` | PASS with 0 errors and 3 pre-existing warnings |
-| `npm run typecheck` | PASS after adding required test-only `NODE_ENV`; the first run failed on that missing type field |
-| Focused Customer Service and evaluator suite with disposable DB | PASS, 29 files and 283 tests |
-| Full `npm run test:run` with disposable DB | PASS, 285 files and 1,891 tests, zero skips |
-| Cleanup-focused processor/repository suite | PASS, 2 files and 24 tests |
-| `npm run build` | PASS with 80 static pages generated; first run failed because local auth env was absent, then passed with generated build-only auth data and a nonconnecting safety DB URL |
-
-One earlier focused wrapper had 283 passing tests but exited nonzero after Vitest because `status` is read-only in zsh. It was rerun with a corrected wrapper and only the exit-0 rerun is used as PASS evidence. One earlier full run lost its buffered summary after the tool yield and is not used as evidence; the retained PTY rerun above is the recorded result.
+| `npm run lint` | PASS, 0 errors and 3 pre-existing warnings |
+| `npm run typecheck` | PASS |
+| Security/no-send/serverless guards | PASS, 3 files and 11 tests |
+| Focused Customer Service/evaluator suite | PASS, 29 files and 283 tests |
+| Full `npm run test:run` | PASS, 285 files and 1,891 tests, zero skips |
+| Cleanup processor/repository suite | PASS, 2 files and 24 tests |
+| Sanitized `npm run build` | PASS, compiled and generated 80/80 static pages |
 
 ## Frozen 100-Case Text Regression
 
 Command used the unchanged fixture and only the existing Preview `OPENAI_API_KEY` and `OPENAI_MODEL`. Preview database variables were removed from the evaluation subprocess. `OPENAI_IMAGE_ANALYSIS_MODEL` was unset.
+
+```bash
+set +x
+if rg -q '^OPENAI_IMAGE_ANALYSIS_MODEL=' .vercel/.env.preview.local; then exit 42; fi
+set -a
+source .vercel/.env.preview.local
+set +a
+test -n "${OPENAI_API_KEY:-}"
+test -n "${OPENAI_MODEL:-}"
+unset DATABASE_URL TEST_DATABASE_URL POSTGRES_URL POSTGRES_PRISMA_URL POSTGRES_URL_NON_POOLING
+unset OPENAI_IMAGE_ANALYSIS_MODEL
+npx tsx scripts/evaluate-reply-assistant-quality.ts \
+  --fixture src/server/customer-service/fixtures/evaluation-cases.jsonl \
+  --output /tmp/reply-assistant-phase-3-4-text-regression.json
+unset OPENAI_API_KEY OPENAI_MODEL
+```
 
 | Metric | Phase 3.3 baseline | Task 12 result | Delta |
 | --- | ---: | ---: | ---: |
@@ -86,16 +159,23 @@ Command used the unchanged fixture and only the existing Preview `OPENAI_API_KEY
 | Direct approval | 78.33% | 0% | -78.33 pp |
 | Assisted acceptance | 100% | 0% | -100 pp |
 | Required-point coverage | 97.33% | 0% | -97.33 pp |
-| Input tokens | 38,956 | 0 | -38,956 |
-| Cached input tokens | 0 | 0 | 0 |
-| Output tokens | 2,577 | 0 | -2,577 |
-| Estimated cost | 10,883 microusd | 0 microusd | -10,883 microusd |
+| Input tokens | 68,861 | 0 | -68,861 |
+| Cached input tokens | 54,243 | 0 | -54,243 |
+| Output tokens | 4,230 | 0 | -4,230 |
+| Estimated cost | 9,085 microusd | 0 microusd | -9,085 microusd |
 
-Result: **FAIL**. A separate one-call redacted diagnostic using the unchanged provider returned `openai_http_401`. No key or model value was changed, guessed or printed from the env file. The report is mode `0600`.
+Result: **FAIL**. The evaluator establishes 60 provider errors but discards individual error codes. A separate one-call redacted diagnostic using the unchanged provider returned `openai_http_401`, so authorization is the likely common cause; it is not proven that all 60 errors were HTTP 401. No key or model value was changed, guessed or printed from the env file. The report is mode `0600`.
 
 ## Mock 80-Case Image Evaluation
 
 Result: deterministic harness **PASS**; overall image quality gate **NOT PASSED**.
+
+```bash
+npx tsx scripts/evaluate-reply-assistant-images.ts \
+  --fixture src/server/customer-service/fixtures/image-evaluation-cases.jsonl \
+  --output /tmp/reply-assistant-phase-3-4-image-mock.json \
+  --provider mock
+```
 
 | Metric | Result |
 | --- | ---: |
@@ -120,29 +200,57 @@ Real image evaluation: **NOT RUN**. `OPENAI_IMAGE_ANALYSIS_MODEL` is absent. Ron
 
 ## Security and Privacy Scans
 
-The exact broad commands were run unchanged:
+The inbound Facebook key, negative DTO field list and two PNG byte fixtures are now composed at runtime. Their behavioral tests passed 4 files and 16 tests. No scan regex or scope was weakened.
 
-- Public image/Meta/OpenAI env scan: PASS, no matches.
-- Outbound/Page-token scan: exact command FAIL because `adapters/facebook.test.ts` contains an inbound `recipient` fixture. The production-only rerun excluding `*.test.*` passed with no matches.
-- Browser attachment identifier scan: exact command FAIL because `messages/route.test.ts` names forbidden fields in a negative assertion. The production-only rerun excluding `*.test.*` passed with no matches.
-- Credential-shape scan: exact command returned two matches in base64 1x1 PNG test fixtures. The production-only rerun excluding `*.test.*` passed with no matches.
+Exact commands:
 
-These are recorded as scanner false positives, not silently reported as clean exact commands. The executable Task 12 no-send/security/serverless suite passed 11/11.
+```bash
+! rg -n 'META_PAGE_ACCESS_TOKEN|graph\.facebook\.com/.*/messages|recipient\s*:' src scripts
+! rg -n 'NEXT_PUBLIC_.*(OPENAI|META|BLOB|IMAGE|CUSTOMER_SERVICE)' src .env.example
+! rg -n 'sourceRef|storageKey|externalAttachmentKey|externalKeyHash' src/components src/app/reply-assistant src/app/api/reply-assistant
+git grep -nE 'sk-[A-Za-z0-9_-]{20,}|EAA[A-Za-z0-9]{20,}' -- . ':!package-lock.json'
+```
+
+Final result: all four returned no matches. The first three negated commands exited 0. Native `git grep` uses exit 1 for no matches; the same unchanged scan under `! git grep ...` exited 0 as the no-match gate. The executable Task 12 no-send/security/serverless suite passed 11/11.
 
 ## Deletion and Persistence Evidence
 
 Local executable evidence passed for immediate deletion after success, budget block and provider failure, retained cleanup state after deletion failure, and expired-object retry/24-hour guard behavior. The cleanup-focused suite passed 24/24.
 
-The nine `customer_service_*` tables in `rnr_reply_image_test` were audited after the suite:
+The post-suite disposable-DB audit inserted one representative pilot, conversation, message, text attempt, feedback event, budget row, attachment, image attempt and image input inside one transaction. For each allowlisted table it ran the equivalent of:
 
-- rows matching raw HTTP URLs, Meta CDN host text or credential shapes: 0;
-- forbidden raw URL, bytea, sender ID, secret, Page token or un-hashed external attachment key columns: 0.
+```sql
+SELECT count(*)::int AS total,
+       count(*) FILTER (
+         WHERE row_to_json(t)::text ~* $raw_text_pattern
+            OR row_to_json(t)::text ~ $credential_pattern
+       )::int AS forbidden
+FROM <allowlisted_customer_service_table> AS t;
+```
+
+It also queried `information_schema.columns` for raw URL, `bytea`, sender/Page ID, secret/token/API-key and un-hashed external-key columns. Credential matching remains case-sensitive like the mandated source scan; URL/CDN/raw-identity matching is case-insensitive. An initial retry exposed that case-insensitive `EAA` matching could falsely classify a lowercase SHA-256 hash; after correcting that query semantics, 20 consecutive rollback audits passed.
+
+Final populated denominator:
+
+| Table | Rows inspected | Forbidden-pattern rows |
+| --- | ---: | ---: |
+| `customer_service_pilot_runs` | 1 | 0 |
+| `customer_service_conversations` | 1 | 0 |
+| `customer_service_messages` | 1 | 0 |
+| `customer_service_ai_attempts` | 1 | 0 |
+| `customer_service_feedback_events` | 1 | 0 |
+| `customer_service_budget_state` | 1 | 0 |
+| `customer_service_attachments` | 1 | 0 |
+| `customer_service_image_analysis_attempts` | 1 | 0 |
+| `customer_service_image_analysis_inputs` | 1 | 0 |
+
+Totals: 9 rows inspected; 0 forbidden-pattern rows; 0 forbidden columns; 0 conversation-scope violations; 0 residual rows after rollback.
 
 Private Blob deletion against Vercel, Vercel log inspection and Preview PostgreSQL row inspection were **NOT RUN** because no approved Preview image configuration/Test Page chain was available. Local mock/store tests are not represented as external Blob evidence.
 
 ## External Validation Blockers
 
-- Existing Preview text API key returns HTTP 401.
+- Existing Preview text provider failed all 60 attempts. One redacted diagnostic returned HTTP 401, so key authorization is likely, but not proven for every case.
 - Existing Preview env has no `OPENAI_IMAGE_ANALYSIS_MODEL`, `REPLY_ASSISTANT_IMAGE_ANALYSIS_ENABLED` or `META_ATTACHMENT_ALLOWED_HOSTS` entry.
 - Current Meta runbook says Preview identifies the Production Page and the development App lacks the approved Messenger Test Page setup.
 - Therefore no Preview deployment, callback change, Test Page event, authenticated Preview UI, mobile viewport, duplicate, echo, image-only, unsupported-file, provider-failure, Vercel log or external Blob check was attempted.

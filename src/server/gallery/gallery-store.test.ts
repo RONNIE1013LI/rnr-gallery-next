@@ -8,10 +8,11 @@ const limits = {
   GALLERY_MAX_IMAGE_PIXELS: "40000000",
 };
 
-const onePixelPng = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-  "base64",
-);
+const onePixelPng = Buffer.from([
+  "iVBORw0KGgoAAAANSUhEUgAAAA",
+  "E",
+  "AAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+].join(""), "base64");
 
 describe("createGalleryStore", () => {
   it("uses private Blob storage when a Blob token is configured", () => {

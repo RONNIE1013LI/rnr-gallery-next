@@ -1,23 +1,23 @@
 import { readFileSync } from "node:fs";
-import { relative, resolve } from "node:path";
-import { execFileSync } from "node:child_process";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-
-function productionFiles(root: string) {
-  return execFileSync("rg", ["--files", root], { encoding: "utf8" }).trim().split("\n")
-    .filter((file) => /\.(?:c|m)?(?:j|t)sx?$|\.json$/.test(file))
-    .filter((file) => !/\.test\.[^.]+$/.test(file));
-}
+import {
+  loadProductionRuntimeSourceInventory,
+  productionSourcePathsMatching,
+} from "./test-support/production-runtime-source";
 
 describe("reply assistant serverless compatibility", () => {
   it("does not use runtime filesystem or JSONL persistence", () => {
-    const root = resolve(process.cwd(), "src/server/customer-service");
-    const files = productionFiles(root)
-      .filter((file) => !file.endsWith("compiled-knowledge.json"));
-    const source = files.map((file) => readFileSync(file, "utf8")).join("\n");
-    expect(source).not.toMatch(
+    const inventory = loadProductionRuntimeSourceInventory();
+    const paths = inventory.serverFiles.map((file) => file.relativePath);
+    expect(paths).toEqual(expect.arrayContaining([
+      "src/app/api/meta/webhook/route-handler.ts",
+      "src/app/api/reply-assistant/messages/route-handler.ts",
+      "src/server/customer-service/runtime.ts",
+    ]));
+    expect(productionSourcePathsMatching(inventory.serverFiles,
       /from\s+["'](?:node:)?fs(?:\/promises)?["']|import\s*(?:\(\s*)?["'](?:node:)?fs(?:\/promises)?["']|require\(\s*["'](?:node:)?fs(?:\/promises)?["']|appendFile|writeFile|createWriteStream|\.jsonl/i,
-    );
+    )).toEqual([]);
   });
 
   it("keeps the Meta endpoint on the Node runtime", () => {
@@ -34,18 +34,9 @@ describe("reply assistant serverless compatibility", () => {
   });
 
   it("keeps attachment source identities out of browser and reply-assistant API modules", () => {
-    const root = resolve(process.cwd(), "src");
-    const source = productionFiles(root)
-      .filter((file) => {
-        const path = relative(root, file);
-        return path.startsWith("components/reply-assistant/")
-          || path.startsWith("app/reply-assistant/")
-          || path.startsWith("app/api/reply-assistant/");
-      })
-      .map((file) => readFileSync(file, "utf8"))
-      .join("\n");
-    expect(source).not.toMatch(
+    expect(productionSourcePathsMatching(
+      loadProductionRuntimeSourceInventory().browserBoundaryFiles,
       /sourceRef|(?:raw|source|attachment|remote)Url|storageKey|attachmentIds?|externalAttachmentKey|externalKeyHash|privateStorageKey|sha256|senderHash|conversationKeyHash/i,
-    );
+    )).toEqual([]);
   });
 });

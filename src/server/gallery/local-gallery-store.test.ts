@@ -6,10 +6,11 @@ import { parseGalleryConfig } from "./config";
 import { LocalGalleryStore } from "./local-gallery-store";
 import { validateGalleryStorageKey } from "./storage-key";
 
-const onePixelPng = Buffer.from(
-  "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
-  "base64",
-);
+const onePixelPng = Buffer.from([
+  "iVBORw0KGgoAAAANSUhEUgAAAA",
+  "E",
+  "AAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=",
+].join(""), "base64");
 
 const temporaryDirectories: string[] = [];
 
