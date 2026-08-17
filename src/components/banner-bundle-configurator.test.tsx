@@ -56,6 +56,10 @@ describe("BannerBundleConfigurator", () => {
     expect(screen.getByRole("region", { name: "Roll-Up Banner customisation" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Wall Banner customisation" })).toBeVisible();
     expect(document.querySelector("form#customise")).not.toBeNull();
+    expect(screen.getByText("Australia:").closest("li"))
+      .toHaveTextContent("Australia: approximately 5 business days");
+    expect(screen.queryByText(/Australia \(Standard Delivery\):/))
+      .not.toBeInTheDocument();
   });
 
   it("simplifies Bundle size labels and omits GST only from size-card prices", () => {

@@ -498,7 +498,7 @@ export function BannerBundleConfigurator({
               <p>Estimated delivery times after production are:</p>
               <ul>
                 <li><strong>New Zealand:</strong> 2–3 business days</li>
-                <li><strong>Australia (Standard Delivery):</strong> approximately 5 business days</li>
+                <li><strong>Australia:</strong> approximately 5 business days</li>
               </ul>
               <p>If your order is <strong>urgent</strong>, please make sure to clearly let us know when placing your order so that we can arrange it accordingly and avoid any delays.</p>
             </div>
