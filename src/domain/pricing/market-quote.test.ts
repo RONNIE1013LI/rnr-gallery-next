@@ -38,6 +38,7 @@ describe("market configuration quote", () => {
     );
 
     expect(quote.totalInclGstCents).toBe(total);
+    expect(quote.lines[0]).toMatchObject({ amountInclGstCents: total });
   });
 
   it("uses the fixed small Banner Bundle AUD base price", () => {
@@ -73,6 +74,7 @@ describe("market configuration quote", () => {
         key: "product-size",
         label: "Product / size price",
         amountExGstCents: 31_303,
+        amountInclGstCents: 35_999,
       },
       {
         key: "roll-up-extra-photos",
@@ -110,6 +112,7 @@ describe("market configuration quote", () => {
         key: "product-size",
         label: "Product / size price",
         amountExGstCents: 31_303,
+        amountInclGstCents: 35_999,
       },
       {
         key: "roll-up-background-removals",

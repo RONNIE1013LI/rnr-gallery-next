@@ -98,7 +98,7 @@ export function quoteMarketConfiguration(
     key: "product-size",
     label: "Product / size price",
     amountInclTaxCents: requiredPrice(size.amountInclTaxCents, "Product / size price"),
-    preserveGross: market === "AU",
+    preserveGross: market === "AU" || productKey === "banner-bundle",
   }];
 
   if (schema.peoplePetsMode === "required") {

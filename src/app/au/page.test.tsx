@@ -56,7 +56,7 @@ describe("Australia storefront", () => {
     expect(screen.getByRole("heading", { name: "Custom artwork for Australia." })).toBeVisible();
     expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
     expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
-    expect(screen.getByRole("link", { name: /Roll-Up Banner/i })).toHaveAttribute(
+    expect(screen.getByRole("heading", { name: "Roll-Up Banner" }).closest("a")).toHaveAttribute(
       "href",
       "/au/products/roll-up-banner",
     );
