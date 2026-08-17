@@ -3,32 +3,115 @@ export type ImageDraftValidationResult = Readonly<{
   codes: readonly string[];
 }>;
 
-const restorationClaim = /\bwill\s+(?:be\s+)?(?:fully\s+)?(?:restore(?:d)?|fix(?:ed)?|repair(?:ed)?)\b|\bcan\s+(?:(?:definitely|certainly|absolutely|fully)\s+)?(?:fix|restore|repair)\b|\bcan\s+be\s+(?:fully\s+)?(?:restored|fixed|repaired)\b|\b(?:full\s+)?restoration\s+is\s+guaranteed\b/i;
-const printClaim = /\b(?:photo|image|picture|file)\s+(?:is|will\s+be|looks?|appears?)\s+(?:perfect|ideal|ready|suitable)\s+(?:for\s+print(?:ing)?|to\s+print)\b|\bprint\s+quality\s+is\s+guaranteed\b|\bwill\s+print\s+perfectly\b/i;
+type ImageClaimCode =
+  | "visual_restoration_claim"
+  | "visual_print_suitability_claim";
 
-function explicitlyDefersAssessment(clause: string) {
+type ClaimClassifier = Readonly<{
+  code: ImageClaimCode;
+  candidates: readonly RegExp[];
+}>;
+
+const modifiers = String.raw`(?:(?:[a-z]+ly|not|never|yet)\s+)*`;
+const imageSubject = String.raw`(?:photo|image|picture|file|it|this|that)`;
+const qualifiedImageSubject = String.raw`(?:(?:this|that|the|your)\s+)?${imageSubject}`;
+const restorationResult = String.raw`(?:restore(?:d)?|fix(?:ed)?|repair(?:ed)?)`;
+const printAssessment = String.raw`(?:perfect|ideal|ready|suitable)`;
+const printPurpose = String.raw`(?:for\s+print(?:ing)?|to\s+print)`;
+
+const classifiers: readonly ClaimClassifier[] = [
+  {
+    code: "visual_restoration_claim",
+    candidates: [
+      new RegExp(
+        String.raw`\b(?:will|can(?:not)?|can't|could|may|might)\s+${modifiers}(?:be\s+${modifiers})?${restorationResult}\b`,
+        "gi",
+      ),
+      new RegExp(
+        String.raw`\b(?:will|can(?:not)?|can't|could|may|might)\s+${modifiers}${qualifiedImageSubject}\s+${modifiers}be\s+${modifiers}(?:restored|fixed|repaired)\b`,
+        "gi",
+      ),
+      new RegExp(
+        String.raw`\b(?:(?:will|can(?:not)?|can't|could|may|might)\s+${modifiers}be|(?:am|is|are|was|were|be|been|being))\s+${modifiers}able\s+to\s+${modifiers}(?:restore|fix|repair)\b`,
+        "gi",
+      ),
+      new RegExp(
+        String.raw`\b(?:full\s+)?restoration\s+is\s+${modifiers}guaranteed\b`,
+        "gi",
+      ),
+    ],
+  },
+  {
+    code: "visual_print_suitability_claim",
+    candidates: [
+      new RegExp(
+        String.raw`\b${imageSubject}\s+(?:(?:is|are|looks?|appears?)\s+${modifiers}|(?:will|can|could|may|might)\s+${modifiers}be\s+${modifiers})${printAssessment}\s+${printPurpose}\b`,
+        "gi",
+      ),
+      new RegExp(
+        String.raw`\b(?:will|can|could|may|might)\s+${modifiers}${qualifiedImageSubject}\s+${modifiers}be\s+${modifiers}${printAssessment}\s+${printPurpose}\b`,
+        "gi",
+      ),
+      new RegExp(
+        String.raw`\bwill\s+${modifiers}print\s+${modifiers}perfectly\b`,
+        "gi",
+      ),
+      new RegExp(
+        String.raw`\bprint\s+quality\s+is\s+${modifiers}guaranteed\b`,
+        "gi",
+      ),
+    ],
+  },
+];
+
+const assessmentContext = /\b(?:assess|review|check|determine|confirm)\s+(?:if|whether)\b/i;
+const withheldContext = /\b(?:cannot|can't|can\s+not|could\s+not|couldn't|do\s+not|don't|does\s+not|doesn't|did\s+not|didn't|will\s+not|won't)\s+(?:yet\s+)?(?:confirm|say|guarantee|determine|know)\b/i;
+const notYetPossibleContext = /\bnot\s+(?:yet\s+)?possible\s+to\s+(?:confirm|say|determine|know)\s+(?:if|whether)\b/i;
+const uncertainOrNegatedCandidate = /\b(?:may|might|could|perhaps|possibly|probably|likely|unlikely|cannot|can't|not|never)\b/i;
+const dependentAssessment = /\b(?:if|whether)\b.+\bdepends?\s+on\b/i;
+const governingUncertaintyContext = new RegExp(
+  String.raw`(?:\b(?:may|might)\s+be\s+possible\s+that|\b(?:perhaps|possibly|probably|likely|unlikely))\s+(?:(?:we|it|this|that|(?:(?:this|that|the|your)\s+)?(?:photo|image|picture|file))\s+)?$`,
+  "i",
+);
+
+function claimIsQualified(clause: string, candidate: RegExpMatchArray) {
   if (clause.endsWith("?")) return true;
-  return /\b(?:need|needs|would\s+need|will\s+need)\s+to\s+(?:assess|review|check|determine|confirm)\s+whether\b/i.test(clause)
-    || /\b(?:assess|review|check|determine|confirm)\s+whether\b/i.test(clause)
-    || /\b(?:cannot|can't|can\s+not|could\s+not|couldn't|will\s+not|won't)\s+(?:confirm|say|guarantee|determine|know)\b/i.test(clause)
-    || /\bnot\s+(?:yet\s+)?possible\s+to\s+(?:confirm|say|determine|know)\s+whether\b/i.test(clause)
-    || /\bwhether\b.+\bdepends?\s+on\b/i.test(clause);
+
+  const candidateStart = candidate.index ?? 0;
+  const context = clause.slice(0, candidateStart);
+  return assessmentContext.test(context)
+    || withheldContext.test(context)
+    || notYetPossibleContext.test(context)
+    || governingUncertaintyContext.test(context)
+    || uncertainOrNegatedCandidate.test(candidate[0])
+    || dependentAssessment.test(clause);
+}
+
+function hasDefinitiveClaim(clause: string, patterns: readonly RegExp[]) {
+  for (const pattern of patterns) {
+    for (const candidate of clause.matchAll(pattern)) {
+      if (!claimIsQualified(clause, candidate)) return true;
+    }
+  }
+  return false;
 }
 
 export function validateImageDraft(draft: string): ImageDraftValidationResult {
   const value = String(draft ?? "").trim();
-  const codes: string[] = [];
+  const codes: ImageClaimCode[] = [];
   const sentences = value.match(/[^.!?;\n]+[.!?]?/g) ?? [];
   for (const sentence of sentences) {
-    const clauses = sentence.split(/,|\b(?:and|but|however)\b/i);
+    const clauses = sentence.split(
+      /,|\b(?:and|but|however|because|even\s+though|although|though|while|whereas|then|so)\b/i,
+    );
     for (const item of clauses) {
       const clause = item.trim();
-      if (!clause || explicitlyDefersAssessment(clause)) continue;
-      if (!codes.includes("visual_restoration_claim") && restorationClaim.test(clause)) {
-        codes.push("visual_restoration_claim");
-      }
-      if (!codes.includes("visual_print_suitability_claim") && printClaim.test(clause)) {
-        codes.push("visual_print_suitability_claim");
+      if (!clause) continue;
+
+      for (const classifier of classifiers) {
+        if (!codes.includes(classifier.code) && hasDefinitiveClaim(clause, classifier.candidates)) {
+          codes.push(classifier.code);
+        }
       }
     }
   }

@@ -19,6 +19,9 @@ describe("image draft validator", () => {
     ["This photo will be perfect for printing.", "visual_print_suitability_claim"],
     ["This photo looks suitable for print.", "visual_print_suitability_claim"],
     ["This file is perfect for printing.", "visual_print_suitability_claim"],
+    ["This photo is definitely suitable for print.", "visual_print_suitability_claim"],
+    ["This image will absolutely be perfect for printing.", "visual_print_suitability_claim"],
+    ["We are able to fully restore this photo.", "visual_restoration_claim"],
   ])("blocks unsupported visual claim: %s", (draft, code) => {
     expect(validateImageDraft(draft)).toEqual({ ok: false, codes: [code] });
   });
@@ -44,6 +47,13 @@ describe("image draft validator", () => {
   });
 
   it.each([
+    "We need to assess if this photo can be fully restored.",
+    "We cannot yet confirm this photo is suitable for print.",
+    "We do not know whether this photo can be fully restored.",
+    "We may be able to restore this photo.",
+    "We will not be able to restore this photo.",
+    "It may be possible that we will be able to restore this photo.",
+    "We probably will be able to restore this photo.",
     "We need to assess whether this photo can be fully restored.",
     "We need to assess whether this photo is suitable for print.",
     "We cannot confirm this photo is suitable for print without reviewing the original.",
@@ -58,6 +68,9 @@ describe("image draft validator", () => {
   });
 
   it("still blocks a definitive claim in a contrast clause", () => {
+    expect(validateImageDraft(
+      "We need to assess if restoration is possible because this image is suitable for print.",
+    )).toEqual({ ok: false, codes: ["visual_print_suitability_claim"] });
     expect(validateImageDraft(
       "We cannot confirm the source resolution, but this photo is suitable for print.",
     )).toEqual({ ok: false, codes: ["visual_print_suitability_claim"] });

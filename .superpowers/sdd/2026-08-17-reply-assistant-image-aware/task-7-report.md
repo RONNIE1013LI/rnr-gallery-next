@@ -145,3 +145,37 @@ If any legacy image attempt is still `provider_pending`, migration `0024` aborts
 ### Concerns
 
 The migration intentionally requires manual reconciliation if a legacy image attempt is `provider_pending`; it cannot safely infer ownership from aggregate budget rows. No Production or send behavior changed, and no live OpenAI request was made.
+
+## Fix Round 3
+
+### Status
+
+Resolved the remaining additive image-validator boundary from the updated scoped review.
+
+### TDD Evidence
+
+- The three exact advisory examples using `assess if`, `cannot yet confirm`, and `do not know whether` first returned visual-claim blocks.
+- The three exact definitive examples using `definitely suitable`, `will absolutely be perfect`, and `able to fully restore` first passed validation.
+- Independent review identified that modal context was lost before `be able to`; exact conditional and negated regressions for `may be able to restore` and `will not be able to restore` first failed, then passed after the candidate retained its governing modal.
+- Follow-up review found that assessment context could shield an unrelated definitive claim after `because`, while uncertainty immediately before a modal was discarded. All three exact regressions failed first; qualification is now candidate-bound by deterministic clause boundaries and tail-anchored uncertainty.
+- All prior definitive, advisory, question, dependency, and contrast-clause cases remain covered.
+
+### Changes
+
+- Replaced whole-clause phrase exemptions with a deterministic candidate-first classifier for restoration and print-suitability predicates.
+- Each candidate is allowed only when its own clause contains an assessment condition, withheld confirmation, dependency, question, modal uncertainty, or explicit negation.
+- Candidate forms support intervening adverbs and `able to restore` while remaining limited to restoration and print-suitability language.
+- `output-validator.ts`, orchestration, policy, send behavior, Production configuration, and public APIs are unchanged.
+
+### Verification
+
+- Additive image validator: 39 tests passed.
+- Validators, policy gate/regression, no-send, prompt/text provider, image provider, and engine boundaries: 9 files passed, 84 tests passed.
+- `npm run typecheck`: passed.
+- Scoped ESLint: passed with zero warnings or errors.
+- `git diff --check`: passed.
+- `output-validator.ts` SHA-256 remains `3e95c2af99e18b91cbaa8351df5c3907aa64066fbf21ee795c262a5852581a76`.
+
+### Concerns
+
+The classifier is intentionally deterministic and English-phrase bounded; newly introduced claim grammar should receive an exact regression before expanding it. No live provider request was made.
