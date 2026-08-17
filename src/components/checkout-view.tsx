@@ -503,10 +503,14 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus());
       return;
     }
+    const reviewDestination = different && deliveryResult.success
+      ? deliveryResult.data
+      : billingResult.data;
+    const deliveryMethod = reviewDestination.country === "AU" ? "post" : method;
     reviewing.current = true;
     setPending("review");
     try {
-      const session = await postJson("/api/checkout/session", { cart: canonicalCheckoutCart(cart), billingAddress: billing, useDifferentDeliveryAddress: different, ...(different ? { deliveryAddress: delivery } : {}), deliveryMethod: method });
+      const session = await postJson("/api/checkout/session", { cart: canonicalCheckoutCart(cart), billingAddress: billing, useDifferentDeliveryAddress: different, ...(different ? { deliveryAddress: delivery } : {}), deliveryMethod });
       const quote = await postJson("/api/checkout/shipping", {});
       const payment = await postJson("/api/checkout/payment-methods", { checkoutVersion: session.checkout.version, cartDigest: session.checkout.cart.cartDigest }) as { methods: readonly PaymentMethodOption[] };
       setReviewedCart(session.checkout.cart); setReviewedVersion(session.checkout.version); setShipping(quote.shipping.option); setReviewKey(currentKey);

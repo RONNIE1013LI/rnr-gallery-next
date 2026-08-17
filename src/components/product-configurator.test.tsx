@@ -106,6 +106,28 @@ describe("ProductConfigurator", () => {
       .toMatchObject({ market: "AU", currency: "AUD", totalInclGstCents: 46_000 });
   });
 
+  it("hides delivery choices and stores post for Australian orders", () => {
+    render(
+      <ProductConfigurator
+        product={product}
+        schema={schema}
+        registry={enabledAustraliaRegistry()}
+        market="AU"
+        orderDate="2026-08-03"
+        createId={() => "aud-post-item"}
+      />,
+    );
+
+    expect(screen.queryByRole("radiogroup", { name: "Delivery" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Pickup")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByText("Send Photos After Ordering"));
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+
+    const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
+    expect(stored.items[0].deliveryPreference).toBe("post");
+  });
+
   it("presents every available size as a selectable card with its minimum price", () => {
     render(
       <ProductConfigurator

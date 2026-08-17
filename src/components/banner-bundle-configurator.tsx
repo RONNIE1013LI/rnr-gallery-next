@@ -255,6 +255,7 @@ export function BannerBundleConfigurator({
 
   function addToCart() {
     if (addDisabled || !urgentService) return;
+    const effectiveDeliveryPreference = market === "AU" ? "post" : deliveryPreference;
     const bundleComponents = validateBannerBundleComponents([
       componentSnapshot("roll-up", rollUp),
       componentSnapshot("wall-banner", wallBanner),
@@ -277,7 +278,7 @@ export function BannerBundleConfigurator({
       neededDate,
       urgentServiceConfirmed,
       urgentFeeInclGstCents: urgentService.feeInclGstCents,
-      deliveryPreference,
+      deliveryPreference: effectiveDeliveryPreference,
       quantity: 1,
       price: quote,
       uploadReferences,
@@ -285,7 +286,7 @@ export function BannerBundleConfigurator({
     };
     const cart = setCartDeliveryPreference(
       addCartItem(repository.load(), item),
-      deliveryPreference,
+      effectiveDeliveryPreference,
     );
     repository.save(cart);
     notifyCartChanged();
@@ -529,7 +530,7 @@ export function BannerBundleConfigurator({
                   </span>
                 </label>
               )}
-              <fieldset className={styles.formField} role="radiogroup">
+              {market === "NZ" ? <fieldset className={styles.formField} role="radiogroup">
                 <legend>Delivery</legend>
                 <div className={styles.deliveryChoices}>
                   <label>
@@ -541,7 +542,7 @@ export function BannerBundleConfigurator({
                     />
                     Post
                   </label>
-                  {market === "NZ" ? <label>
+                  <label>
                     <input
                       type="radio"
                       name="delivery-preference"
@@ -549,10 +550,10 @@ export function BannerBundleConfigurator({
                       onChange={() => setDeliveryPreference("pickup")}
                     />
                     Pickup
-                  </label> : null}
+                  </label>
                 </div>
                 <p className={styles.deliveryScopeNote}>This choice applies to your whole order.</p>
-              </fieldset>
+              </fieldset> : null}
             </div>
           </section>
         </form>

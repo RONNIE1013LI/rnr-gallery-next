@@ -2,7 +2,10 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import { readFileSync } from "node:fs";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { getProductBySlug } from "@/domain/catalogue/products";
-import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import {
+  defaultProductRegistry,
+  parseProductRegistry,
+} from "@/domain/catalogue/product-registry";
 import { getConfigurationSchema } from "@/domain/configuration/schemas";
 import { BannerBundleConfigurator } from "./banner-bundle-configurator";
 
@@ -14,6 +17,21 @@ vi.mock("@/domain/analytics/client", () => analytics);
 
 const product = getProductBySlug("banner-bundle")!;
 const schema = getConfigurationSchema(product.key)!;
+
+function enabledAustraliaRegistry() {
+  const registry = structuredClone(defaultProductRegistry);
+  for (const marketProduct of registry.markets.AU.products) {
+    for (const size of marketProduct.sizes) size.amountInclTaxCents = 40_000;
+    for (const charge of marketProduct.charges) charge.amountInclTaxCents = 3_000;
+  }
+  for (const fee of registry.markets.AU.peoplePets.fees) {
+    fee.amountInclTaxCents = fee.count * 6_000;
+  }
+  registry.markets.AU.peoplePets.additionalEachInclTaxCents = 4_000;
+  for (const fee of registry.markets.AU.urgentServiceFees) fee.amountInclTaxCents = 10_000;
+  registry.markets.AU.enabled = true;
+  return parseProductRegistry(registry);
+}
 
 describe("BannerBundleConfigurator", () => {
   beforeEach(() => {
@@ -84,6 +102,29 @@ describe("BannerBundleConfigurator", () => {
       "Roll Up Banner + 200 x 100 cm Wall Banner",
     )).toBeVisible();
     expect(within(orderSummary).getByText("NZ$359.99 incl GST")).toBeInTheDocument();
+  });
+
+  it("hides delivery choices and stores post for Australian bundle orders", () => {
+    render(
+      <BannerBundleConfigurator
+        product={product}
+        schema={schema}
+        registry={enabledAustraliaRegistry()}
+        market="AU"
+        orderDate="2026-08-17"
+        createId={() => "aud-bundle-item"}
+      />,
+    );
+
+    expect(screen.queryByRole("radiogroup", { name: "Delivery" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Pickup")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getAllByText("Send Photos After Ordering")[0]);
+    fireEvent.click(screen.getAllByText("Send Photos After Ordering")[1]);
+    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+
+    const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
+    expect(stored.items[0].deliveryPreference).toBe("post");
   });
 
   it("shows the fixed five-photo component allowance even if an untrusted schema differs", () => {

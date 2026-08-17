@@ -228,9 +228,25 @@ describe("checkout service", () => {
 
   it("uses the shipping country as authority and reprices every item in fixed AUD", async () => {
     const registry = enabledAustraliaRegistry();
+    const shipping = shippingService();
+    let savedState: Awaited<ReturnType<CheckoutStateRepository["saveCheckoutState"]>>;
+    const repo = repository({
+      saveCheckoutState: vi.fn().mockImplementation(async (id, input) => {
+        savedState = {
+          id,
+          customerId: null,
+          version: 2,
+          selectedShippingQuoteId: null,
+          expiresAt: new Date("2026-09-01T00:00:00.000Z"),
+          ...input,
+        };
+        return savedState;
+      }),
+      getCheckoutState: vi.fn().mockImplementation(async () => savedState),
+    });
     const service = createCheckoutService({
-      repository: repository(),
-      shippingService: shippingService(),
+      repository: repo,
+      shippingService: shipping,
       productRegistryService: {
         current: vi.fn().mockResolvedValue({ revision: 9, registry }),
       },
@@ -255,6 +271,12 @@ describe("checkout service", () => {
       totalInclGstCents: 40_000,
       gstCents: 0,
     });
+    await service.quoteShipping(sessionId);
+    expect(shipping.quotePost).toHaveBeenCalledWith(
+      state.cartSnapshot,
+      state.deliveryAddress,
+      registry.markets.AU,
+    );
   });
 
   it("fails closed instead of retaining NZ prices when AU is disabled", async () => {

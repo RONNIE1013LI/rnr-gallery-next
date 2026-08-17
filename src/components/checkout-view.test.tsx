@@ -388,6 +388,7 @@ describe("CheckoutView", () => {
 
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.useDifferentDeliveryAddress).toBe(true);
+    expect(body.deliveryMethod).toBe("post");
     expect(body.deliveryAddress).toEqual({ country: "AU", fullName: "Aroha Ngata", building: "", street: "25 George Street", suburb: "Sydney", region: "NSW", postcode: "2000", phone: "+61412345678", email: "aroha@example.test" });
     expect(JSON.stringify(body)).not.toContain("saved-1");
   });

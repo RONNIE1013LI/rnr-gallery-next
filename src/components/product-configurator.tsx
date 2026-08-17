@@ -237,6 +237,7 @@ export function ProductConfigurator({
 
   function addToCart() {
     if (addDisabled || !urgentService) return;
+    const effectiveDeliveryPreference = market === "AU" ? "post" : deliveryPreference;
     const repository = createBrowserCartRepository(window.localStorage);
     const item: CartItem = {
       id: createId(),
@@ -255,7 +256,7 @@ export function ProductConfigurator({
       neededDate,
       urgentServiceConfirmed,
       urgentFeeInclGstCents: urgentService.feeInclGstCents,
-      deliveryPreference,
+      deliveryPreference: effectiveDeliveryPreference,
       quantity: 1,
       price: quote,
       uploadReferences,
@@ -268,7 +269,7 @@ export function ProductConfigurator({
     };
     const cart = setCartDeliveryPreference(
       addCartItem(repository.load(), item),
-      deliveryPreference,
+      effectiveDeliveryPreference,
     );
     repository.save(cart);
     notifyCartChanged();
@@ -554,7 +555,7 @@ export function ProductConfigurator({
                 </span>
               </label>
             )}
-            <fieldset className={styles.formField} role="radiogroup">
+            {market === "NZ" ? <fieldset className={styles.formField} role="radiogroup">
               <legend>Delivery</legend>
               <div className={styles.deliveryChoices}>
                 <label>
@@ -566,7 +567,7 @@ export function ProductConfigurator({
                   />
                   Post
                 </label>
-                {market === "NZ" ? <label>
+                <label>
                   <input
                     type="radio"
                     name="delivery-preference"
@@ -574,10 +575,10 @@ export function ProductConfigurator({
                     onChange={() => setDeliveryPreference("pickup")}
                   />
                   Pickup
-                </label> : null}
+                </label>
               </div>
               <p className={styles.deliveryScopeNote}>This choice applies to your whole order.</p>
-            </fieldset>
+            </fieldset> : null}
           </div>
         </section>
 
