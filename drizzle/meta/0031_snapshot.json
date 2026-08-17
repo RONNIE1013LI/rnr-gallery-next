@@ -3953,22 +3953,6 @@
         }
       },
       "indexes": {
-        "customer_service_turns_open_conversation_unique": {
-          "name": "customer_service_turns_open_conversation_unique",
-          "columns": [
-            {
-              "expression": "conversation_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "where": "\"customer_service_turns\".\"status\" = 'open'",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
         "customer_service_turns_pilot_sequence_unique": {
           "name": "customer_service_turns_pilot_sequence_unique",
           "columns": [

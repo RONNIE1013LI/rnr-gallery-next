@@ -132,9 +132,6 @@ export const customerServiceTurns = pgTable(
     updatedAt: updatedTimestamp(),
   },
   (table) => [
-    uniqueIndex("customer_service_turns_open_conversation_unique")
-      .on(table.conversationId)
-      .where(sql`${table.status} = 'open'`),
     uniqueIndex("customer_service_turns_pilot_sequence_unique")
       .on(table.pilotRunId, table.pilotSequence)
       .where(sql`${table.pilotRunId} is not null and ${table.pilotSequence} is not null`),

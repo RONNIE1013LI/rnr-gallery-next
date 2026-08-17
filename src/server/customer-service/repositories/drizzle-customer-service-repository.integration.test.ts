@@ -159,6 +159,71 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(messages.rows[0]).toEqual({ count: 1 });
   });
 
+  it("aggregates rapid fragments and allocates one pilot slot when the turn is sealed", async () => {
+    await activateFacebookPilot("context-turn-debounce");
+    const conversationHash = "d".repeat(64);
+    const first = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "e".repeat(64),
+      text: "I need a banner",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    const second = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "f".repeat(64),
+      text: "around 5 photos",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:01.000Z"),
+    });
+    expect(first.status).toBe("turn_pending");
+    expect(second.status).toBe("turn_pending");
+    if (first.status !== "turn_pending" || second.status !== "turn_pending") return;
+    expect(second.turnId).toBe(first.turnId);
+
+    const [pilotBefore] = await database.select().from(customerServicePilotRuns);
+    expect(pilotBefore.nextSequence).toBe(1);
+    await expect(repository.sealDueCustomerTurn({
+      turnId: first.turnId,
+      now: new Date("2026-08-18T00:00:02.999Z"),
+    })).resolves.toEqual({ status: "not_due" });
+
+    const sealed = await Promise.all([
+      repository.sealDueCustomerTurn({ turnId: first.turnId, now: new Date("2026-08-18T00:00:03.000Z") }),
+      repository.sealDueCustomerTurn({ turnId: first.turnId, now: new Date("2026-08-18T00:00:03.000Z") }),
+    ]);
+    expect(sealed.map((result) => result.status).sort()).toEqual(["already_terminal", "sealed"]);
+    const [ready] = sealed.filter((result) => result.status === "sealed");
+    expect(ready).toMatchObject({
+      messageId: first.messageId,
+      turnId: first.turnId,
+      pilotSequence: 1,
+    });
+    const [turn] = await database.select().from(customerServiceTurns).where(eq(customerServiceTurns.id, first.turnId));
+    expect(turn).toMatchObject({
+      body: "I need a banner\naround 5 photos",
+      fragmentCount: 2,
+      status: "sealed",
+      pilotSequence: 1,
+    });
+    const pilotMessages = await database.select().from(customerServiceMessages)
+      .where(eq(customerServiceMessages.pilotSequence, 1));
+    expect(pilotMessages).toHaveLength(1);
+    expect(pilotMessages[0]).toMatchObject({
+      id: first.messageId,
+      body: "I need a banner\naround 5 photos",
+      customerText: "I need a banner\naround 5 photos",
+    });
+    const [pilotAfter] = await database.select().from(customerServicePilotRuns);
+    expect(pilotAfter.nextSequence).toBe(2);
+  });
+
   it("deduplicates concurrent webhook ingestion and allocates one pilot slot", async () => {
     await database.insert(customerServicePilotRuns).values({
       name: "test-facebook",

@@ -49,7 +49,6 @@ ALTER TABLE "customer_service_turns" ADD CONSTRAINT "customer_service_turns_pilo
 CREATE UNIQUE INDEX "customer_service_conversation_events_channel_external_unique" ON "customer_service_conversation_events" USING btree ("channel","external_message_key_hash");--> statement-breakpoint
 CREATE INDEX "customer_service_conversation_events_conversation_received_idx" ON "customer_service_conversation_events" USING btree ("conversation_id","received_at","created_at");--> statement-breakpoint
 CREATE INDEX "customer_service_conversation_events_turn_idx" ON "customer_service_conversation_events" USING btree ("turn_id");--> statement-breakpoint
-CREATE UNIQUE INDEX "customer_service_turns_open_conversation_unique" ON "customer_service_turns" USING btree ("conversation_id") WHERE "customer_service_turns"."status" = 'open';--> statement-breakpoint
 CREATE UNIQUE INDEX "customer_service_turns_pilot_sequence_unique" ON "customer_service_turns" USING btree ("pilot_run_id","pilot_sequence") WHERE "customer_service_turns"."pilot_run_id" is not null and "customer_service_turns"."pilot_sequence" is not null;--> statement-breakpoint
 CREATE INDEX "customer_service_turns_conversation_last_event_idx" ON "customer_service_turns" USING btree ("conversation_id","last_event_at");--> statement-breakpoint
 CREATE INDEX "customer_service_turns_status_debounce_idx" ON "customer_service_turns" USING btree ("status","debounce_until");

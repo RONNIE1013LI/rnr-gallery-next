@@ -381,16 +381,59 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         }).onConflictDoNothing().returning({ id: customerServiceMessages.id });
         if (!message) return { status: "duplicate" as const };
 
-        const debounceUntil = new Date(input.receivedAt.getTime() + 2_000);
-        const [turn] = await transaction.insert(customerServiceTurns).values({
-          conversationId: conversation.id,
-          channel: input.channel,
-          representativeMessageId: message.id,
-          body,
-          debounceUntil,
-          openedAt: input.receivedAt,
-          lastEventAt: input.receivedAt,
-        }).returning({ id: customerServiceTurns.id });
+        const debounceMs = input.debounceMs ?? 2_000;
+        if (!Number.isSafeInteger(debounceMs) || debounceMs < 250 || debounceMs > 10_000) {
+          throw new Error("customer_service_turn_debounce_invalid");
+        }
+        const debounceUntil = new Date(input.receivedAt.getTime() + debounceMs);
+        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + conversation.id}))`);
+        const canAggregate = input.attachments.length === 0 && customerText !== null;
+        const [openTurn] = canAggregate
+          ? await transaction.select({
+            id: customerServiceTurns.id,
+            representativeMessageId: customerServiceTurns.representativeMessageId,
+            body: customerServiceTurns.body,
+            fragmentCount: customerServiceTurns.fragmentCount,
+          }).from(customerServiceTurns).where(and(
+            eq(customerServiceTurns.conversationId, conversation.id),
+            eq(customerServiceTurns.status, "open"),
+            lte(customerServiceTurns.lastEventAt, input.receivedAt),
+            sql`${customerServiceTurns.debounceUntil} >= ${input.receivedAt}`,
+            sql`not exists (
+              select 1 from ${customerServiceAttachments}
+              where ${customerServiceAttachments.messageId} = ${customerServiceTurns.representativeMessageId}
+            )`,
+          )).orderBy(desc(customerServiceTurns.lastEventAt)).limit(1).for("update")
+          : [];
+        const combinedBody = openTurn ? `${openTurn.body}\n${body}` : body;
+        const mayExtend = Boolean(openTurn)
+          && openTurn.fragmentCount < 8
+          && combinedBody.length <= 2_400;
+        const [turn] = mayExtend && openTurn
+          ? await transaction.update(customerServiceTurns).set({
+            body: combinedBody,
+            lastEventAt: input.receivedAt,
+            debounceUntil,
+            fragmentCount: openTurn.fragmentCount + 1,
+          }).where(and(
+            eq(customerServiceTurns.id, openTurn.id),
+            eq(customerServiceTurns.status, "open"),
+          )).returning({ id: customerServiceTurns.id })
+          : await transaction.insert(customerServiceTurns).values({
+            conversationId: conversation.id,
+            channel: input.channel,
+            representativeMessageId: message.id,
+            body,
+            debounceUntil,
+            openedAt: input.receivedAt,
+            lastEventAt: input.receivedAt,
+          }).returning({ id: customerServiceTurns.id });
+        if (mayExtend && openTurn?.representativeMessageId) {
+          await transaction.update(customerServiceMessages).set({
+            body: combinedBody,
+            customerText: combinedBody,
+          }).where(eq(customerServiceMessages.id, openTurn.representativeMessageId));
+        }
         await transaction.insert(customerServiceConversationEvents).values({
           conversationId: conversation.id,
           turnId: turn.id,
@@ -427,7 +470,71 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             ...(input.imageJob.status === "human_review_required" ? { completedAt: input.receivedAt } : {}),
           });
         }
-        return { status: "turn_pending" as const, messageId: message.id, turnId: turn.id, debounceUntil };
+        return {
+          status: "turn_pending" as const,
+          messageId: openTurn?.representativeMessageId ?? message.id,
+          turnId: turn.id,
+          debounceUntil,
+        };
+      });
+    },
+
+    async sealDueCustomerTurn(input) {
+      return database.transaction(async (transaction) => {
+        const [turn] = await transaction.select().from(customerServiceTurns)
+          .where(eq(customerServiceTurns.id, input.turnId)).limit(1).for("update");
+        if (!turn || turn.status !== "open" || !turn.representativeMessageId) {
+          return { status: "already_terminal" as const };
+        }
+        if (turn.debounceUntil.getTime() > input.now.getTime()) {
+          return { status: "not_due" as const };
+        }
+        const [pilot] = await transaction.select().from(customerServicePilotRuns)
+          .where(and(
+            eq(customerServicePilotRuns.channel, turn.channel),
+            eq(customerServicePilotRuns.status, "active"),
+          )).limit(1).for("update");
+        if (!pilot || pilot.nextSequence > pilot.messageLimit) {
+          if (pilot) {
+            await transaction.update(customerServicePilotRuns).set({
+              status: "completed",
+              completedAt: input.now,
+            }).where(eq(customerServicePilotRuns.id, pilot.id));
+          }
+          await transaction.update(customerServiceTurns).set({
+            status: "pilot_complete",
+            sealedAt: input.now,
+          }).where(eq(customerServiceTurns.id, turn.id));
+          return {
+            status: "pilot_complete" as const,
+            turnId: turn.id,
+            messageId: turn.representativeMessageId,
+          };
+        }
+        await transaction.update(customerServiceTurns).set({
+          status: "sealed",
+          sealedAt: input.now,
+          pilotRunId: pilot.id,
+          pilotSequence: pilot.nextSequence,
+        }).where(and(
+          eq(customerServiceTurns.id, turn.id),
+          eq(customerServiceTurns.status, "open"),
+        ));
+        await transaction.update(customerServiceMessages).set({
+          body: turn.body,
+          customerText: turn.body,
+          pilotRunId: pilot.id,
+          pilotSequence: pilot.nextSequence,
+        }).where(eq(customerServiceMessages.id, turn.representativeMessageId));
+        await transaction.update(customerServicePilotRuns).set({
+          nextSequence: pilot.nextSequence + 1,
+        }).where(eq(customerServicePilotRuns.id, pilot.id));
+        return {
+          status: "sealed" as const,
+          turnId: turn.id,
+          messageId: turn.representativeMessageId,
+          pilotSequence: pilot.nextSequence,
+        };
       });
     },
 

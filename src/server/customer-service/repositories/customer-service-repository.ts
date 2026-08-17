@@ -51,6 +51,7 @@ export type HashedIncomingMessage = Readonly<{
 
 export type HashedConversationEvent = HashedIncomingMessage & Readonly<{
   role: ConversationRole;
+  debounceMs?: number;
 }>;
 
 export type DraftInput = Readonly<{
@@ -176,6 +177,12 @@ export interface CustomerServiceRepository {
     | Readonly<{ status: "turn_pending"; messageId: string; turnId: string; debounceUntil: Date }>
     | Readonly<{ status: "context_only" }>
     | Readonly<{ status: "duplicate" }>
+  >;
+  sealDueCustomerTurn(input: Readonly<{ turnId: string; now: Date }>): Promise<
+    | Readonly<{ status: "not_due" }>
+    | Readonly<{ status: "already_terminal" }>
+    | Readonly<{ status: "pilot_complete"; turnId: string; messageId: string }>
+    | Readonly<{ status: "sealed"; turnId: string; messageId: string; pilotSequence: number }>
   >;
   ingestFacebookMessage(input: HashedIncomingMessage): Promise<
     | Readonly<{ status: "created"; messageId: string; pilotSequence: number }>

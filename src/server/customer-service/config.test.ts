@@ -34,6 +34,15 @@ describe("customer service server config", () => {
     expect(parseCustomerServiceConfig({}).imageAnalysisEnabled).toBe(false);
   });
 
+  it("bounds the server-side conversation debounce window", () => {
+    expect(parseCustomerServiceConfig({}).conversationDebounceMs).toBe(2_000);
+    expect(parseCustomerServiceConfig({ REPLY_ASSISTANT_DEBOUNCE_MS: "750" }).conversationDebounceMs).toBe(750);
+    expect(() => parseCustomerServiceConfig({ REPLY_ASSISTANT_DEBOUNCE_MS: "249" }))
+      .toThrow("REPLY_ASSISTANT_DEBOUNCE_MS must be between 250 and 10000");
+    expect(() => parseCustomerServiceConfig({ REPLY_ASSISTANT_DEBOUNCE_MS: "10001" }))
+      .toThrow("REPLY_ASSISTANT_DEBOUNCE_MS must be between 250 and 10000");
+  });
+
   it("requires an image model when image analysis is enabled", () => {
     expect(() => parseCustomerServiceConfig({
       REPLY_ASSISTANT_ENABLED: "true",
