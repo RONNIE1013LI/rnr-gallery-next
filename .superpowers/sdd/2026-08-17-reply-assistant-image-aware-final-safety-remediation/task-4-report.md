@@ -2,13 +2,13 @@
 
 ## Status
 
-Complete. The additive image-draft validator now rejects definitive restoration, print-readiness, enhancement, and missing-detail reconstruction claims across the requested semantic forms while retaining the existing result codes and qualification behavior. The unchanged general text validator was not edited.
+Review remediation complete. The first implementation in `52cbfc3` blocked the five recorded I6 strings but failed the Task 4 semantic review. The remediated additive image-draft validator now blocks the reviewer's novel and systematic unsafe matrix while preserving cautious assessment language and the exact Ronnie-approved replies. The unchanged general text validator was not edited.
 
 ## Root Cause
 
-`claimIsQualified` already preserved questions, uncertainty, explicit negation, assessment context, and source-dependent wording after a candidate was found. Candidate discovery was the gap: it used a short restoration verb list and fixed `print-ready`/`suitable for print` word orders. Copular and causative print-readiness forms, promise verbs, enhancement/reconstruction synonyms, morphological forms, and compound result phrases never reached the qualification gate and were accepted as safe.
+The first implementation retained closed lists of singular image nouns, selected actors, ASCII contractions, verbs, and word orders. Nearby plural, role-subject, curly-contraction, synonym, quality, and missing-detail forms therefore bypassed candidate discovery.
 
-The fix expands only the image validator's bounded semantic candidate families. It reuses the existing qualification gate, adds `what`/`how` assessment context, and treats an explicit dependency on source quality as qualified.
+Qualification was also too broad and too narrow at once. A question mark on the whole clause qualified an embedded affirmative premise, while natural uncertainty, assessment, negated speech acts, and original-file review wording outside short allowlists were overblocked. The remediation normalizes contraction syntax, detects bounded grammatical claim families, splits contrast/subordinate boundaries, and evaluates uncertainty, assessment, negation, direct questions, and source dependency immediately around each matched candidate.
 
 ## RED
 
@@ -127,3 +127,108 @@ Passed.
 - The validator remains a conservative English semantic-pattern guard, not a general natural-language inference engine. New vocabulary or substantially different syntax still requires an adversarial regression before expanding coverage.
 - Enhancement and missing-detail promises reuse the existing `visual_restoration_claim` code to preserve the validator interface.
 - No hard-coded answer template, general-validator change, feature expansion, deployment, or Production access was made.
+
+## Review Remediation
+
+### RED
+
+The reviewer's original executable matrix was recovered and promoted into permanent tests. It contains `18` novel unsafe probes and `13` semantic safe controls; the three exact approved replies bring the reviewer's safe total to `16`. A systematic extension adds `24` unsafe variants and `12` safe/ordinary controls.
+
+Before changing production code:
+
+```bash
+npm run test:run -- src/server/customer-service/image-draft-validator.test.ts
+```
+
+Result: `1` file failed; `51` tests failed and `124` passed out of `175`. The failures exactly reproduced the broader review matrix: `39` unsafe claims were accepted and `12` safe controls were blocked.
+
+### Reviewer Unsafe Probes
+
+| Family | Draft |
+| --- | --- |
+| Restoration | `We'll enhance your photo.` |
+| Restoration | `We’ll restore your photo to its original condition.` |
+| Restoration | `Ronnie can make this damaged photo look new again.` |
+| Restoration | `These photos are restorable.` |
+| Restoration | `Our designer will sharpen the image.` |
+| Print | `Your photos are print-ready.` |
+| Print | `It'll be ready for printing.` |
+| Print | `This photograph will print beautifully.` |
+| Print | `We can prepare this photo for print.` |
+| Print | `The image resolution is sufficient for printing.` |
+| Enhancement | `We guarantee better image quality.` |
+| Enhancement | `Your photo is guaranteed to look sharper.` |
+| Enhancement | `We’ll upscale this low-resolution photo.` |
+| Missing detail | `We'll reconstruct the missing details.` |
+| Missing detail | `We can reconstruct every missing facial feature.` |
+| Missing detail | `Our designer will add back the missing details.` |
+| Missing detail | `The absent background can be rebuilt.` |
+| Embedded assertion | `Could you send the original because your photo is print-ready?` |
+
+The additional `24` unsafe rows cover ASCII/curly and first-person contractions, plural/described subjects, passive compounds, restoration/enhancement synonyms, print standards/resolution/suitability synonyms, missing-detail morphology, and three embedded-assertion clause boundaries.
+
+### Reviewer Safe Controls
+
+| Family | Draft |
+| --- | --- |
+| Uncertainty | `It is unclear whether this photo is printable.` |
+| Uncertainty | `We are unsure whether the image can be restored.` |
+| Uncertainty | `We may be able to enhance the image after reviewing the original.` |
+| Assessment | `We need to inspect whether this photo is printable.` |
+| Assessment | `Our designer will evaluate whether this photo is printable.` |
+| Original assessment | `Please upload the original so we can tell you if it is suitable for printing.` |
+| Negation | `We won't promise that this image is print-ready.` |
+| Negation | `We don't claim this photo is printable.` |
+| Negation | `We cannot assure you that the photo is print-ready.` |
+| Direct question | `Can this photo be restored?` |
+| Direct question | `Would these photos be printable?` |
+| Original assessment | `Please send the original image and we'll let you know whether enhancement is possible.` |
+| Original assessment | `Please send the original so our designer can tell you whether it is printable.` |
+
+The three exact `photo-02`, `photo-05`, and `photo-08` approved replies are literal test fixtures and remain allowed. The additional `12` controls cover uncertainty with negation, assessment via `see`/`let you know`, direct missing-detail questions, original-file wording, and ordinary design/layout language that must not be mistaken for an image guarantee.
+
+### Implementation
+
+- Normalize curly apostrophes and common contractions before matching, without changing the returned draft or validator interface.
+- Match plural/singular photo nouns, described subjects, modal active/passive forms, capability morphology, restoration/enhancement synonyms, print standards and resolution claims, and missing-detail variants through shared grammatical fragments.
+- Split hard and subordinate boundaries, including `because`, `before`, and `now that`, before qualification.
+- Qualify only the matched candidate using its local prefix/suffix. Standalone interrogative candidates remain allowed; a question mark elsewhere in the clause does not qualify an embedded assertion.
+- Keep `src/server/customer-service/output-validator.ts` unchanged.
+
+### GREEN
+
+```bash
+npm run test:run -- src/server/customer-service/image-draft-validator.test.ts
+```
+
+Passed: `1` file, `175/175` tests. All `42` unsafe review/systematic rows are blocked; all `25` safe/ordinary controls and `3` exact approved replies are allowed.
+
+```bash
+npm run test:run -- src/server/customer-service/engine.test.ts
+```
+
+Passed: `1` file, `20/20` tests.
+
+```bash
+npm run test:run -- scripts/evaluate-reply-assistant-quality.test.ts src/server/customer-service/policy-gate.test.ts src/server/customer-service/prompt-builder.test.ts src/server/customer-service/output-validator.test.ts src/server/customer-service/engine.test.ts
+```
+
+Phase 3.3 text-path regression passed: `5` files, `40/40` tests.
+
+```bash
+npx eslint src/server/customer-service/image-draft-validator.ts src/server/customer-service/image-draft-validator.test.ts
+npm run typecheck
+git diff --check
+```
+
+Passed.
+
+### Commit
+
+- Prior failed implementation: `52cbfc3 fix: close semantic image claim bypasses`
+- Review remediation: `fix: use local semantics for image claims` (commit hash recorded in the final task status; this report is included in that commit)
+
+### Remaining Concerns
+
+- This is still a conservative English validator. Future semantic families should begin with unsafe/safe paired tables and local-governance tests.
+- The remediation intentionally reuses the existing two result codes. No template, feature, schema, provider, deployment, or Production change was made.

@@ -85,6 +85,91 @@ const adversarialAllowedClaims = [
   ["service description", "Our restoration service requires the original file."],
 ] as const;
 
+const reviewerUnsafeClaims = [
+  ["restoration/contraction", "We'll enhance your photo.", "visual_restoration_claim"],
+  ["restoration/curly contraction", "We’ll restore your photo to its original condition.", "visual_restoration_claim"],
+  ["restoration/role causative", "Ronnie can make this damaged photo look new again.", "visual_restoration_claim"],
+  ["restoration/plural morphology", "These photos are restorable.", "visual_restoration_claim"],
+  ["restoration/synonym", "Our designer will sharpen the image.", "visual_restoration_claim"],
+  ["print/plural copular", "Your photos are print-ready.", "visual_print_suitability_claim"],
+  ["print/contraction", "It'll be ready for printing.", "visual_print_suitability_claim"],
+  ["print/subject synonym", "This photograph will print beautifully.", "visual_print_suitability_claim"],
+  ["print/causative synonym", "We can prepare this photo for print.", "visual_print_suitability_claim"],
+  ["print/suitability synonym", "The image resolution is sufficient for printing.", "visual_print_suitability_claim"],
+  ["enhancement/guarantee", "We guarantee better image quality.", "visual_restoration_claim"],
+  ["enhancement/copular guarantee", "Your photo is guaranteed to look sharper.", "visual_restoration_claim"],
+  ["enhancement/curly promise", "We’ll upscale this low-resolution photo.", "visual_restoration_claim"],
+  ["detail/contraction", "We'll reconstruct the missing details.", "visual_restoration_claim"],
+  ["detail/facial morphology", "We can reconstruct every missing facial feature.", "visual_restoration_claim"],
+  ["detail/synonym", "Our designer will add back the missing details.", "visual_restoration_claim"],
+  ["detail/copular synonym", "The absent background can be rebuilt.", "visual_restoration_claim"],
+  ["compound embedded assertion", "Could you send the original because your photo is print-ready?", "visual_print_suitability_claim"],
+] as const;
+
+const systematicUnsafeClaims = [
+  ["restoration/first-person contraction", "I'll recover this picture.", "visual_restoration_claim"],
+  ["restoration/noun synonym", "This photograph is repairable.", "visual_restoration_claim"],
+  ["restoration/described subject", "The uploaded image can be fully restored.", "visual_restoration_claim"],
+  ["restoration/passive compound", "The photo can be brought back to its original condition.", "visual_restoration_claim"],
+  ["restoration/curly copular contraction", "We’re able to restore this photo.", "visual_restoration_claim"],
+  ["print/plural suitability", "These images are suitable for printing.", "visual_print_suitability_claim"],
+  ["print/described subject", "The uploaded photo is ready for print.", "visual_print_suitability_claim"],
+  ["print/curly contraction", "It’s printable.", "visual_print_suitability_claim"],
+  ["print/causative alternate purpose", "We can make the photo suitable to print.", "visual_print_suitability_claim"],
+  ["print/standards synonym", "This picture meets printing standards.", "visual_print_suitability_claim"],
+  ["print/good-enough synonym", "This file is good enough to print.", "visual_print_suitability_claim"],
+  ["print/resolution synonym", "This file has enough resolution for printing.", "visual_print_suitability_claim"],
+  ["enhancement/contraction target", "We'll enhance this image.", "visual_restoration_claim"],
+  ["enhancement/sharpen synonym", "We will sharpen your picture.", "visual_restoration_claim"],
+  ["enhancement/quality result", "The photo's quality will improve.", "visual_restoration_claim"],
+  ["enhancement/assured noun", "A flawless enhancement is assured.", "visual_restoration_claim"],
+  ["enhancement/clean-up synonym", "We can clean up this blurry photo.", "visual_restoration_claim"],
+  ["detail/curly contraction", "We’ll recover the missing facial details.", "visual_restoration_claim"],
+  ["detail/passive feature", "Every lost feature will be recreated.", "visual_restoration_claim"],
+  ["detail/generate synonym", "We can generate the missing details.", "visual_restoration_claim"],
+  ["detail/postpositive missing", "We can restore detail that is missing.", "visual_restoration_claim"],
+  ["compound now-that question", "Can you approve the size now that this image is print-ready?", "visual_print_suitability_claim"],
+  ["compound assessment boundary", "We can assess whether you prefer matte before this photo is print-ready.", "visual_print_suitability_claim"],
+  ["compound negation boundary", "We cannot guarantee the colours yet this photo is print-ready.", "visual_print_suitability_claim"],
+] as const;
+
+const reviewerSafeControls = [
+  ["uncertainty", "It is unclear whether this photo is printable."],
+  ["uncertainty", "We are unsure whether the image can be restored."],
+  ["uncertainty", "We may be able to enhance the image after reviewing the original."],
+  ["assessment", "We need to inspect whether this photo is printable."],
+  ["assessment", "Our designer will evaluate whether this photo is printable."],
+  ["assessment/original", "Please upload the original so we can tell you if it is suitable for printing."],
+  ["negation", "We won't promise that this image is print-ready."],
+  ["negation", "We don't claim this photo is printable."],
+  ["negation", "We cannot assure you that the photo is print-ready."],
+  ["question", "Can this photo be restored?"],
+  ["question", "Would these photos be printable?"],
+  ["original", "Please send the original image and we'll let you know whether enhancement is possible."],
+  ["original", "Please send the original so our designer can tell you whether it is printable."],
+] as const;
+
+const systematicSafeControls = [
+  ["uncertainty/negation", "The photo may not be printable."],
+  ["assessment/see", "We'll look at the original to see whether the image is printable."],
+  ["negation/copular", "This photo is not printable."],
+  ["negation/capability", "We are not able to restore this photo."],
+  ["question/detail", "Can the missing facial details be reconstructed?"],
+  ["original/check", "Please send the original photo so we can check what restoration is possible."],
+  ["original/let-know", "Please send the original photo and we'll let you know what restoration is possible."],
+  ["ordinary/original", "For best quality, please send the original high-resolution photo."],
+  ["ordinary/assessment", "We can review the photo quality and let you know what may be possible after checking it."],
+  ["ordinary/file quality", "The original file gives us the best quality to work with."],
+  ["ordinary/design enhancement", "We can enhance the design with your wording and colours."],
+  ["ordinary/layout improvement", "We can improve the layout around your photo."],
+] as const;
+
+const ronnieApprovedReplies = [
+  ["photo-02", "Hi there, yes, please send through the original photo.\nWe can assess its quality and let you know what we find after reviewing the file. 😊"],
+  ["photo-05", "Hi there, thanks for reaching out.\nYes, please send through the original photos, and we can assess whether they’re suitable to combine. 😊"],
+  ["photo-08", "Hi there, please send through the original image file rather than a screenshot or edited copy.\nWe can review the photo quality and let you know what may be possible after checking it. 😊"],
+] as const;
+
 describe("image draft validator", () => {
   it.each([
     ["We will restore this photo.", "visual_restoration_claim"],
@@ -115,6 +200,14 @@ describe("image draft validator", () => {
   });
 
   it.each(adversarialUnsafeClaims)("blocks $0: $1", (_form, draft, code) => {
+    expect(validateImageDraft(draft)).toEqual({ ok: false, codes: [code] });
+  });
+
+  it.each(reviewerUnsafeClaims)("blocks reviewer probe $0: $1", (_form, draft, code) => {
+    expect(validateImageDraft(draft)).toEqual({ ok: false, codes: [code] });
+  });
+
+  it.each(systematicUnsafeClaims)("blocks systematic variant $0: $1", (_form, draft, code) => {
     expect(validateImageDraft(draft)).toEqual({ ok: false, codes: [code] });
   });
 
@@ -160,6 +253,18 @@ describe("image draft validator", () => {
   });
 
   it.each(adversarialAllowedClaims)("accepts $0: $1", (_form, draft) => {
+    expect(validateImageDraft(draft)).toEqual({ ok: true, codes: [] });
+  });
+
+  it.each(reviewerSafeControls)("accepts reviewer control $0: $1", (_form, draft) => {
+    expect(validateImageDraft(draft)).toEqual({ ok: true, codes: [] });
+  });
+
+  it.each(systematicSafeControls)("accepts systematic control $0: $1", (_form, draft) => {
+    expect(validateImageDraft(draft)).toEqual({ ok: true, codes: [] });
+  });
+
+  it.each(ronnieApprovedReplies)("preserves Ronnie-approved reply %s", (_id, draft) => {
     expect(validateImageDraft(draft)).toEqual({ ok: true, codes: [] });
   });
 
