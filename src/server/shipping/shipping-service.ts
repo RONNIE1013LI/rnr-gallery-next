@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import type { NormalizedAddress } from "@/domain/address/types";
 import type { MarketPriceBook } from "@/domain/catalogue/market-price-book";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
-import { currencyForMarket, includedTaxFromGross, marketTaxPolicy } from "@/domain/markets/market";
+import { marketTaxPolicy } from "@/domain/markets/market";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { createGoSweetSpotShippingProvider } from "./gosweetspot-provider";
 import { createLocalTestShippingProvider } from "./local-test-provider";
@@ -142,54 +142,6 @@ export function createShippingService({
       const packages = packagesFor(cart);
       const destination = destinationFor(address);
       const digest = requestDigest(cart, destination, packages);
-      if (cart.market === "AU") {
-        const method = priceBook?.market === "AU" && priceBook.enabled
-          ? priceBook.shippingMethods.find((candidate) =>
-              candidate.active && candidate.method === "post" && candidate.source === "fixed"
-            )
-          : undefined;
-        if (
-          !method ||
-          !Number.isSafeInteger(method.amountInclTaxCents) ||
-          Number(method.amountInclTaxCents) <= 0
-        ) {
-          throw new ShippingUnavailableError("Australian shipping price is unavailable");
-        }
-        const tax = includedTaxFromGross(
-          Number(method.amountInclTaxCents),
-          marketTaxPolicy("AU", priceBook!.tax),
-        );
-        const expiresAt = new Date(now().getTime() + 30 * 60 * 1_000);
-        const quote: ProviderShippingQuote = Object.freeze({
-          provider: "internal-fixed",
-          serviceCode: method.key,
-          serviceName: method.label,
-          currency: "AUD",
-          amountExGstCents: tax.amountExTaxCents,
-          gstCents: tax.taxCents,
-          amountInclGstCents: tax.amountInclTaxCents,
-          providerReference: `fixed-aud-${cart.priceBookRevision}-${digest}`,
-          expiresAt,
-          rawResponseHash: digest,
-          isTest: false,
-        });
-        return Object.freeze({
-          requestDigest: digest,
-          quote,
-          option: Object.freeze({
-            method: "post" as const,
-            serviceCode: quote.serviceCode,
-            serviceName: quote.serviceName,
-            amountExGstCents: quote.amountExGstCents,
-            gstCents: quote.gstCents,
-            amountInclGstCents: quote.amountInclGstCents,
-            currency: quote.currency,
-            provenance: quote.provider,
-            isTest: quote.isTest,
-            expiresAt: quote.expiresAt,
-          }),
-        });
-      }
       if (!provider) throw new ShippingUnavailableError();
       try {
         const availability = await provider.availability();
@@ -199,14 +151,14 @@ export function createShippingService({
 
         const request: ShippingQuoteRequest = Object.freeze({
           market: cart.market,
-          currency: currencyForMarket(cart.market),
-          taxPolicy: marketTaxPolicy(cart.market),
+          currency: cart.currency,
+          taxPolicy: marketTaxPolicy(cart.market, priceBook?.tax),
           cartValueInclGstCents: cart.totalInclGstCents,
           packages: Object.freeze(packages),
           destination,
         });
         const quote = await provider.quote(request);
-        assertCurrentPositiveQuote(quote, now(), "NZD");
+        assertCurrentPositiveQuote(quote, now(), cart.currency);
         return Object.freeze({
           requestDigest: digest,
           quote,

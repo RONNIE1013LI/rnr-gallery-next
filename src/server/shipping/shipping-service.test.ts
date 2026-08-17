@@ -5,12 +5,13 @@ import {
   parseProductRegistry,
 } from "@/domain/catalogue/product-registry";
 import type { NormalizedAddress } from "@/domain/address/types";
+import { includedTaxFromGross } from "@/domain/markets/market";
 import {
   createShippingService,
   selectShippingProvider,
   ShippingUnavailableError,
 } from "./shipping-service";
-import type { ShippingQuoteProvider } from "./types";
+import type { ShippingQuoteProvider, ShippingQuoteRequest } from "./types";
 
 const now = new Date("2026-08-02T12:00:00.000Z");
 const address: NormalizedAddress = {
@@ -50,18 +51,22 @@ function provider(overrides: Partial<ShippingQuoteProvider> = {}): ShippingQuote
   return {
     key: "local-test",
     availability: vi.fn().mockResolvedValue({ available: true }),
-    quote: vi.fn().mockResolvedValue({
-      provider: "local-test",
-      serviceCode: "test-post-nz",
-      serviceName: "Test Post — not a live carrier rate",
-      amountExGstCents: 2_000,
-      gstCents: 300,
-      amountInclGstCents: 2_300,
-      currency: "NZD",
-      providerReference: "test-ref",
-      expiresAt: new Date("2026-08-02T12:15:00.000Z"),
-      rawResponseHash: "a".repeat(64),
-      isTest: true,
+    quote: vi.fn().mockImplementation((request: ShippingQuoteRequest) => {
+      const amountInclGstCents = request.market === "AU" ? 3_000 : 2_300;
+      const tax = includedTaxFromGross(amountInclGstCents, request.taxPolicy);
+      return Promise.resolve({
+        provider: "local-test" as const,
+        serviceCode: `test-post-${request.market.toLowerCase()}`,
+        serviceName: "Test Post — not a live carrier rate",
+        amountExGstCents: tax.amountExTaxCents,
+        gstCents: tax.taxCents,
+        amountInclGstCents: tax.amountInclTaxCents,
+        currency: request.currency,
+        providerReference: "test-ref",
+        expiresAt: new Date("2026-08-02T12:15:00.000Z"),
+        rawResponseHash: "a".repeat(64),
+        isTest: true,
+      });
     }),
     ...overrides,
   };
@@ -264,7 +269,7 @@ describe("shipping service", () => {
     ]).size).toBe(3);
   });
 
-  it("uses fixed AUD shipping for a Bundle without calling the NZ carrier", async () => {
+  it("quotes an AU Bundle from carrier packages", async () => {
     const quoteProvider = provider();
     const fixture = australianFixture(bannerBundleCartInput(2));
     const service = createShippingService({ provider: quoteProvider, now: () => now });
@@ -275,22 +280,51 @@ describe("shipping service", () => {
       fixture.registry.markets.AU,
     );
 
-    expect(quoteProvider.availability).not.toHaveBeenCalled();
-    expect(quoteProvider.quote).not.toHaveBeenCalled();
-    expect(result).toMatchObject({
-      quote: {
-        provider: "internal-fixed",
-        currency: "AUD",
-        amountExGstCents: 4_500,
-        gstCents: 0,
-        amountInclGstCents: 4_500,
+    expect(quoteProvider.quote).toHaveBeenCalledWith(expect.objectContaining({
+      market: "AU",
+      currency: "AUD",
+      taxPolicy: {
+        jurisdiction: "NONE",
+        registered: false,
+        rateBasisPoints: 1_000,
       },
-      option: {
-        currency: "AUD",
-        amountInclGstCents: 4_500,
-        provenance: "internal-fixed",
-      },
+      destination: expect.objectContaining({ countryCode: "AU", city: "NSW" }),
+    }));
+    expect(vi.mocked(quoteProvider.quote).mock.calls[0][0].packages).toHaveLength(4);
+    expect(result.option).toMatchObject({
+      currency: "AUD",
+      provenance: "local-test",
+      amountInclGstCents: 3_000,
     });
+  });
+
+  it.each([
+    ["a missing provider", null],
+    ["a NZD quote", provider({ quote: vi.fn().mockResolvedValue({
+      provider: "local-test", serviceCode: "wrong-currency", serviceName: "Wrong currency",
+      amountExGstCents: 3_000, gstCents: 0, amountInclGstCents: 3_000, currency: "NZD",
+      providerReference: "wrong-currency", expiresAt: new Date("2026-08-02T12:15:00.000Z"),
+      rawResponseHash: "e".repeat(64), isTest: true,
+    }) })],
+    ["an expired AUD quote", provider({ quote: vi.fn().mockResolvedValue({
+      provider: "local-test", serviceCode: "expired", serviceName: "Expired",
+      amountExGstCents: 3_000, gstCents: 0, amountInclGstCents: 3_000, currency: "AUD",
+      providerReference: "expired", expiresAt: now,
+      rawResponseHash: "f".repeat(64), isTest: true,
+    }) })],
+    ["a non-positive AUD quote", provider({ quote: vi.fn().mockResolvedValue({
+      provider: "local-test", serviceCode: "free", serviceName: "Free",
+      amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "AUD",
+      providerReference: "free", expiresAt: new Date("2026-08-02T12:15:00.000Z"),
+      rawResponseHash: "g".repeat(64), isTest: true,
+    }) })],
+  ])("does not fall back to fixed AU shipping for %s", async (_name, quoteProvider) => {
+    const fixture = australianFixture();
+
+    await expect(
+      createShippingService({ provider: quoteProvider, now: () => now })
+        .quotePost(fixture.cart, fixture.address, fixture.registry.markets.AU),
+    ).rejects.toBeInstanceOf(ShippingUnavailableError);
   });
 
   it("rejects a destination whose country does not match the repriced cart market", async () => {
