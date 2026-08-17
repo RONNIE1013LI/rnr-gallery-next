@@ -2,11 +2,10 @@
 
 ## Scope and status
 
-This record covers the GA4 ecommerce changes on `feat/ga4-ecommerce` before
-deployment. Automated source, type, lint, executable non-database test, build,
-and release-boundary checks are recorded below. Production deployment,
-production browser/network inspection, GA4 Realtime, GA4 DebugView, NZD/AUD
-payload observation, and live purchase confirmation remain **pending**.
+This record covers the GA4 ecommerce changes on `feat/ga4-ecommerce` through
+production deployment. The tag, privacy boundary, and seven non-purchase
+ecommerce events have been observed in production and GA4. A live `purchase`
+and an AUD production event remain **pending** for the reasons recorded below.
 
 The first non-database run did not have `TEST_DATABASE_URL`; the isolated test
 database was subsequently verified and the 18 required database suites passed.
@@ -25,6 +24,15 @@ No application, staging, or production database was used as a substitute.
 | Dedicated database suite listed below | PASS | The safe gate confirmed only these labels: `TEST_DATABASE_URL` present, PostgreSQL, separately test-named, and different from `DATABASE_URL`. Exit 0: 18 test files and 89 tests passed in 97.72s. No URL, host, user, password, or database name was printed. |
 | `DATABASE_URL='postgresql://build:build@127.0.0.1:1/rnr_build' BETTER_AUTH_SECRET='<build-only non-secret>' BETTER_AUTH_URL='https://build.invalid' VERCEL_ENV='production' npm run build` | PASS | Exit 0. The final build generated 89/89 static pages. The loopback database URL and auth values were build-only placeholders; no external service was contacted. |
 | `git diff --check` | PASS | Exit 0; no whitespace errors. |
+
+After production Realtime exposed that the private checkout gate also blocked
+the three allowlisted checkout events, a focused red-green fix was added in
+`080445bd4b9ff1dc2fb0c5922c6eaae8c7432e74`. Fresh verification for that fix:
+
+- GA/runtime/checkout focused suite: 8 files, 104 tests passed.
+- `npm run typecheck`: exit 0.
+- `npm run lint`: exit 0.
+- production-placeholder `npm run build`: exit 0, 89/89 pages.
 
 The final exact full-suite command above supersedes the initial
 missing-environment preflight and the earlier complete run. The current result
@@ -159,19 +167,60 @@ A src/domain/analytics/runtime.test.ts
 A src/domain/analytics/runtime.ts
 ```
 
-## Pending controller-owned evidence
+## Production deployment and browser evidence
 
-The following must be appended after the exact verified commit is deployed:
+- Ready preview: `dpl_Cb4MgEzfnXmuWRHapXfJe4jhaxir`, source revision
+  `080445bd4b9ff1dc2fb0c5922c6eaae8c7432e74`.
+- Promoted production deployment: `dpl_gRyujqdr5zZuQBrKttEQxnKz9vmj`.
+- Production aliases: `https://rrgallery.co.nz` and
+  `https://www.rrgallery.co.nz`.
+- Production Chrome showed exactly one external official tag script,
+  `https://www.googletagmanager.com/gtag/js?id=G-RE5Z5B58TJ`, plus its one
+  `_next-ga-init` initializer. The runtime DOM gates were enabled and loaded.
+- The exact preview artifact showed no GA runtime DOM gates and no GA or GTM
+  scripts, confirming Preview remains excluded from the production property.
+- A cancelled Afterpay flow created unpaid test orders `08004` and `08005` and
+  returned safely to the order page. No payment was made.
 
-- Vercel Ready deployment ID, source revision, and production alias.
-- Production DOM/network proof that `G-RE5Z5B58TJ` loads once, plus preview
-  proof that the tag and ecommerce emission are disabled.
-- Production browser evidence for `view_item`, `add_to_cart`,
-  `remove_from_cart`, `view_cart`, `begin_checkout`, `add_shipping_info`,
-  `add_payment_info`, and `purchase` in both GA4 Realtime and DebugView.
-- Observed NZD and AUD values/items, a stable purchase transaction ID, and a
-  production payload privacy check.
-- Confirmation that `?ga_debug=0` removes debug mode.
+## GA4 Realtime and DebugView evidence
 
-Until the production checks above are completed, this record is not
-production-release evidence.
+Chrome production actions were performed with the controlled debug session.
+GA4 Realtime and DebugView both showed these event names:
+
+| Event | Realtime | DebugView |
+| --- | --- | --- |
+| `view_item` | PASS | PASS |
+| `add_to_cart` | PASS | PASS |
+| `remove_from_cart` | PASS | PASS |
+| `view_cart` | PASS | PASS |
+| `begin_checkout` | PASS | PASS |
+| `add_shipping_info` | PASS | PASS |
+| `add_payment_info` | PASS | PASS |
+| `purchase` | PENDING | PENDING |
+
+DebugView showed one Apple debug device and the seven event names above in its
+timeline. Opening `add_shipping_info` showed only the allowlisted commerce
+parameters plus GA-managed parameters. Its `currency` value was observed as
+`NZD`; no name, email, phone, street, postcode, upload reference, image URL,
+design text, or order-access token parameter appeared.
+
+The existing paid order URL supplied for testing returned the expected secure
+404 in this guest Chrome session, so it could not emit a server-confirmed
+purchase. No purchase was fabricated. A fresh real paid order or authorised
+paid-order access is still required to observe `transaction_id`, `value`,
+`currency`, and `items` in Realtime and DebugView.
+
+AUD event observation is also pending because the Australia storefront remains
+disabled in production during the current tuning phase. Automated event-builder,
+order-currency, and purchase tests cover AUD, but this document does not label
+that as a live GA observation.
+
+## Remaining evidence
+
+- Complete one real paid order in the current debug-enabled Chrome session and
+  observe `purchase` in both Realtime and DebugView.
+- Inspect the resulting stable `transaction_id`, NZD `value`, and `items`.
+- After the AU storefront is deliberately enabled, repeat the checkout and
+  purchase observation in AUD.
+- Navigate to `?ga_debug=0` after the real payment observation and confirm the
+  debug device stops receiving new events.
