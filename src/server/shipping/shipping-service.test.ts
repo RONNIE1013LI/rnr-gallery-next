@@ -270,7 +270,25 @@ describe("shipping service", () => {
   });
 
   it("quotes an AU Bundle from carrier packages", async () => {
-    const quoteProvider = provider();
+    const quoteProvider = provider({
+      key: "gosweetspot",
+      quote: vi.fn().mockImplementation((request: ShippingQuoteRequest) => {
+        const tax = includedTaxFromGross(3_000, request.taxPolicy);
+        return Promise.resolve({
+          provider: "gosweetspot" as const,
+          serviceCode: "au-standard",
+          serviceName: "AU standard",
+          amountExGstCents: tax.amountExTaxCents,
+          gstCents: tax.taxCents,
+          amountInclGstCents: tax.amountInclTaxCents,
+          currency: request.currency,
+          providerReference: "gosweetspot-au-ref",
+          expiresAt: new Date("2026-08-02T12:15:00.000Z"),
+          rawResponseHash: "h".repeat(64),
+          isTest: false,
+        });
+      }),
+    });
     const fixture = australianFixture(bannerBundleCartInput(2));
     const service = createShippingService({ provider: quoteProvider, now: () => now });
 
@@ -293,7 +311,7 @@ describe("shipping service", () => {
     expect(vi.mocked(quoteProvider.quote).mock.calls[0][0].packages).toHaveLength(4);
     expect(result.option).toMatchObject({
       currency: "AUD",
-      provenance: "local-test",
+      provenance: "gosweetspot",
       amountInclGstCents: 3_000,
     });
   });
