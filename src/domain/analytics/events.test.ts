@@ -9,7 +9,7 @@ function order(paymentStatus: PublicOrder["paymentStatus"]): PublicOrder {
     paymentStatus, fulfilmentStatus: "new", currency: "NZD", deliveryMethod: "post",
     shipping: { provider: "local-test", serviceName: "Post", isTest: true, amountExGstCents: 2000, gstCents: 300, amountInclGstCents: 2300 },
     totals: { productSubtotalExGstCents: 6500, productGstCents: 975, productTotalInclGstCents: 7475, totalExGstCents: 8500, totalGstCents: 1275, totalInclGstCents: 9775 },
-    items: [{ productTitle: "Photo Print Canvas", sizeLabel: "A4", peoplePets: 0, photoSubmissionMethod: "later", designText: "PRIVATE", notes: "PRIVATE", neededDate: "2026-09-01", urgentServiceConfirmed: false, urgentWorkingDays: 5, quantity: 1, priceLines: [], uploadReferences: ["PRIVATE-FILE"], unitSubtotalExGstCents: 6500, unitGstCents: 975, unitTotalInclGstCents: 7475, lineSubtotalExGstCents: 6500, lineGstCents: 975, lineTotalInclGstCents: 7475 } as PublicOrder["items"][number]],
+    items: [{ productKey: "photo-print-canvas", productTitle: "Photo Print Canvas", sizeKey: "a4", sizeLabel: "A4", peoplePets: 0, photoSubmissionMethod: "later", designText: "PRIVATE", notes: "PRIVATE", neededDate: "2026-09-01", urgentServiceConfirmed: false, urgentWorkingDays: 5, quantity: 1, priceLines: [], uploadReferences: ["PRIVATE-FILE"], unitSubtotalExGstCents: 6500, unitGstCents: 975, unitTotalInclGstCents: 7475, lineSubtotalExGstCents: 6500, lineGstCents: 975, lineTotalInclGstCents: 7475 } as PublicOrder["items"][number]],
     addresses: { billing: { country: "NZ", fullName: "PRIVATE", building: "", street: "PRIVATE", suburb: "PRIVATE", region: "PRIVATE", postcode: "1010", phone: "PRIVATE", email: "private@example.test" }, delivery: { country: "NZ", fullName: "PRIVATE", building: "", street: "PRIVATE", suburb: "PRIVATE", region: "PRIVATE", postcode: "1010", phone: "PRIVATE", email: "private@example.test" } },
     payment: null,
   };
@@ -22,7 +22,7 @@ describe("privacy-safe analytics events", () => {
     expect(event).toEqual({
       event: "purchase", transaction_id: "RNR-2026-ABC123", currency: "NZD",
       value: 97.75, tax: 12.75, shipping: 23,
-      items: [{ item_id: "photo-print-canvas", item_name: "Photo Print Canvas", item_variant: "A4", price: 74.75, quantity: 1 }],
+      items: [{ item_id: "photo-print-canvas", item_name: "Photo Print Canvas", item_variant: "a4", price: 74.75, quantity: 1 }],
     });
     expect(JSON.stringify(event)).not.toContain("PRIVATE");
   });
@@ -31,8 +31,10 @@ describe("privacy-safe analytics events", () => {
     const paidOrder = order("paid");
     const bundleItem = {
       ...paidOrder.items[0],
-      productTitle: "Banner Bundle",
-      sizeLabel: "85 × 200 cm Roll-Up + 200 × 100 cm Wall Banner",
+      productKey: "banner-bundle",
+      productTitle: "Celebration Display Package",
+      sizeKey: "rollup-wall-200x100",
+      sizeLabel: "Combined banner package",
       designText: "PRIVATE BUNDLE WORDING",
       notes: "PRIVATE BUNDLE NOTES",
       galleryDesign: {
@@ -70,8 +72,8 @@ describe("privacy-safe analytics events", () => {
 
     expect(event?.items).toEqual([{
       item_id: "banner-bundle",
-      item_name: "Banner Bundle",
-      item_variant: "85 × 200 cm Roll-Up + 200 × 100 cm Wall Banner",
+      item_name: "Celebration Display Package",
+      item_variant: "rollup-wall-200x100",
       price: 74.75,
       quantity: 1,
     }]);

@@ -39,10 +39,6 @@ function dollars(cents: number) {
   return Number((cents / 100).toFixed(2));
 }
 
-function productId(title: string) {
-  return title.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "") || "product";
-}
-
 export function buildPurchaseEvent(order: PublicOrder): PurchaseEvent | null {
   if (order.paymentStatus !== "paid") return null;
   return Object.freeze({
@@ -53,9 +49,9 @@ export function buildPurchaseEvent(order: PublicOrder): PurchaseEvent | null {
     tax: dollars(order.totals.totalGstCents),
     shipping: dollars(order.shipping.amountInclGstCents),
     items: order.items.map((item) => Object.freeze({
-      item_id: productId(item.productTitle),
+      item_id: item.productKey,
       item_name: item.productTitle,
-      item_variant: item.sizeLabel,
+      item_variant: item.sizeKey,
       price: dollars(item.unitTotalInclGstCents),
       quantity: item.quantity,
     })),

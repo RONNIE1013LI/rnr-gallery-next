@@ -1,9 +1,53 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  defaultProductRegistry,
+  parseProductRegistry,
+} from "@/domain/catalogue/product-registry";
 import { getProductBySlug } from "@/domain/catalogue/products";
-import { ProductPageContent } from "./page-content";
+import AustraliaProductPage from "@/app/au/products/[slug]/page";
+import ProductPage, { ProductPageContent } from "./page-content";
+
+const state = vi.hoisted(() => ({ registry: undefined as unknown }));
+
+vi.mock("@/server/admin/product-registry-runtime", () => ({
+  getSafePublicProductRegistry: async () => ({ registry: state.registry }),
+}));
+vi.mock("@/server/gallery/gallery-runtime", () => ({
+  getGalleryRuntime: () => ({
+    selectionService: { resolve: vi.fn().mockResolvedValue(null) },
+  }),
+}));
+
+function enabledAustraliaRegistry() {
+  const registry = structuredClone(defaultProductRegistry);
+  for (const product of registry.markets.AU.products) {
+    for (const size of product.sizes) size.amountInclTaxCents ??= 40_000;
+    for (const charge of product.charges) charge.amountInclTaxCents ??= 2_000;
+  }
+  for (const fee of registry.markets.AU.peoplePets.fees) {
+    fee.amountInclTaxCents ??= 5_000;
+  }
+  registry.markets.AU.peoplePets.additionalEachInclTaxCents ??= 3_000;
+  for (const fee of registry.markets.AU.urgentServiceFees) {
+    fee.amountInclTaxCents ??= 9_000;
+  }
+  for (const shipping of registry.markets.AU.shippingMethods) {
+    if (shipping.source === "fixed") shipping.amountInclTaxCents ??= 3_500;
+  }
+  registry.markets.AU.enabled = true;
+  return parseProductRegistry(registry);
+}
+
+const bundleProps = {
+  params: Promise.resolve({ slug: "banner-bundle" }),
+  searchParams: Promise.resolve({}),
+};
 
 describe("ProductPageContent", () => {
+  beforeEach(() => {
+    state.registry = defaultProductRegistry;
+  });
   it("shows a validated inspiration and preserves it in the create link", () => {
     const product = getProductBySlug("digital-oil-painting-canvas")!;
     const designId = "a".repeat(64);
@@ -95,36 +139,39 @@ describe("ProductPageContent", () => {
     expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
   });
 
-  it.each([
-    ["NZ", 35_999, "NZD", "359.99", "From NZ$359.99 incl GST"],
-    ["AU", 33_999, "AUD", "339.99", "From A$339.99 AUD"],
-  ] as const)(
-    "publishes the Banner Bundle %s starting amount in Product JSON-LD",
-    (market, priceInclTaxCents, currency, price, visiblePrice) => {
-      const product = getProductBySlug("banner-bundle")!;
-      const { container } = render(
-        <ProductPageContent
-          product={product}
-          selection={null}
-          market={market}
-          priceInclTaxCents={priceInclTaxCents}
-        />,
-      );
+  it("resolves the NZ Banner Bundle JSON-LD starting offer from the runtime registry", async () => {
+    const { container } = render(await ProductPage(bundleProps));
 
-      expect(screen.getByText(visiblePrice)).toBeVisible();
-      expect(JSON.parse(
-        container.querySelector("#rnr-product-data")?.textContent ?? "{}",
-      )).toMatchObject({
-        "@type": "Product",
-        name: "Banner Bundle",
-        image: ["https://rrgallery.co.nz/media/products/banner-bundle.png"],
-        offers: {
-          price,
-          priceCurrency: currency,
-        },
-      });
-    },
-  );
+    expect(JSON.parse(
+      container.querySelector("#rnr-product-data")?.textContent ?? "{}",
+    )).toMatchObject({
+      "@type": "Product",
+      name: "Banner Bundle",
+      image: ["https://rrgallery.co.nz/media/products/banner-bundle.png"],
+      offers: {
+        price: "359.99",
+        priceCurrency: "NZD",
+      },
+    });
+  });
+
+  it("resolves the AU Banner Bundle JSON-LD starting offer from the runtime registry", async () => {
+    state.registry = enabledAustraliaRegistry();
+
+    const { container } = render(await AustraliaProductPage(bundleProps));
+
+    expect(JSON.parse(
+      container.querySelector("#rnr-product-data")?.textContent ?? "{}",
+    )).toMatchObject({
+      "@type": "Product",
+      name: "Banner Bundle",
+      image: ["https://rrgallery.co.nz/media/products/banner-bundle.png"],
+      offers: {
+        price: "339.99",
+        priceCurrency: "AUD",
+      },
+    });
+  });
 
   it("preserves a selected size when opening the configurator", () => {
     const product = getProductBySlug("photo-print-canvas")!;

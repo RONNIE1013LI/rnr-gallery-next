@@ -27,7 +27,9 @@ const order: PublicOrder = {
     totalInclGstCents: 35_999,
   },
   items: [{
+    productKey: "banner-bundle",
     productTitle: "Banner Bundle",
+    sizeKey: "rollup-wall-200x100",
     sizeLabel: "85 × 200 cm Roll-Up + 200 × 100 cm Wall Banner",
     peoplePets: 0,
     photoSubmissionMethod: "upload",

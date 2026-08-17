@@ -177,6 +177,7 @@ function publicItems(itemRows: OrderItemRow[], order: OrderRow) {
       : undefined;
     assertSnapshot(item.productKey === "banner-bundle" || item.bundleComponents === null);
     return Object.freeze({
+      productKey: item.productKey,
       productTitle: item.productTitle,
       ...(hasGalleryDesign ? {
         galleryDesign: Object.freeze({
@@ -187,6 +188,7 @@ function publicItems(itemRows: OrderItemRow[], order: OrderRow) {
           imageUrl: `/gallery-images/${item.galleryDesignId}?v=${item.galleryDesignContentHash}`,
         }),
       } : {}),
+      sizeKey: item.sizeKey,
       sizeLabel: isGraveCover ? "100 × 200 cm" : item.sizeLabel,
       ...(!isGraveCover && item.orientation ? { orientation: item.orientation } : {}),
       peoplePets: item.peoplePets, photoSubmissionMethod: item.photoSubmissionMethod,

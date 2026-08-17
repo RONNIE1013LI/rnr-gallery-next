@@ -289,11 +289,15 @@ describe("Drizzle order query read model", () => {
       "deliveryMethod", "shipping", "totals", "items", "addresses", "payment",
     ]);
     expect(Object.keys(result.items[0])).toEqual([
-      "productTitle", "galleryDesign", "sizeLabel", "orientation", "peoplePets", "photoSubmissionMethod",
+      "productKey", "productTitle", "galleryDesign", "sizeKey", "sizeLabel", "orientation", "peoplePets", "photoSubmissionMethod",
       "designText", "notes", "neededDate", "urgentServiceConfirmed", "urgentWorkingDays",
       "quantity", "priceLines", "unitSubtotalExGstCents", "unitGstCents", "unitTotalInclGstCents",
       "lineSubtotalExGstCents", "lineGstCents", "lineTotalInclGstCents",
     ]);
+    expect(result.items[0]).toMatchObject({
+      productKey: "photo-print-canvas",
+      sizeKey: "a4",
+    });
     expect(JSON.stringify(result)).not.toMatch(/checkoutSessionId|tokenDigest|customerId|shippingQuoteId|idempotencyKey|uploadReferences/);
     expect(Object.isFrozen(result)).toBe(true);
     expect(Object.isFrozen(result.items)).toBe(true);
@@ -332,6 +336,10 @@ describe("Drizzle order query read model", () => {
   it("keeps wording and notes in an authorized Bundle detail without upload references", () => {
     const [result] = buildPublicOrders([orderRow], [bundleItemRow], addresses, []);
 
+    expect(result.items[0]).toMatchObject({
+      productKey: "banner-bundle",
+      sizeKey: "rollup-wall-200x100",
+    });
     expect(result.items[0].bundleComponents).toEqual([
       {
         componentKey: "roll-up",
