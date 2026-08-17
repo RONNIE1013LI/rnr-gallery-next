@@ -78,12 +78,16 @@ export function createFacebookChannelAdapter(): ChannelAdapter<unknown> {
         for (const rawEvent of list(entry.messaging)) {
           const event = record(rawEvent);
           const sender = record(event?.sender);
+          const recipient = record(event?.recipient);
           const message = record(event?.message);
           const senderId = typeof sender?.id === "string" ? sender.id.trim() : "";
+          const recipientId = typeof recipient?.id === "string" ? recipient.id.trim() : "";
           const messageId = typeof message?.mid === "string" ? message.mid.trim() : "";
           const textValue = typeof message?.text === "string" ? message.text.trim() : "";
-          const attachments = message ? normalizedAttachments(message, messageId) : [];
-          if (!senderId || !messageId || message?.is_echo === true || (!textValue && !attachments.length)) continue;
+          const role = message?.is_echo === true ? "staff" as const : "customer" as const;
+          const conversationKey = role === "staff" ? recipientId : senderId;
+          const attachments = role === "customer" && message ? normalizedAttachments(message, messageId) : [];
+          if (!conversationKey || !messageId || (!textValue && !attachments.length)) continue;
           const timestamp = typeof event?.timestamp === "number"
             ? event.timestamp
             : typeof entry.time === "number"
@@ -91,7 +95,8 @@ export function createFacebookChannelAdapter(): ChannelAdapter<unknown> {
               : Date.now();
           normalized.push(Object.freeze({
             channel: "facebook",
-            externalConversationKey: senderId,
+            role,
+            externalConversationKey: conversationKey,
             externalMessageKey: messageId,
             text: textValue || null,
             attachments,
