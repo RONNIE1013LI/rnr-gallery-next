@@ -176,4 +176,14 @@ describe("checkout and order schema contract", () => {
       "order_addresses_order_kind_unique",
     );
   });
+
+  it("stores an optional immutable Banner Bundle component snapshot", () => {
+    const column = config(orderItems).columns.find(
+      (candidate) => candidate.name === "bundle_components",
+    );
+
+    expect(column).toBeDefined();
+    expect(column?.notNull).toBe(false);
+    expect(column?.dataType).toBe("json");
+  });
 });

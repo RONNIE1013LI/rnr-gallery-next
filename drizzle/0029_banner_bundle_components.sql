@@ -1,0 +1,1 @@
+ALTER TABLE "order_items" ADD COLUMN "bundle_components" jsonb;

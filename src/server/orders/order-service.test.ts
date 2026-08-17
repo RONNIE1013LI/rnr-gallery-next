@@ -105,6 +105,75 @@ function shippingService() {
 }
 
 describe("atomic order service", () => {
+  it("preserves both Bundle groups while repricing and claims their union once", async () => {
+    const uploadIds = [
+      "70000000-0000-4000-8000-000000000001",
+      "70000000-0000-4000-8000-000000000002",
+    ];
+    const bundleInput = {
+      version: 1 as const,
+      items: [{
+        clientItemId: "30000000-0000-4000-8000-000000000002",
+        productKey: "banner-bundle",
+        sizeKey: "rollup-wall-200x100",
+        peoplePets: 0,
+        photoSubmissionMethod: "upload" as const,
+        designText: "",
+        notes: "",
+        neededDate: "2026-08-10",
+        urgentServiceConfirmed: false,
+        quantity: 1,
+        uploadReferences: uploadIds,
+        bundleComponents: [
+          {
+            componentKey: "roll-up" as const,
+            photoSubmissionMethod: "upload" as const,
+            designText: "Roll-up wording",
+            notes: "",
+            uploadReferences: [uploadIds[0]],
+            mainPhotoUploadId: uploadIds[0],
+          },
+          {
+            componentKey: "wall-banner" as const,
+            photoSubmissionMethod: "upload" as const,
+            designText: "Wall wording",
+            notes: "",
+            uploadReferences: [uploadIds[1]],
+            mainPhotoUploadId: uploadIds[1],
+          },
+        ],
+      }],
+    };
+    const cart = repriceCart(bundleInput, { now });
+    const checkout = { ...state(), cartDigest: cart.cartDigest, cartSnapshot: cart };
+    const findOwnedUploadIds = vi.fn().mockResolvedValue(uploadIds);
+    const repo = repository({
+      getCheckoutState: vi.fn().mockResolvedValue(checkout),
+      findOwnedUploadIds,
+    });
+    const service = createOrderService({
+      repository: repo,
+      shippingService: shippingService(),
+      now: () => now,
+    });
+
+    await service.createOrder(sessionId, key, {
+      ...reviewed(),
+      cartDigest: cart.cartDigest,
+    });
+
+    expect(findOwnedUploadIds).toHaveBeenCalledOnce();
+    expect(findOwnedUploadIds).toHaveBeenCalledWith(sessionId, uploadIds);
+    expect(repo.createAtomicOrder).toHaveBeenCalledWith(expect.objectContaining({
+      cart: expect.objectContaining({
+        items: [expect.objectContaining({
+          uploadReferences: uploadIds,
+          bundleComponents: bundleInput.items[0].bundleComponents,
+        })],
+      }),
+    }));
+  });
+
   it("returns the same-session same-key order before repricing or quoting", async () => {
     const repo = repository({ findBySession: vi.fn().mockResolvedValue(existingOrder) });
     const shipping = shippingService();

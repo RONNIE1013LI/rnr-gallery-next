@@ -26,6 +26,31 @@ function addressLines(address: Detail["addresses"][number]) {
   ].filter(Boolean);
 }
 
+function UploadList({ uploads }: Readonly<{ uploads: Detail["uploads"] }>) {
+  return <div className={styles.uploadList}>
+    <strong>Uploads</strong>
+    {uploads.length ? (
+      <ul>
+        {uploads.map((upload) => (
+          <li key={upload.id}>
+            {upload.purgedAt === null
+              && upload.originalName
+              && upload.mediaType
+              && upload.sizeBytes !== null ? (
+                <>
+                  <span><strong>{upload.originalName}</strong><span className={styles.uploadActions}><a href={`/api/admin/uploads/${upload.id}`} target="_blank" rel="noopener noreferrer">View</a><a href={`/api/admin/uploads/${upload.id}?download=1`}>Download</a></span></span>
+                  <small>{upload.mediaType} · {(upload.sizeBytes / 1024 / 1024).toFixed(1)} MB</small>
+                </>
+              ) : (
+                <span>Original photo deleted after the 5-day storage period.</span>
+              )}
+          </li>
+        ))}
+      </ul>
+    ) : <p>No uploaded files for this item.</p>}
+  </div>;
+}
+
 export function AdminOrderDetail({ detail }: Readonly<{ detail: Detail }>) {
   const { order } = detail;
   const amount = (cents: number) => formatMarketMoney(cents, order.currency);
@@ -73,28 +98,29 @@ export function AdminOrderDetail({ detail }: Readonly<{ detail: Detail }>) {
                 ))}
                 <div><span>Line GST</span><strong>{amount(item.lineGstCents)}</strong></div>
               </div>
-              <div className={styles.uploadList}>
-                <strong>Uploads</strong>
-                {detail.uploads.filter((upload) => upload.orderItemId === item.id).length ? (
-                  <ul>
-                    {detail.uploads.filter((upload) => upload.orderItemId === item.id).map((upload) => (
-                      <li key={upload.id}>
-                        {upload.purgedAt === null
-                          && upload.originalName
-                          && upload.mediaType
-                          && upload.sizeBytes !== null ? (
-                            <>
-                              <span><strong>{upload.originalName}</strong><span className={styles.uploadActions}><a href={`/api/admin/uploads/${upload.id}`} target="_blank" rel="noopener noreferrer">View</a><a href={`/api/admin/uploads/${upload.id}?download=1`}>Download</a></span></span>
-                              <small>{upload.mediaType} · {(upload.sizeBytes / 1024 / 1024).toFixed(1)} MB</small>
-                            </>
-                          ) : (
-                            <span>Original photo deleted after the 5-day storage period.</span>
-                          )}
-                      </li>
-                    ))}
-                  </ul>
-                ) : <p>No uploaded files for this item.</p>}
-              </div>
+              {item.bundleComponents?.map((component) => {
+                const componentLabel = component.componentKey === "roll-up"
+                  ? "Roll-Up Banner"
+                  : "Wall Banner";
+                const uploads = detail.uploads.filter(
+                  (upload) => upload.orderItemId === item.id
+                    && component.uploadReferences.includes(upload.id),
+                );
+                return <section
+                  aria-label={`${componentLabel} customisation`}
+                  key={component.componentKey}
+                >
+                  <h4>{componentLabel} customisation</h4>
+                  <dl className={styles.definitionGrid}>
+                    <div><dt>Photo submission</dt><dd>{component.photoSubmissionMethod === "upload" ? "Upload Photos Now" : "Send Photos After Ordering"}</dd></div>
+                  </dl>
+                  {component.designText ? <div className={styles.customerText}><strong>Artwork direction</strong><p>{component.designText}</p></div> : null}
+                  {component.notes ? <div className={styles.customerText}><strong>Customer notes</strong><p>{component.notes}</p></div> : null}
+                  <UploadList uploads={uploads} />
+                </section>;
+              }) ?? <UploadList uploads={detail.uploads.filter(
+                (upload) => upload.orderItemId === item.id,
+              )} />}
             </article>
           ))}
         </section>

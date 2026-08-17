@@ -88,6 +88,27 @@ function canonicalInputFrom(snapshot: RepricedCheckoutCart) {
       ...(item.extraBackgroundRemovalUploadIds
         ? { extraBackgroundRemovalUploadIds: [...item.extraBackgroundRemovalUploadIds] }
         : {}),
+      ...(item.bundleComponents
+        ? {
+            bundleComponents: item.bundleComponents.map((component) => ({
+              componentKey: component.componentKey,
+              photoSubmissionMethod: component.photoSubmissionMethod,
+              designText: component.designText,
+              notes: component.notes,
+              uploadReferences: [...component.uploadReferences],
+              ...(component.mainPhotoUploadId
+                ? { mainPhotoUploadId: component.mainPhotoUploadId }
+                : {}),
+              ...(component.extraBackgroundRemovalUploadIds
+                ? {
+                    extraBackgroundRemovalUploadIds: [
+                      ...component.extraBackgroundRemovalUploadIds,
+                    ],
+                  }
+                : {}),
+            })),
+          }
+        : {}),
     })),
   };
 }

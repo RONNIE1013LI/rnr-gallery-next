@@ -89,6 +89,7 @@ const itemRow: ItemRow = {
     { key: "no-charge", label: "No-charge adjustment", amountExGstCents: 0, amountInclGstCents: 0, internalMetadata: "private" },
   ] as ItemRow["priceLines"],
   uploadReferences: [],
+  bundleComponents: null,
   unitSubtotalExGstCents: 6500,
   unitGstCents: 975,
   unitTotalInclGstCents: 7475,
@@ -249,6 +250,80 @@ describe("Drizzle order query read model", () => {
     expect(JSON.stringify(result.payment)).not.toMatch(
       /providerReference|attemptId|clientSecret|returnState|failure|event|provider|createdAt|updatedAt|id/,
     );
+  });
+
+  it("maps Bundle groups to a frozen public snapshot without upload references", () => {
+    const bundleItem: ItemRow = {
+      ...itemRow,
+      productKey: "banner-bundle",
+      productSlug: "banner-bundle",
+      productTitle: "Banner Bundle",
+      sizeKey: "rollup-wall-200x100",
+      sizeLabel: "Roll-Up + Wall Banner",
+      orientation: null,
+      bundleComponents: [
+        {
+          componentKey: "roll-up",
+          photoSubmissionMethod: "upload",
+          designText: "Roll-up wording",
+          notes: "Keep the logo clear",
+          uploadReferences: ["upload-private-roll-up"],
+          mainPhotoUploadId: "upload-private-roll-up",
+        },
+        {
+          componentKey: "wall-banner",
+          photoSubmissionMethod: "later",
+          designText: "Wall wording",
+          notes: "Wide layout",
+          uploadReferences: [],
+        },
+      ],
+    };
+
+    const [result] = buildPublicOrders([orderRow], [bundleItem], addresses, []);
+
+    expect(result.items[0].bundleComponents).toEqual([
+      {
+        componentKey: "roll-up",
+        photoSubmissionMethod: "upload",
+        designText: "Roll-up wording",
+        notes: "Keep the logo clear",
+        photoCount: 1,
+        backgroundRemovalCount: 0,
+      },
+      {
+        componentKey: "wall-banner",
+        photoSubmissionMethod: "later",
+        designText: "Wall wording",
+        notes: "Wide layout",
+        photoCount: 0,
+        backgroundRemovalCount: 0,
+      },
+    ]);
+    expect(JSON.stringify(result)).not.toMatch(
+      /upload-private-roll-up|uploadReferences|mainPhotoUploadId|extraBackgroundRemovalUploadIds/,
+    );
+    expect(Object.isFrozen(result.items[0].bundleComponents)).toBe(true);
+    expect(Object.isFrozen(result.items[0].bundleComponents?.[0])).toBe(true);
+  });
+
+  it("fails closed when a Bundle order snapshot is missing either component", () => {
+    expect(() => buildPublicOrders(
+      [orderRow],
+      [{
+        ...itemRow,
+        productKey: "banner-bundle",
+        bundleComponents: [{
+          componentKey: "roll-up",
+          photoSubmissionMethod: "later",
+          designText: "",
+          notes: "",
+          uploadReferences: [],
+        }],
+      }],
+      addresses,
+      [],
+    )).toThrow(OrderSnapshotIntegrityError);
   });
 
   it("returns null when an authorized order has no payment attempt", () => {

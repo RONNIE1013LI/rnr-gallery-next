@@ -18,6 +18,7 @@ import {
 } from "drizzle-orm/pg-core";
 import type { SupportedCountry } from "@/domain/address/types";
 import type { OrderAttribution } from "@/domain/analytics/attribution";
+import type { BannerBundleComponentCustomization } from "@/domain/bundles/banner-bundle";
 import type {
   DeliveryPreference,
   Orientation,
@@ -262,6 +263,8 @@ export const orderItems = pgTable(
     quantity: integer("quantity").notNull(),
     priceLines: jsonb("price_lines").$type<readonly PriceLine[]>().notNull(),
     uploadReferences: jsonb("upload_references").$type<readonly string[]>().notNull(),
+    bundleComponents: jsonb("bundle_components")
+      .$type<readonly BannerBundleComponentCustomization[]>(),
     unitSubtotalExGstCents: bigint("unit_subtotal_ex_gst_cents", {
       mode: "number",
     }).notNull(),

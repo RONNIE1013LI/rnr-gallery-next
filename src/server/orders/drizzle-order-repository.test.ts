@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { normalizeAddress } from "@/domain/address/schema";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import {
+  buildOrderItemCustomizationSnapshot,
   buildWebProductionJobSnapshot,
   calculateOrderTotals,
 } from "./drizzle-order-repository";
@@ -18,6 +19,90 @@ describe("atomic order totals", () => {
       shippingGstCents: 3,
       shippingTotalInclGstCents: 23,
     })).toThrow("safe integer cents");
+  });
+});
+
+describe("order item customisation snapshot", () => {
+  it("stores null for an ordinary product", () => {
+    const [item] = repriceCart({
+      version: 1,
+      items: [{
+        clientItemId: randomUUID(),
+        productKey: "photo-print-canvas",
+        sizeKey: "a4",
+        orientation: "landscape",
+        peoplePets: 0,
+        photoSubmissionMethod: "later",
+        designText: "Family",
+        notes: "",
+        neededDate: "2026-08-12",
+        urgentServiceConfirmed: false,
+        quantity: 1,
+        uploadReferences: [],
+      }],
+    }, { now: new Date("2026-08-04T00:00:00.000Z") }).items;
+
+    expect(buildOrderItemCustomizationSnapshot(item)).toEqual({
+      bundleComponents: null,
+      uploadReferences: [],
+    });
+  });
+
+  it("deep-freezes both Bundle groups and one flattened upload union", () => {
+    const uploadIds = [randomUUID(), randomUUID(), randomUUID()];
+    const [item] = repriceCart({
+      version: 1,
+      items: [{
+        clientItemId: randomUUID(),
+        productKey: "banner-bundle",
+        sizeKey: "rollup-wall-200x100",
+        peoplePets: 0,
+        photoSubmissionMethod: "upload",
+        designText: "",
+        notes: "",
+        neededDate: "2026-08-12",
+        urgentServiceConfirmed: false,
+        quantity: 1,
+        uploadReferences: uploadIds,
+        bundleComponents: [
+          {
+            componentKey: "roll-up",
+            photoSubmissionMethod: "upload",
+            designText: "Roll-up wording",
+            notes: "Roll-up notes",
+            uploadReferences: uploadIds.slice(0, 2),
+            mainPhotoUploadId: uploadIds[0],
+            extraBackgroundRemovalUploadIds: [uploadIds[1]],
+          },
+          {
+            componentKey: "wall-banner",
+            photoSubmissionMethod: "upload",
+            designText: "Wall wording",
+            notes: "Wall notes",
+            uploadReferences: uploadIds.slice(2),
+            mainPhotoUploadId: uploadIds[2],
+          },
+        ],
+      }],
+    }, { now: new Date("2026-08-04T00:00:00.000Z") }).items;
+
+    const snapshot = buildOrderItemCustomizationSnapshot(item);
+
+    expect(snapshot.uploadReferences).toEqual(uploadIds);
+    expect(new Set(snapshot.uploadReferences).size).toBe(uploadIds.length);
+    expect(snapshot.bundleComponents?.map(({ componentKey }) => componentKey)).toEqual([
+      "roll-up",
+      "wall-banner",
+    ]);
+    expect(snapshot.bundleComponents).not.toBe(item.bundleComponents);
+    expect(Object.isFrozen(snapshot)).toBe(true);
+    expect(Object.isFrozen(snapshot.uploadReferences)).toBe(true);
+    expect(Object.isFrozen(snapshot.bundleComponents)).toBe(true);
+    expect(Object.isFrozen(snapshot.bundleComponents?.[0])).toBe(true);
+    expect(Object.isFrozen(snapshot.bundleComponents?.[0].uploadReferences)).toBe(true);
+    expect(Object.isFrozen(
+      snapshot.bundleComponents?.[0].extraBackgroundRemovalUploadIds,
+    )).toBe(true);
   });
 });
 

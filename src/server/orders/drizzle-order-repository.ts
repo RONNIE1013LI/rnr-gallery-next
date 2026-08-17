@@ -1,7 +1,14 @@
 import { isDeepStrictEqual } from "node:util";
 import { and, eq, gt, inArray, isNull, sql } from "drizzle-orm";
 import type { NormalizedAddress } from "@/domain/address/types";
-import type { RepricedCheckoutCart } from "@/domain/checkout/types";
+import {
+  flattenBannerBundleUploadReferences,
+  validateBannerBundleComponents,
+} from "@/domain/bundles/banner-bundle";
+import type {
+  RepricedCheckoutCart,
+  RepricedCheckoutItem,
+} from "@/domain/checkout/types";
 import type { DeliveryPreference } from "@/domain/configuration/types";
 import type { getDatabase } from "@/server/db/client";
 import {
@@ -24,6 +31,41 @@ import {
 import { buildOrderPricingSnapshot } from "./order-pricing-snapshot";
 
 type Database = ReturnType<typeof getDatabase>;
+
+export function buildOrderItemCustomizationSnapshot(
+  item: RepricedCheckoutItem,
+) {
+  const uploadReferences = Object.freeze([...item.uploadReferences]);
+  if (!item.bundleComponents) {
+    return Object.freeze({ bundleComponents: null, uploadReferences });
+  }
+  const bundleComponents = validateBannerBundleComponents(
+    item.bundleComponents.map((component) => ({
+      componentKey: component.componentKey,
+      photoSubmissionMethod: component.photoSubmissionMethod,
+      designText: component.designText,
+      notes: component.notes,
+      uploadReferences: [...component.uploadReferences],
+      ...(component.mainPhotoUploadId
+        ? { mainPhotoUploadId: component.mainPhotoUploadId }
+        : {}),
+      ...(component.extraBackgroundRemovalUploadIds
+        ? {
+            extraBackgroundRemovalUploadIds: [
+              ...component.extraBackgroundRemovalUploadIds,
+            ],
+          }
+        : {}),
+    })),
+  );
+  if (!isDeepStrictEqual(
+    flattenBannerBundleUploadReferences(bundleComponents),
+    uploadReferences,
+  )) {
+    throw new AtomicOrderStateError("Bundle upload references changed before ordering");
+  }
+  return Object.freeze({ bundleComponents, uploadReferences });
+}
 
 function productionAddressText(address: NormalizedAddress) {
   return [
@@ -349,6 +391,7 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
 
           const createdOrderItemIds: string[] = [];
           for (const [position, item] of input.cart.items.entries()) {
+            const customizationSnapshot = buildOrderItemCustomizationSnapshot(item);
             const [orderItem] = await transaction
               .insert(orderItems)
               .values({
@@ -375,7 +418,8 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
                 urgentWorkingDays: item.urgentService.workingDays,
                 quantity: item.quantity,
                 priceLines: item.unitPrice.lines,
-                uploadReferences: item.uploadReferences,
+                uploadReferences: customizationSnapshot.uploadReferences,
+                bundleComponents: customizationSnapshot.bundleComponents,
                 unitSubtotalExGstCents: item.unitPrice.subtotalExGstCents,
                 unitGstCents: item.unitPrice.gstCents,
                 unitTotalInclGstCents: item.unitPrice.totalInclGstCents,
@@ -386,18 +430,18 @@ export function createDrizzleOrderRepository(database: Database): OrderRepositor
               .returning({ id: orderItems.id });
             createdOrderItemIds.push(orderItem.id);
 
-            if (item.uploadReferences.length > 0) {
+            if (customizationSnapshot.uploadReferences.length > 0) {
               const claimed = await transaction
                 .update(checkoutUploads)
                 .set({ claimedByOrderItemId: orderItem.id, claimedAt: input.now })
                 .where(and(
                   eq(checkoutUploads.checkoutSessionId, input.sessionId),
-                  inArray(checkoutUploads.id, [...item.uploadReferences]),
+                  inArray(checkoutUploads.id, [...customizationSnapshot.uploadReferences]),
                   isNull(checkoutUploads.claimedByOrderItemId),
                   isNull(checkoutUploads.cleanupClaimedAt),
                 ))
                 .returning({ id: checkoutUploads.id });
-              if (claimed.length !== item.uploadReferences.length) {
+              if (claimed.length !== customizationSnapshot.uploadReferences.length) {
                 throw new UnclaimableUploadError();
               }
             }

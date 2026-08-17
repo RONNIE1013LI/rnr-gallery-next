@@ -2,6 +2,7 @@ import { and, count, desc, eq, inArray, isNotNull, isNull, sql } from "drizzle-o
 import type { getDatabase } from "@/server/db/client";
 import { checkoutSessions, orderAddresses, orderItems, orders, paymentAttempts } from "@/server/db/schema";
 import { normalizeAddress } from "@/domain/address/schema";
+import { validateBannerBundleComponents } from "@/domain/bundles/banner-bundle";
 import { toPublicPaymentDTO } from "@/server/payments/public-dto";
 import type { OrderQueryRepository, PublicOrder } from "./order-query-service";
 
@@ -157,6 +158,20 @@ function publicItems(itemRows: OrderItemRow[], order: OrderRow) {
     assertSnapshot(item.lineTotalInclGstCents === item.unitTotalInclGstCents * item.quantity);
     assertSnapshot(priceLines.reduce((sum, line) => sum + line.amountExGstCents, 0) === item.unitSubtotalExGstCents);
     const isGraveCover = item.productKey === "grave-cover";
+    const bundleComponents = item.productKey === "banner-bundle"
+      ? Object.freeze(validateBannerBundleComponents(item.bundleComponents ?? []).map(
+          (component) => Object.freeze({
+            componentKey: component.componentKey,
+            photoSubmissionMethod: component.photoSubmissionMethod,
+            designText: component.designText,
+            notes: component.notes,
+            photoCount: component.uploadReferences.length,
+            backgroundRemovalCount:
+              component.extraBackgroundRemovalUploadIds?.length ?? 0,
+          }),
+        ))
+      : undefined;
+    assertSnapshot(item.productKey === "banner-bundle" || item.bundleComponents === null);
     return Object.freeze({
       productTitle: item.productTitle,
       ...(hasGalleryDesign ? {
@@ -174,6 +189,7 @@ function publicItems(itemRows: OrderItemRow[], order: OrderRow) {
       designText: item.designText, notes: item.notes, neededDate: item.neededDate,
       urgentServiceConfirmed: item.urgentServiceConfirmed, urgentWorkingDays: item.urgentWorkingDays,
       quantity: item.quantity, priceLines: Object.freeze(priceLines),
+      ...(bundleComponents ? { bundleComponents } : {}),
       unitSubtotalExGstCents: item.unitSubtotalExGstCents,
       unitGstCents: item.unitGstCents, unitTotalInclGstCents: item.unitTotalInclGstCents,
       lineSubtotalExGstCents: item.lineSubtotalExGstCents, lineGstCents: item.lineGstCents,
