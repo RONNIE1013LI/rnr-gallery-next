@@ -14,6 +14,15 @@ function cssRule(source: string, selector: string) {
 }
 
 describe("root layout metadata", () => {
+  it("installs one production-only official GA4 root tag", () => {
+    const layout = readFileSync(join(process.cwd(), "src/app/layout.tsx"), "utf8");
+
+    expect(layout.match(/<GoogleAnalytics\b/g)).toHaveLength(1);
+    expect(layout).not.toContain("GoogleTagManager");
+    expect(layout).not.toContain("googletagmanager.com");
+    expect(layout).toContain("isGa4Production(process.env.VERCEL_ENV)");
+  });
+
   it("uses the current R&R Gallery mark for browser and Apple icons", () => {
     expect(metadata.icons).toEqual({
       icon: "/media/brand/rr-gallery-logo-2026.webp",

@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import { SiteChrome } from "@/components/site-chrome";
+import { GA4_MEASUREMENT_ID, isGa4Production } from "@/domain/analytics/runtime";
 import { getSafePublicContent } from "@/server/admin/admin-content-runtime";
 import { getSiteUrl } from "@/server/seo/site-url";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
@@ -52,6 +54,7 @@ export default async function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const ga4Enabled = isGa4Production(process.env.VERCEL_ENV);
   const [managed, session, registryState, cookieStore] = await Promise.all([
     getSafePublicContent([
       "footer.tagline",
@@ -64,7 +67,11 @@ export default async function RootLayout({
   ]);
 
   return (
-    <html lang="en" data-scroll-behavior="smooth">
+    <html
+      lang="en"
+      data-scroll-behavior="smooth"
+      data-ga4-enabled={ga4Enabled ? "true" : undefined}
+    >
       <body>
         <a className="skip-link" href="#main-content">Skip to content</a>
         <SiteChrome
@@ -80,6 +87,7 @@ export default async function RootLayout({
           {children}
         </SiteChrome>
       </body>
+      {ga4Enabled ? <GoogleAnalytics gaId={GA4_MEASUREMENT_ID} /> : null}
     </html>
   );
 }

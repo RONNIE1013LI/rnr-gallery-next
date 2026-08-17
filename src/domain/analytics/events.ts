@@ -29,12 +29,6 @@ export type PurchaseEvent = Readonly<{
 }>;
 export type AnalyticsEvent = CommerceEvent | SimpleEvent | PurchaseEvent;
 
-declare global {
-  interface Window {
-    dataLayer?: AnalyticsEvent[];
-  }
-}
-
 function dollars(cents: number) {
   return Number((cents / 100).toFixed(2));
 }
