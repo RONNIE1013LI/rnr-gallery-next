@@ -7,6 +7,8 @@ import {
   customerServiceBudgetState,
   customerServiceConversations,
   customerServiceFeedbackEvents,
+  customerServiceImageAnalysisAttempts,
+  customerServiceImageAnalysisInputs,
   customerServiceMessages,
   customerServicePilotRuns,
 } from "@/server/db/schema";
@@ -18,6 +20,7 @@ import type {
   ProviderAttemptCompletion,
   ProviderAttemptReservation,
 } from "./customer-service-repository";
+import { parseImageAnalysisResult } from "../image-analysis-schema";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -27,6 +30,14 @@ async function nextAttemptNumber(transaction: Transaction, messageId: string) {
   const [row] = await transaction.select({ value: max(customerServiceAiAttempts.attemptNumber) })
     .from(customerServiceAiAttempts)
     .where(eq(customerServiceAiAttempts.messageId, messageId));
+  return (row?.value ?? 0) + 1;
+}
+
+async function nextImageAttemptNumber(transaction: Transaction, messageId: string) {
+  await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'image:' + messageId}))`);
+  const [row] = await transaction.select({ value: max(customerServiceImageAnalysisAttempts.attemptNumber) })
+    .from(customerServiceImageAnalysisAttempts)
+    .where(eq(customerServiceImageAnalysisAttempts.messageId, messageId));
   return (row?.value ?? 0) + 1;
 }
 
@@ -58,6 +69,49 @@ async function ensureBudgetRows(transaction: Transaction, keys: readonly string[
     .where(sql`${customerServiceBudgetState.scopeKey} in (${sql.join(keys.map((key) => sql`${key}`), sql`, `)})`)
     .orderBy(asc(customerServiceBudgetState.scopeKey))
     .for("update");
+}
+
+async function validatedAnalysisSummary(
+  database: Database,
+  messageId: string,
+  attachmentIds: readonly string[],
+) {
+  const attempts = await database.select({
+    id: customerServiceImageAnalysisAttempts.id,
+    analysisResult: customerServiceImageAnalysisAttempts.analysisResult,
+  }).from(customerServiceImageAnalysisAttempts).where(and(
+    eq(customerServiceImageAnalysisAttempts.messageId, messageId),
+    eq(customerServiceImageAnalysisAttempts.status, "analyzed"),
+  )).orderBy(desc(customerServiceImageAnalysisAttempts.startedAt));
+
+  for (const attempt of attempts) {
+    const inputs = await database.select({
+      attachmentId: customerServiceImageAnalysisInputs.attachmentId,
+      ordinal: customerServiceImageAnalysisInputs.ordinal,
+      attachmentStatus: customerServiceAttachments.status,
+    }).from(customerServiceImageAnalysisInputs)
+      .innerJoin(
+        customerServiceAttachments,
+        eq(customerServiceAttachments.id, customerServiceImageAnalysisInputs.attachmentId),
+      )
+      .where(eq(customerServiceImageAnalysisInputs.analysisAttemptId, attempt.id))
+      .orderBy(asc(customerServiceImageAnalysisInputs.ordinal));
+    if (
+      inputs.length !== attachmentIds.length
+      || inputs.some((input, index) => input.attachmentId !== attachmentIds[index])
+      || inputs.some((input) => input.attachmentStatus !== "deleted")
+    ) continue;
+    try {
+      const analysis = parseImageAnalysisResult(
+        attempt.analysisResult,
+        inputs.map((input) => input.ordinal),
+      );
+      if (analysis.overallStatus === "assessed") return analysis.safeSummary;
+    } catch {
+      // Invalid historical results are never reused in a new draft.
+    }
+  }
+  return null;
 }
 
 export function createDrizzleCustomerServiceRepository(database: Database): CustomerServiceRepository {
@@ -170,10 +224,11 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         ))
         .orderBy(asc(customerServiceAttachments.ordinal));
       if (ownAttachments.length) {
+        const attachmentIds = ownAttachments.slice(0, 5).map((attachment) => attachment.id);
         return {
           messageId: current.id,
-          attachmentIds: ownAttachments.slice(0, 5).map((attachment) => attachment.id),
-          analysisSummary: null,
+          attachmentIds,
+          analysisSummary: await validatedAnalysisSummary(database, current.id, attachmentIds),
         };
       }
 
@@ -206,9 +261,157 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         attachmentIds.push(...attachments.map((attachment) => attachment.id));
         if (attachmentIds.length === 5) break;
       }
-      return attachmentIds.length
-        ? { messageId: current.id, attachmentIds, analysisSummary: null }
-        : null;
+      return attachmentIds.length ? {
+        messageId: current.id,
+        attachmentIds,
+        analysisSummary: await validatedAnalysisSummary(database, current.id, attachmentIds),
+      } : null;
+    },
+
+    async createImageAnalysisAttempt(input) {
+      return database.transaction(async (transaction) => {
+        if (
+          input.attachments.length < 1
+          || input.attachments.length > 5
+          || new Set(input.attachments.map((attachment) => attachment.ordinal)).size !== input.attachments.length
+        ) throw new Error("customer_service_image_context_mismatch");
+        const [message] = await transaction.select({ conversationId: customerServiceMessages.conversationId })
+          .from(customerServiceMessages)
+          .where(eq(customerServiceMessages.id, input.messageId))
+          .limit(1);
+        if (!message) throw new Error("customer_service_message_not_found");
+        const attachments = await transaction.select({
+          id: customerServiceAttachments.id,
+          conversationId: customerServiceAttachments.conversationId,
+        }).from(customerServiceAttachments).where(sql`${customerServiceAttachments.id} in (${sql.join(
+          input.attachments.map((attachment) => sql`${attachment.attachmentId}`),
+          sql`, `,
+        )})`);
+        if (
+          attachments.length !== input.attachments.length
+          || attachments.some((attachment) => attachment.conversationId !== message.conversationId)
+        ) throw new Error("customer_service_image_context_mismatch");
+
+        const [attempt] = await transaction.insert(customerServiceImageAnalysisAttempts).values({
+          messageId: input.messageId,
+          conversationId: message.conversationId,
+          attemptNumber: await nextImageAttemptNumber(transaction, input.messageId),
+          status: "pending",
+          schemaVersion: input.schemaVersion,
+        }).returning({ id: customerServiceImageAnalysisAttempts.id });
+        await transaction.insert(customerServiceImageAnalysisInputs).values(input.attachments.map((attachment) => ({
+          analysisAttemptId: attempt.id,
+          attachmentId: attachment.attachmentId,
+          conversationId: message.conversationId,
+          ordinal: attachment.ordinal,
+        })));
+        return attempt.id;
+      });
+    },
+
+    async markImageAttachmentStored(input) {
+      await database.update(customerServiceAttachments).set({
+        status: "stored",
+        verifiedMimeType: input.verifiedMimeType,
+        width: input.width,
+        height: input.height,
+        byteSize: input.byteSize,
+        sha256: input.sha256,
+        privateStorageKey: input.privateStorageKey,
+        deleteDueAt: input.deleteDueAt,
+        failureCode: null,
+      }).where(eq(customerServiceAttachments.id, input.attachmentId));
+    },
+
+    async reserveImageAnalysisAttempt(input) {
+      return database.transaction(async (transaction) => {
+        const [attempt] = await transaction.select({ status: customerServiceImageAnalysisAttempts.status })
+          .from(customerServiceImageAnalysisAttempts)
+          .where(eq(customerServiceImageAnalysisAttempts.id, input.attemptId))
+          .limit(1)
+          .for("update");
+        if (!attempt || attempt.status !== "pending") {
+          throw new Error("customer_service_image_attempt_not_pending");
+        }
+        const rows = await ensureBudgetRows(transaction, [input.dailyScopeKey, "total"].sort());
+        const daily = rows.find((row) => row.scopeKey === input.dailyScopeKey);
+        const total = rows.find((row) => row.scopeKey === "total");
+        const blocked = !daily || !total
+          || daily.spentMicrousd + daily.reservedMicrousd + input.reservationMicrousd > input.dailyHardStopMicrousd
+          || total.spentMicrousd + total.reservedMicrousd + input.reservationMicrousd > input.totalHardStopMicrousd;
+        if (blocked) return { status: "budget_blocked" as const };
+        await transaction.update(customerServiceBudgetState).set({
+          reservedMicrousd: sql`${customerServiceBudgetState.reservedMicrousd} + ${input.reservationMicrousd}`,
+        }).where(sql`${customerServiceBudgetState.scopeKey} in (${input.dailyScopeKey}, 'total')`);
+        await transaction.update(customerServiceImageAnalysisAttempts).set({
+          status: "provider_pending",
+          providerCalled: true,
+        }).where(eq(customerServiceImageAnalysisAttempts.id, input.attemptId));
+        return { status: "reserved" as const };
+      });
+    },
+
+    async completeImageAnalysisAttempt(input) {
+      await database.transaction(async (transaction) => {
+        const [attempt] = await transaction.select({ status: customerServiceImageAnalysisAttempts.status })
+          .from(customerServiceImageAnalysisAttempts)
+          .where(eq(customerServiceImageAnalysisAttempts.id, input.attemptId))
+          .limit(1)
+          .for("update");
+        if (!attempt || !["pending", "provider_pending"].includes(attempt.status)) {
+          throw new Error("customer_service_image_attempt_not_pending");
+        }
+        if (input.reservedCostMicrousd > 0) {
+          await ensureBudgetRows(transaction, [input.dailyScopeKey, "total"].sort());
+          await transaction.update(customerServiceBudgetState).set({
+            reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${input.reservedCostMicrousd})`,
+            spentMicrousd: sql`${customerServiceBudgetState.spentMicrousd} + ${input.estimatedCostMicrousd}`,
+          }).where(sql`${customerServiceBudgetState.scopeKey} in (${input.dailyScopeKey}, 'total')`);
+        }
+        await transaction.update(customerServiceImageAnalysisAttempts).set({
+          status: input.status,
+          providerCalled: input.providerCalled,
+          provider: input.provider ?? null,
+          model: input.model ?? null,
+          analysisResult: input.analysisResult ?? null,
+          validatorCodes: input.validatorCodes,
+          inputTokens: input.inputTokens,
+          cachedInputTokens: input.cachedInputTokens,
+          outputTokens: input.outputTokens,
+          estimatedCostMicrousd: input.estimatedCostMicrousd,
+          latencyMs: input.latencyMs,
+          providerErrorCode: input.providerErrorCode ?? null,
+          completedAt: new Date(),
+        }).where(eq(customerServiceImageAnalysisAttempts.id, input.attemptId));
+        const attachmentStatus = input.status === "analyzed"
+          ? "analyzed" as const
+          : input.status === "input_rejected"
+            ? "rejected" as const
+            : "failed" as const;
+        const inputs = await transaction.select({ attachmentId: customerServiceImageAnalysisInputs.attachmentId })
+          .from(customerServiceImageAnalysisInputs)
+          .where(eq(customerServiceImageAnalysisInputs.analysisAttemptId, input.attemptId));
+        if (inputs.length) {
+          await transaction.update(customerServiceAttachments).set({ status: attachmentStatus })
+            .where(sql`${customerServiceAttachments.id} in (${sql.join(
+              inputs.map((item) => sql`${item.attachmentId}`),
+              sql`, `,
+            )})`);
+        }
+      });
+    },
+
+    async markImageAttachmentDeleted(input) {
+      await database.update(customerServiceAttachments).set(input.deleted ? {
+        status: "deleted",
+        privateStorageKey: null,
+        deleteDueAt: null,
+        deletedAt: new Date(),
+        failureCode: null,
+      } : {
+        status: "failed",
+        failureCode: input.failureCode,
+      }).where(eq(customerServiceAttachments.id, input.attachmentId));
     },
 
     async createGateBlockedAttempt(input) {

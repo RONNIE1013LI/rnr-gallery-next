@@ -2,8 +2,11 @@ import { createHash } from "node:crypto";
 import { evaluatePolicyGate, type PolicyKnowledge } from "./policy-gate";
 import { retrieveKnowledge, type AnswerQualityGuide } from "./knowledge-retrieval";
 import { validateDraft } from "./output-validator";
+import { validateImageDraft } from "./image-draft-validator";
 import { buildDraftPrompt } from "./prompt-builder";
 import { localDateScopeKey } from "./usage-cost";
+import type { AttachmentProcessor } from "./attachments/attachment-processor";
+import type { NormalizedAttachment } from "./attachments/types";
 import type { AiProvider } from "./providers/ai-provider";
 import type { CustomerServiceRepository } from "./repositories/customer-service-repository";
 import type { DraftGenerationRequest, DraftGenerationResult } from "./types";
@@ -29,6 +32,9 @@ type EngineKnowledge = PolicyKnowledge & Readonly<{
 export class CustomerServiceEngine {
   private readonly repository: CustomerServiceRepository;
   private readonly provider: AiProvider;
+  private readonly attachmentProcessor?: AttachmentProcessor;
+  private readonly policyGate: typeof evaluatePolicyGate;
+  private readonly outputValidator: typeof validateDraft;
   private readonly knowledge: EngineKnowledge;
   private readonly budget: Readonly<{
     reservationMicrousd: number;
@@ -39,6 +45,9 @@ export class CustomerServiceEngine {
   constructor(input: Readonly<{
     repository: CustomerServiceRepository;
     provider: AiProvider;
+    attachmentProcessor?: AttachmentProcessor;
+    policyGate?: typeof evaluatePolicyGate;
+    outputValidator?: typeof validateDraft;
     knowledge: EngineKnowledge;
     budget: Readonly<{
       reservationMicrousd: number;
@@ -48,14 +57,20 @@ export class CustomerServiceEngine {
   }>) {
     this.repository = input.repository;
     this.provider = input.provider;
+    this.attachmentProcessor = input.attachmentProcessor;
+    this.policyGate = input.policyGate ?? evaluatePolicyGate;
+    this.outputValidator = input.outputValidator ?? validateDraft;
     this.knowledge = input.knowledge;
     this.budget = input.budget;
   }
 
-  async generateDraft(request: DraftGenerationRequest): Promise<DraftGenerationResult> {
+  async generateDraft(
+    request: DraftGenerationRequest,
+    attachmentSourceContext?: readonly NormalizedAttachment[],
+  ): Promise<DraftGenerationResult> {
     const draftInput = await this.repository.loadDraftInput(request.messageId, 6);
     if (!draftInput) throw new Error("customer_service_message_not_found");
-    const gate = evaluatePolicyGate({ message: draftInput.current.body, knowledge: this.knowledge });
+    const gate = this.policyGate({ message: draftInput.current.body, knowledge: this.knowledge });
     if (!gate.providerAllowed) {
       const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
         ? "realtime_required"
@@ -75,6 +90,58 @@ export class CustomerServiceEngine {
         status: gate.decision === "REALTIME_DATA_REQUIRED" ? "realtime_required" : "gate_blocked",
         attemptId,
       };
+    }
+
+    let visualAssessment: string | undefined;
+    if (this.attachmentProcessor) {
+      const imageContext = await this.repository.selectImageContext(request.messageId);
+      if (imageContext) {
+        if (request.trigger === "manual_regenerate" && imageContext.analysisSummary) {
+          visualAssessment = imageContext.analysisSummary;
+        } else if (attachmentSourceContext?.length) {
+          const processed = await this.attachmentProcessor.process({
+            messageId: imageContext.messageId,
+            attachmentIds: imageContext.attachmentIds,
+            sources: attachmentSourceContext,
+          });
+          if (processed.status === "analyzed") {
+            visualAssessment = processed.summary;
+          } else {
+            const attemptId = await this.repository.createGateBlockedAttempt({
+              messageId: request.messageId,
+              trigger: request.trigger,
+              intent: gate.intent,
+              riskLevel: "high",
+              gateResult: "pilot_limit",
+              gateReasons: [processed.code],
+              knowledgeVersion: this.knowledge.knowledgeVersion,
+            });
+            return { status: "image_review_required", attemptId };
+          }
+        } else {
+          const attemptId = await this.repository.createGateBlockedAttempt({
+            messageId: request.messageId,
+            trigger: request.trigger,
+            intent: gate.intent,
+            riskLevel: "high",
+            gateResult: "pilot_limit",
+            gateReasons: ["image_source_unavailable"],
+            knowledgeVersion: this.knowledge.knowledgeVersion,
+          });
+          return { status: "image_review_required", attemptId };
+        }
+      } else if (attachmentSourceContext?.length) {
+        const attemptId = await this.repository.createGateBlockedAttempt({
+          messageId: request.messageId,
+          trigger: request.trigger,
+          intent: gate.intent,
+          riskLevel: "high",
+          gateResult: "pilot_limit",
+          gateReasons: ["image_context_mismatch"],
+          knowledgeVersion: this.knowledge.knowledgeVersion,
+        });
+        return { status: "image_review_required", attemptId };
+      }
     }
 
     const sources = retrieveKnowledge({ gate, knowledge: this.knowledge });
@@ -104,10 +171,18 @@ export class CustomerServiceEngine {
       goldenExamples: sources.goldenExamples,
       qualityGuide: sources.qualityGuide,
       toneGuide: this.knowledge.toneGuide,
+      visualAssessment,
     });
     try {
       const generated = await this.provider.generate(prompt);
-      const validation = validateDraft(generated.text, { intent: gate.intent });
+      const textValidation = this.outputValidator(generated.text, { intent: gate.intent });
+      const imageValidation = visualAssessment
+        ? validateImageDraft(generated.text)
+        : { ok: true, codes: [] as readonly string[] };
+      const validation = {
+        ok: textValidation.ok && imageValidation.ok,
+        codes: [...textValidation.codes, ...imageValidation.codes],
+      };
       await this.repository.completeProviderAttempt({
         attemptId: reservation.attemptId,
         status: validation.ok ? "draft_ready" : "output_blocked",

@@ -9,6 +9,7 @@ export function buildDraftPrompt(input: Readonly<{
   goldenExamples: readonly Readonly<{ customerQuestion: string; approvedAnswer: string }>[];
   qualityGuide: AnswerQualityGuide | null;
   toneGuide: string;
+  visualAssessment?: string;
 }>) {
   const rules = input.rules.map((rule) => `${rule.id}: ${rule.text}`).join("\n");
   const examples = input.examples.map((example) => `Customer: ${example.customer}\nReply: ${example.reply}`).join("\n\n");
@@ -34,6 +35,12 @@ export function buildDraftPrompt(input: Readonly<{
       "Do not mention AI, policy status, internal risk or the knowledge base.",
       `Detected intent: ${input.intent}`,
       `CONFIRMED RULES:\n${rules}`,
+      ...(input.visualAssessment ? [
+        [
+          `VISUAL ASSESSMENT:\n${input.visualAssessment.slice(0, 300)}`,
+          "This assessment is advisory, cannot establish print suitability and cannot support a restoration guarantee.",
+        ].join("\n"),
+      ] : []),
       `MINIMUM REQUIRED CONTENT:\n${minimumContent}`,
       `RECOMMENDED DETAIL LEVEL:\n${guide?.recommendedDetailLevel ?? "Keep the answer concise and specific."}`,
       `PREFERRED STRUCTURE:\n${preferredStructure}`,

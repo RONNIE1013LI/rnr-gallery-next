@@ -1,4 +1,5 @@
 import type { CustomerServiceChannel, DraftGenerationRequest } from "../types";
+import type { ImageAnalysisResult } from "../image-analysis-schema";
 
 export type HashedIncomingMessage = Readonly<{
   channel: CustomerServiceChannel;
@@ -60,6 +61,24 @@ export type ProviderAttemptCompletion = Readonly<{
   dailyScopeKey: string;
 }>;
 
+export type ImageAnalysisAttemptCompletion = Readonly<{
+  attemptId: string;
+  status: "analyzed" | "input_rejected" | "provider_error" | "schema_blocked";
+  providerCalled: boolean;
+  provider?: "mock" | "openai";
+  model?: string;
+  analysisResult?: ImageAnalysisResult;
+  validatorCodes: readonly string[];
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  estimatedCostMicrousd: number;
+  latencyMs: number;
+  providerErrorCode?: string;
+  dailyScopeKey: string;
+  reservedCostMicrousd: number;
+}>;
+
 export type FeedbackEventInput = Readonly<{
   attemptId: string;
   actorUserId: string | null;
@@ -107,6 +126,34 @@ export interface CustomerServiceRepository {
     attachmentIds: readonly string[];
     analysisSummary: string | null;
   }> | null>;
+  createImageAnalysisAttempt(input: Readonly<{
+    messageId: string;
+    schemaVersion: "1";
+    attachments: readonly Readonly<{ attachmentId: string; ordinal: number }>[];
+  }>): Promise<string>;
+  markImageAttachmentStored(input: Readonly<{
+    attachmentId: string;
+    verifiedMimeType: "image/jpeg" | "image/png" | "image/webp";
+    width: number;
+    height: number;
+    byteSize: number;
+    sha256: string;
+    privateStorageKey: string;
+    deleteDueAt: Date;
+  }>): Promise<void>;
+  reserveImageAnalysisAttempt(input: Readonly<{
+    attemptId: string;
+    reservationMicrousd: number;
+    dailyScopeKey: string;
+    dailyHardStopMicrousd: number;
+    totalHardStopMicrousd: number;
+  }>): Promise<Readonly<{ status: "reserved" }> | Readonly<{ status: "budget_blocked" }>>;
+  completeImageAnalysisAttempt(input: ImageAnalysisAttemptCompletion): Promise<void>;
+  markImageAttachmentDeleted(input: Readonly<{
+    attachmentId: string;
+    deleted: boolean;
+    failureCode: string | null;
+  }>): Promise<void>;
   createGateBlockedAttempt(input: GateBlockedAttemptInput): Promise<string>;
   reserveProviderAttempt(input: ProviderAttemptReservation): Promise<
     | Readonly<{ status: "reserved"; attemptId: string }>

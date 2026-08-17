@@ -24,6 +24,7 @@ export type DraftGenerationResult =
       | "realtime_required"
       | "output_blocked"
       | "provider_error"
+      | "image_review_required"
       | "pilot_limit_reached"
       | "budget_blocked";
     attemptId: string;
