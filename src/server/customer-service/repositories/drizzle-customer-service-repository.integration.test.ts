@@ -10,6 +10,7 @@ import {
   customerServiceFeedbackEvents,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
+  customerServiceImageJobs,
   customerServiceMessages,
   customerServicePilotRuns,
 } from "@/server/db/schema";
@@ -68,6 +69,7 @@ function imageCompletion(attemptId: string, status: "analyzed" | "provider_error
 
 async function clearTables() {
   await database.delete(customerServiceFeedbackEvents);
+  await database.delete(customerServiceImageJobs);
   await database.delete(customerServiceAiAttempts);
   await database.delete(customerServiceImageAnalysisInputs);
   await database.delete(customerServiceImageAnalysisAttempts);
@@ -137,7 +139,41 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(first.status).toBe("created");
     if (first.status !== "created") return;
     await expect(repository.loadDraftInput(first.messageId, 6)).resolves.toMatchObject({
+      current: { text: "first conversation" },
       context: ["first conversation"],
+    });
+  });
+
+  it("uses customer_text only and never promotes an image compatibility marker into model context", async () => {
+    const imageOnly = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "5".repeat(64),
+      externalMessageKeyHash: "6".repeat(64),
+      text: null,
+      attachments: [{
+        externalAttachmentKeyHash: "7".repeat(64),
+        ordinal: 0,
+        kind: "image",
+        mimeTypeHint: null,
+      }],
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    const text = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "5".repeat(64),
+      externalMessageKeyHash: "8".repeat(64),
+      text: "Please assess this message only",
+      attachments: [],
+      receivedAt: new Date("2026-08-17T00:01:00.000Z"),
+    });
+
+    await expect(repository.loadDraftInput(imageOnly.messageId, 6)).resolves.toMatchObject({
+      current: { text: null },
+      context: [],
+    });
+    await expect(repository.loadDraftInput(text.messageId, 6)).resolves.toMatchObject({
+      current: { text: "Please assess this message only" },
+      context: ["Please assess this message only"],
     });
   });
 
@@ -154,6 +190,13 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
         kind: "image" as const,
         mimeTypeHint: "image/jpeg",
       }],
+      imageJob: {
+        id: "00000000-0000-4000-8000-000000000101",
+        status: "pending" as const,
+        sourceCiphertext: "v1.encrypted-source",
+        sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
+        failureCode: null,
+      },
       receivedAt,
     };
 
@@ -161,6 +204,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(created.status).toBe("pilot_complete");
     const [persistedMessage] = await database.select().from(customerServiceMessages);
     const [persistedAttachment] = await database.select().from(customerServiceAttachments);
+    const [persistedJob] = await database.select().from(customerServiceImageJobs);
     expect(persistedMessage).toMatchObject({
       body: "[Image attachment]",
       customerText: null,
@@ -175,10 +219,20 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       mimeTypeHint: "image/jpeg",
       status: "metadata_received",
     });
+    expect(persistedJob).toMatchObject({
+      id: "00000000-0000-4000-8000-000000000101",
+      messageId: persistedMessage.id,
+      conversationId: persistedMessage.conversationId,
+      stage: "policy",
+      status: "pending",
+      sourceCiphertext: "v1.encrypted-source",
+      sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
+    });
     expect(JSON.stringify([persistedMessage, persistedAttachment])).not.toContain("https://scontent.test/image.jpg");
 
     await expect(repository.ingestFacebookMessage(message)).resolves.toMatchObject({ status: "duplicate" });
     expect(await database.select().from(customerServiceAttachments)).toHaveLength(1);
+    expect(await database.select().from(customerServiceImageJobs)).toHaveLength(1);
 
     await expect(repository.ingestFacebookMessage({
       ...message,
@@ -190,6 +244,44 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     })).rejects.toThrow();
     expect(await database.select().from(customerServiceMessages)).toHaveLength(1);
     expect(await database.select().from(customerServiceAttachments)).toHaveLength(1);
+    expect(await database.select().from(customerServiceImageJobs)).toHaveLength(1);
+  });
+
+  it("persists unsupported attachment kind and stable failure metadata without a source", async () => {
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "f".repeat(64),
+      externalMessageKeyHash: "e".repeat(64),
+      text: "Please check this file",
+      attachments: [{
+        externalAttachmentKeyHash: "d".repeat(64),
+        ordinal: 0,
+        kind: "unsupported",
+        mimeTypeHint: "application/pdf",
+        failureCode: "unsupported_attachment",
+      }],
+      imageJob: {
+        id: "00000000-0000-4000-8000-000000000171",
+        status: "human_review_required",
+        sourceCiphertext: null,
+        sourceExpiresAt: null,
+        failureCode: "unsupported_attachment",
+      },
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    const [attachment] = await database.select().from(customerServiceAttachments);
+    expect(attachment).toMatchObject({
+      messageId: created.messageId,
+      kind: "image",
+      normalizedKind: "unsupported",
+      status: "rejected",
+      failureCode: "unsupported_attachment",
+      privateStorageKey: null,
+    });
+    await expect(repository.selectImageContext(created.messageId)).resolves.toMatchObject({
+      hasUnsupportedAttachments: true,
+      analysisSummary: null,
+    });
   });
 
   it("projects up to 100 queue image assessments with a fixed number of reads", async () => {
@@ -286,10 +378,11 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       messageId: created.messageId,
       attachmentIds: attachments.map((attachment) => attachment.id),
       analysisSummary: null,
+      hasUnsupportedAttachments: false,
     });
   });
 
-  it("selects up to five recent attachment-only images from the same conversation", async () => {
+  it("never reuses preceding attachment-only messages for a later text message", async () => {
     const conversation = "a".repeat(64);
     const start = new Date("2026-08-17T00:00:00.000Z");
     const prior = await Promise.all(Array.from({ length: 6 }, async (_, index) => (
@@ -327,16 +420,14 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     if (current.status === "duplicate") return;
 
     const selected = await repository.selectImageContext(current.messageId);
-    expect(selected).toMatchObject({ messageId: current.messageId, analysisSummary: null });
-    expect(selected?.attachmentIds).toHaveLength(5);
+    expect(selected).toBeNull();
     const [oldest] = await database.select({ id: customerServiceAttachments.id })
       .from(customerServiceAttachments)
       .where(eq(customerServiceAttachments.messageId, prior[0].messageId));
     const [otherAttachment] = await database.select({ id: customerServiceAttachments.id })
       .from(customerServiceAttachments)
       .where(eq(customerServiceAttachments.messageId, other.messageId));
-    expect(selected?.attachmentIds).not.toContain(oldest.id);
-    expect(selected?.attachmentIds).not.toContain(otherAttachment.id);
+    expect(oldest.id).not.toBe(otherAttachment.id);
   });
 
   it("stops image context at the first earlier text message", async () => {
@@ -383,11 +474,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     const [blocked] = await database.select({ id: customerServiceAttachments.id })
       .from(customerServiceAttachments)
       .where(eq(customerServiceAttachments.messageId, beforeText.messageId));
-    await expect(repository.selectImageContext(current.messageId)).resolves.toEqual({
-      messageId: current.messageId,
-      attachmentIds: [allowed.id],
-      analysisSummary: null,
-    });
+    await expect(repository.selectImageContext(current.messageId)).resolves.toBeNull();
     expect(allowed.id).not.toBe(blocked.id);
   });
 
@@ -491,11 +578,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       },
     ]);
 
-    await expect(repository.selectImageContext(currentId)).resolves.toEqual({
-      messageId: currentId,
-      attachmentIds: [afterTextAttachmentId],
-      analysisSummary: null,
-    });
+    await expect(repository.selectImageContext(currentId)).resolves.toBeNull();
   });
 
   it("keeps microsecond createdAt ordering in PostgreSQL for image context boundaries", async () => {
@@ -539,11 +622,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       },
     ]);
 
-    await expect(repository.selectImageContext(currentId)).resolves.toEqual({
-      messageId: currentId,
-      attachmentIds: [afterTextAttachmentId],
-      analysisSummary: null,
-    });
+    await expect(repository.selectImageContext(currentId)).resolves.toBeNull();
   });
 
   it("persists exact image analysis inputs and shares budget accounting with draft generation", async () => {
@@ -660,6 +739,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       messageId: created.messageId,
       attachmentIds: attachments.map((attachment) => attachment.id),
       analysisSummary: null,
+      hasUnsupportedAttachments: false,
     });
     for (const [index, attachment] of attachments.entries()) {
       await repository.markImageAttachmentDeleted({
@@ -675,6 +755,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       messageId: created.messageId,
       attachmentIds: attachments.map((attachment) => attachment.id),
       analysisSummary: analysis.safeSummary,
+      hasUnsupportedAttachments: false,
     });
 
     const other = await repository.ingestFacebookMessage({
@@ -803,6 +884,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       messageId: created.messageId,
       attachmentIds: [attachment.id],
       analysisSummary: null,
+      hasUnsupportedAttachments: false,
     });
     const lifecycle = await database.execute(sql`
       select analysis_attempt_id, cleanup_status, private_storage_key
@@ -972,5 +1054,537 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       reserved_cost_microusd: "0",
       budget_daily_scope_key: "daily:2026-08-17",
     });
+  });
+
+  it("claims durable image jobs once and advances stages only with the active lease", async () => {
+    const jobId = "00000000-0000-4000-8000-000000000101";
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "c".repeat(64),
+      externalMessageKeyHash: "d".repeat(64),
+      text: "Can I use this photo?",
+      attachments: [{
+        externalAttachmentKeyHash: "e".repeat(64),
+        ordinal: 0,
+        kind: "image",
+        mimeTypeHint: null,
+      }],
+      imageJob: {
+        id: jobId,
+        status: "pending",
+        sourceCiphertext: "v1.encrypted",
+        sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
+        failureCode: null,
+      },
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    expect(created.status).not.toBe("duplicate");
+    const claimInput = {
+      jobId,
+      now: new Date("2026-08-17T00:00:01.000Z"),
+      leaseExpiresAt: new Date("2026-08-17T00:00:26.000Z"),
+    };
+
+    const claims = await Promise.all([
+      repository.claimImageJob(claimInput),
+      repository.claimImageJob(claimInput),
+    ]);
+    const claimed = claims.find((claim) => claim !== null);
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(claimed).toMatchObject({
+      id: jobId,
+      stage: "policy",
+      hasUnsupportedAttachments: false,
+      leaseToken: expect.stringMatching(/^[0-9a-f-]{36}$/),
+    });
+    if (!claimed) return;
+
+    await expect(repository.completeImageJobStage({
+      jobId,
+      leaseToken: "00000000-0000-4000-8000-000000000999",
+      nextStage: "download",
+    })).resolves.toBe(false);
+    await expect(repository.completeImageJobStage({
+      jobId,
+      leaseToken: claimed.leaseToken,
+      nextStage: "download",
+    })).resolves.toBe(true);
+    const [persisted] = await database.select().from(customerServiceImageJobs);
+    expect(persisted).toMatchObject({
+      stage: "download",
+      status: "pending",
+      leaseToken: null,
+      leaseExpiresAt: null,
+    });
+  });
+
+  it("persists an attempt-owned cleanup key before upload and atomically gates combined image and text cost", async () => {
+    const createVisionJob = async (suffix: string, jobId: string) => {
+      const externalAttachmentKeyHash = suffix.repeat(64);
+      const created = await repository.ingestFacebookMessage({
+        channel: "facebook",
+        externalConversationKeyHash: suffix.repeat(64),
+        externalMessageKeyHash: `${suffix}f`.repeat(32),
+        text: "Can I use this photo?",
+        attachments: [{ externalAttachmentKeyHash, ordinal: 0, kind: "image", mimeTypeHint: null }],
+        imageJob: {
+          id: jobId,
+          status: "pending",
+          sourceCiphertext: "v1.encrypted",
+          sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
+          failureCode: null,
+        },
+        receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+      });
+      const policy = await repository.claimImageJob({
+        jobId,
+        now: new Date("2026-08-17T00:00:01.000Z"),
+        leaseExpiresAt: new Date("2026-08-17T00:00:26.000Z"),
+      });
+      if (!policy) throw new Error("missing policy claim");
+      await repository.completeImageJobStage({ jobId, leaseToken: policy.leaseToken, nextStage: "download" });
+      const download = await repository.claimImageJob({
+        jobId,
+        now: new Date("2026-08-17T00:00:02.000Z"),
+        leaseExpiresAt: new Date("2026-08-17T00:00:27.000Z"),
+      });
+      if (!download) throw new Error("missing download claim");
+      const attempt = await repository.ensureImageAnalysisAttemptForJob({
+        jobId,
+        leaseToken: download.leaseToken,
+        sources: [{
+          ordinal: 0,
+          externalAttachmentKeyHash,
+          sourceRef: { kind: "facebook_remote", url: "https://example.test/private.png" },
+        }],
+      });
+      const privateStorageKey = `customer-service-attachments/${jobId}.bin`;
+      await repository.prepareImageAttachmentStorage({
+        jobId,
+        leaseToken: download.leaseToken,
+        attemptId: attempt.attemptId,
+        attachmentId: attempt.inputs[0].attachmentId,
+        privateStorageKey,
+        deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
+      });
+      const [prepared] = await database.select().from(customerServiceImageAnalysisInputs)
+        .where(eq(customerServiceImageAnalysisInputs.analysisAttemptId, attempt.attemptId));
+      expect(prepared).toMatchObject({ cleanupStatus: "pending", privateStorageKey });
+      await repository.completeImageJobStage({ jobId, leaseToken: download.leaseToken, nextStage: "vision" });
+      const vision = await repository.claimImageJob({
+        jobId,
+        now: new Date("2026-08-17T00:00:03.000Z"),
+        leaseExpiresAt: new Date("2026-08-17T00:00:28.000Z"),
+      });
+      if (!vision) throw new Error("missing vision claim");
+      return { created, vision };
+    };
+    const first = await createVisionJob("1", "00000000-0000-4000-8000-000000000111");
+    const second = await createVisionJob("2", "00000000-0000-4000-8000-000000000222");
+    const reservation = (job: NonNullable<typeof first.vision>) => repository.reserveImageJobBudget({
+      jobId: job.id,
+      leaseToken: job.leaseToken,
+      reservationMicrousd: 600,
+      dailyScopeKey: "daily:2026-08-17",
+      dailyHardStopMicrousd: 1_000,
+      totalHardStopMicrousd: 1_000,
+    });
+    const results = await Promise.all([reservation(first.vision), reservation(second.vision)]);
+    expect(results.map((result) => result.status).sort()).toEqual(["budget_blocked", "reserved"]);
+    const budgets = await database.select().from(customerServiceBudgetState);
+    expect(budgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeKey: "daily:2026-08-17", reservedMicrousd: 600 }),
+      expect.objectContaining({ scopeKey: "total", reservedMicrousd: 600 }),
+    ]));
+  });
+
+  it("reconciles a stale post-reservation job exactly once and leaves cleanup retryable", async () => {
+    const jobId = "00000000-0000-4000-8000-000000000333";
+    const externalAttachmentKeyHash = "3".repeat(64);
+    await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "4".repeat(64),
+      externalMessageKeyHash: "5".repeat(64),
+      text: "Can I use this photo?",
+      attachments: [{ externalAttachmentKeyHash, ordinal: 0, kind: "image", mimeTypeHint: null }],
+      imageJob: {
+        id: jobId,
+        status: "pending",
+        sourceCiphertext: "v1.encrypted",
+        sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
+        failureCode: null,
+      },
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    const [message] = await database.select().from(customerServiceMessages);
+    const [attachment] = await database.select().from(customerServiceAttachments);
+    const attemptId = await repository.createImageAnalysisAttempt({
+      messageId: message.id,
+      schemaVersion: "1",
+      attachments: [{ attachmentId: attachment.id, ordinal: 0, externalAttachmentKeyHash }],
+    });
+    await database.update(customerServiceImageJobs).set({
+      imageAnalysisAttemptId: attemptId,
+      stage: "vision",
+      status: "running",
+      leaseToken: "00000000-0000-4000-8000-000000000334",
+      leaseExpiresAt: new Date("2026-08-16T23:59:00.000Z"),
+      reservedCostMicrousd: 2_000,
+      budgetDailyScopeKey: "daily:2026-08-17",
+    }).where(eq(customerServiceImageJobs.id, jobId));
+    await database.insert(customerServiceBudgetState).values([
+      { scopeKey: "daily:2026-08-17", reservedMicrousd: 2_000 },
+      { scopeKey: "total", reservedMicrousd: 2_000 },
+    ]);
+
+    await expect(repository.reconcileStaleImageJobs({
+      now: new Date("2026-08-17T00:00:00.000Z"),
+      limit: 10,
+    })).resolves.toMatchObject({ examined: 1, terminal: 1, reservationsReleased: 1 });
+    await expect(repository.reconcileStaleImageJobs({
+      now: new Date("2026-08-17T00:00:00.000Z"),
+      limit: 10,
+    })).resolves.toMatchObject({ examined: 0, reservationsReleased: 0 });
+    const [persisted] = await database.select().from(customerServiceImageJobs);
+    const [persistedAttempt] = await database.select().from(customerServiceImageAnalysisAttempts)
+      .where(eq(customerServiceImageAnalysisAttempts.id, attemptId));
+    expect(persisted).toMatchObject({
+      stage: "cleanup",
+      status: "pending",
+      terminalAfterCleanup: true,
+      failureCode: "image_provider_state_ambiguous",
+      reservedCostMicrousd: 0,
+      budgetSettledAt: expect.any(Date),
+    });
+    expect(persistedAttempt).toMatchObject({
+      status: "provider_error",
+      providerCalled: false,
+      providerErrorCode: "image_job_interrupted",
+      completedAt: expect.any(Date),
+    });
+    const budgets = await database.select().from(customerServiceBudgetState);
+    expect(budgets.every((budget) => budget.reservedMicrousd === 0)).toBe(true);
+  });
+
+  it("resumes a stale download with its preallocated cleanup key", async () => {
+    const jobId = "00000000-0000-4000-8000-000000000441";
+    const externalAttachmentKeyHash = "4".repeat(64);
+    await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "5".repeat(64),
+      externalMessageKeyHash: "6".repeat(64),
+      text: "Can I use this photo?",
+      attachments: [{ externalAttachmentKeyHash, ordinal: 0, kind: "image", mimeTypeHint: null }],
+      imageJob: {
+        id: jobId,
+        status: "pending",
+        sourceCiphertext: "v1.encrypted",
+        sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
+        failureCode: null,
+      },
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    const policy = await repository.claimImageJob({
+      jobId,
+      now: new Date("2026-08-17T00:00:01.000Z"),
+      leaseExpiresAt: new Date("2026-08-17T00:00:26.000Z"),
+    });
+    if (!policy) throw new Error("missing policy claim");
+    await repository.completeImageJobStage({ jobId, leaseToken: policy.leaseToken, nextStage: "download" });
+    const download = await repository.claimImageJob({
+      jobId,
+      now: new Date("2026-08-17T00:00:02.000Z"),
+      leaseExpiresAt: new Date("2026-08-17T00:00:03.000Z"),
+    });
+    if (!download) throw new Error("missing download claim");
+    const attempt = await repository.ensureImageAnalysisAttemptForJob({
+      jobId,
+      leaseToken: download.leaseToken,
+      sources: [{
+        ordinal: 0,
+        externalAttachmentKeyHash,
+        sourceRef: { kind: "facebook_remote", url: "https://example.test/private.png" },
+      }],
+    });
+    const privateStorageKey = "customer-service-attachments/00000000-0000-4000-8000-000000000442.bin";
+    await repository.prepareImageAttachmentStorage({
+      jobId,
+      leaseToken: download.leaseToken,
+      attemptId: attempt.attemptId,
+      attachmentId: attempt.inputs[0].attachmentId,
+      privateStorageKey,
+      deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+
+    await expect(repository.reconcileStaleImageJobs({
+      now: new Date("2026-08-17T00:00:04.000Z"),
+      limit: 10,
+    })).resolves.toMatchObject({ examined: 1, resumed: 1, terminal: 0 });
+
+    const [persisted] = await database.select().from(customerServiceImageJobs)
+      .where(eq(customerServiceImageJobs.id, jobId));
+    const [persistedInput] = await database.select().from(customerServiceImageAnalysisInputs)
+      .where(eq(customerServiceImageAnalysisInputs.analysisAttemptId, attempt.attemptId));
+    expect(persisted).toMatchObject({
+      stage: "download",
+      status: "pending",
+      sourceCiphertext: "v1.encrypted",
+      terminalAfterCleanup: false,
+    });
+    expect(persistedInput).toMatchObject({
+      cleanupStatus: "pending",
+      privateStorageKey,
+    });
+  });
+
+  it("abandons an ambiguous stale text attempt while settling its combined reservation once", async () => {
+    const jobId = "00000000-0000-4000-8000-000000000451";
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "7".repeat(64),
+      externalMessageKeyHash: "8".repeat(64),
+      text: "Can I use this photo?",
+      attachments: [{ externalAttachmentKeyHash: "9".repeat(64), ordinal: 0, kind: "image", mimeTypeHint: null }],
+      imageJob: {
+        id: jobId,
+        status: "pending",
+        sourceCiphertext: "v1.encrypted",
+        sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
+        failureCode: null,
+      },
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    await database.update(customerServiceImageJobs).set({
+      stage: "draft",
+      status: "running",
+      leaseToken: "00000000-0000-4000-8000-000000000452",
+      leaseExpiresAt: new Date("2026-08-16T23:59:00.000Z"),
+      reservedCostMicrousd: 2_000,
+      budgetDailyScopeKey: "daily:2026-08-17",
+    }).where(eq(customerServiceImageJobs.id, jobId));
+    await database.insert(customerServiceBudgetState).values([
+      { scopeKey: "daily:2026-08-17", reservedMicrousd: 2_000 },
+      { scopeKey: "total", reservedMicrousd: 2_000 },
+    ]);
+    const [textAttempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: created.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "photo_guidance",
+      riskLevel: "low",
+      gateResult: "allowed",
+      gateReasons: ["confirmed_draft_scope"],
+      knowledgeVersion: "test-v1",
+      status: "provider_pending",
+      providerCalled: true,
+      reservedCostMicrousd: 0,
+    }).returning({ id: customerServiceAiAttempts.id });
+    await database.update(customerServiceImageJobs).set({ textAttemptId: textAttempt.id })
+      .where(eq(customerServiceImageJobs.id, jobId));
+
+    await expect(repository.reconcileStaleImageJobs({
+      now: new Date("2026-08-17T00:00:00.000Z"),
+      limit: 10,
+    })).resolves.toMatchObject({ examined: 1, terminal: 1, reservationsReleased: 1 });
+
+    const [persistedAttempt] = await database.select().from(customerServiceAiAttempts)
+      .where(eq(customerServiceAiAttempts.id, textAttempt.id));
+    const budgets = await database.select().from(customerServiceBudgetState);
+    expect(persistedAttempt).toMatchObject({
+      status: "abandoned",
+      providerErrorCode: "text_provider_state_ambiguous",
+      completedAt: expect.any(Date),
+    });
+    expect(budgets.every((budget) => budget.reservedMicrousd === 0)).toBe(true);
+  });
+
+  it("settles separate image and text actuals against one combined reservation exactly once", async () => {
+    const jobId = "00000000-0000-4000-8000-000000000551";
+    const externalAttachmentKeyHash = "a".repeat(64);
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "b".repeat(64),
+      externalMessageKeyHash: "c".repeat(64),
+      text: "Can I use this photo?",
+      attachments: [{ externalAttachmentKeyHash, ordinal: 0, kind: "image", mimeTypeHint: null }],
+      imageJob: {
+        id: jobId,
+        status: "pending",
+        sourceCiphertext: "v1.encrypted",
+        sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
+        failureCode: null,
+      },
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    const [attachment] = await database.select().from(customerServiceAttachments);
+    const attemptId = await repository.createImageAnalysisAttempt({
+      messageId: created.messageId,
+      schemaVersion: "1",
+      attachments: [{ attachmentId: attachment.id, ordinal: 0, externalAttachmentKeyHash }],
+    });
+    await database.update(customerServiceImageJobs).set({
+      stage: "vision",
+      status: "running",
+      imageAnalysisAttemptId: attemptId,
+      leaseToken: "00000000-0000-4000-8000-000000000552",
+      leaseExpiresAt: new Date("2026-08-17T00:00:25.000Z"),
+    }).where(eq(customerServiceImageJobs.id, jobId));
+    const visionLease = "00000000-0000-4000-8000-000000000552";
+    await expect(repository.reserveImageJobBudget({
+      jobId,
+      leaseToken: visionLease,
+      reservationMicrousd: 2_000,
+      dailyScopeKey: "daily:2026-08-17",
+      dailyHardStopMicrousd: 10_000,
+      totalHardStopMicrousd: 10_000,
+    })).resolves.toEqual({ status: "reserved" });
+    await expect(repository.markImageAnalysisProviderStarted({ jobId, leaseToken: visionLease, attemptId }))
+      .resolves.toBe(true);
+    await repository.completeImageAnalysisAttempt(imageCompletion(attemptId, "analyzed"));
+    await database.update(customerServiceImageAnalysisAttempts).set({
+      analysisResult: {
+        ...assessedAnalysis(),
+        recommendationCodes: ["send_original_file"],
+      },
+    }).where(eq(customerServiceImageAnalysisAttempts.id, attemptId));
+    await repository.completeImageJobStage({ jobId, leaseToken: visionLease, nextStage: "draft" });
+    const draftJob = await repository.claimImageJob({
+      jobId,
+      now: new Date("2026-08-17T00:00:26.000Z"),
+      leaseExpiresAt: new Date("2026-08-17T00:00:51.000Z"),
+    });
+    if (!draftJob) throw new Error("missing draft claim");
+    const text = await repository.createImageJobProviderAttempt({
+      jobId,
+      leaseToken: draftJob.leaseToken,
+      messageId: created.messageId,
+      trigger: "webhook_after",
+      intent: "photo_guidance",
+      riskLevel: "low",
+      gateReasons: ["confirmed_draft_scope"],
+      knowledgeSources: ["AI-SCOPE-05"],
+      knowledgeVersion: "test-v1",
+    });
+    expect(text.status).toBe("reserved");
+    await repository.completeProviderAttempt({
+      attemptId: text.attemptId,
+      status: "draft_ready",
+      provider: "mock",
+      model: "mock",
+      draftText: "Please send the original file so we can assess it.",
+      validatorCodes: [],
+      inputTokens: 10,
+      cachedInputTokens: 0,
+      outputTokens: 5,
+      estimatedCostMicrousd: 40,
+      latencyMs: 2,
+      dailyScopeKey: "daily:2026-08-17",
+    });
+    await expect(repository.finishImageJob({
+      jobId,
+      leaseToken: draftJob.leaseToken,
+      status: "completed",
+      failureCode: null,
+      textAttemptId: text.attemptId,
+    })).resolves.toBe(true);
+    await expect(repository.finishImageJob({
+      jobId,
+      leaseToken: draftJob.leaseToken,
+      status: "completed",
+      failureCode: null,
+      textAttemptId: text.attemptId,
+    })).resolves.toBe(false);
+    await repository.appendFeedback({
+      attemptId: text.attemptId,
+      actorUserId: null,
+      action: "accepted_unchanged",
+      humanFinalText: "Please send the original file so we can assess it.",
+      reasonCode: null,
+      idempotencyKey: "image-aware-metric-feedback",
+    });
+    const budgets = await database.select().from(customerServiceBudgetState);
+    expect(budgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeKey: "daily:2026-08-17", reservedMicrousd: 0, spentMicrousd: 65 }),
+      expect.objectContaining({ scopeKey: "total", reservedMicrousd: 0, spentMicrousd: 65 }),
+    ]));
+    let queryCount = 0;
+    const countedRepository = createDrizzleCustomerServiceRepository(drizzle(testDatabaseUrl!, {
+      logger: { logQuery: () => { queryCount += 1; } },
+    }));
+    await expect(countedRepository.metricCounts()).resolves.toMatchObject({
+      imageContexts: 1,
+      imageAnalysesSucceeded: 1,
+      imageAnalysesBlocked: 0,
+      imageAwareDraftsGenerated: 1,
+      imageAwareAcceptedUnchanged: 1,
+      imageAwareEditedAccepted: 0,
+      imageAwareRejected: 0,
+      imageRequestOriginalRecommendations: 1,
+      imageAwareTotalCostMicrousd: 65,
+    });
+    expect(queryCount).toBe(1);
+  });
+
+  it("commits cleanup claims before slow deletes so two workers never delete the same key", async () => {
+    const externalAttachmentKeyHash = "6".repeat(64);
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "7".repeat(64),
+      externalMessageKeyHash: "8".repeat(64),
+      text: "Please assess this image",
+      attachments: [{ externalAttachmentKeyHash, ordinal: 0, kind: "image", mimeTypeHint: null }],
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    const [attachment] = await database.select().from(customerServiceAttachments);
+    const keys = [
+      "customer-service-attachments/00000000-0000-4000-8000-000000000661.bin",
+      "customer-service-attachments/00000000-0000-4000-8000-000000000662.bin",
+    ];
+    for (const key of keys) {
+      const attemptId = await repository.createImageAnalysisAttempt({
+        messageId: created.messageId,
+        schemaVersion: "1",
+        attachments: [{ attachmentId: attachment.id, ordinal: 0, externalAttachmentKeyHash }],
+      });
+      await repository.markImageAttachmentStored({
+        attemptId,
+        attachmentId: attachment.id,
+        verifiedMimeType: "image/png",
+        width: 10,
+        height: 10,
+        byteSize: 10,
+        sha256: "9".repeat(64),
+        privateStorageKey: key,
+        deleteDueAt: new Date("2026-08-16T00:00:00.000Z"),
+      });
+    }
+    const removed: string[] = [];
+    let releaseDeletes!: () => void;
+    const blocked = new Promise<void>((resolve) => { releaseDeletes = resolve; });
+    const remove = async (key: string) => { removed.push(key); await blocked; };
+    const first = repository.cleanupExpiredImageAttachments({
+      now: new Date("2026-08-17T00:00:00.000Z"),
+      limit: 1,
+      remove,
+    });
+    await expect.poll(async () => (
+      await database.select().from(customerServiceImageAnalysisInputs)
+    ).filter((row) => row.cleanupClaimToken !== null).length).toBe(1);
+    const second = repository.cleanupExpiredImageAttachments({
+      now: new Date("2026-08-17T00:00:00.000Z"),
+      limit: 2,
+      remove,
+    });
+    await expect.poll(() => removed.length).toBe(2);
+    releaseDeletes();
+    await expect(Promise.all([first, second])).resolves.toEqual(expect.arrayContaining([
+      { selected: 1, deleted: 1, failed: 0 },
+    ]));
+    expect(new Set(removed).size).toBe(2);
+    await expect(repository.cleanupExpiredImageAttachments({
+      now: new Date("2026-08-17T00:00:00.000Z"),
+      limit: 10,
+      remove: async (key) => { removed.push(key); },
+    })).resolves.toEqual({ selected: 0, deleted: 0, failed: 0 });
   });
 });

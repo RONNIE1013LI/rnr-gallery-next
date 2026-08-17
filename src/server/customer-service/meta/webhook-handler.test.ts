@@ -9,6 +9,8 @@ const config = {
   metaVerifyToken: "verify-token",
   metaPageId: "page-1",
   idHashSecret: "id-hash-secret",
+  imageAnalysisEnabled: true,
+  attachmentSourceEncryptionKey: "source-encryption-key-32-bytes!!",
 };
 
 function signedRequest(payload: unknown, secret = config.metaAppSecret) {
@@ -41,14 +43,24 @@ function setup(ingestResult: { status: "created"; messageId: string; pilotSequen
   const scheduledTasks: Array<() => Promise<void>> = [];
   const ingest = vi.fn(async () => { events.push("persist:commit"); return ingestResult; });
   const generateDraft = vi.fn(async () => undefined);
+  const kickImageJob = vi.fn(async () => undefined);
   const scheduleAfter = vi.fn((task: () => Promise<void>) => { events.push("after:schedule"); scheduledTasks.push(task); });
   return {
     events,
     scheduledTasks,
     ingest,
     generateDraft,
+    kickImageJob,
     scheduleAfter,
-    handlers: createMetaWebhookHandlers({ config, ingest, generateDraft, scheduleAfter }),
+    handlers: createMetaWebhookHandlers({
+      config,
+      ingest,
+      generateDraft,
+      kickImageJob,
+      scheduleAfter,
+      createJobId: () => "00000000-0000-4000-8000-000000000101",
+      now: () => new Date("2026-08-17T00:00:00.000Z"),
+    }),
   };
 }
 
@@ -83,15 +95,14 @@ describe("Meta webhook handler", () => {
     expect(current.scheduleAfter).not.toHaveBeenCalled();
   });
 
-  it("persists image-only metadata before scheduling ephemeral attachment analysis", async () => {
+  it("persists image-only metadata for human review without retaining or scheduling its source", async () => {
     const current = setup();
     const response = await current.handlers.POST(signedRequest(messagePayload({
       text: undefined,
       attachments: [{ type: "image", payload: { url: "https://scontent.test/image.jpg" } }],
     })));
     expect(response.status).toBe(200);
-    expect(current.events).toEqual(["persist:commit", "after:schedule"]);
-    expect(current.ingest.mock.invocationCallOrder[0]).toBeLessThan(current.scheduleAfter.mock.invocationCallOrder[0]);
+    expect(current.events).toEqual(["persist:commit"]);
     expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
       text: null,
       attachments: [{
@@ -99,25 +110,54 @@ describe("Meta webhook handler", () => {
         ordinal: 0,
         kind: "image",
         mimeTypeHint: null,
+        failureCode: null,
       }],
+      imageJob: {
+        id: "00000000-0000-4000-8000-000000000101",
+        status: "human_review_required",
+        sourceCiphertext: null,
+        sourceExpiresAt: null,
+        failureCode: "image_only_without_text",
+      },
     }));
     expect(JSON.stringify(current.ingest.mock.calls)).not.toContain("https://scontent.test/image.jpg");
     expect(await response.text()).not.toContain("https://scontent.test/image.jpg");
 
-    await current.scheduledTasks[0]();
-    expect(current.generateDraft).toHaveBeenCalledWith(
-      "internal-1",
-      [{
-        externalAttachmentKey: "mid-1:0",
-        ordinal: 0,
-        kind: "image",
-        sourceRef: { kind: "facebook_remote", url: "https://scontent.test/image.jpg" },
-        mimeTypeHint: null,
-      }],
-    );
+    expect(current.scheduleAfter).not.toHaveBeenCalled();
+    expect(current.kickImageJob).not.toHaveBeenCalled();
+    expect(current.generateDraft).not.toHaveBeenCalled();
   });
 
-  it("persists before scheduling one new message", async () => {
+  it("never combines an image-only event with a later text-only event", async () => {
+    const current = setup();
+    await current.handlers.POST(signedRequest(messagePayload({
+      text: undefined,
+      attachments: [{ type: "image", payload: { url: "https://scontent.test/image.jpg" } }],
+    })));
+    await current.handlers.POST(signedRequest(messagePayload({
+      mid: "mid-2",
+      text: "Can you use it?",
+    })));
+
+    expect(current.ingest).toHaveBeenNthCalledWith(1, expect.objectContaining({
+      text: null,
+      imageJob: expect.objectContaining({
+        status: "human_review_required",
+        sourceCiphertext: null,
+      }),
+    }));
+    expect(current.ingest).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      text: "Can you use it?",
+      attachments: [],
+      imageJob: null,
+    }));
+    expect(current.scheduleAfter).toHaveBeenCalledOnce();
+    await current.scheduledTasks[0]();
+    expect(current.generateDraft).toHaveBeenCalledOnce();
+    expect(current.kickImageJob).not.toHaveBeenCalled();
+  });
+
+  it("commits an encrypted durable job before scheduling a best-effort kick", async () => {
     const current = setup();
     expect((await current.handlers.POST(signedRequest(messagePayload({
       attachments: [{ type: "image", payload: { url: "https://scontent.test/image.jpg" } }],
@@ -132,8 +172,48 @@ describe("Meta webhook handler", () => {
         ordinal: 0,
         kind: "image",
         mimeTypeHint: null,
+        failureCode: null,
       }],
+      imageJob: expect.objectContaining({
+        id: "00000000-0000-4000-8000-000000000101",
+        status: "pending",
+        sourceCiphertext: expect.stringMatching(/^v1\./),
+        sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
+        failureCode: null,
+      }),
     }));
+    expect(current.ingest.mock.invocationCallOrder[0]).toBeLessThan(current.scheduleAfter.mock.invocationCallOrder[0]);
+    expect(JSON.stringify(current.ingest.mock.calls)).not.toContain("https://scontent.test/image.jpg");
+    await current.scheduledTasks[0]();
+    expect(current.kickImageJob).toHaveBeenCalledWith("00000000-0000-4000-8000-000000000101");
+    expect(current.generateDraft).not.toHaveBeenCalled();
+  });
+
+  it("persists mixed image/file metadata and forces human review with zero deferred providers", async () => {
+    const current = setup();
+    const response = await current.handlers.POST(signedRequest(messagePayload({
+      attachments: [
+        { type: "image", payload: { url: "https://scontent.test/image.jpg" } },
+        { type: "file", payload: { url: "https://scontent.test/private.pdf" } },
+      ],
+    })));
+
+    expect(response.status).toBe(200);
+    expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      attachments: expect.arrayContaining([
+        expect.objectContaining({ kind: "image", failureCode: null }),
+        expect.objectContaining({ kind: "unsupported", failureCode: "unsupported_attachment" }),
+      ]),
+      imageJob: expect.objectContaining({
+        status: "human_review_required",
+        sourceCiphertext: null,
+        failureCode: "unsupported_attachment",
+      }),
+    }));
+    expect(JSON.stringify(current.ingest.mock.calls)).not.toMatch(/scontent\.test|private\.pdf/);
+    expect(current.scheduleAfter).not.toHaveBeenCalled();
+    expect(current.kickImageJob).not.toHaveBeenCalled();
+    expect(current.generateDraft).not.toHaveBeenCalled();
   });
 
   it("does not schedule duplicates or run when disabled", async () => {
@@ -150,6 +230,7 @@ describe("Meta webhook handler", () => {
       config: { ...config, enabled: false },
       ingest: disabled.ingest,
       generateDraft: disabled.generateDraft,
+      kickImageJob: disabled.kickImageJob,
       scheduleAfter: disabled.scheduleAfter,
     });
     expect((await disabled.handlers.POST(signedRequest(messagePayload()))).status).toBe(503);
@@ -158,7 +239,7 @@ describe("Meta webhook handler", () => {
 
   it("keeps the committed webhook response successful when deferred generation fails", async () => {
     const current = setup();
-    current.generateDraft.mockRejectedValueOnce(new Error("private deferred failure"));
+    current.kickImageJob.mockRejectedValueOnce(new Error("private deferred failure"));
 
     const response = await current.handlers.POST(signedRequest(messagePayload({
       attachments: [{ type: "image", payload: { url: "https://scontent.test/image.jpg" } }],

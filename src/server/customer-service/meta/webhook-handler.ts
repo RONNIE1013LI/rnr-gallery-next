@@ -1,6 +1,7 @@
-import { createHmac } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 import { createFacebookChannelAdapter } from "../adapters/facebook";
-import type { NormalizedAttachment } from "../attachments/types";
+import { createAttachmentSourceProtector } from "../attachments/attachment-source-protector";
+import { IMAGE_LIMITS } from "../attachments/limits";
 import type { HashedIncomingMessage } from "../repositories/customer-service-repository";
 import { verifyMetaSignature } from "./signature";
 
@@ -15,6 +16,8 @@ type WebhookConfig = Readonly<{
   metaVerifyToken: string;
   metaPageId: string;
   idHashSecret: string;
+  imageAnalysisEnabled: boolean;
+  attachmentSourceEncryptionKey: string;
 }>;
 
 function pageIds(payload: unknown) {
@@ -35,12 +38,14 @@ function hashExternalId(value: string, secret: string) {
 export function createMetaWebhookHandlers(dependencies: Readonly<{
   config: WebhookConfig;
   ingest: (message: HashedIncomingMessage) => Promise<IngestResult>;
-  generateDraft: (
-    messageId: string,
-    attachmentSourceContext: readonly NormalizedAttachment[],
-  ) => Promise<unknown>;
+  generateDraft: (messageId: string) => Promise<unknown>;
+  kickImageJob: (jobId: string) => Promise<unknown>;
   scheduleAfter: (task: () => Promise<void>) => void;
+  createJobId?: () => string;
+  now?: () => Date;
 }>) {
+  const now = dependencies.now ?? (() => new Date());
+  const createJobId = dependencies.createJobId ?? randomUUID;
   return {
     async GET(request: Request) {
       if (!dependencies.config.enabled) return new Response("Disabled", { status: 503 });
@@ -74,28 +79,80 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
 
       const adapter = createFacebookChannelAdapter();
       for (const message of adapter.normalize(payload)) {
+        const attachments = message.attachments.map((attachment) => ({
+          externalAttachmentKeyHash: hashExternalId(attachment.externalAttachmentKey, dependencies.config.idHashSecret),
+          ordinal: attachment.ordinal,
+          kind: attachment.kind,
+          mimeTypeHint: attachment.mimeTypeHint,
+          failureCode: attachment.failureCode ?? null,
+        }));
+        const jobId = message.attachments.length ? createJobId() : null;
+        let imageJob: HashedIncomingMessage["imageJob"] = null;
+        if (jobId) {
+          const unsupported = message.attachments.some((attachment) => (
+            attachment.kind === "unsupported" || attachment.sourceRef.kind !== "facebook_remote"
+          ));
+          const failureCode = message.text === null
+            ? "image_only_without_text"
+            : unsupported
+              ? "unsupported_attachment"
+              : !dependencies.config.imageAnalysisEnabled
+                ? "image_analysis_unavailable"
+                : null;
+          if (failureCode) {
+            imageJob = {
+              id: jobId,
+              status: "human_review_required",
+              sourceCiphertext: null,
+              sourceExpiresAt: null,
+              failureCode,
+            };
+          } else {
+            const sourceExpiresAt = new Date(now().getTime() + IMAGE_LIMITS.sourceRefRetentionMs);
+            const protector = createAttachmentSourceProtector(dependencies.config.attachmentSourceEncryptionKey, { now });
+            const supported = message.attachments.flatMap((attachment, index) => (
+              attachment.kind === "image" && attachment.sourceRef.kind === "facebook_remote" ? [{
+                ordinal: attachment.ordinal,
+                externalAttachmentKeyHash: attachments[index].externalAttachmentKeyHash,
+                sourceRef: attachment.sourceRef,
+              }] : []
+            ));
+            imageJob = {
+              id: jobId,
+              status: "pending",
+              sourceCiphertext: protector.seal({ jobId, sources: supported, expiresAt: sourceExpiresAt }),
+              sourceExpiresAt,
+              failureCode: null,
+            };
+          }
+        }
         const result = await dependencies.ingest({
           channel: message.channel,
           externalConversationKeyHash: hashExternalId(message.externalConversationKey, dependencies.config.idHashSecret),
           externalMessageKeyHash: hashExternalId(message.externalMessageKey, dependencies.config.idHashSecret),
           text: message.text,
-          attachments: message.attachments.map((attachment) => ({
-            externalAttachmentKeyHash: hashExternalId(attachment.externalAttachmentKey, dependencies.config.idHashSecret),
-            ordinal: attachment.ordinal,
-            kind: attachment.kind,
-            mimeTypeHint: attachment.mimeTypeHint,
-          })),
+          attachments,
+          imageJob,
           receivedAt: message.receivedAt,
         });
         if (result.status === "created") {
-          const attachmentSourceContext = message.attachments;
-          dependencies.scheduleAfter(async () => {
-            try {
-              await dependencies.generateDraft(result.messageId, attachmentSourceContext);
-            } catch {
-              // The webhook has already committed; operators can retry from the review UI.
-            }
-          });
+          if (imageJob?.status === "pending") {
+            dependencies.scheduleAfter(async () => {
+              try {
+                await dependencies.kickImageJob(imageJob.id);
+              } catch {
+                // The durable runner will recover the committed job.
+              }
+            });
+          } else if (!imageJob) {
+            dependencies.scheduleAfter(async () => {
+              try {
+                await dependencies.generateDraft(result.messageId);
+              } catch {
+                // The webhook has already committed; operators can retry from the review UI.
+              }
+            });
+          }
         }
       }
       return new Response(null, { status: 200 });

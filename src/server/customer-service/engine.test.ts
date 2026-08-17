@@ -27,16 +27,17 @@ const safeAnalysis: ImageAnalysisResult = {
   safeSummary: "Image 0 appears to be a screenshot; request the original file.",
 };
 
-function repositoryFor(body: string, withImage = false) {
+function repositoryFor(body: string | null, withImage = false) {
   const methods = {
     loadDraftInput: vi.fn(async () => ({
-      current: { id: "message-1", body, channel: "facebook" as const },
-      context: [body],
+      current: { id: "message-1", text: body, channel: "facebook" as const },
+      context: body === null ? [] : [body],
     })),
     selectImageContext: vi.fn<CustomerServiceRepository["selectImageContext"]>(async () => withImage ? ({
       messageId: "message-1",
       attachmentIds: ["attachment-1"],
       analysisSummary: null,
+      hasUnsupportedAttachments: false,
     }) : null),
     createGateBlockedAttempt: vi.fn(async () => "attempt-blocked"),
     createImageAnalysisAttempt: vi.fn(async () => "image-attempt-1"),
@@ -45,6 +46,9 @@ function repositoryFor(body: string, withImage = false) {
     completeImageAnalysisAttempt: vi.fn(async () => undefined),
     markImageAttachmentDeleted: vi.fn(async () => undefined),
     reserveProviderAttempt: vi.fn(async () => ({ status: "reserved" as const, attemptId: "attempt-1" })),
+    createImageJobProviderAttempt: vi.fn<CustomerServiceRepository["createImageJobProviderAttempt"]>(
+      async () => ({ status: "reserved" as const, attemptId: "attempt-image-text-1" }),
+    ),
     completeProviderAttempt: vi.fn(async () => undefined),
   };
   return methods as typeof methods & CustomerServiceRepository;
@@ -77,7 +81,8 @@ function imageDependencies(repository: CustomerServiceRepository) {
     })),
   };
   const attachmentStore = {
-    save: vi.fn(async () => ({ storageKey: "customer-service-attachments/00000000-0000-4000-8000-000000000001.bin" })),
+    allocateKey: vi.fn(() => "customer-service-attachments/00000000-0000-4000-8000-000000000001.bin"),
+    save: vi.fn(async () => undefined),
     read: vi.fn(async () => Buffer.from("validated-private-image")),
     remove: vi.fn(async () => undefined),
   };
@@ -112,7 +117,7 @@ function imageDependencies(repository: CustomerServiceRepository) {
   };
 }
 
-function setup(body: string, input: Readonly<{
+function setup(body: string | null, input: Readonly<{
   reply?: string;
   withImage?: boolean;
   previousAnalysis?: string;
@@ -124,6 +129,7 @@ function setup(body: string, input: Readonly<{
       messageId: "message-1",
       attachmentIds: ["attachment-1"],
       analysisSummary: input.previousAnalysis,
+      hasUnsupportedAttachments: false,
     });
   }
   const provider = textProvider(input.reply);
@@ -248,11 +254,12 @@ describe("CustomerServiceEngine", () => {
   });
 
   it("keeps image-only messages away from both providers", async () => {
-    const current = setup("[Image attachment]", { withImage: true });
+    const current = setup(null, { withImage: true });
     await expect(current.engine.generateDraft(
       { messageId: "message-1", trigger: "webhook_after" },
       attachmentContext,
-    )).resolves.toMatchObject({ status: "gate_blocked" });
+    )).resolves.toMatchObject({ status: "image_review_required" });
+    expect(current.policyGate).not.toHaveBeenCalled();
     expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
     expect(current.provider.generate).not.toHaveBeenCalled();
   });
@@ -326,5 +333,64 @@ describe("CustomerServiceEngine", () => {
       status: "provider_error",
       providerErrorCode: "provider_request_failed",
     }));
+  });
+
+  it("checks image-job policy from customer_text without selecting or reading attachments", async () => {
+    const current = setup("I want a refund", { withImage: true });
+
+    await expect(current.engine.checkImageJobPolicy("message-1")).resolves.toEqual({
+      status: "blocked",
+      code: "high_risk_topic",
+    });
+
+    expect(current.repository.createGateBlockedAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      messageId: "message-1",
+      trigger: "webhook_after",
+      gateReasons: ["high_risk_topic"],
+    }));
+    expect(current.repository.selectImageContext).not.toHaveBeenCalled();
+    expect(current.image.sourceReader.read).not.toHaveBeenCalled();
+    expect(current.provider.generate).not.toHaveBeenCalled();
+  });
+
+  it("generates an image-aware draft against the combined job reservation without a second reserve", async () => {
+    const current = setup("Can you use my blurry original photo?", { withImage: true });
+
+    await expect(current.engine.generateImageAwareDraft({
+      messageId: "message-1",
+      imageJobId: "image-job-1",
+      leaseToken: "lease-1",
+      visualAssessment: safeAnalysis.safeSummary,
+    })).resolves.toEqual({ status: "draft_ready", attemptId: "attempt-image-text-1" });
+
+    expect(current.repository.createImageJobProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      jobId: "image-job-1",
+      leaseToken: "lease-1",
+      messageId: "message-1",
+    }));
+    expect(current.repository.reserveProviderAttempt).not.toHaveBeenCalled();
+    expect(current.provider.generate).toHaveBeenCalledWith(expect.objectContaining({
+      instructions: expect.stringContaining(`VISUAL ASSESSMENT:\n${safeAnalysis.safeSummary}`),
+    }));
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      attemptId: "attempt-image-text-1",
+      status: "draft_ready",
+    }));
+  });
+
+  it("fails closed without repeating an ambiguous image-aware text provider call", async () => {
+    const current = setup("Can you use my blurry original photo?", { withImage: true });
+    current.repository.createImageJobProviderAttempt.mockResolvedValueOnce({
+      status: "ambiguous",
+      attemptId: "attempt-image-text-1",
+    });
+
+    await expect(current.engine.generateImageAwareDraft({
+      messageId: "message-1",
+      imageJobId: "image-job-1",
+      leaseToken: "lease-1",
+      visualAssessment: safeAnalysis.safeSummary,
+    })).resolves.toEqual({ status: "provider_error", attemptId: "attempt-image-text-1" });
+    expect(current.provider.generate).not.toHaveBeenCalled();
   });
 });

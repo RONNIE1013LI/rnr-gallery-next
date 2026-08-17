@@ -251,18 +251,13 @@ describe("OpenAI image-analysis provider", () => {
     })).rejects.toThrow("image_analysis_invalid_output");
   });
 
-  it("maps missing model pricing to a stable configuration code", async () => {
-    const provider = new OpenAIImageAnalysisProvider({
+  it("rejects missing reviewed model pricing before any network call", () => {
+    const fetchImpl = vi.fn(async () => new Response("private response"));
+    expect(() => new OpenAIImageAnalysisProvider({
       apiKey: "test-only-secret",
       model: "unpriced-private-model",
-      fetchImpl: async () => new Response(JSON.stringify({
-        output_text: JSON.stringify(providerOutput),
-        usage: { input_tokens: 1, output_tokens: 1 },
-      }), { status: 200 }),
-    });
-
-    await expect(provider.analyze({
-      images: [{ ordinal: 1, mimeType: "image/png", bytes: Buffer.from("private") }],
-    })).rejects.toThrow("image_analysis_configuration_error");
+      fetchImpl,
+    })).toThrow("image_analysis_model_not_approved");
+    expect(fetchImpl).not.toHaveBeenCalled();
   });
 });

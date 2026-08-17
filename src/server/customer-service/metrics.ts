@@ -17,5 +17,20 @@ export function calculatePilotMetrics(counts: PilotMetricCounts) {
     averageImageCostPerCallMicrousd: ratio(counts.imageTotalCostMicrousd, counts.imageProviderCalls),
     averageImageLatencyMs: ratio(counts.imageTotalLatencyMs, counts.imageProviderCalls),
     combinedCostMicrousd: counts.totalCostMicrousd + counts.imageTotalCostMicrousd,
+    imageAnalysisSuccessRate: ratio(counts.imageAnalysesSucceeded, counts.imageContexts),
+    imageRequestOriginalRate: ratio(
+      counts.imageRequestOriginalRecommendations,
+      counts.imageAnalysesSucceeded,
+    ),
+    averageImageAwareCostPerDraftMicrousd: ratio(
+      counts.imageAwareTotalCostMicrousd,
+      counts.imageAwareDraftsGenerated,
+    ),
+    imageAwareDirectAcceptanceRate: ratio(
+      counts.imageAwareAcceptedUnchanged,
+      counts.imageAwareDraftsGenerated,
+    ),
+    imageAwareEditRate: ratio(counts.imageAwareEditedAccepted, counts.imageAwareDraftsGenerated),
+    imageAwareRejectionRate: ratio(counts.imageAwareRejected, counts.imageAwareDraftsGenerated),
   });
 }

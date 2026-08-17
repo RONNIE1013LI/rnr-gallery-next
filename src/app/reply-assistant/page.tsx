@@ -4,6 +4,7 @@ import { calculatePilotMetrics } from "@/server/customer-service/metrics";
 import type { SafeQueuePage } from "@/server/customer-service/repositories/customer-service-repository";
 import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
 import styles from "./reply-assistant.module.css";
+import { pilotMetricCards } from "./metric-cards";
 
 export const metadata = { title: "Reply Assistant | R&R Gallery" };
 
@@ -20,6 +21,10 @@ export default async function ReplyAssistantPage() {
       imageProviderCalls: 0, imageInputTokens: 0, imageCachedInputTokens: 0, imageOutputTokens: 0,
       imageTotalCostMicrousd: 0, imageTotalLatencyMs: 0, imageFailures: 0,
       imageCleanupDeleted: 0, imageCleanupFailures: 0,
+      imageContexts: 0, imageAnalysesSucceeded: 0, imageAnalysesBlocked: 0,
+      imageAwareDraftsGenerated: 0, imageAwareAcceptedUnchanged: 0, imageAwareEditedAccepted: 0,
+      imageAwareRejected: 0, imageRequestOriginalRecommendations: 0,
+      imageAwareTotalCostMicrousd: 0,
     }];
   const metrics = calculatePilotMetrics(rawMetrics);
   const cards = [
@@ -44,6 +49,7 @@ export default async function ReplyAssistantPage() {
     ["Image cleanup deleted", metrics.imageCleanupDeleted],
     ["Image cleanup failed", metrics.imageCleanupFailures],
     ["Combined spend", `$${(metrics.combinedCostMicrousd / 1_000_000).toFixed(4)}`],
+    ...pilotMetricCards(metrics),
   ] as const;
 
   return (

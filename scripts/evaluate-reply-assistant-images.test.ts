@@ -8,6 +8,7 @@ import {
   unlinkSync,
   statSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -16,11 +17,15 @@ import { buildDraftPrompt } from "../src/server/customer-service/prompt-builder"
 import { retrieveKnowledge } from "../src/server/customer-service/knowledge-retrieval";
 import { evaluatePolicyGate } from "../src/server/customer-service/policy-gate";
 import {
+  AUTOMATED_IMAGE_QUALITY_THRESHOLDS,
+  automatedImageQualityGate,
   createDeterministicImageEvaluationProviders,
   createOpenAIEvaluationProviders,
   evaluateReplyAssistantImageCases,
+  imageEvaluationExitCode,
   loadImageEvaluationDataset,
   requireOpenAIEvaluationEnvironment,
+  scoreImageEvaluationExpectations,
   writeImageEvaluationReport,
   type EvaluationTextProvider,
   type EvaluationVisionRequest,
@@ -48,13 +53,33 @@ describe("reply assistant image evaluation", () => {
     });
     expect(dataset.manifest.assets.length).toBeGreaterThanOrEqual(80);
     expect(dataset.manifest.assets.every((asset) => (
-      asset.provenanceCategory === "deterministic_generated_fixture"
+      asset.provenanceCategory === "deterministic_realistic_synthetic"
       && asset.consentStatus === "not_applicable_generated"
       && asset.permittedUse === "internal_reply_assistant_image_evaluation"
+      && asset.pixelContent === "label_free_synthetic_scene"
       && /^[a-f0-9]{64}$/.test(asset.sha256)
       && !asset.relativePath.startsWith("/")
       && !asset.relativePath.includes("..")
     ))).toBe(true);
+  });
+
+  it("keeps generated image fixtures free of rendered labels and PNG text metadata", () => {
+    const generatorSource = readFileSync(
+      resolve("scripts/generate-reply-assistant-image-fixtures.ts"),
+      "utf8",
+    );
+    expect(generatorSource).not.toMatch(/<text\b/i);
+
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf8")) as {
+      assets: Array<{ relativePath: string; mimeType: string }>;
+    };
+    const pngTextChunkTypes = ["tEXt", "iTXt", "zTXt"];
+    for (const asset of manifest.assets.filter((item) => item.mimeType === "image/png")) {
+      const bytes = readFileSync(resolve(manifestPath, "..", asset.relativePath));
+      for (const chunkType of pngTextChunkTypes) {
+        expect(bytes.includes(Buffer.from(chunkType, "ascii"))).toBe(false);
+      }
+    }
   });
 
   it("rejects a manifest asset that escapes through a filesystem symlink", async () => {
@@ -203,6 +228,9 @@ describe("reply assistant image evaluation", () => {
       ...providers.visionProvider,
       analyze: vi.fn(async (request) => {
         expect(request).not.toHaveProperty("expected");
+        expect(request.assets.every((asset: EvaluationVisionRequest["assets"][number]) => (
+          !("assetId" in asset)
+        ))).toBe(true);
         return providers.visionProvider.analyze(request);
       }),
     };
@@ -230,11 +258,11 @@ describe("reply assistant image evaluation", () => {
       OPENAI_IMAGE_ANALYSIS_MODEL: "image-model",
     })).toThrowError("openai_evaluation_environment_unavailable");
 
-    expect(requireOpenAIEvaluationEnvironment({
+    expect(() => requireOpenAIEvaluationEnvironment({
       OPENAI_API_KEY: "test-key",
       OPENAI_IMAGE_ANALYSIS_MODEL: "image-model",
       OPENAI_MODEL: "text-model",
-    })).toEqual({ apiKey: "test-key", imageModel: "image-model", textModel: "text-model" });
+    })).toThrowError("image_analysis_model_not_approved");
   });
 
   it("keeps the production image and text models separate in real mode", () => {
@@ -242,6 +270,11 @@ describe("reply assistant image evaluation", () => {
       apiKey: "test-key",
       imageModel: "image-model",
       textModel: "text-model",
+      imagePricing: {
+        inputUsdPerMillion: 1,
+        cachedInputUsdPerMillion: 0.1,
+        outputUsdPerMillion: 2,
+      },
     });
 
     expect(providers.visionProvider.model).toBe("image-model");
@@ -330,7 +363,9 @@ describe("reply assistant image evaluation", () => {
     const visionProvider: EvaluationVisionProvider = {
       ...providers.visionProvider,
       analyze: vi.fn(async (request: EvaluationVisionRequest) => {
-        seenAssets.set(request.caseId, request.assets.map((asset) => asset.assetId));
+        seenAssets.set(request.caseId, request.assets.map((asset) => (
+          createHash("sha256").update(asset.bytes).digest("hex")
+        )));
         return providers.visionProvider.analyze(request);
       }),
     };
@@ -343,8 +378,11 @@ describe("reply assistant image evaluation", () => {
 
     writeImageEvaluationReport(outputPath, report);
 
-    for (const [caseId, assetIds] of seenAssets) {
-      expect(assetIds).toEqual(dataset.cases.find((item) => item.id === caseId)?.assetIds);
+    for (const [caseId, assetHashes] of seenAssets) {
+      const item = dataset.cases.find((candidate) => candidate.id === caseId)!;
+      expect(assetHashes).toEqual(item.assetIds.map((assetId) => (
+        createHash("sha256").update(dataset.assets.get(assetId)!.bytes).digest("hex")
+      )));
     }
     expect(statSync(outputPath).mode & 0o777).toBe(0o600);
     const serialized = readFileSync(outputPath, "utf8");
@@ -429,5 +467,71 @@ describe("reply assistant image evaluation", () => {
     });
     expect(report.summary.latency.vision.p50Ms).toBe(7);
     expect(report.summary.latency.text.p50Ms).toBe(15);
+  });
+
+  it("mutation-checks every declared case expectation", async () => {
+    const dataset = await loadImageEvaluationDataset({ fixturePath, manifestPath });
+    const item = dataset.cases.find((candidate) => candidate.id === "comparison-01")!;
+    const draft = item.expected.requiredDraftPoints.join(" and ");
+    const base = {
+      expectedGateDecision: item.expectedGateDecision,
+      expected: item.expected,
+      gateResult: item.expectedGateDecision,
+      visualObserved: true,
+      draftObserved: true,
+      classifications: item.expected.classifications,
+      visualCodes: item.expected.issueCodes,
+      recommendationCodes: [item.expected.acceptableRecommendationCodes[0]],
+      likelyMainOrdinal: item.expected.likelyMainOrdinal,
+      draft,
+      fallbackObserved: false,
+    } as const;
+    expect(scoreImageEvaluationExpectations(base)).toMatchObject({
+      gate: true,
+      classifications: true,
+      issueCodes: true,
+      recommendation: true,
+      likelyMainOrdinal: true,
+      requiredDraftPointsPct: 100,
+      forbiddenClaims: true,
+      fallback: null,
+    });
+    expect(scoreImageEvaluationExpectations({ ...base, gateResult: "NEEDS_HUMAN_REVIEW" }).gate).toBe(false);
+    expect(scoreImageEvaluationExpectations({
+      ...base,
+      classifications: ["unknown", ...base.classifications.slice(1)],
+    }).classifications).toBe(false);
+    expect(scoreImageEvaluationExpectations({ ...base, visualCodes: ["manual_assessment"] }).issueCodes).toBe(false);
+    expect(scoreImageEvaluationExpectations({ ...base, recommendationCodes: ["human_review"] }).recommendation).toBe(false);
+    expect(scoreImageEvaluationExpectations({ ...base, likelyMainOrdinal: 1 }).likelyMainOrdinal).toBe(false);
+    expect(scoreImageEvaluationExpectations({ ...base, draft: "review" }).requiredDraftPointsPct).toBeLessThan(100);
+    const forbidden = scoreImageEvaluationExpectations({
+      ...base,
+      draft: `${draft}. ${item.expected.forbiddenClaims[0]}`,
+    });
+    expect(forbidden.forbiddenClaims).toBe(false);
+    expect(forbidden.forbiddenClaimMatches).toEqual([item.expected.forbiddenClaims[0]]);
+    expect(scoreImageEvaluationExpectations({
+      ...base,
+      expected: { ...item.expected, fallback: "human_review" },
+      fallbackObserved: false,
+    }).fallback).toBe(false);
+  });
+
+  it("mutation-checks every automated quality threshold and real-mode exit boundary", () => {
+    const passing = {
+      harnessGatePassed: true,
+      visualIssueCoveragePct: AUTOMATED_IMAGE_QUALITY_THRESHOLDS.visualIssueCoveragePct,
+      requestOriginalRecallPct: AUTOMATED_IMAGE_QUALITY_THRESHOLDS.requestOriginalRecallPct,
+      forbiddenClaimMatches: AUTOMATED_IMAGE_QUALITY_THRESHOLDS.forbiddenClaimMatches,
+    };
+    expect(automatedImageQualityGate(passing)).toBe(true);
+    expect(automatedImageQualityGate({ ...passing, visualIssueCoveragePct: 89.99 })).toBe(false);
+    expect(automatedImageQualityGate({ ...passing, requestOriginalRecallPct: 89.99 })).toBe(false);
+    expect(automatedImageQualityGate({ ...passing, forbiddenClaimMatches: 1 })).toBe(false);
+    expect(automatedImageQualityGate({ ...passing, harnessGatePassed: false })).toBe(false);
+    expect(imageEvaluationExitCode("mock", { harnessGatePassed: true, automatedQualityGatePassed: null })).toBe(0);
+    expect(imageEvaluationExitCode("openai", { harnessGatePassed: true, automatedQualityGatePassed: false })).toBe(1);
+    expect(imageEvaluationExitCode("openai", { harnessGatePassed: true, automatedQualityGatePassed: true })).toBe(0);
   });
 });

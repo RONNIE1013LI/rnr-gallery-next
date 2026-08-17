@@ -23,6 +23,7 @@
     "knowledge:check": "tsx scripts/compile-customer-service-knowledge.ts --check",
     "reply-assistant:pilot": "tsx scripts/configure-reply-assistant-pilot.ts",
     "reply-assistant:evaluate:images": "tsx scripts/evaluate-reply-assistant-images.ts",
+    "reply-assistant:fixtures:images": "tsx scripts/generate-reply-assistant-image-fixtures.ts",
     "reply-assistant:images:cleanup": "tsx scripts/cleanup-customer-service-attachments.ts"
   },
   "dependencies": {

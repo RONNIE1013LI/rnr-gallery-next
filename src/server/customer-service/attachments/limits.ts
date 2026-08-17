@@ -6,6 +6,11 @@ export const IMAGE_LIMITS = Object.freeze({
   maxSidePixels: 8192,
   maxRedirects: 2,
   perImageTimeoutMs: 10_000,
+  storageOperationTimeoutMs: 5_000,
   batchTimeoutMs: 20_000,
   retentionMs: 24 * 60 * 60 * 1000,
+  sourceRefRetentionMs: 15 * 60 * 1000,
+  jobLeaseMs: 35 * 1000,
+  cleanupClaimMs: 5 * 60 * 1000,
+  cleanupTimeoutMs: 10 * 1000,
 } as const);

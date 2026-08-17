@@ -45,7 +45,8 @@ function setup(identitySecret = sourceIdentitySecret) {
     })),
   };
   const attachmentStore = {
-    save: vi.fn(async () => ({ storageKey })),
+    allocateKey: vi.fn(() => storageKey),
+    save: vi.fn(async () => undefined),
     read: vi.fn(async () => Buffer.from("validated-private-image")),
     remove: vi.fn(async () => undefined),
   };

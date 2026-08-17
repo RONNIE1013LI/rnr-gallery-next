@@ -18,6 +18,8 @@ const qualifiedImageSubject = String.raw`(?:(?:this|that|the|your)\s+)?${imageSu
 const restorationResult = String.raw`(?:restore(?:d)?|fix(?:ed)?|repair(?:ed)?)`;
 const printAssessment = String.raw`(?:perfect|ideal|ready|suitable)`;
 const printPurpose = String.raw`(?:for\s+print(?:ing)?|to\s+print)`;
+const activeAgent = String.raw`(?:we(?:'ll|\s+(?:will|can))|i(?:'ll|\s+(?:will|can))|our\s+team\s+(?:will|can))`;
+const printReadyResult = String.raw`(?:print[-\s]?ready|suitable\s+for\s+print(?:ing)?)`;
 
 const classifiers: readonly ClaimClassifier[] = [
   {
@@ -39,6 +41,10 @@ const classifiers: readonly ClaimClassifier[] = [
         String.raw`\b(?:full\s+)?restoration\s+is\s+${modifiers}guaranteed\b`,
         "gi",
       ),
+      new RegExp(
+        String.raw`\b${activeAgent}\s+${modifiers}(?:restore|fix|repair)\s+${modifiers}${qualifiedImageSubject}\b`,
+        "gi",
+      ),
     ],
   },
   {
@@ -58,6 +64,14 @@ const classifiers: readonly ClaimClassifier[] = [
       ),
       new RegExp(
         String.raw`\bprint\s+quality\s+is\s+${modifiers}guaranteed\b`,
+        "gi",
+      ),
+      new RegExp(
+        String.raw`\b${activeAgent}\s+${modifiers}make\s+${modifiers}${qualifiedImageSubject}\s+${modifiers}${printReadyResult}\b`,
+        "gi",
+      ),
+      new RegExp(
+        String.raw`\b${qualifiedImageSubject}\s+will\s+${modifiers}print\s+${modifiers}(?:beautifully|perfectly|well)\b`,
         "gi",
       ),
     ],

@@ -23,22 +23,39 @@ function httpsUrl(value: unknown): string | null {
   }
 }
 
-function imageAttachments(message: Record<string, unknown>, messageId: string): readonly NormalizedAttachment[] {
+function normalizedAttachments(message: Record<string, unknown>, messageId: string): readonly NormalizedAttachment[] {
   const attachments: NormalizedAttachment[] = [];
   for (const rawAttachment of list(message.attachments)) {
     if (attachments.length >= IMAGE_LIMITS.maxCount) break;
+    const ordinal = attachments.length;
     const attachment = record(rawAttachment);
     const payload = record(attachment?.payload);
-    if (attachment?.type !== "image") continue;
-    const url = httpsUrl(payload?.url);
-    if (!url) continue;
-    const ordinal = attachments.length;
+    if (attachment?.type === "image") {
+      const url = httpsUrl(payload?.url);
+      attachments.push(Object.freeze(url ? {
+        externalAttachmentKey: `${messageId}:${ordinal}`,
+        ordinal,
+        kind: "image" as const,
+        sourceRef: Object.freeze({ kind: "facebook_remote" as const, url }),
+        mimeTypeHint: null,
+        failureCode: null,
+      } : {
+        externalAttachmentKey: `${messageId}:${ordinal}`,
+        ordinal,
+        kind: "unsupported" as const,
+        sourceRef: null,
+        mimeTypeHint: null,
+        failureCode: "invalid_image_source" as const,
+      }));
+      continue;
+    }
     attachments.push(Object.freeze({
       externalAttachmentKey: `${messageId}:${ordinal}`,
       ordinal,
-      kind: "image" as const,
-      sourceRef: Object.freeze({ kind: "facebook_remote" as const, url }),
+      kind: "unsupported" as const,
+      sourceRef: null,
       mimeTypeHint: null,
+      failureCode: attachment ? "unsupported_attachment" as const : "malformed_attachment" as const,
     }));
   }
   return Object.freeze(attachments);
@@ -61,7 +78,7 @@ export function createFacebookChannelAdapter(): ChannelAdapter<unknown> {
           const senderId = typeof sender?.id === "string" ? sender.id.trim() : "";
           const messageId = typeof message?.mid === "string" ? message.mid.trim() : "";
           const textValue = typeof message?.text === "string" ? message.text.trim() : "";
-          const attachments = message ? imageAttachments(message, messageId) : [];
+          const attachments = message ? normalizedAttachments(message, messageId) : [];
           if (!senderId || !messageId || message?.is_echo === true || (!textValue && !attachments.length)) continue;
           const timestamp = typeof event?.timestamp === "number"
             ? event.timestamp

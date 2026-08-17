@@ -64,13 +64,167 @@ export class CustomerServiceEngine {
     this.budget = input.budget;
   }
 
+  async checkImageJobPolicy(messageId: string): Promise<
+    Readonly<{ status: "allowed" }> | Readonly<{ status: "blocked"; code: string }>
+  > {
+    const draftInput = await this.repository.loadDraftInput(messageId, 6);
+    if (!draftInput) throw new Error("customer_service_message_not_found");
+    if (draftInput.current.text === null) {
+      await this.repository.createGateBlockedAttempt({
+        messageId,
+        trigger: "webhook_after",
+        intent: "image_only",
+        riskLevel: "high",
+        gateResult: "unresolved",
+        gateReasons: ["image_only_without_text"],
+        knowledgeVersion: this.knowledge.knowledgeVersion,
+      });
+      return { status: "blocked", code: "image_only_without_text" };
+    }
+    const gate = this.policyGate({ message: draftInput.current.text, knowledge: this.knowledge });
+    if (gate.providerAllowed) return { status: "allowed" };
+    const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
+      ? "realtime_required"
+      : gate.reason === "high_risk_topic" ? "high_risk" : "unresolved";
+    await this.repository.createGateBlockedAttempt({
+      messageId,
+      trigger: "webhook_after",
+      intent: gate.intent,
+      riskLevel: "high",
+      gateResult,
+      gateReasons: [gate.reason],
+      knowledgeVersion: this.knowledge.knowledgeVersion,
+    });
+    return { status: "blocked", code: gate.reason };
+  }
+
+  async generateImageAwareDraft(input: Readonly<{
+    messageId: string;
+    imageJobId: string;
+    leaseToken: string;
+    visualAssessment: string;
+  }>): Promise<DraftGenerationResult> {
+    const draftInput = await this.repository.loadDraftInput(input.messageId, 6);
+    if (!draftInput) throw new Error("customer_service_message_not_found");
+    if (draftInput.current.text === null) {
+      const attemptId = await this.repository.createGateBlockedAttempt({
+        messageId: input.messageId,
+        trigger: "webhook_after",
+        intent: "image_only",
+        riskLevel: "high",
+        gateResult: "unresolved",
+        gateReasons: ["image_only_without_text"],
+        knowledgeVersion: this.knowledge.knowledgeVersion,
+      });
+      return { status: "image_review_required", attemptId };
+    }
+    const gate = this.policyGate({ message: draftInput.current.text, knowledge: this.knowledge });
+    if (!gate.providerAllowed) {
+      const attemptId = await this.repository.createGateBlockedAttempt({
+        messageId: input.messageId,
+        trigger: "webhook_after",
+        intent: gate.intent,
+        riskLevel: "high",
+        gateResult: gate.decision === "REALTIME_DATA_REQUIRED"
+          ? "realtime_required"
+          : gate.reason === "high_risk_topic" ? "high_risk" : "unresolved",
+        gateReasons: [gate.reason],
+        knowledgeVersion: this.knowledge.knowledgeVersion,
+      });
+      return {
+        status: gate.decision === "REALTIME_DATA_REQUIRED" ? "realtime_required" : "gate_blocked",
+        attemptId,
+      };
+    }
+    const sources = retrieveKnowledge({ gate, knowledge: this.knowledge });
+    const reservation = await this.repository.createImageJobProviderAttempt({
+      jobId: input.imageJobId,
+      leaseToken: input.leaseToken,
+      messageId: input.messageId,
+      trigger: "webhook_after",
+      intent: gate.intent,
+      riskLevel: gate.riskLevel,
+      gateReasons: [gate.reason],
+      knowledgeSources: sources.rules.map((rule) => rule.id),
+      knowledgeVersion: this.knowledge.knowledgeVersion,
+    });
+    if (reservation.status === "ambiguous") {
+      return { status: "provider_error", attemptId: reservation.attemptId };
+    }
+    const prompt = buildDraftPrompt({
+      intent: gate.intent,
+      context: draftInput.context,
+      rules: sources.rules,
+      examples: sources.examples,
+      goldenExamples: sources.goldenExamples,
+      qualityGuide: sources.qualityGuide,
+      toneGuide: this.knowledge.toneGuide,
+      visualAssessment: input.visualAssessment,
+    });
+    const dailyScopeKey = localDateScopeKey();
+    try {
+      const generated = await this.provider.generate(prompt);
+      const textValidation = this.outputValidator(generated.text, { intent: gate.intent });
+      const imageValidation = validateImageDraft(generated.text);
+      const validation = {
+        ok: textValidation.ok && imageValidation.ok,
+        codes: [...textValidation.codes, ...imageValidation.codes],
+      };
+      await this.repository.completeProviderAttempt({
+        attemptId: reservation.attemptId,
+        status: validation.ok ? "draft_ready" : "output_blocked",
+        provider: generated.provider,
+        model: generated.model,
+        ...(validation.ok ? { draftText: generated.text } : {
+          rejectedOutputHash: createHash("sha256").update(generated.text).digest("hex"),
+        }),
+        validatorCodes: validation.codes,
+        inputTokens: generated.usage.inputTokens,
+        cachedInputTokens: generated.usage.cachedInputTokens,
+        outputTokens: generated.usage.outputTokens,
+        estimatedCostMicrousd: generated.estimatedCostMicrousd,
+        latencyMs: generated.latencyMs,
+        dailyScopeKey,
+      });
+      return { status: validation.ok ? "draft_ready" : "output_blocked", attemptId: reservation.attemptId };
+    } catch {
+      await this.repository.completeProviderAttempt({
+        attemptId: reservation.attemptId,
+        status: "provider_error",
+        provider: this.provider.providerKind,
+        model: this.provider.model,
+        validatorCodes: [],
+        inputTokens: 0,
+        cachedInputTokens: 0,
+        outputTokens: 0,
+        estimatedCostMicrousd: 0,
+        latencyMs: 0,
+        providerErrorCode: "provider_request_failed",
+        dailyScopeKey,
+      });
+      return { status: "provider_error", attemptId: reservation.attemptId };
+    }
+  }
+
   async generateDraft(
     request: DraftGenerationRequest,
     attachmentSourceContext?: readonly NormalizedAttachment[],
   ): Promise<DraftGenerationResult> {
     const draftInput = await this.repository.loadDraftInput(request.messageId, 6);
     if (!draftInput) throw new Error("customer_service_message_not_found");
-    const gate = this.policyGate({ message: draftInput.current.body, knowledge: this.knowledge });
+    if (draftInput.current.text === null) {
+      const attemptId = await this.repository.createGateBlockedAttempt({
+        messageId: request.messageId,
+        trigger: request.trigger,
+        intent: "image_only",
+        riskLevel: "high",
+        gateResult: "unresolved",
+        gateReasons: ["image_only_without_text"],
+        knowledgeVersion: this.knowledge.knowledgeVersion,
+      });
+      return { status: "image_review_required", attemptId };
+    }
+    const gate = this.policyGate({ message: draftInput.current.text, knowledge: this.knowledge });
     if (!gate.providerAllowed) {
       const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
         ? "realtime_required"
@@ -95,6 +249,18 @@ export class CustomerServiceEngine {
     let visualAssessment: string | undefined;
     const imageContext = await this.repository.selectImageContext(request.messageId);
     if (imageContext) {
+      if (imageContext.hasUnsupportedAttachments) {
+        const attemptId = await this.repository.createGateBlockedAttempt({
+          messageId: request.messageId,
+          trigger: request.trigger,
+          intent: gate.intent,
+          riskLevel: "high",
+          gateResult: "unresolved",
+          gateReasons: ["unsupported_attachment"],
+          knowledgeVersion: this.knowledge.knowledgeVersion,
+        });
+        return { status: "image_review_required", attemptId };
+      }
       if (request.trigger === "manual_regenerate" && imageContext.analysisSummary) {
         visualAssessment = imageContext.analysisSummary;
       } else if (!this.attachmentProcessor) {

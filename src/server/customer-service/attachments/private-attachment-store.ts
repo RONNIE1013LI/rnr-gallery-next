@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { del as deleteBlob, get as getBlob, put as putBlob } from "@vercel/blob";
 import type { ResolvedAttachment } from "./image-validation";
+import { IMAGE_LIMITS } from "./limits";
 
 type BlobClient = Readonly<{
   put: typeof putBlob;
@@ -9,9 +10,10 @@ type BlobClient = Readonly<{
 }>;
 
 export type PrivateAttachmentStore = Readonly<{
-  save(attachment: ResolvedAttachment): Promise<{ storageKey: string }>;
-  read(storageKey: string): Promise<Buffer>;
-  remove(storageKey: string): Promise<void>;
+  allocateKey(): string;
+  save(storageKey: string, attachment: ResolvedAttachment, signal?: AbortSignal): Promise<void>;
+  read(storageKey: string, signal?: AbortSignal): Promise<Buffer>;
+  remove(storageKey: string, signal?: AbortSignal): Promise<void>;
 }>;
 
 const defaultClient: BlobClient = {
@@ -37,21 +39,26 @@ export function createPrivateAttachmentStore(
   if (!blobToken) throw new Error("BLOB_READ_WRITE_TOKEN is required");
 
   return Object.freeze({
-    async save(attachment: ResolvedAttachment) {
+    allocateKey() {
       const storageKey = `customer-service-attachments/${createId()}.bin`;
+      assertStorageKey(storageKey);
+      return storageKey;
+    },
+    async save(storageKey: string, attachment: ResolvedAttachment, signal = AbortSignal.timeout(IMAGE_LIMITS.storageOperationTimeoutMs)) {
       assertStorageKey(storageKey);
       await client.put(storageKey, attachment.bytes, {
         access: "private",
         addRandomSuffix: false,
+        abortSignal: signal,
         contentType: attachment.mimeType,
         token: blobToken,
       });
-      return Object.freeze({ storageKey });
     },
-    async read(storageKey: string) {
+    async read(storageKey: string, signal = AbortSignal.timeout(IMAGE_LIMITS.storageOperationTimeoutMs)) {
       assertStorageKey(storageKey);
       const result = await client.get(storageKey, {
         access: "private",
+        abortSignal: signal,
         token: blobToken,
       });
       if (!result || result.statusCode !== 200) {
@@ -59,9 +66,9 @@ export function createPrivateAttachmentStore(
       }
       return Buffer.from(await new Response(result.stream).arrayBuffer());
     },
-    async remove(storageKey: string) {
+    async remove(storageKey: string, signal = AbortSignal.timeout(IMAGE_LIMITS.storageOperationTimeoutMs)) {
       assertStorageKey(storageKey);
-      await client.del(storageKey, { token: blobToken });
+      await client.del(storageKey, { abortSignal: signal, token: blobToken });
     },
   });
 }

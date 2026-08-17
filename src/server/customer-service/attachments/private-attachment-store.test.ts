@@ -39,28 +39,32 @@ describe("createPrivateAttachmentStore", () => {
       () => "11111111-1111-4111-8111-111111111111",
     );
 
-    const saved = await store.save(attachment);
+    const storageKey = store.allocateKey();
+    const signal = new AbortController().signal;
+    expect(put).not.toHaveBeenCalled();
+    await store.save(storageKey, attachment, signal);
 
-    expect(saved).toEqual({
-      storageKey: "customer-service-attachments/11111111-1111-4111-8111-111111111111.bin",
-    });
+    expect(storageKey).toBe("customer-service-attachments/11111111-1111-4111-8111-111111111111.bin");
     expect(put).toHaveBeenCalledWith(
       "customer-service-attachments/11111111-1111-4111-8111-111111111111.bin",
       attachment.bytes,
       {
         access: "private",
         addRandomSuffix: false,
+        abortSignal: signal,
         contentType: "image/jpeg",
         token: "vercel_blob_rw_test",
       },
     );
-    await expect(store.read(saved.storageKey)).resolves.toEqual(attachment.bytes);
-    await store.remove(saved.storageKey);
-    expect(get).toHaveBeenCalledWith(saved.storageKey, {
+    await expect(store.read(storageKey, signal)).resolves.toEqual(attachment.bytes);
+    await store.remove(storageKey, signal);
+    expect(get).toHaveBeenCalledWith(storageKey, {
       access: "private",
+      abortSignal: signal,
       token: "vercel_blob_rw_test",
     });
-    expect(del).toHaveBeenCalledWith(saved.storageKey, {
+    expect(del).toHaveBeenCalledWith(storageKey, {
+      abortSignal: signal,
       token: "vercel_blob_rw_test",
     });
   });
@@ -77,6 +81,7 @@ describe("createPrivateAttachmentStore", () => {
     });
 
     await expect(store.read(storageKey)).rejects.toThrow("Invalid customer service attachment key");
+    await expect(store.save(storageKey, attachment)).rejects.toThrow("Invalid customer service attachment key");
     await expect(store.remove(storageKey)).rejects.toThrow("Invalid customer service attachment key");
   });
 });

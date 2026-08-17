@@ -22,6 +22,10 @@ describe("image draft validator", () => {
     ["This photo is definitely suitable for print.", "visual_print_suitability_claim"],
     ["This image will absolutely be perfect for printing.", "visual_print_suitability_claim"],
     ["We are able to fully restore this photo.", "visual_restoration_claim"],
+    ["We'll restore this photo.", "visual_restoration_claim"],
+    ["We can make this photo print-ready.", "visual_print_suitability_claim"],
+    ["This photo will print beautifully.", "visual_print_suitability_claim"],
+    ["We'll make it suitable for printing.", "visual_print_suitability_claim"],
   ])("blocks unsupported visual claim: %s", (draft, code) => {
     expect(validateImageDraft(draft)).toEqual({ ok: false, codes: [code] });
   });

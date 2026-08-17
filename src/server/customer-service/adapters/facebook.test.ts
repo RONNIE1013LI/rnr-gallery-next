@@ -68,7 +68,7 @@ describe("Facebook channel adapter", () => {
     });
   });
 
-  it("ignores non-image and malformed attachments while preserving text", () => {
+  it("preserves safe unsupported and malformed metadata without retaining source URLs", () => {
     const result = adapter.normalize(payload({
       mid: "mid-invalid",
       text: "Here is the detail",
@@ -83,8 +83,35 @@ describe("Facebook channel adapter", () => {
 
     expect(result).toMatchObject([{
       text: "Here is the detail",
-      attachments: [],
+      attachments: [
+        { ordinal: 0, kind: "unsupported", failureCode: "unsupported_attachment", sourceRef: null },
+        { ordinal: 1, kind: "unsupported", failureCode: "invalid_image_source", sourceRef: null },
+        { ordinal: 2, kind: "unsupported", failureCode: "invalid_image_source", sourceRef: null },
+        { ordinal: 3, kind: "unsupported", failureCode: "invalid_image_source", sourceRef: null },
+        { ordinal: 4, kind: "unsupported", failureCode: "malformed_attachment", sourceRef: null },
+      ],
     }]);
+    expect(JSON.stringify(result)).not.toContain("file.pdf");
+    expect(JSON.stringify(result)).not.toContain("not-https.jpg");
+  });
+
+  it("persists a file-only event for human review", () => {
+    const result = adapter.normalize(payload({
+      mid: "mid-file-only",
+      attachments: [{ type: "file", payload: { url: "https://scontent.test/private.pdf" } }],
+    }));
+
+    expect(result).toMatchObject([{
+      text: null,
+      attachments: [{
+        externalAttachmentKey: "mid-file-only:0",
+        ordinal: 0,
+        kind: "unsupported",
+        failureCode: "unsupported_attachment",
+        sourceRef: null,
+      }],
+    }]);
+    expect(JSON.stringify(result)).not.toContain("private.pdf");
   });
 
   it("keeps at most five valid image attachments", () => {
@@ -115,7 +142,7 @@ describe("Facebook channel adapter", () => {
     expect(adapter.normalize(payload({
       mid: "mid-2",
       attachments: [{ type: "image", payload: { url: "not-a-url" } }],
-    }))).toEqual([]);
+    }))).toMatchObject([{ text: null, attachments: [{ kind: "unsupported" }] }]);
   });
 
   it("normalizes all valid messages in a batch", () => {

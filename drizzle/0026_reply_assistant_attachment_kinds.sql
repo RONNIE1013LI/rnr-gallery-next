@@ -1,0 +1,2 @@
+ALTER TABLE "customer_service_attachments" ADD COLUMN "normalized_kind" text DEFAULT 'image' NOT NULL;--> statement-breakpoint
+ALTER TABLE "customer_service_attachments" ADD CONSTRAINT "customer_service_attachments_normalized_kind_valid" CHECK ("customer_service_attachments"."normalized_kind" in ('image', 'unsupported'));

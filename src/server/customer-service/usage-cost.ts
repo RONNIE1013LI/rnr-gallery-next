@@ -12,9 +12,18 @@ const MODEL_PRICING: Readonly<Record<string, ModelPricing>> = {
   },
 };
 
+// Intentionally empty until a vision-capable model and its pricing are approved together.
+const REVIEWED_IMAGE_MODEL_PRICING: Readonly<Record<string, ModelPricing>> = Object.freeze({});
+
 export function pricingForModel(model: string): ModelPricing {
   const pricing = MODEL_PRICING[model];
   if (!pricing) throw new Error(`pricing_not_configured:${model}`);
+  return pricing;
+}
+
+export function pricingForReviewedImageModel(model: string): ModelPricing {
+  const pricing = REVIEWED_IMAGE_MODEL_PRICING[model];
+  if (!pricing) throw new Error("image_analysis_model_not_approved");
   return pricing;
 }
 

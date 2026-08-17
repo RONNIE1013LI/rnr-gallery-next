@@ -70,12 +70,42 @@ describe("customer service server config", () => {
     })).toThrow("META_ATTACHMENT_ALLOWED_HOSTS is required");
   });
 
+  it("requires server-only source encryption and recovery runner secrets", () => {
+    const base = {
+      REPLY_ASSISTANT_IMAGE_ANALYSIS_ENABLED: "true",
+      OPENAI_IMAGE_ANALYSIS_MODEL: "test-image-model",
+      BLOB_READ_WRITE_TOKEN: "blob-token",
+      META_ATTACHMENT_ALLOWED_HOSTS: "cdn.facebook.com",
+    };
+    expect(() => parseCustomerServiceConfig(base))
+      .toThrow("CUSTOMER_SERVICE_ATTACHMENT_SOURCE_ENCRYPTION_KEY is required");
+    expect(() => parseCustomerServiceConfig({
+      ...base,
+      CUSTOMER_SERVICE_ATTACHMENT_SOURCE_ENCRYPTION_KEY: "source-encryption-secret-at-least-32-bytes",
+    })).toThrow("REPLY_ASSISTANT_JOB_RUNNER_SECRET is required");
+  });
+
+  it("rejects an unreviewed OpenAI image model before runtime dependencies are built", () => {
+    expect(() => parseCustomerServiceConfig({
+      AI_PROVIDER: "openai",
+      OPENAI_API_KEY: "test-key",
+      REPLY_ASSISTANT_IMAGE_ANALYSIS_ENABLED: "true",
+      OPENAI_IMAGE_ANALYSIS_MODEL: "unapproved-image-model",
+      BLOB_READ_WRITE_TOKEN: "blob-token",
+      META_ATTACHMENT_ALLOWED_HOSTS: "cdn.facebook.com",
+      CUSTOMER_SERVICE_ATTACHMENT_SOURCE_ENCRYPTION_KEY: "source-encryption-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_JOB_RUNNER_SECRET: "job-runner-secret-at-least-32-bytes",
+    })).toThrow("image_analysis_model_not_approved");
+  });
+
   it("normalizes allowed attachment hosts", () => {
     const parsed = parseCustomerServiceConfig({
       REPLY_ASSISTANT_IMAGE_ANALYSIS_ENABLED: "true",
       OPENAI_IMAGE_ANALYSIS_MODEL: "gpt-vision",
       BLOB_READ_WRITE_TOKEN: "blob-token",
       META_ATTACHMENT_ALLOWED_HOSTS: " CDN.FACEBOOK.COM, fbcdn.net ",
+      CUSTOMER_SERVICE_ATTACHMENT_SOURCE_ENCRYPTION_KEY: "source-encryption-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_JOB_RUNNER_SECRET: "job-runner-secret-at-least-32-bytes",
     });
     expect(parsed.metaAttachmentAllowedHosts).toEqual(["cdn.facebook.com", "fbcdn.net"]);
   });

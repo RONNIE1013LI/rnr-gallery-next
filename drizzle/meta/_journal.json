@@ -176,6 +176,20 @@
       "when": 1786934651765,
       "tag": "0024_shocking_silver_surfer",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1786951562158,
+      "tag": "0025_reply_assistant_image_jobs",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1786952844049,
+      "tag": "0026_reply_assistant_attachment_kinds",
+      "breakpoints": true
     }
   ]
 }

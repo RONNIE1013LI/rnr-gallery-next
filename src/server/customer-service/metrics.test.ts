@@ -24,6 +24,15 @@ describe("reply assistant pilot metrics", () => {
       imageFailures: 1,
       imageCleanupDeleted: 2,
       imageCleanupFailures: 1,
+      imageContexts: 5,
+      imageAnalysesSucceeded: 3,
+      imageAnalysesBlocked: 2,
+      imageAwareDraftsGenerated: 2,
+      imageAwareAcceptedUnchanged: 1,
+      imageAwareEditedAccepted: 1,
+      imageAwareRejected: 0,
+      imageRequestOriginalRecommendations: 2,
+      imageAwareTotalCostMicrousd: 900,
     })).toMatchObject({
       directAcceptanceRate: 0.4,
       assistedAcceptanceRate: 0.7,
@@ -35,6 +44,12 @@ describe("reply assistant pilot metrics", () => {
       averageImageCostPerCallMicrousd: 200,
       averageImageLatencyMs: 400,
       combinedCostMicrousd: 3_000,
+      imageAnalysisSuccessRate: 0.6,
+      imageRequestOriginalRate: 2 / 3,
+      averageImageAwareCostPerDraftMicrousd: 450,
+      imageAwareDirectAcceptanceRate: 0.5,
+      imageAwareEditRate: 0.5,
+      imageAwareRejectionRate: 0,
     });
   });
 
@@ -46,6 +61,10 @@ describe("reply assistant pilot metrics", () => {
       imageProviderCalls: 0, imageInputTokens: 0, imageCachedInputTokens: 0,
       imageOutputTokens: 0, imageTotalCostMicrousd: 0, imageTotalLatencyMs: 0,
       imageFailures: 0, imageCleanupDeleted: 0, imageCleanupFailures: 0,
+      imageContexts: 0, imageAnalysesSucceeded: 0, imageAnalysesBlocked: 0,
+      imageAwareDraftsGenerated: 0, imageAwareAcceptedUnchanged: 0,
+      imageAwareEditedAccepted: 0, imageAwareRejected: 0,
+      imageRequestOriginalRecommendations: 0, imageAwareTotalCostMicrousd: 0,
     })).toMatchObject({
       directAcceptanceRate: 0,
       policyViolationRate: 0,
@@ -53,6 +72,12 @@ describe("reply assistant pilot metrics", () => {
       averageImageCostPerCallMicrousd: 0,
       averageImageLatencyMs: 0,
       combinedCostMicrousd: 0,
+      imageAnalysisSuccessRate: 0,
+      imageRequestOriginalRate: 0,
+      averageImageAwareCostPerDraftMicrousd: 0,
+      imageAwareDirectAcceptanceRate: 0,
+      imageAwareEditRate: 0,
+      imageAwareRejectionRate: 0,
     });
   });
 });

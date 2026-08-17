@@ -4,7 +4,7 @@ import {
   parseImageAnalysisResult,
   renderImageAnalysisSafeSummary,
 } from "../image-analysis-schema";
-import { estimateCostMicrousd } from "../usage-cost";
+import { estimateCostMicrousd, pricingForReviewedImageModel } from "../usage-cost";
 import type { ModelPricing } from "../usage-cost";
 import type {
   ImageAnalysisProvider,
@@ -63,7 +63,7 @@ export class OpenAIImageAnalysisProvider implements ImageAnalysisProvider {
   private readonly apiKey: string;
   private readonly fetchImpl: FetchImplementation;
   private readonly now: () => number;
-  private readonly pricing?: ModelPricing;
+  private readonly pricing: ModelPricing;
 
   constructor({
     apiKey,
@@ -82,7 +82,7 @@ export class OpenAIImageAnalysisProvider implements ImageAnalysisProvider {
     this.model = model;
     this.fetchImpl = fetchImpl;
     this.now = now;
-    this.pricing = pricing;
+    this.pricing = pricing ?? pricingForReviewedImageModel(model);
   }
 
   async analyze(request: ImageAnalysisProviderRequest): Promise<ImageAnalysisProviderResult> {

@@ -5,9 +5,10 @@ import { CustomerServiceEngine } from "./engine";
 import { MockAiProvider } from "./providers/mock-provider";
 import { OpenAIResponsesProvider } from "./providers/openai-responses";
 import { createDrizzleCustomerServiceRepository } from "./repositories/drizzle-customer-service-repository";
-import { createAttachmentProcessor } from "./attachments/attachment-processor";
 import { createFacebookSourceReader } from "./attachments/facebook-source-reader";
 import { createPrivateAttachmentStore } from "./attachments/private-attachment-store";
+import { createAttachmentSourceProtector } from "./attachments/attachment-source-protector";
+import { createImageJobRunner } from "./image-job-runner";
 import { MockImageAnalysisProvider } from "./providers/mock-image-analysis";
 import { OpenAIImageAnalysisProvider } from "./providers/openai-image-analysis";
 
@@ -17,27 +18,9 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
   const provider = config.provider === "openai"
     ? new OpenAIResponsesProvider({ apiKey: config.openaiApiKey, model: config.openaiModel })
     : new MockAiProvider();
-  const imageProvider = config.provider === "openai"
-    ? new OpenAIImageAnalysisProvider({ apiKey: config.openaiApiKey, model: config.imageAnalysisModel })
-    : new MockImageAnalysisProvider();
-  const attachmentProcessor = config.imageAnalysisEnabled
-    ? createAttachmentProcessor({
-      repository,
-      sourceReader: createFacebookSourceReader({ allowedHosts: config.metaAttachmentAllowedHosts }),
-      attachmentStore: createPrivateAttachmentStore(config.blobReadWriteToken),
-      imageProvider,
-      sourceIdentitySecret: config.idHashSecret,
-      budget: {
-        reservationMicrousd: 1_000,
-        dailyHardStopMicrousd: config.dailyHardStopMicrousd,
-        totalHardStopMicrousd: config.totalHardStopMicrousd,
-      },
-    })
-    : undefined;
   const engine = new CustomerServiceEngine({
     repository,
     provider,
-    attachmentProcessor,
     knowledge: compiledKnowledge,
     budget: {
       reservationMicrousd: 1_000,
@@ -45,5 +28,24 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
       totalHardStopMicrousd: config.totalHardStopMicrousd,
     },
   });
-  return Object.freeze({ config, repository, engine });
+  const imageJobRunner = config.imageAnalysisEnabled
+    ? createImageJobRunner({
+      repository,
+      policyCheck: (messageId) => engine.checkImageJobPolicy(messageId),
+      sourceProtector: createAttachmentSourceProtector(config.attachmentSourceEncryptionKey),
+      sourceReader: createFacebookSourceReader({ allowedHosts: config.metaAttachmentAllowedHosts }),
+      store: createPrivateAttachmentStore(config.blobReadWriteToken),
+      imageProvider: config.provider === "openai"
+        ? new OpenAIImageAnalysisProvider({ apiKey: config.openaiApiKey, model: config.imageAnalysisModel })
+        : new MockImageAnalysisProvider(),
+      generateDraft: (request) => engine.generateImageAwareDraft(request),
+      budget: {
+        imageReservationMicrousd: 1_000,
+        textReservationMicrousd: 1_000,
+        dailyHardStopMicrousd: config.dailyHardStopMicrousd,
+        totalHardStopMicrousd: config.totalHardStopMicrousd,
+      },
+    })
+    : undefined;
+  return Object.freeze({ config, repository, engine, imageJobRunner });
 }

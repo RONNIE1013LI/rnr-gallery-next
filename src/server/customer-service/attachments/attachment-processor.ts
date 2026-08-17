@@ -132,6 +132,13 @@ export function createAttachmentProcessor(input: Readonly<{
         let totalBytes = 0;
         for (let index = 0; index < request.sources.length; index += 1) {
           const source = request.sources[index];
+          if (source.kind !== "image") {
+            throw new ProcessingFailure({
+              code: "image_input_rejected",
+              status: "input_rejected",
+              providerCalled: false,
+            });
+          }
           let resolved: ResolvedAttachment;
           try {
             resolved = await input.sourceReader.read(
@@ -155,11 +162,12 @@ export function createAttachmentProcessor(input: Readonly<{
           }
 
           try {
-            const saved = await input.attachmentStore.save(resolved);
+            const storageKey = input.attachmentStore.allocateKey();
+            await input.attachmentStore.save(storageKey, resolved);
             const item = {
               attachmentId: request.attachmentIds[index],
               ordinal: source.ordinal,
-              storageKey: saved.storageKey,
+              storageKey,
               deleteDueAt: new Date(now().getTime() + IMAGE_LIMITS.retentionMs),
               resolved,
             };
@@ -172,7 +180,7 @@ export function createAttachmentProcessor(input: Readonly<{
               height: resolved.height,
               byteSize: resolved.bytes.byteLength,
               sha256: resolved.sha256,
-              privateStorageKey: saved.storageKey,
+              privateStorageKey: storageKey,
               deleteDueAt: item.deleteDueAt,
             });
           } catch {

@@ -13,6 +13,7 @@ import {
   customerServiceFeedbackEvents,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
+  customerServiceImageJobs,
   customerServiceMessages,
   customerServicePilotRuns,
 } from "./index";
@@ -27,6 +28,7 @@ const tables = [
   customerServiceAttachments,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
+  customerServiceImageJobs,
 ];
 
 describe("customer service schema contract", () => {
@@ -44,7 +46,7 @@ describe("customer service schema contract", () => {
     expect(migration).toContain("RAISE EXCEPTION");
   });
 
-  it("defines the nine additive reply assistant tables", () => {
+  it("defines the ten additive reply assistant tables", () => {
     expect(tables.map(getTableName)).toEqual([
       "customer_service_pilot_runs",
       "customer_service_conversations",
@@ -55,6 +57,7 @@ describe("customer service schema contract", () => {
       "customer_service_attachments",
       "customer_service_image_analysis_attempts",
       "customer_service_image_analysis_inputs",
+      "customer_service_image_jobs",
     ]);
   });
 
@@ -63,6 +66,7 @@ describe("customer service schema contract", () => {
 
     expect(attachmentColumns).toEqual(expect.objectContaining({
       externalAttachmentKeyHash: expect.anything(),
+      normalizedKind: expect.anything(),
       mimeTypeHint: expect.anything(),
       verifiedMimeType: expect.anything(),
       privateStorageKey: expect.anything(),
@@ -103,9 +107,42 @@ describe("customer service schema contract", () => {
       privateStorageKeyHash: expect.anything(),
       deleteDueAt: expect.anything(),
       deletedAt: expect.anything(),
+      cleanupClaimToken: expect.anything(),
+      cleanupClaimedAt: expect.anything(),
     }));
     expect(inputColumns.externalAttachmentKeyHash.notNull).toBe(true);
     expect(inputColumns.cleanupStatus.notNull).toBe(true);
+  });
+
+  it("persists durable staged jobs without a raw source column", () => {
+    const columns = getTableColumns(customerServiceImageJobs);
+
+    expect(columns).toEqual(expect.objectContaining({
+      messageId: expect.anything(),
+      stage: expect.anything(),
+      status: expect.anything(),
+      sourceCiphertext: expect.anything(),
+      sourceExpiresAt: expect.anything(),
+      leaseToken: expect.anything(),
+      leaseExpiresAt: expect.anything(),
+      reservedCostMicrousd: expect.anything(),
+      budgetSettledAt: expect.anything(),
+    }));
+    expect(Object.keys(columns)).not.toEqual(expect.arrayContaining([
+      "sourceUrl",
+      "sourceRef",
+      "rawBytes",
+      "senderId",
+    ]));
+  });
+
+  it("adds only forward migration statements and safely backfills legacy customer text", () => {
+    const migration = readFileSync(resolve(process.cwd(), "drizzle/0025_reply_assistant_image_jobs.sql"), "utf8");
+
+    expect(migration).toContain("CREATE TABLE \"customer_service_image_jobs\"");
+    expect(migration).toContain("UPDATE \"customer_service_messages\"");
+    expect(migration).toContain("\"body\" <> '[Image attachment]'");
+    expect(migration).not.toMatch(/DROP\s+(?:TABLE|COLUMN|CONSTRAINT)|TRUNCATE|DELETE\s+FROM/i);
   });
 
   it("keys image analysis inputs to the same conversation as their parents", () => {

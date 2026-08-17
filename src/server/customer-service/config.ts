@@ -1,3 +1,5 @@
+import { pricingForReviewedImageModel } from "./usage-cost";
+
 export type CustomerServiceConfig = Readonly<{
   enabled: boolean;
   pilotLimit: number;
@@ -16,6 +18,8 @@ export type CustomerServiceConfig = Readonly<{
   imageAnalysisModel: string;
   metaAttachmentAllowedHosts: readonly string[];
   blobReadWriteToken: string;
+  attachmentSourceEncryptionKey: string;
+  imageJobRunnerSecret: string;
 }>;
 
 function boolean(value: string | undefined) {
@@ -37,6 +41,12 @@ function usdMicrousd(value: string | undefined, fallback: number, name: string) 
 function required(env: NodeJS.ProcessEnv | Record<string, string | undefined>, name: string) {
   const value = env[name]?.trim();
   if (!value) throw new Error(`${name} is required`);
+  return value;
+}
+
+function requiredSecret(env: NodeJS.ProcessEnv | Record<string, string | undefined>, name: string) {
+  const value = required(env, name);
+  if (value.length < 32) throw new Error(`${name} must be at least 32 characters`);
   return value;
 }
 
@@ -67,6 +77,13 @@ export function parseCustomerServiceConfig(
   if (imageAnalysisEnabled && metaAttachmentAllowedHosts.length === 0) {
     throw new Error("META_ATTACHMENT_ALLOWED_HOSTS is required");
   }
+  const attachmentSourceEncryptionKey = imageAnalysisEnabled
+    ? requiredSecret(env, "CUSTOMER_SERVICE_ATTACHMENT_SOURCE_ENCRYPTION_KEY")
+    : "";
+  const imageJobRunnerSecret = imageAnalysisEnabled
+    ? requiredSecret(env, "REPLY_ASSISTANT_JOB_RUNNER_SECRET")
+    : "";
+  if (imageAnalysisEnabled && provider === "openai") pricingForReviewedImageModel(imageAnalysisModel);
   return Object.freeze({
     enabled,
     pilotLimit: positiveInteger(env.REPLY_ASSISTANT_PILOT_LIMIT, 100, "REPLY_ASSISTANT_PILOT_LIMIT"),
@@ -85,6 +102,8 @@ export function parseCustomerServiceConfig(
     imageAnalysisModel,
     metaAttachmentAllowedHosts,
     blobReadWriteToken,
+    attachmentSourceEncryptionKey,
+    imageJobRunnerSecret,
   });
 }
 

@@ -86,13 +86,14 @@ describe("reply assistant security regression", () => {
     });
     const repository = {
       loadDraftInput: vi.fn(async () => ({
-        current: { id: "message-1", body: "Can you use my blurry original photo?", channel: "facebook" as const },
+        current: { id: "message-1", text: "Can you use my blurry original photo?", channel: "facebook" as const },
         context: ["Can you use my blurry original photo?"],
       })),
       selectImageContext: vi.fn(async () => ({
         messageId: "message-1",
         attachmentIds: ["attachment-1"],
         analysisSummary: null,
+        hasUnsupportedAttachments: false,
       })),
       createGateBlockedAttempt: vi.fn(async () => "attempt-blocked"),
     };
@@ -145,5 +146,24 @@ describe("reply assistant security regression", () => {
     expect(imageProcess).not.toHaveBeenCalled();
     expect(imageAnalyze).not.toHaveBeenCalled();
     expect(textGenerate).not.toHaveBeenCalled();
+  });
+
+  it("fails exact OpenAI runtime construction before network access for an unreviewed image model", async () => {
+    vi.resetModules();
+    const fetchSpy = vi.spyOn(globalThis, "fetch");
+    const { createCustomerServiceRuntime } = await import("./runtime");
+
+    expect(() => createCustomerServiceRuntime({
+      NODE_ENV: "test",
+      AI_PROVIDER: "openai",
+      OPENAI_API_KEY: "test-only-key",
+      REPLY_ASSISTANT_IMAGE_ANALYSIS_ENABLED: "true",
+      OPENAI_IMAGE_ANALYSIS_MODEL: "unapproved-image-model",
+      BLOB_READ_WRITE_TOKEN: "test-only-blob-token",
+      META_ATTACHMENT_ALLOWED_HOSTS: "cdn.facebook.com",
+      CUSTOMER_SERVICE_ATTACHMENT_SOURCE_ENCRYPTION_KEY: "source-encryption-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_JOB_RUNNER_SECRET: "job-runner-secret-at-least-32-bytes",
+    })).toThrow("image_analysis_model_not_approved");
+    expect(fetchSpy).not.toHaveBeenCalled();
   });
 });

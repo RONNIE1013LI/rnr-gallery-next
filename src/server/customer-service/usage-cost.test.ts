@@ -1,7 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { estimateCostMicrousd, localDateScopeKey } from "./usage-cost";
+import { estimateCostMicrousd, localDateScopeKey, pricingForReviewedImageModel } from "./usage-cost";
 
 describe("customer service usage cost", () => {
+  it("rejects image models that have no explicit reviewed pricing", () => {
+    expect(() => pricingForReviewedImageModel("unapproved-image-model"))
+      .toThrow("image_analysis_model_not_approved");
+  });
   it("charges cached and uncached input separately and rounds to micro USD", () => {
     expect(estimateCostMicrousd({
       model: "gpt-5.6-luna",

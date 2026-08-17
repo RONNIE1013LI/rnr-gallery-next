@@ -1,5 +1,31 @@
 import type { CustomerServiceChannel, DraftGenerationRequest } from "../types";
 import type { ImageAnalysisResult } from "../image-analysis-schema";
+import type { ProtectedAttachmentSource } from "../attachments/attachment-source-protector";
+
+export type ImageJobStage = "policy" | "download" | "vision" | "cleanup" | "draft";
+
+export type ClaimedImageJob = Readonly<{
+  id: string;
+  messageId: string;
+  stage: ImageJobStage;
+  leaseToken: string;
+  sourceCiphertext: string | null;
+  sourceExpiresAt: Date | null;
+  imageAnalysisAttemptId: string | null;
+  hasUnsupportedAttachments: boolean;
+  terminalAfterCleanup: boolean;
+  failureCode: string | null;
+}>;
+
+export type ImageAnalysisInputRecord = Readonly<{
+  attachmentId: string;
+  ordinal: number;
+  cleanupStatus: "pending" | "stored" | "deleted" | "failed";
+  privateStorageKey: string | null;
+  verifiedMimeType: "image/jpeg" | "image/png" | "image/webp" | null;
+  byteSize: number | null;
+  sha256: string | null;
+}>;
 
 export type HashedIncomingMessage = Readonly<{
   channel: CustomerServiceChannel;
@@ -9,14 +35,22 @@ export type HashedIncomingMessage = Readonly<{
   attachments: readonly Readonly<{
     externalAttachmentKeyHash: string;
     ordinal: number;
-    kind: "image";
+    kind: "image" | "unsupported";
     mimeTypeHint: string | null;
+    failureCode?: "unsupported_attachment" | "invalid_image_source" | "malformed_attachment" | null;
   }>[];
+  imageJob?: Readonly<{
+    id: string;
+    status: "pending" | "human_review_required";
+    sourceCiphertext: string | null;
+    sourceExpiresAt: Date | null;
+    failureCode: string | null;
+  }> | null;
   receivedAt: Date;
 }>;
 
 export type DraftInput = Readonly<{
-  current: Readonly<{ id: string; body: string; channel: CustomerServiceChannel }>;
+  current: Readonly<{ id: string; text: string | null; channel: CustomerServiceChannel }>;
   context: readonly string[];
 }>;
 
@@ -122,6 +156,15 @@ export type PilotMetricCounts = Readonly<{
   imageFailures: number;
   imageCleanupDeleted: number;
   imageCleanupFailures: number;
+  imageContexts: number;
+  imageAnalysesSucceeded: number;
+  imageAnalysesBlocked: number;
+  imageAwareDraftsGenerated: number;
+  imageAwareAcceptedUnchanged: number;
+  imageAwareEditedAccepted: number;
+  imageAwareRejected: number;
+  imageRequestOriginalRecommendations: number;
+  imageAwareTotalCostMicrousd: number;
 }>;
 
 export interface CustomerServiceRepository {
@@ -135,7 +178,70 @@ export interface CustomerServiceRepository {
     messageId: string;
     attachmentIds: readonly string[];
     analysisSummary: string | null;
+    hasUnsupportedAttachments: boolean;
   }> | null>;
+  reconcileStaleImageJobs(input: Readonly<{ now: Date; limit: number }>): Promise<Readonly<{
+    examined: number;
+    resumed: number;
+    terminal: number;
+    reservationsReleased: number;
+  }>>;
+  claimImageJob(input: Readonly<{
+    jobId?: string;
+    now: Date;
+    leaseExpiresAt: Date;
+  }>): Promise<ClaimedImageJob | null>;
+  completeImageJobStage(input: Readonly<{
+    jobId: string;
+    leaseToken: string;
+    nextStage: ImageJobStage;
+    terminalAfterCleanup?: boolean;
+    failureCode?: string | null;
+  }>): Promise<boolean>;
+  finishImageJob(input: Readonly<{
+    jobId: string;
+    leaseToken: string;
+    status: "completed" | "human_review_required";
+    failureCode: string | null;
+    textAttemptId?: string;
+  }>): Promise<boolean>;
+  ensureImageAnalysisAttemptForJob(input: Readonly<{
+    jobId: string;
+    leaseToken: string;
+    sources: readonly ProtectedAttachmentSource[];
+  }>): Promise<Readonly<{
+    attemptId: string;
+    inputs: readonly (ImageAnalysisInputRecord & Readonly<{ externalAttachmentKeyHash: string }>)[];
+  }>>;
+  prepareImageAttachmentStorage(input: Readonly<{
+    jobId: string;
+    leaseToken: string;
+    attemptId: string;
+    attachmentId: string;
+    privateStorageKey: string;
+    deleteDueAt: Date;
+  }>): Promise<void>;
+  loadImageAnalysisInputs(attemptId: string): Promise<readonly ImageAnalysisInputRecord[]>;
+  reserveImageJobBudget(input: Readonly<{
+    jobId: string;
+    leaseToken: string;
+    reservationMicrousd: number;
+    dailyScopeKey: string;
+    dailyHardStopMicrousd: number;
+    totalHardStopMicrousd: number;
+  }>): Promise<Readonly<{ status: "reserved" }> | Readonly<{ status: "budget_blocked" }>>;
+  markImageAnalysisProviderStarted(input: Readonly<{
+    jobId: string;
+    leaseToken: string;
+    attemptId: string;
+  }>): Promise<boolean>;
+  cleanupImageAttemptInputs(input: Readonly<{
+    attemptId: string;
+    now: Date;
+    limit: number;
+    remove(storageKey: string): Promise<void>;
+  }>): Promise<Readonly<{ selected: number; deleted: number; failed: number }>>;
+  loadImageJobAssessment(jobId: string): Promise<string | null>;
   createImageAnalysisAttempt(input: Readonly<{
     messageId: string;
     schemaVersion: "1";
@@ -181,6 +287,20 @@ export interface CustomerServiceRepository {
   reserveProviderAttempt(input: ProviderAttemptReservation): Promise<
     | Readonly<{ status: "reserved"; attemptId: string }>
     | Readonly<{ status: "budget_blocked"; attemptId: string }>
+  >;
+  createImageJobProviderAttempt(input: Readonly<{
+    jobId: string;
+    leaseToken: string;
+    messageId: string;
+    trigger: "webhook_after";
+    intent: string;
+    riskLevel: "low" | "medium" | "high";
+    gateReasons: readonly string[];
+    knowledgeSources: readonly string[];
+    knowledgeVersion: string;
+  }>): Promise<
+    | Readonly<{ status: "reserved"; attemptId: string }>
+    | Readonly<{ status: "ambiguous"; attemptId: string }>
   >;
   completeProviderAttempt(input: ProviderAttemptCompletion): Promise<void>;
   messageIdForAttempt(attemptId: string): Promise<string | null>;

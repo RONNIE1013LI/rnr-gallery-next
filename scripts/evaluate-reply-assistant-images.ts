@@ -19,6 +19,7 @@ import { evaluatePolicyGate } from "../src/server/customer-service/policy-gate";
 import type { AiProviderRequest } from "../src/server/customer-service/providers/ai-provider";
 import { OpenAIImageAnalysisProvider } from "../src/server/customer-service/providers/openai-image-analysis";
 import { OpenAIResponsesProvider } from "../src/server/customer-service/providers/openai-responses";
+import { pricingForReviewedImageModel, type ModelPricing } from "../src/server/customer-service/usage-cost";
 
 const CATEGORIES = [
   "blur_low_resolution",
@@ -102,9 +103,10 @@ const ManifestAssetSchema = z.object({
   assetId: z.string().regex(/^asset-[a-z0-9-]+$/),
   relativePath: z.string().min(1),
   sha256: z.string().regex(/^[a-f0-9]{64}$/),
-  provenanceCategory: z.literal("deterministic_generated_fixture"),
+  provenanceCategory: z.literal("deterministic_realistic_synthetic"),
   consentStatus: z.literal("not_applicable_generated"),
   permittedUse: z.literal("internal_reply_assistant_image_evaluation"),
+  pixelContent: z.literal("label_free_synthetic_scene"),
   mimeType: z.string().min(1),
 }).strict();
 
@@ -144,7 +146,11 @@ type ProviderUsage = Readonly<{
 export type EvaluationVisionRequest = Readonly<{
   caseId: string;
   failureMode: z.infer<typeof FailureModeSchema>;
-  assets: ReadonlyArray<LoadedAsset & Readonly<{ ordinal: number }>>;
+  assets: ReadonlyArray<Readonly<{
+    bytes: Buffer;
+    mimeType: string;
+    ordinal: number;
+  }>>;
 }>;
 
 export type EvaluationVisionProvider = Readonly<{
@@ -198,7 +204,36 @@ type CaseResult = Readonly<{
   humanReviewRequired: true;
   crossCustomerExposure: boolean;
   automaticSend: false;
+  expectationScores: Readonly<{
+    gate: boolean;
+    classifications: boolean | null;
+    issueCodes: boolean | null;
+    recommendation: boolean | null;
+    likelyMainOrdinal: boolean | null;
+    requiredDraftPointsPct: number | null;
+    forbiddenClaims: boolean;
+    forbiddenClaimMatches: readonly string[];
+    fallback: boolean | null;
+  }>;
 }>;
+
+export const AUTOMATED_IMAGE_QUALITY_THRESHOLDS = Object.freeze({
+  visualIssueCoveragePct: 90,
+  requestOriginalRecallPct: 90,
+  forbiddenClaimMatches: 0,
+} as const);
+
+export function automatedImageQualityGate(input: Readonly<{
+  harnessGatePassed: boolean;
+  visualIssueCoveragePct: number;
+  requestOriginalRecallPct: number;
+  forbiddenClaimMatches: number;
+}>) {
+  return input.harnessGatePassed
+    && input.visualIssueCoveragePct >= AUTOMATED_IMAGE_QUALITY_THRESHOLDS.visualIssueCoveragePct
+    && input.requestOriginalRecallPct >= AUTOMATED_IMAGE_QUALITY_THRESHOLDS.requestOriginalRecallPct
+    && input.forbiddenClaimMatches <= AUTOMATED_IMAGE_QUALITY_THRESHOLDS.forbiddenClaimMatches;
+}
 
 const ZERO_USAGE: ProviderUsage = Object.freeze({
   inputTokens: 0,
@@ -369,8 +404,9 @@ export function createOpenAIEvaluationProviders({
   apiKey,
   imageModel,
   textModel,
-}: Readonly<{ apiKey: string; imageModel: string; textModel: string }>) {
-  const vision = new OpenAIImageAnalysisProvider({ apiKey, model: imageModel });
+  imagePricing,
+}: Readonly<{ apiKey: string; imageModel: string; textModel: string; imagePricing?: ModelPricing }>) {
+  const vision = new OpenAIImageAnalysisProvider({ apiKey, model: imageModel, pricing: imagePricing });
   const text = new OpenAIResponsesProvider({ apiKey, model: textModel });
   const visionProvider: EvaluationVisionProvider = {
     kind: "openai",
@@ -414,7 +450,79 @@ export function createOpenAIEvaluationProviders({
   return { visionProvider, textProvider };
 }
 
+export function scoreImageEvaluationExpectations(input: Readonly<{
+  expectedGateDecision: ImageEvaluationCase["expectedGateDecision"];
+  expected: ImageEvaluationCase["expected"];
+  gateResult: string;
+  visualObserved: boolean;
+  draftObserved: boolean;
+  classifications: readonly string[];
+  visualCodes: readonly string[];
+  recommendationCodes: readonly string[];
+  likelyMainOrdinal: number | null;
+  draft: string;
+  fallbackObserved: boolean;
+}>): CaseResult["expectationScores"] {
+  const forbiddenClaimMatches = input.expected.forbiddenClaims.filter((claim) => (
+    input.draft.toLowerCase().includes(claim.toLowerCase())
+  ));
+  return {
+    gate: input.gateResult === input.expectedGateDecision,
+    classifications: input.visualObserved
+      ? input.classifications.length === input.expected.classifications.length
+        && input.classifications.every((classification, index) => classification === input.expected.classifications[index])
+      : null,
+    issueCodes: input.visualObserved
+      ? input.visualCodes.length === input.expected.issueCodes.length
+        && input.visualCodes.every((code) => input.expected.issueCodes.includes(code as never))
+      : null,
+    recommendation: input.visualObserved
+      ? input.expected.acceptableRecommendationCodes.some((code) => input.recommendationCodes.includes(code))
+      : null,
+    likelyMainOrdinal: input.visualObserved
+      ? input.likelyMainOrdinal === input.expected.likelyMainOrdinal
+      : null,
+    requiredDraftPointsPct: input.draftObserved
+      ? requiredPointCoverage(input.draft, input.expected.requiredDraftPoints)
+      : null,
+    forbiddenClaims: forbiddenClaimMatches.length === 0,
+    forbiddenClaimMatches,
+    fallback: input.expected.fallback === null ? null : input.fallbackObserved,
+  };
+}
+
 function failedResult(item: ImageEvaluationCase, input: Partial<CaseResult>): CaseResult {
+  const classifications = input.classifications ?? [];
+  const visualCodes = input.visualCodes ?? [];
+  const recommendationCodes = input.recommendationCodes ?? [];
+  const likelyMainOrdinal = input.likelyMainOrdinal ?? null;
+  const draft = input.draft ?? "";
+  const providerAttempts = input.providerAttempts ?? { vision: false, text: false };
+  const providerFailureStage = input.providerFailureStage ?? null;
+  const inputFailure = input.inputFailure ?? null;
+  const visualObserved = providerAttempts.vision && providerFailureStage !== "vision" && !inputFailure;
+  const draftObserved = providerAttempts.text && providerFailureStage !== "text";
+  const scores = scoreImageEvaluationExpectations({
+    expectedGateDecision: item.expectedGateDecision,
+    expected: item.expected,
+    gateResult: input.gateResult ?? item.expectedGateDecision,
+    visualObserved,
+    draftObserved,
+    classifications,
+    visualCodes,
+    recommendationCodes,
+    likelyMainOrdinal,
+    draft,
+    fallbackObserved: Boolean(
+      inputFailure
+      || providerFailureStage
+      || input.gateResult && input.gateResult !== "DRAFT_ALLOWED"
+      || input.outputAccepted === false,
+    ),
+  });
+  const reportedRequiredPointCoverage = Object.prototype.hasOwnProperty.call(input, "requiredPointCoveragePct")
+    ? input.requiredPointCoveragePct ?? null
+    : scores.requiredDraftPointsPct;
   return {
     id: item.id,
     category: item.category,
@@ -422,24 +530,25 @@ function failedResult(item: ImageEvaluationCase, input: Partial<CaseResult>): Ca
     gateResult: input.gateResult ?? item.expectedGateDecision,
     expectedGateResult: item.expectedGateDecision,
     gateBypass: input.gateBypass ?? false,
-    classifications: input.classifications ?? [],
-    visualCodes: input.visualCodes ?? [],
-    recommendationCodes: input.recommendationCodes ?? [],
-    likelyMainOrdinal: input.likelyMainOrdinal ?? null,
-    draft: input.draft ?? "",
+    classifications,
+    visualCodes,
+    recommendationCodes,
+    likelyMainOrdinal,
+    draft,
     outputAccepted: input.outputAccepted ?? false,
     policyViolations: input.policyViolations ?? [],
-    requiredPointCoveragePct: input.requiredPointCoveragePct ?? null,
-    providerAttempts: input.providerAttempts ?? { vision: false, text: false },
+    requiredPointCoveragePct: reportedRequiredPointCoverage,
+    providerAttempts,
     networkCalls: input.networkCalls ?? { vision: false, text: false },
     observedLatencyMs: input.observedLatencyMs ?? { vision: 0, text: 0 },
     usage: input.usage ?? { vision: ZERO_USAGE, text: ZERO_USAGE },
-    inputFailure: input.inputFailure ?? null,
+    inputFailure,
     providerFailure: input.providerFailure ?? null,
-    providerFailureStage: input.providerFailureStage ?? null,
+    providerFailureStage,
     humanReviewRequired: true,
     crossCustomerExposure: input.crossCustomerExposure ?? false,
     automaticSend: false,
+    expectationScores: { ...scores, requiredDraftPointsPct: reportedRequiredPointCoverage },
   };
 }
 
@@ -560,7 +669,11 @@ export async function evaluateReplyAssistantImageCases({
       visionResult = await visionProvider.analyze({
         caseId: item.id,
         failureMode: item.failureMode,
-        assets: loadedAssets.map((asset, ordinal) => ({ ...asset, ordinal })),
+        assets: loadedAssets.map((asset, ordinal) => ({
+          bytes: asset.bytes,
+          mimeType: asset.mimeType,
+          ordinal,
+        })),
       });
       visionLatencyMs = elapsed(visionStartedAt, now());
       visionResult = {
@@ -685,6 +798,19 @@ export async function evaluateReplyAssistantImageCases({
   const coveredDraftResults = draftResults.filter((result): result is CaseResult & { requiredPointCoveragePct: number } => (
     result.requiredPointCoveragePct !== null
   ));
+  const scoredPercentage = (key: keyof CaseResult["expectationScores"]) => {
+    const scores = results.flatMap((result) => {
+      const value = result.expectationScores[key];
+      return typeof value === "boolean" ? [value] : [];
+    });
+    return percentage(scores.filter(Boolean).length, scores.length);
+  };
+  const forbiddenClaimMatches = results.reduce(
+    (sum, result) => sum + result.expectationScores.forbiddenClaimMatches.length,
+    0,
+  );
+  const visualIssueCoveragePct = percentage(coveredIssueCount, expectedIssueCount);
+  const requestOriginalRecallPct = percentage(originalRecall, originalCases.length);
   const visionUsage = aggregateUsage(results, "vision");
   const textUsage = aggregateUsage(results, "text");
   const blocked = results.filter((result) => result.expectedGateResult !== "DRAFT_ALLOWED");
@@ -692,6 +818,7 @@ export async function evaluateReplyAssistantImageCases({
     results.length === 80
     && results.filter((result) => result.gateBypass).length === 0
     && results.reduce((sum, result) => sum + result.policyViolations.length, 0) === 0
+    && forbiddenClaimMatches === 0
     && results.filter((result) => result.expectedGateResult !== "DRAFT_ALLOWED")
       .every((result) => !result.providerAttempts.vision && !result.providerAttempts.text)
     && results.every((result) => !result.crossCustomerExposure && !result.automaticSend)
@@ -699,6 +826,12 @@ export async function evaluateReplyAssistantImageCases({
     && results.filter((result) => result.providerFailureStage === "vision").length === 2
     && results.filter((result) => result.providerFailureStage === "text").length === 1
   );
+  const automatedQualityGatePassed = qualityObserved && automatedImageQualityGate({
+    harnessGatePassed,
+    visualIssueCoveragePct,
+    requestOriginalRecallPct,
+    forbiddenClaimMatches,
+  });
   const summary = {
     totalCases: results.length,
     distribution: dataset.distribution,
@@ -707,6 +840,15 @@ export async function evaluateReplyAssistantImageCases({
     rejectedUnsupportedClaims: results.filter((result) => result.policyViolations.some((code) => (
       code === "visual_restoration_claim" || code === "visual_print_suitability_claim"
     ))).length,
+    forbiddenClaimMatches,
+    expectationScores: {
+      gateAccuracyPct: scoredPercentage("gate"),
+      classificationAccuracyPct: scoredPercentage("classifications"),
+      issueCodeAccuracyPct: scoredPercentage("issueCodes"),
+      recommendationAccuracyPct: scoredPercentage("recommendation"),
+      likelyMainAccuracyPct: scoredPercentage("likelyMainOrdinal"),
+      fallbackAccuracyPct: scoredPercentage("fallback"),
+    },
     blockedProviderAttempts: {
       vision: blocked.filter((result) => result.providerAttempts.vision).length,
       text: blocked.filter((result) => result.providerAttempts.text).length,
@@ -724,8 +866,9 @@ export async function evaluateReplyAssistantImageCases({
     textProviderFailures: results.filter((result) => result.providerFailureStage === "text").length,
     quality: {
       status: qualityObserved ? "observed_human_review_pending" : "unavailable_mock_provider",
-      visualIssueCoveragePct: qualityObserved ? percentage(coveredIssueCount, expectedIssueCount) : null,
-      requestOriginalRecallPct: qualityObserved ? percentage(originalRecall, originalCases.length) : null,
+      thresholds: AUTOMATED_IMAGE_QUALITY_THRESHOLDS,
+      visualIssueCoveragePct: qualityObserved ? visualIssueCoveragePct : null,
+      requestOriginalRecallPct: qualityObserved ? requestOriginalRecallPct : null,
       classificationAccuracyPct: qualityObserved ? percentage(classificationMatches, classificationCases.length) : null,
       comparisonAccuracyPct: qualityObserved ? percentage(comparisonMatches, comparisonCases.length) : null,
       requiredPointCoveragePct: qualityObserved && coveredDraftResults.length
@@ -734,6 +877,7 @@ export async function evaluateReplyAssistantImageCases({
       automatedDraftAcceptancePct: qualityObserved ? percentage(acceptedDrafts.length, draftResults.length) : null,
       humanAssistedAcceptancePct: null,
       humanReviewedCases: 0,
+      automatedGatePassed: qualityObserved ? automatedQualityGatePassed : null,
       gatePassed: null,
     },
     usage: {
@@ -746,6 +890,7 @@ export async function evaluateReplyAssistantImageCases({
       text: latencySummary(results.filter((result) => result.providerAttempts.text).map((result) => result.observedLatencyMs.text)),
     },
     harnessGatePassed,
+    automatedQualityGatePassed: qualityObserved ? automatedQualityGatePassed : null,
     overallGatePassed: false,
   };
 
@@ -777,7 +922,17 @@ export function requireOpenAIEvaluationEnvironment(
   const imageModel = env.OPENAI_IMAGE_ANALYSIS_MODEL?.trim() ?? "";
   const textModel = env.OPENAI_MODEL?.trim() ?? "";
   if (!apiKey || !imageModel || !textModel) throw new Error("openai_evaluation_environment_unavailable");
+  pricingForReviewedImageModel(imageModel);
   return { apiKey, imageModel, textModel };
+}
+
+export function imageEvaluationExitCode(
+  providerKind: "mock" | "openai",
+  summary: Readonly<{ harnessGatePassed: boolean; automatedQualityGatePassed: boolean | null }>,
+) {
+  return providerKind === "mock"
+    ? Number(!summary.harnessGatePassed)
+    : Number(!summary.harnessGatePassed || summary.automatedQualityGatePassed !== true);
 }
 
 async function runCli() {
@@ -796,14 +951,15 @@ async function runCli() {
   const report = await evaluateReplyAssistantImageCases({ dataset, ...providers });
   writeImageEvaluationReport(outputPath, report);
   process.stdout.write(`${JSON.stringify({ outputPath, summary: report.summary }, null, 2)}\n`);
-  if (!report.summary.harnessGatePassed) process.exitCode = 1;
+  process.exitCode = imageEvaluationExitCode(providerKind, report.summary);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   void runCli().catch((error) => {
-    const code = error instanceof Error && error.message === "openai_evaluation_environment_unavailable"
-      ? error.message
-      : "reply_assistant_image_evaluation_failed";
+    const code = error instanceof Error && [
+      "openai_evaluation_environment_unavailable",
+      "image_analysis_model_not_approved",
+    ].includes(error.message) ? error.message : "reply_assistant_image_evaluation_failed";
     process.stderr.write(`${code}\n`);
     process.exitCode = 1;
   });

@@ -203,6 +203,7 @@ export const customerServiceAttachments = pgTable(
     externalAttachmentKeyHash: text("external_attachment_key_hash").notNull(),
     ordinal: integer("ordinal").notNull(),
     kind: text("kind").$type<"image">().default("image").notNull(),
+    normalizedKind: text("normalized_kind").$type<"image" | "unsupported">().default("image").notNull(),
     status: text("status")
       .$type<"metadata_received" | "stored" | "analyzed" | "rejected" | "failed" | "deleted">()
       .default("metadata_received")
@@ -234,6 +235,7 @@ export const customerServiceAttachments = pgTable(
     check("customer_service_attachments_external_hash_valid", sql`length(trim(${table.externalAttachmentKeyHash})) > 0`),
     check("customer_service_attachments_ordinal_valid", sql`${table.ordinal} >= 0`),
     check("customer_service_attachments_kind_valid", sql`${table.kind} = 'image'`),
+    check("customer_service_attachments_normalized_kind_valid", sql`${table.normalizedKind} in ('image', 'unsupported')`),
     check("customer_service_attachments_status_valid", sql`${table.status} in ('metadata_received', 'stored', 'analyzed', 'rejected', 'failed', 'deleted')`),
     check("customer_service_attachments_mime_valid", sql`${table.verifiedMimeType} is null or ${table.verifiedMimeType} in ('image/jpeg', 'image/png', 'image/webp')`),
     check("customer_service_attachments_dimensions_valid", sql`coalesce(${table.width}, 0) >= 0 and coalesce(${table.height}, 0) >= 0 and coalesce(${table.byteSize}, 0) >= 0`),
@@ -307,6 +309,8 @@ export const customerServiceImageAnalysisInputs = pgTable(
     failureCode: text("failure_code"),
     deleteDueAt: timestamp("delete_due_at", { withTimezone: true }),
     deletedAt: timestamp("deleted_at", { withTimezone: true }),
+    cleanupClaimToken: uuid("cleanup_claim_token"),
+    cleanupClaimedAt: timestamp("cleanup_claimed_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("customer_service_image_analysis_inputs_attempt_attachment_unique")
@@ -330,5 +334,51 @@ export const customerServiceImageAnalysisInputs = pgTable(
     check("customer_service_image_analysis_inputs_cleanup_status_valid", sql`${table.cleanupStatus} in ('pending', 'stored', 'deleted', 'failed')`),
     check("customer_service_image_analysis_inputs_mime_valid", sql`${table.verifiedMimeType} is null or ${table.verifiedMimeType} in ('image/jpeg', 'image/png', 'image/webp')`),
     check("customer_service_image_analysis_inputs_dimensions_valid", sql`coalesce(${table.width}, 0) >= 0 and coalesce(${table.height}, 0) >= 0 and coalesce(${table.byteSize}, 0) >= 0`),
+  ],
+);
+
+export const customerServiceImageJobs = pgTable(
+  "customer_service_image_jobs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    messageId: uuid("message_id").notNull(),
+    conversationId: uuid("conversation_id").notNull(),
+    imageAnalysisAttemptId: uuid("image_analysis_attempt_id"),
+    textAttemptId: uuid("text_attempt_id").references(() => customerServiceAiAttempts.id, { onDelete: "restrict" }),
+    stage: text("stage").$type<"policy" | "download" | "vision" | "cleanup" | "draft">().default("policy").notNull(),
+    status: text("status").$type<"pending" | "running" | "completed" | "human_review_required">().default("pending").notNull(),
+    sourceCiphertext: text("source_ciphertext"),
+    sourceExpiresAt: timestamp("source_expires_at", { withTimezone: true }),
+    terminalAfterCleanup: boolean("terminal_after_cleanup").default(false).notNull(),
+    failureCode: text("failure_code"),
+    leaseToken: uuid("lease_token"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }).defaultNow().notNull(),
+    reservedCostMicrousd: bigint("reserved_cost_microusd", { mode: "number" }).default(0).notNull(),
+    budgetDailyScopeKey: text("budget_daily_scope_key"),
+    budgetSettledAt: timestamp("budget_settled_at", { withTimezone: true }),
+    completedAt: timestamp("completed_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: updatedTimestamp(),
+  },
+  (table) => [
+    uniqueIndex("customer_service_image_jobs_message_unique").on(table.messageId),
+    index("customer_service_image_jobs_claim_idx").on(table.status, table.nextRunAt, table.leaseExpiresAt),
+    foreignKey({
+      name: "customer_service_image_jobs_message_conversation_fk",
+      columns: [table.messageId, table.conversationId],
+      foreignColumns: [customerServiceMessages.id, customerServiceMessages.conversationId],
+    }).onDelete("restrict"),
+    foreignKey({
+      name: "customer_service_image_jobs_attempt_conversation_fk",
+      columns: [table.imageAnalysisAttemptId, table.conversationId],
+      foreignColumns: [customerServiceImageAnalysisAttempts.id, customerServiceImageAnalysisAttempts.conversationId],
+    }).onDelete("restrict"),
+    check("customer_service_image_jobs_stage_valid", sql`${table.stage} in ('policy', 'download', 'vision', 'cleanup', 'draft')`),
+    check("customer_service_image_jobs_status_valid", sql`${table.status} in ('pending', 'running', 'completed', 'human_review_required')`),
+    check("customer_service_image_jobs_reservation_valid", sql`${table.reservedCostMicrousd} >= 0 and (${table.reservedCostMicrousd} = 0 or length(trim(${table.budgetDailyScopeKey})) > 0)`),
+    check("customer_service_image_jobs_source_pair_valid", sql`(${table.sourceCiphertext} is null and ${table.sourceExpiresAt} is null) or (${table.sourceCiphertext} is not null and ${table.sourceExpiresAt} is not null)`),
+    check("customer_service_image_jobs_lease_pair_valid", sql`(${table.leaseToken} is null and ${table.leaseExpiresAt} is null) or (${table.leaseToken} is not null and ${table.leaseExpiresAt} is not null)`),
+    check("customer_service_image_jobs_terminal_valid", sql`${table.status} in ('pending', 'running') or ${table.completedAt} is not null`),
   ],
 );
