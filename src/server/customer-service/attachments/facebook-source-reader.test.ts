@@ -29,6 +29,20 @@ function imageResponse(bytes: Buffer | string = validPng, headers: HeadersInit =
   });
 }
 
+function cancellableResponse(status: number, headers: HeadersInit = {}) {
+  const cancel = vi.fn();
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(new Uint8Array([1, 2, 3]));
+    },
+    cancel,
+  });
+  return {
+    cancel,
+    response: new Response(body, { status, headers }),
+  };
+}
+
 function reader(options: {
   lookup?: ReturnType<typeof publicLookup>;
   fetch?: typeof fetch;
@@ -50,12 +64,30 @@ describe("Facebook attachment URL validation", () => {
     "https://0x7f000001/image.png",
     "https://evil.test/image.png",
     "https://cdn.facebook.test.evil.test/image.png",
+    "https://cdn.facebook.test:443/image.png",
     "https://cdn.facebook.test:444/image.png",
   ])("rejects unsafe source URL %s", async (url) => {
     await expect(reader().read(
       { kind: "facebook_remote", url },
       new AbortController().signal,
     )).rejects.toThrow("Unsafe Facebook attachment URL");
+  });
+
+  it.each([
+    "https://cdn.facebook.test/image",
+    "https://cdn.facebook.test/image.gif",
+  ])("rejects a source URL without a supported image extension: %s", async (url) => {
+    await expect(reader().read(
+      { kind: "facebook_remote", url },
+      new AbortController().signal,
+    )).rejects.toThrow("Unsupported Facebook attachment path");
+  });
+
+  it("rejects an image whose MIME type disagrees with the path extension", async () => {
+    await expect(reader().read(
+      { kind: "facebook_remote", url: "https://cdn.facebook.test/image.jpg" },
+      new AbortController().signal,
+    )).rejects.toThrow("Image path extension does not match");
   });
 
   it.each([
@@ -109,14 +141,42 @@ describe("Facebook attachment URL validation", () => {
     )).rejects.toThrow("Facebook attachment host resolved to a non-public address");
   });
 
-  it("permits at most two redirects", async () => {
+  it("revalidates the path extension after a redirect", async () => {
     const fetchMock = vi.fn()
-      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "/one" } }))
-      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "/two" } }))
-      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "/three" } }));
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { location: "/image" },
+      }))
+      .mockResolvedValueOnce(imageResponse());
 
     await expect(reader({ fetch: fetchMock }).read(
-      { kind: "facebook_remote", url: "https://cdn.facebook.test/start" },
+      { kind: "facebook_remote", url: "https://cdn.facebook.test/start.png" },
+      new AbortController().signal,
+    )).rejects.toThrow("Unsupported Facebook attachment path");
+  });
+
+  it("rejects an explicit default port after a redirect", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, {
+        status: 302,
+        headers: { location: "https://redirect.facebook.test:443/image.png" },
+      }))
+      .mockResolvedValueOnce(imageResponse());
+
+    await expect(reader({ fetch: fetchMock }).read(
+      { kind: "facebook_remote", url: "https://cdn.facebook.test/start.png" },
+      new AbortController().signal,
+    )).rejects.toThrow("Unsafe Facebook attachment URL");
+  });
+
+  it("permits at most two redirects", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "/one.png" } }))
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "/two.png" } }))
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { location: "/three.png" } }));
+
+    await expect(reader({ fetch: fetchMock }).read(
+      { kind: "facebook_remote", url: "https://cdn.facebook.test/start.png" },
       new AbortController().signal,
     )).rejects.toThrow("Too many Facebook attachment redirects");
   });
@@ -131,7 +191,7 @@ describe("Facebook attachment URL validation", () => {
       .mockResolvedValueOnce(imageResponse());
 
     await reader({ lookup, fetch: fetchMock }).read(
-      { kind: "facebook_remote", url: "https://cdn.facebook.test/start" },
+      { kind: "facebook_remote", url: "https://cdn.facebook.test/start.png" },
       new AbortController().signal,
     );
 
@@ -201,5 +261,47 @@ describe("Facebook attachment response bounds", () => {
       { kind: "facebook_remote", url: "https://cdn.facebook.test/image.png" },
       new AbortController().signal,
     )).rejects.toThrow("Image signature does not match");
+  });
+});
+
+describe("Facebook attachment response cleanup", () => {
+  it("cancels the body when Content-Length declares an oversized response", async () => {
+    const { cancel, response } = cancellableResponse(200, {
+      "content-length": String(IMAGE_LIMITS.maxBytesPerImage + 1),
+      "content-type": "image/png",
+    });
+    const fetchMock = vi.fn().mockResolvedValue(response);
+
+    await expect(reader({ fetch: fetchMock }).read(
+      { kind: "facebook_remote", url: "https://cdn.facebook.test/image.png" },
+      new AbortController().signal,
+    )).rejects.toThrow("Facebook attachment exceeds byte limit");
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("cancels the redirect response body before following Location", async () => {
+    const { cancel, response } = cancellableResponse(302, {
+      location: "/redirected.png",
+    });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response)
+      .mockResolvedValueOnce(imageResponse());
+
+    await reader({ fetch: fetchMock }).read(
+      { kind: "facebook_remote", url: "https://cdn.facebook.test/image.png" },
+      new AbortController().signal,
+    );
+    expect(cancel).toHaveBeenCalledOnce();
+  });
+
+  it("cancels a non-2xx terminal response body", async () => {
+    const { cancel, response } = cancellableResponse(404);
+    const fetchMock = vi.fn().mockResolvedValue(response);
+
+    await expect(reader({ fetch: fetchMock }).read(
+      { kind: "facebook_remote", url: "https://cdn.facebook.test/image.png" },
+      new AbortController().signal,
+    )).rejects.toThrow("Facebook attachment download failed");
+    expect(cancel).toHaveBeenCalledOnce();
   });
 });

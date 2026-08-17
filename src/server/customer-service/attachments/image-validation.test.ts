@@ -50,6 +50,18 @@ describe("validateImageAttachment", () => {
       .rejects.toThrow("Invalid image");
   });
 
+  it("rejects truncated pixel data even when metadata is readable", async () => {
+    const complete = await image("png", 20, 20);
+    const truncated = complete.subarray(0, complete.length - 20);
+
+    await expect(sharp(truncated).metadata()).resolves.toMatchObject({
+      width: 20,
+      height: 20,
+    });
+    await expect(validateImageAttachment(truncated, "image/png"))
+      .rejects.toThrow("Invalid image");
+  });
+
   it("rejects images above the exact pixel limit", async () => {
     const bytes = await image("png", 5_000, 4_001);
 

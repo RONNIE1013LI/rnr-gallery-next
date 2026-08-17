@@ -79,6 +79,15 @@ export async function validateImageAttachment(
     throw new Error("Image dimensions exceed limits");
   }
 
+  try {
+    await sharp(bytes, {
+      failOn: "error",
+      limitInputPixels: IMAGE_LIMITS.maxPixels,
+    }).raw().toBuffer();
+  } catch {
+    throw new Error("Invalid image");
+  }
+
   return Object.freeze({
     bytes,
     mimeType,

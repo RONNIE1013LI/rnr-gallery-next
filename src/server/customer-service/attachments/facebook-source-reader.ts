@@ -7,6 +7,7 @@ import type { AttachmentSourceRef } from "./types";
 import {
   validateImageAttachment,
   type AttachmentSourceReader,
+  type ResolvedAttachment,
 } from "./image-validation";
 
 type DnsAddress = Readonly<{ address: string; family: 4 | 6 }>;
@@ -111,10 +112,32 @@ function normalizedHostname(url: URL) {
     : url.hostname;
 }
 
-function safeUrl(value: string, allowedHosts: ReadonlySet<string>) {
+function pathMimeType(url: URL): ResolvedAttachment["mimeType"] {
+  const pathname = url.pathname.toLowerCase();
+  if (pathname.endsWith(".jpg") || pathname.endsWith(".jpeg")) return "image/jpeg";
+  if (pathname.endsWith(".png")) return "image/png";
+  if (pathname.endsWith(".webp")) return "image/webp";
+  throw new Error("Unsupported Facebook attachment path");
+}
+
+function hasExplicitPort(value: string) {
+  const authority = /^(?:[a-z][a-z\d+.-]*:)?\/\/([^/?#]*)/i.exec(value)?.[1];
+  if (authority === undefined) return false;
+  const hostAndPort = authority.slice(authority.lastIndexOf("@") + 1);
+  if (hostAndPort.startsWith("[")) {
+    const closingBracket = hostAndPort.indexOf("]");
+    return closingBracket >= 0 && hostAndPort.slice(closingBracket + 1).startsWith(":");
+  }
+  return hostAndPort.includes(":");
+}
+
+function safeUrl(value: string, allowedHosts: ReadonlySet<string>, base?: URL) {
   let url: URL;
   try {
-    url = new URL(value);
+    if (value.includes("\\") || hasExplicitPort(value)) {
+      throw new Error("Unsafe Facebook attachment URL");
+    }
+    url = new URL(value, base);
   } catch {
     throw new Error("Unsafe Facebook attachment URL");
   }
@@ -129,7 +152,7 @@ function safeUrl(value: string, allowedHosts: ReadonlySet<string>) {
   ) {
     throw new Error("Unsafe Facebook attachment URL");
   }
-  return url;
+  return Object.freeze({ url, mimeType: pathMimeType(url) });
 }
 
 function isNonPublicAddress({ address, family }: DnsAddress) {
@@ -137,14 +160,20 @@ function isNonPublicAddress({ address, family }: DnsAddress) {
   return isIP(address) !== family || nonPublicAddresses.check(address, expectedFamily);
 }
 
+async function cancelResponseBody(response: FetchResult) {
+  await response.body?.cancel().catch(() => undefined);
+}
+
 async function readBoundedBody(response: FetchResult, signal: AbortSignal) {
   const declaredLength = response.headers.get("content-length");
   if (declaredLength !== null) {
     const parsedLength = Number(declaredLength);
     if (!Number.isSafeInteger(parsedLength) || parsedLength < 0) {
+      await cancelResponseBody(response);
       throw new Error("Invalid Facebook attachment response");
     }
     if (parsedLength > IMAGE_LIMITS.maxBytesPerImage) {
+      await cancelResponseBody(response);
       throw new Error("Facebook attachment exceeds byte limit");
     }
   }
@@ -188,31 +217,40 @@ export function createFacebookSourceReader({
 
       let current = safeUrl(source.url, allowedHostSet);
       for (let redirects = 0; ; redirects += 1) {
-        const hostname = normalizedHostname(current);
+        const hostname = normalizedHostname(current.url);
         const addresses = await lookup(hostname);
         if (addresses.length === 0 || addresses.some(isNonPublicAddress)) {
           throw new Error("Facebook attachment host resolved to a non-public address");
         }
-        const response = await fetch(current.toString(), {
+        const response = await fetch(current.url.toString(), {
           addresses,
           headers: { accept: "image/jpeg, image/png, image/webp" },
           redirect: "manual",
           signal,
         });
         if ([301, 302, 303, 307, 308].includes(response.status)) {
+          await cancelResponseBody(response);
           if (redirects >= IMAGE_LIMITS.maxRedirects) {
             throw new Error("Too many Facebook attachment redirects");
           }
           const location = response.headers.get("location");
           if (!location) throw new Error("Invalid Facebook attachment redirect");
-          current = safeUrl(new URL(location, current).toString(), allowedHostSet);
+          current = safeUrl(location, allowedHostSet, current.url);
           continue;
         }
         if (response.status < 200 || response.status >= 300) {
+          await cancelResponseBody(response);
           throw new Error("Facebook attachment download failed");
         }
         const bytes = await readBoundedBody(response, signal);
-        return validateImageAttachment(bytes, response.headers.get("content-type") ?? "");
+        const attachment = await validateImageAttachment(
+          bytes,
+          response.headers.get("content-type") ?? "",
+        );
+        if (attachment.mimeType !== current.mimeType) {
+          throw new Error("Image path extension does not match image type");
+        }
+        return attachment;
       }
     },
   });
