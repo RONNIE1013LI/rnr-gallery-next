@@ -20,14 +20,15 @@ No application, staging, or production database was used as a substitute.
 | `npm run lint` | PASS | Exit 0. |
 | Initial `npm test -- --run` | Historical preflight result | Exit 1 because 18 database suites required an absent `TEST_DATABASE_URL`; 278 files and 1,855 tests passed before those setup failures. |
 | `set -a; source /Users/ronnieli/Documents/海报制作/rnr-next-platform/.worktrees/payment-adapters/.env.local; set +a; npm test -- --run` | PASS | Exit 0: 296 test files and 1,944 tests passed in 232.45s. The environment file was sourced only into that shell; no values were printed. |
+| Final full suite after private-navigation hardening: same command as above | PASS | Exit 0: 297 test files and 1,961 tests passed in 228.12s. This is the current release result. |
 | `npm test -- --run --exclude '**/*.integration.test.ts' --exclude 'src/server/addresses/drizzle-address-repository.test.ts' --exclude 'src/server/checkout/drizzle-checkout-repository.test.ts'` | PASS | Exit 0: 278 test files and 1,855 tests passed. This is the complete executable non-database suite. |
 | Dedicated database suite listed below | PASS | The safe gate confirmed only these labels: `TEST_DATABASE_URL` present, PostgreSQL, separately test-named, and different from `DATABASE_URL`. Exit 0: 18 test files and 89 tests passed in 97.72s. No URL, host, user, password, or database name was printed. |
-| `DATABASE_URL='postgresql://build:build@127.0.0.1:1/rnr_build' BETTER_AUTH_SECRET='<build-only non-secret>' BETTER_AUTH_URL='https://build.invalid' npm run build` | PASS | Exit 0. The build generated 89/89 static pages. The loopback database URL and auth values were build-only placeholders; no external service was contacted. |
+| `DATABASE_URL='postgresql://build:build@127.0.0.1:1/rnr_build' BETTER_AUTH_SECRET='<build-only non-secret>' BETTER_AUTH_URL='https://build.invalid' VERCEL_ENV='production' npm run build` | PASS | Exit 0. The final build generated 89/89 static pages. The loopback database URL and auth values were build-only placeholders; no external service was contacted. |
 | `git diff --check` | PASS | Exit 0; no whitespace errors. |
 
-The exact full-suite command above supersedes the initial missing-environment
-preflight result. It is the fresh complete test result: 296 files and 1,944
-tests passed in 232.45 seconds.
+The final exact full-suite command above supersedes the initial
+missing-environment preflight and the earlier complete run. The current result
+is 297 files and 1,961 tests passed in 228.12 seconds.
 
 For a separately reproducible database-only check, the following non-secret
 command was run. It references the approved environment file but does not print
@@ -74,9 +75,17 @@ Results:
 
 - `src/domain/analytics/runtime.ts` contains the sole Measurement ID constant:
   `G-RE5Z5B58TJ`.
-- `src/app/layout.tsx` contains one conditional root `GoogleAnalytics` render.
-  There is no Google Tag Manager, manual `gtag.js`, or `googletagmanager.com`
-  source match.
+- `src/app/layout.tsx` contains one root-owned production controller, and
+  `src/components/analytics-runtime-controller.tsx` contains the sole official
+  `GoogleAnalytics` render. There is no Google Tag Manager, manual `gtag.js`,
+  or `googletagmanager.com` source match.
+- The controller keeps the Google measurement ID disabled during initial
+  config and every history transition. Only public pathname-only pageviews are
+  emitted, with `page_referrer: ""`; private routes and sensitive query keys
+  remain disabled. `Referrer-Policy: origin` prevents a full navigation from
+  forwarding a private path or query.
+- Debug mode is event-scoped only. `ga_debug=0` clears the session flag without
+  relying on a one-time GA config script to rerun.
 - Privacy-field matches are restricted to negative privacy assertions and test
   fixtures in `src/domain/analytics/*.test.ts`. The analytics event builders and
   emitted event types contain no `fullName`, email, phone, street, postcode,
