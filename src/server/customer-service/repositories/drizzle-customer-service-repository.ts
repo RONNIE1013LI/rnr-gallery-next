@@ -375,19 +375,6 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             failureCode: attachment.failureCode ?? null,
           })));
         }
-        if (input.imageJob) {
-          await transaction.insert(customerServiceImageJobs).values({
-            id: input.imageJob.id,
-            messageId,
-            conversationId: conversation.id,
-            status: input.imageJob.status,
-            sourceCiphertext: input.imageJob.sourceCiphertext,
-            sourceExpiresAt: input.imageJob.sourceExpiresAt,
-            failureCode: input.imageJob.failureCode,
-            nextRunAt: input.receivedAt,
-            ...(input.imageJob.status === "human_review_required" ? { completedAt: input.receivedAt } : {}),
-          });
-        }
         const [pilot] = await transaction.select().from(customerServicePilotRuns)
           .where(and(
             eq(customerServicePilotRuns.channel, input.channel),
@@ -409,6 +396,19 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         await transaction.update(customerServicePilotRuns).set({
           nextSequence: pilot.nextSequence + 1,
         }).where(eq(customerServicePilotRuns.id, pilot.id));
+        if (input.imageJob) {
+          await transaction.insert(customerServiceImageJobs).values({
+            id: input.imageJob.id,
+            messageId,
+            conversationId: conversation.id,
+            status: input.imageJob.status,
+            sourceCiphertext: input.imageJob.sourceCiphertext,
+            sourceExpiresAt: input.imageJob.sourceExpiresAt,
+            failureCode: input.imageJob.failureCode,
+            nextRunAt: input.receivedAt,
+            ...(input.imageJob.status === "human_review_required" ? { completedAt: input.receivedAt } : {}),
+          });
+        }
         return { status: "created" as const, messageId, pilotSequence: pilot.nextSequence };
       });
     },
@@ -565,6 +565,12 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         const [job] = await transaction.select().from(customerServiceImageJobs).where(and(
           eq(customerServiceImageJobs.status, "pending"),
           lte(customerServiceImageJobs.nextRunAt, input.now),
+          sql`exists (
+            select 1
+            from ${customerServiceMessages}
+            where ${customerServiceMessages.id} = ${customerServiceImageJobs.messageId}
+              and ${customerServiceMessages.pilotRunId} is not null
+          )`,
           input.jobId ? eq(customerServiceImageJobs.id, input.jobId) : undefined,
         )).orderBy(asc(customerServiceImageJobs.nextRunAt), asc(customerServiceImageJobs.createdAt))
           .limit(1)

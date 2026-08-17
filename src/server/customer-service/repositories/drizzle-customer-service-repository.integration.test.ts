@@ -80,6 +80,16 @@ async function clearTables() {
   await database.delete(customerServicePilotRuns);
 }
 
+async function activateFacebookPilot(name: string) {
+  await database.insert(customerServicePilotRuns).values({
+    name,
+    channel: "facebook",
+    messageLimit: 100,
+    status: "active",
+    startedAt: new Date("2026-08-17T00:00:00.000Z"),
+  });
+}
+
 describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   beforeEach(clearTables);
   afterAll(clearTables);
@@ -177,7 +187,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
   });
 
-  it("commits message and safe attachment metadata atomically without duplicating attachments", async () => {
+  it("omits runnable image work when the pilot is complete", async () => {
     const receivedAt = new Date("2026-08-17T00:00:00.000Z");
     const message = {
       channel: "facebook" as const,
@@ -204,7 +214,6 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(created.status).toBe("pilot_complete");
     const [persistedMessage] = await database.select().from(customerServiceMessages);
     const [persistedAttachment] = await database.select().from(customerServiceAttachments);
-    const [persistedJob] = await database.select().from(customerServiceImageJobs);
     expect(persistedMessage).toMatchObject({
       body: "[Image attachment]",
       customerText: null,
@@ -219,20 +228,23 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       mimeTypeHint: "image/jpeg",
       status: "metadata_received",
     });
-    expect(persistedJob).toMatchObject({
-      id: "00000000-0000-4000-8000-000000000101",
-      messageId: persistedMessage.id,
-      conversationId: persistedMessage.conversationId,
-      stage: "policy",
-      status: "pending",
-      sourceCiphertext: "v1.encrypted-source",
-      sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
-    });
+    expect(await database.select().from(customerServiceImageJobs)).toEqual([]);
     expect(JSON.stringify([persistedMessage, persistedAttachment])).not.toContain("https://scontent.test/image.jpg");
+
+    const claimInput = {
+      jobId: message.imageJob.id,
+      now: new Date("2026-08-17T00:00:01.000Z"),
+      leaseExpiresAt: new Date("2026-08-17T00:00:26.000Z"),
+    };
+    await expect(Promise.all([
+      repository.claimImageJob(claimInput),
+      repository.claimImageJob(claimInput),
+    ])).resolves.toEqual([null, null]);
+    await expect(repository.claimImageJob(claimInput)).resolves.toBeNull();
 
     await expect(repository.ingestFacebookMessage(message)).resolves.toMatchObject({ status: "duplicate" });
     expect(await database.select().from(customerServiceAttachments)).toHaveLength(1);
-    expect(await database.select().from(customerServiceImageJobs)).toHaveLength(1);
+    expect(await database.select().from(customerServiceImageJobs)).toHaveLength(0);
 
     await expect(repository.ingestFacebookMessage({
       ...message,
@@ -244,10 +256,51 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     })).rejects.toThrow();
     expect(await database.select().from(customerServiceMessages)).toHaveLength(1);
     expect(await database.select().from(customerServiceAttachments)).toHaveLength(1);
-    expect(await database.select().from(customerServiceImageJobs)).toHaveLength(1);
+    expect(await database.select().from(customerServiceImageJobs)).toHaveLength(0);
+  });
+
+  it("does not recover a legacy runnable image job without a pilot-bound message", async () => {
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "d".repeat(64),
+      externalMessageKeyHash: "e".repeat(64),
+      text: "Can I use this photo?",
+      attachments: [{
+        externalAttachmentKeyHash: "f".repeat(64),
+        ordinal: 0,
+        kind: "image",
+        mimeTypeHint: "image/jpeg",
+      }],
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    expect(created.status).toBe("pilot_complete");
+    const [message] = await database.select().from(customerServiceMessages)
+      .where(eq(customerServiceMessages.id, created.messageId));
+    const jobId = "00000000-0000-4000-8000-000000000102";
+    await database.insert(customerServiceImageJobs).values({
+      id: jobId,
+      messageId: message.id,
+      conversationId: message.conversationId,
+      status: "pending",
+      sourceCiphertext: "v1.legacy-encrypted-source",
+      sourceExpiresAt: new Date("2026-08-17T00:15:00.000Z"),
+      nextRunAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+
+    const claimInput = {
+      jobId,
+      now: new Date("2026-08-17T00:00:01.000Z"),
+      leaseExpiresAt: new Date("2026-08-17T00:00:26.000Z"),
+    };
+    await expect(Promise.all([
+      repository.claimImageJob(claimInput),
+      repository.claimImageJob(claimInput),
+    ])).resolves.toEqual([null, null]);
+    await expect(repository.claimImageJob(claimInput)).resolves.toBeNull();
   });
 
   it("persists unsupported attachment kind and stable failure metadata without a source", async () => {
+    await activateFacebookPilot("unsupported-attachment");
     const created = await repository.ingestFacebookMessage({
       channel: "facebook",
       externalConversationKeyHash: "f".repeat(64),
@@ -1057,6 +1110,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   });
 
   it("claims durable image jobs once and advances stages only with the active lease", async () => {
+    await activateFacebookPilot("claim-image-job");
     const jobId = "00000000-0000-4000-8000-000000000101";
     const created = await repository.ingestFacebookMessage({
       channel: "facebook",
@@ -1119,6 +1173,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   });
 
   it("persists an attempt-owned cleanup key before upload and atomically gates combined image and text cost", async () => {
+    await activateFacebookPilot("combined-image-budget");
     const createVisionJob = async (suffix: string, jobId: string) => {
       const externalAttachmentKeyHash = suffix.repeat(64);
       const created = await repository.ingestFacebookMessage({
@@ -1199,6 +1254,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   });
 
   it("reconciles a stale post-reservation job exactly once and leaves cleanup retryable", async () => {
+    await activateFacebookPilot("stale-vision-job");
     const jobId = "00000000-0000-4000-8000-000000000333";
     const externalAttachmentKeyHash = "3".repeat(64);
     await repository.ingestFacebookMessage({
@@ -1267,6 +1323,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   });
 
   it("resumes a stale download with its preallocated cleanup key", async () => {
+    await activateFacebookPilot("stale-download-job");
     const jobId = "00000000-0000-4000-8000-000000000441";
     const externalAttachmentKeyHash = "4".repeat(64);
     await repository.ingestFacebookMessage({
@@ -1338,6 +1395,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   });
 
   it("abandons an ambiguous stale text attempt while settling its combined reservation once", async () => {
+    await activateFacebookPilot("stale-draft-job");
     const jobId = "00000000-0000-4000-8000-000000000451";
     const created = await repository.ingestFacebookMessage({
       channel: "facebook",
@@ -1399,6 +1457,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   });
 
   it("settles separate image and text actuals against one combined reservation exactly once", async () => {
+    await activateFacebookPilot("image-text-settlement");
     const jobId = "00000000-0000-4000-8000-000000000551";
     const externalAttachmentKeyHash = "a".repeat(64);
     const created = await repository.ingestFacebookMessage({
