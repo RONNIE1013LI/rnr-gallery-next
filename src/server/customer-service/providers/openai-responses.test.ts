@@ -86,6 +86,43 @@ describe("OpenAI Responses provider", () => {
     });
   });
 
+  it("preserves an unknown cost when cached usage exceeds input usage", async () => {
+    const provider = new OpenAIResponsesProvider({
+      apiKey: "test-only-secret",
+      fetchImpl: async () => new Response(JSON.stringify({
+        output_text: "Please send the original photo for assessment 😊",
+        usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+          input_tokens_details: { cached_tokens: 1 },
+        },
+      }), { status: 200 }),
+    });
+
+    await expect(provider.generate({ instructions: "rules", input: "message" })).resolves.toMatchObject({
+      estimatedCostMicrousd: null,
+    });
+  });
+
+  it("keeps complete usage authoritative when cached usage equals input usage", async () => {
+    const provider = new OpenAIResponsesProvider({
+      apiKey: "test-only-secret",
+      fetchImpl: async () => new Response(JSON.stringify({
+        output_text: "Please send the original photo for assessment 😊",
+        usage: {
+          input_tokens: 1_000_000,
+          output_tokens: 0,
+          input_tokens_details: { cached_tokens: 1_000_000 },
+        },
+      }), { status: 200 }),
+    });
+
+    await expect(provider.generate({ instructions: "rules", input: "message" })).resolves.toMatchObject({
+      usage: { inputTokens: 1_000_000, cachedInputTokens: 1_000_000, outputTokens: 0 },
+      estimatedCostMicrousd: 20_000,
+    });
+  });
+
   it("requires a key before any fetch", async () => {
     const fetchSpy = vi.fn();
     const provider = new OpenAIResponsesProvider({ apiKey: "", fetchImpl: fetchSpy });

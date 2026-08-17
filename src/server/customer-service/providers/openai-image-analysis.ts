@@ -33,7 +33,7 @@ function usageFrom(body: Record<string, unknown>) {
     ? (details as Record<string, unknown>).cached_tokens
     : undefined;
   const cachedTokens = cachedValue === undefined ? 0 : asNonNegativeInteger(cachedValue);
-  if (cachedTokens === null) return null;
+  if (cachedTokens === null || cachedTokens > inputTokens) return null;
   return { inputTokens, cachedInputTokens: cachedTokens, outputTokens };
 }
 

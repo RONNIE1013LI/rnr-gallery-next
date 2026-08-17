@@ -77,6 +77,63 @@ describe("OpenAI image-analysis provider", () => {
     })).resolves.toMatchObject({ estimatedCostMicrousd: null });
   });
 
+  it("preserves an unknown cost when cached image usage exceeds input usage", async () => {
+    const provider = new OpenAIImageAnalysisProvider({
+      apiKey: "test-only-secret",
+      model: "approved-vision-model",
+      fetchImpl: async () => new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          ...providerOutput,
+          images: [{ ...providerOutput.images[0], ordinal: 0 }],
+        }),
+        usage: {
+          input_tokens: 0,
+          output_tokens: 0,
+          input_tokens_details: { cached_tokens: 1 },
+        },
+      }), { status: 200 }),
+      pricing: {
+        inputUsdPerMillion: 1,
+        cachedInputUsdPerMillion: 0.1,
+        outputUsdPerMillion: 2,
+      },
+    });
+
+    await expect(provider.analyze({
+      images: [{ ordinal: 0, mimeType: "image/png", bytes: Buffer.from("private") }],
+    })).resolves.toMatchObject({ estimatedCostMicrousd: null });
+  });
+
+  it("keeps complete image usage authoritative when cached usage equals input usage", async () => {
+    const provider = new OpenAIImageAnalysisProvider({
+      apiKey: "test-only-secret",
+      model: "approved-vision-model",
+      fetchImpl: async () => new Response(JSON.stringify({
+        output_text: JSON.stringify({
+          ...providerOutput,
+          images: [{ ...providerOutput.images[0], ordinal: 0 }],
+        }),
+        usage: {
+          input_tokens: 1_000_000,
+          output_tokens: 0,
+          input_tokens_details: { cached_tokens: 1_000_000 },
+        },
+      }), { status: 200 }),
+      pricing: {
+        inputUsdPerMillion: 1,
+        cachedInputUsdPerMillion: 0.1,
+        outputUsdPerMillion: 2,
+      },
+    });
+
+    await expect(provider.analyze({
+      images: [{ ordinal: 0, mimeType: "image/png", bytes: Buffer.from("private") }],
+    })).resolves.toMatchObject({
+      usage: { inputTokens: 1_000_000, cachedInputTokens: 1_000_000, outputTokens: 0 },
+      estimatedCostMicrousd: 100_000,
+    });
+  });
+
   it("maps each batched image input to its non-contiguous submitted ordinal", async () => {
     const fetchImpl: (input: string | URL | Request, init?: RequestInit) => Promise<Response> = async () => new Response(JSON.stringify({
       output_text: JSON.stringify({
