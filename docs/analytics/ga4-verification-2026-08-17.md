@@ -4,8 +4,9 @@
 
 This record covers the GA4 ecommerce changes on `feat/ga4-ecommerce` through
 production deployment. The tag, privacy boundary, and seven non-purchase
-ecommerce events have been observed in production and GA4. A live `purchase`
-and an AUD production event remain **pending** for the reasons recorded below.
+ecommerce events have been observed in production and GA4. The business owner
+accepted the prior successful real payment as `purchase` verification and
+waived another charge; an AUD production event remains **pending**.
 
 The first non-database run did not have `TEST_DATABASE_URL`; the isolated test
 database was subsequently verified and the 18 required database suites passed.
@@ -196,7 +197,7 @@ GA4 Realtime and DebugView both showed these event names:
 | `begin_checkout` | PASS | PASS |
 | `add_shipping_info` | PASS | PASS |
 | `add_payment_info` | PASS | PASS |
-| `purchase` | PENDING | PENDING |
+| `purchase` | OWNER ACCEPTED | OWNER ACCEPTED |
 
 DebugView showed one Apple debug device and the seven event names above in its
 timeline. Opening `add_shipping_info` showed only the allowlisted commerce
@@ -205,10 +206,10 @@ parameters plus GA-managed parameters. Its `currency` value was observed as
 design text, or order-access token parameter appeared.
 
 The existing paid order URL supplied for testing returned the expected secure
-404 in this guest Chrome session, so it could not emit a server-confirmed
-purchase. No purchase was fabricated. A fresh real paid order or authorised
-paid-order access is still required to observe `transaction_id`, `value`,
-`currency`, and `items` in Realtime and DebugView.
+404 in this guest Chrome session, so this run did not re-observe its
+`transaction_id`, `value`, `currency`, or `items`. No purchase was fabricated.
+The business owner confirmed a prior real payment succeeded and explicitly
+waived another paid test, accepting `purchase` as passed on that basis.
 
 AUD event observation is also pending because the Australia storefront remains
 disabled in production during the current tuning phase. Automated event-builder,
@@ -217,10 +218,10 @@ that as a live GA observation.
 
 ## Remaining evidence
 
-- Complete one real paid order in the current debug-enabled Chrome session and
-  observe `purchase` in both Realtime and DebugView.
-- Inspect the resulting stable `transaction_id`, NZD `value`, and `items`.
 - After the AU storefront is deliberately enabled, repeat the checkout and
   purchase observation in AUD.
-- Navigate to `?ga_debug=0` after the real payment observation and confirm the
-  debug device stops receiving new events.
+
+The controlled Chrome session navigated through `?ga_debug=0` and then opened
+a normal product page. DebugView subsequently reported `Debug Device 0`; no new
+debug event appeared after the last earlier debug timestamp. Debug mode is
+therefore closed.
