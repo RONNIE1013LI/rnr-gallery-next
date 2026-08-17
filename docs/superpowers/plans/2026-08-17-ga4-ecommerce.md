@@ -20,8 +20,8 @@
 - `purchase.value` excludes separately reported tax and shipping.
 - Never send customer identity/contact/address data, artwork wording, notes, upload names, upload references, image URLs, private tokens, or payment-provider references.
 - Do not change product prices, tax, shipping, cart identity, checkout, payment, or order business rules.
-- Do not deploy Banner Bundle or migration `0029_banner_bundle_components` as part of the GA4 release.
-- Production release base is Vercel deployment `AFyg5GgL5Dx9TbhbJAJB1y6oq6Dp`, Git revision `687899e6e2775639db72f6a3f70616d1f1c38e1e`.
+- Preserve the already-live Banner Bundle and migration `0029_banner_bundle_components`; do not introduce further Bundle changes in the GA4 release.
+- Production release base is Vercel deployment `F5GHgrt9qfieHyHPZ89ff6yPFH1r`, Git revision `73ab97aae85aa354adec00946d2fe52e72e3de6e`.
 
 ## File map
 
@@ -53,7 +53,7 @@
 - Create worktree: `/Users/ronnieli/Documents/海报制作/rnr-next-platform/.worktrees/ga4-ecommerce`
 
 **Interfaces:**
-- Consumes: Vercel production Git revision `687899e6e2775639db72f6a3f70616d1f1c38e1e`.
+- Consumes: Vercel production Git revision `73ab97aae85aa354adec00946d2fe52e72e3de6e`.
 - Produces: clean branch `feat/ga4-ecommerce` whose first parent is the exact deployed revision.
 
 - [ ] **Step 1: Read the worktree skill and recheck the release base**
@@ -61,19 +61,19 @@
 Run:
 
 ```bash
-git show -s --format='%H %s' 687899e6e2775639db72f6a3f70616d1f1c38e1e
+git show -s --format='%H %s' 73ab97aae85aa354adec00946d2fe52e72e3de6e
 git status --short
 git worktree list
 ```
 
-Expected: the revision is `fix: keep guest checkout note on one line`; the existing unrelated untracked files remain only in `payment-adapters`.
+Expected: the revision is `fix: close banner bundle review findings`; the existing unrelated untracked files remain only in `payment-adapters`.
 
 - [ ] **Step 2: Create the isolated worktree from the deployed revision**
 
 Run:
 
 ```bash
-git worktree add /Users/ronnieli/Documents/海报制作/rnr-next-platform/.worktrees/ga4-ecommerce -b feat/ga4-ecommerce 687899e6e2775639db72f6a3f70616d1f1c38e1e
+git worktree add /Users/ronnieli/Documents/海报制作/rnr-next-platform/.worktrees/ga4-ecommerce -b feat/ga4-ecommerce 73ab97aae85aa354adec00946d2fe52e72e3de6e
 ```
 
 Expected: new clean worktree at the exact production revision.
@@ -512,8 +512,8 @@ Expected: one Measurement ID constant, one root `GoogleAnalytics` render, no GTM
 Run:
 
 ```bash
-git log --oneline 687899e6e2775639db72f6a3f70616d1f1c38e1e..HEAD
-git diff --name-status 687899e6e2775639db72f6a3f70616d1f1c38e1e..HEAD
+git log --oneline 73ab97aae85aa354adec00946d2fe52e72e3de6e..HEAD
+git diff --name-status 73ab97aae85aa354adec00946d2fe52e72e3de6e..HEAD
 git status --short
 ```
 

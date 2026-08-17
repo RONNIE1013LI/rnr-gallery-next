@@ -112,7 +112,7 @@ Add focused automated tests for:
 
 ## Deployment boundary
 
-The current development branch contains other work that may not be ready for activation. GA4 implementation and deployment must therefore be based on the exact currently deployed production revision or an explicitly approved production-ready revision. Do not deploy unrelated Banner Bundle, database migration, pricing, payment, upload, or order changes as part of the GA4 release.
+GA4 implementation and deployment are based on the exact Banner Bundle production revision `73ab97aae85aa354adec00946d2fe52e72e3de6e`. Do not deploy later unrelated pricing, payment, upload, order, or workspace changes as part of the GA4 release.
 
 ## Out of scope
 
