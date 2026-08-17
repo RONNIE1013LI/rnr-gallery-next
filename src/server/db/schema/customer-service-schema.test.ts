@@ -72,18 +72,45 @@ describe("customer service schema contract", () => {
     ]);
   });
 
-  it("keys each image analysis input to the same message as its parents", () => {
+  it("keys image analysis inputs to the same conversation as their parents", () => {
+    const messageConfig = getTableConfig(customerServiceMessages);
     const attachmentConfig = getTableConfig(customerServiceAttachments);
     const attemptConfig = getTableConfig(customerServiceImageAnalysisAttempts);
     const inputConfig = getTableConfig(customerServiceImageAnalysisInputs);
 
-    expect(getTableColumns(customerServiceImageAnalysisInputs).messageId.notNull).toBe(true);
+    expect(getTableColumns(customerServiceImageAnalysisInputs).conversationId.notNull).toBe(true);
+    expect(Object.keys(getTableColumns(customerServiceImageAnalysisInputs))).not.toContain("messageId");
+    expect(messageConfig.uniqueConstraints.map((constraint) => constraint.name)).toContain(
+      "customer_service_messages_id_conversation_unique",
+    );
     expect(attachmentConfig.uniqueConstraints.map((constraint) => constraint.name)).toContain(
-      "customer_service_attachments_id_message_unique",
+      "customer_service_attachments_id_conversation_unique",
     );
     expect(attemptConfig.uniqueConstraints.map((constraint) => constraint.name)).toContain(
-      "customer_service_image_analysis_attempts_id_message_unique",
+      "customer_service_image_analysis_attempts_id_conversation_unique",
     );
+    expect(attachmentConfig.foreignKeys.map((foreignKey) => ({
+      columns: foreignKey.reference().columns.map((column) => column.name),
+      foreignColumns: foreignKey.reference().foreignColumns.map((column) => column.name),
+      onDelete: foreignKey.onDelete,
+    }))).toEqual([
+      {
+        columns: ["message_id", "conversation_id"],
+        foreignColumns: ["id", "conversation_id"],
+        onDelete: "restrict",
+      },
+    ]);
+    expect(attemptConfig.foreignKeys.map((foreignKey) => ({
+      columns: foreignKey.reference().columns.map((column) => column.name),
+      foreignColumns: foreignKey.reference().foreignColumns.map((column) => column.name),
+      onDelete: foreignKey.onDelete,
+    }))).toEqual([
+      {
+        columns: ["message_id", "conversation_id"],
+        foreignColumns: ["id", "conversation_id"],
+        onDelete: "restrict",
+      },
+    ]);
     expect(inputConfig.foreignKeys).toHaveLength(2);
     expect(inputConfig.foreignKeys.map((foreignKey) => ({
       columns: foreignKey.reference().columns.map((column) => column.name),
@@ -91,13 +118,13 @@ describe("customer service schema contract", () => {
       onDelete: foreignKey.onDelete,
     }))).toEqual(expect.arrayContaining([
       {
-        columns: ["analysis_attempt_id", "message_id"],
-        foreignColumns: ["id", "message_id"],
+        columns: ["analysis_attempt_id", "conversation_id"],
+        foreignColumns: ["id", "conversation_id"],
         onDelete: "restrict",
       },
       {
-        columns: ["attachment_id", "message_id"],
-        foreignColumns: ["id", "message_id"],
+        columns: ["attachment_id", "conversation_id"],
+        foreignColumns: ["id", "conversation_id"],
         onDelete: "restrict",
       },
     ]));
@@ -145,7 +172,47 @@ describe("customer service schema contract", () => {
 
   const databaseIt = process.env.TEST_DATABASE_URL ? it : it.skip;
 
-  databaseIt("rejects an image input that combines parents from different messages", async () => {
+  databaseIt("allows image analysis inputs from earlier messages in the same conversation", async () => {
+    const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await client.connect();
+    await client.query("BEGIN");
+
+    try {
+      const conversation = await client.query(
+        "insert into customer_service_conversations (channel, external_key_hash) values ('facebook', $1) returning id",
+        [`schema-test-conversation-${randomUUID()}`],
+      );
+      const messageA = await client.query(
+        "insert into customer_service_messages (conversation_id, channel, external_message_key_hash, body, received_at) values ($1, 'facebook', $2, 'image A', now()) returning id",
+        [conversation.rows[0].id, `schema-test-message-a-${randomUUID()}`],
+      );
+      const messageB = await client.query(
+        "insert into customer_service_messages (conversation_id, channel, external_message_key_hash, body, received_at) values ($1, 'facebook', $2, 'image B', now()) returning id",
+        [conversation.rows[0].id, `schema-test-message-b-${randomUUID()}`],
+      );
+      const attemptA = await client.query(
+        "insert into customer_service_image_analysis_attempts (message_id, conversation_id, attempt_number, status, schema_version) values ($1, $2, 1, 'pending', 'v1') returning id",
+        [messageA.rows[0].id, conversation.rows[0].id],
+      );
+      const attachmentB = await client.query(
+        "insert into customer_service_attachments (message_id, conversation_id, external_attachment_key_hash, ordinal) values ($1, $2, $3, 0) returning id",
+        [messageB.rows[0].id, conversation.rows[0].id, `schema-test-attachment-b-${randomUUID()}`],
+      );
+
+      const input = await client.query(
+        "insert into customer_service_image_analysis_inputs (analysis_attempt_id, attachment_id, conversation_id, ordinal) values ($1, $2, $3, 0) returning analysis_attempt_id",
+        [attemptA.rows[0].id, attachmentB.rows[0].id, conversation.rows[0].id],
+      );
+
+      expect(input.rowCount).toBe(1);
+      expect(input.rows[0].analysis_attempt_id).toBe(attemptA.rows[0].id);
+    } finally {
+      await client.query("ROLLBACK");
+      await client.end();
+    }
+  });
+
+  databaseIt("rejects an image input that combines parents from different conversations", async () => {
     const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });
     await client.connect();
     await client.query("BEGIN");
@@ -168,17 +235,17 @@ describe("customer service schema contract", () => {
         [conversationB.rows[0].id, `schema-test-message-b-${randomUUID()}`],
       );
       const attemptA = await client.query(
-        "insert into customer_service_image_analysis_attempts (message_id, attempt_number, status, schema_version) values ($1, 1, 'pending', 'v1') returning id",
-        [messageA.rows[0].id],
+        "insert into customer_service_image_analysis_attempts (message_id, conversation_id, attempt_number, status, schema_version) values ($1, $2, 1, 'pending', 'v1') returning id",
+        [messageA.rows[0].id, conversationA.rows[0].id],
       );
       const attachmentB = await client.query(
-        "insert into customer_service_attachments (message_id, external_attachment_key_hash, ordinal) values ($1, $2, 0) returning id",
-        [messageB.rows[0].id, `schema-test-attachment-b-${randomUUID()}`],
+        "insert into customer_service_attachments (message_id, conversation_id, external_attachment_key_hash, ordinal) values ($1, $2, $3, 0) returning id",
+        [messageB.rows[0].id, conversationB.rows[0].id, `schema-test-attachment-b-${randomUUID()}`],
       );
 
       await expect(client.query(
-        "insert into customer_service_image_analysis_inputs (analysis_attempt_id, attachment_id, message_id, ordinal) values ($1, $2, $3, 0)",
-        [attemptA.rows[0].id, attachmentB.rows[0].id, messageA.rows[0].id],
+        "insert into customer_service_image_analysis_inputs (analysis_attempt_id, attachment_id, conversation_id, ordinal) values ($1, $2, $3, 0)",
+        [attemptA.rows[0].id, attachmentB.rows[0].id, conversationA.rows[0].id],
       )).rejects.toMatchObject({ code: "23503" });
     } finally {
       await client.query("ROLLBACK");

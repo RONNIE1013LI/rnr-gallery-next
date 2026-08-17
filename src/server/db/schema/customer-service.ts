@@ -93,6 +93,7 @@ export const customerServiceMessages = pgTable(
     uniqueIndex("customer_service_messages_pilot_sequence_unique")
       .on(table.pilotRunId, table.pilotSequence)
       .where(sql`${table.pilotRunId} is not null and ${table.pilotSequence} is not null`),
+    unique("customer_service_messages_id_conversation_unique").on(table.id, table.conversationId),
     index("customer_service_messages_conversation_received_idx").on(table.conversationId, table.receivedAt),
     index("customer_service_messages_created_idx").on(table.createdAt),
     check("customer_service_messages_channel_valid", sql`${table.channel} in ('facebook', 'website')`),
@@ -197,7 +198,8 @@ export const customerServiceAttachments = pgTable(
   "customer_service_attachments",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    messageId: uuid("message_id").notNull().references(() => customerServiceMessages.id, { onDelete: "restrict" }),
+    messageId: uuid("message_id").notNull(),
+    conversationId: uuid("conversation_id").notNull(),
     externalAttachmentKeyHash: text("external_attachment_key_hash").notNull(),
     ordinal: integer("ordinal").notNull(),
     kind: text("kind").$type<"image">().default("image").notNull(),
@@ -222,8 +224,13 @@ export const customerServiceAttachments = pgTable(
     uniqueIndex("customer_service_attachments_message_external_unique")
       .on(table.messageId, table.externalAttachmentKeyHash),
     uniqueIndex("customer_service_attachments_message_ordinal_unique").on(table.messageId, table.ordinal),
-    unique("customer_service_attachments_id_message_unique").on(table.id, table.messageId),
+    unique("customer_service_attachments_id_conversation_unique").on(table.id, table.conversationId),
     index("customer_service_attachments_status_delete_due_idx").on(table.status, table.deleteDueAt),
+    foreignKey({
+      name: "customer_service_attachments_message_conversation_fk",
+      columns: [table.messageId, table.conversationId],
+      foreignColumns: [customerServiceMessages.id, customerServiceMessages.conversationId],
+    }).onDelete("restrict"),
     check("customer_service_attachments_external_hash_valid", sql`length(trim(${table.externalAttachmentKeyHash})) > 0`),
     check("customer_service_attachments_ordinal_valid", sql`${table.ordinal} >= 0`),
     check("customer_service_attachments_kind_valid", sql`${table.kind} = 'image'`),
@@ -237,7 +244,8 @@ export const customerServiceImageAnalysisAttempts = pgTable(
   "customer_service_image_analysis_attempts",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    messageId: uuid("message_id").notNull().references(() => customerServiceMessages.id, { onDelete: "restrict" }),
+    messageId: uuid("message_id").notNull(),
+    conversationId: uuid("conversation_id").notNull(),
     attemptNumber: integer("attempt_number").notNull(),
     status: text("status")
       .$type<"pending" | "provider_pending" | "analyzed" | "input_rejected" | "provider_error" | "schema_blocked">()
@@ -259,9 +267,14 @@ export const customerServiceImageAnalysisAttempts = pgTable(
   },
   (table) => [
     uniqueIndex("customer_service_image_analysis_attempts_message_number_unique").on(table.messageId, table.attemptNumber),
-    unique("customer_service_image_analysis_attempts_id_message_unique").on(table.id, table.messageId),
+    unique("customer_service_image_analysis_attempts_id_conversation_unique").on(table.id, table.conversationId),
     index("customer_service_image_analysis_attempts_message_started_idx").on(table.messageId, table.startedAt),
     index("customer_service_image_analysis_attempts_status_started_idx").on(table.status, table.startedAt),
+    foreignKey({
+      name: "customer_service_image_analysis_attempts_message_conversation_fk",
+      columns: [table.messageId, table.conversationId],
+      foreignColumns: [customerServiceMessages.id, customerServiceMessages.conversationId],
+    }).onDelete("restrict"),
     check("customer_service_image_analysis_attempts_number_valid", sql`${table.attemptNumber} > 0`),
     check("customer_service_image_analysis_attempts_status_valid", sql`${table.status} in ('pending', 'provider_pending', 'analyzed', 'input_rejected', 'provider_error', 'schema_blocked')`),
     check("customer_service_image_analysis_attempts_usage_valid", sql`coalesce(${table.inputTokens}, 0) >= 0 and coalesce(${table.cachedInputTokens}, 0) >= 0 and coalesce(${table.outputTokens}, 0) >= 0 and coalesce(${table.estimatedCostMicrousd}, 0) >= 0 and coalesce(${table.latencyMs}, 0) >= 0`),
@@ -274,7 +287,7 @@ export const customerServiceImageAnalysisInputs = pgTable(
   {
     analysisAttemptId: uuid("analysis_attempt_id").notNull(),
     attachmentId: uuid("attachment_id").notNull(),
-    messageId: uuid("message_id").notNull(),
+    conversationId: uuid("conversation_id").notNull(),
     ordinal: integer("ordinal").notNull(),
   },
   (table) => [
@@ -284,14 +297,14 @@ export const customerServiceImageAnalysisInputs = pgTable(
       .on(table.analysisAttemptId, table.ordinal),
     index("customer_service_image_analysis_inputs_attachment_idx").on(table.attachmentId),
     foreignKey({
-      name: "customer_service_image_analysis_inputs_attempt_message_fk",
-      columns: [table.analysisAttemptId, table.messageId],
-      foreignColumns: [customerServiceImageAnalysisAttempts.id, customerServiceImageAnalysisAttempts.messageId],
+      name: "customer_service_image_analysis_inputs_attempt_conversation_fk",
+      columns: [table.analysisAttemptId, table.conversationId],
+      foreignColumns: [customerServiceImageAnalysisAttempts.id, customerServiceImageAnalysisAttempts.conversationId],
     }).onDelete("restrict"),
     foreignKey({
-      name: "customer_service_image_analysis_inputs_attachment_message_fk",
-      columns: [table.attachmentId, table.messageId],
-      foreignColumns: [customerServiceAttachments.id, customerServiceAttachments.messageId],
+      name: "customer_service_image_analysis_inputs_attachment_conversation_fk",
+      columns: [table.attachmentId, table.conversationId],
+      foreignColumns: [customerServiceAttachments.id, customerServiceAttachments.conversationId],
     }).onDelete("restrict"),
     check("customer_service_image_analysis_inputs_ordinal_valid", sql`${table.ordinal} >= 0`),
   ],

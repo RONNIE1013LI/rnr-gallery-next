@@ -1,5 +1,5 @@
 {
-  "id": "a2675f36-ad21-4a72-832b-729a9f545752",
+  "id": "37d4ac84-84f3-4fbf-8e1b-d82edce9dede",
   "prevId": "8266e76c-a8cf-4a8e-85e5-647b0fac1b20",
   "version": "7",
   "dialect": "postgresql",
@@ -1998,6 +1998,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "external_attachment_key_hash": {
           "name": "external_attachment_key_hash",
           "type": "text",
@@ -2165,15 +2171,17 @@
         }
       },
       "foreignKeys": {
-        "customer_service_attachments_message_id_customer_service_messages_id_fk": {
-          "name": "customer_service_attachments_message_id_customer_service_messages_id_fk",
+        "customer_service_attachments_message_conversation_fk": {
+          "name": "customer_service_attachments_message_conversation_fk",
           "tableFrom": "customer_service_attachments",
           "tableTo": "customer_service_messages",
           "columnsFrom": [
-            "message_id"
+            "message_id",
+            "conversation_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "conversation_id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
@@ -2181,12 +2189,12 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "customer_service_attachments_id_message_unique": {
-          "name": "customer_service_attachments_id_message_unique",
+        "customer_service_attachments_id_conversation_unique": {
+          "name": "customer_service_attachments_id_conversation_unique",
           "nullsNotDistinct": false,
           "columns": [
             "id",
-            "message_id"
+            "conversation_id"
           ]
         }
       },
@@ -2520,6 +2528,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
         "attempt_number": {
           "name": "attempt_number",
           "type": "integer",
@@ -2686,15 +2700,17 @@
         }
       },
       "foreignKeys": {
-        "customer_service_image_analysis_attempts_message_id_customer_service_messages_id_fk": {
-          "name": "customer_service_image_analysis_attempts_message_id_customer_service_messages_id_fk",
+        "customer_service_image_analysis_attempts_message_conversation_fk": {
+          "name": "customer_service_image_analysis_attempts_message_conversation_fk",
           "tableFrom": "customer_service_image_analysis_attempts",
           "tableTo": "customer_service_messages",
           "columnsFrom": [
-            "message_id"
+            "message_id",
+            "conversation_id"
           ],
           "columnsTo": [
-            "id"
+            "id",
+            "conversation_id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
@@ -2702,12 +2718,12 @@
       },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
-        "customer_service_image_analysis_attempts_id_message_unique": {
-          "name": "customer_service_image_analysis_attempts_id_message_unique",
+        "customer_service_image_analysis_attempts_id_conversation_unique": {
+          "name": "customer_service_image_analysis_attempts_id_conversation_unique",
           "nullsNotDistinct": false,
           "columns": [
             "id",
-            "message_id"
+            "conversation_id"
           ]
         }
       },
@@ -2748,8 +2764,8 @@
           "primaryKey": false,
           "notNull": true
         },
-        "message_id": {
-          "name": "message_id",
+        "conversation_id": {
+          "name": "conversation_id",
           "type": "uuid",
           "primaryKey": false,
           "notNull": true
@@ -2821,32 +2837,32 @@
         }
       },
       "foreignKeys": {
-        "customer_service_image_analysis_inputs_attempt_message_fk": {
-          "name": "customer_service_image_analysis_inputs_attempt_message_fk",
+        "customer_service_image_analysis_inputs_attempt_conversation_fk": {
+          "name": "customer_service_image_analysis_inputs_attempt_conversation_fk",
           "tableFrom": "customer_service_image_analysis_inputs",
           "tableTo": "customer_service_image_analysis_attempts",
           "columnsFrom": [
             "analysis_attempt_id",
-            "message_id"
+            "conversation_id"
           ],
           "columnsTo": [
             "id",
-            "message_id"
+            "conversation_id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
         },
-        "customer_service_image_analysis_inputs_attachment_message_fk": {
-          "name": "customer_service_image_analysis_inputs_attachment_message_fk",
+        "customer_service_image_analysis_inputs_attachment_conversation_fk": {
+          "name": "customer_service_image_analysis_inputs_attachment_conversation_fk",
           "tableFrom": "customer_service_image_analysis_inputs",
           "tableTo": "customer_service_attachments",
           "columnsFrom": [
             "attachment_id",
-            "message_id"
+            "conversation_id"
           ],
           "columnsTo": [
             "id",
-            "message_id"
+            "conversation_id"
           ],
           "onDelete": "restrict",
           "onUpdate": "no action"
@@ -3061,7 +3077,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "customer_service_messages_id_conversation_unique": {
+          "name": "customer_service_messages_id_conversation_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "conversation_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "customer_service_messages_channel_valid": {

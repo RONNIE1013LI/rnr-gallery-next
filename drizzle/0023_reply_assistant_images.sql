@@ -1,6 +1,7 @@
 CREATE TABLE "customer_service_attachments" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"message_id" uuid NOT NULL,
+	"conversation_id" uuid NOT NULL,
 	"external_attachment_key_hash" text NOT NULL,
 	"ordinal" integer NOT NULL,
 	"kind" text DEFAULT 'image' NOT NULL,
@@ -17,7 +18,7 @@ CREATE TABLE "customer_service_attachments" (
 	"deleted_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "customer_service_attachments_id_message_unique" UNIQUE("id","message_id"),
+	CONSTRAINT "customer_service_attachments_id_conversation_unique" UNIQUE("id","conversation_id"),
 	CONSTRAINT "customer_service_attachments_external_hash_valid" CHECK (length(trim("customer_service_attachments"."external_attachment_key_hash")) > 0),
 	CONSTRAINT "customer_service_attachments_ordinal_valid" CHECK ("customer_service_attachments"."ordinal" >= 0),
 	CONSTRAINT "customer_service_attachments_kind_valid" CHECK ("customer_service_attachments"."kind" = 'image'),
@@ -29,6 +30,7 @@ CREATE TABLE "customer_service_attachments" (
 CREATE TABLE "customer_service_image_analysis_attempts" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"message_id" uuid NOT NULL,
+	"conversation_id" uuid NOT NULL,
 	"attempt_number" integer NOT NULL,
 	"status" text NOT NULL,
 	"provider_called" boolean DEFAULT false NOT NULL,
@@ -45,7 +47,7 @@ CREATE TABLE "customer_service_image_analysis_attempts" (
 	"provider_error_code" text,
 	"started_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"completed_at" timestamp with time zone,
-	CONSTRAINT "customer_service_image_analysis_attempts_id_message_unique" UNIQUE("id","message_id"),
+	CONSTRAINT "customer_service_image_analysis_attempts_id_conversation_unique" UNIQUE("id","conversation_id"),
 	CONSTRAINT "customer_service_image_analysis_attempts_number_valid" CHECK ("customer_service_image_analysis_attempts"."attempt_number" > 0),
 	CONSTRAINT "customer_service_image_analysis_attempts_status_valid" CHECK ("customer_service_image_analysis_attempts"."status" in ('pending', 'provider_pending', 'analyzed', 'input_rejected', 'provider_error', 'schema_blocked')),
 	CONSTRAINT "customer_service_image_analysis_attempts_usage_valid" CHECK (coalesce("customer_service_image_analysis_attempts"."input_tokens", 0) >= 0 and coalesce("customer_service_image_analysis_attempts"."cached_input_tokens", 0) >= 0 and coalesce("customer_service_image_analysis_attempts"."output_tokens", 0) >= 0 and coalesce("customer_service_image_analysis_attempts"."estimated_cost_microusd", 0) >= 0 and coalesce("customer_service_image_analysis_attempts"."latency_ms", 0) >= 0),
@@ -55,16 +57,17 @@ CREATE TABLE "customer_service_image_analysis_attempts" (
 CREATE TABLE "customer_service_image_analysis_inputs" (
 	"analysis_attempt_id" uuid NOT NULL,
 	"attachment_id" uuid NOT NULL,
-	"message_id" uuid NOT NULL,
+	"conversation_id" uuid NOT NULL,
 	"ordinal" integer NOT NULL,
 	CONSTRAINT "customer_service_image_analysis_inputs_ordinal_valid" CHECK ("customer_service_image_analysis_inputs"."ordinal" >= 0)
 );
 --> statement-breakpoint
 ALTER TABLE "customer_service_messages" ADD COLUMN "customer_text" text;--> statement-breakpoint
-ALTER TABLE "customer_service_attachments" ADD CONSTRAINT "customer_service_attachments_message_id_customer_service_messages_id_fk" FOREIGN KEY ("message_id") REFERENCES "public"."customer_service_messages"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "customer_service_image_analysis_attempts" ADD CONSTRAINT "customer_service_image_analysis_attempts_message_id_customer_service_messages_id_fk" FOREIGN KEY ("message_id") REFERENCES "public"."customer_service_messages"("id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "customer_service_image_analysis_inputs" ADD CONSTRAINT "customer_service_image_analysis_inputs_attempt_message_fk" FOREIGN KEY ("analysis_attempt_id","message_id") REFERENCES "public"."customer_service_image_analysis_attempts"("id","message_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "customer_service_image_analysis_inputs" ADD CONSTRAINT "customer_service_image_analysis_inputs_attachment_message_fk" FOREIGN KEY ("attachment_id","message_id") REFERENCES "public"."customer_service_attachments"("id","message_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "customer_service_messages" ADD CONSTRAINT "customer_service_messages_id_conversation_unique" UNIQUE("id","conversation_id");--> statement-breakpoint
+ALTER TABLE "customer_service_attachments" ADD CONSTRAINT "customer_service_attachments_message_conversation_fk" FOREIGN KEY ("message_id","conversation_id") REFERENCES "public"."customer_service_messages"("id","conversation_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "customer_service_image_analysis_attempts" ADD CONSTRAINT "customer_service_image_analysis_attempts_message_conversation_fk" FOREIGN KEY ("message_id","conversation_id") REFERENCES "public"."customer_service_messages"("id","conversation_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "customer_service_image_analysis_inputs" ADD CONSTRAINT "customer_service_image_analysis_inputs_attempt_conversation_fk" FOREIGN KEY ("analysis_attempt_id","conversation_id") REFERENCES "public"."customer_service_image_analysis_attempts"("id","conversation_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
+ALTER TABLE "customer_service_image_analysis_inputs" ADD CONSTRAINT "customer_service_image_analysis_inputs_attachment_conversation_fk" FOREIGN KEY ("attachment_id","conversation_id") REFERENCES "public"."customer_service_attachments"("id","conversation_id") ON DELETE restrict ON UPDATE no action;--> statement-breakpoint
 CREATE UNIQUE INDEX "customer_service_attachments_message_external_unique" ON "customer_service_attachments" USING btree ("message_id","external_attachment_key_hash");--> statement-breakpoint
 CREATE UNIQUE INDEX "customer_service_attachments_message_ordinal_unique" ON "customer_service_attachments" USING btree ("message_id","ordinal");--> statement-breakpoint
 CREATE INDEX "customer_service_attachments_status_delete_due_idx" ON "customer_service_attachments" USING btree ("status","delete_due_at");--> statement-breakpoint
