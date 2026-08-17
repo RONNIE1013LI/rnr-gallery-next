@@ -129,6 +129,60 @@ describe("Facebook attachment URL validation", () => {
     )).rejects.toThrow("Facebook attachment host resolved to a non-public address");
   });
 
+  it.each([
+    "0.0.0.0",
+    "10.255.255.255",
+    "100.64.0.0",
+    "100.127.255.255",
+    "127.255.255.255",
+    "169.254.255.255",
+    "172.16.0.0",
+    "172.31.255.255",
+    "192.0.0.255",
+    "192.0.2.255",
+    "192.88.99.1",
+    "192.168.255.255",
+    "198.18.0.0",
+    "198.19.255.255",
+    "198.51.100.255",
+    "203.0.113.255",
+    "224.0.0.0",
+    "239.255.255.255",
+    "240.0.0.0",
+    "255.255.255.255",
+  ])("fails closed for IANA non-public/special-use IPv4 address %s", async (address) => {
+    const lookup = vi.fn().mockResolvedValue([{ address, family: 4 as const }]);
+    const fetchMock = vi.fn().mockResolvedValue(imageResponse());
+
+    await expect(reader({ lookup, fetch: fetchMock }).read(
+      { kind: "facebook_remote", url: "https://cdn.facebook.test/image.png" },
+      new AbortController().signal,
+    )).rejects.toThrow("Facebook attachment host resolved to a non-public address");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "8.8.8.8",
+    "93.184.216.34",
+    "100.63.255.255",
+    "100.128.0.0",
+    "172.15.255.255",
+    "172.32.0.0",
+    "192.31.196.1",
+    "192.52.193.1",
+    "192.175.48.1",
+    "223.255.255.254",
+  ])("allows a public IPv4 DNS address %s", async (address) => {
+    const lookup = vi.fn().mockResolvedValue([{ address, family: 4 as const }]);
+    const fetchMock = vi.fn().mockResolvedValue(imageResponse());
+
+    await expect(reader({ lookup, fetch: fetchMock }).read(
+      { kind: "facebook_remote", url: "https://cdn.facebook.test/image.png" },
+      new AbortController().signal,
+    )).resolves.toMatchObject({ mimeType: "image/png" });
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
   it("revalidates redirects and rejects an allowlist escape", async () => {
     const fetchMock = vi.fn().mockResolvedValueOnce(new Response(null, {
       status: 302,
