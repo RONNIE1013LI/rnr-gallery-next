@@ -127,6 +127,58 @@ describe("product registry administration", () => {
       .toMatchObject({ amountInclTaxCents: 35_999 });
   });
 
+  it("rejects a Bundle product patch that omits any exact NZD final price", async () => {
+    const repository = memoryRepository();
+    const service = createProductRegistryService(repository);
+    const bundle = defaultProductRegistry.products.find(
+      (product) => product.key === "banner-bundle",
+    )!;
+
+    await expect(service.publishProduct(actor, {
+      productKey: bundle.key,
+      expectedRevision: 0,
+      idempotencyKey: "bundle-missing-nz-gross-0001",
+      title: bundle.title,
+      summary: bundle.summary,
+      imageSrc: bundle.image.src,
+      imageAlt: bundle.image.alt,
+      active: bundle.active,
+      featured: bundle.featured,
+      sizes: bundle.configuration.sizes.map((size, index) => index === 0
+        ? { key: size.key, label: size.label, priceExGstCents: size.priceExGstCents }
+        : { ...size }),
+      includedPhotos: 5,
+      extraPhotoPriceExGstCents: null,
+      extraBackgroundRemovalFeeInclGstCents: null,
+    })).rejects.toBeInstanceOf(ProductRegistryValidationError);
+    expect(repository.publish).not.toHaveBeenCalled();
+  });
+
+  it("rejects a Bundle product patch that changes the five-photo component allowance", async () => {
+    const repository = memoryRepository();
+    const service = createProductRegistryService(repository);
+    const bundle = defaultProductRegistry.products.find(
+      (product) => product.key === "banner-bundle",
+    )!;
+
+    await expect(service.publishProduct(actor, {
+      productKey: bundle.key,
+      expectedRevision: 0,
+      idempotencyKey: "bundle-photo-rule-0001",
+      title: bundle.title,
+      summary: bundle.summary,
+      imageSrc: bundle.image.src,
+      imageAlt: bundle.image.alt,
+      active: bundle.active,
+      featured: bundle.featured,
+      sizes: bundle.configuration.sizes,
+      includedPhotos: 6,
+      extraPhotoPriceExGstCents: null,
+      extraBackgroundRemovalFeeInclGstCents: null,
+    })).rejects.toBeInstanceOf(ProductRegistryValidationError);
+    expect(repository.publish).not.toHaveBeenCalled();
+  });
+
   it("rejects a stale editor before it can overwrite a newer revision", async () => {
     const repository = memoryRepository({ revision: 3, snapshot: defaultProductRegistry });
     const service = createProductRegistryService(repository);

@@ -9,6 +9,7 @@ import {
   australiaPriceBookSchema,
   synchronizeNewZealandPriceBook,
 } from "@/domain/catalogue/market-price-book";
+import { BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT } from "@/domain/bundles/banner-bundle";
 import type { getDatabase } from "@/server/db/client";
 import {
   adminAuditLogs,
@@ -42,7 +43,27 @@ const productPatchSchema = mutationBase.extend({
   includedPhotos: z.number().int().min(0).max(20),
   extraPhotoPriceExGstCents: cents.nullable(),
   extraBackgroundRemovalFeeInclGstCents: cents.nullable(),
-}).strict();
+}).strict().superRefine((input, context) => {
+  if (input.productKey !== "banner-bundle") return;
+  if (
+    input.includedPhotos !== BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT
+  ) {
+    context.addIssue({
+      code: "custom",
+      path: ["includedPhotos"],
+      message: `Banner Bundle requires exactly ${BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT} included photos per component.`,
+    });
+  }
+  for (const [index, size] of input.sizes.entries()) {
+    if (size.nzAmountInclTaxCents === undefined) {
+      context.addIssue({
+        code: "custom",
+        path: ["sizes", index, "nzAmountInclTaxCents"],
+        message: "Every Banner Bundle size requires an exact NZ GST-inclusive price.",
+      });
+    }
+  }
+});
 const pricingPatchSchema = mutationBase.extend({
   peoplePetsFeesExGstCents: z.array(cents).length(5),
   additionalPeoplePetsEachExGstCents: cents,

@@ -119,8 +119,8 @@ describe("web order production job snapshot", () => {
           orientation: "landscape",
           peoplePets: 0,
           photoSubmissionMethod: "later",
-          designText: "First design",
-          notes: "First note",
+          designText: "  First design  ",
+          notes: "  First note  ",
           neededDate: "2026-08-12",
           urgentServiceConfirmed: false,
           quantity: 1,
@@ -184,6 +184,8 @@ describe("web order production job snapshot", () => {
         productTitle: "Photo Print Canvas",
         sizeLabel: "A4 — 29.7 × 21 cm",
         quantity: 1,
+        designText: "  First design  ",
+        notes: "  First note  ",
       }),
       expect.objectContaining({
         position: 1,
@@ -192,6 +194,80 @@ describe("web order production job snapshot", () => {
         sizeLabel: "85 × 200 cm",
         quantity: 2,
       }),
+    ]);
+    expect(snapshot.job).toMatchObject({
+      designRequirements: "First design\n\nSecond design",
+      internalNotes: "First note\n\nSecond note",
+    });
+  });
+
+  it("projects labelled Bundle component wording and instructions without flattening the order snapshot", () => {
+    const now = new Date("2026-08-04T00:00:00.000Z");
+    const priced = repriceCart({
+      version: 1,
+      items: [{
+        clientItemId: randomUUID(),
+        productKey: "banner-bundle",
+        sizeKey: "rollup-wall-200x100",
+        peoplePets: 0,
+        photoSubmissionMethod: "later",
+        designText: "",
+        notes: "",
+        neededDate: "2026-08-12",
+        urgentServiceConfirmed: false,
+        quantity: 1,
+        uploadReferences: [],
+        bundleComponents: [
+          {
+            componentKey: "roll-up",
+            photoSubmissionMethod: "later",
+            designText: "Roll-Up wording",
+            notes: "Keep the logo clear",
+            uploadReferences: [],
+          },
+          {
+            componentKey: "wall-banner",
+            photoSubmissionMethod: "later",
+            designText: "Wall Banner wording",
+            notes: "Use the wide layout",
+            uploadReferences: [],
+          },
+        ],
+      }],
+    }, { now });
+    const address = normalizeAddress({
+      country: "NZ",
+      fullName: "Aroha Ngata",
+      building: "",
+      street: "12 Queen Street",
+      suburb: "Auckland Central",
+      region: "Auckland",
+      postcode: "1010",
+      phone: "021 123 4567",
+      email: "aroha@example.test",
+    });
+
+    const snapshot = buildWebProductionJobSnapshot({
+      order: { id: randomUUID(), orderNumber: "RNR-2026-BUNDLE" },
+      cart: priced,
+      billingAddress: address,
+      deliveryAddress: address,
+      deliveryMethod: "post",
+      orderItemIds: [randomUUID()],
+      now,
+    });
+
+    expect(snapshot.items[0]).toMatchObject({
+      designText: "Roll-Up Banner — wording\nRoll-Up wording\n\nWall Banner — wording\nWall Banner wording",
+      notes: "Roll-Up Banner — design instructions\nKeep the logo clear\n\nWall Banner — design instructions\nUse the wide layout",
+    });
+    expect(snapshot.job).toMatchObject({
+      designRequirements: snapshot.items[0].designText,
+      internalNotes: snapshot.items[0].notes,
+    });
+    expect(priced.items[0].bundleComponents?.map((component) => component.designText)).toEqual([
+      "Roll-Up wording",
+      "Wall Banner wording",
     ]);
   });
 });

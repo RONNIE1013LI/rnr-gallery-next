@@ -63,6 +63,11 @@ describe("product registry editor", () => {
 
     expect(screen.getByLabelText("rollup-wall-200x100 final price incl GST (NZD)")).toBeInTheDocument();
     expect(screen.getByLabelText("Banner Bundle · rollup-wall-200x100 final price (AUD)")).toBeInTheDocument();
+    expect(screen.getByText("Each Banner Bundle component includes 5 photos.")).toBeVisible();
+    expect(screen.getByText(/Component extra-photo and background-removal charges use the Roll-Up Banner and Custom Themed Wall Banner settings/)).toBeVisible();
+    expect(screen.queryByLabelText("Included photos")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Extra photo ex GST (NZD, optional)")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Background removal incl GST (NZD, optional)")).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("rollup-wall-200x100 final price incl GST (NZD)"), {
       target: { value: "359.99" },
     });
@@ -75,6 +80,11 @@ describe("product registry editor", () => {
       label: "85 × 200 cm Roll-Up + 200 × 100 cm Wall Banner",
       priceExGstCents: 31_303,
       nzAmountInclTaxCents: 35_999,
+    });
+    expect(payload).toMatchObject({
+      includedPhotos: 5,
+      extraPhotoPriceExGstCents: 500,
+      extraBackgroundRemovalFeeInclGstCents: 2_000,
     });
   });
 

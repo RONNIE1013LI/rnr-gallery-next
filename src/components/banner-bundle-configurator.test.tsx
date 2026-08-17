@@ -31,6 +31,25 @@ describe("BannerBundleConfigurator", () => {
     expect(document.querySelector("form#customise")).not.toBeNull();
   });
 
+  it("shows the fixed five-photo component allowance even if an untrusted schema differs", () => {
+    render(
+      <BannerBundleConfigurator
+        product={product}
+        schema={{ ...schema, includedPhotos: 6 }}
+        registry={defaultProductRegistry}
+        pricing={defaultProductRegistry.pricing}
+        orderDate="2026-08-17"
+      />,
+    );
+
+    expect(screen.getAllByText(
+      "Up to 5 photos are included. Additional photos are charged from photo 6.",
+    )).toHaveLength(2);
+    expect(screen.queryByText(
+      "Up to 6 photos are included. Additional photos are charged from photo 7.",
+    )).not.toBeInTheDocument();
+  });
+
   it("adds one Bundle cart item with the active frozen union and grouped snapshots", async () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (_url, init?: RequestInit) => {
       const file = (init?.body as FormData).get("file") as File;

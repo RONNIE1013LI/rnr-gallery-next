@@ -13,6 +13,7 @@ import {
   type PhotoSubmissionMethod,
   type ProductConfigurationSchema,
 } from "@/domain/configuration/types";
+import { BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT } from "@/domain/bundles/banner-bundle";
 import {
   DEFAULT_PEOPLE_PETS_PRICING,
   getPeoplePetsFeeExGstCents,
@@ -253,6 +254,28 @@ function assertImmutableStructure(document: ProductRegistryDocument) {
     )) {
       throw new ProductRegistryValidationError("Size structure cannot be changed.");
     }
+  }
+}
+
+function assertBannerBundleInvariants(document: ProductRegistryDocument) {
+  const bundle = document.products.find((product) => product.key === "banner-bundle");
+  if (!bundle) {
+    throw new ProductRegistryValidationError("Banner Bundle configuration is missing.");
+  }
+  if (
+    bundle.configuration.includedPhotos !==
+      BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT
+  ) {
+    throw new ProductRegistryValidationError(
+      `Banner Bundle requires exactly ${BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT} included photos per component.`,
+    );
+  }
+  if (bundle.configuration.sizes.some(
+    (size) => size.nzAmountInclTaxCents === undefined,
+  )) {
+    throw new ProductRegistryValidationError(
+      "Every Banner Bundle size requires an exact NZ GST-inclusive price.",
+    );
   }
 }
 
@@ -519,6 +542,7 @@ export function parseProductRegistry(value: unknown): ProductRegistryDocument {
     );
   }
   const document = parsed.data as ProductRegistryDocument;
+  assertBannerBundleInvariants(document);
   assertImmutableStructure(document);
   try {
     assertMarketPriceBookStructure(document);

@@ -1,5 +1,6 @@
 import { CataloguePage } from "@/components/catalogue-page";
 import { getRegistryProducts } from "@/domain/catalogue/product-registry";
+import { getMarketStartingPriceInclTaxCents } from "@/domain/pricing/market-quote";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { buildPublicMetadata } from "@/server/seo/metadata";
 
@@ -14,6 +15,14 @@ export const dynamic = "force-dynamic";
 
 export default async function ShopPage() {
   const { registry } = await getSafePublicProductRegistry();
+  const products = getRegistryProducts(registry).filter((product) => product.active);
+  const pricesInclTaxCents = products.some((product) => product.key === "banner-bundle")
+    ? { "banner-bundle": getMarketStartingPriceInclTaxCents(
+        registry,
+        "NZ",
+        "banner-bundle",
+      ) }
+    : undefined;
   return (
     <CataloguePage
       eyebrow="OUR PRODUCTS"
@@ -21,7 +30,8 @@ export default async function ShopPage() {
       description="Select a product to see sizes, options and start your personalised order."
       path="/shop"
       breadcrumbLabel="Shop"
-      products={getRegistryProducts(registry).filter((product) => product.active)}
+      products={products}
+      pricesInclTaxCents={pricesInclTaxCents}
     />
   );
 }

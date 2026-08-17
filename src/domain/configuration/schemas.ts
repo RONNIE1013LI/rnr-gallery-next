@@ -1,4 +1,5 @@
 import type { ProductConfigurationSchema } from "./types";
+import { BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT } from "@/domain/bundles/banner-bundle";
 
 const canvasSizes = Object.freeze([
   { key: "a4", label: "A4 — 29.7 × 21 cm", priceExGstCents: 6_500 },
@@ -145,7 +146,7 @@ export const configurationSchemas = Object.freeze([
     defaultPeoplePets: 0,
     minimumSourcePhotos: 1,
     maximumSourcePhotos: 50,
-    includedPhotos: 5,
+    includedPhotos: BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT,
     extraPhotoPriceExGstCents: 500,
     extraBackgroundRemovalFeeInclGstCents: 2_000,
     ...common,

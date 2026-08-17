@@ -208,6 +208,40 @@ describe("authoritative product registry", () => {
     );
   });
 
+  it("rejects every Bundle registry path that loses an exact NZ gross size price", () => {
+    const missingExactGross = structuredClone(defaultProductRegistry);
+    const bundle = missingExactGross.products.find(
+      (product) => product.key === "banner-bundle",
+    )!;
+    delete bundle.configuration.sizes[0].nzAmountInclTaxCents;
+
+    expect(() => synchronizeNewZealandPriceBook(missingExactGross)).toThrow(
+      "exact NZ GST-inclusive price",
+    );
+
+    const matchedFallback = structuredClone(missingExactGross);
+    matchedFallback.markets.NZ.products.find(
+      (product) => product.productKey === "banner-bundle",
+    )!.sizes.find(
+      (size) => size.sizeKey === "rollup-wall-200x100",
+    )!.amountInclTaxCents = 35_998;
+    expect(() => parseProductRegistry(matchedFallback)).toThrow(
+      "exact NZ GST-inclusive price",
+    );
+  });
+
+  it("rejects a Bundle registry whose included-photo rule differs from five per component", () => {
+    const changedAllowance = structuredClone(defaultProductRegistry);
+    const bundle = changedAllowance.products.find(
+      (product) => product.key === "banner-bundle",
+    )!;
+    bundle.configuration.includedPhotos = 6;
+
+    expect(() => parseProductRegistry(changedAllowance)).toThrow(
+      "exactly 5 included photos per component",
+    );
+  });
+
   it("uses registry people and urgent fee policies in customer prices", () => {
     const input = structuredClone(defaultProductRegistry);
     input.pricing.peoplePetsFeesExGstCents = [4_500, 6_000, 8_500, 11_000, 13_000];

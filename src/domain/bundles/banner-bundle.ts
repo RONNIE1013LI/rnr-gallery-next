@@ -5,6 +5,9 @@ import {
 
 export type BannerBundleComponentKey = "roll-up" | "wall-banner";
 
+export const BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT = 5;
+export const MAX_BANNER_BUNDLE_SOURCE_PHOTOS = MAX_SOURCE_PHOTOS_PER_ITEM * 2;
+
 export type BannerBundleComponentCustomization = Readonly<{
   componentKey: BannerBundleComponentKey;
   photoSubmissionMethod: PhotoSubmissionMethod;
@@ -122,8 +125,14 @@ export function getBannerBundleCounts(
   const rollUp = components.find((component) => component.componentKey === "roll-up")!;
   const wallBanner = components.find((component) => component.componentKey === "wall-banner")!;
   return Object.freeze({
-    rollUpExtraPhotos: Math.max(0, rollUp.uploadReferences.length - 5),
-    wallBannerExtraPhotos: Math.max(0, wallBanner.uploadReferences.length - 5),
+    rollUpExtraPhotos: Math.max(
+      0,
+      rollUp.uploadReferences.length - BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT,
+    ),
+    wallBannerExtraPhotos: Math.max(
+      0,
+      wallBanner.uploadReferences.length - BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT,
+    ),
     rollUpBackgroundRemovals: rollUp.extraBackgroundRemovalUploadIds?.length ?? 0,
     wallBannerBackgroundRemovals:
       wallBanner.extraBackgroundRemovalUploadIds?.length ?? 0,

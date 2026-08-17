@@ -6,6 +6,7 @@ import type {
   ProductRegistryDocument,
   ProductRegistryPricing,
 } from "@/domain/catalogue/product-registry";
+import { BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT } from "@/domain/bundles/banner-bundle";
 import { createClientId } from "@/lib/client-id";
 import type { listAdminProducts } from "@/server/admin/product-admin-service";
 import styles from "./admin.module.css";
@@ -119,12 +120,15 @@ export function ProductRegistryForm({
               priceExGstCents: cents(form.get(`size-${size.key}-price`)),
             };
           }),
-          includedPhotos: Number(form.get("includedPhotos")),
-          extraPhotoPriceExGstCents: cents(form.get("extraPhotoPrice"), true),
-          extraBackgroundRemovalFeeInclGstCents: cents(
-            form.get("backgroundRemovalFee"),
-            true,
-          ),
+          includedPhotos: key === "banner-bundle"
+            ? BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT
+            : Number(form.get("includedPhotos")),
+          extraPhotoPriceExGstCents: key === "banner-bundle"
+            ? product.extraPhotoPriceExGstCents ?? null
+            : cents(form.get("extraPhotoPrice"), true),
+          extraBackgroundRemovalFeeInclGstCents: key === "banner-bundle"
+            ? product.extraBackgroundRemovalFeeInclGstCents ?? null
+            : cents(form.get("backgroundRemovalFee"), true),
         }),
       });
       const result = await readResponse(response);
@@ -446,9 +450,18 @@ export function ProductRegistryForm({
                   )}
                 </div>
               ))}
-              <label><span>Included photos</span><input name="includedPhotos" type="number" min={0} max={20} defaultValue={product.includedPhotos} required disabled={pending !== null} /></label>
-              <label><span>Extra photo ex GST (NZD, optional)</span><input name="extraPhotoPrice" inputMode="decimal" defaultValue={moneyInput(product.extraPhotoPriceExGstCents)} disabled={pending !== null} /></label>
-              <label><span>Background removal incl GST (NZD, optional)</span><input name="backgroundRemovalFee" inputMode="decimal" defaultValue={moneyInput(product.extraBackgroundRemovalFeeInclGstCents)} disabled={pending !== null} /></label>
+              {product.key === "banner-bundle" ? (
+                <div className={styles.fullField}>
+                  <strong>Each Banner Bundle component includes {BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT} photos.</strong>
+                  <p>Component extra-photo and background-removal charges use the Roll-Up Banner and Custom Themed Wall Banner settings.</p>
+                </div>
+              ) : (
+                <>
+                  <label><span>Included photos</span><input name="includedPhotos" type="number" min={0} max={20} defaultValue={product.includedPhotos} required disabled={pending !== null} /></label>
+                  <label><span>Extra photo ex GST (NZD, optional)</span><input name="extraPhotoPrice" inputMode="decimal" defaultValue={moneyInput(product.extraPhotoPriceExGstCents)} disabled={pending !== null} /></label>
+                  <label><span>Background removal incl GST (NZD, optional)</span><input name="backgroundRemovalFee" inputMode="decimal" defaultValue={moneyInput(product.extraBackgroundRemovalFeeInclGstCents)} disabled={pending !== null} /></label>
+                </>
+              )}
             </div>
             <div className={styles.registryFormActions}>
               <p aria-live="polite">{feedback[product.key]}</p>

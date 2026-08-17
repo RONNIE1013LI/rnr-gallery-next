@@ -14,6 +14,7 @@ import {
   UnclaimableUploadError,
   type OrderRepository,
 } from "./order-repository";
+import { buildWebProductionJobSnapshot } from "./drizzle-order-repository";
 
 const sessionId = "10000000-0000-4000-8000-000000000001";
 const key = "20000000-0000-4000-8000-000000000001";
@@ -129,7 +130,7 @@ describe("atomic order service", () => {
             componentKey: "roll-up" as const,
             photoSubmissionMethod: "upload" as const,
             designText: "Roll-up wording",
-            notes: "",
+            notes: "Roll-up instructions",
             uploadReferences: [uploadIds[0]],
             mainPhotoUploadId: uploadIds[0],
           },
@@ -137,7 +138,7 @@ describe("atomic order service", () => {
             componentKey: "wall-banner" as const,
             photoSubmissionMethod: "upload" as const,
             designText: "Wall wording",
-            notes: "",
+            notes: "Wall instructions",
             uploadReferences: [uploadIds[1]],
             mainPhotoUploadId: uploadIds[1],
           },
@@ -147,9 +148,22 @@ describe("atomic order service", () => {
     const cart = repriceCart(bundleInput, { now });
     const checkout = { ...state(), cartDigest: cart.cartDigest, cartSnapshot: cart };
     const findOwnedUploadIds = vi.fn().mockResolvedValue(uploadIds);
+    let productionSnapshot: ReturnType<typeof buildWebProductionJobSnapshot> | undefined;
     const repo = repository({
       getCheckoutState: vi.fn().mockResolvedValue(checkout),
       findOwnedUploadIds,
+      createAtomicOrder: vi.fn(async (input) => {
+        productionSnapshot = buildWebProductionJobSnapshot({
+          order: { id: existingOrder.id, orderNumber: existingOrder.orderNumber },
+          cart: input.cart,
+          billingAddress: input.billingAddress,
+          deliveryAddress: input.deliveryAddress,
+          deliveryMethod: input.deliveryMethod,
+          orderItemIds: ["50000000-0000-4000-8000-000000000001"],
+          now: input.now,
+        });
+        return existingOrder;
+      }),
     });
     const service = createOrderService({
       repository: repo,
@@ -172,6 +186,10 @@ describe("atomic order service", () => {
         })],
       }),
     }));
+    expect(productionSnapshot?.items[0]).toMatchObject({
+      designText: expect.stringMatching(/Roll-Up Banner — wording[\s\S]*Wall Banner — wording/),
+      notes: expect.stringMatching(/Roll-Up Banner — design instructions[\s\S]*Wall Banner — design instructions/),
+    });
   });
 
   it("returns the same-session same-key order before repricing or quoting", async () => {

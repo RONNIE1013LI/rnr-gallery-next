@@ -88,4 +88,54 @@ describe("cart checkout input", () => {
     ]);
     expect(repriced.items[0].unitPrice.totalInclGstCents).toBe(41_724);
   });
+
+  it("carries a real 50 + 50 Bundle upload union through checkout repricing", () => {
+    const rollUpUploads = uploadIds(50, "8000");
+    const wallBannerUploads = uploadIds(50, "8001");
+    const cart: Cart = {
+      version: 1,
+      items: [{
+        id: "00000000-0000-4000-8000-000000000100",
+        productKey: "banner-bundle",
+        productSlug: "banner-bundle",
+        productTitle: "Banner Bundle",
+        imageSrc: "/media/products/banner-bundle.png",
+        sizeKey: "rollup-wall-200x100",
+        sizeLabel: "85 × 200 cm Roll-Up + 200 × 100 cm Wall Banner",
+        peoplePets: 0,
+        photoSubmissionMethod: "upload",
+        designText: "",
+        notes: "",
+        neededDate: "2026-08-10",
+        deliveryPreference: "post",
+        quantity: 1,
+        price: calculateFixedPackage({ priceExGstCents: 1 }),
+        uploadReferences: [...rollUpUploads, ...wallBannerUploads],
+        bundleComponents: [
+          {
+            componentKey: "roll-up",
+            photoSubmissionMethod: "upload",
+            designText: "Roll-Up wording",
+            notes: "Roll-Up instructions",
+            uploadReferences: rollUpUploads,
+          },
+          {
+            componentKey: "wall-banner",
+            photoSubmissionMethod: "upload",
+            designText: "Wall Banner wording",
+            notes: "Wall Banner instructions",
+            uploadReferences: wallBannerUploads,
+          },
+        ],
+      }],
+    };
+
+    const input = cartToCheckoutInput(cart);
+    expect(input.items[0].uploadReferences).toHaveLength(100);
+
+    const repriced = repriceCart(input, { now: MONDAY_IN_AUCKLAND });
+    expect(repriced.items[0].uploadReferences).toHaveLength(100);
+    expect(repriced.items[0].bundleComponents?.map((component) =>
+      component.uploadReferences.length)).toEqual([50, 50]);
+  });
 });

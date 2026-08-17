@@ -1,6 +1,7 @@
 import { z } from "zod";
 import type { CanonicalCheckoutCartInput } from "./types";
 import { MAX_SOURCE_PHOTOS_PER_ITEM } from "@/domain/configuration/types";
+import { MAX_BANNER_BUNDLE_SOURCE_PHOTOS } from "@/domain/bundles/banner-bundle";
 
 // Defensive boundaries that are independent from each product's included quantity.
 export const MAX_PEOPLE_PETS_PER_ITEM = 20;
@@ -32,10 +33,21 @@ const checkoutItemInputSchema = z.object({
   neededDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/),
   urgentServiceConfirmed: z.boolean().optional(),
   quantity: z.number().int().min(1).max(5),
-  uploadReferences: z.array(z.uuid()).max(MAX_SOURCE_PHOTOS_PER_ITEM),
+  uploadReferences: z.array(z.uuid()).max(MAX_BANNER_BUNDLE_SOURCE_PHOTOS),
   mainPhotoUploadId: z.uuid().optional(),
   extraBackgroundRemovalUploadIds: z.array(z.uuid()).max(MAX_SOURCE_PHOTOS_PER_ITEM - 1).optional(),
   bundleComponents: z.array(bannerBundleComponentSchema).length(2).optional(),
+}).superRefine((item, context) => {
+  const maximum = item.productKey === "banner-bundle"
+    ? MAX_BANNER_BUNDLE_SOURCE_PHOTOS
+    : MAX_SOURCE_PHOTOS_PER_ITEM;
+  if (item.uploadReferences.length > maximum) {
+    context.addIssue({
+      code: "custom",
+      path: ["uploadReferences"],
+      message: `Choose no more than ${maximum} source photos.`,
+    });
+  }
 });
 
 export const checkoutCartInputSchema = z.object({

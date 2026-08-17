@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useCallback, useMemo, useRef, useState } from "react";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import {
+  BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT,
   flattenBannerBundleUploadReferences,
   validateBannerBundleComponents,
   type BannerBundleComponentCustomization,
@@ -122,6 +123,10 @@ export function BannerBundleConfigurator({
   const previewZoomDialogRef = useRef<HTMLDivElement>(null);
   const previewZoomCloseRef = useRef<HTMLButtonElement>(null);
   const closePreviewZoom = useCallback(() => setIsPreviewZoomOpen(false), []);
+  const componentSchema = useMemo(() => ({
+    ...schema,
+    includedPhotos: BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT,
+  }), [schema]);
 
   useContainedDialog({
     active: isPreviewZoomOpen,
@@ -192,8 +197,14 @@ export function BannerBundleConfigurator({
       sizeKey,
       peoplePets: 0,
       bundleCounts: {
-        rollUpExtraPhotos: Math.max(0, rollUpUploadReferences.length - 5),
-        wallBannerExtraPhotos: Math.max(0, wallBannerUploadReferences.length - 5),
+        rollUpExtraPhotos: Math.max(
+          0,
+          rollUpUploadReferences.length - BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT,
+        ),
+        wallBannerExtraPhotos: Math.max(
+          0,
+          wallBannerUploadReferences.length - BANNER_BUNDLE_INCLUDED_PHOTOS_PER_COMPONENT,
+        ),
         rollUpBackgroundRemovals: rollUpBackgroundRemovals.length,
         wallBannerBackgroundRemovals: wallBannerBackgroundRemovals.length,
       },
@@ -418,7 +429,7 @@ export function BannerBundleConfigurator({
             inputName="roll-up-photo-submission"
             sourceStepNumber={2}
             artworkStepNumber={3}
-            schema={schema}
+            schema={componentSchema}
             market={market}
             taxRegistered={taxRegistered}
             backgroundRemovalFeeInclTaxCents={rollUpBackgroundRemovalFee}
@@ -431,7 +442,7 @@ export function BannerBundleConfigurator({
             inputName="wall-banner-photo-submission"
             sourceStepNumber={4}
             artworkStepNumber={5}
-            schema={schema}
+            schema={componentSchema}
             market={market}
             taxRegistered={taxRegistered}
             backgroundRemovalFeeInclTaxCents={wallBannerBackgroundRemovalFee}

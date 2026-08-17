@@ -8,7 +8,7 @@ vi.mock("@/server/admin/product-registry-runtime", () => ({
 }));
 
 describe("Banners page", () => {
-  it("lists Banner Bundle with its supplied product image", async () => {
+  it("lists Banner Bundle with its supplied product image and exact NZ price", async () => {
     render(await BannersPage());
 
     const heading = screen.getByRole("heading", { name: "Banner Bundle" });
@@ -19,5 +19,6 @@ describe("Banners page", () => {
     });
     expect(new URL(image.getAttribute("src")!, "https://rrgallery.co.nz")
       .searchParams.get("url")).toBe("/media/products/banner-bundle.png");
+    expect(within(card!).getByText("From NZ$359.99 incl GST")).toBeVisible();
   });
 });

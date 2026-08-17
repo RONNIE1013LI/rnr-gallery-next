@@ -196,12 +196,19 @@ function bundleProductPrices(
   if (!bundle || !rollUp || !wallBanner) {
     throw new MarketPriceBookValidationError("Banner Bundle configuration is incomplete.");
   }
+  if (bundle.configuration.sizes.some(
+    (size) => size.nzAmountInclTaxCents === undefined,
+  )) {
+    throw new MarketPriceBookValidationError(
+      "Every Banner Bundle size requires an exact NZ GST-inclusive price.",
+    );
+  }
   return {
     productKey: bundle.key,
     sizes: bundle.configuration.sizes.map((size) => ({
       sizeKey: size.key,
       amountInclTaxCents: market === "NZ"
-        ? size.nzAmountInclTaxCents ?? addNzGst(size.priceExGstCents)
+        ? size.nzAmountInclTaxCents as number
         : BANNER_BUNDLE_AU_SIZE_CENTS[size.key] ?? null,
     })),
     charges: [

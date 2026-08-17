@@ -4,6 +4,7 @@ import type { NormalizedAddress } from "@/domain/address/types";
 import {
   flattenBannerBundleUploadReferences,
   validateBannerBundleComponents,
+  type BannerBundleComponentKey,
 } from "@/domain/bundles/banner-bundle";
 import type {
   RepricedCheckoutCart,
@@ -79,6 +80,25 @@ function productionAddressText(address: NormalizedAddress) {
   ].map((value) => value.trim()).filter(Boolean).join("\n");
 }
 
+const productionComponentLabels: Readonly<Record<BannerBundleComponentKey, string>> = {
+  "roll-up": "Roll-Up Banner",
+  "wall-banner": "Wall Banner",
+};
+
+function productionCustomizationText(
+  item: RepricedCheckoutItem,
+  field: "designText" | "notes",
+): string {
+  if (!item.bundleComponents) return item[field];
+  const descriptor = field === "designText" ? "wording" : "design instructions";
+  return item.bundleComponents.map((component) => {
+    const value = component[field].trim();
+    return value
+      ? `${productionComponentLabels[component.componentKey]} — ${descriptor}\n${value}`
+      : "";
+  }).filter(Boolean).join("\n\n");
+}
+
 export function buildWebProductionJobSnapshot(input: Readonly<{
   order: Readonly<{ id: string; orderNumber: string }>;
   cart: RepricedCheckoutCart;
@@ -97,11 +117,21 @@ export function buildWebProductionJobSnapshot(input: Readonly<{
   if (!neededDate) {
     throw new AtomicOrderStateError("Production job required date is missing");
   }
-  const designRequirements = input.cart.items
+  const items = Object.freeze(input.cart.items.map((item, position) => Object.freeze({
+    position,
+    sourceOrderItemId: input.orderItemIds[position],
+    productTitle: item.productTitle,
+    sizeLabel: item.sizeLabel,
+    quantity: item.quantity,
+    designText: productionCustomizationText(item, "designText"),
+    notes: productionCustomizationText(item, "notes"),
+    createdAt: input.now,
+  })));
+  const designRequirements = items
     .map((item) => item.designText.trim())
     .filter(Boolean)
     .join("\n\n");
-  const internalNotes = input.cart.items
+  const internalNotes = items
     .map((item) => item.notes.trim())
     .filter(Boolean)
     .join("\n\n");
@@ -123,16 +153,7 @@ export function buildWebProductionJobSnapshot(input: Readonly<{
       createdAt: input.now,
       updatedAt: input.now,
     }),
-    items: Object.freeze(input.cart.items.map((item, position) => Object.freeze({
-      position,
-      sourceOrderItemId: input.orderItemIds[position],
-      productTitle: item.productTitle,
-      sizeLabel: item.sizeLabel,
-      quantity: item.quantity,
-      designText: item.designText,
-      notes: item.notes,
-      createdAt: input.now,
-    }))),
+    items,
   });
 }
 
