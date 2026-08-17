@@ -10,6 +10,58 @@ import {
 } from "./product-registry";
 
 describe("authoritative product registry", () => {
+  it("adds only missing Bundle baseline rows to older published registry revisions", () => {
+    const legacy = structuredClone(defaultProductRegistry);
+    legacy.products = legacy.products.filter((product) => product.key !== "banner-bundle");
+    for (const market of [legacy.markets.NZ, legacy.markets.AU]) {
+      market.products = market.products.filter(
+        (product) => product.productKey !== "banner-bundle",
+      );
+    }
+
+    const auRollUp = legacy.markets.AU.products.find(
+      (product) => product.productKey === "roll-up-banner",
+    )!;
+    const auWallBanner = legacy.markets.AU.products.find(
+      (product) => product.productKey === "custom-themed-wall-banner",
+    )!;
+    auRollUp.sizes[0].amountInclTaxCents = 41_234;
+    auRollUp.charges[0].amountInclTaxCents = 1_234;
+    auRollUp.charges[1].amountInclTaxCents = 2_345;
+    auWallBanner.charges[0].amountInclTaxCents = 3_456;
+    auWallBanner.charges[1].amountInclTaxCents = 4_567;
+    legacy.markets.AU.tax = { registered: true, rateBasisPoints: 1_234 };
+
+    const parsed = parseProductRegistry(legacy);
+    const bundle = parsed.products.find((product) => product.key === "banner-bundle");
+    const auBundle = parsed.markets.AU.products.find(
+      (product) => product.productKey === "banner-bundle",
+    );
+
+    expect(bundle?.configuration.sizes.map((size) => size.key)).toEqual([
+      "rollup-wall-200x100",
+      "rollup-wall-300x150",
+    ]);
+    expect(parsed.markets.AU.tax).toEqual({ registered: true, rateBasisPoints: 1_234 });
+    expect(
+      parsed.markets.AU.products.find(
+        (product) => product.productKey === "roll-up-banner",
+      )?.sizes[0].amountInclTaxCents,
+    ).toBe(41_234);
+    expect(auBundle).toMatchObject({
+      sizes: [
+        { sizeKey: "rollup-wall-200x100", amountInclTaxCents: 33_999 },
+        { sizeKey: "rollup-wall-300x150", amountInclTaxCents: 46_999 },
+      ],
+      charges: [
+        { key: "roll-up-extra-photo", amountInclTaxCents: 1_234 },
+        { key: "roll-up-background-removal", amountInclTaxCents: 2_345 },
+        { key: "wall-banner-extra-photo", amountInclTaxCents: 3_456 },
+        { key: "wall-banner-background-removal", amountInclTaxCents: 4_567 },
+      ],
+    });
+  });
+
   it("ships a complete NZ price book and a disabled empty AU price book", () => {
     expect(defaultProductRegistry.schemaVersion).toBe(2);
     expect(defaultProductRegistry.markets.NZ).toMatchObject({
@@ -32,6 +84,7 @@ describe("authoritative product registry", () => {
       "digital-oil-painting-canvas": "/media/home/digital-oil-pet.webp",
       "custom-themed-canvas": "/media/home/family-canvas.webp",
       "roll-up-banner": "/media/home/roll-up-banner.webp",
+      "banner-bundle": "/media/products/banner-bundle.png",
       "custom-themed-wall-banner": "/media/home/wall-banner.webp",
       "digital-oil-painting-banner": "/media/home/wall-banner.webp",
       "grave-cover": "/media/home/roll-up-banner.webp",
@@ -53,7 +106,7 @@ describe("authoritative product registry", () => {
     const parsedLegacy = parseProductRegistry(legacy);
     const parsedCustomMedia = parseProductRegistry(customMedia);
 
-    expect(new Set(parsedLegacy.products.map((product) => product.image.src))).toHaveLength(7);
+    expect(new Set(parsedLegacy.products.map((product) => product.image.src))).toHaveLength(8);
     expect(
       parsedCustomMedia.products.find(
         (product) => product.key === "photo-print-canvas",

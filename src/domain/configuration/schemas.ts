@@ -123,6 +123,33 @@ export const configurationSchemas = Object.freeze([
     extraBackgroundRemovalFeeInclGstCents: 2_000,
     ...common,
   },
+  {
+    productKey: "banner-bundle",
+    sizes: Object.freeze([
+      {
+        key: "rollup-wall-200x100",
+        label: "85 × 200 cm Roll-Up + 200 × 100 cm Wall Banner",
+        priceExGstCents: 31_303,
+        nzAmountInclTaxCents: 35_999,
+      },
+      {
+        key: "rollup-wall-300x150",
+        label: "85 × 200 cm Roll-Up + 300 × 150 cm Wall Banner",
+        priceExGstCents: 42_608,
+        nzAmountInclTaxCents: 48_999,
+      },
+    ]),
+    defaultSizeKey: "rollup-wall-200x100",
+    orientationMode: "none",
+    peoplePetsMode: "none",
+    defaultPeoplePets: 0,
+    minimumSourcePhotos: 1,
+    maximumSourcePhotos: 50,
+    includedPhotos: 5,
+    extraPhotoPriceExGstCents: 500,
+    extraBackgroundRemovalFeeInclGstCents: 2_000,
+    ...common,
+  },
 ] satisfies readonly ProductConfigurationSchema[]);
 
 export function getConfigurationSchema(

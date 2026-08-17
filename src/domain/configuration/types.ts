@@ -9,6 +9,7 @@ export type ConfigurationSize = Readonly<{
   key: string;
   label: string;
   priceExGstCents: number;
+  nzAmountInclTaxCents?: number;
 }>;
 
 export type ProductConfigurationSchema = Readonly<{

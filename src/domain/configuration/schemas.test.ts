@@ -4,7 +4,7 @@ import { configurationSchemas, getConfigurationSchema } from "./schemas";
 
 describe("product configuration schemas", () => {
   it("defines one schema for every active product", () => {
-    expect(configurationSchemas).toHaveLength(7);
+    expect(configurationSchemas).toHaveLength(8);
     expect(configurationSchemas.map((schema) => schema.productKey).sort()).toEqual(
       products.map((product) => product.key).sort(),
     );
@@ -41,6 +41,21 @@ describe("product configuration schemas", () => {
       sizes: [{ key: "standard", label: "100 × 200 cm" }],
     });
     expect(getConfigurationSchema("grave-cover")).not.toHaveProperty("defaultOrientation");
+  });
+
+  it("defines fixed inclusive NZ prices for the Banner Bundle sizes", () => {
+    expect(getConfigurationSchema("banner-bundle")).toMatchObject({
+      defaultSizeKey: "rollup-wall-200x100",
+      orientationMode: "none",
+      peoplePetsMode: "none",
+      defaultPeoplePets: 0,
+      includedPhotos: 5,
+      maximumSourcePhotos: 50,
+      sizes: [
+        { key: "rollup-wall-200x100", nzAmountInclTaxCents: 35_999 },
+        { key: "rollup-wall-300x150", nzAmountInclTaxCents: 48_999 },
+      ],
+    });
   });
 
   it("uses only post and pickup delivery choices with post first", () => {

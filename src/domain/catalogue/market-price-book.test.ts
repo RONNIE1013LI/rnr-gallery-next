@@ -33,6 +33,30 @@ function completeAustraliaDraft(): typeof defaultProductRegistry {
 }
 
 describe("market price books", () => {
+  it("uses fixed Bundle retail prices for NZ and AU without conversion", () => {
+    const nzBundle = defaultProductRegistry.markets.NZ.products.find(
+      (product) => product.productKey === "banner-bundle",
+    );
+    const auBundle = defaultProductRegistry.markets.AU.products.find(
+      (product) => product.productKey === "banner-bundle",
+    );
+
+    expect(nzBundle?.sizes).toEqual([
+      { sizeKey: "rollup-wall-200x100", amountInclTaxCents: 35_999 },
+      { sizeKey: "rollup-wall-300x150", amountInclTaxCents: 48_999 },
+    ]);
+    expect(auBundle?.sizes).toEqual([
+      { sizeKey: "rollup-wall-200x100", amountInclTaxCents: 33_999 },
+      { sizeKey: "rollup-wall-300x150", amountInclTaxCents: 46_999 },
+    ]);
+    expect(nzBundle?.charges.map((charge) => charge.key)).toEqual([
+      "roll-up-extra-photo",
+      "roll-up-background-removal",
+      "wall-banner-extra-photo",
+      "wall-banner-background-removal",
+    ]);
+  });
+
   it("migrates the legacy NZ registry without changing final retail prices", () => {
     const migrated = parseProductRegistry(legacyVersionOneRegistry());
     const rollUp = migrated.markets.NZ.products.find(

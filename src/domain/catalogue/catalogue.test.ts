@@ -6,12 +6,12 @@ import {
 } from "./products";
 
 describe("R&R catalogue", () => {
-  it("contains the seven unique active products", () => {
+  it("contains the eight unique active products", () => {
     const activeProducts = products.filter((product) => product.active);
     const slugs = new Set(activeProducts.map((product) => product.slug));
 
-    expect(activeProducts).toHaveLength(7);
-    expect(slugs.size).toBe(7);
+    expect(activeProducts).toHaveLength(8);
+    expect(slugs.size).toBe(8);
   });
 
   it.each([
@@ -19,6 +19,7 @@ describe("R&R catalogue", () => {
     "digital-oil-painting-canvas",
     "custom-themed-canvas",
     "roll-up-banner",
+    "banner-bundle",
     "custom-themed-wall-banner",
     "digital-oil-painting-banner",
     "grave-cover",
@@ -43,17 +44,26 @@ describe("R&R catalogue", () => {
       "digital-oil-painting-canvas": "/media/products/digital-oil-painting-canvas-shop.webp",
       "custom-themed-canvas": "/media/products/custom-themed-canvas-shop.webp",
       "roll-up-banner": "/media/products/roll-up-banner-shop.webp",
+      "banner-bundle": "/media/products/banner-bundle.png",
       "custom-themed-wall-banner": "/media/products/wall-hanging-banner-shop.webp",
       "digital-oil-painting-banner": "/media/products/digital-oil-painting-banner-shop.webp",
       "grave-cover": "/media/products/grave-cover-shop.webp",
     });
 
-    expect(new Set(products.map((product) => product.image.src))).toHaveLength(7);
+    expect(new Set(products.map((product) => product.image.src))).toHaveLength(8);
   });
 
-  it("groups three canvas and four banner products", () => {
+  it("groups three canvas and five banner products", () => {
     expect(getProductsByCategory("canvas")).toHaveLength(3);
-    expect(getProductsByCategory("banners")).toHaveLength(4);
+    expect(getProductsByCategory("banners")).toHaveLength(5);
+  });
+
+  it("exposes the Banner Bundle with its prepared product image", () => {
+    expect(getProductBySlug("banner-bundle")).toMatchObject({
+      category: "banners",
+      workflowKey: "banner_bundle",
+      image: { src: "/media/products/banner-bundle.png" },
+    });
   });
 
   it("states the finished dimensions in every single-size product summary", () => {

@@ -7,11 +7,19 @@ const priceCell = cents.nullable();
 
 export type MarketPriceCell = number | null;
 
+export type MarketChargeKey =
+  | "extra-photo"
+  | "background-removal"
+  | "roll-up-extra-photo"
+  | "roll-up-background-removal"
+  | "wall-banner-extra-photo"
+  | "wall-banner-background-removal";
+
 export type MarketProductPrice = {
   productKey: string;
   sizes: Array<{ sizeKey: string; amountInclTaxCents: MarketPriceCell }>;
   charges: Array<{
-    key: "extra-photo" | "background-removal";
+    key: MarketChargeKey;
     amountInclTaxCents: MarketPriceCell;
   }>;
 };
@@ -56,7 +64,11 @@ type LegacyRegistryShape = {
   products: Array<{
     key: string;
     configuration: {
-      sizes: Array<{ key: string; priceExGstCents: number }>;
+      sizes: Array<{
+        key: string;
+        priceExGstCents: number;
+        nzAmountInclTaxCents?: number;
+      }>;
       extraPhotoPriceExGstCents?: number;
       extraBackgroundRemovalFeeInclGstCents?: number;
     };
@@ -77,7 +89,14 @@ const productPriceSchema = z.object({
     amountInclTaxCents: priceCell,
   }).strict()).min(1),
   charges: z.array(z.object({
-    key: z.enum(["extra-photo", "background-removal"]),
+    key: z.enum([
+      "extra-photo",
+      "background-removal",
+      "roll-up-extra-photo",
+      "roll-up-background-removal",
+      "wall-banner-extra-photo",
+      "wall-banner-background-removal",
+    ]),
     amountInclTaxCents: priceCell,
   }).strict()),
 }).strict();
@@ -146,35 +165,116 @@ function addNzGst(amountExGstCents: number): number {
   return Math.round((amountExGstCents * 115) / 100);
 }
 
+const BANNER_BUNDLE_AU_SIZE_CENTS: Record<string, number> = {
+  "rollup-wall-200x100": 33_999,
+  "rollup-wall-300x150": 46_999,
+};
+
+function configuredChargeAmount(
+  product: LegacyRegistryShape["products"][number],
+  field: "extraPhotoPriceExGstCents" | "extraBackgroundRemovalFeeInclGstCents",
+  market: Market,
+): MarketPriceCell {
+  const amount = product.configuration[field];
+  if (amount === undefined) return null;
+  return market === "NZ" && field === "extraPhotoPriceExGstCents"
+    ? addNzGst(amount)
+    : market === "NZ"
+      ? amount
+      : null;
+}
+
+function bundleProductPrices(
+  registry: LegacyRegistryShape,
+  market: Market,
+): MarketProductPrice {
+  const bundle = registry.products.find((product) => product.key === "banner-bundle");
+  const rollUp = registry.products.find((product) => product.key === "roll-up-banner");
+  const wallBanner = registry.products.find(
+    (product) => product.key === "custom-themed-wall-banner",
+  );
+  if (!bundle || !rollUp || !wallBanner) {
+    throw new MarketPriceBookValidationError("Banner Bundle configuration is incomplete.");
+  }
+  return {
+    productKey: bundle.key,
+    sizes: bundle.configuration.sizes.map((size) => ({
+      sizeKey: size.key,
+      amountInclTaxCents: market === "NZ"
+        ? size.nzAmountInclTaxCents ?? addNzGst(size.priceExGstCents)
+        : BANNER_BUNDLE_AU_SIZE_CENTS[size.key] ?? null,
+    })),
+    charges: [
+      {
+        key: "roll-up-extra-photo",
+        amountInclTaxCents: configuredChargeAmount(
+          rollUp,
+          "extraPhotoPriceExGstCents",
+          market,
+        ),
+      },
+      {
+        key: "roll-up-background-removal",
+        amountInclTaxCents: configuredChargeAmount(
+          rollUp,
+          "extraBackgroundRemovalFeeInclGstCents",
+          market,
+        ),
+      },
+      {
+        key: "wall-banner-extra-photo",
+        amountInclTaxCents: configuredChargeAmount(
+          wallBanner,
+          "extraPhotoPriceExGstCents",
+          market,
+        ),
+      },
+      {
+        key: "wall-banner-background-removal",
+        amountInclTaxCents: configuredChargeAmount(
+          wallBanner,
+          "extraBackgroundRemovalFeeInclGstCents",
+          market,
+        ),
+      },
+    ],
+  };
+}
+
 function productPrices(
   registry: LegacyRegistryShape,
   market: Market,
 ): MarketProductPrice[] {
-  return registry.products.map((product) => ({
-    productKey: product.key,
-    sizes: product.configuration.sizes.map((size) => ({
-      sizeKey: size.key,
-      amountInclTaxCents: market === "NZ" ? addNzGst(size.priceExGstCents) : null,
-    })),
-    charges: [
-      ...(product.configuration.extraPhotoPriceExGstCents === undefined
-        ? []
-        : [{
-            key: "extra-photo" as const,
-            amountInclTaxCents: market === "NZ"
-              ? addNzGst(product.configuration.extraPhotoPriceExGstCents)
-              : null,
-          }]),
-      ...(product.configuration.extraBackgroundRemovalFeeInclGstCents === undefined
-        ? []
-        : [{
-            key: "background-removal" as const,
-            amountInclTaxCents: market === "NZ"
-              ? product.configuration.extraBackgroundRemovalFeeInclGstCents
-              : null,
-          }]),
-    ],
-  }));
+  return registry.products.map((product) => {
+    if (product.key === "banner-bundle") return bundleProductPrices(registry, market);
+    return {
+      productKey: product.key,
+      sizes: product.configuration.sizes.map((size) => ({
+        sizeKey: size.key,
+        amountInclTaxCents: market === "NZ"
+          ? size.nzAmountInclTaxCents ?? addNzGst(size.priceExGstCents)
+          : null,
+      })),
+      charges: [
+        ...(product.configuration.extraPhotoPriceExGstCents === undefined
+          ? []
+          : [{
+              key: "extra-photo" as const,
+              amountInclTaxCents: market === "NZ"
+                ? addNzGst(product.configuration.extraPhotoPriceExGstCents)
+                : null,
+            }]),
+        ...(product.configuration.extraBackgroundRemovalFeeInclGstCents === undefined
+          ? []
+          : [{
+              key: "background-removal" as const,
+              amountInclTaxCents: market === "NZ"
+                ? product.configuration.extraBackgroundRemovalFeeInclGstCents
+                : null,
+            }]),
+      ],
+    };
+  });
 }
 
 function peoplePetsPrices(registry: LegacyRegistryShape, market: Market) {
@@ -256,6 +356,14 @@ function sameValues(left: readonly unknown[], right: readonly unknown[]): boolea
 }
 
 function expectedChargeKeys(product: LegacyRegistryShape["products"][number]) {
+  if (product.key === "banner-bundle") {
+    return [
+      "roll-up-extra-photo",
+      "roll-up-background-removal",
+      "wall-banner-extra-photo",
+      "wall-banner-background-removal",
+    ];
+  }
   return [
     ...(product.configuration.extraPhotoPriceExGstCents === undefined ? [] : ["extra-photo"]),
     ...(product.configuration.extraBackgroundRemovalFeeInclGstCents === undefined

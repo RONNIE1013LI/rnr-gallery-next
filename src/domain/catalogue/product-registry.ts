@@ -30,7 +30,12 @@ const MAX_PRICE_CENTS = 100_000_000;
 
 export type RegistryConfiguration = {
   productKey: string;
-  sizes: Array<{ key: string; label: string; priceExGstCents: number }>;
+  sizes: Array<{
+    key: string;
+    label: string;
+    priceExGstCents: number;
+    nzAmountInclTaxCents?: number;
+  }>;
   defaultSizeKey: string;
   orientationMode: OrientationMode;
   defaultOrientation?: Orientation;
@@ -87,6 +92,7 @@ const configurationSchema = z.object({
     key: z.string().min(1),
     label: z.string().trim().min(1).max(120),
     priceExGstCents: cents,
+    nzAmountInclTaxCents: cents.optional(),
   }).strict()).min(1),
   defaultSizeKey: z.string().min(1),
   orientationMode: z.enum(["choice", "fixed", "none"]),
@@ -265,6 +271,7 @@ const LEGACY_PRODUCT_IMAGE_SOURCES: Record<
   "digital-oil-painting-canvas": "/media/home/digital-oil-pet.webp",
   "custom-themed-canvas": "/media/home/family-canvas.webp",
   "roll-up-banner": "/media/home/roll-up-banner.webp",
+  "banner-bundle": "/media/products/banner-bundle.png",
   "custom-themed-wall-banner": "/media/home/wall-banner.webp",
   "digital-oil-painting-banner": "/media/home/wall-banner.webp",
   "grave-cover": "/media/home/roll-up-banner.webp",
@@ -278,6 +285,152 @@ function deepFreeze<T>(value: T): T {
     }
   }
   return value;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function configuredNzCharge(
+  products: unknown[],
+  productKey: string,
+  field: "extraPhotoPriceExGstCents" | "extraBackgroundRemovalFeeInclGstCents",
+  fallback: number | null,
+): number | null {
+  const product = products.find((candidate) =>
+    isRecord(candidate) && candidate.key === productKey,
+  );
+  const configuration = isRecord(product) && isRecord(product.configuration)
+    ? product.configuration
+    : undefined;
+  const amount = configuration?.[field];
+  if (typeof amount !== "number") return fallback;
+  return field === "extraPhotoPriceExGstCents"
+    ? Math.round((amount * 115) / 100)
+    : amount;
+}
+
+function sourceCharge(
+  marketProducts: unknown[],
+  productKey: string,
+  chargeKey: "extra-photo" | "background-removal",
+  fallback: number | null,
+): number | null {
+  const product = marketProducts.find((candidate) =>
+    isRecord(candidate) && candidate.productKey === productKey,
+  );
+  const charges = isRecord(product) && Array.isArray(product.charges)
+    ? product.charges
+    : [];
+  const charge = charges.find((candidate) =>
+    isRecord(candidate) && candidate.key === chargeKey,
+  );
+  return isRecord(charge) && (typeof charge.amountInclTaxCents === "number" || charge.amountInclTaxCents === null)
+    ? charge.amountInclTaxCents
+    : fallback;
+}
+
+function missingBundleMarketRow(
+  market: "NZ" | "AU",
+  products: unknown[],
+  marketProducts: unknown[],
+): Record<string, unknown> {
+  const baseline = defaultProductRegistry.markets[market].products.find(
+    (product) => product.productKey === "banner-bundle",
+  );
+  if (!baseline) {
+    throw new ProductRegistryValidationError("Missing Banner Bundle market baseline.");
+  }
+  const row = structuredClone(baseline);
+  if (market === "NZ") {
+    row.charges[0].amountInclTaxCents = configuredNzCharge(
+      products,
+      "roll-up-banner",
+      "extraPhotoPriceExGstCents",
+      row.charges[0].amountInclTaxCents,
+    );
+    row.charges[1].amountInclTaxCents = configuredNzCharge(
+      products,
+      "roll-up-banner",
+      "extraBackgroundRemovalFeeInclGstCents",
+      row.charges[1].amountInclTaxCents,
+    );
+    row.charges[2].amountInclTaxCents = configuredNzCharge(
+      products,
+      "custom-themed-wall-banner",
+      "extraPhotoPriceExGstCents",
+      row.charges[2].amountInclTaxCents,
+    );
+    row.charges[3].amountInclTaxCents = configuredNzCharge(
+      products,
+      "custom-themed-wall-banner",
+      "extraBackgroundRemovalFeeInclGstCents",
+      row.charges[3].amountInclTaxCents,
+    );
+  } else {
+    row.charges[0].amountInclTaxCents = sourceCharge(
+      marketProducts,
+      "roll-up-banner",
+      "extra-photo",
+      row.charges[0].amountInclTaxCents,
+    );
+    row.charges[1].amountInclTaxCents = sourceCharge(
+      marketProducts,
+      "roll-up-banner",
+      "background-removal",
+      row.charges[1].amountInclTaxCents,
+    );
+    row.charges[2].amountInclTaxCents = sourceCharge(
+      marketProducts,
+      "custom-themed-wall-banner",
+      "extra-photo",
+      row.charges[2].amountInclTaxCents,
+    );
+    row.charges[3].amountInclTaxCents = sourceCharge(
+      marketProducts,
+      "custom-themed-wall-banner",
+      "background-removal",
+      row.charges[3].amountInclTaxCents,
+    );
+  }
+  return row as unknown as Record<string, unknown>;
+}
+
+function addMissingBaselineProducts(value: unknown): unknown {
+  const normalized = structuredClone(value);
+  if (!isRecord(normalized) || !Array.isArray(normalized.products)) return normalized;
+
+  const products = normalized.products;
+  const productKeys = new Set(
+    products.filter(isRecord).map((product) => product.key).filter(
+      (key): key is string => typeof key === "string",
+    ),
+  );
+  for (const baseline of defaultProductRegistry.products) {
+    if (!productKeys.has(baseline.key)) products.push(structuredClone(baseline));
+  }
+
+  const markets = isRecord(normalized.markets) ? normalized.markets : undefined;
+  for (const market of ["NZ", "AU"] as const) {
+    const book = markets && isRecord(markets[market]) ? markets[market] : undefined;
+    if (!book || !Array.isArray(book.products)) continue;
+    const marketProducts = book.products;
+    const marketProductKeys = new Set(
+      marketProducts.filter(isRecord).map((product) => product.productKey).filter(
+        (key): key is string => typeof key === "string",
+      ),
+    );
+    for (const baseline of defaultProductRegistry.markets[market].products) {
+      if (marketProductKeys.has(baseline.productKey)) continue;
+      marketProducts.push(
+        baseline.productKey === "banner-bundle"
+          ? missingBundleMarketRow(market, products, marketProducts)
+          : structuredClone(baseline),
+      );
+    }
+  }
+
+  return normalized;
 }
 
 export function parseProductRegistry(value: unknown): ProductRegistryDocument {
@@ -351,6 +504,8 @@ export function parseProductRegistry(value: unknown): ProductRegistryDocument {
       markets: createDefaultMarketPriceBooks(legacy.data),
     };
   }
+
+  normalized = addMissingBaselineProducts(normalized);
 
   const parsed = documentSchema.safeParse(normalized);
   if (!parsed.success) {
