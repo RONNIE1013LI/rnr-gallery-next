@@ -38,11 +38,27 @@ function messagePayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function setup(ingestResult: { status: "created"; messageId: string; pilotSequence: number } | { status: "duplicate"; messageId: string } | { status: "pilot_complete"; messageId: string } = { status: "created", messageId: "internal-1", pilotSequence: 1 }) {
+function setup(ingestResult:
+  | { status: "turn_pending"; messageId: string; turnId: string; debounceUntil: Date }
+  | { status: "context_only" }
+  | { status: "duplicate" }
+  = {
+    status: "turn_pending",
+    messageId: "internal-1",
+    turnId: "turn-1",
+    debounceUntil: new Date("2026-08-17T00:00:02.000Z"),
+  }) {
   const events: string[] = [];
   const scheduledTasks: Array<() => Promise<void>> = [];
   const ingest = vi.fn(async () => { events.push("persist:commit"); return ingestResult; });
   const generateDraft = vi.fn(async () => undefined);
+  const sealTurn = vi.fn(async () => ({
+    status: "sealed" as const,
+    messageId: "internal-1",
+    turnId: "turn-1",
+    pilotSequence: 1,
+  }));
+  const waitUntil = vi.fn(async () => undefined);
   const kickImageJob = vi.fn(async () => undefined);
   const scheduleAfter = vi.fn((task: () => Promise<void>) => { events.push("after:schedule"); scheduledTasks.push(task); });
   return {
@@ -50,11 +66,15 @@ function setup(ingestResult: { status: "created"; messageId: string; pilotSequen
     scheduledTasks,
     ingest,
     generateDraft,
+    sealTurn,
+    waitUntil,
     kickImageJob,
     scheduleAfter,
     handlers: createMetaWebhookHandlers({
       config,
       ingest,
+      sealTurn,
+      waitUntil,
       generateDraft,
       kickImageJob,
       scheduleAfter,
@@ -88,11 +108,31 @@ describe("Meta webhook handler", () => {
     adapterFactory.mockRestore();
   });
 
-  it("filters echoes without persistence or scheduling", async () => {
-    const current = setup();
-    expect((await current.handlers.POST(signedRequest(messagePayload({ is_echo: true })))).status).toBe(200);
-    expect(current.ingest).not.toHaveBeenCalled();
+  it("persists staff echoes as context without scheduling a draft", async () => {
+    const current = setup({ status: "context_only" });
+    const echo = messagePayload({ is_echo: true });
+    echo.entry[0].messaging[0].sender.id = "page-1";
+    Object.assign(echo.entry[0].messaging[0], { recipient: { id: "customer-1" } });
+    expect((await current.handlers.POST(signedRequest(echo))).status).toBe(200);
+    expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      role: "staff",
+      text: "How do I prepare my photos?",
+    }));
     expect(current.scheduleAfter).not.toHaveBeenCalled();
+  });
+
+  it("seals a pending customer turn before generating one draft", async () => {
+    const current = setup();
+    expect((await current.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
+    expect(current.events).toEqual(["persist:commit", "after:schedule"]);
+    await current.scheduledTasks[0]();
+    expect(current.waitUntil).toHaveBeenCalledWith(new Date("2026-08-17T00:00:02.000Z"));
+    expect(current.sealTurn).toHaveBeenCalledWith({
+      turnId: "turn-1",
+      now: expect.any(Date),
+    });
+    expect(current.sealTurn).toHaveBeenCalledBefore(current.generateDraft);
+    expect(current.generateDraft).toHaveBeenCalledWith("internal-1");
   });
 
   it("persists image-only metadata for human review without retaining or scheduling its source", async () => {
@@ -251,18 +291,20 @@ describe("Meta webhook handler", () => {
   });
 
   it("does not schedule duplicates or run when disabled", async () => {
-    const duplicate = setup({ status: "duplicate", messageId: "internal-1" });
+    const duplicate = setup({ status: "duplicate" });
     expect((await duplicate.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
     expect(duplicate.scheduleAfter).not.toHaveBeenCalled();
 
-    const pilotComplete = setup({ status: "pilot_complete", messageId: "internal-1" });
-    expect((await pilotComplete.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
-    expect(pilotComplete.scheduleAfter).not.toHaveBeenCalled();
+    const contextOnly = setup({ status: "context_only" });
+    expect((await contextOnly.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
+    expect(contextOnly.scheduleAfter).not.toHaveBeenCalled();
 
     const disabled = setup();
     disabled.handlers = createMetaWebhookHandlers({
       config: { ...config, enabled: false },
       ingest: disabled.ingest,
+      sealTurn: disabled.sealTurn,
+      waitUntil: disabled.waitUntil,
       generateDraft: disabled.generateDraft,
       kickImageJob: disabled.kickImageJob,
       scheduleAfter: disabled.scheduleAfter,

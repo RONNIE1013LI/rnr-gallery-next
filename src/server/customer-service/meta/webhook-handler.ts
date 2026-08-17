@@ -1,12 +1,13 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { createFacebookChannelAdapter } from "../adapters/facebook";
-import type { HashedIncomingMessage } from "../repositories/customer-service-repository";
+import type {
+  CustomerServiceRepository,
+  HashedConversationEvent,
+} from "../repositories/customer-service-repository";
 import { verifyMetaSignature } from "./signature";
 
-type IngestResult =
-  | Readonly<{ status: "created"; messageId: string; pilotSequence: number }>
-  | Readonly<{ status: "duplicate"; messageId: string }>
-  | Readonly<{ status: "pilot_complete"; messageId: string }>;
+type IngestResult = Awaited<ReturnType<CustomerServiceRepository["ingestConversationEvent"]>>;
+type SealResult = Awaited<ReturnType<CustomerServiceRepository["sealDueCustomerTurn"]>>;
 
 type WebhookConfig = Readonly<{
   enabled: boolean;
@@ -16,6 +17,7 @@ type WebhookConfig = Readonly<{
   idHashSecret: string;
   imageAnalysisEnabled: boolean;
   attachmentSourceEncryptionKey: string;
+  conversationDebounceMs?: number;
 }>;
 
 function pageIds(payload: unknown) {
@@ -35,7 +37,9 @@ function hashExternalId(value: string, secret: string) {
 
 export function createMetaWebhookHandlers(dependencies: Readonly<{
   config: WebhookConfig;
-  ingest: (message: HashedIncomingMessage) => Promise<IngestResult>;
+  ingest: (message: HashedConversationEvent) => Promise<IngestResult>;
+  sealTurn: (input: Readonly<{ turnId: string; now: Date }>) => Promise<SealResult>;
+  waitUntil?: (deadline: Date) => Promise<void>;
   generateDraft: (messageId: string) => Promise<unknown>;
   kickImageJob: (jobId: string) => Promise<unknown>;
   scheduleAfter: (task: () => Promise<void>) => void;
@@ -43,6 +47,11 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
   now?: () => Date;
 }>) {
   const createJobId = dependencies.createJobId ?? randomUUID;
+  const now = dependencies.now ?? (() => new Date());
+  const waitUntil = dependencies.waitUntil ?? (async (deadline: Date) => {
+    const delayMs = Math.max(0, deadline.getTime() - Date.now());
+    await new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+  });
   return {
     async GET(request: Request) {
       if (!dependencies.config.enabled) return new Response("Disabled", { status: 503 });
@@ -84,7 +93,7 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
           failureCode: attachment.failureCode ?? null,
         }));
         const jobId = message.attachments.length ? createJobId() : null;
-        let imageJob: HashedIncomingMessage["imageJob"] = null;
+        let imageJob: HashedConversationEvent["imageJob"] = null;
         if (jobId) {
           const unsupported = message.attachments.some((attachment) => (
             attachment.kind === "unsupported" || attachment.sourceRef.kind !== "facebook_remote"
@@ -104,31 +113,27 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
         }
         const result = await dependencies.ingest({
           channel: message.channel,
+          role: message.role,
           externalConversationKeyHash: hashExternalId(message.externalConversationKey, dependencies.config.idHashSecret),
           externalMessageKeyHash: hashExternalId(message.externalMessageKey, dependencies.config.idHashSecret),
           text: message.text,
           attachments,
           imageJob,
+          debounceMs: dependencies.config.conversationDebounceMs ?? 2_000,
           receivedAt: message.receivedAt,
         });
-        if (result.status === "created") {
-          if (imageJob?.status === "pending") {
-            dependencies.scheduleAfter(async () => {
-              try {
-                await dependencies.kickImageJob(imageJob.id);
-              } catch {
-                // The durable runner will recover the committed job.
+        if (result.status === "turn_pending" && !imageJob) {
+          dependencies.scheduleAfter(async () => {
+            try {
+              await waitUntil(result.debounceUntil);
+              const sealed = await dependencies.sealTurn({ turnId: result.turnId, now: now() });
+              if (sealed.status === "sealed") {
+                await dependencies.generateDraft(sealed.messageId);
               }
-            });
-          } else if (!imageJob) {
-            dependencies.scheduleAfter(async () => {
-              try {
-                await dependencies.generateDraft(result.messageId);
-              } catch {
-                // The webhook has already committed; operators can retry from the review UI.
-              }
-            });
-          }
+            } catch {
+              // The webhook has already committed; a later retry can seal the durable turn.
+            }
+          });
         }
       }
       return new Response(null, { status: 200 });

@@ -6,7 +6,8 @@ import { createCustomerServiceRuntime } from "@/server/customer-service/runtime"
 const config = parseCustomerServiceConfig();
 const handlers = createMetaWebhookHandlers({
   config,
-  ingest: (message) => createCustomerServiceRuntime().repository.ingestFacebookMessage(message),
+  ingest: (message) => createCustomerServiceRuntime().repository.ingestConversationEvent(message),
+  sealTurn: (input) => createCustomerServiceRuntime().repository.sealDueCustomerTurn(input),
   generateDraft: (messageId) => createCustomerServiceRuntime().engine.generateDraft(
     {
       messageId,
