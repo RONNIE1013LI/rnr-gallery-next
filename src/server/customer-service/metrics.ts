@@ -14,5 +14,8 @@ export function calculatePilotMetrics(counts: PilotMetricCounts) {
     policyViolationRate: ratio(counts.policyViolationAttempts, counts.providerCalls),
     averageCostPerDraftMicrousd: ratio(counts.totalCostMicrousd, counts.draftsGenerated),
     averageLatencyMs: ratio(counts.totalLatencyMs, counts.providerCalls),
+    averageImageCostPerCallMicrousd: ratio(counts.imageTotalCostMicrousd, counts.imageProviderCalls),
+    averageImageLatencyMs: ratio(counts.imageTotalLatencyMs, counts.imageProviderCalls),
+    combinedCostMicrousd: counts.totalCostMicrousd + counts.imageTotalCostMicrousd,
   });
 }

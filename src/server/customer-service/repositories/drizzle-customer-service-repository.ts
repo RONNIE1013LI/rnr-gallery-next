@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { and, asc, desc, eq, gte, inArray, lte, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gte, inArray, isNotNull, isNull, lte, max, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { getDatabase } from "@/server/db/client";
 import {
@@ -560,6 +560,60 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       });
     },
 
+    async cleanupExpiredImageAttachments(input) {
+      if (!Number.isSafeInteger(input.limit) || input.limit <= 0) {
+        throw new Error("customer_service_image_cleanup_limit_invalid");
+      }
+      return database.transaction(async (transaction) => {
+        const expired = await transaction.select({
+          attemptId: customerServiceImageAnalysisInputs.analysisAttemptId,
+          attachmentId: customerServiceImageAnalysisInputs.attachmentId,
+          privateStorageKey: customerServiceImageAnalysisInputs.privateStorageKey,
+        }).from(customerServiceImageAnalysisInputs).where(and(
+          inArray(customerServiceImageAnalysisInputs.cleanupStatus, ["stored", "failed"]),
+          lte(customerServiceImageAnalysisInputs.deleteDueAt, input.now),
+          isNull(customerServiceImageAnalysisInputs.deletedAt),
+          isNotNull(customerServiceImageAnalysisInputs.privateStorageKey),
+        )).orderBy(asc(customerServiceImageAnalysisInputs.deleteDueAt))
+          .limit(input.limit)
+          .for("update", { skipLocked: true });
+        let deleted = 0;
+        let failed = 0;
+        for (const item of expired) {
+          const storageKey = item.privateStorageKey;
+          if (!storageKey) continue;
+          try {
+            await input.remove(storageKey);
+          } catch {
+            await transaction.update(customerServiceImageAnalysisInputs).set({
+              cleanupStatus: "failed",
+              failureCode: "image_cleanup_failed",
+              deletedAt: null,
+            }).where(and(
+              eq(customerServiceImageAnalysisInputs.analysisAttemptId, item.attemptId),
+              eq(customerServiceImageAnalysisInputs.attachmentId, item.attachmentId),
+            ));
+            failed += 1;
+            continue;
+          }
+          const privateStorageKeyHash = createHash("sha256").update(storageKey).digest("hex");
+          await transaction.update(customerServiceImageAnalysisInputs).set({
+            cleanupStatus: "deleted",
+            privateStorageKey: null,
+            privateStorageKeyHash,
+            deleteDueAt: null,
+            deletedAt: new Date(),
+            failureCode: null,
+          }).where(and(
+            eq(customerServiceImageAnalysisInputs.analysisAttemptId, item.attemptId),
+            eq(customerServiceImageAnalysisInputs.attachmentId, item.attachmentId),
+          ));
+          deleted += 1;
+        }
+        return { selected: expired.length, deleted, failed };
+      });
+    },
+
     async createGateBlockedAttempt(input) {
       return database.transaction((transaction) => insertGateAttempt(transaction, input));
     },
@@ -704,7 +758,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     },
 
     async metricCounts() {
-      const [messages, attempts, feedback] = await Promise.all([
+      const [messages, attempts, feedback, imageAttempts, imageInputs] = await Promise.all([
         database.select({ id: customerServiceMessages.id, pilotRunId: customerServiceMessages.pilotRunId }).from(customerServiceMessages),
         database.select({
           id: customerServiceAiAttempts.id,
@@ -715,6 +769,17 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           latency: customerServiceAiAttempts.latencyMs,
         }).from(customerServiceAiAttempts),
         database.select({ action: customerServiceFeedbackEvents.action }).from(customerServiceFeedbackEvents),
+        database.select({
+          status: customerServiceImageAnalysisAttempts.status,
+          providerCalled: customerServiceImageAnalysisAttempts.providerCalled,
+          inputTokens: customerServiceImageAnalysisAttempts.inputTokens,
+          cachedInputTokens: customerServiceImageAnalysisAttempts.cachedInputTokens,
+          outputTokens: customerServiceImageAnalysisAttempts.outputTokens,
+          cost: customerServiceImageAnalysisAttempts.estimatedCostMicrousd,
+          latency: customerServiceImageAnalysisAttempts.latencyMs,
+        }).from(customerServiceImageAnalysisAttempts),
+        database.select({ cleanupStatus: customerServiceImageAnalysisInputs.cleanupStatus })
+          .from(customerServiceImageAnalysisInputs),
       ]);
       const generated = attempts.filter((attempt) => attempt.status === "draft_ready");
       const policyCodes = new Set(["forbidden_commitment", "monetary_claim", "unconfirmed_policy_claim"]);
@@ -730,6 +795,15 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         policyViolationAttempts: attempts.filter((attempt) => attempt.validatorCodes.some((code) => policyCodes.has(code))).length,
         totalCostMicrousd: attempts.reduce((sum, attempt) => sum + (attempt.cost ?? 0), 0),
         totalLatencyMs: attempts.reduce((sum, attempt) => sum + (attempt.latency ?? 0), 0),
+        imageProviderCalls: imageAttempts.filter((attempt) => attempt.providerCalled).length,
+        imageInputTokens: imageAttempts.reduce((sum, attempt) => sum + (attempt.inputTokens ?? 0), 0),
+        imageCachedInputTokens: imageAttempts.reduce((sum, attempt) => sum + (attempt.cachedInputTokens ?? 0), 0),
+        imageOutputTokens: imageAttempts.reduce((sum, attempt) => sum + (attempt.outputTokens ?? 0), 0),
+        imageTotalCostMicrousd: imageAttempts.reduce((sum, attempt) => sum + (attempt.cost ?? 0), 0),
+        imageTotalLatencyMs: imageAttempts.reduce((sum, attempt) => sum + (attempt.latency ?? 0), 0),
+        imageFailures: imageAttempts.filter((attempt) => ["input_rejected", "provider_error", "schema_blocked"].includes(attempt.status)).length,
+        imageCleanupDeleted: imageInputs.filter((input) => input.cleanupStatus === "deleted").length,
+        imageCleanupFailures: imageInputs.filter((input) => input.cleanupStatus === "failed").length,
       };
     },
   };

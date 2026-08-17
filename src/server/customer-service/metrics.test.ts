@@ -15,6 +15,15 @@ describe("reply assistant pilot metrics", () => {
       policyViolationAttempts: 1,
       totalCostMicrousd: 2_400,
       totalLatencyMs: 6_000,
+      imageProviderCalls: 3,
+      imageInputTokens: 90,
+      imageCachedInputTokens: 15,
+      imageOutputTokens: 30,
+      imageTotalCostMicrousd: 600,
+      imageTotalLatencyMs: 1_200,
+      imageFailures: 1,
+      imageCleanupDeleted: 2,
+      imageCleanupFailures: 1,
     })).toMatchObject({
       directAcceptanceRate: 0.4,
       assistedAcceptanceRate: 0.7,
@@ -23,6 +32,9 @@ describe("reply assistant pilot metrics", () => {
       policyViolationRate: 1 / 12,
       averageCostPerDraftMicrousd: 240,
       averageLatencyMs: 500,
+      averageImageCostPerCallMicrousd: 200,
+      averageImageLatencyMs: 400,
+      combinedCostMicrousd: 3_000,
     });
   });
 
@@ -31,6 +43,16 @@ describe("reply assistant pilot metrics", () => {
       totalIncomingEligible: 0, draftsGenerated: 0, acceptedUnchanged: 0, editedAccepted: 0,
       rejected: 0, gateBlocked: 0, outputValidatorBlocked: 0, providerCalls: 0,
       policyViolationAttempts: 0, totalCostMicrousd: 0, totalLatencyMs: 0,
-    })).toMatchObject({ directAcceptanceRate: 0, policyViolationRate: 0, averageLatencyMs: 0 });
+      imageProviderCalls: 0, imageInputTokens: 0, imageCachedInputTokens: 0,
+      imageOutputTokens: 0, imageTotalCostMicrousd: 0, imageTotalLatencyMs: 0,
+      imageFailures: 0, imageCleanupDeleted: 0, imageCleanupFailures: 0,
+    })).toMatchObject({
+      directAcceptanceRate: 0,
+      policyViolationRate: 0,
+      averageLatencyMs: 0,
+      averageImageCostPerCallMicrousd: 0,
+      averageImageLatencyMs: 0,
+      combinedCostMicrousd: 0,
+    });
   });
 });

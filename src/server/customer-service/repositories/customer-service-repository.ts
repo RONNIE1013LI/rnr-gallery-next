@@ -113,6 +113,15 @@ export type PilotMetricCounts = Readonly<{
   policyViolationAttempts: number;
   totalCostMicrousd: number;
   totalLatencyMs: number;
+  imageProviderCalls: number;
+  imageInputTokens: number;
+  imageCachedInputTokens: number;
+  imageOutputTokens: number;
+  imageTotalCostMicrousd: number;
+  imageTotalLatencyMs: number;
+  imageFailures: number;
+  imageCleanupDeleted: number;
+  imageCleanupFailures: number;
 }>;
 
 export interface CustomerServiceRepository {
@@ -163,6 +172,11 @@ export interface CustomerServiceRepository {
     deleted: boolean;
     failureCode: string | null;
   }>): Promise<void>;
+  cleanupExpiredImageAttachments(input: Readonly<{
+    now: Date;
+    limit: number;
+    remove(storageKey: string): Promise<void>;
+  }>): Promise<Readonly<{ selected: number; deleted: number; failed: number }>>;
   createGateBlockedAttempt(input: GateBlockedAttemptInput): Promise<string>;
   reserveProviderAttempt(input: ProviderAttemptReservation): Promise<
     | Readonly<{ status: "reserved"; attemptId: string }>

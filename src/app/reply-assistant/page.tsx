@@ -17,6 +17,9 @@ export default async function ReplyAssistantPage() {
       totalIncomingEligible: 0, draftsGenerated: 0, acceptedUnchanged: 0, editedAccepted: 0,
       rejected: 0, gateBlocked: 0, outputValidatorBlocked: 0, providerCalls: 0,
       policyViolationAttempts: 0, totalCostMicrousd: 0, totalLatencyMs: 0,
+      imageProviderCalls: 0, imageInputTokens: 0, imageCachedInputTokens: 0, imageOutputTokens: 0,
+      imageTotalCostMicrousd: 0, imageTotalLatencyMs: 0, imageFailures: 0,
+      imageCleanupDeleted: 0, imageCleanupFailures: 0,
     }];
   const metrics = calculatePilotMetrics(rawMetrics);
   const cards = [
@@ -30,6 +33,17 @@ export default async function ReplyAssistantPage() {
     ["Policy violations", `${Math.round(metrics.policyViolationRate * 100)}%`],
     ["Avg latency", `${Math.round(metrics.averageLatencyMs)}ms`],
     ["Avg cost", `$${(metrics.averageCostPerDraftMicrousd / 1_000_000).toFixed(4)}`],
+    ["Text spend", `$${(metrics.totalCostMicrousd / 1_000_000).toFixed(4)}`],
+    ["Image calls", metrics.imageProviderCalls],
+    ["Image input tokens", metrics.imageInputTokens],
+    ["Image cached tokens", metrics.imageCachedInputTokens],
+    ["Image output tokens", metrics.imageOutputTokens],
+    ["Image spend", `$${(metrics.imageTotalCostMicrousd / 1_000_000).toFixed(4)}`],
+    ["Image avg latency", `${Math.round(metrics.averageImageLatencyMs)}ms`],
+    ["Image failures", metrics.imageFailures],
+    ["Image cleanup deleted", metrics.imageCleanupDeleted],
+    ["Image cleanup failed", metrics.imageCleanupFailures],
+    ["Combined spend", `$${(metrics.combinedCostMicrousd / 1_000_000).toFixed(4)}`],
   ] as const;
 
   return (
