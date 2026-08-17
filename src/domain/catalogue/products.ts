@@ -18,7 +18,7 @@ export const PRODUCT_SHOP_IMAGES = {
     alt: "A personalised 21st birthday roll-up banner standing on its complete display base",
   },
   "banner-bundle": {
-    src: "/media/products/banner-bundle.png",
+    src: "/media/products/banner-bundle.webp",
     alt: "A roll-up banner and matching wall banner prepared as a personalised event package",
   },
   "custom-themed-wall-banner": {

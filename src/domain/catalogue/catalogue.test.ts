@@ -44,7 +44,7 @@ describe("R&R catalogue", () => {
       "digital-oil-painting-canvas": "/media/products/digital-oil-painting-canvas-shop.webp",
       "custom-themed-canvas": "/media/products/custom-themed-canvas-shop.webp",
       "roll-up-banner": "/media/products/roll-up-banner-shop.webp",
-      "banner-bundle": "/media/products/banner-bundle.png",
+      "banner-bundle": "/media/products/banner-bundle.webp",
       "custom-themed-wall-banner": "/media/products/wall-hanging-banner-shop.webp",
       "digital-oil-painting-banner": "/media/products/digital-oil-painting-banner-shop.webp",
       "grave-cover": "/media/products/grave-cover-shop.webp",
@@ -62,7 +62,7 @@ describe("R&R catalogue", () => {
     expect(getProductBySlug("banner-bundle")).toMatchObject({
       category: "banners",
       workflowKey: "banner_bundle",
-      image: { src: "/media/products/banner-bundle.png" },
+      image: { src: "/media/products/banner-bundle.webp" },
     });
   });
 

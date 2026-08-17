@@ -198,7 +198,7 @@ describe("ProductPageContent", () => {
     )).toMatchObject({
       "@type": "Product",
       name: "Banner Bundle",
-      image: ["https://rrgallery.co.nz/media/products/banner-bundle.png"],
+      image: ["https://rrgallery.co.nz/media/products/banner-bundle.webp"],
       offers: {
         price: "359.99",
         priceCurrency: "NZD",
@@ -216,7 +216,7 @@ describe("ProductPageContent", () => {
     )).toMatchObject({
       "@type": "Product",
       name: "Banner Bundle",
-      image: ["https://rrgallery.co.nz/media/products/banner-bundle.png"],
+      image: ["https://rrgallery.co.nz/media/products/banner-bundle.webp"],
       offers: {
         price: "339.99",
         priceCurrency: "AUD",

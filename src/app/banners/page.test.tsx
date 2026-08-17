@@ -18,7 +18,7 @@ describe("Banners page", () => {
       name: "A roll-up banner and matching wall banner prepared as a personalised event package",
     });
     expect(new URL(image.getAttribute("src")!, "https://rrgallery.co.nz")
-      .searchParams.get("url")).toBe("/media/products/banner-bundle.png");
+      .searchParams.get("url")).toBe("/media/products/banner-bundle.webp");
     expect(within(card!).getByText("From NZ$359.99 incl GST")).toBeVisible();
   });
 });
