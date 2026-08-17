@@ -60,3 +60,51 @@ Two earlier persistence/cleanup findings and the additive-validator coverage fin
 ## Concerns
 
 No Task 7 blocker remains. The production Meta webhook will not supply ephemeral attachment sources until Task 8 is implemented, by design. No live OpenAI request was made; provider behavior remains covered at the existing controlled boundary.
+
+## Fix Round 1
+
+### Status
+
+Addressed all four findings from `task-7-review.md` in the scoped fix commit (`fix: bind image attempts to sources and cleanup`).
+
+### TDD Evidence
+
+- The substituted-source integration test first resolved and created an attempt for the wrong ephemeral identity. It now rejects `customer_service_image_context_mismatch` before source read.
+- The overlapping-attempt test first allowed one successful shared-row cleanup to certify another attempt whose object deletion failed. It now keeps each key and cleanup result isolated on its exact attempt input.
+- A stale failed-cleanup write first downgraded an already deleted exact attempt/key. Deletion proof is now monotonic and the regression passes.
+- The second identical reservation first threw `customer_service_image_attempt_not_pending`; the second completion also was not idempotent. Both ambiguous retry paths now return safely without double reserve, release, or spend.
+- Five definitive claim forms, including all review examples, first passed the additive validator. They are now blocked while advisory print/restoration language remains accepted.
+- A missing HMAC secret first allowed processor construction. The processor now fails startup with `image_source_identity_secret_required`.
+
+### Changes
+
+- HMAC-SHA-256 binds each ephemeral `externalAttachmentKey` to the selected persisted attachment hash before any source read. Attempt creation verifies attachment ID, conversation, ordinal, and source hash atomically.
+- Added migration `0024_shocking_silver_surfer.sql`. It preserves existing rows, backfills the new source hash from the restrictive attachment relation, and adds only new columns, checks, and an index.
+- Moved active object key/hash, retention deadline, verified metadata, failure state, and deletion proof to `customer_service_image_analysis_inputs`, keyed by exact attempt and attachment.
+- Storage and cleanup writes lock the exact attempt input and require the exact storage key. Successful deletion is monotonic; failed deletion retains the raw private key and due date for cleanup.
+- Reuse now requires the exact analyzed attempt's complete input set to have attempt-owned `cleanup_status = 'deleted'`.
+- Persisted reservation amount and daily scope on the image attempt in the same transaction that updates shared budgets.
+- Reservation retries return the existing reservation only when amount and scope match. Completion locks the attempt, releases its persisted reservation, zeroes it, records spend once, and treats terminal retries as no-ops.
+- Removed caller-supplied reservation amount/scope from image completion so callers cannot under-release or over-release shared budgets.
+- Expanded only the additive image validator; `output-validator.ts` remains unchanged.
+
+### Verification
+
+- Orchestration, processor, prompt, existing validator, additive validator, and policy suite: 6 files passed, 50 tests passed.
+- Public-route, no-send, security, serverless, and Meta regressions: 6 files passed, 16 tests passed.
+- Isolated PostgreSQL repository plus schema contract: 2 files passed, 24 tests passed.
+- `npm run typecheck`: passed.
+- Targeted ESLint across all changed TypeScript files: passed with zero warnings or errors.
+- `npm run db:check`: passed.
+- Migration `0024` applied successfully to the dedicated disposable PostgreSQL database without exposing credentials.
+
+### Scope and Invariants
+
+- Policy-first order, zero provider calls for blocked/image-only paths, no automatic retry, and `finally` cleanup remain unchanged.
+- Public generate/regenerate bodies, send behavior, Meta callback, production configuration, and customer-service config are unchanged.
+- Text-only prompt behavior remains frozen.
+- `output-validator.ts` SHA-256 remains `3e95c2af99e18b91cbaa8351df5c3907aa64066fbf21ee795c262a5852581a76`.
+
+### Concerns
+
+Historical pre-migration image attempts intentionally receive no attempt-owned deletion proof and are therefore not reusable. Backfilling `deleted` from the old shared attachment row would recreate the reviewed concurrency vulnerability; affected manual regenerations fail closed until a new safe analysis is available. Task 8 remains responsible for the ephemeral Meta handoff. No live OpenAI request was made.

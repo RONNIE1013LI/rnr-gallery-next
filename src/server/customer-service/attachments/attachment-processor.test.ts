@@ -1,8 +1,10 @@
+import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import type { CustomerServiceRepository } from "../repositories/customer-service-repository";
 import { createAttachmentProcessor } from "./attachment-processor";
 
 const storageKey = "customer-service-attachments/00000000-0000-4000-8000-000000000001.bin";
+const sourceIdentitySecret = "test-source-identity-secret";
 const analysis = {
   schemaVersion: "1" as const,
   overallStatus: "assessed" as const,
@@ -23,7 +25,7 @@ const analysis = {
   safeSummary: "Image 0 is the likely main candidate.",
 };
 
-function setup() {
+function setup(identitySecret = sourceIdentitySecret) {
   const repositoryMethods = {
     createImageAnalysisAttempt: vi.fn(async () => "image-attempt-1"),
     markImageAttachmentStored: vi.fn(async () => undefined),
@@ -64,6 +66,7 @@ function setup() {
     sourceReader,
     attachmentStore,
     imageProvider,
+    sourceIdentitySecret: identitySecret,
     budget: {
       reservationMicrousd: 2_000,
       dailyHardStopMicrousd: 1_000_000,
@@ -86,6 +89,10 @@ function setup() {
 }
 
 describe("attachment processor", () => {
+  it("requires a non-empty source identity secret", () => {
+    expect(() => setup("")).toThrow("image_source_identity_secret_required");
+  });
+
   it("persists storage, reserves the shared budget, analyzes once, persists usage, then deletes", async () => {
     const current = setup();
     await expect(current.processor.process(current.request)).resolves.toEqual({
@@ -93,6 +100,15 @@ describe("attachment processor", () => {
       summary: analysis.safeSummary,
     });
     expect(current.sourceReader.read).toHaveBeenCalledBefore(current.attachmentStore.save);
+    expect(current.repository.createImageAnalysisAttempt).toHaveBeenCalledWith({
+      messageId: "message-1",
+      schemaVersion: "1",
+      attachments: [{
+        attachmentId: "attachment-1",
+        ordinal: 0,
+        externalAttachmentKeyHash: createHmac("sha256", sourceIdentitySecret).update("mid-1:0").digest("hex"),
+      }],
+    });
     expect(current.attachmentStore.save).toHaveBeenCalledBefore(current.repository.markImageAttachmentStored);
     expect(current.repository.reserveImageAnalysisAttempt).toHaveBeenCalledBefore(current.imageProvider.analyze);
     expect(current.imageProvider.analyze).toHaveBeenCalledTimes(1);
@@ -107,7 +123,10 @@ describe("attachment processor", () => {
     expect(current.repository.completeImageAnalysisAttempt).toHaveBeenCalledBefore(current.attachmentStore.remove);
     expect(current.attachmentStore.remove).toHaveBeenCalledWith(storageKey);
     expect(current.repository.markImageAttachmentDeleted).toHaveBeenCalledWith({
+      attemptId: "image-attempt-1",
       attachmentId: "attachment-1",
+      privateStorageKey: storageKey,
+      deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
       deleted: true,
       failureCode: null,
     });
@@ -180,7 +199,6 @@ describe("attachment processor", () => {
       cachedInputTokens: 2,
       outputTokens: 4,
       estimatedCostMicrousd: 20,
-      reservedCostMicrousd: 2_000,
       providerErrorCode: "image_persistence_error",
     }));
     expect(current.attachmentStore.remove).toHaveBeenCalledWith(storageKey);
@@ -195,7 +213,10 @@ describe("attachment processor", () => {
     });
     expect(current.attachmentStore.remove).toHaveBeenCalledTimes(1);
     expect(current.repository.markImageAttachmentDeleted).toHaveBeenCalledWith({
+      attemptId: "image-attempt-1",
       attachmentId: "attachment-1",
+      privateStorageKey: storageKey,
+      deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
       deleted: false,
       failureCode: "image_cleanup_failed",
     });
@@ -210,5 +231,22 @@ describe("attachment processor", () => {
     expect(current.sourceReader.read).not.toHaveBeenCalled();
     expect(current.imageProvider.analyze).not.toHaveBeenCalled();
     expect(current.repository.createImageAnalysisAttempt).not.toHaveBeenCalled();
+  });
+
+  it("rejects a persisted source-identity mismatch before reading either source", async () => {
+    const current = setup();
+    current.repository.createImageAnalysisAttempt.mockRejectedValueOnce(
+      new Error("customer_service_image_context_mismatch"),
+    );
+
+    await expect(current.processor.process(current.request)).resolves.toEqual({
+      status: "image_review_required",
+      code: "image_processing_error",
+    });
+
+    expect(current.repository.createImageAnalysisAttempt).toHaveBeenCalledTimes(1);
+    expect(current.sourceReader.read).not.toHaveBeenCalled();
+    expect(current.attachmentStore.save).not.toHaveBeenCalled();
+    expect(current.imageProvider.analyze).not.toHaveBeenCalled();
   });
 });

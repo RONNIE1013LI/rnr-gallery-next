@@ -8,12 +8,17 @@ describe("image draft validator", () => {
     ["Your photo will be fully restored.", "visual_restoration_claim"],
     ["We can certainly repair it.", "visual_restoration_claim"],
     ["We can fully restore this photo.", "visual_restoration_claim"],
+    ["This photo can be fully restored.", "visual_restoration_claim"],
+    ["A full restoration is guaranteed.", "visual_restoration_claim"],
     ["This image is perfect for printing.", "visual_print_suitability_claim"],
     ["This image is ideal for printing.", "visual_print_suitability_claim"],
     ["It will print perfectly.", "visual_print_suitability_claim"],
     ["Print quality is guaranteed.", "visual_print_suitability_claim"],
     ["This photo is suitable for print.", "visual_print_suitability_claim"],
     ["This photo is ready to print.", "visual_print_suitability_claim"],
+    ["This photo will be perfect for printing.", "visual_print_suitability_claim"],
+    ["This photo looks suitable for print.", "visual_print_suitability_claim"],
+    ["This file is perfect for printing.", "visual_print_suitability_claim"],
   ])("blocks unsupported visual claim: %s", (draft, code) => {
     expect(validateImageDraft(draft)).toEqual({ ok: false, codes: [code] });
   });
@@ -30,5 +35,11 @@ describe("image draft validator", () => {
       ok: true,
       codes: [],
     });
+  });
+
+  it("accepts advisory print and restoration wording without a definitive promise", () => {
+    expect(validateImageDraft(
+      "We can review whether the file may be suitable for printing and assess what restoration is possible.",
+    )).toEqual({ ok: true, codes: [] });
   });
 });

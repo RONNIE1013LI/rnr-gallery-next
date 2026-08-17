@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac } from "node:crypto";
 import { parseImageAnalysisResult } from "../image-analysis-schema";
 import type { ImageAnalysisProvider, ImageAnalysisProviderResult } from "../providers/image-analysis-provider";
 import type { CustomerServiceRepository, ImageAnalysisAttemptCompletion } from "../repositories/customer-service-repository";
@@ -30,6 +30,7 @@ type StoredAttachment = Readonly<{
   attachmentId: string;
   ordinal: number;
   storageKey: string;
+  deleteDueAt: Date;
   resolved: ResolvedAttachment;
 }>;
 
@@ -68,8 +69,6 @@ function completion(input: Readonly<{
   attemptId: string;
   failure: ProcessingFailure;
   imageProvider: ImageAnalysisProvider;
-  dailyScopeKey: string;
-  reservedCostMicrousd: number;
 }>): ImageAnalysisAttemptCompletion {
   const providerResult = input.failure.providerResult;
   return {
@@ -87,8 +86,6 @@ function completion(input: Readonly<{
     estimatedCostMicrousd: providerResult?.estimatedCostMicrousd ?? 0,
     latencyMs: providerResult?.latencyMs ?? 0,
     ...(input.failure.status === "provider_error" ? { providerErrorCode: input.failure.code } : {}),
-    dailyScopeKey: input.dailyScopeKey,
-    reservedCostMicrousd: input.reservedCostMicrousd,
   };
 }
 
@@ -97,9 +94,11 @@ export function createAttachmentProcessor(input: Readonly<{
   sourceReader: AttachmentSourceReader;
   attachmentStore: PrivateAttachmentStore;
   imageProvider: ImageAnalysisProvider;
+  sourceIdentitySecret: string;
   budget: Budget;
   now?: () => Date;
 }>): AttachmentProcessor {
+  if (!input.sourceIdentitySecret.trim()) throw new Error("image_source_identity_secret_required");
   const now = input.now ?? (() => new Date());
   return Object.freeze({
     async process(request) {
@@ -110,7 +109,6 @@ export function createAttachmentProcessor(input: Readonly<{
       const stored: StoredAttachment[] = [];
       const dailyScopeKey = localDateScopeKey(now());
       let attemptId: string | null = null;
-      let reservedCostMicrousd = 0;
       let completedProviderResult: ImageAnalysisProviderResult | undefined;
       let result: AttachmentProcessingResult = {
         status: "image_review_required",
@@ -125,6 +123,9 @@ export function createAttachmentProcessor(input: Readonly<{
           attachments: request.sources.map((source, index) => ({
             attachmentId: request.attachmentIds[index],
             ordinal: source.ordinal,
+            externalAttachmentKeyHash: createHmac("sha256", input.sourceIdentitySecret)
+              .update(source.externalAttachmentKey)
+              .digest("hex"),
           })),
         });
 
@@ -159,10 +160,12 @@ export function createAttachmentProcessor(input: Readonly<{
               attachmentId: request.attachmentIds[index],
               ordinal: source.ordinal,
               storageKey: saved.storageKey,
+              deleteDueAt: new Date(now().getTime() + IMAGE_LIMITS.retentionMs),
               resolved,
             };
             stored.push(item);
             await input.repository.markImageAttachmentStored({
+              attemptId,
               attachmentId: item.attachmentId,
               verifiedMimeType: resolved.mimeType,
               width: resolved.width,
@@ -170,7 +173,7 @@ export function createAttachmentProcessor(input: Readonly<{
               byteSize: resolved.bytes.byteLength,
               sha256: resolved.sha256,
               privateStorageKey: saved.storageKey,
-              deleteDueAt: new Date(now().getTime() + IMAGE_LIMITS.retentionMs),
+              deleteDueAt: item.deleteDueAt,
             });
           } catch {
             throw new ProcessingFailure({
@@ -195,8 +198,6 @@ export function createAttachmentProcessor(input: Readonly<{
             providerCalled: false,
           });
         }
-        reservedCostMicrousd = input.budget.reservationMicrousd;
-
         const images = [];
         for (const item of stored) {
           let bytes: Buffer;
@@ -259,10 +260,7 @@ export function createAttachmentProcessor(input: Readonly<{
           outputTokens: providerResult.usage.outputTokens,
           estimatedCostMicrousd: providerResult.estimatedCostMicrousd,
           latencyMs: providerResult.latencyMs,
-          dailyScopeKey,
-          reservedCostMicrousd,
         });
-        reservedCostMicrousd = 0;
         result = analysis.overallStatus === "assessed"
           ? { status: "analyzed", summary: analysis.safeSummary }
           : { status: "image_review_required", code: "image_assessment_inconclusive" };
@@ -286,10 +284,7 @@ export function createAttachmentProcessor(input: Readonly<{
               attemptId,
               failure,
               imageProvider: input.imageProvider,
-              dailyScopeKey,
-              reservedCostMicrousd,
             }));
-            reservedCostMicrousd = 0;
           } catch {
             result = { status: "image_review_required", code: "image_persistence_error" };
           }
@@ -305,7 +300,10 @@ export function createAttachmentProcessor(input: Readonly<{
           }
           try {
             await input.repository.markImageAttachmentDeleted({
+              attemptId: attemptId!,
               attachmentId: item.attachmentId,
+              privateStorageKey: item.storageKey,
+              deleteDueAt: item.deleteDueAt,
               deleted,
               failureCode: deleted ? null : "image_cleanup_failed",
             });

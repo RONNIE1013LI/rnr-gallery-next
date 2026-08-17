@@ -72,6 +72,26 @@ describe("customer service schema contract", () => {
     ]);
   });
 
+  it("owns image reservations and temporary-object cleanup on exact attempts", () => {
+    const attemptColumns = getTableColumns(customerServiceImageAnalysisAttempts);
+    const inputColumns = getTableColumns(customerServiceImageAnalysisInputs);
+
+    expect(attemptColumns).toEqual(expect.objectContaining({
+      reservedCostMicrousd: expect.anything(),
+      budgetDailyScopeKey: expect.anything(),
+    }));
+    expect(inputColumns).toEqual(expect.objectContaining({
+      externalAttachmentKeyHash: expect.anything(),
+      cleanupStatus: expect.anything(),
+      privateStorageKey: expect.anything(),
+      privateStorageKeyHash: expect.anything(),
+      deleteDueAt: expect.anything(),
+      deletedAt: expect.anything(),
+    }));
+    expect(inputColumns.externalAttachmentKeyHash.notNull).toBe(true);
+    expect(inputColumns.cleanupStatus.notNull).toBe(true);
+  });
+
   it("keys image analysis inputs to the same conversation as their parents", () => {
     const messageConfig = getTableConfig(customerServiceMessages);
     const attachmentConfig = getTableConfig(customerServiceAttachments);
@@ -194,14 +214,15 @@ describe("customer service schema contract", () => {
         "insert into customer_service_image_analysis_attempts (message_id, conversation_id, attempt_number, status, schema_version) values ($1, $2, 1, 'pending', 'v1') returning id",
         [messageA.rows[0].id, conversation.rows[0].id],
       );
+      const attachmentHash = `schema-test-attachment-b-${randomUUID()}`;
       const attachmentB = await client.query(
         "insert into customer_service_attachments (message_id, conversation_id, external_attachment_key_hash, ordinal) values ($1, $2, $3, 0) returning id",
-        [messageB.rows[0].id, conversation.rows[0].id, `schema-test-attachment-b-${randomUUID()}`],
+        [messageB.rows[0].id, conversation.rows[0].id, attachmentHash],
       );
 
       const input = await client.query(
-        "insert into customer_service_image_analysis_inputs (analysis_attempt_id, attachment_id, conversation_id, ordinal) values ($1, $2, $3, 0) returning analysis_attempt_id",
-        [attemptA.rows[0].id, attachmentB.rows[0].id, conversation.rows[0].id],
+        "insert into customer_service_image_analysis_inputs (analysis_attempt_id, attachment_id, conversation_id, ordinal, external_attachment_key_hash) values ($1, $2, $3, 0, $4) returning analysis_attempt_id",
+        [attemptA.rows[0].id, attachmentB.rows[0].id, conversation.rows[0].id, attachmentHash],
       );
 
       expect(input.rowCount).toBe(1);
@@ -238,14 +259,15 @@ describe("customer service schema contract", () => {
         "insert into customer_service_image_analysis_attempts (message_id, conversation_id, attempt_number, status, schema_version) values ($1, $2, 1, 'pending', 'v1') returning id",
         [messageA.rows[0].id, conversationA.rows[0].id],
       );
+      const attachmentHash = `schema-test-attachment-b-${randomUUID()}`;
       const attachmentB = await client.query(
         "insert into customer_service_attachments (message_id, conversation_id, external_attachment_key_hash, ordinal) values ($1, $2, $3, 0) returning id",
-        [messageB.rows[0].id, conversationB.rows[0].id, `schema-test-attachment-b-${randomUUID()}`],
+        [messageB.rows[0].id, conversationB.rows[0].id, attachmentHash],
       );
 
       await expect(client.query(
-        "insert into customer_service_image_analysis_inputs (analysis_attempt_id, attachment_id, conversation_id, ordinal) values ($1, $2, $3, 0)",
-        [attemptA.rows[0].id, attachmentB.rows[0].id, conversationA.rows[0].id],
+        "insert into customer_service_image_analysis_inputs (analysis_attempt_id, attachment_id, conversation_id, ordinal, external_attachment_key_hash) values ($1, $2, $3, 0, $4)",
+        [attemptA.rows[0].id, attachmentB.rows[0].id, conversationA.rows[0].id, attachmentHash],
       )).rejects.toMatchObject({ code: "23503" });
     } finally {
       await client.query("ROLLBACK");

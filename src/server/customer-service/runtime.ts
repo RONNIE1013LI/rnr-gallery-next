@@ -26,6 +26,7 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
       sourceReader: createFacebookSourceReader({ allowedHosts: config.metaAttachmentAllowedHosts }),
       attachmentStore: createPrivateAttachmentStore(config.blobReadWriteToken),
       imageProvider,
+      sourceIdentitySecret: config.idHashSecret,
       budget: {
         reservationMicrousd: 1_000,
         dailyHardStopMicrousd: config.dailyHardStopMicrousd,

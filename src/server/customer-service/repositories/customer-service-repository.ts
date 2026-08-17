@@ -75,8 +75,6 @@ export type ImageAnalysisAttemptCompletion = Readonly<{
   estimatedCostMicrousd: number;
   latencyMs: number;
   providerErrorCode?: string;
-  dailyScopeKey: string;
-  reservedCostMicrousd: number;
 }>;
 
 export type FeedbackEventInput = Readonly<{
@@ -129,9 +127,14 @@ export interface CustomerServiceRepository {
   createImageAnalysisAttempt(input: Readonly<{
     messageId: string;
     schemaVersion: "1";
-    attachments: readonly Readonly<{ attachmentId: string; ordinal: number }>[];
+    attachments: readonly Readonly<{
+      attachmentId: string;
+      ordinal: number;
+      externalAttachmentKeyHash: string;
+    }>[];
   }>): Promise<string>;
   markImageAttachmentStored(input: Readonly<{
+    attemptId: string;
     attachmentId: string;
     verifiedMimeType: "image/jpeg" | "image/png" | "image/webp";
     width: number;
@@ -150,7 +153,10 @@ export interface CustomerServiceRepository {
   }>): Promise<Readonly<{ status: "reserved" }> | Readonly<{ status: "budget_blocked" }>>;
   completeImageAnalysisAttempt(input: ImageAnalysisAttemptCompletion): Promise<void>;
   markImageAttachmentDeleted(input: Readonly<{
+    attemptId: string;
     attachmentId: string;
+    privateStorageKey: string;
+    deleteDueAt: Date;
     deleted: boolean;
     failureCode: string | null;
   }>): Promise<void>;

@@ -102,6 +102,7 @@ function imageDependencies(repository: CustomerServiceRepository) {
       sourceReader,
       attachmentStore,
       imageProvider,
+      sourceIdentitySecret: "engine-test-source-identity-secret",
       budget: {
         reservationMicrousd: 2_000,
         dailyHardStopMicrousd: 1_000_000,

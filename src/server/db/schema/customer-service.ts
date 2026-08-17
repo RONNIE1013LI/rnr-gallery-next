@@ -260,6 +260,8 @@ export const customerServiceImageAnalysisAttempts = pgTable(
     cachedInputTokens: integer("cached_input_tokens"),
     outputTokens: integer("output_tokens"),
     estimatedCostMicrousd: bigint("estimated_cost_microusd", { mode: "number" }),
+    reservedCostMicrousd: bigint("reserved_cost_microusd", { mode: "number" }).default(0).notNull(),
+    budgetDailyScopeKey: text("budget_daily_scope_key"),
     latencyMs: integer("latency_ms"),
     providerErrorCode: text("provider_error_code"),
     startedAt: timestamp("started_at", { withTimezone: true }).defaultNow().notNull(),
@@ -278,6 +280,7 @@ export const customerServiceImageAnalysisAttempts = pgTable(
     check("customer_service_image_analysis_attempts_number_valid", sql`${table.attemptNumber} > 0`),
     check("customer_service_image_analysis_attempts_status_valid", sql`${table.status} in ('pending', 'provider_pending', 'analyzed', 'input_rejected', 'provider_error', 'schema_blocked')`),
     check("customer_service_image_analysis_attempts_usage_valid", sql`coalesce(${table.inputTokens}, 0) >= 0 and coalesce(${table.cachedInputTokens}, 0) >= 0 and coalesce(${table.outputTokens}, 0) >= 0 and coalesce(${table.estimatedCostMicrousd}, 0) >= 0 and coalesce(${table.latencyMs}, 0) >= 0`),
+    check("customer_service_image_analysis_attempts_reservation_valid", sql`${table.reservedCostMicrousd} >= 0 and (${table.reservedCostMicrousd} = 0 or length(trim(${table.budgetDailyScopeKey})) > 0)`),
     check("customer_service_image_analysis_attempts_terminal_valid", sql`${table.status} in ('pending', 'provider_pending') or ${table.completedAt} is not null`),
   ],
 );
@@ -289,6 +292,21 @@ export const customerServiceImageAnalysisInputs = pgTable(
     attachmentId: uuid("attachment_id").notNull(),
     conversationId: uuid("conversation_id").notNull(),
     ordinal: integer("ordinal").notNull(),
+    externalAttachmentKeyHash: text("external_attachment_key_hash").notNull(),
+    cleanupStatus: text("cleanup_status")
+      .$type<"pending" | "stored" | "deleted" | "failed">()
+      .default("pending")
+      .notNull(),
+    verifiedMimeType: text("verified_mime_type").$type<"image/jpeg" | "image/png" | "image/webp">(),
+    width: integer("width"),
+    height: integer("height"),
+    byteSize: integer("byte_size"),
+    sha256: text("sha256"),
+    privateStorageKey: text("private_storage_key"),
+    privateStorageKeyHash: text("private_storage_key_hash"),
+    failureCode: text("failure_code"),
+    deleteDueAt: timestamp("delete_due_at", { withTimezone: true }),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
   },
   (table) => [
     uniqueIndex("customer_service_image_analysis_inputs_attempt_attachment_unique")
@@ -296,6 +314,7 @@ export const customerServiceImageAnalysisInputs = pgTable(
     uniqueIndex("customer_service_image_analysis_inputs_attempt_ordinal_unique")
       .on(table.analysisAttemptId, table.ordinal),
     index("customer_service_image_analysis_inputs_attachment_idx").on(table.attachmentId),
+    index("customer_service_image_analysis_inputs_cleanup_due_idx").on(table.cleanupStatus, table.deleteDueAt),
     foreignKey({
       name: "customer_service_image_analysis_inputs_attempt_conversation_fk",
       columns: [table.analysisAttemptId, table.conversationId],
@@ -307,5 +326,9 @@ export const customerServiceImageAnalysisInputs = pgTable(
       foreignColumns: [customerServiceAttachments.id, customerServiceAttachments.conversationId],
     }).onDelete("restrict"),
     check("customer_service_image_analysis_inputs_ordinal_valid", sql`${table.ordinal} >= 0`),
+    check("customer_service_image_analysis_inputs_external_hash_valid", sql`length(trim(${table.externalAttachmentKeyHash})) > 0`),
+    check("customer_service_image_analysis_inputs_cleanup_status_valid", sql`${table.cleanupStatus} in ('pending', 'stored', 'deleted', 'failed')`),
+    check("customer_service_image_analysis_inputs_mime_valid", sql`${table.verifiedMimeType} is null or ${table.verifiedMimeType} in ('image/jpeg', 'image/png', 'image/webp')`),
+    check("customer_service_image_analysis_inputs_dimensions_valid", sql`coalesce(${table.width}, 0) >= 0 and coalesce(${table.height}, 0) >= 0 and coalesce(${table.byteSize}, 0) >= 0`),
   ],
 );

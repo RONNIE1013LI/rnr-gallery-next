@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { and, asc, desc, eq, gte, lte, max, sql } from "drizzle-orm";
 import { alias } from "drizzle-orm/pg-core";
 import type { getDatabase } from "@/server/db/client";
@@ -88,18 +89,14 @@ async function validatedAnalysisSummary(
     const inputs = await database.select({
       attachmentId: customerServiceImageAnalysisInputs.attachmentId,
       ordinal: customerServiceImageAnalysisInputs.ordinal,
-      attachmentStatus: customerServiceAttachments.status,
+      cleanupStatus: customerServiceImageAnalysisInputs.cleanupStatus,
     }).from(customerServiceImageAnalysisInputs)
-      .innerJoin(
-        customerServiceAttachments,
-        eq(customerServiceAttachments.id, customerServiceImageAnalysisInputs.attachmentId),
-      )
       .where(eq(customerServiceImageAnalysisInputs.analysisAttemptId, attempt.id))
       .orderBy(asc(customerServiceImageAnalysisInputs.ordinal));
     if (
       inputs.length !== attachmentIds.length
       || inputs.some((input, index) => input.attachmentId !== attachmentIds[index])
-      || inputs.some((input) => input.attachmentStatus !== "deleted")
+      || inputs.some((input) => input.cleanupStatus !== "deleted")
     ) continue;
     try {
       const analysis = parseImageAnalysisResult(
@@ -283,13 +280,21 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         const attachments = await transaction.select({
           id: customerServiceAttachments.id,
           conversationId: customerServiceAttachments.conversationId,
+          ordinal: customerServiceAttachments.ordinal,
+          externalAttachmentKeyHash: customerServiceAttachments.externalAttachmentKeyHash,
         }).from(customerServiceAttachments).where(sql`${customerServiceAttachments.id} in (${sql.join(
           input.attachments.map((attachment) => sql`${attachment.attachmentId}`),
           sql`, `,
         )})`);
         if (
           attachments.length !== input.attachments.length
-          || attachments.some((attachment) => attachment.conversationId !== message.conversationId)
+          || input.attachments.some((expected) => {
+            const attachment = attachments.find((candidate) => candidate.id === expected.attachmentId);
+            return !attachment
+              || attachment.conversationId !== message.conversationId
+              || attachment.ordinal !== expected.ordinal
+              || attachment.externalAttachmentKeyHash !== expected.externalAttachmentKeyHash;
+          })
         ) throw new Error("customer_service_image_context_mismatch");
 
         const [attempt] = await transaction.insert(customerServiceImageAnalysisAttempts).values({
@@ -304,35 +309,69 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           attachmentId: attachment.attachmentId,
           conversationId: message.conversationId,
           ordinal: attachment.ordinal,
+          externalAttachmentKeyHash: attachment.externalAttachmentKeyHash,
         })));
         return attempt.id;
       });
     },
 
     async markImageAttachmentStored(input) {
-      await database.update(customerServiceAttachments).set({
-        status: "stored",
-        verifiedMimeType: input.verifiedMimeType,
-        width: input.width,
-        height: input.height,
-        byteSize: input.byteSize,
-        sha256: input.sha256,
-        privateStorageKey: input.privateStorageKey,
-        deleteDueAt: input.deleteDueAt,
-        failureCode: null,
-      }).where(eq(customerServiceAttachments.id, input.attachmentId));
+      await database.transaction(async (transaction) => {
+        const [attemptInput] = await transaction.select({
+          cleanupStatus: customerServiceImageAnalysisInputs.cleanupStatus,
+          privateStorageKey: customerServiceImageAnalysisInputs.privateStorageKey,
+        }).from(customerServiceImageAnalysisInputs).where(and(
+          eq(customerServiceImageAnalysisInputs.analysisAttemptId, input.attemptId),
+          eq(customerServiceImageAnalysisInputs.attachmentId, input.attachmentId),
+        )).limit(1).for("update");
+        if (!attemptInput) throw new Error("customer_service_image_context_mismatch");
+        if (attemptInput.cleanupStatus === "stored" && attemptInput.privateStorageKey === input.privateStorageKey) {
+          return;
+        }
+        if (attemptInput.cleanupStatus !== "pending") {
+          throw new Error("customer_service_image_storage_state_mismatch");
+        }
+        await transaction.update(customerServiceImageAnalysisInputs).set({
+          cleanupStatus: "stored",
+          verifiedMimeType: input.verifiedMimeType,
+          width: input.width,
+          height: input.height,
+          byteSize: input.byteSize,
+          sha256: input.sha256,
+          privateStorageKey: input.privateStorageKey,
+          privateStorageKeyHash: createHash("sha256").update(input.privateStorageKey).digest("hex"),
+          deleteDueAt: input.deleteDueAt,
+          deletedAt: null,
+          failureCode: null,
+        }).where(and(
+          eq(customerServiceImageAnalysisInputs.analysisAttemptId, input.attemptId),
+          eq(customerServiceImageAnalysisInputs.attachmentId, input.attachmentId),
+        ));
+      });
     },
 
     async reserveImageAnalysisAttempt(input) {
       return database.transaction(async (transaction) => {
-        const [attempt] = await transaction.select({ status: customerServiceImageAnalysisAttempts.status })
+        const [attempt] = await transaction.select({
+          status: customerServiceImageAnalysisAttempts.status,
+          reservedCostMicrousd: customerServiceImageAnalysisAttempts.reservedCostMicrousd,
+          budgetDailyScopeKey: customerServiceImageAnalysisAttempts.budgetDailyScopeKey,
+        })
           .from(customerServiceImageAnalysisAttempts)
           .where(eq(customerServiceImageAnalysisAttempts.id, input.attemptId))
           .limit(1)
           .for("update");
-        if (!attempt || attempt.status !== "pending") {
+        if (!attempt) {
           throw new Error("customer_service_image_attempt_not_pending");
         }
+        if (attempt.status === "provider_pending") {
+          if (
+            attempt.reservedCostMicrousd === input.reservationMicrousd
+            && attempt.budgetDailyScopeKey === input.dailyScopeKey
+          ) return { status: "reserved" as const };
+          throw new Error("customer_service_image_reservation_mismatch");
+        }
+        if (attempt.status !== "pending") throw new Error("customer_service_image_attempt_not_pending");
         const rows = await ensureBudgetRows(transaction, [input.dailyScopeKey, "total"].sort());
         const daily = rows.find((row) => row.scopeKey === input.dailyScopeKey);
         const total = rows.find((row) => row.scopeKey === "total");
@@ -346,6 +385,8 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         await transaction.update(customerServiceImageAnalysisAttempts).set({
           status: "provider_pending",
           providerCalled: true,
+          reservedCostMicrousd: input.reservationMicrousd,
+          budgetDailyScopeKey: input.dailyScopeKey,
         }).where(eq(customerServiceImageAnalysisAttempts.id, input.attemptId));
         return { status: "reserved" as const };
       });
@@ -353,20 +394,24 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
 
     async completeImageAnalysisAttempt(input) {
       await database.transaction(async (transaction) => {
-        const [attempt] = await transaction.select({ status: customerServiceImageAnalysisAttempts.status })
+        const [attempt] = await transaction.select({
+          status: customerServiceImageAnalysisAttempts.status,
+          reservedCostMicrousd: customerServiceImageAnalysisAttempts.reservedCostMicrousd,
+          budgetDailyScopeKey: customerServiceImageAnalysisAttempts.budgetDailyScopeKey,
+        })
           .from(customerServiceImageAnalysisAttempts)
           .where(eq(customerServiceImageAnalysisAttempts.id, input.attemptId))
           .limit(1)
           .for("update");
-        if (!attempt || !["pending", "provider_pending"].includes(attempt.status)) {
-          throw new Error("customer_service_image_attempt_not_pending");
-        }
-        if (input.reservedCostMicrousd > 0) {
-          await ensureBudgetRows(transaction, [input.dailyScopeKey, "total"].sort());
+        if (!attempt) throw new Error("customer_service_image_attempt_not_found");
+        if (!["pending", "provider_pending"].includes(attempt.status)) return;
+        if (attempt.reservedCostMicrousd > 0) {
+          if (!attempt.budgetDailyScopeKey) throw new Error("customer_service_image_reservation_invalid");
+          await ensureBudgetRows(transaction, [attempt.budgetDailyScopeKey, "total"].sort());
           await transaction.update(customerServiceBudgetState).set({
-            reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${input.reservedCostMicrousd})`,
+            reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${attempt.reservedCostMicrousd})`,
             spentMicrousd: sql`${customerServiceBudgetState.spentMicrousd} + ${input.estimatedCostMicrousd}`,
-          }).where(sql`${customerServiceBudgetState.scopeKey} in (${input.dailyScopeKey}, 'total')`);
+          }).where(sql`${customerServiceBudgetState.scopeKey} in (${attempt.budgetDailyScopeKey}, 'total')`);
         }
         await transaction.update(customerServiceImageAnalysisAttempts).set({
           status: input.status,
@@ -379,39 +424,60 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           cachedInputTokens: input.cachedInputTokens,
           outputTokens: input.outputTokens,
           estimatedCostMicrousd: input.estimatedCostMicrousd,
+          reservedCostMicrousd: 0,
           latencyMs: input.latencyMs,
           providerErrorCode: input.providerErrorCode ?? null,
           completedAt: new Date(),
         }).where(eq(customerServiceImageAnalysisAttempts.id, input.attemptId));
-        const attachmentStatus = input.status === "analyzed"
-          ? "analyzed" as const
-          : input.status === "input_rejected"
-            ? "rejected" as const
-            : "failed" as const;
-        const inputs = await transaction.select({ attachmentId: customerServiceImageAnalysisInputs.attachmentId })
-          .from(customerServiceImageAnalysisInputs)
-          .where(eq(customerServiceImageAnalysisInputs.analysisAttemptId, input.attemptId));
-        if (inputs.length) {
-          await transaction.update(customerServiceAttachments).set({ status: attachmentStatus })
-            .where(sql`${customerServiceAttachments.id} in (${sql.join(
-              inputs.map((item) => sql`${item.attachmentId}`),
-              sql`, `,
-            )})`);
-        }
       });
     },
 
     async markImageAttachmentDeleted(input) {
-      await database.update(customerServiceAttachments).set(input.deleted ? {
-        status: "deleted",
-        privateStorageKey: null,
-        deleteDueAt: null,
-        deletedAt: new Date(),
-        failureCode: null,
-      } : {
-        status: "failed",
-        failureCode: input.failureCode,
-      }).where(eq(customerServiceAttachments.id, input.attachmentId));
+      await database.transaction(async (transaction) => {
+        const [attemptInput] = await transaction.select({
+          cleanupStatus: customerServiceImageAnalysisInputs.cleanupStatus,
+          privateStorageKey: customerServiceImageAnalysisInputs.privateStorageKey,
+          privateStorageKeyHash: customerServiceImageAnalysisInputs.privateStorageKeyHash,
+        }).from(customerServiceImageAnalysisInputs).where(and(
+          eq(customerServiceImageAnalysisInputs.analysisAttemptId, input.attemptId),
+          eq(customerServiceImageAnalysisInputs.attachmentId, input.attachmentId),
+        )).limit(1).for("update");
+        if (!attemptInput) throw new Error("customer_service_image_context_mismatch");
+        const expectedKeyHash = createHash("sha256").update(input.privateStorageKey).digest("hex");
+        if (attemptInput.cleanupStatus === "deleted") {
+          if (attemptInput.privateStorageKeyHash !== expectedKeyHash) {
+            throw new Error("customer_service_image_storage_key_mismatch");
+          }
+          return;
+        }
+        if (
+          attemptInput.privateStorageKey !== null
+          && attemptInput.privateStorageKey !== input.privateStorageKey
+        ) throw new Error("customer_service_image_storage_key_mismatch");
+        if (
+          attemptInput.privateStorageKey === null
+          && attemptInput.privateStorageKeyHash !== null
+          && attemptInput.privateStorageKeyHash !== expectedKeyHash
+        ) throw new Error("customer_service_image_storage_key_mismatch");
+        await transaction.update(customerServiceImageAnalysisInputs).set(input.deleted ? {
+          cleanupStatus: "deleted",
+          privateStorageKey: null,
+          privateStorageKeyHash: expectedKeyHash,
+          deleteDueAt: null,
+          deletedAt: new Date(),
+          failureCode: null,
+        } : {
+          cleanupStatus: "failed",
+          privateStorageKey: input.privateStorageKey,
+          privateStorageKeyHash: expectedKeyHash,
+          deleteDueAt: input.deleteDueAt,
+          deletedAt: null,
+          failureCode: input.failureCode,
+        }).where(and(
+          eq(customerServiceImageAnalysisInputs.analysisAttemptId, input.attemptId),
+          eq(customerServiceImageAnalysisInputs.attachmentId, input.attachmentId),
+        ));
+      });
     },
 
     async createGateBlockedAttempt(input) {

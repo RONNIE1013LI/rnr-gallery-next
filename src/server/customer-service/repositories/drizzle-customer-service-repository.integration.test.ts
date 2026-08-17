@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
@@ -19,6 +20,51 @@ const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 const enabled = Boolean(testDatabaseUrl) && isDedicatedTestDatabase(testDatabaseUrl, process.env.DATABASE_URL);
 const database = drizzle(testDatabaseUrl ?? "postgres://disabled.invalid/test");
 const repository = createDrizzleCustomerServiceRepository(database);
+const sourceIdentitySecret = "integration-source-identity-secret";
+
+function sourceHash(value: string) {
+  return createHmac("sha256", sourceIdentitySecret).update(value).digest("hex");
+}
+
+function assessedAnalysis(safeSummary = "Image 0 is the likely main candidate.") {
+  return {
+    schemaVersion: "1" as const,
+    overallStatus: "assessed" as const,
+    images: [{
+      ordinal: 0,
+      classification: "customer_photo" as const,
+      blur: "mild" as const,
+      sourceResolutionSignal: "normal" as const,
+      subjectScale: "usable" as const,
+      crop: "none_visible" as const,
+      obstruction: "none_visible" as const,
+      screenshotSignal: "none_visible" as const,
+      recommendedRole: "main_candidate" as const,
+      issueCodes: [],
+    }],
+    comparison: null,
+    recommendationCodes: ["use_as_main_candidate" as const],
+    safeSummary,
+  };
+}
+
+function imageCompletion(attemptId: string, status: "analyzed" | "provider_error") {
+  return {
+    attemptId,
+    status,
+    providerCalled: true,
+    provider: "mock" as const,
+    model: "mock-image",
+    ...(status === "analyzed" ? { analysisResult: assessedAnalysis() } : {}),
+    validatorCodes: [],
+    inputTokens: 10,
+    cachedInputTokens: 2,
+    outputTokens: 4,
+    estimatedCostMicrousd: 25,
+    latencyMs: 5,
+    ...(status === "provider_error" ? { providerErrorCode: "image_provider_error" } : {}),
+  };
+}
 
 async function clearTables() {
   await database.delete(customerServiceFeedbackEvents);
@@ -161,7 +207,10 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(created.status).toBe("pilot_complete");
     if (created.status === "duplicate") return;
 
-    const attachments = await database.select({ id: customerServiceAttachments.id })
+    const attachments = await database.select({
+      id: customerServiceAttachments.id,
+      externalAttachmentKeyHash: customerServiceAttachments.externalAttachmentKeyHash,
+    })
       .from(customerServiceAttachments)
       .orderBy(customerServiceAttachments.ordinal);
     await expect(repository.selectImageContext(created.messageId)).resolves.toEqual({
@@ -442,25 +491,38 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
     expect(created.status).toBe("pilot_complete");
     if (created.status === "duplicate") return;
-    const attachments = await database.select({ id: customerServiceAttachments.id })
+    const attachments = await database.select({
+      id: customerServiceAttachments.id,
+      externalAttachmentKeyHash: customerServiceAttachments.externalAttachmentKeyHash,
+    })
       .from(customerServiceAttachments)
       .orderBy(customerServiceAttachments.ordinal);
 
     const attemptId = await repository.createImageAnalysisAttempt({
       messageId: created.messageId,
       schemaVersion: "1",
-      attachments: attachments.map((attachment, ordinal) => ({ attachmentId: attachment.id, ordinal })),
+      attachments: attachments.map((attachment, ordinal) => ({
+        attachmentId: attachment.id,
+        ordinal,
+        externalAttachmentKeyHash: attachment.externalAttachmentKeyHash,
+      })),
     });
-    await repository.markImageAttachmentStored({
-      attachmentId: attachments[0].id,
-      verifiedMimeType: "image/png",
-      width: 100,
-      height: 80,
-      byteSize: 64,
-      sha256: "e".repeat(64),
-      privateStorageKey: "customer-service-attachments/00000000-0000-4000-8000-000000000001.bin",
-      deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
-    });
+    const storageKeys = attachments.map((_, index) => (
+      `customer-service-attachments/00000000-0000-4000-8000-${String(index + 1).padStart(12, "0")}.bin`
+    ));
+    for (const [index, attachment] of attachments.entries()) {
+      await repository.markImageAttachmentStored({
+        attemptId,
+        attachmentId: attachment.id,
+        verifiedMimeType: "image/png",
+        width: 100,
+        height: 80,
+        byteSize: 64,
+        sha256: "e".repeat(64),
+        privateStorageKey: storageKeys[index],
+        deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
+      });
+    }
     await expect(repository.reserveImageAnalysisAttempt({
       attemptId,
       reservationMicrousd: 100,
@@ -501,11 +563,12 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       outputTokens: 4,
       estimatedCostMicrousd: 25,
       latencyMs: 5,
-      dailyScopeKey: "daily:2026-08-17",
-      reservedCostMicrousd: 100,
     });
     await repository.markImageAttachmentDeleted({
+      attemptId,
       attachmentId: attachments[0].id,
+      privateStorageKey: storageKeys[0],
+      deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
       deleted: false,
       failureCode: "image_cleanup_failed",
     });
@@ -517,23 +580,24 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       .orderBy(customerServiceImageAnalysisInputs.ordinal);
     const budgets = await database.select().from(customerServiceBudgetState)
       .orderBy(customerServiceBudgetState.scopeKey);
-    const [deletedAttachment] = await database.select().from(customerServiceAttachments)
-      .where(eq(customerServiceAttachments.id, attachments[0].id));
     expect(attempt).toMatchObject({ status: "analyzed", providerCalled: true, estimatedCostMicrousd: 25 });
     expect(inputs.map((item) => item.attachmentId)).toEqual(attachments.map((attachment) => attachment.id));
+    expect(inputs[0]).toMatchObject({ cleanupStatus: "failed", privateStorageKey: storageKeys[0] });
     expect(budgets).toEqual(expect.arrayContaining([
       expect.objectContaining({ scopeKey: "daily:2026-08-17", reservedMicrousd: 0, spentMicrousd: 25 }),
       expect.objectContaining({ scopeKey: "total", reservedMicrousd: 0, spentMicrousd: 25 }),
     ]));
-    expect(deletedAttachment).toMatchObject({ status: "failed", failureCode: "image_cleanup_failed" });
     await expect(repository.selectImageContext(created.messageId)).resolves.toEqual({
       messageId: created.messageId,
       attachmentIds: attachments.map((attachment) => attachment.id),
       analysisSummary: null,
     });
-    for (const attachment of attachments) {
+    for (const [index, attachment] of attachments.entries()) {
       await repository.markImageAttachmentDeleted({
+        attemptId,
         attachmentId: attachment.id,
+        privateStorageKey: storageKeys[index],
+        deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
         deleted: true,
         failureCode: null,
       });
@@ -554,13 +618,198 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
     expect(other.status).toBe("pilot_complete");
     if (other.status === "duplicate") return;
-    const [otherAttachment] = await database.select({ id: customerServiceAttachments.id })
+    const [otherAttachment] = await database.select({
+      id: customerServiceAttachments.id,
+      externalAttachmentKeyHash: customerServiceAttachments.externalAttachmentKeyHash,
+    })
       .from(customerServiceAttachments)
       .where(eq(customerServiceAttachments.messageId, other.messageId));
     await expect(repository.createImageAnalysisAttempt({
       messageId: created.messageId,
       schemaVersion: "1",
-      attachments: [{ attachmentId: otherAttachment.id, ordinal: 0 }],
+      attachments: [{
+        attachmentId: otherAttachment.id,
+        ordinal: 0,
+        externalAttachmentKeyHash: otherAttachment.externalAttachmentKeyHash,
+      }],
     })).rejects.toThrow("customer_service_image_context_mismatch");
+  });
+
+  it("rejects an ephemeral source identity substituted for the selected persisted attachment", async () => {
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "3".repeat(64),
+      externalMessageKeyHash: "4".repeat(64),
+      text: "Please assess this image",
+      attachments: [{
+        externalAttachmentKeyHash: sourceHash("conversation-a-source"),
+        ordinal: 0,
+        kind: "image",
+        mimeTypeHint: null,
+      }],
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    if (created.status === "duplicate") return;
+    const [attachment] = await database.select({ id: customerServiceAttachments.id })
+      .from(customerServiceAttachments)
+      .where(eq(customerServiceAttachments.messageId, created.messageId));
+
+    await expect(repository.createImageAnalysisAttempt({
+      messageId: created.messageId,
+      schemaVersion: "1",
+      attachments: [{
+        attachmentId: attachment.id,
+        ordinal: 0,
+        externalAttachmentKeyHash: sourceHash("conversation-b-source"),
+      }],
+    })).rejects.toThrow("customer_service_image_context_mismatch");
+
+    expect(await database.select().from(customerServiceImageAnalysisAttempts)).toHaveLength(0);
+  });
+
+  it("keeps cleanup proof and storage guards isolated to each overlapping attempt", async () => {
+    const externalAttachmentKeyHash = sourceHash("shared-source");
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "5".repeat(64),
+      externalMessageKeyHash: "6".repeat(64),
+      text: "Please assess this image",
+      attachments: [{ externalAttachmentKeyHash, ordinal: 0, kind: "image", mimeTypeHint: null }],
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    if (created.status === "duplicate") return;
+    const [attachment] = await database.select({ id: customerServiceAttachments.id })
+      .from(customerServiceAttachments)
+      .where(eq(customerServiceAttachments.messageId, created.messageId));
+    const attemptInput = {
+      messageId: created.messageId,
+      schemaVersion: "1" as const,
+      attachments: [{ attachmentId: attachment.id, ordinal: 0, externalAttachmentKeyHash }],
+    };
+    const attemptA = await repository.createImageAnalysisAttempt(attemptInput);
+    const attemptB = await repository.createImageAnalysisAttempt(attemptInput);
+    const keyA = "customer-service-attachments/00000000-0000-4000-8000-00000000000a.bin";
+    const keyB = "customer-service-attachments/00000000-0000-4000-8000-00000000000b.bin";
+    for (const [attemptId, privateStorageKey] of [[attemptA, keyA], [attemptB, keyB]] as const) {
+      await repository.markImageAttachmentStored({
+        attemptId,
+        attachmentId: attachment.id,
+        verifiedMimeType: "image/png",
+        width: 100,
+        height: 80,
+        byteSize: 64,
+        sha256: "e".repeat(64),
+        privateStorageKey,
+        deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
+      });
+    }
+    await repository.completeImageAnalysisAttempt(imageCompletion(attemptA, "provider_error"));
+    await repository.completeImageAnalysisAttempt(imageCompletion(attemptB, "analyzed"));
+    await repository.markImageAttachmentDeleted({
+      attemptId: attemptB,
+      attachmentId: attachment.id,
+      privateStorageKey: keyB,
+      deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
+      deleted: false,
+      failureCode: "image_cleanup_failed",
+    });
+    await repository.markImageAttachmentDeleted({
+      attemptId: attemptA,
+      attachmentId: attachment.id,
+      privateStorageKey: keyA,
+      deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
+      deleted: true,
+      failureCode: null,
+    });
+    await repository.markImageAttachmentDeleted({
+      attemptId: attemptA,
+      attachmentId: attachment.id,
+      privateStorageKey: keyA,
+      deleteDueAt: new Date("2026-08-18T00:00:00.000Z"),
+      deleted: false,
+      failureCode: "stale_cleanup_failure",
+    });
+
+    await expect(repository.selectImageContext(created.messageId)).resolves.toEqual({
+      messageId: created.messageId,
+      attachmentIds: [attachment.id],
+      analysisSummary: null,
+    });
+    const lifecycle = await database.execute(sql`
+      select analysis_attempt_id, cleanup_status, private_storage_key
+      from customer_service_image_analysis_inputs
+      order by analysis_attempt_id
+    `);
+    expect(lifecycle.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        analysis_attempt_id: attemptA,
+        cleanup_status: "deleted",
+        private_storage_key: null,
+      }),
+      expect.objectContaining({
+        analysis_attempt_id: attemptB,
+        cleanup_status: "failed",
+        private_storage_key: keyB,
+      }),
+    ]));
+  });
+
+  it("owns image reservations on the attempt and makes ambiguous reserve and completion retries idempotent", async () => {
+    const externalAttachmentKeyHash = sourceHash("budget-source");
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "7".repeat(64),
+      externalMessageKeyHash: "8".repeat(64),
+      text: "Please assess this image",
+      attachments: [{ externalAttachmentKeyHash, ordinal: 0, kind: "image", mimeTypeHint: null }],
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    if (created.status === "duplicate") return;
+    const [attachment] = await database.select({ id: customerServiceAttachments.id })
+      .from(customerServiceAttachments)
+      .where(eq(customerServiceAttachments.messageId, created.messageId));
+    const attemptId = await repository.createImageAnalysisAttempt({
+      messageId: created.messageId,
+      schemaVersion: "1",
+      attachments: [{ attachmentId: attachment.id, ordinal: 0, externalAttachmentKeyHash }],
+    });
+    const reservation = {
+      attemptId,
+      reservationMicrousd: 100,
+      dailyScopeKey: "daily:2026-08-17",
+      dailyHardStopMicrousd: 1_000,
+      totalHardStopMicrousd: 1_000,
+    };
+
+    await expect(repository.reserveImageAnalysisAttempt(reservation)).resolves.toEqual({ status: "reserved" });
+    await expect(repository.reserveImageAnalysisAttempt(reservation)).resolves.toEqual({ status: "reserved" });
+    const persistedReservations = await database.execute(sql`
+      select reserved_cost_microusd, budget_daily_scope_key
+      from customer_service_image_analysis_attempts
+      where id = ${attemptId}
+    `);
+    expect(persistedReservations.rows[0]).toMatchObject({
+      reserved_cost_microusd: "100",
+      budget_daily_scope_key: "daily:2026-08-17",
+    });
+
+    const completion = imageCompletion(attemptId, "analyzed");
+    await expect(repository.completeImageAnalysisAttempt(completion)).resolves.toBeUndefined();
+    await expect(repository.completeImageAnalysisAttempt(completion)).resolves.toBeUndefined();
+    const budgets = await database.select().from(customerServiceBudgetState)
+      .orderBy(customerServiceBudgetState.scopeKey);
+    expect(budgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeKey: "daily:2026-08-17", reservedMicrousd: 0, spentMicrousd: 25 }),
+      expect.objectContaining({ scopeKey: "total", reservedMicrousd: 0, spentMicrousd: 25 }),
+    ]));
+    const completedAttempts = await database.execute(sql`
+      select reserved_cost_microusd, budget_daily_scope_key
+      from customer_service_image_analysis_attempts
+      where id = ${attemptId}
+    `);
+    expect(completedAttempts.rows[0]).toMatchObject({
+      reserved_cost_microusd: "0",
+      budget_daily_scope_key: "daily:2026-08-17",
+    });
   });
 });
