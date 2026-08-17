@@ -105,6 +105,52 @@ describe("authoritative product registry", () => {
     });
   });
 
+  it("migrates a legacy v2 AU fixed-shipping snapshot without changing manual prices", () => {
+    const legacy = structuredClone(defaultProductRegistry);
+    const australia = legacy.markets.AU;
+    let amount = 10_000;
+    for (const product of australia.products) {
+      for (const size of product.sizes) size.amountInclTaxCents = amount++;
+      for (const charge of product.charges) charge.amountInclTaxCents = amount++;
+    }
+    for (const fee of australia.peoplePets.fees) fee.amountInclTaxCents = amount++;
+    australia.peoplePets.additionalEachInclTaxCents = amount++;
+    for (const fee of australia.urgentServiceFees) fee.amountInclTaxCents = amount++;
+    australia.tax = { registered: true, rateBasisPoints: 1_234 };
+    australia.enabled = false;
+    australia.shippingMethods = [{
+      key: "au-standard",
+      label: "Australia standard delivery",
+      method: "post",
+      source: "fixed",
+      active: true,
+      amountInclTaxCents: 4_500,
+    }];
+    const expectedProducts = structuredClone(legacy.products);
+    const expectedPricing = structuredClone(legacy.pricing);
+    const expectedNewZealand = structuredClone(legacy.markets.NZ);
+    const expectedAustralia = structuredClone(australia);
+
+    const parsed = parseProductRegistry(legacy);
+
+    expect(parsed.schemaVersion).toBe(2);
+    expect(legacy.markets.AU).toEqual(expectedAustralia);
+    expect(parsed.products).toEqual(expectedProducts);
+    expect(parsed.pricing).toEqual(expectedPricing);
+    expect(parsed.markets.NZ).toEqual(expectedNewZealand);
+    expect(parsed.markets.AU).toEqual({
+      ...expectedAustralia,
+      shippingMethods: [{
+        key: "au-live-carrier",
+        label: "GoSweetSpot live delivery",
+        method: "post",
+        source: "carrier",
+        active: true,
+        amountInclTaxCents: null,
+      }],
+    });
+  });
+
   it("upgrades legacy product imagery while preserving administrator-selected media", () => {
     const legacy = structuredClone(defaultProductRegistry);
     const legacySources: Record<string, string> = {

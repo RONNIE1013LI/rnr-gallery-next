@@ -454,6 +454,35 @@ function addMissingBaselineProducts(value: unknown): unknown {
   return normalized;
 }
 
+function migrateLegacyAustraliaShipping(value: unknown): unknown {
+  if (!isRecord(value) || value.schemaVersion !== 2 || !isRecord(value.markets)) {
+    return value;
+  }
+  const australia = value.markets.AU;
+  if (!isRecord(australia) || !Array.isArray(australia.shippingMethods)) {
+    return value;
+  }
+  const [shipping] = australia.shippingMethods;
+  if (
+    australia.shippingMethods.length !== 1 ||
+    !isRecord(shipping) ||
+    shipping.key !== "au-standard" ||
+    shipping.method !== "post" ||
+    shipping.source !== "fixed"
+  ) {
+    return value;
+  }
+  australia.shippingMethods = [{
+    key: "au-live-carrier",
+    label: "GoSweetSpot live delivery",
+    method: "post",
+    source: "carrier",
+    active: true,
+    amountInclTaxCents: null,
+  }];
+  return value;
+}
+
 export function parseProductRegistry(value: unknown): ProductRegistryDocument {
   let normalized = structuredClone(value);
   if (normalized && typeof normalized === "object" && "products" in normalized) {
@@ -526,6 +555,7 @@ export function parseProductRegistry(value: unknown): ProductRegistryDocument {
     };
   }
 
+  normalized = migrateLegacyAustraliaShipping(normalized);
   normalized = addMissingBaselineProducts(normalized);
 
   const parsed = documentSchema.safeParse(normalized);
