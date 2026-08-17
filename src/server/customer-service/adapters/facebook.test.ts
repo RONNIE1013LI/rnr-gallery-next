@@ -114,7 +114,7 @@ describe("Facebook channel adapter", () => {
     expect(JSON.stringify(result)).not.toContain("private.pdf");
   });
 
-  it("keeps at most five valid image attachments", () => {
+  it("retains safe overflow metadata after five valid image sources", () => {
     const result = adapter.normalize(payload({
       mid: "mid-six-images",
       attachments: Array.from({ length: 6 }, (_, index) => ({
@@ -123,14 +123,50 @@ describe("Facebook channel adapter", () => {
       })),
     }));
 
-    expect(result[0]?.attachments).toHaveLength(5);
+    expect(result[0]?.attachments).toHaveLength(6);
     expect(result[0]?.attachments.map((attachment) => attachment.externalAttachmentKey)).toEqual([
       "mid-six-images:0",
       "mid-six-images:1",
       "mid-six-images:2",
       "mid-six-images:3",
       "mid-six-images:4",
+      "mid-six-images:5",
     ]);
+    expect(result[0]?.attachments.slice(0, 5).every((attachment) => attachment.kind === "image")).toBe(true);
+    expect(result[0]?.attachments[5]).toMatchObject({
+      ordinal: 5,
+      kind: "unsupported",
+      sourceRef: null,
+      failureCode: "too_many_attachments",
+    });
+    expect(JSON.stringify(result)).not.toContain("image-5.jpg");
+  });
+
+  it.each([
+    ["file", { type: "file", payload: { url: "https://scontent.test/private.pdf" } }, "unsupported_attachment", "private.pdf"],
+    ["invalid image URL", { type: "image", payload: { url: "http://scontent.test/private.jpg" } }, "invalid_image_source", "private.jpg"],
+    ["malformed attachment", null, "malformed_attachment", ""],
+  ] as const)("retains safe %s metadata after five valid image sources", (_label, trailingAttachment, failureCode, rawUrlFragment) => {
+    const result = adapter.normalize(payload({
+      mid: "mid-trailing-invalid",
+      attachments: [
+        ...Array.from({ length: 5 }, (_, index) => ({
+          type: "image",
+          payload: { url: `https://scontent.test/image-${index}.jpg` },
+        })),
+        trailingAttachment,
+      ],
+    }));
+
+    expect(result[0]?.attachments).toHaveLength(6);
+    expect(result[0]?.attachments.slice(0, 5).every((attachment) => attachment.kind === "image")).toBe(true);
+    expect(result[0]?.attachments[5]).toMatchObject({
+      ordinal: 5,
+      kind: "unsupported",
+      sourceRef: null,
+      failureCode,
+    });
+    if (rawUrlFragment) expect(JSON.stringify(result)).not.toContain(rawUrlFragment);
   });
 
   it("filters echoes and non-text events", () => {

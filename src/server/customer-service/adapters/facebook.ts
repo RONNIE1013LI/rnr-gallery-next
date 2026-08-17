@@ -25,27 +25,31 @@ function httpsUrl(value: unknown): string | null {
 
 function normalizedAttachments(message: Record<string, unknown>, messageId: string): readonly NormalizedAttachment[] {
   const attachments: NormalizedAttachment[] = [];
-  for (const rawAttachment of list(message.attachments)) {
-    if (attachments.length >= IMAGE_LIMITS.maxCount) break;
-    const ordinal = attachments.length;
+  let sourceCount = 0;
+  for (const [ordinal, rawAttachment] of list(message.attachments).entries()) {
     const attachment = record(rawAttachment);
     const payload = record(attachment?.payload);
     if (attachment?.type === "image") {
       const url = httpsUrl(payload?.url);
-      attachments.push(Object.freeze(url ? {
+      if (url && sourceCount < IMAGE_LIMITS.maxCount) {
+        sourceCount += 1;
+        attachments.push(Object.freeze({
         externalAttachmentKey: `${messageId}:${ordinal}`,
         ordinal,
         kind: "image" as const,
         sourceRef: Object.freeze({ kind: "facebook_remote" as const, url }),
         mimeTypeHint: null,
         failureCode: null,
-      } : {
+        }));
+        continue;
+      }
+      attachments.push(Object.freeze({
         externalAttachmentKey: `${messageId}:${ordinal}`,
         ordinal,
         kind: "unsupported" as const,
         sourceRef: null,
         mimeTypeHint: null,
-        failureCode: "invalid_image_source" as const,
+        failureCode: url ? "too_many_attachments" as const : "invalid_image_source" as const,
       }));
       continue;
     }

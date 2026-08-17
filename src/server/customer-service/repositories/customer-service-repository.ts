@@ -37,7 +37,7 @@ export type HashedIncomingMessage = Readonly<{
     ordinal: number;
     kind: "image" | "unsupported";
     mimeTypeHint: string | null;
-    failureCode?: "unsupported_attachment" | "invalid_image_source" | "malformed_attachment" | null;
+    failureCode?: "unsupported_attachment" | "invalid_image_source" | "malformed_attachment" | "too_many_attachments" | null;
   }>[];
   imageJob?: Readonly<{
     id: string;

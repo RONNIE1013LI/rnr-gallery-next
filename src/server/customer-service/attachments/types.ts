@@ -17,7 +17,7 @@ type NormalizedUnsupportedAttachment = Readonly<{
   kind: "unsupported";
   sourceRef: null;
   mimeTypeHint: null;
-  failureCode: "unsupported_attachment" | "invalid_image_source" | "malformed_attachment";
+  failureCode: "unsupported_attachment" | "invalid_image_source" | "malformed_attachment" | "too_many_attachments";
 }>;
 
 export type NormalizedAttachment = NormalizedImageAttachment | NormalizedUnsupportedAttachment;

@@ -216,6 +216,41 @@ describe("Meta webhook handler", () => {
     expect(current.generateDraft).not.toHaveBeenCalled();
   });
 
+  it("fails closed when valid images overflow with trailing unsupported metadata", async () => {
+    const current = setup();
+    const response = await current.handlers.POST(signedRequest(messagePayload({
+      attachments: [
+        ...Array.from({ length: 5 }, (_, index) => ({
+          type: "image",
+          payload: { url: `https://scontent.test/image-${index}.jpg` },
+        })),
+        { type: "file", payload: { url: "https://scontent.test/private.pdf" } },
+        { type: "image", payload: { url: "https://scontent.test/image-overflow.jpg" } },
+        { type: "image", payload: { url: "http://scontent.test/invalid-overflow.jpg" } },
+      ],
+    })));
+
+    expect(response.status).toBe(200);
+    expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      attachments: expect.arrayContaining([
+        expect.objectContaining({ ordinal: 5, kind: "unsupported", failureCode: "unsupported_attachment" }),
+        expect.objectContaining({ ordinal: 6, kind: "unsupported", failureCode: "too_many_attachments" }),
+        expect.objectContaining({ ordinal: 7, kind: "unsupported", failureCode: "invalid_image_source" }),
+      ]),
+      imageJob: {
+        id: "00000000-0000-4000-8000-000000000101",
+        status: "human_review_required",
+        sourceCiphertext: null,
+        sourceExpiresAt: null,
+        failureCode: "unsupported_attachment",
+      },
+    }));
+    expect(JSON.stringify(current.ingest.mock.calls)).not.toMatch(/scontent\.test|private\.pdf|overflow\.jpg/);
+    expect(current.scheduleAfter).not.toHaveBeenCalled();
+    expect(current.kickImageJob).not.toHaveBeenCalled();
+    expect(current.generateDraft).not.toHaveBeenCalled();
+  });
+
   it("does not schedule duplicates or run when disabled", async () => {
     const duplicate = setup({ status: "duplicate", messageId: "internal-1" });
     expect((await duplicate.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
