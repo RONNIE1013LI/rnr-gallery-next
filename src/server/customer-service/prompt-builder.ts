@@ -1,9 +1,10 @@
 import type { CustomerServiceIntent } from "./intent-detection";
 import type { AnswerQualityGuide } from "./knowledge-retrieval";
+import type { ConversationContextItem } from "./repositories/customer-service-repository";
 
 export function buildDraftPrompt(input: Readonly<{
   intent: CustomerServiceIntent;
-  context: readonly string[];
+  context: readonly (string | ConversationContextItem)[];
   rules: readonly Readonly<{ id: string; text: string }>[];
   examples: readonly Readonly<{ customer: string; reply: string }>[];
   goldenExamples: readonly Readonly<{ customerQuestion: string; approvedAnswer: string }>[];
@@ -52,7 +53,11 @@ export function buildDraftPrompt(input: Readonly<{
     ].join("\n\n"),
     input: [
       "Current same-customer conversation:",
-      ...input.context.slice(-6).map((message, index) => `${index + 1}. ${message}`),
+      ...input.context.slice(-6).map((message, index) => (
+        typeof message === "string"
+          ? `${index + 1}. ${message}`
+          : `${index + 1}. ${message.role === "staff" ? "R&R staff" : "Customer"}: ${message.text}`
+      )),
       "Return only the proposed customer reply.",
     ].join("\n"),
   };

@@ -663,20 +663,93 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         channel: customerServiceMessages.channel,
         conversationId: customerServiceMessages.conversationId,
         receivedAt: customerServiceMessages.receivedAt,
+        createdAt: customerServiceMessages.createdAt,
       }).from(customerServiceMessages).where(eq(customerServiceMessages.id, messageId)).limit(1);
       if (!current) return null;
-      const context = await database.select({ text: customerServiceMessages.customerText })
-        .from(customerServiceMessages)
+      const [currentTurn] = await database.select({
+        id: customerServiceTurns.id,
+        lastEventAt: customerServiceTurns.lastEventAt,
+      }).from(customerServiceTurns).where(eq(
+        customerServiceTurns.representativeMessageId,
+        current.id,
+      )).limit(1);
+      const boundary = currentTurn?.lastEventAt ?? current.receivedAt;
+      const boundedLimit = Math.max(1, Math.min(12, contextLimit));
+      const events = await database.select({
+        id: customerServiceConversationEvents.id,
+        role: customerServiceConversationEvents.role,
+        text: customerServiceConversationEvents.body,
+        receivedAt: customerServiceConversationEvents.receivedAt,
+        createdAt: customerServiceConversationEvents.createdAt,
+        turnId: customerServiceConversationEvents.turnId,
+        turnBody: customerServiceTurns.body,
+        turnOpenedAt: customerServiceTurns.openedAt,
+      }).from(customerServiceConversationEvents)
+        .leftJoin(customerServiceTurns, eq(customerServiceTurns.id, customerServiceConversationEvents.turnId))
         .where(and(
-          eq(customerServiceMessages.conversationId, current.conversationId),
-          lte(customerServiceMessages.receivedAt, current.receivedAt),
-          isNotNull(customerServiceMessages.customerText),
+          eq(customerServiceConversationEvents.conversationId, current.conversationId),
+          lte(customerServiceConversationEvents.receivedAt, boundary),
         ))
-        .orderBy(desc(customerServiceMessages.receivedAt))
-        .limit(Math.max(1, Math.min(6, contextLimit)));
+        .orderBy(
+          desc(customerServiceConversationEvents.receivedAt),
+          desc(customerServiceConversationEvents.createdAt),
+          desc(customerServiceConversationEvents.id),
+        )
+        .limit(boundedLimit * 8);
+      const legacyMessages = await database.select({
+        id: customerServiceMessages.id,
+        text: customerServiceMessages.customerText,
+        receivedAt: customerServiceMessages.receivedAt,
+        createdAt: customerServiceMessages.createdAt,
+      }).from(customerServiceMessages).where(and(
+        eq(customerServiceMessages.conversationId, current.conversationId),
+        lte(customerServiceMessages.receivedAt, boundary),
+        isNotNull(customerServiceMessages.customerText),
+        sql`not exists (
+          select 1 from ${customerServiceConversationEvents}
+          where ${customerServiceConversationEvents.legacyMessageId} = ${customerServiceMessages.id}
+        )`,
+      )).orderBy(
+        desc(customerServiceMessages.receivedAt),
+        desc(customerServiceMessages.createdAt),
+        desc(customerServiceMessages.id),
+      ).limit(boundedLimit);
+      const seenTurns = new Set<string>();
+      const context = [
+        ...events.reverse().flatMap((event) => {
+          if (event.role === "customer" && event.turnId) {
+            if (seenTurns.has(event.turnId)) return [];
+            seenTurns.add(event.turnId);
+            return [{
+              role: "customer" as const,
+              text: event.turnBody ?? event.text,
+              receivedAt: (event.turnOpenedAt ?? event.receivedAt).toISOString(),
+              sortAt: event.turnOpenedAt ?? event.receivedAt,
+              sortId: event.turnId,
+            }];
+          }
+          return [{
+            role: event.role,
+            text: event.text,
+            receivedAt: event.receivedAt.toISOString(),
+            sortAt: event.receivedAt,
+            sortId: event.id,
+          }];
+        }),
+        ...legacyMessages.map((message) => ({
+          role: "customer" as const,
+          text: message.text ?? "",
+          receivedAt: message.receivedAt.toISOString(),
+          sortAt: message.receivedAt,
+          sortId: message.id,
+        })),
+      ].sort((left, right) => (
+        left.sortAt.getTime() - right.sortAt.getTime()
+        || left.sortId.localeCompare(right.sortId)
+      )).slice(-boundedLimit).map(({ role, text, receivedAt }) => ({ role, text, receivedAt }));
       return {
         current: { id: current.id, text: current.text, channel: current.channel },
-        context: context.reverse().flatMap((row) => row.text === null ? [] : [row.text]),
+        context,
       };
     },
 

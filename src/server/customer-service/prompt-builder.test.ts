@@ -77,6 +77,25 @@ describe("customer service prompt builder", () => {
     });
   });
 
+  it("labels customer and staff history without accepting a conversation selector", () => {
+    const prompt = buildDraftPrompt({
+      intent: "quote_information_collection",
+      context: [
+        { role: "staff", text: "Which country are you in?", receivedAt: "2026-08-18T00:00:00.000Z" },
+        { role: "customer", text: "Australia", receivedAt: "2026-08-18T00:00:01.000Z" },
+      ],
+      rules: [],
+      examples: [],
+      goldenExamples: [],
+      qualityGuide: null,
+      toneGuide: "Warm.",
+    });
+
+    expect(prompt.input).toContain("1. R&R staff: Which country are you in?");
+    expect(prompt.input).toContain("2. Customer: Australia");
+    expect(prompt.input).not.toMatch(/conversation[-_ ]?id|sender[-_ ]?id/i);
+  });
+
   it("adds a bounded advisory visual section without bytes or URLs", () => {
     const prompt = buildDraftPrompt({
       intent: "photo_guidance",

@@ -284,6 +284,57 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     })).resolves.toMatchObject({ status: "sealed", pilotSequence: 1 });
   });
 
+  it("loads bounded role-labelled history from the current conversation only", async () => {
+    await activateFacebookPilot("context-history");
+    const conversation = "6".repeat(64);
+    await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      externalConversationKeyHash: conversation,
+      externalMessageKeyHash: "7".repeat(64),
+      text: "Which country are you in?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      externalConversationKeyHash: "8".repeat(64),
+      externalMessageKeyHash: "9".repeat(64),
+      text: "Other customer's private context",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.500Z"),
+    });
+    const pending = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: conversation,
+      externalMessageKeyHash: "a".repeat(63) + "1",
+      text: "Australia",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:01.000Z"),
+    });
+    expect(pending.status).toBe("turn_pending");
+    if (pending.status !== "turn_pending") return;
+    await repository.sealDueCustomerTurn({
+      turnId: pending.turnId,
+      now: new Date("2026-08-18T00:00:03.000Z"),
+    });
+
+    await expect(repository.loadDraftInput(pending.messageId, 6)).resolves.toMatchObject({
+      current: { text: "Australia" },
+      context: [
+        { role: "staff", text: "Which country are you in?" },
+        { role: "customer", text: "Australia" },
+      ],
+    });
+    const loaded = await repository.loadDraftInput(pending.messageId, 6);
+    expect(JSON.stringify(loaded)).not.toContain("Other customer's private context");
+  });
+
   it("deduplicates concurrent webhook ingestion and allocates one pilot slot", async () => {
     await database.insert(customerServicePilotRuns).values({
       name: "test-facebook",
@@ -340,7 +391,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     if (first.status !== "created") return;
     await expect(repository.loadDraftInput(first.messageId, 6)).resolves.toMatchObject({
       current: { text: "first conversation" },
-      context: ["first conversation"],
+      context: [{ role: "customer", text: "first conversation" }],
     });
   });
 
@@ -373,7 +424,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
     await expect(repository.loadDraftInput(text.messageId, 6)).resolves.toMatchObject({
       current: { text: "Please assess this message only" },
-      context: ["Please assess this message only"],
+      context: [{ role: "customer", text: "Please assess this message only" }],
     });
   });
 

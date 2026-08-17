@@ -54,9 +54,15 @@ export type HashedConversationEvent = HashedIncomingMessage & Readonly<{
   debounceMs?: number;
 }>;
 
+export type ConversationContextItem = Readonly<{
+  role: "customer" | "staff";
+  text: string;
+  receivedAt: string;
+}>;
+
 export type DraftInput = Readonly<{
   current: Readonly<{ id: string; text: string | null; channel: CustomerServiceChannel }>;
-  context: readonly string[];
+  context: readonly ConversationContextItem[];
 }>;
 
 export type GateBlockedAttemptInput = Readonly<{
