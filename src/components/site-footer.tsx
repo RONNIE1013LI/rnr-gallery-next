@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { BrandMark } from "./brand-mark";
+import type { Market } from "@/domain/markets/types";
 
 export type SiteFooterContent = Readonly<{
   tagline: string;
@@ -28,7 +29,11 @@ function phoneHref(phone: string) {
   return `tel:${normalized}`;
 }
 
-export function SiteFooter({ content = defaultContent }: Readonly<{ content?: SiteFooterContent }>) {
+export function SiteFooter({
+  content = defaultContent,
+  market = "NZ",
+}: Readonly<{ content?: SiteFooterContent; market?: Market }>) {
+  const shopHref = market === "AU" ? "/au" : "/shop";
   return (
     <footer className="site-footer">
       <div className="site-footer__grid">
@@ -75,9 +80,9 @@ export function SiteFooter({ content = defaultContent }: Readonly<{ content?: Si
         <div className="site-footer__column site-footer__shop">
           <p className="site-footer__title">Shop</p>
           <ul>
-            <li><Link href="/shop">All products</Link></li>
-            <li><Link href="/canvas">Canvas</Link></li>
-            <li><Link href="/banners">Banners</Link></li>
+            <li><Link href={shopHref}>All products</Link></li>
+            {market === "NZ" ? <li><Link href="/canvas">Canvas</Link></li> : null}
+            {market === "NZ" ? <li><Link href="/banners">Banners</Link></li> : null}
           </ul>
         </div>
 

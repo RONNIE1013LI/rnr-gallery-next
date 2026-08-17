@@ -78,6 +78,45 @@ describe("site shell", () => {
     expect(screen.getByRole("option", { name: "Australia — AUD" })).toBeDisabled();
   });
 
+  it("keeps every storefront navigation entry on Australian pricing", () => {
+    usePathname.mockReturnValue("/au");
+    render(<><SiteHeader initialMarket="AU" australiaEnabled /><SiteFooter market="AU" /></>);
+
+    expect(screen.getByRole("link", { name: /r&r gallery home/i }))
+      .toHaveAttribute("href", "/au");
+    expect(screen.getAllByRole("link", { name: "Shop" })[0])
+      .toHaveAttribute("href", "/au");
+    expect(screen.getAllByRole("link", { name: "Start a Design" })[0])
+      .toHaveAttribute("href", "/au");
+
+    const shopMenu = screen.getByRole("navigation", { name: "Shop menu" });
+    expect(within(shopMenu).getByRole("link", { name: "All products" }))
+      .toHaveAttribute("href", "/au");
+    expect(within(shopMenu).queryByRole("link", { name: "Canvas" }))
+      .not.toBeInTheDocument();
+    expect(within(shopMenu).queryByRole("link", { name: "Banners" }))
+      .not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
+    const mobileMenu = screen.getByRole("navigation", { name: "Mobile navigation" });
+    expect(within(mobileMenu).getByRole("link", { name: "Home" }))
+      .toHaveAttribute("href", "/au");
+    expect(within(mobileMenu).getByRole("link", { name: "Shop" }))
+      .toHaveAttribute("href", "/au");
+    expect(within(mobileMenu).queryByRole("link", { name: "Canvas" }))
+      .not.toBeInTheDocument();
+    expect(within(mobileMenu).queryByRole("link", { name: "Banners" }))
+      .not.toBeInTheDocument();
+
+    const footer = screen.getByRole("contentinfo");
+    expect(within(footer).getByRole("link", { name: "All products" }))
+      .toHaveAttribute("href", "/au");
+    expect(within(footer).queryByRole("link", { name: "Canvas" }))
+      .not.toBeInTheDocument();
+    expect(within(footer).queryByRole("link", { name: "Banners" }))
+      .not.toBeInTheDocument();
+  });
+
   it("marks the current primary navigation destination", () => {
     usePathname.mockReturnValue("/design-gallery");
     render(<SiteHeader />);

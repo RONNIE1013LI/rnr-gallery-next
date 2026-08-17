@@ -17,6 +17,24 @@ export class InvalidMarketValueError extends Error {
   }
 }
 
+export function marketSwitchDestination(pathname: string, market: Market): string {
+  if (market === "NZ") {
+    const stripped = pathname.replace(/^\/au(?=\/|$)/, "");
+    return stripped || "/";
+  }
+  if (pathname === "/") return "/au";
+  if (pathname.startsWith("/products/")) return `/au${pathname}`;
+  return "/au";
+}
+
+export function australianCommerceDestination(pathname: string): string | null {
+  if (pathname === "/" || pathname === "/shop" || pathname === "/canvas" || pathname === "/banners") {
+    return "/au";
+  }
+  if (pathname.startsWith("/products/")) return `/au${pathname}`;
+  return null;
+}
+
 function assertRateBasisPoints(rateBasisPoints: number): void {
   if (
     !Number.isSafeInteger(rateBasisPoints) ||

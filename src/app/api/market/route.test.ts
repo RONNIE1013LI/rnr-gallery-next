@@ -61,7 +61,7 @@ describe("market selection route", () => {
         clientItemId: "00000000-0000-4000-8000-000000000010",
         productKey: "photo-print-canvas", sizeKey: "a4", orientation: "landscape",
         peoplePets: 0, photoSubmissionMethod: "later", designText: "", notes: "",
-        neededDate: "2026-08-24", urgentServiceConfirmed: false, quantity: 1,
+        neededDate: "2026-09-24", urgentServiceConfirmed: false, quantity: 1,
         uploadReferences: [],
       }],
     }));

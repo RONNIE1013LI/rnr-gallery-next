@@ -143,6 +143,18 @@ export function SiteHeader({
   const market: Market = pathname === "/au" || pathname.startsWith("/au/")
     ? "AU"
     : initialMarket;
+  const homeHref = market === "AU" ? "/au" : "/";
+  const shopHref = market === "AU" ? "/au" : "/shop";
+  const visibleShopMenu = market === "AU"
+    ? [{ ...shopMenu[0], href: "/au" }] as const
+    : shopMenu;
+  const visibleMobileNavigation = market === "AU"
+    ? mobileNavigation
+        .filter((item) => item.label !== "Canvas" && item.label !== "Banners")
+        .map((item) => item.label === "Home" || item.label === "Shop"
+          ? { ...item, href: "/au" }
+          : item)
+    : mobileNavigation;
   const mobileMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileMenuClosing, setIsMobileMenuClosing] = useState(false);
@@ -210,7 +222,7 @@ export function SiteHeader({
         <div className="site-header__inner">
           <Link
             className="site-header__brand"
-            href="/"
+            href={homeHref}
             aria-label="R&R Gallery home"
             onClick={closeMobileMenuImmediately}
           >
@@ -218,7 +230,7 @@ export function SiteHeader({
           </Link>
 
           <nav className="site-header__nav" aria-label="Primary navigation">
-            <DesktopMenu href="/shop" label="Shop" items={shopMenu} pathname={pathname} />
+            <DesktopMenu href={shopHref} label="Shop" items={visibleShopMenu} pathname={pathname} />
             <DesktopMenu
               href="/design-gallery"
               label="Design Gallery"
@@ -246,7 +258,7 @@ export function SiteHeader({
             <CartCount onClick={closeMobileMenuImmediately} />
             <Link
               className="site-header__start-design"
-              href="/shop"
+              href={shopHref}
               onClick={closeMobileMenuImmediately}
             >
               Start a Design
@@ -284,7 +296,7 @@ export function SiteHeader({
                     aria-label="Mobile navigation"
                   >
                     <NavigationLinks
-                      items={mobileNavigation}
+                      items={visibleMobileNavigation}
                       pathname={pathname}
                       onNavigate={closeMobileMenuImmediately}
                     />
@@ -297,7 +309,7 @@ export function SiteHeader({
                     </Link>
                     <Link
                       className="mobile-menu__start-design"
-                      href="/shop"
+                      href={shopHref}
                       onClick={closeMobileMenuImmediately}
                     >
                       Start a Design

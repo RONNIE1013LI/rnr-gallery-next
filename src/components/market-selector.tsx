@@ -12,16 +12,7 @@ import { cartToCheckoutInput } from "@/domain/cart/checkout-input";
 import { applyAuthoritativeRepricing } from "@/domain/cart/cart";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
-
-function destination(pathname: string, market: Market) {
-  if (market === "NZ") {
-    const stripped = pathname.replace(/^\/au(?=\/|$)/, "");
-    return stripped || "/";
-  }
-  if (pathname === "/") return "/au";
-  if (pathname.startsWith("/products/")) return `/au${pathname}`;
-  return "/au";
-}
+import { marketSwitchDestination } from "@/domain/markets/market";
 
 export function MarketSelector({
   market,
@@ -61,7 +52,7 @@ export function MarketSelector({
         getActiveCustomerId(),
       );
       window.dispatchEvent(new CustomEvent("rnr:market-changed", { detail: { market: next } }));
-      router.push(destination(pathname, next));
+      router.push(marketSwitchDestination(pathname, next));
       router.refresh();
     } finally {
       setPending(false);
