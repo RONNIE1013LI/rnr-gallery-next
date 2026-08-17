@@ -30,7 +30,7 @@ const RUNTIME_ROOTS: readonly RuntimeRoot[] = [
   { relativePath: "src/server/customer-service", server: true },
   { relativePath: "src/app/api/meta", server: true },
   { relativePath: "src/app/api/reply-assistant", server: true, browserBoundary: true },
-  { relativePath: "src/app/reply-assistant", browserBoundary: true },
+  { relativePath: "src/app/reply-assistant", server: true, browserBoundary: true },
   { relativePath: "src/components/reply-assistant", browserBoundary: true },
   {
     relativePath: "scripts",
@@ -43,9 +43,14 @@ const SOURCE_EXTENSION = /\.(?:c|m)?(?:j|t)sx?$/;
 const TEST_FILE = /\.(?:test|spec)\.[^/]+$/;
 const EXCLUDED_DIRECTORY = /(?:^|\/)(?:__tests__|docs|fixtures|generated|test-support)(?:\/|$)/;
 const GENERATED_FILE = /(?:^|\/)(?:generated-|compiled-knowledge\.)/;
+const CLIENT_DIRECTIVE = /^(?:\uFEFF)?(?:\s|\/\/[^\r\n]*(?:\r?\n|$)|\/\*[\s\S]*?\*\/)*["']use client["'](?:[ \t]*;|[ \t]*(?:\/\/[^\r\n]*)?(?:\r?\n|$))/;
 
 function normalizePath(path: string) {
   return path.replaceAll("\\", "/");
+}
+
+function isExplicitClientComponent(relativePath: string, source: string) {
+  return /\.(?:j|t)sx$/.test(relativePath) && CLIENT_DIRECTIVE.test(source);
 }
 
 function listRootFiles(projectRoot: string, root: RuntimeRoot) {
@@ -86,10 +91,14 @@ export function loadProductionRuntimeSourceInventory(
     .sort((left, right) => left.relativePath.localeCompare(right.relativePath))
     .map((file) => {
       const absolutePath = resolve(projectRoot, file.relativePath);
+      const source = readFileSync(absolutePath, "utf8");
+      const clientOnly = isExplicitClientComponent(file.relativePath, source);
       return {
         ...file,
         absolutePath,
-        source: readFileSync(absolutePath, "utf8"),
+        source,
+        server: file.server && !clientOnly,
+        browserBoundary: file.browserBoundary || clientOnly,
       };
     });
 

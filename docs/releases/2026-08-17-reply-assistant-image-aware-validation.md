@@ -4,7 +4,9 @@ Date: 17 August 2026
 
 Candidate before Task 12: `86d573b`
 
-Task 12 fix-round base: `452c67a`
+Task 12 fix-round 1 base: `452c67a`
+
+Task 12 fix-round 2 base: `a5c2cee`
 
 ## Decision
 
@@ -37,7 +39,7 @@ Task 12 guard files now share one test-only inventory:
 - `src/server/customer-service/serverless-compatibility.test.ts`
 - `src/server/customer-service/test-support/production-runtime-source.ts`
 
-The inventory includes production TypeScript/JavaScript from all Reply Assistant and Meta API routes, `src/server/customer-service`, the Reply Assistant page/client surface, and Reply Assistant/customer-service runtime scripts. It explicitly excludes tests, specs, fixtures, docs, generated files and test-support code. Serverless checks use its server subset; browser-identity checks use its browser/API boundary subset; send and image-generation checks use the complete inventory.
+The inventory includes production TypeScript/JavaScript from all Reply Assistant and Meta API routes, `src/server/customer-service`, the Reply Assistant page/client surface, and Reply Assistant/customer-service runtime scripts. It explicitly excludes tests, specs, fixtures, docs, generated files and test-support code. Non-client files under `src/app/reply-assistant`, including `page.tsx`, `layout.tsx` and `loading.tsx`, are in the serverless subset. JSX/TSX files with a leading `use client` directive remain outside that subset and inside the browser boundary. Browser-identity checks still scan client components; send and image-generation checks use the complete inventory.
 
 The final 11 tests cover:
 
@@ -58,6 +60,8 @@ TDD RED evidence was isolated and then removed:
 - source attachment identifier in a Reply Assistant API response: both security and serverless failed and named that route.
 
 After every probe was removed, the final result was 3 files and 11 tests passed.
+
+Fix round 2 reproduced the remaining false negative with a temporary `src/app/reply-assistant/filesystem-probe.tsx` that imported `writeFile` from `node:fs/promises`: the pre-fix serverless suite incorrectly passed 4/4. A test-first assertion then failed because `page.tsx`, `layout.tsx` and `loading.tsx` were missing from `serverFiles`. After the minimal classification fix, the same filesystem probe produced the intended RED and named only its path. Removing the probe returned serverless to 4/4 and all three guards to 11/11. The explicit Reply Assistant client component remained browser-only throughout.
 
 ## Disposable Database
 
@@ -126,6 +130,8 @@ unset build_secret
 | Full `npm run test:run` | PASS, 285 files and 1,891 tests, zero skips |
 | Cleanup processor/repository suite | PASS, 2 files and 24 tests |
 | Sanitized `npm run build` | PASS, compiled and generated 80/80 static pages |
+
+Fix round 2 made only test/test-support/report changes. Its narrow rerun was: guards 3 files/11 tests PASS; scan-fixture regressions 4/16 PASS; typecheck PASS; lint PASS with 0 errors and the same 3 warnings; all four mandated no-match scan gates PASS. The earlier isolated-DB, evaluator, privacy-audit and build results above were not rerun in this round and remain separately recorded evidence.
 
 ## Frozen 100-Case Text Regression
 

@@ -2,7 +2,7 @@
 
 ## Status
 
-**FAIL - Task 12 release completion gate is not met. Fix-round 1 review findings are resolved locally.**
+**FAIL - Task 12 release completion gate is not met. Fix-round 2 inventory finding is resolved locally.**
 
 Local implementation regressions, database tests, cleanup controls, exact scans and build pass. The unchanged text regression had 60 provider errors and no drafts. One separate redacted diagnostic returned HTTP 401, indicating likely Preview-key authorization failure, but it does not establish the code for every provider error. Real image evaluation is blocked by the absent approved `OPENAI_IMAGE_ANALYSIS_MODEL`. Preview/Test Page validation is blocked because no approved separate Meta Test App/Test Page is available and the current Preview record identifies the Production Page.
 
@@ -11,6 +11,7 @@ No Production deployment, database, callback, Page, feature flag or environment 
 ## Task 12 Changes
 
 - Added one shared test-only production-runtime inventory for all Reply Assistant/Meta API and server modules, Reply Assistant browser/API boundaries and Reply Assistant/customer-service scripts. Tests, fixtures, docs, generated files and test-support code are excluded.
+- Classified non-client `src/app/reply-assistant` runtime files as serverless/no-filesystem inputs while retaining explicit `use client` JSX/TSX files as browser-only.
 - Updated all three security/no-send/serverless guards to use that inventory, with file-path-only failure diagnostics.
 - Refactored inbound, negative DTO and PNG test fixtures to runtime-composed values so all mandated scan regexes remain unchanged and return no matches.
 - Added a disposable-DB privacy audit helper that seeds all nine customer-service tables, scans aggregate rows/schema, rolls back and verifies zero residue without printing identifiers or credentials.
@@ -29,6 +30,8 @@ The shared helper was first referenced by all three suites; RED was three import
 
 Every probe was removed. GREEN: 3 files and 11 tests passed. No production engine or route behavior changed.
 
+Fix round 2 first reproduced the server-component gap: a temporary `src/app/reply-assistant/filesystem-probe.tsx` with a `node:fs/promises` write left serverless green at 4/4. New inventory assertions were then RED because `page.tsx`, `layout.tsx` and `loading.tsx` were absent from `serverFiles`. After the minimal helper change, the unchanged probe produced the intended filesystem RED and named only that path. Removing it returned serverless to 4/4 and the complete guard set to 11/11. The explicit Reply Assistant client remained in the browser subset and outside the server subset.
+
 ## Database and Tests
 
 - Container: `rnr-next-payment-test`.
@@ -46,6 +49,8 @@ Every probe was removed. GREEN: 3 files and 11 tests passed. No production engin
 - Lint: PASS, 0 errors and 3 pre-existing warnings.
 - Typecheck: PASS.
 - Build: PASS, including 80/80 static pages, using generated build-only auth data, disabled Reply Assistant flags and a nonconnecting safety DB URL.
+
+Fix round 2 narrow rerun: guards 3 files/11 tests; related scan fixtures 4/16; typecheck; lint with 0 errors and the same 3 warnings; four exact no-match scan gates; all PASS. Full/DB/evaluator/privacy/build evidence above was not rerun in round 2.
 
 ## Text Evaluation
 

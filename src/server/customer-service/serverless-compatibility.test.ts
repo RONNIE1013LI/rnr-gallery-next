@@ -13,8 +13,14 @@ describe("reply assistant serverless compatibility", () => {
     expect(paths).toEqual(expect.arrayContaining([
       "src/app/api/meta/webhook/route-handler.ts",
       "src/app/api/reply-assistant/messages/route-handler.ts",
+      "src/app/reply-assistant/layout.tsx",
+      "src/app/reply-assistant/loading.tsx",
+      "src/app/reply-assistant/page.tsx",
       "src/server/customer-service/runtime.ts",
     ]));
+    const clientPath = "src/components/reply-assistant/reply-assistant-client.tsx";
+    expect(inventory.browserBoundaryFiles.map((file) => file.relativePath)).toContain(clientPath);
+    expect(paths).not.toContain(clientPath);
     expect(productionSourcePathsMatching(inventory.serverFiles,
       /from\s+["'](?:node:)?fs(?:\/promises)?["']|import\s*(?:\(\s*)?["'](?:node:)?fs(?:\/promises)?["']|require\(\s*["'](?:node:)?fs(?:\/promises)?["']|appendFile|writeFile|createWriteStream|\.jsonl/i,
     )).toEqual([]);
