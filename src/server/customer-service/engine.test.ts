@@ -29,9 +29,13 @@ const safeAnalysis: ImageAnalysisResult = {
 
 function repositoryFor(body: string | null, withImage = false) {
   const methods = {
-    loadDraftInput: vi.fn(async () => ({
+    loadDraftInput: vi.fn<CustomerServiceRepository["loadDraftInput"]>(async () => ({
       current: { id: "message-1", text: body, channel: "facebook" as const },
-      context: body === null ? [] : [body],
+      context: body === null ? [] : [{
+        role: "customer" as const,
+        text: body,
+        receivedAt: "2026-08-18T00:00:00.000Z",
+      }],
     })),
     selectImageContext: vi.fn<CustomerServiceRepository["selectImageContext"]>(async () => withImage ? ({
       messageId: "message-1",
@@ -229,6 +233,40 @@ describe("CustomerServiceEngine", () => {
     expect(current.image.attachmentStore.save).not.toHaveBeenCalled();
     expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
     expect(current.provider.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses same-conversation staff context to interpret a short location reply", async () => {
+    const current = setup("Australia");
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: "Australia", channel: "facebook" },
+      context: [
+        { role: "staff", text: "Which country are you in?", receivedAt: "2026-08-18T00:00:00.000Z" },
+        { role: "customer", text: "Australia", receivedAt: "2026-08-18T00:00:01.000Z" },
+      ],
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.policyGate).toHaveBeenCalledWith(expect.objectContaining({
+      message: "Australia",
+      intentOverride: "quote_information_collection",
+    }));
+    expect(current.provider.generate).toHaveBeenCalledOnce();
+  });
+
+  it("does not let contextual intent override a current high-risk message", async () => {
+    const current = setup("I want a refund");
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: "I want a refund", channel: "facebook" },
+      context: [
+        { role: "staff", text: "Which size would you like?", receivedAt: "2026-08-18T00:00:00.000Z" },
+        { role: "customer", text: "I want a refund", receivedAt: "2026-08-18T00:00:01.000Z" },
+      ],
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toMatchObject({ status: "gate_blocked" });
+    expect(current.provider.generate).not.toHaveBeenCalled();
   });
 
   it("preserves the text-only path when image analysis is disabled", async () => {

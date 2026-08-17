@@ -4,6 +4,8 @@ import { retrieveKnowledge, type AnswerQualityGuide } from "./knowledge-retrieva
 import { validateDraft } from "./output-validator";
 import { buildDraftPrompt } from "./prompt-builder";
 import { localDateScopeKey } from "./usage-cost";
+import { detectIntent } from "./intent-detection";
+import { resolveContextualIntent } from "./conversation/contextual-intent";
 import type { AttachmentProcessor } from "./attachments/attachment-processor";
 import type { NormalizedAttachment } from "./attachments/types";
 import type { AiProvider } from "./providers/ai-provider";
@@ -61,6 +63,19 @@ export class CustomerServiceEngine {
     this.budget = input.budget;
   }
 
+  private gateFor(text: string, context: Parameters<typeof resolveContextualIntent>[0]["history"]) {
+    const resolved = resolveContextualIntent({
+      currentText: text,
+      history: context,
+      baseIntent: detectIntent(text),
+    });
+    return this.policyGate({
+      message: text,
+      knowledge: this.knowledge,
+      intentOverride: resolved.intent,
+    });
+  }
+
   async checkImageJobPolicy(messageId: string): Promise<
     Readonly<{ status: "allowed" }> | Readonly<{ status: "blocked"; code: string }>
   > {
@@ -78,7 +93,7 @@ export class CustomerServiceEngine {
       });
       return { status: "blocked", code: "image_only_without_text" };
     }
-    const gate = this.policyGate({ message: draftInput.current.text, knowledge: this.knowledge });
+    const gate = this.gateFor(draftInput.current.text, draftInput.context);
     if (gate.providerAllowed) return { status: "allowed" };
     const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
       ? "realtime_required"
@@ -115,7 +130,7 @@ export class CustomerServiceEngine {
       });
       return { status: "image_review_required", attemptId };
     }
-    const gate = this.policyGate({ message: draftInput.current.text, knowledge: this.knowledge });
+    const gate = this.gateFor(draftInput.current.text, draftInput.context);
     if (!gate.providerAllowed) {
       const attemptId = await this.repository.createGateBlockedAttempt({
         messageId: input.messageId,
@@ -163,7 +178,7 @@ export class CustomerServiceEngine {
       });
       return { status: "image_review_required", attemptId };
     }
-    const gate = this.policyGate({ message: draftInput.current.text, knowledge: this.knowledge });
+    const gate = this.gateFor(draftInput.current.text, draftInput.context);
     if (!gate.providerAllowed) {
       const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
         ? "realtime_required"

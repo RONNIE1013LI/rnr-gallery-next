@@ -44,6 +44,24 @@ describe("customer service policy gate", () => {
     })).toMatchObject({ decision: "REALTIME_DATA_REQUIRED", providerAllowed: false });
   });
 
+  it("checks current high-risk and realtime wording before a contextual intent override", () => {
+    expect(evaluatePolicyGate({
+      message: "I want a refund",
+      intentOverride: "quote_information_collection",
+      knowledge: compiledKnowledge,
+    })).toMatchObject({ providerAllowed: false, reason: "high_risk_topic" });
+    expect(evaluatePolicyGate({
+      message: "How much is it?",
+      intentOverride: "quote_information_collection",
+      knowledge: compiledKnowledge,
+    })).toMatchObject({ providerAllowed: false, reason: "realtime_data_required" });
+    expect(evaluatePolicyGate({
+      message: "Australia",
+      intentOverride: "quote_information_collection",
+      knowledge: compiledKnowledge,
+    })).toMatchObject({ providerAllowed: true, intent: "quote_information_collection" });
+  });
+
   it("blocks evidence-based and unresolved supporting rules", () => {
     expect(evaluatePolicyGate({
       message: "How many free revisions do I get?",

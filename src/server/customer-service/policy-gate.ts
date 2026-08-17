@@ -73,9 +73,14 @@ function realtimeReason(message: string, intent: CustomerServiceIntent) {
 export function evaluatePolicyGate({
   message,
   knowledge,
-}: Readonly<{ message: string; knowledge: PolicyKnowledge }>): PolicyGateResult {
+  intentOverride,
+}: Readonly<{
+  message: string;
+  knowledge: PolicyKnowledge;
+  intentOverride?: CustomerServiceIntent;
+}>): PolicyGateResult {
   const value = String(message ?? "").trim();
-  const intent = detectIntent(value);
+  const intent = intentOverride ?? detectIntent(value);
 
   if (HIGH_RISK_PATTERNS.some((pattern) => pattern.test(value))) {
     return {
