@@ -26,6 +26,7 @@ describe("emitAnalyticsEvent", () => {
     window.history.replaceState({}, "", "/");
     sessionStorage.clear();
     localStorage.clear();
+    Object.assign(window, { dataLayer: [] });
   });
 
   it("does not emit unless the strict production DOM gate is enabled", () => {
@@ -45,6 +46,49 @@ describe("emitAnalyticsEvent", () => {
     document.documentElement.dataset.ga4Enabled = "true";
     expect(emitAnalyticsEvent(null)).toBe(false);
     expect(sendGAEvent).not.toHaveBeenCalled();
+  });
+
+  it("returns false until the official dataLayer transport is ready", () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+    Object.assign(window, { dataLayer: undefined });
+
+    expect(emitAnalyticsEvent(event)).toBe(false);
+    expect(sendGAEvent).not.toHaveBeenCalled();
+
+    Object.assign(window, { dataLayer: [] });
+    expect(emitAnalyticsEvent(event)).toBe(true);
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("rebuilds the payload from the runtime allowlist before transport", () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+    const eventWithPrivateFields = {
+      ...event,
+      customer_name: "Private Person",
+      email: "private@example.test",
+      address: "10 Private Street",
+      checkout_token: "private-checkout-token",
+      payment_provider_reference: "private-payment-id",
+      items: event.items.map((item) => ({
+        ...item,
+        design_text: "PRIVATE DESIGN TEXT",
+        upload_reference: "private-upload-token",
+        image_url: "/private-image.jpg",
+      })),
+    };
+
+    expect(emitAnalyticsEvent(eventWithPrivateFields)).toBe(true);
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "view_cart", {
+      currency: "NZD",
+      value: 65,
+      items: [{
+        item_id: "photo-print-canvas",
+        item_name: "Photo Print Canvas",
+        item_variant: "a4",
+        price: 65,
+        quantity: 1,
+      }],
+    });
   });
 
   it("persists controlled debug mode only in sessionStorage", () => {

@@ -25,6 +25,7 @@ describe("AnalyticsEventTracker", () => {
     document.documentElement.dataset.ga4Enabled = "true";
     window.history.replaceState({}, "", "/");
     sessionStorage.clear();
+    Object.assign(window, { dataLayer: [] });
   });
 
   it("does not emit the same scoped event again on rerender", async () => {

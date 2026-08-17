@@ -25,6 +25,7 @@ describe("PurchaseTracker", () => {
     sessionStorage.clear();
     document.documentElement.removeAttribute("data-ga4-enabled");
     window.history.replaceState({}, "", "/");
+    Object.assign(window, { dataLayer: [] });
   });
 
   it("records a purchase only after the official production transport emits", async () => {
@@ -59,6 +60,21 @@ describe("PurchaseTracker", () => {
     render(<PurchaseTracker event={event} />);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem(storageKey)).toBe("sent");
+  });
+
+  it("does not deduplicate before dataLayer is ready and retries later", async () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+    Object.assign(window, { dataLayer: undefined });
+    const view = render(<PurchaseTracker event={event} />);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem(storageKey)).toBeNull();
+
+    Object.assign(window, { dataLayer: [] });
+    view.rerender(<PurchaseTracker event={{ ...event }} />);
+    await waitFor(() => expect(sendGAEvent).toHaveBeenCalledTimes(1));
     expect(sessionStorage.getItem(storageKey)).toBe("sent");
   });
 });
