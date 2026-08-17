@@ -2,10 +2,12 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { AddressInput } from "@/domain/address/types";
 import { ADDRESS_FIELD_LIMITS, addressInputSchema } from "@/domain/address/schema";
 import { readAttribution } from "@/domain/analytics/attribution";
+import { emitAnalyticsEvent } from "@/domain/analytics/client";
+import { buildCartEvent, buildCheckoutEvent, type CheckoutAnalyticsDetails } from "@/domain/analytics/events";
 import { createBrowserCartRepository, parseStoredCart } from "@/domain/cart/browser-cart-repository";
 import { EMPTY_CART_JSON, getCartSnapshot, notifyCartChanged, subscribeToCart } from "@/domain/cart/browser-cart-events";
 import {
@@ -23,6 +25,7 @@ import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import type { PaymentActionDTO } from "@/server/payments/public-dto";
 import { createClientId } from "@/lib/client-id";
 import { AddressForm, type AddressFieldErrors } from "./address-form";
+import { AnalyticsEventTracker } from "./analytics-event-tracker";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { followPaymentAction, PaymentStartError, startOrderPayment } from "./order-payment-panel";
 import { PaymentMethods, type PaymentMethodOption } from "./payment-methods";
@@ -186,6 +189,18 @@ function reviewErrorMessage(error: unknown) {
   return "We couldn’t review delivery right now. Check your connection and try again.";
 }
 
+function trackCheckoutEvent(
+  name: "add_shipping_info" | "add_payment_info",
+  cart: RepricedCheckoutCart,
+  details: CheckoutAnalyticsDetails,
+) {
+  try {
+    emitAnalyticsEvent(buildCheckoutEvent(name, cart, details));
+  } catch {
+    // Analytics must never interrupt checkout or payment submission.
+  }
+}
+
 export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: CheckoutSavedAddress[] }) {
   const { push } = useRouter();
   const snapshot = useSyncExternalStore(subscribeToCart, getCartSnapshot, () => EMPTY_CART_JSON);
@@ -215,7 +230,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   const [isReturningToOrder, setIsReturningToOrder] = useState(false);
   const reviewing = useRef(false);
   const placing = useRef(false);
-  const currentKey = useMemo(() => JSON.stringify({ snapshot, billing, delivery: different ? delivery : billing, different, method }), [snapshot, billing, delivery, different, method]);
+  const currentKey = JSON.stringify({ snapshot, billing, delivery: different ? delivery : billing, different, method });
   const isReviewed = Boolean(reviewKey === currentKey && reviewedCart && reviewedVersion !== null && shipping);
   const hasPaymentAuthority = Boolean(isReviewed && paymentReviewKey === currentKey);
   const checkoutLocked = Boolean(!recoveryChecked || !draftChecked || pending || paymentIntent);
@@ -283,7 +298,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
     setSelectedPaymentMethod(null);
     setPaymentReviewKey("");
     setMessage("Checkout changed. Review delivery and totals again.");
-  }, []);
+  }, [setSelectedPaymentMethod]);
 
   const handlePlacementFailure = useCallback((error: unknown, intent: CheckoutPaymentIntent | null) => {
     if (intent && error instanceof PaymentStartError) {
@@ -422,6 +437,11 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
         totalInclGstCents={reviewedCart
           ? reviewedCart.totalInclGstCents + (shipping?.amountInclGstCents ?? 0)
           : undefined}
+        onPaymentSubmitted={() => {
+          if (reviewedCart) {
+            trackCheckoutEvent("add_payment_info", reviewedCart, { payment_type: "card" });
+          }
+        }}
         onPaymentUpdated={(status) => {
           setIsReturningToOrder(true);
           if (status === "paid") {
@@ -494,6 +514,9 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       setSelectedPaymentMethod(payment.methods.find((option) => option.method === "card")?.method ?? payment.methods[0]?.method ?? null);
       setPaymentReviewKey(currentKey);
       setMessage("Delivery and totals reviewed.");
+      trackCheckoutEvent("add_shipping_info", session.checkout.cart, {
+        shipping_tier: quote.shipping.option.serviceName,
+      });
     } catch (error) { const fields = error instanceof CheckoutApiError ? error.fields as { billingAddress?: AddressFieldErrors; deliveryAddress?: AddressFieldErrors } | undefined : undefined; if (fields?.billingAddress) setBillingErrors(fields.billingAddress); if (fields?.deliveryAddress) setDeliveryErrors(fields.deliveryAddress); setReviewedCart(null); setReviewedVersion(null); setShipping(null); setReviewKey(""); setPaymentMethods([]); setSelectedPaymentMethod(null); setPaymentReviewKey(""); setMessage(reviewErrorMessage(error)); requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); }
     finally { reviewing.current = false; setPending(null); }
   }
@@ -537,6 +560,11 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       } else starting = intent;
       if (intent.phase !== "placing_order") rememberPlacedCart(starting, orderedCart);
       const payment = await startOrderPayment(starting.orderNumber, starting.method, starting.paymentIdempotencyKey);
+      if (starting.method !== "card" && payment.action && reviewedCart) {
+        trackCheckoutEvent("add_payment_info", reviewedCart, {
+          payment_type: starting.method,
+        });
+      }
       await finishPaymentStart(starting.orderNumber, payment);
     } catch (error) {
       handlePlacementFailure(error, starting);
@@ -545,7 +573,12 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
     }
   }
 
-  return <div className={styles.checkoutLayout}>
+  return <>
+    <AnalyticsEventTracker
+      event={buildCartEvent("begin_checkout", cart)}
+      scopeKey={getActiveCartStorageKey()}
+    />
+    <div className={styles.checkoutLayout}>
     <form aria-label="Checkout details" className={styles.checkoutForm} noValidate onSubmit={(event) => { event.preventDefault(); void review(); }}>
       {savedAddresses.length ? <label className={styles.savedAddressSelect}>Saved billing address<select disabled={checkoutLocked} value={billingSavedId} onChange={(event) => { setBillingSavedId(event.target.value); const selected = savedAddresses.find((address) => address.id === event.target.value); if (selected) setBilling(addressInput(selected)); }}><option value="">Enter manually</option>{savedAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}
       <fieldset><legend>Billing address</legend><AddressForm value={billing} onChange={setBilling} errors={billingErrors} disabled={checkoutLocked} /></fieldset>
@@ -555,5 +588,6 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       <p aria-live="polite" className={styles.checkoutMessage}>{message}</p>
     </form>
     <aside className={styles.checkoutSummary}><p className={styles.eyebrow}>Your order</p><h2>Order summary</h2>{reviewedCart && !isReviewed ? <p className={styles.checkoutMessage}>Changes need review.</p> : null}<CheckoutOrderSummary cart={isReviewed ? reviewedCart : null} shipping={isReviewed ? shipping : null} />{hasPaymentAuthority ? <PaymentMethods methods={paymentMethods} value={selectedPaymentMethod} onChange={setSelectedPaymentMethod} disabled={checkoutLocked} /> : null}<button className={styles.primaryButton} type="button" disabled={paymentIntent ? Boolean(pending) : !hasPaymentAuthority || !selectedPaymentMethod || paymentMethods.length === 0 || Boolean(pending)} onClick={placeOrder}>{pending === "order" ? "Preparing payment…" : paymentIntent?.phase === "starting_payment" ? "Retry payment recovery" : paymentIntent ? "Retry order recovery" : selectedPaymentMethod === "card" ? "Continue to secure card payment" : selectedPaymentMethod === "afterpay" ? "Continue to Afterpay" : selectedPaymentMethod === "zip" ? "Continue to Zip Pay" : "Continue to payment"}</button></aside>
-  </div>;
+    </div>
+  </>;
 }

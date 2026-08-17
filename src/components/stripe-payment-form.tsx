@@ -19,12 +19,14 @@ import styles from "./storefront.module.css";
 function StripeConfirmation({
   confirmationUrl,
   currency,
+  onPaymentSubmitted,
   onPaymentUpdated,
   returnUrl,
   totalInclGstCents,
 }: {
   confirmationUrl: string;
   currency: MarketCurrency;
+  onPaymentSubmitted?: () => void;
   onPaymentUpdated?: (status: ConfirmedPaymentStatus) => void;
   returnUrl: string;
   totalInclGstCents?: number;
@@ -44,6 +46,11 @@ function StripeConfirmation({
     setPending(true);
     setMessage("");
     try {
+      try {
+        onPaymentSubmitted?.();
+      } catch {
+        // Submission observers must never interrupt payment confirmation.
+      }
       const result = await stripe.confirmPayment({
         elements,
         confirmParams: { return_url: returnUrl },
@@ -99,6 +106,7 @@ export function StripePaymentForm({
   clientSecret,
   confirmationUrl,
   currency = "NZD",
+  onPaymentSubmitted,
   onPaymentUpdated,
   publishableKey,
   returnUrl,
@@ -107,6 +115,7 @@ export function StripePaymentForm({
   clientSecret: string;
   confirmationUrl: string;
   currency?: MarketCurrency;
+  onPaymentSubmitted?: () => void;
   onPaymentUpdated?: (status: ConfirmedPaymentStatus) => void;
   publishableKey: string;
   returnUrl: string;
@@ -125,6 +134,7 @@ export function StripePaymentForm({
     <StripeConfirmation
       confirmationUrl={confirmationUrl}
       currency={currency}
+      onPaymentSubmitted={onPaymentSubmitted}
       onPaymentUpdated={onPaymentUpdated}
       returnUrl={returnUrl}
       totalInclGstCents={totalInclGstCents}

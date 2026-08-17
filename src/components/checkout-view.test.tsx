@@ -4,11 +4,17 @@ import { CART_STORAGE_KEY, type Cart } from "@/domain/cart/types";
 import { canonicalCheckoutCart, CheckoutView } from "./checkout-view";
 
 const push = vi.fn();
+const analytics = vi.hoisted(() => ({
+  emitAnalyticsEvent: vi.fn<(event: unknown) => boolean>(() => true),
+}));
+
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
+vi.mock("@/domain/analytics/client", () => analytics);
 vi.mock("./stripe-payment-form", () => ({
-  StripePaymentForm: ({ clientSecret, returnUrl, onPaymentUpdated }: {
+  StripePaymentForm: ({ clientSecret, returnUrl, onPaymentSubmitted, onPaymentUpdated }: {
     clientSecret: string;
     returnUrl: string;
+    onPaymentSubmitted?: () => void;
     onPaymentUpdated: (status: "paid" | "failed" | "cancelled" | "processing") => void;
   }) => (
     <div
@@ -17,6 +23,7 @@ vi.mock("./stripe-payment-form", () => ({
       data-entry-scroll-y={window.scrollY}
       data-return-url={returnUrl}
     >
+      <button type="button" onClick={() => onPaymentSubmitted?.()}>Simulate Stripe submit</button>
       <button type="button" onClick={() => onPaymentUpdated("paid")}>Simulate Stripe paid</button>
     </div>
   ),
@@ -35,7 +42,7 @@ const postCart: Cart = {
   items: cart.items.map((item) => ({ ...item, deliveryPreference: "post" as const })),
 };
 const address = { id: "saved-1", country: "NZ" as const, fullName: "Aroha Ngata", building: "", street: "12 Queen Street", suburb: "Auckland Central", region: "Auckland", postcode: "1010", phone: "+64211234567", email: "aroha@example.test" };
-const repriced = { version: 1, orderDate: "2026-08-03", items: [{ clientItemId: cart.items[0].id, productKey: "photo-print-canvas", productSlug: "photo-print-canvas", productTitle: "Photo Print Canvas", sizeKey: "a4", sizeLabel: "A4", orientation: "landscape", peoplePets: 0, photoSubmissionMethod: "later", designText: "Family", notes: "", neededDate: "2026-08-10", urgentServiceConfirmed: false, urgentService: { workingDays: 5, feeInclGstCents: 0 }, quantity: 1, uploadReferences: [], unitPrice: { lines: [], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475 }, lineSubtotalExGstCents: 6500, lineGstCents: 975, lineTotalInclGstCents: 7475 }], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475, itemCount: 1, cartDigest: "a".repeat(64) };
+const repriced = { version: 1, market: "NZ", currency: "NZD", taxJurisdiction: "NZ_GST", taxRateBasisPoints: 1500, priceBookRevision: 1, orderDate: "2026-08-03", items: [{ clientItemId: cart.items[0].id, productKey: "photo-print-canvas", productSlug: "photo-print-canvas", productTitle: "Photo Print Canvas", sizeKey: "a4", sizeLabel: "A4", orientation: "landscape", peoplePets: 0, photoSubmissionMethod: "later", designText: "Family", notes: "", neededDate: "2026-08-10", urgentServiceConfirmed: false, urgentService: { workingDays: 5, feeInclGstCents: 0 }, quantity: 1, uploadReferences: [], unitPrice: { lines: [], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475 }, lineSubtotalExGstCents: 6500, lineGstCents: 975, lineTotalInclGstCents: 7475 }], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475, discountCents: 0, designSurchargeCents: 0, itemCount: 1, cartDigest: "a".repeat(64) };
 const paymentIntentStorageKey = "rnr:commerce:v1:guest:checkout:payment-intent";
 const checkoutDraftStorageKey = "rnr:commerce:v1:guest:checkout:draft";
 const pendingCheckoutStorageKey = "rnr:commerce:v1:guest:checkout:pending";
@@ -45,7 +52,86 @@ function placementIntent(orderIdempotencyKey = "70000000-0000-4000-8000-00000000
 async function checkoutReady() { return screen.findByRole("button", { name: "Review delivery & totals" }); }
 
 describe("CheckoutView", () => {
-  beforeEach(() => { localStorage.clear(); sessionStorage.clear(); localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart)); push.mockReset(); vi.restoreAllMocks(); });
+  beforeEach(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+    push.mockReset();
+    vi.restoreAllMocks();
+    analytics.emitAnalyticsEvent.mockReset();
+    analytics.emitAnalyticsEvent.mockReturnValue(true);
+  });
+
+  it("tracks begin_checkout once for the mounted identity-scoped cart", async () => {
+    const view = render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+    view.rerender(<CheckoutView savedAddresses={[address]} />);
+
+    await waitFor(() => expect(analytics.emitAnalyticsEvent).toHaveBeenCalledTimes(1));
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
+      event: "begin_checkout",
+      currency: "NZD",
+      value: 0.01,
+      items: [{
+        item_id: "photo-print-canvas",
+        item_name: "Browser title",
+        item_variant: "a4",
+        price: 0.01,
+        quantity: 1,
+      }],
+    });
+    expect(JSON.stringify(analytics.emitAnalyticsEvent.mock.calls))
+      .not.toContain(CART_STORAGE_KEY);
+  });
+
+  it("tracks shipping only after every review API accepts the repriced cart", async () => {
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(postCart));
+    const repricedAud = { ...repriced, market: "AU", currency: "AUD", taxJurisdiction: "NONE", taxRateBasisPoints: 0 };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repricedAud } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "post", serviceCode: "public-code", serviceName: "Tracked courier", amountExGstCents: 2000, gstCents: 0, amountInclGstCents: 2000, currency: "AUD", provenance: "gosweetspot", isTest: false } } }) })
+      .mockResolvedValueOnce(methodsResponse);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+
+    await waitFor(() => expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
+      event: "add_shipping_info",
+      currency: "AUD",
+      value: 65,
+      shipping_tier: "Tracked courier",
+      items: [{
+        item_id: "photo-print-canvas",
+        item_name: "Photo Print Canvas",
+        item_variant: "a4",
+        price: 65,
+        quantity: 1,
+      }],
+    }));
+    const shippingEvent = analytics.emitAnalyticsEvent.mock.calls
+      .map(([event]) => event)
+      .find((event) => (event as { event?: string }).event === "add_shipping_info");
+    expect(JSON.stringify(shippingEvent)).not.toMatch(/address|email|phone|serviceCode|provenance/i);
+  });
+
+  it("does not track shipping or payment information when review fails", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
+      .mockResolvedValueOnce({ ok: false, json: async () => ({ error: { message: "Payment methods unavailable" } }) });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    await screen.findByText("Payment methods unavailable");
+
+    expect(analytics.emitAnalyticsEvent.mock.calls
+      .map(([event]) => (event as { event?: string }).event))
+      .toEqual(["begin_checkout"]);
+  });
 
   it("inherits the cart delivery choice without asking the customer to select it again", async () => {
     const fetchMock = vi.fn()
@@ -787,6 +873,23 @@ describe("CheckoutView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Continue to secure card payment" }));
 
     const stripeForm = await screen.findByTestId("checkout-stripe-payment-form");
+    expect(analytics.emitAnalyticsEvent.mock.calls
+      .map(([event]) => (event as { event?: string }).event))
+      .not.toContain("add_payment_info");
+    fireEvent.click(screen.getByRole("button", { name: "Simulate Stripe submit" }));
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
+      event: "add_payment_info",
+      currency: "NZD",
+      value: 65,
+      payment_type: "card",
+      items: [{
+        item_id: "photo-print-canvas",
+        item_name: "Photo Print Canvas",
+        item_variant: "a4",
+        price: 65,
+        quantity: 1,
+      }],
+    });
     expect(stripeForm).toHaveAttribute("data-entry-scroll-y", "0");
     expect(scrollBehaviorAtCall).toBe("auto");
     await waitFor(() => expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: "auto" }));
@@ -796,6 +899,46 @@ describe("CheckoutView", () => {
       intent: { phase: "starting_payment", orderNumber: "RNR-2026-CARD-OPEN" },
       cart,
     });
+  });
+
+  it.each(["afterpay", "zip"] as const)("tracks %s only after an accepted payment action", async (method) => {
+    let resolvePayment!: (value: unknown) => void;
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ methods: [{ method, label: method, isTest: false }] }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ order: { orderNumber: `RNR-2026-${method.toUpperCase()}` } }) })
+      .mockImplementationOnce(() => new Promise((resolve) => { resolvePayment = resolve; }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+    await screen.findByRole("radio", { name: method });
+
+    fireEvent.click(screen.getByRole("button", { name: method === "afterpay" ? "Continue to Afterpay" : "Continue to Zip Pay" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
+    expect(analytics.emitAnalyticsEvent.mock.calls
+      .map(([event]) => (event as { event?: string }).event))
+      .not.toContain("add_payment_info");
+
+    resolvePayment({ ok: true, json: async () => ({
+      payment: { method, status: "requires_action", isTest: false, canRetry: false },
+      action: { kind: "redirect", method, redirectUrl: `https://pay.example.test/${method}` },
+    }) });
+
+    await waitFor(() => expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
+      event: "add_payment_info",
+      currency: "NZD",
+      value: 65,
+      payment_type: method,
+      items: [{
+        item_id: "photo-print-canvas",
+        item_name: "Photo Print Canvas",
+        item_variant: "a4",
+        price: 65,
+        quantity: 1,
+      }],
+    }));
   });
 
   it("opens the order page at the top after Stripe confirms payment", async () => {

@@ -72,17 +72,42 @@ describe("StripePaymentForm", () => {
   });
 
   it("does not submit Stripe while the card details are empty", () => {
-    render(<StripePaymentForm {...props} />);
+    const onPaymentSubmitted = vi.fn();
+    render(<StripePaymentForm {...props} onPaymentSubmitted={onPaymentSubmitted} />);
 
     const confirm = screen.getByRole("button", { name: "Pay NZ$397.25 and place order" });
     expect(confirm).toBeDisabled();
     fireEvent.click(confirm);
     expect(confirmPayment).not.toHaveBeenCalled();
+    expect(onPaymentSubmitted).not.toHaveBeenCalled();
 
     act(() => paymentElement.onChange?.({ complete: true }));
     expect(confirm).toBeDisabled();
     act(() => paymentElement.onReady?.());
     expect(confirm).toBeEnabled();
+    expect(onPaymentSubmitted).not.toHaveBeenCalled();
+  });
+
+  it("observes a complete submission immediately before Stripe confirmation", async () => {
+    const calls: string[] = [];
+    const onPaymentSubmitted = vi.fn(() => { calls.push("submitted"); });
+    confirmPayment.mockImplementationOnce(async () => {
+      calls.push("confirmed");
+      return { paymentIntent: { status: "succeeded" } };
+    });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ payment: { status: "paid" } }),
+    }));
+    render(<StripePaymentForm {...props} onPaymentSubmitted={onPaymentSubmitted} />);
+    act(() => paymentElement.onReady?.());
+    act(() => paymentElement.onChange?.({ complete: true }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Pay NZ$397.25 and place order" }));
+
+    await waitFor(() => expect(confirmPayment).toHaveBeenCalledTimes(1));
+    expect(onPaymentSubmitted).toHaveBeenCalledTimes(1);
+    expect(calls).toEqual(["submitted", "confirmed"]);
   });
 
   it("labels an Australian fixed-price payment in AUD", () => {
@@ -126,13 +151,23 @@ describe("StripePaymentForm", () => {
     confirmPayment.mockResolvedValueOnce({
       error: { type: "validation_error", message: "Enter a complete card number." },
     });
-    render(<StripePaymentForm {...props} />);
+    const onPaymentSubmitted = vi.fn();
+    render(<StripePaymentForm {...props} onPaymentSubmitted={onPaymentSubmitted} />);
     act(() => paymentElement.onReady?.());
     act(() => paymentElement.onChange?.({ complete: true }));
     const button = screen.getByRole("button", { name: "Pay NZ$397.25 and place order" });
     fireEvent.click(button);
     expect(await screen.findByText("Enter a complete card number.")).toBeInTheDocument();
     expect(button).toBeEnabled();
+    expect(onPaymentSubmitted).toHaveBeenCalledTimes(1);
+
+    confirmPayment.mockResolvedValueOnce({
+      error: { type: "validation_error", message: "Check the card details." },
+    });
+    fireEvent.click(button);
+    await screen.findByText("Check the card details.");
+    expect(onPaymentSubmitted).toHaveBeenCalledTimes(2);
+    expect(confirmPayment).toHaveBeenCalledTimes(2);
   });
 
   it("recovers an ambiguous client error by verifying the payment on the server", async () => {
