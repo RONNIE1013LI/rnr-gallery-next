@@ -8,6 +8,8 @@ import {
   customerServiceConversationEvents,
   customerServiceConversations,
   customerServiceFeedbackEvents,
+  customerServiceHumanReplyMatches,
+  customerServiceHumanReplyMatchEvents,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
   customerServiceImageJobs,
@@ -27,6 +29,7 @@ import type {
 import { parseImageAnalysisResult } from "../image-analysis-schema";
 import { IMAGE_LIMITS } from "../attachments/limits";
 import { classifyAcknowledgement } from "../conversation/acknowledgement";
+import { canAppendHumanReply } from "../conversation/human-reply-grouping";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -402,6 +405,82 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             receivedAt: input.receivedAt,
           }).onConflictDoNothing().returning({ id: customerServiceConversationEvents.id });
           if (!inserted.length) return { status: "duplicate" as const };
+
+          const eventId = inserted[0].id;
+          const groupWindowMs = input.humanReplyGroupMs ?? 90_000;
+          if (!Number.isSafeInteger(groupWindowMs) || groupWindowMs < 10_000 || groupWindowMs > 120_000) {
+            throw new Error("customer_service_human_reply_group_window_invalid");
+          }
+          const groupCutoff = new Date(input.receivedAt.getTime() - groupWindowMs);
+          const [openGroup] = await transaction.select({
+            id: customerServiceHumanReplyMatches.id,
+            conversationId: customerServiceHumanReplyMatches.conversationId,
+            lastOutboundAt: customerServiceHumanReplyMatches.lastOutboundAt,
+            humanFinalText: customerServiceHumanReplyMatches.humanFinalText,
+          }).from(customerServiceHumanReplyMatches).where(and(
+            eq(customerServiceHumanReplyMatches.conversationId, conversation.id),
+            eq(customerServiceHumanReplyMatches.status, "pending"),
+            sql`${customerServiceHumanReplyMatches.lastOutboundAt} >= ${groupCutoff}`,
+            lte(customerServiceHumanReplyMatches.lastOutboundAt, input.receivedAt),
+          )).orderBy(desc(customerServiceHumanReplyMatches.lastOutboundAt)).limit(1).for("update");
+          const [memberCount] = openGroup
+            ? await transaction.select({ value: sql<number>`count(*)::int` })
+              .from(customerServiceHumanReplyMatchEvents)
+              .where(eq(customerServiceHumanReplyMatchEvents.matchId, openGroup.id))
+            : [];
+          const [interruption] = openGroup
+            ? await transaction.select({ id: customerServiceConversationEvents.id })
+              .from(customerServiceConversationEvents)
+              .where(and(
+                eq(customerServiceConversationEvents.conversationId, conversation.id),
+                eq(customerServiceConversationEvents.eventType, "customer_message"),
+                sql`${customerServiceConversationEvents.receivedAt} > ${openGroup.lastOutboundAt}`,
+                lte(customerServiceConversationEvents.receivedAt, input.receivedAt),
+              )).limit(1)
+            : [];
+          const append = openGroup && canAppendHumanReply({
+            group: {
+              conversationId: openGroup.conversationId,
+              lastOutboundAt: openGroup.lastOutboundAt,
+              messageCount: memberCount?.value ?? 0,
+              characterCount: openGroup.humanFinalText.length,
+            },
+            conversationId: conversation.id,
+            receivedAt: input.receivedAt,
+            textLength: body.length,
+            interveningCustomer: Boolean(interruption),
+            windowMs: groupWindowMs,
+          });
+          let groupId: string;
+          let ordinal: number;
+          if (append && openGroup) {
+            ordinal = memberCount?.value ?? 0;
+            groupId = openGroup.id;
+            await transaction.update(customerServiceHumanReplyMatches).set({
+              lastOutboundAt: input.receivedAt,
+              humanFinalText: `${openGroup.humanFinalText}\n${body}`,
+            }).where(and(
+              eq(customerServiceHumanReplyMatches.id, openGroup.id),
+              eq(customerServiceHumanReplyMatches.status, "pending"),
+            ));
+          } else {
+            ordinal = 0;
+            const [createdGroup] = await transaction.insert(customerServiceHumanReplyMatches).values({
+              conversationId: conversation.id,
+              status: "pending",
+              firstOutboundAt: input.receivedAt,
+              lastOutboundAt: input.receivedAt,
+              humanFinalText: body,
+              contextSummary: "[Pending conservative match]",
+            }).returning({ id: customerServiceHumanReplyMatches.id });
+            groupId = createdGroup.id;
+          }
+          await transaction.insert(customerServiceHumanReplyMatchEvents).values({
+            matchId: groupId,
+            eventId,
+            conversationId: conversation.id,
+            ordinal,
+          });
 
           const [repliedEvent] = input.replyToExternalMessageKeyHash
             ? await transaction.select({ turnId: customerServiceConversationEvents.turnId })

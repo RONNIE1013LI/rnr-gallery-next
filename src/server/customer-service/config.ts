@@ -4,6 +4,7 @@ export type CustomerServiceConfig = Readonly<{
   enabled: boolean;
   pilotLimit: number;
   conversationDebounceMs: number;
+  humanReplyGroupMs: number;
   provider: "mock" | "openai";
   openaiApiKey: string;
   openaiModel: string;
@@ -102,6 +103,13 @@ export function parseCustomerServiceConfig(
       "REPLY_ASSISTANT_DEBOUNCE_MS",
       250,
       10_000,
+    ),
+    humanReplyGroupMs: boundedInteger(
+      env.REPLY_ASSISTANT_HUMAN_REPLY_GROUP_MS,
+      90_000,
+      "REPLY_ASSISTANT_HUMAN_REPLY_GROUP_MS",
+      10_000,
+      120_000,
     ),
     provider,
     openaiApiKey,

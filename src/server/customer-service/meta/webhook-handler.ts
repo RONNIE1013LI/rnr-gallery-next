@@ -19,6 +19,7 @@ type WebhookConfig = Readonly<{
   imageAnalysisEnabled: boolean;
   attachmentSourceEncryptionKey: string;
   conversationDebounceMs?: number;
+  humanReplyGroupMs?: number;
 }>;
 
 function pageIds(payload: unknown) {
@@ -128,6 +129,7 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
             ? hashExternalId(message.externalReplyToMessageKey, dependencies.config.idHashSecret)
             : null,
           learningEligible: outbound?.learningEligible ?? false,
+          humanReplyGroupMs: dependencies.config.humanReplyGroupMs ?? 90_000,
           attachments,
           imageJob,
           debounceMs: dependencies.config.conversationDebounceMs ?? 2_000,

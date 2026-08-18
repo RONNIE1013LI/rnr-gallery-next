@@ -43,6 +43,13 @@ describe("customer service server config", () => {
       .toThrow("REPLY_ASSISTANT_DEBOUNCE_MS must be between 250 and 10000");
   });
 
+  it("bounds the server-side human reply grouping window", () => {
+    expect(parseCustomerServiceConfig({}).humanReplyGroupMs).toBe(90_000);
+    expect(parseCustomerServiceConfig({ REPLY_ASSISTANT_HUMAN_REPLY_GROUP_MS: "45000" }).humanReplyGroupMs).toBe(45_000);
+    expect(() => parseCustomerServiceConfig({ REPLY_ASSISTANT_HUMAN_REPLY_GROUP_MS: "9999" }))
+      .toThrow("REPLY_ASSISTANT_HUMAN_REPLY_GROUP_MS must be between 10000 and 120000");
+  });
+
   it("requires an image model when image analysis is enabled", () => {
     expect(() => parseCustomerServiceConfig({
       REPLY_ASSISTANT_ENABLED: "true",

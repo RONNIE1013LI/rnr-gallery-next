@@ -503,6 +503,45 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(events).toHaveLength(1);
   });
 
+  it("groups consecutive staff echoes and starts a new group after customer interruption", async () => {
+    const conversationHash = "45".repeat(32);
+    const event = (suffix: string, role: "customer" | "staff", text: string, receivedAt: string) => ({
+      channel: "facebook" as const,
+      role,
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: suffix.repeat(64 / suffix.length),
+      text,
+      ...(role === "staff" ? {
+        eventType: "human_outbound" as const,
+        bodyHash: (suffix + "f").slice(0, 2).repeat(32),
+        redactionCodes: [],
+        replyToExternalMessageKeyHash: null,
+        learningEligible: true,
+      } : {}),
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date(receivedAt),
+    });
+
+    await repository.ingestConversationEvent(event("46", "staff", "First line.", "2026-08-18T00:00:00.000Z"));
+    await repository.ingestConversationEvent(event("47", "staff", "Second line.", "2026-08-18T00:01:30.000Z"));
+    let groups = await database.select().from(customerServiceHumanReplyMatches);
+    expect(groups).toHaveLength(1);
+    expect(groups[0].humanFinalText).toBe("First line.\nSecond line.");
+    const members = await database.select().from(customerServiceHumanReplyMatchEvents)
+      .where(eq(customerServiceHumanReplyMatchEvents.matchId, groups[0].id)).orderBy(asc(customerServiceHumanReplyMatchEvents.ordinal));
+    expect(members.map((member) => member.ordinal)).toEqual([0, 1]);
+
+    await repository.ingestConversationEvent(event("48", "customer", "One more question.", "2026-08-18T00:01:40.000Z"));
+    await repository.ingestConversationEvent(event("49", "staff", "New answer.", "2026-08-18T00:01:50.000Z"));
+    groups = await database.select().from(customerServiceHumanReplyMatches)
+      .orderBy(asc(customerServiceHumanReplyMatches.firstOutboundAt));
+    expect(groups.map((group) => group.humanFinalText)).toEqual([
+      "First line.\nSecond line.",
+      "New answer.",
+    ]);
+  });
+
   it("does not suppress another customer's turn when echoes arrive concurrently", async () => {
     const createTurn = async (conversationHash: string, messageHash: string) => repository.ingestConversationEvent({
       channel: "facebook" as const,

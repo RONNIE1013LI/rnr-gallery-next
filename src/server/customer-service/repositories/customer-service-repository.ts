@@ -56,6 +56,7 @@ export type HashedConversationEvent = HashedIncomingMessage & Readonly<{
   redactionCodes?: readonly string[];
   replyToExternalMessageKeyHash?: string | null;
   learningEligible?: boolean;
+  humanReplyGroupMs?: number;
   debounceMs?: number;
 }>;
 
