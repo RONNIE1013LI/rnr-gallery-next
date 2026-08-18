@@ -1,6 +1,9 @@
 import { render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import {
+  defaultProductRegistry,
+  parseProductRegistry,
+} from "@/domain/catalogue/product-registry";
 import DesignDetailPage, { generateMetadata, revalidate } from "./page";
 
 const { findByPublicSlug, list, notFound } = vi.hoisted(() => ({
@@ -8,14 +11,36 @@ const { findByPublicSlug, list, notFound } = vi.hoisted(() => ({
   list: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
 }));
+const state = vi.hoisted(() => ({ registry: undefined as unknown, market: "NZ" }));
 
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/server/gallery/gallery-runtime", () => ({
   getGalleryRuntime: () => ({ publicService: { findByPublicSlug, list } }),
 }));
 vi.mock("@/server/admin/product-registry-runtime", () => ({
-  getSafePublicProductRegistry: async () => ({ registry: defaultProductRegistry }),
+  getSafePublicProductRegistry: async () => ({ registry: state.registry }),
 }));
+vi.mock("next/headers", () => ({
+  cookies: async () => ({ get: () => ({ value: state.market }) }),
+}));
+
+function enabledAustraliaRegistry() {
+  const registry = structuredClone(defaultProductRegistry);
+  for (const product of registry.markets.AU.products) {
+    for (const size of product.sizes) size.amountInclTaxCents = 40_000;
+    for (const charge of product.charges) charge.amountInclTaxCents = 3_000;
+  }
+  const rollUp = registry.markets.AU.products.find(
+    (product) => product.productKey === "roll-up-banner",
+  )!;
+  rollUp.sizes.find((size) => size.sizeKey === "standard")!.amountInclTaxCents = 32_000;
+  for (const fee of registry.markets.AU.peoplePets.fees) fee.amountInclTaxCents = fee.count * 6_000;
+  registry.markets.AU.peoplePets.additionalEachInclTaxCents = 4_000;
+  for (const fee of registry.markets.AU.urgentServiceFees) fee.amountInclTaxCents = 10_000;
+  for (const shipping of registry.markets.AU.shippingMethods) shipping.amountInclTaxCents = 4_500;
+  registry.markets.AU.enabled = true;
+  return parseProductRegistry(registry);
+}
 
 const designId = `a1b2c3d4${"a".repeat(56)}`;
 const design = {
@@ -40,8 +65,22 @@ const props = {
 describe("public design detail page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    state.registry = defaultProductRegistry;
+    state.market = "NZ";
     findByPublicSlug.mockResolvedValue(design);
     list.mockResolvedValue({ items: [], total: 0, page: 1, pageCount: 1, pageSize: 5 });
+  });
+
+  it("uses the selected Australia market for price and configuration destination", async () => {
+    state.registry = enabledAustraliaRegistry();
+    state.market = "AU";
+
+    render(await DesignDetailPage(props));
+
+    expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
+    expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Start With Your Photos" }))
+      .toHaveAttribute("href", `/au/products/roll-up-banner/configure?design=${designId}`);
   });
 
   it("uses on-demand revalidation instead of prebuilding every gallery design", () => {

@@ -18,6 +18,7 @@ export class InvalidMarketValueError extends Error {
 }
 
 export function marketSwitchDestination(pathname: string, market: Market): string {
+  if (pathname.startsWith("/designs/")) return pathname;
   if (market === "NZ") {
     const stripped = pathname.replace(/^\/au(?=\/|$)/, "");
     return stripped || "/";

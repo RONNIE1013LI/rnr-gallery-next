@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
+import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { StructuredData } from "@/components/structured-data";
 import styles from "@/components/storefront.module.css";
+import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
 import {
   getRegistryProductBySlug,
 } from "@/domain/catalogue/product-registry";
@@ -11,10 +13,12 @@ import {
   buildPublicDesignSlug,
   publicDesignTitle,
 } from "@/domain/gallery/public-design-slug";
-import { addNzdGst, formatNzdExplicit } from "@/domain/money";
+import { formatMarketMoney } from "@/domain/money";
+import { getMarketStartingPriceInclTaxCents } from "@/domain/pricing/market-quote";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
+import { MARKET_COOKIE_NAME, parseMarketCookie } from "@/server/markets/market-cookie";
 import {
   buildBreadcrumbData,
   buildPublicMetadata,
@@ -94,10 +98,11 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function DesignDetailPage({ params, searchParams }: Props) {
-  const [{ slug }, query, { registry }] = await Promise.all([
+  const [{ slug }, query, { registry }, cookieStore] = await Promise.all([
     params,
     searchParams,
     getSafePublicProductRegistry(),
+    cookies(),
   ]);
   const design = await getDesign(slug);
   if (!design) notFound();
@@ -109,7 +114,21 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
   const canonicalSlug = buildPublicDesignSlug(title, design.id);
   const productType = productTypeLabels[design.productTypeSlug];
   const occasion = occasionLabels[design.occasionSlug];
-  const priceInclGstCents = addNzdGst(product.startingPriceExGstCents);
+  const savedMarket = parseMarketCookie(cookieStore.get(MARKET_COOKIE_NAME)?.value);
+  const market = savedMarket === "AU" && registry.markets.AU.enabled
+    && getMarketCompleteness(registry, "AU").ready
+    ? "AU"
+    : "NZ";
+  const marketBook = registry.markets[market];
+  const priceInclTaxCents = getMarketStartingPriceInclTaxCents(
+    registry,
+    market,
+    product.key,
+  );
+  const taxLabel = marketBook.tax.registered ? " incl GST" : "";
+  const configurePath = market === "AU"
+    ? `/au/products/${product.slug}/configure`
+    : `/products/${product.slug}/configure`;
   const returnTo = safeGalleryReturnPath(scalar(query.from))
     ?? `/design-gallery?occasion=${encodeURIComponent(design.occasionSlug)}&design_type=${encodeURIComponent(design.productTypeSlug)}`;
   let related: readonly PublicGalleryItem[] = [];
@@ -129,7 +148,7 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
   return (
     <main id="main-content" className={styles.designDetailPage}>
       <StructuredData id="rnr-design-breadcrumbs" data={buildBreadcrumbData([
-        { name: "Home", path: "/" },
+        { name: "Home", path: market === "AU" ? "/au" : "/" },
         { name: "Design Gallery", path: "/design-gallery" },
         { name: title, path: `/designs/${canonicalSlug}` },
       ])} />
@@ -164,9 +183,11 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
               </dd>
             </div>
           </dl>
-          <p className={styles.productDetailPrice}>From {formatNzdExplicit(priceInclGstCents)} incl GST</p>
+          <p className={styles.productDetailPrice}>
+            From {formatMarketMoney(priceInclTaxCents, marketBook.currency)}{taxLabel}
+          </p>
           <div className={styles.designDetailActions}>
-            <Link className={styles.primaryButton} href={`/products/${product.slug}/configure?design=${design.id}`}>
+            <Link className={styles.primaryButton} href={`${configurePath}?design=${design.id}`}>
               Start With Your Photos
             </Link>
             <Link className={styles.secondaryButton} href={returnTo}>View Similar Designs</Link>

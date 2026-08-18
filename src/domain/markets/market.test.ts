@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   currencyForMarket,
   includedTaxFromGross,
+  marketSwitchDestination,
   marketForCountry,
   marketTaxPolicy,
 } from "./market";
@@ -48,6 +49,13 @@ describe("market primitives", () => {
       taxCents: 0,
       amountInclTaxCents: 32_000,
     });
+  });
+
+  it("keeps shared design details open while changing their market", () => {
+    const pathname = "/designs/canvas-design-example-wedding-ed3f5c8d";
+
+    expect(marketSwitchDestination(pathname, "AU")).toBe(pathname);
+    expect(marketSwitchDestination(pathname, "NZ")).toBe(pathname);
   });
 
   it("extracts included Australian GST without changing the gross price", () => {
