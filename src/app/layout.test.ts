@@ -94,6 +94,24 @@ describe("root layout metadata", () => {
     }
   });
 
+  it("keeps public product and design starting prices at the approved size without heavy type", () => {
+    const style = document.createElement("style");
+    style.textContent = cssFile("src/components/storefront.module.css");
+    const price = document.createElement("p");
+    price.className = "productDetailPrice";
+    document.head.append(style);
+    document.body.append(price);
+
+    try {
+      const computed = getComputedStyle(price);
+      expect(computed.fontSize).toBe("17.28px");
+      expect(computed.fontWeight).toBe("500");
+    } finally {
+      price.remove();
+      style.remove();
+    }
+  });
+
   it("preserves the approved morning mobile-menu trigger and close treatment", () => {
     const globals = cssFile("src/app/globals.css");
     const trigger = cssRule(globals, ".mobile-menu > button {");
