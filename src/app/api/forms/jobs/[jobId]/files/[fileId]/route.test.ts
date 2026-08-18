@@ -1,10 +1,26 @@
 import { describe, expect, it, vi } from "vitest";
+import { HttpError } from "@/server/auth/require-session";
 import { createFormsJobFileRoute } from "./route-handler";
 
 const jobId = "de31f47e-0fb9-438e-bef6-6bc45556d3bb";
 const fileId = "e23a9f59-bf54-4bb6-a7d0-9239c14cf819";
 
 describe("forms private file route", () => {
+  it("denies a profile without view_files before reading private storage", async () => {
+    const read = vi.fn();
+    const route = createFormsJobFileRoute({
+      requirePermission: vi.fn().mockRejectedValue(new HttpError("Forbidden", 403)),
+      assertScope: vi.fn(), getPrivateFile: vi.fn(), read,
+    });
+
+    const response = await route.GET(new Request(`https://shop.example.test/api/forms/jobs/${jobId}/files/${fileId}`), {
+      params: Promise.resolve({ jobId, fileId }),
+    });
+
+    expect(response.status).toBe(403);
+    expect(read).not.toHaveBeenCalled();
+  });
+
   it("checks forms scope and streams a job-owned file without caching", async () => {
     const access = {
       user: { id: "artist-1" }, formRole: "form_staff" as const,

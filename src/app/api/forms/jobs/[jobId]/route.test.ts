@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { HttpError } from "@/server/auth/require-session";
+import { normalizeStaffAccessProfile } from "@/server/auth/staff-access-profile";
 import { ProductionJobConflictError } from "@/server/production/production-job-service";
 import { createFormsJobRoute } from "./route-handler";
 
@@ -110,16 +111,17 @@ describe("forms job inline update route", () => {
     expect(response.status).toBe(409);
   });
 
-  it("prevents assigned-only staff from updating another artist's job", async () => {
+  it("prevents assigned-only Staff from updating another artist's job", async () => {
     const update = vi.fn();
     const route = createFormsJobRoute({
       requirePermission: vi.fn().mockResolvedValue({
         user: { id: "artist-1", email: "artist@example.test" },
-        formRole: "form_staff",
-        formProfile: {
-          preset: "artist", assignedOnly: true,
-          permissions: { view_jobs: true, update_jobs: true },
-        },
+        formRole: "staff",
+        formProfile: normalizeStaffAccessProfile({
+          adminPermissions: [],
+          formPermissions: { access_forms: true, view_jobs: true, update_jobs: true },
+          assignedOnly: true,
+        }),
       }),
       update,
       detail: vi.fn().mockResolvedValue({ job: { assignedUserId: "artist-2" } }),
@@ -153,15 +155,16 @@ describe("forms job detail route", () => {
     });
   });
 
-  it("enforces assigned-only scope and redacts protected detail fields", async () => {
+  it("enforces assigned-only Staff scope and redacts protected detail fields", async () => {
     const route = createFormsJobRoute({
       requirePermission: vi.fn().mockResolvedValue({
         user: { id: "artist-1", email: "artist@example.test" },
-        formRole: "form_staff",
-        formProfile: {
-          preset: "artist", assignedOnly: true,
-          permissions: { view_jobs: true, view_customer_contact: false, view_finance: false, view_audit: false },
-        },
+        formRole: "staff",
+        formProfile: normalizeStaffAccessProfile({
+          adminPermissions: [],
+          formPermissions: { access_forms: true, view_jobs: true },
+          assignedOnly: true,
+        }),
       }),
       update: vi.fn(),
       detail: vi.fn().mockResolvedValue({
@@ -181,12 +184,14 @@ describe("forms job detail route", () => {
     expect(body.detail.audit).toEqual([]);
   });
 
-  it("returns 404 when an assigned-only artist opens another artist's job", async () => {
+  it("returns 404 when assigned-only Staff opens another artist's job", async () => {
     const route = createFormsJobRoute({
       requirePermission: vi.fn().mockResolvedValue({
         user: { id: "artist-1", email: "artist@example.test" },
-        formRole: "form_staff",
-        formProfile: { preset: "artist", assignedOnly: true, permissions: { view_jobs: true } },
+        formRole: "staff",
+        formProfile: normalizeStaffAccessProfile({
+          adminPermissions: [], formPermissions: { access_forms: true, view_jobs: true }, assignedOnly: true,
+        }),
       }),
       update: vi.fn(),
       detail: vi.fn().mockResolvedValue({ job: { assignedUserId: "artist-2" } }),

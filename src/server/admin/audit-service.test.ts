@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { buildAuditRecord } from "./audit-service";
 
+function stringsIn(value: unknown): string[] {
+  if (typeof value === "string") return [value];
+  if (Array.isArray(value)) return value.flatMap(stringsIn);
+  if (value && typeof value === "object") return Object.values(value).flatMap(stringsIn);
+  return [];
+}
+
 describe("admin audit records", () => {
   it("normalizes an append-only success record", () => {
     expect(buildAuditRecord({
@@ -51,6 +58,29 @@ describe("admin audit records", () => {
       beforeSummary: { enabled: false, nested: { label: "Stripe" } },
       afterSummary: { enabled: true, methods: [{ provider: "stripe" }] },
     });
+  });
+
+  it("does not retain employee credentials or raw failed request bodies at any depth", () => {
+    const plaintextPassword = "long-lived-password-for-test";
+    const passwordHash = "$2b$12$test-only-password-hash";
+    const record = buildAuditRecord({
+      actorUserId: "admin-1",
+      actorEmail: "owner@example.test",
+      action: "user.access.change.failed",
+      resourceType: "user",
+      afterSummary: {
+        changed: false,
+        credential: { password: plaintextPassword, passwordHash },
+        request: { body: { initialPassword: plaintextPassword, hash: passwordHash } },
+        rawRequestBody: { initialPassword: plaintextPassword },
+      },
+      result: "failure",
+      idempotencyKey: "employee-access-failure-1",
+    });
+
+    expect(record.afterSummary).toEqual({ changed: false, request: {} });
+    expect(stringsIn(record)).not.toContain(plaintextPassword);
+    expect(stringsIn(record)).not.toContain(passwordHash);
   });
 
   it("rejects incomplete records", () => {

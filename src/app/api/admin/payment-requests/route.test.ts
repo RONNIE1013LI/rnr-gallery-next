@@ -45,6 +45,28 @@ describe("admin payment requests route", () => {
     expect(create).not.toHaveBeenCalled();
   });
 
+  it("uses the exact manage_payment grant for a stored payment operator", async () => {
+    const create = vi.fn().mockResolvedValue(result);
+    const requirePermission = vi.fn(async (permission: string) => {
+      if (permission !== "manage_payment") throw new HttpError("Forbidden", 403);
+      return { user: { id: "payment-operator-1" } };
+    });
+    const route = createAdminPaymentRequestsRoute({ requirePermission, create, origin });
+
+    const response = await route.POST(request({
+      kind: "standalone",
+      idempotencyKey: "payment-operator-create-1",
+      amountCents: 20_000,
+      currency: "NZD",
+      description: "Custom deposit",
+      enabledPaymentMethods: ["card"],
+    }));
+
+    expect(response.status).toBe(201);
+    expect(requirePermission).toHaveBeenCalledWith("manage_payment");
+    expect(create).toHaveBeenCalledWith("payment-operator-1", expect.any(Object));
+  });
+
   it("creates a fixed request and returns its raw link token only on first creation", async () => {
     const create = vi.fn().mockResolvedValue(result);
     const route = createAdminPaymentRequestsRoute({

@@ -14,7 +14,7 @@ const auditInputSchema = z.object({
   idempotencyKey: z.string().trim().min(1).max(255),
 });
 
-const sensitiveKey = /(?:secret|password|token|cookie|authorization|credential|raw(?:request|payload|body))/i;
+const sensitiveKey = /(?:secret|password|token|cookie|authorization|credential|body|raw(?:request|payload|body))/i;
 
 function sanitizeValue(value: unknown): unknown {
   if (

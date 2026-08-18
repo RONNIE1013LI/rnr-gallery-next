@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { HttpError } from "@/server/auth/require-session";
 import { createAdminPaymentLedgerRoute } from "./route-handler";
 
 const origin = "http://localhost:3000";
@@ -13,6 +14,31 @@ function request(body: unknown) {
 }
 
 describe("admin payment ledger route", () => {
+  it("uses the exact manage_payment grant for ledger mutations", async () => {
+    const recordBankTransfer = vi.fn().mockResolvedValue({ id: "ledger-1", amountCents: 20_000 });
+    const requirePermission = vi.fn(async (permission: string) => {
+      if (permission !== "manage_payment") throw new HttpError("Forbidden", 403);
+      return { user: { id: "payment-operator-1" } };
+    });
+    const route = createAdminPaymentLedgerRoute({
+      requirePermission,
+      recordBankTransfer,
+      reverseBankTransfer: vi.fn(),
+      origin,
+    });
+
+    const response = await route.POST(request({
+      action: "bank_transfer",
+      amountCents: 20_000,
+      receivedAt: "2026-08-18T05:00:00.000Z",
+      idempotencyKey: "bank-transfer-operator-1",
+    }), context);
+
+    expect(response.status).toBe(200);
+    expect(requirePermission).toHaveBeenCalledWith("manage_payment");
+    expect(recordBankTransfer).toHaveBeenCalledWith("payment-operator-1", expect.any(Object));
+  });
+
   it("records a bank credit using the path order and idempotency key", async () => {
     const recordBankTransfer = vi.fn().mockResolvedValue({ id: "ledger-1", amountCents: 20_000 });
     const route = createAdminPaymentLedgerRoute({

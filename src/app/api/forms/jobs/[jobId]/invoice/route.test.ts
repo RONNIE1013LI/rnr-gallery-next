@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { HttpError } from "@/server/auth/require-session";
 import { createFormsJobInvoiceRoute } from "./route-handler";
 
 const origin = "https://shop.example.test";
@@ -17,6 +18,19 @@ function mutation(body: unknown) {
 }
 
 describe("forms job invoice route", () => {
+  it("denies an assigned artist without finance before loading an invoice", async () => {
+    const getOrCreateDraft = vi.fn();
+    const route = createFormsJobInvoiceRoute({
+      requirePermission: vi.fn().mockRejectedValue(new HttpError("Forbidden", 403)),
+      assertScope: vi.fn(), getOrCreateDraft, updateDraft: vi.fn(), issue: vi.fn(), void: vi.fn(),
+    });
+
+    const response = await route.GET(new Request(`${origin}/api/forms/jobs/${jobId}/invoice`), context);
+
+    expect(response.status).toBe(403);
+    expect(getOrCreateDraft).not.toHaveBeenCalled();
+  });
+
   it("checks finance-view and job scope before loading or seeding an invoice", async () => {
     const assertScope = vi.fn().mockResolvedValue(undefined);
     const getOrCreateDraft = vi.fn().mockResolvedValue({ id: invoiceId, status: "draft" });
