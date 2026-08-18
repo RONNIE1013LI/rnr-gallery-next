@@ -25,8 +25,10 @@ describe("Facebook channel adapter", () => {
     expect(adapter.normalize(payload({ mid: "mid-1", text: "How do I prepare my photos?" }))).toEqual([{
       channel: "facebook",
       role: "customer",
+      eventType: "customer_message",
       externalConversationKey: "sender-1",
       externalMessageKey: "mid-1",
+      externalReplyToMessageKey: null,
       text: "How do I prepare my photos?",
       attachments: [],
       receivedAt: new Date(1_787_001_600_000),
@@ -42,7 +44,12 @@ describe("Facebook channel adapter", () => {
           sender: { id: "page-1" },
           [recipientField]: { id: "customer-1" },
           timestamp: 1_787_001_600_000,
-          message: { mid: "echo-1", text: "Which size would you like?", is_echo: true },
+          message: {
+            mid: "echo-1",
+            text: "Which size would you like?",
+            is_echo: true,
+            reply_to: { mid: "customer-mid-1" },
+          },
         }],
       }],
     });
@@ -50,12 +57,29 @@ describe("Facebook channel adapter", () => {
     expect(result).toEqual([{
       channel: "facebook",
       role: "staff",
+      eventType: "human_outbound",
       externalConversationKey: "customer-1",
       externalMessageKey: "echo-1",
+      externalReplyToMessageKey: "customer-mid-1",
       text: "Which size would you like?",
       attachments: [],
       receivedAt: new Date(1_787_001_600_000),
     }]);
+  });
+
+  it("fails closed when an echo sender is not the entry Page", () => {
+    expect(adapter.normalize({
+      object: "page",
+      entry: [{
+        id: "page-1",
+        messaging: [{
+          sender: { id: "other-page" },
+          [recipientField]: { id: "customer-1" },
+          timestamp: 1_787_001_600_000,
+          message: { mid: "echo-wrong-page", text: "Hello", is_echo: true },
+        }],
+      }],
+    })).toEqual([]);
   });
 
   it("fails closed when a staff echo has no customer recipient", () => {
