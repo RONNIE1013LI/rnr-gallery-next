@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { account, adminAuditLogs, adminStaffAccess, session, user } from "@/server/db/schema";
 import {
+  AdminEmployeeConflictError,
   createAdminEmployeeService,
   createDrizzleAdminEmployeeRepository,
 } from "./admin-employee-service";
@@ -18,6 +19,7 @@ const employeeEmail = `employee-${suffix}@example.test`;
 const actorEmail = `employee-actor-${suffix}@example.test`;
 const initialPassword = "long-lived-password";
 const passwordHash = `test-only-hash-${randomUUID()}`;
+const rollbackEmail = `employee-rollback-${suffix}@example.test`;
 
 describe("admin employee persistence", () => {
   beforeAll(async () => {
@@ -38,6 +40,7 @@ describe("admin employee persistence", () => {
   it("creates the user, credential, profile, and redacted audit atomically without a session", async () => {
     const service = createAdminEmployeeService({
       hashPassword: async () => passwordHash,
+      verifyPassword: async ({ hash, password }) => hash === passwordHash && password === initialPassword,
       passwordPolicy: { minPasswordLength: 8, maxPasswordLength: 128 },
       create: createDrizzleAdminEmployeeRepository(database).create,
     });
@@ -54,6 +57,10 @@ describe("admin employee persistence", () => {
 
     const created = await service.createEmployee({ userId: actorId, email: actorEmail }, input);
     const replay = await service.createEmployee({ userId: actorId, email: actorEmail }, input);
+    await expect(service.createEmployee({ userId: actorId, email: actorEmail }, {
+      ...input,
+      initialPassword: "different-long-lived-password",
+    })).rejects.toBeInstanceOf(AdminEmployeeConflictError);
 
     const [storedUser] = await database.select({
       id: user.id,
@@ -96,5 +103,49 @@ describe("admin employee persistence", () => {
     expect(audit).toMatchObject({ requestSource: "integration-test", result: "success" });
     expect(JSON.stringify(audit)).not.toContain(initialPassword);
     expect(JSON.stringify(audit)).not.toContain(passwordHash);
+  });
+
+  it("rolls back user, credential, and profile when the final audit insert fails", async () => {
+    const idempotencyKey = `employee-rollback-${suffix}`;
+    await database.insert(adminAuditLogs).values({
+      actorUserId: actorId,
+      actorEmail,
+      action: "user.employee.created",
+      resourceType: "user",
+      afterSummary: { errorType: "ForcedAuditFailure" },
+      result: "failure",
+      idempotencyKey,
+    });
+    const service = createAdminEmployeeService({
+      hashPassword: async () => passwordHash,
+      verifyPassword: async ({ hash, password }) => hash === passwordHash && password === initialPassword,
+      passwordPolicy: { minPasswordLength: 8, maxPasswordLength: 128 },
+      create: createDrizzleAdminEmployeeRepository(database).create,
+    });
+
+    await expect(service.createEmployee({ userId: actorId, email: actorEmail }, {
+      name: "Rollback Artist",
+      email: rollbackEmail,
+      initialPassword,
+      adminPermissions: ["view_orders"],
+      formPermissions: { access_forms: true, view_jobs: true },
+      assignedOnly: false,
+      idempotencyKey,
+      requestSource: "integration-test",
+    })).rejects.toThrow();
+
+    const users = await database.select({ id: user.id }).from(user).where(eq(user.email, rollbackEmail));
+    const credentials = await database.select({ id: account.id })
+      .from(account)
+      .innerJoin(user, eq(user.id, account.userId))
+      .where(eq(user.email, rollbackEmail));
+    const profiles = await database.select({ userId: adminStaffAccess.userId })
+      .from(adminStaffAccess)
+      .innerJoin(user, eq(user.id, adminStaffAccess.userId))
+      .where(eq(user.email, rollbackEmail));
+
+    expect(users).toEqual([]);
+    expect(credentials).toEqual([]);
+    expect(profiles).toEqual([]);
   });
 });

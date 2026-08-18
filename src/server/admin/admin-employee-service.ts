@@ -8,6 +8,7 @@ import {
   normalizeStaffAccessProfile,
   type StaffAccessProfile,
 } from "@/server/auth/staff-access-profile";
+import { FORM_PERMISSION_KEYS } from "@/domain/forms/forms-parity";
 import { buildAuditRecord } from "./audit-service";
 
 type Database = ReturnType<typeof getDatabase>;
@@ -56,12 +57,18 @@ type ParsedEmployeeInput = Readonly<{
   requestSource?: string;
 }>;
 
+type ReplayPasswordVerifier = (storedPasswordHash: string) => Promise<boolean>;
 type AdminEmployeeRepository = Readonly<{
-  create: (actor: Actor, input: CreateEmployeeRecord) => Promise<AdminEmployeeResult>;
+  create: (
+    actor: Actor,
+    input: CreateEmployeeRecord,
+    verifyReplayPassword: ReplayPasswordVerifier,
+  ) => Promise<AdminEmployeeResult>;
 }>;
 
 type PasswordRuntime = Readonly<{
   hashPassword: (password: string) => Promise<string>;
+  verifyPassword: (input: Readonly<{ password: string; hash: string }>) => Promise<boolean>;
   passwordPolicy: PasswordPolicy;
 }>;
 type ServiceDependencies = AdminEmployeeRepository & Partial<PasswordRuntime> & Readonly<{
@@ -100,6 +107,7 @@ async function resolvePasswordRuntime(dependencies: ServiceDependencies): Promis
   if (dependencies.hashPassword && dependencies.passwordPolicy) {
     return {
       hashPassword: dependencies.hashPassword,
+      verifyPassword: dependencies.verifyPassword ?? (() => Promise.resolve(false)),
       passwordPolicy: dependencies.passwordPolicy,
     };
   }
@@ -119,6 +127,9 @@ export function createAdminEmployeeService(dependencies: ServiceDependencies) {
         profile: parsed.profile,
         idempotencyKey: parsed.idempotencyKey,
         ...(parsed.requestSource ? { requestSource: parsed.requestSource } : {}),
+      }), (storedPasswordHash) => passwordRuntime.verifyPassword({
+        password: parsed.initialPassword,
+        hash: storedPasswordHash,
       }));
     },
   });
@@ -131,6 +142,19 @@ const employeeFields = {
   role: user.role,
 };
 
+export function sameStaffAccessProfile(
+  candidate: unknown,
+  expected: StaffAccessProfile,
+) {
+  if (!isStaffAccessProfile(candidate)) return false;
+  return candidate.adminPermissions.length === expected.adminPermissions.length &&
+    candidate.adminPermissions.every((permission, index) => permission === expected.adminPermissions[index]) &&
+    candidate.assignedOnly === expected.assignedOnly &&
+    FORM_PERMISSION_KEYS.every(
+      (permission) => candidate.formPermissions[permission] === expected.formPermissions[permission],
+    );
+}
+
 function matchesEmployeeRecord(
   record: { id: string; name: string; email: string; role: "customer" | "form_staff" | "staff" | "admin" },
   profile: unknown,
@@ -139,15 +163,12 @@ function matchesEmployeeRecord(
   return record.name === input.name &&
     record.email === input.email &&
     record.role === "staff" &&
-    isStaffAccessProfile(profile) &&
-    JSON.stringify(profile.adminPermissions) === JSON.stringify(input.profile.adminPermissions) &&
-    JSON.stringify(profile.formPermissions) === JSON.stringify(input.profile.formPermissions) &&
-    profile.assignedOnly === input.profile.assignedOnly;
+    sameStaffAccessProfile(profile, input.profile);
 }
 
 export function createDrizzleAdminEmployeeRepository(database: Database): AdminEmployeeRepository {
   return Object.freeze({
-    async create(actor, input) {
+    async create(actor, input, verifyReplayPassword) {
       return database.transaction(async (transaction) => {
         await transaction.execute(sql`select pg_advisory_xact_lock(hashtext('rnr_admin_employee_create'))`);
 
@@ -166,10 +187,14 @@ export function createDrizzleAdminEmployeeRepository(database: Database): AdminE
           .where(and(
             eq(adminAuditLogs.actorUserId, actor.userId),
             eq(adminAuditLogs.action, "user.employee.created"),
+            eq(adminAuditLogs.result, "success"),
             eq(adminAuditLogs.idempotencyKey, input.idempotencyKey),
           ))
           .limit(1);
-        if (existingAudit?.resourceId) {
+        if (existingAudit) {
+          if (!existingAudit.resourceId) {
+            throw new AdminEmployeeConflictError("This employee-creation request has already been used.");
+          }
           const [record] = await transaction
             .select({
               ...employeeFields,
@@ -189,6 +214,17 @@ export function createDrizzleAdminEmployeeRepository(database: Database): AdminE
               }
             : null;
           if (!record || !matchesEmployeeRecord(record, profile, input)) {
+            throw new AdminEmployeeConflictError("This employee-creation request has already been used.");
+          }
+          const [credential] = await transaction
+            .select({ password: account.password })
+            .from(account)
+            .where(and(
+              eq(account.userId, record.id),
+              eq(account.providerId, "credential"),
+            ))
+            .limit(1);
+          if (!credential?.password || !await verifyReplayPassword(credential.password)) {
             throw new AdminEmployeeConflictError("This employee-creation request has already been used.");
           }
           return Object.freeze({ ...record, role: "staff" as const, created: false });

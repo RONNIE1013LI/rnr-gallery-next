@@ -34,6 +34,18 @@ function request(body: unknown, requestOrigin = origin) {
   });
 }
 
+function malformedJsonRequest() {
+  return new Request(`${origin}/api/admin/users`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: origin,
+      "Sec-Fetch-Site": "same-origin",
+    },
+    body: "{",
+  });
+}
+
 describe("admin employee route", () => {
   it("requires database-backed role management and never returns password material", async () => {
     const requirePermission = vi.fn().mockResolvedValue({
@@ -128,5 +140,20 @@ describe("admin employee route", () => {
         created: false,
       },
     });
+  });
+
+  it("returns a safe validation error for malformed JSON", async () => {
+    const createEmployee = vi.fn();
+    const route = createAdminEmployeeRoute({
+      requirePermission: vi.fn().mockResolvedValue({ user: { id: "admin-1", email: "owner@example.test" } }),
+      createEmployee,
+      trustedOrigin: origin,
+    });
+
+    const response = await route.POST(malformedJsonRequest());
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Request body must contain valid JSON." });
+    expect(createEmployee).not.toHaveBeenCalled();
   });
 });

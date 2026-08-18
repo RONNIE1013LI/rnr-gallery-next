@@ -18,6 +18,7 @@ export function getAdminUserRuntime() {
       const context = await auth.$context;
       return {
         hashPassword: context.password.hash,
+        verifyPassword: context.password.verify,
         passwordPolicy: context.password.config,
       };
     },

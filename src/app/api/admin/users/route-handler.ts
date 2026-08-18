@@ -31,6 +31,9 @@ function errorResponse(error: unknown) {
   if (error instanceof MutationRequestError) {
     return Response.json({ error: error.message }, { status: error.status, headers: noStore });
   }
+  if (error instanceof SyntaxError) {
+    return Response.json({ error: "Request body must contain valid JSON." }, { status: 400, headers: noStore });
+  }
   if (error instanceof AdminEmployeeAuthorizationError) {
     return Response.json({ error: error.message }, { status: 403, headers: noStore });
   }
