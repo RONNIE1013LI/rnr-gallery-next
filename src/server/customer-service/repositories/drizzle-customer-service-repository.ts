@@ -6,6 +6,7 @@ import {
   customerServiceAttachments,
   customerServiceBudgetState,
   customerServiceCaseMemories,
+  customerServiceCaseRetrievals,
   customerServiceConversationEvents,
   customerServiceConversations,
   customerServiceFeedbackEvents,
@@ -35,6 +36,7 @@ import { chooseHumanReplyTurn } from "../learning/human-reply-matcher";
 import { classifyHumanEdit } from "../learning/edit-classifier";
 import { assessCaseMemoryEligibility } from "../learning/case-memory";
 import { sanitizeCaseMemoryText } from "../learning/case-memory-sanitizer";
+import { scoreCaseMemory } from "../learning/case-retrieval";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -1875,6 +1877,90 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           ? { status, caseMemoryId: memory.id }
           : { status, caseMemoryId: memory.id, exclusionCodes: eligibility.exclusionCodes };
       });
+    },
+
+    async retrieveApprovedCaseMemories(input) {
+      const limit = Math.max(1, Math.min(3, input.limit));
+      const startedAt = Date.now();
+      const candidates = await database.select({
+        id: customerServiceCaseMemories.id,
+        intent: customerServiceCaseMemories.intent,
+        riskClass: customerServiceCaseMemories.riskClass,
+        productCategory: customerServiceCaseMemories.productCategory,
+        market: customerServiceCaseMemories.market,
+        policyReferences: customerServiceCaseMemories.policyReferences,
+        normalizedSituation: customerServiceCaseMemories.normalizedSituation,
+        humanFinalReply: customerServiceCaseMemories.humanFinalReply,
+        knowledgeVersion: customerServiceCaseMemories.knowledgeVersion,
+        exclusionCodes: customerServiceCaseMemories.exclusionCodes,
+        createdAt: customerServiceCaseMemories.createdAt,
+        fullTextRank: sql<number>`ts_rank_cd(
+          to_tsvector('simple', ${customerServiceCaseMemories.normalizedSituation}),
+          plainto_tsquery('simple', ${input.query})
+        )::float`,
+      }).from(customerServiceCaseMemories).where(and(
+        eq(customerServiceCaseMemories.eligibilityStatus, "approved_reusable"),
+        eq(customerServiceCaseMemories.intent, input.intent),
+      )).limit(50);
+      const scored = candidates.map((memory) => {
+        let exclusionReason: string | null = null;
+        if (memory.knowledgeVersion !== input.knowledgeVersion) exclusionReason = "knowledge_version_conflict";
+        else if (memory.exclusionCodes.length) exclusionReason = "excluded_source";
+        const score = exclusionReason ? null : scoreCaseMemory({
+          current: {
+            intent: input.intent,
+            riskClass: input.riskClass,
+            productCategory: input.productCategory,
+            market: input.market,
+            policyReferences: input.policyReferences,
+            query: input.query,
+            now: input.now,
+          },
+          memory: {
+            intent: memory.intent,
+            riskClass: memory.riskClass,
+            productCategory: memory.productCategory,
+            market: memory.market,
+            policyReferences: memory.policyReferences,
+            normalizedSituation: memory.normalizedSituation,
+            createdAt: memory.createdAt,
+            fullTextRank: memory.fullTextRank,
+          },
+        });
+        if (!exclusionReason && !score?.eligible) exclusionReason = "structured_incompatible";
+        if (!exclusionReason && (score?.totalScore ?? 0) < 70) exclusionReason = "below_threshold";
+        return { memory, score, exclusionReason };
+      }).sort((left, right) => (
+        (right.score?.totalScore ?? 0) - (left.score?.totalScore ?? 0)
+        || right.memory.createdAt.getTime() - left.memory.createdAt.getTime()
+        || left.memory.id.localeCompare(right.memory.id)
+      ));
+      const selected = scored.filter((item) => !item.exclusionReason).slice(0, limit);
+      const selectedIds = new Set(selected.map((item) => item.memory.id));
+      const latencyMs = Math.max(0, Date.now() - startedAt);
+      if (scored.length) {
+        await database.insert(customerServiceCaseRetrievals).values(scored.map((item) => {
+          const selectedIndex = selected.findIndex((candidate) => candidate.memory.id === item.memory.id);
+          const injected = selectedIds.has(item.memory.id);
+          return {
+            attemptId: input.attemptId,
+            caseMemoryId: item.memory.id,
+            rank: injected ? selectedIndex + 1 : null,
+            totalScore: item.score?.totalScore ?? 0,
+            scoreComponents: item.score?.eligible ? item.score.components : {},
+            thresholdPassed: !item.exclusionReason,
+            injected,
+            exclusionReason: item.exclusionReason,
+            latencyMs,
+          };
+        })).onConflictDoNothing();
+      }
+      return selected.map((item) => Object.freeze({
+        id: item.memory.id,
+        normalizedSituation: item.memory.normalizedSituation,
+        humanFinalReply: item.memory.humanFinalReply,
+        score: item.score?.totalScore ?? 0,
+      }));
     },
 
     async createImageJobProviderAttempt(input) {

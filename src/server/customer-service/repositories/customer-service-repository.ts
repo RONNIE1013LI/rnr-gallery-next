@@ -352,6 +352,23 @@ export interface CustomerServiceRepository {
     | Readonly<{ status: "excluded"; caseMemoryId: string; exclusionCodes: readonly string[] }>
     | Readonly<{ status: "already_exists"; caseMemoryId: string }>
   >;
+  retrieveApprovedCaseMemories(input: Readonly<{
+    attemptId: string;
+    intent: string;
+    riskClass: "low" | "medium";
+    productCategory: string | null;
+    market: "NZ" | "AU" | "other" | "unknown";
+    policyReferences: readonly string[];
+    knowledgeVersion: string;
+    query: string;
+    limit: number;
+    now: Date;
+  }>): Promise<readonly Readonly<{
+    id: string;
+    normalizedSituation: string;
+    humanFinalReply: string;
+    score: number;
+  }>[]>;
   createImageJobProviderAttempt(input: Readonly<{
     jobId: string;
     leaseToken: string;

@@ -592,6 +592,37 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     const [memory] = await database.select().from(customerServiceCaseMemories);
     expect(memory).toMatchObject({ eligibilityStatus: "pending_review", intent: "design_process" });
     expect(memory.eligibilityStatus).not.toBe("approved_reusable");
+
+    await database.update(customerServiceCaseMemories).set({
+      eligibilityStatus: "approved_reusable",
+      decidedAt: new Date("2026-08-18T00:03:01.000Z"),
+    }).where(eq(customerServiceCaseMemories.id, memory.id));
+    const retrieved = await repository.retrieveApprovedCaseMemories({
+      attemptId: matched.aiAttemptId!,
+      intent: "design_process",
+      riskClass: "low",
+      productCategory: null,
+      market: "unknown",
+      policyReferences: matched.policyReferences,
+      knowledgeVersion: "test",
+      query: "photos wording theme design process",
+      limit: 3,
+      now: new Date("2026-08-18T00:04:00.000Z"),
+    });
+    expect(retrieved).toEqual([expect.objectContaining({
+      id: memory.id,
+      normalizedSituation: "Customer asks how the design process works.",
+      humanFinalReply: "Please send your photos, wording and theme!",
+      score: expect.any(Number),
+    })]);
+    const audits = await database.select().from(customerServiceCaseRetrievals);
+    expect(audits).toEqual([expect.objectContaining({
+      caseMemoryId: memory.id,
+      attemptId: matched.aiAttemptId,
+      injected: true,
+      thresholdPassed: true,
+      rank: 1,
+    })]);
   });
 
   it("marks a human reply unmatched when multiple pending turns are ambiguous", async () => {
