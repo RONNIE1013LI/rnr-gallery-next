@@ -22,16 +22,23 @@ export function PaymentRequestView({
   return <main id="main-content" className={styles.page}>
     <section className={styles.card} aria-labelledby="payment-request-title">
       <p className={styles.eyebrow}>Secure payment</p>
-      <h1 id="payment-request-title">Payment request</h1>
-      <dl className={styles.summary}>
-        <div><dt>Reference</dt><dd>{request.requestNumber}</dd></div>
-        {request.orderNumber ? <div><dt>Order</dt><dd>{request.orderNumber}</dd></div> : null}
-        <div><dt>Description</dt><dd>{request.description}</dd></div>
-        <div className={styles.total}><dt>Amount to pay</dt><dd>{amount}</dd></div>
-      </dl>
-      {request.status === "pending"
-        ? <PaymentRequestForm amountCents={request.amountCents} currency={request.currency} methods={methods} />
-        : <p className={styles.status} role="status">{statusMessage[request.status]}</p>}
+      <header className={styles.header}>
+        <h1 id="payment-request-title">Payment request</h1>
+        <p className={styles.requestSubhead}>Complete this one-time payment to confirm your order</p>
+      </header>
+      <div className={styles.summaryWrap}>
+        <dl className={styles.summary}>
+          <div><dt>Reference</dt><dd>{request.requestNumber}</dd></div>
+          {request.orderNumber ? <div><dt>Order</dt><dd>{request.orderNumber}</dd></div> : null}
+          <div><dt>Description</dt><dd>{request.description}</dd></div>
+          <div className={styles.total}><dt>Amount to pay</dt><dd>{amount}</dd></div>
+        </dl>
+      </div>
+      {request.status === "pending" ? (
+        <PaymentRequestForm amountCents={request.amountCents} currency={request.currency} methods={methods} />
+      ) : (
+        <p className={styles.status} role="status">{statusMessage[request.status]}</p>
+      )}
     </section>
   </main>;
 }

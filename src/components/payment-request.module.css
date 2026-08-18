@@ -7,10 +7,11 @@
 .card {
   width: min(100%, 42rem);
   margin-inline: auto;
-  padding: clamp(1.5rem, 4vw, 3rem);
+  padding: clamp(1.35rem, 3vw, 2.4rem);
   border: 1px solid var(--border);
   border-radius: 1.5rem;
   background: #fff;
+  box-shadow: 0 20px 40px rgb(23 60 49 / 0.06);
 }
 
 .eyebrow {
@@ -22,13 +23,33 @@
 }
 
 .card h1 {
-  margin-top: 0.65rem;
+  margin-top: 0.35rem;
   font-size: clamp(2rem, 5vw, 3rem);
   letter-spacing: -0.04em;
 }
 
+.header {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.requestSubhead {
+  max-width: 28rem;
+  color: var(--muted);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
 .summary {
   margin-top: 2rem;
+  padding: 1rem;
+  background: color-mix(in srgb, var(--paper) 55%, var(--ivory) 45%);
+  border: 1px solid color-mix(in srgb, var(--border) 78%, var(--ink) 22%);
+  border-radius: 0.95rem;
+}
+
+.summaryWrap {
+  margin-top: 1.35rem;
 }
 
 .summary > div {
@@ -52,20 +73,43 @@
 .summary .total dd {
   color: var(--gallery-green);
   font-size: 1.5rem;
+  font-weight: 750;
+}
+
+.summary .total dt {
+  color: var(--gallery-green-light);
 }
 
 .form,
 .paymentArea {
   margin-top: 2.5rem;
+  padding: 1.2rem;
+  border: 1px solid var(--border);
+  border-radius: 1rem;
+  background: color-mix(in srgb, var(--paper) 68%, white 32%);
+}
+
+.formSection {
+  display: grid;
+  gap: 0.35rem;
+  margin-bottom: 1rem;
 }
 
 .form h2,
 .paymentArea h2 {
-  font-size: 1.35rem;
+  margin: 0;
+  font-size: 1.22rem;
+  letter-spacing: -0.02em;
+}
+
+.formHint {
+  color: var(--muted);
+  font-size: 0.9rem;
+  line-height: 1.45;
 }
 
 .methods {
-  margin-top: 1.5rem;
+  margin-top: 0.25rem;
   padding: 0;
   border: 0;
 }
@@ -79,13 +123,20 @@
 }
 
 .methods label {
+  position: relative;
   min-height: 48px;
   padding: 0.75rem;
   display: flex;
   align-items: center;
   gap: 0.65rem;
   border: 1px solid var(--border);
+  border-radius: 0.78rem;
   cursor: pointer;
+  background: #fff;
+  transition:
+    border-color var(--motion-standard),
+    box-shadow var(--motion-standard),
+    transform var(--motion-standard);
 }
 
 .methods label + label {
@@ -94,11 +145,26 @@
 
 .methods label:has(input:checked) {
   border-color: var(--gallery-green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gallery-green) 16%, transparent);
 }
 
 .methods small {
-  margin-left: 0;
+  margin-left: auto;
   color: var(--muted);
+  text-wrap: nowrap;
+}
+
+.methodLabel {
+  font-weight: 700;
+}
+
+.methodMeta {
+  font-size: 0.77rem;
+  color: var(--muted);
+}
+
+.methods input[type="radio"] {
+  accent-color: var(--gallery-green);
 }
 
 .cardBrands {
@@ -174,7 +240,7 @@
 }
 
 .fields {
-  margin-top: 1.5rem;
+  margin-top: 1.55rem;
   display: grid;
   grid-template-columns: 1fr;
   gap: 1rem;
@@ -201,6 +267,14 @@
   background: #fff;
   color: var(--ink);
   font: inherit;
+  transition: border-color var(--motion-standard), box-shadow var(--motion-standard);
+}
+
+.fields input:focus,
+.fields select:focus {
+  border-color: var(--gallery-green);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--gallery-green) 15%, transparent);
+  outline: none;
 }
 
 .fields .readOnlyCountry {
@@ -218,7 +292,7 @@
 .payButton {
   width: 100%;
   min-height: 52px;
-  margin-top: 1.5rem;
+  margin-top: 1.45rem;
   border: 1px solid var(--gallery-green);
   border-radius: var(--radius-button);
   background: var(--gallery-green);
@@ -226,6 +300,9 @@
   cursor: pointer;
   font: inherit;
   font-weight: 750;
+  font-size: 1rem;
+  letter-spacing: 0.01em;
+  text-transform: none;
 }
 
 .payButton:disabled {
@@ -240,6 +317,19 @@
   color: var(--ink);
   background: #f2eee5;
   line-height: 1.55;
+  border-radius: 0.65rem;
+}
+
+.status {
+  border: 1px solid var(--border);
+}
+
+.message {
+  border: 1px solid color-mix(in srgb, var(--gallery-green) 25%, transparent);
+}
+
+.form .message {
+  margin-top: 1rem;
 }
 
 @media (max-width: 600px) {
@@ -255,5 +345,25 @@
 
   .summary > div {
     gap: 0.3rem;
+  }
+
+  .summary {
+    padding: 0.85rem;
+  }
+
+  .form,
+  .paymentArea {
+    padding: 1rem;
+  }
+
+  .methods label {
+    align-items: flex-start;
+    flex-direction: row;
+  }
+
+  .cardBrands {
+    margin-left: 0;
+    margin-right: auto;
+    margin-top: 0.2rem;
   }
 }

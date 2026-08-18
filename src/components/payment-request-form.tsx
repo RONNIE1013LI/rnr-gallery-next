@@ -147,9 +147,12 @@ export function PaymentRequestForm({
 
   const needsAddress = method === "afterpay";
   return <form className={styles.form} onSubmit={submit}>
-    <h2>Pay securely</h2>
+    <section className={styles.formSection}>
+      <h2>Payment method</h2>
+      <p className={styles.formHint}>Select your preferred payment method and continue.</p>
+    </section>
     <fieldset className={styles.methods}>
-      <legend>Payment method</legend>
+      <legend>Available methods</legend>
       {methods.map((option) => <label key={option.method}>
         <input
           aria-label={option.label}
@@ -159,7 +162,7 @@ export function PaymentRequestForm({
           type="radio"
           value={option.method}
         />
-        <span>{option.label}</span>
+        <span className={styles.methodLabel}>{option.label}</span>
         {option.method === "card" ? <span
           aria-label="Accepted cards: Visa, Mastercard and American Express"
           className={styles.cardBrands}
@@ -179,7 +182,7 @@ export function PaymentRequestForm({
             width={1171}
           />
         </span> : null}
-        {option.isTest ? <small>Test mode</small> : null}
+        {option.isTest ? <small className={styles.methodMeta}>Test mode</small> : null}
       </label>)}
     </fieldset>
     <div className={styles.fields}>
