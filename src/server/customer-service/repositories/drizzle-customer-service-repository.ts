@@ -2215,10 +2215,44 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             ), 0)
             from customer_service_image_jobs jobs
             left join customer_service_image_analysis_attempts image_attempts on image_attempts.id = jobs.image_analysis_attempt_id
-            left join customer_service_ai_attempts text_attempts on text_attempts.id = jobs.text_attempt_id) as image_aware_total_cost_microusd
+            left join customer_service_ai_attempts text_attempts on text_attempts.id = jobs.text_attempt_id) as image_aware_total_cost_microusd,
+          (select count(*) from customer_service_conversation_events where role = 'staff') as total_actual_human_replies,
+          (select count(*) from customer_service_human_reply_matches where status = 'matched') as matched_human_replies,
+          (select count(*) from customer_service_human_reply_matches where status = 'unmatched') as unmatched_human_replies,
+          (select count(*) from customer_service_human_reply_matches where edit_classification = 'accepted_unchanged') as accepted_unchanged_human_replies,
+          (select count(*) from customer_service_human_reply_matches
+            where edit_classification in ('edited_light', 'edited_significant')) as edited_human_replies,
+          (select count(*) from customer_service_human_reply_matches
+            where edit_classification in ('ai_ignored', 'independent_reply')) as independently_written_human_replies,
+          (select count(*) from customer_service_case_memories where eligibility_status = 'approved_reusable') as reusable_case_memories,
+          (select count(*) from customer_service_case_memories
+            where eligibility_status = 'excluded' and exclusion_codes <> '[]'::jsonb) as excluded_high_risk_cases,
+          (select count(*) from customer_service_case_retrievals where injected) as cases_retrieved_in_drafts,
+          (select count(*) from customer_service_learning_candidates where status = 'pending') as learning_candidates_pending,
+          (select count(*) from customer_service_learning_candidates where status = 'approved') as learning_candidates_approved,
+          (select count(*) from customer_service_learning_candidates where status = 'rejected') as learning_candidates_rejected,
+          (select coalesce(jsonb_agg(jsonb_build_object('code', reasons.code, 'count', reasons.reason_count)
+            order by reasons.reason_count desc, reasons.code), '[]'::jsonb)
+            from (
+              select reason.value as code, count(*)::integer as reason_count
+              from customer_service_human_reply_matches matches
+              cross join lateral jsonb_array_elements_text(matches.edit_reason_codes) reason(value)
+              group by reason.value
+              order by reason_count desc, reason.value
+              limit 5
+            ) reasons) as common_edit_reasons
       `);
       const row = result.rows[0] as Record<string, unknown>;
       const count = (name: string) => Number(row[name] ?? 0);
+      const commonEditReasons = Array.isArray(row.common_edit_reasons)
+        ? row.common_edit_reasons.flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const value = item as Record<string, unknown>;
+          return typeof value.code === "string"
+            ? [{ code: value.code, count: Number(value.count ?? 0) }]
+            : [];
+        })
+        : [];
       return {
         totalIncomingEligible: count("total_incoming_eligible"),
         rawCustomerEvents: count("raw_customer_events"),
@@ -2254,6 +2288,19 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         imageAwareRejected: count("image_aware_rejected"),
         imageRequestOriginalRecommendations: count("image_request_original_recommendations"),
         imageAwareTotalCostMicrousd: count("image_aware_total_cost_microusd"),
+        totalActualHumanReplies: count("total_actual_human_replies"),
+        matchedHumanReplies: count("matched_human_replies"),
+        unmatchedHumanReplies: count("unmatched_human_replies"),
+        acceptedUnchangedHumanReplies: count("accepted_unchanged_human_replies"),
+        editedHumanReplies: count("edited_human_replies"),
+        independentlyWrittenHumanReplies: count("independently_written_human_replies"),
+        reusableCaseMemories: count("reusable_case_memories"),
+        excludedHighRiskCases: count("excluded_high_risk_cases"),
+        casesRetrievedInDrafts: count("cases_retrieved_in_drafts"),
+        learningCandidatesPending: count("learning_candidates_pending"),
+        learningCandidatesApproved: count("learning_candidates_approved"),
+        learningCandidatesRejected: count("learning_candidates_rejected"),
+        commonEditReasons,
       };
     },
   };

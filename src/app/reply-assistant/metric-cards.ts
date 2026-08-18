@@ -25,3 +25,43 @@ export function pilotMetricCards(metrics: ImageMetrics) {
     ["Image-aware rejected", percent(metrics.imageAwareRejectionRate)],
   ] as const;
 }
+
+type LearningMetrics = Readonly<{
+  totalActualHumanReplies: number;
+  matchedHumanReplies: number;
+  unmatchedHumanReplies: number;
+  acceptedUnchangedHumanReplies: number;
+  editedHumanReplies: number;
+  independentlyWrittenHumanReplies: number;
+  reusableCaseMemories: number;
+  excludedHighRiskCases: number;
+  casesRetrievedInDrafts: number;
+  learningCandidatesPending: number;
+  learningCandidatesApproved: number;
+  learningCandidatesRejected: number;
+  commonEditReasons: readonly Readonly<{ code: string; count: number }>[];
+}>;
+
+export function learningMetricCards(metrics: LearningMetrics) {
+  return [
+    ["Human replies", metrics.totalActualHumanReplies],
+    ["Matched replies", metrics.matchedHumanReplies],
+    ["Unmatched replies", metrics.unmatchedHumanReplies],
+    ["Accepted unchanged", metrics.acceptedUnchangedHumanReplies],
+    ["Edited replies", metrics.editedHumanReplies],
+    ["AI ignored / independent", metrics.independentlyWrittenHumanReplies],
+    ["Reusable cases", metrics.reusableCaseMemories],
+    ["Excluded high risk", metrics.excludedHighRiskCases],
+    ["Cases used in drafts", metrics.casesRetrievedInDrafts],
+    ["Learning pending", metrics.learningCandidatesPending],
+    ["Learning approved", metrics.learningCandidatesApproved],
+    ["Learning rejected", metrics.learningCandidatesRejected],
+    ["Common edits", metrics.commonEditReasons.length
+      ? metrics.commonEditReasons.map((reason) => `${reasonLabel(reason.code)} (${reason.count})`).join(", ")
+      : "None"],
+  ] as const;
+}
+
+function reasonLabel(code: string) {
+  return code.replaceAll("_", " ");
+}

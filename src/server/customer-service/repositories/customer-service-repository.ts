@@ -187,6 +187,19 @@ export type PilotMetricCounts = Readonly<{
   imageAwareRejected: number;
   imageRequestOriginalRecommendations: number;
   imageAwareTotalCostMicrousd: number;
+  totalActualHumanReplies: number;
+  matchedHumanReplies: number;
+  unmatchedHumanReplies: number;
+  acceptedUnchangedHumanReplies: number;
+  editedHumanReplies: number;
+  independentlyWrittenHumanReplies: number;
+  reusableCaseMemories: number;
+  excludedHighRiskCases: number;
+  casesRetrievedInDrafts: number;
+  learningCandidatesPending: number;
+  learningCandidatesApproved: number;
+  learningCandidatesRejected: number;
+  commonEditReasons: readonly Readonly<{ code: string; count: number }>[];
 }>;
 
 export interface CustomerServiceRepository {

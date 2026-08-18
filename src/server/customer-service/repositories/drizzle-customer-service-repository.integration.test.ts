@@ -623,6 +623,21 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       thresholdPassed: true,
       rank: 1,
     })]);
+    await expect(repository.metricCounts()).resolves.toMatchObject({
+      totalActualHumanReplies: 1,
+      matchedHumanReplies: 1,
+      unmatchedHumanReplies: 0,
+      acceptedUnchangedHumanReplies: 1,
+      editedHumanReplies: 0,
+      independentlyWrittenHumanReplies: 0,
+      reusableCaseMemories: 1,
+      excludedHighRiskCases: 0,
+      casesRetrievedInDrafts: 1,
+      learningCandidatesPending: 0,
+      learningCandidatesApproved: 0,
+      learningCandidatesRejected: 0,
+      commonEditReasons: [],
+    });
   });
 
   it("marks a human reply unmatched when multiple pending turns are ambiguous", async () => {
