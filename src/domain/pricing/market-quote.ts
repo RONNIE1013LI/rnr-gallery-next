@@ -54,13 +54,9 @@ function peoplePetsGross(
       "People / pets price",
     );
   }
-  const five = requiredPrice(
-    book.peoplePets.fees.find((fee) => fee.count === 5)?.amountInclTaxCents,
-    "Five people / pets price",
-  );
-  return five + (count - 5) * requiredPrice(
+  return count * requiredPrice(
     book.peoplePets.additionalEachInclTaxCents,
-    "Additional people / pets price",
+    "Six-plus people / pets per-person price",
   );
 }
 

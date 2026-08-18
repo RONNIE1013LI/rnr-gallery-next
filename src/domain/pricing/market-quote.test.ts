@@ -156,6 +156,24 @@ describe("market configuration quote", () => {
     });
   });
 
+  it("uses the configured six-plus per-person AUD rate", () => {
+    const draft = structuredClone(enabledAustraliaRegistry(false));
+    draft.markets.AU.peoplePets.fees.find((fee) => fee.count === 5)!
+      .amountInclTaxCents = 13_000;
+    draft.markets.AU.peoplePets.additionalEachInclTaxCents = 2_500;
+    const registry = parseProductRegistry(draft);
+
+    const quote = quoteMarketConfiguration(
+      registry,
+      "AU",
+      "digital-oil-painting-canvas",
+      { sizeKey: "a4", peoplePets: 6 },
+    );
+
+    expect(quote.lines.find((line) => line.key === "people-pets"))
+      .toMatchObject({ amountInclGstCents: 15_000 });
+  });
+
   it("extracts AU GST from the fixed gross price without changing it", () => {
     const quote = quoteMarketConfiguration(
       enabledAustraliaRegistry(true),

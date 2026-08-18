@@ -293,7 +293,7 @@ export function ProductRegistryForm({
               </label>
             ))}
             <label>
-              <span>Each person / pet from 6 onward ex GST (NZD)</span>
+              <span>6+ people / pets per-person rate ex GST (NZD)</span>
               <input name="additionalPeoplePetsEach" inputMode="decimal" defaultValue={moneyInput(pricing.additionalPeoplePetsEachExGstCents)} required disabled={pending !== null} />
             </label>
             {pricing.urgentServiceFeesInclGstCents.map((amount, index) => (
@@ -375,7 +375,7 @@ export function ProductRegistryForm({
                 </label>
               ))}
               <label>
-                <span>Each person / pet from 6 onward final price (AUD)</span>
+                <span>6+ people / pets per-person rate (AUD)</span>
                 <input name="au-people-pets-additional" inputMode="decimal" defaultValue={moneyInput(markets.AU.peoplePets.additionalEachInclTaxCents)} disabled={pending !== null} />
               </label>
               {markets.AU.urgentServiceFees.map((fee) => (

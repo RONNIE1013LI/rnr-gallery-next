@@ -121,6 +121,10 @@ describe("product registry editor", () => {
     />);
 
     expect(screen.getByRole("heading", { name: "Australia — AUD" })).toBeInTheDocument();
+    expect(screen.getByLabelText("6+ people / pets per-person rate ex GST (NZD)"))
+      .toBeInTheDocument();
+    expect(screen.getByLabelText("6+ people / pets per-person rate (AUD)"))
+      .toBeInTheDocument();
     expect(screen.getByLabelText("Enable Australia checkout")).toBeDisabled();
     expect(
       within(screen.getByRole("group", { name: "Australia shipping" })).queryAllByRole("textbox"),
