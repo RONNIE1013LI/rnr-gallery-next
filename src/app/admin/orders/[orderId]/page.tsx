@@ -10,12 +10,17 @@ import { getPaymentRequestRuntime } from "@/server/payment-requests/payment-requ
 
 type Props = Readonly<{ params: Promise<{ orderId: string }> }>;
 
+export function canLoadPaymentSummary(paymentStatus: string) {
+  return paymentStatus !== "cancelled" && paymentStatus !== "refunded";
+}
+
 export default async function AdminOrderDetailPage({ params }: Props) {
   const { orderId } = await params;
   const access = await requireAdminPage(`/admin/orders/${encodeURIComponent(orderId)}`, "view_orders");
   const detail = await getAdminOrderRuntime().detail(orderId);
   if (!detail) notFound();
   const paymentSummary = hasAdminPermission(access.adminRole, "manage_payment")
+    && canLoadPaymentSummary(detail.order.paymentStatus)
     ? await getPaymentRequestRuntime().orderSummary(orderId)
     : null;
 

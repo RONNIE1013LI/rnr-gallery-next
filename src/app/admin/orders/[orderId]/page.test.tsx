@@ -1,6 +1,6 @@
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
-import AdminOrderDetailPage from "./page";
+import AdminOrderDetailPage, { canLoadPaymentSummary } from "./page";
 
 const { requireAdminPage, detail, orderSummary } = vi.hoisted(() => ({
   requireAdminPage: vi.fn(),
@@ -21,6 +21,12 @@ vi.mock("next/navigation", () => ({
 }));
 
 describe("admin order detail page", () => {
+  it("does not expose payment controls for terminal orders", () => {
+    expect(canLoadPaymentSummary("cancelled")).toBe(false);
+    expect(canLoadPaymentSummary("refunded")).toBe(false);
+    expect(canLoadPaymentSummary("paid")).toBe(true);
+  });
+
   it("shows immutable order facts, customer data, payments, notes, and operations", async () => {
     requireAdminPage.mockResolvedValue({
       user: { id: "admin-1", email: "owner@example.test" },
