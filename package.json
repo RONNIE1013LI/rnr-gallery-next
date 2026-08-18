@@ -12,7 +12,7 @@
     "test": "vitest",
     "test:run": "vitest run",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "tsx scripts/migrate-database.ts",
     "db:check": "drizzle-kit check",
     "backup:lan": "zsh ops/macos/backup-lan-data.zsh",
     "gallery:import": "tsx scripts/import-wordpress-gallery.ts",
