@@ -39,6 +39,7 @@ describe("admin production job update route", () => {
       requirePermission: vi.fn().mockResolvedValue({
         user: { id: "staff-1", email: "staff@example.test" },
         adminRole: "staff",
+        adminPermissions: ["update_production_jobs"],
       }),
       update,
       trustedOrigin: origin,
@@ -64,6 +65,7 @@ describe("admin production job update route", () => {
       requirePermission: vi.fn().mockResolvedValue({
         user: { id: "admin-1", email: "owner@example.test" },
         adminRole: "admin",
+        adminPermissions: [],
       }),
       update: vi.fn().mockRejectedValue(new ProductionJobConflictError()),
       trustedOrigin: origin,

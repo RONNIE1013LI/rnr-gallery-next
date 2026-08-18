@@ -2,11 +2,16 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { hasAdminPermission, type AdminRole } from "@/server/auth/admin-permissions";
+import { hasAdminPermission, type AdminPermission, type AdminRole } from "@/server/auth/admin-permissions";
 import styles from "./admin.module.css";
 
 type AdminShellProps = Readonly<{
-  administrator: Readonly<{ name: string; email: string; role: AdminRole }>;
+  administrator: Readonly<{
+    name: string;
+    email: string;
+    role: AdminRole;
+    permissions: readonly AdminPermission[];
+  }>;
   children: React.ReactNode;
 }>;
 
@@ -28,15 +33,16 @@ const navigation = [
   { label: "Reply Assistant", href: "/reply-assistant", permission: "use_reply_assistant" },
 ] as const;
 
-function Navigation({ ariaLabel = "Administration", role, onNavigate }: Readonly<{
+function Navigation({ ariaLabel = "Administration", role, permissions, onNavigate }: Readonly<{
   ariaLabel?: string;
   role: AdminRole;
+  permissions: readonly AdminPermission[];
   onNavigate?: () => void;
 }>) {
   return (
     <nav className={styles.navigation} aria-label={ariaLabel}>
       {navigation
-        .filter((item) => hasAdminPermission(role, item.permission))
+        .filter((item) => hasAdminPermission(role, permissions, item.permission))
         .map((item) => (
           <Link href={item.href} key={item.href} onClick={onNavigate}>{item.label}</Link>
         ))}
@@ -78,7 +84,7 @@ export function AdminShell({ administrator, children }: AdminShellProps) {
           <span>R&amp;R Gallery</span>
           <strong>Operations</strong>
         </div>
-        <Navigation role={administrator.role} />
+        <Navigation role={administrator.role} permissions={administrator.permissions} />
         <Link className={styles.publicLink} href="/">View storefront</Link>
       </aside>
 
@@ -99,6 +105,7 @@ export function AdminShell({ administrator, children }: AdminShellProps) {
                 <Navigation
                   ariaLabel="Administration menu"
                   role={administrator.role}
+                  permissions={administrator.permissions}
                   onNavigate={closeMobileMenu}
                 />
               </div>

@@ -13,7 +13,7 @@ function label(value: string) { return value.replaceAll("_", " ").replace(/\b\w/
 
 export default async function ProductionReportPage() {
   const access = await requireAdminPage("/admin/jobs/report", "view_production_reports");
-  const canViewFinance = hasAdminPermission(access.adminRole, "view_production_finance");
+  const canViewFinance = hasAdminPermission(access.adminRole, access.adminPermissions, "view_production_finance");
   const filters = { ...parseProductionJobFilters({ sort: "needed", direction: "asc" }), page: 1, pageSize: 5_000 };
   const result = await getAdminProductionRuntime().list(filters, { canViewFinance });
   const report = buildProductionReport(result.items, new Date(), { canViewFinance });
@@ -25,7 +25,7 @@ export default async function ProductionReportPage() {
     <section className={styles.pageSection}>
       <header className={styles.pageHeader}>
         <div><nav className={styles.breadcrumbs} aria-label="Breadcrumb"><Link href="/admin">Dashboard</Link><span>/</span><Link href="/admin/jobs">Production</Link><span>/</span><span>Report</span></nav><h1>Production report</h1><p>Live operational attention, capacity and status totals. This report does not send customer or staff notifications.</p></div>
-        <div className={styles.headerActions}><Link className={styles.recordCount} href="/admin/jobs">Back to production</Link>{hasAdminPermission(access.adminRole, "export_production_jobs") ? <Link prefetch={false} className={styles.primaryAdminButton} href="/api/admin/jobs/export">Export all CSV</Link> : null}</div>
+        <div className={styles.headerActions}><Link className={styles.recordCount} href="/admin/jobs">Back to production</Link>{hasAdminPermission(access.adminRole, access.adminPermissions, "export_production_jobs") ? <Link prefetch={false} className={styles.primaryAdminButton} href="/api/admin/jobs/export">Export all CSV</Link> : null}</div>
       </header>
 
       <section className={styles.reportMetrics}>{metrics.map(([name, value]) => <article key={name}><span>{name}</span><strong>{value}</strong></article>)}</section>

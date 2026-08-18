@@ -20,7 +20,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 describe("admin production jobs page", () => {
   it("shows linked and manual work in one operational queue with admin finance", async () => {
-    requireAdminPage.mockResolvedValue({ user: { id: "admin-1" }, adminRole: "admin" });
+    requireAdminPage.mockResolvedValue({ user: { id: "admin-1" }, adminRole: "admin", adminPermissions: [] });
     assignees.mockResolvedValue([{ id: "staff-1", name: "Artist", email: "artist@example.test", role: "staff" }]);
     list.mockResolvedValue({
       items: [{
@@ -70,7 +70,7 @@ describe("admin production jobs page", () => {
   });
 
   it("does not render finance values returned as redacted for staff", async () => {
-    requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff" });
+    requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff", adminPermissions: ["view_production_jobs"] });
     assignees.mockResolvedValue([]);
     list.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25, pageCount: 0 });
     render(await AdminProductionJobsPage({ searchParams: Promise.resolve({}) }));

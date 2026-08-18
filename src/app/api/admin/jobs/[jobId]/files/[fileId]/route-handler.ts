@@ -1,6 +1,6 @@
 import { getAdminProductionProofRuntime } from "@/server/admin/admin-production-proof-runtime";
-import { hasAdminPermission, type AdminPermission, type AdminRole } from "@/server/auth/admin-permissions";
-import { requireAdminPermission } from "@/server/auth/require-admin";
+import { hasAdminPermission, type AdminPermission } from "@/server/auth/admin-permissions";
+import { requireAdminPermission, type AdminAccess } from "@/server/auth/require-admin";
 import { HttpError } from "@/server/auth/require-session";
 import {
   ProductionProofForbiddenError,
@@ -9,7 +9,7 @@ import {
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
-type Access = Readonly<{ user: Readonly<{ id: string; email?: string }>; adminRole: AdminRole }>;
+type Access = AdminAccess<Readonly<{ user: Readonly<{ id: string; email?: string }> }>>;
 type ProofRuntime = ReturnType<typeof getAdminProductionProofRuntime>;
 type Dependencies = Readonly<{
   requirePermission: (permission: AdminPermission) => Promise<Access>;
@@ -34,7 +34,7 @@ export function createProductionJobFileRoute(dependencies?: Dependencies) {
         const access = await deps.requirePermission("view_production_files");
         const { jobId, fileId } = await context.params;
         const file = await deps.getPrivateFile(jobId, fileId, {
-          canViewFinance: hasAdminPermission(access.adminRole, "view_production_finance"),
+          canViewFinance: hasAdminPermission(access.adminRole, access.adminPermissions, "view_production_finance"),
         });
         const bytes = await deps.read(file.storageKey);
         const attachment = new URL(request.url).searchParams.get("download") === "1";

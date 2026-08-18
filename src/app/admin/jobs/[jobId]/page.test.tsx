@@ -27,7 +27,7 @@ vi.mock("next/navigation", () => ({
 
 describe("production job detail page", () => {
   it("shows linked order authority, work details, milestones and admin finance", async () => {
-    requireAdminPage.mockResolvedValue({ user: { id: "admin-1" }, adminRole: "admin" });
+    requireAdminPage.mockResolvedValue({ user: { id: "admin-1" }, adminRole: "admin", adminPermissions: [] });
     assignees.mockResolvedValue([]);
     detail.mockResolvedValue({
       job: {

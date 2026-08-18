@@ -1,6 +1,6 @@
 import { eq } from "drizzle-orm";
 
-import { user } from "@/server/db/schema";
+import { adminStaffAccess, formUserAccess, user } from "@/server/db/schema";
 import { HttpError, requireSessionFrom } from "@/server/auth/require-session";
 import {
   hasFormPermission,
@@ -10,6 +10,10 @@ import {
   type FormCapableRole,
   type FormPermission,
 } from "./forms-permissions";
+import {
+  isStaffAccessProfile,
+  type StaffAccessProfile,
+} from "@/server/auth/staff-access-profile";
 
 type SessionWithUser = Readonly<{
   user: Readonly<{ id: string; name?: string; email?: string }>;
@@ -21,13 +25,13 @@ type SessionGetter<T extends SessionWithUser> = (
 
 type StoredFormAccess = Readonly<{
   role: unknown;
-  profile: unknown;
+  profile: FormAccessProfile | StaffAccessProfile | null;
 }>;
 
 export type FormAccess<T extends SessionWithUser = SessionWithUser> = T &
   Readonly<{
     formRole: FormCapableRole;
-    formProfile: FormAccessProfile | null;
+    formProfile: FormAccessProfile | StaffAccessProfile | null;
   }>;
 
 export async function requireFormPermissionFrom<T extends SessionWithUser>(
@@ -38,7 +42,9 @@ export async function requireFormPermissionFrom<T extends SessionWithUser>(
 ): Promise<FormAccess<T>> {
   const session = await requireSessionFrom(getSession, requestHeaders);
   const stored = await findAccess(session.user.id);
-  const profile = isFormAccessProfile(stored.profile) ? stored.profile : null;
+  const profile = stored.role === "staff"
+    ? (isStaffAccessProfile(stored.profile) ? stored.profile : null)
+    : (isFormAccessProfile(stored.profile) ? stored.profile : null);
   if (
     !isFormCapableRole(stored.role) ||
     !hasFormPermission(stored.role, profile, permission)
@@ -53,30 +59,41 @@ export async function requireFormPermissionFrom<T extends SessionWithUser>(
 }
 
 async function accessForUser(userId: string): Promise<StoredFormAccess> {
-  const [{ getDatabase }, { formUserAccess }] = await Promise.all([
-    import("@/server/db/client"),
-    import("@/server/db/schema"),
-  ]);
+  const { getDatabase } = await import("@/server/db/client");
   const [record] = await getDatabase()
     .select({
       role: user.role,
       preset: formUserAccess.preset,
-      assignedOnly: formUserAccess.assignedOnly,
-      permissions: formUserAccess.permissions,
+      presetAssignedOnly: formUserAccess.assignedOnly,
+      presetPermissions: formUserAccess.permissions,
+      adminPermissions: adminStaffAccess.adminPermissions,
+      staffFormPermissions: adminStaffAccess.formPermissions,
+      staffAssignedOnly: adminStaffAccess.assignedOnly,
     })
     .from(user)
     .leftJoin(formUserAccess, eq(formUserAccess.userId, user.id))
+    .leftJoin(adminStaffAccess, eq(adminStaffAccess.userId, user.id))
     .where(eq(user.id, userId))
     .limit(1);
+  const staffProfile = record?.adminPermissions && record.staffFormPermissions
+    ? {
+        adminPermissions: record.adminPermissions,
+        formPermissions: record.staffFormPermissions,
+        assignedOnly: record.staffAssignedOnly ?? false,
+      }
+    : null;
+  const presetProfile = record?.preset && record.presetPermissions
+    ? {
+        preset: record.preset,
+        assignedOnly: record.presetAssignedOnly ?? false,
+        permissions: record.presetPermissions,
+      }
+    : null;
   return {
     role: record?.role ?? null,
-    profile: record?.preset && record.permissions
-      ? {
-          preset: record.preset,
-          assignedOnly: record.assignedOnly ?? false,
-          permissions: record.permissions,
-        }
-      : null,
+    profile: record?.role === "staff"
+      ? (isStaffAccessProfile(staffProfile) ? staffProfile : null)
+      : isFormAccessProfile(presetProfile) ? presetProfile : null,
   };
 }
 

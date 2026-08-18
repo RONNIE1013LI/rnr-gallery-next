@@ -19,7 +19,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
   const access = await requireAdminPage(`/admin/orders/${encodeURIComponent(orderId)}`, "view_orders");
   const detail = await getAdminOrderRuntime().detail(orderId);
   if (!detail) notFound();
-  const paymentSummary = hasAdminPermission(access.adminRole, "manage_payment")
+  const paymentSummary = hasAdminPermission(access.adminRole, access.adminPermissions, "manage_payment")
     && canLoadPaymentSummary(detail.order.paymentStatus)
     ? await getPaymentRequestRuntime().orderSummary(orderId)
     : null;

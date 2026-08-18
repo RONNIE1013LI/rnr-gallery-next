@@ -8,7 +8,7 @@ vi.mock("@/server/admin/admin-production-runtime", () => ({ getAdminProductionRu
 
 describe("production operations report page", () => {
   it("shows attention and workload without finance for staff", async () => {
-    requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff" });
+    requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff", adminPermissions: ["view_production_reports"] });
     list.mockResolvedValue({ items: [{
       id: "job-1", jobNumber: "RNR-1", source: "manual", orderNumber: null,
       customerName: "Customer", customerEmail: "customer@example.com", customerPhone: "021",

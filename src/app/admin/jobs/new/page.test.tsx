@@ -10,7 +10,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
 
 describe("new production job page", () => {
   it("gives staff the manual intake form without restricted finance fields", async () => {
-    requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff" });
+    requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff", adminPermissions: ["create_manual_jobs"] });
     assignees.mockResolvedValue([]);
     render(await NewProductionJobPage());
     expect(requireAdminPage).toHaveBeenCalledWith("/admin/jobs/new", "create_manual_jobs");

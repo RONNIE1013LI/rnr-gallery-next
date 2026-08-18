@@ -15,6 +15,7 @@ export default async function AdminLayout({ children }: Readonly<{ children: Rea
       name: access.user.name ?? access.user.email ?? "Administrator",
       email: access.user.email ?? "Administrator",
       role: access.adminRole,
+      permissions: access.adminPermissions,
     }}>
       {children}
     </AdminShell>

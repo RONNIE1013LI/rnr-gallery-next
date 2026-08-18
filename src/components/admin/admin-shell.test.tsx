@@ -6,7 +6,7 @@ describe("AdminShell", () => {
   it("renders the full operations navigation and current administrator", () => {
     render(
       <AdminShell
-        administrator={{ name: "Ronnie", email: "owner@example.test", role: "admin" }}
+        administrator={{ name: "Ronnie", email: "owner@example.test", role: "admin", permissions: [] }}
       >
         <p>Page content</p>
       </AdminShell>,
@@ -37,20 +37,25 @@ describe("AdminShell", () => {
     expect(screen.getByText("Page content")).toBeInTheDocument();
   });
 
-  it("omits restricted configuration links for staff", () => {
+  it("renders only the stored permissions for staff", () => {
     render(
       <AdminShell
-        administrator={{ name: "Studio Staff", email: "staff@example.test", role: "staff" }}
+        administrator={{
+          name: "Studio Staff",
+          email: "staff@example.test",
+          role: "staff",
+          permissions: ["access_admin", "view_orders"],
+        }}
       >
         <p>Page content</p>
       </AdminShell>,
     );
 
     expect(screen.getByRole("link", { name: "Orders" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Production" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Design Gallery" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Email templates" })).toHaveAttribute("href", "/admin/settings/email-templates");
-    expect(screen.getByRole("link", { name: "Reply Assistant" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Production" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Design Gallery" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Email templates" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Reply Assistant" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Shipping" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Payment" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Payment Requests" })).not.toBeInTheDocument();
@@ -61,7 +66,7 @@ describe("AdminShell", () => {
   it("closes the mobile navigation after a destination is selected", () => {
     render(
       <AdminShell
-        administrator={{ name: "Ronnie", email: "owner@example.test", role: "admin" }}
+        administrator={{ name: "Ronnie", email: "owner@example.test", role: "admin", permissions: [] }}
       >
         <p>Page content</p>
       </AdminShell>,
@@ -80,7 +85,7 @@ describe("AdminShell", () => {
   it("keeps mobile navigation non-modal while preserving Escape close and scroll lock", () => {
     render(
       <AdminShell
-        administrator={{ name: "Ronnie", email: "owner@example.test", role: "admin" }}
+        administrator={{ name: "Ronnie", email: "owner@example.test", role: "admin", permissions: [] }}
       >
         <button type="button">Background action</button>
       </AdminShell>,

@@ -1,11 +1,7 @@
 import { getAdminProductionRuntime } from "@/server/admin/admin-production-runtime";
 import { recordAdminFailure } from "@/server/admin/admin-failure-audit";
-import {
-  hasAdminPermission,
-  type AdminPermission,
-  type AdminRole,
-} from "@/server/auth/admin-permissions";
-import { requireAdminPermission } from "@/server/auth/require-admin";
+import { hasAdminPermission, type AdminPermission } from "@/server/auth/admin-permissions";
+import { requireAdminPermission, type AdminAccess } from "@/server/auth/require-admin";
 import { HttpError } from "@/server/auth/require-session";
 import {
   assertTrustedMutationRequest,
@@ -22,10 +18,7 @@ import {
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
 
-type Access = Readonly<{
-  user: Readonly<{ id: string; email?: string }>;
-  adminRole: AdminRole;
-}>;
+type Access = AdminAccess<Readonly<{ user: Readonly<{ id: string; email?: string }> }>>;
 type ProductionRuntime = ReturnType<typeof getAdminProductionRuntime>;
 type Dependencies = Readonly<{
   requirePermission: (permission: AdminPermission) => Promise<Access>;
@@ -89,6 +82,7 @@ export function createAdminJobsRoute(dependencies?: Dependencies) {
         const result = await deps.list(filters, {
           canViewFinance: hasAdminPermission(
             access.adminRole,
+            access.adminPermissions,
             "view_production_finance",
           ),
         });
@@ -113,6 +107,7 @@ export function createAdminJobsRoute(dependencies?: Dependencies) {
         const result = await deps.createManual(actor, body, {
           canUpdateFinance: hasAdminPermission(
             access.adminRole,
+            access.adminPermissions,
             "update_production_finance",
           ),
         });

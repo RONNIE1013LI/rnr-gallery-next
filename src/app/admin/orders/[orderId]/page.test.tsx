@@ -31,6 +31,7 @@ describe("admin order detail page", () => {
     requireAdminPage.mockResolvedValue({
       user: { id: "admin-1", email: "owner@example.test" },
       adminRole: "admin",
+      adminPermissions: [],
     });
     detail.mockResolvedValue({
       order: {
@@ -159,6 +160,7 @@ describe("admin order detail page", () => {
     requireAdminPage.mockResolvedValue({
       user: { id: "admin-1", email: "owner@example.test" },
       adminRole: "admin",
+      adminPermissions: [],
     });
     detail.mockResolvedValue({
       order: {

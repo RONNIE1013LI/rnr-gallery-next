@@ -19,6 +19,7 @@ export default async function ReplyAssistantLayout({
         name: access.user.name ?? access.user.email ?? "Administrator",
         email: access.user.email ?? "Administrator",
         role: access.adminRole,
+        permissions: access.adminPermissions,
       }}
     >
       {children}

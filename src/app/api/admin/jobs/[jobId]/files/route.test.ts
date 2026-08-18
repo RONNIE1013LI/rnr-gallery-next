@@ -2,7 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { createProductionJobFilesRoute } from "./route-handler";
 
 const jobId = "de31f47e-0fb9-438e-bef6-6bc45556d3bb";
-const access = { user: { id: "user-1", email: "staff@example.com" }, adminRole: "staff" as const };
+const access = {
+  user: { id: "user-1", email: "staff@example.com" },
+  adminRole: "staff" as const,
+  adminPermissions: ["upload_production_files"] as const,
+};
 const reference = {
   id: "e23a9f59-bf54-4bb6-a7d0-9239c14cf819",
   originalName: "draft.jpg", mimeType: "image/jpeg", size: 3,
@@ -79,6 +83,7 @@ describe("production job files route", () => {
       requirePermission: vi.fn().mockResolvedValue({
         user: access.user,
         adminRole: "admin" as const,
+        adminPermissions: [],
       }),
       save,
       remove: vi.fn(),

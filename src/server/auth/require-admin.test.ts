@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { requireAdminFrom } from "./require-admin";
+import { requireAdminFrom, requireAdminPermissionFrom } from "./require-admin";
+import { normalizeStaffAccessProfile } from "./staff-access-profile";
 
 const session = { user: { id: "user-1", email: "owner@example.test" }, session: {} };
 
@@ -34,5 +35,51 @@ describe("requireAdminFrom", () => {
         new Headers(),
       )).rejects.toMatchObject({ status: 403 });
     }
+  });
+});
+
+describe("requireAdminPermissionFrom", () => {
+  it("fails closed when a staff account has no stored access profile", async () => {
+    await expect(requireAdminPermissionFrom(
+      vi.fn().mockResolvedValue(session),
+      vi.fn().mockResolvedValue({ role: "staff", profile: null }),
+      new Headers(),
+      "view_orders",
+    )).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("fails closed when a staff account has an invalid stored access profile", async () => {
+    await expect(requireAdminPermissionFrom(
+      vi.fn().mockResolvedValue(session),
+      vi.fn().mockResolvedValue({
+        role: "staff",
+        profile: {
+          adminPermissions: ["view_orders"],
+          formPermissions: {},
+          assignedOnly: false,
+        },
+      }),
+      new Headers(),
+      "view_orders",
+    )).rejects.toMatchObject({ status: 403 });
+  });
+
+  it("returns only the current staff profile grants", async () => {
+    await expect(requireAdminPermissionFrom(
+      vi.fn().mockResolvedValue(session),
+      vi.fn().mockResolvedValue({
+        role: "staff",
+        profile: normalizeStaffAccessProfile({
+          adminPermissions: ["view_orders"],
+          formPermissions: {},
+          assignedOnly: false,
+        }),
+      }),
+      new Headers(),
+      "view_orders",
+    )).resolves.toMatchObject({
+      adminRole: "staff",
+      adminPermissions: expect.arrayContaining(["view_orders"]),
+    });
   });
 });

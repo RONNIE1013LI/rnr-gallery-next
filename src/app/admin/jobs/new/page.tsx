@@ -18,8 +18,8 @@ export default async function NewProductionJobPage() {
     getSafePublicProductRegistry(),
     getAdminProductionFieldRuntime().list(),
   ]);
-  const canManageFinance = hasAdminPermission(access.adminRole, "update_production_finance");
-  const canUploadFiles = hasAdminPermission(access.adminRole, "upload_production_files");
+  const canManageFinance = hasAdminPermission(access.adminRole, access.adminPermissions, "update_production_finance");
+  const canUploadFiles = hasAdminPermission(access.adminRole, access.adminPermissions, "upload_production_files");
   return (
     <section className={styles.pageSection}>
       <header className={styles.pageHeader}>

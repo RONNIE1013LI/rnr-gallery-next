@@ -1,6 +1,6 @@
 import { getAdminProductionProofRuntime } from "@/server/admin/admin-production-proof-runtime";
-import { hasAdminPermission, type AdminPermission, type AdminRole } from "@/server/auth/admin-permissions";
-import { requireAdminPermission } from "@/server/auth/require-admin";
+import { hasAdminPermission, type AdminPermission } from "@/server/auth/admin-permissions";
+import { requireAdminPermission, type AdminAccess } from "@/server/auth/require-admin";
 import { HttpError } from "@/server/auth/require-session";
 import { parseBoundedMultipartFormData, assertTrustedMultipartMutationRequest } from "@/server/http/multipart-mutation-request";
 import { MutationRequestError } from "@/server/http/mutation-request";
@@ -14,7 +14,7 @@ import { InvalidUploadError, type PrivateUploadReference } from "@/server/upload
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
-type Access = Readonly<{ user: Readonly<{ id: string; email?: string }>; adminRole: AdminRole }>;
+type Access = AdminAccess<Readonly<{ user: Readonly<{ id: string; email?: string }> }>>;
 type ProofRuntime = ReturnType<typeof getAdminProductionProofRuntime>;
 type Dependencies = Readonly<{
   requirePermission: (permission: AdminPermission) => Promise<Access>;
@@ -69,7 +69,7 @@ export function createProductionJobFilesRoute(dependencies?: Dependencies) {
               file: form.get("file"),
             }));
         const { kind, idempotencyKey, file } = parsed;
-        const canManageFinance = hasAdminPermission(access.adminRole, "update_production_finance");
+        const canManageFinance = hasAdminPermission(access.adminRole, access.adminPermissions, "update_production_finance");
         if (kind === "payment_proof" && !canManageFinance) {
           throw new ProductionProofForbiddenError();
         }

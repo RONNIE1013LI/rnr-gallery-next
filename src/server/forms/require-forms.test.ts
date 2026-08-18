@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { buildFormAccessProfile } from "./forms-permissions";
 import { requireFormPermissionFrom } from "./require-forms";
+import { normalizeStaffAccessProfile } from "@/server/auth/staff-access-profile";
 
 const session = {
   user: { id: "forms-user-1", email: "operator@example.test" },
@@ -47,6 +48,25 @@ describe("requireFormPermissionFrom", () => {
         vi.fn().mockResolvedValue(access),
         new Headers(),
         "update_jobs",
+      )).rejects.toMatchObject({ status: 403 });
+    }
+  });
+
+  it("allows Staff only the Forms permissions in its stored profile", async () => {
+    const profile = normalizeStaffAccessProfile({
+      adminPermissions: [],
+      formPermissions: { view_jobs: true },
+      assignedOnly: false,
+    });
+    const findAccess = vi.fn().mockResolvedValue({ role: "staff", profile });
+
+    await expect(requireFormPermissionFrom(
+      vi.fn().mockResolvedValue(session), findAccess, new Headers(), "view_jobs",
+    )).resolves.toMatchObject({ formRole: "staff", formProfile: profile });
+
+    for (const permission of ["view_finance", "view_customer_contact"] as const) {
+      await expect(requireFormPermissionFrom(
+        vi.fn().mockResolvedValue(session), findAccess, new Headers(), permission,
       )).rejects.toMatchObject({ status: 403 });
     }
   });

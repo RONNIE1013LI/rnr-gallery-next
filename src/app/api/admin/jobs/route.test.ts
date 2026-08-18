@@ -36,6 +36,7 @@ describe("admin production jobs route", () => {
       requirePermission: vi.fn().mockResolvedValue({
         user: { id: "staff-1", email: "staff@example.test" },
         adminRole: "staff",
+        adminPermissions: ["view_production_jobs"],
       }),
       list,
       createManual: vi.fn(),
@@ -66,6 +67,7 @@ describe("admin production jobs route", () => {
       requirePermission: vi.fn().mockResolvedValue({
         user: { id: "admin-1", email: "owner@example.test" },
         adminRole: "admin",
+        adminPermissions: [],
       }),
       list: vi.fn(),
       createManual,
@@ -90,6 +92,7 @@ describe("admin production jobs route", () => {
       requirePermission: vi.fn().mockResolvedValue({
         user: { id: "staff-1", email: "staff@example.test" },
         adminRole: "staff",
+        adminPermissions: [],
       }),
       list: vi.fn(),
       createManual,
