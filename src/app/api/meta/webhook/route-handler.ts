@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
 import { createMetaWebhookHandlers } from "@/server/customer-service/meta/webhook-handler";
 import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
+import compiledKnowledge from "@/server/customer-service/knowledge/compiled-knowledge.json";
 
 const config = parseCustomerServiceConfig();
 const handlers = createMetaWebhookHandlers({
@@ -19,6 +20,10 @@ const handlers = createMetaWebhookHandlers({
     if (!runner) throw new Error("customer_service_image_jobs_unavailable");
     return runner.runOnce({ jobId });
   },
+  recoverHumanReplies: (input) => createCustomerServiceRuntime().repository.recoverDueHumanReplies({
+    ...input,
+    knowledgeVersion: compiledKnowledge.knowledgeVersion,
+  }),
   scheduleAfter: (task) => after(task),
 });
 

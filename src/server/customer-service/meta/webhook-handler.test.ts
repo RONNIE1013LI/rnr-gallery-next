@@ -47,7 +47,7 @@ function setup(ingestResult:
     messageId: "internal-1",
     turnId: "turn-1",
     debounceUntil: new Date("2026-08-17T00:00:02.000Z"),
-  }) {
+  }, withRecovery = false) {
   const events: string[] = [];
   const scheduledTasks: Array<() => Promise<void>> = [];
   const ingest = vi.fn(async () => { events.push("persist:commit"); return ingestResult; });
@@ -60,6 +60,7 @@ function setup(ingestResult:
   }));
   const waitUntil = vi.fn(async () => undefined);
   const kickImageJob = vi.fn(async () => undefined);
+  const recoverHumanReplies = vi.fn(async () => ({ selected: 0, matched: 0, unmatched: 0 }));
   const scheduleAfter = vi.fn((task: () => Promise<void>) => { events.push("after:schedule"); scheduledTasks.push(task); });
   return {
     events,
@@ -69,6 +70,7 @@ function setup(ingestResult:
     sealTurn,
     waitUntil,
     kickImageJob,
+    recoverHumanReplies,
     scheduleAfter,
     handlers: createMetaWebhookHandlers({
       config,
@@ -77,6 +79,7 @@ function setup(ingestResult:
       waitUntil,
       generateDraft,
       kickImageJob,
+      ...(withRecovery ? { recoverHumanReplies } : {}),
       scheduleAfter,
       createJobId: () => "00000000-0000-4000-8000-000000000101",
       now: () => new Date("2026-08-17T00:00:00.000Z"),
@@ -109,7 +112,7 @@ describe("Meta webhook handler", () => {
   });
 
   it("persists staff echoes as context without scheduling a draft", async () => {
-    const current = setup({ status: "context_only" });
+    const current = setup({ status: "context_only" }, true);
     const echo = messagePayload({ is_echo: true });
     echo.entry[0].messaging[0].sender.id = "page-1";
     Object.assign(echo.entry[0].messaging[0], { recipient: { id: "customer-1" } });
@@ -123,7 +126,20 @@ describe("Meta webhook handler", () => {
       learningEligible: true,
     }));
     expect(current.scheduleAfter).not.toHaveBeenCalled();
+    expect(current.recoverHumanReplies).not.toHaveBeenCalled();
     expect(current.generateDraft).not.toHaveBeenCalled();
+  });
+
+  it("uses customer incoming events to recover interrupted human reply groups", async () => {
+    const current = setup(undefined, true);
+    expect((await current.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
+    expect(current.scheduledTasks).toHaveLength(2);
+    await current.scheduledTasks[1]();
+    expect(current.recoverHumanReplies).toHaveBeenCalledWith({
+      now: expect.any(Date),
+      groupWindowMs: 90_000,
+      limit: 25,
+    });
   });
 
   it("does not generate when a delayed customer turn became terminal after a human reply", async () => {

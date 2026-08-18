@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, max, or, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import {
   customerServiceAiAttempts,
@@ -38,6 +38,7 @@ import { classifyHumanEdit } from "../learning/edit-classifier";
 import { assessCaseMemoryEligibility } from "../learning/case-memory";
 import { sanitizeCaseMemoryText } from "../learning/case-memory-sanitizer";
 import { scoreCaseMemory } from "../learning/case-retrieval";
+import { buildLearningSummary } from "../learning/learning-summary";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -380,7 +381,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     return { selected: claimed.length, deleted, failed };
   }
 
-  return {
+  const repository: CustomerServiceRepository = {
     async ingestConversationEvent(input: HashedConversationEvent) {
       return database.transaction(async (transaction) => {
         const insertedConversation = await transaction.insert(customerServiceConversations).values({
@@ -1698,7 +1699,18 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           .where(eq(customerServiceHumanReplyMatches.id, input.matchId)).limit(1).for("update");
         if (!group) throw new Error("customer_service_human_reply_match_not_found");
         if (group.status !== "pending") return { status: "already_terminal" as const };
-        if (input.now.getTime() < group.lastOutboundAt.getTime() + 90_000) {
+        const [interruption] = await transaction.select({ id: customerServiceConversationEvents.id })
+          .from(customerServiceConversationEvents).where(and(
+            eq(customerServiceConversationEvents.conversationId, group.conversationId),
+            eq(customerServiceConversationEvents.eventType, "customer_message"),
+            sql`${customerServiceConversationEvents.receivedAt} > ${group.lastOutboundAt}`,
+            lte(customerServiceConversationEvents.receivedAt, input.now),
+          )).limit(1);
+        const groupWindowMs = input.groupWindowMs ?? 90_000;
+        if (!Number.isSafeInteger(groupWindowMs) || groupWindowMs < 10_000 || groupWindowMs > 120_000) {
+          throw new Error("customer_service_human_reply_group_window_invalid");
+        }
+        if (input.now.getTime() < group.lastOutboundAt.getTime() + groupWindowMs && !interruption) {
           return { status: "not_due" as const };
         }
         await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + group.conversationId}))`);
@@ -1807,6 +1819,58 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         ));
         return { status: "matched" as const, classification: edit.classification };
       });
+    },
+
+    async recoverDueHumanReplies(input) {
+      const limit = Math.max(1, Math.min(100, Math.trunc(input.limit)));
+      if (!Number.isSafeInteger(input.groupWindowMs) || input.groupWindowMs < 10_000 || input.groupWindowMs > 120_000) {
+        throw new Error("customer_service_human_reply_group_window_invalid");
+      }
+      const cutoff = new Date(input.now.getTime() - input.groupWindowMs);
+      const due = await database.select({ id: customerServiceHumanReplyMatches.id })
+        .from(customerServiceHumanReplyMatches).where(and(
+          eq(customerServiceHumanReplyMatches.status, "pending"),
+          or(
+            lte(customerServiceHumanReplyMatches.lastOutboundAt, cutoff),
+            sql`exists (
+              select 1 from ${customerServiceConversationEvents} interruption
+              where interruption.conversation_id = ${customerServiceHumanReplyMatches.conversationId}
+                and interruption.event_type = 'customer_message'
+                and interruption.received_at > ${customerServiceHumanReplyMatches.lastOutboundAt}
+                and interruption.received_at <= ${input.now}
+            )`,
+          ),
+        )).orderBy(asc(customerServiceHumanReplyMatches.lastOutboundAt)).limit(limit);
+      let matched = 0;
+      let unmatched = 0;
+      for (const item of due) {
+        const result = await repository.matchHumanReply({
+          matchId: item.id,
+          now: input.now,
+          groupWindowMs: input.groupWindowMs,
+        });
+        if (result.status === "matched") matched += 1;
+        if (result.status === "unmatched") unmatched += 1;
+        if (result.status === "matched") {
+          const [source] = await database.select({ body: customerServiceMessages.body })
+            .from(customerServiceHumanReplyMatches)
+            .innerJoin(customerServiceTurns, eq(customerServiceTurns.id, customerServiceHumanReplyMatches.turnId))
+            .innerJoin(customerServiceMessages, eq(customerServiceMessages.id, customerServiceTurns.representativeMessageId))
+            .where(eq(customerServiceHumanReplyMatches.id, item.id)).limit(1);
+          if (source) {
+            await repository.createCaseMemoryCandidate({
+              matchId: item.id,
+              customerSituation: source.body,
+              customerTurnSummary: source.body,
+              productCategory: null,
+              market: "unknown",
+              deadlineContext: null,
+              knowledgeVersion: input.knowledgeVersion,
+            });
+          }
+        }
+      }
+      return { selected: due.length, matched, unmatched };
     },
 
     async createCaseMemoryCandidate(input) {
@@ -1978,20 +2042,80 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       return Object.freeze({ items: Object.freeze(rows.map((row) => Object.freeze(row))) });
     },
 
+    async refreshLearningCandidates(input = {}) {
+      const minimumMatchedReplies = input.minimumMatchedReplies ?? 50;
+      if (!Number.isSafeInteger(minimumMatchedReplies) || minimumMatchedReplies < 3 || minimumMatchedReplies > 1_000) {
+        throw new Error("learning_summary_threshold_invalid");
+      }
+      const [countRow] = await database.select({ value: sql<number>`count(*)::int` })
+        .from(customerServiceHumanReplyMatches)
+        .where(eq(customerServiceHumanReplyMatches.status, "matched"));
+      const checkpoint = Math.floor((countRow?.value ?? 0) / minimumMatchedReplies) * minimumMatchedReplies;
+      if (!checkpoint) return { checkpoint: 0, created: 0 };
+      const cases = await database.select({
+        caseId: customerServiceCaseMemories.id,
+        conversationKeyHash: customerServiceHumanReplyMatches.conversationId,
+        intent: customerServiceCaseMemories.intent,
+        editReasonCodes: customerServiceCaseMemories.editReasonCodes,
+      }).from(customerServiceCaseMemories)
+        .innerJoin(customerServiceHumanReplyMatches, eq(
+          customerServiceHumanReplyMatches.id,
+          customerServiceCaseMemories.humanReplyMatchId,
+        ))
+        .where(eq(customerServiceCaseMemories.eligibilityStatus, "pending_review"))
+        .orderBy(asc(customerServiceCaseMemories.createdAt))
+        .limit(checkpoint);
+      const summary = buildLearningSummary(cases.map((item) => ({
+        ...item,
+        approvedLowRisk: true,
+      })), minimumMatchedReplies);
+      if (!summary?.candidates.length) return { checkpoint, created: 0 };
+      const created = await database.insert(customerServiceLearningCandidates).values(
+        summary.candidates.map((candidate) => ({
+          candidateKind: candidate.candidateKind,
+          intent: candidate.intent,
+          proposedChange: candidate.proposedChange,
+          evidenceCount: candidate.evidenceCount,
+          distinctCaseCount: candidate.distinctCaseCount,
+          reasonCodes: candidate.reasonCodes,
+          sourceCaseMemoryIds: candidate.sourceCaseMemoryIds,
+          evidenceSignature: candidate.evidenceSignature,
+          status: "pending" as const,
+        })),
+      ).onConflictDoNothing().returning({ id: customerServiceLearningCandidates.id });
+      return { checkpoint, created: created.length };
+    },
+
     async decideLearningCandidate(input) {
       const nextStatus = input.action === "reject" ? "rejected" as const : "approved" as const;
-      const updated = await database.update(customerServiceLearningCandidates).set({
-        status: nextStatus,
-        approvedText: input.action === "edit_and_approve" ? input.approvedText : null,
-        reviewerUserId: input.reviewerUserId,
-        decisionReason: input.reason,
-        decidedAt: input.now,
-      }).where(and(
-        eq(customerServiceLearningCandidates.id, input.candidateId),
-        eq(customerServiceLearningCandidates.status, "pending"),
-      )).returning({ id: customerServiceLearningCandidates.id });
-      if (!updated.length) throw new Error("customer_service_learning_candidate_transition_invalid");
-      return { status: nextStatus };
+      return database.transaction(async (transaction) => {
+        const [candidate] = await transaction.select().from(customerServiceLearningCandidates)
+          .where(eq(customerServiceLearningCandidates.id, input.candidateId)).limit(1).for("update");
+        if (!candidate || candidate.status !== "pending") {
+          throw new Error("customer_service_learning_candidate_transition_invalid");
+        }
+        await transaction.update(customerServiceLearningCandidates).set({
+          status: nextStatus,
+          approvedText: input.action === "edit_and_approve" ? input.approvedText : null,
+          reviewerUserId: input.reviewerUserId,
+          decisionReason: input.reason,
+          decidedAt: input.now,
+        }).where(and(
+          eq(customerServiceLearningCandidates.id, input.candidateId),
+          eq(customerServiceLearningCandidates.status, "pending"),
+        ));
+        if (nextStatus === "approved" && candidate.sourceCaseMemoryIds.length) {
+          await transaction.update(customerServiceCaseMemories).set({
+            eligibilityStatus: "approved_reusable",
+            approvedByUserId: input.reviewerUserId,
+            decidedAt: input.now,
+          }).where(and(
+            inArray(customerServiceCaseMemories.id, [...candidate.sourceCaseMemoryIds]),
+            eq(customerServiceCaseMemories.eligibilityStatus, "pending_review"),
+          ));
+        }
+        return { status: nextStatus };
+      });
     },
 
     async createImageJobProviderAttempt(input) {
@@ -2304,4 +2428,5 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       };
     },
   };
+  return repository;
 }

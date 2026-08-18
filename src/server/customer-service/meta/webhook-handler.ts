@@ -44,6 +44,7 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
   waitUntil?: (deadline: Date) => Promise<void>;
   generateDraft: (messageId: string) => Promise<unknown>;
   kickImageJob: (jobId: string) => Promise<unknown>;
+  recoverHumanReplies?: (input: Readonly<{ now: Date; groupWindowMs: number; limit: number }>) => Promise<unknown>;
   scheduleAfter: (task: () => Promise<void>) => void;
   createJobId?: () => string;
   now?: () => Date;
@@ -86,7 +87,9 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
       }
 
       const adapter = createFacebookChannelAdapter();
+      let sawCustomerEvent = false;
       for (const message of adapter.normalize(payload)) {
+        if (message.role === "customer") sawCustomerEvent = true;
         const outbound = message.role === "staff" && message.text !== null
           ? sanitizeHumanOutboundText(message.text)
           : null;
@@ -148,6 +151,19 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
             }
           });
         }
+      }
+      if (sawCustomerEvent && dependencies.recoverHumanReplies) {
+        dependencies.scheduleAfter(async () => {
+          try {
+            await dependencies.recoverHumanReplies!({
+              now: now(),
+              groupWindowMs: dependencies.config.humanReplyGroupMs ?? 90_000,
+              limit: 25,
+            });
+          } catch {
+            // A later webhook or protected page load retries durable pending groups.
+          }
+        });
       }
       return new Response(null, { status: 200 });
     },

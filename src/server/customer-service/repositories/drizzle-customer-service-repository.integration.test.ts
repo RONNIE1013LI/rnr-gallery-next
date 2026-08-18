@@ -20,6 +20,7 @@ import {
   customerServiceMessages,
   customerServicePilotRuns,
   customerServiceTurns,
+  user,
 } from "@/server/db/schema";
 import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
 import { createDrizzleCustomerServiceRepository } from "./drizzle-customer-service-repository";
@@ -542,6 +543,50 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     ]);
   });
 
+  it("recovers overdue groups once under concurrent recovery workers", async () => {
+    const conversationHash = "4a".repeat(32);
+    const incoming = await repository.ingestConversationEvent({
+      channel: "facebook", role: "customer", externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "4b".repeat(32), text: "How does the design process work?",
+      attachments: [], imageJob: null, receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    await repository.ingestConversationEvent({
+      channel: "facebook", role: "staff", eventType: "human_outbound",
+      externalConversationKeyHash: conversationHash, externalMessageKeyHash: "4c".repeat(32),
+      text: "Please send your photos and wording.", bodyHash: "4d".repeat(32),
+      redactionCodes: [], learningEligible: true, replyToExternalMessageKeyHash: "4b".repeat(32),
+      attachments: [], imageJob: null, receivedAt: new Date("2026-08-18T00:00:05.000Z"),
+    });
+
+    const results = await Promise.all([
+      repository.recoverDueHumanReplies({ now: new Date("2026-08-18T00:01:35.000Z"), groupWindowMs: 90_000, limit: 10, knowledgeVersion: "test" }),
+      repository.recoverDueHumanReplies({ now: new Date("2026-08-18T00:01:35.000Z"), groupWindowMs: 90_000, limit: 10, knowledgeVersion: "test" }),
+    ]);
+    expect(results.reduce((sum, result) => sum + result.matched, 0)).toBe(1);
+    const [group] = await database.select().from(customerServiceHumanReplyMatches);
+    expect(group.status).toBe("matched");
+  });
+
+  it("recovers a group immediately when a new customer event interrupts it", async () => {
+    const conversationHash = "4e".repeat(32);
+    await repository.ingestConversationEvent({
+      channel: "facebook", role: "staff", eventType: "human_outbound",
+      externalConversationKeyHash: conversationHash, externalMessageKeyHash: "4f".repeat(32),
+      text: "Which size would you like?", bodyHash: "50".repeat(32), redactionCodes: [],
+      learningEligible: true, replyToExternalMessageKeyHash: null,
+      attachments: [], imageJob: null, receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    await repository.ingestConversationEvent({
+      channel: "facebook", role: "customer", externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "5a".repeat(32), text: "A1 please",
+      attachments: [], imageJob: null, receivedAt: new Date("2026-08-18T00:00:05.000Z"),
+    });
+    await expect(repository.recoverDueHumanReplies({
+      now: new Date("2026-08-18T00:00:06.000Z"), groupWindowMs: 90_000, limit: 10, knowledgeVersion: "test",
+    })).resolves.toMatchObject({ selected: 1, unmatched: 1 });
+  });
+
   it("matches one eligible turn against every completed draft and remains terminal on rematch", async () => {
     await activateFacebookPilot("human-reply-match");
     const conversationHash = "51".repeat(32);
@@ -661,6 +706,57 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     const [group] = await database.select().from(customerServiceHumanReplyMatches);
     await expect(repository.matchHumanReply({ matchId: group.id, now: new Date("2026-08-18T00:08:00.000Z") }))
       .resolves.toEqual({ status: "unmatched" });
+  });
+
+  it("creates pending learning candidates and promotes source cases only after admin approval", async () => {
+    await activateFacebookPilot("learning-candidate-review");
+    for (let index = 0; index < 3; index += 1) {
+      const conversationHash = `${70 + index}`.repeat(32);
+      const incoming = await repository.ingestConversationEvent({
+        channel: "facebook", role: "customer", externalConversationKeyHash: conversationHash,
+        externalMessageKeyHash: `${80 + index}`.repeat(32), text: "How does the design process work?",
+        attachments: [], imageJob: null, receivedAt: new Date(`2026-08-18T00:0${index}:00.000Z`),
+      });
+      if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+      await repository.sealDueCustomerTurn({ turnId: incoming.turnId, now: new Date(`2026-08-18T00:0${index}:03.000Z`) });
+      await database.insert(customerServiceAiAttempts).values({
+        messageId: incoming.messageId, attemptNumber: 1, trigger: "webhook_after",
+        intent: "design_process", riskLevel: "low", gateResult: "allowed",
+        knowledgeVersion: "test", knowledgeSources: ["DESIGN-01"], status: "draft_ready",
+        providerCalled: true, provider: "mock", model: "mock", draftText: "A short unrelated draft.",
+        completedAt: new Date(`2026-08-18T00:0${index}:04.000Z`),
+      });
+      await repository.ingestConversationEvent({
+        channel: "facebook", role: "staff", eventType: "human_outbound",
+        externalConversationKeyHash: conversationHash, externalMessageKeyHash: `${90 + index}`.repeat(32),
+        replyToExternalMessageKeyHash: `${80 + index}`.repeat(32),
+        text: "Please send your photos, wording and theme so we can prepare your draft.",
+        bodyHash: `${60 + index}`.repeat(32), redactionCodes: [], learningEligible: true,
+        attachments: [], imageJob: null, receivedAt: new Date(`2026-08-18T00:0${index}:05.000Z`),
+      });
+    }
+
+    await repository.recoverDueHumanReplies({
+      now: new Date("2026-08-18T00:04:00.000Z"), groupWindowMs: 90_000, limit: 10,
+      knowledgeVersion: "test",
+    });
+    await expect(repository.refreshLearningCandidates({ minimumMatchedReplies: 3 }))
+      .resolves.toMatchObject({ checkpoint: 3, created: 1 });
+    const [candidate] = await database.select().from(customerServiceLearningCandidates);
+    expect(candidate).toMatchObject({ status: "pending", evidenceCount: 3 });
+    const pending = await database.select().from(customerServiceCaseMemories);
+    expect(pending.every((memory) => memory.eligibilityStatus === "pending_review")).toBe(true);
+
+    await database.insert(user).values({
+      id: "phase36-reviewer", name: "Phase 36 Reviewer", email: "phase36-reviewer@example.test",
+      emailVerified: true, createdAt: new Date(), updatedAt: new Date(),
+    }).onConflictDoNothing();
+    await expect(repository.decideLearningCandidate({
+      candidateId: candidate.id, reviewerUserId: "phase36-reviewer", action: "approve",
+      approvedText: null, reason: null, now: new Date("2026-08-18T00:05:00.000Z"),
+    })).resolves.toEqual({ status: "approved" });
+    const approved = await database.select().from(customerServiceCaseMemories);
+    expect(approved.every((memory) => memory.eligibilityStatus === "approved_reusable")).toBe(true);
   });
 
   it("does not suppress another customer's turn when echoes arrive concurrently", async () => {

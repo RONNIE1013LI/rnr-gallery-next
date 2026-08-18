@@ -343,7 +343,7 @@ export interface CustomerServiceRepository {
     | Readonly<{ status: "allowed" }>
     | Readonly<{ status: "human_reply_received" }>
   >;
-  matchHumanReply(input: Readonly<{ matchId: string; now: Date }>): Promise<
+  matchHumanReply(input: Readonly<{ matchId: string; now: Date; groupWindowMs?: number }>): Promise<
     | Readonly<{ status: "not_due" }>
     | Readonly<{ status: "already_terminal" }>
     | Readonly<{ status: "unmatched" }>
@@ -351,6 +351,15 @@ export interface CustomerServiceRepository {
       status: "matched";
       classification: "accepted_unchanged" | "edited_light" | "edited_significant" | "ai_ignored" | "independent_reply";
     }>
+  >;
+  recoverDueHumanReplies(input: Readonly<{
+    now: Date;
+    groupWindowMs: number;
+    limit: number;
+    knowledgeVersion: string;
+  }>): Promise<Readonly<{ selected: number; matched: number; unmatched: number }>>;
+  refreshLearningCandidates(input?: Readonly<{ minimumMatchedReplies?: number }>): Promise<
+    Readonly<{ checkpoint: number; created: number }>
   >;
   createCaseMemoryCandidate(input: Readonly<{
     matchId: string;

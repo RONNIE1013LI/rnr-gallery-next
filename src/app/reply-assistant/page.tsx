@@ -4,6 +4,7 @@ import { parseCustomerServiceConfig } from "@/server/customer-service/config";
 import { calculatePilotMetrics } from "@/server/customer-service/metrics";
 import type { SafeQueuePage } from "@/server/customer-service/repositories/customer-service-repository";
 import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
+import compiledKnowledge from "@/server/customer-service/knowledge/compiled-knowledge.json";
 import styles from "./reply-assistant.module.css";
 import { LearningCandidateReview } from "./learning-candidate-review";
 import { learningMetricCards, pilotMetricCards } from "./metric-cards";
@@ -15,6 +16,15 @@ export default async function ReplyAssistantPage() {
   const config = parseCustomerServiceConfig();
   const runtime = config.enabled ? createCustomerServiceRuntime() : null;
   const emptyQueue: SafeQueuePage = { items: [] };
+  if (runtime) {
+    await runtime.repository.recoverDueHumanReplies({
+      now: new Date(),
+      groupWindowMs: config.humanReplyGroupMs,
+      limit: 25,
+      knowledgeVersion: compiledKnowledge.knowledgeVersion,
+    });
+    await runtime.repository.refreshLearningCandidates();
+  }
   const [queue, rawMetrics, learningCandidates] = runtime
     ? await Promise.all([
       runtime.repository.listQueue(100),
