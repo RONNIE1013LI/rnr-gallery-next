@@ -2,7 +2,7 @@
 
 ## Release state
 
-**NOT READY TO DEPLOY.** Production is **NOT DEPLOYED**. Automated verification passed after correcting three stale test fixtures, but required authenticated desktop and 390px browser validation was not run because `http://192.168.4.199:3000` is serving a different worktree. The verifier did not interrupt that service.
+**NOT READY TO DEPLOY.** Production is **NOT DEPLOYED**. Automated verification passed after correcting three stale test fixtures in commit `0bb1f82`, but required authenticated desktop and 390px browser validation was not run because `http://192.168.4.199:3000` is serving a different worktree. The verifier did not interrupt that service.
 
 The implementation baseline was `512336a` (`test: require exact forms finance and file grants`), based on `76d146f`. Migration `0034_admin_staff_access` was applied successfully through the guarded runner to the isolated test database only. No Production migration, deployment, push, or Production account creation occurred.
 
@@ -23,12 +23,14 @@ The implementation baseline was `512336a` (`test: require exact forms finance an
 
 ## Browser validation
 
-Not run. Port 3000 was owned by the `payment-adapters` worktree, not this worktree. Therefore the following remain unverified locally: Users list/create/detail permissions, 390px layout and Amount edit flow, restricted employee navigation, direct Admin/Forms denials, and no Production employee creation.
+Not run. Port 3000 is owned by the `payment-adapters` worktree: parent PID `1142` runs `npm run dev --webpack --hostname 0.0.0.0 --port 3000`, and the listener is PID `1410`. Its public page and `/api/auth/get-session` both return HTTP 200, but its `.env.local` lacks the Better Auth values required to reconstruct that authenticated process. Stopping it would therefore risk an incomplete restoration. The verifier did not interrupt it.
+
+The following remain unverified locally: Users list/create/detail permissions, 390px layout and Amount edit flow, restricted employee navigation, direct Admin/Forms denials, and no Production employee creation.
 
 ## Release-boundary audit
 
-`git diff --name-only 76d146f..HEAD` contained 97 versioned files covering the approved implementation, migration `0034`, tests, and plan/task evidence. `git diff --check 76d146f..HEAD` and the current-worktree `git diff --check` both exited 0. The tracked-file name audit for `.env`, `secret`, `credential`, and `.tmp` patterns returned no matches; no file contents were read. Three test-fixture corrections remain uncommitted by the Task 8 commit boundary.
+`git diff --name-only 76d146f..HEAD` contained 97 versioned files before the verification documentation and fixture commits, covering the approved implementation, migration `0034`, tests, and plan/task evidence. `git diff --check 76d146f..HEAD` and the current-worktree `git diff --check` both exited 0. The tracked-file name audit for `.env`, `secret`, `credential`, and `.tmp` patterns returned no matches; no file contents were read. The three test-fixture corrections are committed in `0bb1f82`.
 
 ## Remaining release checks
 
-Before deployment, serve this exact commit at the official LAN URL and complete the browser checks above with test-only accounts. Re-run the automated gates from the release commit. Do not run Production migration or deploy without separate explicit approval.
+Before deployment, arrange an explicit handoff or restart procedure for the authenticated `payment-adapters` LAN process, then serve this exact commit at the official LAN URL and complete the browser checks above with test-only accounts. Re-run the automated gates from the release commit. Do not run Production migration or deploy without separate explicit approval.
