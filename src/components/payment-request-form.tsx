@@ -201,8 +201,10 @@ export function PaymentRequestForm({
           onChange={updateAddressFromGoogle}
           value={googleAddressValue}
         /> : <label><span>Street address</span><input aria-label="Street address" autoComplete="address-line1" required value={address.street} onChange={(event) => setAddress({ ...address, street: event.target.value })} /></label>}
-        <label><span>Suburb</span><input autoComplete="address-level3" required value={address.suburb} onChange={(event) => setAddress({ ...address, suburb: event.target.value })} /></label>
-        <label><span>Region</span><input autoComplete="address-level1" required value={address.region} onChange={(event) => setAddress({ ...address, region: event.target.value })} /></label>
+        <div className={styles.addressPair}>
+          <label><span>Suburb</span><input autoComplete="address-level3" required value={address.suburb} onChange={(event) => setAddress({ ...address, suburb: event.target.value })} /></label>
+          <label><span>Region</span><input autoComplete="address-level1" required value={address.region} onChange={(event) => setAddress({ ...address, region: event.target.value })} /></label>
+        </div>
       </> : null}
     </div>
     <button className={styles.payButton} disabled={pending} type="submit">
