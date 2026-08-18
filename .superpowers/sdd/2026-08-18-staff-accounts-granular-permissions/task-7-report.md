@@ -48,3 +48,15 @@ from entering audit summaries.
 - Review verification: focused matrix 11 files / 60 tests passed; typecheck
   passed; lint exited 0 with the same 3 pre-existing task-external warnings;
   `git diff --check` passed.
+
+## Final permission regression follow-up
+
+- Forms private-file GET now proves that a `view_jobs`-only grant is denied
+  before scope or file services run, while an exact `view_files` grant is
+  allowed. The route test asserts the resolver receives `view_files`.
+- Forms invoice PUT now proves that a `view_finance`-only grant is denied
+  before scope or draft mutation services run, while an exact `update_finance`
+  grant is allowed. The route test asserts the resolver receives
+  `update_finance`.
+- Final focused matrix: 11 files / 63 tests passed; typecheck passed; lint
+  exited 0 with the same 3 task-external warnings; `git diff --check` passed.

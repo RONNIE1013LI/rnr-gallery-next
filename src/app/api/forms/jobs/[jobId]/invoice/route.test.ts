@@ -58,4 +58,47 @@ describe("forms job invoice route", () => {
     expect(assertScope).toHaveBeenCalledWith(access, jobId);
     expect(updateDraft).toHaveBeenCalledWith({ userId: "finance-1", email: "finance@example.test" }, body);
   });
+
+  it("requires update_finance rather than view_finance before changing a draft", async () => {
+    const weakGrant = vi.fn(async (permission: string) => {
+      if (permission === "view_finance") return access;
+      throw new HttpError("Forbidden", 403);
+    });
+    const assertScope = vi.fn();
+    const updateDraft = vi.fn();
+    const route = createFormsJobInvoiceRoute({
+      requirePermission: weakGrant, assertScope,
+      getOrCreateDraft: vi.fn(), updateDraft, issue: vi.fn(), void: vi.fn(), trustedOrigin: origin,
+    });
+
+    const response = await route.PUT(mutation({
+      invoiceId, idempotencyKey: "invoice-weak-grant-1", expectedUpdatedAt: "2026-08-05T00:00:00.000Z", draft: {},
+    }), context);
+
+    expect(response.status).toBe(403);
+    expect(weakGrant).toHaveBeenCalledWith("update_finance");
+    expect(assertScope).not.toHaveBeenCalled();
+    expect(updateDraft).not.toHaveBeenCalled();
+  });
+
+  it("allows an update_finance grant to change a draft", async () => {
+    const strongGrant = vi.fn(async (permission: string) => {
+      if (permission !== "update_finance") throw new HttpError("Forbidden", 403);
+      return access;
+    });
+    const updateDraft = vi.fn().mockResolvedValue({ id: invoiceId, status: "draft" });
+    const route = createFormsJobInvoiceRoute({
+      requirePermission: strongGrant, assertScope: vi.fn().mockResolvedValue(undefined),
+      getOrCreateDraft: vi.fn(), updateDraft, issue: vi.fn(), void: vi.fn(), trustedOrigin: origin,
+    });
+    const body = {
+      invoiceId, idempotencyKey: "invoice-strong-grant-1", expectedUpdatedAt: "2026-08-05T00:00:00.000Z", draft: {},
+    };
+
+    const response = await route.PUT(mutation(body), context);
+
+    expect(response.status).toBe(200);
+    expect(strongGrant).toHaveBeenCalledWith("update_finance");
+    expect(updateDraft).toHaveBeenCalledWith({ userId: "finance-1", email: "finance@example.test" }, body);
+  });
 });
