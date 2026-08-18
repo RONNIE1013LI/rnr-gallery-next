@@ -14,7 +14,8 @@ const auditInputSchema = z.object({
   idempotencyKey: z.string().trim().min(1).max(255),
 });
 
-const sensitiveKey = /(?:secret|password|token|cookie|authorization|credential|body|raw(?:request|payload|body))/i;
+const sensitiveKey = /(?:secret|password|token|cookie|authorization|credential)/i;
+const rawRequestKey = /^(?:body|rawRequest|rawPayload|rawBody|rawRequestBody|rawPayloadBody)$/i;
 
 function sanitizeValue(value: unknown): unknown {
   if (
@@ -34,7 +35,7 @@ function sanitizeValue(value: unknown): unknown {
   if (typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
-        .filter(([key]) => !sensitiveKey.test(key))
+        .filter(([key]) => !sensitiveKey.test(key) && !rawRequestKey.test(key))
         .map(([key, child]) => [key, sanitizeValue(child)])
         .filter(([, child]) => child !== undefined),
     );

@@ -83,6 +83,25 @@ describe("admin audit records", () => {
     expect(stringsIn(record)).not.toContain(passwordHash);
   });
 
+  it("preserves non-sensitive keys that merely contain body", () => {
+    const record = buildAuditRecord({
+      actorUserId: "admin-1",
+      actorEmail: "owner@example.test",
+      action: "user.access.changed",
+      resourceType: "user",
+      afterSummary: {
+        bodyLength: 1_024,
+        somebodyApproved: true,
+        body: { initialPassword: "must-not-survive" },
+        rawRequestBody: { initialPassword: "must-not-survive" },
+      },
+      result: "success",
+      idempotencyKey: "employee-access-body-1",
+    });
+
+    expect(record.afterSummary).toEqual({ bodyLength: 1_024, somebodyApproved: true });
+  });
+
   it("rejects incomplete records", () => {
     expect(() => buildAuditRecord({
       actorUserId: "",

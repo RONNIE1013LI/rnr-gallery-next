@@ -30,3 +30,21 @@ from entering audit summaries.
 
 - No production migration, push, deployment, payment/order/ledger change, or
   credential material was introduced.
+
+## Review follow-up
+
+- Added default-route integration coverage with profiles persisted to the
+  isolated test database. The test provides only an authenticated test session;
+  both protected routes use their real default permission resolver and database
+  lookup. Payment Requests deny the order viewer and missing profile (403),
+  while the payment operator reaches request validation (422). Forms allows an
+  assigned artist (200), denies a missing profile (403), and hides a job after
+  reassignment (404).
+- Added persisted audit coverage for real employee creation, access change, and
+  failure audit writes. It recursively checks all values and JSON serialisation
+  for the plaintext-password and stored-hash test substrings.
+- Tightened raw-request redaction to exact body/raw-request aliases. `bodyLength`
+  and `somebodyApproved` are now retained by regression tests.
+- Review verification: focused matrix 11 files / 60 tests passed; typecheck
+  passed; lint exited 0 with the same 3 pre-existing task-external warnings;
+  `git diff --check` passed.
