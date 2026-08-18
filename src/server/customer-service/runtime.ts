@@ -7,6 +7,7 @@ import { OpenAIResponsesProvider } from "./providers/openai-responses";
 import { createDrizzleCustomerServiceRepository } from "./repositories/drizzle-customer-service-repository";
 import { createPrivateAttachmentStore } from "./attachments/private-attachment-store";
 import { createImageJobRunner } from "./image-job-runner";
+import { createCustomerTurnRecoveryRunner } from "./turn-recovery-runner";
 
 export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.env) {
   const config = parseCustomerServiceConfig(env);
@@ -31,5 +32,9 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
       store: createPrivateAttachmentStore(config.blobReadWriteToken),
     })
     : undefined;
-  return Object.freeze({ config, repository, engine, imageJobRunner });
+  const turnRecoveryRunner = createCustomerTurnRecoveryRunner({
+    repository,
+    generateDraft: (messageId) => engine.generateDraft({ messageId, trigger: "webhook_after" }),
+  });
+  return Object.freeze({ config, repository, engine, imageJobRunner, turnRecoveryRunner });
 }

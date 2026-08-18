@@ -3,6 +3,8 @@ import { pricingForReviewedImageModel } from "./usage-cost";
 export type CustomerServiceConfig = Readonly<{
   enabled: boolean;
   pilotLimit: number;
+  conversationDebounceMs: number;
+  humanReplyGroupMs: number;
   provider: "mock" | "openai";
   openaiApiKey: string;
   openaiModel: string;
@@ -20,6 +22,7 @@ export type CustomerServiceConfig = Readonly<{
   blobReadWriteToken: string;
   attachmentSourceEncryptionKey: string;
   imageJobRunnerSecret: string;
+  turnRecoverySecret: string;
 }>;
 
 function boolean(value: string | undefined) {
@@ -29,6 +32,14 @@ function boolean(value: string | undefined) {
 function positiveInteger(value: string | undefined, fallback: number, name: string) {
   const parsed = value ? Number(value) : fallback;
   if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new Error(`${name} must be a positive integer`);
+  return parsed;
+}
+
+function boundedInteger(value: string | undefined, fallback: number, name: string, min: number, max: number) {
+  const parsed = value ? Number(value) : fallback;
+  if (!Number.isSafeInteger(parsed) || parsed < min || parsed > max) {
+    throw new Error(`${name} must be between ${min} and ${max}`);
+  }
   return parsed;
 }
 
@@ -87,6 +98,20 @@ export function parseCustomerServiceConfig(
   return Object.freeze({
     enabled,
     pilotLimit: positiveInteger(env.REPLY_ASSISTANT_PILOT_LIMIT, 100, "REPLY_ASSISTANT_PILOT_LIMIT"),
+    conversationDebounceMs: boundedInteger(
+      env.REPLY_ASSISTANT_DEBOUNCE_MS,
+      2_000,
+      "REPLY_ASSISTANT_DEBOUNCE_MS",
+      250,
+      10_000,
+    ),
+    humanReplyGroupMs: boundedInteger(
+      env.REPLY_ASSISTANT_HUMAN_REPLY_GROUP_MS,
+      90_000,
+      "REPLY_ASSISTANT_HUMAN_REPLY_GROUP_MS",
+      10_000,
+      120_000,
+    ),
     provider,
     openaiApiKey,
     openaiModel: env.OPENAI_MODEL?.trim() || "gpt-5.6-luna",
@@ -104,6 +129,7 @@ export function parseCustomerServiceConfig(
     blobReadWriteToken,
     attachmentSourceEncryptionKey,
     imageJobRunnerSecret,
+    turnRecoverySecret: enabled ? requiredSecret(env, "CRON_SECRET") : "",
   });
 }
 

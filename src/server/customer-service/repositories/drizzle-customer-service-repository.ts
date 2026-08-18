@@ -1,28 +1,45 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, max, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, max, or, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import {
   customerServiceAiAttempts,
   customerServiceAttachments,
   customerServiceBudgetState,
+  customerServiceCaseMemories,
+  customerServiceCaseRetrievals,
+  customerServiceConversationEvents,
   customerServiceConversations,
   customerServiceFeedbackEvents,
+  customerServiceHumanReplyMatches,
+  customerServiceHumanReplyMatchEvents,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
   customerServiceImageJobs,
+  customerServiceLearningCandidates,
   customerServiceMessages,
   customerServicePilotRuns,
+  customerServiceTurns,
 } from "@/server/db/schema";
 import type {
   CustomerServiceRepository,
   FeedbackEventInput,
   GateBlockedAttemptInput,
   HashedIncomingMessage,
+  HashedConversationEvent,
   ProviderAttemptCompletion,
   ProviderAttemptReservation,
 } from "./customer-service-repository";
 import { parseImageAnalysisResult } from "../image-analysis-schema";
 import { IMAGE_LIMITS } from "../attachments/limits";
+import { classifyAcknowledgement } from "../conversation/acknowledgement";
+import { canAppendHumanReply } from "../conversation/human-reply-grouping";
+import { chooseHumanReplyTurn } from "../learning/human-reply-matcher";
+import { classifyHumanEdit } from "../learning/edit-classifier";
+import { assessCaseMemoryEligibility } from "../learning/case-memory";
+import { sanitizeCaseMemoryText } from "../learning/case-memory-sanitizer";
+import { scoreCaseMemory } from "../learning/case-retrieval";
+import { buildLearningSummary } from "../learning/learning-summary";
+import { localDateScopeKey } from "../usage-cost";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -193,6 +210,33 @@ async function validatedQueueImageAssessments(
 }
 
 export function createDrizzleCustomerServiceRepository(database: Database): CustomerServiceRepository {
+  async function turnForMessage(transaction: Transaction, messageId: string) {
+    const [turn] = await transaction.select({
+      id: customerServiceTurns.id,
+      conversationId: customerServiceTurns.conversationId,
+      status: customerServiceTurns.status,
+      lastEventAt: customerServiceTurns.lastEventAt,
+      suppressionReason: customerServiceTurns.suppressionReason,
+    }).from(customerServiceTurns)
+      .where(eq(customerServiceTurns.representativeMessageId, messageId))
+      .limit(1);
+    return turn ?? null;
+  }
+
+  async function hasHumanReplyAfterTurn(transaction: Transaction, turn: Readonly<{
+    conversationId: string;
+    lastEventAt: Date;
+  }>) {
+    const [reply] = await transaction.select({ id: customerServiceConversationEvents.id })
+      .from(customerServiceConversationEvents)
+      .where(and(
+        eq(customerServiceConversationEvents.conversationId, turn.conversationId),
+        eq(customerServiceConversationEvents.eventType, "human_outbound"),
+        sql`${customerServiceConversationEvents.receivedAt} >= ${turn.lastEventAt}`,
+      )).limit(1);
+    return Boolean(reply);
+  }
+
   async function settleImageJobBudget(
     transaction: Transaction,
     job: Readonly<{
@@ -338,7 +382,613 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     return { selected: claimed.length, deleted, failed };
   }
 
-  return {
+  const repository: CustomerServiceRepository = {
+    async ingestConversationEvent(input: HashedConversationEvent) {
+      return database.transaction(async (transaction) => {
+        const insertedConversation = await transaction.insert(customerServiceConversations).values({
+          channel: input.channel,
+          externalKeyHash: input.externalConversationKeyHash,
+        }).onConflictDoNothing().returning({ id: customerServiceConversations.id });
+        const [conversation] = insertedConversation.length
+          ? insertedConversation
+          : await transaction.select({ id: customerServiceConversations.id })
+            .from(customerServiceConversations)
+            .where(and(
+              eq(customerServiceConversations.channel, input.channel),
+              eq(customerServiceConversations.externalKeyHash, input.externalConversationKeyHash),
+            )).limit(1);
+
+        const body = input.text?.trim() || "[Image attachment]";
+        if (input.role === "staff") {
+          await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + conversation.id}))`);
+          const inserted = await transaction.insert(customerServiceConversationEvents).values({
+            conversationId: conversation.id,
+            channel: input.channel,
+            externalMessageKeyHash: input.externalMessageKeyHash,
+            role: "staff",
+            eventType: "human_outbound",
+            body,
+            bodyHash: input.bodyHash ?? null,
+            redactionCodes: input.redactionCodes ?? [],
+            replyToExternalMessageKeyHash: input.replyToExternalMessageKeyHash ?? null,
+            learningEligible: input.learningEligible ?? false,
+            receivedAt: input.receivedAt,
+          }).onConflictDoNothing().returning({ id: customerServiceConversationEvents.id });
+          if (!inserted.length) return { status: "duplicate" as const };
+
+          const eventId = inserted[0].id;
+          const groupWindowMs = input.humanReplyGroupMs ?? 90_000;
+          if (!Number.isSafeInteger(groupWindowMs) || groupWindowMs < 10_000 || groupWindowMs > 120_000) {
+            throw new Error("customer_service_human_reply_group_window_invalid");
+          }
+          const groupCutoff = new Date(input.receivedAt.getTime() - groupWindowMs);
+          const [openGroup] = await transaction.select({
+            id: customerServiceHumanReplyMatches.id,
+            conversationId: customerServiceHumanReplyMatches.conversationId,
+            lastOutboundAt: customerServiceHumanReplyMatches.lastOutboundAt,
+            humanFinalText: customerServiceHumanReplyMatches.humanFinalText,
+          }).from(customerServiceHumanReplyMatches).where(and(
+            eq(customerServiceHumanReplyMatches.conversationId, conversation.id),
+            eq(customerServiceHumanReplyMatches.status, "pending"),
+            sql`${customerServiceHumanReplyMatches.lastOutboundAt} >= ${groupCutoff}`,
+            lte(customerServiceHumanReplyMatches.lastOutboundAt, input.receivedAt),
+          )).orderBy(desc(customerServiceHumanReplyMatches.lastOutboundAt)).limit(1).for("update");
+          const [memberCount] = openGroup
+            ? await transaction.select({ value: sql<number>`count(*)::int` })
+              .from(customerServiceHumanReplyMatchEvents)
+              .where(eq(customerServiceHumanReplyMatchEvents.matchId, openGroup.id))
+            : [];
+          const [interruption] = openGroup
+            ? await transaction.select({ id: customerServiceConversationEvents.id })
+              .from(customerServiceConversationEvents)
+              .where(and(
+                eq(customerServiceConversationEvents.conversationId, conversation.id),
+                eq(customerServiceConversationEvents.eventType, "customer_message"),
+                sql`${customerServiceConversationEvents.receivedAt} > ${openGroup.lastOutboundAt}`,
+                lte(customerServiceConversationEvents.receivedAt, input.receivedAt),
+              )).limit(1)
+            : [];
+          const replyTargets = openGroup
+            ? await transaction.select({ value: customerServiceConversationEvents.replyToExternalMessageKeyHash })
+              .from(customerServiceHumanReplyMatchEvents)
+              .innerJoin(customerServiceConversationEvents, eq(
+                customerServiceConversationEvents.id,
+                customerServiceHumanReplyMatchEvents.eventId,
+              ))
+              .where(eq(customerServiceHumanReplyMatchEvents.matchId, openGroup.id))
+            : [];
+          const distinctReplyTargets = [...new Set(replyTargets.map((item) => item.value))];
+          const groupReplyTarget = distinctReplyTargets.length === 1 ? distinctReplyTargets[0] : "mixed";
+          const append = openGroup && canAppendHumanReply({
+            group: {
+              conversationId: openGroup.conversationId,
+              lastOutboundAt: openGroup.lastOutboundAt,
+              messageCount: memberCount?.value ?? 0,
+              characterCount: openGroup.humanFinalText.length,
+              replyToExternalMessageKeyHash: groupReplyTarget,
+            },
+            conversationId: conversation.id,
+            receivedAt: input.receivedAt,
+            textLength: body.length,
+            interveningCustomer: Boolean(interruption),
+            replyToExternalMessageKeyHash: input.replyToExternalMessageKeyHash ?? null,
+            windowMs: groupWindowMs,
+          });
+          let groupId: string;
+          let ordinal: number;
+          if (append && openGroup) {
+            ordinal = memberCount?.value ?? 0;
+            groupId = openGroup.id;
+            await transaction.update(customerServiceHumanReplyMatches).set({
+              lastOutboundAt: input.receivedAt,
+              humanFinalText: `${openGroup.humanFinalText}\n${body}`,
+            }).where(and(
+              eq(customerServiceHumanReplyMatches.id, openGroup.id),
+              eq(customerServiceHumanReplyMatches.status, "pending"),
+            ));
+          } else {
+            ordinal = 0;
+            const [createdGroup] = await transaction.insert(customerServiceHumanReplyMatches).values({
+              conversationId: conversation.id,
+              status: "pending",
+              firstOutboundAt: input.receivedAt,
+              lastOutboundAt: input.receivedAt,
+              humanFinalText: body,
+              contextSummary: "[Pending conservative match]",
+            }).returning({ id: customerServiceHumanReplyMatches.id });
+            groupId = createdGroup.id;
+          }
+          await transaction.insert(customerServiceHumanReplyMatchEvents).values({
+            matchId: groupId,
+            eventId,
+            conversationId: conversation.id,
+            ordinal,
+          });
+
+          const [repliedEvent] = input.replyToExternalMessageKeyHash
+            ? await transaction.select({ turnId: customerServiceConversationEvents.turnId })
+              .from(customerServiceConversationEvents)
+              .where(and(
+                eq(customerServiceConversationEvents.conversationId, conversation.id),
+                eq(customerServiceConversationEvents.externalMessageKeyHash, input.replyToExternalMessageKeyHash),
+                eq(customerServiceConversationEvents.eventType, "customer_message"),
+              )).limit(1)
+            : [];
+          let targetTurn: { id: string } | undefined;
+          if (repliedEvent?.turnId) {
+            [targetTurn] = await transaction.select({ id: customerServiceTurns.id })
+              .from(customerServiceTurns)
+              .where(and(
+                eq(customerServiceTurns.id, repliedEvent.turnId),
+                inArray(customerServiceTurns.status, ["open", "sealed"]),
+              )).limit(1).for("update");
+          } else if (!input.replyToExternalMessageKeyHash) {
+            [targetTurn] = await transaction.select({ id: customerServiceTurns.id })
+              .from(customerServiceTurns)
+              .where(and(
+                eq(customerServiceTurns.conversationId, conversation.id),
+                inArray(customerServiceTurns.status, ["open", "sealed"]),
+                lte(customerServiceTurns.lastEventAt, input.receivedAt),
+              )).orderBy(desc(customerServiceTurns.lastEventAt)).limit(1).for("update");
+          }
+          if (targetTurn) {
+            await transaction.update(customerServiceTurns).set({
+              status: "suppressed",
+              sealedAt: input.receivedAt,
+              suppressionReason: "human_outbound_received",
+              processingStatus: "cancelled",
+              processingLeaseToken: null,
+              processingLeaseExpiresAt: null,
+              processingCompletedAt: input.receivedAt,
+            }).where(and(
+              eq(customerServiceTurns.id, targetTurn.id),
+              inArray(customerServiceTurns.status, ["open", "sealed"]),
+            ));
+          }
+          return { status: "context_only" as const };
+        }
+
+        const customerText = input.text?.trim() || null;
+        const [message] = await transaction.insert(customerServiceMessages).values({
+          conversationId: conversation.id,
+          channel: input.channel,
+          externalMessageKeyHash: input.externalMessageKeyHash,
+          body,
+          customerText,
+          receivedAt: input.receivedAt,
+        }).onConflictDoNothing().returning({ id: customerServiceMessages.id });
+        if (!message) return { status: "duplicate" as const };
+
+        const debounceMs = input.debounceMs ?? 2_000;
+        if (!Number.isSafeInteger(debounceMs) || debounceMs < 250 || debounceMs > 10_000) {
+          throw new Error("customer_service_turn_debounce_invalid");
+        }
+        const debounceUntil = new Date(input.receivedAt.getTime() + debounceMs);
+        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + conversation.id}))`);
+        const canAggregate = input.attachments.length === 0 && customerText !== null;
+        const [openTurn] = canAggregate
+          ? await transaction.select({
+            id: customerServiceTurns.id,
+            representativeMessageId: customerServiceTurns.representativeMessageId,
+            body: customerServiceTurns.body,
+            fragmentCount: customerServiceTurns.fragmentCount,
+          }).from(customerServiceTurns).where(and(
+            eq(customerServiceTurns.conversationId, conversation.id),
+            eq(customerServiceTurns.status, "open"),
+            sql`${customerServiceTurns.openedAt} <= ${debounceUntil}`,
+            sql`${customerServiceTurns.debounceUntil} >= ${input.receivedAt}`,
+            sql`not exists (
+              select 1 from ${customerServiceAttachments}
+              where ${customerServiceAttachments.messageId} = ${customerServiceTurns.representativeMessageId}
+            )`,
+          )).orderBy(desc(customerServiceTurns.lastEventAt)).limit(1).for("update")
+          : [];
+        const combinedBody = openTurn ? `${openTurn.body}\n${body}` : body;
+        const mayExtend = Boolean(openTurn)
+          && openTurn.fragmentCount < 8
+          && combinedBody.length <= 2_400;
+        const [turn] = mayExtend && openTurn
+          ? await transaction.update(customerServiceTurns).set({
+            openedAt: sql`least(${customerServiceTurns.openedAt}, ${input.receivedAt})`,
+            lastEventAt: sql`greatest(${customerServiceTurns.lastEventAt}, ${input.receivedAt})`,
+            debounceUntil: sql`greatest(${customerServiceTurns.debounceUntil}, ${debounceUntil})`,
+            nextRunAt: sql`greatest(${customerServiceTurns.nextRunAt}, ${debounceUntil})`,
+            fragmentCount: sql`${customerServiceTurns.fragmentCount} + 1`,
+          }).where(and(
+            eq(customerServiceTurns.id, openTurn.id),
+            eq(customerServiceTurns.status, "open"),
+          )).returning({ id: customerServiceTurns.id })
+          : await transaction.insert(customerServiceTurns).values({
+            conversationId: conversation.id,
+            channel: input.channel,
+            representativeMessageId: message.id,
+            body,
+            debounceUntil,
+            nextRunAt: debounceUntil,
+            openedAt: input.receivedAt,
+            lastEventAt: input.receivedAt,
+          }).returning({ id: customerServiceTurns.id });
+        await transaction.insert(customerServiceConversationEvents).values({
+          conversationId: conversation.id,
+          turnId: turn.id,
+          legacyMessageId: message.id,
+          channel: input.channel,
+          externalMessageKeyHash: input.externalMessageKeyHash,
+          role: "customer",
+          eventType: "customer_message",
+          body,
+          receivedAt: input.receivedAt,
+        });
+        let representativeMessageId = message.id;
+        if (canAggregate) {
+          const orderedEvents = await transaction.select({
+            body: customerServiceConversationEvents.body,
+            legacyMessageId: customerServiceConversationEvents.legacyMessageId,
+            receivedAt: customerServiceConversationEvents.receivedAt,
+          }).from(customerServiceConversationEvents).where(
+            eq(customerServiceConversationEvents.turnId, turn.id),
+          ).orderBy(
+            asc(customerServiceConversationEvents.receivedAt),
+            asc(customerServiceConversationEvents.createdAt),
+            asc(customerServiceConversationEvents.id),
+          );
+          const firstEvent = orderedEvents[0];
+          const lastEvent = orderedEvents.at(-1);
+          representativeMessageId = firstEvent?.legacyMessageId ?? message.id;
+          const orderedBody = orderedEvents.map((event) => event.body).join("\n");
+          await transaction.update(customerServiceTurns).set({
+            representativeMessageId,
+            body: orderedBody,
+            openedAt: firstEvent?.receivedAt ?? input.receivedAt,
+            lastEventAt: lastEvent?.receivedAt ?? input.receivedAt,
+            fragmentCount: orderedEvents.length,
+          }).where(eq(customerServiceTurns.id, turn.id));
+          await transaction.update(customerServiceMessages).set({
+            body: orderedBody,
+            customerText: orderedBody,
+          }).where(eq(customerServiceMessages.id, representativeMessageId));
+        }
+        if (input.attachments.length) {
+          await transaction.insert(customerServiceAttachments).values(input.attachments.map((attachment) => ({
+            messageId: message.id,
+            conversationId: conversation.id,
+            externalAttachmentKeyHash: attachment.externalAttachmentKeyHash,
+            ordinal: attachment.ordinal,
+            kind: "image" as const,
+            normalizedKind: attachment.kind,
+            mimeTypeHint: attachment.mimeTypeHint,
+            status: attachment.kind === "unsupported" ? "rejected" as const : "metadata_received" as const,
+            failureCode: attachment.failureCode ?? null,
+          })));
+        }
+        if (input.imageJob) {
+          await transaction.insert(customerServiceImageJobs).values({
+            id: input.imageJob.id,
+            messageId: message.id,
+            conversationId: conversation.id,
+            status: input.imageJob.status,
+            sourceCiphertext: input.imageJob.sourceCiphertext,
+            sourceExpiresAt: input.imageJob.sourceExpiresAt,
+            failureCode: input.imageJob.failureCode,
+            nextRunAt: input.receivedAt,
+            ...(input.imageJob.status === "human_review_required" ? { completedAt: input.receivedAt } : {}),
+          });
+          await transaction.update(customerServiceTurns).set({
+            processingStatus: "completed",
+            processingCompletedAt: input.receivedAt,
+          }).where(eq(customerServiceTurns.id, turn.id));
+        }
+        return {
+          status: "turn_pending" as const,
+          messageId: representativeMessageId,
+          turnId: turn.id,
+          debounceUntil,
+        };
+      });
+    },
+
+    async sealDueCustomerTurn(input) {
+      return database.transaction(async (transaction) => {
+        const [turn] = await transaction.select().from(customerServiceTurns)
+          .where(eq(customerServiceTurns.id, input.turnId)).limit(1).for("update");
+        if (!turn || turn.status !== "open" || !turn.representativeMessageId) {
+          return { status: "already_terminal" as const };
+        }
+        if (turn.debounceUntil.getTime() > input.now.getTime()) {
+          return { status: "not_due" as const };
+        }
+        const historyRows = await transaction.select({
+          role: customerServiceConversationEvents.role,
+          text: customerServiceConversationEvents.body,
+        }).from(customerServiceConversationEvents).where(and(
+          eq(customerServiceConversationEvents.conversationId, turn.conversationId),
+          sql`${customerServiceConversationEvents.turnId} is distinct from ${turn.id}`,
+          lte(customerServiceConversationEvents.receivedAt, turn.openedAt),
+        )).orderBy(
+          desc(customerServiceConversationEvents.receivedAt),
+          desc(customerServiceConversationEvents.createdAt),
+          desc(customerServiceConversationEvents.id),
+        ).limit(6);
+        const acknowledgement = classifyAcknowledgement({
+          currentText: turn.body,
+          recentHistory: historyRows.reverse(),
+        });
+        if (acknowledgement.suppress) {
+          await transaction.update(customerServiceTurns).set({
+            status: "suppressed",
+            sealedAt: input.now,
+            suppressionReason: acknowledgement.reason,
+            processingStatus: "completed",
+            processingLeaseToken: null,
+            processingLeaseExpiresAt: null,
+            processingCompletedAt: input.now,
+          }).where(and(
+            eq(customerServiceTurns.id, turn.id),
+            eq(customerServiceTurns.status, "open"),
+          ));
+          return {
+            status: "suppressed" as const,
+            turnId: turn.id,
+            reason: acknowledgement.reason,
+          };
+        }
+        const [pilot] = await transaction.select().from(customerServicePilotRuns)
+          .where(and(
+            eq(customerServicePilotRuns.channel, turn.channel),
+            eq(customerServicePilotRuns.status, "active"),
+          )).limit(1).for("update");
+        if (!pilot || pilot.nextSequence > pilot.messageLimit) {
+          if (pilot) {
+            await transaction.update(customerServicePilotRuns).set({
+              status: "completed",
+              completedAt: input.now,
+            }).where(eq(customerServicePilotRuns.id, pilot.id));
+          }
+          await transaction.update(customerServiceTurns).set({
+            status: "pilot_complete",
+            sealedAt: input.now,
+            processingStatus: "completed",
+            processingLeaseToken: null,
+            processingLeaseExpiresAt: null,
+            processingCompletedAt: input.now,
+          }).where(eq(customerServiceTurns.id, turn.id));
+          return {
+            status: "pilot_complete" as const,
+            turnId: turn.id,
+            messageId: turn.representativeMessageId,
+          };
+        }
+        await transaction.update(customerServiceTurns).set({
+          status: "sealed",
+          sealedAt: input.now,
+          pilotRunId: pilot.id,
+          pilotSequence: pilot.nextSequence,
+        }).where(and(
+          eq(customerServiceTurns.id, turn.id),
+          eq(customerServiceTurns.status, "open"),
+        ));
+        await transaction.update(customerServiceMessages).set({
+          body: turn.body,
+          customerText: turn.body,
+          pilotRunId: pilot.id,
+          pilotSequence: pilot.nextSequence,
+        }).where(eq(customerServiceMessages.id, turn.representativeMessageId));
+        await transaction.update(customerServicePilotRuns).set({
+          nextSequence: pilot.nextSequence + 1,
+        }).where(eq(customerServicePilotRuns.id, pilot.id));
+        return {
+          status: "sealed" as const,
+          turnId: turn.id,
+          messageId: turn.representativeMessageId,
+          pilotSequence: pilot.nextSequence,
+        };
+      });
+    },
+
+    async claimDueCustomerTurn(input) {
+      if (input.leaseExpiresAt.getTime() <= input.now.getTime()) {
+        throw new Error("customer_service_turn_lease_invalid");
+      }
+
+      const candidateId = await database.transaction(async (transaction) => {
+        const conditions = [
+          inArray(customerServiceTurns.status, ["open", "sealed"]),
+          lte(customerServiceTurns.nextRunAt, input.now),
+          or(
+            eq(customerServiceTurns.processingStatus, "pending"),
+            and(
+              eq(customerServiceTurns.processingStatus, "running"),
+              lte(customerServiceTurns.processingLeaseExpiresAt, input.now),
+            ),
+          ),
+          sql`not exists (
+            select 1 from ${customerServiceAttachments}
+            where ${customerServiceAttachments.messageId} = ${customerServiceTurns.representativeMessageId}
+          )`,
+        ];
+        if (input.turnId) conditions.push(eq(customerServiceTurns.id, input.turnId));
+        const [candidate] = await transaction.select({ id: customerServiceTurns.id })
+          .from(customerServiceTurns)
+          .where(and(...conditions))
+          .orderBy(asc(customerServiceTurns.nextRunAt), asc(customerServiceTurns.createdAt))
+          .limit(1)
+          .for("update", { skipLocked: true });
+        return candidate?.id ?? null;
+      });
+      if (!candidateId) return null;
+
+      await repository.sealDueCustomerTurn({ turnId: candidateId, now: input.now });
+
+      return database.transaction(async (transaction) => {
+        const [turn] = await transaction.select({
+          id: customerServiceTurns.id,
+          messageId: customerServiceTurns.representativeMessageId,
+        }).from(customerServiceTurns).where(and(
+          eq(customerServiceTurns.id, candidateId),
+          eq(customerServiceTurns.status, "sealed"),
+          lte(customerServiceTurns.nextRunAt, input.now),
+          or(
+            eq(customerServiceTurns.processingStatus, "pending"),
+            and(
+              eq(customerServiceTurns.processingStatus, "running"),
+              lte(customerServiceTurns.processingLeaseExpiresAt, input.now),
+            ),
+          ),
+        )).limit(1).for("update", { skipLocked: true });
+        if (!turn?.messageId) return null;
+
+        const [latestAttempt] = await transaction.select({
+          id: customerServiceAiAttempts.id,
+          status: customerServiceAiAttempts.status,
+          providerCalled: customerServiceAiAttempts.providerCalled,
+          reservedCostMicrousd: customerServiceAiAttempts.reservedCostMicrousd,
+          startedAt: customerServiceAiAttempts.startedAt,
+        }).from(customerServiceAiAttempts).where(eq(
+          customerServiceAiAttempts.messageId,
+          turn.messageId,
+        )).orderBy(desc(customerServiceAiAttempts.attemptNumber)).limit(1).for("update");
+
+        if (latestAttempt && [
+          "gate_blocked",
+          "draft_ready",
+          "output_blocked",
+          "budget_blocked",
+          "abandoned",
+        ].includes(latestAttempt.status)) {
+          await transaction.update(customerServiceTurns).set({
+            processingStatus: "completed",
+            processingLeaseToken: null,
+            processingLeaseExpiresAt: null,
+            processingCompletedAt: input.now,
+          }).where(eq(customerServiceTurns.id, turn.id));
+          return null;
+        }
+
+        if (
+          latestAttempt
+          && ["pending", "provider_pending"].includes(latestAttempt.status)
+          && latestAttempt.providerCalled
+        ) {
+          await transaction.update(customerServiceTurns).set({
+            processingStatus: "completed",
+            processingLeaseToken: null,
+            processingLeaseExpiresAt: null,
+            processingCompletedAt: input.now,
+            lastProcessingError: "provider_outcome_unknown",
+          }).where(eq(customerServiceTurns.id, turn.id));
+          return null;
+        }
+
+        if (
+          latestAttempt
+          && ["pending", "provider_pending"].includes(latestAttempt.status)
+          && !latestAttempt.providerCalled
+        ) {
+          if (latestAttempt.reservedCostMicrousd > 0) {
+            const dailyScopeKey = localDateScopeKey(latestAttempt.startedAt);
+            await ensureBudgetRows(transaction, [dailyScopeKey, "total"].sort());
+            await transaction.update(customerServiceBudgetState).set({
+              reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${latestAttempt.reservedCostMicrousd})`,
+            }).where(sql`${customerServiceBudgetState.scopeKey} in (${dailyScopeKey}, 'total')`);
+          }
+          await transaction.update(customerServiceAiAttempts).set({
+            status: "abandoned",
+            reservedCostMicrousd: 0,
+            providerErrorCode: "turn_recovery_pre_invocation_interrupted",
+            completedAt: input.now,
+          }).where(and(
+            eq(customerServiceAiAttempts.id, latestAttempt.id),
+            inArray(customerServiceAiAttempts.status, ["pending", "provider_pending"]),
+            eq(customerServiceAiAttempts.providerCalled, false),
+          ));
+        }
+
+        const leaseToken = randomUUID();
+        const [claimed] = await transaction.update(customerServiceTurns).set({
+          processingStatus: "running",
+          processingLeaseToken: leaseToken,
+          processingLeaseExpiresAt: input.leaseExpiresAt,
+          processingAttempts: sql`${customerServiceTurns.processingAttempts} + 1`,
+          lastProcessingError: null,
+        }).where(and(
+          eq(customerServiceTurns.id, turn.id),
+          eq(customerServiceTurns.status, "sealed"),
+          or(
+            eq(customerServiceTurns.processingStatus, "pending"),
+            and(
+              eq(customerServiceTurns.processingStatus, "running"),
+              lte(customerServiceTurns.processingLeaseExpiresAt, input.now),
+            ),
+          ),
+        )).returning({
+          id: customerServiceTurns.id,
+          processingAttempt: customerServiceTurns.processingAttempts,
+        });
+        return claimed ? {
+          turnId: turn.id,
+          messageId: turn.messageId,
+          leaseToken,
+          processingAttempt: claimed.processingAttempt,
+        } : null;
+      });
+    },
+
+    async completeCustomerTurnProcessing(input) {
+      const completed = await database.update(customerServiceTurns).set({
+        processingStatus: "completed",
+        processingLeaseToken: null,
+        processingLeaseExpiresAt: null,
+        processingCompletedAt: input.now,
+        lastProcessingError: null,
+      }).where(and(
+        eq(customerServiceTurns.id, input.turnId),
+        eq(customerServiceTurns.status, "sealed"),
+        eq(customerServiceTurns.processingStatus, "running"),
+        eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
+      )).returning({ id: customerServiceTurns.id });
+      return completed.length === 1;
+    },
+
+    async retryCustomerTurnProcessing(input) {
+      const retried = await database.update(customerServiceTurns).set({
+        processingStatus: "pending",
+        processingLeaseToken: null,
+        processingLeaseExpiresAt: null,
+        nextRunAt: input.nextRunAt,
+        lastProcessingError: input.errorCode.slice(0, 120),
+      }).where(and(
+        eq(customerServiceTurns.id, input.turnId),
+        eq(customerServiceTurns.status, "sealed"),
+        eq(customerServiceTurns.processingStatus, "running"),
+        eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
+      )).returning({ id: customerServiceTurns.id });
+      return retried.length === 1;
+    },
+
+    async exhaustCustomerTurnProcessing(input) {
+      return database.transaction(async (transaction) => {
+        const exhausted = await transaction.update(customerServiceTurns).set({
+          processingStatus: "completed",
+          processingLeaseToken: null,
+          processingLeaseExpiresAt: null,
+          processingCompletedAt: input.now,
+          lastProcessingError: input.errorCode.slice(0, 120),
+        }).where(and(
+          eq(customerServiceTurns.id, input.turnId),
+          eq(customerServiceTurns.status, "sealed"),
+          eq(customerServiceTurns.processingStatus, "running"),
+          eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
+        )).returning({ messageId: customerServiceTurns.representativeMessageId });
+        if (!exhausted[0]) return false;
+        if (exhausted[0].messageId) {
+          await transaction.update(customerServiceMessages).set({
+            ingestStatus: "provider_error",
+          }).where(eq(customerServiceMessages.id, exhausted[0].messageId));
+        }
+        return true;
+      });
+    },
+
     async ingestFacebookMessage(input: HashedIncomingMessage) {
       return database.transaction(async (transaction) => {
         const insertedConversation = await transaction.insert(customerServiceConversations).values({
@@ -432,20 +1082,93 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         channel: customerServiceMessages.channel,
         conversationId: customerServiceMessages.conversationId,
         receivedAt: customerServiceMessages.receivedAt,
+        createdAt: customerServiceMessages.createdAt,
       }).from(customerServiceMessages).where(eq(customerServiceMessages.id, messageId)).limit(1);
       if (!current) return null;
-      const context = await database.select({ text: customerServiceMessages.customerText })
-        .from(customerServiceMessages)
+      const [currentTurn] = await database.select({
+        id: customerServiceTurns.id,
+        lastEventAt: customerServiceTurns.lastEventAt,
+      }).from(customerServiceTurns).where(eq(
+        customerServiceTurns.representativeMessageId,
+        current.id,
+      )).limit(1);
+      const boundary = currentTurn?.lastEventAt ?? current.receivedAt;
+      const boundedLimit = Math.max(1, Math.min(12, contextLimit));
+      const events = await database.select({
+        id: customerServiceConversationEvents.id,
+        role: customerServiceConversationEvents.role,
+        text: customerServiceConversationEvents.body,
+        receivedAt: customerServiceConversationEvents.receivedAt,
+        createdAt: customerServiceConversationEvents.createdAt,
+        turnId: customerServiceConversationEvents.turnId,
+        turnBody: customerServiceTurns.body,
+        turnOpenedAt: customerServiceTurns.openedAt,
+      }).from(customerServiceConversationEvents)
+        .leftJoin(customerServiceTurns, eq(customerServiceTurns.id, customerServiceConversationEvents.turnId))
         .where(and(
-          eq(customerServiceMessages.conversationId, current.conversationId),
-          lte(customerServiceMessages.receivedAt, current.receivedAt),
-          isNotNull(customerServiceMessages.customerText),
+          eq(customerServiceConversationEvents.conversationId, current.conversationId),
+          lte(customerServiceConversationEvents.receivedAt, boundary),
         ))
-        .orderBy(desc(customerServiceMessages.receivedAt))
-        .limit(Math.max(1, Math.min(6, contextLimit)));
+        .orderBy(
+          desc(customerServiceConversationEvents.receivedAt),
+          desc(customerServiceConversationEvents.createdAt),
+          desc(customerServiceConversationEvents.id),
+        )
+        .limit(boundedLimit * 8);
+      const legacyMessages = await database.select({
+        id: customerServiceMessages.id,
+        text: customerServiceMessages.customerText,
+        receivedAt: customerServiceMessages.receivedAt,
+        createdAt: customerServiceMessages.createdAt,
+      }).from(customerServiceMessages).where(and(
+        eq(customerServiceMessages.conversationId, current.conversationId),
+        lte(customerServiceMessages.receivedAt, boundary),
+        isNotNull(customerServiceMessages.customerText),
+        sql`not exists (
+          select 1 from ${customerServiceConversationEvents}
+          where ${customerServiceConversationEvents.legacyMessageId} = ${customerServiceMessages.id}
+        )`,
+      )).orderBy(
+        desc(customerServiceMessages.receivedAt),
+        desc(customerServiceMessages.createdAt),
+        desc(customerServiceMessages.id),
+      ).limit(boundedLimit);
+      const seenTurns = new Set<string>();
+      const context = [
+        ...events.reverse().flatMap((event) => {
+          if (event.role === "customer" && event.turnId) {
+            if (seenTurns.has(event.turnId)) return [];
+            seenTurns.add(event.turnId);
+            return [{
+              role: "customer" as const,
+              text: event.turnBody ?? event.text,
+              receivedAt: (event.turnOpenedAt ?? event.receivedAt).toISOString(),
+              sortAt: event.turnOpenedAt ?? event.receivedAt,
+              sortId: event.turnId,
+            }];
+          }
+          return [{
+            role: event.role,
+            text: event.text,
+            receivedAt: event.receivedAt.toISOString(),
+            sortAt: event.receivedAt,
+            sortId: event.id,
+          }];
+        }),
+        ...legacyMessages.map((message) => ({
+          role: "customer" as const,
+          text: message.text ?? "",
+          receivedAt: message.receivedAt.toISOString(),
+          sortAt: message.receivedAt,
+          sortId: message.id,
+        })),
+      ].sort((left, right) => (
+        left.sortAt.getTime() - right.sortAt.getTime()
+        || left.sortId.localeCompare(right.sortId)
+      )).slice(-boundedLimit).map(({ role, text, receivedAt }) => ({ role, text, receivedAt }));
       return {
         current: { id: current.id, text: current.text, channel: current.channel },
-        context: context.reverse().flatMap((row) => row.text === null ? [] : [row.text]),
+        context,
       };
     },
 
@@ -1082,6 +1805,33 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
 
     async reserveProviderAttempt(input: ProviderAttemptReservation) {
       return database.transaction(async (transaction) => {
+        let turn = await turnForMessage(transaction, input.messageId);
+        if (turn) {
+          await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + turn.conversationId}))`);
+          turn = await turnForMessage(transaction, input.messageId);
+        }
+        if (turn && (
+          (turn.status === "suppressed" && turn.suppressionReason === "human_outbound_received")
+          || await hasHumanReplyAfterTurn(transaction, turn)
+        )) {
+          const [attempt] = await transaction.insert(customerServiceAiAttempts).values({
+            messageId: input.messageId,
+            attemptNumber: await nextAttemptNumber(transaction, input.messageId),
+            trigger: input.trigger,
+            intent: input.intent,
+            riskLevel: input.riskLevel,
+            gateResult: "allowed",
+            gateReasons: [...input.gateReasons, "human_outbound_received"],
+            knowledgeSources: input.knowledgeSources,
+            knowledgeVersion: input.knowledgeVersion,
+            status: "abandoned",
+            providerCalled: false,
+            reservedCostMicrousd: 0,
+            completedAt: new Date(),
+          }).returning({ id: customerServiceAiAttempts.id });
+          return { status: "human_reply_received" as const, attemptId: attempt.id };
+        }
+
         const rows = await ensureBudgetRows(transaction, [input.dailyScopeKey, "total"].sort());
         const daily = rows.find((row) => row.scopeKey === input.dailyScopeKey);
         const total = rows.find((row) => row.scopeKey === "total");
@@ -1119,10 +1869,523 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           knowledgeSources: input.knowledgeSources,
           knowledgeVersion: input.knowledgeVersion,
           status: "provider_pending",
-          providerCalled: true,
+          providerCalled: false,
           reservedCostMicrousd: input.reservationMicrousd,
         }).returning({ id: customerServiceAiAttempts.id });
         return { status: "reserved" as const, attemptId: attempt.id };
+      });
+    },
+
+    async confirmProviderInvocation(input) {
+      return database.transaction(async (transaction) => {
+        const [initial] = await transaction.select({
+          messageId: customerServiceAiAttempts.messageId,
+        }).from(customerServiceAiAttempts)
+          .where(eq(customerServiceAiAttempts.id, input.attemptId)).limit(1);
+        if (!initial) throw new Error("customer_service_attempt_not_found");
+        let turn = await turnForMessage(transaction, initial.messageId);
+        if (turn) {
+          await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + turn.conversationId}))`);
+          turn = await turnForMessage(transaction, initial.messageId);
+        }
+        const [attempt] = await transaction.select({
+          status: customerServiceAiAttempts.status,
+          providerCalled: customerServiceAiAttempts.providerCalled,
+          reserved: customerServiceAiAttempts.reservedCostMicrousd,
+        }).from(customerServiceAiAttempts)
+          .where(eq(customerServiceAiAttempts.id, input.attemptId)).limit(1).for("update");
+        if (!attempt) throw new Error("customer_service_attempt_not_found");
+        if (attempt.status === "abandoned") return { status: "human_reply_received" as const };
+        if (attempt.status !== "provider_pending" || attempt.providerCalled) {
+          throw new Error("customer_service_provider_invocation_state_invalid");
+        }
+        const humanReplyReceived = Boolean(turn) && (
+          (turn?.status === "suppressed" && turn.suppressionReason === "human_outbound_received")
+          || await hasHumanReplyAfterTurn(transaction, turn)
+        );
+        if (humanReplyReceived) {
+          await ensureBudgetRows(transaction, [input.dailyScopeKey, "total"].sort());
+          await transaction.update(customerServiceBudgetState).set({
+            reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${attempt.reserved})`,
+          }).where(sql`${customerServiceBudgetState.scopeKey} in (${input.dailyScopeKey}, 'total')`);
+          await transaction.update(customerServiceAiAttempts).set({
+            status: "abandoned",
+            providerCalled: false,
+            reservedCostMicrousd: 0,
+            completedAt: new Date(),
+          }).where(and(
+            eq(customerServiceAiAttempts.id, input.attemptId),
+            eq(customerServiceAiAttempts.status, "provider_pending"),
+            eq(customerServiceAiAttempts.providerCalled, false),
+          ));
+          return { status: "human_reply_received" as const };
+        }
+        const started = await transaction.update(customerServiceAiAttempts).set({
+          providerCalled: true,
+        }).where(and(
+          eq(customerServiceAiAttempts.id, input.attemptId),
+          eq(customerServiceAiAttempts.status, "provider_pending"),
+          eq(customerServiceAiAttempts.providerCalled, false),
+        )).returning({ id: customerServiceAiAttempts.id });
+        if (!started.length) throw new Error("customer_service_provider_invocation_state_invalid");
+        return { status: "allowed" as const };
+      });
+    },
+
+    async matchHumanReply(input) {
+      return database.transaction(async (transaction) => {
+        const [group] = await transaction.select().from(customerServiceHumanReplyMatches)
+          .where(eq(customerServiceHumanReplyMatches.id, input.matchId)).limit(1).for("update");
+        if (!group) throw new Error("customer_service_human_reply_match_not_found");
+        if (group.status !== "pending") return { status: "already_terminal" as const };
+        const [interruption] = await transaction.select({ id: customerServiceConversationEvents.id })
+          .from(customerServiceConversationEvents).where(and(
+            eq(customerServiceConversationEvents.conversationId, group.conversationId),
+            eq(customerServiceConversationEvents.eventType, "customer_message"),
+            sql`${customerServiceConversationEvents.receivedAt} > ${group.lastOutboundAt}`,
+            lte(customerServiceConversationEvents.receivedAt, input.now),
+          )).limit(1);
+        const groupWindowMs = input.groupWindowMs ?? 90_000;
+        if (!Number.isSafeInteger(groupWindowMs) || groupWindowMs < 10_000 || groupWindowMs > 120_000) {
+          throw new Error("customer_service_human_reply_group_window_invalid");
+        }
+        if (input.now.getTime() < group.lastOutboundAt.getTime() + groupWindowMs && !interruption) {
+          return { status: "not_due" as const };
+        }
+        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + group.conversationId}))`);
+        const windowStart = new Date(group.firstOutboundAt.getTime() - 2 * 60 * 60 * 1_000);
+        const eligibleTurns = await transaction.select({ id: customerServiceTurns.id })
+          .from(customerServiceTurns).where(and(
+            eq(customerServiceTurns.conversationId, group.conversationId),
+            sql`${customerServiceTurns.lastEventAt} >= ${windowStart}`,
+            lte(customerServiceTurns.lastEventAt, group.firstOutboundAt),
+            sql`not exists (
+              select 1 from ${customerServiceHumanReplyMatches} prior_match
+              where prior_match.turn_id = ${customerServiceTurns.id}
+                and prior_match.id <> ${group.id}
+                and prior_match.status = 'matched'
+            )`,
+          )).orderBy(asc(customerServiceTurns.lastEventAt));
+        const [replyReference] = await transaction.select({
+          replyHash: customerServiceConversationEvents.replyToExternalMessageKeyHash,
+        }).from(customerServiceHumanReplyMatchEvents)
+          .innerJoin(customerServiceConversationEvents, eq(
+            customerServiceConversationEvents.id,
+            customerServiceHumanReplyMatchEvents.eventId,
+          )).where(and(
+            eq(customerServiceHumanReplyMatchEvents.matchId, group.id),
+            isNotNull(customerServiceConversationEvents.replyToExternalMessageKeyHash),
+          )).orderBy(asc(customerServiceHumanReplyMatchEvents.ordinal)).limit(1);
+        const [explicitEvent] = replyReference?.replyHash
+          ? await transaction.select({ turnId: customerServiceConversationEvents.turnId })
+            .from(customerServiceConversationEvents).where(and(
+              eq(customerServiceConversationEvents.conversationId, group.conversationId),
+              eq(customerServiceConversationEvents.externalMessageKeyHash, replyReference.replyHash),
+              eq(customerServiceConversationEvents.eventType, "customer_message"),
+            )).limit(1)
+          : [];
+        const decision = chooseHumanReplyTurn({
+          explicitTurnId: explicitEvent?.turnId ?? null,
+          hasExplicitReference: Boolean(replyReference?.replyHash),
+          eligibleTurnIds: eligibleTurns.map((turn) => turn.id),
+        });
+        if (decision.status === "unmatched") {
+          await transaction.update(customerServiceHumanReplyMatches).set({
+            status: "unmatched",
+            matchMethod: "none",
+            confidence: "low",
+            matchScore: 0,
+            editClassification: "unmatched",
+            contextSummary: "[No reliable customer turn match]",
+          }).where(and(
+            eq(customerServiceHumanReplyMatches.id, group.id),
+            eq(customerServiceHumanReplyMatches.status, "pending"),
+          ));
+          return { status: "unmatched" as const };
+        }
+        const [turn] = await transaction.select({
+          id: customerServiceTurns.id,
+          representativeMessageId: customerServiceTurns.representativeMessageId,
+        }).from(customerServiceTurns).where(eq(customerServiceTurns.id, decision.turnId)).limit(1);
+        if (!turn?.representativeMessageId) throw new Error("customer_service_turn_message_missing");
+        const attempts = await transaction.select({
+          id: customerServiceAiAttempts.id,
+          draftText: customerServiceAiAttempts.draftText,
+          intent: customerServiceAiAttempts.intent,
+          riskLevel: customerServiceAiAttempts.riskLevel,
+          knowledgeSources: customerServiceAiAttempts.knowledgeSources,
+          completedAt: customerServiceAiAttempts.completedAt,
+        }).from(customerServiceAiAttempts).where(and(
+          eq(customerServiceAiAttempts.messageId, turn.representativeMessageId),
+          eq(customerServiceAiAttempts.status, "draft_ready"),
+          lte(customerServiceAiAttempts.completedAt, group.firstOutboundAt),
+        )).orderBy(desc(customerServiceAiAttempts.completedAt));
+        const classified = attempts.map((attempt) => ({
+          attempt,
+          edit: classifyHumanEdit(attempt.draftText, group.humanFinalText),
+        })).sort((left, right) => (
+          (right.edit.similarityScore ?? -1) - (left.edit.similarityScore ?? -1)
+          || (right.attempt.completedAt?.getTime() ?? 0) - (left.attempt.completedAt?.getTime() ?? 0)
+        ));
+        const best = classified[0];
+        const independent = classifyHumanEdit(null, group.humanFinalText);
+        const edit = best?.edit ?? independent;
+        const history = await transaction.select({
+          role: customerServiceConversationEvents.role,
+          body: customerServiceConversationEvents.body,
+        }).from(customerServiceConversationEvents).where(and(
+          eq(customerServiceConversationEvents.conversationId, group.conversationId),
+          lte(customerServiceConversationEvents.receivedAt, group.firstOutboundAt),
+        )).orderBy(desc(customerServiceConversationEvents.receivedAt)).limit(6);
+        const contextSummary = history.reverse().map((event) => `${event.role}: ${event.body}`).join("\n")
+          || "[No prior context]";
+        await transaction.update(customerServiceHumanReplyMatches).set({
+          status: "matched",
+          turnId: turn.id,
+          aiAttemptId: best?.attempt.id ?? null,
+          matchMethod: decision.method,
+          confidence: decision.confidence,
+          matchScore: 100,
+          editClassification: edit.classification,
+          similarityScore: edit.similarityScore,
+          editReasonCodes: edit.reasonCodes,
+          intent: best?.attempt.intent ?? null,
+          riskClass: best?.attempt.riskLevel ?? null,
+          policyReferences: best?.attempt.knowledgeSources ?? [],
+          contextSummary,
+        }).where(and(
+          eq(customerServiceHumanReplyMatches.id, group.id),
+          eq(customerServiceHumanReplyMatches.status, "pending"),
+        ));
+        return { status: "matched" as const, classification: edit.classification };
+      });
+    },
+
+    async recoverDueHumanReplies(input) {
+      const limit = Math.max(1, Math.min(100, Math.trunc(input.limit)));
+      if (!Number.isSafeInteger(input.groupWindowMs) || input.groupWindowMs < 10_000 || input.groupWindowMs > 120_000) {
+        throw new Error("customer_service_human_reply_group_window_invalid");
+      }
+      const cutoff = new Date(input.now.getTime() - input.groupWindowMs);
+      const due = await database.select({ id: customerServiceHumanReplyMatches.id })
+        .from(customerServiceHumanReplyMatches).where(and(
+          eq(customerServiceHumanReplyMatches.status, "pending"),
+          or(
+            lte(customerServiceHumanReplyMatches.lastOutboundAt, cutoff),
+            sql`exists (
+              select 1 from ${customerServiceConversationEvents} interruption
+              where interruption.conversation_id = ${customerServiceHumanReplyMatches.conversationId}
+                and interruption.event_type = 'customer_message'
+                and interruption.received_at > ${customerServiceHumanReplyMatches.lastOutboundAt}
+                and interruption.received_at <= ${input.now}
+            )`,
+          ),
+        )).orderBy(asc(customerServiceHumanReplyMatches.lastOutboundAt)).limit(limit);
+      let matched = 0;
+      let unmatched = 0;
+      for (const item of due) {
+        const result = await repository.matchHumanReply({
+          matchId: item.id,
+          now: input.now,
+          groupWindowMs: input.groupWindowMs,
+        });
+        if (result.status === "matched") matched += 1;
+        if (result.status === "unmatched") unmatched += 1;
+        if (result.status === "matched") {
+          const [source] = await database.select({ body: customerServiceMessages.body })
+            .from(customerServiceHumanReplyMatches)
+            .innerJoin(customerServiceTurns, eq(customerServiceTurns.id, customerServiceHumanReplyMatches.turnId))
+            .innerJoin(customerServiceMessages, eq(customerServiceMessages.id, customerServiceTurns.representativeMessageId))
+            .where(eq(customerServiceHumanReplyMatches.id, item.id)).limit(1);
+          if (source) {
+            await repository.createCaseMemoryCandidate({
+              matchId: item.id,
+              customerSituation: source.body,
+              customerTurnSummary: source.body,
+              productCategory: null,
+              market: "unknown",
+              deadlineContext: null,
+              knowledgeVersion: input.knowledgeVersion,
+            });
+          }
+        }
+      }
+      return { selected: due.length, matched, unmatched };
+    },
+
+    async createCaseMemoryCandidate(input) {
+      return database.transaction(async (transaction) => {
+        const [existing] = await transaction.select({ id: customerServiceCaseMemories.id })
+          .from(customerServiceCaseMemories)
+          .innerJoin(customerServiceHumanReplyMatches, eq(
+            customerServiceHumanReplyMatches.id,
+            customerServiceCaseMemories.humanReplyMatchId,
+          ))
+          .where(eq(customerServiceCaseMemories.humanReplyMatchId, input.matchId)).limit(1);
+        if (existing) return { status: "already_exists" as const, caseMemoryId: existing.id };
+        const [match] = await transaction.select().from(customerServiceHumanReplyMatches)
+          .where(eq(customerServiceHumanReplyMatches.id, input.matchId)).limit(1).for("update");
+        if (!match || match.status !== "matched" || !match.turnId) {
+          throw new Error("customer_service_case_memory_match_not_eligible");
+        }
+        const sourceEvents = await transaction.select({
+          redactionCodes: customerServiceConversationEvents.redactionCodes,
+        }).from(customerServiceHumanReplyMatchEvents)
+          .innerJoin(customerServiceConversationEvents, eq(
+            customerServiceConversationEvents.id,
+            customerServiceHumanReplyMatchEvents.eventId,
+          )).where(eq(customerServiceHumanReplyMatchEvents.matchId, match.id));
+        const [attempt] = match.aiAttemptId
+          ? await transaction.select({
+            draftText: customerServiceAiAttempts.draftText,
+            gateReasons: customerServiceAiAttempts.gateReasons,
+          }).from(customerServiceAiAttempts).where(eq(customerServiceAiAttempts.id, match.aiAttemptId)).limit(1)
+          : [];
+        const situation = sanitizeCaseMemoryText(input.customerSituation);
+        const turnSummary = sanitizeCaseMemoryText(input.customerTurnSummary);
+        const context = sanitizeCaseMemoryText(match.contextSummary);
+        const finalReply = sanitizeCaseMemoryText(match.humanFinalText);
+        const draft = attempt?.draftText ? sanitizeCaseMemoryText(attempt.draftText) : null;
+        const sourceRedactions = sourceEvents.flatMap((event) => event.redactionCodes);
+        const sanitationCodes = [situation, turnSummary, context, finalReply, ...(draft ? [draft] : [])]
+          .flatMap((item) => item.codes);
+        const eligibility = assessCaseMemoryEligibility({
+          riskClass: match.riskClass ?? "high",
+          gateReasons: attempt?.gateReasons ?? [],
+          customerSituation: situation.text,
+          humanReply: finalReply.text,
+          redactionCodes: [...sourceRedactions, ...sanitationCodes],
+        });
+        const status = eligibility.eligible ? "pending_review" as const : "excluded" as const;
+        const [memory] = await transaction.insert(customerServiceCaseMemories).values({
+          humanReplyMatchId: match.id,
+          intent: match.intent ?? "unknown",
+          normalizedSituation: situation.text,
+          customerTurnSummary: turnSummary.text,
+          contextSummary: context.text,
+          aiDraft: draft?.text ?? null,
+          humanFinalReply: finalReply.text,
+          editClassification: match.editClassification,
+          editReasonCodes: match.editReasonCodes,
+          productCategory: input.productCategory,
+          market: input.market,
+          deadlineContext: input.deadlineContext,
+          policyReferences: match.policyReferences,
+          knowledgeVersion: input.knowledgeVersion,
+          riskClass: match.riskClass === "low" ? "low" : "medium",
+          eligibilityStatus: status,
+          sourceConfidence: match.confidence === "high" ? "high" : "medium",
+          exclusionCodes: eligibility.exclusionCodes,
+          ...(status === "excluded" ? { decidedAt: new Date() } : {}),
+        }).returning({ id: customerServiceCaseMemories.id });
+        return status === "pending_review"
+          ? { status, caseMemoryId: memory.id }
+          : { status, caseMemoryId: memory.id, exclusionCodes: eligibility.exclusionCodes };
+      });
+    },
+
+    async retrieveApprovedCaseMemories(input) {
+      const limit = Math.max(1, Math.min(3, input.limit));
+      const startedAt = Date.now();
+      const fullTextRank = sql<number>`ts_rank_cd(
+        to_tsvector('simple', ${customerServiceCaseMemories.normalizedSituation}),
+        plainto_tsquery('simple', ${input.query})
+      )::float`;
+      const candidates = await database.select({
+        id: customerServiceCaseMemories.id,
+        intent: customerServiceCaseMemories.intent,
+        riskClass: customerServiceCaseMemories.riskClass,
+        productCategory: customerServiceCaseMemories.productCategory,
+        market: customerServiceCaseMemories.market,
+        policyReferences: customerServiceCaseMemories.policyReferences,
+        normalizedSituation: customerServiceCaseMemories.normalizedSituation,
+        humanFinalReply: customerServiceCaseMemories.humanFinalReply,
+        knowledgeVersion: customerServiceCaseMemories.knowledgeVersion,
+        exclusionCodes: customerServiceCaseMemories.exclusionCodes,
+        createdAt: customerServiceCaseMemories.createdAt,
+        fullTextRank,
+      }).from(customerServiceCaseMemories).where(and(
+        eq(customerServiceCaseMemories.eligibilityStatus, "approved_reusable"),
+        eq(customerServiceCaseMemories.intent, input.intent),
+      )).orderBy(desc(fullTextRank), desc(customerServiceCaseMemories.createdAt)).limit(50);
+      const scored = candidates.map((memory) => {
+        let exclusionReason: string | null = null;
+        if (memory.knowledgeVersion !== input.knowledgeVersion) exclusionReason = "knowledge_version_conflict";
+        else if (memory.exclusionCodes.length) exclusionReason = "excluded_source";
+        const score = exclusionReason ? null : scoreCaseMemory({
+          current: {
+            intent: input.intent,
+            riskClass: input.riskClass,
+            productCategory: input.productCategory,
+            market: input.market,
+            policyReferences: input.policyReferences,
+            query: input.query,
+            now: input.now,
+          },
+          memory: {
+            intent: memory.intent,
+            riskClass: memory.riskClass,
+            productCategory: memory.productCategory,
+            market: memory.market,
+            policyReferences: memory.policyReferences,
+            normalizedSituation: memory.normalizedSituation,
+            createdAt: memory.createdAt,
+            fullTextRank: memory.fullTextRank,
+          },
+        });
+        if (!exclusionReason && !score?.eligible) exclusionReason = "structured_incompatible";
+        if (!exclusionReason && (score?.totalScore ?? 0) < 70) exclusionReason = "below_threshold";
+        return { memory, score, exclusionReason };
+      }).sort((left, right) => (
+        (right.score?.totalScore ?? 0) - (left.score?.totalScore ?? 0)
+        || right.memory.createdAt.getTime() - left.memory.createdAt.getTime()
+        || left.memory.id.localeCompare(right.memory.id)
+      ));
+      const selected = scored.filter((item) => !item.exclusionReason).slice(0, limit);
+      const selectedIds = new Set(selected.map((item) => item.memory.id));
+      const latencyMs = Math.max(0, Date.now() - startedAt);
+      if (scored.length) {
+        await database.insert(customerServiceCaseRetrievals).values(scored.map((item) => {
+          const selectedIndex = selected.findIndex((candidate) => candidate.memory.id === item.memory.id);
+          const injected = selectedIds.has(item.memory.id);
+          return {
+            attemptId: input.attemptId,
+            caseMemoryId: item.memory.id,
+            rank: injected ? selectedIndex + 1 : null,
+            totalScore: item.score?.totalScore ?? 0,
+            scoreComponents: item.score?.eligible ? item.score.components : {},
+            thresholdPassed: !item.exclusionReason,
+            injected,
+            exclusionReason: item.exclusionReason,
+            latencyMs,
+          };
+        })).onConflictDoNothing();
+      }
+      return selected.map((item) => Object.freeze({
+        id: item.memory.id,
+        normalizedSituation: item.memory.normalizedSituation,
+        humanFinalReply: item.memory.humanFinalReply,
+        score: item.score?.totalScore ?? 0,
+      }));
+    },
+
+    async listCaseMemoryCandidates(limit) {
+      const rows = await database.select({
+        id: customerServiceCaseMemories.id,
+        intent: customerServiceCaseMemories.intent,
+        normalizedSituation: customerServiceCaseMemories.normalizedSituation,
+        humanFinalReply: customerServiceCaseMemories.humanFinalReply,
+        status: customerServiceCaseMemories.eligibilityStatus,
+      }).from(customerServiceCaseMemories)
+        .where(eq(customerServiceCaseMemories.eligibilityStatus, "pending_review"))
+        .orderBy(asc(customerServiceCaseMemories.createdAt))
+        .limit(Math.max(1, Math.min(100, limit)));
+      return Object.freeze({ items: Object.freeze(rows.map((row) => Object.freeze(row))) });
+    },
+
+    async decideCaseMemory(input) {
+      const nextStatus = input.action === "approve" ? "approved_reusable" as const : "excluded" as const;
+      return database.transaction(async (transaction) => {
+        const [memory] = await transaction.select({
+          status: customerServiceCaseMemories.eligibilityStatus,
+          exclusionCodes: customerServiceCaseMemories.exclusionCodes,
+        }).from(customerServiceCaseMemories)
+          .where(eq(customerServiceCaseMemories.id, input.caseMemoryId)).limit(1).for("update");
+        if (!memory || memory.status !== "pending_review") {
+          throw new Error("customer_service_case_memory_transition_invalid");
+        }
+        await transaction.update(customerServiceCaseMemories).set({
+          eligibilityStatus: nextStatus,
+          approvedByUserId: input.reviewerUserId,
+          decidedAt: input.now,
+          exclusionCodes: input.action === "reject"
+            ? [...new Set([...memory.exclusionCodes, "rejected_by_reviewer"])]
+            : memory.exclusionCodes,
+        }).where(and(
+          eq(customerServiceCaseMemories.id, input.caseMemoryId),
+          eq(customerServiceCaseMemories.eligibilityStatus, "pending_review"),
+        ));
+        return { status: nextStatus };
+      });
+    },
+
+    async listLearningCandidates(limit) {
+      const rows = await database.select({
+        id: customerServiceLearningCandidates.id,
+        intent: customerServiceLearningCandidates.intent,
+        proposedChange: customerServiceLearningCandidates.proposedChange,
+        reasonCodes: customerServiceLearningCandidates.reasonCodes,
+        evidenceCount: customerServiceLearningCandidates.evidenceCount,
+        status: customerServiceLearningCandidates.status,
+      }).from(customerServiceLearningCandidates)
+        .orderBy(desc(customerServiceLearningCandidates.createdAt))
+        .limit(Math.max(1, Math.min(100, limit)));
+      return Object.freeze({ items: Object.freeze(rows.map((row) => Object.freeze(row))) });
+    },
+
+    async refreshLearningCandidates(input = {}) {
+      const minimumMatchedReplies = input.minimumMatchedReplies ?? 50;
+      if (!Number.isSafeInteger(minimumMatchedReplies) || minimumMatchedReplies < 3 || minimumMatchedReplies > 1_000) {
+        throw new Error("learning_summary_threshold_invalid");
+      }
+      const [countRow] = await database.select({ value: sql<number>`count(*)::int` })
+        .from(customerServiceHumanReplyMatches)
+        .where(eq(customerServiceHumanReplyMatches.status, "matched"));
+      const checkpoint = Math.floor((countRow?.value ?? 0) / minimumMatchedReplies) * minimumMatchedReplies;
+      if (!checkpoint) return { checkpoint: 0, created: 0 };
+      const cases = await database.select({
+        caseId: customerServiceCaseMemories.id,
+        conversationKeyHash: customerServiceHumanReplyMatches.conversationId,
+        intent: customerServiceCaseMemories.intent,
+        editReasonCodes: customerServiceCaseMemories.editReasonCodes,
+      }).from(customerServiceCaseMemories)
+        .innerJoin(customerServiceHumanReplyMatches, eq(
+          customerServiceHumanReplyMatches.id,
+          customerServiceCaseMemories.humanReplyMatchId,
+        ))
+        .where(eq(customerServiceCaseMemories.eligibilityStatus, "approved_reusable"))
+        .orderBy(asc(customerServiceCaseMemories.createdAt))
+        .limit(checkpoint);
+      const summary = buildLearningSummary(cases.map((item) => ({
+        ...item,
+        approvedLowRisk: true,
+      })), minimumMatchedReplies, checkpoint);
+      if (!summary?.candidates.length) return { checkpoint, created: 0 };
+      const created = await database.insert(customerServiceLearningCandidates).values(
+        summary.candidates.map((candidate) => ({
+          candidateKind: candidate.candidateKind,
+          intent: candidate.intent,
+          proposedChange: candidate.proposedChange,
+          evidenceCount: candidate.evidenceCount,
+          distinctCaseCount: candidate.distinctCaseCount,
+          reasonCodes: candidate.reasonCodes,
+          sourceCaseMemoryIds: candidate.sourceCaseMemoryIds,
+          evidenceSignature: candidate.evidenceSignature,
+          status: "pending" as const,
+        })),
+      ).onConflictDoNothing().returning({ id: customerServiceLearningCandidates.id });
+      return { checkpoint, created: created.length };
+    },
+
+    async decideLearningCandidate(input) {
+      const nextStatus = input.action === "reject" ? "rejected" as const : "approved" as const;
+      return database.transaction(async (transaction) => {
+        const [candidate] = await transaction.select().from(customerServiceLearningCandidates)
+          .where(eq(customerServiceLearningCandidates.id, input.candidateId)).limit(1).for("update");
+        if (!candidate || candidate.status !== "pending") {
+          throw new Error("customer_service_learning_candidate_transition_invalid");
+        }
+        await transaction.update(customerServiceLearningCandidates).set({
+          status: nextStatus,
+          approvedText: input.action === "edit_and_approve" ? input.approvedText : null,
+          reviewerUserId: input.reviewerUserId,
+          decisionReason: input.reason,
+          decidedAt: input.now,
+        }).where(and(
+          eq(customerServiceLearningCandidates.id, input.candidateId),
+          eq(customerServiceLearningCandidates.status, "pending"),
+        ));
+        return { status: nextStatus };
       });
     },
 
@@ -1163,6 +2426,16 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
 
     async completeProviderAttempt(input: ProviderAttemptCompletion) {
       await database.transaction(async (transaction) => {
+        const [initial] = await transaction.select({
+          messageId: customerServiceAiAttempts.messageId,
+        }).from(customerServiceAiAttempts)
+          .where(eq(customerServiceAiAttempts.id, input.attemptId)).limit(1);
+        if (!initial) throw new Error("customer_service_attempt_not_found");
+        let turn = await turnForMessage(transaction, initial.messageId);
+        if (turn) {
+          await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + turn.conversationId}))`);
+          turn = await turnForMessage(transaction, initial.messageId);
+        }
         const [attempt] = await transaction.select({
           status: customerServiceAiAttempts.status,
           reserved: customerServiceAiAttempts.reservedCostMicrousd,
@@ -1182,13 +2455,17 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             spentMicrousd: sql`${customerServiceBudgetState.spentMicrousd} + ${settledCost}`,
           }).where(sql`${customerServiceBudgetState.scopeKey} in (${input.dailyScopeKey}, 'total')`);
         }
+        const humanReplyReceived = Boolean(turn) && (
+          (turn?.status === "suppressed" && turn.suppressionReason === "human_outbound_received")
+          || await hasHumanReplyAfterTurn(transaction, turn)
+        );
         await transaction.update(customerServiceAiAttempts).set({
-          status: input.status,
+          status: humanReplyReceived ? "abandoned" : input.status,
           providerCalled: true,
           provider: input.provider,
           model: input.model,
-          draftText: input.status === "draft_ready" ? input.draftText : null,
-          rejectedOutputHash: input.rejectedOutputHash ?? null,
+          draftText: !humanReplyReceived && input.status === "draft_ready" ? input.draftText : null,
+          rejectedOutputHash: humanReplyReceived ? null : input.rejectedOutputHash ?? null,
           validatorCodes: input.validatorCodes,
           inputTokens: input.inputTokens,
           cachedInputTokens: input.cachedInputTokens,
@@ -1216,14 +2493,39 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     async listQueue(limit) {
       const rows = await database.select({
         messageId: customerServiceMessages.id,
+        conversationId: customerServiceMessages.conversationId,
         body: customerServiceMessages.body,
         receivedAt: customerServiceMessages.receivedAt,
         status: customerServiceMessages.ingestStatus,
         latestAttemptId: customerServiceAiAttempts.id,
         draftText: customerServiceAiAttempts.draftText,
         gateResult: customerServiceAiAttempts.gateResult,
+        humanReplyReceived: sql<boolean>`exists (
+          select 1 from customer_service_turns turns
+          where turns.representative_message_id = ${customerServiceMessages.id}
+            and turns.status = 'suppressed'
+            and turns.suppression_reason = 'human_outbound_received'
+        )`,
       }).from(customerServiceMessages)
         .leftJoin(customerServiceAiAttempts, eq(customerServiceAiAttempts.messageId, customerServiceMessages.id))
+        .where(sql`
+          exists (
+            select 1 from customer_service_turns turns
+            where turns.representative_message_id = ${customerServiceMessages.id}
+              and (
+                turns.status in ('sealed', 'pilot_complete')
+                or (turns.status = 'suppressed' and turns.suppression_reason = 'human_outbound_received')
+              )
+          )
+          or exists (
+            select 1 from customer_service_attachments attachments
+            where attachments.message_id = ${customerServiceMessages.id}
+          )
+          or not exists (
+            select 1 from customer_service_conversation_events events
+            where events.legacy_message_id = ${customerServiceMessages.id}
+          )
+        `)
         .orderBy(desc(customerServiceMessages.receivedAt), desc(customerServiceAiAttempts.attemptNumber))
         .limit(Math.max(1, Math.min(100, limit)));
       const seen = new Set<string>();
@@ -1248,17 +2550,77 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         ]);
       }
       const assessments = await validatedQueueImageAssessments(database, attachmentIdsByMessage);
+      const conversationIds = [...new Set(items.map((item) => item.conversationId))];
+      const timelineRows = conversationIds.length
+        ? await database.execute<{
+          conversation_id: string;
+          role: "customer" | "staff";
+          body: string;
+          received_at: Date;
+        }>(sql`
+          select conversation_id, role, body, received_at
+          from (
+            select
+              conversation_id,
+              role,
+              body,
+              received_at,
+              created_at,
+              id,
+              row_number() over (
+                partition by conversation_id
+                order by received_at desc, created_at desc, id desc
+              ) as ordinal
+            from ${customerServiceConversationEvents}
+            where ${customerServiceConversationEvents.conversationId} in (${sql.join(
+              conversationIds.map((id) => sql`${id}`),
+              sql`, `,
+            )})
+              and ${customerServiceConversationEvents.eventType} in ('customer_message', 'human_outbound')
+          ) recent
+          where ordinal <= 8
+          order by conversation_id, received_at asc, created_at asc, id asc
+        `)
+        : { rows: [] as Array<{
+          conversation_id: string;
+          role: "customer" | "staff";
+          body: string;
+          received_at: Date;
+        }> };
+      const timelineByConversation = new Map<string, Array<{
+        role: "customer" | "staff";
+        text: string;
+        receivedAt: string;
+      }>>();
+      for (const event of timelineRows.rows) {
+        timelineByConversation.set(event.conversation_id, [
+          ...(timelineByConversation.get(event.conversation_id) ?? []),
+          {
+            role: event.role,
+            text: event.body,
+            receivedAt: new Date(event.received_at).toISOString(),
+          },
+        ]);
+      }
       return {
         items: items.map((item) => {
           const attachmentIds = attachmentIdsByMessage.get(item.messageId) ?? [];
           const assessment = assessments.get(item.messageId);
           return {
-            ...item,
+            messageId: item.messageId,
+            body: item.body,
+            receivedAt: item.receivedAt,
+            status: item.status,
+            latestAttemptId: item.humanReplyReceived ? null : item.latestAttemptId,
+            draftText: item.humanReplyReceived ? null : item.draftText,
+            gateResult: item.humanReplyReceived ? null : item.gateResult,
+            humanReplyReceived: item.humanReplyReceived,
             attachmentCount: attachmentIds.length,
             imageAnalysisStatus: attachmentIds.length
               ? assessment?.status ?? "human_review_required"
               : "not_applicable",
             imageAssessmentSummary: assessment?.summary ?? null,
+            timeline: timelineByConversation.get(item.conversationId) ?? [],
           };
         }),
       };
@@ -1268,6 +2630,12 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       const result = await database.execute(sql`
         select
           (select count(*) from customer_service_messages where pilot_run_id is not null) as total_incoming_eligible,
+          (select count(*) from customer_service_conversation_events where role = 'customer') as raw_customer_events,
+          (select count(*) from customer_service_conversation_events where role = 'staff') as staff_context_events,
+          (select count(*) from customer_service_turns where status in ('sealed', 'pilot_complete')) as meaningful_turns,
+          (select coalesce(sum(greatest(fragment_count - 1, 0)), 0) from customer_service_turns) as aggregated_fragments,
+          (select count(*) from customer_service_turns
+            where status = 'suppressed' and suppression_reason = 'completed_acknowledgement') as acknowledgements_suppressed,
           (select count(*) from customer_service_ai_attempts where status = 'draft_ready') as drafts_generated,
           (select count(*) from customer_service_feedback_events where action = 'accepted_unchanged') as accepted_unchanged,
           (select count(*) from customer_service_feedback_events where action = 'edited') as edited_accepted,
@@ -1312,12 +2680,51 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             ), 0)
             from customer_service_image_jobs jobs
             left join customer_service_image_analysis_attempts image_attempts on image_attempts.id = jobs.image_analysis_attempt_id
-            left join customer_service_ai_attempts text_attempts on text_attempts.id = jobs.text_attempt_id) as image_aware_total_cost_microusd
+            left join customer_service_ai_attempts text_attempts on text_attempts.id = jobs.text_attempt_id) as image_aware_total_cost_microusd,
+          (select count(*) from customer_service_conversation_events where role = 'staff') as total_actual_human_replies,
+          (select count(*) from customer_service_human_reply_matches where status = 'matched') as matched_human_replies,
+          (select count(*) from customer_service_human_reply_matches where status = 'unmatched') as unmatched_human_replies,
+          (select count(*) from customer_service_human_reply_matches where edit_classification = 'accepted_unchanged') as accepted_unchanged_human_replies,
+          (select count(*) from customer_service_human_reply_matches
+            where edit_classification in ('edited_light', 'edited_significant')) as edited_human_replies,
+          (select count(*) from customer_service_human_reply_matches
+            where edit_classification in ('ai_ignored', 'independent_reply')) as independently_written_human_replies,
+          (select count(*) from customer_service_case_memories where eligibility_status = 'approved_reusable') as reusable_case_memories,
+          (select count(*) from customer_service_case_memories
+            where eligibility_status = 'excluded' and exclusion_codes <> '[]'::jsonb) as excluded_high_risk_cases,
+          (select count(*) from customer_service_case_retrievals where injected) as cases_retrieved_in_drafts,
+          (select count(*) from customer_service_learning_candidates where status = 'pending') as learning_candidates_pending,
+          (select count(*) from customer_service_learning_candidates where status = 'approved') as learning_candidates_approved,
+          (select count(*) from customer_service_learning_candidates where status = 'rejected') as learning_candidates_rejected,
+          (select coalesce(jsonb_agg(jsonb_build_object('code', reasons.code, 'count', reasons.reason_count)
+            order by reasons.reason_count desc, reasons.code), '[]'::jsonb)
+            from (
+              select reason.value as code, count(*)::integer as reason_count
+              from customer_service_human_reply_matches matches
+              cross join lateral jsonb_array_elements_text(matches.edit_reason_codes) reason(value)
+              group by reason.value
+              order by reason_count desc, reason.value
+              limit 5
+            ) reasons) as common_edit_reasons
       `);
       const row = result.rows[0] as Record<string, unknown>;
       const count = (name: string) => Number(row[name] ?? 0);
+      const commonEditReasons = Array.isArray(row.common_edit_reasons)
+        ? row.common_edit_reasons.flatMap((item) => {
+          if (!item || typeof item !== "object") return [];
+          const value = item as Record<string, unknown>;
+          return typeof value.code === "string"
+            ? [{ code: value.code, count: Number(value.count ?? 0) }]
+            : [];
+        })
+        : [];
       return {
         totalIncomingEligible: count("total_incoming_eligible"),
+        rawCustomerEvents: count("raw_customer_events"),
+        staffContextEvents: count("staff_context_events"),
+        meaningfulTurns: count("meaningful_turns"),
+        aggregatedFragments: count("aggregated_fragments"),
+        acknowledgementsSuppressed: count("acknowledgements_suppressed"),
         draftsGenerated: count("drafts_generated"),
         acceptedUnchanged: count("accepted_unchanged"),
         editedAccepted: count("edited_accepted"),
@@ -1346,7 +2753,21 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         imageAwareRejected: count("image_aware_rejected"),
         imageRequestOriginalRecommendations: count("image_request_original_recommendations"),
         imageAwareTotalCostMicrousd: count("image_aware_total_cost_microusd"),
+        totalActualHumanReplies: count("total_actual_human_replies"),
+        matchedHumanReplies: count("matched_human_replies"),
+        unmatchedHumanReplies: count("unmatched_human_replies"),
+        acceptedUnchangedHumanReplies: count("accepted_unchanged_human_replies"),
+        editedHumanReplies: count("edited_human_replies"),
+        independentlyWrittenHumanReplies: count("independently_written_human_replies"),
+        reusableCaseMemories: count("reusable_case_memories"),
+        excludedHighRiskCases: count("excluded_high_risk_cases"),
+        casesRetrievedInDrafts: count("cases_retrieved_in_drafts"),
+        learningCandidatesPending: count("learning_candidates_pending"),
+        learningCandidatesApproved: count("learning_candidates_approved"),
+        learningCandidatesRejected: count("learning_candidates_rejected"),
+        commonEditReasons,
       };
     },
   };
+  return repository;
 }
