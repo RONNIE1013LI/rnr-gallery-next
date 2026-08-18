@@ -460,6 +460,17 @@ describe("HomepageV3", () => {
     );
   });
 
+  it("centres the finished transformation result at the compact desktop breakpoint", () => {
+    const stylesheet = readFileSync(
+      "src/components/homepage-v3.module.css",
+      "utf8",
+    );
+
+    expect(stylesheet).toMatch(
+      /@media \(max-width:\s*1080px\)[\s\S]*?\.transformationResult\s*\{[^}]*justify-self:\s*center/,
+    );
+  });
+
   it("renders the approved V3 story and verified service language", () => {
     const { container } = render(<HomepageV3 registry={defaultProductRegistry} />);
 

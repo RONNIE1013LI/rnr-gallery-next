@@ -552,7 +552,7 @@
   .heroCopy { max-width: 46rem; padding-bottom: 1.25rem; }
   .heroArt { width: min(100%, 44rem); min-height: 47rem; margin-inline: auto; }
   .transformationGrid { grid-template-columns: 1fr 0.8fr; }
-  .transformationResult { max-width: 35rem; grid-column: 1 / -1; justify-self: end; }
+  .transformationResult { max-width: 35rem; grid-column: 1 / -1; justify-self: center; }
   .workList { margin-top: 12.5rem; }
   .peopleGrid { grid-template-columns: 1fr; }
   .peopleCopy { max-width: 38.75rem; }
