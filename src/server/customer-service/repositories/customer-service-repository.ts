@@ -1,4 +1,9 @@
-import type { ConversationRole, CustomerServiceChannel, DraftGenerationRequest } from "../types";
+import type {
+  ConversationRole,
+  CustomerServiceChannel,
+  DraftGenerationRequest,
+  DraftGenerationResult,
+} from "../types";
 import type { ImageAnalysisResult } from "../image-analysis-schema";
 import type { ProtectedAttachmentSource } from "../attachments/attachment-source-protector";
 
@@ -69,6 +74,12 @@ export type ConversationContextItem = Readonly<{
 export type DraftInput = Readonly<{
   current: Readonly<{ id: string; text: string | null; channel: CustomerServiceChannel }>;
   context: readonly ConversationContextItem[];
+}>;
+
+export type ClaimedCustomerTurn = Readonly<{
+  turnId: string;
+  messageId: string;
+  leaseToken: string;
 }>;
 
 export type GateBlockedAttemptInput = Readonly<{
@@ -149,6 +160,11 @@ export type SafeQueuePage = Readonly<{
     attachmentCount: number;
     imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
     imageAssessmentSummary: string | null;
+    timeline: readonly Readonly<{
+      role: "customer" | "staff";
+      text: string;
+      receivedAt: string;
+    }>[];
   }>[];
 }>;
 
@@ -215,6 +231,23 @@ export interface CustomerServiceRepository {
     | Readonly<{ status: "pilot_complete"; turnId: string; messageId: string }>
     | Readonly<{ status: "sealed"; turnId: string; messageId: string; pilotSequence: number }>
   >;
+  claimDueCustomerTurn(input: Readonly<{
+    turnId?: string;
+    now: Date;
+    leaseExpiresAt: Date;
+  }>): Promise<ClaimedCustomerTurn | null>;
+  completeCustomerTurnProcessing(input: Readonly<{
+    turnId: string;
+    leaseToken: string;
+    now: Date;
+    outcome: DraftGenerationResult["status"];
+  }>): Promise<boolean>;
+  retryCustomerTurnProcessing(input: Readonly<{
+    turnId: string;
+    leaseToken: string;
+    nextRunAt: Date;
+    errorCode: string;
+  }>): Promise<boolean>;
   ingestFacebookMessage(input: HashedIncomingMessage): Promise<
     | Readonly<{ status: "created"; messageId: string; pilotSequence: number }>
     | Readonly<{ status: "duplicate"; messageId: string }>

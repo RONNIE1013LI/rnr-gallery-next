@@ -39,6 +39,7 @@ import { assessCaseMemoryEligibility } from "../learning/case-memory";
 import { sanitizeCaseMemoryText } from "../learning/case-memory-sanitizer";
 import { scoreCaseMemory } from "../learning/case-retrieval";
 import { buildLearningSummary } from "../learning/learning-summary";
+import { localDateScopeKey } from "../usage-cost";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -535,6 +536,10 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
               status: "suppressed",
               sealedAt: input.receivedAt,
               suppressionReason: "human_outbound_received",
+              processingStatus: "cancelled",
+              processingLeaseToken: null,
+              processingLeaseExpiresAt: null,
+              processingCompletedAt: input.receivedAt,
             }).where(and(
               eq(customerServiceTurns.id, targetTurn.id),
               inArray(customerServiceTurns.status, ["open", "sealed"]),
@@ -587,6 +592,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             openedAt: sql`least(${customerServiceTurns.openedAt}, ${input.receivedAt})`,
             lastEventAt: sql`greatest(${customerServiceTurns.lastEventAt}, ${input.receivedAt})`,
             debounceUntil: sql`greatest(${customerServiceTurns.debounceUntil}, ${debounceUntil})`,
+            nextRunAt: sql`greatest(${customerServiceTurns.nextRunAt}, ${debounceUntil})`,
             fragmentCount: sql`${customerServiceTurns.fragmentCount} + 1`,
           }).where(and(
             eq(customerServiceTurns.id, openTurn.id),
@@ -598,6 +604,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             representativeMessageId: message.id,
             body,
             debounceUntil,
+            nextRunAt: debounceUntil,
             openedAt: input.receivedAt,
             lastEventAt: input.receivedAt,
           }).returning({ id: customerServiceTurns.id });
@@ -666,6 +673,10 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             nextRunAt: input.receivedAt,
             ...(input.imageJob.status === "human_review_required" ? { completedAt: input.receivedAt } : {}),
           });
+          await transaction.update(customerServiceTurns).set({
+            processingStatus: "completed",
+            processingCompletedAt: input.receivedAt,
+          }).where(eq(customerServiceTurns.id, turn.id));
         }
         return {
           status: "turn_pending" as const,
@@ -707,6 +718,10 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             status: "suppressed",
             sealedAt: input.now,
             suppressionReason: acknowledgement.reason,
+            processingStatus: "completed",
+            processingLeaseToken: null,
+            processingLeaseExpiresAt: null,
+            processingCompletedAt: input.now,
           }).where(and(
             eq(customerServiceTurns.id, turn.id),
             eq(customerServiceTurns.status, "open"),
@@ -732,6 +747,10 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           await transaction.update(customerServiceTurns).set({
             status: "pilot_complete",
             sealedAt: input.now,
+            processingStatus: "completed",
+            processingLeaseToken: null,
+            processingLeaseExpiresAt: null,
+            processingCompletedAt: input.now,
           }).where(eq(customerServiceTurns.id, turn.id));
           return {
             status: "pilot_complete" as const,
@@ -764,6 +783,178 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           pilotSequence: pilot.nextSequence,
         };
       });
+    },
+
+    async claimDueCustomerTurn(input) {
+      if (input.leaseExpiresAt.getTime() <= input.now.getTime()) {
+        throw new Error("customer_service_turn_lease_invalid");
+      }
+
+      const candidateId = await database.transaction(async (transaction) => {
+        const conditions = [
+          inArray(customerServiceTurns.status, ["open", "sealed"]),
+          lte(customerServiceTurns.nextRunAt, input.now),
+          or(
+            eq(customerServiceTurns.processingStatus, "pending"),
+            and(
+              eq(customerServiceTurns.processingStatus, "running"),
+              lte(customerServiceTurns.processingLeaseExpiresAt, input.now),
+            ),
+          ),
+          sql`not exists (
+            select 1 from ${customerServiceAttachments}
+            where ${customerServiceAttachments.messageId} = ${customerServiceTurns.representativeMessageId}
+          )`,
+        ];
+        if (input.turnId) conditions.push(eq(customerServiceTurns.id, input.turnId));
+        const [candidate] = await transaction.select({ id: customerServiceTurns.id })
+          .from(customerServiceTurns)
+          .where(and(...conditions))
+          .orderBy(asc(customerServiceTurns.nextRunAt), asc(customerServiceTurns.createdAt))
+          .limit(1)
+          .for("update", { skipLocked: true });
+        return candidate?.id ?? null;
+      });
+      if (!candidateId) return null;
+
+      await repository.sealDueCustomerTurn({ turnId: candidateId, now: input.now });
+
+      return database.transaction(async (transaction) => {
+        const [turn] = await transaction.select({
+          id: customerServiceTurns.id,
+          messageId: customerServiceTurns.representativeMessageId,
+        }).from(customerServiceTurns).where(and(
+          eq(customerServiceTurns.id, candidateId),
+          eq(customerServiceTurns.status, "sealed"),
+          lte(customerServiceTurns.nextRunAt, input.now),
+          or(
+            eq(customerServiceTurns.processingStatus, "pending"),
+            and(
+              eq(customerServiceTurns.processingStatus, "running"),
+              lte(customerServiceTurns.processingLeaseExpiresAt, input.now),
+            ),
+          ),
+        )).limit(1).for("update", { skipLocked: true });
+        if (!turn?.messageId) return null;
+
+        const [latestAttempt] = await transaction.select({
+          id: customerServiceAiAttempts.id,
+          status: customerServiceAiAttempts.status,
+          providerCalled: customerServiceAiAttempts.providerCalled,
+          reservedCostMicrousd: customerServiceAiAttempts.reservedCostMicrousd,
+          startedAt: customerServiceAiAttempts.startedAt,
+        }).from(customerServiceAiAttempts).where(eq(
+          customerServiceAiAttempts.messageId,
+          turn.messageId,
+        )).orderBy(desc(customerServiceAiAttempts.attemptNumber)).limit(1).for("update");
+
+        if (latestAttempt && [
+          "gate_blocked",
+          "draft_ready",
+          "output_blocked",
+          "budget_blocked",
+          "abandoned",
+        ].includes(latestAttempt.status)) {
+          await transaction.update(customerServiceTurns).set({
+            processingStatus: "completed",
+            processingLeaseToken: null,
+            processingLeaseExpiresAt: null,
+            processingCompletedAt: input.now,
+          }).where(eq(customerServiceTurns.id, turn.id));
+          return null;
+        }
+
+        if (
+          latestAttempt
+          && ["pending", "provider_pending"].includes(latestAttempt.status)
+          && latestAttempt.providerCalled
+        ) {
+          await transaction.update(customerServiceTurns).set({
+            processingStatus: "completed",
+            processingLeaseToken: null,
+            processingLeaseExpiresAt: null,
+            processingCompletedAt: input.now,
+            lastProcessingError: "provider_outcome_unknown",
+          }).where(eq(customerServiceTurns.id, turn.id));
+          return null;
+        }
+
+        if (
+          latestAttempt
+          && ["pending", "provider_pending"].includes(latestAttempt.status)
+          && !latestAttempt.providerCalled
+        ) {
+          if (latestAttempt.reservedCostMicrousd > 0) {
+            const dailyScopeKey = localDateScopeKey(latestAttempt.startedAt);
+            await ensureBudgetRows(transaction, [dailyScopeKey, "total"].sort());
+            await transaction.update(customerServiceBudgetState).set({
+              reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${latestAttempt.reservedCostMicrousd})`,
+            }).where(sql`${customerServiceBudgetState.scopeKey} in (${dailyScopeKey}, 'total')`);
+          }
+          await transaction.update(customerServiceAiAttempts).set({
+            status: "abandoned",
+            reservedCostMicrousd: 0,
+            providerErrorCode: "turn_recovery_pre_invocation_interrupted",
+            completedAt: input.now,
+          }).where(and(
+            eq(customerServiceAiAttempts.id, latestAttempt.id),
+            inArray(customerServiceAiAttempts.status, ["pending", "provider_pending"]),
+            eq(customerServiceAiAttempts.providerCalled, false),
+          ));
+        }
+
+        const leaseToken = randomUUID();
+        const [claimed] = await transaction.update(customerServiceTurns).set({
+          processingStatus: "running",
+          processingLeaseToken: leaseToken,
+          processingLeaseExpiresAt: input.leaseExpiresAt,
+          processingAttempts: sql`${customerServiceTurns.processingAttempts} + 1`,
+          lastProcessingError: null,
+        }).where(and(
+          eq(customerServiceTurns.id, turn.id),
+          eq(customerServiceTurns.status, "sealed"),
+          or(
+            eq(customerServiceTurns.processingStatus, "pending"),
+            and(
+              eq(customerServiceTurns.processingStatus, "running"),
+              lte(customerServiceTurns.processingLeaseExpiresAt, input.now),
+            ),
+          ),
+        )).returning({ id: customerServiceTurns.id });
+        return claimed ? { turnId: turn.id, messageId: turn.messageId, leaseToken } : null;
+      });
+    },
+
+    async completeCustomerTurnProcessing(input) {
+      const completed = await database.update(customerServiceTurns).set({
+        processingStatus: "completed",
+        processingLeaseToken: null,
+        processingLeaseExpiresAt: null,
+        processingCompletedAt: input.now,
+        lastProcessingError: null,
+      }).where(and(
+        eq(customerServiceTurns.id, input.turnId),
+        eq(customerServiceTurns.status, "sealed"),
+        eq(customerServiceTurns.processingStatus, "running"),
+        eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
+      )).returning({ id: customerServiceTurns.id });
+      return completed.length === 1;
+    },
+
+    async retryCustomerTurnProcessing(input) {
+      const retried = await database.update(customerServiceTurns).set({
+        processingStatus: "pending",
+        processingLeaseToken: null,
+        processingLeaseExpiresAt: null,
+        nextRunAt: input.nextRunAt,
+        lastProcessingError: input.errorCode.slice(0, 120),
+      }).where(and(
+        eq(customerServiceTurns.id, input.turnId),
+        eq(customerServiceTurns.status, "sealed"),
+        eq(customerServiceTurns.processingStatus, "running"),
+        eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
+      )).returning({ id: customerServiceTurns.id });
+      return retried.length === 1;
     },
 
     async ingestFacebookMessage(input: HashedIncomingMessage) {
@@ -2270,6 +2461,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     async listQueue(limit) {
       const rows = await database.select({
         messageId: customerServiceMessages.id,
+        conversationId: customerServiceMessages.conversationId,
         body: customerServiceMessages.body,
         receivedAt: customerServiceMessages.receivedAt,
         status: customerServiceMessages.ingestStatus,
@@ -2282,7 +2474,10 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           exists (
             select 1 from customer_service_turns turns
             where turns.representative_message_id = ${customerServiceMessages.id}
-              and turns.status in ('sealed', 'pilot_complete')
+              and (
+                turns.status in ('sealed', 'pilot_complete')
+                or (turns.status = 'suppressed' and turns.suppression_reason = 'human_outbound_received')
+              )
           )
           or exists (
             select 1 from customer_service_attachments attachments
@@ -2317,17 +2512,76 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         ]);
       }
       const assessments = await validatedQueueImageAssessments(database, attachmentIdsByMessage);
+      const conversationIds = [...new Set(items.map((item) => item.conversationId))];
+      const timelineRows = conversationIds.length
+        ? await database.execute<{
+          conversation_id: string;
+          role: "customer" | "staff";
+          body: string;
+          received_at: Date;
+        }>(sql`
+          select conversation_id, role, body, received_at
+          from (
+            select
+              conversation_id,
+              role,
+              body,
+              received_at,
+              created_at,
+              id,
+              row_number() over (
+                partition by conversation_id
+                order by received_at desc, created_at desc, id desc
+              ) as ordinal
+            from ${customerServiceConversationEvents}
+            where ${customerServiceConversationEvents.conversationId} in (${sql.join(
+              conversationIds.map((id) => sql`${id}`),
+              sql`, `,
+            )})
+              and ${customerServiceConversationEvents.eventType} in ('customer_message', 'human_outbound')
+          ) recent
+          where ordinal <= 8
+          order by conversation_id, received_at asc, created_at asc, id asc
+        `)
+        : { rows: [] as Array<{
+          conversation_id: string;
+          role: "customer" | "staff";
+          body: string;
+          received_at: Date;
+        }> };
+      const timelineByConversation = new Map<string, Array<{
+        role: "customer" | "staff";
+        text: string;
+        receivedAt: string;
+      }>>();
+      for (const event of timelineRows.rows) {
+        timelineByConversation.set(event.conversation_id, [
+          ...(timelineByConversation.get(event.conversation_id) ?? []),
+          {
+            role: event.role,
+            text: event.body,
+            receivedAt: new Date(event.received_at).toISOString(),
+          },
+        ]);
+      }
       return {
         items: items.map((item) => {
           const attachmentIds = attachmentIdsByMessage.get(item.messageId) ?? [];
           const assessment = assessments.get(item.messageId);
           return {
-            ...item,
+            messageId: item.messageId,
+            body: item.body,
+            receivedAt: item.receivedAt,
+            status: item.status,
+            latestAttemptId: item.latestAttemptId,
+            draftText: item.draftText,
+            gateResult: item.gateResult,
             attachmentCount: attachmentIds.length,
             imageAnalysisStatus: attachmentIds.length
               ? assessment?.status ?? "human_review_required"
               : "not_applicable",
             imageAssessmentSummary: assessment?.summary ?? null,
+            timeline: timelineByConversation.get(item.conversationId) ?? [],
           };
         }),
       };

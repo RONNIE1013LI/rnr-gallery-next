@@ -13,6 +13,10 @@ const item = {
   attachmentCount: 0,
   imageAnalysisStatus: "not_applicable" as const,
   imageAssessmentSummary: null,
+  timeline: [
+    { role: "customer" as const, text: "Can you use my blurry photo?", receivedAt: "2026-08-17T00:00:00.000Z" },
+    { role: "staff" as const, text: "Please send the original file.", receivedAt: "2026-08-17T00:01:00.000Z" },
+  ],
 };
 
 describe("ReplyAssistantClient", () => {
@@ -92,5 +96,14 @@ describe("ReplyAssistantClient", () => {
     expect(screen.getByRole("button", { name: "Regenerate" })).toBeDisabled();
     fireEvent.click(screen.getByRole("button", { name: "Accept unchanged" }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled());
+  });
+
+  it("shows actual human outbound messages in the conversation timeline", () => {
+    render(<ReplyAssistantClient initialItems={[item]} />);
+
+    expect(screen.getByRole("region", { name: "Conversation timeline" })).toBeInTheDocument();
+    expect(screen.getByText("R&R")).toBeInTheDocument();
+    expect(screen.getByText("Please send the original file.")).toBeInTheDocument();
+    expect(screen.queryByText("AI draft", { exact: false })).not.toBeInTheDocument();
   });
 });

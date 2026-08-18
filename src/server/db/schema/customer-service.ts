@@ -128,6 +128,16 @@ export const customerServiceTurns = pgTable(
     fragmentCount: integer("fragment_count").default(1).notNull(),
     pilotRunId: uuid("pilot_run_id").references(() => customerServicePilotRuns.id, { onDelete: "restrict" }),
     pilotSequence: integer("pilot_sequence"),
+    processingStatus: text("processing_status")
+      .$type<"pending" | "running" | "completed" | "cancelled">()
+      .default("pending")
+      .notNull(),
+    processingLeaseToken: text("processing_lease_token"),
+    processingLeaseExpiresAt: timestamp("processing_lease_expires_at", { withTimezone: true }),
+    processingAttempts: integer("processing_attempts").default(0).notNull(),
+    nextRunAt: timestamp("next_run_at", { withTimezone: true }).defaultNow().notNull(),
+    lastProcessingError: text("last_processing_error"),
+    processingCompletedAt: timestamp("processing_completed_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: updatedTimestamp(),
   },
@@ -137,10 +147,18 @@ export const customerServiceTurns = pgTable(
       .where(sql`${table.pilotRunId} is not null and ${table.pilotSequence} is not null`),
     index("customer_service_turns_conversation_last_event_idx").on(table.conversationId, table.lastEventAt),
     index("customer_service_turns_status_debounce_idx").on(table.status, table.debounceUntil),
+    index("customer_service_turns_processing_due_idx")
+      .on(table.processingStatus, table.nextRunAt, table.processingLeaseExpiresAt),
     check("customer_service_turns_channel_valid", sql`${table.channel} in ('facebook', 'website')`),
     check("customer_service_turns_status_valid", sql`${table.status} in ('open', 'sealed', 'suppressed', 'pilot_complete')`),
     check("customer_service_turns_body_valid", sql`length(trim(${table.body})) > 0`),
     check("customer_service_turns_fragment_count_valid", sql`${table.fragmentCount} > 0`),
+    check("customer_service_turns_processing_status_valid", sql`${table.processingStatus} in ('pending', 'running', 'completed', 'cancelled')`),
+    check("customer_service_turns_processing_attempts_valid", sql`${table.processingAttempts} >= 0`),
+    check(
+      "customer_service_turns_processing_lease_valid",
+      sql`(${table.processingStatus} = 'running' and ${table.processingLeaseToken} is not null and ${table.processingLeaseExpiresAt} is not null) or (${table.processingStatus} <> 'running' and ${table.processingLeaseToken} is null and ${table.processingLeaseExpiresAt} is null)`,
+    ),
     check(
       "customer_service_turns_pilot_pair_valid",
       sql`(${table.pilotRunId} is null and ${table.pilotSequence} is null) or (${table.pilotRunId} is not null and ${table.pilotSequence} is not null and ${table.pilotSequence} > 0)`,

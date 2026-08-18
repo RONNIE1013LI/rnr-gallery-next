@@ -8,7 +8,6 @@ import { sanitizeHumanOutboundText } from "../conversation/human-outbound-saniti
 import { verifyMetaSignature } from "./signature";
 
 type IngestResult = Awaited<ReturnType<CustomerServiceRepository["ingestConversationEvent"]>>;
-type SealResult = Awaited<ReturnType<CustomerServiceRepository["sealDueCustomerTurn"]>>;
 
 type WebhookConfig = Readonly<{
   enabled: boolean;
@@ -40,9 +39,8 @@ function hashExternalId(value: string, secret: string) {
 export function createMetaWebhookHandlers(dependencies: Readonly<{
   config: WebhookConfig;
   ingest: (message: HashedConversationEvent) => Promise<IngestResult>;
-  sealTurn: (input: Readonly<{ turnId: string; now: Date }>) => Promise<SealResult>;
   waitUntil?: (deadline: Date) => Promise<void>;
-  generateDraft: (messageId: string) => Promise<unknown>;
+  processTurn: (turnId: string) => Promise<unknown>;
   kickImageJob: (jobId: string) => Promise<unknown>;
   recoverHumanReplies?: (input: Readonly<{ now: Date; groupWindowMs: number; limit: number }>) => Promise<unknown>;
   scheduleAfter: (task: () => Promise<void>) => void;
@@ -142,10 +140,7 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
           dependencies.scheduleAfter(async () => {
             try {
               await waitUntil(result.debounceUntil);
-              const sealed = await dependencies.sealTurn({ turnId: result.turnId, now: now() });
-              if (sealed.status === "sealed") {
-                await dependencies.generateDraft(sealed.messageId);
-              }
+              await dependencies.processTurn(result.turnId);
             } catch {
               // The webhook has already committed; a later retry can seal the durable turn.
             }

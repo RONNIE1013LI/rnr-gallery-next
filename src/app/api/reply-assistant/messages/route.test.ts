@@ -26,6 +26,11 @@ describe("reply assistant messages API", () => {
       attachmentCount: 1,
       imageAnalysisStatus: "assessed" as const,
       imageAssessmentSummary: "Image 0 appears cropped; request an uncropped version.",
+      timeline: [{
+        role: "staff" as const,
+        text: "Please send the original photo.",
+        receivedAt: "2026-08-17T00:00:01.000Z",
+      }],
     }] }));
     const response = await createMessagesHandler({ enabled: true, requirePermission, list }).GET();
     expect(requirePermission).toHaveBeenCalledWith("use_reply_assistant");
@@ -42,6 +47,11 @@ describe("reply assistant messages API", () => {
       attachmentCount: 1,
       imageAnalysisStatus: "assessed",
       imageAssessmentSummary: "Image 0 appears cropped; request an uncropped version.",
+      timeline: [{
+        role: "staff",
+        text: "Please send the original photo.",
+        receivedAt: "2026-08-17T00:00:01.000Z",
+      }],
     }] });
     expect(JSON.stringify(body)).not.toMatch(forbiddenDtoPattern);
   });

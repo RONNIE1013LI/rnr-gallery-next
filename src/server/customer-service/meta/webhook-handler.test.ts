@@ -1,7 +1,6 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import * as facebookAdapter from "../adapters/facebook";
-import type { CustomerServiceRepository } from "../repositories/customer-service-repository";
 import { createMetaWebhookHandlers } from "./webhook-handler";
 
 const config = {
@@ -52,13 +51,7 @@ function setup(ingestResult:
   const events: string[] = [];
   const scheduledTasks: Array<() => Promise<void>> = [];
   const ingest = vi.fn(async () => { events.push("persist:commit"); return ingestResult; });
-  const generateDraft = vi.fn(async () => undefined);
-  const sealTurn = vi.fn<CustomerServiceRepository["sealDueCustomerTurn"]>(async () => ({
-    status: "sealed" as const,
-    messageId: "internal-1",
-    turnId: "turn-1",
-    pilotSequence: 1,
-  }));
+  const processTurn = vi.fn(async () => undefined);
   const waitUntil = vi.fn(async () => undefined);
   const kickImageJob = vi.fn(async () => undefined);
   const recoverHumanReplies = vi.fn(async () => ({ selected: 0, matched: 0, unmatched: 0 }));
@@ -67,8 +60,7 @@ function setup(ingestResult:
     events,
     scheduledTasks,
     ingest,
-    generateDraft,
-    sealTurn,
+    processTurn,
     waitUntil,
     kickImageJob,
     recoverHumanReplies,
@@ -76,9 +68,8 @@ function setup(ingestResult:
     handlers: createMetaWebhookHandlers({
       config,
       ingest,
-      sealTurn,
       waitUntil,
-      generateDraft,
+      processTurn,
       kickImageJob,
       ...(withRecovery ? { recoverHumanReplies } : {}),
       scheduleAfter,
@@ -128,7 +119,7 @@ describe("Meta webhook handler", () => {
     }));
     expect(current.scheduleAfter).not.toHaveBeenCalled();
     expect(current.recoverHumanReplies).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
   });
 
   it("persists attachment-only staff echoes as non-learning context without generation", async () => {
@@ -153,7 +144,7 @@ describe("Meta webhook handler", () => {
     }));
     expect(current.scheduleAfter).not.toHaveBeenCalled();
     expect(current.recoverHumanReplies).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
   });
 
   it("uses customer incoming events to recover interrupted human reply groups", async () => {
@@ -168,28 +159,24 @@ describe("Meta webhook handler", () => {
     });
   });
 
-  it("does not generate when a delayed customer turn became terminal after a human reply", async () => {
+  it("delegates a delayed terminal turn to the durable executor without local generation", async () => {
     const current = setup();
     await current.handlers.POST(signedRequest(messagePayload()));
-    current.sealTurn.mockResolvedValueOnce({ status: "already_terminal" });
+    current.processTurn.mockResolvedValueOnce(undefined);
 
     await current.scheduledTasks[0]();
 
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).toHaveBeenCalledWith("turn-1");
   });
 
-  it("seals a pending customer turn before generating one draft", async () => {
+  it("uses the durable exact-turn executor after the debounce deadline", async () => {
     const current = setup();
     expect((await current.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
     expect(current.events).toEqual(["persist:commit", "after:schedule"]);
     await current.scheduledTasks[0]();
     expect(current.waitUntil).toHaveBeenCalledWith(new Date("2026-08-17T00:00:02.000Z"));
-    expect(current.sealTurn).toHaveBeenCalledWith({
-      turnId: "turn-1",
-      now: expect.any(Date),
-    });
-    expect(current.sealTurn).toHaveBeenCalledBefore(current.generateDraft);
-    expect(current.generateDraft).toHaveBeenCalledWith("internal-1");
+    expect(current.processTurn).toHaveBeenCalledOnce();
+    expect(current.processTurn).toHaveBeenCalledWith("turn-1");
   });
 
   it("persists image-only metadata for human review without retaining or scheduling its source", async () => {
@@ -222,7 +209,7 @@ describe("Meta webhook handler", () => {
 
     expect(current.scheduleAfter).not.toHaveBeenCalled();
     expect(current.kickImageJob).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
   });
 
   it("never combines an image-only event with a later text-only event", async () => {
@@ -250,7 +237,7 @@ describe("Meta webhook handler", () => {
     }));
     expect(current.scheduleAfter).toHaveBeenCalledOnce();
     await current.scheduledTasks[0]();
-    expect(current.generateDraft).toHaveBeenCalledOnce();
+    expect(current.processTurn).toHaveBeenCalledOnce();
     expect(current.kickImageJob).not.toHaveBeenCalled();
   });
 
@@ -282,7 +269,7 @@ describe("Meta webhook handler", () => {
     expect(JSON.stringify(current.ingest.mock.calls)).not.toContain("https://scontent.test/image.jpg");
     expect(current.scheduleAfter).not.toHaveBeenCalled();
     expect(current.kickImageJob).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
   });
 
   it("persists mixed image/file metadata and forces human review with zero deferred providers", async () => {
@@ -309,7 +296,7 @@ describe("Meta webhook handler", () => {
     expect(JSON.stringify(current.ingest.mock.calls)).not.toMatch(/scontent\.test|private\.pdf/);
     expect(current.scheduleAfter).not.toHaveBeenCalled();
     expect(current.kickImageJob).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
   });
 
   it("fails closed when valid images overflow with trailing unsupported metadata", async () => {
@@ -344,7 +331,7 @@ describe("Meta webhook handler", () => {
     expect(JSON.stringify(current.ingest.mock.calls)).not.toMatch(/scontent\.test|private\.pdf|overflow\.jpg/);
     expect(current.scheduleAfter).not.toHaveBeenCalled();
     expect(current.kickImageJob).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
   });
 
   it("does not schedule duplicates or run when disabled", async () => {
@@ -360,9 +347,8 @@ describe("Meta webhook handler", () => {
     disabled.handlers = createMetaWebhookHandlers({
       config: { ...config, enabled: false },
       ingest: disabled.ingest,
-      sealTurn: disabled.sealTurn,
       waitUntil: disabled.waitUntil,
-      generateDraft: disabled.generateDraft,
+      processTurn: disabled.processTurn,
       kickImageJob: disabled.kickImageJob,
       scheduleAfter: disabled.scheduleAfter,
     });
@@ -381,6 +367,6 @@ describe("Meta webhook handler", () => {
     expect(response.status).toBe(200);
     expect(current.scheduledTasks).toHaveLength(0);
     expect(current.kickImageJob).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
   });
 });

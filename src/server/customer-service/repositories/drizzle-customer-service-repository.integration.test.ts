@@ -105,6 +105,24 @@ async function activateFacebookPilot(name: string) {
   });
 }
 
+async function createRecoveryTurn(input: Readonly<{
+  conversationHash: string;
+  messageHash: string;
+  receivedAt?: Date;
+}>) {
+  return repository.ingestConversationEvent({
+    channel: "facebook",
+    role: "customer",
+    externalConversationKeyHash: input.conversationHash,
+    externalMessageKeyHash: input.messageHash,
+    text: "How do I prepare my photos?",
+    attachments: [],
+    imageJob: null,
+    debounceMs: 2_000,
+    receivedAt: input.receivedAt ?? new Date("2026-08-19T00:00:00.000Z"),
+  });
+}
+
 describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   beforeEach(clearTables);
   afterAll(clearTables);
@@ -274,6 +292,299 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
         learningEligible: true,
       },
     ]);
+    await expect(repository.listQueue(100)).resolves.toMatchObject({
+      items: [{
+        body: "How much are your banners?",
+        timeline: [
+          { role: "customer", text: "How much are your banners?" },
+          { role: "staff", text: "Which type of banner do you need?" },
+        ],
+      }],
+    });
+  });
+
+  it("claims and seals one stale open turn for durable recovery", async () => {
+    await activateFacebookPilot("recovery-stale-open");
+    const incoming = await createRecoveryTurn({
+      conversationHash: "d1".repeat(32),
+      messageHash: "d2".repeat(32),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+
+    const claimed = await repository.claimDueCustomerTurn({
+      now: new Date("2026-08-19T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:03.000Z"),
+    });
+
+    expect(claimed).toMatchObject({
+      turnId: incoming.turnId,
+      messageId: incoming.messageId,
+      leaseToken: expect.any(String),
+    });
+    const [turn] = await database.select().from(customerServiceTurns)
+      .where(eq(customerServiceTurns.id, incoming.turnId));
+    expect(turn).toMatchObject({ status: "sealed", processingStatus: "running", processingAttempts: 1 });
+  });
+
+  it("allows only one claimant when after and recovery workers race", async () => {
+    await activateFacebookPilot("recovery-after-race");
+    const incoming = await createRecoveryTurn({
+      conversationHash: "d3".repeat(32),
+      messageHash: "d4".repeat(32),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    const request = {
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:03.000Z"),
+    };
+
+    const results = await Promise.all([
+      repository.claimDueCustomerTurn(request),
+      repository.claimDueCustomerTurn(request),
+    ]);
+
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
+  it("never claims a turn after a human outbound echo", async () => {
+    await activateFacebookPilot("recovery-human-first");
+    const incoming = await createRecoveryTurn({
+      conversationHash: "d5".repeat(32),
+      messageHash: "d6".repeat(32),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      eventType: "human_outbound",
+      externalConversationKeyHash: "d5".repeat(32),
+      externalMessageKeyHash: "d7".repeat(32),
+      text: "Please send the original photo.",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-19T00:00:01.000Z"),
+    });
+
+    await expect(repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:03.000Z"),
+    })).resolves.toBeNull();
+  });
+
+  it("invalidates an active lease when a human outbound echo arrives during processing", async () => {
+    await activateFacebookPilot("recovery-human-during");
+    const conversationHash = "d8".repeat(32);
+    const incoming = await createRecoveryTurn({ conversationHash, messageHash: "d9".repeat(32) });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    const claimed = await repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:03.000Z"),
+    });
+    if (!claimed) throw new Error("expected claimed turn");
+    await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      eventType: "human_outbound",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "da".repeat(32),
+      text: "Please send the original photo.",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-19T00:00:04.000Z"),
+    });
+
+    await expect(repository.completeCustomerTurnProcessing({
+      turnId: incoming.turnId,
+      leaseToken: claimed.leaseToken,
+      now: new Date("2026-08-19T00:00:05.000Z"),
+      outcome: "draft_ready",
+    })).resolves.toBe(false);
+    const [turn] = await database.select().from(customerServiceTurns)
+      .where(eq(customerServiceTurns.id, incoming.turnId));
+    expect(turn.processingStatus).toBe("cancelled");
+  });
+
+  it("retries a transient interruption after its durable next-run deadline", async () => {
+    await activateFacebookPilot("recovery-retry");
+    const incoming = await createRecoveryTurn({
+      conversationHash: "db".repeat(32),
+      messageHash: "dc".repeat(32),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    const first = await repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:03.000Z"),
+    });
+    if (!first) throw new Error("expected claimed turn");
+    await expect(repository.retryCustomerTurnProcessing({
+      turnId: incoming.turnId,
+      leaseToken: first.leaseToken,
+      nextRunAt: new Date("2026-08-19T00:01:03.000Z"),
+      errorCode: "turn_processing_interrupted",
+    })).resolves.toBe(true);
+    await expect(repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:00:30.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:30.000Z"),
+    })).resolves.toBeNull();
+    const second = await repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:01:04.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:06:04.000Z"),
+    });
+    expect(second?.leaseToken).not.toBe(first.leaseToken);
+  });
+
+  it("releases a pre-invocation reservation and retries after the worker lease expires", async () => {
+    await activateFacebookPilot("recovery-before-provider");
+    const incoming = await createRecoveryTurn({
+      conversationHash: "e3".repeat(32),
+      messageHash: "e4".repeat(32),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    const first = await repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:00:04.000Z"),
+    });
+    if (!first) throw new Error("expected first claim");
+    const reservation = await repository.reserveProviderAttempt({
+      messageId: incoming.messageId,
+      trigger: "webhook_after",
+      intent: "product_difference",
+      riskLevel: "low",
+      gateReasons: [],
+      knowledgeSources: ["test"],
+      knowledgeVersion: "test-v1",
+      reservationMicrousd: 1_000,
+      dailyScopeKey: "daily:2026-08-19",
+      dailyHardStopMicrousd: 10_000,
+      totalHardStopMicrousd: 10_000,
+    });
+    await database.update(customerServiceAiAttempts).set({
+      startedAt: new Date("2026-08-18T13:00:00.000Z"),
+    }).where(eq(customerServiceAiAttempts.id, reservation.attemptId));
+
+    const second = await repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:00:05.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:05.000Z"),
+    });
+
+    expect(second?.leaseToken).not.toBe(first.leaseToken);
+    const [attempt] = await database.select().from(customerServiceAiAttempts)
+      .where(eq(customerServiceAiAttempts.id, reservation.attemptId));
+    expect(attempt).toMatchObject({
+      status: "abandoned",
+      providerCalled: false,
+      reservedCostMicrousd: 0,
+      providerErrorCode: "turn_recovery_pre_invocation_interrupted",
+    });
+    const budgets = await database.select().from(customerServiceBudgetState);
+    expect(budgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeKey: "daily:2026-08-19", reservedMicrousd: 0 }),
+      expect.objectContaining({ scopeKey: "total", reservedMicrousd: 0 }),
+    ]));
+  });
+
+  it("does not retry an expired lease after provider invocation became uncertain", async () => {
+    await activateFacebookPilot("recovery-provider-unknown");
+    const incoming = await createRecoveryTurn({
+      conversationHash: "e5".repeat(32),
+      messageHash: "e6".repeat(32),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    await repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:00:04.000Z"),
+    });
+    const reservation = await repository.reserveProviderAttempt({
+      messageId: incoming.messageId,
+      trigger: "webhook_after",
+      intent: "product_difference",
+      riskLevel: "low",
+      gateReasons: [],
+      knowledgeSources: ["test"],
+      knowledgeVersion: "test-v1",
+      reservationMicrousd: 1_000,
+      dailyScopeKey: "daily:2026-08-19",
+      dailyHardStopMicrousd: 10_000,
+      totalHardStopMicrousd: 10_000,
+    });
+    await repository.confirmProviderInvocation({
+      attemptId: reservation.attemptId,
+      dailyScopeKey: "daily:2026-08-19",
+    });
+
+    await expect(repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:00:05.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:05.000Z"),
+    })).resolves.toBeNull();
+    const [turn] = await database.select().from(customerServiceTurns)
+      .where(eq(customerServiceTurns.id, incoming.turnId));
+    expect(turn).toMatchObject({
+      processingStatus: "completed",
+      lastProcessingError: "provider_outcome_unknown",
+    });
+    const budgets = await database.select().from(customerServiceBudgetState);
+    expect(budgets).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scopeKey: "daily:2026-08-19", reservedMicrousd: 1_000 }),
+      expect.objectContaining({ scopeKey: "total", reservedMicrousd: 1_000 }),
+    ]));
+  });
+
+  it("recovers an orphaned sealed turn but never reclaims terminal processing", async () => {
+    await activateFacebookPilot("recovery-sealed");
+    const incoming = await createRecoveryTurn({
+      conversationHash: "dd".repeat(32),
+      messageHash: "de".repeat(32),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    await repository.sealDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    });
+    const claimed = await repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:00:04.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:04.000Z"),
+    });
+    if (!claimed) throw new Error("expected orphaned sealed turn to be claimed");
+    await repository.completeCustomerTurnProcessing({
+      turnId: incoming.turnId,
+      leaseToken: claimed.leaseToken,
+      now: new Date("2026-08-19T00:00:05.000Z"),
+      outcome: "gate_blocked",
+    });
+
+    await expect(repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-20T00:00:00.000Z"),
+      leaseExpiresAt: new Date("2026-08-20T00:05:00.000Z"),
+    })).resolves.toBeNull();
+  });
+
+  it("claims multiple due conversations independently", async () => {
+    await activateFacebookPilot("recovery-multiple");
+    await createRecoveryTurn({ conversationHash: "df".repeat(32), messageHash: "e0".repeat(32) });
+    await createRecoveryTurn({ conversationHash: "e1".repeat(32), messageHash: "e2".repeat(32) });
+    const request = {
+      now: new Date("2026-08-19T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:03.000Z"),
+    };
+
+    const first = await repository.claimDueCustomerTurn(request);
+    const second = await repository.claimDueCustomerTurn(request);
+
+    expect(first?.turnId).toBeTruthy();
+    expect(second?.turnId).toBeTruthy();
+    expect(second?.turnId).not.toBe(first?.turnId);
   });
 
   it("does not suppress or match a turn when an explicit reply reference is unknown", async () => {
@@ -1035,6 +1346,15 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     await expect(repository.listQueue(100)).resolves.toMatchObject({
       items: [{
         body: "The 200 x 100 one\naround 5 photos\nfor next Saturday",
+        timeline: [
+          {
+            role: "staff",
+            text: "Which banner size and how many photos would you like?",
+          },
+          { role: "customer", text: "The 200 x 100 one" },
+          { role: "customer", text: "around 5 photos" },
+          { role: "customer", text: "for next Saturday" },
+        ],
       }],
     });
     await expect(repository.metricCounts()).resolves.toMatchObject({
@@ -1467,7 +1787,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(page.items).toEqual(expect.arrayContaining([
       expect.objectContaining({ attachmentCount: 1, imageAnalysisStatus: "assessed" }),
     ]));
-    expect(queryCount).toBeLessThanOrEqual(4);
+    expect(queryCount).toBeLessThanOrEqual(5);
   });
 
   it("selects current-message attachments in stable ordinal order", async () => {

@@ -8,13 +8,7 @@ const config = parseCustomerServiceConfig();
 const handlers = createMetaWebhookHandlers({
   config,
   ingest: (message) => createCustomerServiceRuntime().repository.ingestConversationEvent(message),
-  sealTurn: (input) => createCustomerServiceRuntime().repository.sealDueCustomerTurn(input),
-  generateDraft: (messageId) => createCustomerServiceRuntime().engine.generateDraft(
-    {
-      messageId,
-      trigger: "webhook_after",
-    },
-  ),
+  processTurn: (turnId) => createCustomerServiceRuntime().turnRecoveryRunner.runOnce({ turnId }),
   kickImageJob: async (jobId) => {
     const runner = createCustomerServiceRuntime().imageJobRunner;
     if (!runner) throw new Error("customer_service_image_jobs_unavailable");

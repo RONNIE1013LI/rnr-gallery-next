@@ -22,6 +22,7 @@ export type CustomerServiceConfig = Readonly<{
   blobReadWriteToken: string;
   attachmentSourceEncryptionKey: string;
   imageJobRunnerSecret: string;
+  turnRecoverySecret: string;
 }>;
 
 function boolean(value: string | undefined) {
@@ -128,6 +129,7 @@ export function parseCustomerServiceConfig(
     blobReadWriteToken,
     attachmentSourceEncryptionKey,
     imageJobRunnerSecret,
+    turnRecoverySecret: enabled ? requiredSecret(env, "CRON_SECRET") : "",
   });
 }
 

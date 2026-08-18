@@ -22,6 +22,7 @@ import {
   customerServicePilotRuns,
   customerServiceLearningCandidates,
   customerServiceConversationEvents,
+  customerServiceTurns,
 } from "./index";
 
 const tables = [
@@ -127,6 +128,28 @@ describe("customer service schema contract", () => {
     expect(migration).toContain("CREATE TABLE \"customer_service_human_reply_matches\"");
     expect(migration).toContain("CREATE TABLE \"customer_service_case_memories\"");
     expect(migration).toContain("ADD COLUMN \"event_type\"");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
+  });
+
+  it("adds durable lease state for customer-turn recovery", () => {
+    const columns = getTableColumns(customerServiceTurns);
+    expect(columns).toEqual(expect.objectContaining({
+      processingStatus: expect.anything(),
+      processingLeaseToken: expect.anything(),
+      processingLeaseExpiresAt: expect.anything(),
+      processingAttempts: expect.anything(),
+      nextRunAt: expect.anything(),
+      lastProcessingError: expect.anything(),
+      processingCompletedAt: expect.anything(),
+    }));
+    expect(columns.processingStatus.default).toBe("pending");
+
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0033_reply_assistant_turn_recovery.sql"),
+      "utf8",
+    );
+    expect(migration).toContain("ADD COLUMN \"processing_status\"");
+    expect(migration).toContain("customer_service_turns_processing_due_idx");
     expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
   });
 
