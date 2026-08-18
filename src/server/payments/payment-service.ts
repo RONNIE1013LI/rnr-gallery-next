@@ -156,7 +156,7 @@ const providerContracts: Readonly<Record<string, Readonly<{
   isTest: boolean;
 }>>> = Object.freeze({
   "local-test": Object.freeze({
-    methods: ["card", "afterpay", "zip"] as readonly PaymentMethodKey[],
+    methods: ["card", "afterpay"] as readonly PaymentMethodKey[],
     sessionKind: "test",
     isTest: true,
   }),
@@ -167,11 +167,6 @@ const providerContracts: Readonly<Record<string, Readonly<{
   }),
   afterpay: Object.freeze({
     methods: ["afterpay"] as readonly PaymentMethodKey[],
-    sessionKind: "redirect",
-    isTest: false,
-  }),
-  zip: Object.freeze({
-    methods: ["zip"] as readonly PaymentMethodKey[],
     sessionKind: "redirect",
     isTest: false,
   }),
@@ -835,8 +830,7 @@ export function createPaymentService({
         ) throw unavailableReturn();
         if (
           storedAttempt.status === "cancelled" ||
-          input.provider === "stripe" ||
-          (input.provider === "zip" && storedRequest.currency !== "AUD")
+          input.provider === "stripe"
         ) return Object.freeze({ paymentToken: input.paymentToken });
 
         const target = providerPaymentRequest(storedRequest, storedAttempt.payerSnapshot);
@@ -906,8 +900,7 @@ export function createPaymentService({
       }
 
       if (
-        input.provider === "stripe" ||
-        (input.provider === "zip" && storedOrder.currency !== "AUD")
+        input.provider === "stripe"
       ) {
         return Object.freeze({ orderNumber: storedOrder.orderNumber });
       }

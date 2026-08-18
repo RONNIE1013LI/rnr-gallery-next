@@ -96,7 +96,6 @@ export async function getAdminDashboardSummary(
     paymentProviders: Object.freeze([
       Object.freeze({ label: "Card", enabled: payment.stripe.enabled || payment.localTest.enabled, environment: payment.stripe.enabled ? "production" : payment.localTest.enabled ? "local test" : "not configured" }),
       Object.freeze({ label: "Afterpay", enabled: payment.afterpay.enabled || payment.localTest.enabled, environment: payment.afterpay.enabled ? payment.afterpay.environment : payment.localTest.enabled ? "local test" : "not configured" }),
-      Object.freeze({ label: "Zip", enabled: payment.zip.enabled || payment.localTest.enabled, environment: payment.zip.enabled ? payment.zip.environment : payment.localTest.enabled ? "local test" : "not configured" }),
     ]),
     shippingProvider: Object.freeze({
       label: shipping?.key === "gosweetspot" ? "GoSweetSpot" : shipping?.key === "local-test" ? "Local test shipping" : "Post shipping",

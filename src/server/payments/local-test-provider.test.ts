@@ -56,7 +56,7 @@ describe("local test payment provider", () => {
     vi.unstubAllEnvs();
   });
 
-  it.each(["card", "afterpay", "zip"] as const)(
+  it.each(["card", "afterpay"] as const)(
     "rejects direct %s construction in production",
     (method) => {
       expect(() => createLocalTestProvider({ nodeEnv: "production", method }))
@@ -79,7 +79,7 @@ describe("local test payment provider", () => {
     },
   );
 
-  it.each(["card", "afterpay", "zip"] as const)(
+  it.each(["card", "afterpay"] as const)(
     "is visibly local-test and never advertises refunds for %s",
     (method) => {
       const provider = createLocalTestProvider({ nodeEnv: "test", method });
@@ -163,14 +163,11 @@ describe("local test payment provider", () => {
     })).rejects.toThrow("Local test return verification failed");
   });
 
-  it("mirrors method eligibility and blocks current NZD Zip orders", async () => {
+  it("mirrors Card and Afterpay eligibility", async () => {
     const cases: readonly [PaymentMethodKey, PaymentOrder, boolean][] = [
       ["card", order("NZ", "NZD"), true],
       ["afterpay", order("NZ", "NZD"), true],
       ["afterpay", order("AU", "NZD"), false],
-      ["zip", order("AU", "AUD"), true],
-      ["zip", order("AU", "NZD"), false],
-      ["zip", order("AU", "AUD", "NZ"), false],
     ];
 
     for (const [method, paymentOrder, expected] of cases) {
@@ -179,9 +176,5 @@ describe("local test payment provider", () => {
         available: expected,
       });
     }
-
-    const zip = createLocalTestProvider({ nodeEnv: "test", method: "zip" });
-    await expect(zip.createOrReuse(sessionInput(order("AU", "NZD"))))
-      .rejects.toThrow("Local test payment method is unavailable");
   });
 });

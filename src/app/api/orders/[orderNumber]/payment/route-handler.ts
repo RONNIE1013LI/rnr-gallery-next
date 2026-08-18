@@ -27,7 +27,7 @@ import type { PaymentActionDTO, PublicPaymentDTO } from "@/server/payments/publi
 export const runtime = "nodejs";
 const noStoreHeaders = { "Cache-Control": "no-store" };
 const startInputSchema = z.object({
-  method: z.enum(["card", "afterpay", "zip"]),
+  method: z.enum(["card", "afterpay"]),
   idempotencyKey: z.uuid(),
 }).strict();
 const inputSchema = z.union([
@@ -38,7 +38,7 @@ const inputSchema = z.union([
 type PaymentStarter = {
   start(
     access: PaymentOrderAccess,
-    method: "card" | "afterpay" | "zip",
+    method: "card" | "afterpay",
     idempotencyKey: string,
   ): Promise<PaymentStartResult>;
   confirmPayment(

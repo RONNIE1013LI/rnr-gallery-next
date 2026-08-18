@@ -20,9 +20,14 @@ describe("parsePaymentConfig", () => {
     expect(parsePaymentConfig({})).toMatchObject({
       stripe: { enabled: false },
       afterpay: { enabled: false },
-      zip: { enabled: false },
       localTest: { enabled: false },
     });
+    expect(Object.keys(parsePaymentConfig({}))).toEqual([
+      "stripe",
+      "afterpay",
+      "localTest",
+      "operations",
+    ]);
   });
 
   it.each([
@@ -33,10 +38,6 @@ describe("parsePaymentConfig", () => {
     ["afterpay", "AFTERPAY_SECRET_KEY"],
     ["afterpay", "AFTERPAY_ENVIRONMENT"],
     ["afterpay", "AFTERPAY_MERCHANT_COUNTRY"],
-    ["zip", "ZIP_API_KEY"],
-    ["zip", "ZIP_ENVIRONMENT"],
-    ["zip", "ZIP_MERCHANT_COUNTRY"],
-    ["zip", "ZIP_ALLOWED_CURRENCIES"],
   ] as const)("fails the partial %s group closed when %s is missing", (provider, missing) => {
     const config = parsePaymentConfig({
       NODE_ENV: "development",
@@ -98,7 +99,6 @@ describe("parsePaymentConfig", () => {
     const config = parsePaymentConfig({
       NODE_ENV: "development",
       ...completeProviderEnvironment,
-      ZIP_ALLOWED_CURRENCIES: " AUD, NZD, AUD ",
       PAYMENT_RETURN_BASE_URL: "https://shop.example.test",
       PAYMENT_RECONCILIATION_SECRET: "reconciliation-secret",
       ENABLE_LOCAL_TEST_PAYMENTS: "true",
@@ -114,12 +114,12 @@ describe("parsePaymentConfig", () => {
       merchantCountry: "NZ",
       currency: "NZD",
     });
-    expect(config.zip).toMatchObject({
-      enabled: true,
-      environment: "sandbox",
-      merchantCountry: "AU",
-      allowedCurrencies: ["AUD", "NZD"],
-    });
+    expect(Object.keys(config)).toEqual([
+      "stripe",
+      "afterpay",
+      "localTest",
+      "operations",
+    ]);
     expect(config.localTest).toEqual({ enabled: true, isTest: true });
     expect(config.operations).toEqual({
       returnBaseUrl: "https://shop.example.test",
@@ -145,7 +145,6 @@ describe("parsePaymentConfig", () => {
     expect(config).toMatchObject({
       stripe: { enabled: false },
       afterpay: { enabled: false },
-      zip: { enabled: false },
       localTest: { enabled: true, isTest: true },
       operations: { returnBaseUrl: null },
     });
@@ -161,7 +160,6 @@ describe("parsePaymentConfig", () => {
     expect(config).toMatchObject({
       stripe: { enabled: false },
       afterpay: { enabled: false },
-      zip: { enabled: false },
       operations: { returnBaseUrl: null },
     });
   });
@@ -177,7 +175,6 @@ describe("parsePaymentConfig", () => {
 
       expect(config.stripe.enabled).toBe(true);
       expect(config.afterpay.enabled).toBe(true);
-      expect(config.zip.enabled).toBe(true);
       expect(config.operations.returnBaseUrl).toContain(hostname);
     },
   );
@@ -197,19 +194,12 @@ describe("parsePaymentConfig", () => {
   it.each([
     [{ AFTERPAY_ENVIRONMENT: "invalid" }, "afterpay"],
     [{ AFTERPAY_MERCHANT_COUNTRY: "US" }, "afterpay"],
-    [{ ZIP_ENVIRONMENT: "invalid" }, "zip"],
-    [{ ZIP_MERCHANT_COUNTRY: "US" }, "zip"],
-    [{ ZIP_ALLOWED_CURRENCIES: "AUD,XYZ" }, "zip"],
   ] as const)("disables a group with invalid enum configuration", (override, provider) => {
     const env = {
       AFTERPAY_MERCHANT_ID: "afterpay-merchant",
       AFTERPAY_SECRET_KEY: "afterpay-secret",
       AFTERPAY_ENVIRONMENT: "sandbox",
       AFTERPAY_MERCHANT_COUNTRY: "NZ",
-      ZIP_API_KEY: "zip-secret",
-      ZIP_ENVIRONMENT: "sandbox",
-      ZIP_MERCHANT_COUNTRY: "AU",
-      ZIP_ALLOWED_CURRENCIES: "AUD",
       ...override,
     };
 

@@ -96,7 +96,7 @@ Noindex and robots rules are discovery controls, not access control. Authenticat
 - Old WordPress URL disposition where no equivalent new content exists (404 versus 410).
 - Complete fixed AUD product/option/charge/shipping price approval and explicit AU market enablement.
 - Confirm whether R&R Gallery is registered for Australian GST before enabling `AU_GST_REGISTERED`.
-- Confirm the production Stripe account can settle AUD and the desired AU Afterpay/Zip account configuration.
+- Confirm the production Stripe account can settle AUD and the desired AU Afterpay account configuration.
 
 ## Waiting for legal/policy approval
 

@@ -63,7 +63,6 @@ export const FORM_OPTION_SETS = Object.freeze({
     "Not checked",
     "Arrive",
     "Afterpay",
-    "ZIP PAY",
     "Stripe",
     "Wise",
     "waitting..",

@@ -14,6 +14,7 @@ describe("PaymentMethods", () => {
       null,
       { methods, extra: true },
       { methods: [{ method: "cash", label: "Cash", isTest: false }] },
+      { methods: [{ method: "zip", label: "Zip", isTest: false }] },
       { methods: [{ method: "card", label: "", isTest: false }] },
       { methods: [{ method: "card", label: "Card", isTest: "false" }] },
       { methods: [methods[0], methods[0]] },
@@ -27,6 +28,7 @@ describe("PaymentMethods", () => {
     expect(screen.getByRole("radiogroup", { name: "Payment method" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
     expect(screen.getByText("Test Afterpay — no real payment")).toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /zip/i })).not.toBeInTheDocument();
     expect(screen.getByText("No real payment will be taken.")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Accepted cards: Visa, Mastercard and American Express" })).toBeInTheDocument();
     expect(screen.getByText("Secure payment powered by Stripe")).toBeInTheDocument();

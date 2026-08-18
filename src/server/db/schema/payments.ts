@@ -17,8 +17,8 @@ import type { MarketCurrency } from "@/domain/markets/types";
 import { user } from "./auth";
 import { orders } from "./orders";
 
-export type PaymentProviderKey = "stripe" | "afterpay" | "zip" | "local-test";
-export type PaymentMethodKey = "card" | "afterpay" | "zip";
+export type PaymentProviderKey = "stripe" | "afterpay" | "local-test";
+export type PaymentMethodKey = "card" | "afterpay";
 export type PaymentAttemptStatus =
   | "created"
   | "requires_action"
@@ -132,7 +132,7 @@ export const paymentRequests = pgTable(
       "payment_requests_methods_valid",
       sql`jsonb_typeof(${table.enabledPaymentMethods}) = 'array'
         AND jsonb_array_length(${table.enabledPaymentMethods}) > 0
-        AND ${table.enabledPaymentMethods} <@ '["card", "afterpay", "zip"]'::jsonb`,
+        AND ${table.enabledPaymentMethods} <@ '["card", "afterpay"]'::jsonb`,
     ),
     check(
       "payment_requests_terminal_timestamps_valid",
@@ -226,21 +226,20 @@ export const paymentAttempts = pgTable(
     ),
     check(
       "payment_attempts_provider_valid",
-      sql`${table.provider} in ('stripe', 'afterpay', 'zip', 'local-test')`,
+      sql`${table.provider} in ('stripe', 'afterpay', 'local-test')`,
     ),
     check(
       "payment_attempts_method_valid",
-      sql`${table.method} in ('card', 'afterpay', 'zip')`,
+      sql`${table.method} in ('card', 'afterpay')`,
     ),
     check(
       "payment_attempts_provider_method_valid",
       sql`(
-        ${table.provider} NOT in ('stripe', 'afterpay', 'zip', 'local-test')
-        OR ${table.method} NOT in ('card', 'afterpay', 'zip')
+        ${table.provider} NOT in ('stripe', 'afterpay', 'local-test')
+        OR ${table.method} NOT in ('card', 'afterpay')
         OR (${table.provider} = 'stripe' AND ${table.method} = 'card')
         OR (${table.provider} = 'afterpay' AND ${table.method} = 'afterpay')
-        OR (${table.provider} = 'zip' AND ${table.method} = 'zip')
-        OR (${table.provider} = 'local-test' AND ${table.method} in ('card', 'afterpay', 'zip'))
+        OR (${table.provider} = 'local-test' AND ${table.method} in ('card', 'afterpay'))
       )`,
     ),
     check(
@@ -393,7 +392,7 @@ export const webhookEvents = pgTable(
     ),
     check(
       "webhook_events_provider_valid",
-      sql`${table.provider} in ('stripe', 'afterpay', 'zip', 'local-test')`,
+      sql`${table.provider} in ('stripe', 'afterpay', 'local-test')`,
     ),
     check(
       "webhook_events_processing_result_valid",

@@ -202,6 +202,7 @@ describe("POST /api/orders/[orderNumber]/payment", () => {
       request("{"),
       request({ method: "card", idempotencyKey: "bad" }),
       request({ method: "paypal", idempotencyKey: paymentKey }),
+      request({ method: "zip", idempotencyKey: paymentKey }),
       request(validBody, token, "https://attacker.example"),
     ]) {
       expect((await handler(invalid, context)).status).toBeGreaterThanOrEqual(400);

@@ -440,7 +440,7 @@ export function ProductionJobForm({
             <label><span>Amount payable (NZD)</span><input name="amountPayable" type="number" min="0" step="0.01" value={amountPayable} onChange={(event) => setAmountPayable(event.target.value)} required disabled={pending} /></label>
             <label><span>Amount paid (NZD)</span><input name="amountPaid" type="number" min="0" step="0.01" value={amountPaid} onChange={(event) => setAmountPaid(event.target.value)} required disabled={pending} /></label>
             <label><span>Amount owing (NZD)</span><input value={Math.max(0, (Number(amountPayable) || 0) - (Number(amountPaid) || 0)).toFixed(2)} readOnly aria-readonly="true" /></label>
-            <label><span>Payment reconciliation</span><select name="paymentReconciliationStatus" defaultValue="Not checked" disabled={pending}>{["Not checked", "Arrive", "Afterpay", "ZIP PAY", "Stripe", "Wise", "waitting..", "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other"].map((status) => <option value={status} key={status}>{status}</option>)}</select></label>
+            <label><span>Payment reconciliation</span><select name="paymentReconciliationStatus" defaultValue="Not checked" disabled={pending}>{["Not checked", "Arrive", "Afterpay", "Stripe", "Wise", "waitting..", "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other"].map((status) => <option value={status} key={status}>{status}</option>)}</select></label>
           </div>
           {canUploadFiles ? <div className={styles.formGrid}>
             <div className={styles.fullField}>

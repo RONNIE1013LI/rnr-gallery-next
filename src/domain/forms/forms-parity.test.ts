@@ -74,7 +74,6 @@ describe("forms source parity", () => {
       "Not checked",
       "Arrive",
       "Afterpay",
-      "ZIP PAY",
       "Stripe",
       "Wise",
       "waitting..",

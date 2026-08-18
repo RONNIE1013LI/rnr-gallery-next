@@ -289,7 +289,6 @@ function paymentActionLabel(method: PaymentMethodKey | null, pending: boolean) {
   if (pending) return method === "card" ? "Preparing secure card payment…" : "Starting payment…";
   if (method === "card") return "Continue to secure card payment";
   if (method === "afterpay") return "Continue to Afterpay";
-  if (method === "zip") return "Continue to Zip Pay";
   return "Continue to payment";
 }
 

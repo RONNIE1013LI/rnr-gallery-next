@@ -77,7 +77,7 @@ export function PaymentRequestForm({
         email,
         idempotencyKey: idempotencyKey(keys.current, method),
         ...(phone.trim() ? { phone } : {}),
-        ...(method === "afterpay" || method === "zip" ? { address } : {}),
+        ...(method === "afterpay" ? { address } : {}),
       };
       const response = await fetch(`/api/payment-requests/${encodeURIComponent(token)}/payment`, {
         method: "POST",
@@ -122,7 +122,7 @@ export function PaymentRequestForm({
     return <p className={styles.status} role="status">No payment method is currently available. Please contact R&R Gallery.</p>;
   }
 
-  const needsAddress = method === "afterpay" || method === "zip";
+  const needsAddress = method === "afterpay";
   return <form className={styles.form} onSubmit={submit}>
     <h2>Pay securely</h2>
     <fieldset className={styles.methods}>

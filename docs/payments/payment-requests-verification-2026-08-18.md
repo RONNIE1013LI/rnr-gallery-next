@@ -67,7 +67,7 @@ Automated tests cover:
 - Token hashing, rotation and old-token rejection.
 - `manage_payment` protection for admin mutations and views.
 - Public DTO privacy boundaries and terminal/unavailable request UI.
-- Stripe, Afterpay and Zip Payment Target mapping.
+- Stripe and Afterpay Payment Target mapping.
 - NZD/AUD preservation through request, attempt, provider and ledger records.
 
 ## Migration incident recorded during implementation

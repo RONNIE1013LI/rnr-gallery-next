@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add fixed-amount Order balance and standalone Payment Requests with immutable ledger accounting, safe public links, and the existing Stripe/Afterpay/Zip payment pipeline.
+**Goal:** Add fixed-amount Order balance and standalone Payment Requests with immutable ledger accounting, safe public links, and the existing Stripe/Afterpay payment pipeline.
 
 **Architecture:** Add `payment_requests` and append-only `payment_ledger_entries`, and extend `payment_attempts` so every attempt has exactly one database-enforced target. A single payment-target repository loads either an Order or Payment Request, rechecks locked ledger balance immediately before a provider session, and applies verified provider results atomically. Admin mutations require `manage_payment`; `/pay/[token]` uses digest lookup, no-store/noindex, explicit DTOs, and the existing provider UI.
 
@@ -18,9 +18,9 @@
 - Revalidate locked outstanding balance immediately before every real provider session claim.
 - Invalidate pending requests that no longer fit; reject bank credits that conflict with an in-flight provider reservation.
 - Ledger rows are append-only; bank transfer corrections use linked reversals.
-- Reuse Stripe, Afterpay, Zip, return, webhook, and reconciliation paths; do not create hidden Orders or a second engine.
+- Reuse Stripe, Afterpay, return, webhook, and reconciliation paths; do not create hidden Orders or a second engine.
 - Store only SHA-256 public-token digests; rotate only pending requests without nonterminal attempts.
-- Standalone Card does not require a site address; Afterpay/Zip collect only their required payer/contact/address data.
+- Standalone Card does not require a site address; Afterpay collects only its required payer/contact/address data.
 - Require `manage_payment` for all Admin Payment Request and ledger mutations.
 - Do not change completed Order totals, product pricing, shipping, provider amount calculation, or the legacy site.
 - `/pay/*` is noindex, no-store, excluded from sitemap and GA, and never exposes stored PII or internal notes.
@@ -337,7 +337,6 @@ git commit -m "feat: enforce payment request balances"
 - Modify: `src/server/payments/provider-registry.ts`
 - Modify: `src/server/payments/stripe-provider.ts`
 - Modify: `src/server/payments/afterpay-provider.ts`
-- Modify: `src/server/payments/zip-provider.ts`
 - Modify: corresponding `src/server/payments/*.test.ts`
 - Modify: `src/app/api/payments/returns/[provider]/route-handler.ts`
 - Modify: corresponding return route tests
@@ -475,7 +474,7 @@ git commit -m "feat: add payment request admin APIs"
 
 - [ ] **Step 1: Write failing security and payment-start tests**
 
-Cover uniform 404 for malformed/unknown/rotated tokens; no internal PII fields; `Cache-Control: no-store`; terminal requests have no controls; Card accepts contact without address; Afterpay/Zip reject only missing provider-required fields; forged amount/currency/request fields are rejected by strict schema; server preflight invalidation returns safe 409.
+Cover uniform 404 for malformed/unknown/rotated tokens; no internal PII fields; `Cache-Control: no-store`; terminal requests have no controls; Card accepts contact without address; Afterpay rejects only missing provider-required fields; forged amount/currency/request fields are rejected by strict schema; server preflight invalidation returns safe 409.
 
 Add analytics/SEO assertions:
 

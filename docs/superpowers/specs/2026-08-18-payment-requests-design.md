@@ -2,7 +2,7 @@
 
 ## Goal
 
-Add a production-grade Payment Request system to the R&R Gallery Next.js site. It supports fixed-amount outstanding-balance links for existing orders and fixed-amount standalone links for manually quoted work, while reusing the existing Stripe, Afterpay, Zip, payment-return, reconciliation, and webhook infrastructure.
+Add a production-grade Payment Request system to the R&R Gallery Next.js site. It supports fixed-amount outstanding-balance links for existing orders and fixed-amount standalone links for manually quoted work, while reusing the existing Stripe, Afterpay, payment-return, reconciliation, and webhook infrastructure.
 
 The old `$0.01 × quantity` workaround belongs only to the legacy site. It does not exist in this repository and is not migrated, supported, or referenced by the new implementation.
 
@@ -47,7 +47,7 @@ Stores the immutable collection instruction.
 - `description`
 - `currency`: `NZD` or `AUD`
 - `amount_cents` positive integer
-- `enabled_payment_methods`: non-empty subset of `card`, `afterpay`, `zip`
+- `enabled_payment_methods`: non-empty subset of `card`, `afterpay`
 - `status`: `pending`, `paid`, `expired`, `cancelled`, or `invalidated`
 - `status_reason` nullable safe internal code
 - `expires_at` nullable timestamp
@@ -153,7 +153,7 @@ The provider-neutral `PaymentOrder` concept becomes a `PaymentTargetSnapshot` wi
 - provider-required customer/address data;
 - optional linked Order number for display only.
 
-Provider adapters continue to create a single payment for the exact target amount. Stripe PaymentIntent has no quantity model; its `amount` is the fixed request amount. Afterpay and Zip receive the same fixed amount and stable merchant reference. No adapter constructs a cent-priced high-quantity item.
+Provider adapters continue to create a single payment for the exact target amount. Stripe PaymentIntent has no quantity model; its `amount` is the fixed request amount. Afterpay receives the same fixed amount and stable merchant reference. No adapter constructs a cent-priced high-quantity item.
 
 Provider availability is the intersection of:
 
@@ -166,7 +166,6 @@ For existing-order requests, the immutable Order customer and address snapshots 
 
 - Card does not require a site-level address; Stripe Elements remains responsible for card collection.
 - Afterpay requires full name, email, phone, and one normalized address; the payment-only flow uses that address for both provider billing and shipping fields.
-- Zip requires full name, email, phone, and one Australian normalized address; the payment-only flow uses it for provider billing and shipping fields.
 
 Public input can supply only payer/contact fields and an idempotency key. It cannot supply amount, currency, request ID, merchant reference, description, or enabled methods.
 
@@ -185,7 +184,7 @@ The existing provider reference, return-state, webhook-event, and idempotency ch
 
 Duplicate webhooks/returns/reconciliation runs do not create another ledger entry or change a paid request back to a payable state.
 
-Stripe verified webhooks continue through the existing webhook route. Afterpay and Zip continue through their current verified return and reconciliation paths. The repository dispatches by the stored attempt target, not by trusting a client-supplied target type.
+Stripe verified webhooks continue through the existing webhook route. Afterpay continues through its current verified return and reconciliation path. The repository dispatches by the stored attempt target, not by trusting a client-supplied target type.
 
 ## Status rules
 
@@ -325,7 +324,7 @@ Existing `/api/orders/[orderNumber]/payment`, provider return routes, Stripe web
 - unauthorized staff/public access is rejected;
 - public page shows fixed amount and correct NZD/AUD formatting;
 - Card flow requires no site address;
-- Afterpay/Zip request only their required payer fields;
+- Afterpay requests only its required payer fields;
 - client amount tampering has no effect;
 - public token route is noindex and excluded from GA;
 - mobile and desktop payment pages remain usable;

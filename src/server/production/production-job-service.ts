@@ -77,7 +77,6 @@ const paymentReconciliationStatuses = [
   "Not checked",
   "Arrive",
   "Afterpay",
-  "ZIP PAY",
   "Stripe",
   "Wise",
   "waitting..",

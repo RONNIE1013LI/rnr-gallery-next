@@ -31,6 +31,7 @@ describe("PaymentRequestView", () => {
     expect(screen.getByText("NZ$200.00")).toBeInTheDocument();
     expect(screen.queryByRole("spinbutton")).not.toBeInTheDocument();
     expect(screen.queryByText(/customer/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole("radio", { name: /zip/i })).not.toBeInTheDocument();
   });
 
   it("requires no address for Card and reveals address only for Afterpay", () => {

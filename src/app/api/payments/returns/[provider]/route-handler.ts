@@ -28,8 +28,8 @@ type Dependencies = Readonly<{
 type RouteContext = Readonly<{ params: Promise<{ provider: string }> }>;
 
 const noStoreHeaders = { "Cache-Control": "no-store" };
-const providers = new Set<ReturnProvider>(["stripe", "afterpay", "zip", "local-test"]);
-const paymentMethods = new Set<PaymentReturnInput["method"]>(["card", "afterpay", "zip"]);
+const providers = new Set<ReturnProvider>(["stripe", "afterpay", "local-test"]);
+const paymentMethods = new Set<PaymentReturnInput["method"]>(["card", "afterpay"]);
 const orderNumberPattern = /^(?:\d{5,}|RNR-[A-Z0-9]+(?:-[A-Z0-9]+)+|PAY-[A-Z0-9]+(?:-[A-Z0-9]+)*)$/;
 const statePattern = /^[a-f0-9]{64}$/;
 const referencePattern = /^[A-Za-z0-9._-]{8,1024}$/;
@@ -192,28 +192,7 @@ function parseReturnInput(
     };
   }
 
-  if (!hasExactKeys(url, new Set([...commonKeys, "result", "checkoutId"]))) {
-    return null;
-  }
-  const common = commonReturnValues(url, "zip");
-  const providerReference = url.searchParams.get("checkoutId");
-  const result = url.searchParams.get("result");
-  if (
-    !common ||
-    !providerReference ||
-    !referencePattern.test(providerReference) ||
-    !result ||
-    !["Approved", "Declined", "Referred"].includes(result) ||
-    common.flow !== "return"
-  ) return null;
-  return {
-    provider,
-    method: "zip",
-    orderNumber: common.orderNumber,
-    returnState: common.returnState,
-    providerReference,
-    ...(paymentToken ? { paymentToken } : {}),
-  };
+  return null;
 }
 
 function defaults(): Dependencies {

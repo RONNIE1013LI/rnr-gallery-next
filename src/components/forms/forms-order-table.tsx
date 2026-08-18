@@ -33,7 +33,7 @@ const sourceOptions = [
   ["wechat", "WeChat"], ["phone", "Phone"], ["messenger", "Messenger"],
   ["walk_in", "Walk in"], ["other", "Other"],
 ].map(([value, label]) => ({ value, label }));
-const bankOptions = ["Not checked", "Arrive", "Afterpay", "ZIP PAY", "Stripe", "Wise", "waitting..", "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other"]
+const bankOptions = ["Not checked", "Arrive", "Afterpay", "Stripe", "Wise", "waitting..", "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other"]
   .map((value) => ({ value, label: value }));
 
 function StatusValue({ field, value }: Readonly<{ field: string; value: string }>) {

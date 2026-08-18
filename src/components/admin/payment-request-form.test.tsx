@@ -16,6 +16,9 @@ describe("Admin PaymentRequestForm", () => {
     expect(screen.getByLabelText("Currency")).toHaveValue("NZD");
     expect(screen.getByLabelText("Currency")).toBeDisabled();
     expect(screen.getByLabelText("Amount")).toHaveValue(150);
+    expect(screen.getByRole("checkbox", { name: "Card" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Afterpay" })).toBeInTheDocument();
+    expect(screen.queryByRole("checkbox", { name: /zip/i })).not.toBeInTheDocument();
   });
 
   it("keeps standalone name and email optional and reveals the one-time link", async () => {

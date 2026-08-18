@@ -6,14 +6,12 @@ import {
   localTestEligibility,
   paymentEligibility,
   stripeEligibility,
-  zipEligibility,
 } from "./eligibility";
 import type {
   AfterpayPaymentConfig,
   LocalTestPaymentConfig,
   PaymentConfig,
   StripePaymentConfig,
-  ZipPaymentConfig,
 } from "./config";
 
 function orderFor(
@@ -66,14 +64,6 @@ const afterpayConfig: AfterpayPaymentConfig = {
   environment: "sandbox",
   merchantCountry: "NZ",
   currency: "NZD",
-};
-
-const zipConfig: ZipPaymentConfig = {
-  enabled: true,
-  apiKey: "zip-secret",
-  environment: "sandbox",
-  merchantCountry: "AU",
-  allowedCurrencies: ["AUD", "NZD"],
 };
 
 const localTestConfig: LocalTestPaymentConfig = {
@@ -175,91 +165,13 @@ describe("Afterpay eligibility", () => {
   });
 });
 
-describe("Zip eligibility", () => {
-  it("is unavailable when standalone payer address is missing", () => {
-    expect(zipEligibility({
-      amountCents: 20_000,
-      currency: "AUD",
-      customer: {
-        fullName: "Aroha Ngata",
-        email: "aroha@example.test",
-        phone: "+61400000000",
-      },
-      billingAddress: null,
-      deliveryAddress: null,
-    }, zipConfig)).toEqual({ available: false, reason: "country" });
-  });
-
-  it("never offers Zip for New Zealand", () => {
-    expect(zipEligibility(orderFor("NZ", "AUD"), zipConfig)).toEqual({
-      available: false,
-      reason: "country",
-    });
-  });
-
-  it("rejects persisted NZD even when the merchant allowlist contains NZD", () => {
-    expect(zipEligibility(orderFor("AU", "NZD"), zipConfig)).toEqual({
-      available: false,
-      reason: "currency",
-    });
-  });
-
-  it("requires AU merchant configuration and both currency allowlists", () => {
-    expect(zipEligibility(orderFor("AU", "AUD"), zipConfig)).toEqual({
-      available: true,
-    });
-    expect(
-      zipEligibility(orderFor("AU", "AUD"), {
-        ...zipConfig,
-        merchantCountry: "NZ",
-      }),
-    ).toEqual({ available: false, reason: "country" });
-    expect(
-      zipEligibility(orderFor("AU", "AUD"), {
-        ...zipConfig,
-        allowedCurrencies: ["USD"],
-      }),
-    ).toEqual({ available: false, reason: "currency" });
-  });
-
-  it("requires both billing and delivery addresses to be Australian", () => {
-    const splitAddressOrder = orderFor("NZ", "NZD", 12_075, "AU");
-    const limits = {
-      currency: "NZD" as const,
-      minimumAmountCents: 100,
-      maximumAmountCents: 200_000,
-    };
-
-    expect(afterpayEligibility(splitAddressOrder, afterpayConfig, limits)).toEqual({
-      available: true,
-    });
-    expect(zipEligibility(splitAddressOrder, zipConfig)).toEqual({
-      available: false,
-      reason: "country",
-    });
-    expect(
-      localTestEligibility(splitAddressOrder, localTestConfig, "afterpay"),
-    ).toEqual({ available: true, isTest: true });
-    expect(localTestEligibility(splitAddressOrder, localTestConfig, "zip")).toEqual({
-      available: false,
-      reason: "country",
-      isTest: true,
-    });
-  });
-});
-
 describe("local test eligibility", () => {
   it("is visibly test-only and mirrors method country/currency rules", () => {
     expect(localTestEligibility(orderFor("NZ", "NZD"), localTestConfig, "card")).toEqual({
       available: true,
       isTest: true,
     });
-    expect(localTestEligibility(orderFor("NZ", "AUD"), localTestConfig, "zip")).toEqual({
-      available: false,
-      reason: "country",
-      isTest: true,
-    });
-    expect(localTestEligibility(orderFor("AU", "NZD"), localTestConfig, "zip")).toEqual({
+    expect(localTestEligibility(orderFor("AU", "NZD"), localTestConfig, "afterpay")).toEqual({
       available: false,
       reason: "currency",
       isTest: true,
@@ -286,21 +198,12 @@ describe("paymentEligibility", () => {
         available: false,
         reason: "amount",
       });
-      expect(zipEligibility(order, zipConfig)).toEqual({
-        available: false,
-        reason: "amount",
-      });
       expect(localTestEligibility(order, localTestConfig, "card")).toEqual({
         available: false,
         reason: "amount",
         isTest: true,
       });
       expect(localTestEligibility(order, localTestConfig, "afterpay")).toEqual({
-        available: false,
-        reason: "amount",
-        isTest: true,
-      });
-      expect(localTestEligibility(order, localTestConfig, "zip")).toEqual({
         available: false,
         reason: "amount",
         isTest: true,
@@ -312,7 +215,6 @@ describe("paymentEligibility", () => {
     const config: PaymentConfig = {
       stripe: stripeConfig,
       afterpay: afterpayConfig,
-      zip: zipConfig,
       localTest: localTestConfig,
       operations: { returnBaseUrl: null, reconciliationSecret: null },
     };
@@ -322,11 +224,9 @@ describe("paymentEligibility", () => {
     ).toMatchObject({
       stripe: { available: false, reason: "configuration" },
       afterpay: { available: false, reason: "configuration" },
-      zip: { available: false, reason: "configuration" },
       localTest: {
         card: { available: true, isTest: true },
         afterpay: { available: false, reason: "currency", isTest: true },
-        zip: { available: false, reason: "currency", isTest: true },
       },
     });
   });

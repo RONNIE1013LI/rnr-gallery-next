@@ -4,7 +4,6 @@ import type {
   LocalTestPaymentConfig,
   PaymentConfig,
   StripePaymentConfig,
-  ZipPaymentConfig,
 } from "./config";
 import type { PaymentCurrency, PaymentEligibilityContext } from "./types";
 
@@ -33,7 +32,6 @@ export type AfterpayLimits = Readonly<{
   maximumAmountCents: number;
 }>;
 
-const ZIP_CHARGE_CURRENCIES = new Set<PaymentCurrency>(["AUD", "USD", "CAD"]);
 const LOCAL_CARD_CURRENCIES = new Set<PaymentCurrency>([
   "NZD",
   "AUD",
@@ -98,30 +96,6 @@ export function afterpayEligibility(
   return available;
 }
 
-export function zipEligibility(
-  order: PaymentEligibilityContext,
-  config: ZipPaymentConfig,
-): PaymentEligibilityResult {
-  if (!hasValidAmount(order)) return unavailable("amount");
-  if (!config.enabled) return unavailable("configuration");
-  if (
-    !order.billingAddress ||
-    !order.deliveryAddress ||
-    order.billingAddress.country !== "AU" ||
-    order.deliveryAddress.country !== "AU" ||
-    config.merchantCountry !== "AU"
-  ) {
-    return unavailable("country");
-  }
-  if (
-    !ZIP_CHARGE_CURRENCIES.has(order.currency) ||
-    !config.allowedCurrencies.includes(order.currency)
-  ) {
-    return unavailable("currency");
-  }
-  return available;
-}
-
 export function localTestEligibility(
   order: PaymentEligibilityContext,
   config: LocalTestPaymentConfig,
@@ -153,17 +127,8 @@ export function localTestEligibility(
       order.currency === COUNTRY_CURRENCY[order.billingAddress.country]
         ? available
         : unavailable(order.billingAddress ? "currency" : "country");
-  } else if (
-    !order.billingAddress ||
-    !order.deliveryAddress ||
-    order.billingAddress.country !== "AU" ||
-    order.deliveryAddress.country !== "AU"
-  ) {
-    result = unavailable("country");
   } else {
-    result = ZIP_CHARGE_CURRENCIES.has(order.currency)
-      ? available
-      : unavailable("currency");
+    result = unavailable("configuration");
   }
 
   return Object.freeze({ ...result, isTest: true });
@@ -187,11 +152,9 @@ export function paymentEligibility(
       realPaymentsEnabled ? config.afterpay : disabledConfig,
       limits.afterpay,
     ),
-    zip: zipEligibility(order, realPaymentsEnabled ? config.zip : disabledConfig),
     localTest: Object.freeze({
       card: localTestEligibility(order, config.localTest, "card"),
       afterpay: localTestEligibility(order, config.localTest, "afterpay"),
-      zip: localTestEligibility(order, config.localTest, "zip"),
     }),
   });
 }

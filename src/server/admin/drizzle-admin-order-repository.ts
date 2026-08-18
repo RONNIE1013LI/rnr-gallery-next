@@ -11,6 +11,7 @@ import {
   type SQL,
 } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
+import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import {
   adminAuditLogs,
   checkoutUploads,
@@ -43,7 +44,7 @@ export type AdminOrderListItem = Readonly<{
   currency: typeof orders.$inferSelect.currency;
   productTitles: readonly string[];
   totalInclGstCents: number;
-  paymentMethod: "card" | "afterpay" | "zip" | null;
+  paymentMethod: PaymentMethodKey | null;
   paymentStatus: typeof orders.$inferSelect.paymentStatus;
   fulfilmentStatus: OrderFulfilmentStatus;
   deliveryMethod: "post" | "pickup";

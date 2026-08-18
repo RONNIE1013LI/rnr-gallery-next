@@ -34,6 +34,24 @@ describe("payment request start", () => {
     expect(start).not.toHaveBeenCalled();
   });
 
+  it("rejects a forged Zip payment before service access", async () => {
+    const start = vi.fn();
+    const route = createPaymentRequestPaymentRoute({
+      publicByToken: vi.fn().mockResolvedValue({ status: "pending" }),
+      start,
+      origin,
+    });
+    const response = await route.POST(request({
+      method: "zip",
+      fullName: "Customer",
+      email: "payer@example.test",
+      idempotencyKey: "public-payment-zip",
+    }), { params: Promise.resolve({ token }) });
+
+    expect(response.status).toBe(400);
+    expect(start).not.toHaveBeenCalled();
+  });
+
   it("returns 409 when a fresh server balance check invalidates the request", async () => {
     const route = createPaymentRequestPaymentRoute({
       publicByToken: vi.fn().mockResolvedValue({ status: "pending" }),

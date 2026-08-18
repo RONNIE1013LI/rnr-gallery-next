@@ -7,7 +7,6 @@ import {
 } from "./local-test-provider";
 import { createStripeProvider } from "./stripe-provider";
 import type { PaymentProvider } from "./types";
-import { createZipProvider } from "./zip-provider";
 
 type ProviderFactory = () => PaymentProvider;
 type LocalProviderFactory = (
@@ -27,27 +26,23 @@ export type PaymentProviderRegistryOptions = Readonly<{
   localFactory?: LocalProviderFactory;
 }>;
 
-const methods = ["card", "afterpay", "zip"] as const;
+const methods = ["card", "afterpay"] as const;
 const localLabels: Record<PaymentMethodKey, string> = {
   card: "Test card — no real payment",
   afterpay: "Test Afterpay — no real payment",
-  zip: "Test Zip — no real payment",
 };
 const realLabels: Record<PaymentMethodKey, string> = {
   card: "Card",
   afterpay: "Afterpay",
-  zip: "Zip",
 };
 const realProviderKeys: Record<PaymentMethodKey, PaymentProvider["key"]> = {
   card: "stripe",
   afterpay: "afterpay",
-  zip: "zip",
 };
 
 function realProviderEnabled(config: PaymentConfig, method: PaymentMethodKey) {
   if (method === "card") return config.stripe.enabled;
-  if (method === "afterpay") return config.afterpay.enabled;
-  return config.zip.enabled;
+  return config.afterpay.enabled;
 }
 
 function registration(
@@ -87,10 +82,6 @@ export function selectPaymentProviders(
       if (!factory && method === "afterpay" && config.afterpay.enabled) {
         const afterpayConfig = config.afterpay;
         factory = () => createAfterpayProvider({ config: afterpayConfig });
-      }
-      if (!factory && method === "zip" && config.zip.enabled) {
-        const zipConfig = config.zip;
-        factory = () => createZipProvider({ config: zipConfig });
       }
       if (factory) selected.push(registration(method, factory(), false));
       continue;

@@ -28,7 +28,7 @@ export function parsePaymentMethodsResponse(payload: unknown): readonly PaymentM
   const methods = response.methods.map((raw) => {
     const method = record(raw);
     if (!method || !exactKeys(method, ["method", "label", "isTest"]) ||
-      (method.method !== "card" && method.method !== "afterpay" && method.method !== "zip") ||
+      (method.method !== "card" && method.method !== "afterpay") ||
       seen.has(method.method) || typeof method.label !== "string" || method.label.trim() !== method.label ||
       method.label.length < 1 || method.label.length > 120 || typeof method.isTest !== "boolean") {
       throw new Error("Payment methods response is invalid");

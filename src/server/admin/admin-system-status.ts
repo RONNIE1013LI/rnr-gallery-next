@@ -10,7 +10,6 @@ export function getAdminPaymentStatus(env: NodeJS.ProcessEnv = process.env) {
     providers: Object.freeze([
       Object.freeze({ key: "stripe", label: "Card (Stripe)", enabled: config.stripe.enabled, environment: config.stripe.enabled ? "Provider configured" : "Not configured", market: null }),
       Object.freeze({ key: "afterpay", label: "Afterpay", enabled: config.afterpay.enabled, environment: config.afterpay.enabled ? config.afterpay.environment : "Not configured", market: config.afterpay.enabled ? `${config.afterpay.merchantCountry} · ${config.afterpay.currency}` : null }),
-      Object.freeze({ key: "zip", label: "Zip", enabled: config.zip.enabled, environment: config.zip.enabled ? config.zip.environment : "Not configured", market: config.zip.enabled ? `${config.zip.merchantCountry} · ${config.zip.allowedCurrencies.join(", ")}` : null }),
     ]),
   });
 }

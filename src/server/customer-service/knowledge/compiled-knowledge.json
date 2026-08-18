@@ -1,5 +1,5 @@
 {
-  "knowledgeVersion": "4af8504b35764a40114f0900c83805d0ba4103417ef0c8945d226e4471537d34",
+  "knowledgeVersion": "9d0d8e655ec51e0514922f209e8e1722511c3f1dcf054f1b4d310998ba717d29",
   "rules": [
     {
       "id": "AI-GOV-01",
@@ -223,12 +223,12 @@
     },
     {
       "id": "ORDER-03",
-      "text": "Afterpay and ZIP are available.",
-      "evidenceStatus": "UNRESOLVED",
+      "text": "Card and Afterpay are the supported online payment methods.",
+      "evidenceStatus": "CONFIRMED",
       "highRisk": false,
       "realtimeRequired": true,
-      "source": "Runtime/template statement without current payment-provider verification",
-      "lastConfirmed": "Not recorded",
+      "source": "Ronnie approved Card and Afterpay only payment scope",
+      "lastConfirmed": "2026-08-18",
       "mayAnswerAutomatically": false,
       "requiresHumanEscalation": true
     },

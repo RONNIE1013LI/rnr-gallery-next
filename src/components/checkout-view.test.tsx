@@ -902,7 +902,7 @@ describe("CheckoutView", () => {
     });
   });
 
-  it.each(["afterpay", "zip"] as const)("tracks %s only after an accepted payment action", async (method) => {
+  it.each(["afterpay"] as const)("tracks %s only after an accepted payment action", async (method) => {
     let resolvePayment!: (value: unknown) => void;
     const fetchMock = vi.fn()
       .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
@@ -916,7 +916,7 @@ describe("CheckoutView", () => {
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
     await screen.findByRole("radio", { name: method });
 
-    fireEvent.click(screen.getByRole("button", { name: method === "afterpay" ? "Continue to Afterpay" : "Continue to Zip Pay" }));
+    fireEvent.click(screen.getByRole("button", { name: "Continue to Afterpay" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(5));
     expect(analytics.emitAnalyticsEvent.mock.calls
       .map(([event]) => (event as { event?: string }).event))

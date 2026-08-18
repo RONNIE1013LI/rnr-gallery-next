@@ -21,19 +21,12 @@ const completeProviderEnvironment = {
     AFTERPAY_ENVIRONMENT: "sandbox",
     AFTERPAY_MERCHANT_COUNTRY: "NZ",
   },
-  zip: {
-    ZIP_API_KEY: "zip-secret",
-    ZIP_ENVIRONMENT: "sandbox",
-    ZIP_MERCHANT_COUNTRY: "AU",
-    ZIP_ALLOWED_CURRENCIES: "AUD,NZD",
-  },
 } as const;
 
 function config(overrides: Partial<PaymentConfig> = {}): PaymentConfig {
   return {
     stripe: disabled,
     afterpay: disabled,
-    zip: disabled,
     localTest: { enabled: true, isTest: true },
     operations: { returnBaseUrl: "http://localhost:3000", reconciliationSecret: null },
     ...overrides,
@@ -94,13 +87,7 @@ describe("payment provider registry", () => {
     }))).toEqual([
       { method: "card", label: "Test card — no real payment", isTest: true, refundCapability: "unsupported" },
       { method: "afterpay", label: "Test Afterpay — no real payment", isTest: true, refundCapability: "unsupported" },
-      { method: "zip", label: "Test Zip — no real payment", isTest: true, refundCapability: "unsupported" },
     ]);
-    const zip = providers.find(({ method }) => method === "zip");
-    await expect(zip?.provider.availability(auNzdOrder())).resolves.toEqual({
-      available: false,
-      reason: "currency",
-    });
   });
 
   it.each([
@@ -111,10 +98,6 @@ describe("payment provider registry", () => {
     ["afterpay", "AFTERPAY_SECRET_KEY"],
     ["afterpay", "AFTERPAY_ENVIRONMENT"],
     ["afterpay", "AFTERPAY_MERCHANT_COUNTRY"],
-    ["zip", "ZIP_API_KEY"],
-    ["zip", "ZIP_ENVIRONMENT"],
-    ["zip", "ZIP_MERCHANT_COUNTRY"],
-    ["zip", "ZIP_ALLOWED_CURRENCIES"],
   ] as const)(
     "keeps a partial %s configuration local-test-only when %s is missing",
     async (provider, missing) => {
@@ -127,14 +110,12 @@ describe("payment provider registry", () => {
       });
       const cardFactory = vi.fn(() => fakeProvider("stripe", "card"));
       const afterpayFactory = vi.fn(() => fakeProvider("afterpay", "afterpay"));
-      const zipFactory = vi.fn(() => fakeProvider("zip", "zip"));
       const localFactory = vi.fn(createLocalTestProvider);
       const providers = selectPaymentProviders(parsed, {
         nodeEnv: "test",
         realFactories: {
           card: cardFactory,
           afterpay: afterpayFactory,
-          zip: zipFactory,
         },
         localFactory,
       });
@@ -191,14 +172,12 @@ describe("payment provider registry", () => {
         isTest && provider.key === "local-test")).toBe(true);
       expect(cardFactory).not.toHaveBeenCalled();
       expect(afterpayFactory).not.toHaveBeenCalled();
-      expect(zipFactory).not.toHaveBeenCalled();
     },
   );
 
   it("uses real configured providers by method and constructs nothing unintended", () => {
     const cardFactory = vi.fn(() => fakeProvider("stripe", "card"));
     const afterpayFactory = vi.fn(() => fakeProvider("afterpay", "afterpay"));
-    const zipFactory = vi.fn(() => fakeProvider("zip", "zip"));
     const localFactory = vi.fn(createLocalTestProvider);
     const providers = selectPaymentProviders(config({
       stripe: {
@@ -221,7 +200,6 @@ describe("payment provider registry", () => {
       realFactories: {
         card: cardFactory,
         afterpay: afterpayFactory,
-        zip: zipFactory,
       },
       localFactory,
     });
@@ -229,13 +207,10 @@ describe("payment provider registry", () => {
     expect(providers.map(({ method, isTest }) => ({ method, isTest }))).toEqual([
       { method: "card", isTest: false },
       { method: "afterpay", isTest: false },
-      { method: "zip", isTest: true },
     ]);
     expect(cardFactory).toHaveBeenCalledOnce();
     expect(afterpayFactory).toHaveBeenCalledOnce();
-    expect(zipFactory).not.toHaveBeenCalled();
-    expect(localFactory).toHaveBeenCalledOnce();
-    expect(localFactory).toHaveBeenCalledWith({ nodeEnv: "test", method: "zip" });
+    expect(localFactory).not.toHaveBeenCalled();
   });
 
   it("constructs no local provider when disabled and never falls back over real config", () => {
@@ -263,9 +238,8 @@ describe("payment provider registry", () => {
     expect(configuredWithoutFactory.map(({ method, provider }) => ({ method, provider: provider.key }))).toEqual([
       { method: "card", provider: "stripe" },
       { method: "afterpay", provider: "local-test" },
-      { method: "zip", provider: "local-test" },
     ]);
-    expect(localFactory).toHaveBeenCalledTimes(2);
+    expect(localFactory).toHaveBeenCalledOnce();
   });
 
   it("constructs the real Afterpay provider from enabled repository config", () => {
@@ -287,27 +261,6 @@ describe("payment provider registry", () => {
       key: provider.key,
     }))).toEqual([
       { method: "afterpay", isTest: false, key: "afterpay" },
-    ]);
-  });
-
-  it("constructs the real Zip provider from enabled repository config", () => {
-    const providers = selectPaymentProviders(config({
-      localTest: disabled,
-      zip: {
-        enabled: true,
-        apiKey: "zip-secret",
-        environment: "sandbox",
-        merchantCountry: "AU",
-        allowedCurrencies: ["AUD"],
-      },
-    }), { nodeEnv: "test" });
-
-    expect(providers.map(({ method, isTest, provider }) => ({
-      method,
-      isTest,
-      key: provider.key,
-    }))).toEqual([
-      { method: "zip", isTest: false, key: "zip" },
     ]);
   });
 
@@ -341,7 +294,7 @@ describe("payment provider registry", () => {
     })).toThrow("Payment provider identity mismatch for card");
     expect(() => selectPaymentProviders(realCardConfig, {
       nodeEnv: "test",
-      realFactories: { card: () => fakeProvider("stripe", "zip") },
+      realFactories: { card: () => fakeProvider("stripe", "afterpay") },
       localFactory,
     })).toThrow("Payment provider identity mismatch for card");
     expect(localFactory).not.toHaveBeenCalled();

@@ -400,12 +400,6 @@ describe("payment service", () => {
         provider: { ...card, key: "afterpay", method: "card" },
         isTest: false,
       },
-      {
-        ...registration(card),
-        provider: { ...card, key: "zip", method: "afterpay" },
-        method: "afterpay",
-        isTest: false,
-      },
       { ...registration(card), isTest: false },
       {
         ...registration(card),
@@ -460,21 +454,21 @@ describe("payment service", () => {
       customer: { fullName: australianAddress.fullName, email: australianAddress.email, phone: australianAddress.phone },
     };
     const card = provider();
-    const zip = provider("zip");
-    vi.mocked(zip.availability).mockImplementation(async (context) => context.currency === "NZD"
+    const afterpay = provider("afterpay");
+    vi.mocked(afterpay.availability).mockImplementation(async (context) => context.currency === "NZD"
       ? { available: false, reason: "currency" }
       : { available: true });
     const repo = repository({ findPayableOrder: vi.fn().mockResolvedValue(australianOrder) });
 
     await expect(service({
       repository: repo,
-      providers: [registration(card), registration(zip)],
+      providers: [registration(card), registration(afterpay)],
     }).availableMethodsForOrder(access)).resolves.toEqual([
       { method: "card", label: "Test card — no real payment", isTest: true },
     ]);
 
     expect(repo.findPayableOrder).toHaveBeenCalledWith(access);
-    expect(zip.availability).toHaveBeenCalledWith(expect.objectContaining({
+    expect(afterpay.availability).toHaveBeenCalledWith(expect.objectContaining({
       amountCents: order.amountCents,
       currency: "NZD",
       deliveryAddress: australianAddress,
@@ -1413,38 +1407,6 @@ describe("payment service", () => {
     });
   });
 
-  it("does not invoke Zip completion for the current NZD service path", async () => {
-    const state = "e".repeat(64);
-    const reference = "zip_checkout_123";
-    const zip: PaymentProvider = {
-      ...provider("zip"), key: "zip", method: "zip", completeReturn: vi.fn(),
-    };
-    const boundAttempt: PaymentAttemptRecord = {
-      ...attempt, provider: "zip", method: "zip", providerReference: reference,
-      returnStateDigest: createHash("sha256").update(state).digest("hex"),
-      status: "requires_action",
-    };
-    const repo = repository({
-      consumeReturnState: vi.fn().mockResolvedValue({
-        outcome: "consumed", attempt: boundAttempt, order,
-      }),
-    });
-    const paymentService = service({
-      repository: repo,
-      providers: [{ method: "zip", label: "Zip", isTest: false, provider: zip }],
-    });
-
-    await expect(paymentService.handleReturn({
-      provider: "zip", method: "zip", orderNumber: order.orderNumber,
-      returnState: state, providerReference: reference,
-      returnUrl: new URL(
-        `https://trusted.example.test/api/payments/returns/zip?flow=return&orderNumber=${order.orderNumber}&method=zip&state=${state}&result=Approved&checkoutId=${reference}`,
-      ),
-    })).resolves.toEqual({ orderNumber: order.orderNumber });
-    expect(zip.completeReturn).not.toHaveBeenCalled();
-    expect(repo.applyVerifiedResult).not.toHaveBeenCalled();
-  });
-
   it("fails closed instead of recording a deterministic provider verification error as unknown", async () => {
     const state = "2".repeat(64);
     const reference = "afterpay_verification_123";
@@ -1482,130 +1444,6 @@ describe("payment service", () => {
       "Payment return is unavailable",
     ));
     expect(applyVerifiedResult).not.toHaveBeenCalled();
-  });
-
-  it("allows only a persisted synthetic AUD Zip fixture to complete", async () => {
-    const state = "1".repeat(64);
-    const reference = "zip_aud_checkout_123";
-    const auAddress: NormalizedAddress = {
-      ...address, country: "AU", region: "NSW", postcode: "2000",
-      phone: "+61400000000",
-    };
-    const audOrder: PaymentOrder = {
-      ...order,
-      currency: "AUD",
-      billingAddress: auAddress,
-      deliveryAddress: auAddress,
-    };
-    const result: VerifiedPaymentResult = {
-      providerReference: reference,
-      providerStatus: "Charged",
-      amountCents: audOrder.amountCents,
-      currency: "AUD",
-      orderNumber: audOrder.orderNumber,
-      status: "paid",
-    };
-    const zip: PaymentProvider = {
-      ...provider("zip"), key: "zip", method: "zip",
-      completeReturn: vi.fn().mockResolvedValue(result),
-    };
-    const boundAttempt: PaymentAttemptRecord = {
-      ...attempt, provider: "zip", method: "zip", providerReference: reference,
-      returnStateDigest: createHash("sha256").update(state).digest("hex"),
-      status: "requires_action", currency: "AUD", country: "AU",
-    };
-    const applyVerifiedResult = vi.fn().mockResolvedValue({
-      attempt: { ...boundAttempt, status: "paid" },
-      order: { ...audOrder, paymentStatus: "paid" },
-    });
-    const repo = repository({
-      consumeReturnState: vi.fn().mockResolvedValue({
-        outcome: "consumed", attempt: boundAttempt, order: audOrder,
-      }),
-      applyVerifiedResult,
-    });
-    const paymentService = service({
-      repository: repo,
-      providers: [{ method: "zip", label: "Zip", isTest: false, provider: zip }],
-    });
-    const returnUrl = new URL(
-      `https://trusted.example.test/api/payments/returns/zip?flow=return&orderNumber=${audOrder.orderNumber}&method=zip&state=${state}&result=Approved&checkoutId=${reference}`,
-    );
-
-    await expect(paymentService.handleReturn({
-      provider: "zip", method: "zip", orderNumber: audOrder.orderNumber,
-      returnState: state, providerReference: reference, returnUrl,
-    })).resolves.toEqual({ orderNumber: audOrder.orderNumber });
-    expect(zip.completeReturn).toHaveBeenCalledOnce();
-    expect(applyVerifiedResult).toHaveBeenCalledWith({
-      attemptId: boundAttempt.id,
-      result,
-      source: "server_capture",
-    });
-  });
-
-  it("consumes a Referred Zip return once and never repeats provider work", async () => {
-    const state = "3".repeat(64);
-    const reference = "zip_referred_checkout_123";
-    const auAddress: NormalizedAddress = {
-      ...address, country: "AU", region: "NSW", postcode: "2000",
-      phone: "+61400000000",
-    };
-    const audOrder: PaymentOrder = {
-      ...order, currency: "AUD", billingAddress: auAddress, deliveryAddress: auAddress,
-    };
-    const result: VerifiedPaymentResult = {
-      providerReference: reference,
-      providerStatus: "CHECKOUT:referred",
-      amountCents: audOrder.amountCents,
-      currency: "AUD",
-      orderNumber: audOrder.orderNumber,
-      status: "failed",
-      sanitizedFailureCode: "declined",
-    };
-    const zip: PaymentProvider = {
-      ...provider("zip"), key: "zip", method: "zip",
-      completeReturn: vi.fn().mockResolvedValue(result),
-    };
-    const boundAttempt: PaymentAttemptRecord = {
-      ...attempt, provider: "zip", method: "zip", providerReference: reference,
-      returnStateDigest: createHash("sha256").update(state).digest("hex"),
-      status: "requires_action", currency: "AUD", country: "AU",
-    };
-    const consumeReturnState = vi.fn()
-      .mockResolvedValueOnce({ outcome: "consumed", attempt: boundAttempt, order: audOrder })
-      .mockResolvedValueOnce({ outcome: "already_consumed", orderNumber: audOrder.orderNumber });
-    const applyVerifiedResult = vi.fn().mockResolvedValue({
-      attempt: { ...boundAttempt, status: "failed" },
-      order: { ...audOrder, paymentStatus: "failed" },
-    });
-    const paymentService = service({
-      repository: repository({ consumeReturnState, applyVerifiedResult }),
-      providers: [{ method: "zip", label: "Zip", isTest: false, provider: zip }],
-    });
-    const returnUrl = new URL(
-      `https://trusted.example.test/api/payments/returns/zip?flow=return&orderNumber=${audOrder.orderNumber}&method=zip&state=${state}&result=Referred&checkoutId=${reference}`,
-    );
-    const input = {
-      provider: "zip" as const,
-      method: "zip" as const,
-      orderNumber: audOrder.orderNumber,
-      returnState: state,
-      providerReference: reference,
-      returnUrl,
-    };
-
-    await expect(paymentService.handleReturn(input))
-      .resolves.toEqual({ orderNumber: audOrder.orderNumber });
-    await expect(paymentService.handleReturn(input))
-      .resolves.toEqual({ orderNumber: audOrder.orderNumber });
-    expect(zip.completeReturn).toHaveBeenCalledOnce();
-    expect(applyVerifiedResult).toHaveBeenCalledOnce();
-    expect(applyVerifiedResult).toHaveBeenCalledWith({
-      attemptId: boundAttempt.id,
-      result,
-      source: "server_capture",
-    });
   });
 
   it("fails closed before provider completion when the persisted return authority is absent", async () => {

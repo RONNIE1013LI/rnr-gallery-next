@@ -398,6 +398,12 @@ describe("ProductionJobForm", () => {
     });
   });
 
+  it("does not offer Zip as a payment reconciliation status", () => {
+    render(<ProductionJobForm assignees={assignees} canManageFinance />);
+
+    expect(screen.queryByRole("option", { name: "ZIP PAY" })).not.toBeInTheDocument();
+  });
+
   it("uses Size other as the saved size when a manual custom size is entered", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       result: "created",

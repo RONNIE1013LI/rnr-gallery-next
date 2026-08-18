@@ -222,7 +222,7 @@ describe("payment schema database constraints", () => {
     }
   });
 
-  it.each(["card", "afterpay", "zip"])(
+  it.each(["card", "afterpay"])(
     "allows local-test with the %s method",
     async (method) => {
       const orderId = await createOrder(`local-test-${method}`);
@@ -236,6 +236,16 @@ describe("payment schema database constraints", () => {
       ).resolves.toMatchObject({ rowCount: 1 });
     },
   );
+
+  it("rejects Zip provider and method pairs", async () => {
+    const orderId = await createOrder("unsupported-zip");
+    await expect(insertAttempt({
+      orderId,
+      provider: "zip",
+      method: "zip",
+      idempotencyKey: `unsupported-zip-${suffix}`,
+    })).rejects.toThrow("payment_attempts_method_valid");
+  });
 
   it("requires provider lease fields to be both null or both present", async () => {
     const leaseIdOnlyOrder = await createOrder("lease-id-only");
@@ -371,8 +381,8 @@ describe("payment schema database constraints", () => {
     await expect(
       insertAttempt({
         orderId: thirdOrder,
-        provider: "zip",
-        method: "zip",
+        provider: "stripe",
+        method: "card",
         idempotencyKey: `return-state-c-${suffix}`,
         returnStateDigest: digest,
         status: "failed",
@@ -435,6 +445,7 @@ describe("payment schema database constraints", () => {
 
   it("validates webhook providers and processing-result pairs", async () => {
     const hash = "b".repeat(64);
+    const zipEventId = `zip-provider-${suffix}`;
     await expect(
       pool.query(
         `INSERT INTO webhook_events (provider, provider_event_id, payload_sha256)
@@ -442,6 +453,20 @@ describe("payment schema database constraints", () => {
         [`unknown-provider-${suffix}`, hash],
       ),
     ).rejects.toThrow("webhook_events_provider_valid");
+    try {
+      await expect(
+        pool.query(
+          `INSERT INTO webhook_events (provider, provider_event_id, payload_sha256)
+           VALUES ('zip', $1, $2)`,
+          [zipEventId, hash],
+        ),
+      ).rejects.toThrow("webhook_events_provider_valid");
+    } finally {
+      await pool.query(
+        "DELETE FROM webhook_events WHERE provider_event_id = $1",
+        [zipEventId],
+      );
+    }
     await expect(
       pool.query(
         `INSERT INTO webhook_events (

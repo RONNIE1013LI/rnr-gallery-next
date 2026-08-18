@@ -28,16 +28,6 @@ export type AfterpayPaymentConfig =
       currency: "NZD" | "AUD";
     }>;
 
-export type ZipPaymentConfig =
-  | DisabledPaymentConfig
-  | Readonly<{
-      enabled: true;
-      apiKey: string;
-      environment: ProviderEnvironment;
-      merchantCountry: "NZ" | "AU";
-      allowedCurrencies: readonly PaymentCurrency[];
-    }>;
-
 export type LocalTestPaymentConfig =
   | DisabledPaymentConfig
   | Readonly<{ enabled: true; isTest: true }>;
@@ -45,7 +35,6 @@ export type LocalTestPaymentConfig =
 export type PaymentConfig = Readonly<{
   stripe: StripePaymentConfig;
   afterpay: AfterpayPaymentConfig;
-  zip: ZipPaymentConfig;
   localTest: LocalTestPaymentConfig;
   operations: Readonly<{
     returnBaseUrl: string | null;
@@ -54,7 +43,6 @@ export type PaymentConfig = Readonly<{
 }>;
 
 const PAYMENT_CURRENCIES = ["NZD", "AUD", "USD", "CAD"] as const;
-const PAYMENT_CURRENCY_SET = new Set<string>(PAYMENT_CURRENCIES);
 const PROVIDER_ENVIRONMENTS = new Set<string>(["sandbox", "production"]);
 const AFTERPAY_CURRENCY_BY_COUNTRY = {
   NZ: "NZD",
@@ -164,47 +152,6 @@ function parseAfterpayConfig(env: PaymentEnvironment): AfterpayPaymentConfig {
   });
 }
 
-function parseAllowedCurrencies(rawValue: string | null) {
-  if (!rawValue) return null;
-
-  const currencies = [...new Set(rawValue.split(",").map((item) => item.trim()))];
-  if (
-    currencies.length === 0 ||
-    currencies.some((currency) => !PAYMENT_CURRENCY_SET.has(currency))
-  ) {
-    return null;
-  }
-
-  return currencies as PaymentCurrency[];
-}
-
-function parseZipConfig(env: PaymentEnvironment): ZipPaymentConfig {
-  const apiKey = value(env, "ZIP_API_KEY");
-  const environment = value(env, "ZIP_ENVIRONMENT");
-  const merchantCountry = value(env, "ZIP_MERCHANT_COUNTRY");
-  const allowedCurrencies = parseAllowedCurrencies(
-    value(env, "ZIP_ALLOWED_CURRENCIES"),
-  );
-
-  if (
-    !apiKey ||
-    !environment ||
-    !PROVIDER_ENVIRONMENTS.has(environment) ||
-    merchantCountry !== "AU" ||
-    !allowedCurrencies
-  ) {
-    return disabled();
-  }
-
-  return Object.freeze({
-    enabled: true,
-    apiKey,
-    environment: environment as ProviderEnvironment,
-    merchantCountry,
-    allowedCurrencies: Object.freeze(allowedCurrencies),
-  });
-}
-
 export function parsePaymentConfig(
   env: PaymentEnvironment = process.env,
 ): PaymentConfig {
@@ -222,7 +169,6 @@ export function parsePaymentConfig(
   return Object.freeze({
     stripe: parseStripeConfig(realProviderEnvironment),
     afterpay: parseAfterpayConfig(realProviderEnvironment),
-    zip: parseZipConfig(realProviderEnvironment),
     localTest: localTestEnabled
       ? Object.freeze({ enabled: true, isTest: true })
       : disabled(),

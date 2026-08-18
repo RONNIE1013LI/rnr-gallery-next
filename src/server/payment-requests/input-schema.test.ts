@@ -56,6 +56,11 @@ describe("payment request input schemas", () => {
       kind: "standalone",
       partiallyPaid: true,
     }).success).toBe(false);
+    expect(createPaymentRequestInputSchema.safeParse({
+      ...common,
+      kind: "standalone",
+      enabledPaymentMethods: ["zip"],
+    }).success).toBe(false);
   });
 
   it("requires an idempotency key when creating a request", () => {
@@ -97,7 +102,7 @@ describe("payment request input schemas", () => {
     }
   });
 
-  it("requires phone and address only for Afterpay and Zip", () => {
+  it("requires phone and address only for Afterpay and rejects Zip", () => {
     const base = {
       fullName: "Ronnie Li",
       email: "payer@example.test",
@@ -125,11 +130,11 @@ describe("payment request input schemas", () => {
       ...base,
       phone: "+64 21 023 48948",
       address: {
-        country: "NZ",
+        country: "AU",
         building: "11",
         street: "Para Close",
         suburb: "Fairview Heights",
-        region: "Auckland",
+        region: "Queensland",
         postcode: "0632",
       },
     }).success).toBe(false);

@@ -62,7 +62,7 @@ const valueOptions: Partial<Record<FormFilterField, readonly Readonly<{ value: s
     .map((value) => ({ value, label: value.replaceAll("_", " ") })),
   paymentStatus: ["awaiting_payment", "processing", "paid", "failed", "cancelled", "refunded"]
     .map((value) => ({ value, label: value.replaceAll("_", " ") })),
-  bankRecon: ["Not checked", "Arrive", "Afterpay", "ZIP PAY", "Stripe", "Wise", "waitting..", "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other"]
+  bankRecon: ["Not checked", "Arrive", "Afterpay", "Stripe", "Wise", "waitting..", "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other"]
     .map((value) => ({ value, label: value })),
 };
 

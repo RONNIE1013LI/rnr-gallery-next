@@ -40,10 +40,10 @@ where multiple immutable ledger credits can reduce the outstanding balance.
 - Public APIs return allowlisted fields only; internal notes, stored contact
   details and token digests are not exposed.
 - Payment administration requires `manage_payment`.
-- Card requests collect name, email and optional phone only. Afterpay and Zip
-  request an address because those providers require it. An address is not a
+- Card requests collect name, email and optional phone only. Afterpay requests
+  an address because the provider requires it. An address is not a
   universal Payment Request requirement.
-- Provider sessions still use the existing Stripe, Afterpay and Zip pipelines,
+- Provider sessions still use the existing Stripe and Afterpay pipelines,
   return-state protection, webhook verification and reconciliation jobs.
 
 ## Administrator workflow

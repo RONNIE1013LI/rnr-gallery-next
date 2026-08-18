@@ -68,7 +68,7 @@ function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]) {
 }
 
 function isMethod(value: unknown): value is PaymentMethodKey {
-  return value === "card" || value === "afterpay" || value === "zip";
+  return value === "card" || value === "afterpay";
 }
 
 function validStartingBase(intent: Record<string, unknown>) {

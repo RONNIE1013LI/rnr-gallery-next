@@ -113,9 +113,9 @@ export function PaymentRequestForm({ linkedOrder }: Readonly<{ linkedOrder?: Lin
     </div>
     <fieldset className={styles.paymentRequestMethods}>
       <legend>Enabled payment methods</legend>
-      {(["card", "afterpay", "zip"] as const).map((method) => <label key={method}>
+      {(["card", "afterpay"] as const).map((method) => <label key={method}>
         <input checked={methods.includes(method)} onChange={() => toggleMethod(method)} type="checkbox" />
-        <span>{method === "card" ? "Card" : method === "afterpay" ? "Afterpay" : "Zip"}</span>
+        <span>{method === "card" ? "Card" : "Afterpay"}</span>
       </label>)}
     </fieldset>
     <div className={styles.formSubmitBar}>

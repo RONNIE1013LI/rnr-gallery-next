@@ -757,7 +757,6 @@ export function createDrizzlePaymentRepository(
                 or attempts.provider_session_lease_expires_at <= ${now}
               )
               and attempts.updated_at <= ${new Date(now.getTime() - RECONCILIATION_STALE_MS)}
-              and not (attempts.provider = 'zip' and attempts.currency <> 'AUD')
             order by attempts.updated_at asc, attempts.id asc
             for update of attempts skip locked
             limit ${limit}

@@ -83,6 +83,24 @@ describe("production job filters", () => {
   });
 });
 
+describe("production job payment reconciliation", () => {
+  it("rejects Zip as a new manual reconciliation status", async () => {
+    const service = createProductionJobService(repository());
+
+    await expect(service.createManual(actor, {
+      ...validInput,
+      paymentReconciliationStatus: "ZIP PAY",
+    }, { canUpdateFinance: true })).rejects.toBeInstanceOf(ProductionJobValidationError);
+
+    await expect(service.update(actor, {
+      jobId: "00000000-0000-4000-8000-000000000001",
+      idempotencyKey: "reject-zip-payment-status",
+      expectedUpdatedAt: "2026-08-04T10:00:00.000Z",
+      paymentReconciliationStatus: "ZIP PAY",
+    }, { canUpdateFinance: true })).rejects.toBeInstanceOf(ProductionJobValidationError);
+  });
+});
+
 describe("manual production finance", () => {
   it("derives owing and actual profit without storing a second formula", () => {
     expect(deriveManualJobFinance({

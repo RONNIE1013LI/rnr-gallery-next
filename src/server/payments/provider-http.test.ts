@@ -48,8 +48,8 @@ describe("provider HTTP boundary", () => {
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ ok: true }));
     const http = createProviderHttp({
       baseUrl: "https://sand.merchant-api.com",
-      bearerToken: "zip-server-secret",
-      defaultHeaders: { "Zip-Version": "2021-08-25" },
+      bearerToken: "provider-server-secret",
+      defaultHeaders: { "Provider-Version": "2026-08-18" },
       fetchImpl,
     });
 
@@ -66,10 +66,10 @@ describe("provider HTTP boundary", () => {
       redirect: "error",
       headers: {
         Accept: "application/json",
-        Authorization: "Bearer zip-server-secret",
+        Authorization: "Bearer provider-server-secret",
         "Content-Type": "application/json",
         "Idempotency-Key": "stable-charge-key",
-        "Zip-Version": "2021-08-25",
+        "Provider-Version": "2026-08-18",
       },
     });
   });
@@ -79,14 +79,14 @@ describe("provider HTTP boundary", () => {
       baseUrl: "https://sand.merchant-api.com",
       username: "merchant-id",
       password: "server-secret",
-      bearerToken: "zip-secret",
+      bearerToken: "provider-secret",
       fetchImpl: vi.fn(),
     })).toThrow("Payment provider configuration is invalid");
 
     const http = createProviderHttp({
       baseUrl: "https://sand.merchant-api.com",
-      bearerToken: "zip-server-secret",
-      defaultHeaders: { "Zip-Version": "2021-08-25" },
+      bearerToken: "provider-server-secret",
+      defaultHeaders: { "Provider-Version": "2026-08-18" },
       fetchImpl: vi.fn(),
     });
     await expect(http.json({

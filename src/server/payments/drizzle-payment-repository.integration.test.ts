@@ -1246,7 +1246,7 @@ describe("Drizzle payment repository", () => {
     );
   });
 
-  it("excludes terminal orders and unsupported NZD Zip attempts from reconciliation", async () => {
+  it("excludes terminal orders from reconciliation", async () => {
     const terminalOrder = await createOrder({ paymentStatus: "failed" });
     const terminalClaim = await repository.createOrClaimNonterminalAttempt(
       claimInput(terminalOrder.orderId),
@@ -1259,31 +1259,15 @@ describe("Drizzle payment repository", () => {
       status: "processing",
     });
 
-    const zipOrder = await createOrder();
-    const zipClaim = await repository.createOrClaimNonterminalAttempt({
-      orderId: zipOrder.orderId,
-      provider: "zip",
-      method: "zip",
-      expectedAmountCents: 7_475,
-      currency: "NZD",
-      clientKey: randomUUID(),
-    });
-    await repository.bindProviderSession({
-      attemptId: zipClaim.attempt.id,
-      claimId: zipClaim.claimId!,
-      providerReference: `zip-${randomUUID()}`,
-      returnStateDigest: null,
-      status: "processing",
-    });
     await pool.query(
       "update payment_attempts set updated_at = now() - interval '2 minutes' where id = any($1::uuid[])",
-      [[terminalClaim.attempt.id, zipClaim.attempt.id]],
+      [[terminalClaim.attempt.id]],
     );
 
     const candidates = await repository.claimReconciliationCandidates(50);
 
     expect(candidates.map(({ attempt: candidate }) => candidate.id))
-      .not.toEqual(expect.arrayContaining([terminalClaim.attempt.id, zipClaim.attempt.id]));
+      .not.toContain(terminalClaim.attempt.id);
   });
 
   it("rejects a stale reconciliation result after a webhook has already paid the order", async () => {

@@ -1966,8 +1966,6 @@
 .formsEditor select[name="paymentReconciliationStatus"] option[value="Arrive"] { background: #4c61b6; }
 .formEntryPage :global(select[name="paymentReconciliationStatus"] option[value="Afterpay"]),
 .formsEditor select[name="paymentReconciliationStatus"] option[value="Afterpay"] { background: #57d4df; }
-.formEntryPage :global(select[name="paymentReconciliationStatus"] option[value="ZIP PAY"]),
-.formsEditor select[name="paymentReconciliationStatus"] option[value="ZIP PAY"] { background: #050505; }
 .formEntryPage :global(select[name="paymentReconciliationStatus"] option[value="Stripe"]),
 .formsEditor select[name="paymentReconciliationStatus"] option[value="Stripe"] { background: #6554df; }
 .formEntryPage :global(select[name="paymentReconciliationStatus"] option[value="Wise"]),
@@ -2008,8 +2006,6 @@
 .formsEditor select[name="paymentReconciliationStatus"]:has(option[value="Arrive"]:checked) { background: #4c61b6; }
 .formEntryPage :global(select[name="paymentReconciliationStatus"]:has(option[value="Afterpay"]:checked)),
 .formsEditor select[name="paymentReconciliationStatus"]:has(option[value="Afterpay"]:checked) { background: #57d4df; }
-.formEntryPage :global(select[name="paymentReconciliationStatus"]:has(option[value="ZIP PAY"]:checked)),
-.formsEditor select[name="paymentReconciliationStatus"]:has(option[value="ZIP PAY"]:checked) { background: #050505; }
 .formEntryPage :global(select[name="paymentReconciliationStatus"]:has(option[value="Stripe"]:checked)),
 .formsEditor select[name="paymentReconciliationStatus"]:has(option[value="Stripe"]:checked) { background: #6554df; }
 .formEntryPage :global(select[name="paymentReconciliationStatus"]:has(option[value="Wise"]:checked)),

@@ -153,21 +153,6 @@ describe("GET /api/payments/returns/[provider]", () => {
       { ...common, method: "afterpay", status: "SUCCESS", orderToken: "afterpay_persisted_123" },
       "afterpay_persisted_123",
     ],
-    [
-      "zip",
-      { ...common, method: "zip", result: "Approved", checkoutId: "zip_checkout_123" },
-      "zip_checkout_123",
-    ],
-    [
-      "zip",
-      { ...common, method: "zip", result: "Referred", checkoutId: "zip_checkout_123" },
-      "zip_checkout_123",
-    ],
-    [
-      "zip",
-      { ...common, method: "zip", result: "Declined", checkoutId: "zip_checkout_123" },
-      "zip_checkout_123",
-    ],
   ] as const)("passes only strict persisted-authority inputs for %s and redirects safely", async (
     provider,
     params,

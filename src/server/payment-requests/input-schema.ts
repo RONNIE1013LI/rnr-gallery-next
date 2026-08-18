@@ -2,12 +2,12 @@ import { z } from "zod";
 
 const amountCentsSchema = z.number().int().safe().positive().max(100_000_000);
 const currencySchema = z.enum(["NZD", "AUD"]);
-const methodSchema = z.enum(["card", "afterpay", "zip"]);
+const methodSchema = z.enum(["card", "afterpay"]);
 const idempotencyKeySchema = z.string().trim().min(8).max(255);
 const optionalText = (maximum: number) =>
   z.string().trim().max(maximum).transform((value) => value || undefined).optional();
 
-const enabledPaymentMethodsSchema = z.array(methodSchema).min(1).max(3)
+const enabledPaymentMethodsSchema = z.array(methodSchema).min(1).max(2)
   .refine((methods) => new Set(methods).size === methods.length, {
     message: "Payment methods must be unique",
   });
@@ -78,15 +78,6 @@ export const standalonePayerInputSchema = z.discriminatedUnion("method", [
     phone: z.string().trim().min(1).max(32),
     address: z.object({
       country: z.enum(["NZ", "AU"]),
-      ...addressFields,
-    }).strict(),
-  }).strict(),
-  z.object({
-    method: z.literal("zip"),
-    ...payerBase,
-    phone: z.string().trim().min(1).max(32),
-    address: z.object({
-      country: z.literal("AU"),
       ...addressFields,
     }).strict(),
   }).strict(),

@@ -54,7 +54,7 @@ Every case above is `UNRESOLVED — HIGH RISK`, requires current order evidence,
 | G-022 | Australia rates, services, and remote postcodes | UNRESOLVED | REALTIME_REQUIRED |
 | G-023 | Meaning/start point of Australia 1–2 day guidance | UNRESOLVED — HIGH RISK | REALTIME_REQUIRED |
 | G-024 | Lost, damaged, redelivery, wrong-address, courier-claim SOP | UNRESOLVED — HIGH RISK | REALTIME_REQUIRED |
-| G-025 | Current Afterpay/ZIP/split/weekly/cash availability | UNRESOLVED | REALTIME_REQUIRED |
+| G-025 | Current Card/Afterpay/split/weekly/cash availability | UNRESOLVED | REALTIME_REQUIRED |
 | G-026 | Deposit rounding and minimum installment rules | UNRESOLVED | REALTIME_REQUIRED |
 | G-027 | Secure source for bank/payment instructions | UNRESOLVED — HIGH RISK | REALTIME_REQUIRED |
 | G-028 | Current pickup address, hours, closure, and availability | UNRESOLVED | REALTIME_REQUIRED |
@@ -157,7 +157,7 @@ The future assistant needs a rule for verifying a customer before exposing:
 
 ## P1: Payment and Pickup Gaps — `UNRESOLVED / REALTIME_REQUIRED` (G-025 to G-028)
 
-- Confirm current availability and rules for Afterpay, ZIP, weekly payments, split payments, and cash pickup.
+- Confirm current operational availability and rules for Card, Afterpay, weekly payments, split payments, and cash pickup.
 - Define deposit rounding and minimum installment rules.
 - Move bank details from hard-coded response text to secure finance configuration.
 - Confirm current pickup address, hours, holiday closure, busy-season notice, and staff availability.

@@ -4,7 +4,7 @@
 
 The current code classifies a draft as `low` or `high` risk using keyword matching.
 
-High-risk keywords include refund, cancellation, dissatisfaction, complaint, urgent deadlines, deposit/payment/bank/balance, Afterpay/ZIP, changes/revisions, printed status, and redraws.
+High-risk keywords include refund, cancellation, dissatisfaction, complaint, urgent deadlines, deposit/payment/bank/balance, supported or unsupported provider questions, changes/revisions, printed status, and redraws.
 
 Narrow low-risk exceptions exist for:
 
@@ -33,7 +33,7 @@ When `AUTO_SEND_MODE=low-risk`, the current Messenger runtime sends low-risk dra
 - Any request after printing confirmation.
 - Urgent orders or required-date commitments.
 - Delivery guarantees, rerouting, lost parcels, or courier disputes.
-- Payment, bank account, outstanding balance, failed payment, Afterpay/ZIP account issues.
+- Payment, bank account, outstanding balance, failed payment, Afterpay, or unsupported-provider account issues.
 - Order-specific status, deposit, invoice, reference, tracking, or personal data when authentication is absent.
 - Price conflicts or products/options not found in the live catalog.
 - Revisions after free allowance, photo replacement/redrawing, or complex editing fees.

@@ -414,7 +414,7 @@ describe("payment request balance transactions", () => {
       currency: "AUD",
       customerName: "Internal Name",
       customerEmail: "internal@example.test",
-      enabledPaymentMethods: ["card", "zip"],
+      enabledPaymentMethods: ["card", "afterpay"],
     }));
     expect(created.orderId).toBeNull();
     await expect(repository.preflightAndClaimAttempt({
