@@ -97,6 +97,35 @@ describe("payment schema contract", () => {
     );
   });
 
+  it("defines a durable Payment Request notification outbox", () => {
+    const outbox = Reflect.get(schema, "paymentRequestNotificationOutbox");
+    expect(outbox).toBeDefined();
+    if (!outbox) return;
+
+    expect(getTableName(outbox)).toBe("payment_request_notification_outbox");
+    const config = getTableConfig(outbox);
+    expect(config.columns.map((column) => column.name)).toEqual(expect.arrayContaining([
+      "event_key",
+      "kind",
+      "payment_request_id",
+      "recipient_name",
+      "recipient_email",
+      "status",
+      "attempts",
+      "available_at",
+      "sent_at",
+    ]));
+    expect(config.indexes.map((index) => index.config.name)).toEqual(expect.arrayContaining([
+      "payment_request_notification_outbox_event_key_unique",
+      "payment_request_notification_outbox_status_available_idx",
+    ]));
+    expect(config.checks.map((check) => check.name)).toEqual(expect.arrayContaining([
+      "payment_request_notification_outbox_kind_valid",
+      "payment_request_notification_outbox_status_valid",
+      "payment_request_notification_outbox_recipient_present",
+    ]));
+  });
+
   it("deduplicates non-null return-state digests per provider", () => {
     const index = getTableConfig(paymentAttempts).indexes.find(
       (candidate) =>

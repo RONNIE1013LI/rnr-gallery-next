@@ -4,6 +4,7 @@ import {
   check,
   foreignKey,
   index,
+  integer,
   jsonb,
   pgTable,
   text,
@@ -34,6 +35,14 @@ export type PaymentRequestStatus =
   | "expired"
   | "cancelled"
   | "invalidated";
+export type PaymentRequestNotificationKind =
+  | "payment_request_confirmed"
+  | "admin_payment_request_received";
+export type PaymentRequestNotificationStatus =
+  | "pending"
+  | "sending"
+  | "sent"
+  | "failed";
 export type PaymentLedgerEntryType =
   | "online_payment"
   | "bank_transfer"
@@ -142,6 +151,59 @@ export const paymentRequests = pgTable(
         OR (${table.status} = 'invalidated' AND ${table.invalidatedAt} IS NOT NULL)
         OR (${table.status} in ('pending', 'expired'))
       )`,
+    ),
+  ],
+);
+
+export const paymentRequestNotificationOutbox = pgTable(
+  "payment_request_notification_outbox",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    eventKey: text("event_key").notNull(),
+    kind: text("kind").$type<PaymentRequestNotificationKind>().notNull(),
+    paymentRequestId: uuid("payment_request_id")
+      .notNull()
+      .references(() => paymentRequests.id, { onDelete: "cascade" }),
+    recipientName: text("recipient_name").notNull(),
+    recipientEmail: text("recipient_email").notNull(),
+    status: text("status")
+      .$type<PaymentRequestNotificationStatus>()
+      .default("pending")
+      .notNull(),
+    attempts: integer("attempts").default(0).notNull(),
+    availableAt: timestamp("available_at", { withTimezone: true }).defaultNow().notNull(),
+    lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    providerMessageId: text("provider_message_id"),
+    lastErrorCode: text("last_error_code"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    uniqueIndex("payment_request_notification_outbox_event_key_unique").on(table.eventKey),
+    index("payment_request_notification_outbox_status_available_idx").on(
+      table.status,
+      table.availableAt,
+    ),
+    index("payment_request_notification_outbox_request_id_idx").on(table.paymentRequestId),
+    check(
+      "payment_request_notification_outbox_kind_valid",
+      sql`${table.kind} in ('payment_request_confirmed', 'admin_payment_request_received')`,
+    ),
+    check(
+      "payment_request_notification_outbox_status_valid",
+      sql`${table.status} in ('pending', 'sending', 'sent', 'failed')`,
+    ),
+    check(
+      "payment_request_notification_outbox_attempts_nonnegative",
+      sql`${table.attempts} >= 0`,
+    ),
+    check(
+      "payment_request_notification_outbox_recipient_present",
+      sql`length(trim(${table.recipientEmail})) > 0`,
     ),
   ],
 );

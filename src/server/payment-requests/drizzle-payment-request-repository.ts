@@ -14,7 +14,9 @@ import {
   orders,
   paymentAttempts,
   paymentLedgerEntries,
+  paymentRequestNotificationOutbox,
   paymentRequests,
+  user,
   webhookEvents,
 } from "@/server/db/schema";
 import type {
@@ -355,6 +357,46 @@ async function applyRequestVerifiedResult(
       paidAt: request.paidAt ?? now,
       updatedAt: now,
     }).where(eq(paymentRequests.id, request.id)).returning();
+    const payerEmail = attempt.payerSnapshot?.email.trim()
+      || request.customerEmail?.trim()
+      || order?.customerEmail.trim()
+      || null;
+    if (payerEmail) {
+      await transaction.insert(paymentRequestNotificationOutbox).values({
+        eventKey: `payment-request-confirmed:${request.id}`,
+        kind: "payment_request_confirmed",
+        paymentRequestId: request.id,
+        recipientName: attempt.payerSnapshot?.fullName.trim()
+          || request.customerName?.trim()
+          || "Customer",
+        recipientEmail: payerEmail,
+        availableAt: now,
+        createdAt: now,
+        updatedAt: now,
+      }).onConflictDoNothing({
+        target: paymentRequestNotificationOutbox.eventKey,
+      });
+    }
+    const administrators = await transaction.select({
+      id: user.id,
+      email: user.email,
+    }).from(user).where(eq(user.role, "admin"));
+    if (administrators.length) {
+      await transaction.insert(paymentRequestNotificationOutbox).values(
+        administrators.map((administrator) => ({
+          eventKey: `admin-payment-request-received:${request.id}:${administrator.id}`,
+          kind: "admin_payment_request_received" as const,
+          paymentRequestId: request.id,
+          recipientName: "R&R Gallery team",
+          recipientEmail: administrator.email,
+          availableAt: now,
+          createdAt: now,
+          updatedAt: now,
+        })),
+      ).onConflictDoNothing({
+        target: paymentRequestNotificationOutbox.eventKey,
+      });
+    }
     if (order) {
       await updateOrderPaymentStatus(transaction, order, now);
       await reconcileOrderRequests(transaction, order, now);

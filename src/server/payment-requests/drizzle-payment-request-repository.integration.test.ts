@@ -9,6 +9,7 @@ import {
   orders,
   paymentAttempts,
   paymentLedgerEntries,
+  paymentRequestNotificationOutbox,
   paymentRequests,
   user,
   webhookEvents,
@@ -563,5 +564,15 @@ describe("payment request balance transactions", () => {
     const ledger = await database.select().from(paymentLedgerEntries)
       .where(eq(paymentLedgerEntries.paymentAttemptId, claim.attempt.id));
     expect(ledger).toHaveLength(1);
+    const notifications = await database.select().from(paymentRequestNotificationOutbox)
+      .where(eq(paymentRequestNotificationOutbox.paymentRequestId, request.id));
+    expect(notifications.filter((item) =>
+      item.kind === "payment_request_confirmed" &&
+      item.recipientEmail === "payer@example.test"
+    )).toHaveLength(1);
+    expect(notifications.filter((item) =>
+      item.kind === "admin_payment_request_received" &&
+      item.recipientEmail === `${actorId}@example.test`
+    )).toHaveLength(1);
   });
 });
