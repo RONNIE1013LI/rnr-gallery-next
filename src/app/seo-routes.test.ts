@@ -48,7 +48,7 @@ describe("public SEO routes", () => {
     expect(urls).toContain("https://shop.example.test/custom-wall-banners-nz");
     expect(urls).toContain("https://shop.example.test/custom-photo-canvas-nz");
     expect(urls).not.toContain(`https://shop.example.test/products/${registry.products[0].slug}`);
-    expect(urls.some((url) => /\/(?:admin|account|cart|checkout|orders)(?:\/|$)/.test(url))).toBe(false);
+    expect(urls.some((url) => /\/(?:admin|account|cart|checkout|orders|pay)(?:\/|$)/.test(url))).toBe(false);
     expect(sitemap.every((entry) => entry.lastModified instanceof Date)).toBe(true);
     expect(urls.every((url) => !url.includes("?"))).toBe(true);
     expect(urls.some((url) => url.includes("/au"))).toBe(false);
@@ -97,6 +97,7 @@ describe("public SEO routes", () => {
           "/checkout",
           "/forms/",
           "/orders/",
+          "/pay/",
           "/product/",
           "/products/*/configure",
         ]),

@@ -14,6 +14,7 @@ export function buildRobots(siteUrl: URL): MetadataRoute.Robots {
         "/checkout",
         "/forms/",
         "/orders/",
+        "/pay/",
         "/product/",
         "/products/*/configure",
       ],

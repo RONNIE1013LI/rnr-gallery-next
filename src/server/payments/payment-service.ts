@@ -346,6 +346,25 @@ export function createPaymentService({
   }
 
   return {
+    async availableMethodsForPaymentRequest(
+      rawToken: string,
+      tokenDigest: string,
+    ): Promise<readonly PublicPaymentMethod[]> {
+      if (
+        !paymentRequestRepository ||
+        !/^[A-Za-z0-9_-]{43}$/.test(rawToken) ||
+        !/^[a-f0-9]{64}$/.test(tokenDigest)
+      ) throw unavailableStart();
+      const request = await paymentRequestRepository.findPublicByDigest(tokenDigest);
+      if (!request || request.status !== "pending") throw unavailableStart();
+      return Object.freeze(request.enabledPaymentMethods.flatMap((method) => {
+        const entry = byMethod.get(method);
+        return entry
+          ? [Object.freeze({ method: entry.method, label: entry.label, isTest: entry.isTest })]
+          : [];
+      }));
+    },
+
     async startPaymentRequest(
       access: Readonly<{
         rawToken: string;

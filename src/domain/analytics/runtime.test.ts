@@ -36,6 +36,10 @@ describe("GA4 runtime boundary", () => {
     }
   });
 
+  it("treats public payment tokens as private locations", () => {
+    expect(classifyGa4Location("/pay/private-token", new URLSearchParams())).toBe("private");
+  });
+
   it("blocks sensitive query keys even on an otherwise public route", () => {
     for (const query of [
       "access=email-order-token",

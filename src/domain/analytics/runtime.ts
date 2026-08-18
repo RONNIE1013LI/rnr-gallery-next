@@ -12,6 +12,7 @@ const PRIVATE_PATH_PREFIXES = [
   "/checkout",
   "/forms",
   "/order-system",
+  "/pay",
 ] as const;
 
 const SENSITIVE_QUERY_KEY = /(?:^|_)(?:access|address|auth|checkout|client_secret|code|email|expires|order|payment|phone|postcode|provider|recipient|secret|session|signature|state|token)(?:_|$)/i;
