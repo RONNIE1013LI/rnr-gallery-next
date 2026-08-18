@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { buildFormAccessProfile } from "@/server/forms/forms-permissions";
 
 import FormsPortalLayout from "./layout";
 
@@ -19,15 +20,7 @@ describe("forms portal layout", () => {
     requireFormsPage.mockResolvedValue({
       user: { id: "operator-1", name: "Rosemary", email: "rosemary@example.test" },
       formRole: "form_staff",
-      formProfile: {
-        preset: "manager",
-        assignedOnly: false,
-        permissions: {
-          access_forms: true,
-          create_jobs: true,
-          view_stats: true,
-        },
-      },
+      formProfile: buildFormAccessProfile("manager"),
     });
 
     render(await FormsPortalLayout({ children: <p>Protected workbench</p> }));

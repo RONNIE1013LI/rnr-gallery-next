@@ -1,18 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+import { buildFormAccessProfile } from "@/server/forms/forms-permissions";
 import { createFormsJobFilesRoute } from "./route-handler";
 
 const jobId = "de31f47e-0fb9-438e-bef6-6bc45556d3bb";
 const access = {
   user: { id: "staff-1", email: "staff@example.test" },
   formRole: "form_staff" as const,
-  formProfile: { preset: "manager" as const, assignedOnly: false, permissions: { upload_files: true, update_finance: false } as never },
+  formProfile: buildFormAccessProfile("manager"),
 };
 const financeAccess = {
-  ...access,
-  formProfile: {
-    ...access.formProfile,
-    permissions: { upload_files: true, update_finance: true } as never,
-  },
+  user: { id: "admin-1", email: "admin@example.test" },
+  formRole: "admin" as const,
+  formProfile: null,
 };
 const reference = {
   id: "e23a9f59-bf54-4bb6-a7d0-9239c14cf819",

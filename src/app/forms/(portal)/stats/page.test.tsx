@@ -18,8 +18,8 @@ vi.mock("@/components/forms/forms-stats-workbench", () => ({
 describe("forms stats page", () => {
   it("gates statistics and passes validated operator layouts", async () => {
     requireFormsPage.mockResolvedValue({
-      user: { id: "manager-1" }, formRole: "form_staff",
-      formProfile: { preset: "manager", assignedOnly: false, permissions: { view_stats: true, manage_stats: true, view_finance: false } },
+      user: { id: "manager-1" }, formRole: "admin",
+      formProfile: null,
     });
     list.mockResolvedValue([{
       id: "layout-1", name: "Daily",
