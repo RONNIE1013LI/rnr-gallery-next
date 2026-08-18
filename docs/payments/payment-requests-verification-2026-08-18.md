@@ -13,19 +13,16 @@
 | --- | --- |
 | Baseline full Vitest run | PASS — 342 files, 2,584 tests |
 | Payment Request database integration | PASS — 2 files, 27 tests, isolated test DB |
-| Completed feature full Vitest run | PASS — 357 files and 2,635 tests; 4 files and 35 tests skipped by their existing guards |
-| Route/admin regression after final build fix | PASS — 7 files, 20 tests |
+| Card/Afterpay payment and admin regression | PASS — 33 files, 537 tests |
+| Completed feature full Vitest run | PASS — 358 files and 2,562 tests; 4 files and 35 tests skipped by their existing guards |
 | TypeScript | PASS — `npm run typecheck` |
 | ESLint | PASS — 0 errors; 3 pre-existing unused-parameter warnings |
 | Drizzle schema check | PASS — `npm run db:check` |
 | Production build | PASS — compiled, typechecked and generated 96/96 pages |
 | Diff whitespace check | PASS — `git diff --check` |
 
-The production build used the isolated test database plus a non-sensitive,
-build-only HTTPS auth origin and high-entropy placeholder auth secret. The
-first build attempt correctly stopped because the local environment did not
-define `BETTER_AUTH_URL`; a second attempt with an HTTP production auth URL was
-also correctly rejected. Neither failure required a product-code workaround.
+The final production build used the isolated test database plus a
+non-sensitive, build-only HTTPS auth origin and placeholder auth secret.
 
 The PostgreSQL client emitted its existing warning about future
 `sslmode=require` semantics. It did not cause a test or build failure.
@@ -83,11 +80,35 @@ required and adds two unique indexes. It does not delete orders, alter product
 prices or change order/payment amounts. No application code was deployed as
 part of that incident, and no destructive rollback was attempted.
 
-## Remaining manual checks before a later production release
+The repository migration command is now guarded by an explicit
+`--environment test|production` selector. Test mode reads only
+`TEST_DATABASE_URL`; Production mode reads only `PRODUCTION_DATABASE_URL` and
+requires confirmation plus exact database-name and host-fingerprint checks.
+Ambient `DATABASE_URL` is removed before Drizzle is started.
 
-- Review the final migration plan and production environment variables.
-- After an explicit deployment request, create one low-risk admin test request
-  and verify the public link with the configured live/sandbox providers.
-- Verify provider return/webhook behavior without assuming a successful real
-  charge from a previous feature is proof of this new target type.
+## Production pre-deployment audit
+
+The final audit was read-only:
+
+- `0031_cultured_human_torch.sql`: applied.
+- `0032_sad_maria_hill.sql`: applied completely; both idempotency columns and
+  both unique indexes are present.
+- `0033_remove_zip_payment_provider.sql`: not applied and remains the only
+  pending Payment Request migration for deployment.
+- Production has zero Zip attempts, zero non-terminal Zip attempts, zero
+  Zip-enabled Payment Requests and zero Zip webhook events.
+- Current Vercel Production configuration includes the Stripe and Afterpay
+  variable groups. Zip variables are not part of the release requirements.
+- No Production migration, provider session, charge, push or deployment was
+  performed during this gate.
+
+## Post-deployment smoke checks
+
+- Create a standalone NZ$200 fixed Payment Request and confirm the public
+  amount is not editable.
+- Confirm Card and Afterpay are offered and Zip is absent.
+- Create an existing-order request, record a bank transfer and confirm the
+  outstanding balance and request invalidation behavior.
 - Confirm authorised staff roles match the intended `manage_payment` access.
+- Do not perform a real charge unless Ronnie gives a separate explicit
+  instruction.
