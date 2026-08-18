@@ -492,12 +492,12 @@ describe("payment schema database constraints", () => {
       );
       const request = await pool.query<{ id: string }>(
         `INSERT INTO payment_requests (
-           request_number, public_token_digest, kind, order_id, description,
+           request_number, public_token_digest, idempotency_key, kind, order_id, description,
            currency, amount_cents, enabled_payment_methods, created_by
-         ) VALUES ($1, $2, 'order_balance', $3, 'Outstanding balance',
-           'NZD', 7475, '["card"]'::jsonb, $4)
+         ) VALUES ($1, $2, $3, 'order_balance', $4, 'Outstanding balance',
+           'NZD', 7475, '["card"]'::jsonb, $5)
          RETURNING id`,
-        [`PAY-${suffix}`, "c".repeat(64), orderId, adminId],
+        [`PAY-${suffix}`, "c".repeat(64), `request-${suffix}`, orderId, adminId],
       );
       requestId = request.rows[0].id;
 

@@ -61,7 +61,7 @@ export function createPaymentRequestService({
       if (!actorId.trim()) throw new Error("Payment administrator is required");
       const parsed = createPaymentRequestInputSchema.parse(input);
       const token = generatePaymentRequestToken();
-      const request = await repository.createRequest({
+      const created = await repository.createRequest({
         requestNumber: generateRequestNumber(),
         publicTokenDigest: token.digest,
         kind: parsed.kind,
@@ -75,8 +75,12 @@ export function createPaymentRequestService({
         expiresAt: parsed.expiresAt ? new Date(parsed.expiresAt) : null,
         internalNote: parsed.internalNote ?? null,
         createdBy: actorId,
+        idempotencyKey: parsed.idempotencyKey,
       });
-      return Object.freeze({ request: adminDto(request), rawToken: token.rawToken });
+      return Object.freeze({
+        request: adminDto(created.request),
+        ...(created.outcome === "created" ? { rawToken: token.rawToken } : {}),
+      });
     },
 
     async publicByToken(rawToken: string): Promise<PublicPaymentRequestDTO | null> {
@@ -117,6 +121,7 @@ export function createPaymentRequestService({
         payerName: parsed.payerName ?? null,
         note: parsed.note ?? null,
         createdBy: actorId,
+        idempotencyKey: parsed.idempotencyKey,
       });
     },
 
@@ -127,6 +132,7 @@ export function createPaymentRequestService({
         entryId: parsed.entryId,
         reason: parsed.reason,
         createdBy: actorId,
+        idempotencyKey: parsed.idempotencyKey,
       });
     },
   });

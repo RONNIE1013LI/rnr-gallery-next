@@ -61,6 +61,7 @@ export const paymentRequests = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     requestNumber: text("request_number").notNull().unique(),
     publicTokenDigest: text("public_token_digest").notNull().unique(),
+    idempotencyKey: text("idempotency_key").notNull(),
     tokenRotatedAt: timestamp("token_rotated_at", { withTimezone: true }),
     kind: text("kind").$type<PaymentRequestKind>().notNull(),
     orderId: uuid("order_id").references(() => orders.id, {
@@ -98,6 +99,10 @@ export const paymentRequests = pgTable(
   (table) => [
     index("payment_requests_order_id_idx").on(table.orderId),
     index("payment_requests_status_idx").on(table.status),
+    uniqueIndex("payment_requests_creator_idempotency_unique").on(
+      table.createdBy,
+      table.idempotencyKey,
+    ),
     unique("payment_requests_expected_amount_unique").on(
       table.id,
       table.amountCents,
@@ -295,6 +300,7 @@ export const paymentLedgerEntries = pgTable(
     createdBy: text("created_by").references(() => user.id, {
       onDelete: "restrict",
     }),
+    idempotencyKey: text("idempotency_key"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -310,6 +316,9 @@ export const paymentLedgerEntries = pgTable(
     uniqueIndex("payment_ledger_entries_reversal_unique")
       .on(table.reversesEntryId)
       .where(sql`${table.reversesEntryId} IS NOT NULL`),
+    uniqueIndex("payment_ledger_entries_creator_idempotency_unique")
+      .on(table.createdBy, table.idempotencyKey)
+      .where(sql`${table.createdBy} IS NOT NULL AND ${table.idempotencyKey} IS NOT NULL`),
     foreignKey({
       name: "payment_ledger_entries_reverses_entry_fk",
       columns: [table.reversesEntryId],

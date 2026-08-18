@@ -7,6 +7,7 @@ import {
 } from "./input-schema";
 
 const common = {
+  idempotencyKey: "payment-request-create-1",
   amountCents: 20_000,
   currency: "NZD",
   description: "Outstanding balance",
@@ -54,6 +55,16 @@ describe("payment request input schemas", () => {
       ...common,
       kind: "standalone",
       partiallyPaid: true,
+    }).success).toBe(false);
+  });
+
+  it("requires an idempotency key when creating a request", () => {
+    expect(createPaymentRequestInputSchema.safeParse({
+      amountCents: common.amountCents,
+      currency: common.currency,
+      description: common.description,
+      enabledPaymentMethods: common.enabledPaymentMethods,
+      kind: "standalone",
     }).success).toBe(false);
   });
 

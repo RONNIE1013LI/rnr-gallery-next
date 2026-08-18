@@ -136,11 +136,14 @@ function orderRequest(orderId: string, amountCents: number) {
     customerName: null,
     customerEmail: null,
     createdBy: actorId,
+    idempotencyKey: `request-create-${numberCounter}`,
   };
 }
 
-async function remember<T extends { id: string }>(promise: Promise<T>) {
-  const record = await promise;
+async function remember(
+  promise: ReturnType<typeof repository.createRequest>,
+) {
+  const { request: record } = await promise;
   requestIds.push(record.id);
   return record;
 }
@@ -202,6 +205,65 @@ describe("payment request balance transactions", () => {
     expect(active.reduce((sum, item) => sum + item.amount, 0)).toBe(30_000);
   });
 
+  it("replays identical request creation once and rejects key reuse with another payload", async () => {
+    const input = {
+      ...orderRequest(randomUUID(), 20_000),
+      kind: "standalone" as const,
+      orderId: null,
+      idempotencyKey: `request-replay-${randomUUID()}`,
+    };
+    const first = await repository.createRequest(input);
+    requestIds.push(first.request.id);
+    const replay = await repository.createRequest({
+      ...input,
+      requestNumber: `${input.requestNumber}-retry`,
+      publicTokenDigest: "f".repeat(64),
+    });
+
+    expect(first).toMatchObject({ outcome: "created" });
+    expect(replay).toMatchObject({ outcome: "existing", request: { id: first.request.id } });
+    await expect(repository.createRequest({
+      ...input,
+      requestNumber: `${input.requestNumber}-conflict`,
+      publicTokenDigest: "e".repeat(64),
+      amountCents: 19_999,
+    })).rejects.toBeInstanceOf(PaymentRequestConflictError);
+  });
+
+  it("replays identical bank credits and reversals without duplicate ledger entries", async () => {
+    const order = await createOrder();
+    const bankInput = {
+      orderId: order.id,
+      amountCents: 10_000,
+      receivedAt: new Date("2026-08-18T05:00:00.000Z"),
+      reference: "BANK-IDEMPOTENT",
+      payerName: null,
+      note: null,
+      createdBy: actorId,
+      idempotencyKey: `bank-${randomUUID()}`,
+    };
+    const credit = await repository.recordBankTransfer(bankInput);
+    const replayedCredit = await repository.recordBankTransfer(bankInput);
+    expect(replayedCredit.id).toBe(credit.id);
+    await expect(repository.recordBankTransfer({
+      ...bankInput,
+      amountCents: 9_999,
+    })).rejects.toBeInstanceOf(PaymentRequestConflictError);
+
+    const reversalInput = {
+      entryId: credit.id,
+      reason: "Wrong order",
+      createdBy: actorId,
+      idempotencyKey: `reversal-${randomUUID()}`,
+    };
+    const reversal = await repository.reverseBankTransfer(reversalInput);
+    const replayedReversal = await repository.reverseBankTransfer(reversalInput);
+    expect(replayedReversal.id).toBe(reversal.id);
+    const ledger = await database.select().from(paymentLedgerEntries)
+      .where(eq(paymentLedgerEntries.orderId, order.id));
+    expect(ledger).toHaveLength(2);
+  });
+
   it("invalidates pending requests deterministically after a bank credit", async () => {
     const order = await createOrder();
     const first = await remember(repository.createRequest(orderRequest(order.id, 25_000)));
@@ -215,6 +277,7 @@ describe("payment request balance transactions", () => {
       payerName: null,
       note: null,
       createdBy: actorId,
+      idempotencyKey: `bank-credit-${randomUUID()}`,
     });
 
     expect(entry.amountCents).toBe(20_000);
@@ -251,6 +314,7 @@ describe("payment request balance transactions", () => {
       payerName: null,
       note: null,
       createdBy: actorId,
+      idempotencyKey: `bank-conflict-${randomUUID()}`,
     })).rejects.toBeInstanceOf(PaymentRequestConflictError);
 
     await expect(repository.recordBankTransfer({
@@ -261,6 +325,7 @@ describe("payment request balance transactions", () => {
       payerName: null,
       note: null,
       createdBy: actorId,
+      idempotencyKey: `bank-safe-${randomUUID()}`,
     })).resolves.toMatchObject({ amountCents: 15_000 });
   });
 
@@ -276,6 +341,7 @@ describe("payment request balance transactions", () => {
       receivedAt: new Date(),
       reference: "CONCURRENT-CREDIT",
       createdBy: actorId,
+      idempotencyKey: `bank-reversal-again-${randomUUID()}`,
     });
 
     await expect(repository.preflightAndClaimAttempt({
@@ -299,11 +365,13 @@ describe("payment request balance transactions", () => {
       payerName: null,
       note: null,
       createdBy: actorId,
+      idempotencyKey: `bank-reversal-source-${randomUUID()}`,
     });
     const reversal = await repository.reverseBankTransfer({
       entryId: credit.id,
       reason: "Wrong order",
       createdBy: actorId,
+      idempotencyKey: `bank-reversal-${randomUUID()}`,
     });
     expect(reversal).toMatchObject({
       entryType: "reversal",
@@ -315,6 +383,7 @@ describe("payment request balance transactions", () => {
       entryId: credit.id,
       reason: "Again",
       createdBy: actorId,
+      idempotencyKey: `bank-reversal-again-${randomUUID()}`,
     })).rejects.toBeInstanceOf(PaymentRequestConflictError);
     await expect(repository.getOrderSummary(order.id)).resolves.toMatchObject({
       netPaidCents: 0,

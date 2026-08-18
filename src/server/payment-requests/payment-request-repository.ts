@@ -65,6 +65,12 @@ export type CreatePaymentRequestRecordInput = Readonly<{
   expiresAt: Date | null;
   internalNote: string | null;
   createdBy: string;
+  idempotencyKey: string;
+}>;
+
+export type CreatePaymentRequestRecordResult = Readonly<{
+  outcome: "created" | "existing";
+  request: PaymentRequestRecord;
 }>;
 
 export type RequestAttemptClaim = Readonly<{
@@ -119,7 +125,7 @@ export type OrderPaymentSummary = Readonly<{
 }>;
 
 export interface PaymentRequestRepository {
-  createRequest(input: CreatePaymentRequestRecordInput): Promise<PaymentRequestRecord>;
+  createRequest(input: CreatePaymentRequestRecordInput): Promise<CreatePaymentRequestRecordResult>;
   findPublicByDigest(digest: string): Promise<PaymentRequestRecord | null>;
   rotateToken(input: Readonly<{
     requestId: string;
@@ -139,11 +145,13 @@ export interface PaymentRequestRepository {
     payerName: string | null;
     note: string | null;
     createdBy: string;
+    idempotencyKey: string;
   }>): Promise<PaymentLedgerEntryRecord>;
   reverseBankTransfer(input: Readonly<{
     entryId: string;
     reason: string;
     createdBy: string;
+    idempotencyKey: string;
   }>): Promise<PaymentLedgerEntryRecord>;
   preflightAndClaimAttempt(input: Readonly<{
     publicTokenDigest: string;

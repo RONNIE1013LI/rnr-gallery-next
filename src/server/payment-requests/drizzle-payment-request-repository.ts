@@ -85,6 +85,19 @@ function requestRecord(row: RequestRow, orderNumber: string | null): PaymentRequ
   });
 }
 
+function sameRequestInput(row: RequestRow, input: CreatePaymentRequestRecordInput) {
+  return row.kind === input.kind &&
+    row.orderId === input.orderId &&
+    row.customerName === input.customerName &&
+    row.customerEmail === input.customerEmail &&
+    row.description === input.description &&
+    row.currency === input.currency &&
+    row.amountCents === input.amountCents &&
+    JSON.stringify(row.enabledPaymentMethods) === JSON.stringify(input.enabledPaymentMethods) &&
+    row.expiresAt?.getTime() === input.expiresAt?.getTime() &&
+    row.internalNote === input.internalNote;
+}
+
 function ledgerRecord(row: LedgerRow): PaymentLedgerEntryRecord {
   return Object.freeze({
     id: row.id,
@@ -381,9 +394,23 @@ export function createDrizzlePaymentRequestRepository(
         } else if (input.orderId !== null) {
           throw new PaymentRequestConflictError();
         }
+        const [existing] = await transaction.select().from(paymentRequests).where(and(
+          eq(paymentRequests.createdBy, input.createdBy),
+          eq(paymentRequests.idempotencyKey, input.idempotencyKey),
+        )).limit(1);
+        if (existing) {
+          if (!sameRequestInput(existing, input)) {
+            throw new PaymentRequestConflictError("Idempotency key was used for another request");
+          }
+          return Object.freeze({
+            outcome: "existing" as const,
+            request: requestRecord(existing, orderNumber),
+          });
+        }
         const [created] = await transaction.insert(paymentRequests).values({
           requestNumber: input.requestNumber,
           publicTokenDigest: input.publicTokenDigest,
+          idempotencyKey: input.idempotencyKey,
           kind: input.kind,
           orderId: input.orderId,
           customerName: input.customerName,
@@ -395,8 +422,26 @@ export function createDrizzlePaymentRequestRepository(
           expiresAt: input.expiresAt,
           internalNote: input.internalNote,
           createdBy: input.createdBy,
+        }).onConflictDoNothing({
+          target: [paymentRequests.createdBy, paymentRequests.idempotencyKey],
         }).returning();
-        return requestRecord(created, orderNumber);
+        if (created) {
+          return Object.freeze({
+            outcome: "created" as const,
+            request: requestRecord(created, orderNumber),
+          });
+        }
+        const [replayed] = await transaction.select().from(paymentRequests).where(and(
+          eq(paymentRequests.createdBy, input.createdBy),
+          eq(paymentRequests.idempotencyKey, input.idempotencyKey),
+        )).limit(1);
+        if (!replayed || !sameRequestInput(replayed, input)) {
+          throw new PaymentRequestConflictError("Idempotency key was used for another request");
+        }
+        return Object.freeze({
+          outcome: "existing" as const,
+          request: requestRecord(replayed, orderNumber),
+        });
       });
     },
 
@@ -523,6 +568,22 @@ export function createDrizzlePaymentRequestRepository(
     async recordBankTransfer(input) {
       return database.transaction(async (transaction) => {
         const order = await lockOrder(transaction, input.orderId);
+        const [existing] = await transaction.select().from(paymentLedgerEntries).where(and(
+          eq(paymentLedgerEntries.createdBy, input.createdBy),
+          eq(paymentLedgerEntries.idempotencyKey, input.idempotencyKey),
+        )).limit(1);
+        if (existing) {
+          if (
+            existing.entryType !== "bank_transfer" ||
+            existing.orderId !== input.orderId ||
+            existing.amountCents !== input.amountCents ||
+            existing.receivedAt.getTime() !== input.receivedAt.getTime() ||
+            existing.reference !== input.reference ||
+            existing.payerName !== input.payerName ||
+            existing.note !== input.note
+          ) throw new PaymentRequestConflictError("Idempotency key was used for another ledger entry");
+          return ledgerRecord(existing);
+        }
         const now = await databaseNow(transaction);
         const balance = await reconcileOrderRequests(transaction, order, now);
         const requestActiveIds = balance.activeIds;
@@ -554,6 +615,7 @@ export function createDrizzlePaymentRequestRepository(
           payerName: input.payerName,
           note: input.note,
           createdBy: input.createdBy,
+          idempotencyKey: input.idempotencyKey,
         }).returning();
         await updateOrderPaymentStatus(transaction, order, now);
         await reconcileOrderRequests(transaction, order, now);
@@ -567,6 +629,18 @@ export function createDrizzlePaymentRequestRepository(
       if (!candidate?.orderId) throw new PaymentRequestNotFoundError();
       return database.transaction(async (transaction) => {
         const order = await lockOrder(transaction, candidate.orderId!);
+        const [idempotent] = await transaction.select().from(paymentLedgerEntries).where(and(
+          eq(paymentLedgerEntries.createdBy, input.createdBy),
+          eq(paymentLedgerEntries.idempotencyKey, input.idempotencyKey),
+        )).limit(1);
+        if (idempotent) {
+          if (
+            idempotent.entryType !== "reversal" ||
+            idempotent.reversesEntryId !== input.entryId ||
+            idempotent.note !== input.reason
+          ) throw new PaymentRequestConflictError("Idempotency key was used for another ledger entry");
+          return ledgerRecord(idempotent);
+        }
         const [entry] = await transaction.select().from(paymentLedgerEntries)
           .where(eq(paymentLedgerEntries.id, input.entryId)).for("update").limit(1);
         if (!entry) throw new PaymentRequestNotFoundError();
@@ -595,6 +669,7 @@ export function createDrizzlePaymentRequestRepository(
           note: input.reason,
           reversesEntryId: reversal.reversesEntryId,
           createdBy: input.createdBy,
+          idempotencyKey: input.idempotencyKey,
         }).returning();
         await updateOrderPaymentStatus(transaction, order, now);
         await reconcileOrderRequests(transaction, order, now);

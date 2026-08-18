@@ -30,5 +30,5 @@ export type AdminPaymentRequestDTO = PublicPaymentRequestDTO & Readonly<{
 
 export type PaymentRequestCreateResult = Readonly<{
   request: AdminPaymentRequestDTO;
-  rawToken: string;
+  rawToken?: string;
 }>;

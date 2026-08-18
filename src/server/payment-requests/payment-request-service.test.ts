@@ -28,7 +28,7 @@ const request: PaymentRequestRecord = Object.freeze({
 
 function repository(overrides: Partial<PaymentRequestRepository> = {}) {
   return {
-    createRequest: vi.fn(async () => request),
+    createRequest: vi.fn(async () => ({ outcome: "created" as const, request })),
     findPublicByDigest: vi.fn(async () => request),
     rotateToken: vi.fn(async () => request),
     cancel: vi.fn(async () => ({ ...request, status: "cancelled" as const })),
@@ -57,6 +57,7 @@ describe("payment request service", () => {
     });
     const result = await service.create("admin-1", {
       kind: "standalone",
+      idempotencyKey: "payment-request-create-1",
       amountCents: 20_000,
       currency: "NZD",
       description: "Custom design deposit",
@@ -65,11 +66,31 @@ describe("payment request service", () => {
 
     expect(result.rawToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
     expect(store.createRequest).toHaveBeenCalledWith(expect.objectContaining({
+      idempotencyKey: "payment-request-create-1",
       requestNumber: "PAY-2026-ABC123",
       publicTokenDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
     }));
     expect(vi.mocked(store.createRequest).mock.calls[0][0].publicTokenDigest)
       .not.toBe(result.rawToken);
+  });
+
+  it("does not expose a second raw token when create is an idempotent replay", async () => {
+    const store = repository({
+      createRequest: vi.fn(async () => ({ outcome: "existing" as const, request })),
+    });
+    const service = createPaymentRequestService({ repository: store });
+
+    const result = await service.create("admin-1", {
+      kind: "standalone",
+      idempotencyKey: "payment-request-create-replay",
+      amountCents: 20_000,
+      currency: "NZD",
+      description: "Custom design deposit",
+      enabledPaymentMethods: ["card"],
+    });
+
+    expect(result).toEqual({ request: expect.objectContaining({ id: request.id }) });
+    expect(result).not.toHaveProperty("rawToken");
   });
 
   it("returns a public allowlist without stored identity or internal values", async () => {

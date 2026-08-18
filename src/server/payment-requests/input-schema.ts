@@ -13,6 +13,7 @@ const enabledPaymentMethodsSchema = z.array(methodSchema).min(1).max(3)
   });
 
 const requestFields = {
+  idempotencyKey: idempotencyKeySchema,
   amountCents: amountCentsSchema,
   currency: currencySchema,
   description: z.string().trim().min(1).max(500),
