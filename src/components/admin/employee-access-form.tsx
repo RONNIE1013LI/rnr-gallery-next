@@ -30,31 +30,58 @@ function profileFor(account: AdminUserAccount): StaffAccessProfile {
   return emptyStaffAccessProfile();
 }
 
+function accessPayload(
+  role: AdminUserRole,
+  profile: StaffAccessProfile,
+  formPreset: FormAccessPreset,
+) {
+  if (role === "staff") {
+    return {
+      role,
+      adminPermissions: profile.adminPermissions,
+      formPermissions: profile.formPermissions,
+      assignedOnly: profile.assignedOnly,
+    };
+  }
+  return role === "form_staff" ? { role, formPreset } : { role };
+}
+
+type PendingMutation = Readonly<{ fingerprint: string; idempotencyKey: string }>;
+
 export function EmployeeAccessForm({ account, currentUserId }: Readonly<{ account: AdminUserAccount; currentUserId: string }>) {
   const locked = account.id === currentUserId;
   const [role, setRole] = useState<AdminUserRole>(account.role);
   const [profile, setProfile] = useState<StaffAccessProfile>(() => profileFor(account));
   const [formPreset, setFormPreset] = useState<FormAccessPreset>(account.formPreset ?? "manager");
+  const [savedFingerprint, setSavedFingerprint] = useState(() => JSON.stringify(
+    accessPayload(account.role, profileFor(account), account.formPreset ?? "manager"),
+  ));
+  const [pendingMutation, setPendingMutation] = useState<PendingMutation | null>(null);
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
+  const payload = accessPayload(role, profile, formPreset);
+  const fingerprint = JSON.stringify(payload);
+  const unchanged = fingerprint === savedFingerprint;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pending || locked) return;
+    if (pending || locked || unchanged) return;
     setPending(true);
     setMessage("");
-    const access = role === "staff"
-      ? { adminPermissions: profile.adminPermissions, formPermissions: profile.formPermissions, assignedOnly: profile.assignedOnly }
-      : role === "form_staff" ? { formPreset } : {};
+    const mutation = pendingMutation?.fingerprint === fingerprint
+      ? pendingMutation
+      : { fingerprint, idempotencyKey: createClientId() };
+    if (mutation !== pendingMutation) setPendingMutation(mutation);
     try {
       const response = await fetch(`/api/admin/users/${encodeURIComponent(account.id)}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ role, ...access, idempotencyKey: createClientId() }),
+        body: JSON.stringify({ ...payload, idempotencyKey: mutation.idempotencyKey }),
       });
-      const payload = await response.json().catch(() => null) as { error?: string; result?: { changed?: boolean } } | null;
-      if (!response.ok) throw new Error(payload?.error || "The employee access could not be updated.");
-      setMessage(payload?.result?.changed === false ? "No change was needed." : "Employee access saved.");
+      const responseBody = await response.json().catch(() => null) as { error?: string; result?: { changed?: boolean } } | null;
+      if (!response.ok) throw new Error(responseBody?.error || "The employee access could not be updated.");
+      setSavedFingerprint(fingerprint);
+      setMessage(responseBody?.result?.changed === false ? "No change was needed." : "Employee access saved.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "The employee access could not be updated.");
     } finally {
@@ -74,7 +101,7 @@ export function EmployeeAccessForm({ account, currentUserId }: Readonly<{ accoun
     {role === "customer" ? <div className={styles.fullAccessNote} role="note"><strong>Customer account</strong><p>This account has no Admin or Forms permissions.</p></div> : null}
     <div className={styles.employeeFormActions}>
       <p role="status">{message || (locked ? "This account cannot be changed here." : "Changes take effect on the next permission check.")}</p>
-      <button className={styles.primaryAdminButton} disabled={locked || pending} type="submit">{pending ? "Saving…" : "Save employee access"}</button>
+      <button className={styles.primaryAdminButton} disabled={locked || pending || unchanged} type="submit">{pending ? "Saving…" : "Save employee access"}</button>
     </div>
   </form>;
 }

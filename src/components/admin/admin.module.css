@@ -2523,21 +2523,6 @@
   .employeeFormActions .primaryAdminButton {
     min-height: 48px;
   }
-}
-
-@media (max-width: 560px) {
-  .employeeAccessForm {
-    padding: 16px;
-  }
-
-  .employeeFormActions {
-    position: static;
-    display: grid;
-  }
-
-  .employeeFormActions .primaryAdminButton {
-    width: 100%;
-  }
 
   .permissionGroupActions {
     display: grid;
@@ -2546,6 +2531,26 @@
   .permissionGroupActions button {
     width: 100%;
   }
+
+  .employeePresetField {
+    width: 100%;
+  }
+
+  .employeeFormActions .primaryAdminButton {
+    width: 100%;
+  }
+
+  .employeeFormActions {
+    position: static;
+    display: grid;
+  }
+}
+
+@media (max-width: 560px) {
+  .employeeAccessForm {
+    padding: 16px;
+  }
+
 }
 
 .numeric {

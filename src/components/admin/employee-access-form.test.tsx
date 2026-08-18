@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AdminUserAccount } from "@/server/admin/admin-user-service";
 import { EmployeeAccessForm } from "./employee-access-form";
@@ -29,6 +30,8 @@ describe("EmployeeAccessForm", () => {
     render(<EmployeeAccessForm account={staffAccount} currentUserId="admin-1" />);
 
     fireEvent.click(screen.getByRole("checkbox", { name: "Update order status" }));
+    expect(screen.getByRole("checkbox", { name: "Update order status" })).toBeChecked();
+    expect(screen.getByRole("button", { name: "Save employee access" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "Save employee access" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
@@ -59,5 +62,57 @@ describe("EmployeeAccessForm", () => {
 
     expect(screen.getByRole("checkbox", { name: "View orders" })).toBeChecked();
     expect(screen.getByRole("checkbox", { name: "Administration dashboard" })).toBeChecked();
+  });
+
+  it("retries a lost Staff save response with the same idempotency key", async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new Error("Network response was lost"))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: { changed: true } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: vi.fn().mockReturnValueOnce("employee-access-retry-0001").mockReturnValueOnce("employee-access-retry-0002") });
+    render(<EmployeeAccessForm account={staffAccount} currentUserId="admin-1" />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Update order status" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save employee access" }));
+    await screen.findByText("Network response was lost");
+    fireEvent.click(screen.getByRole("button", { name: "Save employee access" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).idempotencyKey).toBe("employee-access-retry-0001");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).idempotencyKey).toBe("employee-access-retry-0001");
+  });
+
+  it("disables an unchanged saved profile and rotates the key for the next mutation", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: { changed: true } }), { status: 200 }));
+    const randomUUID = vi.fn().mockReturnValueOnce("employee-access-change-0001").mockReturnValueOnce("employee-access-change-0002");
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID });
+    render(<EmployeeAccessForm account={staffAccount} currentUserId="admin-1" />);
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Update order status" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save employee access" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save employee access" })).toBeDisabled());
+
+    fireEvent.click(screen.getByRole("checkbox", { name: "Update order status" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save employee access" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).idempotencyKey).toBe("employee-access-change-0001");
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body).idempotencyKey).toBe("employee-access-change-0002");
+  });
+
+  it("makes permission actions, preset and save controls full width from 900px down", () => {
+    const css = readFileSync("src/components/admin/admin.module.css", "utf8");
+    const employeeCss = css.slice(css.indexOf(".employeeAccessForm"));
+    const responsive900 = employeeCss.slice(
+      employeeCss.indexOf("@media (max-width: 900px)"),
+      employeeCss.indexOf("@media (max-width: 560px)"),
+    );
+
+    expect(responsive900).toContain(".permissionGroupActions {");
+    expect(responsive900).toMatch(/\.permissionGroupActions\s*\{\s*display: grid;/);
+    expect(responsive900).toMatch(/\.permissionGroupActions button\s*\{\s*width: 100%;/);
+    expect(responsive900).toMatch(/\.employeePresetField\s*\{\s*width: 100%;/);
+    expect(responsive900).toMatch(/\.employeeFormActions\s*\{\s*position: static;\s*display: grid;/);
+    expect(responsive900).toMatch(/\.employeeFormActions \.primaryAdminButton\s*\{\s*width: 100%;/);
   });
 });
