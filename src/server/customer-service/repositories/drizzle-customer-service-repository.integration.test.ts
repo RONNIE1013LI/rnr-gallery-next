@@ -579,6 +579,19 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       .resolves.toEqual({ status: "already_terminal" });
     const [after] = await database.select().from(customerServiceHumanReplyMatches).where(eq(customerServiceHumanReplyMatches.id, group.id));
     expect(JSON.stringify(after)).toBe(snapshot);
+
+    await expect(repository.createCaseMemoryCandidate({
+      matchId: group.id,
+      customerSituation: "Customer asks how the design process works.",
+      customerTurnSummary: "Asked about the design process.",
+      productCategory: null,
+      market: "unknown",
+      deadlineContext: null,
+      knowledgeVersion: "test",
+    })).resolves.toMatchObject({ status: "pending_review", caseMemoryId: expect.any(String) });
+    const [memory] = await database.select().from(customerServiceCaseMemories);
+    expect(memory).toMatchObject({ eligibilityStatus: "pending_review", intent: "design_process" });
+    expect(memory.eligibilityStatus).not.toBe("approved_reusable");
   });
 
   it("marks a human reply unmatched when multiple pending turns are ambiguous", async () => {

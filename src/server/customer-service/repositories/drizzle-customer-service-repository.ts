@@ -5,6 +5,7 @@ import {
   customerServiceAiAttempts,
   customerServiceAttachments,
   customerServiceBudgetState,
+  customerServiceCaseMemories,
   customerServiceConversationEvents,
   customerServiceConversations,
   customerServiceFeedbackEvents,
@@ -32,6 +33,8 @@ import { classifyAcknowledgement } from "../conversation/acknowledgement";
 import { canAppendHumanReply } from "../conversation/human-reply-grouping";
 import { chooseHumanReplyTurn } from "../learning/human-reply-matcher";
 import { classifyHumanEdit } from "../learning/edit-classifier";
+import { assessCaseMemoryEligibility } from "../learning/case-memory";
+import { sanitizeCaseMemoryText } from "../learning/case-memory-sanitizer";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -1800,6 +1803,77 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           eq(customerServiceHumanReplyMatches.status, "pending"),
         ));
         return { status: "matched" as const, classification: edit.classification };
+      });
+    },
+
+    async createCaseMemoryCandidate(input) {
+      return database.transaction(async (transaction) => {
+        const [existing] = await transaction.select({ id: customerServiceCaseMemories.id })
+          .from(customerServiceCaseMemories)
+          .innerJoin(customerServiceHumanReplyMatches, eq(
+            customerServiceHumanReplyMatches.id,
+            customerServiceCaseMemories.humanReplyMatchId,
+          ))
+          .where(eq(customerServiceCaseMemories.humanReplyMatchId, input.matchId)).limit(1);
+        if (existing) return { status: "already_exists" as const, caseMemoryId: existing.id };
+        const [match] = await transaction.select().from(customerServiceHumanReplyMatches)
+          .where(eq(customerServiceHumanReplyMatches.id, input.matchId)).limit(1).for("update");
+        if (!match || match.status !== "matched" || !match.turnId) {
+          throw new Error("customer_service_case_memory_match_not_eligible");
+        }
+        const sourceEvents = await transaction.select({
+          redactionCodes: customerServiceConversationEvents.redactionCodes,
+        }).from(customerServiceHumanReplyMatchEvents)
+          .innerJoin(customerServiceConversationEvents, eq(
+            customerServiceConversationEvents.id,
+            customerServiceHumanReplyMatchEvents.eventId,
+          )).where(eq(customerServiceHumanReplyMatchEvents.matchId, match.id));
+        const [attempt] = match.aiAttemptId
+          ? await transaction.select({
+            draftText: customerServiceAiAttempts.draftText,
+            gateReasons: customerServiceAiAttempts.gateReasons,
+          }).from(customerServiceAiAttempts).where(eq(customerServiceAiAttempts.id, match.aiAttemptId)).limit(1)
+          : [];
+        const situation = sanitizeCaseMemoryText(input.customerSituation);
+        const turnSummary = sanitizeCaseMemoryText(input.customerTurnSummary);
+        const context = sanitizeCaseMemoryText(match.contextSummary);
+        const finalReply = sanitizeCaseMemoryText(match.humanFinalText);
+        const draft = attempt?.draftText ? sanitizeCaseMemoryText(attempt.draftText) : null;
+        const sourceRedactions = sourceEvents.flatMap((event) => event.redactionCodes);
+        const sanitationCodes = [situation, turnSummary, context, finalReply, ...(draft ? [draft] : [])]
+          .flatMap((item) => item.codes);
+        const eligibility = assessCaseMemoryEligibility({
+          riskClass: match.riskClass ?? "high",
+          gateReasons: attempt?.gateReasons ?? [],
+          customerSituation: situation.text,
+          humanReply: finalReply.text,
+          redactionCodes: [...sourceRedactions, ...sanitationCodes],
+        });
+        const status = eligibility.eligible ? "pending_review" as const : "excluded" as const;
+        const [memory] = await transaction.insert(customerServiceCaseMemories).values({
+          humanReplyMatchId: match.id,
+          intent: match.intent ?? "unknown",
+          normalizedSituation: situation.text,
+          customerTurnSummary: turnSummary.text,
+          contextSummary: context.text,
+          aiDraft: draft?.text ?? null,
+          humanFinalReply: finalReply.text,
+          editClassification: match.editClassification,
+          editReasonCodes: match.editReasonCodes,
+          productCategory: input.productCategory,
+          market: input.market,
+          deadlineContext: input.deadlineContext,
+          policyReferences: match.policyReferences,
+          knowledgeVersion: input.knowledgeVersion,
+          riskClass: match.riskClass === "low" ? "low" : "medium",
+          eligibilityStatus: status,
+          sourceConfidence: match.confidence === "high" ? "high" : "medium",
+          exclusionCodes: eligibility.exclusionCodes,
+          ...(status === "excluded" ? { decidedAt: new Date() } : {}),
+        }).returning({ id: customerServiceCaseMemories.id });
+        return status === "pending_review"
+          ? { status, caseMemoryId: memory.id }
+          : { status, caseMemoryId: memory.id, exclusionCodes: eligibility.exclusionCodes };
       });
     },
 

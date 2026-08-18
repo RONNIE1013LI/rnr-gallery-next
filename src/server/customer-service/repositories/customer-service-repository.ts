@@ -339,6 +339,19 @@ export interface CustomerServiceRepository {
       classification: "accepted_unchanged" | "edited_light" | "edited_significant" | "ai_ignored" | "independent_reply";
     }>
   >;
+  createCaseMemoryCandidate(input: Readonly<{
+    matchId: string;
+    customerSituation: string;
+    customerTurnSummary: string;
+    productCategory: string | null;
+    market: "NZ" | "AU" | "other" | "unknown";
+    deadlineContext: string | null;
+    knowledgeVersion: string;
+  }>): Promise<
+    | Readonly<{ status: "pending_review"; caseMemoryId: string }>
+    | Readonly<{ status: "excluded"; caseMemoryId: string; exclusionCodes: readonly string[] }>
+    | Readonly<{ status: "already_exists"; caseMemoryId: string }>
+  >;
   createImageJobProviderAttempt(input: Readonly<{
     jobId: string;
     leaseToken: string;
