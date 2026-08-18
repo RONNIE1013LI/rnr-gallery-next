@@ -365,6 +365,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             channel: input.channel,
             externalMessageKeyHash: input.externalMessageKeyHash,
             role: "staff",
+            eventType: "human_outbound",
             body,
             receivedAt: input.receivedAt,
           }).onConflictDoNothing().returning({ id: customerServiceConversationEvents.id });
@@ -436,6 +437,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           channel: input.channel,
           externalMessageKeyHash: input.externalMessageKeyHash,
           role: "customer",
+          eventType: "customer_message",
           body,
           receivedAt: input.receivedAt,
         });

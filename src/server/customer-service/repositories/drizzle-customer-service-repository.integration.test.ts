@@ -98,6 +98,46 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   beforeEach(clearTables);
   afterAll(clearTables);
 
+  it("has additive continuous-learning tables with fail-closed defaults", async () => {
+    const tables = await database.execute(sql`
+      select table_name
+      from information_schema.tables
+      where table_schema = 'public'
+        and table_name in (
+          'customer_service_human_reply_matches',
+          'customer_service_human_reply_match_events',
+          'customer_service_case_memories',
+          'customer_service_case_retrievals',
+          'customer_service_learning_candidates'
+        )
+      order by table_name
+    `);
+
+    expect(tables.rows.map((row) => row.table_name)).toEqual([
+      "customer_service_case_memories",
+      "customer_service_case_retrievals",
+      "customer_service_human_reply_match_events",
+      "customer_service_human_reply_matches",
+      "customer_service_learning_candidates",
+    ]);
+
+    const eventColumns = await database.execute(sql`
+      select column_name
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'customer_service_conversation_events'
+        and column_name in (
+          'event_type',
+          'body_hash',
+          'redaction_codes',
+          'reply_to_external_message_key_hash',
+          'learning_eligible'
+        )
+      order by column_name
+    `);
+    expect(eventColumns.rows).toHaveLength(5);
+  });
+
   it("persists customer and staff events in one isolated conversation", async () => {
     const contextualRepository = repository as typeof repository & {
       ingestConversationEvent(input: {

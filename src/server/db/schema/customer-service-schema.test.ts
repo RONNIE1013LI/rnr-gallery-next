@@ -10,12 +10,18 @@ import {
   customerServiceAttachments,
   customerServiceBudgetState,
   customerServiceConversations,
+  customerServiceCaseMemories,
+  customerServiceCaseRetrievals,
   customerServiceFeedbackEvents,
+  customerServiceHumanReplyMatches,
+  customerServiceHumanReplyMatchEvents,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
   customerServiceImageJobs,
   customerServiceMessages,
   customerServicePilotRuns,
+  customerServiceLearningCandidates,
+  customerServiceConversationEvents,
 } from "./index";
 
 const tables = [
@@ -29,6 +35,14 @@ const tables = [
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
   customerServiceImageJobs,
+];
+
+const continuousLearningTables = [
+  customerServiceHumanReplyMatches,
+  customerServiceHumanReplyMatchEvents,
+  customerServiceCaseMemories,
+  customerServiceCaseRetrievals,
+  customerServiceLearningCandidates,
 ];
 
 describe("customer service schema contract", () => {
@@ -57,6 +71,63 @@ describe("customer service schema contract", () => {
       "customer_service_image_analysis_inputs",
       "customer_service_image_jobs",
     ]);
+  });
+
+  it("defines the five additive continuous-learning tables", () => {
+    expect(continuousLearningTables.map(getTableName)).toEqual([
+      "customer_service_human_reply_matches",
+      "customer_service_human_reply_match_events",
+      "customer_service_case_memories",
+      "customer_service_case_retrievals",
+      "customer_service_learning_candidates",
+    ]);
+  });
+
+  it("extends conversation events with explicit sanitized timeline metadata", () => {
+    expect(getTableColumns(customerServiceConversationEvents)).toEqual(expect.objectContaining({
+      eventType: expect.anything(),
+      bodyHash: expect.anything(),
+      redactionCodes: expect.anything(),
+      replyToExternalMessageKeyHash: expect.anything(),
+      learningEligible: expect.anything(),
+    }));
+  });
+
+  it("keeps case memories non-retrievable until an explicit decision", () => {
+    const columns = getTableColumns(customerServiceCaseMemories);
+
+    expect(columns.eligibilityStatus.default).toBe("pending_review");
+    expect(columns.approvedByUserId.notNull).toBe(false);
+    expect(columns.decidedAt.notNull).toBe(false);
+  });
+
+  it("keeps continuous-learning storage free of external identity and private contact fields", () => {
+    const names = continuousLearningTables.flatMap((table) => (
+      getTableConfig(table).columns.map((column) => column.name)
+    ));
+
+    expect(names).not.toEqual(expect.arrayContaining([
+      "sender_id",
+      "conversation_external_id",
+      "psid",
+      "email",
+      "phone",
+      "street_address",
+      "bank_account",
+      "raw_payload",
+    ]));
+  });
+
+  it("uses a forward-only continuous-learning migration", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0032_reply_assistant_continuous_learning.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain("CREATE TABLE \"customer_service_human_reply_matches\"");
+    expect(migration).toContain("CREATE TABLE \"customer_service_case_memories\"");
+    expect(migration).toContain("ADD COLUMN \"event_type\"");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
   });
 
   it("persists image metadata without raw source URLs", () => {
