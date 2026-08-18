@@ -9,8 +9,33 @@ import { ProductionJobDetail } from "./production-job-detail";
 
 vi.mock("./production-files-panel", () => ({ ProductionFilesPanel: () => null }));
 vi.mock("./invoice-panel", () => ({ InvoicePanel: () => null }));
+vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
 
 describe("ProductionJobDetail", () => {
+  it("keeps job mutation controls closed unless access is supplied", () => {
+    const now = new Date("2026-08-16T01:00:00.000Z");
+    render(<ProductionJobDetail
+      detail={{
+        job: {
+          id: "job-1", jobNumber: "08000", source: "manual", orderId: null,
+          customerName: "Customer", customerEmail: "customer@example.test", customerPhone: "+64210000000",
+          customerSource: "website", deliveryMethod: "post", deliveryAddress: "Auckland",
+          webOrderNumber: "", urgent: false, neededDate: "2026-08-21",
+          paymentReconciliationStatus: "Stripe", designRequirements: "", internalNotes: "",
+          assignedUserId: null, createdAt: now, updatedAt: now,
+          fileSentAt: null, downloadedAt: null, printedAt: null, customerNotifiedAt: null,
+          deliveredAt: null, artistPaidAt: null, completedAt: null,
+        },
+        status: "new", paymentStatus: "paid", orderNumber: null, assignee: null,
+        items: [], finance: null, customFields: [], audit: [],
+      } as never}
+      assignees={[]}
+      canManageFinance={false}
+    />);
+
+    expect(screen.queryByRole("button", { name: "Save production plan" })).not.toBeInTheDocument();
+  });
+
   it("shows online order fields in the approved data-entry sequence", () => {
     const now = new Date("2026-08-16T01:00:00.000Z");
     const detail = {

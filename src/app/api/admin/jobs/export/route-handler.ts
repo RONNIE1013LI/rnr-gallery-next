@@ -1,13 +1,13 @@
 import { getAdminProductionRuntime } from "@/server/admin/admin-production-runtime";
-import type { AdminPermission, AdminRole } from "@/server/auth/admin-permissions";
-import { requireAdminPermission } from "@/server/auth/require-admin";
+import { hasAdminPermission, type AdminPermission } from "@/server/auth/admin-permissions";
+import { requireAdminPermission, type AdminAccess } from "@/server/auth/require-admin";
 import { HttpError } from "@/server/auth/require-session";
 import { createProductionCsv } from "@/server/production/production-operations-service";
 import { parseProductionJobFilters } from "@/server/production/production-job-service";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
-type Access = Readonly<{ user: Readonly<{ id: string }>; adminRole: AdminRole }>;
+type Access = AdminAccess<Readonly<{ user: Readonly<{ id: string }> }>>;
 type ProductionRuntime = ReturnType<typeof getAdminProductionRuntime>;
 type Dependencies = Readonly<{
   requirePermission: (permission: AdminPermission) => Promise<Access>;
@@ -22,10 +22,16 @@ export function createAdminProductionExportRoute(dependencies?: Dependencies) {
           const production = getAdminProductionRuntime();
           return { requirePermission: requireAdminPermission, list: production.list };
         })();
-        await deps.requirePermission("export_production_jobs");
+        const access = await deps.requirePermission("export_production_jobs");
         const query = Object.fromEntries(new URL(request.url).searchParams.entries());
         const filters = { ...parseProductionJobFilters(query), page: 1, pageSize: 5_000 };
-        const result = await deps.list(filters, { canViewFinance: true });
+        const result = await deps.list(filters, {
+          canViewFinance: hasAdminPermission(
+            access.adminRole,
+            access.adminPermissions,
+            "view_production_finance",
+          ),
+        });
         const stamp = new Date().toISOString().slice(0, 10);
         return new Response(`\uFEFF${createProductionCsv(result.items)}`, { headers: {
           ...noStore,

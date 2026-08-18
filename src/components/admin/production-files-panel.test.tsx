@@ -23,11 +23,24 @@ describe("production files panel", () => {
       files={[file]}
       revision={{ changesRequested: 1, freeRevisionsRemaining: 1, requiresAdditionalChargeReview: false }}
       canManageFinance={false}
+      canReviewProofs
     />);
     expect(screen.getByText("Design draft v2")).toBeInTheDocument();
     expect(screen.getByText("1 free revision remaining")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Record decision" })).toBeInTheDocument();
     expect(screen.queryByRole("option", { name: "Payment proof" })).not.toBeInTheDocument();
+  });
+
+  it("keeps file mutation controls closed unless access is supplied", () => {
+    render(<ProductionFilesPanel
+      jobId={file.jobId}
+      files={[file]}
+      revision={{ changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false }}
+      canManageFinance={false}
+    />);
+
+    expect(screen.queryByRole("button", { name: "Upload private file" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Record decision" })).not.toBeInTheDocument();
   });
 
   it("does not offer a second decision for an already reviewed draft", () => {
@@ -36,6 +49,7 @@ describe("production files panel", () => {
       files={[{ ...file, review: { id: "r1", decision: "approved", notes: "Ready", reviewerType: "staff", createdAt: new Date() } }]}
       revision={{ changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false }}
       canManageFinance
+      canUploadFiles
     />);
     expect(screen.getByText("Approved · Recorded by staff")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Record decision" })).not.toBeInTheDocument();

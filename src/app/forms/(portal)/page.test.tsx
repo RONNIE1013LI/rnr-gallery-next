@@ -2,15 +2,18 @@ import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { formOrderRow } from "@/components/forms/forms-test-data";
+import { normalizeStaffAccessProfile } from "@/server/auth/staff-access-profile";
+import { buildFormAccessProfile } from "@/server/forms/forms-permissions";
 import FormsDataListPage from "./page";
 
-const { requireFormsPage, listFormOrders, getDatabase, listFields, productRegistry, listAssignees } = vi.hoisted(() => ({
+const { requireFormsPage, listFormOrders, getDatabase, listFields, productRegistry, listAssignees, listSavedViews } = vi.hoisted(() => ({
   requireFormsPage: vi.fn(),
   listFormOrders: vi.fn(),
   getDatabase: vi.fn(() => ({ kind: "database" })),
   listFields: vi.fn(),
   productRegistry: vi.fn(),
   listAssignees: vi.fn(),
+  listSavedViews: vi.fn(),
 }));
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -21,6 +24,9 @@ vi.mock("@/server/admin/admin-production-field-runtime", () => ({ getAdminProduc
 vi.mock("@/server/admin/product-registry-runtime", () => ({ getSafePublicProductRegistry: productRegistry }));
 vi.mock("@/domain/catalogue/product-registry", () => ({ getRegistryProducts: () => [{ active: true, title: "Canvas" }, { active: false, title: "Hidden" }] }));
 vi.mock("@/server/production/drizzle-production-job-repository", () => ({ listProductionAssignees: listAssignees }));
+vi.mock("@/server/forms/forms-saved-view-runtime", () => ({
+  getFormsSavedViewRuntime: () => ({ list: listSavedViews }),
+}));
 
 describe("forms data list page", () => {
   beforeEach(() => {
@@ -28,22 +34,14 @@ describe("forms data list page", () => {
     listFields.mockResolvedValue([]);
     productRegistry.mockResolvedValue({ registry: {} });
     listAssignees.mockResolvedValue([{ id: "artist-1", name: "Artist", email: "artist@example.test", role: "staff" }]);
+    listSavedViews.mockResolvedValue([]);
   });
 
   it("loads the protected source-parity workbench with field-level access", async () => {
     requireFormsPage.mockResolvedValue({
       user: { id: "operator-1", email: "operator@example.test" },
       formRole: "form_staff",
-      formProfile: {
-        preset: "finance",
-        assignedOnly: false,
-        permissions: {
-          view_jobs: true,
-          view_finance: true,
-          view_customer_contact: true,
-          export_jobs: true,
-        },
-      },
+      formProfile: buildFormAccessProfile("finance"),
     });
     listFormOrders.mockResolvedValue({
       items: [formOrderRow], total: 1, page: 1, pageSize: 20, pageCount: 1,
@@ -66,11 +64,32 @@ describe("forms data list page", () => {
     expect(screen.getByRole("link", { name: "Export CSV" })).toBeInTheDocument();
   });
 
+  it("scopes custom Staff listing to assigned jobs", async () => {
+    requireFormsPage.mockResolvedValue({
+      user: { id: "staff-1", email: "staff@example.test" },
+      formRole: "staff",
+      formProfile: normalizeStaffAccessProfile({
+        adminPermissions: [],
+        formPermissions: { view_jobs: true },
+        assignedOnly: true,
+      }),
+    });
+    listFormOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
+
+    await FormsDataListPage({ searchParams: Promise.resolve({}) });
+
+    expect(listFormOrders).toHaveBeenCalledWith(
+      { kind: "database" },
+      expect.anything(),
+      expect.objectContaining({ actorUserId: "staff-1", assignedOnly: true }),
+    );
+  });
+
   it("preserves repeated operational filters in the sign-in return path", async () => {
     requireFormsPage.mockResolvedValue({
       user: { id: "operator-2", email: "readonly@example.test" },
       formRole: "form_staff",
-      formProfile: { preset: "readOnly", assignedOnly: false, permissions: { view_jobs: true } },
+      formProfile: buildFormAccessProfile("readOnly"),
     });
     listFormOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
     await FormsDataListPage({
@@ -89,11 +108,7 @@ describe("forms data list page", () => {
     requireFormsPage.mockResolvedValue({
       user: { id: "operator-3", email: "entry@example.test" },
       formRole: "form_staff",
-      formProfile: {
-        preset: "manager",
-        assignedOnly: false,
-        permissions: { view_jobs: true, create_jobs: true, update_finance: true },
-      },
+      formProfile: buildFormAccessProfile("manager"),
     });
     listFormOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
     listFields.mockResolvedValue([{ id: "field-1", label: "Source", fieldType: "text", options: [], required: false, enabled: true, showOnCreate: true, legacyOnly: false, section: "order" }]);
@@ -110,7 +125,7 @@ describe("forms data list page", () => {
     requireFormsPage.mockResolvedValue({
       user: { id: "operator-4", email: "viewer@example.test" },
       formRole: "form_staff",
-      formProfile: { preset: "readOnly", assignedOnly: false, permissions: { view_jobs: true } },
+      formProfile: buildFormAccessProfile("readOnly"),
     });
     listFormOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
 

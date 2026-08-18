@@ -57,6 +57,7 @@ export function FormsWorkbench({
   canUpdateFinance = false,
   canUpdateProductionStatus = false,
   canUpdateDeliveryStatus = false,
+  canViewFiles = false,
   canUploadFiles = false,
   canReviewProofs = false,
   assignees = [],
@@ -72,6 +73,7 @@ export function FormsWorkbench({
   canUpdateFinance?: boolean;
   canUpdateProductionStatus?: boolean;
   canUpdateDeliveryStatus?: boolean;
+  canViewFiles?: boolean;
   canUploadFiles?: boolean;
   canReviewProofs?: boolean;
   assignees?: readonly Readonly<{ id: string; name: string; email: string; role: "admin" | "staff" | "form_staff" }>[];
@@ -227,6 +229,7 @@ export function FormsWorkbench({
         assignees={assignees}
         canManageFinance={canUpdateFinance}
         canUpdate={canUpdate}
+        canViewFiles={canViewFiles}
         canUploadFiles={canUploadFiles}
         canReviewProofs={canReviewProofs}
       /> : null}

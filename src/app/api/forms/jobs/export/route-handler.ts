@@ -73,7 +73,7 @@ export function createFormsJobsExportRoute(dependencies?: Dependencies) {
         const canViewCustomerContact = hasFormPermission(actor.formRole, actor.formProfile, "view_customer_contact");
         const access: FormWorkbenchAccess = {
           actorUserId: actor.user.id,
-          assignedOnly: actor.formRole === "form_staff" ? actor.formProfile?.assignedOnly ?? false : false,
+          assignedOnly: actor.formProfile?.assignedOnly ?? false,
           canViewCustomerContact,
           canViewFinance,
         };

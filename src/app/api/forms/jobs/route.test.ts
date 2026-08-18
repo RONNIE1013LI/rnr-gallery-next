@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { HttpError } from "@/server/auth/require-session";
 import { buildFormAccessProfile } from "@/server/forms/forms-permissions";
+import { normalizeStaffAccessProfile } from "@/server/auth/staff-access-profile";
 import { createFormsJobsRoute } from "./route-handler";
 
 describe("forms jobs route", () => {
@@ -38,6 +39,30 @@ describe("forms jobs route", () => {
     const response = await route.GET(new Request("https://shop.example.test/api/forms/jobs"));
     expect(response.status).toBe(403);
     expect(list).not.toHaveBeenCalled();
+  });
+
+  it("keeps custom Staff list access assigned-only", async () => {
+    const list = vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
+    const route = createFormsJobsRoute({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: { id: "staff-1", email: "staff@example.test" },
+        formRole: "staff",
+        formProfile: normalizeStaffAccessProfile({
+          adminPermissions: [],
+          formPermissions: { view_jobs: true },
+          assignedOnly: true,
+        }),
+      }),
+      list,
+    });
+
+    const response = await route.GET(new Request("https://shop.example.test/api/forms/jobs"));
+
+    expect(response.status).toBe(200);
+    expect(list).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      actorUserId: "staff-1",
+      assignedOnly: true,
+    }));
   });
 
   it("creates a manual job without creating a false ecommerce order", async () => {

@@ -1,9 +1,9 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import ProductionJobDetailPage from "./page";
 
-const { requireAdminPage, detail, assignees } = vi.hoisted(() => ({
-  requireAdminPage: vi.fn(), detail: vi.fn(), assignees: vi.fn(),
+const { requireAdminPage, detail, assignees, listFiles, listForJob } = vi.hoisted(() => ({
+  requireAdminPage: vi.fn(), detail: vi.fn(), assignees: vi.fn(), listFiles: vi.fn(), listForJob: vi.fn(),
 }));
 vi.mock("@/server/auth/require-admin-page", () => ({ requireAdminPage }));
 vi.mock("@/server/admin/admin-production-runtime", () => ({
@@ -11,15 +11,20 @@ vi.mock("@/server/admin/admin-production-runtime", () => ({
 }));
 vi.mock("@/server/admin/admin-production-proof-runtime", () => ({
   getAdminProductionProofRuntime: () => ({
-    listFiles: vi.fn().mockResolvedValue({
-      files: [],
-      revision: { changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false },
-    }),
+    listFiles,
   }),
 }));
 vi.mock("@/server/notifications/customer-notification-runtime", () => ({
-  getCustomerNotificationRuntime: () => ({ listForJob: vi.fn().mockResolvedValue([]) }),
+  getCustomerNotificationRuntime: () => ({ listForJob }),
 }));
+beforeEach(() => {
+  vi.clearAllMocks();
+  listFiles.mockResolvedValue({
+      files: [],
+      revision: { changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false },
+  });
+  listForJob.mockResolvedValue([]);
+});
 vi.mock("next/navigation", () => ({
   notFound: vi.fn(() => { throw new Error("not found"); }),
   useRouter: () => ({ refresh: vi.fn() }),
@@ -50,5 +55,22 @@ describe("production job detail page", () => {
     expect(screen.getByText("Digital Oil Painting Canvas")).toBeInTheDocument();
     expect(screen.getAllByText("$345.00")).toHaveLength(2);
     expect(screen.getByText("File sent")).toBeInTheDocument();
+  });
+
+  it("does not load file or notification metadata for Staff without file access", async () => {
+    requireAdminPage.mockResolvedValue({
+      user: { id: "staff-1" },
+      adminRole: "staff",
+      adminPermissions: ["view_production_jobs"],
+    });
+    detail.mockResolvedValue(null);
+    assignees.mockResolvedValue([]);
+
+    await expect(ProductionJobDetailPage({
+      params: Promise.resolve({ jobId: "63f77c27-fd7b-4c65-a834-886c128b6cc1" }),
+    })).rejects.toThrow("not found");
+
+    expect(listFiles).not.toHaveBeenCalled();
+    expect(listForJob).not.toHaveBeenCalled();
   });
 });

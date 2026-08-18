@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { normalizeStaffAccessProfile } from "@/server/auth/staff-access-profile";
 import AdminContentPage from "./page";
 
 const { requireAdminPage, list } = vi.hoisted(() => ({
@@ -39,10 +40,48 @@ describe("admin content page", () => {
   });
 
   it("does not offer publishing to staff", async () => {
-    requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff" });
-    list.mockResolvedValue([]);
+    requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff", adminPermissions: ["manage_content"] });
+    list.mockResolvedValue([{
+      key: "home.hero.title",
+      group: "Homepage",
+      label: "Hero title",
+      description: "Primary homepage heading.",
+      maxLength: 200,
+      multiline: false,
+      defaultValue: "Art made from your story.",
+      draftValue: "A refined story headline",
+      publishedValue: "Art made from your story.",
+      updatedAt: new Date("2026-08-04T03:00:00.000Z"),
+      updatedByEmail: "owner@example.test",
+    }]);
     render(await AdminContentPage());
     expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
     expect(screen.getByText(/Staff can save drafts/)).toBeInTheDocument();
+  });
+
+  it("offers publishing to Staff with the exact publish grant", async () => {
+    const profile = normalizeStaffAccessProfile({
+      adminPermissions: ["publish_content"],
+      formPermissions: {},
+      assignedOnly: false,
+    });
+    requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff", adminPermissions: profile.adminPermissions });
+    list.mockResolvedValue([{
+      key: "home.hero.title",
+      group: "Homepage",
+      label: "Hero title",
+      description: "Primary homepage heading.",
+      maxLength: 200,
+      multiline: false,
+      defaultValue: "Art made from your story.",
+      draftValue: "A refined story headline",
+      publishedValue: "Art made from your story.",
+      updatedAt: new Date("2026-08-04T03:00:00.000Z"),
+      updatedByEmail: "owner@example.test",
+    }]);
+
+    render(await AdminContentPage());
+
+    expect(screen.getByRole("button", { name: "Publish" })).toBeInTheDocument();
   });
 });

@@ -29,14 +29,16 @@ export function ProductionJobDetail({
   invoicePdfBase = "/api/admin/invoices",
   orderBasePath = "/admin/orders",
   notificationRetryEndpoint = "/api/admin/notifications/retry",
-  canUploadFiles = true,
-  canReviewProofs = true,
-  canRetryNotifications = true,
-  canUpdateJob = true,
+  canViewFiles = false,
+  canUploadFiles = false,
+  canReviewProofs = false,
+  canRetryNotifications = false,
+  canUpdateJob = false,
 }: Readonly<{
   detail: Detail;
   assignees: readonly ProductionAssignee[];
   canManageFinance: boolean;
+  canViewFiles?: boolean;
   files?: readonly ProductionFileSummary[];
   notifications?: readonly CustomerNotificationSummary[];
   revision?: Readonly<{ changesRequested: number; freeRevisionsRemaining: number; requiresAdditionalChargeReview: boolean }>;
@@ -134,7 +136,7 @@ export function ProductionJobDetail({
           </dl>
         </section>
 
-        <ProductionFilesPanel
+        {canViewFiles ? <ProductionFilesPanel
           jobId={job.id}
           files={files}
           notifications={notifications}
@@ -145,7 +147,7 @@ export function ProductionJobDetail({
           canUploadFiles={canUploadFiles}
           canReviewProofs={canReviewProofs}
           canRetryNotifications={canRetryNotifications}
-        />
+        /> : null}
 
         <section className={styles.panel}>
           <div className={styles.panelHeading}><h2>Internal Production Status</h2><span>{label(detail.status)}</span></div>

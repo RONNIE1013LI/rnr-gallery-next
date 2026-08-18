@@ -26,15 +26,17 @@ function FormsJobDrawerSession({
   onClose,
   assignees,
   canManageFinance,
-  canUpdate = true,
-  canUploadFiles = true,
-  canReviewProofs = true,
+  canUpdate = false,
+  canViewFiles = false,
+  canUploadFiles = false,
+  canReviewProofs = false,
 }: Readonly<{
   jobId: string;
   onClose: () => void;
   assignees: readonly ProductionAssignee[];
   canManageFinance: boolean;
   canUpdate?: boolean;
+  canViewFiles?: boolean;
   canUploadFiles?: boolean;
   canReviewProofs?: boolean;
 }>) {
@@ -131,6 +133,7 @@ function FormsJobDrawerSession({
             invoicePdfBase="/api/forms/invoices"
             orderBasePath={null}
             notificationRetryEndpoint="/api/forms/notifications/retry"
+            canViewFiles={canViewFiles}
             canUploadFiles={canUploadFiles}
             canReviewProofs={canReviewProofs}
             canRetryNotifications={canUploadFiles}
@@ -148,6 +151,7 @@ export function FormsJobDrawer(props: Readonly<{
   assignees: readonly ProductionAssignee[];
   canManageFinance: boolean;
   canUpdate?: boolean;
+  canViewFiles?: boolean;
   canUploadFiles?: boolean;
   canReviewProofs?: boolean;
 }>) {

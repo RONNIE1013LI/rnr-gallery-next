@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AdminContentForm } from "@/components/admin/content-form";
 import styles from "@/components/admin/admin.module.css";
 import { getAdminContentRuntime } from "@/server/admin/admin-content-runtime";
+import { hasAdminPermission } from "@/server/auth/admin-permissions";
 import { requireAdminPage } from "@/server/auth/require-admin-page";
 
 export const metadata = { title: "Content | R&R Gallery Admin" };
@@ -9,7 +10,7 @@ export const metadata = { title: "Content | R&R Gallery Admin" };
 export default async function AdminContentPage() {
   const access = await requireAdminPage("/admin/content", "manage_content");
   const entries = await getAdminContentRuntime().list();
-  const canPublish = access.adminRole === "admin";
+  const canPublish = hasAdminPermission(access.adminRole, access.adminPermissions, "publish_content");
 
   return (
     <section className={styles.pageSection}>

@@ -1,5 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
+import { normalizeStaffAccessProfile } from "@/server/auth/staff-access-profile";
 import AdminEmailTemplatesPage from "./page";
 
 const { requireAdminPage, listEmailTemplates } = vi.hoisted(() => ({
@@ -63,7 +64,7 @@ describe("admin email templates page", () => {
   });
 
   it("allows staff to draft but not publish email wording", async () => {
-    requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff" });
+    requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff", adminPermissions: ["manage_content"] });
     listEmailTemplates.mockResolvedValue([entry]);
 
     render(await AdminEmailTemplatesPage());
@@ -71,5 +72,19 @@ describe("admin email templates page", () => {
     expect(screen.getByText(/Staff can save drafts/)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Save draft" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Publish" })).not.toBeInTheDocument();
+  });
+
+  it("offers email publishing to Staff with the exact publish grant", async () => {
+    const profile = normalizeStaffAccessProfile({
+      adminPermissions: ["publish_content"],
+      formPermissions: {},
+      assignedOnly: false,
+    });
+    requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff", adminPermissions: profile.adminPermissions });
+    listEmailTemplates.mockResolvedValue([entry]);
+
+    render(await AdminEmailTemplatesPage());
+
+    expect(screen.getByRole("button", { name: "Publish" })).toBeInTheDocument();
   });
 });

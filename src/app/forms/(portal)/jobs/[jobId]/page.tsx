@@ -77,6 +77,7 @@ export default async function FormsJobDetailPage({ params }: Props) {
         invoicePdfBase="/api/forms/invoices"
         orderBasePath={null}
         notificationRetryEndpoint="/api/forms/notifications/retry"
+        canViewFiles={canViewFiles}
         canUploadFiles={canUploadFiles}
         canReviewProofs={canReviewProofs}
         canRetryNotifications={canUploadFiles}

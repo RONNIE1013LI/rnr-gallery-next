@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { HttpError } from "@/server/auth/require-session";
 import { buildFormAccessProfile } from "@/server/forms/forms-permissions";
+import { normalizeStaffAccessProfile } from "@/server/auth/staff-access-profile";
 import { createFormsJobsExportRoute } from "./route-handler";
 
 const row = {
@@ -45,5 +46,30 @@ describe("forms jobs CSV export", () => {
     const response = await route.GET(new Request("https://shop.example.test/api/forms/jobs/export"));
     expect(response.status).toBe(403);
     expect(list).not.toHaveBeenCalled();
+  });
+
+  it("keeps custom Staff exports assigned-only", async () => {
+    const list = vi.fn().mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 100, pageCount: 0 });
+    const route = createFormsJobsExportRoute({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: { id: "staff-1", email: "staff@example.test" },
+        formRole: "staff",
+        formProfile: normalizeStaffAccessProfile({
+          adminPermissions: [],
+          formPermissions: { export_jobs: true },
+          assignedOnly: true,
+        }),
+      }),
+      list,
+      recordExport: vi.fn(),
+    });
+
+    const response = await route.GET(new Request("https://shop.example.test/api/forms/jobs/export"));
+
+    expect(response.status).toBe(200);
+    expect(list).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      actorUserId: "staff-1",
+      assignedOnly: true,
+    }));
   });
 });

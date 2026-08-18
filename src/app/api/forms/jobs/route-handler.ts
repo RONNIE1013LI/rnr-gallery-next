@@ -73,9 +73,7 @@ export function createFormsJobsRoute(dependencies?: Dependencies) {
         ));
         const result = await deps.list(query, {
           actorUserId: access.user.id,
-          assignedOnly: access.formRole === "form_staff"
-            ? access.formProfile?.assignedOnly ?? false
-            : false,
+          assignedOnly: access.formProfile?.assignedOnly ?? false,
           canViewCustomerContact: hasFormPermission(
             access.formRole,
             access.formProfile,

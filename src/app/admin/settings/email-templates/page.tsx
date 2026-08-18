@@ -2,6 +2,7 @@ import Link from "next/link";
 import { EmailTemplateForm } from "@/components/admin/email-template-form";
 import styles from "@/components/admin/admin.module.css";
 import { getAdminContentRuntime } from "@/server/admin/admin-content-runtime";
+import { hasAdminPermission } from "@/server/auth/admin-permissions";
 import { requireAdminPage } from "@/server/auth/require-admin-page";
 
 export const metadata = { title: "Email templates | R&R Gallery Admin" };
@@ -12,7 +13,7 @@ export default async function AdminEmailTemplatesPage() {
     "manage_content",
   );
   const entries = await getAdminContentRuntime().listEmailTemplates();
-  const canPublish = access.adminRole === "admin";
+  const canPublish = hasAdminPermission(access.adminRole, access.adminPermissions, "publish_content");
 
   return (
     <section className={styles.pageSection}>
