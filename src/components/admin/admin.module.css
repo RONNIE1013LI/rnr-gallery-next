@@ -2285,6 +2285,269 @@
   color: var(--admin-muted);
 }
 
+.employeeAccessForm {
+  display: grid;
+  gap: 22px;
+  padding: 22px;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: #fff;
+}
+
+.employeeIdentityFields,
+.employeeAccountSummary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.employeeIdentityFields label,
+.employeePresetField,
+.employeeAccountSummary label {
+  display: grid;
+  gap: 6px;
+  color: #3f4045;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.employeeIdentityFields input,
+.employeePresetField select,
+.employeeAccountSummary select {
+  width: 100%;
+  min-height: 44px;
+  padding: 9px 10px;
+  border: 1px solid #c7c7cc;
+  border-radius: 7px;
+  color: #1d1d1f;
+  background: #fff;
+  font: inherit;
+  font-size: 14px;
+}
+
+.employeeIdentityFields input:focus,
+.employeePresetField select:focus,
+.employeeAccountSummary select:focus {
+  border-color: #345c45;
+  outline: 2px solid rgb(52 92 69 / 20%);
+  outline-offset: 1px;
+}
+
+.employeeIdentityFields small,
+.employeePresetField small {
+  color: var(--admin-muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.4;
+}
+
+.employeeWideField {
+  grid-column: 1 / -1;
+}
+
+.employeeAccountSummary {
+  align-items: end;
+  padding-bottom: 18px;
+  border-bottom: 1px solid var(--admin-border);
+}
+
+.employeeAccountSummary > div {
+  display: grid;
+  gap: 4px;
+}
+
+.employeeAccountSummary > div span {
+  overflow-wrap: anywhere;
+  color: var(--admin-muted);
+  font-size: 13px;
+}
+
+.employeeAccessFields {
+  display: grid;
+  gap: 16px;
+}
+
+.permissionHint {
+  margin: 0;
+  color: var(--admin-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.permissionColumns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  align-items: start;
+}
+
+.permissionColumns > section {
+  display: grid;
+  gap: 12px;
+}
+
+.permissionColumns > section > h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.permissionGroup {
+  min-width: 0;
+  margin: 0;
+  padding: 14px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+}
+
+.permissionGroup legend {
+  padding: 0 4px;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.permissionGroupActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 2px 0 12px;
+}
+
+.permissionGroupActions button {
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid #c7c7cc;
+  border-radius: var(--radius-button);
+  color: #1d1d1f;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.permissionOptions {
+  display: grid;
+  gap: 8px;
+}
+
+.permissionOptions label,
+.assignedOnlyField {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  gap: 10px;
+  padding: 8px;
+  border-radius: 7px;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.permissionOptions label:hover,
+.assignedOnlyField:hover {
+  background: #f5f7f5;
+}
+
+.permissionOptions input,
+.assignedOnlyField input {
+  width: 18px;
+  height: 18px;
+  flex: 0 0 auto;
+}
+
+.assignedOnlyField {
+  align-items: flex-start;
+  border: 1px solid var(--admin-border);
+  padding: 12px;
+}
+
+.assignedOnlyField > span {
+  display: grid;
+  gap: 3px;
+}
+
+.assignedOnlyField small {
+  color: var(--admin-muted);
+  font-size: 12px;
+}
+
+.employeePresetField {
+  width: min(100%, 440px);
+}
+
+.fullAccessNote {
+  padding: 16px 18px;
+  border: 1px solid #b9cec0;
+  border-radius: 10px;
+  background: #f1f7f3;
+}
+
+.fullAccessNote p {
+  margin: 4px 0 0;
+  color: #496052;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.employeeFormActions {
+  position: sticky;
+  bottom: 12px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 14px 16px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 96%);
+  box-shadow: 0 12px 30px rgb(0 0 0 / 10%);
+}
+
+.employeeFormActions p {
+  margin: 0;
+  color: var(--admin-muted);
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .permissionColumns,
+  .employeeIdentityFields,
+  .employeeAccountSummary {
+    grid-template-columns: 1fr;
+  }
+
+  .employeeWideField {
+    grid-column: auto;
+  }
+
+  .permissionGroupActions button,
+  .employeeFormActions .primaryAdminButton {
+    min-height: 48px;
+  }
+}
+
+@media (max-width: 560px) {
+  .employeeAccessForm {
+    padding: 16px;
+  }
+
+  .employeeFormActions {
+    position: static;
+    display: grid;
+  }
+
+  .employeeFormActions .primaryAdminButton {
+    width: 100%;
+  }
+
+  .permissionGroupActions {
+    display: grid;
+  }
+
+  .permissionGroupActions button {
+    width: 100%;
+  }
+}
+
 .numeric {
   font-variant-numeric: tabular-nums;
   white-space: nowrap;

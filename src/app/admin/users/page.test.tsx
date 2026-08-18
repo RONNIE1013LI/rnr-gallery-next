@@ -20,6 +20,10 @@ describe("admin users page", () => {
         updatedAt: new Date("2026-08-04T01:00:00Z"),
         lastSeenAt: new Date("2026-08-04T02:00:00Z"),
         activeSessions: 1,
+        formPreset: null,
+        adminPermissions: ["access_admin", "view_orders"],
+        formPermissions: { access_forms: false },
+        assignedOnly: false,
       }],
       total: 1,
       page: 1,
@@ -34,5 +38,7 @@ describe("admin users page", () => {
     expect(screen.getByText("studio@example.test")).toBeInTheDocument();
     expect(screen.getByText("1 active session")).toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "Role" })).toHaveValue("staff");
+    expect(screen.getByRole("link", { name: "Add employee" })).toHaveAttribute("href", "/admin/users/new");
+    expect(screen.getByRole("link", { name: "Open Studio User" })).toHaveAttribute("href", "/admin/users/user-2");
   });
 });
