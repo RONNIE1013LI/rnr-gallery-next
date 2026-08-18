@@ -7,7 +7,7 @@ export default defineConfig({
     tsconfigPaths: true,
   },
   test: {
-    css: { include: /storefront\.module\.css$/ },
+    css: { include: /(storefront|payment-request)\.module\.css$/ },
     environment: "jsdom",
     fileParallelism: !process.env.TEST_DATABASE_URL,
     setupFiles: ["./vitest.setup.ts"],

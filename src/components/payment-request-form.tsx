@@ -1,10 +1,13 @@
 "use client";
 
+import Image from "next/image";
 import { useRef, useState, type FormEvent } from "react";
+import type { AddressInput } from "@/domain/address/types";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { formatMarketMoney } from "@/domain/money";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import type { PublicPaymentMethod, PaymentStartResult } from "@/server/payments/payment-service";
+import { GoogleAddressAutocomplete } from "./google-address-autocomplete";
 import { StripePaymentForm } from "./stripe-payment-form";
 import styles from "./payment-request.module.css";
 
@@ -41,10 +44,12 @@ function idempotencyKey(keys: Map<PaymentMethodKey, string>, method: PaymentMeth
 export function PaymentRequestForm({
   amountCents,
   currency,
+  googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
   methods,
 }: Readonly<{
   amountCents: number;
   currency: MarketCurrency;
+  googleMapsApiKey?: string;
   methods: readonly PublicPaymentMethod[];
 }>) {
   const [method, setMethod] = useState<PaymentMethodKey>(methods[0]?.method ?? "card");
@@ -59,6 +64,24 @@ export function PaymentRequestForm({
   const [message, setMessage] = useState("");
   const [started, setStarted] = useState<PaymentStartResult | null>(null);
   const keys = useRef(new Map<PaymentMethodKey, string>());
+
+  const googleAddressValue: AddressInput = {
+    ...address,
+    fullName,
+    email,
+    phone,
+  };
+
+  function updateAddressFromGoogle(value: AddressInput) {
+    setAddress({
+      country: value.country,
+      building: value.building,
+      street: value.street,
+      suburb: value.suburb,
+      region: value.region,
+      postcode: value.postcode,
+    });
+  }
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -129,6 +152,7 @@ export function PaymentRequestForm({
       <legend>Payment method</legend>
       {methods.map((option) => <label key={option.method}>
         <input
+          aria-label={option.label}
           checked={method === option.method}
           name="payment-method"
           onChange={() => setMethod(option.method)}
@@ -136,6 +160,25 @@ export function PaymentRequestForm({
           value={option.method}
         />
         <span>{option.label}</span>
+        {option.method === "card" ? <span
+          aria-label="Accepted cards: Visa, Mastercard and American Express"
+          className={styles.cardBrands}
+          role="img"
+        >
+          <span className={styles.visa}>VISA</span>
+          <span className={styles.mastercard} aria-hidden="true"><i /><i /></span>
+          <span className={styles.amex}>AMEX</span>
+        </span> : option.method === "afterpay" ? <span aria-label="Afterpay" className={styles.afterpayMark} role="img">
+          <Image
+            alt=""
+            aria-hidden="true"
+            className={styles.paymentSprite}
+            height={100}
+            src="/media/payments/footer-payment-methods.jpg"
+            unoptimized
+            width={1171}
+          />
+        </span> : null}
         {option.isTest ? <small>Test mode</small> : null}
       </label>)}
     </fieldset>
@@ -144,12 +187,17 @@ export function PaymentRequestForm({
       <label><span>Email</span><input autoComplete="email" required type="email" value={email} onChange={(event) => setEmail(event.target.value)} /></label>
       <label><span>Phone{method === "card" ? " (optional)" : ""}</span><input autoComplete="tel" required={needsAddress} type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
       {needsAddress ? <>
-        <label><span>Country</span><select aria-label="Country" value={address.country} disabled>
-          {address.country === "NZ" ? <option value="NZ">New Zealand</option> : null}
-          {address.country === "AU" ? <option value="AU">Australia</option> : null}
-        </select></label>
-        <label><span>Building / unit (optional)</span><input autoComplete="address-line1" value={address.building} onChange={(event) => setAddress({ ...address, building: event.target.value })} /></label>
-        <label><span>Street address</span><input aria-label="Street address" autoComplete="address-line2" required value={address.street} onChange={(event) => setAddress({ ...address, street: event.target.value })} /></label>
+        <label><span>Country</span><input aria-label="Country" className={styles.readOnlyCountry} readOnly value={address.country === "NZ" ? "New Zealand" : "Australia"} /></label>
+        <label><span>Building / unit (optional)</span><input autoComplete="address-line2" value={address.building} onChange={(event) => setAddress({ ...address, building: event.target.value })} /></label>
+        {googleMapsApiKey ? <GoogleAddressAutocomplete
+          apiKey={googleMapsApiKey}
+          country={address.country}
+          disabled={pending}
+          errorId="payment-request-street-error"
+          inputId="payment-request-street"
+          onChange={updateAddressFromGoogle}
+          value={googleAddressValue}
+        /> : <label><span>Street address</span><input aria-label="Street address" autoComplete="address-line1" required value={address.street} onChange={(event) => setAddress({ ...address, street: event.target.value })} /></label>}
         <label><span>Suburb</span><input autoComplete="address-level3" required value={address.suburb} onChange={(event) => setAddress({ ...address, suburb: event.target.value })} /></label>
         <label><span>Region</span><input autoComplete="address-level1" required value={address.region} onChange={(event) => setAddress({ ...address, region: event.target.value })} /></label>
         <label><span>Postcode</span><input autoComplete="postal-code" inputMode="numeric" pattern="[0-9]{4}" required value={address.postcode} onChange={(event) => setAddress({ ...address, postcode: event.target.value })} /></label>

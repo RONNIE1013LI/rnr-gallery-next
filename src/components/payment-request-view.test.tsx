@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PublicPaymentRequestDTO } from "@/server/payment-requests/types";
+import { PaymentRequestForm } from "./payment-request-form";
 import { PaymentRequestView } from "./payment-request-view";
 
 const request: PublicPaymentRequestDTO = Object.freeze({
@@ -17,6 +18,10 @@ describe("PaymentRequestView", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
     window.history.replaceState({}, "", "/pay/A234567890123456789012345678901234567890123");
+  });
+
+  afterEach(() => {
+    delete (window as Window & { google?: unknown }).google;
   });
 
   it("shows only the public fixed-payment details and does not expose editable amount controls", () => {
@@ -44,6 +49,86 @@ describe("PaymentRequestView", () => {
     fireEvent.click(screen.getByRole("radio", { name: "Afterpay" }));
     expect(screen.getByLabelText("Street address")).toBeInTheDocument();
     expect(screen.getByLabelText("Country")).toBeInTheDocument();
+  });
+
+  it("shows recognisable Card and Afterpay payment marks beside their options", () => {
+    render(<PaymentRequestView request={request} methods={[
+      { method: "card", label: "Card", isTest: false },
+      { method: "afterpay", label: "Afterpay", isTest: false },
+    ]} />);
+
+    expect(screen.getByRole("img", {
+      name: "Accepted cards: Visa, Mastercard and American Express",
+    })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Afterpay" })).toBeInTheDocument();
+  });
+
+  it("renders the currency-authoritative country as a full-size read-only field", () => {
+    render(<PaymentRequestView request={request} methods={[
+      { method: "afterpay", label: "Afterpay", isTest: false },
+    ]} />);
+
+    const country = screen.getByLabelText("Country");
+    expect(country.tagName).toBe("INPUT");
+    expect(country).toHaveAttribute("readonly");
+    expect(country).toHaveValue("New Zealand");
+    expect(getComputedStyle(country).minHeight).toBe("48px");
+    expect(getComputedStyle(country).backgroundColor).toBe("rgb(244, 241, 234)");
+  });
+
+  it("uses Google address suggestions to fill the Afterpay address", async () => {
+    const place = {
+      addressComponents: [
+        { longText: "11", shortText: "11", types: ["street_number"] },
+        { longText: "Para Close", shortText: "Para Close", types: ["route"] },
+        { longText: "Fairview Heights", shortText: "Fairview Heights", types: ["sublocality_level_1"] },
+        { longText: "Auckland", shortText: "Auckland", types: ["locality"] },
+        { longText: "0632", shortText: "0632", types: ["postal_code"] },
+        { longText: "New Zealand", shortText: "NZ", types: ["country"] },
+      ],
+      fetchFields: vi.fn().mockResolvedValue(undefined),
+    };
+    const fetchAutocompleteSuggestions = vi.fn().mockResolvedValue({
+      suggestions: [{
+        placePrediction: {
+          text: { toString: () => "11 Para Close, Fairview Heights, Auckland" },
+          toPlace: () => place,
+        },
+      }],
+    });
+    (window as Window & { google?: unknown }).google = {
+      maps: {
+        importLibrary: vi.fn().mockResolvedValue({
+          AutocompleteSessionToken: function AutocompleteSessionToken() {},
+          AutocompleteSuggestion: { fetchAutocompleteSuggestions },
+        }),
+      },
+    };
+
+    render(<PaymentRequestForm
+      amountCents={1_000}
+      currency="NZD"
+      googleMapsApiKey="test-browser-key"
+      methods={[{ method: "afterpay", label: "Afterpay", isTest: false }]}
+    />);
+
+    fireEvent.change(screen.getByLabelText("Street address"), {
+      target: { value: "11 Para" },
+    });
+    fireEvent.click(await screen.findByRole("option", {
+      name: "11 Para Close, Fairview Heights, Auckland",
+    }));
+
+    await waitFor(() => expect(screen.getByLabelText("Street address")).toHaveValue("11 Para Close"));
+    expect(screen.getByLabelText("Suburb")).toHaveValue("Fairview Heights");
+    expect(screen.getByLabelText("Region")).toHaveValue("Auckland");
+    expect(screen.getByLabelText("Postcode")).toHaveValue("0632");
+    expect(fetchAutocompleteSuggestions).toHaveBeenCalledWith(expect.objectContaining({
+      includedRegionCodes: ["nz"],
+      input: "11 Para",
+      language: "en-NZ",
+      region: "nz",
+    }));
   });
 
   it("submits payer details without an amount or raw token in the JSON body", async () => {

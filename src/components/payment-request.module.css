@@ -97,8 +97,80 @@
 }
 
 .methods small {
-  margin-left: auto;
+  margin-left: 0;
   color: var(--muted);
+}
+
+.cardBrands {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 0 0 auto;
+}
+
+.cardBrands > span {
+  width: 2.4rem;
+  height: 1.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: #fff;
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: -0.03em;
+  line-height: 1;
+}
+
+.visa {
+  color: #1434cb;
+  font-style: italic;
+}
+
+.mastercard {
+  position: relative;
+}
+
+.mastercard i {
+  width: 0.72rem;
+  height: 0.72rem;
+  border-radius: 50%;
+  background: #eb001b;
+}
+
+.mastercard i + i {
+  margin-left: -0.25rem;
+  background: #f79e1b;
+  opacity: 0.9;
+}
+
+.amex {
+  color: #fff;
+  background: #2e77bb !important;
+}
+
+.afterpayMark {
+  position: relative;
+  width: 3.4rem;
+  aspect-ratio: 147 / 92;
+  margin-left: auto;
+  display: block;
+  overflow: hidden;
+  border-radius: 13% / 20%;
+  flex: 0 0 auto;
+}
+
+.paymentSprite {
+  position: absolute;
+  top: -4.3478%;
+  left: -234.0136%;
+  width: 796.5986%;
+  max-width: none;
+  height: 108.6957%;
+  object-fit: fill;
+  user-select: none;
 }
 
 .fields {
@@ -117,6 +189,18 @@
   border-radius: 0.65rem;
   background: #fff;
   color: var(--ink);
+  font: inherit;
+}
+
+.fields .readOnlyCountry {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #cbc6bb;
+  border-radius: 0.65rem;
+  background: #f4f1ea;
+  color: var(--ink);
+  cursor: default;
   font: inherit;
 }
 
