@@ -11,6 +11,7 @@ import type {
 import { digestPaymentRequestToken, generatePaymentRequestToken } from "./token";
 import type {
   AdminPaymentRequestDTO,
+  AdminOrderPaymentSummaryDTO,
   PaymentRequestCreateResult,
   PublicPaymentRequestDTO,
 } from "./types";
@@ -49,6 +50,34 @@ function adminDto(request: PaymentRequestRecord): AdminPaymentRequestDTO {
   });
 }
 
+function orderSummaryDto(
+  summary: Awaited<ReturnType<PaymentRequestRepository["getOrderSummary"]>>,
+): AdminOrderPaymentSummaryDTO {
+  return Object.freeze({
+    orderId: summary.orderId,
+    orderNumber: summary.orderNumber,
+    currency: summary.currency,
+    totalCents: summary.totalCents,
+    netPaidCents: summary.netPaidCents,
+    outstandingCents: summary.outstandingCents,
+    reservedCents: summary.reservedCents,
+    unreservedCents: Math.max(0, summary.outstandingCents - summary.reservedCents),
+    ledger: Object.freeze(summary.ledger.map((entry) => Object.freeze({
+      id: entry.id,
+      entryType: entry.entryType,
+      direction: entry.direction,
+      amountCents: entry.amountCents,
+      currency: entry.currency,
+      receivedAt: entry.receivedAt.toISOString(),
+      ...(entry.reference ? { reference: entry.reference } : {}),
+      ...(entry.payerName ? { payerName: entry.payerName } : {}),
+      ...(entry.note ? { note: entry.note } : {}),
+      ...(entry.reversesEntryId ? { reversesEntryId: entry.reversesEntryId } : {}),
+      createdAt: entry.createdAt.toISOString(),
+    }))),
+  });
+}
+
 export function createPaymentRequestService({
   repository,
   generateRequestNumber = defaultRequestNumber,
@@ -57,6 +86,19 @@ export function createPaymentRequestService({
   generateRequestNumber?: () => string;
 }>) {
   return Object.freeze({
+    async listAdmin(): Promise<readonly AdminPaymentRequestDTO[]> {
+      return Object.freeze((await repository.listAdminRequests()).map(adminDto));
+    },
+
+    async adminById(requestId: string): Promise<AdminPaymentRequestDTO | null> {
+      const request = await repository.findAdminById(requestId);
+      return request ? adminDto(request) : null;
+    },
+
+    async orderSummary(orderId: string): Promise<AdminOrderPaymentSummaryDTO> {
+      return orderSummaryDto(await repository.getOrderSummary(orderId));
+    },
+
     async create(actorId: string, input: unknown): Promise<PaymentRequestCreateResult> {
       if (!actorId.trim()) throw new Error("Payment administrator is required");
       const parsed = createPaymentRequestInputSchema.parse(input);

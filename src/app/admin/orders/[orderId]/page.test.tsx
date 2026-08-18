@@ -2,16 +2,23 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import AdminOrderDetailPage from "./page";
 
-const { requireAdminPage, detail } = vi.hoisted(() => ({
+const { requireAdminPage, detail, orderSummary } = vi.hoisted(() => ({
   requireAdminPage: vi.fn(),
   detail: vi.fn(),
+  orderSummary: vi.fn(),
 }));
 
 vi.mock("@/server/auth/require-admin-page", () => ({ requireAdminPage }));
 vi.mock("@/server/admin/admin-order-runtime", () => ({
   getAdminOrderRuntime: () => ({ detail }),
 }));
-vi.mock("next/navigation", () => ({ notFound: vi.fn(() => { throw new Error("not found"); }) }));
+vi.mock("@/server/payment-requests/payment-request-runtime", () => ({
+  getPaymentRequestRuntime: () => ({ orderSummary }),
+}));
+vi.mock("next/navigation", () => ({
+  notFound: vi.fn(() => { throw new Error("not found"); }),
+  useRouter: () => ({ refresh: vi.fn() }),
+}));
 
 describe("admin order detail page", () => {
   it("shows immutable order facts, customer data, payments, notes, and operations", async () => {
@@ -107,6 +114,17 @@ describe("admin order detail page", () => {
       notes: [{ id: "note-1", visibility: "internal", body: "Check image quality", authorEmail: "owner@example.test", createdAt: new Date("2026-08-04T03:00:00.000Z") }],
       history: [{ id: "history-1", fromStatus: "new", toStatus: "designing", actorEmail: "owner@example.test", reason: "Assigned", createdAt: new Date("2026-08-04T03:00:00.000Z") }],
     });
+    orderSummary.mockResolvedValue({
+      orderId: "63f77c27-fd7b-4c65-a834-886c128b6cc1",
+      orderNumber: "RNR-2026-ABC123",
+      currency: "NZD",
+      totalCents: 35650,
+      netPaidCents: 10000,
+      outstandingCents: 25650,
+      reservedCents: 0,
+      unreservedCents: 25650,
+      ledger: [],
+    });
 
     render(await AdminOrderDetailPage({ params: Promise.resolve({
       orderId: "63f77c27-fd7b-4c65-a834-886c128b6cc1",
@@ -125,6 +143,10 @@ describe("admin order detail page", () => {
     expect(screen.getByRole("heading", { name: "Update order status" })).toBeInTheDocument();
     expect(screen.getByText("Original price snapshot — read only")).toBeInTheDocument();
     expect(screen.getByText(/Payment status is controlled by payment events/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Order payment balance" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Create payment request" })).toHaveAttribute(
+      "href", "/admin/payment-requests/new?orderId=63f77c27-fd7b-4c65-a834-886c128b6cc1",
+    );
   });
 
   it("shows a legacy Grave Cover order as 100 × 200 cm without orientation", async () => {
@@ -182,6 +204,17 @@ describe("admin order detail page", () => {
       uploads: [],
       notes: [],
       history: [],
+    });
+    orderSummary.mockResolvedValue({
+      orderId: "63f77c27-fd7b-4c65-a834-886c128b6cc1",
+      orderNumber: "RNR-2026-GRAVE",
+      currency: "NZD",
+      totalCents: 21275,
+      netPaidCents: 21275,
+      outstandingCents: 0,
+      reservedCents: 0,
+      unreservedCents: 0,
+      ledger: [],
     });
 
     render(await AdminOrderDetailPage({ params: Promise.resolve({

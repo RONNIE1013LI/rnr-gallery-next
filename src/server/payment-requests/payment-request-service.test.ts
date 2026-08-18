@@ -30,6 +30,8 @@ function repository(overrides: Partial<PaymentRequestRepository> = {}) {
   return {
     createRequest: vi.fn(async () => ({ outcome: "created" as const, request })),
     findPublicByDigest: vi.fn(async () => request),
+    listAdminRequests: vi.fn(async () => [request]),
+    findAdminById: vi.fn(async () => request),
     rotateToken: vi.fn(async () => request),
     cancel: vi.fn(async () => ({ ...request, status: "cancelled" as const })),
     getOrderSummary: vi.fn(),
@@ -129,6 +131,50 @@ describe("payment request service", () => {
       requestId: request.id,
       publicTokenDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
       actorId: "admin-1",
+    });
+  });
+
+  it("returns allowlisted Admin request records without token digests", async () => {
+    const store = repository({
+      listAdminRequests: vi.fn(async () => [request]),
+      findAdminById: vi.fn(async () => request),
+    } as Partial<PaymentRequestRepository>);
+    const service = createPaymentRequestService({ repository: store });
+
+    const [listed] = await service.listAdmin();
+    const detail = await service.adminById(request.id);
+    expect(listed).toMatchObject({ id: request.id, customerEmail: request.customerEmail });
+    expect(detail).toMatchObject({ id: request.id, internalNote: request.internalNote });
+    expect(listed).not.toHaveProperty("publicTokenDigest");
+    expect(detail).not.toHaveProperty("publicTokenDigest");
+  });
+
+  it("serializes immutable Order ledger entries for the Admin interface", async () => {
+    const store = repository({
+      getOrderSummary: vi.fn(async () => ({
+        orderId: "order-1",
+        orderNumber: "08001",
+        currency: "NZD" as const,
+        totalCents: 40_000,
+        netPaidCents: 20_000,
+        outstandingCents: 20_000,
+        reservedCents: 5_000,
+        ledger: [{
+          id: "ledger-1", orderId: "order-1", paymentRequestId: null,
+          paymentAttemptId: null, entryType: "bank_transfer" as const,
+          direction: "credit" as const, amountCents: 20_000, currency: "NZD" as const,
+          receivedAt: new Date("2026-08-18T05:00:00.000Z"), reference: "BANK-1",
+          payerName: null, note: null, reversesEntryId: null,
+          createdAt: new Date("2026-08-18T05:01:00.000Z"),
+        }],
+      })),
+    });
+    const summary = await createPaymentRequestService({ repository: store }).orderSummary("order-1");
+
+    expect(summary).toMatchObject({ outstandingCents: 20_000, reservedCents: 5_000 });
+    expect(summary.ledger[0]).toMatchObject({
+      receivedAt: "2026-08-18T05:00:00.000Z",
+      createdAt: "2026-08-18T05:01:00.000Z",
     });
   });
 });

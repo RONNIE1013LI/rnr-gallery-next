@@ -25,6 +25,7 @@ describe("AdminShell", () => {
       ["Media", "/admin/media"],
       ["Shipping", "/admin/settings/shipping"],
       ["Payment", "/admin/settings/payment"],
+      ["Payment Requests", "/admin/payment-requests"],
       ["Email templates", "/admin/settings/email-templates"],
       ["Audit Log", "/admin/audit"],
       ["Reply Assistant", "/reply-assistant"],
@@ -52,6 +53,7 @@ describe("AdminShell", () => {
     expect(screen.getByRole("link", { name: "Reply Assistant" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Shipping" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Payment" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Payment Requests" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Audit Log" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
   });

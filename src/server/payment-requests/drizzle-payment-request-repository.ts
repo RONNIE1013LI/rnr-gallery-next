@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import {
   and,
   asc,
+  desc,
   eq,
   inArray,
   isNotNull,
@@ -465,6 +466,33 @@ export function createDrizzlePaymentRequestRepository(
           .where(eq(paymentRequests.id, candidate.request.id))
           .limit(1);
         return current ? requestRecord(current.request, current.orderNumber) : null;
+      });
+    },
+
+    async listAdminRequests() {
+      return database.transaction(async (transaction) => {
+        await expireStaleRequests(transaction, await databaseNow(transaction));
+        const rows = await transaction.select({
+          request: paymentRequests,
+          orderNumber: orders.orderNumber,
+        }).from(paymentRequests)
+          .leftJoin(orders, eq(orders.id, paymentRequests.orderId))
+          .orderBy(desc(paymentRequests.createdAt), desc(paymentRequests.id));
+        return Object.freeze(rows.map((row) => requestRecord(row.request, row.orderNumber)));
+      });
+    },
+
+    async findAdminById(id) {
+      return database.transaction(async (transaction) => {
+        await expireStaleRequests(transaction, await databaseNow(transaction));
+        const [row] = await transaction.select({
+          request: paymentRequests,
+          orderNumber: orders.orderNumber,
+        }).from(paymentRequests)
+          .leftJoin(orders, eq(orders.id, paymentRequests.orderId))
+          .where(eq(paymentRequests.id, id))
+          .limit(1);
+        return row ? requestRecord(row.request, row.orderNumber) : null;
       });
     },
 

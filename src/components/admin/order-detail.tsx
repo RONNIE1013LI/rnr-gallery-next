@@ -1,5 +1,7 @@
 import { AdminOrderActions } from "./order-actions";
+import { PaymentLedgerPanel } from "./payment-ledger-panel";
 import type { getAdminOrderDetail } from "@/server/admin/drizzle-admin-order-repository";
+import type { AdminOrderPaymentSummaryDTO } from "@/server/payment-requests/types";
 import { formatMarketMoney } from "@/domain/money";
 import styles from "./admin.module.css";
 
@@ -51,7 +53,13 @@ function UploadList({ uploads }: Readonly<{ uploads: Detail["uploads"] }>) {
   </div>;
 }
 
-export function AdminOrderDetail({ detail }: Readonly<{ detail: Detail }>) {
+export function AdminOrderDetail({
+  detail,
+  paymentSummary,
+}: Readonly<{
+  detail: Detail;
+  paymentSummary?: AdminOrderPaymentSummaryDTO | null;
+}>) {
   const { order } = detail;
   const amount = (cents: number) => formatMarketMoney(cents, order.currency);
   return (
@@ -134,6 +142,8 @@ export function AdminOrderDetail({ detail }: Readonly<{ detail: Detail }>) {
             </article>
           ))}
         </section>
+
+        {paymentSummary ? <PaymentLedgerPanel summary={paymentSummary} /> : null}
 
         <section className={styles.panel}>
           <h2>Shipping</h2>

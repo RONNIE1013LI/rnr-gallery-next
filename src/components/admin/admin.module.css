@@ -2734,6 +2734,151 @@
   font-size: 13px;
 }
 
+.paymentRequestWideField {
+  grid-column: 1 / -1;
+}
+
+.paymentRequestMethods {
+  margin: 22px 0 0;
+  padding: 0;
+  border: 0;
+}
+
+.paymentRequestMethods legend {
+  margin-bottom: 10px;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.paymentRequestMethods label {
+  min-height: 44px;
+  margin-right: 18px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.oneTimeLink {
+  margin-top: 18px;
+  padding: 16px;
+  border: 1px solid #c7a34b;
+  border-radius: 10px;
+  background: #fffaf0;
+}
+
+.oneTimeLink p {
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+
+.oneTimeLink button,
+.actionStack > button,
+.paymentLedgerForm button,
+.paymentLedgerList button,
+.reversalForm button {
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 1px solid #1d1d1f;
+  border-radius: var(--radius-button);
+  background: #1d1d1f;
+  color: #fff;
+  font: inherit;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.paymentBalanceGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.paymentBalanceGrid > div {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+}
+
+.paymentBalanceGrid span,
+.paymentBalanceGrid strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.paymentBalanceGrid span {
+  margin-bottom: 5px;
+  color: var(--admin-muted);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.paymentLedgerList {
+  margin-top: 18px;
+}
+
+.paymentLedgerList > article {
+  padding: 14px 0;
+  border-top: 1px solid #e8e8eb;
+}
+
+.paymentLedgerList > article > div:first-child {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.paymentLedgerList small {
+  margin: 5px 0 10px;
+  display: block;
+  color: var(--admin-muted);
+}
+
+.paymentLedgerForm,
+.reversalForm {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.paymentLedgerForm h3 {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 15px;
+}
+
+.paymentLedgerForm label span,
+.reversalForm label span {
+  margin-bottom: 5px;
+  display: block;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.paymentLedgerForm input,
+.reversalForm input {
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid #c7c7cc;
+  border-radius: 7px;
+  font: inherit;
+}
+
+@media (max-width: 700px) {
+  .paymentBalanceGrid,
+  .paymentLedgerForm,
+  .reversalForm {
+    grid-template-columns: 1fr;
+  }
+
+  .paymentRequestWideField,
+  .paymentLedgerForm h3 {
+    grid-column: auto;
+  }
+}
+
 .visuallyHidden {
   position: absolute;
   width: 1px;

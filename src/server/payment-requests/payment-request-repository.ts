@@ -127,6 +127,8 @@ export type OrderPaymentSummary = Readonly<{
 export interface PaymentRequestRepository {
   createRequest(input: CreatePaymentRequestRecordInput): Promise<CreatePaymentRequestRecordResult>;
   findPublicByDigest(digest: string): Promise<PaymentRequestRecord | null>;
+  listAdminRequests(): Promise<readonly PaymentRequestRecord[]>;
+  findAdminById(id: string): Promise<PaymentRequestRecord | null>;
   rotateToken(input: Readonly<{
     requestId: string;
     publicTokenDigest: string;

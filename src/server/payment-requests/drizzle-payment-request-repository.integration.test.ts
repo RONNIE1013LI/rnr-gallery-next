@@ -295,6 +295,21 @@ describe("payment request balance transactions", () => {
     });
   });
 
+  it("lists and reads Admin requests without using the public token", async () => {
+    const order = await createOrder();
+    const created = await remember(repository.createRequest(orderRequest(order.id, 10_000)));
+
+    await expect(repository.findAdminById(created.id)).resolves.toMatchObject({
+      id: created.id,
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      amountCents: 10_000,
+    });
+    await expect(repository.listAdminRequests()).resolves.toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: created.id })]),
+    );
+  });
+
   it("rechecks balance before an attempt and blocks a conflicting bank credit", async () => {
     const order = await createOrder();
     const request = await remember(repository.createRequest(orderRequest(order.id, 25_000)));

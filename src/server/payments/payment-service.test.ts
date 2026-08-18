@@ -140,6 +140,8 @@ function paymentRequestRepository(
   return {
     createRequest: vi.fn(),
     findPublicByDigest: vi.fn().mockResolvedValue(paymentRequest),
+    listAdminRequests: vi.fn().mockResolvedValue([]),
+    findAdminById: vi.fn().mockResolvedValue(null),
     rotateToken: vi.fn(),
     cancel: vi.fn(),
     getOrderSummary: vi.fn(),
