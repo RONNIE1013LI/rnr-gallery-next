@@ -4,6 +4,7 @@ import {
   asc,
   eq,
   inArray,
+  isNotNull,
   isNull,
   sql,
 } from "drizzle-orm";
@@ -13,6 +14,7 @@ import {
   paymentAttempts,
   paymentLedgerEntries,
   paymentRequests,
+  webhookEvents,
 } from "@/server/db/schema";
 import type {
   OrderPaymentStatus,
@@ -26,8 +28,11 @@ import type {
   PaymentLedgerEntryRecord,
   PaymentRequestRecord,
   PaymentRequestRepository,
+  PaymentRequestAttemptResult,
   RequestAttemptClaim,
 } from "./payment-request-repository";
+import type { VerifiedPaymentResult } from "@/server/payments/types";
+import type { PaymentVerificationSource } from "@/server/payments/state-machine";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -245,10 +250,106 @@ function attemptClaimRecord(
       method: attempt.method,
       status: attempt.status,
       providerReference: attempt.providerReference,
+      returnStateDigest: attempt.returnStateDigest,
+      returnStateConsumedAt: attempt.returnStateConsumedAt,
       idempotencyKey: attempt.idempotencyKey,
+      expectedAmountCents: attempt.expectedAmountCents,
+      currency: attempt.currency,
+      payerSnapshot: attempt.payerSnapshot,
+      createdAt: attempt.createdAt,
     }),
     claimId,
   });
+}
+
+function requestAttemptResult(
+  request: PaymentRequestRecord,
+  attempt: AttemptRow,
+): PaymentRequestAttemptResult {
+  return Object.freeze({
+    request,
+    attempt: attemptClaimRecord("existing", request, attempt, null).attempt,
+  });
+}
+
+function verifiedMerchantReference(result: VerifiedPaymentResult) {
+  return result.merchantReference ?? result.orderNumber ?? null;
+}
+
+async function applyRequestVerifiedResult(
+  transaction: Transaction,
+  input: Readonly<{
+    attemptId: string;
+    result: VerifiedPaymentResult;
+    source: PaymentVerificationSource;
+  }>,
+) {
+  const [candidate] = await transaction.select({
+    requestId: paymentAttempts.paymentRequestId,
+  }).from(paymentAttempts).where(eq(paymentAttempts.id, input.attemptId)).limit(1);
+  if (!candidate?.requestId) throw new PaymentRequestNotFoundError();
+  const [requestCandidate] = await transaction.select().from(paymentRequests)
+    .where(eq(paymentRequests.id, candidate.requestId)).limit(1);
+  if (!requestCandidate) throw new PaymentRequestNotFoundError();
+  let order: OrderRow | null = null;
+  if (requestCandidate.orderId) order = await lockOrder(transaction, requestCandidate.orderId);
+  const [request] = await transaction.select().from(paymentRequests)
+    .where(eq(paymentRequests.id, requestCandidate.id)).for("update").limit(1);
+  const [attempt] = await transaction.select().from(paymentAttempts)
+    .where(eq(paymentAttempts.id, input.attemptId)).for("update").limit(1);
+  if (
+    !request ||
+    !attempt ||
+    attempt.paymentRequestId !== request.id ||
+    attempt.orderId ||
+    input.result.providerReference !== attempt.providerReference ||
+    input.result.amountCents !== attempt.expectedAmountCents ||
+    input.result.amountCents !== request.amountCents ||
+    input.result.currency !== attempt.currency ||
+    input.result.currency !== request.currency ||
+    verifiedMerchantReference(input.result) !== request.requestNumber ||
+    input.result.status === "refunded"
+  ) throw new PaymentRequestConflictError("Verified payment does not match request");
+
+  const now = await databaseNow(transaction);
+  const nextStatus: PaymentAttemptStatus = attempt.status === "paid"
+    ? "paid"
+    : input.result.status;
+  const [updatedAttempt] = await transaction.update(paymentAttempts).set({
+    status: nextStatus,
+    sanitizedFailureCode: input.result.sanitizedFailureCode ?? null,
+    providerSessionLeaseId: null,
+    providerSessionLeaseExpiresAt: null,
+    updatedAt: now,
+  }).where(eq(paymentAttempts.id, attempt.id)).returning();
+
+  let updatedRequest = request;
+  if (nextStatus === "paid") {
+    await transaction.insert(paymentLedgerEntries).values({
+      orderId: request.orderId,
+      paymentRequestId: request.id,
+      paymentAttemptId: attempt.id,
+      entryType: "online_payment",
+      direction: "credit",
+      amountCents: request.amountCents,
+      currency: request.currency,
+      receivedAt: now,
+    }).onConflictDoNothing();
+    [updatedRequest] = await transaction.update(paymentRequests).set({
+      status: "paid",
+      statusReason: null,
+      paidAt: request.paidAt ?? now,
+      updatedAt: now,
+    }).where(eq(paymentRequests.id, request.id)).returning();
+    if (order) {
+      await updateOrderPaymentStatus(transaction, order, now);
+      await reconcileOrderRequests(transaction, order, now);
+    }
+  }
+  return requestAttemptResult(
+    requestRecord(updatedRequest, order?.orderNumber ?? null),
+    updatedAttempt,
+  );
 }
 
 export function createDrizzlePaymentRequestRepository(
@@ -590,6 +691,231 @@ export function createDrizzlePaymentRequestRepository(
       });
       if (!result) throw new PaymentRequestConflictError("Payment request is not payable");
       return result;
+    },
+
+    async bindProviderSession(input) {
+      return database.transaction(async (transaction) => {
+        const [candidate] = await transaction.select({
+          requestId: paymentAttempts.paymentRequestId,
+        }).from(paymentAttempts).where(eq(paymentAttempts.id, input.attemptId)).limit(1);
+        if (!candidate?.requestId) throw new PaymentRequestNotFoundError();
+        const [request] = await transaction.select().from(paymentRequests)
+          .where(eq(paymentRequests.id, candidate.requestId)).for("update").limit(1);
+        const [attempt] = await transaction.select().from(paymentAttempts)
+          .where(eq(paymentAttempts.id, input.attemptId)).for("update").limit(1);
+        if (!request || !attempt || attempt.paymentRequestId !== request.id || attempt.orderId) {
+          throw new PaymentRequestConflictError();
+        }
+        if (
+          attempt.providerReference === input.providerReference &&
+          attempt.returnStateDigest === input.returnStateDigest &&
+          attempt.status === input.status
+        ) return attemptClaimRecord("existing", requestRecord(request, null), attempt, null).attempt;
+        const now = await databaseNow(transaction);
+        if (
+          attempt.providerReference ||
+          attempt.returnStateDigest ||
+          attempt.providerSessionLeaseId !== input.claimId ||
+          !attempt.providerSessionLeaseExpiresAt ||
+          attempt.providerSessionLeaseExpiresAt <= now
+        ) throw new PaymentRequestConflictError("Provider-session claim expired");
+        const [updated] = await transaction.update(paymentAttempts).set({
+          providerReference: input.providerReference,
+          returnStateDigest: input.returnStateDigest,
+          status: input.status,
+          providerSessionLeaseId: null,
+          providerSessionLeaseExpiresAt: null,
+          updatedAt: now,
+        }).where(eq(paymentAttempts.id, attempt.id)).returning();
+        return attemptClaimRecord("existing", requestRecord(request, null), updated, null).attempt;
+      });
+    },
+
+    async consumeReturnState(input) {
+      const [candidate] = await database.select({
+        id: paymentAttempts.id,
+        requestId: paymentAttempts.paymentRequestId,
+      }).from(paymentAttempts).where(and(
+        eq(paymentAttempts.provider, input.provider),
+        eq(paymentAttempts.returnStateDigest, input.digest),
+      )).limit(1);
+      if (!candidate?.requestId) return null;
+      return database.transaction(async (transaction) => {
+        const [requestCandidate] = await transaction.select().from(paymentRequests)
+          .where(eq(paymentRequests.id, candidate.requestId!)).limit(1);
+        if (!requestCandidate) return null;
+        let order: OrderRow | null = null;
+        if (requestCandidate.orderId) order = await lockOrder(transaction, requestCandidate.orderId);
+        const [request] = await transaction.select().from(paymentRequests)
+          .where(eq(paymentRequests.id, requestCandidate.id)).for("update").limit(1);
+        const [attempt] = await transaction.select().from(paymentAttempts)
+          .where(eq(paymentAttempts.id, candidate.id)).for("update").limit(1);
+        if (
+          !request ||
+          !attempt ||
+          attempt.paymentRequestId !== request.id ||
+          attempt.orderId ||
+          attempt.provider !== input.provider ||
+          attempt.method !== input.method ||
+          attempt.returnStateDigest !== input.digest ||
+          attempt.providerReference !== input.providerReference ||
+          request.requestNumber !== input.merchantReference ||
+          request.publicTokenDigest !== input.publicTokenDigest
+        ) return null;
+        if (attempt.returnStateConsumedAt) {
+          return Object.freeze({
+            outcome: "already_consumed" as const,
+            requestNumber: request.requestNumber,
+          });
+        }
+        const now = await databaseNow(transaction);
+        if (attempt.createdAt.getTime() + 24 * 60 * 60 * 1000 <= now.getTime()) return null;
+        const [updated] = await transaction.update(paymentAttempts).set({
+          returnStateConsumedAt: now,
+          updatedAt: now,
+        }).where(and(
+          eq(paymentAttempts.id, attempt.id),
+          isNull(paymentAttempts.returnStateConsumedAt),
+        )).returning();
+        if (!updated) return null;
+        const record = requestRecord(request, order?.orderNumber ?? null);
+        return Object.freeze({
+          outcome: "consumed" as const,
+          request: record,
+          attempt: attemptClaimRecord("existing", record, updated, null).attempt,
+        });
+      });
+    },
+
+    async applyVerifiedResult(input) {
+      return database.transaction((transaction) =>
+        applyRequestVerifiedResult(transaction, input));
+    },
+
+    async ownsProviderReference(provider, providerReference) {
+      const [row] = await database.select({ id: paymentAttempts.id })
+        .from(paymentAttempts)
+        .where(and(
+          eq(paymentAttempts.provider, provider),
+          eq(paymentAttempts.providerReference, providerReference),
+          isNotNull(paymentAttempts.paymentRequestId),
+        ))
+        .limit(1);
+      return Boolean(row);
+    },
+
+    async applyVerifiedWebhookEventAtomically(input) {
+      return database.transaction(async (transaction) => {
+        const inserted = await transaction.insert(webhookEvents).values({
+          provider: input.provider,
+          providerEventId: input.providerEventId,
+          payloadSha256: input.payloadSha256,
+        }).onConflictDoNothing().returning();
+        const [event] = inserted.length
+          ? inserted
+          : await transaction.select().from(webhookEvents).where(and(
+              eq(webhookEvents.provider, input.provider),
+              eq(webhookEvents.providerEventId, input.providerEventId),
+            )).for("update").limit(1);
+        if (!event) throw new PaymentRequestConflictError();
+        if (event.payloadSha256 !== input.payloadSha256) return "hash_mismatch" as const;
+        if (event.processingResult) return "duplicate" as const;
+        const [candidate] = await transaction.select({ id: paymentAttempts.id })
+          .from(paymentAttempts).where(and(
+            eq(paymentAttempts.provider, input.provider),
+            eq(paymentAttempts.providerReference, input.result.providerReference),
+            isNotNull(paymentAttempts.paymentRequestId),
+          )).limit(1);
+        if (!candidate) throw new PaymentRequestNotFoundError();
+        await applyRequestVerifiedResult(transaction, {
+          attemptId: candidate.id,
+          result: input.result,
+          source: "verified_webhook",
+        });
+        const now = await databaseNow(transaction);
+        await transaction.update(webhookEvents).set({
+          paymentAttemptId: candidate.id,
+          processingResult: "applied",
+          processedAt: now,
+        }).where(eq(webhookEvents.id, event.id));
+        return "applied" as const;
+      });
+    },
+
+    async claimReconciliationCandidates(limit) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+        throw new Error("Reconciliation limit must be an integer from 1 to 50");
+      }
+      return database.transaction(async (transaction) => {
+        const now = await databaseNow(transaction);
+        const claimed = await transaction.execute<{ id: string }>(sql`
+          select attempts.id
+          from ${paymentAttempts} as attempts
+          inner join ${paymentRequests} as requests
+            on requests.id = attempts.payment_request_id
+          where attempts.status in ('requires_action', 'processing')
+            and attempts.provider_reference is not null
+            and requests.status = 'pending'
+            and (
+              attempts.provider_session_lease_id is null
+              or attempts.provider_session_lease_expires_at <= ${now}
+            )
+            and attempts.updated_at <= ${new Date(now.getTime() - 60_000)}
+          order by attempts.updated_at asc, attempts.id asc
+          for update of attempts skip locked
+          limit ${limit}
+        `);
+        const results = [];
+        for (const row of claimed.rows) {
+          const claimId = randomUUID();
+          const [attempt] = await transaction.update(paymentAttempts).set({
+            providerSessionLeaseId: claimId,
+            providerSessionLeaseExpiresAt: new Date(now.getTime() + leaseDurationMs),
+            updatedAt: now,
+          }).where(eq(paymentAttempts.id, row.id)).returning();
+          if (!attempt?.paymentRequestId) continue;
+          const [request] = await transaction.select().from(paymentRequests)
+            .where(eq(paymentRequests.id, attempt.paymentRequestId)).limit(1);
+          if (!request) continue;
+          const record = requestRecord(request, null);
+          results.push(Object.freeze({
+            ...requestAttemptResult(record, attempt),
+            claimId,
+          }));
+        }
+        return Object.freeze(results);
+      });
+    },
+
+    async applyReconciliationResult(input) {
+      return database.transaction(async (transaction) => {
+        const [attempt] = await transaction.select().from(paymentAttempts)
+          .where(eq(paymentAttempts.id, input.attemptId)).for("update").limit(1);
+        const now = await databaseNow(transaction);
+        if (
+          !attempt?.paymentRequestId ||
+          attempt.providerSessionLeaseId !== input.claimId ||
+          !attempt.providerSessionLeaseExpiresAt ||
+          attempt.providerSessionLeaseExpiresAt <= now
+        ) throw new PaymentRequestConflictError("Reconciliation claim expired");
+        return applyRequestVerifiedResult(transaction, {
+          attemptId: input.attemptId,
+          result: input.result,
+          source: "reconciliation",
+        });
+      });
+    },
+
+    async recordReconciliationOutcome(input) {
+      await database.update(paymentAttempts).set({
+        providerSessionLeaseId: null,
+        providerSessionLeaseExpiresAt: null,
+        sanitizedFailureCode: input.code.slice(0, 120),
+        updatedAt: new Date(),
+      }).where(and(
+        eq(paymentAttempts.id, input.attemptId),
+        eq(paymentAttempts.providerSessionLeaseId, input.claimId),
+      ));
     },
   };
   return Object.freeze(repository);

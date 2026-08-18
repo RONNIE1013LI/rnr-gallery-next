@@ -8,7 +8,11 @@ import {
   type StripePaymentIntent,
   type StripeWebhookEvent,
 } from "./stripe-provider";
-import type { CreateProviderSessionInput, PaymentOrder } from "./types";
+import type {
+  CreateProviderSessionInput,
+  PaymentOrder,
+  PaymentTargetSnapshot,
+} from "./types";
 
 const address: NormalizedAddress = {
   country: "NZ",
@@ -126,6 +130,41 @@ describe("Stripe payment provider", () => {
     }, { idempotencyKey: sessionInput.idempotencyKey });
     expect(vi.mocked(stripe.paymentIntents.create).mock.calls[0]?.[0])
       .not.toHaveProperty("automatic_payment_methods");
+  });
+
+  it("creates a fixed Payment Request intent using its merchant reference", async () => {
+    const target: PaymentTargetSnapshot = {
+      targetKind: "payment_request",
+      targetId: "request-id",
+      merchantReference: "PAY-08001",
+      amountCents: 20_000,
+      currency: "NZD",
+      customer: {
+        fullName: "Aroha Ngata",
+        email: "aroha@example.test",
+        phone: "",
+      },
+      billingAddress: null,
+      deliveryAddress: null,
+    };
+    const intent: StripePaymentIntent = {
+      ...baseIntent,
+      amount: target.amountCents,
+      metadata: { merchant_reference: target.merchantReference },
+    };
+    const stripe = client(intent);
+    const provider = createStripeProvider({ config, client: stripe });
+
+    await expect(provider.createOrReuse({ ...sessionInput, order: target }))
+      .resolves.toMatchObject({ providerReference: intent.id });
+    expect(stripe.paymentIntents.create).toHaveBeenCalledWith({
+      amount: 20_000,
+      currency: "nzd",
+      payment_method_types: ["card"],
+      metadata: { merchant_reference: "PAY-08001" },
+    }, { idempotencyKey: sessionInput.idempotencyKey });
+    expect(vi.mocked(stripe.paymentIntents.create).mock.calls[0]?.[0])
+      .not.toHaveProperty("quantity");
   });
 
   it("sends the authoritative stored Australian Banner Bundle total in AUD", async () => {
@@ -328,6 +367,31 @@ describe("Stripe payment provider", () => {
       config.webhookSecret,
     );
     expect(vi.mocked(stripe.webhooks.constructEvent).mock.calls[0]?.[0]).toBe(rawBody);
+  });
+
+  it("preserves the Payment Request merchant reference from a verified webhook", async () => {
+    const intent: StripePaymentIntent = {
+      ...baseIntent,
+      status: "succeeded",
+      client_secret: null,
+      amount: 20_000,
+      metadata: { merchant_reference: "PAY-08001" },
+    };
+    const event = webhookEvent("payment_intent.succeeded", intent);
+    const provider = createStripeProvider({ config, client: client(intent, event) });
+
+    await expect(provider.verifyWebhook?.(
+      new Uint8Array([1, 2, 3]),
+      new Headers({ "stripe-signature": "t=1,v1=request" }),
+    )).resolves.toMatchObject({
+      result: {
+        providerReference: intent.id,
+        amountCents: 20_000,
+        currency: "NZD",
+        merchantReference: "PAY-08001",
+        status: "paid",
+      },
+    });
   });
 
   it.each([

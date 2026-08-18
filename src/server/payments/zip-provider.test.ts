@@ -6,6 +6,7 @@ import type {
   CompleteProviderReturnInput,
   CreateProviderSessionInput,
   PaymentOrder,
+  PaymentTargetSnapshot,
 } from "./types";
 
 const checkoutId = "co_P9GOgSVE9qMnL0VA6Jy8z6";
@@ -134,6 +135,41 @@ function completeInput(
 }
 
 describe("Zip AU provider", () => {
+  it("uses the fixed Payment Request reference and amount", async () => {
+    const payerAddress = address();
+    const target: PaymentTargetSnapshot = {
+      targetKind: "payment_request",
+      targetId: "request-id",
+      merchantReference: "PAY-08001",
+      amountCents: 20_000,
+      currency: "AUD",
+      customer: {
+        fullName: payerAddress.fullName,
+        email: payerAddress.email,
+        phone: payerAddress.phone,
+      },
+      billingAddress: payerAddress,
+      deliveryAddress: payerAddress,
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse(checkoutResponse({
+      order: { reference: "PAY-08001", amount: 200, currency: "AUD" },
+    })));
+    const provider = createZipProvider({ config: config(), fetchImpl });
+    const input: CreateProviderSessionInput = {
+      ...sessionInput(),
+      order: target,
+      returnUrl: `https://shop.example.test/api/payments/returns/zip?flow=return&orderNumber=PAY-08001&method=zip&state=${state}`,
+      cancelUrl: `https://shop.example.test/api/payments/returns/zip?flow=cancel&orderNumber=PAY-08001&method=zip&state=${state}`,
+    };
+
+    await provider.createOrReuse(input);
+    const body = JSON.parse(String((fetchImpl.mock.calls[0]?.[1] as RequestInit).body));
+    expect(body.order.reference).toBe("PAY-08001");
+    expect(body.order.amount).toBe(200);
+    expect(body.order.currency).toBe("AUD");
+    expect(body).not.toHaveProperty("quantity");
+  });
+
   it.each([
     [1, 0.01],
     [100, 1],

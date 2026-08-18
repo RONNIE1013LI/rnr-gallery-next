@@ -6,8 +6,9 @@ import { createProviderHttp, ProviderHttpError } from "./provider-http";
 import {
   PaymentProviderRequestError,
   PaymentProviderVerificationError,
-  type PaymentOrder,
+  paymentTargetReference,
   type PaymentProvider,
+  type ProviderPaymentTarget,
   type VerifiedPaymentResult,
 } from "./types";
 
@@ -119,7 +120,7 @@ export function formatAfterpayAmount(amountCents: number) {
   return `${whole}.${fraction}`;
 }
 
-function amount(order: PaymentOrder): Money {
+function amount(order: ProviderPaymentTarget): Money {
   if (order.currency !== "NZD" && order.currency !== "AUD") {
     throw verificationFailure();
   }
@@ -176,7 +177,7 @@ function afterpayAddress(address: NormalizedAddress) {
 }
 
 function assertTrustedMerchantUrls(input: {
-  order: PaymentOrder;
+  order: ProviderPaymentTarget;
   returnState: string;
   returnUrl: string;
   cancelUrl: string;
@@ -199,7 +200,7 @@ function assertTrustedMerchantUrls(input: {
       url.password ||
       url.hash ||
       url.searchParams.get("flow") !== flow ||
-      url.searchParams.get("orderNumber") !== input.order.orderNumber ||
+      url.searchParams.get("orderNumber") !== paymentTargetReference(input.order) ||
       url.searchParams.get("method") !== "afterpay" ||
       url.searchParams.get("state") !== input.returnState
     ) throw verificationFailure();
@@ -209,7 +210,7 @@ function assertTrustedMerchantUrls(input: {
 
 function assertCheckout(
   response: CheckoutResponse,
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
   environment: EnabledAfterpayConfig["environment"],
 ) {
   if (!/^[A-Za-z0-9._-]{8,1024}$/.test(response.token)) {
@@ -228,7 +229,8 @@ function assertCheckout(
     redirect.host !== PORTAL_HOST[environment] ||
     !redirect.pathname.toLowerCase().includes("checkout") ||
     redirect.searchParams.get("token") !== response.token ||
-    (response.merchantReference !== undefined && response.merchantReference !== order.orderNumber)
+    (response.merchantReference !== undefined &&
+      response.merchantReference !== paymentTargetReference(order))
   ) throw verificationFailure();
   if (response.amount !== undefined) {
     if (
@@ -240,12 +242,12 @@ function assertCheckout(
 
 function assertPayment(
   response: PaymentResponse,
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
   providerReference: string,
 ) {
   if (
     response.token !== providerReference ||
-    response.merchantReference !== order.orderNumber ||
+    response.merchantReference !== paymentTargetReference(order) ||
     response.originalAmount.currency !== order.currency ||
     moneyToCents(response.originalAmount) !== order.amountCents ||
     response.openToCaptureAmount.currency !== order.currency
@@ -254,7 +256,7 @@ function assertPayment(
 
 function paymentResult(
   response: PaymentResponse,
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
 ): VerifiedPaymentResult {
   const openAmountCents = moneyToCents(response.openToCaptureAmount);
   let status: VerifiedPaymentResult["status"] = "processing";
@@ -271,7 +273,9 @@ function paymentResult(
     providerStatus: `${response.status}:${response.paymentState}`,
     amountCents: order.amountCents,
     currency: order.currency,
-    orderNumber: order.orderNumber,
+    ...("merchantReference" in order
+      ? { merchantReference: order.merchantReference }
+      : { orderNumber: order.orderNumber }),
     status,
     ...(status === "failed" ? { sanitizedFailureCode: "declined" } : {}),
   });
@@ -291,13 +295,15 @@ function stableRequestId(idempotencyKey: string) {
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function cancelledAbsentResult(order: PaymentOrder, providerReference: string) {
+function cancelledAbsentResult(order: ProviderPaymentTarget, providerReference: string) {
   return Object.freeze({
     providerReference,
     providerStatus: "CANCELLED:NOT_FOUND",
     amountCents: order.amountCents,
     currency: order.currency,
-    orderNumber: order.orderNumber,
+    ...("merchantReference" in order
+      ? { merchantReference: order.merchantReference }
+      : { orderNumber: order.orderNumber }),
     status: "cancelled" as const,
   });
 }
@@ -336,7 +342,7 @@ export function createAfterpayProvider({
   }
 
   async function retrieveAuthority(
-    order: PaymentOrder,
+    order: ProviderPaymentTarget,
     providerReference: string,
   ): Promise<
     | Readonly<{ kind: "found"; result: VerifiedPaymentResult }>
@@ -364,7 +370,7 @@ export function createAfterpayProvider({
   }
 
   async function capture(
-    order: PaymentOrder,
+    order: ProviderPaymentTarget,
     providerReference: string,
     idempotencyKey: string,
   ) {
@@ -374,7 +380,7 @@ export function createAfterpayProvider({
       body: {
         requestId: stableRequestId(idempotencyKey),
         token: providerReference,
-        merchantReference: order.orderNumber,
+        merchantReference: paymentTargetReference(order),
         amount: amount(order),
       },
       validate: isPayment,
@@ -407,13 +413,13 @@ export function createAfterpayProvider({
             email: input.order.customer.email,
             phoneNumber: input.order.customer.phone,
           },
-          billing: afterpayAddress(input.order.billingAddress),
-          shipping: afterpayAddress(input.order.deliveryAddress),
+          billing: afterpayAddress(input.order.billingAddress!),
+          shipping: afterpayAddress(input.order.deliveryAddress!),
           merchant: {
             redirectConfirmUrl: input.returnUrl,
             redirectCancelUrl: input.cancelUrl,
           },
-          merchantReference: input.order.orderNumber,
+          merchantReference: paymentTargetReference(input.order),
         },
         validate: isCheckout,
       });

@@ -1,6 +1,7 @@
 import { parseAuthConfig } from "@/server/auth/config";
 import { createDrizzleCheckoutRepository } from "@/server/checkout/drizzle-checkout-repository";
 import { getDatabase } from "@/server/db/client";
+import { createDrizzlePaymentRequestRepository } from "@/server/payment-requests/drizzle-payment-request-repository";
 import {
   parsePaymentConfig,
   parsePaymentReturnOrigin,
@@ -29,9 +30,10 @@ type RouteContext = Readonly<{ params: Promise<{ provider: string }> }>;
 const noStoreHeaders = { "Cache-Control": "no-store" };
 const providers = new Set<ReturnProvider>(["stripe", "afterpay", "zip", "local-test"]);
 const paymentMethods = new Set<PaymentReturnInput["method"]>(["card", "afterpay", "zip"]);
-const orderNumberPattern = /^(?:\d{5,}|RNR-[A-Z0-9]+(?:-[A-Z0-9]+)+)$/;
+const orderNumberPattern = /^(?:\d{5,}|RNR-[A-Z0-9]+(?:-[A-Z0-9]+)+|PAY-[A-Z0-9]+(?:-[A-Z0-9]+)*)$/;
 const statePattern = /^[a-f0-9]{64}$/;
 const referencePattern = /^[A-Za-z0-9._-]{8,1024}$/;
+const paymentTokenPattern = /^[A-Za-z0-9_-]{43}$/;
 
 function json(body: unknown, status: number) {
   return Response.json(body, { status, headers: noStoreHeaders });
@@ -100,7 +102,9 @@ function parseReturnInput(
   url: URL,
   provider: ReturnProvider,
 ): Omit<PaymentReturnInput, "returnUrl"> | null {
-  const commonKeys = ["flow", "orderNumber", "method", "state"];
+  const commonKeys = ["flow", "orderNumber", "method", "state", "paymentToken"];
+  const paymentToken = url.searchParams.get("paymentToken") ?? undefined;
+  if (paymentToken !== undefined && !paymentTokenPattern.test(paymentToken)) return null;
 
   if (provider === "stripe") {
     const allowed = new Set([
@@ -132,6 +136,7 @@ function parseReturnInput(
       orderNumber: common.orderNumber,
       returnState: common.returnState,
       providerReference,
+      ...(paymentToken ? { paymentToken } : {}),
     };
   }
 
@@ -156,6 +161,7 @@ function parseReturnInput(
       orderNumber: common.orderNumber,
       returnState: common.returnState,
       providerReference,
+      ...(paymentToken ? { paymentToken } : {}),
     };
   }
 
@@ -182,6 +188,7 @@ function parseReturnInput(
       orderNumber: common.orderNumber,
       returnState: common.returnState,
       providerReference,
+      ...(paymentToken ? { paymentToken } : {}),
     };
   }
 
@@ -205,6 +212,7 @@ function parseReturnInput(
     orderNumber: common.orderNumber,
     returnState: common.returnState,
     providerReference,
+    ...(paymentToken ? { paymentToken } : {}),
   };
 }
 
@@ -221,6 +229,7 @@ function defaults(): Dependencies {
     trustedOrigin,
     paymentService: createPaymentService({
       repository: createDrizzlePaymentRepository(database),
+      paymentRequestRepository: createDrizzlePaymentRequestRepository(database),
       checkoutAuthority: createDrizzleCheckoutRepository(database),
       providers: selectedProviders,
       returnBaseUrl: trustedOrigin,
@@ -259,14 +268,14 @@ export function createPaymentReturnRoute(dependencies?: Dependencies) {
         ...parsed,
         returnUrl: url,
       });
-      if (
-        result.orderNumber.length > 80 ||
-        !orderNumberPattern.test(result.orderNumber)
-      ) return internalError();
-      const destination = new URL(
-        `/orders/${encodeURIComponent(result.orderNumber)}`,
-        deps.trustedOrigin,
-      );
+      const destination = result.paymentToken
+        ? new URL(`/pay/${encodeURIComponent(result.paymentToken)}`, deps.trustedOrigin)
+        : result.orderNumber &&
+            result.orderNumber.length <= 80 &&
+            orderNumberPattern.test(result.orderNumber)
+          ? new URL(`/orders/${encodeURIComponent(result.orderNumber)}`, deps.trustedOrigin)
+          : null;
+      if (!destination) return internalError();
       return new Response(null, {
         status: 303,
         headers: { ...noStoreHeaders, Location: destination.toString() },

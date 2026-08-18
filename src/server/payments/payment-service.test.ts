@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from "vitest";
 import type { NormalizedAddress } from "@/domain/address/types";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import type { ReviewedPaymentCheckoutRepository } from "@/server/checkout/checkout-repository";
+import type { PaymentPayerSnapshot } from "@/server/db/schema/payments";
+import type { PaymentRequestRepository } from "@/server/payment-requests/payment-request-repository";
 import type { PaymentAttemptRecord, PaymentRepository } from "./payment-repository";
 import { createPaymentService, PaymentServiceError } from "./payment-service";
 import type { PaymentProviderRegistration } from "./provider-registry";
@@ -103,7 +105,64 @@ function repository(overrides: Partial<PaymentRepository> = {}): PaymentReposito
     })),
     consumeReturnState: vi.fn(),
     applyVerifiedWebhookEventAtomically: vi.fn(),
+    claimReconciliationCandidates: vi.fn().mockResolvedValue([]),
+    applyReconciliationResult: vi.fn(),
+    recordReconciliationOutcome: vi.fn(),
     applyVerifiedResult: vi.fn(),
+    ...overrides,
+  };
+}
+
+const paymentRequest = Object.freeze({
+  id: "40000000-0000-4000-8000-000000000001",
+  requestNumber: "PAY-08001",
+  publicTokenDigest: "b".repeat(64),
+  kind: "standalone" as const,
+  orderId: null,
+  orderNumber: null,
+  customerName: null,
+  customerEmail: null,
+  description: "Custom payment",
+  currency: "NZD" as const,
+  amountCents: 20_000,
+  enabledPaymentMethods: ["card"] as const,
+  status: "pending" as const,
+  statusReason: null,
+  expiresAt: null,
+  internalNote: null,
+  createdAt: new Date("2026-08-18T00:00:00.000Z"),
+  updatedAt: new Date("2026-08-18T00:00:00.000Z"),
+});
+
+function paymentRequestRepository(
+  overrides: Partial<PaymentRequestRepository> = {},
+): PaymentRequestRepository {
+  return {
+    createRequest: vi.fn(),
+    findPublicByDigest: vi.fn().mockResolvedValue(paymentRequest),
+    rotateToken: vi.fn(),
+    cancel: vi.fn(),
+    getOrderSummary: vi.fn(),
+    recordBankTransfer: vi.fn(),
+    reverseBankTransfer: vi.fn(),
+    preflightAndClaimAttempt: vi.fn().mockResolvedValue({
+      outcome: "claimed",
+      request: paymentRequest,
+      attempt: {
+        id: "50000000-0000-4000-8000-000000000001",
+        provider: "local-test",
+        method: "card",
+        status: "created",
+        providerReference: null,
+        idempotencyKey: "c".repeat(64),
+      },
+      claimId: "60000000-0000-4000-8000-000000000001",
+    }),
+    bindProviderSession: vi.fn(),
+    consumeReturnState: vi.fn(),
+    applyVerifiedResult: vi.fn(),
+    ownsProviderReference: vi.fn().mockResolvedValue(false),
+    applyVerifiedWebhookEventAtomically: vi.fn(),
     claimReconciliationCandidates: vi.fn().mockResolvedValue([]),
     applyReconciliationResult: vi.fn(),
     recordReconciliationOutcome: vi.fn(),
@@ -115,6 +174,7 @@ function service(input: {
   repository?: PaymentRepository;
   providers?: readonly PaymentProviderRegistration[];
   checkoutAuthority?: ReviewedPaymentCheckoutRepository;
+  paymentRequestRepository?: PaymentRequestRepository;
   deriveReturnState?: (input: {
     attemptId: string;
     idempotencyKey: string;
@@ -135,12 +195,97 @@ function service(input: {
         deliveryAddress: order.deliveryAddress,
       }),
     },
+    paymentRequestRepository: input.paymentRequestRepository,
     returnBaseUrl: input.returnBaseUrl ?? "https://trusted.example.test",
     deriveReturnState: input.deriveReturnState ?? (() => "a".repeat(64)),
   });
 }
 
 describe("payment service", () => {
+  it("dispatches a verified Payment Request webhook by the stored attempt target", async () => {
+    const orderRepo = repository();
+    const applyRequestWebhook = vi.fn().mockResolvedValue("applied");
+    const requests = paymentRequestRepository({
+      ownsProviderReference: vi.fn().mockResolvedValue(true),
+      applyVerifiedWebhookEventAtomically: applyRequestWebhook,
+    });
+    const stripe: PaymentProvider = {
+      ...provider(),
+      key: "stripe",
+      verifyWebhook: vi.fn(),
+    };
+    const paymentService = service({
+      repository: orderRepo,
+      paymentRequestRepository: requests,
+      providers: [{ method: "card", label: "Card", isTest: false, provider: stripe }],
+    });
+    const event: VerifiedProviderEvent = {
+      provider: "stripe",
+      providerEventId: "evt_request_123",
+      result: {
+        providerReference: "pi_request_123",
+        providerStatus: "succeeded",
+        amountCents: 20_000,
+        currency: "NZD",
+        merchantReference: "PAY-08001",
+        status: "paid",
+      },
+    };
+    const rawBody = new Uint8Array([1, 2, 3]);
+
+    await expect(paymentService.applyVerifiedWebhook(event, rawBody)).resolves.toBe("applied");
+    expect(applyRequestWebhook).toHaveBeenCalledWith({
+      ...event,
+      payloadSha256: createHash("sha256").update(rawBody).digest("hex"),
+    });
+    expect(orderRepo.applyVerifiedWebhookEventAtomically).not.toHaveBeenCalled();
+  });
+
+  it("starts a fixed standalone Payment Request through the shared provider", async () => {
+    const card = provider();
+    const requests = paymentRequestRepository();
+    const paymentService = service({
+      providers: [registration(card)],
+      paymentRequestRepository: requests,
+    });
+    const payer: PaymentPayerSnapshot = {
+      fullName: "Aroha Ngata",
+      email: "aroha@example.test",
+      phone: "",
+    };
+
+    await expect(paymentService.startPaymentRequest({
+      rawToken: "A".repeat(43),
+      tokenDigest: paymentRequest.publicTokenDigest,
+      payerSnapshot: payer,
+    }, "card")).resolves.toMatchObject({
+      action: { kind: "test" },
+    });
+    expect(requests.preflightAndClaimAttempt).toHaveBeenCalledWith({
+      publicTokenDigest: paymentRequest.publicTokenDigest,
+      provider: "local-test",
+      method: "card",
+      payerSnapshot: payer,
+    });
+    expect(card.createOrReuse).toHaveBeenCalledWith(expect.objectContaining({
+      order: {
+        targetKind: "payment_request",
+        targetId: paymentRequest.id,
+        merchantReference: "PAY-08001",
+        amountCents: 20_000,
+        currency: "NZD",
+        customer: payer,
+        billingAddress: null,
+        deliveryAddress: null,
+      },
+    }));
+    expect(requests.bindProviderSession).toHaveBeenCalledWith(expect.objectContaining({
+      attemptId: "50000000-0000-4000-8000-000000000001",
+      providerReference: "local-card-reference",
+      status: "requires_action",
+    }));
+  });
+
   it("hashes exact webhook bytes server-side and atomically applies only a registered provider event", async () => {
     const applyVerifiedWebhookEventAtomically = vi.fn().mockResolvedValue("applied");
     const repo = repository({ applyVerifiedWebhookEventAtomically });

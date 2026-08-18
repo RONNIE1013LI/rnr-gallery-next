@@ -26,6 +26,35 @@ function handler(handleReturn = vi.fn().mockResolvedValue({ orderNumber })) {
 const common = { flow: "return", orderNumber, state };
 
 describe("GET /api/payments/returns/[provider]", () => {
+  it("returns a Payment Request callback to the same public token page", async () => {
+    const paymentToken = "A".repeat(43);
+    const handleReturn = vi.fn().mockResolvedValue({ paymentToken });
+    const route = createPaymentReturnRoute({
+      trustedOrigin,
+      paymentService: { handleReturn },
+    });
+    const incoming = request("afterpay", {
+      flow: "return",
+      orderNumber: "PAY-08001",
+      state,
+      method: "afterpay",
+      paymentToken,
+      status: "SUCCESS",
+      orderToken: "afterpay_request_123",
+    });
+
+    const response = await route(incoming, {
+      params: Promise.resolve({ provider: "afterpay" }),
+    });
+    expect(response.status).toBe(303);
+    expect(response.headers.get("Location"))
+      .toBe(`${trustedOrigin}/pay/${paymentToken}`);
+    expect(handleReturn).toHaveBeenCalledWith(expect.objectContaining({
+      orderNumber: "PAY-08001",
+      paymentToken,
+    }));
+  });
+
   it("completes a strict local-test return and redirects to the created order", async () => {
     const { route, handleReturn } = handler();
     const providerReference = "local-test.v1.card.00000000-0000-4000-8000-000000000001.aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";

@@ -5,12 +5,13 @@ import type {
   CompleteProviderReturnInput,
   CreateProviderSessionInput,
   PaymentEligibilityContext,
-  PaymentOrder,
   PaymentProvider,
+  ProviderPaymentTarget,
   ProviderAvailability,
   RetrieveProviderPaymentInput,
   VerifiedPaymentResult,
 } from "./types";
+import { paymentTargetReference } from "./types";
 
 export type LocalTestProviderOptions = Readonly<{
   method: PaymentMethodKey;
@@ -24,10 +25,10 @@ function digest(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function orderFingerprint(order: PaymentOrder) {
+function orderFingerprint(order: ProviderPaymentTarget) {
   return JSON.stringify([
-    order.id,
-    order.orderNumber,
+    "targetId" in order ? order.targetId : order.id,
+    paymentTargetReference(order),
     order.amountCents,
     order.currency,
     order.customer,
@@ -39,7 +40,7 @@ function orderFingerprint(order: PaymentOrder) {
 function providerReference(
   method: PaymentMethodKey,
   attemptId: string,
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
 ) {
   const integrity = digest(
     JSON.stringify([referencePrefix, method, attemptId, orderFingerprint(order)]),
@@ -67,7 +68,7 @@ function parseAttemptId(reference: string, method: PaymentMethodKey) {
 }
 
 function verifiedResult(
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
   reference: string,
   status: "processing" | "paid",
 ): VerifiedPaymentResult {
@@ -77,13 +78,15 @@ function verifiedResult(
       status === "paid" ? "TEST_CAPTURED" : "TEST_REQUIRES_ACTION",
     amountCents: order.amountCents,
     currency: order.currency,
-    orderNumber: order.orderNumber,
+    ...("merchantReference" in order
+      ? { merchantReference: order.merchantReference }
+      : { orderNumber: order.orderNumber }),
     status,
   });
 }
 
 function assertReference(
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
   method: PaymentMethodKey,
   reference: string,
 ) {

@@ -6,8 +6,9 @@ import { createProviderHttp, ProviderHttpError } from "./provider-http";
 import {
   PaymentProviderRequestError,
   PaymentProviderVerificationError,
-  type PaymentOrder,
+  paymentTargetReference,
   type PaymentProvider,
+  type ProviderPaymentTarget,
   type VerifiedPaymentResult,
 } from "./types";
 
@@ -131,7 +132,7 @@ function zipAddress(address: NormalizedAddress) {
 }
 
 function assertTrustedMerchantUrls(input: {
-  order: PaymentOrder;
+  order: ProviderPaymentTarget;
   returnState: string;
   returnUrl: string;
   cancelUrl: string;
@@ -154,7 +155,7 @@ function assertTrustedMerchantUrls(input: {
       url.password ||
       url.hash ||
       url.searchParams.get("flow") !== flow ||
-      url.searchParams.get("orderNumber") !== input.order.orderNumber ||
+      url.searchParams.get("orderNumber") !== paymentTargetReference(input.order) ||
       url.searchParams.get("method") !== "zip" ||
       url.searchParams.get("state") !== input.returnState
     ) throw verificationFailure();
@@ -168,14 +169,14 @@ function assertProviderReference(value: string) {
 
 function assertCheckoutIdentity(
   response: CheckoutResponse,
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
   providerReference?: string,
 ) {
   assertProviderReference(response.id);
   if (
     response.state.length === 0 ||
     (providerReference !== undefined && response.id !== providerReference) ||
-    response.order.reference !== order.orderNumber ||
+    response.order.reference !== paymentTargetReference(order) ||
     response.order.currency !== order.currency ||
     moneyToCents(response.order.amount) !== order.amountCents
   ) throw verificationFailure();
@@ -203,19 +204,19 @@ function assertCheckoutRedirect(
 
 function assertCharge(
   response: ChargeResponse,
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
 ) {
   assertProviderReference(response.id);
   if (
     response.state.length === 0 ||
-    response.metadata.order_number !== order.orderNumber ||
+    response.metadata.order_number !== paymentTargetReference(order) ||
     response.currency !== order.currency ||
     moneyToCents(response.amount) !== order.amountCents
   ) throw verificationFailure();
 }
 
 function result(
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
   providerReference: string,
   providerStatus: string,
   status: VerifiedPaymentResult["status"],
@@ -225,7 +226,9 @@ function result(
     providerStatus,
     amountCents: order.amountCents,
     currency: order.currency,
-    orderNumber: order.orderNumber,
+    ...("merchantReference" in order
+      ? { merchantReference: order.merchantReference }
+      : { orderNumber: order.orderNumber }),
     status,
     ...(status === "failed" ? { sanitizedFailureCode: "declined" } : {}),
   });
@@ -233,7 +236,7 @@ function result(
 
 function checkoutResult(
   response: CheckoutResponse,
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
   providerReference: string,
 ) {
   const providerState = response.state.trim().toLowerCase();
@@ -246,7 +249,7 @@ function checkoutResult(
 
 function chargeResult(
   response: ChargeResponse,
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
   providerReference: string,
 ) {
   const providerState = response.state.trim().toLowerCase();
@@ -285,7 +288,7 @@ function stableRequestId(purpose: "checkout" | "charge", idempotencyKey: string)
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
 }
 
-function absentResult(order: PaymentOrder, providerReference: string) {
+function absentResult(order: ProviderPaymentTarget, providerReference: string) {
   return result(order, providerReference, "NOT_FOUND", "processing");
 }
 
@@ -315,7 +318,7 @@ export function createZipProvider({
   }
 
   async function retrieveAuthority(
-    order: PaymentOrder,
+    order: ProviderPaymentTarget,
     providerReference: string,
   ): Promise<
     | Readonly<{ kind: "found"; response: CheckoutResponse; result: VerifiedPaymentResult }>
@@ -345,7 +348,7 @@ export function createZipProvider({
   }
 
   async function charge(
-    order: PaymentOrder,
+    order: ProviderPaymentTarget,
     providerReference: string,
     idempotencyKey: string,
   ) {
@@ -355,7 +358,7 @@ export function createZipProvider({
       headers: { "Idempotency-Key": stableRequestId("charge", idempotencyKey) },
       body: {
         authority: { type: "checkout_id", value: providerReference },
-        reference: order.orderNumber,
+        reference: paymentTargetReference(order),
         amount: formatZipAmount(order.amountCents),
         currency: order.currency,
         capture: true,
@@ -380,7 +383,7 @@ export function createZipProvider({
       if (!eligibility.available) throw verificationFailure();
       assertTrustedMerchantUrls(input);
       const shopperNames = names(input.order.customer.fullName);
-      const billingAddress = zipAddress(input.order.billingAddress);
+      const billingAddress = zipAddress(input.order.billingAddress!);
       const response = await providerJson({
         method: "POST",
         path: "/merchant/checkouts",
@@ -394,15 +397,15 @@ export function createZipProvider({
             billing_address: { ...shopperNames, ...billingAddress },
           },
           order: {
-            reference: input.order.orderNumber,
+            reference: paymentTargetReference(input.order),
             amount: formatZipAmount(input.order.amountCents),
             currency: input.order.currency,
             shipping: {
               pickup: false,
-              address: zipAddress(input.order.deliveryAddress),
+              address: zipAddress(input.order.deliveryAddress!),
             },
           },
-          metadata: { order_number: input.order.orderNumber },
+          metadata: { order_number: paymentTargetReference(input.order) },
           config: { redirect_uri: input.returnUrl },
         },
         validate: isCheckout,

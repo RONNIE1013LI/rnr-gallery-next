@@ -36,6 +36,14 @@ function repository(overrides: Partial<PaymentRequestRepository> = {}) {
     recordBankTransfer: vi.fn(),
     reverseBankTransfer: vi.fn(),
     preflightAndClaimAttempt: vi.fn(),
+    bindProviderSession: vi.fn(),
+    consumeReturnState: vi.fn(),
+    applyVerifiedResult: vi.fn(),
+    ownsProviderReference: vi.fn().mockResolvedValue(false),
+    applyVerifiedWebhookEventAtomically: vi.fn(),
+    claimReconciliationCandidates: vi.fn().mockResolvedValue([]),
+    applyReconciliationResult: vi.fn(),
+    recordReconciliationOutcome: vi.fn(),
     ...overrides,
   } satisfies PaymentRequestRepository;
 }

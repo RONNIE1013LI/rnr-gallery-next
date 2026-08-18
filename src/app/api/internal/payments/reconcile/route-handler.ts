@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { parseAuthConfig } from "@/server/auth/config";
 import { createDrizzleCheckoutRepository } from "@/server/checkout/drizzle-checkout-repository";
 import { getDatabase } from "@/server/db/client";
+import { createDrizzlePaymentRequestRepository } from "@/server/payment-requests/drizzle-payment-request-repository";
 import { parsePaymentConfig } from "@/server/payments/config";
 import { createDrizzlePaymentRepository } from "@/server/payments/drizzle-payment-repository";
 import {
@@ -81,6 +82,7 @@ function defaults(): Dependencies {
     reconciliationSecret: config.operations.reconciliationSecret,
     paymentService: createPaymentService({
       repository: createDrizzlePaymentRepository(database),
+      paymentRequestRepository: createDrizzlePaymentRequestRepository(database),
       checkoutAuthority: createDrizzleCheckoutRepository(database),
       providers,
       returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,

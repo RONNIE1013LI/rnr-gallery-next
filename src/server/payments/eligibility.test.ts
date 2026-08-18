@@ -82,6 +82,20 @@ const localTestConfig: LocalTestPaymentConfig = {
 };
 
 describe("Stripe eligibility", () => {
+  it("allows standalone card payment without address fields", () => {
+    expect(stripeEligibility({
+      amountCents: 20_000,
+      currency: "NZD",
+      customer: {
+        fullName: "Aroha Ngata",
+        email: "aroha@example.test",
+        phone: "",
+      },
+      billingAddress: null,
+      deliveryAddress: null,
+    }, stripeConfig)).toEqual({ available: true });
+  });
+
   it("requires complete configuration and an explicitly supported currency", () => {
     expect(stripeEligibility(orderFor("NZ", "NZD"), stripeConfig)).toEqual({
       available: true,
@@ -100,6 +114,24 @@ describe("Stripe eligibility", () => {
 });
 
 describe("Afterpay eligibility", () => {
+  it("is unavailable when standalone payer address is missing", () => {
+    expect(afterpayEligibility({
+      amountCents: 20_000,
+      currency: "NZD",
+      customer: {
+        fullName: "Aroha Ngata",
+        email: "aroha@example.test",
+        phone: "+64210000000",
+      },
+      billingAddress: null,
+      deliveryAddress: null,
+    }, afterpayConfig, {
+      currency: "NZD",
+      minimumAmountCents: 100,
+      maximumAmountCents: 200_000,
+    })).toEqual({ available: false, reason: "country" });
+  });
+
   const limits = {
     currency: "NZD" as const,
     minimumAmountCents: 100,
@@ -144,6 +176,20 @@ describe("Afterpay eligibility", () => {
 });
 
 describe("Zip eligibility", () => {
+  it("is unavailable when standalone payer address is missing", () => {
+    expect(zipEligibility({
+      amountCents: 20_000,
+      currency: "AUD",
+      customer: {
+        fullName: "Aroha Ngata",
+        email: "aroha@example.test",
+        phone: "+61400000000",
+      },
+      billingAddress: null,
+      deliveryAddress: null,
+    }, zipConfig)).toEqual({ available: false, reason: "country" });
+  });
+
   it("never offers Zip for New Zealand", () => {
     expect(zipEligibility(orderFor("NZ", "AUD"), zipConfig)).toEqual({
       available: false,

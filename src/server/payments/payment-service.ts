@@ -2,8 +2,11 @@ import { createHash } from "node:crypto";
 import type { NormalizedAddress } from "@/domain/address/types";
 import type {
   PaymentMethodKey,
+  PaymentPayerSnapshot,
   PaymentProviderKey,
 } from "@/server/db/schema/payments";
+import type { PaymentRequestRepository } from "@/server/payment-requests/payment-request-repository";
+import { digestPaymentRequestToken } from "@/server/payment-requests/token";
 import type { ReviewedPaymentCheckoutRepository } from "@/server/checkout/checkout-repository";
 import { parsePaymentReturnOrigin } from "./config";
 import type {
@@ -21,6 +24,7 @@ import type {
   PaymentEligibilityContext,
   PaymentOrder,
   PaymentProvider,
+  PaymentTargetSnapshot,
   ProviderSession,
   VerifiedPaymentResult,
   VerifiedProviderEvent,
@@ -71,9 +75,12 @@ export type PaymentReturnInput = Readonly<{
   returnState: string;
   providerReference: string;
   returnUrl: URL;
+  paymentToken?: string;
 }>;
 
-export type PaymentReturnResult = Readonly<{ orderNumber: string }>;
+export type PaymentReturnResult =
+  | Readonly<{ orderNumber: string; paymentToken?: never }>
+  | Readonly<{ paymentToken: string; orderNumber?: never }>;
 
 export type PaymentConfirmationResult = Readonly<{
   payment: PublicPaymentDTO;
@@ -193,8 +200,8 @@ function eligibilityContext(context: PaymentEligibilityContext): PaymentEligibil
       email: context.customer.email,
       phone: context.customer.phone,
     }),
-    billingAddress: minimalAddress(context.billingAddress),
-    deliveryAddress: minimalAddress(context.deliveryAddress),
+    billingAddress: context.billingAddress ? minimalAddress(context.billingAddress) : null,
+    deliveryAddress: context.deliveryAddress ? minimalAddress(context.deliveryAddress) : null,
   });
 }
 
@@ -207,6 +214,35 @@ function providerPaymentOrder(order: PaymentOrder): PaymentOrder {
     customer: Object.freeze({ ...order.customer }),
     billingAddress: minimalAddress(order.billingAddress),
     deliveryAddress: minimalAddress(order.deliveryAddress),
+  });
+}
+
+function providerPaymentRequest(
+  request: Awaited<ReturnType<PaymentRequestRepository["findPublicByDigest"]>> & {},
+  payer: PaymentPayerSnapshot,
+): PaymentTargetSnapshot {
+  const address = payer.address
+    ? Object.freeze({
+        ...payer.address,
+        fullName: payer.fullName,
+        phone: payer.phone,
+        email: payer.email,
+      })
+    : null;
+  return Object.freeze({
+    targetKind: "payment_request",
+    targetId: request.id,
+    merchantReference: request.requestNumber,
+    ...(request.orderNumber ? { orderNumber: request.orderNumber } : {}),
+    amountCents: request.amountCents,
+    currency: request.currency,
+    customer: Object.freeze({
+      fullName: payer.fullName,
+      email: payer.email,
+      phone: payer.phone,
+    }),
+    billingAddress: address,
+    deliveryAddress: address,
   });
 }
 
@@ -263,6 +299,7 @@ function matchesReconciliationAuthority(
 
 export function createPaymentService({
   repository,
+  paymentRequestRepository,
   checkoutAuthority,
   providers,
   returnBaseUrl,
@@ -270,6 +307,7 @@ export function createPaymentService({
   nodeEnv = process.env.NODE_ENV,
 }: {
   repository: PaymentRepository;
+  paymentRequestRepository?: PaymentRequestRepository;
   checkoutAuthority: CheckoutPaymentAuthority;
   providers: readonly PaymentProviderRegistration[];
   returnBaseUrl: string;
@@ -308,6 +346,121 @@ export function createPaymentService({
   }
 
   return {
+    async startPaymentRequest(
+      access: Readonly<{
+        rawToken: string;
+        tokenDigest: string;
+        payerSnapshot: PaymentPayerSnapshot;
+      }>,
+      method: PaymentMethodKey,
+    ): Promise<PaymentStartResult> {
+      if (
+        !paymentRequestRepository ||
+        !/^[A-Za-z0-9_-]{43}$/.test(access.rawToken) ||
+        !/^[a-f0-9]{64}$/.test(access.tokenDigest)
+      ) throw unavailableStart();
+      const registration = byMethod.get(method);
+      if (!registration) throw unavailableStart();
+      const publicRequest = await paymentRequestRepository.findPublicByDigest(
+        access.tokenDigest,
+      );
+      if (!publicRequest || publicRequest.status !== "pending") throw unavailableStart();
+      let initialTarget = providerPaymentRequest(publicRequest, access.payerSnapshot);
+      try {
+        const availability = await registration.provider.availability(
+          eligibilityContext(initialTarget),
+        );
+        if (!availability.available) throw unavailableStart();
+      } catch (error) {
+        if (error instanceof PaymentServiceError) throw error;
+        throw unavailableStart();
+      }
+      const claim = await paymentRequestRepository.preflightAndClaimAttempt({
+        publicTokenDigest: access.tokenDigest,
+        provider: registration.provider.key,
+        method,
+        payerSnapshot: access.payerSnapshot,
+      });
+      initialTarget = providerPaymentRequest(claim.request, access.payerSnapshot);
+      const createSession = async (
+        stableReturnState?: string,
+        providerReference?: string,
+      ) => {
+        const returnState = stableReturnState ?? deriveReturnState({
+          attemptId: claim.attempt.id,
+          idempotencyKey: claim.attempt.idempotencyKey,
+          provider: registration.provider.key,
+          method,
+        });
+        if (!/^[a-f0-9]{64}$/.test(returnState)) throw new Error("Invalid return state");
+        const returnUrl = new URL(trustedPaymentUrl(
+          trustedOrigin,
+          registration.provider.key,
+          "return",
+          claim.request.requestNumber,
+          method,
+          returnState,
+        ));
+        returnUrl.searchParams.set("paymentToken", access.rawToken);
+        const cancelUrl = new URL(trustedPaymentUrl(
+          trustedOrigin,
+          registration.provider.key,
+          "cancel",
+          claim.request.requestNumber,
+          method,
+          returnState,
+        ));
+        cancelUrl.searchParams.set("paymentToken", access.rawToken);
+        const session = await registration.provider.createOrReuse({
+          order: initialTarget,
+          attemptId: claim.attempt.id,
+          idempotencyKey: claim.attempt.idempotencyKey,
+          providerReference,
+          returnState,
+          returnUrl: returnUrl.toString(),
+          cancelUrl: cancelUrl.toString(),
+        });
+        if (!hasExpectedIdentity(session, registration.provider, method)) {
+          throw new Error("Payment provider identity mismatch");
+        }
+        return { returnState, session };
+      };
+      if (claim.outcome === "existing" || !claim.claimId) {
+        if (!claim.attempt.providerReference) {
+          return Object.freeze({
+            payment: publicPayment(method, claim.attempt.status, registration.isTest),
+            action: null,
+          });
+        }
+        throw new PaymentServiceError(
+          "PAYMENT_ATTEMPT_IN_PROGRESS",
+          "Another payment attempt is in progress",
+        );
+      }
+      let created;
+      try {
+        created = await createSession();
+      } catch {
+        throw unavailableStart();
+      }
+      const status = created.session.kind === "elements" ? "processing" : "requires_action";
+      try {
+        await paymentRequestRepository.bindProviderSession({
+          attemptId: claim.attempt.id,
+          claimId: claim.claimId,
+          providerReference: created.session.providerReference,
+          returnStateDigest: digestReturnState(created.returnState),
+          status,
+        });
+      } catch {
+        throw unavailableStart();
+      }
+      return Object.freeze({
+        payment: publicPayment(method, status, registration.isTest),
+        action: toImmediatePaymentActionDTO(created.session),
+      });
+    },
+
     async changePaymentMethod(
       access: PaymentOrderAccess,
     ): Promise<PaymentConfirmationResult> {
@@ -489,6 +642,83 @@ export function createPaymentService({
         }
       }
 
+      if (paymentRequestRepository) {
+        for (let index = summary.processed; index < 50; index += 1) {
+          const [candidate] = await paymentRequestRepository
+            .claimReconciliationCandidates(1);
+          if (!candidate) break;
+          summary.processed += 1;
+          const recordOutcome = async (code: string) => {
+            try {
+              await paymentRequestRepository.recordReconciliationOutcome({
+                attemptId: candidate.attempt.id,
+                claimId: candidate.claimId,
+                code,
+              });
+            } catch {
+              // A concurrent verified transition may already own the final state.
+            }
+          };
+          try {
+            const registration = byMethod.get(candidate.attempt.method);
+            if (
+              !registration ||
+              registration.provider.key !== candidate.attempt.provider ||
+              !candidate.attempt.providerReference ||
+              !candidate.attempt.payerSnapshot
+            ) throw new PaymentProviderVerificationError();
+            const target = providerPaymentRequest(
+              candidate.request,
+              candidate.attempt.payerSnapshot,
+            );
+            const authority = await registration.provider.retrieve({
+              order: target,
+              providerReference: candidate.attempt.providerReference,
+            });
+            let result: VerifiedPaymentResult;
+            if (authority.kind === "verified") {
+              result = authority.result;
+            } else {
+              if (!registration.provider.retryCompletion) {
+                await recordOutcome("reconciliation_pending");
+                summary.pending += 1;
+                continue;
+              }
+              summary.retried += 1;
+              result = await registration.provider.retryCompletion({
+                order: target,
+                providerReference: candidate.attempt.providerReference,
+                idempotencyKey: candidate.attempt.idempotencyKey,
+                attemptCreatedAt: candidate.attempt.createdAt,
+                source: "reconciliation",
+              });
+            }
+            if (
+              result.providerReference !== candidate.attempt.providerReference ||
+              result.amountCents !== candidate.request.amountCents ||
+              result.currency !== candidate.request.currency ||
+              (result.merchantReference ?? result.orderNumber) !==
+                candidate.request.requestNumber
+            ) throw new PaymentProviderVerificationError();
+            await paymentRequestRepository.applyReconciliationResult({
+              attemptId: candidate.attempt.id,
+              claimId: candidate.claimId,
+              result,
+            });
+            summary.applied += 1;
+            if (result.status === "processing") summary.pending += 1;
+          } catch (error) {
+            if (error instanceof PaymentProviderRequestError) {
+              await recordOutcome("reconciliation_retrieval_unavailable");
+              summary.pending += 1;
+            } else {
+              await recordOutcome("reconciliation_verification_failed");
+              summary.failed += 1;
+            }
+          }
+        }
+      }
+
       return Object.freeze(summary);
     },
 
@@ -500,6 +730,20 @@ export function createPaymentService({
         throw new Error("Payment webhook provider is unavailable");
       }
       const payloadSha256 = createHash("sha256").update(rawBody).digest("hex");
+      if (
+        paymentRequestRepository &&
+        await paymentRequestRepository.ownsProviderReference(
+          event.provider,
+          event.result.providerReference,
+        )
+      ) {
+        return paymentRequestRepository.applyVerifiedWebhookEventAtomically({
+          provider: event.provider,
+          providerEventId: event.providerEventId,
+          result: event.result,
+          payloadSha256,
+        });
+      }
       return repository.applyVerifiedWebhookEventAtomically({
         provider: event.provider,
         providerEventId: event.providerEventId,
@@ -542,6 +786,74 @@ export function createPaymentService({
         !/^[a-f0-9]{64}$/.test(input.returnState)
       ) {
         throw unavailableReturn();
+      }
+
+      if (input.paymentToken !== undefined) {
+        if (!paymentRequestRepository || !/^[A-Za-z0-9_-]{43}$/.test(input.paymentToken)) {
+          throw unavailableReturn();
+        }
+        const consumedRequest = await paymentRequestRepository.consumeReturnState({
+          provider: input.provider,
+          method: input.method,
+          digest: digestReturnState(input.returnState),
+          publicTokenDigest: digestPaymentRequestToken(input.paymentToken),
+          merchantReference: input.orderNumber,
+          providerReference: input.providerReference,
+        });
+        if (!consumedRequest) throw unavailableReturn();
+        if (consumedRequest.outcome === "already_consumed") {
+          return Object.freeze({ paymentToken: input.paymentToken });
+        }
+        const { attempt: storedAttempt, request: storedRequest } = consumedRequest;
+        if (
+          storedAttempt.provider !== input.provider ||
+          storedAttempt.method !== input.method ||
+          storedAttempt.providerReference !== input.providerReference ||
+          storedAttempt.returnStateDigest !== digestReturnState(input.returnState) ||
+          storedAttempt.expectedAmountCents !== storedRequest.amountCents ||
+          storedAttempt.currency !== storedRequest.currency ||
+          !storedAttempt.payerSnapshot
+        ) throw unavailableReturn();
+        if (
+          storedAttempt.status === "cancelled" ||
+          input.provider === "stripe" ||
+          (input.provider === "zip" && storedRequest.currency !== "AUD")
+        ) return Object.freeze({ paymentToken: input.paymentToken });
+
+        const target = providerPaymentRequest(storedRequest, storedAttempt.payerSnapshot);
+        let result;
+        try {
+          result = await registration.provider.completeReturn({
+            order: target,
+            providerReference: storedAttempt.providerReference,
+            idempotencyKey: storedAttempt.idempotencyKey,
+            attemptCreatedAt: storedAttempt.createdAt,
+            returnState: input.returnState,
+            returnUrl: input.returnUrl,
+          });
+        } catch (error) {
+          if (error instanceof PaymentProviderVerificationError) throw unavailableReturn();
+          if (!(error instanceof PaymentProviderRequestError)) throw error;
+          await paymentRequestRepository.applyVerifiedResult({
+            attemptId: storedAttempt.id,
+            result: {
+              providerReference: storedAttempt.providerReference,
+              providerStatus: "RETURN_STATUS_UNKNOWN",
+              amountCents: storedAttempt.expectedAmountCents,
+              currency: storedAttempt.currency,
+              merchantReference: storedRequest.requestNumber,
+              status: "processing",
+            },
+            source: "browser_return",
+          });
+          return Object.freeze({ paymentToken: input.paymentToken });
+        }
+        await paymentRequestRepository.applyVerifiedResult({
+          attemptId: storedAttempt.id,
+          result,
+          source: "server_capture",
+        });
+        return Object.freeze({ paymentToken: input.paymentToken });
       }
 
       const consumed = await repository.consumeReturnState({

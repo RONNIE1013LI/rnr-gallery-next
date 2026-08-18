@@ -4,8 +4,9 @@ import { stripeEligibility } from "./eligibility";
 import {
   PaymentProviderRequestError,
   PaymentProviderVerificationError,
-  type PaymentOrder,
+  paymentTargetReference,
   type PaymentProvider,
+  type ProviderPaymentTarget,
   type VerifiedPaymentResult,
 } from "./types";
 
@@ -38,7 +39,7 @@ type StripeCreateParams = Readonly<{
   amount: number;
   currency: string;
   payment_method_types: readonly ["card"];
-  metadata: Readonly<{ order_number: string }>;
+  metadata: Readonly<Record<string, string>>;
 }>;
 
 export type StripeClient = Readonly<{
@@ -92,7 +93,7 @@ function verificationFailure(): Error {
 
 function assertIntent(
   intent: StripePaymentIntent,
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
   expectedReference?: string,
 ) {
   if (
@@ -104,7 +105,8 @@ function assertIntent(
     intent.amount !== order.amountCents ||
     intent.currency !== order.currency.toLowerCase() ||
     !intent.metadata ||
-    intent.metadata.order_number !== order.orderNumber ||
+    (intent.metadata.merchant_reference ?? intent.metadata.order_number) !==
+      paymentTargetReference(order) ||
     typeof intent.status !== "string" ||
     intent.status.length === 0
   ) throw verificationFailure();
@@ -119,7 +121,7 @@ function verifiedStatus(status: string): VerifiedPaymentResult["status"] {
 
 function verifiedResult(
   intent: StripePaymentIntent,
-  order: PaymentOrder,
+  order: ProviderPaymentTarget,
 ): VerifiedPaymentResult {
   const status = verifiedStatus(intent.status);
   return Object.freeze({
@@ -127,7 +129,9 @@ function verifiedResult(
     providerStatus: intent.status,
     amountCents: order.amountCents,
     currency: order.currency,
-    orderNumber: order.orderNumber,
+    ...("merchantReference" in order
+      ? { merchantReference: order.merchantReference }
+      : { orderNumber: order.orderNumber }),
     status,
     ...(status === "failed" ? { sanitizedFailureCode: "payment_method_required" } : {}),
   });
@@ -154,7 +158,8 @@ function verifiedWebhookResult(
   if (event.type === "charge.refunded") {
     const charge = intent as StripeCharge;
     const currency = charge?.currency?.toUpperCase();
-    const orderNumber = charge?.metadata?.order_number;
+    const merchantReference = charge?.metadata?.merchant_reference ??
+      charge?.metadata?.order_number;
     if (
       typeof event.id !== "string" ||
       !event.id.startsWith("evt_") ||
@@ -168,8 +173,8 @@ function verifiedWebhookResult(
       charge.amount_refunded !== charge.amount ||
       charge.refunded !== true ||
       !config.supportedCurrencies.includes(currency as VerifiedPaymentResult["currency"]) ||
-      typeof orderNumber !== "string" ||
-      !orderNumber.trim()
+      typeof merchantReference !== "string" ||
+      !merchantReference.trim()
     ) throw verificationFailure();
     return Object.freeze({
       provider: "stripe" as const,
@@ -179,7 +184,9 @@ function verifiedWebhookResult(
         providerStatus: "refunded",
         amountCents: charge.amount,
         currency: currency as VerifiedPaymentResult["currency"],
-        orderNumber,
+        ...(charge.metadata.merchant_reference
+          ? { merchantReference }
+          : { orderNumber: merchantReference }),
         status: "refunded" as const,
       }),
     });
@@ -188,7 +195,8 @@ function verifiedWebhookResult(
   const mapping = webhookStatuses[event.type as keyof typeof webhookStatuses];
   const paymentIntent = intent as StripePaymentIntent;
   const currency = paymentIntent?.currency?.toUpperCase();
-  const orderNumber = paymentIntent?.metadata?.order_number;
+  const merchantReference = paymentIntent?.metadata?.merchant_reference ??
+    paymentIntent?.metadata?.order_number;
   if (
     typeof event.id !== "string" ||
     !event.id.startsWith("evt_") ||
@@ -199,9 +207,9 @@ function verifiedWebhookResult(
     !Number.isSafeInteger(paymentIntent.amount) ||
     paymentIntent.amount <= 0 ||
     !config.supportedCurrencies.includes(currency as VerifiedPaymentResult["currency"]) ||
-    typeof orderNumber !== "string" ||
-    orderNumber.length === 0 ||
-    orderNumber !== orderNumber.trim() ||
+    typeof merchantReference !== "string" ||
+    merchantReference.length === 0 ||
+    merchantReference !== merchantReference.trim() ||
     paymentIntent.status !== mapping.providerStatus
   ) {
     throw verificationFailure();
@@ -211,7 +219,9 @@ function verifiedWebhookResult(
     providerStatus: paymentIntent.status,
     amountCents: paymentIntent.amount,
     currency: currency as VerifiedPaymentResult["currency"],
-    orderNumber,
+    ...(paymentIntent.metadata.merchant_reference
+      ? { merchantReference }
+      : { orderNumber: merchantReference }),
     status: mapping.status,
     ...(mapping.status === "failed"
       ? { sanitizedFailureCode: "payment_method_required" }
@@ -231,7 +241,7 @@ export function createStripeProvider({
   config: EnabledStripeConfig;
   client?: StripeClient;
 }): PaymentProvider {
-  async function retrieve(order: PaymentOrder, providerReference: string) {
+  async function retrieve(order: ProviderPaymentTarget, providerReference: string) {
     let intent: StripePaymentIntent;
     try {
       intent = await client.paymentIntents.retrieve(providerReference);
@@ -263,7 +273,10 @@ export function createStripeProvider({
               amount: input.order.amountCents,
               currency: input.order.currency.toLowerCase(),
               payment_method_types: ["card"],
-              metadata: { order_number: input.order.orderNumber },
+              metadata: "targetKind" in input.order &&
+                  input.order.targetKind === "payment_request"
+                ? { merchant_reference: paymentTargetReference(input.order) }
+                : { order_number: paymentTargetReference(input.order) },
             }, { idempotencyKey: input.idempotencyKey });
       } catch {
         throw requestFailure();

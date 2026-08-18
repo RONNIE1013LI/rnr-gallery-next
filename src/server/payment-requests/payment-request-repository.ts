@@ -9,6 +9,9 @@ import type {
   PaymentRequestKind,
   PaymentRequestStatus,
 } from "@/server/db/schema/payments";
+import type { PaymentVerificationSource } from "@/server/payments/state-machine";
+import type { VerifiedEventInput } from "@/server/payments/payment-repository";
+import type { VerifiedPaymentResult } from "@/server/payments/types";
 
 export type PaymentRequestRecord = Readonly<{
   id: string;
@@ -73,9 +76,35 @@ export type RequestAttemptClaim = Readonly<{
     method: PaymentMethodKey;
     status: PaymentAttemptStatus;
     providerReference: string | null;
+    returnStateDigest: string | null;
+    returnStateConsumedAt: Date | null;
     idempotencyKey: string;
+    expectedAmountCents: number;
+    currency: MarketCurrency;
+    payerSnapshot: PaymentPayerSnapshot | null;
+    createdAt: Date;
   }>;
   claimId: string | null;
+}>;
+
+export type PaymentRequestAttemptResult = Readonly<{
+  request: PaymentRequestRecord;
+  attempt: RequestAttemptClaim["attempt"];
+}>;
+
+export type ConsumedPaymentRequestReturn =
+  | Readonly<{
+      outcome: "consumed";
+      request: PaymentRequestRecord;
+      attempt: RequestAttemptClaim["attempt"];
+    }>
+  | Readonly<{
+      outcome: "already_consumed";
+      requestNumber: string;
+    }>;
+
+export type PaymentRequestReconciliationCandidate = PaymentRequestAttemptResult & Readonly<{
+  claimId: string;
 }>;
 
 export type OrderPaymentSummary = Readonly<{
@@ -122,4 +151,44 @@ export interface PaymentRequestRepository {
     method: PaymentMethodKey;
     payerSnapshot: PaymentPayerSnapshot | null;
   }>): Promise<RequestAttemptClaim>;
+  bindProviderSession(input: Readonly<{
+    attemptId: string;
+    claimId: string;
+    providerReference: string;
+    returnStateDigest: string | null;
+    status: Extract<PaymentAttemptStatus, "requires_action" | "processing">;
+  }>): Promise<RequestAttemptClaim["attempt"]>;
+  consumeReturnState(input: Readonly<{
+    provider: PaymentProviderKey;
+    method: PaymentMethodKey;
+    digest: string;
+    publicTokenDigest: string;
+    merchantReference: string;
+    providerReference: string;
+  }>): Promise<ConsumedPaymentRequestReturn | null>;
+  applyVerifiedResult(input: Readonly<{
+    attemptId: string;
+    result: VerifiedPaymentResult;
+    source: PaymentVerificationSource;
+  }>): Promise<PaymentRequestAttemptResult>;
+  ownsProviderReference(
+    provider: PaymentProviderKey,
+    providerReference: string,
+  ): Promise<boolean>;
+  applyVerifiedWebhookEventAtomically(
+    input: VerifiedEventInput,
+  ): Promise<"applied" | "duplicate" | "hash_mismatch">;
+  claimReconciliationCandidates(
+    limit: number,
+  ): Promise<readonly PaymentRequestReconciliationCandidate[]>;
+  applyReconciliationResult(input: Readonly<{
+    attemptId: string;
+    claimId: string;
+    result: VerifiedPaymentResult;
+  }>): Promise<PaymentRequestAttemptResult>;
+  recordReconciliationOutcome(input: Readonly<{
+    attemptId: string;
+    claimId: string;
+    code: string;
+  }>): Promise<void>;
 }

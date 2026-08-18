@@ -19,21 +19,41 @@ export type PaymentEligibilityContext = Readonly<{
     email: string;
     phone: string;
   }>;
+  billingAddress: NormalizedAddress | null;
+  deliveryAddress: NormalizedAddress | null;
+}>;
+
+export type PaymentOrder = Omit<
+  PaymentEligibilityContext,
+  "billingAddress" | "deliveryAddress"
+> & Readonly<{
+  id: string;
+  orderNumber: string;
   billingAddress: NormalizedAddress;
   deliveryAddress: NormalizedAddress;
 }>;
 
-export type PaymentOrder = PaymentEligibilityContext & Readonly<{
-  id: string;
-  orderNumber: string;
+export type PaymentTargetSnapshot = PaymentEligibilityContext & Readonly<{
+  targetKind: "order" | "payment_request";
+  targetId: string;
+  merchantReference: string;
+  orderNumber?: string;
 }>;
+
+export type ProviderPaymentTarget = PaymentOrder | PaymentTargetSnapshot;
+
+export function paymentTargetReference(target: ProviderPaymentTarget): string {
+  return "merchantReference" in target
+    ? target.merchantReference
+    : target.orderNumber;
+}
 
 export type ProviderAvailability =
   | Readonly<{ available: true }>
   | Readonly<{ available: false; reason: string }>;
 
 export type CreateProviderSessionInput = Readonly<{
-  order: PaymentOrder;
+  order: ProviderPaymentTarget;
   attemptId: string;
   idempotencyKey: string;
   providerReference?: string;
@@ -43,7 +63,7 @@ export type CreateProviderSessionInput = Readonly<{
 }>;
 
 export type CompleteProviderReturnInput = Readonly<{
-  order: PaymentOrder;
+  order: ProviderPaymentTarget;
   providerReference: string;
   idempotencyKey: string;
   attemptCreatedAt: Date;
@@ -52,12 +72,12 @@ export type CompleteProviderReturnInput = Readonly<{
 }>;
 
 export type RetrieveProviderPaymentInput = Readonly<{
-  order: PaymentOrder;
+  order: ProviderPaymentTarget;
   providerReference: string;
 }>;
 
 export type RetryProviderCompletionInput = Readonly<{
-  order: PaymentOrder;
+  order: ProviderPaymentTarget;
   providerReference: string;
   idempotencyKey: string;
   attemptCreatedAt: Date;
@@ -101,7 +121,8 @@ export type VerifiedPaymentResult = Readonly<{
   providerStatus: string;
   amountCents: number;
   currency: PaymentCurrency;
-  orderNumber: string;
+  merchantReference?: string;
+  orderNumber?: string;
   status: VerifiedPaymentStatus;
   sanitizedFailureCode?: string;
 }>;

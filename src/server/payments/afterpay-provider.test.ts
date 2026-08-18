@@ -9,6 +9,7 @@ import type {
   CompleteProviderReturnInput,
   CreateProviderSessionInput,
   PaymentOrder,
+  PaymentTargetSnapshot,
 } from "./types";
 
 const token = "002.checkout_token_123456789";
@@ -128,6 +129,44 @@ function completeInput(
 }
 
 describe("Afterpay provider", () => {
+  it("uses the fixed Payment Request reference and amount", async () => {
+    const payerAddress = address();
+    const target: PaymentTargetSnapshot = {
+      targetKind: "payment_request",
+      targetId: "request-id",
+      merchantReference: "PAY-08001",
+      amountCents: 20_000,
+      currency: "NZD",
+      customer: {
+        fullName: payerAddress.fullName,
+        email: payerAddress.email,
+        phone: payerAddress.phone,
+      },
+      billingAddress: payerAddress,
+      deliveryAddress: payerAddress,
+    };
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(configuration()))
+      .mockResolvedValueOnce(jsonResponse({
+        ...checkoutResponse(),
+        amount: { amount: "200.00", currency: "NZD" },
+        merchantReference: "PAY-08001",
+      }));
+    const provider = createAfterpayProvider({ config: config(), fetchImpl });
+    const input: CreateProviderSessionInput = {
+      ...sessionInput(),
+      order: target,
+      returnUrl: `https://shop.example.test/api/payments/returns/afterpay?flow=return&orderNumber=PAY-08001&method=afterpay&state=${state}`,
+      cancelUrl: `https://shop.example.test/api/payments/returns/afterpay?flow=cancel&orderNumber=PAY-08001&method=afterpay&state=${state}`,
+    };
+
+    await provider.createOrReuse(input);
+    const body = JSON.parse(String((fetchImpl.mock.calls[1]?.[1] as RequestInit).body));
+    expect(body.amount).toEqual({ amount: "200.00", currency: "NZD" });
+    expect(body.merchantReference).toBe("PAY-08001");
+    expect(body).not.toHaveProperty("quantity");
+  });
+
   it.each([
     [1, "0.01"],
     [100, "1.00"],

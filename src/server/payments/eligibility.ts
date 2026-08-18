@@ -71,7 +71,11 @@ export function afterpayEligibility(
 ): PaymentEligibilityResult {
   if (!hasValidAmount(order)) return unavailable("amount");
   if (!config.enabled) return unavailable("configuration");
-  if (order.billingAddress.country !== config.merchantCountry) {
+  if (
+    !order.billingAddress ||
+    !order.deliveryAddress ||
+    order.billingAddress.country !== config.merchantCountry
+  ) {
     return unavailable("country");
   }
   if (order.currency !== config.currency) return unavailable("currency");
@@ -101,6 +105,8 @@ export function zipEligibility(
   if (!hasValidAmount(order)) return unavailable("amount");
   if (!config.enabled) return unavailable("configuration");
   if (
+    !order.billingAddress ||
+    !order.deliveryAddress ||
     order.billingAddress.country !== "AU" ||
     order.deliveryAddress.country !== "AU" ||
     config.merchantCountry !== "AU"
@@ -143,10 +149,13 @@ export function localTestEligibility(
       : unavailable("currency");
   } else if (method === "afterpay") {
     result =
+      order.billingAddress &&
       order.currency === COUNTRY_CURRENCY[order.billingAddress.country]
         ? available
-        : unavailable("currency");
+        : unavailable(order.billingAddress ? "currency" : "country");
   } else if (
+    !order.billingAddress ||
+    !order.deliveryAddress ||
     order.billingAddress.country !== "AU" ||
     order.deliveryAddress.country !== "AU"
   ) {

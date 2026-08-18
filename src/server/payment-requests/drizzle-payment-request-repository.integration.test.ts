@@ -11,6 +11,7 @@ import {
   paymentLedgerEntries,
   paymentRequests,
   user,
+  webhookEvents,
 } from "@/server/db/schema";
 import {
   PaymentRequestConflictError,
@@ -30,6 +31,7 @@ const actorId = `payment-request-admin-${suffix}`;
 const orderIds: string[] = [];
 const sessionIds: string[] = [];
 const requestIds: string[] = [];
+const webhookEventIds: string[] = [];
 
 async function createOrder(totalCents = 40_000) {
   const [session] = await database.insert(checkoutSessions).values({
@@ -154,6 +156,11 @@ describe("payment request balance transactions", () => {
   });
 
   afterAll(async () => {
+    if (webhookEventIds.length) {
+      await database.delete(webhookEvents).where(
+        inArray(webhookEvents.providerEventId, webhookEventIds),
+      );
+    }
     if (requestIds.length) {
       await database.delete(paymentLedgerEntries).where(
         inArray(paymentLedgerEntries.paymentRequestId, requestIds),
@@ -369,5 +376,108 @@ describe("payment request balance transactions", () => {
       publicTokenDigest: "e".repeat(64),
       actorId,
     })).rejects.toBeInstanceOf(PaymentRequestConflictError);
+  });
+
+  it("binds and applies one verified online payment ledger entry idempotently", async () => {
+    const order = await createOrder();
+    const request = await remember(repository.createRequest(orderRequest(order.id, 20_000)));
+    const claim = await repository.preflightAndClaimAttempt({
+      publicTokenDigest: request.publicTokenDigest,
+      provider: "stripe",
+      method: "card",
+      payerSnapshot: null,
+    });
+    expect(claim.claimId).toBeTruthy();
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference: "pi_payment_request_123",
+      returnStateDigest: "b".repeat(64),
+      status: "processing",
+    });
+
+    const verified = {
+      providerReference: "pi_payment_request_123",
+      providerStatus: "succeeded",
+      amountCents: 20_000,
+      currency: "NZD" as const,
+      merchantReference: request.requestNumber,
+      status: "paid" as const,
+    };
+    await expect(repository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      result: verified,
+      source: "verified_webhook",
+    })).resolves.toMatchObject({ request: { id: request.id, status: "paid" } });
+    await expect(repository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      result: verified,
+      source: "reconciliation",
+    })).resolves.toMatchObject({ request: { id: request.id, status: "paid" } });
+
+    const ledger = await database.select().from(paymentLedgerEntries)
+      .where(eq(paymentLedgerEntries.paymentAttemptId, claim.attempt.id));
+    expect(ledger).toHaveLength(1);
+    expect(ledger[0]).toMatchObject({
+      entryType: "online_payment",
+      direction: "credit",
+      amountCents: 20_000,
+      currency: "NZD",
+      orderId: order.id,
+      paymentRequestId: request.id,
+    });
+    await expect(repository.getOrderSummary(order.id)).resolves.toMatchObject({
+      netPaidCents: 20_000,
+      outstandingCents: 20_000,
+      reservedCents: 0,
+    });
+  });
+
+  it("applies a verified Payment Request webhook atomically and deduplicates it", async () => {
+    const request = await remember(repository.createRequest({
+      ...orderRequest(randomUUID(), 20_000),
+      kind: "standalone",
+      orderId: null,
+    }));
+    const claim = await repository.preflightAndClaimAttempt({
+      publicTokenDigest: request.publicTokenDigest,
+      provider: "stripe",
+      method: "card",
+      payerSnapshot: { fullName: "Payer", email: "payer@example.test", phone: "" },
+    });
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference: "pi_payment_request_webhook",
+      returnStateDigest: "c".repeat(64),
+      status: "processing",
+    });
+    const providerEventId = `evt_request_${randomUUID().replaceAll("-", "")}`;
+    webhookEventIds.push(providerEventId);
+    const input = {
+      provider: "stripe" as const,
+      providerEventId,
+      payloadSha256: "d".repeat(64),
+      result: {
+        providerReference: "pi_payment_request_webhook",
+        providerStatus: "succeeded",
+        amountCents: 20_000,
+        currency: "NZD" as const,
+        merchantReference: request.requestNumber,
+        status: "paid" as const,
+      },
+    };
+
+    await expect(repository.applyVerifiedWebhookEventAtomically(input))
+      .resolves.toBe("applied");
+    await expect(repository.applyVerifiedWebhookEventAtomically(input))
+      .resolves.toBe("duplicate");
+    await expect(repository.applyVerifiedWebhookEventAtomically({
+      ...input,
+      payloadSha256: "e".repeat(64),
+    })).resolves.toBe("hash_mismatch");
+    const ledger = await database.select().from(paymentLedgerEntries)
+      .where(eq(paymentLedgerEntries.paymentAttemptId, claim.attempt.id));
+    expect(ledger).toHaveLength(1);
   });
 });
