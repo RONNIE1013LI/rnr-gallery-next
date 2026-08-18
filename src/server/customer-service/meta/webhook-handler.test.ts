@@ -116,9 +116,24 @@ describe("Meta webhook handler", () => {
     expect((await current.handlers.POST(signedRequest(echo))).status).toBe(200);
     expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
       role: "staff",
+      eventType: "human_outbound",
       text: "How do I prepare my photos?",
+      bodyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      redactionCodes: [],
+      learningEligible: true,
     }));
     expect(current.scheduleAfter).not.toHaveBeenCalled();
+    expect(current.generateDraft).not.toHaveBeenCalled();
+  });
+
+  it("does not generate when a delayed customer turn became terminal after a human reply", async () => {
+    const current = setup();
+    await current.handlers.POST(signedRequest(messagePayload()));
+    current.sealTurn.mockResolvedValueOnce({ status: "already_terminal" });
+
+    await current.scheduledTasks[0]();
+
+    expect(current.generateDraft).not.toHaveBeenCalled();
   });
 
   it("seals a pending customer turn before generating one draft", async () => {

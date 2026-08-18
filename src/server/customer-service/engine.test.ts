@@ -50,6 +50,7 @@ function repositoryFor(body: string | null, withImage = false) {
     completeImageAnalysisAttempt: vi.fn(async () => undefined),
     markImageAttachmentDeleted: vi.fn(async () => undefined),
     reserveProviderAttempt: vi.fn(async () => ({ status: "reserved" as const, attemptId: "attempt-1" })),
+    confirmProviderInvocation: vi.fn(async () => ({ status: "allowed" as const })),
     createImageJobProviderAttempt: vi.fn<CustomerServiceRepository["createImageJobProviderAttempt"]>(
       async () => ({ status: "reserved" as const, attemptId: "attempt-image-text-1" }),
     ),
@@ -233,6 +234,21 @@ describe("CustomerServiceEngine", () => {
     expect(current.image.attachmentStore.save).not.toHaveBeenCalled();
     expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
     expect(current.provider.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call the provider when a human echo arrives after reservation", async () => {
+    const current = setup("Can you explain the design process?");
+    current.repository.confirmProviderInvocation.mockResolvedValueOnce({ status: "human_reply_received" });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" }))
+      .resolves.toEqual({ status: "human_reply_received", attemptId: "attempt-1" });
+
+    expect(current.repository.reserveProviderAttempt).toHaveBeenCalledOnce();
+    expect(current.repository.confirmProviderInvocation).toHaveBeenCalledWith({
+      attemptId: "attempt-1",
+      dailyScopeKey: expect.stringMatching(/^daily:/),
+    });
+    expect(current.provider.generate).not.toHaveBeenCalled();
   });
 
   it("uses same-conversation staff context to interpret a short location reply", async () => {

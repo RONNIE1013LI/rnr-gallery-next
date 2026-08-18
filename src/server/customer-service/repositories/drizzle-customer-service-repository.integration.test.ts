@@ -9,6 +9,11 @@ import {
   customerServiceConversationEvents,
   customerServiceConversations,
   customerServiceFeedbackEvents,
+  customerServiceCaseMemories,
+  customerServiceCaseRetrievals,
+  customerServiceHumanReplyMatches,
+  customerServiceHumanReplyMatchEvents,
+  customerServiceLearningCandidates,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
   customerServiceImageJobs,
@@ -70,6 +75,11 @@ function imageCompletion(attemptId: string, status: "analyzed" | "provider_error
 }
 
 async function clearTables() {
+  await database.delete(customerServiceCaseRetrievals);
+  await database.delete(customerServiceLearningCandidates);
+  await database.delete(customerServiceCaseMemories);
+  await database.delete(customerServiceHumanReplyMatchEvents);
+  await database.delete(customerServiceHumanReplyMatches);
   await database.delete(customerServiceFeedbackEvents);
   await database.delete(customerServiceImageJobs);
   await database.delete(customerServiceAiAttempts);
@@ -197,6 +207,346 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       { role: "staff", body: "Which type of banner do you need?" },
     ]);
     expect(messages.rows[0]).toEqual({ count: 1 });
+  });
+
+  it("persists a human outbound echo and atomically suppresses its open customer turn", async () => {
+    const conversationHash = "a1".repeat(32);
+    const incoming = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "b1".repeat(32),
+      text: "How much are your banners?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    expect(incoming.status).toBe("turn_pending");
+    if (incoming.status !== "turn_pending") return;
+
+    const outbound = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "c1".repeat(32),
+      text: "Which type of banner do you need?",
+      eventType: "human_outbound",
+      bodyHash: "d1".repeat(32),
+      redactionCodes: [],
+      replyToExternalMessageKeyHash: "b1".repeat(32),
+      learningEligible: true,
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:01.000Z"),
+    } as Parameters<typeof repository.ingestConversationEvent>[0]);
+
+    expect(outbound).toEqual({ status: "context_only" });
+    const [turn] = await database.select().from(customerServiceTurns)
+      .where(eq(customerServiceTurns.id, incoming.turnId));
+    expect(turn).toMatchObject({
+      status: "suppressed",
+      suppressionReason: "human_outbound_received",
+    });
+    await expect(repository.sealDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-18T00:00:03.000Z"),
+    })).resolves.toEqual({ status: "already_terminal" });
+    const events = await database.select().from(customerServiceConversationEvents)
+      .where(eq(customerServiceConversationEvents.conversationId, turn.conversationId))
+      .orderBy(asc(customerServiceConversationEvents.receivedAt));
+    expect(events.map((event) => ({
+      role: event.role,
+      eventType: event.eventType,
+      body: event.body,
+      learningEligible: event.learningEligible,
+    }))).toEqual([
+      {
+        role: "customer",
+        eventType: "customer_message",
+        body: "How much are your banners?",
+        learningEligible: false,
+      },
+      {
+        role: "staff",
+        eventType: "human_outbound",
+        body: "Which type of banner do you need?",
+        learningEligible: true,
+      },
+    ]);
+  });
+
+  it("prevents provider reservation after a human reply to a sealed turn", async () => {
+    await activateFacebookPilot("human-reply-before-provider");
+    const conversationHash = "e1".repeat(32);
+    const incoming = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "f1".repeat(32),
+      text: "Can you explain the design process?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    await repository.sealDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-18T00:00:03.000Z"),
+    });
+    await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "01".repeat(32),
+      text: "Send your photos, theme and wording and we will prepare a draft.",
+      eventType: "human_outbound",
+      bodyHash: "02".repeat(32),
+      redactionCodes: [],
+      replyToExternalMessageKeyHash: null,
+      learningEligible: true,
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:04.000Z"),
+    } as Parameters<typeof repository.ingestConversationEvent>[0]);
+
+    const result = await repository.reserveProviderAttempt({
+      messageId: incoming.messageId,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateReasons: ["confirmed_rule"],
+      knowledgeSources: ["design-rules"],
+      knowledgeVersion: "test",
+      reservationMicrousd: 100,
+      dailyScopeKey: "daily:2026-08-18",
+      dailyHardStopMicrousd: 10_000,
+      totalHardStopMicrousd: 20_000,
+    });
+
+    expect(result).toMatchObject({ status: "human_reply_received", attemptId: expect.any(String) });
+    const [attempt] = await database.select().from(customerServiceAiAttempts);
+    expect(attempt).toMatchObject({ status: "abandoned", providerCalled: false, reservedCostMicrousd: 0 });
+  });
+
+  it("cancels a reserved invocation when a human echo arrives before the provider call", async () => {
+    await activateFacebookPilot("human-reply-during-delayed-generation");
+    const conversationHash = "31".repeat(32);
+    const incoming = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "32".repeat(32),
+      text: "Can you explain the design process?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    await repository.sealDueCustomerTurn({ turnId: incoming.turnId, now: new Date("2026-08-18T00:00:03.000Z") });
+    const reserved = await repository.reserveProviderAttempt({
+      messageId: incoming.messageId,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateReasons: ["confirmed_rule"],
+      knowledgeSources: ["design-rules"],
+      knowledgeVersion: "test",
+      reservationMicrousd: 100,
+      dailyScopeKey: "daily:2026-08-18",
+      dailyHardStopMicrousd: 10_000,
+      totalHardStopMicrousd: 20_000,
+    });
+    if (reserved.status !== "reserved") throw new Error("expected reservation");
+
+    await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "33".repeat(32),
+      text: "Send your photos, wording and theme and we will prepare a draft.",
+      eventType: "human_outbound",
+      bodyHash: "34".repeat(32),
+      redactionCodes: [],
+      replyToExternalMessageKeyHash: null,
+      learningEligible: true,
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:04.000Z"),
+    } as Parameters<typeof repository.ingestConversationEvent>[0]);
+
+    const guardedRepository = repository as typeof repository & {
+      confirmProviderInvocation(input: { attemptId: string; dailyScopeKey: string }): Promise<{ status: string }>;
+    };
+    await expect(guardedRepository.confirmProviderInvocation({
+      attemptId: reserved.attemptId,
+      dailyScopeKey: "daily:2026-08-18",
+    })).resolves.toEqual({ status: "human_reply_received" });
+
+    const [attempt] = await database.select().from(customerServiceAiAttempts)
+      .where(eq(customerServiceAiAttempts.id, reserved.attemptId));
+    expect(attempt).toMatchObject({ status: "abandoned", providerCalled: false, reservedCostMicrousd: 0 });
+    const budgets = await database.select().from(customerServiceBudgetState);
+    expect(budgets.every((budget) => budget.reservedMicrousd === 0)).toBe(true);
+  });
+
+  it("settles provider cost but discards a draft when a human echo arrives during generation", async () => {
+    await activateFacebookPilot("human-reply-after-provider-start");
+    const conversationHash = "35".repeat(32);
+    const incoming = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "36".repeat(32),
+      text: "Can you explain the design process?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    await repository.sealDueCustomerTurn({ turnId: incoming.turnId, now: new Date("2026-08-18T00:00:03.000Z") });
+    const reserved = await repository.reserveProviderAttempt({
+      messageId: incoming.messageId,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateReasons: ["confirmed_rule"],
+      knowledgeSources: ["design-rules"],
+      knowledgeVersion: "test",
+      reservationMicrousd: 100,
+      dailyScopeKey: "daily:2026-08-18",
+      dailyHardStopMicrousd: 10_000,
+      totalHardStopMicrousd: 20_000,
+    });
+    if (reserved.status !== "reserved") throw new Error("expected reservation");
+    await expect(repository.confirmProviderInvocation({
+      attemptId: reserved.attemptId,
+      dailyScopeKey: "daily:2026-08-18",
+    })).resolves.toEqual({ status: "allowed" });
+
+    await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "37".repeat(32),
+      text: "Send your photos, wording and theme and we will prepare a draft.",
+      eventType: "human_outbound",
+      bodyHash: "38".repeat(32),
+      redactionCodes: [],
+      replyToExternalMessageKeyHash: null,
+      learningEligible: true,
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:04.000Z"),
+    });
+    await repository.completeProviderAttempt({
+      attemptId: reserved.attemptId,
+      status: "draft_ready",
+      provider: "mock",
+      model: "mock",
+      draftText: "This stale draft must not be shown.",
+      validatorCodes: [],
+      inputTokens: 10,
+      cachedInputTokens: 0,
+      outputTokens: 5,
+      estimatedCostMicrousd: 25,
+      latencyMs: 10,
+      dailyScopeKey: "daily:2026-08-18",
+    });
+
+    const [attempt] = await database.select().from(customerServiceAiAttempts)
+      .where(eq(customerServiceAiAttempts.id, reserved.attemptId));
+    expect(attempt).toMatchObject({
+      status: "abandoned",
+      providerCalled: true,
+      draftText: null,
+      estimatedCostMicrousd: 25,
+    });
+    const budgets = await database.select().from(customerServiceBudgetState);
+    expect(budgets.every((budget) => budget.reservedMicrousd === 0 && budget.spentMicrousd === 25)).toBe(true);
+  });
+
+  it("deduplicates repeated human echoes without changing the terminal turn again", async () => {
+    const conversationHash = "41".repeat(32);
+    const incoming = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "42".repeat(32),
+      text: "What product should I choose?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    const echo = {
+      channel: "facebook" as const,
+      role: "staff" as const,
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "43".repeat(32),
+      text: "Will it be displayed on a wall or freestanding?",
+      eventType: "human_outbound" as const,
+      bodyHash: "44".repeat(32),
+      redactionCodes: [],
+      replyToExternalMessageKeyHash: null,
+      learningEligible: true,
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:01.000Z"),
+    };
+
+    await expect(repository.ingestConversationEvent(echo as Parameters<typeof repository.ingestConversationEvent>[0]))
+      .resolves.toEqual({ status: "context_only" });
+    await expect(repository.ingestConversationEvent(echo as Parameters<typeof repository.ingestConversationEvent>[0]))
+      .resolves.toEqual({ status: "duplicate" });
+    const events = await database.select().from(customerServiceConversationEvents)
+      .where(eq(customerServiceConversationEvents.externalMessageKeyHash, echo.externalMessageKeyHash));
+    expect(events).toHaveLength(1);
+  });
+
+  it("does not suppress another customer's turn when echoes arrive concurrently", async () => {
+    const createTurn = async (conversationHash: string, messageHash: string) => repository.ingestConversationEvent({
+      channel: "facebook" as const,
+      role: "customer" as const,
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: messageHash,
+      text: "How does it work?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    const [customerA, customerB] = await Promise.all([
+      createTurn("11".repeat(32), "12".repeat(32)),
+      createTurn("21".repeat(32), "22".repeat(32)),
+    ]);
+    if (customerA.status !== "turn_pending" || customerB.status !== "turn_pending") {
+      throw new Error("expected pending turns");
+    }
+
+    await Promise.all([
+      repository.ingestConversationEvent({
+        channel: "facebook",
+        role: "staff",
+        externalConversationKeyHash: "11".repeat(32),
+        externalMessageKeyHash: "13".repeat(32),
+        text: "Reply for customer A",
+        eventType: "human_outbound",
+        bodyHash: "14".repeat(32),
+        redactionCodes: [],
+        replyToExternalMessageKeyHash: null,
+        learningEligible: true,
+        attachments: [],
+        imageJob: null,
+        receivedAt: new Date("2026-08-18T00:00:01.000Z"),
+      } as Parameters<typeof repository.ingestConversationEvent>[0]),
+      createTurn("21".repeat(32), "23".repeat(32)),
+    ]);
+
+    const turns = await database.select({ id: customerServiceTurns.id, status: customerServiceTurns.status })
+      .from(customerServiceTurns).where(inArray(customerServiceTurns.id, [customerA.turnId, customerB.turnId]));
+    expect(turns).toEqual(expect.arrayContaining([
+      { id: customerA.turnId, status: "suppressed" },
+      { id: customerB.turnId, status: "open" },
+    ]));
   });
 
   it("aggregates rapid fragments and allocates one pilot slot when the turn is sealed", async () => {

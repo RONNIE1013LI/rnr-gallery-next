@@ -4,6 +4,7 @@ import type {
   CustomerServiceRepository,
   HashedConversationEvent,
 } from "../repositories/customer-service-repository";
+import { sanitizeHumanOutboundText } from "../conversation/human-outbound-sanitizer";
 import { verifyMetaSignature } from "./signature";
 
 type IngestResult = Awaited<ReturnType<CustomerServiceRepository["ingestConversationEvent"]>>;
@@ -85,6 +86,9 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
 
       const adapter = createFacebookChannelAdapter();
       for (const message of adapter.normalize(payload)) {
+        const outbound = message.role === "staff" && message.text !== null
+          ? sanitizeHumanOutboundText(message.text)
+          : null;
         const attachments = message.attachments.map((attachment) => ({
           externalAttachmentKeyHash: hashExternalId(attachment.externalAttachmentKey, dependencies.config.idHashSecret),
           ordinal: attachment.ordinal,
@@ -114,9 +118,16 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
         const result = await dependencies.ingest({
           channel: message.channel,
           role: message.role,
+          eventType: message.eventType,
           externalConversationKeyHash: hashExternalId(message.externalConversationKey, dependencies.config.idHashSecret),
           externalMessageKeyHash: hashExternalId(message.externalMessageKey, dependencies.config.idHashSecret),
-          text: message.text,
+          text: outbound?.text ?? message.text,
+          bodyHash: outbound?.bodyHash ?? null,
+          redactionCodes: outbound?.redactionCodes ?? [],
+          replyToExternalMessageKeyHash: message.externalReplyToMessageKey
+            ? hashExternalId(message.externalReplyToMessageKey, dependencies.config.idHashSecret)
+            : null,
+          learningEligible: outbound?.learningEligible ?? false,
           attachments,
           imageJob,
           debounceMs: dependencies.config.conversationDebounceMs ?? 2_000,

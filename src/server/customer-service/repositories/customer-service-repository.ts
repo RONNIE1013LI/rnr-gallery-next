@@ -51,6 +51,11 @@ export type HashedIncomingMessage = Readonly<{
 
 export type HashedConversationEvent = HashedIncomingMessage & Readonly<{
   role: ConversationRole;
+  eventType?: "customer_message" | "human_outbound";
+  bodyHash?: string | null;
+  redactionCodes?: readonly string[];
+  replyToExternalMessageKeyHash?: string | null;
+  learningEligible?: boolean;
   debounceMs?: number;
 }>;
 
@@ -315,6 +320,14 @@ export interface CustomerServiceRepository {
   reserveProviderAttempt(input: ProviderAttemptReservation): Promise<
     | Readonly<{ status: "reserved"; attemptId: string }>
     | Readonly<{ status: "budget_blocked"; attemptId: string }>
+    | Readonly<{ status: "human_reply_received"; attemptId: string }>
+  >;
+  confirmProviderInvocation(input: Readonly<{
+    attemptId: string;
+    dailyScopeKey: string;
+  }>): Promise<
+    | Readonly<{ status: "allowed" }>
+    | Readonly<{ status: "human_reply_received" }>
   >;
   createImageJobProviderAttempt(input: Readonly<{
     jobId: string;

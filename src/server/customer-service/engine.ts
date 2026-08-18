@@ -235,6 +235,9 @@ export class CustomerServiceEngine {
     if (reservation.status === "budget_blocked") {
       return { status: "budget_blocked", attemptId: reservation.attemptId };
     }
+    if (reservation.status === "human_reply_received") {
+      return { status: "human_reply_received", attemptId: reservation.attemptId };
+    }
 
     const prompt = buildDraftPrompt({
       intent: gate.intent,
@@ -245,6 +248,13 @@ export class CustomerServiceEngine {
       qualityGuide: sources.qualityGuide,
       toneGuide: this.knowledge.toneGuide,
     });
+    const invocation = await this.repository.confirmProviderInvocation({
+      attemptId: reservation.attemptId,
+      dailyScopeKey,
+    });
+    if (invocation.status === "human_reply_received") {
+      return { status: "human_reply_received", attemptId: reservation.attemptId };
+    }
     try {
       const generated = await this.provider.generate(prompt);
       const textValidation = this.outputValidator(generated.text, { intent: gate.intent });
