@@ -19,7 +19,9 @@ function nextKey() {
 
 export function PaymentRequestForm({ linkedOrder }: Readonly<{ linkedOrder?: LinkedOrder }>) {
   const [currency, setCurrency] = useState<MarketCurrency>(linkedOrder?.currency ?? "NZD");
-  const [amount, setAmount] = useState(linkedOrder ? linkedOrder.unreservedCents / 100 : 0);
+  const [amount, setAmount] = useState(
+    linkedOrder ? String(linkedOrder.unreservedCents / 100) : "0",
+  );
   const [description, setDescription] = useState("");
   const [customerName, setCustomerName] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -41,7 +43,18 @@ export function PaymentRequestForm({ linkedOrder }: Readonly<{ linkedOrder?: Lin
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending || methods.length === 0) return;
-    const amountCents = Math.round(Number(amount) * 100);
+    const amountNumber = Number(amount);
+    const amountCents = Math.round(amountNumber * 100);
+    if (
+      amount.trim() === "" ||
+      !Number.isFinite(amountNumber) ||
+      amountNumber <= 0 ||
+      !Number.isInteger(amountNumber * 100) ||
+      (linkedOrder && amountCents > linkedOrder.unreservedCents)
+    ) {
+      setMessage("Enter a valid amount with no more than two decimal places.");
+      return;
+    }
     setPending(true);
     setMessage("");
     setPaymentUrl("");
@@ -102,7 +115,7 @@ export function PaymentRequestForm({ linkedOrder }: Readonly<{ linkedOrder?: Lin
     </div> : null}
     <div className={styles.formGrid}>
       <label><span>Currency</span><select aria-label="Currency" disabled={Boolean(linkedOrder)} value={currency} onChange={(event) => setCurrency(event.target.value as MarketCurrency)}><option value="NZD">NZD</option><option value="AUD">AUD</option></select></label>
-      <label><span>Amount</span><input aria-label="Amount" min="0.01" max={linkedOrder ? linkedOrder.unreservedCents / 100 : 1000000} required step="0.01" type="number" value={amount} onChange={(event) => setAmount(Number(event.target.value))} /></label>
+      <label><span>Amount</span><input aria-label="Amount" min="0.01" max={linkedOrder ? linkedOrder.unreservedCents / 100 : 1000000} required step="0.01" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
       <label className={styles.paymentRequestWideField}><span>Description</span><input aria-label="Description" maxLength={500} required value={description} onChange={(event) => setDescription(event.target.value)} /></label>
       {!linkedOrder ? <>
         <label><span>Customer name (optional)</span><input aria-label="Customer name (optional)" maxLength={120} value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>

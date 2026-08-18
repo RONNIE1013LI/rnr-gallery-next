@@ -42,4 +42,34 @@ describe("Admin PaymentRequestForm", () => {
     expect(await screen.findByText("https://rrgallery.co.nz/pay/safe-token")).toBeInTheDocument();
     expect(screen.getByText(/shown only once/i)).toBeInTheDocument();
   });
+
+  it("allows the initial zero to be cleared and submits exact cents", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ request: { id: "request-1" } }),
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<PaymentRequestForm />);
+
+    const amount = screen.getByLabelText("Amount");
+    fireEvent.change(amount, { target: { value: "" } });
+    expect(amount).toHaveValue(null);
+    fireEvent.change(amount, { target: { value: "200.25" } });
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Outstanding balance" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create payment request" }));
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toMatchObject({ amountCents: 20_025 });
+  });
+
+  it("does not submit an empty amount", () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<PaymentRequestForm />);
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create payment request" }));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
 });
