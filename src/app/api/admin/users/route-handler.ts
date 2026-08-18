@@ -16,6 +16,8 @@ import {
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
 
+class InvalidEmployeeJsonError extends Error {}
+
 type Access = Readonly<{ user: Readonly<{ id: string; email?: string }> }>;
 type UserRuntime = ReturnType<typeof getAdminUserRuntime>;
 type Dependencies = Readonly<{
@@ -31,7 +33,7 @@ function errorResponse(error: unknown) {
   if (error instanceof MutationRequestError) {
     return Response.json({ error: error.message }, { status: error.status, headers: noStore });
   }
-  if (error instanceof SyntaxError) {
+  if (error instanceof InvalidEmployeeJsonError) {
     return Response.json({ error: "Request body must contain valid JSON." }, { status: 400, headers: noStore });
   }
   if (error instanceof AdminEmployeeAuthorizationError) {
@@ -52,6 +54,17 @@ function requestSource(request: Request) {
     "direct";
 }
 
+async function parseEmployeeJson(request: Request) {
+  try {
+    return await parseBoundedJson(request);
+  } catch (error) {
+    if (error instanceof SyntaxError || error instanceof TypeError) {
+      throw new InvalidEmployeeJsonError();
+    }
+    throw error;
+  }
+}
+
 export function createAdminEmployeeRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => ({
     requirePermission: requireAdminPermission,
@@ -64,7 +77,7 @@ export function createAdminEmployeeRoute(dependencies?: Dependencies) {
         const deps = dependencies ?? defaults();
         const access = await deps.requirePermission("manage_roles");
         assertTrustedMutationRequest(request, deps.trustedOrigin);
-        const body = await parseBoundedJson(request) as Record<string, unknown>;
+        const body = await parseEmployeeJson(request) as Record<string, unknown>;
         const result = await deps.createEmployee({
           userId: access.user.id,
           email: access.user.email ?? "unknown@invalid.local",

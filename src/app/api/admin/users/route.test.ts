@@ -46,6 +46,18 @@ function malformedJsonRequest() {
   });
 }
 
+function invalidUtf8Request() {
+  return new Request(`${origin}/api/admin/users`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: origin,
+      "Sec-Fetch-Site": "same-origin",
+    },
+    body: new Uint8Array([0xc3, 0x28]),
+  });
+}
+
 describe("admin employee route", () => {
   it("requires database-backed role management and never returns password material", async () => {
     const requirePermission = vi.fn().mockResolvedValue({
@@ -155,5 +167,33 @@ describe("admin employee route", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "Request body must contain valid JSON." });
     expect(createEmployee).not.toHaveBeenCalled();
+  });
+
+  it("returns the same safe validation error for invalid UTF-8 JSON bytes", async () => {
+    const createEmployee = vi.fn();
+    const route = createAdminEmployeeRoute({
+      requirePermission: vi.fn().mockResolvedValue({ user: { id: "admin-1", email: "owner@example.test" } }),
+      createEmployee,
+      trustedOrigin: origin,
+    });
+
+    const response = await route.POST(invalidUtf8Request());
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Request body must contain valid JSON." });
+    expect(createEmployee).not.toHaveBeenCalled();
+  });
+
+  it("does not classify an employee-service TypeError as invalid JSON", async () => {
+    const route = createAdminEmployeeRoute({
+      requirePermission: vi.fn().mockResolvedValue({ user: { id: "admin-1", email: "owner@example.test" } }),
+      createEmployee: vi.fn().mockRejectedValue(new TypeError("repository failure")),
+      trustedOrigin: origin,
+    });
+
+    const response = await route.POST(request(input()));
+
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: "The employee account could not be created." });
   });
 });
