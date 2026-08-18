@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { account, adminAuditLogs, adminStaffAccess, session, user } from "@/server/db/schema";
 import {
   AdminEmployeeAuthorizationError,
@@ -25,6 +25,20 @@ const initialPassword = "long-lived-password";
 const passwordHash = `test-only-hash-${randomUUID()}`;
 const rollbackEmail = `employee-rollback-${suffix}@example.test`;
 const revokedEmployeeEmail = `employee-revoked-${suffix}@example.test`;
+
+async function waitForQueuedAccessChange() {
+  await vi.waitFor(async () => {
+    const locks = await database.execute(sql`
+      select 1
+      from pg_locks
+      where locktype = 'advisory'
+        and not granted
+        and objid::bigint = (hashtext('rnr_admin_user_access_change')::bigint & 4294967295)
+      limit 1
+    `);
+    expect(locks.rows).toHaveLength(1);
+  });
+}
 
 describe("admin employee persistence", () => {
   beforeAll(async () => {
@@ -187,7 +201,7 @@ describe("admin employee persistence", () => {
       role: "customer",
       idempotencyKey: `employee-actor-demotion-${suffix}`,
     });
-    await new Promise<void>((resolve) => setImmediate(resolve));
+    await waitForQueuedAccessChange();
     const creation = employeeService.createEmployee({ userId: actorId, email: actorEmail }, {
       name: "Revoked Actor Employee",
       email: revokedEmployeeEmail,
