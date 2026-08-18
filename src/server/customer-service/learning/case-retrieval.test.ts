@@ -41,7 +41,15 @@ describe("case memory retrieval scoring", () => {
 
   it("keeps recency bounded to five points", () => {
     const score = scoreCaseMemory({ current, memory: { ...memory, createdAt: current.now } });
+    if (!score.eligible) throw new Error("expected compatible case");
     expect(score.components.recency).toBe(5);
     expect(score.totalScore).toBeLessThanOrEqual(100);
+  });
+
+  it("rejects a structurally compatible case with no text relevance", () => {
+    expect(scoreCaseMemory({
+      current,
+      memory: { ...memory, normalizedSituation: "customer asks which payment method is available", fullTextRank: 0 },
+    })).toMatchObject({ eligible: false, totalScore: 0 });
   });
 });

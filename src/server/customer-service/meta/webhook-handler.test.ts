@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
 import * as facebookAdapter from "../adapters/facebook";
+import type { CustomerServiceRepository } from "../repositories/customer-service-repository";
 import { createMetaWebhookHandlers } from "./webhook-handler";
 
 const config = {
@@ -52,7 +53,7 @@ function setup(ingestResult:
   const scheduledTasks: Array<() => Promise<void>> = [];
   const ingest = vi.fn(async () => { events.push("persist:commit"); return ingestResult; });
   const generateDraft = vi.fn(async () => undefined);
-  const sealTurn = vi.fn(async () => ({
+  const sealTurn = vi.fn<CustomerServiceRepository["sealDueCustomerTurn"]>(async () => ({
     status: "sealed" as const,
     messageId: "internal-1",
     turnId: "turn-1",
@@ -124,6 +125,31 @@ describe("Meta webhook handler", () => {
       bodyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       redactionCodes: [],
       learningEligible: true,
+    }));
+    expect(current.scheduleAfter).not.toHaveBeenCalled();
+    expect(current.recoverHumanReplies).not.toHaveBeenCalled();
+    expect(current.generateDraft).not.toHaveBeenCalled();
+  });
+
+  it("persists attachment-only staff echoes as non-learning context without generation", async () => {
+    const current = setup({ status: "context_only" }, true);
+    const echo = messagePayload({
+      text: undefined,
+      is_echo: true,
+      attachments: [{ type: "image", payload: { url: "https://scontent.test/private.jpg" } }],
+    });
+    echo.entry[0].messaging[0].sender.id = "page-1";
+    Object.assign(echo.entry[0].messaging[0], { recipient: { id: "customer-1" } });
+
+    expect((await current.handlers.POST(signedRequest(echo))).status).toBe(200);
+    expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      role: "staff",
+      eventType: "human_outbound",
+      text: "[Staff sent an attachment]",
+      redactionCodes: ["attachment_only_withheld"],
+      learningEligible: false,
+      attachments: [],
+      imageJob: null,
     }));
     expect(current.scheduleAfter).not.toHaveBeenCalled();
     expect(current.recoverHumanReplies).not.toHaveBeenCalled();

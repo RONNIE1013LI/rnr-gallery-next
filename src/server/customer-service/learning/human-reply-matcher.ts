@@ -1,5 +1,6 @@
 export function chooseHumanReplyTurn(input: Readonly<{
   explicitTurnId: string | null;
+  hasExplicitReference: boolean;
   eligibleTurnIds: readonly string[];
 }>) {
   if (input.explicitTurnId && input.eligibleTurnIds.includes(input.explicitTurnId)) {
@@ -9,6 +10,9 @@ export function chooseHumanReplyTurn(input: Readonly<{
       method: "reply_to" as const,
       confidence: "high" as const,
     });
+  }
+  if (input.hasExplicitReference) {
+    return Object.freeze({ status: "unmatched" as const, method: "none" as const, confidence: "low" as const });
   }
   if (input.eligibleTurnIds.length === 1) {
     return Object.freeze({

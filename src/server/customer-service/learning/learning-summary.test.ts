@@ -29,6 +29,14 @@ describe("continuous learning summary", () => {
     expect(JSON.stringify(summary)).not.toMatch(/phone|email|address|customer name/i);
   });
 
+  it("uses the matched-reply checkpoint even when only some replies produce eligible case memory", () => {
+    const eligibleCases = matches.slice(0, 3);
+    expect(buildLearningSummary(eligibleCases, 50, 50)).toMatchObject({
+      matchedReplies: 50,
+      candidates: [expect.objectContaining({ evidenceCount: 3 })],
+    });
+  });
+
   it("excludes high-risk evidence and never approves automatically", () => {
     const summary = buildLearningSummary(matches.map((item, index) => index < 30
       ? { ...item, approvedLowRisk: false }

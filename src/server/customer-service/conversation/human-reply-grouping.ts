@@ -9,11 +9,13 @@ export function canAppendHumanReply(input: Readonly<{
     lastOutboundAt: Date;
     messageCount: number;
     characterCount: number;
+    replyToExternalMessageKeyHash: string | null;
   }>;
   conversationId: string;
   receivedAt: Date;
   textLength: number;
   interveningCustomer: boolean;
+  replyToExternalMessageKeyHash: string | null;
   windowMs: number;
 }>) {
   const elapsed = input.receivedAt.getTime() - input.group.lastOutboundAt.getTime();
@@ -21,6 +23,7 @@ export function canAppendHumanReply(input: Readonly<{
     && elapsed >= 0
     && elapsed <= input.windowMs
     && !input.interveningCustomer
+    && input.group.replyToExternalMessageKeyHash === input.replyToExternalMessageKeyHash
     && input.group.messageCount < HUMAN_REPLY_GROUP_LIMITS.maxMessages
     && input.group.characterCount + 1 + input.textLength <= HUMAN_REPLY_GROUP_LIMITS.maxCharacters;
 }

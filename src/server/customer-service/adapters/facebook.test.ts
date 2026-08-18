@@ -67,6 +67,33 @@ describe("Facebook channel adapter", () => {
     }]);
   });
 
+  it("captures an attachment-only staff echo as context without retaining its URL", () => {
+    const result = adapter.normalize({
+      object: "page",
+      entry: [{
+        id: "page-1",
+        messaging: [{
+          sender: { id: "page-1" },
+          [recipientField]: { id: "customer-1" },
+          timestamp: 1_787_001_600_000,
+          message: {
+            mid: "echo-image-1",
+            is_echo: true,
+            attachments: [{ type: "image", payload: { url: "https://scontent.test/private.jpg" } }],
+          },
+        }],
+      }],
+    });
+
+    expect(result).toEqual([expect.objectContaining({
+      role: "staff",
+      eventType: "human_outbound",
+      text: "[Staff sent an attachment]",
+      attachments: [],
+    })]);
+    expect(JSON.stringify(result)).not.toContain("private.jpg");
+  });
+
   it("fails closed when an echo sender is not the entry Page", () => {
     expect(adapter.normalize({
       object: "page",

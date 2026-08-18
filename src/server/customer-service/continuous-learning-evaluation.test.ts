@@ -17,8 +17,11 @@ describe("continuous learning evaluation", () => {
       "policy_conflict", "high_risk", "contextual_short_reply", "topic_change",
       "multiple_pending_turns", "duplicate_echo", "multiple_staff_messages", "personal_information",
       "unrelated_retrieval", "no_suitable_case", "approved_case", "rejected_candidate",
+      "explicit_reply_to", "echo_before_debounce", "echo_during_provider", "echo_after_draft",
+      "sanitizer_fail_closed", "attachment_only_echo", "out_of_order_duplicate_echo",
+      "policy_version_change", "below_threshold", "top_three_limit",
     ];
-    expect(cases.length).toBeGreaterThanOrEqual(40);
+    expect(cases.length).toBeGreaterThanOrEqual(50);
     const categories = new Set(cases.map((item) => item.category));
     for (const category of required) expect(categories.has(category)).toBe(true);
 
@@ -41,10 +44,34 @@ describe("continuous learning evaluation", () => {
     expect(report.summary.unmatchedRate).toBeGreaterThan(0);
     expect(report.summary.averageMatchingLatencyMs).toBeGreaterThanOrEqual(0);
     expect(report.summary.averageRetrievalLatencyMs).toBeGreaterThanOrEqual(0);
+    expect(report.results.find((item) => item.category === "top_three_limit"))
+      .toMatchObject({ actualRetrieval: true, actualRetrievedCount: 3 });
   });
 
   it("rejects duplicate ids and any fixture containing obvious personal data", () => {
     const unsafe = `${JSON.stringify({ id: "same", category: "x", customerText: "Call 021 234 5678" })}\n${JSON.stringify({ id: "same", category: "x" })}`;
     expect(() => parseContinuousLearningCases(unsafe)).toThrow();
+  });
+
+  it("derives actual results from the executable scenario instead of expected values", () => {
+    const cases = parseContinuousLearningCases(readFileSync(resolve(
+      "src/server/customer-service/fixtures/continuous-learning-evaluation-cases.jsonl",
+    ), "utf8"));
+    const original = cases.find((item) => item.id === "approved-case-01");
+    expect(original).toBeDefined();
+
+    const report = evaluateContinuousLearningCases([{
+      ...original!,
+      capture: false,
+      match: "unmatched",
+      retrieval: false,
+    }]);
+
+    expect(report.results[0]).toMatchObject({
+      actualCapture: true,
+      actualMatch: "matched",
+      actualRetrieval: true,
+    });
+    expect(report.summary.humanOutboundCaptureAccuracy).toBe(0);
   });
 });

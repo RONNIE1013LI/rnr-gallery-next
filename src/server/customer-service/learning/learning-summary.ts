@@ -15,11 +15,18 @@ const safeProposal: Record<string, string> = {
   tone_too_formal: "Use Ronnie's short, warm and practical customer-service tone.",
 };
 
-export function buildLearningSummary(matches: readonly SummaryMatch[], minimumMatchedReplies = 50) {
+export function buildLearningSummary(
+  matches: readonly SummaryMatch[],
+  minimumMatchedReplies = 50,
+  matchedReplyCount = matches.length,
+) {
   if (!Number.isSafeInteger(minimumMatchedReplies) || minimumMatchedReplies < 3) {
     throw new Error("learning_summary_threshold_invalid");
   }
-  if (matches.length < minimumMatchedReplies) return null;
+  if (!Number.isSafeInteger(matchedReplyCount) || matchedReplyCount < matches.length) {
+    throw new Error("learning_summary_match_count_invalid");
+  }
+  if (matchedReplyCount < minimumMatchedReplies) return null;
   const counts = new Map<string, number>();
   const groups = new Map<string, SummaryMatch[]>();
   for (const match of matches) {
@@ -46,7 +53,7 @@ export function buildLearningSummary(matches: readonly SummaryMatch[], minimumMa
     return proposal ? [{ ...proposal, requiresAdminApproval: true as const }] : [];
   });
   return Object.freeze({
-    matchedReplies: matches.length,
+    matchedReplies: matchedReplyCount,
     commonEditReasons: Object.freeze(commonEditReasons),
     candidates: Object.freeze(candidates),
   });

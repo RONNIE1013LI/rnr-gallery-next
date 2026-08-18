@@ -10,6 +10,15 @@
 
 **Spec:** `docs/superpowers/specs/2026-08-18-reply-assistant-continuous-learning-design.md`
 
+## Implementation Status — 2026-08-18
+
+- Tasks 1-11: complete with focused RED-to-GREEN commits.
+- Task 12 code verification: complete locally; 63 test files / 746 tests pass, including 71 / 71 Customer Service database integration and schema/auth tests with zero skips.
+- Phase 3.5 dependency: confirmed; approved candidate `59b047d` is an ancestor of this branch.
+- Migration order: `0030` -> `0031` (Phase 3.5) -> `0032` (Phase 3.6), additive only.
+- External Staging validation remains pending: the unchanged real 100-case run reached the gate correctly but Preview OpenAI calls returned HTTP 401, and a real signed Test Page outbound echo is still required.
+- Production, Production Meta callback, Website Chat, image AI and send capability remain unchanged.
+
 ## Global Constraints
 
 - Base commit: `59b047dab4688cdead2ea683dd214ea7ce92ba43`.

@@ -73,3 +73,9 @@ The migration is additive. Rollback disables readers/writers through feature fla
 - Approval time: `____________________________`
 
 Codex does not sign these fields.
+
+## Candidate Verification Note — 2026-08-18
+
+- Rollback remains flag/deployment based; migration `0032` is additive and has no destructive down migration.
+- Phase 3.6 has not been deployed and no Production flag or callback has changed.
+- A real Staging rollback drill and named owner sign-off remain required before Staging can be marked READY.

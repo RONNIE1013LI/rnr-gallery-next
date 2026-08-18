@@ -50,8 +50,10 @@ function repositoryFor(body: string | null, withImage = false) {
     completeImageAnalysisAttempt: vi.fn(async () => undefined),
     markImageAttachmentDeleted: vi.fn(async () => undefined),
     reserveProviderAttempt: vi.fn(async () => ({ status: "reserved" as const, attemptId: "attempt-1" })),
-    confirmProviderInvocation: vi.fn(async () => ({ status: "allowed" as const })),
-    retrieveApprovedCaseMemories: vi.fn(async () => []),
+    confirmProviderInvocation: vi.fn<CustomerServiceRepository["confirmProviderInvocation"]>(
+      async () => ({ status: "allowed" as const }),
+    ),
+    retrieveApprovedCaseMemories: vi.fn<CustomerServiceRepository["retrieveApprovedCaseMemories"]>(async () => []),
     createImageJobProviderAttempt: vi.fn<CustomerServiceRepository["createImageJobProviderAttempt"]>(
       async () => ({ status: "reserved" as const, attemptId: "attempt-image-text-1" }),
     ),

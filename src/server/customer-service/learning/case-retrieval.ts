@@ -39,6 +39,9 @@ export function scoreCaseMemory(input: Readonly<{
   const lexicalRatio = queryTokens.size ? overlap / queryTokens.size : 0;
   const ftsRatio = Math.min(1, Math.max(0, (input.memory.fullTextRank ?? 0) * 5));
   const text = Math.min(20, Math.round(Math.max(lexicalRatio, ftsRatio) * 20));
+  if (text === 0) {
+    return Object.freeze({ eligible: false as const, totalScore: 0, components: Object.freeze({}) });
+  }
   const ageDays = Math.max(0, (input.current.now.getTime() - input.memory.createdAt.getTime()) / 86_400_000);
   const components = Object.freeze({
     intent: 35,

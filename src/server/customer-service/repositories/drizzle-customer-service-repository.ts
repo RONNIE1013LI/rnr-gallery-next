@@ -447,17 +447,30 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
                 lte(customerServiceConversationEvents.receivedAt, input.receivedAt),
               )).limit(1)
             : [];
+          const replyTargets = openGroup
+            ? await transaction.select({ value: customerServiceConversationEvents.replyToExternalMessageKeyHash })
+              .from(customerServiceHumanReplyMatchEvents)
+              .innerJoin(customerServiceConversationEvents, eq(
+                customerServiceConversationEvents.id,
+                customerServiceHumanReplyMatchEvents.eventId,
+              ))
+              .where(eq(customerServiceHumanReplyMatchEvents.matchId, openGroup.id))
+            : [];
+          const distinctReplyTargets = [...new Set(replyTargets.map((item) => item.value))];
+          const groupReplyTarget = distinctReplyTargets.length === 1 ? distinctReplyTargets[0] : "mixed";
           const append = openGroup && canAppendHumanReply({
             group: {
               conversationId: openGroup.conversationId,
               lastOutboundAt: openGroup.lastOutboundAt,
               messageCount: memberCount?.value ?? 0,
               characterCount: openGroup.humanFinalText.length,
+              replyToExternalMessageKeyHash: groupReplyTarget,
             },
             conversationId: conversation.id,
             receivedAt: input.receivedAt,
             textLength: body.length,
             interveningCustomer: Boolean(interruption),
+            replyToExternalMessageKeyHash: input.replyToExternalMessageKeyHash ?? null,
             windowMs: groupWindowMs,
           });
           let groupId: string;
@@ -500,20 +513,23 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
                 eq(customerServiceConversationEvents.eventType, "customer_message"),
               )).limit(1)
             : [];
-          const [targetTurn] = repliedEvent?.turnId
-            ? await transaction.select({ id: customerServiceTurns.id })
+          let targetTurn: { id: string } | undefined;
+          if (repliedEvent?.turnId) {
+            [targetTurn] = await transaction.select({ id: customerServiceTurns.id })
               .from(customerServiceTurns)
               .where(and(
                 eq(customerServiceTurns.id, repliedEvent.turnId),
                 inArray(customerServiceTurns.status, ["open", "sealed"]),
-              )).limit(1).for("update")
-            : await transaction.select({ id: customerServiceTurns.id })
+              )).limit(1).for("update");
+          } else if (!input.replyToExternalMessageKeyHash) {
+            [targetTurn] = await transaction.select({ id: customerServiceTurns.id })
               .from(customerServiceTurns)
               .where(and(
                 eq(customerServiceTurns.conversationId, conversation.id),
                 inArray(customerServiceTurns.status, ["open", "sealed"]),
                 lte(customerServiceTurns.lastEventAt, input.receivedAt),
               )).orderBy(desc(customerServiceTurns.lastEventAt)).limit(1).for("update");
+          }
           if (targetTurn) {
             await transaction.update(customerServiceTurns).set({
               status: "suppressed",
@@ -1747,6 +1763,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           : [];
         const decision = chooseHumanReplyTurn({
           explicitTurnId: explicitEvent?.turnId ?? null,
+          hasExplicitReference: Boolean(replyReference?.replyHash),
           eligibleTurnIds: eligibleTurns.map((turn) => turn.id),
         });
         if (decision.status === "unmatched") {
@@ -1947,6 +1964,10 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     async retrieveApprovedCaseMemories(input) {
       const limit = Math.max(1, Math.min(3, input.limit));
       const startedAt = Date.now();
+      const fullTextRank = sql<number>`ts_rank_cd(
+        to_tsvector('simple', ${customerServiceCaseMemories.normalizedSituation}),
+        plainto_tsquery('simple', ${input.query})
+      )::float`;
       const candidates = await database.select({
         id: customerServiceCaseMemories.id,
         intent: customerServiceCaseMemories.intent,
@@ -1959,14 +1980,11 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         knowledgeVersion: customerServiceCaseMemories.knowledgeVersion,
         exclusionCodes: customerServiceCaseMemories.exclusionCodes,
         createdAt: customerServiceCaseMemories.createdAt,
-        fullTextRank: sql<number>`ts_rank_cd(
-          to_tsvector('simple', ${customerServiceCaseMemories.normalizedSituation}),
-          plainto_tsquery('simple', ${input.query})
-        )::float`,
+        fullTextRank,
       }).from(customerServiceCaseMemories).where(and(
         eq(customerServiceCaseMemories.eligibilityStatus, "approved_reusable"),
         eq(customerServiceCaseMemories.intent, input.intent),
-      )).limit(50);
+      )).orderBy(desc(fullTextRank), desc(customerServiceCaseMemories.createdAt)).limit(50);
       const scored = candidates.map((memory) => {
         let exclusionReason: string | null = null;
         if (memory.knowledgeVersion !== input.knowledgeVersion) exclusionReason = "knowledge_version_conflict";
@@ -2028,6 +2046,46 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       }));
     },
 
+    async listCaseMemoryCandidates(limit) {
+      const rows = await database.select({
+        id: customerServiceCaseMemories.id,
+        intent: customerServiceCaseMemories.intent,
+        normalizedSituation: customerServiceCaseMemories.normalizedSituation,
+        humanFinalReply: customerServiceCaseMemories.humanFinalReply,
+        status: customerServiceCaseMemories.eligibilityStatus,
+      }).from(customerServiceCaseMemories)
+        .where(eq(customerServiceCaseMemories.eligibilityStatus, "pending_review"))
+        .orderBy(asc(customerServiceCaseMemories.createdAt))
+        .limit(Math.max(1, Math.min(100, limit)));
+      return Object.freeze({ items: Object.freeze(rows.map((row) => Object.freeze(row))) });
+    },
+
+    async decideCaseMemory(input) {
+      const nextStatus = input.action === "approve" ? "approved_reusable" as const : "excluded" as const;
+      return database.transaction(async (transaction) => {
+        const [memory] = await transaction.select({
+          status: customerServiceCaseMemories.eligibilityStatus,
+          exclusionCodes: customerServiceCaseMemories.exclusionCodes,
+        }).from(customerServiceCaseMemories)
+          .where(eq(customerServiceCaseMemories.id, input.caseMemoryId)).limit(1).for("update");
+        if (!memory || memory.status !== "pending_review") {
+          throw new Error("customer_service_case_memory_transition_invalid");
+        }
+        await transaction.update(customerServiceCaseMemories).set({
+          eligibilityStatus: nextStatus,
+          approvedByUserId: input.reviewerUserId,
+          decidedAt: input.now,
+          exclusionCodes: input.action === "reject"
+            ? [...new Set([...memory.exclusionCodes, "rejected_by_reviewer"])]
+            : memory.exclusionCodes,
+        }).where(and(
+          eq(customerServiceCaseMemories.id, input.caseMemoryId),
+          eq(customerServiceCaseMemories.eligibilityStatus, "pending_review"),
+        ));
+        return { status: nextStatus };
+      });
+    },
+
     async listLearningCandidates(limit) {
       const rows = await database.select({
         id: customerServiceLearningCandidates.id,
@@ -2062,13 +2120,13 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           customerServiceHumanReplyMatches.id,
           customerServiceCaseMemories.humanReplyMatchId,
         ))
-        .where(eq(customerServiceCaseMemories.eligibilityStatus, "pending_review"))
+        .where(eq(customerServiceCaseMemories.eligibilityStatus, "approved_reusable"))
         .orderBy(asc(customerServiceCaseMemories.createdAt))
         .limit(checkpoint);
       const summary = buildLearningSummary(cases.map((item) => ({
         ...item,
         approvedLowRisk: true,
-      })), minimumMatchedReplies);
+      })), minimumMatchedReplies, checkpoint);
       if (!summary?.candidates.length) return { checkpoint, created: 0 };
       const created = await database.insert(customerServiceLearningCandidates).values(
         summary.candidates.map((candidate) => ({
@@ -2104,16 +2162,6 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           eq(customerServiceLearningCandidates.id, input.candidateId),
           eq(customerServiceLearningCandidates.status, "pending"),
         ));
-        if (nextStatus === "approved" && candidate.sourceCaseMemoryIds.length) {
-          await transaction.update(customerServiceCaseMemories).set({
-            eligibilityStatus: "approved_reusable",
-            approvedByUserId: input.reviewerUserId,
-            decidedAt: input.now,
-          }).where(and(
-            inArray(customerServiceCaseMemories.id, [...candidate.sourceCaseMemoryIds]),
-            eq(customerServiceCaseMemories.eligibilityStatus, "pending_review"),
-          ));
-        }
         return { status: nextStatus };
       });
     },

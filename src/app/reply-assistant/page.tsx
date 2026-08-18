@@ -7,6 +7,7 @@ import { createCustomerServiceRuntime } from "@/server/customer-service/runtime"
 import compiledKnowledge from "@/server/customer-service/knowledge/compiled-knowledge.json";
 import styles from "./reply-assistant.module.css";
 import { LearningCandidateReview } from "./learning-candidate-review";
+import { CaseMemoryReview } from "./case-memory-review";
 import { learningMetricCards, pilotMetricCards } from "./metric-cards";
 
 export const metadata = { title: "Reply Assistant | R&R Gallery" };
@@ -25,11 +26,12 @@ export default async function ReplyAssistantPage() {
     });
     await runtime.repository.refreshLearningCandidates();
   }
-  const [queue, rawMetrics, learningCandidates] = runtime
+  const [queue, rawMetrics, learningCandidates, caseMemories] = runtime
     ? await Promise.all([
       runtime.repository.listQueue(100),
       runtime.repository.metricCounts(),
       runtime.repository.listLearningCandidates(20),
+      runtime.repository.listCaseMemoryCandidates(20),
     ])
     : [emptyQueue, {
       totalIncomingEligible: 0, draftsGenerated: 0, acceptedUnchanged: 0, editedAccepted: 0,
@@ -51,7 +53,7 @@ export default async function ReplyAssistantPage() {
       learningCandidatesPending: 0, learningCandidatesApproved: 0,
       learningCandidatesRejected: 0,
       commonEditReasons: [],
-    }, { items: [] }];
+    }, { items: [] }, { items: [] }];
   const metrics = calculatePilotMetrics(rawMetrics);
   const cards = [
     ["Incoming", metrics.totalIncomingEligible],
@@ -89,6 +91,10 @@ export default async function ReplyAssistantPage() {
       <div className={styles.metrics}>{cards.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
       <LearningCandidateReview
         candidates={learningCandidates.items}
+        canReview={access.adminRole === "admin"}
+      />
+      <CaseMemoryReview
+        cases={caseMemories.items}
         canReview={access.adminRole === "admin"}
       />
       <ReplyAssistantClient initialItems={queue.items} />

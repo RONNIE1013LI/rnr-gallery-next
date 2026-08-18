@@ -374,6 +374,20 @@ export interface CustomerServiceRepository {
     | Readonly<{ status: "excluded"; caseMemoryId: string; exclusionCodes: readonly string[] }>
     | Readonly<{ status: "already_exists"; caseMemoryId: string }>
   >;
+  listCaseMemoryCandidates(limit: number): Promise<Readonly<{ items: readonly Readonly<{
+    id: string;
+    intent: string;
+    normalizedSituation: string;
+    humanFinalReply: string;
+    status: "pending_review" | "approved_reusable" | "excluded" | "revoked";
+  }>[] }>>;
+  decideCaseMemory(input: Readonly<{
+    caseMemoryId: string;
+    reviewerUserId: string;
+    action: "approve" | "reject";
+    reason: string | null;
+    now: Date;
+  }>): Promise<Readonly<{ status: "approved_reusable" | "excluded" }>>;
   retrieveApprovedCaseMemories(input: Readonly<{
     attemptId: string;
     intent: string;

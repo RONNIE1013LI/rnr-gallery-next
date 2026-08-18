@@ -93,7 +93,10 @@ export function createFacebookChannelAdapter(): ChannelAdapter<unknown> {
             ? replyTo.mid.trim()
             : null;
           const attachments = role === "customer" && message ? normalizedAttachments(message, messageId) : [];
-          if (!conversationKey || !messageId || (!textValue && !attachments.length)) continue;
+          const safeText = role === "staff" && !textValue && list(message?.attachments).length
+            ? "[Staff sent an attachment]"
+            : textValue;
+          if (!conversationKey || !messageId || (!safeText && !attachments.length)) continue;
           const timestamp = typeof event?.timestamp === "number"
             ? event.timestamp
             : typeof entry.time === "number"
@@ -106,7 +109,7 @@ export function createFacebookChannelAdapter(): ChannelAdapter<unknown> {
             externalConversationKey: conversationKey,
             externalMessageKey: messageId,
             externalReplyToMessageKey,
-            text: textValue || null,
+            text: safeText || null,
             attachments,
             receivedAt: new Date(timestamp),
           }));

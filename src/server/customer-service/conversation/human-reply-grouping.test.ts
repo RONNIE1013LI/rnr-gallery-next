@@ -7,6 +7,7 @@ describe("human reply grouping", () => {
     lastOutboundAt: new Date("2026-08-18T00:00:00.000Z"),
     messageCount: 1,
     characterCount: 20,
+    replyToExternalMessageKeyHash: null as string | null,
   };
 
   it("accepts the 90-second edge in the same uninterrupted conversation", () => {
@@ -16,6 +17,7 @@ describe("human reply grouping", () => {
       receivedAt: new Date("2026-08-18T00:01:30.000Z"),
       textLength: 10,
       interveningCustomer: false,
+      replyToExternalMessageKeyHash: null,
       windowMs: 90_000,
     })).toBe(true);
   });
@@ -33,8 +35,21 @@ describe("human reply grouping", () => {
       receivedAt: new Date("2026-08-18T00:00:30.000Z"),
       textLength: 10,
       interveningCustomer: false,
+      replyToExternalMessageKeyHash: null,
       windowMs: 90_000,
       ...override,
+    })).toBe(false);
+  });
+
+  it("never combines staff messages that target different customer messages", () => {
+    expect(canAppendHumanReply({
+      group: { ...group, replyToExternalMessageKeyHash: "11".repeat(32) },
+      conversationId: "conversation-a",
+      receivedAt: new Date("2026-08-18T00:00:30.000Z"),
+      textLength: 10,
+      interveningCustomer: false,
+      replyToExternalMessageKeyHash: "22".repeat(32),
+      windowMs: 90_000,
     })).toBe(false);
   });
 });

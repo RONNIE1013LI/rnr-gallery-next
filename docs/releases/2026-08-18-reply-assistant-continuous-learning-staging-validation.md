@@ -10,14 +10,16 @@
 
 ## Engineering
 
-- [ ] Candidate is based on approved Phase 3.5 commit and has a clean diff.
-- [ ] Additive migration applies to an empty database and a Phase 3.5 database.
+- [x] Candidate is based on approved Phase 3.5 commit; final clean candidate commit is pending the last review.
+- [x] Additive migration applies in the approved `0030` -> `0031` -> `0032` order and to a fresh isolated database.
 - [ ] Migration rollback drill leaves existing tables/data readable without destructive down migration.
-- [ ] TypeScript, ESLint and build pass.
-- [ ] Full Customer Service suite passes.
-- [ ] All database suites pass with zero skips using guarded `TEST_DATABASE_URL`.
-- [ ] Unchanged Phase 3.5 18-case conversation evaluation passes.
+- [x] TypeScript, ESLint and build pass. ESLint reports zero errors and three existing warnings.
+- [x] Full Customer Service suite passes: 63 files / 746 tests.
+- [x] Customer Service database integration and schema/auth suites pass with zero skips using guarded `TEST_DATABASE_URL`: 71 / 71.
+- [x] Unchanged Phase 3.5 18-case conversation evaluation passes.
 - [ ] Unchanged 100-case real text evaluation has zero bypass/violation and no quality regression.
+
+The unchanged real evaluation currently has 100 / 100 correct gate decisions and zero bypass, but all 60 eligible Preview provider calls fail with HTTP 401. Rotate/fix the Preview-only OpenAI credential, then rerun the unchanged dataset. Do not use or change the Production credential for this validation.
 
 ## Meta Echo
 
@@ -109,3 +111,12 @@
 | No-send | PASS / FAIL |  |  |  |
 
 Staging is READY only when all rows are PASS and a real Test Page echo is proven. Codex cannot sign for Ronnie.
+
+## Current Blockers — 2026-08-18
+
+1. Preview OpenAI credential returns HTTP 401; real 100-case quality and cost evidence is incomplete.
+2. Real Meta Development App / non-Production Test Page outbound echo has not yet been captured against this candidate.
+3. Preview 390px browser validation and manual reviewer sign-off remain pending.
+4. Rollback drill and named owner sign-off remain pending.
+
+No Production feature flag, database, callback or send capability was changed.

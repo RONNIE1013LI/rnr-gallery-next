@@ -106,3 +106,51 @@ For each evaluation case record only synthetic case ID, expected/actual decision
 ## Pass Rule
 
 Phase 3.6 is not Staging ready unless every safety target is met, all database suites pass with zero skips, Phase 3.5 baselines do not regress, and the real Test Page proves outbound echo capture. A missing real echo is `BLOCKED`, not a synthetic PASS.
+
+## Candidate Results — 2026-08-18
+
+### Deterministic Continuous-Learning Evaluation
+
+| Metric | Result |
+| --- | ---: |
+| Cases | 50 |
+| Human outbound capture accuracy | 100% |
+| AI-to-human matching precision | 100% |
+| Unmatched rate | 8.51% |
+| Relevant case retrieval precision | 100% |
+| Irrelevant case injection | 0% |
+| Cross-customer leakage | 0 |
+| Policy conflict leakage | 0 |
+| Realtime-data leakage | 0 |
+| High-risk case reuse | 0 |
+| Policy bypass / violation | 0 / 0 |
+| Automatic sends | 0 |
+| Direct / assisted acceptance | 50% / 100% |
+| Average normalized edit distance | 0.18 |
+| Input / cached / output token increase | Not measured; no successful real-provider run |
+| Incremental API cost | Not measured; no successful real-provider run |
+| Matching / retrieval latency | 0ms / 0.04ms average in deterministic component evaluation |
+
+The runner executes the production Facebook adapter, outbound sanitizer, conservative matcher, Policy Gate, Case Memory eligibility and retrieval scorer. A mutation test proves expected values are not reused as actual values. Repository dedupe, CAS races and approval transitions remain covered by the isolated PostgreSQL integration suite. Latency is component-level only; token and cost remain unmeasured until the unchanged real-provider evaluation succeeds.
+
+### Phase 3.5 Regression
+
+The unchanged 18-case conversation evaluation passed with 100% context retrieval accuracy, 100% short-reply interpretation accuracy, 0% unnecessary drafts, zero cross-customer leakage, zero policy bypass, 100% direct/assisted acceptance and 0.21ms average deterministic latency.
+
+### Real 100-Case Text Evaluation
+
+The unchanged dataset and approved model configuration were used. Gate behavior passed: 100 / 100 expected decisions matched, 40 requests were blocked before the provider, and policy bypass remained zero. The remaining 60 calls failed before generation because the Vercel Preview OpenAI credential returned HTTP 401. No model output, tokens or provider cost were produced. This is an environment blocker and is not recorded as an AI-quality pass.
+
+### Database and Build Evidence
+
+- Fresh isolated database: 33 migrations applied, including additive `0032`; 17 Customer Service tables present.
+- Customer Service database integration and schema/auth coverage: 71 / 71 pass, zero skipped, with the dedicated-test-database safety guard active.
+- Full Customer Service regression: 63 files / 746 tests pass, zero skipped.
+- TypeScript: pass.
+- ESLint: zero errors, three existing unused-parameter warnings.
+- Production build: pass with local test-only auth/database environment values.
+- Knowledge compilation check, privacy audit, no-send tests and secret scan: pass.
+
+### Current Result
+
+The implementation candidate is ready for external Staging validation. Staging itself remains blocked until the Preview OpenAI credential is valid and the real signed Test Page echo flow passes.
