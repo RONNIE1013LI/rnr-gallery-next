@@ -6,6 +6,7 @@ import {
   hasFormPermission,
   isFormCapableRole,
 } from "./forms-permissions";
+import { normalizeStaffAccessProfile } from "@/server/auth/staff-access-profile";
 
 describe("forms permissions", () => {
   it("grants admins every form capability without a stored profile", () => {
@@ -35,9 +36,18 @@ describe("forms permissions", () => {
     expect(profile.permissions.update_delivery_status).toBe(true);
   });
 
-  it("allows existing staff into forms without broadening administrator roles", () => {
-    expect(hasFormPermission("staff", null, "view_jobs")).toBe(true);
-    expect(hasFormPermission("staff", null, "update_finance")).toBe(false);
+  it("requires staff to have a custom profile and grants only its selected form keys", () => {
+    const profile = normalizeStaffAccessProfile({
+      adminPermissions: [],
+      formPermissions: { view_files: true },
+      assignedOnly: true,
+    });
+
+    expect(hasFormPermission("staff", null, "view_jobs")).toBe(false);
+    expect(hasFormPermission("staff", profile, "view_jobs")).toBe(true);
+    expect(hasFormPermission("staff", profile, "view_files")).toBe(true);
+    expect(hasFormPermission("staff", profile, "view_customer_contact")).toBe(false);
+    expect(hasFormPermission("staff", profile, "update_finance")).toBe(false);
     expect(isFormCapableRole("staff")).toBe(true);
     expect(isFormCapableRole("form_staff")).toBe(true);
     expect(isAdminRole("form_staff")).toBe(false);

@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { hasAdminPermission } from "./admin-permissions";
+import {
+  ADMIN_PERMISSION_KEYS,
+  ASSIGNABLE_ADMIN_PERMISSION_KEYS,
+  hasAdminPermission,
+} from "./admin-permissions";
 
 describe("admin permissions", () => {
   it("allows admins to perform every management action", () => {
@@ -32,34 +36,26 @@ describe("admin permissions", () => {
       "export_production_jobs",
       "use_reply_assistant",
     ] as const) {
-      expect(hasAdminPermission("admin", permission)).toBe(true);
+      expect(hasAdminPermission("admin", [], permission)).toBe(true);
     }
   });
 
-  it("limits staff to day-to-day orders, customers, gallery, and content", () => {
+  it("grants staff only their explicitly stored management permissions", () => {
+    const granted = ["access_admin", "view_orders", "update_order_status"] as const;
     for (const permission of [
       "access_admin",
       "view_orders",
       "update_order_status",
-      "view_customers",
-      "manage_gallery",
-      "manage_content",
-      "view_production_jobs",
-      "create_manual_jobs",
-      "update_production_jobs",
-      "view_production_files",
-      "upload_production_files",
-      "review_production_proofs",
-      "manage_production_views",
-      "view_production_reports",
-      "use_reply_assistant",
     ] as const) {
-      expect(hasAdminPermission("staff", permission)).toBe(true);
+      expect(hasAdminPermission("staff", granted, permission)).toBe(true);
     }
 
     for (const permission of [
+      "view_customers",
       "update_payment_status",
       "record_refund",
+      "manage_gallery",
+      "manage_content",
       "publish_content",
       "manage_prices",
       "manage_shipping",
@@ -69,16 +65,30 @@ describe("admin permissions", () => {
       "manage_roles",
       "view_production_finance",
       "update_production_finance",
+      "view_production_jobs",
+      "create_manual_jobs",
+      "update_production_jobs",
+      "view_production_files",
+      "upload_production_files",
+      "review_production_proofs",
+      "manage_production_views",
+      "view_production_reports",
       "export_production_jobs",
+      "use_reply_assistant",
     ] as const) {
-      expect(hasAdminPermission("staff", permission)).toBe(false);
+      expect(hasAdminPermission("staff", granted, permission)).toBe(false);
     }
   });
 
+  it("keeps staff role management unavailable for assignment", () => {
+    expect(ADMIN_PERMISSION_KEYS).toContain("manage_roles");
+    expect(ASSIGNABLE_ADMIN_PERMISSION_KEYS).not.toContain("manage_roles");
+  });
+
   it("denies customers and unknown roles", () => {
-    expect(hasAdminPermission("customer", "access_admin")).toBe(false);
-    expect(hasAdminPermission("form_staff", "access_admin")).toBe(false);
-    expect(hasAdminPermission("owner", "access_admin")).toBe(false);
-    expect(hasAdminPermission(null, "access_admin")).toBe(false);
+    expect(hasAdminPermission("customer", [], "access_admin")).toBe(false);
+    expect(hasAdminPermission("form_staff", [], "access_admin")).toBe(false);
+    expect(hasAdminPermission("owner", [], "access_admin")).toBe(false);
+    expect(hasAdminPermission(null, [], "access_admin")).toBe(false);
   });
 });

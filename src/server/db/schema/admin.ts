@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import {
   check,
+  boolean,
   index,
   integer,
   jsonb,
@@ -13,10 +14,30 @@ import {
 import { user } from "./auth";
 import { orders, type OrderFulfilmentStatus } from "./orders";
 import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
+import type { AdminPermission } from "@/server/auth/admin-permissions";
 
 export type AuditResult = "success" | "failure";
 export type AuditSummary = Readonly<Record<string, unknown>>;
 export type OrderNoteVisibility = "internal" | "customer";
+
+export const adminStaffAccess = pgTable(
+  "admin_staff_access",
+  {
+    userId: text("user_id").primaryKey().references(() => user.id, { onDelete: "cascade" }),
+    adminPermissions: jsonb("admin_permissions").$type<AdminPermission[]>().default([]).notNull(),
+    formPermissions: jsonb("form_permissions").$type<Record<string, boolean>>().default({}).notNull(),
+    assignedOnly: boolean("assigned_only").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .$onUpdate(() => /* @__PURE__ */ new Date())
+      .notNull(),
+  },
+  (table) => [
+    check("admin_staff_access_admin_permissions_array", sql`jsonb_typeof(${table.adminPermissions}) = 'array'`),
+    check("admin_staff_access_form_permissions_object", sql`jsonb_typeof(${table.formPermissions}) = 'object'`),
+  ],
+);
 
 export const adminAuditLogs = pgTable(
   "admin_audit_logs",

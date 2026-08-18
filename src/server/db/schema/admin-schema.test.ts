@@ -3,6 +3,7 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   adminAuditLogs,
+  adminStaffAccess,
   contentEntries,
   formUserAccess,
   orderNotes,
@@ -37,6 +38,24 @@ describe("admin operations schema", () => {
     ]));
     expect(getTableConfig(formUserAccess).checks.map((check) => check.name)).toContain(
       "form_user_access_preset_valid",
+    );
+  });
+
+  it("stores exact staff access profiles separately from account roles", () => {
+    expect(getTableName(adminStaffAccess)).toBe("admin_staff_access");
+    expect(columns(adminStaffAccess)).toEqual(expect.arrayContaining([
+      "user_id",
+      "admin_permissions",
+      "form_permissions",
+      "assigned_only",
+      "created_at",
+      "updated_at",
+    ]));
+    expect(getTableConfig(adminStaffAccess).checks.map((check) => check.name)).toEqual(
+      expect.arrayContaining([
+        "admin_staff_access_admin_permissions_array",
+        "admin_staff_access_form_permissions_object",
+      ]),
     );
   });
 

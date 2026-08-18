@@ -4,6 +4,10 @@ import {
   type FormPermissionKey,
   type FormRolePresetKey,
 } from "@/domain/forms/forms-parity";
+import {
+  isStaffAccessProfile,
+  type StaffAccessProfile,
+} from "@/server/auth/staff-access-profile";
 
 export type FormPermission = FormPermissionKey;
 export type FormCapableRole = "admin" | "staff" | "form_staff";
@@ -13,21 +17,6 @@ export type FormAccessProfile = Readonly<{
   assignedOnly: boolean;
   permissions: Readonly<Record<FormPermission, boolean>>;
 }>;
-
-const staffPermissions = new Set<FormPermission>([
-  "access_forms",
-  "view_jobs",
-  "create_jobs",
-  "update_jobs",
-  "view_customer_contact",
-  "view_files",
-  "upload_files",
-  "update_production_status",
-  "update_delivery_status",
-  "view_stats",
-  "manage_stats",
-  "manage_views",
-]);
 
 export function buildFormAccessProfile(
   preset: FormRolePresetKey,
@@ -60,10 +49,12 @@ export function isFormCapableRole(value: unknown): value is FormCapableRole {
 
 export function hasFormPermission(
   role: unknown,
-  profile: FormAccessProfile | null,
+  profile: FormAccessProfile | StaffAccessProfile | null,
   permission: FormPermission,
 ): boolean {
   if (role === "admin") return true;
-  if (role === "staff") return staffPermissions.has(permission);
-  return role === "form_staff" && Boolean(profile?.permissions[permission]);
+  if (role === "staff") {
+    return isStaffAccessProfile(profile) && profile.formPermissions[permission];
+  }
+  return role === "form_staff" && isFormAccessProfile(profile) && Boolean(profile.permissions[permission]);
 }

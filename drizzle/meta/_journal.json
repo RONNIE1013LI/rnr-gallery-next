@@ -239,6 +239,13 @@
       "when": 1787037891106,
       "tag": "0033_remove_zip_payment_provider",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1787043110888,
+      "tag": "0034_admin_staff_access",
+      "breakpoints": true
     }
   ]
 }
