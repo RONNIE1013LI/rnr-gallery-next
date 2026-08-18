@@ -28,7 +28,8 @@ export type AdminPermission =
   | "view_production_reports"
   | "export_production_jobs"
   | "manage_production_fields"
-  | "use_reply_assistant";
+  | "use_reply_assistant"
+  | "review_reply_learning";
 
 const staffPermissions = new Set<AdminPermission>([
   "access_admin",

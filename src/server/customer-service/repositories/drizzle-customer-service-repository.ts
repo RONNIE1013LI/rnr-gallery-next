@@ -15,6 +15,7 @@ import {
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
   customerServiceImageJobs,
+  customerServiceLearningCandidates,
   customerServiceMessages,
   customerServicePilotRuns,
   customerServiceTurns,
@@ -1961,6 +1962,36 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         humanFinalReply: item.memory.humanFinalReply,
         score: item.score?.totalScore ?? 0,
       }));
+    },
+
+    async listLearningCandidates(limit) {
+      const rows = await database.select({
+        id: customerServiceLearningCandidates.id,
+        intent: customerServiceLearningCandidates.intent,
+        proposedChange: customerServiceLearningCandidates.proposedChange,
+        reasonCodes: customerServiceLearningCandidates.reasonCodes,
+        evidenceCount: customerServiceLearningCandidates.evidenceCount,
+        status: customerServiceLearningCandidates.status,
+      }).from(customerServiceLearningCandidates)
+        .orderBy(desc(customerServiceLearningCandidates.createdAt))
+        .limit(Math.max(1, Math.min(100, limit)));
+      return Object.freeze({ items: Object.freeze(rows.map((row) => Object.freeze(row))) });
+    },
+
+    async decideLearningCandidate(input) {
+      const nextStatus = input.action === "reject" ? "rejected" as const : "approved" as const;
+      const updated = await database.update(customerServiceLearningCandidates).set({
+        status: nextStatus,
+        approvedText: input.action === "edit_and_approve" ? input.approvedText : null,
+        reviewerUserId: input.reviewerUserId,
+        decisionReason: input.reason,
+        decidedAt: input.now,
+      }).where(and(
+        eq(customerServiceLearningCandidates.id, input.candidateId),
+        eq(customerServiceLearningCandidates.status, "pending"),
+      )).returning({ id: customerServiceLearningCandidates.id });
+      if (!updated.length) throw new Error("customer_service_learning_candidate_transition_invalid");
+      return { status: nextStatus };
     },
 
     async createImageJobProviderAttempt(input) {

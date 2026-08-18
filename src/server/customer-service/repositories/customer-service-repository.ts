@@ -369,6 +369,22 @@ export interface CustomerServiceRepository {
     humanFinalReply: string;
     score: number;
   }>[]>;
+  listLearningCandidates(limit: number): Promise<Readonly<{ items: readonly Readonly<{
+    id: string;
+    intent: string;
+    proposedChange: string;
+    reasonCodes: readonly string[];
+    evidenceCount: number;
+    status: "pending" | "approved" | "rejected" | "superseded";
+  }>[] }>>;
+  decideLearningCandidate(input: Readonly<{
+    candidateId: string;
+    reviewerUserId: string;
+    action: "approve" | "edit_and_approve" | "reject";
+    approvedText: string | null;
+    reason: string | null;
+    now: Date;
+  }>): Promise<Readonly<{ status: "approved" | "rejected" }>>;
   createImageJobProviderAttempt(input: Readonly<{
     jobId: string;
     leaseToken: string;
