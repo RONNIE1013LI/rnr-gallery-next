@@ -43,13 +43,15 @@ export function PaymentRequestForm({ linkedOrder }: Readonly<{ linkedOrder?: Lin
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (pending || methods.length === 0) return;
-    const amountNumber = Number(amount);
-    const amountCents = Math.round(amountNumber * 100);
+    const normalizedAmount = amount.trim();
+    const amountMatch = /^(\d+)(?:\.(\d{1,2}))?$/.exec(normalizedAmount);
+    const amountCents = amountMatch
+      ? Number(amountMatch[1]) * 100 + Number((amountMatch[2] ?? "").padEnd(2, "0"))
+      : Number.NaN;
     if (
-      amount.trim() === "" ||
-      !Number.isFinite(amountNumber) ||
-      amountNumber <= 0 ||
-      !Number.isInteger(amountNumber * 100) ||
+      !amountMatch ||
+      !Number.isSafeInteger(amountCents) ||
+      amountCents <= 0 ||
       (linkedOrder && amountCents > linkedOrder.unreservedCents)
     ) {
       setMessage("Enter a valid amount with no more than two decimal places.");

@@ -72,4 +72,22 @@ describe("Admin PaymentRequestForm", () => {
     fireEvent.click(screen.getByRole("button", { name: "Create payment request" }));
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it("submits exact cents for a valid seven-cent amount", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ request: { id: "request-1" } }),
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<PaymentRequestForm />);
+
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "0.07" } });
+    fireEvent.change(screen.getByLabelText("Description"), {
+      target: { value: "Small balance" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Create payment request" }));
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toMatchObject({ amountCents: 7 });
+  });
 });
