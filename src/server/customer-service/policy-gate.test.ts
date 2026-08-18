@@ -63,6 +63,7 @@ describe("customer service policy gate", () => {
     expect(evaluatePolicyGate({
       message: "A1",
       intentOverride: "quote_information_collection",
+      isContextualQuoteDetail: true,
       knowledge: compiledKnowledge,
     })).toMatchObject({ providerAllowed: true, intent: "quote_information_collection" });
     expect(evaluatePolicyGate({

@@ -57,10 +57,13 @@ const INTENT_RULES: Record<CustomerServiceIntent, readonly string[]> = {
   unknown: [],
 };
 
-function realtimeReason(message: string, intent: CustomerServiceIntent) {
+function realtimeReason(message: string, intent: CustomerServiceIntent, isContextualQuoteDetail: boolean) {
   if (intent === "quote_information_collection") {
     if (isGenericBannerQuoteEnquiry(message)) return "";
-    return /\bhow much\b|\bcurrent price\b|\bprice (?:is|for)\b|\bcost (?:is|of|for)\b|\bquote for\b/i.test(message)
+    if (isContextualQuoteDetail && !/\bhow much\b|\bcurrent price\b|\bprice (?:is|for)\b|\bcost (?:is|of|for)\b|\bquote for\b/i.test(message)) {
+      return "";
+    }
+    return /\bhow much\b|\bcurrent price\b|\bprice (?:is|for)\b|\bcost (?:is|of|for)\b|\bA[0-4]\b|\b\d+\s*[x×]\s*\d+\b/i.test(message)
       ? "realtime_data_required"
       : "";
   }
@@ -74,10 +77,12 @@ export function evaluatePolicyGate({
   message,
   knowledge,
   intentOverride,
+  isContextualQuoteDetail = false,
 }: Readonly<{
   message: string;
   knowledge: PolicyKnowledge;
   intentOverride?: CustomerServiceIntent;
+  isContextualQuoteDetail?: boolean;
 }>): PolicyGateResult {
   const value = String(message ?? "").trim();
   const intent = intentOverride ?? detectIntent(value);
@@ -94,7 +99,7 @@ export function evaluatePolicyGate({
     };
   }
 
-  if (realtimeReason(value, intent)) {
+  if (realtimeReason(value, intent, isContextualQuoteDetail)) {
     return {
       decision: "REALTIME_DATA_REQUIRED",
       providerAllowed: false,

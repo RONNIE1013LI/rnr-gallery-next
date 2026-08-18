@@ -74,6 +74,7 @@ export async function evaluateConversationCases(input: Readonly<{
       message: turnText,
       knowledge: input.knowledge,
       intentOverride: resolved.intent,
+      isContextualQuoteDetail: resolved.inherited && resolved.reason === "pending_quote_detail",
     });
     const actualAction = acknowledgement.suppress
       ? "suppress" as const

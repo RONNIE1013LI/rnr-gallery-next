@@ -73,6 +73,7 @@ export class CustomerServiceEngine {
       message: text,
       knowledge: this.knowledge,
       intentOverride: resolved.intent,
+      isContextualQuoteDetail: resolved.inherited && resolved.reason === "pending_quote_detail",
     });
   }
 
