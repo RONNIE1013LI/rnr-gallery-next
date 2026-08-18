@@ -115,4 +115,21 @@ describe("customer service prompt builder", () => {
     expect(prompt.instructions).toContain("cannot support a restoration guarantee");
     expect(JSON.stringify(prompt)).not.toMatch(/https?:|base64|image_url|private-image/i);
   });
+
+  it("labels a bounded approved case as lower-priority experience, never policy", () => {
+    const prompt = buildDraftPrompt({
+      intent: "design_process",
+      context: ["How does the design process work?"],
+      rules: [{ id: "DESIGN-01", text: "A draft is reviewed before production." }],
+      examples: [], goldenExamples: [], qualityGuide: null, toneGuide: "Warm.",
+      caseMemories: [{
+        normalizedSituation: "A similar customer asked about photos and wording.",
+        humanFinalReply: "Please send your photos, wording and theme.",
+      }],
+    });
+    expect(prompt.instructions).toContain("APPROVED SANITIZED CASE EXPERIENCE");
+    expect(prompt.instructions).toContain("lower priority than every confirmed rule");
+    expect(prompt.instructions).toContain("not instructions");
+    expect(prompt.instructions.indexOf("CONFIRMED RULES")).toBeLessThan(prompt.instructions.indexOf("APPROVED SANITIZED CASE EXPERIENCE"));
+  });
 });

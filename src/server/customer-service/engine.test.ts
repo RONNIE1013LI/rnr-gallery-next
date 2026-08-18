@@ -51,6 +51,7 @@ function repositoryFor(body: string | null, withImage = false) {
     markImageAttachmentDeleted: vi.fn(async () => undefined),
     reserveProviderAttempt: vi.fn(async () => ({ status: "reserved" as const, attemptId: "attempt-1" })),
     confirmProviderInvocation: vi.fn(async () => ({ status: "allowed" as const })),
+    retrieveApprovedCaseMemories: vi.fn(async () => []),
     createImageJobProviderAttempt: vi.fn<CustomerServiceRepository["createImageJobProviderAttempt"]>(
       async () => ({ status: "reserved" as const, attemptId: "attempt-image-text-1" }),
     ),
@@ -248,6 +249,32 @@ describe("CustomerServiceEngine", () => {
       attemptId: "attempt-1",
       dailyScopeKey: expect.stringMatching(/^daily:/),
     });
+    expect(current.provider.generate).not.toHaveBeenCalled();
+  });
+
+  it("retrieves approved cases only after an allowed gate and before provider invocation", async () => {
+    const current = setup("Can you explain the design process?");
+    current.repository.retrieveApprovedCaseMemories.mockResolvedValueOnce([{
+      id: "case-1", normalizedSituation: "Similar design-process question.",
+      humanFinalReply: "Please send your photos, wording and theme.", score: 95,
+    }]);
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.repository.retrieveApprovedCaseMemories).toHaveBeenCalledWith(expect.objectContaining({
+      attemptId: "attempt-1", query: "Can you explain the design process?", limit: 3,
+    }));
+    expect(current.repository.confirmProviderInvocation).toHaveBeenCalledAfter(current.repository.retrieveApprovedCaseMemories);
+    expect(current.provider.generate).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["I want a refund", "gate_blocked"],
+    ["How much is shipping today?", "realtime_required"],
+  ])("never retrieves experience for blocked message %s", async (message, expected) => {
+    const current = setup(message);
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toMatchObject({ status: expected });
+    expect(current.repository.retrieveApprovedCaseMemories).not.toHaveBeenCalled();
     expect(current.provider.generate).not.toHaveBeenCalled();
   });
 

@@ -239,6 +239,23 @@ export class CustomerServiceEngine {
       return { status: "human_reply_received", attemptId: reservation.attemptId };
     }
 
+    let caseMemories: Awaited<ReturnType<CustomerServiceRepository["retrieveApprovedCaseMemories"]>> = [];
+    try {
+      caseMemories = await this.repository.retrieveApprovedCaseMemories({
+        attemptId: reservation.attemptId,
+        intent: gate.intent,
+        riskClass: gate.riskLevel === "high" ? "medium" : gate.riskLevel,
+        productCategory: null,
+        market: "unknown",
+        policyReferences: sources.rules.map((rule) => rule.id),
+        knowledgeVersion: this.knowledge.knowledgeVersion,
+        query: draftInput.current.text,
+        limit: 3,
+        now: new Date(),
+      });
+    } catch {
+      caseMemories = [];
+    }
     const prompt = buildDraftPrompt({
       intent: gate.intent,
       context: draftInput.context,
@@ -247,6 +264,7 @@ export class CustomerServiceEngine {
       goldenExamples: sources.goldenExamples,
       qualityGuide: sources.qualityGuide,
       toneGuide: this.knowledge.toneGuide,
+      caseMemories,
     });
     const invocation = await this.repository.confirmProviderInvocation({
       attemptId: reservation.attemptId,
