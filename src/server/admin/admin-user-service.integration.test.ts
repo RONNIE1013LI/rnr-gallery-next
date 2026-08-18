@@ -2,10 +2,12 @@ import { randomUUID } from "node:crypto";
 import { and, eq } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { adminAuditLogs, user } from "@/server/db/schema";
+import { adminAuditLogs, adminStaffAccess, formUserAccess, user } from "@/server/db/schema";
 import {
-  createAdminUserRoleService,
-  createDrizzleAdminUserRoleRepository,
+  AdminUserAuthorizationError,
+  AdminUserConflictError,
+  createAdminUserService,
+  createDrizzleAdminUserRepository,
 } from "./admin-user-service";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -13,43 +15,70 @@ if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is required");
 
 const database = drizzle(testDatabaseUrl);
 const suffix = randomUUID();
-const actorId = `role-actor-${suffix}`;
-const targetId = `role-target-${suffix}`;
-const actorEmail = `role-actor-${suffix}@example.test`;
+const actorId = `access-actor-${suffix}`;
+const targetId = `access-target-${suffix}`;
+const profileMissingId = `access-profile-missing-${suffix}`;
+const actorEmail = `access-actor-${suffix}@example.test`;
 
-describe("admin user role persistence", () => {
+const staffProfile = {
+  adminPermissions: ["view_orders", "update_order_status"],
+  formPermissions: { access_forms: true, view_jobs: true },
+  assignedOnly: true,
+} as const;
+
+describe("admin user access persistence", () => {
   beforeAll(async () => {
     await database.insert(user).values([
-      { id: actorId, name: "Role Actor", email: actorEmail, role: "admin" },
-      { id: targetId, name: "Role Target", email: `role-target-${suffix}@example.test`, role: "customer" },
+      { id: actorId, name: "Access Actor", email: actorEmail, role: "admin" },
+      { id: targetId, name: "Access Target", email: `access-target-${suffix}@example.test`, role: "customer" },
+      {
+        id: profileMissingId,
+        name: "Profile Missing",
+        email: `access-profile-missing-${suffix}@example.test`,
+        role: "staff",
+      },
     ]);
   });
 
   afterAll(async () => {
     await database.delete(adminAuditLogs).where(eq(adminAuditLogs.actorUserId, actorId));
+    await database.delete(user).where(eq(user.id, profileMissingId));
     await database.delete(user).where(eq(user.id, targetId));
     await database.delete(user).where(eq(user.id, actorId));
   });
 
-  it("updates the role and appends one idempotent audit record atomically", async () => {
-    const service = createAdminUserRoleService(createDrizzleAdminUserRoleRepository(database));
+  it("stores the normalized Staff profile and records an idempotent exact audit summary", async () => {
+    const service = createAdminUserService(createDrizzleAdminUserRepository(database));
     const input = {
       targetUserId: targetId,
-      role: "staff",
-      idempotencyKey: `role-change-${suffix}`,
+      role: "staff" as const,
+      ...staffProfile,
+      idempotencyKey: `employee-access-${suffix}`,
       requestSource: "integration-test",
-    } as const;
+    };
 
-    await expect(service.changeRole({ userId: actorId, email: actorEmail }, input))
-      .resolves.toMatchObject({ id: targetId, role: "staff", changed: true });
-    await expect(service.changeRole({ userId: actorId, email: actorEmail }, input))
-      .resolves.toMatchObject({ id: targetId, role: "staff", changed: false });
+    await expect(service.updateAccess({ userId: actorId, email: actorEmail }, input))
+      .resolves.toMatchObject({
+        id: targetId,
+        role: "staff",
+        adminPermissions: ["access_admin", "view_orders", "update_order_status"],
+        assignedOnly: true,
+        changed: true,
+      });
+    await expect(service.updateAccess({ userId: actorId, email: actorEmail }, input))
+      .resolves.toMatchObject({ id: targetId, changed: false });
+    await expect(service.updateAccess({ userId: actorId, email: actorEmail }, {
+      ...input,
+      assignedOnly: false,
+    })).rejects.toBeInstanceOf(AdminUserConflictError);
 
-    const [updated] = await database.select({ role: user.role }).from(user).where(eq(user.id, targetId));
-    const audit = await database.select({
+    const [storedProfile] = await database.select({
+      adminPermissions: adminStaffAccess.adminPermissions,
+      formPermissions: adminStaffAccess.formPermissions,
+      assignedOnly: adminStaffAccess.assignedOnly,
+    }).from(adminStaffAccess).where(eq(adminStaffAccess.userId, targetId));
+    const [audit] = await database.select({
       action: adminAuditLogs.action,
-      resourceType: adminAuditLogs.resourceType,
-      resourceId: adminAuditLogs.resourceId,
       beforeSummary: adminAuditLogs.beforeSummary,
       afterSummary: adminAuditLogs.afterSummary,
       result: adminAuditLogs.result,
@@ -58,14 +87,72 @@ describe("admin user role persistence", () => {
       eq(adminAuditLogs.idempotencyKey, input.idempotencyKey),
     ));
 
-    expect(updated).toEqual({ role: "staff" });
-    expect(audit).toEqual([{
-      action: "user.role.changed",
-      resourceType: "user",
-      resourceId: targetId,
+    expect(storedProfile).toMatchObject({
+      adminPermissions: ["access_admin", "view_orders", "update_order_status"],
+      formPermissions: expect.objectContaining({ access_forms: true, view_jobs: true }),
+      assignedOnly: true,
+    });
+    expect(audit).toMatchObject({
+      action: "user.access.changed",
       beforeSummary: { role: "customer" },
-      afterSummary: { role: "staff" },
+      afterSummary: {
+        role: "staff",
+        adminPermissions: ["access_admin", "view_orders", "update_order_status"],
+        formPermissions: expect.objectContaining({ access_forms: true, view_jobs: true }),
+        assignedOnly: true,
+      },
       result: "success",
-    }]);
+    });
+  });
+
+  it("returns nullable profile fields for a Staff account without a valid profile", async () => {
+    const service = createAdminUserService(createDrizzleAdminUserRepository(database));
+
+    await expect(service.getById(profileMissingId)).resolves.toMatchObject({
+      id: profileMissingId,
+      role: "staff",
+      adminPermissions: null,
+      formPermissions: null,
+      assignedOnly: null,
+    });
+  });
+
+  it("removes the Staff profile for every non-Staff role and keeps the Forms preset", async () => {
+    const service = createAdminUserService(createDrizzleAdminUserRepository(database));
+    const update = (role: "customer" | "admin" | "form_staff", idempotencyKey: string) => service.updateAccess(
+      { userId: actorId, email: actorEmail },
+      role === "form_staff"
+        ? { targetUserId: targetId, role, formPreset: "finance", idempotencyKey }
+        : { targetUserId: targetId, role, idempotencyKey },
+    );
+    const restoreStaff = (idempotencyKey: string) => service.updateAccess(
+      { userId: actorId, email: actorEmail },
+      { targetUserId: targetId, role: "staff", ...staffProfile, idempotencyKey },
+    );
+
+    await update("customer", `employee-access-customer-${suffix}`);
+    expect(await database.select().from(adminStaffAccess).where(eq(adminStaffAccess.userId, targetId))).toEqual([]);
+    await restoreStaff(`employee-access-staff-admin-${suffix}`);
+    await update("admin", `employee-access-admin-${suffix}`);
+    expect(await database.select().from(adminStaffAccess).where(eq(adminStaffAccess.userId, targetId))).toEqual([]);
+    await restoreStaff(`employee-access-staff-form-${suffix}`);
+    await update("form_staff", `employee-access-form-${suffix}`);
+
+    expect(await database.select().from(adminStaffAccess).where(eq(adminStaffAccess.userId, targetId))).toEqual([]);
+    await expect(database.select({ preset: formUserAccess.preset }).from(formUserAccess)
+      .where(eq(formUserAccess.userId, targetId))).resolves.toEqual([{ preset: "finance" }]);
+  });
+
+  it("rejects a stale actor inside the transaction", async () => {
+    const service = createAdminUserService(createDrizzleAdminUserRepository(database));
+    await database.update(user).set({ role: "staff" }).where(eq(user.id, actorId));
+
+    await expect(service.updateAccess({ userId: actorId, email: actorEmail }, {
+      targetUserId: targetId,
+      role: "customer",
+      idempotencyKey: `employee-access-stale-${suffix}`,
+    })).rejects.toBeInstanceOf(AdminUserAuthorizationError);
+
+    await database.update(user).set({ role: "admin" }).where(eq(user.id, actorId));
   });
 });

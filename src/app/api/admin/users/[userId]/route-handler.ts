@@ -22,7 +22,7 @@ type Access = Readonly<{ user: Readonly<{ id: string; email?: string }> }>;
 type UserRuntime = ReturnType<typeof getAdminUserRuntime>;
 type Dependencies = Readonly<{
   requirePermission: (permission: AdminPermission) => Promise<Access>;
-  changeRole: UserRuntime["changeRole"];
+  updateAccess: UserRuntime["updateAccess"];
   trustedOrigin?: string;
   recordFailure?: typeof recordAdminFailure;
 }>;
@@ -47,7 +47,7 @@ function errorResponse(error: unknown) {
   if (error instanceof AdminUserConflictError) {
     return Response.json({ error: error.message }, { status: 409, headers: noStore });
   }
-  return Response.json({ error: "The user role could not be updated." }, { status: 500, headers: noStore });
+  return Response.json({ error: "The user access could not be updated." }, { status: 500, headers: noStore });
 }
 
 function requestSource(request: Request) {
@@ -56,10 +56,10 @@ function requestSource(request: Request) {
     "direct";
 }
 
-export function createAdminUserRoleRoute(dependencies?: Dependencies) {
+export function createAdminUserRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => ({
     requirePermission: requireAdminPermission,
-    changeRole: getAdminUserRuntime().changeRole,
+    updateAccess: getAdminUserRuntime().updateAccess,
     recordFailure: recordAdminFailure,
   });
 
@@ -79,9 +79,12 @@ export function createAdminUserRoleRoute(dependencies?: Dependencies) {
         };
         const body = await parseBoundedJson(request) as Record<string, unknown>;
         idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey : undefined;
-        const result = await deps.changeRole(actor, {
+        const result = await deps.updateAccess(actor, {
           targetUserId,
           role: body.role,
+          adminPermissions: body.adminPermissions,
+          formPermissions: body.formPermissions,
+          assignedOnly: body.assignedOnly,
           formPreset: body.formPreset,
           idempotencyKey: body.idempotencyKey,
           requestSource: requestSource(request),
@@ -91,7 +94,7 @@ export function createAdminUserRoleRoute(dependencies?: Dependencies) {
         if (actor && deps.recordFailure) {
           await deps.recordFailure({
             actor,
-            action: "user.role.change.failed",
+            action: "user.access.change.failed",
             resourceType: "user",
             ...(targetUserId ? { resourceId: targetUserId } : {}),
             requestSource: requestSource(request),
@@ -107,5 +110,5 @@ export function createAdminUserRoleRoute(dependencies?: Dependencies) {
 
 type Actor = Readonly<{ userId: string; email: string }>;
 
-const route = createAdminUserRoleRoute();
+const route = createAdminUserRoute();
 export const PATCH = route.PATCH;

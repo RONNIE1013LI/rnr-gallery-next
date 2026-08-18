@@ -1,8 +1,13 @@
 import { and, asc, count, desc, eq, ilike, max, sql, type SQL } from "drizzle-orm";
 import { z } from "zod";
 import { getDatabase } from "@/server/db/client";
-import { adminAuditLogs, formUserAccess, session, user } from "@/server/db/schema";
-import { buildFormAccessProfile } from "@/server/forms/forms-permissions";
+import { adminAuditLogs, adminStaffAccess, formUserAccess, session, user } from "@/server/db/schema";
+import {
+  isStaffAccessProfile,
+  normalizeStaffAccessProfile,
+  type StaffAccessProfile,
+} from "@/server/auth/staff-access-profile";
+import { buildFormAccessProfile, type FormPermission } from "@/server/forms/forms-permissions";
 import { buildAuditRecord } from "./audit-service";
 
 export const adminUserRoles = ["admin", "form_staff", "staff", "customer"] as const;
@@ -13,13 +18,16 @@ export type FormAccessPreset = (typeof formAccessPresets)[number];
 type Database = ReturnType<typeof getDatabase>;
 type Actor = Readonly<{ userId: string; email: string }>;
 
-type AdminUserAccount = Readonly<{
+export type AdminUserAccount = Readonly<{
   id: string;
   name: string;
   email: string;
   emailVerified: boolean;
   role: AdminUserRole;
   formPreset: FormAccessPreset | null;
+  adminPermissions: readonly string[] | null;
+  formPermissions: Readonly<Record<FormPermission, boolean>> | null;
+  assignedOnly: boolean | null;
   createdAt: Date;
   updatedAt: Date;
 }>;
@@ -29,7 +37,7 @@ export type AdminUserListItem = AdminUserAccount & Readonly<{
   activeSessions: number;
 }>;
 
-export type AdminUserRoleChangeResult = AdminUserAccount & Readonly<{
+export type AdminUserAccessChangeResult = AdminUserAccount & Readonly<{
   changed: boolean;
 }>;
 
@@ -55,6 +63,60 @@ export function parseAdminUserFilters(
   });
 }
 
+const selectedUserFields = {
+  id: user.id,
+  name: user.name,
+  email: user.email,
+  emailVerified: user.emailVerified,
+  role: user.role,
+  formPreset: formUserAccess.preset,
+  adminPermissions: adminStaffAccess.adminPermissions,
+  formPermissions: adminStaffAccess.formPermissions,
+  assignedOnly: adminStaffAccess.assignedOnly,
+  createdAt: user.createdAt,
+  updatedAt: user.updatedAt,
+};
+
+function profileFromRecord(record: Pick<AdminUserAccount, "adminPermissions" | "formPermissions" | "assignedOnly">) {
+  if (!record.adminPermissions || !record.formPermissions || record.assignedOnly === null) return null;
+  const candidate = {
+    adminPermissions: record.adminPermissions,
+    formPermissions: record.formPermissions,
+    assignedOnly: record.assignedOnly,
+  };
+  return isStaffAccessProfile(candidate) ? candidate : null;
+}
+
+function freezeUser(record: {
+  id: string;
+  name: string;
+  email: string;
+  emailVerified: boolean;
+  role: string;
+  formPreset: string | null;
+  adminPermissions: string[] | null;
+  formPermissions: Record<string, boolean> | null;
+  assignedOnly: boolean | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): AdminUserAccount {
+  const profile = profileFromRecord({
+    adminPermissions: record.adminPermissions,
+    formPermissions: record.formPermissions as Record<FormPermission, boolean> | null,
+    assignedOnly: record.assignedOnly,
+  });
+  return Object.freeze({
+    ...record,
+    role: adminUserRoles.includes(record.role as AdminUserRole) ? record.role as AdminUserRole : "customer",
+    formPreset: formAccessPresets.includes(record.formPreset as FormAccessPreset)
+      ? record.formPreset as FormAccessPreset
+      : null,
+    adminPermissions: profile ? Object.freeze([...profile.adminPermissions]) : null,
+    formPermissions: profile ? Object.freeze({ ...profile.formPermissions }) : null,
+    assignedOnly: profile?.assignedOnly ?? null,
+  });
+}
+
 export async function listAdminUsers(
   database: Database,
   params: Readonly<Record<string, string | string[] | undefined>>,
@@ -70,20 +132,14 @@ export async function listAdminUsers(
   const page = pageCount ? Math.min(filters.page, pageCount) : 1;
   const items = await database
     .select({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      emailVerified: user.emailVerified,
-      role: user.role,
-      formPreset: formUserAccess.preset,
-      createdAt: user.createdAt,
-      updatedAt: user.updatedAt,
+      ...selectedUserFields,
       lastSeenAt: max(session.updatedAt),
       activeSessions: sql<number>`count(${session.id}) filter (where ${session.expiresAt} > now())`,
     })
     .from(user)
     .leftJoin(session, eq(session.userId, user.id))
     .leftJoin(formUserAccess, eq(formUserAccess.userId, user.id))
+    .leftJoin(adminStaffAccess, eq(adminStaffAccess.userId, user.id))
     .where(where)
     .groupBy(
       user.id,
@@ -92,6 +148,9 @@ export async function listAdminUsers(
       user.emailVerified,
       user.role,
       formUserAccess.preset,
+      adminStaffAccess.adminPermissions,
+      adminStaffAccess.formPermissions,
+      adminStaffAccess.assignedOnly,
       user.createdAt,
       user.updatedAt,
     )
@@ -100,8 +159,9 @@ export async function listAdminUsers(
     .offset((page - 1) * filters.pageSize);
   return Object.freeze({
     items: Object.freeze(items.map((item) => Object.freeze({
-      ...item,
+      ...freezeUser(item),
       activeSessions: Number(item.activeSessions ?? 0),
+      lastSeenAt: item.lastSeenAt,
     }))),
     total,
     page,
@@ -110,68 +170,153 @@ export async function listAdminUsers(
   });
 }
 
-const roleChangeSchema = z.object({
+const accessChangeSchema = z.object({
   targetUserId: z.string().trim().min(1).max(255),
   role: z.enum(adminUserRoles),
+  adminPermissions: z.array(z.string()).optional(),
+  formPermissions: z.record(z.string(), z.boolean()).optional(),
+  assignedOnly: z.boolean().optional(),
   formPreset: z.enum(formAccessPresets).optional(),
   idempotencyKey: z.string().trim().min(8).max(255),
   requestSource: z.string().trim().min(1).max(255).optional(),
 }).strict().superRefine((input, context) => {
+  if (input.role === "staff" && (
+    !input.adminPermissions || !input.formPermissions || input.assignedOnly === undefined
+  )) {
+    context.addIssue({ code: "custom", path: ["adminPermissions"], message: "Choose exact employee permissions" });
+  }
   if (input.role === "form_staff" && !input.formPreset) {
-    context.addIssue({
-      code: "custom",
-      path: ["formPreset"],
-      message: "Choose a form access profile",
-    });
+    context.addIssue({ code: "custom", path: ["formPreset"], message: "Choose a form access profile" });
   }
 });
 
-type RoleChangeInput = Readonly<{
+type AccessChangeInput = Readonly<{
   targetUserId: unknown;
   role: unknown;
+  adminPermissions?: unknown;
+  formPermissions?: unknown;
+  assignedOnly?: unknown;
   formPreset?: unknown;
   idempotencyKey: unknown;
   requestSource?: unknown;
 }>;
-type ParsedRoleChangeInput = z.output<typeof roleChangeSchema>;
-type AdminUserRoleRepository = Readonly<{
-  changeRole: (
-    actor: Actor,
-    input: ParsedRoleChangeInput,
-  ) => Promise<AdminUserRoleChangeResult | null>;
+
+export type ParsedAccessChangeInput = Readonly<{
+  targetUserId: string;
+  role: AdminUserRole;
+  profile: StaffAccessProfile | null;
+  formPreset?: FormAccessPreset;
+  idempotencyKey: string;
+  requestSource?: string;
 }>;
 
-export function createAdminUserRoleService(repository: AdminUserRoleRepository) {
+type AdminUserRepository = Readonly<{
+  getById: (userId: string) => Promise<AdminUserAccount | null>;
+  updateAccess: (
+    actor: Actor,
+    input: ParsedAccessChangeInput,
+  ) => Promise<AdminUserAccessChangeResult | null>;
+}>;
+
+function parseAccessChange(input: AccessChangeInput): ParsedAccessChangeInput {
+  const parsed = accessChangeSchema.safeParse(input);
+  if (!parsed.success) throw new AdminUserValidationError("Choose a valid user access profile.");
+  try {
+    const profile = parsed.data.role === "staff"
+      ? normalizeStaffAccessProfile({
+          adminPermissions: parsed.data.adminPermissions,
+          formPermissions: parsed.data.formPermissions,
+          assignedOnly: parsed.data.assignedOnly,
+        })
+      : null;
+    return Object.freeze({
+      targetUserId: parsed.data.targetUserId,
+      role: parsed.data.role,
+      profile,
+      ...(parsed.data.formPreset ? { formPreset: parsed.data.formPreset } : {}),
+      idempotencyKey: parsed.data.idempotencyKey,
+      ...(parsed.data.requestSource ? { requestSource: parsed.data.requestSource } : {}),
+    });
+  } catch {
+    throw new AdminUserValidationError("Choose a valid employee permissions profile.");
+  }
+}
+
+export function createAdminUserService(repository: AdminUserRepository) {
   return Object.freeze({
-    async changeRole(actor: Actor, input: RoleChangeInput) {
-      const parsed = roleChangeSchema.safeParse(input);
-      if (!parsed.success) throw new AdminUserValidationError("Choose a valid user role.");
-      if (parsed.data.targetUserId === actor.userId) {
+    getById(userId: string) {
+      return repository.getById(userId);
+    },
+    async updateAccess(actor: Actor, input: AccessChangeInput) {
+      const parsed = parseAccessChange(input);
+      if (parsed.targetUserId === actor.userId) {
         throw new AdminUserConflictError("You cannot change your own administrator role.");
       }
-      const result = await repository.changeRole(actor, parsed.data);
+      const result = await repository.updateAccess(actor, parsed);
       if (!result) throw new AdminUserNotFoundError("The user account could not be found.");
       return result;
     },
   });
 }
 
-const selectedUserFields = {
-  id: user.id,
-  name: user.name,
-  email: user.email,
-  emailVerified: user.emailVerified,
-  role: user.role,
-  formPreset: formUserAccess.preset,
-  createdAt: user.createdAt,
-  updatedAt: user.updatedAt,
-};
+function accessSummary(account: AdminUserAccount) {
+  const profile = profileFromRecord(account);
+  return {
+    role: account.role,
+    ...(profile ? {
+      adminPermissions: profile.adminPermissions,
+      formPermissions: profile.formPermissions,
+      assignedOnly: profile.assignedOnly,
+    } : {}),
+    ...(account.role === "form_staff" && account.formPreset ? { formPreset: account.formPreset } : {}),
+  };
+}
 
-export function createDrizzleAdminUserRoleRepository(database: Database): AdminUserRoleRepository {
+function matchesRecordedAccess(
+  summary: unknown,
+  targetUserId: string | null,
+  input: ParsedAccessChangeInput,
+) {
+  if (targetUserId !== input.targetUserId || !summary || typeof summary !== "object") return false;
+  const recorded = summary as Record<string, unknown>;
+  if (recorded.role !== input.role) return false;
+  if (input.role === "staff") {
+    return sameStaffAccessProfile({
+      adminPermissions: recorded.adminPermissions,
+      formPermissions: recorded.formPermissions,
+      assignedOnly: recorded.assignedOnly,
+    }, input.profile);
+  }
+  return input.role !== "form_staff" || recorded.formPreset === input.formPreset;
+}
+
+function sameStaffAccessProfile(candidate: unknown, expected: StaffAccessProfile | null) {
+  if (!expected || !isStaffAccessProfile(candidate)) return false;
+  return candidate.adminPermissions.length === expected.adminPermissions.length &&
+    candidate.adminPermissions.every((permission, index) => permission === expected.adminPermissions[index]) &&
+    candidate.assignedOnly === expected.assignedOnly &&
+    Object.entries(expected.formPermissions).every(
+      ([permission, enabled]) => candidate.formPermissions[permission as FormPermission] === enabled,
+    );
+}
+
+export function createDrizzleAdminUserRepository(database: Database): AdminUserRepository {
+  async function getById(userId: string) {
+    const [record] = await database
+      .select(selectedUserFields)
+      .from(user)
+      .leftJoin(formUserAccess, eq(formUserAccess.userId, user.id))
+      .leftJoin(adminStaffAccess, eq(adminStaffAccess.userId, user.id))
+      .where(eq(user.id, userId))
+      .limit(1);
+    return record ? freezeUser(record) : null;
+  }
+
   return Object.freeze({
-    async changeRole(actor, input) {
+    getById,
+    async updateAccess(actor, input) {
       return database.transaction(async (transaction) => {
-        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext('rnr_admin_user_role_change'))`);
+        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext('rnr_admin_user_access_change'))`);
 
         const [currentActor] = await transaction
           .select({ role: user.role })
@@ -181,99 +326,136 @@ export function createDrizzleAdminUserRoleRepository(database: Database): AdminU
         if (currentActor?.role !== "admin") {
           throw new AdminUserAuthorizationError("Administrator access has changed. Sign in again.");
         }
+        if (input.targetUserId === actor.userId) {
+          throw new AdminUserConflictError("You cannot change your own administrator role.");
+        }
+        let profile: StaffAccessProfile | null = null;
+        try {
+          profile = input.role === "staff" ? normalizeStaffAccessProfile(input.profile) : null;
+        } catch {
+          throw new AdminUserValidationError("Choose a valid employee permissions profile.");
+        }
+
+        const [lockedTarget] = await transaction
+          .select({ id: user.id })
+          .from(user)
+          .where(eq(user.id, input.targetUserId))
+          .for("update")
+          .limit(1);
+        if (!lockedTarget) return null;
+        const [targetRecord] = await transaction
+          .select(selectedUserFields)
+          .from(user)
+          .leftJoin(formUserAccess, eq(formUserAccess.userId, user.id))
+          .leftJoin(adminStaffAccess, eq(adminStaffAccess.userId, user.id))
+          .where(eq(user.id, lockedTarget.id))
+          .limit(1);
+        if (!targetRecord) return null;
+        const target = freezeUser(targetRecord);
 
         const [existingAudit] = await transaction
           .select({ resourceId: adminAuditLogs.resourceId, afterSummary: adminAuditLogs.afterSummary })
           .from(adminAuditLogs)
           .where(and(
             eq(adminAuditLogs.actorUserId, actor.userId),
-            eq(adminAuditLogs.action, "user.role.changed"),
+            eq(adminAuditLogs.action, "user.access.changed"),
+            eq(adminAuditLogs.result, "success"),
             eq(adminAuditLogs.idempotencyKey, input.idempotencyKey),
           ))
           .limit(1);
         if (existingAudit) {
-          const recordedRole = (existingAudit.afterSummary as Record<string, unknown> | null)?.role;
-          const recordedPreset = (existingAudit.afterSummary as Record<string, unknown> | null)?.formPreset;
-          if (
-            existingAudit.resourceId !== input.targetUserId ||
-            recordedRole !== input.role ||
-            (input.role === "form_staff" && recordedPreset !== input.formPreset)
-          ) {
-            throw new AdminUserConflictError("This role-change request has already been used.");
+          if (!matchesRecordedAccess(existingAudit.afterSummary, existingAudit.resourceId, input)) {
+            throw new AdminUserConflictError("This access-change request has already been used.");
           }
-          const [currentTarget] = await transaction
-            .select(selectedUserFields)
-            .from(user)
-            .leftJoin(formUserAccess, eq(formUserAccess.userId, user.id))
-            .where(eq(user.id, input.targetUserId))
-            .limit(1);
-          return currentTarget ? Object.freeze({ ...currentTarget, changed: false }) : null;
-        }
-
-        const [target] = await transaction
-          .select(selectedUserFields)
-          .from(user)
-          .leftJoin(formUserAccess, eq(formUserAccess.userId, user.id))
-          .where(eq(user.id, input.targetUserId))
-          .limit(1);
-        if (!target) return null;
-        if (
-          target.role === input.role &&
-          (input.role !== "form_staff" || target.formPreset === input.formPreset)
-        ) {
           return Object.freeze({ ...target, changed: false });
         }
 
-        const [updated] = await transaction
-          .update(user)
-          .set({ role: input.role, updatedAt: new Date() })
-          .where(eq(user.id, input.targetUserId))
-          .returning({
-            id: user.id,
-            name: user.name,
-            email: user.email,
-            emailVerified: user.emailVerified,
-            role: user.role,
-            createdAt: user.createdAt,
-            updatedAt: user.updatedAt,
+        const currentProfile = profileFromRecord(target);
+        const changed = target.role !== input.role ||
+          (input.role === "staff" && !sameStaffAccessProfile(currentProfile, profile)) ||
+          (input.role === "form_staff" && target.formPreset !== input.formPreset);
+        let updated = target;
+        if (changed) {
+          const [updatedRecord] = await transaction
+            .update(user)
+            .set({ role: input.role, updatedAt: new Date() })
+            .where(eq(user.id, input.targetUserId))
+            .returning({
+              id: user.id,
+              name: user.name,
+              email: user.email,
+              emailVerified: user.emailVerified,
+              role: user.role,
+              createdAt: user.createdAt,
+              updatedAt: user.updatedAt,
+            });
+          if (!updatedRecord) return null;
+          updated = Object.freeze({
+            ...updatedRecord,
+            formPreset: null,
+            adminPermissions: null,
+            formPermissions: null,
+            assignedOnly: null,
           });
-        if (!updated) return null;
+        }
 
         let formPreset: FormAccessPreset | null = null;
-        if (input.role === "form_staff" && input.formPreset) {
-          const profile = buildFormAccessProfile(input.formPreset);
-          await transaction.insert(formUserAccess).values({
+        if (input.role === "staff" && profile) {
+          await transaction.insert(adminStaffAccess).values({
             userId: input.targetUserId,
-            preset: input.formPreset,
+            adminPermissions: [...profile.adminPermissions],
+            formPermissions: { ...profile.formPermissions },
             assignedOnly: profile.assignedOnly,
-            permissions: profile.permissions,
           }).onConflictDoUpdate({
-            target: formUserAccess.userId,
+            target: adminStaffAccess.userId,
             set: {
-              preset: input.formPreset,
+              adminPermissions: [...profile.adminPermissions],
+              formPermissions: { ...profile.formPermissions },
               assignedOnly: profile.assignedOnly,
-              permissions: profile.permissions,
               updatedAt: new Date(),
             },
           });
-          formPreset = input.formPreset;
-        } else {
           await transaction.delete(formUserAccess).where(eq(formUserAccess.userId, input.targetUserId));
+        } else {
+          await transaction.delete(adminStaffAccess).where(eq(adminStaffAccess.userId, input.targetUserId));
+          if (input.role === "form_staff" && input.formPreset) {
+            const profile = buildFormAccessProfile(input.formPreset);
+            await transaction.insert(formUserAccess).values({
+              userId: input.targetUserId,
+              preset: input.formPreset,
+              assignedOnly: profile.assignedOnly,
+              permissions: profile.permissions,
+            }).onConflictDoUpdate({
+              target: formUserAccess.userId,
+              set: {
+                preset: input.formPreset,
+                assignedOnly: profile.assignedOnly,
+                permissions: profile.permissions,
+                updatedAt: new Date(),
+              },
+            });
+            formPreset = input.formPreset;
+          } else {
+            await transaction.delete(formUserAccess).where(eq(formUserAccess.userId, input.targetUserId));
+          }
         }
 
-        const result = Object.freeze({ ...updated, formPreset, changed: true });
-
+        const result = Object.freeze({
+          ...updated,
+          formPreset,
+          adminPermissions: profile ? Object.freeze([...profile.adminPermissions]) : null,
+          formPermissions: profile ? Object.freeze({ ...profile.formPermissions }) : null,
+          assignedOnly: profile?.assignedOnly ?? null,
+          changed,
+        });
         await transaction.insert(adminAuditLogs).values(buildAuditRecord({
           actorUserId: actor.userId,
           actorEmail: actor.email,
-          action: "user.role.changed",
+          action: "user.access.changed",
           resourceType: "user",
           resourceId: input.targetUserId,
-          beforeSummary: { role: target.role },
-          afterSummary: {
-            role: updated.role,
-            ...(formPreset ? { formPreset } : {}),
-          },
+          beforeSummary: accessSummary(target),
+          afterSummary: accessSummary(result),
           ...(input.requestSource ? { requestSource: input.requestSource } : {}),
           result: "success",
           idempotencyKey: input.idempotencyKey,

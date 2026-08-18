@@ -1,7 +1,7 @@
 import { getDatabase } from "@/server/db/client";
 import {
-  createAdminUserRoleService,
-  createDrizzleAdminUserRoleRepository,
+  createAdminUserService,
+  createDrizzleAdminUserRepository,
   listAdminUsers,
 } from "./admin-user-service";
 import {
@@ -11,7 +11,7 @@ import {
 
 export function getAdminUserRuntime() {
   const database = getDatabase();
-  const roles = createAdminUserRoleService(createDrizzleAdminUserRoleRepository(database));
+  const users = createAdminUserService(createDrizzleAdminUserRepository(database));
   const employees = createAdminEmployeeService({
     async getPasswordRuntime() {
       const { auth } = await import("@/server/auth");
@@ -26,7 +26,8 @@ export function getAdminUserRuntime() {
   });
   return Object.freeze({
     list: (params: Parameters<typeof listAdminUsers>[1]) => listAdminUsers(database, params),
-    changeRole: roles.changeRole,
+    getById: users.getById,
+    updateAccess: users.updateAccess,
     createEmployee: employees.createEmployee,
   });
 }
