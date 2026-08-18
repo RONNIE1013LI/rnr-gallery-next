@@ -57,6 +57,26 @@ describe("EmployeeAccessForm", () => {
     expect(screen.getByRole("combobox", { name: "Forms profile" })).toHaveValue("artist");
   });
 
+  it("allows a legacy Forms staff account without a preset to be repaired", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: { changed: true } }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: () => "employee-form-preset-repair-0001" });
+    render(<EmployeeAccessForm account={{ ...staffAccount, role: "form_staff", formPreset: null, adminPermissions: null, formPermissions: null, assignedOnly: null }} currentUserId="admin-1" />);
+
+    expect(screen.getByRole("combobox", { name: "Forms profile" })).toHaveValue("");
+    expect(screen.getByRole("button", { name: "Save employee access" })).toBeDisabled();
+    fireEvent.change(screen.getByRole("combobox", { name: "Forms profile" }), { target: { value: "manager" } });
+    expect(screen.getByRole("button", { name: "Save employee access" })).toBeEnabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save employee access" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual({
+      role: "form_staff",
+      formPreset: "manager",
+      idempotencyKey: "employee-form-preset-repair-0001",
+    });
+  });
+
   it("restores dependency permissions before rendering a stored Staff profile", () => {
     render(<EmployeeAccessForm account={{ ...staffAccount, adminPermissions: ["view_orders"] }} currentUserId="admin-1" />);
 

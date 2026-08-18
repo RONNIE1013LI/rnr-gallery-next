@@ -33,7 +33,7 @@ function profileFor(account: AdminUserAccount): StaffAccessProfile {
 function accessPayload(
   role: AdminUserRole,
   profile: StaffAccessProfile,
-  formPreset: FormAccessPreset,
+  formPreset: FormAccessPreset | "",
 ) {
   if (role === "staff") {
     return {
@@ -52,9 +52,9 @@ export function EmployeeAccessForm({ account, currentUserId }: Readonly<{ accoun
   const locked = account.id === currentUserId;
   const [role, setRole] = useState<AdminUserRole>(account.role);
   const [profile, setProfile] = useState<StaffAccessProfile>(() => profileFor(account));
-  const [formPreset, setFormPreset] = useState<FormAccessPreset>(account.formPreset ?? "manager");
+  const [formPreset, setFormPreset] = useState<FormAccessPreset | "">(account.formPreset ?? "");
   const [savedFingerprint, setSavedFingerprint] = useState(() => JSON.stringify(
-    accessPayload(account.role, profileFor(account), account.formPreset ?? "manager"),
+    accessPayload(account.role, profileFor(account), account.formPreset ?? ""),
   ));
   const [pendingMutation, setPendingMutation] = useState<PendingMutation | null>(null);
   const [pending, setPending] = useState(false);
@@ -62,6 +62,7 @@ export function EmployeeAccessForm({ account, currentUserId }: Readonly<{ accoun
   const payload = accessPayload(role, profile, formPreset);
   const fingerprint = JSON.stringify(payload);
   const unchanged = fingerprint === savedFingerprint;
+  const presetMissing = role === "form_staff" && formPreset === "";
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -97,11 +98,11 @@ export function EmployeeAccessForm({ account, currentUserId }: Readonly<{ accoun
     {locked ? <div className={styles.safetyBanner} role="note"><strong>Current account — access is locked.</strong><p>Another database administrator must make changes to this account.</p></div> : null}
     {role === "admin" ? <div className={styles.fullAccessNote} role="note"><strong>Full access to all Admin and Forms permissions.</strong><p>Administrator accounts are not limited by employee permission selections.</p></div> : null}
     {role === "staff" ? <EmployeeAccessFields profile={profile} onChange={setProfile} disabled={locked || pending} /> : null}
-    {role === "form_staff" ? <label className={styles.employeePresetField}><span>Forms profile</span><select aria-label="Forms profile" value={formPreset} disabled={locked || pending} onChange={(event) => setFormPreset(event.target.value as FormAccessPreset)}><option value="manager">Manager</option><option value="artist">Artist · assigned orders only</option><option value="finance">Finance</option><option value="readOnly">Read only</option></select><small>Forms staff continue to use the existing Order Entry preset model.</small></label> : null}
+    {role === "form_staff" ? <label className={styles.employeePresetField}><span>Forms profile</span><select aria-label="Forms profile" value={formPreset} disabled={locked || pending} onChange={(event) => setFormPreset(event.target.value as FormAccessPreset | "")}><option value="" disabled>Choose a Forms profile</option><option value="manager">Manager</option><option value="artist">Artist · assigned orders only</option><option value="finance">Finance</option><option value="readOnly">Read only</option></select><small>Forms staff continue to use the existing Order Entry preset model.</small></label> : null}
     {role === "customer" ? <div className={styles.fullAccessNote} role="note"><strong>Customer account</strong><p>This account has no Admin or Forms permissions.</p></div> : null}
     <div className={styles.employeeFormActions}>
-      <p role="status">{message || (locked ? "This account cannot be changed here." : "Changes take effect on the next permission check.")}</p>
-      <button className={styles.primaryAdminButton} disabled={locked || pending || unchanged} type="submit">{pending ? "Saving…" : "Save employee access"}</button>
+      <p role="status">{message || (locked ? "This account cannot be changed here." : presetMissing ? "Choose a Forms profile before saving." : "Changes take effect on the next permission check.")}</p>
+      <button className={styles.primaryAdminButton} disabled={locked || pending || unchanged || presetMissing} type="submit">{pending ? "Saving…" : "Save employee access"}</button>
     </div>
   </form>;
 }
