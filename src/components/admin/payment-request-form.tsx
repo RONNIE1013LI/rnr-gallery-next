@@ -15,7 +15,7 @@ type LinkedOrder = Readonly<{
 const MAX_STANDALONE_PAYMENT_REQUEST_CENTS = 100_000_000;
 
 function nextKey() {
-  return window.crypto?.randomUUID?.() ??
+  return globalThis.crypto?.randomUUID?.() ??
     `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 

@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PaymentRequestForm } from "./payment-request-form";
 
@@ -6,6 +7,12 @@ describe("Admin PaymentRequestForm", () => {
   beforeEach(() => {
     vi.unstubAllGlobals();
     vi.stubGlobal("crypto", { randomUUID: () => "admin-idempotency-key" });
+  });
+
+  it("renders on the server without a browser window", () => {
+    vi.stubGlobal("window", undefined);
+
+    expect(() => renderToStaticMarkup(<PaymentRequestForm />)).not.toThrow();
   });
 
   it("uses the linked Order currency and defaults to its unreserved balance", () => {
