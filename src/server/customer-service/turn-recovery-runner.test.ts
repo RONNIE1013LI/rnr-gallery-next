@@ -10,13 +10,16 @@ function setup() {
       turnId: string;
       messageId: string;
       leaseToken: string;
+      processingAttempt: number;
     } | null>>(async () => ({
       turnId: "turn-1",
       messageId: "message-1",
       leaseToken: "lease-1",
+      processingAttempt: 1,
     })),
     completeCustomerTurnProcessing: vi.fn(async () => true),
     retryCustomerTurnProcessing: vi.fn(async () => true),
+    exhaustCustomerTurnProcessing: vi.fn(async () => true),
   };
   const generateDraft = vi.fn<() => Promise<DraftGenerationResult>>(async () => ({
     status: "draft_ready" as const,
@@ -123,5 +126,47 @@ describe("customer turn recovery runner", () => {
     expect(current.repository.retryCustomerTurnProcessing).toHaveBeenCalledWith(expect.objectContaining({
       errorCode: "turn_processing_interrupted",
     }));
+  });
+
+  it("uses bounded exponential retry delays", async () => {
+    const current = setup();
+    current.repository.claimDueCustomerTurn.mockResolvedValueOnce({
+      turnId: "turn-1",
+      messageId: "message-1",
+      leaseToken: "lease-2",
+      processingAttempt: 2,
+    });
+    current.generateDraft.mockResolvedValueOnce({ status: "provider_error", attemptId: "attempt-2" });
+
+    await current.runner.runOnce();
+
+    expect(current.repository.retryCustomerTurnProcessing).toHaveBeenCalledWith(expect.objectContaining({
+      nextRunAt: new Date("2026-08-19T00:02:00.000Z"),
+    }));
+  });
+
+  it("stops retrying after the third failed processing attempt", async () => {
+    const current = setup();
+    current.repository.claimDueCustomerTurn.mockResolvedValueOnce({
+      turnId: "turn-1",
+      messageId: "message-1",
+      leaseToken: "lease-3",
+      processingAttempt: 3,
+    });
+    current.generateDraft.mockResolvedValueOnce({ status: "provider_error", attemptId: "attempt-3" });
+
+    await expect(current.runner.runOnce()).resolves.toEqual({
+      claimed: 1,
+      completed: 1,
+      retried: 0,
+      cancelled: 0,
+    });
+    expect(current.repository.retryCustomerTurnProcessing).not.toHaveBeenCalled();
+    expect(current.repository.exhaustCustomerTurnProcessing).toHaveBeenCalledWith({
+      turnId: "turn-1",
+      leaseToken: "lease-3",
+      now,
+      errorCode: "provider_retry_exhausted",
+    });
   });
 });

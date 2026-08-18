@@ -14,6 +14,7 @@ export type ReplyQueueItem = Readonly<{
   attachmentCount: number;
   imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
   imageAssessmentSummary: string | null;
+  humanReplyReceived: boolean;
   timeline: readonly Readonly<{
     role: "customer" | "staff";
     text: string;
@@ -109,7 +110,7 @@ export function ReplyAssistantClient({ initialItems }: Readonly<{ initialItems?:
           <article className={styles.message} key={item.messageId}>
             <header>
               <time>{formatReplyReceivedAt(item.receivedAt)}</time>
-              <span data-risk={requiresHumanReview}>{requiresHumanReview ? "Human review required" : item.status.replaceAll("_", " ")}</span>
+              <span data-risk={requiresHumanReview}>{item.humanReplyReceived ? "human replied" : requiresHumanReview ? "Human review required" : item.status.replaceAll("_", " ")}</span>
             </header>
             <div className={styles.customerText}><strong>Customer</strong><p>{item.body}</p></div>
             {item.timeline.length > 0 ? (
@@ -132,7 +133,9 @@ export function ReplyAssistantClient({ initialItems }: Readonly<{ initialItems?:
               </section>
             ) : null}
 
-            {gateBlocked ? (
+            {item.humanReplyReceived ? (
+              <div className={styles.blocked}>Human reply sent in Meta. AI draft closed.</div>
+            ) : gateBlocked ? (
               <>
                 <div className={styles.blocked}>Risk: {item.gateResult?.replaceAll("_", " ")}</div>
                 <button className={styles.generate} type="button" disabled>Generate AI Reply</button>

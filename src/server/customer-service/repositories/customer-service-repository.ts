@@ -80,6 +80,7 @@ export type ClaimedCustomerTurn = Readonly<{
   turnId: string;
   messageId: string;
   leaseToken: string;
+  processingAttempt: number;
 }>;
 
 export type GateBlockedAttemptInput = Readonly<{
@@ -160,6 +161,7 @@ export type SafeQueuePage = Readonly<{
     attachmentCount: number;
     imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
     imageAssessmentSummary: string | null;
+    humanReplyReceived: boolean;
     timeline: readonly Readonly<{
       role: "customer" | "staff";
       text: string;
@@ -246,6 +248,12 @@ export interface CustomerServiceRepository {
     turnId: string;
     leaseToken: string;
     nextRunAt: Date;
+    errorCode: string;
+  }>): Promise<boolean>;
+  exhaustCustomerTurnProcessing(input: Readonly<{
+    turnId: string;
+    leaseToken: string;
+    now: Date;
     errorCode: string;
   }>): Promise<boolean>;
   ingestFacebookMessage(input: HashedIncomingMessage): Promise<

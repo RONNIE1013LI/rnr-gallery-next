@@ -26,6 +26,7 @@ describe("reply assistant messages API", () => {
       attachmentCount: 1,
       imageAnalysisStatus: "assessed" as const,
       imageAssessmentSummary: "Image 0 appears cropped; request an uncropped version.",
+      humanReplyReceived: false,
       timeline: [{
         role: "staff" as const,
         text: "Please send the original photo.",
@@ -47,6 +48,7 @@ describe("reply assistant messages API", () => {
       attachmentCount: 1,
       imageAnalysisStatus: "assessed",
       imageAssessmentSummary: "Image 0 appears cropped; request an uncropped version.",
+      humanReplyReceived: false,
       timeline: [{
         role: "staff",
         text: "Please send the original photo.",

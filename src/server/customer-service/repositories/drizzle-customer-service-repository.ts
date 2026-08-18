@@ -920,8 +920,16 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
               lte(customerServiceTurns.processingLeaseExpiresAt, input.now),
             ),
           ),
-        )).returning({ id: customerServiceTurns.id });
-        return claimed ? { turnId: turn.id, messageId: turn.messageId, leaseToken } : null;
+        )).returning({
+          id: customerServiceTurns.id,
+          processingAttempt: customerServiceTurns.processingAttempts,
+        });
+        return claimed ? {
+          turnId: turn.id,
+          messageId: turn.messageId,
+          leaseToken,
+          processingAttempt: claimed.processingAttempt,
+        } : null;
       });
     },
 
@@ -955,6 +963,30 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
       )).returning({ id: customerServiceTurns.id });
       return retried.length === 1;
+    },
+
+    async exhaustCustomerTurnProcessing(input) {
+      return database.transaction(async (transaction) => {
+        const exhausted = await transaction.update(customerServiceTurns).set({
+          processingStatus: "completed",
+          processingLeaseToken: null,
+          processingLeaseExpiresAt: null,
+          processingCompletedAt: input.now,
+          lastProcessingError: input.errorCode.slice(0, 120),
+        }).where(and(
+          eq(customerServiceTurns.id, input.turnId),
+          eq(customerServiceTurns.status, "sealed"),
+          eq(customerServiceTurns.processingStatus, "running"),
+          eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
+        )).returning({ messageId: customerServiceTurns.representativeMessageId });
+        if (!exhausted[0]) return false;
+        if (exhausted[0].messageId) {
+          await transaction.update(customerServiceMessages).set({
+            ingestStatus: "provider_error",
+          }).where(eq(customerServiceMessages.id, exhausted[0].messageId));
+        }
+        return true;
+      });
     },
 
     async ingestFacebookMessage(input: HashedIncomingMessage) {
@@ -2468,6 +2500,12 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         latestAttemptId: customerServiceAiAttempts.id,
         draftText: customerServiceAiAttempts.draftText,
         gateResult: customerServiceAiAttempts.gateResult,
+        humanReplyReceived: sql<boolean>`exists (
+          select 1 from customer_service_turns turns
+          where turns.representative_message_id = ${customerServiceMessages.id}
+            and turns.status = 'suppressed'
+            and turns.suppression_reason = 'human_outbound_received'
+        )`,
       }).from(customerServiceMessages)
         .leftJoin(customerServiceAiAttempts, eq(customerServiceAiAttempts.messageId, customerServiceMessages.id))
         .where(sql`
@@ -2573,9 +2611,10 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             body: item.body,
             receivedAt: item.receivedAt,
             status: item.status,
-            latestAttemptId: item.latestAttemptId,
-            draftText: item.draftText,
-            gateResult: item.gateResult,
+            latestAttemptId: item.humanReplyReceived ? null : item.latestAttemptId,
+            draftText: item.humanReplyReceived ? null : item.draftText,
+            gateResult: item.humanReplyReceived ? null : item.gateResult,
+            humanReplyReceived: item.humanReplyReceived,
             attachmentCount: attachmentIds.length,
             imageAnalysisStatus: attachmentIds.length
               ? assessment?.status ?? "human_review_required"

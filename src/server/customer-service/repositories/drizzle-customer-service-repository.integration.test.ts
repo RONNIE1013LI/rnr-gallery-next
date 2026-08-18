@@ -243,6 +243,22 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(incoming.status).toBe("turn_pending");
     if (incoming.status !== "turn_pending") return;
 
+    await database.insert(customerServiceAiAttempts).values({
+      messageId: incoming.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "quote_information_collection",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "test-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock",
+      draftText: "Stale AI draft that must not remain actionable.",
+      completedAt: new Date("2026-08-18T00:00:00.500Z"),
+    });
+
     const outbound = await repository.ingestConversationEvent({
       channel: "facebook",
       role: "staff",
@@ -295,6 +311,9 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     await expect(repository.listQueue(100)).resolves.toMatchObject({
       items: [{
         body: "How much are your banners?",
+        humanReplyReceived: true,
+        latestAttemptId: null,
+        draftText: null,
         timeline: [
           { role: "customer", text: "How much are your banners?" },
           { role: "staff", text: "Which type of banner do you need?" },
@@ -437,6 +456,42 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       leaseExpiresAt: new Date("2026-08-19T00:06:04.000Z"),
     });
     expect(second?.leaseToken).not.toBe(first.leaseToken);
+  });
+
+  it("terminalizes an exhausted recovery attempt and never reclaims it", async () => {
+    await activateFacebookPilot("recovery-exhausted");
+    const incoming = await createRecoveryTurn({
+      conversationHash: "ad".repeat(32),
+      messageHash: "ae".repeat(32),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    const claimed = await repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:03.000Z"),
+    });
+    if (!claimed) throw new Error("expected claimed turn");
+
+    await expect(repository.exhaustCustomerTurnProcessing({
+      turnId: incoming.turnId,
+      leaseToken: claimed.leaseToken,
+      now: new Date("2026-08-19T00:00:04.000Z"),
+      errorCode: "provider_retry_exhausted",
+    })).resolves.toBe(true);
+    await expect(repository.claimDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-20T00:00:00.000Z"),
+      leaseExpiresAt: new Date("2026-08-20T00:05:00.000Z"),
+    })).resolves.toBeNull();
+    const [turn] = await database.select().from(customerServiceTurns)
+      .where(eq(customerServiceTurns.id, incoming.turnId));
+    const [message] = await database.select().from(customerServiceMessages)
+      .where(eq(customerServiceMessages.id, incoming.messageId));
+    expect(turn).toMatchObject({
+      processingStatus: "completed",
+      lastProcessingError: "provider_retry_exhausted",
+    });
+    expect(message.ingestStatus).toBe("provider_error");
   });
 
   it("releases a pre-invocation reservation and retries after the worker lease expires", async () => {

@@ -150,6 +150,20 @@ describe("customer service schema contract", () => {
     );
     expect(migration).toContain("ADD COLUMN \"processing_status\"");
     expect(migration).toContain("customer_service_turns_processing_due_idx");
+    expect(migration).toContain("WHERE \"status\" IN ('suppressed', 'pilot_complete')");
+    expect(migration).not.toContain("coalesce(\"sealed_at\", \"updated_at\", now());--> statement-breakpoint");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
+  });
+
+  it("repairs previously backfilled staging turns without reviving terminal work", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0034_reply_assistant_turn_recovery_correction.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain("\"status\" IN ('open', 'sealed')");
+    expect(migration).toContain("NOT EXISTS");
+    expect(migration).toContain("\"provider_called\" = true");
     expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
   });
 
