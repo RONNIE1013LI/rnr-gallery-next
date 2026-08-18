@@ -1,0 +1,164 @@
+.page {
+  min-height: 70vh;
+  padding: clamp(3rem, 7vw, 7rem) var(--page-gutter) var(--section-space);
+  background: var(--paper);
+}
+
+.card {
+  width: min(100%, 42rem);
+  margin-inline: auto;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  border: 1px solid var(--border);
+  border-radius: 1.5rem;
+  background: #fff;
+}
+
+.eyebrow {
+  color: var(--aged-gold-text);
+  font-size: 0.8rem;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.card h1 {
+  margin-top: 0.65rem;
+  font-size: clamp(2rem, 5vw, 3rem);
+  letter-spacing: -0.04em;
+}
+
+.summary {
+  margin-top: 2rem;
+}
+
+.summary > div {
+  padding-block: 0.8rem;
+  display: grid;
+  grid-template-columns: minmax(7rem, 0.4fr) 1fr;
+  gap: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.summary dt {
+  color: var(--muted);
+}
+
+.summary dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+  font-weight: 650;
+}
+
+.summary .total dd {
+  color: var(--gallery-green);
+  font-size: 1.5rem;
+}
+
+.form,
+.paymentArea {
+  margin-top: 2.5rem;
+}
+
+.form h2,
+.paymentArea h2 {
+  font-size: 1.35rem;
+}
+
+.methods {
+  margin-top: 1.5rem;
+  padding: 0;
+  border: 0;
+}
+
+.methods legend,
+.fields label > span {
+  margin-bottom: 0.55rem;
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 700;
+}
+
+.methods label {
+  min-height: 48px;
+  padding: 0.75rem;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  border: 1px solid var(--border);
+  cursor: pointer;
+}
+
+.methods label + label {
+  margin-top: 0.6rem;
+}
+
+.methods label:has(input:checked) {
+  border-color: var(--gallery-green);
+}
+
+.methods small {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.fields {
+  margin-top: 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.fields input,
+.fields select {
+  width: 100%;
+  min-height: 48px;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid #cbc6bb;
+  border-radius: 0.65rem;
+  background: #fff;
+  color: var(--ink);
+  font: inherit;
+}
+
+.payButton {
+  width: 100%;
+  min-height: 52px;
+  margin-top: 1.5rem;
+  border: 1px solid var(--gallery-green);
+  border-radius: var(--radius-button);
+  background: var(--gallery-green);
+  color: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 750;
+}
+
+.payButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.status,
+.message {
+  margin-top: 2rem;
+  padding: 1rem;
+  color: var(--ink);
+  background: #f2eee5;
+  line-height: 1.55;
+}
+
+@media (max-width: 600px) {
+  .card {
+    padding: 1.25rem;
+    border-radius: 1rem;
+  }
+
+  .summary > div,
+  .fields {
+    grid-template-columns: 1fr;
+  }
+
+  .summary > div {
+    gap: 0.3rem;
+  }
+}

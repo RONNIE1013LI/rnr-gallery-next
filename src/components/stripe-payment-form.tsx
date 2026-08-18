@@ -19,6 +19,7 @@ import styles from "./storefront.module.css";
 function StripeConfirmation({
   confirmationUrl,
   currency,
+  forceRedirect,
   onPaymentSubmitted,
   onPaymentUpdated,
   returnUrl,
@@ -26,6 +27,7 @@ function StripeConfirmation({
 }: {
   confirmationUrl: string;
   currency: MarketCurrency;
+  forceRedirect?: boolean;
   onPaymentSubmitted?: () => void;
   onPaymentUpdated?: (status: ConfirmedPaymentStatus) => void;
   returnUrl: string;
@@ -51,11 +53,17 @@ function StripeConfirmation({
       } catch {
         // Submission observers must never interrupt payment confirmation.
       }
-      const result = await stripe.confirmPayment({
-        elements,
-        confirmParams: { return_url: returnUrl },
-        redirect: "if_required",
-      });
+      const result = forceRedirect
+        ? await stripe.confirmPayment({
+            elements,
+            confirmParams: { return_url: returnUrl },
+            redirect: "always",
+          })
+        : await stripe.confirmPayment({
+            elements,
+            confirmParams: { return_url: returnUrl },
+            redirect: "if_required",
+          });
       if (result.error?.type === "validation_error") {
         const validationMessage = result.error.type === "validation_error" &&
           typeof result.error.message === "string" &&
@@ -65,6 +73,7 @@ function StripeConfirmation({
         setMessage(validationMessage || "Card payment could not be confirmed. Try again.");
         return;
       }
+      if (forceRedirect) return;
       setLocked(true);
       const status = await confirmCurrentOrderPayment(confirmationUrl);
       onPaymentUpdated?.(status);
@@ -96,7 +105,9 @@ function StripeConfirmation({
     >
       {pending ? "Confirming payment…" : totalInclGstCents === undefined
         ? "Pay and place order"
-        : `Pay ${formatMarketMoney(totalInclGstCents, currency)} and place order`}
+        : forceRedirect
+          ? `Pay ${formatMarketMoney(totalInclGstCents, currency)}`
+          : `Pay ${formatMarketMoney(totalInclGstCents, currency)} and place order`}
     </button>
     {message ? <p aria-live="polite" className={styles.checkoutMessage}>{message}</p> : null}
   </form>;
@@ -106,6 +117,7 @@ export function StripePaymentForm({
   clientSecret,
   confirmationUrl,
   currency = "NZD",
+  forceRedirect = false,
   onPaymentSubmitted,
   onPaymentUpdated,
   publishableKey,
@@ -115,6 +127,7 @@ export function StripePaymentForm({
   clientSecret: string;
   confirmationUrl: string;
   currency?: MarketCurrency;
+  forceRedirect?: boolean;
   onPaymentSubmitted?: () => void;
   onPaymentUpdated?: (status: ConfirmedPaymentStatus) => void;
   publishableKey: string;
@@ -134,6 +147,7 @@ export function StripePaymentForm({
     <StripeConfirmation
       confirmationUrl={confirmationUrl}
       currency={currency}
+      forceRedirect={forceRedirect}
       onPaymentSubmitted={onPaymentSubmitted}
       onPaymentUpdated={onPaymentUpdated}
       returnUrl={returnUrl}

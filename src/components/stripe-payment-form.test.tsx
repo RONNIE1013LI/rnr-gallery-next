@@ -147,6 +147,23 @@ describe("StripePaymentForm", () => {
     expect(screen.getByRole("button", { name: "Pay NZ$397.25 and place order" })).toBeDisabled();
   });
 
+  it("always redirects a Payment Request confirmation without calling the Order confirmation API", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<StripePaymentForm {...props} confirmationUrl="" forceRedirect />);
+
+    act(() => paymentElement.onReady?.());
+    act(() => paymentElement.onChange?.({ complete: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Pay NZ$397.25" }));
+
+    await waitFor(() => expect(confirmPayment).toHaveBeenCalledWith({
+      elements: elementsValue,
+      confirmParams: { return_url: props.returnUrl },
+      redirect: "always",
+    }));
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
   it("shows a client validation message without locking the editable card form", async () => {
     confirmPayment.mockResolvedValueOnce({
       error: { type: "validation_error", message: "Enter a complete card number." },
