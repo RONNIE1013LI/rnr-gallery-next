@@ -18,6 +18,7 @@ export default async function ProductionJobDetailPage({ params }: Props) {
   const canUploadFiles = hasAdminPermission(access.adminRole, access.adminPermissions, "upload_production_files");
   const canReviewProofs = hasAdminPermission(access.adminRole, access.adminPermissions, "review_production_proofs");
   const canUpdateJob = hasAdminPermission(access.adminRole, access.adminPermissions, "update_production_jobs");
+  const canViewOrders = hasAdminPermission(access.adminRole, access.adminPermissions, "view_orders");
   const canRetryNotifications = canUploadFiles;
   const runtime = getAdminProductionRuntime();
   const [detail, assignees, proofing, notifications] = await Promise.all([
@@ -35,7 +36,7 @@ export default async function ProductionJobDetailPage({ params }: Props) {
     <section className={styles.pageSection}>
       <header className={styles.pageHeader}>
         <div><nav className={styles.breadcrumbs} aria-label="Breadcrumb"><Link href="/admin">Dashboard</Link><span>/</span><Link href="/admin/jobs">Production</Link><span>/</span><span>{detail.job.jobNumber}</span></nav><h1>{detail.job.jobNumber}</h1><p>{detail.job.source === "web" ? "Automatically created from an online order." : "Manually entered studio work."}</p></div>
-        <div className={styles.headerActions}><span className={styles.recordCount}>{detail.job.source === "web" ? "Online" : "Manual"}</span>{detail.job.orderId ? <Link className={styles.primaryAdminButton} href={`/admin/orders/${detail.job.orderId}`}>Open online order</Link> : null}</div>
+        <div className={styles.headerActions}><span className={styles.recordCount}>{detail.job.source === "web" ? "Online" : "Manual"}</span>{detail.job.orderId && canViewOrders ? <Link className={styles.primaryAdminButton} href={`/admin/orders/${detail.job.orderId}`}>Open online order</Link> : null}</div>
       </header>
       <ProductionJobDetail detail={detail} assignees={assignees} canManageFinance={hasAdminPermission(access.adminRole, access.adminPermissions, "update_production_finance")} files={proofing.files} notifications={notifications} revision={proofing.revision} canViewFiles={canViewFiles} canUploadFiles={canUploadFiles} canReviewProofs={canReviewProofs} canRetryNotifications={canRetryNotifications} canUpdateJob={canUpdateJob} />
     </section>

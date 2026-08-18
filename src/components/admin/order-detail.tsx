@@ -56,9 +56,11 @@ function UploadList({ uploads }: Readonly<{ uploads: Detail["uploads"] }>) {
 export function AdminOrderDetail({
   detail,
   paymentSummary,
+  canUpdateOrderStatus = false,
 }: Readonly<{
   detail: Detail;
   paymentSummary?: AdminOrderPaymentSummaryDTO | null;
+  canUpdateOrderStatus?: boolean;
 }>) {
   const { order } = detail;
   const amount = (cents: number) => formatMarketMoney(cents, order.currency);
@@ -207,17 +209,17 @@ export function AdminOrderDetail({
         </section>
       </div>
 
-      <aside className={styles.detailAside}>
-        <AdminOrderActions
-          orderId={order.id}
-          currentStatus={order.fulfilmentStatus}
-          tracking={{
-            carrier: order.trackingCarrier,
-            number: order.trackingNumber,
-            url: order.trackingUrl,
-          }}
-        />
-      </aside>
+      {canUpdateOrderStatus ? <aside className={styles.detailAside}>
+          <AdminOrderActions
+            orderId={order.id}
+            currentStatus={order.fulfilmentStatus}
+            tracking={{
+              carrier: order.trackingCarrier,
+              number: order.trackingNumber,
+              url: order.trackingUrl,
+            }}
+          />
+        </aside> : null}
     </div>
   );
 }

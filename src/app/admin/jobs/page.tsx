@@ -35,12 +35,15 @@ export default async function AdminProductionJobsPage({ searchParams }: Props) {
   const access = await requireAdminPage(`/admin/jobs${query ? `?${query}` : ""}`, "view_production_jobs");
   const filters = parseProductionJobFilters(raw);
   const canViewFinance = hasAdminPermission(access.adminRole, access.adminPermissions, "view_production_finance");
+  const canManageViews = hasAdminPermission(access.adminRole, access.adminPermissions, "manage_production_views");
+  const canViewReports = hasAdminPermission(access.adminRole, access.adminPermissions, "view_production_reports");
+  const canCreateManualJobs = hasAdminPermission(access.adminRole, access.adminPermissions, "create_manual_jobs");
   const runtime = getAdminProductionRuntime();
   const actor = { userId: access.user.id, email: access.user.email ?? "unknown@invalid.local" };
   const [result, assignees, savedViews] = await Promise.all([
     runtime.list(filters, { canViewFinance }),
     runtime.assignees(),
-    getAdminProductionSavedViewRuntime().list(actor),
+    canManageViews ? getAdminProductionSavedViewRuntime().list(actor) : Promise.resolve([]),
   ]);
   const savable = new URLSearchParams();
   for (const key of ["source", "status", "payment", "urgent", "assigned", "from", "to", "sort", "direction"] as const) {
@@ -52,10 +55,10 @@ export default async function AdminProductionJobsPage({ searchParams }: Props) {
     <section className={styles.pageSection}>
       <header className={`${styles.pageHeader} ${styles.productionPageHeader}`}>
         <div><nav className={styles.breadcrumbs} aria-label="Breadcrumb"><Link href="/admin">Dashboard</Link><span>/</span><span>Production</span></nav><h1>Production</h1><p>One operational queue for online orders and work entered manually by the studio.</p></div>
-        <div className={styles.headerActions}><Link className={`${styles.recordCount} ${styles.productionHeaderLink}`} href="/admin/jobs/report">Operations report</Link>{hasAdminPermission(access.adminRole, access.adminPermissions, "manage_production_fields") ? <Link className={`${styles.recordCount} ${styles.productionHeaderLink}`} href="/admin/jobs/fields">Form fields</Link> : null}{hasAdminPermission(access.adminRole, access.adminPermissions, "export_production_jobs") ? <Link prefetch={false} className={`${styles.recordCount} ${styles.productionHeaderLink}`} href={`/api/admin/jobs/export${query ? `?${query}` : ""}`}>Export CSV</Link> : null}<span className={styles.recordCount}>{result.total} {result.total === 1 ? "job" : "jobs"}</span><Link className={styles.primaryAdminButton} href="/admin/jobs/new">New manual job</Link></div>
+        <div className={styles.headerActions}>{canViewReports ? <Link className={`${styles.recordCount} ${styles.productionHeaderLink}`} href="/admin/jobs/report">Operations report</Link> : null}{hasAdminPermission(access.adminRole, access.adminPermissions, "manage_production_fields") ? <Link className={`${styles.recordCount} ${styles.productionHeaderLink}`} href="/admin/jobs/fields">Form fields</Link> : null}{hasAdminPermission(access.adminRole, access.adminPermissions, "export_production_jobs") ? <Link prefetch={false} className={`${styles.recordCount} ${styles.productionHeaderLink}`} href={`/api/admin/jobs/export${query ? `?${query}` : ""}`}>Export CSV</Link> : null}<span className={styles.recordCount}>{result.total} {result.total === 1 ? "job" : "jobs"}</span>{canCreateManualJobs ? <Link className={styles.primaryAdminButton} href="/admin/jobs/new">New manual job</Link> : null}</div>
       </header>
 
-      <ProductionSavedViews views={savedViews} currentQuery={savable.toString()} />
+      {canManageViews ? <ProductionSavedViews views={savedViews} currentQuery={savable.toString()} /> : null}
 
       <form className={styles.filterPanel} method="get">
         <label className={styles.searchField}><span>Job or customer</span><input name="q" type="search" defaultValue={filters.query} placeholder="Search production" /></label>

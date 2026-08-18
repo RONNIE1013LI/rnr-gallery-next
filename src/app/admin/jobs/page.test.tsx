@@ -1,12 +1,13 @@
 import { render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import styles from "@/components/admin/admin.module.css";
 import AdminProductionJobsPage from "./page";
 
-const { requireAdminPage, list, assignees } = vi.hoisted(() => ({
+const { requireAdminPage, list, assignees, savedViews } = vi.hoisted(() => ({
   requireAdminPage: vi.fn(),
   list: vi.fn(),
   assignees: vi.fn(),
+  savedViews: vi.fn(),
 }));
 
 vi.mock("@/server/auth/require-admin-page", () => ({ requireAdminPage }));
@@ -14,14 +15,19 @@ vi.mock("@/server/admin/admin-production-runtime", () => ({
   getAdminProductionRuntime: () => ({ list, assignees }),
 }));
 vi.mock("@/server/admin/admin-production-saved-view-runtime", () => ({
-  getAdminProductionSavedViewRuntime: () => ({ list: vi.fn().mockResolvedValue([]) }),
+  getAdminProductionSavedViewRuntime: () => ({ list: savedViews }),
 }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
+beforeEach(() => {
+  vi.clearAllMocks();
+});
 
 describe("admin production jobs page", () => {
   it("shows linked and manual work in one operational queue with admin finance", async () => {
     requireAdminPage.mockResolvedValue({ user: { id: "admin-1" }, adminRole: "admin", adminPermissions: [] });
     assignees.mockResolvedValue([{ id: "staff-1", name: "Artist", email: "artist@example.test", role: "staff" }]);
+    savedViews.mockResolvedValue([]);
     list.mockResolvedValue({
       items: [{
         id: "63f77c27-fd7b-4c65-a834-886c128b6cc1",
@@ -72,9 +78,14 @@ describe("admin production jobs page", () => {
   it("does not render finance values returned as redacted for staff", async () => {
     requireAdminPage.mockResolvedValue({ user: { id: "staff-1" }, adminRole: "staff", adminPermissions: ["view_production_jobs"] });
     assignees.mockResolvedValue([]);
+    savedViews.mockResolvedValue([]);
     list.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 25, pageCount: 0 });
     render(await AdminProductionJobsPage({ searchParams: Promise.resolve({}) }));
     expect(screen.getByText("No production jobs match these filters.")).toBeInTheDocument();
     expect(list).toHaveBeenCalledWith(expect.any(Object), { canViewFinance: false });
+    expect(screen.queryByRole("link", { name: "Operations report" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "New manual job" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("region", { name: "Saved production views" })).not.toBeInTheDocument();
+    expect(savedViews).not.toHaveBeenCalled();
   });
 });

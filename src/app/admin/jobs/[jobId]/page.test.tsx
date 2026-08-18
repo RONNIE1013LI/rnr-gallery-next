@@ -73,4 +73,30 @@ describe("production job detail page", () => {
     expect(listFiles).not.toHaveBeenCalled();
     expect(listForJob).not.toHaveBeenCalled();
   });
+
+  it("does not expose the linked online order to Staff without order access", async () => {
+    requireAdminPage.mockResolvedValue({
+      user: { id: "staff-1" },
+      adminRole: "staff",
+      adminPermissions: ["view_production_jobs"],
+    });
+    assignees.mockResolvedValue([]);
+    detail.mockResolvedValue({
+      job: {
+        id: "63f77c27-fd7b-4c65-a834-886c128b6cc1", jobNumber: "RNR-2026-ABC123", source: "web",
+        orderId: "73f77c27-fd7b-4c65-a834-886c128b6cc2", customerName: "Example Customer",
+        customerEmail: "customer@example.test", customerPhone: "0210000000", customerSource: "web",
+        urgent: true, neededDate: "2026-08-11", deliveryMethod: "post", assignedUserId: null,
+        designRequirements: "Use the main photo", internalNotes: "", fileSentAt: null,
+        downloadedAt: null, printedAt: null, customerNotifiedAt: null, deliveredAt: null,
+        createdAt: new Date("2026-08-04T02:00:00Z"), updatedAt: new Date("2026-08-04T03:00:00Z"),
+      },
+      orderNumber: "RNR-2026-ABC123", status: "designing", paymentStatus: "paid", assignee: null,
+      items: [], finance: null, audit: [],
+    });
+
+    render(await ProductionJobDetailPage({ params: Promise.resolve({ jobId: "63f77c27-fd7b-4c65-a834-886c128b6cc1" }) }));
+
+    expect(screen.queryByRole("link", { name: "Open online order" })).not.toBeInTheDocument();
+  });
 });

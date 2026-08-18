@@ -19,6 +19,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
   const access = await requireAdminPage(`/admin/orders/${encodeURIComponent(orderId)}`, "view_orders");
   const detail = await getAdminOrderRuntime().detail(orderId);
   if (!detail) notFound();
+  const canUpdateOrderStatus = hasAdminPermission(access.adminRole, access.adminPermissions, "update_order_status");
   const paymentSummary = hasAdminPermission(access.adminRole, access.adminPermissions, "manage_payment")
     && canLoadPaymentSummary(detail.order.paymentStatus)
     ? await getPaymentRequestRuntime().orderSummary(orderId)
@@ -34,7 +35,7 @@ export default async function AdminOrderDetailPage({ params }: Props) {
         </div>
         <CopyOrderNumber orderNumber={detail.order.orderNumber} />
       </header>
-      <AdminOrderDetail detail={detail} paymentSummary={paymentSummary} />
+      <AdminOrderDetail detail={detail} paymentSummary={paymentSummary} canUpdateOrderStatus={canUpdateOrderStatus} />
     </section>
   );
 }

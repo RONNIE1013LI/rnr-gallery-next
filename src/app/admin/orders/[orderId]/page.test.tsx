@@ -232,4 +232,29 @@ describe("admin order detail page", () => {
     expect(screen.getByText("100 × 200 cm")).toBeInTheDocument();
     expect(screen.queryByText(/Portrait/)).not.toBeInTheDocument();
   });
+
+  it("hides order mutation controls from Staff without update_order_status", async () => {
+    requireAdminPage.mockResolvedValue({
+      user: { id: "staff-1", email: "staff@example.test" },
+      adminRole: "staff",
+      adminPermissions: ["view_orders"],
+    });
+    detail.mockResolvedValue({
+      order: {
+        id: "63f77c27-fd7b-4c65-a834-886c128b6cc1", orderNumber: "RNR-2026-READONLY", currency: "NZD",
+        paymentStatus: "paid", fulfilmentStatus: "new", deliveryMethod: "pickup", shippingServiceName: "Pickup",
+        shippingProvider: null, shippingTotalInclGstCents: 0, productSubtotalExGstCents: 0, productGstCents: 0,
+        shippingExGstCents: 0, shippingGstCents: 0, totalExGstCents: 0, totalGstCents: 0, totalInclGstCents: 0,
+        trackingNumber: null, trackingCarrier: null, trackingUrl: null,
+        createdAt: new Date("2026-08-04T02:00:00.000Z"), updatedAt: new Date("2026-08-04T03:00:00.000Z"),
+      },
+      addresses: [], items: [], payments: [], uploads: [], notes: [], history: [],
+    });
+
+    render(await AdminOrderDetailPage({ params: Promise.resolve({ orderId: "63f77c27-fd7b-4c65-a834-886c128b6cc1" }) }));
+
+    expect(screen.queryByRole("heading", { name: "Update order status" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Add note" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Tracking" })).not.toBeInTheDocument();
+  });
 });
