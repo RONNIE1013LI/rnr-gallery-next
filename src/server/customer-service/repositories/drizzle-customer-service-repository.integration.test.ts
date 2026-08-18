@@ -542,6 +542,68 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     ]);
   });
 
+  it("matches one eligible turn against every completed draft and remains terminal on rematch", async () => {
+    await activateFacebookPilot("human-reply-match");
+    const conversationHash = "51".repeat(32);
+    const incoming = await repository.ingestConversationEvent({
+      channel: "facebook", role: "customer", externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "52".repeat(32), text: "How does the design process work?",
+      attachments: [], imageJob: null, receivedAt: new Date("2026-08-18T00:00:00.000Z"),
+    });
+    if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    await repository.sealDueCustomerTurn({ turnId: incoming.turnId, now: new Date("2026-08-18T00:00:03.000Z") });
+    for (const [number, draft] of [[1, "A generic reply."], [2, "Please send your photos, wording and theme."]] as const) {
+      await database.insert(customerServiceAiAttempts).values({
+        messageId: incoming.messageId, attemptNumber: number, trigger: "webhook_after", intent: "design_process",
+        riskLevel: "low", gateResult: "allowed", knowledgeVersion: "test", status: "draft_ready",
+        providerCalled: true, provider: "mock", model: "mock", draftText: draft, completedAt: new Date(`2026-08-18T00:00:0${number + 3}.000Z`),
+      });
+    }
+    await repository.ingestConversationEvent({
+      channel: "facebook", role: "staff", eventType: "human_outbound",
+      externalConversationKeyHash: conversationHash, externalMessageKeyHash: "53".repeat(32),
+      replyToExternalMessageKeyHash: "52".repeat(32), text: "Please send your photos, wording and theme!",
+      bodyHash: "54".repeat(32), redactionCodes: [], learningEligible: true,
+      attachments: [], imageJob: null, receivedAt: new Date("2026-08-18T00:01:00.000Z"),
+    });
+    const [group] = await database.select().from(customerServiceHumanReplyMatches);
+    await expect(repository.matchHumanReply({ matchId: group.id, now: new Date("2026-08-18T00:02:31.000Z") }))
+      .resolves.toMatchObject({ status: "matched", classification: "accepted_unchanged" });
+    const [matched] = await database.select().from(customerServiceHumanReplyMatches).where(eq(customerServiceHumanReplyMatches.id, group.id));
+    expect(matched).toMatchObject({
+      status: "matched", turnId: incoming.turnId, editClassification: "accepted_unchanged",
+      aiAttemptId: expect.any(String), confidence: "high", matchMethod: "reply_to",
+    });
+    const snapshot = JSON.stringify(matched);
+    await expect(repository.matchHumanReply({ matchId: group.id, now: new Date("2026-08-18T00:03:00.000Z") }))
+      .resolves.toEqual({ status: "already_terminal" });
+    const [after] = await database.select().from(customerServiceHumanReplyMatches).where(eq(customerServiceHumanReplyMatches.id, group.id));
+    expect(JSON.stringify(after)).toBe(snapshot);
+  });
+
+  it("marks a human reply unmatched when multiple pending turns are ambiguous", async () => {
+    const conversationHash = "55".repeat(32);
+    for (const [suffix, minute] of [["56", 0], ["57", 5]] as const) {
+      const incoming = await repository.ingestConversationEvent({
+        channel: "facebook", role: "customer", externalConversationKeyHash: conversationHash,
+        externalMessageKeyHash: suffix.repeat(32), text: `Question ${suffix}`,
+        attachments: [{ externalAttachmentKeyHash: `${suffix}a`.repeat(21).slice(0, 64), ordinal: 0, kind: "image", mimeTypeHint: null }],
+        imageJob: null, receivedAt: new Date(`2026-08-18T00:0${minute}:00.000Z`),
+      });
+      if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
+    }
+    await repository.ingestConversationEvent({
+      channel: "facebook", role: "staff", eventType: "human_outbound",
+      externalConversationKeyHash: conversationHash, externalMessageKeyHash: "58".repeat(32),
+      replyToExternalMessageKeyHash: null, text: "Here is the answer.", bodyHash: "59".repeat(32),
+      redactionCodes: [], learningEligible: true, attachments: [], imageJob: null,
+      receivedAt: new Date("2026-08-18T00:06:00.000Z"),
+    });
+    const [group] = await database.select().from(customerServiceHumanReplyMatches);
+    await expect(repository.matchHumanReply({ matchId: group.id, now: new Date("2026-08-18T00:08:00.000Z") }))
+      .resolves.toEqual({ status: "unmatched" });
+  });
+
   it("does not suppress another customer's turn when echoes arrive concurrently", async () => {
     const createTurn = async (conversationHash: string, messageHash: string) => repository.ingestConversationEvent({
       channel: "facebook" as const,

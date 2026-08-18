@@ -330,6 +330,15 @@ export interface CustomerServiceRepository {
     | Readonly<{ status: "allowed" }>
     | Readonly<{ status: "human_reply_received" }>
   >;
+  matchHumanReply(input: Readonly<{ matchId: string; now: Date }>): Promise<
+    | Readonly<{ status: "not_due" }>
+    | Readonly<{ status: "already_terminal" }>
+    | Readonly<{ status: "unmatched" }>
+    | Readonly<{
+      status: "matched";
+      classification: "accepted_unchanged" | "edited_light" | "edited_significant" | "ai_ignored" | "independent_reply";
+    }>
+  >;
   createImageJobProviderAttempt(input: Readonly<{
     jobId: string;
     leaseToken: string;

@@ -30,6 +30,8 @@ import { parseImageAnalysisResult } from "../image-analysis-schema";
 import { IMAGE_LIMITS } from "../attachments/limits";
 import { classifyAcknowledgement } from "../conversation/acknowledgement";
 import { canAppendHumanReply } from "../conversation/human-reply-grouping";
+import { chooseHumanReplyTurn } from "../learning/human-reply-matcher";
+import { classifyHumanEdit } from "../learning/edit-classifier";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -1681,6 +1683,123 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         )).returning({ id: customerServiceAiAttempts.id });
         if (!started.length) throw new Error("customer_service_provider_invocation_state_invalid");
         return { status: "allowed" as const };
+      });
+    },
+
+    async matchHumanReply(input) {
+      return database.transaction(async (transaction) => {
+        const [group] = await transaction.select().from(customerServiceHumanReplyMatches)
+          .where(eq(customerServiceHumanReplyMatches.id, input.matchId)).limit(1).for("update");
+        if (!group) throw new Error("customer_service_human_reply_match_not_found");
+        if (group.status !== "pending") return { status: "already_terminal" as const };
+        if (input.now.getTime() < group.lastOutboundAt.getTime() + 90_000) {
+          return { status: "not_due" as const };
+        }
+        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + group.conversationId}))`);
+        const windowStart = new Date(group.firstOutboundAt.getTime() - 2 * 60 * 60 * 1_000);
+        const eligibleTurns = await transaction.select({ id: customerServiceTurns.id })
+          .from(customerServiceTurns).where(and(
+            eq(customerServiceTurns.conversationId, group.conversationId),
+            sql`${customerServiceTurns.lastEventAt} >= ${windowStart}`,
+            lte(customerServiceTurns.lastEventAt, group.firstOutboundAt),
+            sql`not exists (
+              select 1 from ${customerServiceHumanReplyMatches} prior_match
+              where prior_match.turn_id = ${customerServiceTurns.id}
+                and prior_match.id <> ${group.id}
+                and prior_match.status = 'matched'
+            )`,
+          )).orderBy(asc(customerServiceTurns.lastEventAt));
+        const [replyReference] = await transaction.select({
+          replyHash: customerServiceConversationEvents.replyToExternalMessageKeyHash,
+        }).from(customerServiceHumanReplyMatchEvents)
+          .innerJoin(customerServiceConversationEvents, eq(
+            customerServiceConversationEvents.id,
+            customerServiceHumanReplyMatchEvents.eventId,
+          )).where(and(
+            eq(customerServiceHumanReplyMatchEvents.matchId, group.id),
+            isNotNull(customerServiceConversationEvents.replyToExternalMessageKeyHash),
+          )).orderBy(asc(customerServiceHumanReplyMatchEvents.ordinal)).limit(1);
+        const [explicitEvent] = replyReference?.replyHash
+          ? await transaction.select({ turnId: customerServiceConversationEvents.turnId })
+            .from(customerServiceConversationEvents).where(and(
+              eq(customerServiceConversationEvents.conversationId, group.conversationId),
+              eq(customerServiceConversationEvents.externalMessageKeyHash, replyReference.replyHash),
+              eq(customerServiceConversationEvents.eventType, "customer_message"),
+            )).limit(1)
+          : [];
+        const decision = chooseHumanReplyTurn({
+          explicitTurnId: explicitEvent?.turnId ?? null,
+          eligibleTurnIds: eligibleTurns.map((turn) => turn.id),
+        });
+        if (decision.status === "unmatched") {
+          await transaction.update(customerServiceHumanReplyMatches).set({
+            status: "unmatched",
+            matchMethod: "none",
+            confidence: "low",
+            matchScore: 0,
+            editClassification: "unmatched",
+            contextSummary: "[No reliable customer turn match]",
+          }).where(and(
+            eq(customerServiceHumanReplyMatches.id, group.id),
+            eq(customerServiceHumanReplyMatches.status, "pending"),
+          ));
+          return { status: "unmatched" as const };
+        }
+        const [turn] = await transaction.select({
+          id: customerServiceTurns.id,
+          representativeMessageId: customerServiceTurns.representativeMessageId,
+        }).from(customerServiceTurns).where(eq(customerServiceTurns.id, decision.turnId)).limit(1);
+        if (!turn?.representativeMessageId) throw new Error("customer_service_turn_message_missing");
+        const attempts = await transaction.select({
+          id: customerServiceAiAttempts.id,
+          draftText: customerServiceAiAttempts.draftText,
+          intent: customerServiceAiAttempts.intent,
+          riskLevel: customerServiceAiAttempts.riskLevel,
+          knowledgeSources: customerServiceAiAttempts.knowledgeSources,
+          completedAt: customerServiceAiAttempts.completedAt,
+        }).from(customerServiceAiAttempts).where(and(
+          eq(customerServiceAiAttempts.messageId, turn.representativeMessageId),
+          eq(customerServiceAiAttempts.status, "draft_ready"),
+          lte(customerServiceAiAttempts.completedAt, group.firstOutboundAt),
+        )).orderBy(desc(customerServiceAiAttempts.completedAt));
+        const classified = attempts.map((attempt) => ({
+          attempt,
+          edit: classifyHumanEdit(attempt.draftText, group.humanFinalText),
+        })).sort((left, right) => (
+          (right.edit.similarityScore ?? -1) - (left.edit.similarityScore ?? -1)
+          || (right.attempt.completedAt?.getTime() ?? 0) - (left.attempt.completedAt?.getTime() ?? 0)
+        ));
+        const best = classified[0];
+        const independent = classifyHumanEdit(null, group.humanFinalText);
+        const edit = best?.edit ?? independent;
+        const history = await transaction.select({
+          role: customerServiceConversationEvents.role,
+          body: customerServiceConversationEvents.body,
+        }).from(customerServiceConversationEvents).where(and(
+          eq(customerServiceConversationEvents.conversationId, group.conversationId),
+          lte(customerServiceConversationEvents.receivedAt, group.firstOutboundAt),
+        )).orderBy(desc(customerServiceConversationEvents.receivedAt)).limit(6);
+        const contextSummary = history.reverse().map((event) => `${event.role}: ${event.body}`).join("\n")
+          || "[No prior context]";
+        await transaction.update(customerServiceHumanReplyMatches).set({
+          status: "matched",
+          turnId: turn.id,
+          aiAttemptId: best?.attempt.id ?? null,
+          matchMethod: decision.method,
+          confidence: decision.confidence,
+          matchScore: 100,
+          editClassification: edit.classification,
+          similarityScore: edit.similarityScore,
+          editReasonCodes: edit.reasonCodes,
+          intent: best?.attempt.intent ?? null,
+          riskClass: best?.attempt.riskLevel ?? null,
+          policyReferences: best?.attempt.knowledgeSources ?? [],
+          contextSummary,
+        }).where(and(
+          eq(customerServiceHumanReplyMatches.id, group.id),
+          eq(customerServiceHumanReplyMatches.status, "pending"),
+        ));
+        return { status: "matched" as const, classification: edit.classification };
       });
     },
 
