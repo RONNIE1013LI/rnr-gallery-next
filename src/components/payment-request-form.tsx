@@ -188,7 +188,10 @@ export function PaymentRequestForm({
       <label><span>Phone{method === "card" ? " (optional)" : ""}</span><input autoComplete="tel" required={needsAddress} type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} /></label>
       {needsAddress ? <>
         <label><span>Country</span><input aria-label="Country" className={styles.readOnlyCountry} readOnly value={address.country === "NZ" ? "New Zealand" : "Australia"} /></label>
-        <label><span>Building / unit (optional)</span><input autoComplete="address-line2" value={address.building} onChange={(event) => setAddress({ ...address, building: event.target.value })} /></label>
+        <div className={styles.addressPair}>
+          <label><span>Building / unit (optional)</span><input autoComplete="address-line2" value={address.building} onChange={(event) => setAddress({ ...address, building: event.target.value })} /></label>
+          <label><span>Postcode</span><input autoComplete="postal-code" inputMode="numeric" pattern="[0-9]{4}" required value={address.postcode} onChange={(event) => setAddress({ ...address, postcode: event.target.value })} /></label>
+        </div>
         {googleMapsApiKey ? <GoogleAddressAutocomplete
           apiKey={googleMapsApiKey}
           country={address.country}
@@ -200,7 +203,6 @@ export function PaymentRequestForm({
         /> : <label><span>Street address</span><input aria-label="Street address" autoComplete="address-line1" required value={address.street} onChange={(event) => setAddress({ ...address, street: event.target.value })} /></label>}
         <label><span>Suburb</span><input autoComplete="address-level3" required value={address.suburb} onChange={(event) => setAddress({ ...address, suburb: event.target.value })} /></label>
         <label><span>Region</span><input autoComplete="address-level1" required value={address.region} onChange={(event) => setAddress({ ...address, region: event.target.value })} /></label>
-        <label><span>Postcode</span><input autoComplete="postal-code" inputMode="numeric" pattern="[0-9]{4}" required value={address.postcode} onChange={(event) => setAddress({ ...address, postcode: event.target.value })} /></label>
       </> : null}
     </div>
     <button className={styles.payButton} disabled={pending} type="submit">

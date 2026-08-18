@@ -180,6 +180,17 @@
   gap: 1rem;
 }
 
+.addressPair {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+  gap: 1rem;
+}
+
+.addressPair label {
+  margin: 0;
+}
+
 .fields input,
 .fields select {
   width: 100%;
