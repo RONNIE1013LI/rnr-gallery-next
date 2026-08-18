@@ -18,6 +18,8 @@ import {
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
 
+class InvalidAdminUserJsonError extends Error {}
+
 type Access = Readonly<{ user: Readonly<{ id: string; email?: string }> }>;
 type UserRuntime = ReturnType<typeof getAdminUserRuntime>;
 type Dependencies = Readonly<{
@@ -34,6 +36,9 @@ function errorResponse(error: unknown) {
   }
   if (error instanceof MutationRequestError) {
     return Response.json({ error: error.message }, { status: error.status, headers: noStore });
+  }
+  if (error instanceof InvalidAdminUserJsonError) {
+    return Response.json({ error: "Request body must contain valid JSON." }, { status: 400, headers: noStore });
   }
   if (error instanceof AdminUserAuthorizationError) {
     return Response.json({ error: error.message }, { status: 403, headers: noStore });
@@ -54,6 +59,19 @@ function requestSource(request: Request) {
   return request.headers.get("x-forwarded-for")?.split(",", 1)[0]?.trim() ||
     request.headers.get("x-real-ip")?.trim() ||
     "direct";
+}
+
+async function parseAdminUserJson(request: Request): Promise<Record<string, unknown>> {
+  try {
+    const body = await parseBoundedJson(request);
+    if (!body || typeof body !== "object" || Array.isArray(body)) throw new InvalidAdminUserJsonError();
+    return body as Record<string, unknown>;
+  } catch (error) {
+    if (error instanceof InvalidAdminUserJsonError || error instanceof SyntaxError || error instanceof TypeError) {
+      throw new InvalidAdminUserJsonError();
+    }
+    throw error;
+  }
 }
 
 export function createAdminUserRoute(dependencies?: Dependencies) {
@@ -77,15 +95,15 @@ export function createAdminUserRoute(dependencies?: Dependencies) {
           userId: access.user.id,
           email: access.user.email ?? "unknown@invalid.local",
         };
-        const body = await parseBoundedJson(request) as Record<string, unknown>;
+        const body = await parseAdminUserJson(request);
         idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey : undefined;
         const result = await deps.updateAccess(actor, {
           targetUserId,
           role: body.role,
-          adminPermissions: body.adminPermissions,
-          formPermissions: body.formPermissions,
-          assignedOnly: body.assignedOnly,
-          formPreset: body.formPreset,
+          ...(body.adminPermissions === undefined ? {} : { adminPermissions: body.adminPermissions }),
+          ...(body.formPermissions === undefined ? {} : { formPermissions: body.formPermissions }),
+          ...(body.assignedOnly === undefined ? {} : { assignedOnly: body.assignedOnly }),
+          ...(body.formPreset === undefined ? {} : { formPreset: body.formPreset }),
           idempotencyKey: body.idempotencyKey,
           requestSource: requestSource(request),
         });

@@ -170,25 +170,28 @@ export async function listAdminUsers(
   });
 }
 
-const accessChangeSchema = z.object({
+const accessChangeBase = {
   targetUserId: z.string().trim().min(1).max(255),
-  role: z.enum(adminUserRoles),
-  adminPermissions: z.array(z.string()).optional(),
-  formPermissions: z.record(z.string(), z.boolean()).optional(),
-  assignedOnly: z.boolean().optional(),
-  formPreset: z.enum(formAccessPresets).optional(),
   idempotencyKey: z.string().trim().min(8).max(255),
   requestSource: z.string().trim().min(1).max(255).optional(),
-}).strict().superRefine((input, context) => {
-  if (input.role === "staff" && (
-    !input.adminPermissions || !input.formPermissions || input.assignedOnly === undefined
-  )) {
-    context.addIssue({ code: "custom", path: ["adminPermissions"], message: "Choose exact employee permissions" });
-  }
-  if (input.role === "form_staff" && !input.formPreset) {
-    context.addIssue({ code: "custom", path: ["formPreset"], message: "Choose a form access profile" });
-  }
-});
+};
+
+const accessChangeSchema = z.discriminatedUnion("role", [
+  z.object({
+    ...accessChangeBase,
+    role: z.literal("staff"),
+    adminPermissions: z.array(z.string()),
+    formPermissions: z.record(z.string(), z.boolean()),
+    assignedOnly: z.boolean(),
+  }).strict(),
+  z.object({
+    ...accessChangeBase,
+    role: z.literal("form_staff"),
+    formPreset: z.enum(formAccessPresets),
+  }).strict(),
+  z.object({ ...accessChangeBase, role: z.literal("admin") }).strict(),
+  z.object({ ...accessChangeBase, role: z.literal("customer") }).strict(),
+]);
 
 type AccessChangeInput = Readonly<{
   targetUserId: unknown;
@@ -233,7 +236,7 @@ function parseAccessChange(input: AccessChangeInput): ParsedAccessChangeInput {
       targetUserId: parsed.data.targetUserId,
       role: parsed.data.role,
       profile,
-      ...(parsed.data.formPreset ? { formPreset: parsed.data.formPreset } : {}),
+      ...(parsed.data.role === "form_staff" ? { formPreset: parsed.data.formPreset } : {}),
       idempotencyKey: parsed.data.idempotencyKey,
       ...(parsed.data.requestSource ? { requestSource: parsed.data.requestSource } : {}),
     });
@@ -272,12 +275,74 @@ function accessSummary(account: AdminUserAccount) {
   };
 }
 
+function accessResponseSnapshot(account: AdminUserAccount) {
+  return {
+    id: account.id,
+    name: account.name,
+    email: account.email,
+    emailVerified: account.emailVerified,
+    role: account.role,
+    formPreset: account.formPreset,
+    adminPermissions: account.adminPermissions ? [...account.adminPermissions] : null,
+    formPermissions: account.formPermissions ? { ...account.formPermissions } : null,
+    assignedOnly: account.assignedOnly,
+    createdAt: account.createdAt.toISOString(),
+    updatedAt: account.updatedAt.toISOString(),
+  };
+}
+
+function responseSnapshotFromAudit(summary: unknown): AdminUserAccount | null {
+  if (!summary || typeof summary !== "object") return null;
+  const snapshot = (summary as Record<string, unknown>).responseSnapshot;
+  if (!snapshot || typeof snapshot !== "object") return null;
+  const candidate = snapshot as Record<string, unknown>;
+  if (
+    typeof candidate.id !== "string" ||
+    typeof candidate.name !== "string" ||
+    typeof candidate.email !== "string" ||
+    typeof candidate.emailVerified !== "boolean" ||
+    typeof candidate.role !== "string" ||
+    (candidate.formPreset !== null && typeof candidate.formPreset !== "string") ||
+    (candidate.adminPermissions !== null && !Array.isArray(candidate.adminPermissions)) ||
+    (candidate.formPermissions !== null && (
+      !candidate.formPermissions || typeof candidate.formPermissions !== "object" || Array.isArray(candidate.formPermissions)
+    )) ||
+    (candidate.assignedOnly !== null && typeof candidate.assignedOnly !== "boolean") ||
+    typeof candidate.createdAt !== "string" ||
+    typeof candidate.updatedAt !== "string"
+  ) return null;
+  const createdAt = new Date(candidate.createdAt);
+  const updatedAt = new Date(candidate.updatedAt);
+  if (!Number.isFinite(createdAt.getTime()) || !Number.isFinite(updatedAt.getTime())) return null;
+  if (!candidate.adminPermissions?.every((permission) => typeof permission === "string")) return null;
+  if (!Object.values(candidate.formPermissions ?? {}).every((enabled) => typeof enabled === "boolean")) return null;
+  return freezeUser({
+    id: candidate.id,
+    name: candidate.name,
+    email: candidate.email,
+    emailVerified: candidate.emailVerified,
+    role: candidate.role,
+    formPreset: candidate.formPreset,
+    adminPermissions: candidate.adminPermissions as string[] | null,
+    formPermissions: candidate.formPermissions as Record<string, boolean> | null,
+    assignedOnly: candidate.assignedOnly,
+    createdAt,
+    updatedAt,
+  });
+}
+
 function matchesRecordedAccess(
   summary: unknown,
   targetUserId: string | null,
+  requestSource: string | null,
   input: ParsedAccessChangeInput,
 ) {
-  if (targetUserId !== input.targetUserId || !summary || typeof summary !== "object") return false;
+  if (
+    targetUserId !== input.targetUserId ||
+    requestSource !== (input.requestSource ?? null) ||
+    !summary ||
+    typeof summary !== "object"
+  ) return false;
   const recorded = summary as Record<string, unknown>;
   if (recorded.role !== input.role) return false;
   if (input.role === "staff") {
@@ -336,6 +401,36 @@ export function createDrizzleAdminUserRepository(database: Database): AdminUserR
           throw new AdminUserValidationError("Choose a valid employee permissions profile.");
         }
 
+        const [existingAudit] = await transaction
+          .select({
+            resourceId: adminAuditLogs.resourceId,
+            afterSummary: adminAuditLogs.afterSummary,
+            requestSource: adminAuditLogs.requestSource,
+          })
+          .from(adminAuditLogs)
+          .where(and(
+            eq(adminAuditLogs.actorUserId, actor.userId),
+            eq(adminAuditLogs.action, "user.access.changed"),
+            eq(adminAuditLogs.result, "success"),
+            eq(adminAuditLogs.idempotencyKey, input.idempotencyKey),
+          ))
+          .limit(1);
+        if (existingAudit) {
+          if (!matchesRecordedAccess(
+            existingAudit.afterSummary,
+            existingAudit.resourceId,
+            existingAudit.requestSource,
+            input,
+          )) {
+            throw new AdminUserConflictError("This access-change request has already been used.");
+          }
+          const responseSnapshot = responseSnapshotFromAudit(existingAudit.afterSummary);
+          if (!responseSnapshot) {
+            throw new AdminUserConflictError("This access-change request has already been used.");
+          }
+          return Object.freeze({ ...responseSnapshot, changed: false });
+        }
+
         const [lockedTarget] = await transaction
           .select({ id: user.id })
           .from(user)
@@ -352,23 +447,6 @@ export function createDrizzleAdminUserRepository(database: Database): AdminUserR
           .limit(1);
         if (!targetRecord) return null;
         const target = freezeUser(targetRecord);
-
-        const [existingAudit] = await transaction
-          .select({ resourceId: adminAuditLogs.resourceId, afterSummary: adminAuditLogs.afterSummary })
-          .from(adminAuditLogs)
-          .where(and(
-            eq(adminAuditLogs.actorUserId, actor.userId),
-            eq(adminAuditLogs.action, "user.access.changed"),
-            eq(adminAuditLogs.result, "success"),
-            eq(adminAuditLogs.idempotencyKey, input.idempotencyKey),
-          ))
-          .limit(1);
-        if (existingAudit) {
-          if (!matchesRecordedAccess(existingAudit.afterSummary, existingAudit.resourceId, input)) {
-            throw new AdminUserConflictError("This access-change request has already been used.");
-          }
-          return Object.freeze({ ...target, changed: false });
-        }
 
         const currentProfile = profileFromRecord(target);
         const changed = target.role !== input.role ||
@@ -455,7 +533,10 @@ export function createDrizzleAdminUserRepository(database: Database): AdminUserR
           resourceType: "user",
           resourceId: input.targetUserId,
           beforeSummary: accessSummary(target),
-          afterSummary: accessSummary(result),
+          afterSummary: {
+            ...accessSummary(result),
+            responseSnapshot: accessResponseSnapshot(result),
+          },
           ...(input.requestSource ? { requestSource: input.requestSource } : {}),
           result: "success",
           idempotencyKey: input.idempotencyKey,

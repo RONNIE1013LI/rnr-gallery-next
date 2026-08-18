@@ -16,6 +16,18 @@ function request(body: unknown, requestOrigin = origin) {
   });
 }
 
+function rawRequest(body: BodyInit | null) {
+  return new Request(`${origin}/api/admin/users/user-2`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: origin,
+      "Sec-Fetch-Site": "same-origin",
+    },
+    body,
+  });
+}
+
 describe("admin user access route", () => {
   it("requires role-management permission before reading the request", async () => {
     const updateAccess = vi.fn();
@@ -48,7 +60,6 @@ describe("admin user access route", () => {
         adminPermissions: ["view_orders"],
         formPermissions: { access_forms: true },
         assignedOnly: true,
-        formPreset: "ignored",
         idempotencyKey: "employee-access-0002",
         unexpected: "must-not-reach-service",
       }),
@@ -66,7 +77,6 @@ describe("admin user access route", () => {
         adminPermissions: ["view_orders"],
         formPermissions: { access_forms: true },
         assignedOnly: true,
-        formPreset: "ignored",
         idempotencyKey: "employee-access-0002",
         requestSource: "direct",
       },
@@ -119,5 +129,44 @@ describe("admin user access route", () => {
     );
     expect(response.status).toBe(403);
     expect(updateAccess).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["malformed JSON", "{"],
+    ["invalid UTF-8", new Uint8Array([0x7b, 0xff])],
+    ["empty body", ""],
+    ["JSON null", "null"],
+  ])("returns a safe 400 for %s", async (_name, body) => {
+    const updateAccess = vi.fn();
+    const route = createAdminUserRoute({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: { id: "admin-1", email: "owner@example.test" },
+        adminRole: "admin",
+      }),
+      updateAccess,
+      trustedOrigin: origin,
+    });
+
+    const response = await route.PATCH(rawRequest(body), { params: Promise.resolve({ userId: "user-2" }) });
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Request body must contain valid JSON." });
+    expect(updateAccess).not.toHaveBeenCalled();
+  });
+
+  it("keeps an unrelated service TypeError as a safe 500", async () => {
+    const route = createAdminUserRoute({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: { id: "admin-1", email: "owner@example.test" },
+        adminRole: "admin",
+      }),
+      updateAccess: vi.fn().mockRejectedValue(new TypeError("database implementation failure")),
+      trustedOrigin: origin,
+    });
+
+    const response = await route.PATCH(request({ role: "admin", idempotencyKey: "employee-access-500" }), {
+      params: Promise.resolve({ userId: "user-2" }),
+    });
+    expect(response.status).toBe(500);
+    await expect(response.json()).resolves.toEqual({ error: "The user access could not be updated." });
   });
 });

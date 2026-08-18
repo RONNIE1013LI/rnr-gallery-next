@@ -18,6 +18,7 @@ const suffix = randomUUID();
 const actorId = `access-actor-${suffix}`;
 const targetId = `access-target-${suffix}`;
 const profileMissingId = `access-profile-missing-${suffix}`;
+const replayTargetId = `access-replay-target-${suffix}`;
 const actorEmail = `access-actor-${suffix}@example.test`;
 
 const staffProfile = {
@@ -37,12 +38,19 @@ describe("admin user access persistence", () => {
         email: `access-profile-missing-${suffix}@example.test`,
         role: "staff",
       },
+      {
+        id: replayTargetId,
+        name: "Replay Target",
+        email: `access-replay-target-${suffix}@example.test`,
+        role: "customer",
+      },
     ]);
   });
 
   afterAll(async () => {
     await database.delete(adminAuditLogs).where(eq(adminAuditLogs.actorUserId, actorId));
     await database.delete(user).where(eq(user.id, profileMissingId));
+    await database.delete(user).where(eq(user.id, replayTargetId));
     await database.delete(user).where(eq(user.id, targetId));
     await database.delete(user).where(eq(user.id, actorId));
   });
@@ -70,6 +78,10 @@ describe("admin user access persistence", () => {
     await expect(service.updateAccess({ userId: actorId, email: actorEmail }, {
       ...input,
       assignedOnly: false,
+    })).rejects.toBeInstanceOf(AdminUserConflictError);
+    await expect(service.updateAccess({ userId: actorId, email: actorEmail }, {
+      ...input,
+      requestSource: "different-integration-source",
     })).rejects.toBeInstanceOf(AdminUserConflictError);
 
     const [storedProfile] = await database.select({
@@ -115,6 +127,40 @@ describe("admin user access persistence", () => {
       formPermissions: null,
       assignedOnly: null,
     });
+  });
+
+  it("replays the stored access snapshot after later changes or target deletion", async () => {
+    const service = createAdminUserService(createDrizzleAdminUserRepository(database));
+    const input = {
+      targetUserId: replayTargetId,
+      role: "staff" as const,
+      ...staffProfile,
+      idempotencyKey: `employee-access-replay-${suffix}`,
+    };
+
+    await expect(service.updateAccess({ userId: actorId, email: actorEmail }, input))
+      .resolves.toMatchObject({ id: replayTargetId, role: "staff", changed: true });
+    await expect(service.updateAccess({ userId: actorId, email: actorEmail }, {
+      targetUserId: replayTargetId,
+      role: "customer",
+      idempotencyKey: `employee-access-replay-later-${suffix}`,
+    })).resolves.toMatchObject({ id: replayTargetId, role: "customer", changed: true });
+
+    await expect(service.updateAccess({ userId: actorId, email: actorEmail }, input))
+      .resolves.toMatchObject({
+        id: replayTargetId,
+        role: "staff",
+        adminPermissions: ["access_admin", "view_orders", "update_order_status"],
+        changed: false,
+      });
+    await database.delete(user).where(eq(user.id, replayTargetId));
+    await expect(service.updateAccess({ userId: actorId, email: actorEmail }, input))
+      .resolves.toMatchObject({
+        id: replayTargetId,
+        role: "staff",
+        adminPermissions: ["access_admin", "view_orders", "update_order_status"],
+        changed: false,
+      });
   });
 
   it("removes the Staff profile for every non-Staff role and keeps the Forms preset", async () => {

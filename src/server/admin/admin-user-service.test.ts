@@ -88,6 +88,26 @@ describe("admin user service", () => {
     expect(repository.updateAccess).not.toHaveBeenCalled();
   });
 
+  it("rejects fields that do not belong to the selected role", async () => {
+    const repository = { getById: vi.fn(), updateAccess: vi.fn() };
+    const service = createAdminUserService(repository);
+
+    await expect(service.updateAccess(actor, {
+      targetUserId: "employee-2",
+      role: "admin",
+      adminPermissions: ["view_orders"],
+      idempotencyKey: "employee-access-irrelevant-admin",
+    })).rejects.toBeInstanceOf(AdminUserValidationError);
+    await expect(service.updateAccess(actor, {
+      targetUserId: "employee-2",
+      role: "form_staff",
+      formPreset: "artist",
+      assignedOnly: true,
+      idempotencyKey: "employee-access-irrelevant-form",
+    })).rejects.toBeInstanceOf(AdminUserValidationError);
+    expect(repository.updateAccess).not.toHaveBeenCalled();
+  });
+
   it("prevents an administrator from changing their own role or access", async () => {
     const repository = { getById: vi.fn(), updateAccess: vi.fn() };
     const service = createAdminUserService(repository);
