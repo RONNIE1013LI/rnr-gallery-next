@@ -207,6 +207,28 @@ describe("admin employee route", () => {
     expect(JSON.stringify(recordFailure.mock.calls)).not.toContain("initialPassword");
   });
 
+  it("treats literal JSON null as an invalid employee body and audits it safely", async () => {
+    const createEmployee = vi.fn();
+    const recordFailure = vi.fn().mockResolvedValue(undefined);
+    const route = createAdminEmployeeRoute({
+      requirePermission: vi.fn().mockResolvedValue({ user: { id: "admin-1", email: "owner@example.test" } }),
+      createEmployee,
+      trustedOrigin: origin,
+      recordFailure,
+    });
+
+    const response = await route.POST(request(null));
+
+    expect(response.status).toBe(400);
+    await expect(response.json()).resolves.toEqual({ error: "Request body must contain valid JSON." });
+    expect(createEmployee).not.toHaveBeenCalled();
+    expect(recordFailure).toHaveBeenCalledWith(expect.objectContaining({
+      action: "user.employee.create.failed",
+      resourceType: "user",
+      requestSource: "direct",
+    }));
+  });
+
   it("returns the same safe validation error for invalid UTF-8 JSON bytes", async () => {
     const createEmployee = vi.fn();
     const route = createAdminEmployeeRoute({

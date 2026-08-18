@@ -56,11 +56,19 @@ function requestSource(request: Request) {
     "direct";
 }
 
-async function parseEmployeeJson(request: Request) {
+async function parseEmployeeJson(request: Request): Promise<Record<string, unknown>> {
   try {
-    return await parseBoundedJson(request);
+    const body = await parseBoundedJson(request);
+    if (!body || typeof body !== "object" || Array.isArray(body)) {
+      throw new InvalidEmployeeJsonError();
+    }
+    return body as Record<string, unknown>;
   } catch (error) {
-    if (error instanceof SyntaxError || error instanceof TypeError) {
+    if (
+      error instanceof InvalidEmployeeJsonError ||
+      error instanceof SyntaxError ||
+      error instanceof TypeError
+    ) {
       throw new InvalidEmployeeJsonError();
     }
     throw error;
@@ -86,7 +94,7 @@ export function createAdminEmployeeRoute(dependencies?: Dependencies) {
           userId: access.user.id,
           email: access.user.email ?? "unknown@invalid.local",
         };
-        const body = await parseEmployeeJson(request) as Record<string, unknown>;
+        const body = await parseEmployeeJson(request);
         idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey : undefined;
         const result = await deps.createEmployee(actor, {
           ...body,
