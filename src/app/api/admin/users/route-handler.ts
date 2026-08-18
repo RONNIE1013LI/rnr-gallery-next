@@ -1,4 +1,5 @@
 import { getAdminUserRuntime } from "@/server/admin/admin-user-runtime";
+import { recordAdminFailure } from "@/server/admin/admin-failure-audit";
 import {
   AdminEmployeeAuthorizationError,
   AdminEmployeeConflictError,
@@ -24,6 +25,7 @@ type Dependencies = Readonly<{
   requirePermission: (permission: AdminPermission) => Promise<Access>;
   createEmployee: UserRuntime["createEmployee"];
   trustedOrigin?: string;
+  recordFailure?: typeof recordAdminFailure;
 }>;
 
 function errorResponse(error: unknown) {
@@ -69,24 +71,39 @@ export function createAdminEmployeeRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => ({
     requirePermission: requireAdminPermission,
     createEmployee: getAdminUserRuntime().createEmployee,
+    recordFailure: recordAdminFailure,
   });
 
   return {
     async POST(request: Request) {
+      const deps = dependencies ?? defaults();
+      let actor: Readonly<{ userId: string; email: string }> | null = null;
+      let idempotencyKey: string | undefined;
       try {
-        const deps = dependencies ?? defaults();
         const access = await deps.requirePermission("manage_roles");
         assertTrustedMutationRequest(request, deps.trustedOrigin);
-        const body = await parseEmployeeJson(request) as Record<string, unknown>;
-        const result = await deps.createEmployee({
+        actor = {
           userId: access.user.id,
           email: access.user.email ?? "unknown@invalid.local",
-        }, {
+        };
+        const body = await parseEmployeeJson(request) as Record<string, unknown>;
+        idempotencyKey = typeof body.idempotencyKey === "string" ? body.idempotencyKey : undefined;
+        const result = await deps.createEmployee(actor, {
           ...body,
           requestSource: requestSource(request),
         });
         return Response.json({ result }, { status: 201, headers: noStore });
       } catch (error) {
+        if (actor && deps.recordFailure) {
+          await deps.recordFailure({
+            actor,
+            action: "user.employee.create.failed",
+            resourceType: "user",
+            requestSource: requestSource(request),
+            ...(idempotencyKey ? { idempotencyKey } : {}),
+            error,
+          });
+        }
         return errorResponse(error);
       }
     },

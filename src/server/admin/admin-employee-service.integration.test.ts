@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { and, eq } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { account, adminAuditLogs, adminStaffAccess, session, user } from "@/server/db/schema";
 import {
+  AdminEmployeeAuthorizationError,
   AdminEmployeeConflictError,
   createAdminEmployeeService,
   createDrizzleAdminEmployeeRepository,
 } from "./admin-employee-service";
+import { createAdminUserService, createDrizzleAdminUserRepository } from "./admin-user-service";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is required");
@@ -17,9 +19,12 @@ const suffix = randomUUID();
 const actorId = `employee-actor-${suffix}`;
 const employeeEmail = `employee-${suffix}@example.test`;
 const actorEmail = `employee-actor-${suffix}@example.test`;
+const demoterId = `employee-demoter-${suffix}`;
+const demoterEmail = `employee-demoter-${suffix}@example.test`;
 const initialPassword = "long-lived-password";
 const passwordHash = `test-only-hash-${randomUUID()}`;
 const rollbackEmail = `employee-rollback-${suffix}@example.test`;
+const revokedEmployeeEmail = `employee-revoked-${suffix}@example.test`;
 
 describe("admin employee persistence", () => {
   beforeAll(async () => {
@@ -29,11 +34,20 @@ describe("admin employee persistence", () => {
       email: actorEmail,
       role: "admin",
     });
+    await database.insert(user).values({
+      id: demoterId,
+      name: "Employee Demoter",
+      email: demoterEmail,
+      role: "admin",
+    });
   });
 
   afterAll(async () => {
     await database.delete(user).where(eq(user.email, employeeEmail));
+    await database.delete(user).where(eq(user.email, revokedEmployeeEmail));
     await database.delete(adminAuditLogs).where(eq(adminAuditLogs.actorUserId, actorId));
+    await database.delete(adminAuditLogs).where(eq(adminAuditLogs.actorUserId, demoterId));
+    await database.delete(user).where(eq(user.id, demoterId));
     await database.delete(user).where(eq(user.id, actorId));
   });
 
@@ -147,5 +161,49 @@ describe("admin employee persistence", () => {
     expect(users).toEqual([]);
     expect(credentials).toEqual([]);
     expect(profiles).toEqual([]);
+  });
+
+  it("does not complete employee creation after another administrator concurrently revokes the actor", async () => {
+    const userService = createAdminUserService(createDrizzleAdminUserRepository(database));
+    const employeeService = createAdminEmployeeService({
+      hashPassword: async () => passwordHash,
+      verifyPassword: async ({ hash, password }) => hash === passwordHash && password === initialPassword,
+      passwordPolicy: { minPasswordLength: 8, maxPasswordLength: 128 },
+      create: createDrizzleAdminEmployeeRepository(database).create,
+    });
+    let releaseLock!: () => void;
+    let lockAcquired!: () => void;
+    const release = new Promise<void>((resolve) => { releaseLock = resolve; });
+    const acquired = new Promise<void>((resolve) => { lockAcquired = resolve; });
+    const gate = database.transaction(async (transaction) => {
+      await transaction.execute(sql`select pg_advisory_xact_lock(hashtext('rnr_admin_user_access_change'))`);
+      lockAcquired();
+      await release;
+    });
+
+    await acquired;
+    const demotion = userService.updateAccess({ userId: demoterId, email: demoterEmail }, {
+      targetUserId: actorId,
+      role: "customer",
+      idempotencyKey: `employee-actor-demotion-${suffix}`,
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    const creation = employeeService.createEmployee({ userId: actorId, email: actorEmail }, {
+      name: "Revoked Actor Employee",
+      email: revokedEmployeeEmail,
+      initialPassword,
+      adminPermissions: ["view_orders"],
+      formPermissions: { access_forms: true, view_jobs: true },
+      assignedOnly: false,
+      idempotencyKey: `employee-revoked-create-${suffix}`,
+    });
+
+    releaseLock();
+    await gate;
+    await expect(demotion).resolves.toMatchObject({ id: actorId, role: "customer" });
+    await expect(creation).rejects.toBeInstanceOf(AdminEmployeeAuthorizationError);
+    await expect(database.select({ id: user.id }).from(user).where(eq(user.email, revokedEmployeeEmail)))
+      .resolves.toEqual([]);
+    await database.update(user).set({ role: "admin" }).where(eq(user.id, actorId));
   });
 });

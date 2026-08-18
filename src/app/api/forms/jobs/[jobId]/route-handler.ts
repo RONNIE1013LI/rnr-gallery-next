@@ -181,7 +181,10 @@ export function createFormsJobRoute(dependencies?: Dependencies) {
         const canUpdate = hasFormPermission(access.formRole, access.formProfile, "update_jobs");
         const [proofing, notifications, assignees] = await Promise.all([
           canViewFiles && deps.listFiles
-            ? deps.listFiles(jobId, { canViewFinance: hasFormPermission(access.formRole, access.formProfile, "view_finance") })
+            ? deps.listFiles(jobId, {
+                canViewFinance: hasFormPermission(access.formRole, access.formProfile, "view_finance"),
+                canViewPaymentProof: hasFormPermission(access.formRole, access.formProfile, "view_payment_proof"),
+              })
             : Promise.resolve({ files: [], revision: { changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false } }),
           canViewFiles && deps.listNotifications ? deps.listNotifications(jobId) : Promise.resolve([]),
           canUpdate && deps.assignees ? deps.assignees() : Promise.resolve([]),

@@ -35,6 +35,7 @@ export function createProductionJobFileRoute(dependencies?: Dependencies) {
         const { jobId, fileId } = await context.params;
         const file = await deps.getPrivateFile(jobId, fileId, {
           canViewFinance: hasAdminPermission(access.adminRole, access.adminPermissions, "view_production_finance"),
+          canViewPaymentProof: hasAdminPermission(access.adminRole, access.adminPermissions, "view_production_finance"),
         });
         const bytes = await deps.read(file.storageKey);
         const attachment = new URL(request.url).searchParams.get("download") === "1";

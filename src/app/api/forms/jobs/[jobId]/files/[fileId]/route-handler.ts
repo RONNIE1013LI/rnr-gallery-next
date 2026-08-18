@@ -36,6 +36,7 @@ export function createFormsJobFileRoute(dependencies?: Dependencies) {
         await deps.assertScope(access, jobId);
         const file = await deps.getPrivateFile(jobId, fileId, {
           canViewFinance: hasFormPermission(access.formRole, access.formProfile, "view_finance"),
+          canViewPaymentProof: hasFormPermission(access.formRole, access.formProfile, "view_payment_proof"),
         });
         const bytes = await deps.read(file.storageKey);
         const attachment = new URL(request.url).searchParams.get("download") === "1";

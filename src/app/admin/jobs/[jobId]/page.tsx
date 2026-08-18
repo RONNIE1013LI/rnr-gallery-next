@@ -25,7 +25,7 @@ export default async function ProductionJobDetailPage({ params }: Props) {
     runtime.detail(jobId, { canViewFinance }),
     canUpdateJob ? runtime.assignees() : Promise.resolve([]),
     canViewFiles
-      ? getAdminProductionProofRuntime().listFiles(jobId, { canViewFinance })
+      ? getAdminProductionProofRuntime().listFiles(jobId, { canViewFinance, canViewPaymentProof: canViewFinance })
       : Promise.resolve({ files: [], revision: { changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false } }),
     canViewFiles && canRetryNotifications
       ? getCustomerNotificationRuntime().listForJob(jobId)

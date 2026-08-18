@@ -35,6 +35,19 @@ describe("staff access profiles", () => {
     });
   });
 
+  it("requires general file access when payment-proof access is selected", () => {
+    expect(normalizeStaffAccessProfile({
+      adminPermissions: [],
+      formPermissions: { view_payment_proof: true },
+      assignedOnly: false,
+    }).formPermissions).toMatchObject({
+      access_forms: true,
+      view_jobs: true,
+      view_files: true,
+      view_payment_proof: true,
+    });
+  });
+
   it("rejects non-assignable and unknown admin permissions", () => {
     for (const adminPermissions of [["manage_roles"], ["unknown_permission"]]) {
       expect(() => normalizeStaffAccessProfile({

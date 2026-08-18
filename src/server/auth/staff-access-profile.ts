@@ -59,7 +59,7 @@ export const STAFF_ACCESS_PROFILE_DEPENDENCIES = Object.freeze({
     view_customer_contact: ["view_jobs"],
     view_finance: ["view_jobs"],
     update_finance: ["view_finance"],
-    view_payment_proof: ["view_jobs"],
+    view_payment_proof: ["view_files"],
     view_files: ["view_jobs"],
     upload_files: ["view_files"],
     delete_files: ["view_files"],

@@ -548,7 +548,7 @@ export function createDrizzleProductionProofRepository(
       const rows = await database.select({ file: productionJobFiles, review: productionProofReviews })
         .from(productionJobFiles)
         .leftJoin(productionProofReviews, eq(productionProofReviews.fileId, productionJobFiles.id))
-        .where(permissions.canViewFinance
+        .where(permissions.canViewPaymentProof
           ? eq(productionJobFiles.jobId, jobId)
           : and(eq(productionJobFiles.jobId, jobId), ne(productionJobFiles.kind, "payment_proof")))
         .orderBy(asc(productionJobFiles.kind), desc(productionJobFiles.version), desc(productionJobFiles.createdAt));

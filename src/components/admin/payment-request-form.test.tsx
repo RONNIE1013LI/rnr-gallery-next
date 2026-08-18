@@ -73,6 +73,35 @@ describe("Admin PaymentRequestForm", () => {
     expect(fetchSpy).not.toHaveBeenCalled();
   });
 
+  it("rejects a standalone amount above the advertised maximum before sending a request", () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<PaymentRequestForm />);
+
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1000000.01" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Large balance" } });
+    fireEvent.submit(screen.getByRole("button", { name: "Create payment request" }).closest("form")!);
+
+    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(screen.getByText("Enter a valid amount with no more than two decimal places.")).toBeInTheDocument();
+  });
+
+  it("submits the standalone maximum as exact cents", async () => {
+    const fetchSpy = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ request: { id: "request-1" } }),
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    render(<PaymentRequestForm />);
+
+    fireEvent.change(screen.getByLabelText("Amount"), { target: { value: "1000000" } });
+    fireEvent.change(screen.getByLabelText("Description"), { target: { value: "Maximum balance" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create payment request" }));
+
+    await waitFor(() => expect(fetchSpy).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchSpy.mock.calls[0][1].body)).toMatchObject({ amountCents: 100_000_000 });
+  });
+
   it("submits exact cents for a valid seven-cent amount", async () => {
     const fetchSpy = vi.fn().mockResolvedValue({
       ok: true,

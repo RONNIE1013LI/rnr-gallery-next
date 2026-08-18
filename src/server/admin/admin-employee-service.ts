@@ -170,7 +170,7 @@ export function createDrizzleAdminEmployeeRepository(database: Database): AdminE
   return Object.freeze({
     async create(actor, input, verifyReplayPassword) {
       return database.transaction(async (transaction) => {
-        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext('rnr_admin_employee_create'))`);
+        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext('rnr_admin_user_access_change'))`);
 
         const [currentActor] = await transaction
           .select({ role: user.role })

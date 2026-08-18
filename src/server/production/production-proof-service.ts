@@ -159,7 +159,7 @@ export interface ProductionProofRepository {
       createdAt: Date;
     }>;
   }>>;
-  listJobFiles(jobId: string, permissions: Readonly<{ canViewFinance: boolean }>): Promise<readonly ProductionFileSummary[]>;
+  listJobFiles(jobId: string, permissions: Readonly<{ canViewFinance: boolean; canViewPaymentProof?: boolean }>): Promise<readonly ProductionFileSummary[]>;
   findPrivateFile(jobId: string, fileId: string): Promise<ProductionPrivateFile | null>;
 }
 
@@ -360,7 +360,7 @@ export function createProductionProofService(
       return Object.freeze({ result: result.result, review: result.review });
     },
 
-    async listFiles(jobIdInput: unknown, permissions: Readonly<{ canViewFinance: boolean }>) {
+    async listFiles(jobIdInput: unknown, permissions: Readonly<{ canViewFinance: boolean; canViewPaymentProof?: boolean }>) {
       const jobId = z.string().uuid().safeParse(jobIdInput);
       if (!jobId.success) throw new ProductionProofValidationError();
       const files = await repository.listJobFiles(jobId.data, permissions);
@@ -370,14 +370,14 @@ export function createProductionProofService(
       });
     },
 
-    async getPrivateFile(jobIdInput: unknown, fileIdInput: unknown, permissions: Readonly<{ canViewFinance: boolean }>) {
+    async getPrivateFile(jobIdInput: unknown, fileIdInput: unknown, permissions: Readonly<{ canViewFinance: boolean; canViewPaymentProof?: boolean }>) {
       const jobId = z.string().uuid().safeParse(jobIdInput);
       const fileId = z.string().uuid().safeParse(fileIdInput);
       if (!jobId.success || !fileId.success) throw new ProductionProofNotFoundError();
       const file = await repository.findPrivateFile(jobId.data, fileId.data);
       if (!file) throw new ProductionProofNotFoundError();
-      if (file.kind === "payment_proof" && !permissions.canViewFinance) {
-        throw new ProductionProofForbiddenError();
+      if (file.kind === "payment_proof" && !permissions.canViewPaymentProof) {
+        throw new ProductionProofForbiddenError("Payment-proof permission is required");
       }
       return file;
     },

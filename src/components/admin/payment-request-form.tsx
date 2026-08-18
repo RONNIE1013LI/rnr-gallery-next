@@ -12,6 +12,8 @@ type LinkedOrder = Readonly<{
   unreservedCents: number;
 }>;
 
+const MAX_STANDALONE_PAYMENT_REQUEST_CENTS = 100_000_000;
+
 function nextKey() {
   return window.crypto?.randomUUID?.() ??
     `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -52,6 +54,7 @@ export function PaymentRequestForm({ linkedOrder }: Readonly<{ linkedOrder?: Lin
       !amountMatch ||
       !Number.isSafeInteger(amountCents) ||
       amountCents <= 0 ||
+      (!linkedOrder && amountCents > MAX_STANDALONE_PAYMENT_REQUEST_CENTS) ||
       (linkedOrder && amountCents > linkedOrder.unreservedCents)
     ) {
       setMessage("Enter a valid amount with no more than two decimal places.");
@@ -117,7 +120,7 @@ export function PaymentRequestForm({ linkedOrder }: Readonly<{ linkedOrder?: Lin
     </div> : null}
     <div className={styles.formGrid}>
       <label><span>Currency</span><select aria-label="Currency" disabled={Boolean(linkedOrder)} value={currency} onChange={(event) => setCurrency(event.target.value as MarketCurrency)}><option value="NZD">NZD</option><option value="AUD">AUD</option></select></label>
-      <label><span>Amount</span><input aria-label="Amount" min="0.01" max={linkedOrder ? linkedOrder.unreservedCents / 100 : 1000000} required step="0.01" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
+      <label><span>Amount</span><input aria-label="Amount" min="0.01" max={linkedOrder ? linkedOrder.unreservedCents / 100 : MAX_STANDALONE_PAYMENT_REQUEST_CENTS / 100} required step="0.01" type="number" value={amount} onChange={(event) => setAmount(event.target.value)} /></label>
       <label className={styles.paymentRequestWideField}><span>Description</span><input aria-label="Description" maxLength={500} required value={description} onChange={(event) => setDescription(event.target.value)} /></label>
       {!linkedOrder ? <>
         <label><span>Customer name (optional)</span><input aria-label="Customer name (optional)" maxLength={120} value={customerName} onChange={(event) => setCustomerName(event.target.value)} /></label>

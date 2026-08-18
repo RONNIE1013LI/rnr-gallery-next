@@ -234,11 +234,15 @@ describe("drizzle production job repository", () => {
       fileId: draftOneId, decision: "approved", notes: "", idempotencyKey: `review-2-${suffix}`,
     })).rejects.toMatchObject({ name: "ProductionProofConflictError" });
 
-    const staffFiles = await proof.listFiles(created.job.id, { canViewFinance: false });
-    const adminFiles = await proof.listFiles(created.job.id, { canViewFinance: true });
+    const staffFiles = await proof.listFiles(created.job.id, { canViewFinance: false, canViewPaymentProof: false });
+    const financeOnlyFiles = await proof.listFiles(created.job.id, { canViewFinance: true, canViewPaymentProof: false });
+    const paymentProofFiles = await proof.listFiles(created.job.id, { canViewFinance: false, canViewPaymentProof: true });
     expect(staffFiles.files).toHaveLength(2);
-    expect(adminFiles.files).toHaveLength(3);
+    expect(financeOnlyFiles.files).toHaveLength(2);
+    expect(paymentProofFiles.files).toHaveLength(3);
     expect(staffFiles.revision).toEqual({ changesRequested: 1, freeRevisionsRemaining: 1, requiresAdditionalChargeReview: false });
     expect(staffFiles.files.some((file) => file.kind === "payment_proof")).toBe(false);
+    expect(financeOnlyFiles.files.some((file) => file.kind === "payment_proof")).toBe(false);
+    expect(paymentProofFiles.files.some((file) => file.kind === "payment_proof")).toBe(true);
   });
 });

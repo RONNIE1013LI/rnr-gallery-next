@@ -112,15 +112,45 @@ describe("admin employee route", () => {
     ] as const;
 
     for (const [error, expectedStatus] of cases) {
+      const recordFailure = vi.fn().mockResolvedValue(undefined);
       const route = createAdminEmployeeRoute({
         requirePermission: vi.fn().mockResolvedValue({ user: { id: "admin-1", email: "owner@example.test" } }),
         createEmployee: vi.fn().mockRejectedValue(error),
         trustedOrigin: origin,
+        recordFailure,
       });
       const response = await route.POST(request(input()));
       expect(response.status).toBe(expectedStatus);
       expect(JSON.stringify(await response.json())).not.toContain("long-lived-password");
+      expect(recordFailure).toHaveBeenCalledWith(expect.objectContaining({
+        action: "user.employee.create.failed",
+        resourceType: "user",
+        idempotencyKey: "employee-create-0001",
+      }));
     }
+  });
+
+  it("records authenticated creation failures without password, hash, or raw body data", async () => {
+    const recordFailure = vi.fn().mockResolvedValue(undefined);
+    const route = createAdminEmployeeRoute({
+      requirePermission: vi.fn().mockResolvedValue({ user: { id: "admin-1", email: "owner@example.test" } }),
+      createEmployee: vi.fn().mockRejectedValue(new Error("database implementation failure")),
+      trustedOrigin: origin,
+      recordFailure,
+    });
+
+    const response = await route.POST(request(input({ initialPassword: "long-lived-password", passwordHash: "not-a-real-hash" })));
+
+    expect(response.status).toBe(500);
+    expect(recordFailure).toHaveBeenCalledWith(expect.objectContaining({
+      actor: { userId: "admin-1", email: "owner@example.test" },
+      action: "user.employee.create.failed",
+      resourceType: "user",
+      idempotencyKey: "employee-create-0001",
+      requestSource: "direct",
+    }));
+    expect(JSON.stringify(recordFailure.mock.calls)).not.toContain("long-lived-password");
+    expect(JSON.stringify(recordFailure.mock.calls)).not.toContain("not-a-real-hash");
   });
 
   it("rejects bounded JSON and returns an idempotent replay safely", async () => {
@@ -156,10 +186,12 @@ describe("admin employee route", () => {
 
   it("returns a safe validation error for malformed JSON", async () => {
     const createEmployee = vi.fn();
+    const recordFailure = vi.fn().mockResolvedValue(undefined);
     const route = createAdminEmployeeRoute({
       requirePermission: vi.fn().mockResolvedValue({ user: { id: "admin-1", email: "owner@example.test" } }),
       createEmployee,
       trustedOrigin: origin,
+      recordFailure,
     });
 
     const response = await route.POST(malformedJsonRequest());
@@ -167,6 +199,12 @@ describe("admin employee route", () => {
     expect(response.status).toBe(400);
     await expect(response.json()).resolves.toEqual({ error: "Request body must contain valid JSON." });
     expect(createEmployee).not.toHaveBeenCalled();
+    expect(recordFailure).toHaveBeenCalledWith(expect.objectContaining({
+      action: "user.employee.create.failed",
+      resourceType: "user",
+      requestSource: "direct",
+    }));
+    expect(JSON.stringify(recordFailure.mock.calls)).not.toContain("initialPassword");
   });
 
   it("returns the same safe validation error for invalid UTF-8 JSON bytes", async () => {

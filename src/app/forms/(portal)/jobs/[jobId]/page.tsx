@@ -17,6 +17,7 @@ export default async function FormsJobDetailPage({ params }: Props) {
   const access = await requireFormsPage(path, "view_jobs");
   const canViewFinance = hasFormPermission(access.formRole, access.formProfile, "view_finance");
   const canViewFiles = hasFormPermission(access.formRole, access.formProfile, "view_files");
+  const canViewPaymentProof = hasFormPermission(access.formRole, access.formProfile, "view_payment_proof");
   const canViewContact = hasFormPermission(access.formRole, access.formProfile, "view_customer_contact");
   const canViewAudit = hasFormPermission(access.formRole, access.formProfile, "view_audit");
   const canUpdate = hasFormPermission(access.formRole, access.formProfile, "update_jobs");
@@ -28,7 +29,7 @@ export default async function FormsJobDetailPage({ params }: Props) {
     runtime.detail(jobId, { canViewFinance }),
     canUpdate ? runtime.assignees() : Promise.resolve([]),
     canViewFiles
-      ? getAdminProductionProofRuntime().listFiles(jobId, { canViewFinance })
+      ? getAdminProductionProofRuntime().listFiles(jobId, { canViewFinance, canViewPaymentProof })
       : Promise.resolve({
           files: [],
           revision: { changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false },

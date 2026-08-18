@@ -103,6 +103,31 @@ describe("production proof service", () => {
     }, { canManageFinance: false })).rejects.toBeInstanceOf(ProductionProofForbiddenError);
   });
 
+  it("does not let finance permission substitute for payment-proof access", async () => {
+    const repo = repository({
+      findPrivateFile: vi.fn().mockResolvedValue({
+        id: reference.id,
+        jobId,
+        kind: "payment_proof",
+        version: null,
+        originalName: "bank-receipt.jpg",
+        mediaType: "image/jpeg",
+        sizeBytes: reference.size,
+        createdAt: new Date("2026-08-18T00:00:00Z"),
+        review: null,
+        storageKey: reference.storageKey,
+      }),
+    });
+
+    await expect(createProductionProofService(repo).getPrivateFile(jobId, reference.id, {
+      canViewFinance: true,
+      canViewPaymentProof: false,
+    })).rejects.toMatchObject({
+      name: "ProductionProofForbiddenError",
+      message: "Payment-proof permission is required",
+    });
+  });
+
   it("accepts PDF metadata only for finance-authorised payment proofs", async () => {
     const service = createProductionProofService(repository());
     const pdfReference = {
