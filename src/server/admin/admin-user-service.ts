@@ -37,7 +37,16 @@ export type AdminUserListItem = AdminUserAccount & Readonly<{
   activeSessions: number;
 }>;
 
-export type AdminUserAccessChangeResult = AdminUserAccount & Readonly<{
+type AdminUserAccessState = Readonly<{
+  role: AdminUserRole;
+  formPreset: FormAccessPreset | null;
+  adminPermissions: readonly string[] | null;
+  formPermissions: Readonly<Record<FormPermission, boolean>> | null;
+  assignedOnly: boolean | null;
+}>;
+
+export type AdminUserAccessChangeResult = AdminUserAccessState & Readonly<{
+  id: string;
   changed: boolean;
 }>;
 
@@ -262,7 +271,7 @@ export function createAdminUserService(repository: AdminUserRepository) {
   });
 }
 
-function accessSummary(account: AdminUserAccount) {
+function accessSummary(account: AdminUserAccessState) {
   const profile = profileFromRecord(account);
   return {
     role: account.role,
@@ -275,71 +284,73 @@ function accessSummary(account: AdminUserAccount) {
   };
 }
 
-function accessResponseSnapshot(account: AdminUserAccount) {
+function accessResponseSnapshot(account: AdminUserAccessState) {
   return {
-    id: account.id,
-    name: account.name,
-    email: account.email,
-    emailVerified: account.emailVerified,
     role: account.role,
     formPreset: account.formPreset,
     adminPermissions: account.adminPermissions ? [...account.adminPermissions] : null,
     formPermissions: account.formPermissions ? { ...account.formPermissions } : null,
     assignedOnly: account.assignedOnly,
-    createdAt: account.createdAt.toISOString(),
-    updatedAt: account.updatedAt.toISOString(),
   };
 }
 
-function responseSnapshotFromAudit(summary: unknown): AdminUserAccount | null {
+function responseSnapshotFromAudit(
+  summary: unknown,
+  resourceId: string | null,
+): AdminUserAccessChangeResult | null {
   if (!summary || typeof summary !== "object") return null;
   const snapshot = (summary as Record<string, unknown>).responseSnapshot;
   if (!snapshot || typeof snapshot !== "object") return null;
   const candidate = snapshot as Record<string, unknown>;
   if (
-    typeof candidate.id !== "string" ||
-    typeof candidate.name !== "string" ||
-    typeof candidate.email !== "string" ||
-    typeof candidate.emailVerified !== "boolean" ||
+    !resourceId ||
     typeof candidate.role !== "string" ||
+    !adminUserRoles.includes(candidate.role as AdminUserRole) ||
     (candidate.formPreset !== null && typeof candidate.formPreset !== "string") ||
     (candidate.adminPermissions !== null && !Array.isArray(candidate.adminPermissions)) ||
     (candidate.formPermissions !== null && (
       !candidate.formPermissions || typeof candidate.formPermissions !== "object" || Array.isArray(candidate.formPermissions)
     )) ||
-    (candidate.assignedOnly !== null && typeof candidate.assignedOnly !== "boolean") ||
-    typeof candidate.createdAt !== "string" ||
-    typeof candidate.updatedAt !== "string"
+    (candidate.assignedOnly !== null && typeof candidate.assignedOnly !== "boolean")
   ) return null;
-  const createdAt = new Date(candidate.createdAt);
-  const updatedAt = new Date(candidate.updatedAt);
-  if (!Number.isFinite(createdAt.getTime()) || !Number.isFinite(updatedAt.getTime())) return null;
-  if (!candidate.adminPermissions?.every((permission) => typeof permission === "string")) return null;
+  if (candidate.adminPermissions !== null && !candidate.adminPermissions.every((permission) => typeof permission === "string")) {
+    return null;
+  }
   if (!Object.values(candidate.formPermissions ?? {}).every((enabled) => typeof enabled === "boolean")) return null;
-  return freezeUser({
-    id: candidate.id,
-    name: candidate.name,
-    email: candidate.email,
-    emailVerified: candidate.emailVerified,
-    role: candidate.role,
-    formPreset: candidate.formPreset,
-    adminPermissions: candidate.adminPermissions as string[] | null,
-    formPermissions: candidate.formPermissions as Record<string, boolean> | null,
+  const role = candidate.role as AdminUserRole;
+  const formPreset = formAccessPresets.includes(candidate.formPreset as FormAccessPreset)
+    ? candidate.formPreset as FormAccessPreset
+    : null;
+  const profile = {
+    adminPermissions: candidate.adminPermissions,
+    formPermissions: candidate.formPermissions,
     assignedOnly: candidate.assignedOnly,
-    createdAt,
-    updatedAt,
+  };
+  const staffProfile = isStaffAccessProfile(profile) ? profile : null;
+  if (role === "staff" && !staffProfile) return null;
+  if (role === "form_staff" && !formPreset) return null;
+  if (role !== "staff" && (
+    candidate.adminPermissions !== null || candidate.formPermissions !== null || candidate.assignedOnly !== null
+  )) return null;
+  if (role !== "form_staff" && formPreset !== null) return null;
+  return Object.freeze({
+    id: resourceId,
+    role,
+    formPreset,
+    adminPermissions: staffProfile ? Object.freeze([...staffProfile.adminPermissions]) : null,
+    formPermissions: staffProfile ? Object.freeze({ ...staffProfile.formPermissions }) : null,
+    assignedOnly: staffProfile?.assignedOnly ?? null,
+    changed: false,
   });
 }
 
 function matchesRecordedAccess(
   summary: unknown,
   targetUserId: string | null,
-  requestSource: string | null,
   input: ParsedAccessChangeInput,
 ) {
   if (
     targetUserId !== input.targetUserId ||
-    requestSource !== (input.requestSource ?? null) ||
     !summary ||
     typeof summary !== "object"
   ) return false;
@@ -405,7 +416,6 @@ export function createDrizzleAdminUserRepository(database: Database): AdminUserR
           .select({
             resourceId: adminAuditLogs.resourceId,
             afterSummary: adminAuditLogs.afterSummary,
-            requestSource: adminAuditLogs.requestSource,
           })
           .from(adminAuditLogs)
           .where(and(
@@ -419,16 +429,18 @@ export function createDrizzleAdminUserRepository(database: Database): AdminUserR
           if (!matchesRecordedAccess(
             existingAudit.afterSummary,
             existingAudit.resourceId,
-            existingAudit.requestSource,
             input,
           )) {
             throw new AdminUserConflictError("This access-change request has already been used.");
           }
-          const responseSnapshot = responseSnapshotFromAudit(existingAudit.afterSummary);
+          const responseSnapshot = responseSnapshotFromAudit(
+            existingAudit.afterSummary,
+            existingAudit.resourceId,
+          );
           if (!responseSnapshot) {
             throw new AdminUserConflictError("This access-change request has already been used.");
           }
-          return Object.freeze({ ...responseSnapshot, changed: false });
+          return responseSnapshot;
         }
 
         const [lockedTarget] = await transaction
@@ -518,8 +530,9 @@ export function createDrizzleAdminUserRepository(database: Database): AdminUserR
           }
         }
 
-        const result = Object.freeze({
-          ...updated,
+        const result: AdminUserAccessChangeResult = Object.freeze({
+          id: updated.id,
+          role: input.role,
           formPreset,
           adminPermissions: profile ? Object.freeze([...profile.adminPermissions]) : null,
           formPermissions: profile ? Object.freeze({ ...profile.formPermissions }) : null,
