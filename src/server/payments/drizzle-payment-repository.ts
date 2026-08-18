@@ -110,6 +110,7 @@ function isPositiveMoney(value: unknown): value is number {
 }
 
 function attemptRecord(row: AttemptRow): PaymentAttemptRecord {
+  if (!row.orderId) throw new PaymentRepositoryConflictError();
   return Object.freeze({
     id: row.id,
     orderId: row.orderId,
@@ -204,7 +205,7 @@ async function lockOrderThenAttempt(
     .from(paymentAttempts)
     .where(eq(paymentAttempts.id, attemptId))
     .limit(1);
-  if (!unlockedAttempt) throw new PaymentRepositoryConflictError();
+  if (!unlockedAttempt?.orderId) throw new PaymentRepositoryConflictError();
 
   const [order] = await transaction
     .select()

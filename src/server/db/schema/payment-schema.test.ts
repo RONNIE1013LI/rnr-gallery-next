@@ -1,7 +1,9 @@
 import { getTableName } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
-import { orders, paymentAttempts, webhookEvents } from "./index";
+import * as schema from "./index";
+
+const { orders, paymentAttempts, webhookEvents } = schema;
 
 describe("payment schema contract", () => {
   it("defines payment attempts with immutable order money ownership", () => {
@@ -29,17 +31,70 @@ describe("payment schema contract", () => {
     );
   });
 
-  it("allows only one nonterminal attempt globally per order", () => {
+  it("binds every attempt to exactly one payment target", () => {
     const attemptConfig = getTableConfig(paymentAttempts);
-    const index = attemptConfig.indexes.find(
-      (candidate) =>
-        candidate.config.name === "payment_attempts_one_nonterminal_unique",
+    const columns = attemptConfig.columns.map((column) => column.name);
+
+    expect(columns).toEqual(expect.arrayContaining([
+      "order_id",
+      "payment_request_id",
+      "payer_snapshot",
+    ]));
+    expect(attemptConfig.checks.map((item) => item.name)).toContain(
+      "payment_attempts_exactly_one_target",
     );
 
-    expect(index?.config.unique).toBe(true);
-    expect(index?.config.columns).toHaveLength(1);
-    expect(index?.config.columns[0]).toMatchObject({ name: "order_id" });
-    expect(index?.config.where).toBeDefined();
+    const indexNames = attemptConfig.indexes.map((item) => item.config.name);
+    expect(indexNames).toEqual(expect.arrayContaining([
+      "payment_attempts_one_nonterminal_order_unique",
+      "payment_attempts_one_nonterminal_request_unique",
+    ]));
+
+    expect(attemptConfig.foreignKeys.map((item) => item.getName())).toContain(
+      "payment_attempts_expected_payment_request_amount_fk",
+    );
+  });
+
+  it("defines fixed payment requests without a partially-paid state", () => {
+    const paymentRequests = Reflect.get(schema, "paymentRequests");
+    expect(paymentRequests).toBeDefined();
+    if (!paymentRequests) return;
+
+    expect(getTableName(paymentRequests)).toBe("payment_requests");
+    const config = getTableConfig(paymentRequests);
+    expect(config.checks.map((item) => item.name)).toEqual(expect.arrayContaining([
+      "payment_requests_target_matches_kind",
+      "payment_requests_amount_positive",
+      "payment_requests_status_valid",
+      "payment_requests_token_digest_format",
+    ]));
+    expect(config.uniqueConstraints.map((item) => item.name)).toContain(
+      "payment_requests_expected_amount_unique",
+    );
+    expect(config.columns.map((column) => column.name)).not.toContain(
+      "partially_paid_amount_cents",
+    );
+  });
+
+  it("defines an append-only payment ledger with reversal ownership", () => {
+    const paymentLedgerEntries = Reflect.get(schema, "paymentLedgerEntries");
+    expect(paymentLedgerEntries).toBeDefined();
+    if (!paymentLedgerEntries) return;
+
+    expect(getTableName(paymentLedgerEntries)).toBe("payment_ledger_entries");
+    const config = getTableConfig(paymentLedgerEntries);
+    expect(config.checks.map((item) => item.name)).toEqual(expect.arrayContaining([
+      "payment_ledger_entries_target_valid",
+      "payment_ledger_entries_amount_positive",
+      "payment_ledger_entries_type_valid",
+      "payment_ledger_entries_direction_valid",
+    ]));
+    expect(config.indexes.map((item) => item.config.name)).toContain(
+      "payment_ledger_entries_payment_attempt_unique",
+    );
+    expect(config.indexes.map((item) => item.config.name)).toContain(
+      "payment_ledger_entries_reversal_unique",
+    );
   });
 
   it("deduplicates non-null return-state digests per provider", () => {

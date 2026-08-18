@@ -302,7 +302,7 @@ describe("payment schema database constraints", () => {
         idempotencyKey: `afterpay-${suffix}`,
         status: "processing",
       }),
-    ).rejects.toThrow("payment_attempts_one_nonterminal_unique");
+    ).rejects.toThrow("payment_attempts_one_nonterminal_order_unique");
 
     await pool.query("UPDATE payment_attempts SET status = 'failed' WHERE id = $1", [
       first.rows[0].id,
@@ -466,5 +466,99 @@ describe("payment schema database constraints", () => {
         [`processed-at-only-${suffix}`, hash],
       ),
     ).rejects.toThrow("webhook_events_processing_pair_valid");
+  });
+
+  it("enforces one immutable target for requests, attempts and ledger entries", async () => {
+    const tables = await pool.query<{ table_name: string }>(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'public'
+         AND table_name IN ('payment_requests', 'payment_ledger_entries')
+       ORDER BY table_name`,
+    );
+    expect(tables.rows.map(({ table_name }) => table_name)).toEqual([
+      "payment_ledger_entries",
+      "payment_requests",
+    ]);
+
+    const adminId = `payment-schema-admin-${suffix}`;
+    const orderId = await createOrder("request-target");
+    let requestId: string | undefined;
+    let attemptId: string | undefined;
+    try {
+      await pool.query(
+        `INSERT INTO "user" (id, name, email, role)
+         VALUES ($1, 'Payment Schema Admin', $2, 'admin')`,
+        [adminId, `${adminId}@example.test`],
+      );
+      const request = await pool.query<{ id: string }>(
+        `INSERT INTO payment_requests (
+           request_number, public_token_digest, kind, order_id, description,
+           currency, amount_cents, enabled_payment_methods, created_by
+         ) VALUES ($1, $2, 'order_balance', $3, 'Outstanding balance',
+           'NZD', 7475, '["card"]'::jsonb, $4)
+         RETURNING id`,
+        [`PAY-${suffix}`, "c".repeat(64), orderId, adminId],
+      );
+      requestId = request.rows[0].id;
+
+      await expect(
+        pool.query(
+          `INSERT INTO payment_attempts (
+             order_id, payment_request_id, provider, method, idempotency_key,
+             expected_amount_cents, currency, country, status
+           ) VALUES ($1, $2, 'stripe', 'card', $3, 7475, 'NZD', 'NZ', 'created')`,
+          [orderId, requestId, `both-targets-${suffix}`],
+        ),
+      ).rejects.toThrow("payment_attempts_exactly_one_target");
+
+      await expect(
+        pool.query(
+          `INSERT INTO payment_attempts (
+             provider, method, idempotency_key, expected_amount_cents,
+             currency, country, status
+           ) VALUES ('stripe', 'card', $1, 7475, 'NZD', 'NZ', 'created')`,
+          [`no-target-${suffix}`],
+        ),
+      ).rejects.toThrow("payment_attempts_exactly_one_target");
+
+      const attempt = await pool.query<{ id: string }>(
+        `INSERT INTO payment_attempts (
+           payment_request_id, provider, method, idempotency_key,
+           expected_amount_cents, currency, country, status
+         ) VALUES ($1, 'stripe', 'card', $2, 7475, 'NZD', 'NZ', 'paid')
+         RETURNING id`,
+        [requestId, `request-target-${suffix}`],
+      );
+      attemptId = attempt.rows[0].id;
+
+      await expect(
+        pool.query(
+          `INSERT INTO payment_ledger_entries (
+             entry_type, direction, amount_cents, currency, received_at
+           ) VALUES ('bank_transfer', 'credit', 1000, 'NZD', now())`,
+        ),
+      ).rejects.toThrow("payment_ledger_entries_target_valid");
+
+      await expect(
+        pool.query(
+          `INSERT INTO payment_ledger_entries (
+             payment_request_id, payment_attempt_id, entry_type, direction,
+             amount_cents, currency, received_at
+           ) VALUES ($1, $2, 'online_payment', 'credit', 7475, 'NZD', now())`,
+          [requestId, attemptId],
+        ),
+      ).resolves.toMatchObject({ rowCount: 1 });
+    } finally {
+      if (attemptId) {
+        await pool.query("DELETE FROM payment_ledger_entries WHERE payment_attempt_id = $1", [
+          attemptId,
+        ]);
+        await pool.query("DELETE FROM payment_attempts WHERE id = $1", [attemptId]);
+      }
+      if (requestId) {
+        await pool.query("DELETE FROM payment_requests WHERE id = $1", [requestId]);
+      }
+      await pool.query("DELETE FROM \"user\" WHERE id = $1", [adminId]);
+    }
   });
 });
