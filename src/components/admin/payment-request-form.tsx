@@ -19,7 +19,22 @@ function nextKey() {
     `payment-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
-export function PaymentRequestForm({ linkedOrder }: Readonly<{ linkedOrder?: LinkedOrder }>) {
+type PaymentRequestFormProps = Readonly<{
+  linkedOrder?: LinkedOrder;
+  preferredMethods?: readonly PaymentMethodKey[];
+}>;
+
+function computeInitialMethods(preferred?: readonly PaymentMethodKey[]) {
+  const candidate = preferred?.length
+    ? Array.from(new Set(preferred.filter((method): method is PaymentMethodKey => method === "card" || method === "afterpay"))
+    )
+    : undefined;
+  if (!candidate?.length) return ["afterpay" as const];
+  if (candidate.includes("afterpay")) return ["afterpay" as const];
+  return [candidate[0]];
+}
+
+export function PaymentRequestForm({ linkedOrder, preferredMethods }: PaymentRequestFormProps) {
   const [currency, setCurrency] = useState<MarketCurrency>(linkedOrder?.currency ?? "NZD");
   const [amount, setAmount] = useState(
     linkedOrder ? String(linkedOrder.unreservedCents / 100) : "0",
@@ -29,7 +44,7 @@ export function PaymentRequestForm({ linkedOrder }: Readonly<{ linkedOrder?: Lin
   const [customerEmail, setCustomerEmail] = useState("");
   const [internalNote, setInternalNote] = useState("");
   const [expiresAt, setExpiresAt] = useState("");
-  const [methods, setMethods] = useState<PaymentMethodKey[]>(["card"]);
+  const [methods, setMethods] = useState<PaymentMethodKey[]>(() => computeInitialMethods(preferredMethods));
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [paymentUrl, setPaymentUrl] = useState("");

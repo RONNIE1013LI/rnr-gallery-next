@@ -23,8 +23,8 @@ describe("Admin PaymentRequestForm", () => {
     expect(screen.getByLabelText("Currency")).toHaveValue("NZD");
     expect(screen.getByLabelText("Currency")).toBeDisabled();
     expect(screen.getByLabelText("Amount")).toHaveValue(150);
-    expect(screen.getByRole("checkbox", { name: "Card" })).toBeInTheDocument();
-    expect(screen.getByRole("checkbox", { name: "Afterpay" })).toBeInTheDocument();
+    expect(screen.getByRole("checkbox", { name: "Card" })).not.toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Afterpay" })).toBeChecked();
     expect(screen.queryByRole("checkbox", { name: /zip/i })).not.toBeInTheDocument();
   });
 
