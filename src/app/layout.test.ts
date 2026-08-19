@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { metadata } from "./layout";
@@ -55,6 +55,26 @@ describe("root layout metadata", () => {
       icon: "/media/brand/rr-gallery-logo-2026.webp",
       apple: "/media/brand/rr-gallery-logo-2026.webp",
     });
+  });
+
+  it("uses the approved branded image and wording for default social shares", () => {
+    const socialTitle = "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service";
+    const socialImage = "/media/social/rr-gallery-social-share-2026.webp";
+
+    expect(metadata.openGraph).toMatchObject({
+      title: socialTitle,
+      images: [{
+        url: socialImage,
+        width: 3840,
+        height: 2160,
+      }],
+    });
+    expect(metadata.twitter).toMatchObject({
+      card: "summary_large_image",
+      title: socialTitle,
+      images: [socialImage],
+    });
+    expect(existsSync(join(process.cwd(), "public", socialImage))).toBe(true);
   });
 
   it("reserves the vertical scrollbar gutter so page changes do not shift the site frame", () => {

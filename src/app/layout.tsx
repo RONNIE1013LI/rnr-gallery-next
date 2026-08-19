@@ -10,6 +10,9 @@ import { getSafePublicProductRegistry } from "@/server/admin/product-registry-ru
 import { MARKET_COOKIE_NAME, parseMarketCookie } from "@/server/markets/market-cookie";
 import "./globals.css";
 
+const socialTitle = "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service";
+const socialImage = "/media/social/rr-gallery-social-share-2026.webp";
+
 export const metadata: Metadata = {
   metadataBase: getSiteUrl(),
   title: {
@@ -32,20 +35,20 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_NZ",
     siteName: "R&R Gallery",
-    title: "R&R Gallery | Custom Prints New Zealand",
+    title: socialTitle,
     description: "Personalised canvas, banners and print artwork made with care in New Zealand.",
     images: [{
-      url: "/media/home/digital-oil-painting-canvas-hero-landscape-01.webp",
+      url: socialImage,
       width: 3840,
       height: 2160,
-      alt: "Digital oil painting canvas displayed in a warm home interior",
+      alt: "R&R Gallery custom canvas and digital oil painting display",
     }],
   },
   twitter: {
     card: "summary_large_image",
-    title: "R&R Gallery | Custom Prints New Zealand",
+    title: socialTitle,
     description: "Personalised canvas, banners and print artwork made with care in New Zealand.",
-    images: ["/media/home/digital-oil-painting-canvas-hero-landscape-01.webp"],
+    images: [socialImage],
   },
 };
 
