@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { google as createGoogleProvider } from "@better-auth/core/social-providers";
 
 import {
   getConfiguredSocialProviderIds,
@@ -20,6 +21,7 @@ describe("social provider configuration", () => {
       google: {
         clientId: "google-client",
         clientSecret: "google-secret",
+        prompt: "select_account",
       },
       apple: {
         clientId: "apple-client",
@@ -31,5 +33,22 @@ describe("social provider configuration", () => {
   it("returns no providers when credentials are absent", () => {
     expect(getConfiguredSocialProviderIds({})).toEqual([]);
     expect(getSocialProviderOptions({})).toEqual({});
+  });
+
+  it("makes Better Auth request Google's account chooser", async () => {
+    const options = getSocialProviderOptions({
+      GOOGLE_CLIENT_ID: "google-client",
+      GOOGLE_CLIENT_SECRET: "google-secret",
+    });
+    const provider = createGoogleProvider(options.google!);
+
+    const authorizationURL = await provider.createAuthorizationURL({
+      state: "test-state",
+      codeVerifier: "test-code-verifier",
+      redirectURI: "https://shop.example.test/api/auth/callback/google",
+    });
+
+    expect(authorizationURL.searchParams.get("prompt")).toBe("select_account");
+    expect(options.apple).toBeUndefined();
   });
 });

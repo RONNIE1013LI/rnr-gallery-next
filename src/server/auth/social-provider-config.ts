@@ -5,6 +5,11 @@ type ProviderCredentials = Readonly<{
   clientId: string;
   clientSecret: string;
 }>;
+type SocialProviderOptions = {
+  google?: ProviderCredentials & Readonly<{ prompt: "select_account" }>;
+  github?: ProviderCredentials;
+  apple?: ProviderCredentials;
+};
 
 function credentials(
   env: AuthEnvironment,
@@ -17,12 +22,12 @@ function credentials(
 }
 
 export function getSocialProviderOptions(env: AuthEnvironment) {
-  const options: Partial<Record<SocialProviderId, ProviderCredentials>> = {};
+  const options: SocialProviderOptions = {};
   const google = credentials(env, "GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET");
   const github = credentials(env, "GITHUB_CLIENT_ID", "GITHUB_CLIENT_SECRET");
   const apple = credentials(env, "APPLE_CLIENT_ID", "APPLE_CLIENT_SECRET");
 
-  if (google) options.google = google;
+  if (google) options.google = { ...google, prompt: "select_account" };
   if (github) options.github = github;
   if (apple) options.apple = apple;
   return options;
