@@ -27,6 +27,7 @@ function repository(
   delivery: PaymentRequestNotificationDelivery = customerDelivery,
 ): PaymentRequestNotificationRepository {
   return {
+    repairMissingPaidNotifications: vi.fn().mockResolvedValue(0),
     claimNext: vi.fn().mockResolvedValueOnce(delivery).mockResolvedValue(null),
     markSent: vi.fn().mockResolvedValue(true),
     markFailed: vi.fn().mockResolvedValue(true),
@@ -34,6 +35,28 @@ function repository(
 }
 
 describe("Payment Request notification delivery", () => {
+  it("repairs missing paid notifications before claiming deliveries", async () => {
+    const repairMissingPaidNotifications = vi.fn().mockResolvedValue(2);
+    const repo = {
+      ...repository(),
+      repairMissingPaidNotifications,
+    };
+    const service = createPaymentRequestNotificationService(repo, {
+      provider: {
+        configured: true,
+        send: vi.fn().mockResolvedValue({ providerMessageId: "email-repaired-1" }),
+      },
+      siteUrl: "https://shop.example.test",
+      now: () => now,
+    });
+
+    await service.deliverPending(20);
+
+    expect(repairMissingPaidNotifications).toHaveBeenCalledWith(20, now);
+    expect(repairMissingPaidNotifications.mock.invocationCallOrder[0])
+      .toBeLessThan(vi.mocked(repo.claimNext).mock.invocationCallOrder[0]);
+  });
+
   it("sends the payer a fixed-amount confirmation with the customer signature", async () => {
     const repo = repository();
     const send = vi.fn().mockResolvedValue({ providerMessageId: "email-customer-1" });

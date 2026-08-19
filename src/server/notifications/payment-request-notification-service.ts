@@ -33,6 +33,7 @@ export type PaymentRequestNotificationDelivery = Readonly<{
 }>;
 
 export interface PaymentRequestNotificationRepository {
+  repairMissingPaidNotifications(limit: number, now: Date): Promise<number>;
   claimNext(now: Date): Promise<PaymentRequestNotificationDelivery | null>;
   markSent(id: string, providerMessageId: string, now: Date): Promise<boolean>;
   markFailed(id: string, errorCode: string, availableAt: Date, now: Date): Promise<boolean>;
@@ -116,6 +117,10 @@ export function createPaymentRequestNotificationService(
         return Object.freeze({ result: "not_configured" as const, sent: 0, failed: 0 });
       }
       const safeLimit = Math.max(1, Math.min(50, Math.trunc(limit)));
+      await repository.repairMissingPaidNotifications(
+        safeLimit,
+        dependencies.now?.() ?? new Date(),
+      );
       const signatureValues = dependencies.loadPublishedSignature
         ? await dependencies.loadPublishedSignature().catch(() => defaultCustomerEmailSignatureValues)
         : defaultCustomerEmailSignatureValues;

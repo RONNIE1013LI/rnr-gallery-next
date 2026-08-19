@@ -1,8 +1,12 @@
 import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import {
+  orders,
+  paymentAttempts,
+  paymentLedgerEntries,
   paymentRequestNotificationOutbox,
   paymentRequests,
+  user,
 } from "@/server/db/schema";
 import type {
   PaymentRequestNotificationDelivery,
@@ -15,6 +19,128 @@ export function createDrizzlePaymentRequestNotificationRepository(
   database: Database,
 ): PaymentRequestNotificationRepository {
   return Object.freeze({
+    async repairMissingPaidNotifications(limit: number, now: Date) {
+      if (!Number.isInteger(limit) || limit < 1 || limit > 50) {
+        throw new Error("Notification repair limit must be an integer from 1 to 50");
+      }
+      return database.transaction(async (transaction) => {
+        const customerRows = await transaction.execute<{ id: string }>(sql`
+          with candidates as (
+            select
+              requests.id,
+              coalesce(
+                nullif(trim(attempts.payer_snapshot->>'email'), ''),
+                nullif(trim(requests.customer_email), ''),
+                nullif(trim(linked_orders.customer_email), '')
+              ) as recipient_email,
+              coalesce(
+                nullif(trim(attempts.payer_snapshot->>'fullName'), ''),
+                nullif(trim(requests.customer_name), ''),
+                'Customer'
+              ) as recipient_name
+            from ${paymentRequests} as requests
+            inner join ${paymentLedgerEntries} as ledger
+              on ledger.payment_request_id = requests.id
+              and ledger.entry_type = 'online_payment'
+              and ledger.direction = 'credit'
+            inner join ${paymentAttempts} as attempts
+              on attempts.id = ledger.payment_attempt_id
+              and attempts.status = 'paid'
+            left join ${orders} as linked_orders on linked_orders.id = requests.order_id
+            where requests.status = 'paid'
+              and not exists (
+                select 1 from ${paymentRequestNotificationOutbox} as notifications
+                where notifications.event_key = 'payment-request-confirmed:' || requests.id
+              )
+            order by requests.paid_at asc, requests.id asc
+            limit ${limit}
+          )
+          insert into ${paymentRequestNotificationOutbox} (
+            event_key,
+            kind,
+            payment_request_id,
+            recipient_name,
+            recipient_email,
+            status,
+            attempts,
+            available_at,
+            created_at,
+            updated_at
+          )
+          select
+            'payment-request-confirmed:' || id,
+            'payment_request_confirmed',
+            id,
+            recipient_name,
+            recipient_email,
+            'pending',
+            0,
+            ${now},
+            ${now},
+            ${now}
+          from candidates
+          where recipient_email is not null
+          on conflict (event_key) do nothing
+          returning id
+        `);
+        const adminRows = await transaction.execute<{ id: string }>(sql`
+          with candidates as (
+            select distinct requests.id, requests.paid_at
+            from ${paymentRequests} as requests
+            inner join ${paymentLedgerEntries} as ledger
+              on ledger.payment_request_id = requests.id
+              and ledger.entry_type = 'online_payment'
+              and ledger.direction = 'credit'
+            inner join ${paymentAttempts} as attempts
+              on attempts.id = ledger.payment_attempt_id
+              and attempts.status = 'paid'
+            where requests.status = 'paid'
+              and exists (
+                select 1 from ${user} as administrators
+                where administrators.role = 'admin'
+                  and not exists (
+                    select 1 from ${paymentRequestNotificationOutbox} as notifications
+                    where notifications.event_key =
+                      'admin-payment-request-received:' || requests.id || ':' || administrators.id
+                  )
+              )
+            order by requests.paid_at asc, requests.id asc
+            limit ${limit}
+          )
+          insert into ${paymentRequestNotificationOutbox} (
+            event_key,
+            kind,
+            payment_request_id,
+            recipient_name,
+            recipient_email,
+            status,
+            attempts,
+            available_at,
+            created_at,
+            updated_at
+          )
+          select
+            'admin-payment-request-received:' || candidates.id || ':' || administrators.id,
+            'admin_payment_request_received',
+            candidates.id,
+            'R&R Gallery team',
+            administrators.email,
+            'pending',
+            0,
+            ${now},
+            ${now},
+            ${now}
+          from candidates
+          cross join ${user} as administrators
+          where administrators.role = 'admin'
+            and length(trim(administrators.email)) > 0
+          on conflict (event_key) do nothing
+          returning id
+        `);
+        return customerRows.rows.length + adminRows.rows.length;
+      });
+    },
+
     async claimNext(now: Date): Promise<PaymentRequestNotificationDelivery | null> {
       const staleBefore = new Date(now.getTime() - 10 * 60_000);
       return database.transaction(async (transaction) => {

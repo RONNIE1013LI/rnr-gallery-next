@@ -18,6 +18,7 @@ import {
   PaymentRequestConflictError,
   createDrizzlePaymentRequestRepository,
 } from "./drizzle-payment-request-repository";
+import { createDrizzlePaymentRequestNotificationRepository } from "@/server/notifications/drizzle-payment-request-notification-repository";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is required");
@@ -27,6 +28,7 @@ const database = drizzle(pool);
 const repository = createDrizzlePaymentRequestRepository(database, {
   leaseDurationMs: 30_000,
 });
+const notificationRepository = createDrizzlePaymentRequestNotificationRepository(database);
 const suffix = randomUUID();
 const actorId = `payment-request-admin-${suffix}`;
 const orderIds: string[] = [];
@@ -574,5 +576,60 @@ describe("payment request balance transactions", () => {
       item.kind === "admin_payment_request_received" &&
       item.recipientEmail === `${actorId}@example.test`
     )).toHaveLength(1);
+  });
+
+  it("repairs missing notifications only for paid requests backed by the ledger", async () => {
+    const paidRequest = await remember(repository.createRequest({
+      ...orderRequest(randomUUID(), 5_000),
+      kind: "standalone",
+      orderId: null,
+    }));
+    const claim = await repository.preflightAndClaimAttempt({
+      publicTokenDigest: paidRequest.publicTokenDigest,
+      provider: "afterpay",
+      method: "afterpay",
+      payerSnapshot: { fullName: "Payer", email: "payer@example.test", phone: "" },
+    });
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference: `afterpay-repair-${randomUUID()}`,
+      returnStateDigest: "b".repeat(64),
+      status: "processing",
+    });
+    await repository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      result: {
+        providerReference: (await database.select({
+          providerReference: paymentAttempts.providerReference,
+        }).from(paymentAttempts).where(eq(paymentAttempts.id, claim.attempt.id)))[0]
+          .providerReference!,
+        providerStatus: "APPROVED",
+        amountCents: 5_000,
+        currency: "NZD",
+        merchantReference: paidRequest.requestNumber,
+        status: "paid",
+      },
+      source: "server_capture",
+    });
+    await database.delete(paymentRequestNotificationOutbox)
+      .where(eq(paymentRequestNotificationOutbox.paymentRequestId, paidRequest.id));
+
+    const repaired = await notificationRepository.repairMissingPaidNotifications(20, new Date());
+    const notifications = await database.select().from(paymentRequestNotificationOutbox)
+      .where(eq(paymentRequestNotificationOutbox.paymentRequestId, paidRequest.id));
+    await notificationRepository.repairMissingPaidNotifications(20, new Date());
+    const notificationsAfterSecondRepair = await database.select()
+      .from(paymentRequestNotificationOutbox)
+      .where(eq(paymentRequestNotificationOutbox.paymentRequestId, paidRequest.id));
+
+    expect(repaired).toBeGreaterThanOrEqual(2);
+    expect(notifications.filter((item) =>
+      item.eventKey === `payment-request-confirmed:${paidRequest.id}`
+    )).toHaveLength(1);
+    expect(notifications.filter((item) =>
+      item.eventKey === `admin-payment-request-received:${paidRequest.id}:${actorId}`
+    )).toHaveLength(1);
+    expect(notificationsAfterSecondRepair).toHaveLength(notifications.length);
   });
 });
