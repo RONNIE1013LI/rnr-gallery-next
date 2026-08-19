@@ -35,7 +35,7 @@ describe("Facebook channel adapter", () => {
     }]);
   });
 
-  it("normalizes staff echoes as context for the customer recipient", () => {
+  it("normalizes the sanitized real Test Page message_echoes shape as staff context", () => {
     const result = adapter.normalize({
       object: "page",
       entry: [{
@@ -45,6 +45,7 @@ describe("Facebook channel adapter", () => {
           [recipientField]: { id: "customer-1" },
           timestamp: 1_787_001_600_000,
           message: {
+            app_id: "test-app",
             mid: "echo-1",
             text: "Which size would you like?",
             is_echo: true,
