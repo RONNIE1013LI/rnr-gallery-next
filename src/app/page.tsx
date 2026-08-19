@@ -8,10 +8,11 @@ import { buildPublicMetadata } from "@/server/seo/metadata";
 export const dynamic = "force-dynamic";
 export const metadata = buildPublicMetadata({
   title: "Custom Canvas & Banners Made in New Zealand",
+  socialTitle: "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service",
   description: "Turn your photos into personalised canvas and banners, with a proof before printing and delivery across New Zealand and Australia.",
   path: "/",
-  image: "/media/home/digital-oil-painting-canvas-hero-landscape-01.webp",
-  imageAlt: "Personalised digital oil painting canvas displayed in a home",
+  image: "/media/social/rr-gallery-social-share-2026.webp",
+  imageAlt: "R&R Gallery custom canvas and digital oil painting display",
 });
 
 export default async function Home() {

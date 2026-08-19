@@ -7,6 +7,7 @@ type PublicMetadataInput = Readonly<{
   path: string;
   image: string;
   imageAlt: string;
+  socialTitle?: string;
 }>;
 
 export function absoluteSiteUrl(path: string): string {
@@ -19,23 +20,25 @@ export function buildPublicMetadata({
   path,
   image,
   imageAlt,
+  socialTitle,
 }: PublicMetadataInput): Metadata {
   const canonical = absoluteSiteUrl(path);
   const socialImage = absoluteSiteUrl(image);
+  const shareTitle = socialTitle ?? title;
   return {
     title,
     description,
     alternates: { canonical },
     openGraph: {
       type: "website",
-      title,
+      title: shareTitle,
       description,
       url: canonical,
       images: [{ url: socialImage, alt: imageAlt }],
     },
     twitter: {
       card: "summary_large_image",
-      title,
+      title: shareTitle,
       description,
       images: [socialImage],
     },

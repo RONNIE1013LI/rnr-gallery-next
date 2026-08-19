@@ -24,6 +24,20 @@ import { metadata as orderMetadata } from "./orders/[orderNumber]/page";
 import { metadata as proofMetadata } from "./orders/[orderNumber]/proof/page";
 
 describe("public SEO routes", () => {
+  it("uses the approved default social card when the homepage is shared", () => {
+    const socialTitle = "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service";
+    const socialImage = "https://rrgallery.co.nz/media/social/rr-gallery-social-share-2026.webp";
+
+    expect(homeMetadata.openGraph).toMatchObject({
+      title: socialTitle,
+      images: [{ url: socialImage }],
+    });
+    expect(homeMetadata.twitter).toMatchObject({
+      title: socialTitle,
+      images: [socialImage],
+    });
+  });
+
   it("renders the sitemap from the current market registry instead of a build-time snapshot", () => {
     expect(sitemapDynamic).toBe("force-dynamic");
   });
@@ -120,17 +134,20 @@ describe("public SEO routes", () => {
     ["wall banner landing", wallBannerLandingMetadata, "https://rrgallery.co.nz/custom-wall-banners-nz"],
     ["photo canvas landing", photoCanvasLandingMetadata, "https://rrgallery.co.nz/custom-photo-canvas-nz"],
   ])("gives %s unique, indexable social metadata and an absolute canonical", (_label, metadata, canonical) => {
+    const expectedSocialTitle = _label === "home"
+      ? "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service"
+      : metadata.title;
     expect(metadata.title).toBeTruthy();
     expect(metadata.description).toBeTruthy();
     expect(metadata.alternates).toMatchObject({ canonical });
     expect(metadata.openGraph).toMatchObject({
-      title: metadata.title,
+      title: expectedSocialTitle,
       description: metadata.description,
       url: canonical,
     });
     expect(metadata.twitter).toMatchObject({
       card: "summary_large_image",
-      title: metadata.title,
+      title: expectedSocialTitle,
       description: metadata.description,
     });
     expect(metadata.robots).toMatchObject({ index: true, follow: true });
