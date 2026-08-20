@@ -1,4 +1,9 @@
-import type { CustomerServiceChannel, DraftGenerationRequest } from "../types";
+import type {
+  ConversationRole,
+  CustomerServiceChannel,
+  DraftGenerationRequest,
+  DraftGenerationResult,
+} from "../types";
 import type { ImageAnalysisResult } from "../image-analysis-schema";
 import type { ProtectedAttachmentSource } from "../attachments/attachment-source-protector";
 
@@ -49,9 +54,33 @@ export type HashedIncomingMessage = Readonly<{
   receivedAt: Date;
 }>;
 
+export type HashedConversationEvent = HashedIncomingMessage & Readonly<{
+  role: ConversationRole;
+  eventType?: "customer_message" | "human_outbound";
+  bodyHash?: string | null;
+  redactionCodes?: readonly string[];
+  replyToExternalMessageKeyHash?: string | null;
+  learningEligible?: boolean;
+  humanReplyGroupMs?: number;
+  debounceMs?: number;
+}>;
+
+export type ConversationContextItem = Readonly<{
+  role: "customer" | "staff";
+  text: string;
+  receivedAt: string;
+}>;
+
 export type DraftInput = Readonly<{
   current: Readonly<{ id: string; text: string | null; channel: CustomerServiceChannel }>;
-  context: readonly string[];
+  context: readonly ConversationContextItem[];
+}>;
+
+export type ClaimedCustomerTurn = Readonly<{
+  turnId: string;
+  messageId: string;
+  leaseToken: string;
+  processingAttempt: number;
 }>;
 
 export type GateBlockedAttemptInput = Readonly<{
@@ -132,11 +161,48 @@ export type SafeQueuePage = Readonly<{
     attachmentCount: number;
     imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
     imageAssessmentSummary: string | null;
+    humanReplyReceived: boolean;
+    timeline: readonly Readonly<{
+      role: "customer" | "staff";
+      text: string;
+      receivedAt: string;
+    }>[];
   }>[];
+}>;
+
+export type ReplyAssistantLearningCandidatePage = Readonly<{ items: readonly Readonly<{
+  id: string;
+  intent: string;
+  proposedChange: string;
+  reasonCodes: readonly string[];
+  evidenceCount: number;
+  status: "pending" | "approved" | "rejected" | "superseded";
+}>[] }>;
+
+export type ReplyAssistantCaseMemoryPage = Readonly<{ items: readonly Readonly<{
+  id: string;
+  intent: string;
+  normalizedSituation: string;
+  humanFinalReply: string;
+  status: "pending_review" | "approved_reusable" | "excluded" | "revoked";
+}>[] }>;
+
+export type ReplyAssistantUpdatePage = Readonly<{
+  cursor: string;
+  hasMore: boolean;
+  queueItems: SafeQueuePage["items"];
+  metrics: PilotMetricCounts | null;
+  learningCandidates: ReplyAssistantLearningCandidatePage | null;
+  caseMemories: ReplyAssistantCaseMemoryPage | null;
 }>;
 
 export type PilotMetricCounts = Readonly<{
   totalIncomingEligible: number;
+  rawCustomerEvents: number;
+  staffContextEvents: number;
+  meaningfulTurns: number;
+  aggregatedFragments: number;
+  acknowledgementsSuppressed: number;
   draftsGenerated: number;
   acceptedUnchanged: number;
   editedAccepted: number;
@@ -165,9 +231,57 @@ export type PilotMetricCounts = Readonly<{
   imageAwareRejected: number;
   imageRequestOriginalRecommendations: number;
   imageAwareTotalCostMicrousd: number;
+  totalActualHumanReplies: number;
+  matchedHumanReplies: number;
+  unmatchedHumanReplies: number;
+  acceptedUnchangedHumanReplies: number;
+  editedHumanReplies: number;
+  independentlyWrittenHumanReplies: number;
+  reusableCaseMemories: number;
+  excludedHighRiskCases: number;
+  casesRetrievedInDrafts: number;
+  learningCandidatesPending: number;
+  learningCandidatesApproved: number;
+  learningCandidatesRejected: number;
+  commonEditReasons: readonly Readonly<{ code: string; count: number }>[];
 }>;
 
 export interface CustomerServiceRepository {
+  ingestConversationEvent(input: HashedConversationEvent): Promise<
+    | Readonly<{ status: "turn_pending"; messageId: string; turnId: string; debounceUntil: Date }>
+    | Readonly<{ status: "context_only" }>
+    | Readonly<{ status: "duplicate" }>
+  >;
+  sealDueCustomerTurn(input: Readonly<{ turnId: string; now: Date }>): Promise<
+    | Readonly<{ status: "not_due" }>
+    | Readonly<{ status: "already_terminal" }>
+    | Readonly<{ status: "suppressed"; turnId: string; reason: "completed_acknowledgement" }>
+    | Readonly<{ status: "pilot_complete"; turnId: string; messageId: string }>
+    | Readonly<{ status: "sealed"; turnId: string; messageId: string; pilotSequence: number }>
+  >;
+  claimDueCustomerTurn(input: Readonly<{
+    turnId?: string;
+    now: Date;
+    leaseExpiresAt: Date;
+  }>): Promise<ClaimedCustomerTurn | null>;
+  completeCustomerTurnProcessing(input: Readonly<{
+    turnId: string;
+    leaseToken: string;
+    now: Date;
+    outcome: DraftGenerationResult["status"];
+  }>): Promise<boolean>;
+  retryCustomerTurnProcessing(input: Readonly<{
+    turnId: string;
+    leaseToken: string;
+    nextRunAt: Date;
+    errorCode: string;
+  }>): Promise<boolean>;
+  exhaustCustomerTurnProcessing(input: Readonly<{
+    turnId: string;
+    leaseToken: string;
+    now: Date;
+    errorCode: string;
+  }>): Promise<boolean>;
   ingestFacebookMessage(input: HashedIncomingMessage): Promise<
     | Readonly<{ status: "created"; messageId: string; pilotSequence: number }>
     | Readonly<{ status: "duplicate"; messageId: string }>
@@ -287,7 +401,80 @@ export interface CustomerServiceRepository {
   reserveProviderAttempt(input: ProviderAttemptReservation): Promise<
     | Readonly<{ status: "reserved"; attemptId: string }>
     | Readonly<{ status: "budget_blocked"; attemptId: string }>
+    | Readonly<{ status: "human_reply_received"; attemptId: string }>
   >;
+  confirmProviderInvocation(input: Readonly<{
+    attemptId: string;
+    dailyScopeKey: string;
+  }>): Promise<
+    | Readonly<{ status: "allowed" }>
+    | Readonly<{ status: "human_reply_received" }>
+  >;
+  matchHumanReply(input: Readonly<{ matchId: string; now: Date; groupWindowMs?: number }>): Promise<
+    | Readonly<{ status: "not_due" }>
+    | Readonly<{ status: "already_terminal" }>
+    | Readonly<{ status: "unmatched" }>
+    | Readonly<{
+      status: "matched";
+      classification: "accepted_unchanged" | "edited_light" | "edited_significant" | "ai_ignored" | "independent_reply";
+    }>
+  >;
+  recoverDueHumanReplies(input: Readonly<{
+    now: Date;
+    groupWindowMs: number;
+    limit: number;
+    knowledgeVersion: string;
+  }>): Promise<Readonly<{ selected: number; matched: number; unmatched: number }>>;
+  refreshLearningCandidates(input?: Readonly<{ minimumMatchedReplies?: number }>): Promise<
+    Readonly<{ checkpoint: number; created: number }>
+  >;
+  createCaseMemoryCandidate(input: Readonly<{
+    matchId: string;
+    customerSituation: string;
+    customerTurnSummary: string;
+    productCategory: string | null;
+    market: "NZ" | "AU" | "other" | "unknown";
+    deadlineContext: string | null;
+    knowledgeVersion: string;
+  }>): Promise<
+    | Readonly<{ status: "pending_review"; caseMemoryId: string }>
+    | Readonly<{ status: "excluded"; caseMemoryId: string; exclusionCodes: readonly string[] }>
+    | Readonly<{ status: "already_exists"; caseMemoryId: string }>
+  >;
+  listCaseMemoryCandidates(limit: number): Promise<ReplyAssistantCaseMemoryPage>;
+  decideCaseMemory(input: Readonly<{
+    caseMemoryId: string;
+    reviewerUserId: string;
+    action: "approve" | "reject";
+    reason: string | null;
+    now: Date;
+  }>): Promise<Readonly<{ status: "approved_reusable" | "excluded" }>>;
+  retrieveApprovedCaseMemories(input: Readonly<{
+    attemptId: string;
+    intent: string;
+    riskClass: "low" | "medium";
+    productCategory: string | null;
+    market: "NZ" | "AU" | "other" | "unknown";
+    policyReferences: readonly string[];
+    knowledgeVersion: string;
+    query: string;
+    limit: number;
+    now: Date;
+  }>): Promise<readonly Readonly<{
+    id: string;
+    normalizedSituation: string;
+    humanFinalReply: string;
+    score: number;
+  }>[]>;
+  listLearningCandidates(limit: number): Promise<ReplyAssistantLearningCandidatePage>;
+  decideLearningCandidate(input: Readonly<{
+    candidateId: string;
+    reviewerUserId: string;
+    action: "approve" | "edit_and_approve" | "reject";
+    approvedText: string | null;
+    reason: string | null;
+    now: Date;
+  }>): Promise<Readonly<{ status: "approved" | "rejected" }>>;
   createImageJobProviderAttempt(input: Readonly<{
     jobId: string;
     leaseToken: string;
@@ -306,5 +493,7 @@ export interface CustomerServiceRepository {
   messageIdForAttempt(attemptId: string): Promise<string | null>;
   appendFeedback(input: FeedbackEventInput): Promise<void>;
   listQueue(limit: number): Promise<SafeQueuePage>;
+  getReplyAssistantUiCursor(): Promise<string>;
+  listReplyAssistantUpdates(cursor: string | null, limit: number): Promise<ReplyAssistantUpdatePage>;
   metricCounts(): Promise<PilotMetricCounts>;
 }

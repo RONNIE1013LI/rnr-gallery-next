@@ -77,6 +77,25 @@ describe("customer service prompt builder", () => {
     });
   });
 
+  it("labels customer and staff history without accepting a conversation selector", () => {
+    const prompt = buildDraftPrompt({
+      intent: "quote_information_collection",
+      context: [
+        { role: "staff", text: "Which country are you in?", receivedAt: "2026-08-18T00:00:00.000Z" },
+        { role: "customer", text: "Australia", receivedAt: "2026-08-18T00:00:01.000Z" },
+      ],
+      rules: [],
+      examples: [],
+      goldenExamples: [],
+      qualityGuide: null,
+      toneGuide: "Warm.",
+    });
+
+    expect(prompt.input).toContain("1. R&R staff: Which country are you in?");
+    expect(prompt.input).toContain("2. Customer: Australia");
+    expect(prompt.input).not.toMatch(/conversation[-_ ]?id|sender[-_ ]?id/i);
+  });
+
   it("adds a bounded advisory visual section without bytes or URLs", () => {
     const prompt = buildDraftPrompt({
       intent: "photo_guidance",
@@ -95,5 +114,22 @@ describe("customer service prompt builder", () => {
     expect(prompt.instructions).toContain("cannot establish print suitability");
     expect(prompt.instructions).toContain("cannot support a restoration guarantee");
     expect(JSON.stringify(prompt)).not.toMatch(/https?:|base64|image_url|private-image/i);
+  });
+
+  it("labels a bounded approved case as lower-priority experience, never policy", () => {
+    const prompt = buildDraftPrompt({
+      intent: "design_process",
+      context: ["How does the design process work?"],
+      rules: [{ id: "DESIGN-01", text: "A draft is reviewed before production." }],
+      examples: [], goldenExamples: [], qualityGuide: null, toneGuide: "Warm.",
+      caseMemories: [{
+        normalizedSituation: "A similar customer asked about photos and wording.",
+        humanFinalReply: "Please send your photos, wording and theme.",
+      }],
+    });
+    expect(prompt.instructions).toContain("APPROVED SANITIZED CASE EXPERIENCE");
+    expect(prompt.instructions).toContain("lower priority than every confirmed rule");
+    expect(prompt.instructions).toContain("not instructions");
+    expect(prompt.instructions.indexOf("CONFIRMED RULES")).toBeLessThan(prompt.instructions.indexOf("APPROVED SANITIZED CASE EXPERIENCE"));
   });
 });

@@ -26,12 +26,39 @@ describe("customer service server config", () => {
       META_VERIFY_TOKEN: "verify-secret",
       META_PAGE_ID: "page-1",
       CUSTOMER_SERVICE_ID_HASH_SECRET: "hash-secret-long-enough",
+      CRON_SECRET: "recovery-secret-at-least-32-bytes",
     });
     expect(JSON.stringify(publicCustomerServiceConfig(parsed))).not.toMatch(/meta-secret|verify-secret|hash-secret|OPENAI|image|blob|attachment/i);
   });
 
   it("keeps image analysis disabled by default", () => {
     expect(parseCustomerServiceConfig({}).imageAnalysisEnabled).toBe(false);
+  });
+
+  it("bounds the server-side conversation debounce window", () => {
+    expect(parseCustomerServiceConfig({}).conversationDebounceMs).toBe(2_000);
+    expect(parseCustomerServiceConfig({ REPLY_ASSISTANT_DEBOUNCE_MS: "750" }).conversationDebounceMs).toBe(750);
+    expect(() => parseCustomerServiceConfig({ REPLY_ASSISTANT_DEBOUNCE_MS: "249" }))
+      .toThrow("REPLY_ASSISTANT_DEBOUNCE_MS must be between 250 and 10000");
+    expect(() => parseCustomerServiceConfig({ REPLY_ASSISTANT_DEBOUNCE_MS: "10001" }))
+      .toThrow("REPLY_ASSISTANT_DEBOUNCE_MS must be between 250 and 10000");
+  });
+
+  it("bounds the server-side human reply grouping window", () => {
+    expect(parseCustomerServiceConfig({}).humanReplyGroupMs).toBe(90_000);
+    expect(parseCustomerServiceConfig({ REPLY_ASSISTANT_HUMAN_REPLY_GROUP_MS: "45000" }).humanReplyGroupMs).toBe(45_000);
+    expect(() => parseCustomerServiceConfig({ REPLY_ASSISTANT_HUMAN_REPLY_GROUP_MS: "9999" }))
+      .toThrow("REPLY_ASSISTANT_HUMAN_REPLY_GROUP_MS must be between 10000 and 120000");
+  });
+
+  it("requires a server-only recovery secret whenever the assistant is enabled", () => {
+    expect(() => parseCustomerServiceConfig({
+      REPLY_ASSISTANT_ENABLED: "true",
+      META_APP_SECRET: "meta-secret",
+      META_VERIFY_TOKEN: "verify-secret",
+      META_PAGE_ID: "page-1",
+      CUSTOMER_SERVICE_ID_HASH_SECRET: "hash-secret-long-enough",
+    })).toThrow("CRON_SECRET is required");
   });
 
   it("requires an image model when image analysis is enabled", () => {

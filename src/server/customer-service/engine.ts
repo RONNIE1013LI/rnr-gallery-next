@@ -4,6 +4,8 @@ import { retrieveKnowledge, type AnswerQualityGuide } from "./knowledge-retrieva
 import { validateDraft } from "./output-validator";
 import { buildDraftPrompt } from "./prompt-builder";
 import { localDateScopeKey } from "./usage-cost";
+import { detectIntent } from "./intent-detection";
+import { resolveContextualIntent } from "./conversation/contextual-intent";
 import type { AttachmentProcessor } from "./attachments/attachment-processor";
 import type { NormalizedAttachment } from "./attachments/types";
 import type { AiProvider } from "./providers/ai-provider";
@@ -18,6 +20,15 @@ type EngineKnowledge = PolicyKnowledge & Readonly<{
     customer: string;
     reply: string;
     risk: string;
+    provenance: string;
+  }>[];
+  historicalExamples: readonly Readonly<{
+    id: string;
+    intent: string;
+    status: string;
+    customerQuestion: string;
+    approvedAnswer: string;
+    policyReferences: readonly string[];
     provenance: string;
   }>[];
   goldenReplies: readonly Readonly<{
@@ -61,6 +72,20 @@ export class CustomerServiceEngine {
     this.budget = input.budget;
   }
 
+  private gateFor(text: string, context: Parameters<typeof resolveContextualIntent>[0]["history"]) {
+    const resolved = resolveContextualIntent({
+      currentText: text,
+      history: context,
+      baseIntent: detectIntent(text),
+    });
+    return this.policyGate({
+      message: text,
+      knowledge: this.knowledge,
+      intentOverride: resolved.intent,
+      isContextualQuoteDetail: resolved.inherited && resolved.reason === "pending_quote_detail",
+    });
+  }
+
   async checkImageJobPolicy(messageId: string): Promise<
     Readonly<{ status: "allowed" }> | Readonly<{ status: "blocked"; code: string }>
   > {
@@ -78,7 +103,7 @@ export class CustomerServiceEngine {
       });
       return { status: "blocked", code: "image_only_without_text" };
     }
-    const gate = this.policyGate({ message: draftInput.current.text, knowledge: this.knowledge });
+    const gate = this.gateFor(draftInput.current.text, draftInput.context);
     if (gate.providerAllowed) return { status: "allowed" };
     const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
       ? "realtime_required"
@@ -115,7 +140,7 @@ export class CustomerServiceEngine {
       });
       return { status: "image_review_required", attemptId };
     }
-    const gate = this.policyGate({ message: draftInput.current.text, knowledge: this.knowledge });
+    const gate = this.gateFor(draftInput.current.text, draftInput.context);
     if (!gate.providerAllowed) {
       const attemptId = await this.repository.createGateBlockedAttempt({
         messageId: input.messageId,
@@ -163,7 +188,7 @@ export class CustomerServiceEngine {
       });
       return { status: "image_review_required", attemptId };
     }
-    const gate = this.policyGate({ message: draftInput.current.text, knowledge: this.knowledge });
+    const gate = this.gateFor(draftInput.current.text, draftInput.context);
     if (!gate.providerAllowed) {
       const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
         ? "realtime_required"
@@ -219,7 +244,27 @@ export class CustomerServiceEngine {
     if (reservation.status === "budget_blocked") {
       return { status: "budget_blocked", attemptId: reservation.attemptId };
     }
+    if (reservation.status === "human_reply_received") {
+      return { status: "human_reply_received", attemptId: reservation.attemptId };
+    }
 
+    let caseMemories: Awaited<ReturnType<CustomerServiceRepository["retrieveApprovedCaseMemories"]>> = [];
+    try {
+      caseMemories = await this.repository.retrieveApprovedCaseMemories({
+        attemptId: reservation.attemptId,
+        intent: gate.intent,
+        riskClass: gate.riskLevel === "high" ? "medium" : gate.riskLevel,
+        productCategory: null,
+        market: "unknown",
+        policyReferences: sources.rules.map((rule) => rule.id),
+        knowledgeVersion: this.knowledge.knowledgeVersion,
+        query: draftInput.current.text,
+        limit: 3,
+        now: new Date(),
+      });
+    } catch {
+      caseMemories = [];
+    }
     const prompt = buildDraftPrompt({
       intent: gate.intent,
       context: draftInput.context,
@@ -228,7 +273,15 @@ export class CustomerServiceEngine {
       goldenExamples: sources.goldenExamples,
       qualityGuide: sources.qualityGuide,
       toneGuide: this.knowledge.toneGuide,
+      caseMemories,
     });
+    const invocation = await this.repository.confirmProviderInvocation({
+      attemptId: reservation.attemptId,
+      dailyScopeKey,
+    });
+    if (invocation.status === "human_reply_received") {
+      return { status: "human_reply_received", attemptId: reservation.attemptId };
+    }
     try {
       const generated = await this.provider.generate(prompt);
       const textValidation = this.outputValidator(generated.text, { intent: gate.intent });

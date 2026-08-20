@@ -10,12 +10,21 @@ import {
   customerServiceAttachments,
   customerServiceBudgetState,
   customerServiceConversations,
+  customerServiceCaseMemories,
+  customerServiceCaseRetrievals,
   customerServiceFeedbackEvents,
+  customerServiceHumanReplyMatches,
+  customerServiceHumanReplyMatchEvents,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
   customerServiceImageJobs,
   customerServiceMessages,
   customerServicePilotRuns,
+  customerServiceLearningCandidates,
+  customerServiceConversationEvents,
+  customerServiceTurns,
+  customerServiceUiChanges,
+  customerServiceUiRevision,
 } from "./index";
 
 const tables = [
@@ -29,6 +38,14 @@ const tables = [
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
   customerServiceImageJobs,
+];
+
+const continuousLearningTables = [
+  customerServiceHumanReplyMatches,
+  customerServiceHumanReplyMatchEvents,
+  customerServiceCaseMemories,
+  customerServiceCaseRetrievals,
+  customerServiceLearningCandidates,
 ];
 
 describe("customer service schema contract", () => {
@@ -57,6 +74,155 @@ describe("customer service schema contract", () => {
       "customer_service_image_analysis_inputs",
       "customer_service_image_jobs",
     ]);
+  });
+
+  it("defines the five additive continuous-learning tables", () => {
+    expect(continuousLearningTables.map(getTableName)).toEqual([
+      "customer_service_human_reply_matches",
+      "customer_service_human_reply_match_events",
+      "customer_service_case_memories",
+      "customer_service_case_retrievals",
+      "customer_service_learning_candidates",
+    ]);
+  });
+
+  it("defines a compact revision and dirty-entity index for incremental UI reads", () => {
+    expect([customerServiceUiRevision, customerServiceUiChanges].map(getTableName)).toEqual([
+      "customer_service_ui_revision",
+      "customer_service_ui_changes",
+    ]);
+    expect(getTableColumns(customerServiceUiRevision)).toEqual(expect.objectContaining({
+      singleton: expect.anything(),
+      revision: expect.anything(),
+      changedAt: expect.anything(),
+    }));
+    expect(getTableColumns(customerServiceUiChanges)).toEqual(expect.objectContaining({
+      scope: expect.anything(),
+      entityKey: expect.anything(),
+      revision: expect.anything(),
+      changedAt: expect.anything(),
+    }));
+  });
+
+  it("uses an additive trigger migration for UI change tracking", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0035_reply_assistant_live_updates.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain("CREATE TABLE \"customer_service_ui_revision\"");
+    expect(migration).toContain("CREATE TABLE \"customer_service_ui_changes\"");
+    expect(migration).toContain("customer_service_mark_ui_change");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
+  });
+
+  it("defers UI revision locking and tracks every displayed metric source", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0036_reply_assistant_live_update_reliability.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain("DEFERRABLE INITIALLY DEFERRED");
+    expect(migration).toContain("customer_service_image_analysis_inputs_ui_change");
+    expect(migration).toContain("customer_service_image_jobs_ui_change");
+    expect(migration).toContain("customer_service_case_retrievals_ui_change");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
+  });
+
+  it("invalidates the related queue message when image cleanup changes", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0037_reply_assistant_image_cleanup_live_update.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain("customer_service_mark_ui_image_input_change");
+    expect(migration).toContain("customer_service_image_analysis_attempts");
+    expect(migration).toContain("customer_service_mark_ui_change('queue_message', affected_message_id)");
+    expect(migration).toContain("DEFERRABLE INITIALLY DEFERRED");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
+  });
+
+  it("extends conversation events with explicit sanitized timeline metadata", () => {
+    expect(getTableColumns(customerServiceConversationEvents)).toEqual(expect.objectContaining({
+      eventType: expect.anything(),
+      bodyHash: expect.anything(),
+      redactionCodes: expect.anything(),
+      replyToExternalMessageKeyHash: expect.anything(),
+      learningEligible: expect.anything(),
+    }));
+  });
+
+  it("keeps case memories non-retrievable until an explicit decision", () => {
+    const columns = getTableColumns(customerServiceCaseMemories);
+
+    expect(columns.eligibilityStatus.default).toBe("pending_review");
+    expect(columns.approvedByUserId.notNull).toBe(false);
+    expect(columns.decidedAt.notNull).toBe(false);
+  });
+
+  it("keeps continuous-learning storage free of external identity and private contact fields", () => {
+    const names = continuousLearningTables.flatMap((table) => (
+      getTableConfig(table).columns.map((column) => column.name)
+    ));
+
+    expect(names).not.toEqual(expect.arrayContaining([
+      "sender_id",
+      "conversation_external_id",
+      "psid",
+      "email",
+      "phone",
+      "street_address",
+      "bank_account",
+      "raw_payload",
+    ]));
+  });
+
+  it("uses a forward-only continuous-learning migration", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0032_reply_assistant_continuous_learning.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain("CREATE TABLE \"customer_service_human_reply_matches\"");
+    expect(migration).toContain("CREATE TABLE \"customer_service_case_memories\"");
+    expect(migration).toContain("ADD COLUMN \"event_type\"");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
+  });
+
+  it("adds durable lease state for customer-turn recovery", () => {
+    const columns = getTableColumns(customerServiceTurns);
+    expect(columns).toEqual(expect.objectContaining({
+      processingStatus: expect.anything(),
+      processingLeaseToken: expect.anything(),
+      processingLeaseExpiresAt: expect.anything(),
+      processingAttempts: expect.anything(),
+      nextRunAt: expect.anything(),
+      lastProcessingError: expect.anything(),
+      processingCompletedAt: expect.anything(),
+    }));
+    expect(columns.processingStatus.default).toBe("pending");
+
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0033_reply_assistant_turn_recovery.sql"),
+      "utf8",
+    );
+    expect(migration).toContain("ADD COLUMN \"processing_status\"");
+    expect(migration).toContain("customer_service_turns_processing_due_idx");
+    expect(migration).toContain("WHERE \"status\" IN ('suppressed', 'pilot_complete')");
+    expect(migration).not.toContain("coalesce(\"sealed_at\", \"updated_at\", now());--> statement-breakpoint");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
+  });
+
+  it("repairs previously backfilled staging turns without reviving terminal work", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0034_reply_assistant_turn_recovery_correction.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain("\"status\" IN ('open', 'sealed')");
+    expect(migration).toContain("NOT EXISTS");
+    expect(migration).toContain("\"provider_called\" = true");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
   });
 
   it("persists image metadata without raw source URLs", () => {
@@ -242,6 +408,48 @@ describe("customer service schema contract", () => {
   });
 
   const databaseIt = process.env.TEST_DATABASE_URL ? it : it.skip;
+
+  databaseIt("defers the shared UI revision lock until transaction completion", async () => {
+    const setup = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    const first = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    const second = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await Promise.all([setup.connect(), first.connect(), second.connect()]);
+    const conversationA = await setup.query(
+      "insert into customer_service_conversations (channel, external_key_hash) values ('facebook', $1) returning id",
+      [`deferred-ui-lock-a-${randomUUID()}`],
+    );
+    const conversationB = await setup.query(
+      "insert into customer_service_conversations (channel, external_key_hash) values ('facebook', $1) returning id",
+      [`deferred-ui-lock-b-${randomUUID()}`],
+    );
+    let secondInsert: Promise<unknown> | null = null;
+
+    try {
+      await Promise.all([first.query("BEGIN"), second.query("BEGIN")]);
+      await first.query(
+        "insert into customer_service_messages (conversation_id, channel, external_message_key_hash, body, received_at) values ($1, 'facebook', $2, 'first', now())",
+        [conversationA.rows[0].id, `deferred-ui-message-a-${randomUUID()}`],
+      );
+      secondInsert = second.query(
+        "insert into customer_service_messages (conversation_id, channel, external_message_key_hash, body, received_at) values ($1, 'facebook', $2, 'second', now())",
+        [conversationB.rows[0].id, `deferred-ui-message-b-${randomUUID()}`],
+      );
+
+      await expect(Promise.race([
+        secondInsert.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500)),
+      ])).resolves.toBe(true);
+    } finally {
+      await first.query("ROLLBACK");
+      await secondInsert?.catch(() => undefined);
+      await second.query("ROLLBACK");
+      await setup.query("delete from customer_service_conversations where id = any($1)", [[
+        conversationA.rows[0].id,
+        conversationB.rows[0].id,
+      ]]);
+      await Promise.all([setup.end(), first.end(), second.end()]);
+    }
+  });
 
   databaseIt("allows image analysis inputs from earlier messages in the same conversation", async () => {
     const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });

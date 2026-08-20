@@ -29,9 +29,13 @@ const safeAnalysis: ImageAnalysisResult = {
 
 function repositoryFor(body: string | null, withImage = false) {
   const methods = {
-    loadDraftInput: vi.fn(async () => ({
+    loadDraftInput: vi.fn<CustomerServiceRepository["loadDraftInput"]>(async () => ({
       current: { id: "message-1", text: body, channel: "facebook" as const },
-      context: body === null ? [] : [body],
+      context: body === null ? [] : [{
+        role: "customer" as const,
+        text: body,
+        receivedAt: "2026-08-18T00:00:00.000Z",
+      }],
     })),
     selectImageContext: vi.fn<CustomerServiceRepository["selectImageContext"]>(async () => withImage ? ({
       messageId: "message-1",
@@ -46,6 +50,10 @@ function repositoryFor(body: string | null, withImage = false) {
     completeImageAnalysisAttempt: vi.fn(async () => undefined),
     markImageAttachmentDeleted: vi.fn(async () => undefined),
     reserveProviderAttempt: vi.fn(async () => ({ status: "reserved" as const, attemptId: "attempt-1" })),
+    confirmProviderInvocation: vi.fn<CustomerServiceRepository["confirmProviderInvocation"]>(
+      async () => ({ status: "allowed" as const }),
+    ),
+    retrieveApprovedCaseMemories: vi.fn<CustomerServiceRepository["retrieveApprovedCaseMemories"]>(async () => []),
     createImageJobProviderAttempt: vi.fn<CustomerServiceRepository["createImageJobProviderAttempt"]>(
       async () => ({ status: "reserved" as const, attemptId: "attempt-image-text-1" }),
     ),
@@ -229,6 +237,81 @@ describe("CustomerServiceEngine", () => {
     expect(current.image.attachmentStore.save).not.toHaveBeenCalled();
     expect(current.image.imageProvider.analyze).not.toHaveBeenCalled();
     expect(current.provider.generate).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not call the provider when a human echo arrives after reservation", async () => {
+    const current = setup("Can you explain the design process?");
+    current.repository.confirmProviderInvocation.mockResolvedValueOnce({ status: "human_reply_received" });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" }))
+      .resolves.toEqual({ status: "human_reply_received", attemptId: "attempt-1" });
+
+    expect(current.repository.reserveProviderAttempt).toHaveBeenCalledOnce();
+    expect(current.repository.confirmProviderInvocation).toHaveBeenCalledWith({
+      attemptId: "attempt-1",
+      dailyScopeKey: expect.stringMatching(/^daily:/),
+    });
+    expect(current.provider.generate).not.toHaveBeenCalled();
+  });
+
+  it("retrieves approved cases only after an allowed gate and before provider invocation", async () => {
+    const current = setup("Can you explain the design process?");
+    current.repository.retrieveApprovedCaseMemories.mockResolvedValueOnce([{
+      id: "case-1", normalizedSituation: "Similar design-process question.",
+      humanFinalReply: "Please send your photos, wording and theme.", score: 95,
+    }]);
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.repository.retrieveApprovedCaseMemories).toHaveBeenCalledWith(expect.objectContaining({
+      attemptId: "attempt-1", query: "Can you explain the design process?", limit: 3,
+    }));
+    expect(current.repository.confirmProviderInvocation).toHaveBeenCalledAfter(current.repository.retrieveApprovedCaseMemories);
+    expect(current.provider.generate).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["I want a refund", "gate_blocked"],
+    ["How much is shipping today?", "realtime_required"],
+  ])("never retrieves experience for blocked message %s", async (message, expected) => {
+    const current = setup(message);
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toMatchObject({ status: expected });
+    expect(current.repository.retrieveApprovedCaseMemories).not.toHaveBeenCalled();
+    expect(current.provider.generate).not.toHaveBeenCalled();
+  });
+
+  it("uses same-conversation staff context to interpret a short location reply", async () => {
+    const current = setup("Australia");
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: "Australia", channel: "facebook" },
+      context: [
+        { role: "staff", text: "Which country are you in?", receivedAt: "2026-08-18T00:00:00.000Z" },
+        { role: "customer", text: "Australia", receivedAt: "2026-08-18T00:00:01.000Z" },
+      ],
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.policyGate).toHaveBeenCalledWith(expect.objectContaining({
+      message: "Australia",
+      intentOverride: "quote_information_collection",
+    }));
+    expect(current.provider.generate).toHaveBeenCalledOnce();
+  });
+
+  it("does not let contextual intent override a current high-risk message", async () => {
+    const current = setup("I want a refund");
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: "I want a refund", channel: "facebook" },
+      context: [
+        { role: "staff", text: "Which size would you like?", receivedAt: "2026-08-18T00:00:00.000Z" },
+        { role: "customer", text: "I want a refund", receivedAt: "2026-08-18T00:00:01.000Z" },
+      ],
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toMatchObject({ status: "gate_blocked" });
+    expect(current.provider.generate).not.toHaveBeenCalled();
   });
 
   it("preserves the text-only path when image analysis is disabled", async () => {

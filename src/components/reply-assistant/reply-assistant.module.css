@@ -45,6 +45,18 @@
   text-transform: capitalize;
 }
 
+.statuses {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.message header .newBadge {
+  background: #e8f0ff;
+  color: #214f9b;
+}
+
 .message header span[data-risk="true"] {
   background: #fff0ee;
   color: #9a2f25;
@@ -60,6 +72,26 @@
   margin: 0;
   overflow-wrap: anywhere;
   white-space: pre-wrap;
+}
+
+.timeline {
+  display: grid;
+  min-width: 0;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #e1e1e5;
+  border-radius: 6px;
+  background: #fafafa;
+}
+
+.timeline > strong { font-size: 13px; }
+.timeline ol { display: grid; min-width: 0; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.timeline li { display: grid; min-width: 0; grid-template-columns: 70px minmax(0, 1fr); gap: 8px; }
+.timeline span { color: #62636a; font-size: 12px; font-weight: 700; }
+.timeline p { min-width: 0; margin: 0; overflow-wrap: anywhere; }
+
+@media (max-width: 420px) {
+  .timeline li { grid-template-columns: 1fr; gap: 2px; }
 }
 
 .imageAssessment {
@@ -139,6 +171,14 @@
   background: #fff7f5;
   color: #76251e;
   text-transform: capitalize;
+}
+
+.serverChanged {
+  padding: 10px;
+  border-left: 3px solid #9a6b1c;
+  background: #fff9eb;
+  color: #6f4a0d;
+  font-size: 13px;
 }
 
 @media (max-width: 600px) {
