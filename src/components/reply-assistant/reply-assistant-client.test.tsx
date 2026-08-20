@@ -159,4 +159,23 @@ describe("ReplyAssistantClient", () => {
     expect(editor.scrollTop).toBe(42);
     expect(screen.getByText("Server state changed. Your edit is preserved.")).toBeInTheDocument();
   });
+
+  it("never applies an accepted draft to a newer server attempt", async () => {
+    const { rerender } = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Accept unchanged" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled());
+
+    rerender(<ReplyAssistantClient
+      initialItems={[item]}
+      liveItems={[{
+        ...item,
+        latestAttemptId: "44444444-4444-4444-8444-444444444444",
+        draftText: "A newer server draft",
+      }]}
+    />);
+
+    expect(screen.getByText("Server state changed. Review the new draft before using it.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Mark as manually sent" })).toBeDisabled();
+  });
 });

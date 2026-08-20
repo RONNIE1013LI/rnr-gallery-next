@@ -253,6 +253,20 @@
       "when": 1787219200000,
       "tag": "0035_reply_assistant_live_updates",
       "breakpoints": true
+    },
+    {
+      "idx": 36,
+      "version": "7",
+      "when": 1787223600000,
+      "tag": "0036_reply_assistant_live_update_reliability",
+      "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1787225400000,
+      "tag": "0037_reply_assistant_image_cleanup_live_update",
+      "breakpoints": true
     }
   ]
 }

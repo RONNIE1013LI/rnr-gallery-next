@@ -135,8 +135,8 @@ export function ReplyAssistantClient({
         const imageOnly = item.attachmentCount > 0 && item.body === "[Image attachment]";
         const visualReviewRequired = imageOnly || item.imageAnalysisStatus === "human_review_required";
         const requiresHumanReview = gateBlocked || visualReviewRequired;
-        const approved = current.mode === "accepted" || current.mode === "edited";
-        const serverChanged = current.mode === "editing" && current.sourceAttemptId !== item.latestAttemptId;
+        const serverChanged = current.sourceAttemptId !== item.latestAttemptId;
+        const approved = !serverChanged && (current.mode === "accepted" || current.mode === "edited");
         const locallyEditing = current.mode === "editing";
         return (
           <article className={styles.message} key={item.messageId}>
@@ -188,7 +188,13 @@ export function ReplyAssistantClient({
                     sourceAttemptId: current.sourceAttemptId,
                   })}
                 />
-                {serverChanged ? <div className={styles.serverChanged}>Server state changed. Your edit is preserved.</div> : null}
+                {serverChanged ? (
+                  <div className={styles.serverChanged}>
+                    {current.mode === "editing"
+                      ? "Server state changed. Your edit is preserved."
+                      : "Server state changed. Review the new draft before using it."}
+                  </div>
+                ) : null}
                 <div className={styles.actions}>
                   {current.mode === "editing" ? (
                     <button type="button" disabled={serverChanged} onClick={async () => {
@@ -198,7 +204,7 @@ export function ReplyAssistantClient({
                   ) : (
                     <button type="button" onClick={() => update(item, {
                       mode: "editing",
-                      text: current.text,
+                      text: serverChanged ? item.draftText ?? "" : current.text,
                       sourceAttemptId: item.latestAttemptId,
                     })}>Edit</button>
                   )}

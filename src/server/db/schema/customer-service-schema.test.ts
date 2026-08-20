@@ -116,6 +116,32 @@ describe("customer service schema contract", () => {
     expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
   });
 
+  it("defers UI revision locking and tracks every displayed metric source", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0036_reply_assistant_live_update_reliability.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain("DEFERRABLE INITIALLY DEFERRED");
+    expect(migration).toContain("customer_service_image_analysis_inputs_ui_change");
+    expect(migration).toContain("customer_service_image_jobs_ui_change");
+    expect(migration).toContain("customer_service_case_retrievals_ui_change");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
+  });
+
+  it("invalidates the related queue message when image cleanup changes", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0037_reply_assistant_image_cleanup_live_update.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain("customer_service_mark_ui_image_input_change");
+    expect(migration).toContain("customer_service_image_analysis_attempts");
+    expect(migration).toContain("customer_service_mark_ui_change('queue_message', affected_message_id)");
+    expect(migration).toContain("DEFERRABLE INITIALLY DEFERRED");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
+  });
+
   it("extends conversation events with explicit sanitized timeline metadata", () => {
     expect(getTableColumns(customerServiceConversationEvents)).toEqual(expect.objectContaining({
       eventType: expect.anything(),
@@ -382,6 +408,48 @@ describe("customer service schema contract", () => {
   });
 
   const databaseIt = process.env.TEST_DATABASE_URL ? it : it.skip;
+
+  databaseIt("defers the shared UI revision lock until transaction completion", async () => {
+    const setup = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    const first = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    const second = new Client({ connectionString: process.env.TEST_DATABASE_URL });
+    await Promise.all([setup.connect(), first.connect(), second.connect()]);
+    const conversationA = await setup.query(
+      "insert into customer_service_conversations (channel, external_key_hash) values ('facebook', $1) returning id",
+      [`deferred-ui-lock-a-${randomUUID()}`],
+    );
+    const conversationB = await setup.query(
+      "insert into customer_service_conversations (channel, external_key_hash) values ('facebook', $1) returning id",
+      [`deferred-ui-lock-b-${randomUUID()}`],
+    );
+    let secondInsert: Promise<unknown> | null = null;
+
+    try {
+      await Promise.all([first.query("BEGIN"), second.query("BEGIN")]);
+      await first.query(
+        "insert into customer_service_messages (conversation_id, channel, external_message_key_hash, body, received_at) values ($1, 'facebook', $2, 'first', now())",
+        [conversationA.rows[0].id, `deferred-ui-message-a-${randomUUID()}`],
+      );
+      secondInsert = second.query(
+        "insert into customer_service_messages (conversation_id, channel, external_message_key_hash, body, received_at) values ($1, 'facebook', $2, 'second', now())",
+        [conversationB.rows[0].id, `deferred-ui-message-b-${randomUUID()}`],
+      );
+
+      await expect(Promise.race([
+        secondInsert.then(() => true),
+        new Promise<boolean>((resolve) => setTimeout(() => resolve(false), 500)),
+      ])).resolves.toBe(true);
+    } finally {
+      await first.query("ROLLBACK");
+      await secondInsert?.catch(() => undefined);
+      await second.query("ROLLBACK");
+      await setup.query("delete from customer_service_conversations where id = any($1)", [[
+        conversationA.rows[0].id,
+        conversationB.rows[0].id,
+      ]]);
+      await Promise.all([setup.end(), first.end(), second.end()]);
+    }
+  });
 
   databaseIt("allows image analysis inputs from earlier messages in the same conversation", async () => {
     const client = new Client({ connectionString: process.env.TEST_DATABASE_URL });

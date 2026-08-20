@@ -279,6 +279,64 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
   });
 
+  it("returns a changed older message even when newer attempt rows fill the queue limit", async () => {
+    await activateFacebookPilot("live-updates-direct-message-load");
+    const older = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: "91".repeat(32),
+      externalMessageKeyHash: "92".repeat(32),
+      text: "Older customer message",
+      attachments: [],
+      imageJob: null,
+      debounceMs: 2_000,
+      receivedAt: new Date("2026-08-20T00:00:00.000Z"),
+    });
+    const newer = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: "93".repeat(32),
+      externalMessageKeyHash: "94".repeat(32),
+      text: "Newer customer message",
+      attachments: [],
+      imageJob: null,
+      debounceMs: 2_000,
+      receivedAt: new Date("2026-08-20T00:01:00.000Z"),
+    });
+    expect(older.status).toBe("turn_pending");
+    expect(newer.status).toBe("turn_pending");
+    if (older.status !== "turn_pending" || newer.status !== "turn_pending") return;
+    await repository.sealDueCustomerTurn({ turnId: older.turnId, now: new Date("2026-08-20T00:02:00.000Z") });
+    await repository.sealDueCustomerTurn({ turnId: newer.turnId, now: new Date("2026-08-20T00:02:00.000Z") });
+    await database.insert(customerServiceAiAttempts).values(Array.from({ length: 101 }, (_, index) => ({
+      messageId: newer.messageId,
+      attemptNumber: index + 1,
+      trigger: "manual_regenerate" as const,
+      intent: "photo_guidance",
+      riskLevel: "low" as const,
+      gateResult: "allowed" as const,
+      knowledgeVersion: "test-v1",
+      status: "draft_ready" as const,
+      providerCalled: true,
+      provider: "mock" as const,
+      model: "mock",
+      draftText: `Newer draft ${index + 1}`,
+      completedAt: new Date("2026-08-20T00:02:01.000Z"),
+    })));
+    const cursor = await repository.getReplyAssistantUiCursor();
+    await database.update(customerServiceMessages)
+      .set({ body: "Older customer message changed" })
+      .where(eq(customerServiceMessages.id, older.messageId));
+
+    const update = await repository.listReplyAssistantUpdates(cursor, 250);
+
+    expect(update.queueItems).toHaveLength(1);
+    expect(update.queueItems[0]).toMatchObject({
+      messageId: older.messageId,
+      body: "Older customer message changed",
+    });
+  });
+
   it("incrementally adds a human outbound event to only its server-mapped conversation", async () => {
     await activateFacebookPilot("live-updates-isolation");
     const first = await repository.ingestConversationEvent({
@@ -1947,6 +2005,75 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       expect.objectContaining({ attachmentCount: 1, imageAnalysisStatus: "assessed" }),
     ]));
     expect(queryCount).toBeLessThanOrEqual(5);
+  });
+
+  it("returns the refreshed queue assessment after delayed image cleanup succeeds", async () => {
+    const created = await repository.ingestFacebookMessage({
+      channel: "facebook",
+      externalConversationKeyHash: "8".repeat(64),
+      externalMessageKeyHash: "9".repeat(64),
+      text: "Can you assess this photo?",
+      attachments: [{
+        externalAttachmentKeyHash: "7".repeat(64),
+        ordinal: 0,
+        kind: "image",
+        mimeTypeHint: "image/png",
+      }],
+      receivedAt: new Date("2026-08-17T00:00:00.000Z"),
+    });
+    if (created.status === "duplicate") return;
+    const [attachment] = await database.select().from(customerServiceAttachments)
+      .where(eq(customerServiceAttachments.messageId, created.messageId));
+    const attemptId = await repository.createImageAnalysisAttempt({
+      messageId: created.messageId,
+      schemaVersion: "1",
+      attachments: [{
+        attachmentId: attachment.id,
+        ordinal: 0,
+        externalAttachmentKeyHash: attachment.externalAttachmentKeyHash,
+      }],
+    });
+    const storageKey = "customer-service-attachments/delayed-cleanup.bin";
+    const deleteDueAt = new Date("2026-08-18T00:00:00.000Z");
+    await repository.markImageAttachmentStored({
+      attemptId,
+      attachmentId: attachment.id,
+      verifiedMimeType: "image/png",
+      width: 100,
+      height: 80,
+      byteSize: 64,
+      sha256: "6".repeat(64),
+      privateStorageKey: storageKey,
+      deleteDueAt,
+    });
+    await repository.completeImageAnalysisAttempt(imageCompletion(attemptId, "analyzed"));
+    await repository.markImageAttachmentDeleted({
+      attemptId,
+      attachmentId: attachment.id,
+      privateStorageKey: storageKey,
+      deleteDueAt,
+      deleted: false,
+      failureCode: "image_cleanup_failed",
+    });
+    const cursor = await repository.getReplyAssistantUiCursor();
+
+    await repository.markImageAttachmentDeleted({
+      attemptId,
+      attachmentId: attachment.id,
+      privateStorageKey: storageKey,
+      deleteDueAt,
+      deleted: true,
+      failureCode: null,
+    });
+
+    const updates = await repository.listReplyAssistantUpdates(cursor, 250);
+    expect(updates.queueItems).toEqual([
+      expect.objectContaining({
+        messageId: created.messageId,
+        imageAnalysisStatus: "assessed",
+        imageAssessmentSummary: "Image 0 is the likely main candidate.",
+      }),
+    ]);
   });
 
   it("selects current-message attachments in stable ordinal order", async () => {

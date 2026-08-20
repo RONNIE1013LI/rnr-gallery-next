@@ -388,6 +388,151 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     return { selected: claimed.length, deleted, failed };
   }
 
+  async function loadQueuePage(limit: number, messageIds?: readonly string[]) {
+    const latestAttempts = database.select({
+      messageId: customerServiceAiAttempts.messageId,
+      attemptNumber: max(customerServiceAiAttempts.attemptNumber).as("latest_attempt_number"),
+    }).from(customerServiceAiAttempts)
+      .groupBy(customerServiceAiAttempts.messageId)
+      .as("latest_attempts");
+    const eligible = sql`
+      exists (
+        select 1 from customer_service_turns turns
+        where turns.representative_message_id = ${customerServiceMessages.id}
+          and (
+            turns.status in ('sealed', 'pilot_complete')
+            or (turns.status = 'suppressed' and turns.suppression_reason = 'human_outbound_received')
+          )
+      )
+      or exists (
+        select 1 from customer_service_attachments attachments
+        where attachments.message_id = ${customerServiceMessages.id}
+      )
+      or not exists (
+        select 1 from customer_service_conversation_events events
+        where events.legacy_message_id = ${customerServiceMessages.id}
+      )
+    `;
+    const rows = await database.select({
+      messageId: customerServiceMessages.id,
+      conversationId: customerServiceMessages.conversationId,
+      body: customerServiceMessages.body,
+      receivedAt: customerServiceMessages.receivedAt,
+      status: customerServiceMessages.ingestStatus,
+      latestAttemptId: customerServiceAiAttempts.id,
+      draftText: customerServiceAiAttempts.draftText,
+      gateResult: customerServiceAiAttempts.gateResult,
+      humanReplyReceived: sql<boolean>`exists (
+        select 1 from customer_service_turns turns
+        where turns.representative_message_id = ${customerServiceMessages.id}
+          and turns.status = 'suppressed'
+          and turns.suppression_reason = 'human_outbound_received'
+      )`,
+    }).from(customerServiceMessages)
+      .leftJoin(latestAttempts, eq(latestAttempts.messageId, customerServiceMessages.id))
+      .leftJoin(customerServiceAiAttempts, and(
+        eq(customerServiceAiAttempts.messageId, latestAttempts.messageId),
+        eq(customerServiceAiAttempts.attemptNumber, latestAttempts.attemptNumber),
+      ))
+      .where(messageIds?.length
+        ? and(inArray(customerServiceMessages.id, [...messageIds]), eligible)
+        : eligible)
+      .orderBy(desc(customerServiceMessages.receivedAt), desc(customerServiceMessages.id))
+      .limit(Math.max(1, Math.min(500, limit)));
+    const items = rows.map((row) => ({ ...row, receivedAt: row.receivedAt.toISOString() }));
+    const attachmentRows = items.length
+      ? await database.select({
+        messageId: customerServiceAttachments.messageId,
+        attachmentId: customerServiceAttachments.id,
+      }).from(customerServiceAttachments).where(inArray(
+        customerServiceAttachments.messageId,
+        items.map((item) => item.messageId),
+      )).orderBy(asc(customerServiceAttachments.ordinal))
+      : [];
+    const attachmentIdsByMessage = new Map<string, string[]>();
+    for (const attachment of attachmentRows) {
+      attachmentIdsByMessage.set(attachment.messageId, [
+        ...(attachmentIdsByMessage.get(attachment.messageId) ?? []),
+        attachment.attachmentId,
+      ]);
+    }
+    const assessments = await validatedQueueImageAssessments(database, attachmentIdsByMessage);
+    const conversationIds = [...new Set(items.map((item) => item.conversationId))];
+    const timelineRows = conversationIds.length
+      ? await database.execute<{
+        conversation_id: string;
+        role: "customer" | "staff";
+        body: string;
+        received_at: Date;
+      }>(sql`
+        select conversation_id, role, body, received_at
+        from (
+          select
+            conversation_id,
+            role,
+            body,
+            received_at,
+            created_at,
+            id,
+            row_number() over (
+              partition by conversation_id
+              order by received_at desc, created_at desc, id desc
+            ) as ordinal
+          from ${customerServiceConversationEvents}
+          where ${customerServiceConversationEvents.conversationId} in (${sql.join(
+            conversationIds.map((id) => sql`${id}`),
+            sql`, `,
+          )})
+            and ${customerServiceConversationEvents.eventType} in ('customer_message', 'human_outbound')
+        ) recent
+        where ordinal <= 8
+        order by conversation_id, received_at asc, created_at asc, id asc
+      `)
+      : { rows: [] as Array<{
+        conversation_id: string;
+        role: "customer" | "staff";
+        body: string;
+        received_at: Date;
+      }> };
+    const timelineByConversation = new Map<string, Array<{
+      role: "customer" | "staff";
+      text: string;
+      receivedAt: string;
+    }>>();
+    for (const event of timelineRows.rows) {
+      timelineByConversation.set(event.conversation_id, [
+        ...(timelineByConversation.get(event.conversation_id) ?? []),
+        {
+          role: event.role,
+          text: event.body,
+          receivedAt: new Date(event.received_at).toISOString(),
+        },
+      ]);
+    }
+    return {
+      items: items.map((item) => {
+        const attachmentIds = attachmentIdsByMessage.get(item.messageId) ?? [];
+        const assessment = assessments.get(item.messageId);
+        return {
+          messageId: item.messageId,
+          body: item.body,
+          receivedAt: item.receivedAt,
+          status: item.status,
+          latestAttemptId: item.humanReplyReceived ? null : item.latestAttemptId,
+          draftText: item.humanReplyReceived ? null : item.draftText,
+          gateResult: item.humanReplyReceived ? null : item.gateResult,
+          humanReplyReceived: item.humanReplyReceived,
+          attachmentCount: attachmentIds.length,
+          imageAnalysisStatus: attachmentIds.length
+            ? assessment?.status ?? "human_review_required"
+            : "not_applicable" as const,
+          imageAssessmentSummary: assessment?.summary ?? null,
+          timeline: timelineByConversation.get(item.conversationId) ?? [],
+        };
+      }),
+    };
+  }
+
   const repository: CustomerServiceRepository = {
     async ingestConversationEvent(input: HashedConversationEvent) {
       return database.transaction(async (transaction) => {
@@ -2497,139 +2642,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     },
 
     async listQueue(limit) {
-      const rows = await database.select({
-        messageId: customerServiceMessages.id,
-        conversationId: customerServiceMessages.conversationId,
-        body: customerServiceMessages.body,
-        receivedAt: customerServiceMessages.receivedAt,
-        status: customerServiceMessages.ingestStatus,
-        latestAttemptId: customerServiceAiAttempts.id,
-        draftText: customerServiceAiAttempts.draftText,
-        gateResult: customerServiceAiAttempts.gateResult,
-        humanReplyReceived: sql<boolean>`exists (
-          select 1 from customer_service_turns turns
-          where turns.representative_message_id = ${customerServiceMessages.id}
-            and turns.status = 'suppressed'
-            and turns.suppression_reason = 'human_outbound_received'
-        )`,
-      }).from(customerServiceMessages)
-        .leftJoin(customerServiceAiAttempts, eq(customerServiceAiAttempts.messageId, customerServiceMessages.id))
-        .where(sql`
-          exists (
-            select 1 from customer_service_turns turns
-            where turns.representative_message_id = ${customerServiceMessages.id}
-              and (
-                turns.status in ('sealed', 'pilot_complete')
-                or (turns.status = 'suppressed' and turns.suppression_reason = 'human_outbound_received')
-              )
-          )
-          or exists (
-            select 1 from customer_service_attachments attachments
-            where attachments.message_id = ${customerServiceMessages.id}
-          )
-          or not exists (
-            select 1 from customer_service_conversation_events events
-            where events.legacy_message_id = ${customerServiceMessages.id}
-          )
-        `)
-        .orderBy(desc(customerServiceMessages.receivedAt), desc(customerServiceAiAttempts.attemptNumber))
-        .limit(Math.max(1, Math.min(100, limit)));
-      const seen = new Set<string>();
-      const items = rows.filter((row) => !seen.has(row.messageId) && Boolean(seen.add(row.messageId))).map((row) => ({
-        ...row,
-        receivedAt: row.receivedAt.toISOString(),
-      }));
-      const attachmentRows = items.length
-        ? await database.select({
-          messageId: customerServiceAttachments.messageId,
-          attachmentId: customerServiceAttachments.id,
-        }).from(customerServiceAttachments).where(inArray(
-          customerServiceAttachments.messageId,
-          items.map((item) => item.messageId),
-        )).orderBy(asc(customerServiceAttachments.ordinal))
-        : [];
-      const attachmentIdsByMessage = new Map<string, string[]>();
-      for (const attachment of attachmentRows) {
-        attachmentIdsByMessage.set(attachment.messageId, [
-          ...(attachmentIdsByMessage.get(attachment.messageId) ?? []),
-          attachment.attachmentId,
-        ]);
-      }
-      const assessments = await validatedQueueImageAssessments(database, attachmentIdsByMessage);
-      const conversationIds = [...new Set(items.map((item) => item.conversationId))];
-      const timelineRows = conversationIds.length
-        ? await database.execute<{
-          conversation_id: string;
-          role: "customer" | "staff";
-          body: string;
-          received_at: Date;
-        }>(sql`
-          select conversation_id, role, body, received_at
-          from (
-            select
-              conversation_id,
-              role,
-              body,
-              received_at,
-              created_at,
-              id,
-              row_number() over (
-                partition by conversation_id
-                order by received_at desc, created_at desc, id desc
-              ) as ordinal
-            from ${customerServiceConversationEvents}
-            where ${customerServiceConversationEvents.conversationId} in (${sql.join(
-              conversationIds.map((id) => sql`${id}`),
-              sql`, `,
-            )})
-              and ${customerServiceConversationEvents.eventType} in ('customer_message', 'human_outbound')
-          ) recent
-          where ordinal <= 8
-          order by conversation_id, received_at asc, created_at asc, id asc
-        `)
-        : { rows: [] as Array<{
-          conversation_id: string;
-          role: "customer" | "staff";
-          body: string;
-          received_at: Date;
-        }> };
-      const timelineByConversation = new Map<string, Array<{
-        role: "customer" | "staff";
-        text: string;
-        receivedAt: string;
-      }>>();
-      for (const event of timelineRows.rows) {
-        timelineByConversation.set(event.conversation_id, [
-          ...(timelineByConversation.get(event.conversation_id) ?? []),
-          {
-            role: event.role,
-            text: event.body,
-            receivedAt: new Date(event.received_at).toISOString(),
-          },
-        ]);
-      }
-      return {
-        items: items.map((item) => {
-          const attachmentIds = attachmentIdsByMessage.get(item.messageId) ?? [];
-          const assessment = assessments.get(item.messageId);
-          return {
-            messageId: item.messageId,
-            body: item.body,
-            receivedAt: item.receivedAt,
-            status: item.status,
-            latestAttemptId: item.humanReplyReceived ? null : item.latestAttemptId,
-            draftText: item.humanReplyReceived ? null : item.draftText,
-            gateResult: item.humanReplyReceived ? null : item.gateResult,
-            humanReplyReceived: item.humanReplyReceived,
-            attachmentCount: attachmentIds.length,
-            imageAnalysisStatus: attachmentIds.length
-              ? assessment?.status ?? "human_review_required"
-              : "not_applicable",
-            imageAssessmentSummary: assessment?.summary ?? null,
-            timeline: timelineByConversation.get(item.conversationId) ?? [],
-          };
-        }),
-      };
+      return loadQueuePage(Math.max(1, Math.min(100, limit)));
     },
 
     async getReplyAssistantUiCursor() {
@@ -2641,11 +2654,6 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     },
 
     async listReplyAssistantUpdates(cursor, limit) {
-      let queuePromise: ReturnType<typeof repository.listQueue> | null = null;
-      const loadQueue = () => {
-        queuePromise ??= repository.listQueue(100);
-        return queuePromise;
-      };
       const reader = createReplyAssistantUpdateReader({
         readChanges: async (afterRevision, requestedLimit) => {
           const safeLimit = Math.max(1, Math.min(500, requestedLimit));
@@ -2668,9 +2676,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           };
         },
         loadQueueByMessageIds: async (messageIds) => {
-          const page = await loadQueue();
-          const allowed = new Set(messageIds);
-          return page.items.filter((item) => allowed.has(item.messageId));
+          return (await loadQueuePage(messageIds.length, messageIds)).items;
         },
         loadQueueByConversationIds: async (conversationIds) => {
           const messageRows = conversationIds.length
@@ -2678,9 +2684,8 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
               .from(customerServiceMessages)
               .where(inArray(customerServiceMessages.conversationId, [...conversationIds]))
             : [];
-          const allowed = new Set(messageRows.map((row) => row.id));
-          const page = await loadQueue();
-          return page.items.filter((item) => allowed.has(item.messageId));
+          const messageIds = messageRows.map((row) => row.id);
+          return messageIds.length ? (await loadQueuePage(messageIds.length, messageIds)).items : [];
         },
         loadMetrics: () => repository.metricCounts(),
         loadLearningCandidates: () => repository.listLearningCandidates(20),
