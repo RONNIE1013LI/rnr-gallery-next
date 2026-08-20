@@ -6,10 +6,16 @@ import {
 } from "@/domain/catalogue/product-registry";
 import AustraliaPage, { generateMetadata } from "./page";
 
-const state = vi.hoisted(() => ({ registry: undefined as unknown }));
+const state = vi.hoisted(() => ({ registry: undefined as unknown, reviews: null as unknown }));
 
 vi.mock("@/server/admin/product-registry-runtime", () => ({
   getSafePublicProductRegistry: async () => ({ registry: state.registry }),
+}));
+vi.mock("@/server/customer-reviews/customer-review-runtime", () => ({
+  getSafePublicCustomerReviewSection: async () => state.reviews,
+}));
+vi.mock("@/server/gallery/gallery-runtime", () => ({
+  getGalleryRuntime: () => ({ publicService: { findByIds: async () => [] } }),
 }));
 
 function enabledAustraliaRegistry() {
@@ -35,6 +41,7 @@ function enabledAustraliaRegistry() {
 describe("Australia storefront", () => {
   beforeEach(() => {
     state.registry = defaultProductRegistry;
+    state.reviews = null;
   });
 
   it("keeps the stable AU URL closed and noindex while pricing is disabled", async () => {
@@ -68,5 +75,31 @@ describe("Australia storefront", () => {
       alternates: { canonical: "https://rrgallery.co.nz/au" },
       robots: { index: true, follow: true },
     });
+  });
+
+  it("passes the shared safe customer review DTO to the AU homepage", async () => {
+    state.registry = enabledAustraliaRegistry();
+    state.reviews = {
+      summary: null,
+      featured: {
+        id: "11111111-1111-4111-8111-111111111111",
+        reviewerName: "Shared AU reviewer",
+        originalReviewText: "Shared safely across markets.",
+        sourceReviewUrl: null,
+        reviewDate: "2026-08-20",
+        recommendationStatus: "RECOMMENDS",
+        editorialHeadline: null,
+        productKey: null,
+        productDisplayLabel: null,
+        orderContext: null,
+        isHomepageFeatured: true,
+        avatar: null,
+        featuredImage: null,
+      },
+      reviews: [],
+    };
+
+    render(await AustraliaPage());
+    expect(screen.getByText("Shared AU reviewer")).toBeInTheDocument();
   });
 });

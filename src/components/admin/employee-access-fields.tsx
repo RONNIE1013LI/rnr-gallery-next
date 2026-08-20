@@ -28,7 +28,12 @@ const adminGroups = [
     { key: "view_production_finance", label: "View production finance" }, { key: "update_production_finance", label: "Update production finance" },
   ] },
   { label: "Catalogue", permissions: [{ key: "manage_gallery", label: "Manage gallery" }, { key: "manage_prices", label: "Manage prices" }, { key: "delete_media", label: "Delete media" }] },
-  { label: "Content", permissions: [{ key: "manage_content", label: "Manage content" }, { key: "publish_content", label: "Publish content" }] },
+  { label: "Content", permissions: [
+    { key: "manage_content", label: "Manage content" },
+    { key: "publish_content", label: "Publish content" },
+    { key: "manage_reviews", label: "Manage customer reviews" },
+    { key: "publish_reviews", label: "Publish customer reviews" },
+  ] },
   { label: "Commerce", permissions: [{ key: "manage_payment", label: "Manage payment" }, { key: "update_payment_status", label: "Update payment status" }, { key: "record_refund", label: "Record refunds" }, { key: "manage_shipping", label: "Manage shipping" }] },
   { label: "Oversight and support", permissions: [{ key: "view_audit", label: "View audit log" }, { key: "use_reply_assistant", label: "Use reply assistant" }] },
 ] as const satisfies readonly PermissionGroup<Exclude<AdminPermission, "manage_roles">>[];

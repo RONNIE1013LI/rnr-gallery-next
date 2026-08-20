@@ -31,6 +31,8 @@ export const STAFF_ACCESS_PROFILE_DEPENDENCIES = Object.freeze({
     manage_gallery: ["access_admin"],
     manage_content: ["access_admin"],
     publish_content: ["manage_content"],
+    manage_reviews: ["access_admin"],
+    publish_reviews: ["manage_reviews"],
     manage_prices: ["access_admin"],
     manage_shipping: ["access_admin"],
     manage_payment: ["access_admin"],

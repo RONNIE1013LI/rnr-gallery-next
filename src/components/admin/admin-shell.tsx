@@ -24,6 +24,7 @@ const navigation = [
   { label: "Products", href: "/admin/products", permission: "manage_prices" },
   { label: "Design Gallery", href: "/admin/design-gallery", permission: "manage_gallery" },
   { label: "Content", href: "/admin/content", permission: "manage_content" },
+  { label: "Customer Reviews", href: "/admin/customer-reviews", permission: "manage_reviews" },
   { label: "Media", href: "/admin/media", permission: "delete_media" },
   { label: "Shipping", href: "/admin/settings/shipping", permission: "manage_shipping" },
   { label: "Payment", href: "/admin/settings/payment", permission: "manage_payment" },

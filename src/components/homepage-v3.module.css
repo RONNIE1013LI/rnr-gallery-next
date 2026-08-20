@@ -510,16 +510,6 @@
 .galleryCard:focus-visible { outline: 3px solid var(--v3-gold); outline-offset: 0.375rem; }
 .galleryLink { margin-top: 2.75rem; margin-left: 0; }
 
-.storySection { padding: var(--v3-section-standard) 0; position: relative; z-index: 1; }
-.storyGrid { display: grid; grid-template-columns: 1fr 0.96fr; gap: 5rem; align-items: center; }
-.storyCopy { max-width: 42rem; }
-.storyCopy blockquote { margin: 0 0 1.75rem; font-size: 2.625rem; line-height: 1.18; letter-spacing: -0.025em; }
-.storyCopy > p:not(.eyebrow) { color: var(--v3-muted); }
-.storyMeta { margin-top: 2.125rem; display: flex; flex-direction: column; gap: 0.375rem; font-size: 0.8125rem; }
-.storyMeta span { color: var(--v3-muted); }
-.storyRating { margin: 1.75rem 0; padding-top: 1.625rem; border-top: 1px solid var(--v3-line); color: var(--v3-forest); font-size: 0.8125rem; font-weight: 800; }
-.storyRating span { margin-left: 0.625rem; }
-
 .faqSection { padding: var(--v3-section-standard) 0; }
 .faqGrid { display: grid; grid-template-columns: 0.82fr 1.18fr; gap: 6.5rem; }
 .faqDescription { max-width: 29.375rem; color: var(--v3-muted); }
@@ -568,7 +558,6 @@
   .productEditorialGrid { grid-template-columns: 1fr; }
   .productVertical { grid-template-columns: 23.75rem minmax(0, 1fr); }
   .galleryMosaic { height: auto; }
-  .storyGrid { gap: 3rem; }
   .faqGrid { grid-template-columns: 1fr; gap: 2.875rem; }
   .faqContact { margin-top: 2.25rem; }
 }
@@ -611,7 +600,7 @@
   .trustItem span { font-size: 0.75rem; }
   .trustCopyDesktop { display: none; }
   .trustCopyMobile { display: inline; }
-  .beginSection, .productsSection, .gallerySection, .storySection, .faqSection { padding: var(--v3-section-standard) 0; }
+  .beginSection, .productsSection, .gallerySection, .faqSection { padding: var(--v3-section-standard) 0; }
   .productsBackdropImage {
     background-image:
       linear-gradient(rgb(250 246 238 / 76%), rgb(250 246 238 / 76%)),
@@ -660,8 +649,6 @@
   .galleryLeftColumn { grid-column: 1 / -1; }
   .galleryProductLabel { min-height: 1.5rem; padding: 0.3125rem 0.5625rem; top: 0.5rem; left: 0.5rem; font-size: 0.625rem; }
   .galleryLink { margin-top: 0.75rem; }
-  .storyGrid { grid-template-columns: 1fr; gap: 3rem; }
-  .storyCopy blockquote { font-size: 2.1875rem; }
   .faqItem > button { font-size: 1rem; }
   .finalCta { padding: var(--v3-section-compact) 0; }
   .finalCtaGrid { grid-template-columns: 1fr; gap: 2.75rem; }

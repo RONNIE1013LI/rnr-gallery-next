@@ -1,0 +1,375 @@
+.section {
+  --review-facebook: #1877f2;
+  --review-card-border: #d9dde5;
+  --review-card-muted: #606770;
+  padding: var(--v3-section-standard, 6rem) 0;
+  position: relative;
+  z-index: 1;
+  color: var(--v3-ink, #18211d);
+  background: var(--v3-paper, #faf6ee);
+}
+
+.shell {
+  width: min(var(--v3-content-width, 80.5rem), calc(100% - 4rem));
+  margin-inline: auto;
+}
+
+.sectionHeader {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3rem;
+  align-items: end;
+  margin-bottom: 2.75rem;
+}
+
+.eyebrow {
+  margin: 0;
+  color: var(--v3-gold, #76511d);
+  font-size: .75rem;
+  font-weight: 800;
+  letter-spacing: .16em;
+}
+
+.sectionHeader h2 {
+  margin: 1rem 0 .75rem;
+}
+
+.sectionHeader > div:first-child > p:last-child {
+  max-width: 42rem;
+  margin: 0;
+  color: var(--v3-muted, #5c635f);
+}
+
+.facebookSummary {
+  display: flex;
+  min-width: 18rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: .35rem;
+  padding: 1.5rem 2rem;
+  border: 1px solid rgb(24 119 242 / 14%);
+  border-radius: 1.25rem;
+  background: #fff;
+  box-shadow: 0 .75rem 2rem rgb(24 119 242 / 8%);
+  text-align: center;
+}
+
+.facebookSummaryLabel {
+  color: var(--v3-ink, #18211d);
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: .04em;
+}
+
+.facebookSummaryStars {
+  display: flex;
+  gap: .2rem;
+  color: var(--review-facebook);
+  font-size: 1.55rem;
+}
+
+.facebookSummaryCount {
+  margin: .05rem 0 .15rem;
+  color: var(--review-card-muted);
+  font-size: .8125rem;
+  font-weight: 600;
+}
+
+.facebookWord {
+  color: var(--review-facebook);
+  font-size: 1.65rem;
+  font-weight: 800;
+  letter-spacing: -.035em;
+  line-height: 1;
+}
+
+.facebookSummary a,
+.cardActions a,
+.cardActions button,
+.reviewDialog a {
+  color: #174f95;
+  font: inherit;
+  font-size: .8125rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: .2rem;
+}
+
+.featuredLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 42%) minmax(0, 58%);
+  overflow: hidden;
+  border: 1px solid var(--review-card-border);
+  border-radius: 1rem;
+  background: #fff;
+}
+
+.featuredWithoutImage {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.featuredImage {
+  position: relative;
+  min-height: 100%;
+  aspect-ratio: 4 / 3;
+  background: #ece9e2;
+}
+
+.featuredImage img {
+  object-fit: cover;
+}
+
+.reviewCard {
+  min-width: 0;
+  padding: 1.375rem;
+  border: 1px solid var(--review-card-border);
+  border-radius: 1rem;
+  background: #fff;
+  scroll-snap-align: start;
+}
+
+.featuredCard {
+  display: flex;
+  min-height: 100%;
+  flex-direction: column;
+  justify-content: center;
+  padding: clamp(1.75rem, 4vw, 3.5rem);
+  border: 0;
+  border-radius: 0;
+}
+
+.reviewerHeader {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr) auto;
+  gap: .75rem;
+  align-items: center;
+}
+
+.avatar,
+.initials {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+}
+
+.avatar {
+  object-fit: cover;
+}
+
+.initials {
+  display: grid;
+  place-items: center;
+  color: #fff;
+  background: #49685b;
+  font-size: .8125rem;
+  font-weight: 800;
+}
+
+.reviewerHeader > div {
+  display: grid;
+  gap: .1rem;
+}
+
+.reviewerHeader time {
+  color: var(--review-card-muted);
+  font-size: .75rem;
+}
+
+.facebookIcon {
+  color: var(--review-facebook);
+  font-size: 1.2rem;
+}
+
+.recommendationLine {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  margin: 1rem 0;
+  color: var(--review-card-muted);
+  font-size: .8125rem;
+}
+
+.recommendationLine svg {
+  color: var(--review-facebook);
+}
+
+.editorialLabel,
+.dialogSource {
+  margin: 1rem 0 .4rem;
+  color: var(--v3-gold, #76511d);
+  font-size: .7rem;
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.featuredCard h3 {
+  margin: 0 0 1rem;
+  font-size: clamp(1.8rem, 3vw, 2.625rem);
+  line-height: 1.12;
+}
+
+.reviewText,
+.dialogText {
+  margin: 0;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.clampedText {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 7;
+}
+
+.orderContext {
+  margin: 1rem 0 0;
+  color: var(--review-card-muted);
+  font-size: .8125rem;
+}
+
+.cardActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem 1.25rem;
+  margin-top: 1rem;
+}
+
+.cardActions button {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.carouselArea {
+  margin-top: 2rem;
+}
+
+.carouselControls {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: .5rem;
+  margin-bottom: .75rem;
+}
+
+.carouselControls span {
+  margin-right: .5rem;
+  color: var(--review-card-muted);
+  font-size: .8rem;
+}
+
+.carouselControls button {
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--review-card-border);
+  border-radius: 50%;
+  color: var(--v3-ink, #18211d);
+  background: #fff;
+  cursor: pointer;
+}
+
+.carouselControls button:disabled {
+  opacity: .4;
+  cursor: default;
+}
+
+.carousel {
+  display: grid;
+  grid-auto-columns: calc((100% - 2rem) / 3);
+  grid-auto-flow: column;
+  gap: 1rem;
+  overflow-x: auto;
+  padding: .25rem .15rem .75rem;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: thin;
+}
+
+.carousel:focus-visible,
+.facebookSummary a:focus-visible,
+.carouselControls button:focus-visible,
+.cardActions :is(a, button):focus-visible,
+.reviewDialog :is(a, button):focus-visible {
+  outline: 3px solid var(--v3-gold, #76511d);
+  outline-offset: 3px;
+}
+
+.dialogBackdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.25rem;
+  background: rgb(13 43 37 / 64%);
+}
+
+.reviewDialog {
+  position: relative;
+  width: min(42rem, 100%);
+  max-height: min(42rem, calc(100vh - 2.5rem));
+  overflow: auto;
+  padding: clamp(1.5rem, 4vw, 2.75rem);
+  border-radius: 1rem;
+  background: #fff;
+  box-shadow: 0 2rem 5rem rgb(0 0 0 / 24%);
+}
+
+.reviewDialog h2 {
+  margin: .5rem 2.5rem .5rem 0;
+  font-size: clamp(1.5rem, 4vw, 2rem);
+}
+
+.reviewDialog > time {
+  color: var(--review-card-muted);
+  font-size: .8rem;
+}
+
+.reviewDialog .dialogText {
+  margin: 1.5rem 0;
+}
+
+.dialogSource {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  color: var(--review-facebook);
+}
+
+.dialogClose {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  width: 2.75rem;
+  height: 2.75rem;
+  border: 1px solid var(--review-card-border);
+  border-radius: 50%;
+  background: #fff;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+@media (max-width: 900px) {
+  .shell { width: calc(100% - 3rem); }
+  .sectionHeader { grid-template-columns: 1fr; gap: 1.5rem; }
+  .facebookSummary { width: min(100%, 18rem); min-width: 0; }
+  .featuredLayout { grid-template-columns: 1fr; }
+  .featuredImage { min-height: auto; }
+  .carousel { grid-auto-columns: calc((100% - 1rem) / 2); }
+}
+
+@media (max-width: 600px) {
+  .section { padding: var(--v3-section-standard, 4rem) 0; }
+  .shell { width: calc(100% - 2.5rem); }
+  .facebookSummary { width: min(100%, 18rem); justify-self: center; }
+  .carousel { grid-auto-columns: 88%; }
+  .featuredCard { padding: 1.5rem; }
+  .reviewCard { padding: 1.125rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .carousel { scroll-behavior: auto; }
+}

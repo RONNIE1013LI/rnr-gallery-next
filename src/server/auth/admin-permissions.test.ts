@@ -17,6 +17,8 @@ describe("admin permissions", () => {
       "manage_gallery",
       "manage_content",
       "publish_content",
+      "manage_reviews",
+      "publish_reviews",
       "manage_prices",
       "manage_shipping",
       "manage_payment",
@@ -58,6 +60,8 @@ describe("admin permissions", () => {
       "manage_gallery",
       "manage_content",
       "publish_content",
+      "manage_reviews",
+      "publish_reviews",
       "manage_prices",
       "manage_shipping",
       "manage_payment",
@@ -85,6 +89,17 @@ describe("admin permissions", () => {
   it("keeps staff role management unavailable for assignment", () => {
     expect(ADMIN_PERMISSION_KEYS).toContain("manage_roles");
     expect(ASSIGNABLE_ADMIN_PERMISSION_KEYS).not.toContain("manage_roles");
+  });
+
+  it("exposes separate assignable review management and publishing permissions", () => {
+    expect(ADMIN_PERMISSION_KEYS).toEqual(expect.arrayContaining([
+      "manage_reviews",
+      "publish_reviews",
+    ]));
+    expect(ASSIGNABLE_ADMIN_PERMISSION_KEYS).toEqual(expect.arrayContaining([
+      "manage_reviews",
+      "publish_reviews",
+    ]));
   });
 
   it("denies customers and unknown roles", () => {

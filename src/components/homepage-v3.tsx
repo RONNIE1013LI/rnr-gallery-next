@@ -12,6 +12,7 @@ import {
 } from "@/domain/gallery/public-design-slug";
 import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
 import type { Market } from "@/domain/markets/types";
+import type { PublicCustomerReviewSection } from "@/domain/customer-reviews/types";
 import { getSiteUrl } from "@/server/seo/site-url";
 import {
   selectHomepageGalleryItems,
@@ -19,6 +20,7 @@ import {
 } from "./homepage-gallery";
 import { ProofConversationScroller } from "./proof-conversation-scroller";
 import { HomepageFaq } from "./homepage-faq";
+import { CustomerReviewsSection } from "./customer-reviews/customer-reviews-section";
 import { homepageV3ImageSlots, type HomepageV3ImageSlot } from "./homepage-v3-images";
 import styles from "./homepage-v3.module.css";
 
@@ -144,10 +146,12 @@ export function HomepageV3({
   registry,
   galleryItems = [],
   market = "NZ",
+  reviewSection = null,
 }: Readonly<{
   registry: ProductRegistryDocument;
   galleryItems?: readonly PublicGalleryItem[];
   market?: Market;
+  reviewSection?: PublicCustomerReviewSection | null;
 }>) {
   const products = getRegistryProducts(registry);
   const shopHref = market === "AU" ? "/au/shop" : "/shop";
@@ -455,18 +459,7 @@ export function HomepageV3({
         </div>
       </section>
 
-      <section className={`${styles.storySection} ${styles.sectionPaper}`}>
-        <div className={`${styles.shell} ${styles.storyGrid}`}>
-          <Artwork slot={homepageV3ImageSlots.customerStoryImage} tone="sand" people={4} label="CUSTOMER + FINISHED CANVAS" className={styles.storyImage} />
-          <div className={styles.storyCopy}>
-            <blockquote>“For the past three years, Mum had been wishing for a photo with her parents again.”</blockquote>
-            <p>Separate family photographs were brought together into one meaningful memorial canvas.</p>
-            <div className={styles.storyMeta}><strong>R&amp;R Gallery customer</strong><span>Custom memorial canvas</span></div>
-            <div className={styles.storyRating}>★★★★★ <span>Recommended on Facebook</span></div>
-            <a className={styles.textLink} href="https://www.facebook.com/RandRgallery/reviews/?id=100063872118160&sk=reviews" rel="noopener noreferrer">Read more customer stories <Arrow /></a>
-          </div>
-        </div>
-      </section>
+      {reviewSection ? <CustomerReviewsSection data={reviewSection} /> : null}
 
       <section id="faq" className={`${styles.faqSection} ${styles.sectionWhite}`}>
         <div className={`${styles.shell} ${styles.faqGrid}`}>

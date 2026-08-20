@@ -5,6 +5,7 @@ import { AustraliaUnavailable } from "@/components/market-unavailable";
 import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
+import { getSafePublicCustomerReviewSection } from "@/server/customer-reviews/customer-review-runtime";
 import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
 import { buildPublicMetadata } from "@/server/seo/metadata";
 
@@ -29,15 +30,16 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 export default async function AustraliaPage() {
-  const { registry } = await getSafePublicProductRegistry();
+  const galleryPromise: Promise<readonly PublicGalleryItem[]> = getGalleryRuntime()
+    .publicService.findByIds(homepageGalleryDesignIds)
+    .catch(() => []);
+  const [{ registry }, galleryItems, reviewSection] = await Promise.all([
+    getSafePublicProductRegistry(),
+    galleryPromise,
+    getSafePublicCustomerReviewSection(),
+  ]);
   if (!registry.markets.AU.enabled || !getMarketCompleteness(registry, "AU").ready) {
     return <AustraliaUnavailable />;
   }
-  let galleryItems: readonly PublicGalleryItem[] = [];
-  try {
-    galleryItems = await getGalleryRuntime().publicService.findByIds(homepageGalleryDesignIds);
-  } catch {
-    galleryItems = [];
-  }
-  return <HomepageV3 registry={registry} galleryItems={galleryItems} market="AU" />;
+  return <HomepageV3 registry={registry} galleryItems={galleryItems} market="AU" reviewSection={reviewSection} />;
 }
