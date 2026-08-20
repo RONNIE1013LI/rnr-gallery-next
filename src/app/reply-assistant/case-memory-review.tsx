@@ -15,8 +15,10 @@ export function CaseMemoryReview({
   cases,
   canReview,
 }: Readonly<{ cases: readonly CaseMemoryView[]; canReview: boolean }>) {
-  const [items, setItems] = useState(cases);
+  const [hiddenIds, setHiddenIds] = useState<ReadonlySet<string>>(() => new Set());
   const [busy, setBusy] = useState<string | null>(null);
+
+  const items = cases.filter((item) => !hiddenIds.has(item.id));
 
   async function decide(item: CaseMemoryView, action: "approve" | "reject") {
     setBusy(item.id);
@@ -27,7 +29,7 @@ export function CaseMemoryReview({
         body: JSON.stringify({ action, reason: action === "reject" ? "Not reusable" : null }),
       });
       if (!response.ok) return;
-      setItems((current) => current.filter((candidate) => candidate.id !== item.id));
+      setHiddenIds((current) => new Set([...current, item.id]));
     } finally {
       setBusy(null);
     }

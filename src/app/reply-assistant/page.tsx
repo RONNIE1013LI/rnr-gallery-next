@@ -1,15 +1,13 @@
-import { ReplyAssistantClient } from "@/components/reply-assistant/reply-assistant-client";
 import { requireAdminPermission } from "@/server/auth/require-admin";
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
-import { calculatePilotMetrics } from "@/server/customer-service/metrics";
 import type { SafeQueuePage } from "@/server/customer-service/repositories/customer-service-repository";
 import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
+import { encodeReplyAssistantCursor } from "@/server/customer-service/live-updates";
 import compiledKnowledge from "@/server/customer-service/knowledge/compiled-knowledge.json";
 import styles from "./reply-assistant.module.css";
-import { LearningCandidateReview } from "./learning-candidate-review";
-import { CaseMemoryReview } from "./case-memory-review";
-import { learningMetricCards, pilotMetricCards } from "./metric-cards";
+import { replyAssistantMetricCards } from "./metric-cards";
 import { KnowledgeProvenance } from "./knowledge-provenance";
+import { ReplyAssistantLiveDashboard } from "./live-dashboard";
 
 export const metadata = { title: "Reply Assistant | R&R Gallery" };
 
@@ -27,6 +25,9 @@ export default async function ReplyAssistantPage() {
     });
     await runtime.repository.refreshLearningCandidates();
   }
+  const initialCursor = runtime
+    ? await runtime.repository.getReplyAssistantUiCursor()
+    : encodeReplyAssistantCursor(0);
   const [queue, rawMetrics, learningCandidates, caseMemories] = runtime
     ? await Promise.all([
       runtime.repository.listQueue(100),
@@ -55,36 +56,7 @@ export default async function ReplyAssistantPage() {
       learningCandidatesRejected: 0,
       commonEditReasons: [],
     }, { items: [] }, { items: [] }];
-  const metrics = calculatePilotMetrics(rawMetrics);
-  const cards = [
-    ["Incoming", metrics.totalIncomingEligible],
-    ["Raw customer events", rawMetrics.rawCustomerEvents],
-    ["Meaningful turns", rawMetrics.meaningfulTurns],
-    ["Aggregated fragments", rawMetrics.aggregatedFragments],
-    ["Acknowledgements suppressed", rawMetrics.acknowledgementsSuppressed],
-    ["Drafts", metrics.draftsGenerated],
-    ["Direct acceptance", `${Math.round(metrics.directAcceptanceRate * 100)}%`],
-    ["Assisted acceptance", `${Math.round(metrics.assistedAcceptanceRate * 100)}%`],
-    ["Rejected", `${Math.round(metrics.rejectionRate * 100)}%`],
-    ["Gate blocked", metrics.gateBlocked],
-    ["Validator blocked", metrics.outputValidatorBlocked],
-    ["Policy violations", `${Math.round(metrics.policyViolationRate * 100)}%`],
-    ["Avg latency", `${Math.round(metrics.averageLatencyMs)}ms`],
-    ["Avg cost", `$${(metrics.averageCostPerDraftMicrousd / 1_000_000).toFixed(4)}`],
-    ["Text spend", `$${(metrics.totalCostMicrousd / 1_000_000).toFixed(4)}`],
-    ["Image calls", metrics.imageProviderCalls],
-    ["Image input tokens", metrics.imageInputTokens],
-    ["Image cached tokens", metrics.imageCachedInputTokens],
-    ["Image output tokens", metrics.imageOutputTokens],
-    ["Image spend", `$${(metrics.imageTotalCostMicrousd / 1_000_000).toFixed(4)}`],
-    ["Image avg latency", `${Math.round(metrics.averageImageLatencyMs)}ms`],
-    ["Image failures", metrics.imageFailures],
-    ["Image cleanup deleted", metrics.imageCleanupDeleted],
-    ["Image cleanup failed", metrics.imageCleanupFailures],
-    ["Combined spend", `$${(metrics.combinedCostMicrousd / 1_000_000).toFixed(4)}`],
-    ...pilotMetricCards(metrics),
-    ...learningMetricCards(metrics),
-  ] as const;
+  const cards = replyAssistantMetricCards(rawMetrics);
 
   return (
     <section className={styles.page}>
@@ -93,16 +65,14 @@ export default async function ReplyAssistantPage() {
         knowledgeVersion={compiledKnowledge.knowledgeVersion}
         metadata={compiledKnowledge.metadata}
       />
-      <div className={styles.metrics}>{cards.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
-      <LearningCandidateReview
-        candidates={learningCandidates.items}
+      <ReplyAssistantLiveDashboard
+        initialCursor={initialCursor}
+        initialItems={queue.items}
+        initialMetricCards={cards}
+        initialLearningCandidates={learningCandidates.items}
+        initialCaseMemories={caseMemories.items}
         canReview={access.adminRole === "admin"}
       />
-      <CaseMemoryReview
-        cases={caseMemories.items}
-        canReview={access.adminRole === "admin"}
-      />
-      <ReplyAssistantClient initialItems={queue.items} />
     </section>
   );
 }

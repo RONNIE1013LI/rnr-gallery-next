@@ -45,6 +45,18 @@
   text-transform: capitalize;
 }
 
+.statuses {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.message header .newBadge {
+  background: #e8f0ff;
+  color: #214f9b;
+}
+
 .message header span[data-risk="true"] {
   background: #fff0ee;
   color: #9a2f25;
@@ -159,6 +171,14 @@
   background: #fff7f5;
   color: #76251e;
   text-transform: capitalize;
+}
+
+.serverChanged {
+  padding: 10px;
+  border-left: 3px solid #9a6b1c;
+  background: #fff9eb;
+  color: #6f4a0d;
+  font-size: 13px;
 }
 
 @media (max-width: 600px) {

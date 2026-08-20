@@ -20,6 +20,8 @@ import {
   customerServiceMessages,
   customerServicePilotRuns,
   customerServiceTurns,
+  customerServiceUiChanges,
+  customerServiceUiRevision,
   user,
 } from "@/server/db/schema";
 import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
@@ -93,6 +95,8 @@ async function clearTables() {
   await database.delete(customerServiceConversations);
   await database.delete(customerServiceBudgetState);
   await database.delete(customerServicePilotRuns);
+  await database.delete(customerServiceUiChanges);
+  await database.update(customerServiceUiRevision).set({ revision: 0, changedAt: new Date("2026-08-20T00:00:00.000Z") });
 }
 
 async function activateFacebookPilot(name: string) {
@@ -226,6 +230,106 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       { role: "staff", body: "Which type of banner do you need?" },
     ]);
     expect(messages.rows[0]).toEqual({ count: 1 });
+  });
+
+  it("returns incremental queue changes once and ignores duplicate webhook delivery", async () => {
+    await activateFacebookPilot("live-updates-once");
+    const cursor = await repository.getReplyAssistantUiCursor();
+    const incoming = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: "e1".repeat(32),
+      externalMessageKeyHash: "e2".repeat(32),
+      text: "How much are your banners?",
+      attachments: [],
+      imageJob: null,
+      debounceMs: 2_000,
+      receivedAt: new Date("2026-08-20T00:00:00.000Z"),
+    });
+    expect(incoming.status).toBe("turn_pending");
+    if (incoming.status !== "turn_pending") return;
+    await repository.sealDueCustomerTurn({ turnId: incoming.turnId, now: new Date("2026-08-20T00:00:03.000Z") });
+
+    const first = await repository.listReplyAssistantUpdates(cursor, 250);
+    expect(first.queueItems).toHaveLength(1);
+    expect(first.queueItems[0]).toMatchObject({
+      messageId: incoming.messageId,
+      body: "How much are your banners?",
+      timeline: [{ role: "customer", text: "How much are your banners?" }],
+    });
+    expect(first.metrics).not.toBeNull();
+
+    const duplicate = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: "e1".repeat(32),
+      externalMessageKeyHash: "e2".repeat(32),
+      text: "How much are your banners?",
+      attachments: [],
+      imageJob: null,
+      debounceMs: 2_000,
+      receivedAt: new Date("2026-08-20T00:00:00.000Z"),
+    });
+    expect(duplicate).toEqual({ status: "duplicate" });
+    await expect(repository.listReplyAssistantUpdates(first.cursor, 250)).resolves.toMatchObject({
+      queueItems: [],
+      metrics: null,
+      learningCandidates: null,
+      caseMemories: null,
+    });
+  });
+
+  it("incrementally adds a human outbound event to only its server-mapped conversation", async () => {
+    await activateFacebookPilot("live-updates-isolation");
+    const first = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: "f1".repeat(32),
+      externalMessageKeyHash: "f2".repeat(32),
+      text: "Customer A question",
+      attachments: [],
+      imageJob: null,
+      debounceMs: 2_000,
+      receivedAt: new Date("2026-08-20T00:00:00.000Z"),
+    });
+    const second = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: "a1".repeat(32),
+      externalMessageKeyHash: "a2".repeat(32),
+      text: "Customer B question",
+      attachments: [],
+      imageJob: null,
+      debounceMs: 2_000,
+      receivedAt: new Date("2026-08-20T00:00:01.000Z"),
+    });
+    expect(first.status).toBe("turn_pending");
+    expect(second.status).toBe("turn_pending");
+    if (first.status !== "turn_pending" || second.status !== "turn_pending") return;
+    await repository.sealDueCustomerTurn({ turnId: first.turnId, now: new Date("2026-08-20T00:00:04.000Z") });
+    await repository.sealDueCustomerTurn({ turnId: second.turnId, now: new Date("2026-08-20T00:00:04.000Z") });
+    const cursor = await repository.getReplyAssistantUiCursor();
+
+    await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      eventType: "human_outbound",
+      externalConversationKeyHash: "f1".repeat(32),
+      externalMessageKeyHash: "f3".repeat(32),
+      text: "R&R reply for Customer A only",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-20T00:00:05.000Z"),
+    });
+
+    const update = await repository.listReplyAssistantUpdates(cursor, 250);
+    expect(update.queueItems).toHaveLength(1);
+    expect(update.queueItems[0]?.messageId).toBe(first.messageId);
+    expect(update.queueItems[0]?.timeline).toEqual([
+      expect.objectContaining({ role: "customer", text: "Customer A question" }),
+      expect.objectContaining({ role: "staff", text: "R&R reply for Customer A only" }),
+    ]);
+    expect(JSON.stringify(update.queueItems)).not.toContain("Customer B question");
   });
 
   it("persists a human outbound echo and atomically suppresses its open customer turn", async () => {

@@ -23,6 +23,8 @@ import {
   customerServiceLearningCandidates,
   customerServiceConversationEvents,
   customerServiceTurns,
+  customerServiceUiChanges,
+  customerServiceUiRevision,
 } from "./index";
 
 const tables = [
@@ -82,6 +84,36 @@ describe("customer service schema contract", () => {
       "customer_service_case_retrievals",
       "customer_service_learning_candidates",
     ]);
+  });
+
+  it("defines a compact revision and dirty-entity index for incremental UI reads", () => {
+    expect([customerServiceUiRevision, customerServiceUiChanges].map(getTableName)).toEqual([
+      "customer_service_ui_revision",
+      "customer_service_ui_changes",
+    ]);
+    expect(getTableColumns(customerServiceUiRevision)).toEqual(expect.objectContaining({
+      singleton: expect.anything(),
+      revision: expect.anything(),
+      changedAt: expect.anything(),
+    }));
+    expect(getTableColumns(customerServiceUiChanges)).toEqual(expect.objectContaining({
+      scope: expect.anything(),
+      entityKey: expect.anything(),
+      revision: expect.anything(),
+      changedAt: expect.anything(),
+    }));
+  });
+
+  it("uses an additive trigger migration for UI change tracking", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0035_reply_assistant_live_updates.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain("CREATE TABLE \"customer_service_ui_revision\"");
+    expect(migration).toContain("CREATE TABLE \"customer_service_ui_changes\"");
+    expect(migration).toContain("customer_service_mark_ui_change");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
   });
 
   it("extends conversation events with explicit sanitized timeline metadata", () => {

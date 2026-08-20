@@ -644,3 +644,38 @@ export const customerServiceImageJobs = pgTable(
     check("customer_service_image_jobs_terminal_valid", sql`${table.status} in ('pending', 'running') or ${table.completedAt} is not null`),
   ],
 );
+
+export const customerServiceUiRevision = pgTable(
+  "customer_service_ui_revision",
+  {
+    singleton: integer("singleton").default(1).primaryKey(),
+    revision: bigint("revision", { mode: "number" }).default(0).notNull(),
+    changedAt: timestamp("changed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    check("customer_service_ui_revision_singleton_valid", sql`${table.singleton} = 1`),
+    check("customer_service_ui_revision_value_valid", sql`${table.revision} >= 0`),
+  ],
+);
+
+export const customerServiceUiChanges = pgTable(
+  "customer_service_ui_changes",
+  {
+    scope: text("scope")
+      .$type<"queue_message" | "queue_conversation" | "metrics" | "learning_candidates" | "case_memories">()
+      .notNull(),
+    entityKey: text("entity_key").notNull(),
+    revision: bigint("revision", { mode: "number" }).notNull(),
+    changedAt: timestamp("changed_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("customer_service_ui_changes_scope_entity_unique").on(table.scope, table.entityKey),
+    index("customer_service_ui_changes_revision_idx").on(table.revision),
+    check(
+      "customer_service_ui_changes_scope_valid",
+      sql`${table.scope} in ('queue_message', 'queue_conversation', 'metrics', 'learning_candidates', 'case_memories')`,
+    ),
+    check("customer_service_ui_changes_entity_valid", sql`length(trim(${table.entityKey})) > 0`),
+    check("customer_service_ui_changes_revision_valid", sql`${table.revision} > 0`),
+  ],
+);

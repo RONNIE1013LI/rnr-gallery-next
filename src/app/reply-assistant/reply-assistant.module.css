@@ -67,6 +67,15 @@
 .metrics span { color: #62636a; font-size: 12px; }
 .metrics strong { font-size: 20px; }
 
+.liveStatus {
+  justify-self: end;
+  color: #246334;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.liveStatus[data-state="reconnecting"] { color: #8a3027; }
+
 .learning {
   display: grid;
   min-width: 0;

@@ -19,6 +19,8 @@ import {
   customerServiceMessages,
   customerServicePilotRuns,
   customerServiceTurns,
+  customerServiceUiChanges,
+  customerServiceUiRevision,
 } from "@/server/db/schema";
 import type {
   CustomerServiceRepository,
@@ -40,6 +42,10 @@ import { sanitizeCaseMemoryText } from "../learning/case-memory-sanitizer";
 import { scoreCaseMemory } from "../learning/case-retrieval";
 import { buildLearningSummary } from "../learning/learning-summary";
 import { localDateScopeKey } from "../usage-cost";
+import {
+  createReplyAssistantUpdateReader,
+  encodeReplyAssistantCursor,
+} from "../live-updates";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -2624,6 +2630,63 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           };
         }),
       };
+    },
+
+    async getReplyAssistantUiCursor() {
+      const [state] = await database.select({ revision: customerServiceUiRevision.revision })
+        .from(customerServiceUiRevision)
+        .where(eq(customerServiceUiRevision.singleton, 1))
+        .limit(1);
+      return encodeReplyAssistantCursor(state?.revision ?? 0);
+    },
+
+    async listReplyAssistantUpdates(cursor, limit) {
+      let queuePromise: ReturnType<typeof repository.listQueue> | null = null;
+      const loadQueue = () => {
+        queuePromise ??= repository.listQueue(100);
+        return queuePromise;
+      };
+      const reader = createReplyAssistantUpdateReader({
+        readChanges: async (afterRevision, requestedLimit) => {
+          const safeLimit = Math.max(1, Math.min(500, requestedLimit));
+          const state = await database.select({ revision: customerServiceUiRevision.revision })
+            .from(customerServiceUiRevision)
+            .where(eq(customerServiceUiRevision.singleton, 1))
+            .limit(1);
+          const rows = await database.select({
+              scope: customerServiceUiChanges.scope,
+              entityKey: customerServiceUiChanges.entityKey,
+              revision: customerServiceUiChanges.revision,
+            }).from(customerServiceUiChanges)
+              .where(sql`${customerServiceUiChanges.revision} > ${afterRevision}`)
+              .orderBy(asc(customerServiceUiChanges.revision))
+              .limit(safeLimit + 1);
+          return {
+            currentRevision: state[0]?.revision ?? 0,
+            changes: rows.slice(0, safeLimit),
+            hasMore: rows.length > safeLimit,
+          };
+        },
+        loadQueueByMessageIds: async (messageIds) => {
+          const page = await loadQueue();
+          const allowed = new Set(messageIds);
+          return page.items.filter((item) => allowed.has(item.messageId));
+        },
+        loadQueueByConversationIds: async (conversationIds) => {
+          const messageRows = conversationIds.length
+            ? await database.select({ id: customerServiceMessages.id })
+              .from(customerServiceMessages)
+              .where(inArray(customerServiceMessages.conversationId, [...conversationIds]))
+            : [];
+          const allowed = new Set(messageRows.map((row) => row.id));
+          const page = await loadQueue();
+          return page.items.filter((item) => allowed.has(item.messageId));
+        },
+        loadMetrics: () => repository.metricCounts(),
+        loadLearningCandidates: () => repository.listLearningCandidates(20),
+        loadCaseMemories: () => repository.listCaseMemoryCandidates(20),
+      });
+      return reader(cursor, limit);
     },
 
     async metricCounts() {

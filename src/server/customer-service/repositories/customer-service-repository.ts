@@ -170,6 +170,32 @@ export type SafeQueuePage = Readonly<{
   }>[];
 }>;
 
+export type ReplyAssistantLearningCandidatePage = Readonly<{ items: readonly Readonly<{
+  id: string;
+  intent: string;
+  proposedChange: string;
+  reasonCodes: readonly string[];
+  evidenceCount: number;
+  status: "pending" | "approved" | "rejected" | "superseded";
+}>[] }>;
+
+export type ReplyAssistantCaseMemoryPage = Readonly<{ items: readonly Readonly<{
+  id: string;
+  intent: string;
+  normalizedSituation: string;
+  humanFinalReply: string;
+  status: "pending_review" | "approved_reusable" | "excluded" | "revoked";
+}>[] }>;
+
+export type ReplyAssistantUpdatePage = Readonly<{
+  cursor: string;
+  hasMore: boolean;
+  queueItems: SafeQueuePage["items"];
+  metrics: PilotMetricCounts | null;
+  learningCandidates: ReplyAssistantLearningCandidatePage | null;
+  caseMemories: ReplyAssistantCaseMemoryPage | null;
+}>;
+
 export type PilotMetricCounts = Readonly<{
   totalIncomingEligible: number;
   rawCustomerEvents: number;
@@ -415,13 +441,7 @@ export interface CustomerServiceRepository {
     | Readonly<{ status: "excluded"; caseMemoryId: string; exclusionCodes: readonly string[] }>
     | Readonly<{ status: "already_exists"; caseMemoryId: string }>
   >;
-  listCaseMemoryCandidates(limit: number): Promise<Readonly<{ items: readonly Readonly<{
-    id: string;
-    intent: string;
-    normalizedSituation: string;
-    humanFinalReply: string;
-    status: "pending_review" | "approved_reusable" | "excluded" | "revoked";
-  }>[] }>>;
+  listCaseMemoryCandidates(limit: number): Promise<ReplyAssistantCaseMemoryPage>;
   decideCaseMemory(input: Readonly<{
     caseMemoryId: string;
     reviewerUserId: string;
@@ -446,14 +466,7 @@ export interface CustomerServiceRepository {
     humanFinalReply: string;
     score: number;
   }>[]>;
-  listLearningCandidates(limit: number): Promise<Readonly<{ items: readonly Readonly<{
-    id: string;
-    intent: string;
-    proposedChange: string;
-    reasonCodes: readonly string[];
-    evidenceCount: number;
-    status: "pending" | "approved" | "rejected" | "superseded";
-  }>[] }>>;
+  listLearningCandidates(limit: number): Promise<ReplyAssistantLearningCandidatePage>;
   decideLearningCandidate(input: Readonly<{
     candidateId: string;
     reviewerUserId: string;
@@ -480,5 +493,7 @@ export interface CustomerServiceRepository {
   messageIdForAttempt(attemptId: string): Promise<string | null>;
   appendFeedback(input: FeedbackEventInput): Promise<void>;
   listQueue(limit: number): Promise<SafeQueuePage>;
+  getReplyAssistantUiCursor(): Promise<string>;
+  listReplyAssistantUpdates(cursor: string | null, limit: number): Promise<ReplyAssistantUpdatePage>;
   metricCounts(): Promise<PilotMetricCounts>;
 }

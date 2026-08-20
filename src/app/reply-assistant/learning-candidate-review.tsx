@@ -18,9 +18,13 @@ export function LearningCandidateReview({
   candidates,
   canReview,
 }: Readonly<{ candidates: readonly LearningCandidateView[]; canReview: boolean }>) {
-  const [items, setItems] = useState(candidates);
+  const [statusOverrides, setStatusOverrides] = useState<Record<string, LearningCandidateView["status"]>>({});
   const [edits, setEdits] = useState<Record<string, string>>({});
   const [busy, setBusy] = useState<string | null>(null);
+
+  const items = candidates.map((candidate) => candidate.status === "pending" && statusOverrides[candidate.id]
+    ? { ...candidate, status: statusOverrides[candidate.id] }
+    : candidate);
 
   async function decide(candidate: LearningCandidateView, action: "approve" | "edit_and_approve" | "reject") {
     setBusy(candidate.id);
@@ -35,9 +39,10 @@ export function LearningCandidateReview({
         }),
       });
       if (!response.ok) return;
-      setItems((current) => current.map((item) => item.id === candidate.id
-        ? { ...item, status: action === "reject" ? "rejected" : "approved" }
-        : item));
+      setStatusOverrides((current) => ({
+        ...current,
+        [candidate.id]: action === "reject" ? "rejected" : "approved",
+      }));
     } finally {
       setBusy(null);
     }

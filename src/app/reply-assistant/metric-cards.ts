@@ -65,3 +65,40 @@ export function learningMetricCards(metrics: LearningMetrics) {
 function reasonLabel(code: string) {
   return code.replaceAll("_", " ");
 }
+
+export function replyAssistantMetricCards(counts: PilotMetricCounts): readonly ReplyAssistantMetricCard[] {
+  const metrics = calculatePilotMetrics(counts);
+  return [
+    ["Incoming", metrics.totalIncomingEligible],
+    ["Raw customer events", metrics.rawCustomerEvents],
+    ["Meaningful turns", metrics.meaningfulTurns],
+    ["Aggregated fragments", metrics.aggregatedFragments],
+    ["Acknowledgements suppressed", metrics.acknowledgementsSuppressed],
+    ["Drafts", metrics.draftsGenerated],
+    ["Direct acceptance", percent(metrics.directAcceptanceRate)],
+    ["Assisted acceptance", percent(metrics.assistedAcceptanceRate)],
+    ["Rejected", percent(metrics.rejectionRate)],
+    ["Gate blocked", metrics.gateBlocked],
+    ["Validator blocked", metrics.outputValidatorBlocked],
+    ["Policy violations", percent(metrics.policyViolationRate)],
+    ["Avg latency", `${Math.round(metrics.averageLatencyMs)}ms`],
+    ["Avg cost", `$${(metrics.averageCostPerDraftMicrousd / 1_000_000).toFixed(4)}`],
+    ["Text spend", `$${(metrics.totalCostMicrousd / 1_000_000).toFixed(4)}`],
+    ["Image calls", metrics.imageProviderCalls],
+    ["Image input tokens", metrics.imageInputTokens],
+    ["Image cached tokens", metrics.imageCachedInputTokens],
+    ["Image output tokens", metrics.imageOutputTokens],
+    ["Image spend", `$${(metrics.imageTotalCostMicrousd / 1_000_000).toFixed(4)}`],
+    ["Image avg latency", `${Math.round(metrics.averageImageLatencyMs)}ms`],
+    ["Image failures", metrics.imageFailures],
+    ["Image cleanup deleted", metrics.imageCleanupDeleted],
+    ["Image cleanup failed", metrics.imageCleanupFailures],
+    ["Combined spend", `$${(metrics.combinedCostMicrousd / 1_000_000).toFixed(4)}`],
+    ...pilotMetricCards(metrics),
+    ...learningMetricCards(metrics),
+  ];
+}
+import { calculatePilotMetrics } from "@/server/customer-service/metrics";
+import type { PilotMetricCounts } from "@/server/customer-service/repositories/customer-service-repository";
+
+export type ReplyAssistantMetricCard = readonly [string, string | number];

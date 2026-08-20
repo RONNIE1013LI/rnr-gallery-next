@@ -116,4 +116,47 @@ describe("ReplyAssistantClient", () => {
     expect(screen.queryByRole("button", { name: "Regenerate" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Accept unchanged" })).not.toBeInTheDocument();
   });
+
+  it("merges repeated live items by message ID and marks only newly arrived messages", () => {
+    const second = {
+      ...item,
+      messageId: "33333333-3333-4333-8333-333333333333",
+      body: "A new customer message",
+      receivedAt: "2026-08-17T00:02:00.000Z",
+      draftText: null,
+      latestAttemptId: null,
+      status: "received",
+    };
+    const { rerender } = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} newMessageIds={[]} />);
+
+    rerender(<ReplyAssistantClient
+      initialItems={[item]}
+      liveItems={[second, second, item]}
+      newMessageIds={[second.messageId]}
+    />);
+
+    expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(screen.getByText("A new customer message")).toBeInTheDocument();
+    expect(screen.getAllByText("New")).toHaveLength(1);
+  });
+
+  it("preserves an unsaved local edit when polling replaces the server draft", () => {
+    const { rerender } = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const editor = screen.getByLabelText("Reply draft") as HTMLTextAreaElement;
+    editor.focus();
+    editor.scrollTop = 42;
+    fireEvent.change(editor, { target: { value: "Ronnie local wording" } });
+
+    rerender(<ReplyAssistantClient
+      initialItems={[item]}
+      liveItems={[{ ...item, latestAttemptId: "44444444-4444-4444-8444-444444444444", draftText: "A newer server draft" }]}
+    />);
+
+    expect(screen.getByLabelText("Reply draft")).toBe(editor);
+    expect(editor).toHaveValue("Ronnie local wording");
+    expect(editor).toHaveFocus();
+    expect(editor.scrollTop).toBe(42);
+    expect(screen.getByText("Server state changed. Your edit is preserved.")).toBeInTheDocument();
+  });
 });
