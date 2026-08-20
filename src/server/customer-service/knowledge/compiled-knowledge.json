@@ -2,8 +2,8 @@
   "knowledgeVersion": "894aa90cd6e228d303bfb55fd15de5e7525014432e47786bf85e3921a6705b92",
   "metadata": {
     "buildVersion": "1",
-    "sourceCommit": "f9c17183eb220e117045d458594515ac7bcdac05",
-    "compiledAt": "2026-08-20T02:54:03.508Z",
+    "sourceCommit": "15c5d55fd3430d439108f36b2a6eafb91b9aa22f",
+    "compiledAt": "2026-08-20T03:05:44.817Z",
     "sourceChecksum": "24a8af5368043e8b4f296f4cbce295f21912609661cd57fafcc4bc121c608536",
     "sourceCounts": {
       "policyRules": 58,

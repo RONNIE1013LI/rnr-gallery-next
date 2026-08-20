@@ -25,9 +25,9 @@ Prices and other mutable operational values remain `REALTIME_REQUIRED` regardles
 | Check | Result |
 | --- | --- |
 | Knowledge compiler and check | PASS |
-| Customer Service focused/full tests | PASS — 734/734 |
+| Customer Service focused/full tests | PASS — 783/783, 0 skipped |
 | Independent DB migrations | PASS — additive migrations applied |
-| Customer Service DB suites | PASS — 87/87, 0 skipped |
+| Customer Service DB suites | PASS — 83/83, 0 skipped |
 | Phase 3.5 conversation evaluation | PASS — context 100%, short replies 100%, leakage 0, bypass 0 |
 | Phase 3.6 learning evaluation | PASS — retrieval precision 100%, irrelevant injection 0, leakage 0, bypass 0, auto-send 0 |
 | TypeScript | PASS |
@@ -36,8 +36,8 @@ Prices and other mutable operational values remain `REALTIME_REQUIRED` regardles
 | Security/secret scan | PASS |
 | No-send regression | PASS |
 | Real 100-case OpenAI evaluation | FAIL — both Preview and Production configured keys returned HTTP 401 before token use |
-| Preview `/reply-assistant` | Pending deployment validation |
-| 390px UI | Pending Preview validation |
+| Preview `/reply-assistant` | PASS — Ready deployment `dpl_73J4Ut9sfRn9LCWbtEG5EzxvvsYE`; unauthenticated request redirects to sign-in |
+| 390px UI | PARTIAL — sign-in/authorization boundary has no horizontal overflow; authenticated assistant UI still requires a signed-in Preview admin/staff session |
 
 ## OpenAI Evaluation Evidence
 
@@ -55,3 +55,5 @@ No OpenAI credential was logged, committed, persisted in the report, or copied i
 ## Blocking Condition
 
 A valid server-side Staging/Preview `OPENAI_API_KEY` is required before the unchanged real 100-case evaluation can measure quality or allow Staging READY. No Production configuration was modified.
+
+Preview: `https://rnr-gallery-staging-g2ycx8836-rrg-allery.vercel.app`
