@@ -2,7 +2,7 @@ import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { compileCustomerServiceKnowledge } from "./compile-customer-service-knowledge";
+import { compileCustomerServiceKnowledge, resolveSourceCommit } from "./compile-customer-service-knowledge";
 
 const sourceDir = join(process.cwd(), "customer-service-knowledge");
 
@@ -13,6 +13,13 @@ function copyKnowledge() {
 }
 
 describe("customer service knowledge compiler", () => {
+  it("uses Vercel's source commit when the build has no git directory", () => {
+    const gitFallback = () => { throw new Error("git unavailable"); };
+
+    expect(resolveSourceCommit({ VERCEL_GIT_COMMIT_SHA: "vercel-commit-123" }, gitFallback)).toBe(
+      "vercel-commit-123",
+    );
+  });
   it("normalizes policy evidence, risk and realtime dimensions", () => {
     const result = compileCustomerServiceKnowledge(sourceDir);
 

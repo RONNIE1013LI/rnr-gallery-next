@@ -397,10 +397,15 @@ export function compileCustomerServiceKnowledge(
   return Object.freeze({ knowledgeVersion, metadata, ...payload });
 }
 
-function currentSourceCommit() {
-  const configured = process.env.CUSTOMER_SERVICE_KNOWLEDGE_SOURCE_COMMIT?.trim();
+export function resolveSourceCommit(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+  gitFallback: () => string = () => execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+) {
+  const configured = env.CUSTOMER_SERVICE_KNOWLEDGE_SOURCE_COMMIT?.trim();
   if (configured) return configured;
-  return execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim();
+  const vercelCommit = env.VERCEL_GIT_COMMIT_SHA?.trim();
+  if (vercelCommit) return vercelCommit;
+  return gitFallback();
 }
 
 function runCli() {
@@ -425,7 +430,7 @@ function runCli() {
     return;
   }
   const output = `${JSON.stringify(compileCustomerServiceKnowledge(sourceDir, {
-    sourceCommit: currentSourceCommit(),
+    sourceCommit: resolveSourceCommit(process.env),
     compiledAt: process.env.CUSTOMER_SERVICE_KNOWLEDGE_COMPILED_AT?.trim() || new Date().toISOString(),
   }), null, 2)}\n`;
   mkdirSync(dirname(outputPath), { recursive: true });
