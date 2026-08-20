@@ -22,6 +22,7 @@ describe("AdminShell", () => {
       ["Products", "/admin/products"],
       ["Design Gallery", "/admin/design-gallery"],
       ["Content", "/admin/content"],
+      ["Customer Reviews", "/admin/customer-reviews"],
       ["Media", "/admin/media"],
       ["Shipping", "/admin/settings/shipping"],
       ["Payment", "/admin/settings/payment"],

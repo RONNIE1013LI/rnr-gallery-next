@@ -52,4 +52,15 @@ describe("EmployeeAccessFields", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "Only assigned Forms jobs" }));
     expect(screen.getByRole("checkbox", { name: "Only assigned Forms jobs" })).toBeChecked();
   });
+
+  it("shows independent customer review management and publishing permissions", () => {
+    render(<PermissionEditor />);
+
+    expect(screen.getByRole("checkbox", { name: "Manage customer reviews" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Publish customer reviews" }));
+
+    expect(screen.getByRole("checkbox", { name: "Publish customer reviews" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Manage customer reviews" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Administration dashboard" })).toBeChecked();
+  });
 });

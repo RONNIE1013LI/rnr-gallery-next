@@ -6,6 +6,7 @@ import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service"
 import { selectHomepageGalleryItems } from "./homepage-gallery";
 import { HomepageV3 } from "./homepage-v3";
 import { homepageV3ImageSlots } from "./homepage-v3-images";
+import { featuredReview, secondReview } from "./customer-reviews/test-fixtures";
 
 function galleryItem(
   id: string,
@@ -28,6 +29,24 @@ function galleryItem(
 }
 
 describe("HomepageV3", () => {
+  it("replaces the hard-coded story with the managed review section", () => {
+    render(<HomepageV3 registry={defaultProductRegistry} reviewSection={{
+      summary: null,
+      featured: featuredReview,
+      reviews: [secondReview],
+    }} />);
+
+    expect(screen.getByRole("region", { name: "Customer reviews" })).toBeInTheDocument();
+    expect(screen.queryByText(/For the past three years, Mum/)).not.toBeInTheDocument();
+  });
+
+  it("omits the review area entirely when no approved reviews exist", () => {
+    render(<HomepageV3 registry={defaultProductRegistry} reviewSection={null} />);
+
+    expect(screen.queryByRole("region", { name: "Customer reviews" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/For the past three years, Mum/)).not.toBeInTheDocument();
+  });
+
   it("publishes parseable LocalBusiness and WebSite structured data", () => {
     const { container } = render(<HomepageV3 registry={defaultProductRegistry} />);
     const localBusiness = container.querySelector("#rnr-local-business");
@@ -432,8 +451,12 @@ describe("HomepageV3", () => {
     expect(stylesheet).toMatch(
       /\.gallerySection\s*\{[^}]*position:\s*relative[^}]*z-index:\s*1[^}]*background:\s*var\(--v3-warm\)/,
     );
-    expect(stylesheet).toMatch(
-      /\.storySection\s*\{[^}]*position:\s*relative[^}]*z-index:\s*1/,
+    const reviewStyles = readFileSync(
+      "src/components/customer-reviews/customer-reviews.module.css",
+      "utf8",
+    );
+    expect(reviewStyles).toMatch(
+      /\.section\s*\{[^}]*position:\s*relative[^}]*z-index:\s*1/,
     );
   });
 
@@ -647,7 +670,6 @@ describe("HomepageV3", () => {
       "galleryMemorial",
       "galleryFamily",
       "galleryCultural",
-      "customerStoryImage",
     ]);
     expect(homepageV3ImageSlots.heroFinishedArtwork.src)
       .toBe("/media/home/homepage-hero-finished-artwork.webp");

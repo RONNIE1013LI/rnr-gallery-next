@@ -75,5 +75,4 @@ export const homepageV3ImageSlots = Object.freeze({
   galleryMemorial: slot("Memorial grave cover design"),
   galleryFamily: slot("Custom family canvas design"),
   galleryCultural: slot("Cultural celebration banner design"),
-  customerStoryImage: slot("Customer with their finished custom memorial canvas"),
 });

@@ -10,6 +10,8 @@ export const ADMIN_PERMISSION_KEYS = [
   "manage_gallery",
   "manage_content",
   "publish_content",
+  "manage_reviews",
+  "publish_reviews",
   "manage_prices",
   "manage_shipping",
   "manage_payment",

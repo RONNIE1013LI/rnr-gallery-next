@@ -18,6 +18,18 @@ describe("staff access profiles", () => {
     ]);
   });
 
+  it("normalizes review publishing to review management and Admin access", () => {
+    expect(normalizeStaffAccessProfile({
+      adminPermissions: ["publish_reviews"],
+      formPermissions: {},
+      assignedOnly: false,
+    }).adminPermissions).toEqual([
+      "access_admin",
+      "manage_reviews",
+      "publish_reviews",
+    ]);
+  });
+
   it("adds required form dependencies and fills unselected permissions with false", () => {
     expect(normalizeStaffAccessProfile({
       adminPermissions: [],
@@ -78,6 +90,8 @@ describe("staff access profiles", () => {
       "view_production_reports",
       "use_reply_assistant",
     ]);
+    expect(profile.adminPermissions).not.toContain("manage_reviews");
+    expect(profile.adminPermissions).not.toContain("publish_reviews");
     expect(profile.formPermissions).toMatchObject({
       access_forms: true,
       view_jobs: true,
