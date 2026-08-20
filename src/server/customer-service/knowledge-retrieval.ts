@@ -32,6 +32,15 @@ export type AnswerQualityGuide = Readonly<{
 
 type RetrievalKnowledge = PolicyKnowledge & Readonly<{
   replyExamples: readonly ReplyExample[];
+  historicalExamples: readonly Readonly<{
+    id: string;
+    intent: string;
+    status: string;
+    customerQuestion: string;
+    approvedAnswer: string;
+    policyReferences: readonly string[];
+    provenance: string;
+  }>[];
   goldenReplies: readonly GoldenReply[];
   qualityGuides: Readonly<Record<string, AnswerQualityGuide>>;
 }>;
@@ -57,7 +66,20 @@ export function retrieveKnowledge({
     && !rule.highRisk
     && rule.mayAnswerAutomatically
   ));
-  const matching = knowledge.replyExamples.filter((example) => example.intent === gate.intent);
+  const matching = knowledge.historicalExamples
+    .filter((example) => (
+      example.status === "APPROVED_REUSABLE"
+      && example.intent === gate.intent
+      && example.policyReferences.every((id) => rules.some((rule) => rule.id === id))
+      && validateDraft(example.approvedAnswer, { intent: gate.intent }).ok
+    ))
+    .map((example) => ({
+      intent: example.intent,
+      customer: example.customerQuestion,
+      reply: example.approvedAnswer,
+      risk: "approved_reusable",
+      provenance: example.provenance,
+    }));
   const goldenExamples = knowledge.goldenReplies.filter((example) => (
     example.intent === gate.intent
     && validateDraft(example.approvedAnswer, { intent: gate.intent }).ok

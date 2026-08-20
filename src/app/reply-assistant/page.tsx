@@ -9,6 +9,7 @@ import styles from "./reply-assistant.module.css";
 import { LearningCandidateReview } from "./learning-candidate-review";
 import { CaseMemoryReview } from "./case-memory-review";
 import { learningMetricCards, pilotMetricCards } from "./metric-cards";
+import { KnowledgeProvenance } from "./knowledge-provenance";
 
 export const metadata = { title: "Reply Assistant | R&R Gallery" };
 
@@ -88,6 +89,10 @@ export default async function ReplyAssistantPage() {
   return (
     <section className={styles.page}>
       <header><div><p>Customer Service Pilot</p><h1>Reply Assistant</h1></div><strong data-enabled={config.enabled}>{config.enabled ? "Pilot enabled" : "Disabled"}</strong></header>
+      <KnowledgeProvenance
+        knowledgeVersion={compiledKnowledge.knowledgeVersion}
+        metadata={compiledKnowledge.metadata}
+      />
       <div className={styles.metrics}>{cards.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
       <LearningCandidateReview
         candidates={learningCandidates.items}

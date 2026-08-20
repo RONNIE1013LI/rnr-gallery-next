@@ -31,6 +31,21 @@
 
 .page > header > strong[data-enabled="true"] { color: #246334; }
 
+.knowledgeProvenance {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid #d7d7dc;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.knowledgeProvenance div { min-width: 0; }
+.knowledgeProvenance dt { color: #62636a; font-size: 11px; }
+.knowledgeProvenance dd { overflow-wrap: anywhere; margin: 4px 0 0; font-size: 13px; font-weight: 700; }
+
 .metrics {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
@@ -92,6 +107,7 @@
 .learningControls button { min-height: 36px; padding: 7px 11px; border: 1px solid #bdbdc4; border-radius: 6px; background: #fff; }
 
 @media (max-width: 420px) {
+  .knowledgeProvenance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .learning { padding: 12px; }
   .learningControls button { flex: 1 1 120px; }

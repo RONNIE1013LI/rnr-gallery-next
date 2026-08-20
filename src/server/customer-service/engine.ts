@@ -22,6 +22,15 @@ type EngineKnowledge = PolicyKnowledge & Readonly<{
     risk: string;
     provenance: string;
   }>[];
+  historicalExamples: readonly Readonly<{
+    id: string;
+    intent: string;
+    status: string;
+    customerQuestion: string;
+    approvedAnswer: string;
+    policyReferences: readonly string[];
+    provenance: string;
+  }>[];
   goldenReplies: readonly Readonly<{
     intent: string;
     customerQuestion: string;
