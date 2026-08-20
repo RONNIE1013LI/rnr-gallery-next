@@ -20,6 +20,12 @@ describe("customer service knowledge compiler", () => {
       "vercel-commit-123",
     );
   });
+
+  it("uses the checked artifact commit when CLI deployment has no git metadata", () => {
+    const gitFallback = () => { throw new Error("git unavailable"); };
+
+    expect(resolveSourceCommit({}, gitFallback, "artifact-commit-456")).toBe("artifact-commit-456");
+  });
   it("normalizes policy evidence, risk and realtime dimensions", () => {
     const result = compileCustomerServiceKnowledge(sourceDir);
 

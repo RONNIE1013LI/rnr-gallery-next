@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -400,12 +400,18 @@ export function compileCustomerServiceKnowledge(
 export function resolveSourceCommit(
   env: NodeJS.ProcessEnv | Record<string, string | undefined>,
   gitFallback: () => string = () => execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+  artifactFallback?: string,
 ) {
   const configured = env.CUSTOMER_SERVICE_KNOWLEDGE_SOURCE_COMMIT?.trim();
   if (configured) return configured;
   const vercelCommit = env.VERCEL_GIT_COMMIT_SHA?.trim();
   if (vercelCommit) return vercelCommit;
-  return gitFallback();
+  try {
+    return gitFallback();
+  } catch (error) {
+    if (artifactFallback?.trim()) return artifactFallback.trim();
+    throw error;
+  }
 }
 
 function runCli() {
@@ -429,8 +435,11 @@ function runCli() {
     }
     return;
   }
+  const existingSourceCommit = existsSync(outputPath)
+    ? (JSON.parse(readFileSync(outputPath, "utf8")) as CompiledCustomerServiceKnowledge).metadata.sourceCommit
+    : undefined;
   const output = `${JSON.stringify(compileCustomerServiceKnowledge(sourceDir, {
-    sourceCommit: resolveSourceCommit(process.env),
+    sourceCommit: resolveSourceCommit(process.env, undefined, existingSourceCommit),
     compiledAt: process.env.CUSTOMER_SERVICE_KNOWLEDGE_COMPILED_AT?.trim() || new Date().toISOString(),
   }), null, 2)}\n`;
   mkdirSync(dirname(outputPath), { recursive: true });
