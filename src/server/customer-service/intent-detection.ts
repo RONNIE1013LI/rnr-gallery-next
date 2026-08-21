@@ -34,7 +34,7 @@ export function detectIntent(message: string): CustomerServiceIntent {
   if (/deposit|payment process|how.*payment|pay partly|part payment|split payment|weekly payment|afterpay|\bzip\b/.test(value)) {
     return "payment_process";
   }
-  if (/design process|design work|how.*design|what happens.*design|theme|background idea|wording/.test(value)) {
+  if (/design process|design work|how.*design|what happens.*design|(?:see|review).*(?:design )?draft|(?:design )?draft.*before print|theme|background idea|wording/.test(value)) {
     return "design_process";
   }
   if (/production process|production steps|how.*(?:made|produced)|what happens after.*(?:photo|detail)|production workflow/.test(value)) {
