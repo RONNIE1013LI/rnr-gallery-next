@@ -140,9 +140,8 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     setOpen(false);
   }
 
-  async function send(message = draft.trim(), retry = pendingMessage) {
-    if (!message || sending) return;
-    const current = retry ?? { clientMessageKey: clientMessageKey(), message };
+  async function sendMessage(current: PendingMessage) {
+    if (sending) return;
     setSending(true);
     setFeedback("");
     try {
@@ -177,6 +176,20 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     }
   }
 
+  function submitDraft() {
+    const message = draft.trim();
+    if (!message || sending) return;
+    if (pendingMessage?.message === message) {
+      setFeedback("Use Retry message to resend the unchanged message.");
+      return;
+    }
+    void sendMessage({ clientMessageKey: clientMessageKey(), message });
+  }
+
+  const retryMessage = pendingMessage && pendingMessage.message === draft.trim()
+    ? pendingMessage
+    : null;
+
   return (
     <div className={styles.root}>
       {open ? (
@@ -202,7 +215,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
           <p id="customer-chat-status" className={styles.status} aria-live="polite">{feedback}</p>
           <form className={styles.composer} onSubmit={(event) => {
             event.preventDefault();
-            void send();
+            submitDraft();
           }}>
             <label className={styles.composerLabel}>
               <span>Message R&R Gallery</span>
@@ -216,14 +229,14 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
                 onKeyDown={(event) => {
                   if (event.key === "Enter" && !event.shiftKey) {
                     event.preventDefault();
-                    void send();
+                    submitDraft();
                   }
                 }}
               />
             </label>
-            <button type="submit" className={styles.sendButton} aria-label="Send message" title="Send message" disabled={sending || !draft.trim()}><FaArrowUp aria-hidden="true" /></button>
+            <button type="submit" className={styles.sendButton} aria-label="Send message" title="Send message" disabled={sending || !draft.trim() || retryMessage !== null}><FaArrowUp aria-hidden="true" /></button>
           </form>
-          {pendingMessage ? <button type="button" className={styles.retryButton} onClick={() => void send(pendingMessage.message, pendingMessage)} disabled={sending}>Retry message</button> : null}
+          {retryMessage ? <button type="button" className={styles.retryButton} onClick={() => void sendMessage(retryMessage)} disabled={sending}>Retry message</button> : null}
           <div className={styles.liveRegion} data-testid="customer-chat-live-region" aria-live="polite" aria-atomic="true">{announcement}</div>
         </section>
       ) : null}

@@ -42,7 +42,9 @@ export function SiteChrome({
     || pathname === "/orders" || pathname.startsWith("/orders/")
     || pathname === "/proof" || pathname.startsWith("/proof/")
     || pathname === "/proofs" || pathname.startsWith("/proofs/")
-    || pathname === "/privacy" || pathname.startsWith("/privacy/");
+    || pathname === "/privacy" || pathname.startsWith("/privacy/")
+    || pathname === "/privacy-policy" || pathname.startsWith("/privacy-policy/")
+    || pathname === "/pay" || pathname.startsWith("/pay/");
   const market: Market = pathname === "/au" || pathname.startsWith("/au/")
     ? "AU"
     : initialMarket;

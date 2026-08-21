@@ -57,16 +57,24 @@ describe("CustomerChat", () => {
     expect(launcher).toHaveFocus();
   });
 
-  it("sends on Enter and lets Shift+Enter keep the multiline draft", async () => {
+  it("sends on Enter and lets Shift+Enter add a newline without preventing the textarea default", async () => {
     const fetchMock = vi.mocked(fetch);
     render(<CustomerChat />);
     openChat();
     const input = await screen.findByLabelText("Message R&R Gallery");
 
     fireEvent.change(input, { target: { value: "First line" } });
-    expect(fireEvent.keyDown(input, { key: "Enter", shiftKey: true })).toBe(true);
+    const shiftEnter = new KeyboardEvent("keydown", {
+      key: "Enter",
+      shiftKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+    fireEvent(input, shiftEnter);
+    expect(shiftEnter.defaultPrevented).toBe(false);
+    fireEvent.change(input, { target: { value: "First line\nSecond line" } });
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    expect(input).toHaveValue("First line");
+    expect(input).toHaveValue("First line\nSecond line");
 
     fireEvent.keyDown(input, { key: "Enter" });
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
@@ -74,12 +82,12 @@ describe("CustomerChat", () => {
     expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "POST" });
     expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
       clientMessageKey: expect.stringMatching(/^[A-Za-z0-9_-]{22,64}$/),
-      message: "First line",
+      message: "First line\nSecond line",
       pageContext: { pathname: "/" },
     });
   });
 
-  it("keeps a network-failed draft and retries with the same idempotency key", async () => {
+  it("keeps an unchanged network-failed draft retry-only and reuses its idempotency key on explicit retry", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(updates())
       .mockRejectedValueOnce(new Error("offline"))
@@ -94,6 +102,11 @@ describe("CustomerChat", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     expect(await screen.findByText("Message not sent. Try again.")).toHaveAttribute("aria-live", "polite");
     expect(input).toHaveValue("Can you help with a canvas?");
+    expect(screen.getByRole("button", { name: "Send message" })).toBeDisabled();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByText("Use Retry message to resend the unchanged message.")).toHaveAttribute("aria-live", "polite");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
 
     fireEvent.click(screen.getByRole("button", { name: "Retry message" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
@@ -101,6 +114,34 @@ describe("CustomerChat", () => {
     const retriedPost = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
     expect(retriedPost).toEqual(firstPost);
     expect(input).toHaveValue("");
+  });
+
+  it("sends an edited failed draft as a new message and clears only that accepted visible draft", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(accepted());
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    const input = screen.getByLabelText("Message R&R Gallery");
+    await act(async () => {});
+
+    fireEvent.change(input, { target: { value: "Original message" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await screen.findByText("Message not sent. Try again.");
+    const failedPost = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+
+    fireEvent.change(input, { target: { value: "Edited visible message" } });
+    expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "Retry message" })).not.toBeInTheDocument();
+    fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    const editedPost = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
+    expect(editedPost).toMatchObject({ message: "Edited visible message", pageContext: { pathname: "/" } });
+    expect(editedPost.clientMessageKey).not.toBe(failedPost.clientMessageKey);
+    expect(input).toHaveValue("");
+    expect(screen.queryByRole("button", { name: "Retry message" })).not.toBeInTheDocument();
   });
 
   it("renders a rate limit response without exposing server details or discarding the draft", async () => {

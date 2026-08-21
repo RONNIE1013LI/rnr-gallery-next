@@ -105,11 +105,26 @@ describe("SiteChrome", () => {
     "/orders/order-1",
     "/proofs/proof-1",
     "/privacy",
+    "/privacy-policy",
+    "/privacy-policy/subpage",
+    "/pay/secure-token",
+    "/pay/secure-token/return",
   ])("never mounts customer chat on excluded route %s", (pathname) => {
     state.pathname = pathname;
     render(<SiteChrome customerChatEnabled footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}><main>Restricted page</main></SiteChrome>);
     expect(screen.queryByRole("button", { name: "Chat with R&R Gallery" })).not.toBeInTheDocument();
   });
+
+  it.each(["/privacy-policy", "/pay/secure-token"]) (
+    "keeps storefront chrome while excluding customer chat from %s",
+    (pathname) => {
+      state.pathname = pathname;
+      render(<SiteChrome customerChatEnabled footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}><main>Protected public page</main></SiteChrome>);
+      expect(screen.getByText("Public header")).toBeInTheDocument();
+      expect(screen.getByText("Public footer")).toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Chat with R&R Gallery" })).not.toBeInTheDocument();
+    },
+  );
 
   it("removes storefront header, footer and image protection from Admin", () => {
     state.pathname = "/admin/orders";
