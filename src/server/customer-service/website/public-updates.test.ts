@@ -15,6 +15,7 @@ function record(input: Partial<WebsitePublicUpdateRecord> = {}): WebsitePublicUp
     role: "customer",
     text: "I need a quote for a banner.",
     createdAt: timestamp,
+    orderingKey: "2026-08-21T00:00:00.000123Z",
     state: "pending",
     ...input,
   };
@@ -70,7 +71,7 @@ describe("website public updates", () => {
     expect(calls[1]).toMatchObject({
       conversationId,
       after: {
-        createdAt: timestamp,
+        orderingKey: "2026-08-21T00:00:00.000123Z",
         source: "event",
         id: "00000000-0000-4000-8000-000000000010",
       },

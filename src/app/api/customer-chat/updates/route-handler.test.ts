@@ -70,6 +70,7 @@ describe("GET /api/customer-chat/updates", () => {
             role: "assistant" as const,
             text: "Please share the product and required date.",
             createdAt: now,
+            orderingKey: "2026-08-21T00:00:00.000000Z",
             state: "committed_assistant" as const,
           }];
         },

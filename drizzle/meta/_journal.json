@@ -337,6 +337,13 @@
       "when": 1787310951745,
       "tag": "0047_slim_morlun",
       "breakpoints": true
+    },
+    {
+      "idx": 48,
+      "version": "7",
+      "when": 1787312449790,
+      "tag": "0048_empty_bloodaxe",
+      "breakpoints": true
     }
   ]
 }

@@ -220,6 +220,9 @@ export const customerServiceConversationEvents = pgTable(
       .on(table.conversationId, table.receivedAt, table.createdAt),
     index("customer_service_conversation_events_conversation_created_idx")
       .on(table.conversationId, table.createdAt, table.id),
+    index("customer_service_website_public_events_keyset_idx")
+      .on(table.conversationId, table.createdAt, table.id)
+      .where(sql`${table.channel} = 'website' and (${table.eventType} = 'customer_message' or (${table.eventType} = 'human_outbound' and ${table.role} = 'staff'))`),
     index("customer_service_conversation_events_turn_idx").on(table.turnId),
     unique("customer_service_conversation_events_id_conversation_unique").on(table.id, table.conversationId),
     check("customer_service_conversation_events_channel_valid", sql`${table.channel} in ('facebook', 'website')`),

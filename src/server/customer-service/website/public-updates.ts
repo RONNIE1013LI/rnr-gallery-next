@@ -21,7 +21,7 @@ export type WebsitePublicUpdateState =
   | "recovery";
 
 export type WebsitePublicUpdateCursor = Readonly<{
-  createdAt: Date;
+  orderingKey: string;
   source: WebsitePublicUpdateSource;
   id: string;
 }>;
@@ -32,6 +32,7 @@ export type WebsitePublicUpdateRecord = Readonly<{
   role: "customer" | "assistant" | "staff";
   text: string;
   createdAt: Date;
+  orderingKey: string;
   state: WebsitePublicUpdateState;
 }>;
 
@@ -41,7 +42,7 @@ type CursorPayload = Readonly<{
   version: 1;
   conversationId: string;
   sessionKeyHash: string;
-  createdAt: string;
+  orderingKey: string;
   source: WebsitePublicUpdateSource;
   id: string;
 }>;
@@ -76,8 +77,8 @@ function validCursorPayload(value: unknown): value is CursorPayload {
     && typeof payload.conversationId === "string"
     && typeof payload.sessionKeyHash === "string"
     && /^[a-f0-9]{64}$/.test(payload.sessionKeyHash)
-    && typeof payload.createdAt === "string"
-    && Number.isFinite(Date.parse(payload.createdAt))
+    && typeof payload.orderingKey === "string"
+    && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/.test(payload.orderingKey)
     && (payload.source === "event" || payload.source === "assistant")
     && typeof payload.id === "string";
 }
@@ -94,7 +95,7 @@ function encodeCursor(input: Readonly<{
     version: 1,
     conversationId: input.conversationId,
     sessionKeyHash: input.sessionKeyHash,
-    createdAt: input.cursor.createdAt.toISOString(),
+    orderingKey: input.cursor.orderingKey,
     source: input.cursor.source,
     id: input.cursor.id,
   } satisfies CursorPayload));
@@ -135,12 +136,11 @@ function decodeCursor(input: Readonly<{
   if (payload.conversationId !== input.conversationId || payload.sessionKeyHash !== input.sessionKeyHash) {
     invalidCursor();
   }
-  return Object.freeze({ createdAt: new Date(payload.createdAt), source: payload.source, id: payload.id });
+  return Object.freeze({ orderingKey: payload.orderingKey, source: payload.source, id: payload.id });
 }
 
 function compareRecords(left: WebsitePublicUpdateRecord, right: WebsitePublicUpdateRecord) {
-  const time = left.createdAt.getTime() - right.createdAt.getTime();
-  if (time) return time;
+  if (left.orderingKey !== right.orderingKey) return left.orderingKey < right.orderingKey ? -1 : 1;
   const source = SOURCE_ORDER[left.source] - SOURCE_ORDER[right.source];
   if (source) return source;
   return left.id.localeCompare(right.id);
@@ -180,7 +180,7 @@ export function createWebsitePublicUpdatesReader(input: Readonly<{
           secret: input.cursorSecret,
           conversationId: request.conversationId,
           sessionKeyHash: request.sessionKeyHash,
-          cursor: { createdAt: last.createdAt, source: last.source, id: last.id },
+          cursor: { orderingKey: last.orderingKey, source: last.source, id: last.id },
         }) : request.cursor,
         hasMore: records.length > request.limit,
         events: page.map((record) => Object.freeze({

@@ -99,13 +99,14 @@ function websitePublicUpdateAfter(
   after: WebsitePublicUpdateCursor | null,
 ) {
   if (!after) return undefined;
+  const orderingTimestamp = sql`${after.orderingKey}::timestamptz`;
   const sourceOrder = source === "event" ? 0 : 1;
   const afterSourceOrder = after.source === "event" ? 0 : 1;
-  if (sourceOrder < afterSourceOrder) return gt(createdAt, after.createdAt);
-  if (sourceOrder > afterSourceOrder) return or(gt(createdAt, after.createdAt), eq(createdAt, after.createdAt));
+  if (sourceOrder < afterSourceOrder) return gt(createdAt, orderingTimestamp);
+  if (sourceOrder > afterSourceOrder) return or(gt(createdAt, orderingTimestamp), eq(createdAt, orderingTimestamp));
   return or(
-    gt(createdAt, after.createdAt),
-    and(eq(createdAt, after.createdAt), gt(id, after.id)),
+    gt(createdAt, orderingTimestamp),
+    and(eq(createdAt, orderingTimestamp), gt(id, after.id)),
   );
 }
 
@@ -719,6 +720,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         eventType: customerServiceConversationEvents.eventType,
         body: customerServiceConversationEvents.body,
         createdAt: customerServiceConversationEvents.createdAt,
+        orderingKey: sql<string>`to_char(${customerServiceConversationEvents.createdAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
         processingAttempts: customerServiceTurns.processingAttempts,
       }).from(customerServiceConversationEvents)
         .leftJoin(customerServiceTurns, eq(customerServiceTurns.id, customerServiceConversationEvents.turnId))
@@ -746,6 +748,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         kind: customerServiceWebsiteAssistantMessages.kind,
         body: customerServiceWebsiteAssistantMessages.body,
         createdAt: customerServiceWebsiteAssistantMessages.publishedAt,
+        orderingKey: sql<string>`to_char(${customerServiceWebsiteAssistantMessages.publishedAt} at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"')`,
       }).from(customerServiceWebsiteAssistantMessages)
         .where(and(
           eq(customerServiceWebsiteAssistantMessages.conversationId, input.conversationId),
@@ -765,19 +768,20 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         role: event.role === "staff" ? "staff" : "customer",
         text: event.body,
         createdAt: event.createdAt,
+        orderingKey: event.orderingKey,
         state: event.eventType === "human_outbound"
           ? "human_outbound"
-          : (event.processingAttempts ?? 0) > 0 ? "recovery" : "pending",
+          : (event.processingAttempts ?? 0) > 1 ? "recovery" : "pending",
       })), ...assistantMessages.map((message): WebsitePublicUpdateRecord => ({
         source: "assistant",
         id: message.id,
         role: "assistant",
         text: message.body,
         createdAt: message.createdAt,
+        orderingKey: message.orderingKey,
         state: message.kind === "validated_ai" ? "committed_assistant" : "review",
       }))].sort((left, right) => {
-        const timestamp = left.createdAt.getTime() - right.createdAt.getTime();
-        if (timestamp) return timestamp;
+        if (left.orderingKey !== right.orderingKey) return left.orderingKey < right.orderingKey ? -1 : 1;
         const source = (left.source === "event" ? 0 : 1) - (right.source === "event" ? 0 : 1);
         if (source) return source;
         return left.id.localeCompare(right.id);
