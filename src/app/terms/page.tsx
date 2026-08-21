@@ -11,7 +11,7 @@ export default function TermsPage() {
     <main id="main-content" className={styles.legalPage}>
       <article>
         <h1>Terms of service</h1>
-        <p>Last updated: 2 August 2026</p>
+        <p>Last updated: 21 August 2026</p>
         <nav className={styles.legalToc} aria-label="Terms contents">
           <strong>On this page</strong>
           <ul>
@@ -50,9 +50,20 @@ export default function TermsPage() {
         <p>Estimated delivery times after production are:</p>
         <p>
           <strong>New Zealand:</strong> 2–3 business days
-          <br />
-          <strong>Australia (Standard Delivery):</strong> approximately 5 business
-          days
+        </p>
+        <p>
+          <strong>Australia:</strong> If you live in a major city on the east coast,
+          DHL usually takes around 2 days for delivery, excluding the production
+          time. The shipping cost is higher, but it is much faster.
+        </p>
+        <p>
+          Standard delivery is more affordable and usually takes around 7–10 days.
+        </p>
+        <p>
+          However, if you live in an area far from a major city, there may not be
+          much difference between the two shipping options, as both can take around
+          two weeks to arrive. This is because deliveries to remote areas usually
+          require additional local transit time.
         </p>
         <p>
           If your order is <strong>urgent</strong>, please make sure to clearly let
