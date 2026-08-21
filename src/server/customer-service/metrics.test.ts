@@ -12,6 +12,7 @@ describe("reply assistant pilot metrics", () => {
       humanReviewsOpened: 3,
       humanReviewsResolved: 2,
       alertsQueued: 3,
+      alertsDeduplicated: 2,
       alertsSent: 1,
       alertsFailed: 1,
       websiteHumanReplies: 2,
@@ -25,7 +26,7 @@ describe("reply assistant pilot metrics", () => {
       totalLatencyMs: 2_100,
       publicUpdates: 8,
       totalPublicUpdateLatencyMs: 4_000,
-      crossSessionIsolationViolations: 0,
+      crossSessionIsolation: "test_only_invariant",
       automaticBusinessActions: 0,
       automaticSends: 0,
     });

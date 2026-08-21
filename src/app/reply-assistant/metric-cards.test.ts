@@ -12,6 +12,7 @@ describe("Reply Assistant channel metric cards", () => {
       humanReviewsOpened: 3,
       humanReviewsResolved: 2,
       alertsQueued: 3,
+      alertsDeduplicated: 2,
       alertsSent: 2,
       alertsFailed: 1,
       websiteHumanReplies: 2,
@@ -25,7 +26,7 @@ describe("Reply Assistant channel metric cards", () => {
       totalLatencyMs: 2_100,
       publicUpdates: 8,
       totalPublicUpdateLatencyMs: 4_000,
-      crossSessionIsolationViolations: 0,
+      crossSessionIsolation: "test_only_invariant",
       automaticBusinessActions: 0,
       automaticSends: 0,
     });
@@ -35,9 +36,11 @@ describe("Reply Assistant channel metric cards", () => {
       ["Direct template replies", 6],
       ["No reply", 1],
       ["Human reviews", 3],
+      ["Alerts deduplicated", 2],
       ["Provider tokens", "700 in / 70 cached / 140 out"],
       ["Automatic business actions", 0],
       ["Automatic sends", 0],
+      ["Cross-session isolation", "Invariant / test-only"],
     ]));
   });
 });

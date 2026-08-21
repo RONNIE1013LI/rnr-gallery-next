@@ -84,6 +84,7 @@ const WEBSITE_RATE_LIMITS = Object.freeze({
   networkHour: 60,
 });
 const WEBSITE_CHAT_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
+const WEBSITE_RATE_BUCKET_MAX_MS = 24 * 60 * 60 * 1_000;
 const RETENTION_REDACTION = "[expired website chat]";
 
 function channelMetricCountsSql(channel: "facebook" | "website") {
@@ -102,17 +103,38 @@ function channelMetricCountsSql(channel: "facebook" | "website") {
       then (select count(*) from customer_service_website_assistant_messages)
       else 0 end,
     'directTemplateReplies', case when ${channel} = 'website'
-      then (select count(*) from customer_service_website_assistant_messages where kind = 'validated_ai')
+      then (select count(*) from customer_service_turns turns
+        where turns.channel = 'website'
+          and turns.status <> 'open'
+          and turns.suppression_reason is distinct from 'completed_acknowledgement'
+          and exists (
+            select 1 from customer_service_website_assistant_messages replies
+            where replies.turn_id = turns.id and replies.kind = 'validated_ai'
+          ))
       else 0 end,
-    'noReply', (select count(*) from customer_service_ai_attempts attempts
-      join customer_service_messages messages on messages.id = attempts.message_id
-      where messages.channel = ${channel} and attempts.provider_error_code = 'website_no_reply_needed'),
+    'noReply', case when ${channel} = 'website'
+      then (select count(*) from customer_service_turns turns
+        where turns.channel = 'website'
+          and turns.status <> 'open'
+          and turns.suppression_reason is distinct from 'completed_acknowledgement'
+          and not exists (
+            select 1 from customer_service_website_assistant_messages replies
+            where replies.turn_id = turns.id and replies.kind = 'validated_ai'
+          )
+          and exists (
+            select 1 from customer_service_ai_attempts attempts
+            where attempts.message_id = turns.representative_message_id
+              and attempts.provider_error_code = 'website_no_reply_needed'
+          ))
+      else 0 end,
     'humanReviewsOpened', case when ${channel} = 'website'
       then (select count(*) from customer_service_human_reviews) else 0 end,
     'humanReviewsResolved', case when ${channel} = 'website'
       then (select count(*) from customer_service_human_reviews where status = 'resolved') else 0 end,
     'alertsQueued', case when ${channel} = 'website'
       then (select count(*) from customer_service_review_alert_outbox) else 0 end,
+    'alertsDeduplicated', case when ${channel} = 'website'
+      then (select coalesce(sum(deduplicated_count), 0) from customer_service_review_alert_outbox) else 0 end,
     'alertsSent', case when ${channel} = 'website'
       then (select count(*) from customer_service_review_alert_outbox where status = 'sent') else 0 end,
     'alertsFailed', case when ${channel} = 'website'
@@ -150,7 +172,6 @@ function channelMetricCountsSql(channel: "facebook" | "website") {
       from customer_service_website_assistant_messages published
       join customer_service_messages messages on messages.id = published.message_id
     ) else 0 end,
-    'crossSessionIsolationViolations', 0,
     'automaticBusinessActions', 0,
     'automaticSends', 0
   )`;
@@ -168,6 +189,7 @@ function parseChannelMetricCounts(value: unknown): ChannelMetricCounts {
     humanReviewsOpened: count("humanReviewsOpened"),
     humanReviewsResolved: count("humanReviewsResolved"),
     alertsQueued: count("alertsQueued"),
+    alertsDeduplicated: count("alertsDeduplicated"),
     alertsSent: count("alertsSent"),
     alertsFailed: count("alertsFailed"),
     websiteHumanReplies: count("websiteHumanReplies"),
@@ -181,7 +203,7 @@ function parseChannelMetricCounts(value: unknown): ChannelMetricCounts {
     totalLatencyMs: count("totalLatencyMs"),
     publicUpdates: count("publicUpdates"),
     totalPublicUpdateLatencyMs: count("totalPublicUpdateLatencyMs"),
-    crossSessionIsolationViolations: 0,
+    crossSessionIsolation: "test_only_invariant",
     automaticBusinessActions: 0,
     automaticSends: 0,
   });
@@ -257,6 +279,15 @@ async function consumeWebsiteRateLimits(
   const minute = startOfUtcMinute(now);
   const hour = startOfUtcHour(now);
   const sessionStartedAt = new Date(input.sessionExpiresAt.getTime() - 7 * 24 * 60 * 60 * 1_000);
+  const sessionWindowStartedAt = new Date(
+    sessionStartedAt.getTime()
+      + Math.floor((now.getTime() - sessionStartedAt.getTime()) / WEBSITE_RATE_BUCKET_MAX_MS)
+      * WEBSITE_RATE_BUCKET_MAX_MS,
+  );
+  const sessionWindowExpiresAt = new Date(Math.min(
+    sessionWindowStartedAt.getTime() + WEBSITE_RATE_BUCKET_MAX_MS,
+    input.sessionExpiresAt.getTime(),
+  ));
   const networkBuckets = [
     { kind: "network_hour" as const, key: input.networkKeyHash, window: hour, expiresAt: new Date(hour.getTime() + 3_600_000), limit: WEBSITE_RATE_LIMITS.networkHour },
     { kind: "network_minute" as const, key: input.networkKeyHash, window: minute, expiresAt: new Date(minute.getTime() + 60_000), limit: WEBSITE_RATE_LIMITS.networkMinute },
@@ -264,12 +295,16 @@ async function consumeWebsiteRateLimits(
   const sessionBuckets = [
     { kind: "session_hour" as const, key: input.sessionKeyHash, window: hour, expiresAt: new Date(hour.getTime() + 3_600_000), limit: WEBSITE_RATE_LIMITS.sessionHour },
     { kind: "session_minute" as const, key: input.sessionKeyHash, window: minute, expiresAt: new Date(minute.getTime() + 60_000), limit: WEBSITE_RATE_LIMITS.sessionMinute },
-    { kind: "session_total" as const, key: input.sessionKeyHash, window: sessionStartedAt, expiresAt: input.sessionExpiresAt, limit: WEBSITE_RATE_LIMITS.sessionTotal },
+    { kind: "session_total" as const, key: input.sessionKeyHash, window: sessionWindowStartedAt, expiresAt: sessionWindowExpiresAt, limit: WEBSITE_RATE_LIMITS.sessionTotal },
   ];
 
   const consume = async (buckets: typeof networkBuckets | typeof sessionBuckets) => {
     let allowed = true;
     for (const bucket of [...buckets].sort((left, right) => `${left.kind}:${left.key}`.localeCompare(`${right.kind}:${right.key}`))) {
+      if (
+        bucket.expiresAt <= bucket.window
+        || bucket.expiresAt.getTime() - bucket.window.getTime() > WEBSITE_RATE_BUCKET_MAX_MS
+      ) throw new Error("website_rate_limit_window_invalid");
       const result = await transaction.execute(sql`
         insert into ${customerServiceRateLimitBuckets} (
           bucket_kind, bucket_key_hash, window_started_at, expires_at, request_count
@@ -2082,6 +2117,13 @@ export function createDrizzleCustomerServiceRepository(
           }
           return created;
         })();
+
+        if (existing) {
+          await transaction.update(customerServiceReviewAlertOutbox).set({
+            deduplicatedCount: sql`${customerServiceReviewAlertOutbox.deduplicatedCount} + 1`,
+            updatedAt: input.now,
+          }).where(eq(customerServiceReviewAlertOutbox.humanReviewId, existing.id));
+        }
 
         await transaction.insert(customerServiceWebsiteAssistantMessages).values({
           conversationId: turn.conversationId,
@@ -4402,6 +4444,37 @@ export function createDrizzleCustomerServiceRepository(
           eq(customerServiceConversations.channel, "website"),
           isNull(customerServiceConversations.anonymizedAt),
           lte(customerServiceConversations.createdAt, cutoff),
+          sql`not exists (
+            select 1 from ${customerServiceHumanReviews} reviews
+            where reviews.conversation_id = ${customerServiceConversations.id}
+              and (reviews.status = 'open' or reviews.updated_at > ${cutoff})
+          )`,
+          sql`not exists (
+            select 1 from ${customerServiceRetentionHolds} holds
+            where holds.conversation_id = ${customerServiceConversations.id}
+              and holds.released_at is null
+              and (holds.expires_at is null or holds.expires_at > ${input.now})
+          )`,
+          sql`not exists (
+            select 1 from ${customerServiceMessages} messages
+            where messages.conversation_id = ${customerServiceConversations.id}
+              and messages.received_at > ${cutoff}
+          )`,
+          sql`not exists (
+            select 1 from ${customerServiceConversationEvents} events
+            where events.conversation_id = ${customerServiceConversations.id}
+              and events.received_at > ${cutoff}
+          )`,
+          sql`not exists (
+            select 1 from ${customerServiceWebsiteAssistantMessages} replies
+            where replies.conversation_id = ${customerServiceConversations.id}
+              and replies.published_at > ${cutoff}
+          )`,
+          sql`not exists (
+            select 1 from ${customerServiceTurns} turns
+            where turns.conversation_id = ${customerServiceConversations.id}
+              and turns.processing_status in ('pending', 'running')
+          )`,
         ))
         .orderBy(asc(customerServiceConversations.createdAt), asc(customerServiceConversations.id))
         .limit(input.limit);

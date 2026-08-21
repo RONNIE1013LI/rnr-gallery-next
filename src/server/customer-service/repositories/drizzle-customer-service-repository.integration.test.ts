@@ -530,6 +530,12 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       outcome: "realtime_required",
       now: new Date("2026-08-19T00:00:02.000Z"),
       knowledgeVersion: "knowledge-v1",
+      reviewAlert: {
+        reviewId: "00000000-0000-4000-8000-000000000801",
+        deepLinkTokenHash: "81".repeat(32),
+        deepLinkExpiresAt: new Date("2026-08-28T00:00:02.000Z"),
+        idempotencyKey: "review-alert:00000000-0000-4000-8000-000000000801",
+      },
     });
     expect(firstReview).toMatchObject({ status: "opened", generation: 1 });
     await repository.completeCustomerTurnProcessing({
@@ -571,6 +577,10 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
     expect(secondReview).toMatchObject({ status: "reused", generation: 1 });
     expect(secondReview).toMatchObject({ reviewId: (firstReview as { reviewId: string }).reviewId });
+    const alertDedupe = await database.execute(sql`
+      select deduplicated_count from customer_service_review_alert_outbox
+    `);
+    expect(alertDedupe.rows).toEqual([{ deduplicated_count: 1 }]);
     await repository.completeCustomerTurnProcessing({
       turnId: second.turnId,
       leaseToken: second.leaseToken,
@@ -3864,10 +3874,11 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     const minuteStart = new Date("2026-08-19T00:00:00.000Z");
     const hourStart = new Date("2026-08-19T00:00:00.000Z");
     const sessionStart = new Date(websiteSessionExpiresAt.getTime() - 7 * 24 * 60 * 60 * 1_000);
+    const sessionBucketExpiresAt = new Date(sessionStart.getTime() + 24 * 60 * 60 * 1_000);
     await database.insert(customerServiceRateLimitBuckets).values([
       { bucketKind: "session_minute", bucketKeyHash: sessionHash, windowStartedAt: minuteStart, expiresAt: new Date("2026-08-19T00:01:00.000Z"), requestCount: 4 },
       { bucketKind: "session_hour", bucketKeyHash: sessionHash, windowStartedAt: hourStart, expiresAt: new Date("2026-08-19T01:00:00.000Z"), requestCount: 29 },
-      { bucketKind: "session_total", bucketKeyHash: sessionHash, windowStartedAt: sessionStart, expiresAt: websiteSessionExpiresAt, requestCount: 99 },
+      { bucketKind: "session_total", bucketKeyHash: sessionHash, windowStartedAt: sessionStart, expiresAt: sessionBucketExpiresAt, requestCount: 99 },
       { bucketKind: "network_minute", bucketKeyHash: networkHash, windowStartedAt: minuteStart, expiresAt: new Date("2026-08-19T00:01:00.000Z"), requestCount: 9 },
       { bucketKind: "network_hour", bucketKeyHash: networkHash, windowStartedAt: hourStart, expiresAt: new Date("2026-08-19T01:00:00.000Z"), requestCount: 59 },
     ]);
@@ -3895,6 +3906,38 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     ]);
   });
 
+  it("keeps every rate bucket within 24 hours while preserving the seven-day website session", async () => {
+    const sessionHash = "05".repeat(32);
+    const result = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash,
+      networkHash: "06".repeat(32),
+      messageHash: "07".repeat(32),
+    }));
+    const [session] = await database.select().from(customerServiceWebSessions);
+    const [totalBucket] = await database.select().from(customerServiceRateLimitBuckets)
+      .where(eq(customerServiceRateLimitBuckets.bucketKind, "session_total"));
+
+    expect(result).toMatchObject({ status: "turn_pending" });
+    expect(session.expiresAt.getTime() - session.createdAt.getTime()).toBe(7 * 24 * 60 * 60 * 1_000);
+    expect(totalBucket.expiresAt.getTime() - totalBucket.windowStartedAt.getTime())
+      .toBeLessThanOrEqual(24 * 60 * 60 * 1_000);
+
+    await expect(database.insert(customerServiceRateLimitBuckets).values({
+      bucketKind: "session_total",
+      bucketKeyHash: "08".repeat(32),
+      windowStartedAt: new Date("2026-08-19T00:00:00.000Z"),
+      expiresAt: new Date("2026-08-20T00:00:00.000Z"),
+      requestCount: 1,
+    })).resolves.toBeDefined();
+    await expect(database.insert(customerServiceRateLimitBuckets).values({
+      bucketKind: "session_total",
+      bucketKeyHash: "09".repeat(32),
+      windowStartedAt: new Date("2026-08-19T00:00:00.000Z"),
+      expiresAt: new Date("2026-08-20T00:00:00.001Z"),
+      requestCount: 1,
+    })).rejects.toThrow();
+  });
+
   it.each([
     ["session_minute", 5],
     ["session_hour", 30],
@@ -3908,7 +3951,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     const hour = new Date("2026-08-19T00:00:00.000Z");
     const session = new Date(websiteSessionExpiresAt.getTime() - 7 * 24 * 60 * 60 * 1_000);
     const values = kind === "session_total"
-      ? { windowStartedAt: session, expiresAt: websiteSessionExpiresAt }
+      ? { windowStartedAt: session, expiresAt: new Date(session.getTime() + 24 * 60 * 60 * 1_000) }
       : kind.endsWith("minute")
         ? { windowStartedAt: minute, expiresAt: new Date("2026-08-19T00:01:00.000Z") }
         : { windowStartedAt: hour, expiresAt: new Date("2026-08-19T01:00:00.000Z") };
@@ -8154,7 +8197,10 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   it("reports channel-filtered Website metrics without counting Facebook work as Website", async () => {
     const now = new Date("2026-08-22T00:00:00.000Z");
     const website = await createRetentionConversation({ channel: "website", marker: "metrics-website", at: now });
+    const noReplyWebsite = await createRetentionConversation({ channel: "website", marker: "metrics-no-reply", at: now });
     const facebook = await createRetentionConversation({ channel: "facebook", marker: "metrics-facebook", at: now });
+    await database.update(customerServiceTurns).set({ status: "sealed", suppressionReason: null })
+      .where(inArray(customerServiceTurns.id, [website.turnId, noReplyWebsite.turnId, facebook.turnId]));
     await database.insert(customerServiceWebSessions).values({
       conversationId: website.conversationId,
       sessionTokenHash: createHash("sha256").update("metrics-session").digest("hex"),
@@ -8238,6 +8284,42 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
         completedAt: now,
       },
       {
+        messageId: noReplyWebsite.messageId,
+        attemptNumber: 1,
+        trigger: "webhook_after",
+        intent: "acknowledgement",
+        riskLevel: "low",
+        gateResult: "allowed",
+        gateReasons: [],
+        knowledgeSources: [],
+        knowledgeVersion: "metrics-v1",
+        status: "abandoned",
+        providerCalled: true,
+        provider: "mock",
+        model: "metrics-model",
+        validatorCodes: [],
+        providerErrorCode: "website_no_reply_needed",
+        completedAt: now,
+      },
+      {
+        messageId: noReplyWebsite.messageId,
+        attemptNumber: 2,
+        trigger: "webhook_after",
+        intent: "acknowledgement",
+        riskLevel: "low",
+        gateResult: "allowed",
+        gateReasons: [],
+        knowledgeSources: [],
+        knowledgeVersion: "metrics-v1",
+        status: "abandoned",
+        providerCalled: true,
+        provider: "mock",
+        model: "metrics-model",
+        validatorCodes: [],
+        providerErrorCode: "website_no_reply_needed",
+        completedAt: now,
+      },
+      {
         messageId: facebook.messageId,
         attemptNumber: 1,
         trigger: "webhook_after",
@@ -8281,6 +8363,10 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       createdAt: now,
       updatedAt: now,
     });
+    await database.execute(sql`
+      update customer_service_review_alert_outbox set deduplicated_count = 2
+      where human_review_id = ${review.id}
+    `);
     await database.insert(customerServiceConversationEvents).values({
       conversationId: website.conversationId,
       channel: "website",
@@ -8302,15 +8388,17 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
 
     expect(metrics.channelMetrics?.website).toMatchObject({
       sessions: 1,
+      meaningfulTurns: 2,
       directTemplateReplies: 1,
       noReply: 1,
       humanReviewsOpened: 1,
       alertsQueued: 1,
+      alertsDeduplicated: 2,
       alertsSent: 1,
       websiteHumanReplies: 1,
       rateBlocks: 1,
       budgetBlocks: 1,
-      providerCalls: 2,
+      providerCalls: 4,
       inputTokens: 140,
       cachedInputTokens: 14,
       outputTokens: 28,
@@ -8321,6 +8409,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
     expect(metrics.channelMetrics?.facebook).toMatchObject({
       sessions: 1,
+      meaningfulTurns: 1,
       providerCalls: 1,
       inputTokens: 999,
       totalCostMicrousd: 9_999,
@@ -8329,6 +8418,9 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       automaticBusinessActions: 0,
       automaticSends: 0,
     });
+    const websiteResolution = metrics.channelMetrics!.website.directTemplateReplies
+      + metrics.channelMetrics!.website.noReply;
+    expect(websiteResolution).toBeLessThanOrEqual(metrics.channelMetrics!.website.meaningfulTurns);
   });
 
   it("expires bounded Website credentials and anonymizes only old unprotected Website chat", async () => {
@@ -8535,6 +8627,85 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
 
     expect(results.reduce((sum, item) => sum + item.conversationsAnonymized, 0)).toBe(1);
     expect(conversation.anonymizedAt).toEqual(now);
+  });
+
+  it("excludes protected oldest conversations before the retention limit and keeps making eligible progress", async () => {
+    const now = new Date("2026-08-22T00:00:00.000Z");
+    const held = await createRetentionConversation({
+      channel: "website", marker: "starvation-held", at: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    const reviewed = await createRetentionConversation({
+      channel: "website", marker: "starvation-review", at: new Date("2026-01-02T00:00:00.000Z"),
+    });
+    const recent = await createRetentionConversation({
+      channel: "website", marker: "starvation-recent", at: new Date("2026-01-03T00:00:00.000Z"),
+    });
+    const firstEligible = await createRetentionConversation({
+      channel: "website", marker: "starvation-eligible-1", at: new Date("2026-01-04T00:00:00.000Z"),
+    });
+    const secondEligible = await createRetentionConversation({
+      channel: "website", marker: "starvation-eligible-2", at: new Date("2026-01-05T00:00:00.000Z"),
+    });
+    await database.insert(customerServiceRetentionHolds).values({
+      conversationId: held.conversationId,
+      reason: "legal",
+      referenceHash: createHash("sha256").update("starvation-hold").digest("hex"),
+      createdAt: new Date("2026-01-01T00:00:00.000Z"),
+    });
+    await database.insert(customerServiceHumanReviews).values({
+      conversationId: reviewed.conversationId,
+      triggerTurnId: reviewed.turnId,
+      generation: 1,
+      reason: "unresolved",
+      status: "open",
+      redactedSummary: "Protected open review",
+      openedAt: new Date("2026-01-02T00:00:00.000Z"),
+      createdAt: new Date("2026-01-02T00:00:00.000Z"),
+      updatedAt: new Date("2026-01-02T00:00:00.000Z"),
+    });
+    await database.update(customerServiceMessages).set({ receivedAt: now })
+      .where(eq(customerServiceMessages.id, recent.messageId));
+
+    const results = await Promise.all([
+      repository.runWebsiteRetention({ now, limit: 3 }),
+      competingRepository.runWebsiteRetention({ now, limit: 3 }),
+    ]);
+    const repeated = await repository.runWebsiteRetention({ now, limit: 3 });
+    const conversations = await database.select({
+      id: customerServiceConversations.id,
+      anonymizedAt: customerServiceConversations.anonymizedAt,
+    }).from(customerServiceConversations);
+    const state = new Map(conversations.map((conversation) => [conversation.id, conversation.anonymizedAt]));
+
+    expect(results.reduce((sum, result) => sum + result.conversationsAnonymized, 0)).toBe(2);
+    expect(repeated.conversationsAnonymized).toBe(0);
+    expect(state.get(firstEligible.conversationId)).toEqual(now);
+    expect(state.get(secondEligible.conversationId)).toEqual(now);
+    expect(state.get(held.conversationId)).toBeNull();
+    expect(state.get(reviewed.conversationId)).toBeNull();
+    expect(state.get(recent.conversationId)).toBeNull();
+  });
+
+  it("uses the bounded human-review deep-link expiry cleanup index", async () => {
+    await database.transaction(async (transaction) => {
+      await transaction.execute(sql`set local enable_seqscan = off`);
+      const plan = await transaction.execute(sql`
+        explain (format text)
+        select reviews.id
+        from customer_service_human_reviews reviews
+        where reviews.deep_link_expires_at <= ${new Date("2026-08-22T00:00:00.000Z")}
+          and not exists (
+            select 1 from customer_service_review_alert_outbox alerts
+            where alerts.human_review_id = reviews.id and alerts.status = 'leased'
+          )
+        order by reviews.deep_link_expires_at, reviews.id
+        limit 100
+        for update of reviews skip locked
+      `);
+      const textPlan = plan.rows.map((row) => String(Object.values(row)[0])).join("\n");
+      expect(textPlan).toContain("customer_service_human_reviews_deep_link_expiry_idx");
+      expect(textPlan).not.toContain("Seq Scan on customer_service_human_reviews");
+    });
   });
 
   it("commits cleanup claims before slow deletes so two workers never delete the same key", async () => {

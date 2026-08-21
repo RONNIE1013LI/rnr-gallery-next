@@ -248,6 +248,7 @@ export type ChannelMetricCounts = Readonly<{
   humanReviewsOpened: number;
   humanReviewsResolved: number;
   alertsQueued: number;
+  alertsDeduplicated: number;
   alertsSent: number;
   alertsFailed: number;
   websiteHumanReplies: number;
@@ -261,7 +262,7 @@ export type ChannelMetricCounts = Readonly<{
   totalLatencyMs: number;
   publicUpdates: number;
   totalPublicUpdateLatencyMs: number;
-  crossSessionIsolationViolations: 0;
+  crossSessionIsolation: "test_only_invariant";
   automaticBusinessActions: 0;
   automaticSends: 0;
 }>;

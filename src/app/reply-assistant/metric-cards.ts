@@ -117,6 +117,7 @@ export function channelMetricCards(counts: ChannelMetricCounts): readonly ReplyA
     ["Human reviews", metrics.humanReviewsOpened],
     ["Reviews resolved", metrics.humanReviewsResolved],
     ["Alerts queued", metrics.alertsQueued],
+    ["Alerts deduplicated", metrics.alertsDeduplicated],
     ["Alerts sent", metrics.alertsSent],
     ["Alerts failed", metrics.alertsFailed],
     ["Website human replies", metrics.websiteHumanReplies],
@@ -129,7 +130,7 @@ export function channelMetricCards(counts: ChannelMetricCounts): readonly ReplyA
     ["Direct resolution", percent(metrics.directAutomatedResolutionRate)],
     ["Human escalation", percent(metrics.humanEscalationRate)],
     ["Public update latency", `${Math.round(metrics.averagePublicUpdateLatencyMs)}ms`],
-    ["Isolation violations", metrics.crossSessionIsolationViolations],
+    ["Cross-session isolation", "Invariant / test-only"],
     ["Automatic business actions", metrics.automaticBusinessActions],
     ["Automatic sends", metrics.automaticSends],
   ];

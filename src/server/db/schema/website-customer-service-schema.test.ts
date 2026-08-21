@@ -118,12 +118,14 @@ describe("website customer service schema contract", () => {
       "customer_service_human_reviews_conversation_generation_unique",
       "customer_service_human_reviews_open_conversation_unique",
       "customer_service_human_reviews_deep_link_unique",
+      "customer_service_human_reviews_deep_link_expiry_idx",
     ]));
     expect(outboxColumns).toEqual(expect.objectContaining({
       humanReviewId: expect.anything(),
       status: expect.anything(),
       idempotencyKey: expect.anything(),
       attemptCount: expect.anything(),
+      deduplicatedCount: expect.anything(),
       nextAttemptAt: expect.anything(),
       leaseToken: expect.anything(),
       leaseExpiresAt: expect.anything(),
@@ -156,6 +158,7 @@ describe("website customer service schema contract", () => {
     expect(outboxConfig.checks.map((item) => item.name)).toEqual(expect.arrayContaining([
       "customer_service_review_alert_outbox_lease_valid",
       "customer_service_review_alert_outbox_sent_valid",
+      "customer_service_review_alert_outbox_deduplicated_valid",
     ]));
     expect(getTableConfig(customerServiceWebsiteAssistantMessages).checks.map((item) => item.name))
       .toEqual(expect.arrayContaining([
@@ -182,6 +185,11 @@ describe("website customer service schema contract", () => {
       "session_token",
       "psid",
     ]));
+    expect(getTableConfig(customerServiceRateLimitBuckets).checks.map((item) => item.name))
+      .toEqual(expect.arrayContaining([
+        "customer_service_rate_limit_buckets_expiry_valid",
+        "customer_service_rate_limit_buckets_window_bounded",
+      ]));
   });
 
   it("uses the next forward-only additive migration", () => {
@@ -271,6 +279,20 @@ describe("website customer service schema contract", () => {
     expect(migration).toContain('CREATE TABLE "customer_service_retention_holds"');
     expect(migration).toContain('CREATE TABLE "customer_service_website_metric_events"');
     expect(migration).toContain('ADD COLUMN "anonymized_at"');
+    expect(migration).not.toMatch(/CREATE TABLE "(?:orders|payment_requests|payment_attempts|payment_ledger_entries)"/);
+    expect(migration).not.toMatch(/^\s*(?:DROP\b|ALTER\s+TABLE\s+.+\s+DROP\b|TRUNCATE|DELETE\s+FROM)/im);
+  });
+
+  it("adds only the Task 15 review constraints, alert counter, and cleanup index", () => {
+    const migrationDirectory = resolve(process.cwd(), "drizzle");
+    const migrationName = readdirSync(migrationDirectory).find((name) => /^0053_.+\.sql$/.test(name));
+    expect(migrationName).toEqual(expect.stringMatching(/^0053_.+\.sql$/));
+    const migration = readFileSync(resolve(migrationDirectory, migrationName ?? "missing"), "utf8");
+
+    expect(migration).toContain('ADD COLUMN "deduplicated_count"');
+    expect(migration).toContain("customer_service_rate_limit_buckets_window_bounded");
+    expect(migration).toContain("customer_service_review_alert_outbox_deduplicated_valid");
+    expect(migration).toContain("customer_service_human_reviews_deep_link_expiry_idx");
     expect(migration).not.toMatch(/CREATE TABLE "(?:orders|payment_requests|payment_attempts|payment_ledger_entries)"/);
     expect(migration).not.toMatch(/^\s*(?:DROP\b|ALTER\s+TABLE\s+.+\s+DROP\b|TRUNCATE|DELETE\s+FROM)/im);
   });

@@ -12,6 +12,7 @@ const channelCounts = (sessions: number, directTemplateReplies: number) => ({
   humanReviewsOpened: 1,
   humanReviewsResolved: 0,
   alertsQueued: 1,
+  alertsDeduplicated: 0,
   alertsSent: 1,
   alertsFailed: 0,
   websiteHumanReplies: 1,
@@ -25,7 +26,7 @@ const channelCounts = (sessions: number, directTemplateReplies: number) => ({
   totalLatencyMs: 400,
   publicUpdates: 4,
   totalPublicUpdateLatencyMs: 800,
-  crossSessionIsolationViolations: 0 as const,
+  crossSessionIsolation: "test_only_invariant" as const,
   automaticBusinessActions: 0 as const,
   automaticSends: 0 as const,
 });

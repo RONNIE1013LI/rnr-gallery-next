@@ -1,0 +1,4 @@
+ALTER TABLE "customer_service_review_alert_outbox" ADD COLUMN "deduplicated_count" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+CREATE INDEX "customer_service_human_reviews_deep_link_expiry_idx" ON "customer_service_human_reviews" USING btree ("deep_link_expires_at","id") WHERE "customer_service_human_reviews"."deep_link_expires_at" is not null;--> statement-breakpoint
+ALTER TABLE "customer_service_rate_limit_buckets" ADD CONSTRAINT "customer_service_rate_limit_buckets_window_bounded" CHECK ("customer_service_rate_limit_buckets"."expires_at" <= "customer_service_rate_limit_buckets"."window_started_at" + interval '24 hours');--> statement-breakpoint
+ALTER TABLE "customer_service_review_alert_outbox" ADD CONSTRAINT "customer_service_review_alert_outbox_deduplicated_valid" CHECK ("customer_service_review_alert_outbox"."deduplicated_count" >= 0);

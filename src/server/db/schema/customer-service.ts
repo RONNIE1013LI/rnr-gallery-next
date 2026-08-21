@@ -684,6 +684,9 @@ export const customerServiceHumanReviews = pgTable(
       .on(table.deepLinkTokenHash)
       .where(sql`${table.deepLinkTokenHash} is not null`),
     index("customer_service_human_reviews_status_opened_idx").on(table.status, table.openedAt),
+    index("customer_service_human_reviews_deep_link_expiry_idx")
+      .on(table.deepLinkExpiresAt, table.id)
+      .where(sql`${table.deepLinkExpiresAt} is not null`),
     check("customer_service_human_reviews_generation_valid", sql`${table.generation} > 0`),
     check("customer_service_human_reviews_channel_valid", sql`${table.channel} = 'website'`),
     check(
@@ -734,6 +737,7 @@ export const customerServiceReviewAlertOutbox = pgTable(
     status: text("status").$type<"pending" | "leased" | "retry_wait" | "sent" | "failed">().default("pending").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     attemptCount: integer("attempt_count").default(0).notNull(),
+    deduplicatedCount: integer("deduplicated_count").default(0).notNull(),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull(),
     leaseToken: text("lease_token"),
     leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
@@ -753,6 +757,7 @@ export const customerServiceReviewAlertOutbox = pgTable(
       sql`${table.status} in ('pending', 'leased', 'retry_wait', 'sent', 'failed')`,
     ),
     check("customer_service_review_alert_outbox_attempts_valid", sql`${table.attemptCount} >= 0`),
+    check("customer_service_review_alert_outbox_deduplicated_valid", sql`${table.deduplicatedCount} >= 0`),
     check("customer_service_review_alert_outbox_key_valid", sql`length(trim(${table.idempotencyKey})) > 0`),
     check(
       "customer_service_review_alert_outbox_payload_digest_valid",
@@ -794,6 +799,10 @@ export const customerServiceRateLimitBuckets = pgTable(
     check("customer_service_rate_limit_buckets_hash_valid", sql`${table.bucketKeyHash} ~ '^[0-9a-f]{64}$'`),
     check("customer_service_rate_limit_buckets_count_valid", sql`${table.requestCount} >= 0`),
     check("customer_service_rate_limit_buckets_expiry_valid", sql`${table.expiresAt} > ${table.windowStartedAt}`),
+    check(
+      "customer_service_rate_limit_buckets_window_bounded",
+      sql`${table.expiresAt} <= ${table.windowStartedAt} + interval '24 hours'`,
+    ),
   ],
 );
 
