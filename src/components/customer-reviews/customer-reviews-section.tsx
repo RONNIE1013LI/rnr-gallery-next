@@ -20,7 +20,7 @@ export function CustomerReviewsSection({ data, background = "ivory" }: Readonly<
         <div><p className={styles.eyebrow}>REAL CUSTOMER REVIEWS</p><h2 id="customer-reviews-title">Recommended by our customers.</h2><p>Selected public recommendations originally shared on our Facebook Page.</p></div>
         {summary ? <div className={styles.facebookSummary}>
           <strong className={styles.facebookSummaryLabel}>EXCELLENT</strong>
-          <span className={styles.facebookSummaryStars} aria-label={`${summary.rating} out of 5`}>
+          <span className={styles.facebookSummaryStars} aria-hidden="true">
             {Array.from({ length: 5 }, (_, index) => <FaStar key={index} aria-hidden="true" />)}
           </span>
           <p className={styles.facebookSummaryCount}>100% Recommended ({summary.recommendationCount} Reviews)</p>
