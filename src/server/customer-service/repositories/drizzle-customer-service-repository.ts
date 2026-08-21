@@ -1796,6 +1796,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         current.id,
       )).limit(1);
       const boundary = currentTurn?.lastEventAt ?? current.receivedAt;
+      const causalBoundary = current.createdAt;
       const boundedLimit = Math.max(1, Math.min(12, contextLimit));
       const events = await database.select({
         id: customerServiceConversationEvents.id,
@@ -1810,7 +1811,12 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         .leftJoin(customerServiceTurns, eq(customerServiceTurns.id, customerServiceConversationEvents.turnId))
         .where(and(
           eq(customerServiceConversationEvents.conversationId, current.conversationId),
+          eq(customerServiceConversationEvents.channel, current.channel),
           lte(customerServiceConversationEvents.receivedAt, boundary),
+          or(
+            eq(customerServiceConversationEvents.legacyMessageId, current.id),
+            lte(customerServiceConversationEvents.createdAt, causalBoundary),
+          ),
         ))
         .orderBy(
           desc(customerServiceConversationEvents.receivedAt),
@@ -1825,7 +1831,12 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         createdAt: customerServiceMessages.createdAt,
       }).from(customerServiceMessages).where(and(
         eq(customerServiceMessages.conversationId, current.conversationId),
+        eq(customerServiceMessages.channel, current.channel),
         lte(customerServiceMessages.receivedAt, boundary),
+        or(
+          eq(customerServiceMessages.id, current.id),
+          lte(customerServiceMessages.createdAt, causalBoundary),
+        ),
         isNotNull(customerServiceMessages.customerText),
         sql`not exists (
           select 1 from ${customerServiceConversationEvents}
@@ -1836,6 +1847,22 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         desc(customerServiceMessages.createdAt),
         desc(customerServiceMessages.id),
       ).limit(boundedLimit);
+      const websiteAssistantMessages = current.channel === "website"
+        ? await database.select({
+          id: customerServiceWebsiteAssistantMessages.id,
+          text: customerServiceWebsiteAssistantMessages.body,
+          publishedAt: customerServiceWebsiteAssistantMessages.publishedAt,
+          createdAt: customerServiceWebsiteAssistantMessages.createdAt,
+        }).from(customerServiceWebsiteAssistantMessages).where(and(
+          eq(customerServiceWebsiteAssistantMessages.conversationId, current.conversationId),
+          lte(customerServiceWebsiteAssistantMessages.publishedAt, boundary),
+          lte(customerServiceWebsiteAssistantMessages.createdAt, causalBoundary),
+        )).orderBy(
+          desc(customerServiceWebsiteAssistantMessages.publishedAt),
+          desc(customerServiceWebsiteAssistantMessages.createdAt),
+          desc(customerServiceWebsiteAssistantMessages.id),
+        ).limit(boundedLimit * 8)
+        : [];
       const seenTurns = new Set<string>();
       const context = [
         ...events.reverse().flatMap((event) => {
@@ -1847,6 +1874,8 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
               text: event.turnBody ?? event.text,
               receivedAt: (event.turnOpenedAt ?? event.receivedAt).toISOString(),
               sortAt: event.turnOpenedAt ?? event.receivedAt,
+              causalAt: event.createdAt,
+              sourceRank: 0,
               sortId: event.turnId,
             }];
           }
@@ -1855,6 +1884,8 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             text: event.text,
             receivedAt: event.receivedAt.toISOString(),
             sortAt: event.receivedAt,
+            causalAt: event.createdAt,
+            sourceRank: event.role === "customer" ? 0 : 2,
             sortId: event.id,
           }];
         }),
@@ -1863,10 +1894,23 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           text: message.text ?? "",
           receivedAt: message.receivedAt.toISOString(),
           sortAt: message.receivedAt,
+          causalAt: message.createdAt,
+          sourceRank: 0,
+          sortId: message.id,
+        })),
+        ...websiteAssistantMessages.reverse().map((message) => ({
+          role: "staff" as const,
+          text: message.text,
+          receivedAt: message.publishedAt.toISOString(),
+          sortAt: message.publishedAt,
+          causalAt: message.createdAt,
+          sourceRank: 1,
           sortId: message.id,
         })),
       ].sort((left, right) => (
         left.sortAt.getTime() - right.sortAt.getTime()
+        || left.causalAt.getTime() - right.causalAt.getTime()
+        || left.sourceRank - right.sourceRank
         || left.sortId.localeCompare(right.sortId)
       )).slice(-boundedLimit).map(({ role, text, receivedAt }) => ({ role, text, receivedAt }));
       return {
@@ -2809,8 +2853,14 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         throw new Error("customer_service_human_reply_group_window_invalid");
       }
       const cutoff = new Date(input.now.getTime() - input.groupWindowMs);
-      const due = await database.select({ id: customerServiceHumanReplyMatches.id })
-        .from(customerServiceHumanReplyMatches).where(and(
+      const due = await database.select({
+        id: customerServiceHumanReplyMatches.id,
+        channel: customerServiceConversations.channel,
+      }).from(customerServiceHumanReplyMatches)
+        .innerJoin(customerServiceConversations, eq(
+          customerServiceConversations.id,
+          customerServiceHumanReplyMatches.conversationId,
+        )).where(and(
           eq(customerServiceHumanReplyMatches.status, "pending"),
           or(
             lte(customerServiceHumanReplyMatches.lastOutboundAt, cutoff),
@@ -2833,7 +2883,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         });
         if (result.status === "matched") matched += 1;
         if (result.status === "unmatched") unmatched += 1;
-        if (result.status === "matched") {
+        if (result.status === "matched" && item.channel === "facebook") {
           const [source] = await database.select({ body: customerServiceMessages.body })
             .from(customerServiceHumanReplyMatches)
             .innerJoin(customerServiceTurns, eq(customerServiceTurns.id, customerServiceHumanReplyMatches.turnId))
@@ -2869,6 +2919,18 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           .where(eq(customerServiceHumanReplyMatches.id, input.matchId)).limit(1).for("update");
         if (!match || match.status !== "matched" || !match.turnId) {
           throw new Error("customer_service_case_memory_match_not_eligible");
+        }
+        const [sourceConversation] = await transaction.select({
+          channel: customerServiceConversations.channel,
+        }).from(customerServiceTurns).innerJoin(customerServiceConversations, and(
+          eq(customerServiceConversations.id, customerServiceTurns.conversationId),
+          eq(customerServiceConversations.channel, customerServiceTurns.channel),
+        )).where(and(
+          eq(customerServiceTurns.id, match.turnId),
+          eq(customerServiceTurns.conversationId, match.conversationId),
+        )).limit(1);
+        if (sourceConversation?.channel !== "facebook") {
+          throw new Error("customer_service_case_memory_channel_not_eligible");
         }
         const sourceEvents = await transaction.select({
           redactionCodes: customerServiceConversationEvents.redactionCodes,

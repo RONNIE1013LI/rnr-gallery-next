@@ -163,6 +163,7 @@ function websiteRateEvent(input: Readonly<{
   messageHash: string;
   sessionHash: string;
   networkHash: string;
+  text?: string;
   receivedAt?: Date;
   isNewSession?: boolean;
 }>) {
@@ -171,7 +172,7 @@ function websiteRateEvent(input: Readonly<{
     role: "customer" as const,
     externalConversationKeyHash: input.sessionHash,
     externalMessageKeyHash: input.messageHash,
-    text: "Can you help with a custom banner?",
+    text: input.text ?? "Can you help with a custom banner?",
     attachments: [],
     imageJob: null,
     debounceMs: 2_000,
@@ -3371,6 +3372,371 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     await expect(repository.loadDraftInput(pending.messageId, 6)).resolves.toMatchObject({
       current: { channel: "website", productContext },
     });
+  });
+
+  it("loads only committed Website replies and human outbound history in chronological session context", async () => {
+    const first = await claimWebsiteTurn({
+      sessionHash: "b9".repeat(32),
+      networkHash: "ba".repeat(32),
+      messageHash: "bb".repeat(32),
+    });
+    const [publishedAttempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: first.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "website-context-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "Please send your photos and wording.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:03.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: first.turnId,
+      leaseToken: first.leaseToken,
+      attemptId: publishedAttempt.id,
+      now: new Date("2026-08-19T00:00:03.500Z"),
+    })).resolves.toEqual({ status: "published" });
+    await database.insert(customerServiceAiAttempts).values({
+      messageId: first.messageId,
+      attemptNumber: 2,
+      trigger: "manual_regenerate",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "website-context-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "INTERNAL UNSENT WEBSITE AI ATTEMPT",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:03.750Z"),
+    });
+    await repository.ingestConversationEvent({
+      channel: "website",
+      role: "staff",
+      eventType: "human_outbound",
+      externalConversationKeyHash: "b9".repeat(32),
+      externalMessageKeyHash: "bc".repeat(32),
+      text: "We can also help with the wording.",
+      bodyHash: "bd".repeat(32),
+      redactionCodes: [],
+      learningEligible: false,
+      replyToExternalMessageKeyHash: null,
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-19T00:00:04.000Z"),
+    });
+
+    const other = await ingestAndClaimWebsiteTurn({
+      sessionHash: "be".repeat(32),
+      networkHash: "bf".repeat(32),
+      messageHash: "c0".repeat(32),
+      receivedAt: new Date("2026-08-19T00:00:04.250Z"),
+    });
+    const [otherAttempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: other.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "website-context-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "Tina's private address is not for this customer.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:05.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+    await repository.publishWebsiteValidatedAi({
+      turnId: other.turnId,
+      leaseToken: other.leaseToken,
+      attemptId: otherAttempt.id,
+      now: new Date("2026-08-19T00:00:05.500Z"),
+    });
+
+    const second = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash: "b9".repeat(32),
+      networkHash: "ba".repeat(32),
+      messageHash: "c1".repeat(32),
+      text: "My theme is blue.",
+      receivedAt: new Date("2026-08-19T00:00:06.000Z"),
+    }));
+    expect(second.status).toBe("turn_pending");
+    if (second.status !== "turn_pending") return;
+
+    const loaded = await repository.loadDraftInput(second.messageId, 6);
+    expect(loaded).toMatchObject({
+      current: { channel: "website", text: "My theme is blue." },
+      context: [
+        { role: "customer", text: "Can you help with a custom banner?" },
+        { role: "staff", text: "Please send your photos and wording." },
+        { role: "staff", text: "We can also help with the wording." },
+        { role: "customer", text: "My theme is blue." },
+      ],
+    });
+    expect(JSON.stringify(loaded)).not.toContain("INTERNAL UNSENT WEBSITE AI ATTEMPT");
+    expect(JSON.stringify(loaded)).not.toContain("Tina's private address");
+  });
+
+  it("does not turn Website human replies into automatic case-memory or learning evidence", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "c2".repeat(32),
+      networkHash: "c3".repeat(32),
+      messageHash: "c4".repeat(32),
+    });
+    await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "website-context-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "Please send your photos and wording.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    });
+    await repository.ingestConversationEvent({
+      channel: "website",
+      role: "staff",
+      eventType: "human_outbound",
+      externalConversationKeyHash: "c2".repeat(32),
+      externalMessageKeyHash: "c5".repeat(32),
+      replyToExternalMessageKeyHash: "c4".repeat(32),
+      text: "Please send your photos and wording.",
+      bodyHash: "c6".repeat(32),
+      redactionCodes: [],
+      learningEligible: false,
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-19T00:00:05.000Z"),
+    });
+
+    await expect(repository.recoverDueHumanReplies({
+      now: new Date("2026-08-19T00:02:00.000Z"),
+      groupWindowMs: 90_000,
+      limit: 10,
+      knowledgeVersion: "website-context-v1",
+    })).resolves.toMatchObject({ selected: 1, matched: 1 });
+    const [match] = await database.select().from(customerServiceHumanReplyMatches);
+    await expect(repository.createCaseMemoryCandidate({
+      matchId: match.id,
+      customerSituation: "Customer asks about the design process.",
+      customerTurnSummary: "Asked about the design process.",
+      productCategory: null,
+      market: "unknown",
+      deadlineContext: null,
+      knowledgeVersion: "website-context-v1",
+    })).rejects.toThrow("customer_service_case_memory_channel_not_eligible");
+    await expect(database.select().from(customerServiceCaseMemories)).resolves.toHaveLength(0);
+    await expect(database.select().from(customerServiceLearningCandidates)).resolves.toHaveLength(0);
+  });
+
+  it("uses a causal cursor for equal-timestamp Website context and excludes later or cross-channel rows", async () => {
+    const sameBusinessTime = new Date("2026-08-19T01:00:00.000Z");
+    const first = await claimWebsiteTurn({
+      sessionHash: "c7".repeat(32),
+      networkHash: "c8".repeat(32),
+      messageHash: "c9".repeat(32),
+      receivedAt: sameBusinessTime,
+    });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: first.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "website-context-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "Committed Website reply.",
+      validatorCodes: [],
+      completedAt: sameBusinessTime,
+    }).returning({ id: customerServiceAiAttempts.id });
+    await repository.publishWebsiteValidatedAi({
+      turnId: first.turnId,
+      leaseToken: first.leaseToken,
+      attemptId: attempt.id,
+      now: sameBusinessTime,
+    });
+    await repository.ingestConversationEvent({
+      channel: "website",
+      role: "staff",
+      eventType: "human_outbound",
+      externalConversationKeyHash: "c7".repeat(32),
+      externalMessageKeyHash: "ca".repeat(32),
+      text: "Human Website reply.",
+      bodyHash: "cb".repeat(32),
+      redactionCodes: [],
+      learningEligible: false,
+      replyToExternalMessageKeyHash: null,
+      attachments: [],
+      imageJob: null,
+      receivedAt: sameBusinessTime,
+    });
+    const current = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash: "c7".repeat(32),
+      networkHash: "c8".repeat(32),
+      messageHash: "cc".repeat(32),
+      text: "Current Website customer turn.",
+      receivedAt: sameBusinessTime,
+    }));
+    expect(current.status).toBe("turn_pending");
+    if (current.status !== "turn_pending") return;
+
+    const [currentMessage] = await database.select({
+      conversationId: customerServiceMessages.conversationId,
+    }).from(customerServiceMessages).where(eq(customerServiceMessages.id, current.messageId));
+    await database.insert(customerServiceConversationEvents).values([
+      {
+        conversationId: currentMessage.conversationId,
+        channel: "website",
+        externalMessageKeyHash: "cd".repeat(32),
+        role: "staff",
+        eventType: "human_outbound",
+        body: "Later Website reply must not leak backward.",
+        bodyHash: "ce".repeat(32),
+        redactionCodes: [],
+        learningEligible: false,
+        receivedAt: sameBusinessTime,
+      },
+      {
+        conversationId: currentMessage.conversationId,
+        channel: "facebook",
+        externalMessageKeyHash: "cf".repeat(32),
+        role: "staff",
+        eventType: "human_outbound",
+        body: "Cross-channel private reply must not leak.",
+        bodyHash: "d0".repeat(32),
+        redactionCodes: [],
+        learningEligible: false,
+        receivedAt: sameBusinessTime,
+      },
+    ]);
+
+    await expect(repository.loadDraftInput(current.messageId, 4)).resolves.toMatchObject({
+      context: [
+        { role: "customer", text: "Can you help with a custom banner?" },
+        { role: "staff", text: "Committed Website reply." },
+        { role: "staff", text: "Human Website reply." },
+        { role: "customer", text: "Current Website customer turn." },
+      ],
+    });
+    await expect(repository.loadDraftInput(current.messageId, 3)).resolves.toMatchObject({
+      context: [
+        { role: "staff", text: "Committed Website reply." },
+        { role: "staff", text: "Human Website reply." },
+        { role: "customer", text: "Current Website customer turn." },
+      ],
+    });
+  });
+
+  it("retrieves only compatible approved Case Memory for a Website draft", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "d1".repeat(32),
+      networkHash: "d2".repeat(32),
+      messageHash: "d3".repeat(32),
+    });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "website-context-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "Please send your photos and wording.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+    const [conversation] = await database.select({ id: customerServiceConversations.id })
+      .from(customerServiceConversations).where(eq(
+        customerServiceConversations.externalKeyHash,
+        "d1".repeat(32),
+      ));
+    const cases = [
+      ["approved_reusable", "Photos wording theme design process", null, "website-context-v1"],
+      ["pending_review", "Photos wording theme design process", null, "website-context-v1"],
+      ["revoked", "Photos wording theme design process", null, "website-context-v1"],
+      ["excluded", "Photos wording theme design process", null, "website-context-v1"],
+      ["approved_reusable", "Unrelated parcel tracking question", null, "website-context-v1"],
+      ["approved_reusable", "Photos wording theme design process", "canvas", "old-version"],
+    ] as const;
+    for (const [eligibilityStatus, normalizedSituation, productCategory, knowledgeVersion] of cases) {
+      const [match] = await database.insert(customerServiceHumanReplyMatches).values({
+        conversationId: conversation.id,
+        status: "matched",
+        firstOutboundAt: new Date("2026-08-19T00:00:03.000Z"),
+        lastOutboundAt: new Date("2026-08-19T00:00:03.000Z"),
+        turnId: claimed.turnId,
+        humanFinalText: "Please send your photos and wording.",
+        contextSummary: "customer: design process",
+        intent: "design_process",
+        riskClass: "low",
+        policyReferences: ["DESIGN-01"],
+        editClassification: "accepted_unchanged",
+        confidence: "high",
+      }).returning({ id: customerServiceHumanReplyMatches.id });
+      await database.insert(customerServiceCaseMemories).values({
+        humanReplyMatchId: match.id,
+        intent: "design_process",
+        normalizedSituation,
+        customerTurnSummary: normalizedSituation,
+        contextSummary: "customer: design process",
+        aiDraft: null,
+        humanFinalReply: "Please send your photos and wording.",
+        editClassification: "accepted_unchanged",
+        editReasonCodes: [],
+        productCategory,
+        market: "unknown",
+        deadlineContext: null,
+        policyReferences: ["DESIGN-01"],
+        knowledgeVersion,
+        riskClass: "low",
+        eligibilityStatus,
+        sourceConfidence: "high",
+        exclusionCodes: [],
+        ...(eligibilityStatus === "pending_review" ? {} : { decidedAt: new Date("2026-08-19T00:00:04.000Z") }),
+      });
+    }
+
+    const retrieved = await repository.retrieveApprovedCaseMemories({
+      attemptId: attempt.id,
+      intent: "design_process",
+      riskClass: "low",
+      productCategory: null,
+      market: "unknown",
+      policyReferences: ["DESIGN-01"],
+      knowledgeVersion: "website-context-v1",
+      query: "photos wording theme design process",
+      limit: 3,
+      now: new Date("2026-08-19T00:00:05.000Z"),
+    });
+    expect(retrieved).toHaveLength(1);
+    expect(retrieved[0]).toMatchObject({ normalizedSituation: "Photos wording theme design process" });
+    const audits = await database.select({ injected: customerServiceCaseRetrievals.injected })
+      .from(customerServiceCaseRetrievals);
+    expect(audits.filter((item) => item.injected)).toHaveLength(1);
   });
 
   it("uses the chronologically latest Website product context and clears it when the latest fragment has none", async () => {
