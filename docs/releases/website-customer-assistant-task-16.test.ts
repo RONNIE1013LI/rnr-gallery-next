@@ -6,16 +6,17 @@ const readReleaseDocument = (name: string) =>
   readFileSync(join(process.cwd(), "docs", "releases", name), "utf8");
 
 describe("Task 16 release evidence templates", () => {
-  it("keeps external Staging evidence explicitly unverified", () => {
+  it("records completed Staging evidence without declaring readiness", () => {
     const staging = readReleaseDocument(
       "2026-08-21-website-customer-assistant-staging-validation.md",
     );
 
-    expect(staging).toContain("**Status: NOT RUN.**");
-    expect(staging).toMatch(/No Preview or\s+Production deployment/);
-    expect(staging).toContain("| Preview deployment | NOT RUN |");
+    expect(staging).toContain("**Status: TECHNICAL VALIDATION COMPLETE; STAGING NOT READY.**");
+    expect(staging).toContain("| Preview deployment | PASS |");
     expect(staging).toContain("| Production changes | NONE |");
-    expect(staging).toContain("This template does not establish Staging readiness.");
+    expect(staging).toContain("Google OAuth `redirect_uri_mismatch`");
+    expect(staging).toContain("Ronnie must review at least 20 representative Website replies");
+    expect(staging).toContain("This document currently records **Staging NOT READY**.");
     expect(staging).not.toMatch(/- \[x\]/i);
   });
 
