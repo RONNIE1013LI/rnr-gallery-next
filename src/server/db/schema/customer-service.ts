@@ -56,6 +56,7 @@ export const customerServiceConversations = pgTable(
     id: uuid("id").defaultRandom().primaryKey(),
     channel: text("channel").$type<"facebook" | "website">().notNull(),
     externalKeyHash: text("external_key_hash").notNull(),
+    anonymizedAt: timestamp("anonymized_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: updatedTimestamp(),
   },
@@ -63,6 +64,8 @@ export const customerServiceConversations = pgTable(
     uniqueIndex("customer_service_conversations_channel_external_unique")
       .on(table.channel, table.externalKeyHash),
     unique("customer_service_conversations_id_channel_unique").on(table.id, table.channel),
+    index("customer_service_conversations_retention_idx")
+      .on(table.channel, table.anonymizedAt, table.createdAt),
     check("customer_service_conversations_channel_valid", sql`${table.channel} in ('facebook', 'website')`),
     check("customer_service_conversations_external_hash_valid", sql`length(trim(${table.externalKeyHash})) > 0`),
   ],
@@ -538,6 +541,32 @@ export const customerServiceWebSessions = pgTable(
   ],
 );
 
+export const customerServiceRetentionHolds = pgTable(
+  "customer_service_retention_holds",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversationId: uuid("conversation_id").notNull()
+      .references(() => customerServiceConversations.id, { onDelete: "restrict" }),
+    reason: text("reason").$type<"order" | "dispute" | "legal">().notNull(),
+    referenceHash: text("reference_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    releasedAt: timestamp("released_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("customer_service_retention_holds_reference_unique")
+      .on(table.conversationId, table.reason, table.referenceHash),
+    index("customer_service_retention_holds_active_idx")
+      .on(table.conversationId, table.releasedAt, table.expiresAt),
+    check("customer_service_retention_holds_reason_valid", sql`${table.reason} in ('order', 'dispute', 'legal')`),
+    check("customer_service_retention_holds_reference_valid", sql`${table.referenceHash} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "customer_service_retention_holds_release_valid",
+      sql`${table.releasedAt} is null or ${table.releasedAt} >= ${table.createdAt}`,
+    ),
+  ],
+);
+
 export const customerServiceWebsiteAssistantMessages = pgTable(
   "customer_service_website_assistant_messages",
   {
@@ -765,6 +794,29 @@ export const customerServiceRateLimitBuckets = pgTable(
     check("customer_service_rate_limit_buckets_hash_valid", sql`${table.bucketKeyHash} ~ '^[0-9a-f]{64}$'`),
     check("customer_service_rate_limit_buckets_count_valid", sql`${table.requestCount} >= 0`),
     check("customer_service_rate_limit_buckets_expiry_valid", sql`${table.expiresAt} > ${table.windowStartedAt}`),
+  ],
+);
+
+export const customerServiceWebsiteMetricEvents = pgTable(
+  "customer_service_website_metric_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    eventType: text("event_type").$type<"rate_block">().notNull(),
+    eventKeyHash: text("event_key_hash").notNull(),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("customer_service_website_metric_events_key_unique")
+      .on(table.eventType, table.eventKeyHash),
+    index("customer_service_website_metric_events_expiry_idx").on(table.expiresAt),
+    check("customer_service_website_metric_events_type_valid", sql`${table.eventType} = 'rate_block'`),
+    check("customer_service_website_metric_events_hash_valid", sql`${table.eventKeyHash} ~ '^[0-9a-f]{64}$'`),
+    check(
+      "customer_service_website_metric_events_expiry_valid",
+      sql`${table.expiresAt} > ${table.occurredAt} and ${table.expiresAt} <= ${table.occurredAt} + interval '24 hours'`,
+    ),
   ],
 );
 

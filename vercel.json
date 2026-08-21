@@ -19,6 +19,10 @@
     {
       "path": "/api/internal/customer-chat/review-alerts",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/internal/customer-chat/retention",
+      "schedule": "13 4 * * *"
     }
   ]
 }

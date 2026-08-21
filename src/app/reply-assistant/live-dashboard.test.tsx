@@ -3,6 +3,33 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mergeReplyQueueItems, ReplyAssistantLiveDashboard } from "./live-dashboard";
 import type { PilotMetricCounts } from "@/server/customer-service/repositories/customer-service-repository";
 
+const channelCounts = (sessions: number, directTemplateReplies: number) => ({
+  sessions,
+  meaningfulTurns: 5,
+  responses: 4,
+  directTemplateReplies,
+  noReply: 1,
+  humanReviewsOpened: 1,
+  humanReviewsResolved: 0,
+  alertsQueued: 1,
+  alertsSent: 1,
+  alertsFailed: 0,
+  websiteHumanReplies: 1,
+  rateBlocks: 0,
+  budgetBlocks: 0,
+  providerCalls: 4,
+  inputTokens: 100,
+  cachedInputTokens: 10,
+  outputTokens: 20,
+  totalCostMicrousd: 100,
+  totalLatencyMs: 400,
+  publicUpdates: 4,
+  totalPublicUpdateLatencyMs: 800,
+  crossSessionIsolationViolations: 0 as const,
+  automaticBusinessActions: 0 as const,
+  automaticSends: 0 as const,
+});
+
 const baseItem = {
   messageId: "11111111-1111-4111-8111-111111111111",
   channel: "facebook" as const,
@@ -77,6 +104,10 @@ const updatedMetrics: PilotMetricCounts = {
   learningCandidatesApproved: 0,
   learningCandidatesRejected: 0,
   commonEditReasons: [{ code: "missing_next_step", count: 1 }],
+  channelMetrics: {
+    website: channelCounts(4, 3),
+    facebook: { ...channelCounts(9, 0), websiteHumanReplies: 0 },
+  },
 };
 
 function response(body: unknown, status = 200) {
@@ -172,6 +203,20 @@ describe("ReplyAssistantLiveDashboard", () => {
       expect.objectContaining({ cache: "no-store" }),
     );
     expect(fetchMock.mock.calls.map(([url]) => String(url)).join("\n")).not.toMatch(/openai|generate|\/send/i);
+  });
+
+  it("filters metrics by channel without provider or polling work", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ReplyAssistantLiveDashboard {...props} initialMetrics={updatedMetrics} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Website metrics" }));
+    expect(screen.getByText("Sessions").parentElement).toHaveTextContent("4");
+    expect(screen.getByText("Direct template replies").parentElement).toHaveTextContent("3");
+
+    fireEvent.click(screen.getByRole("button", { name: "Facebook metrics" }));
+    expect(screen.getByText("Sessions").parentElement).toHaveTextContent("9");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("renders repeated message and outbound echo updates only once", async () => {

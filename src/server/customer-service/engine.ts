@@ -390,6 +390,7 @@ export class CustomerServiceEngine {
             outputTokens: generated.usage.outputTokens,
             estimatedCostMicrousd: generated.estimatedCostMicrousd,
             latencyMs: generated.latencyMs,
+            providerErrorCode: "website_no_reply_needed",
             dailyScopeKey,
           });
           return { status: "no_reply_needed", attemptId: reservation.attemptId };

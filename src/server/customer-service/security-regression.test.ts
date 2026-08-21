@@ -54,6 +54,24 @@ describe("reply assistant security regression", () => {
     )).toEqual([]);
   });
 
+  it("keeps Task 15 retention and evaluation boundaries free of raw identities and public secrets", () => {
+    const inventory = loadProductionRuntimeSourceInventory();
+    const task15Files = inventory.files.filter((file) => [
+      "src/app/api/internal/customer-chat/retention/route-handler.ts",
+      "scripts/evaluate-website-customer-service.ts",
+    ].includes(file.relativePath));
+
+    expect(task15Files.map((file) => file.relativePath)).toHaveLength(2);
+    expect(productionSourcePathsMatching(
+      task15Files,
+      /(?:conversationId|messageId|sessionToken|reviewId|email|phone|address)\s*:/,
+    )).toEqual([]);
+    expect(productionSourcePathsMatching(
+      task15Files,
+      new RegExp(`${PUBLIC_ENV_PREFIX}|OPENAI_API_KEY|RESEND_API_KEY|CUSTOMER_CHAT_SESSION_SECRET`, "i"),
+    )).toEqual([]);
+  });
+
   it("uses image analysis without enabling an image-generation tool", () => {
     const inventory = loadProductionRuntimeSourceInventory();
     const provider = inventory.files.find(

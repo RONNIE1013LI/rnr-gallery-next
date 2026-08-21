@@ -9,7 +9,11 @@ import type {
 } from "@/server/customer-service/repositories/customer-service-repository";
 import { CaseMemoryReview, type CaseMemoryView } from "./case-memory-review";
 import { LearningCandidateReview, type LearningCandidateView } from "./learning-candidate-review";
-import { replyAssistantMetricCards, type ReplyAssistantMetricCard } from "./metric-cards";
+import {
+  channelMetricCards,
+  replyAssistantMetricCards,
+  type ReplyAssistantMetricCard,
+} from "./metric-cards";
 import styles from "./reply-assistant.module.css";
 
 const ACTIVE_POLL_MS = 2_500;
@@ -46,6 +50,7 @@ export function ReplyAssistantLiveDashboard({
   initialCursor,
   initialItems,
   initialMetricCards,
+  initialMetrics,
   initialLearningCandidates,
   initialCaseMemories,
   canReview,
@@ -54,6 +59,7 @@ export function ReplyAssistantLiveDashboard({
   initialCursor: string;
   initialItems: readonly ReplyQueueItem[];
   initialMetricCards: readonly ReplyAssistantMetricCard[];
+  initialMetrics?: PilotMetricCounts;
   initialLearningCandidates: readonly LearningCandidateView[];
   initialCaseMemories: readonly CaseMemoryView[];
   canReview: boolean;
@@ -62,6 +68,8 @@ export function ReplyAssistantLiveDashboard({
   const [items, setItems] = useState(initialItems);
   const [newMessageIds, setNewMessageIds] = useState<readonly string[]>([]);
   const [metricCards, setMetricCards] = useState(initialMetricCards);
+  const [metricCounts, setMetricCounts] = useState<PilotMetricCounts | null>(initialMetrics ?? null);
+  const [metricScope, setMetricScope] = useState<"all" | "website" | "facebook">("all");
   const [learningCandidates, setLearningCandidates] = useState(initialLearningCandidates);
   const [caseMemories, setCaseMemories] = useState(initialCaseMemories);
   const [connectionState, setConnectionState] = useState<"active" | "reconnecting">("active");
@@ -105,7 +113,10 @@ export function ReplyAssistantLiveDashboard({
         if (update.queueItems.length) {
           setItems((current) => mergeReplyQueueItems(current, update.queueItems, selectedReviewSelector));
         }
-        if (update.metrics) setMetricCards(replyAssistantMetricCards(update.metrics));
+        if (update.metrics) {
+          setMetricCounts(update.metrics);
+          setMetricCards(replyAssistantMetricCards(update.metrics));
+        }
         if (update.learningCandidates) setLearningCandidates(update.learningCandidates.items);
         if (update.caseMemories) setCaseMemories(update.caseMemories.items);
         cursorRef.current = update.cursor;
@@ -150,12 +161,33 @@ export function ReplyAssistantLiveDashboard({
     };
   }, [selectedReviewSelector]);
 
+  const visibleMetricCards = metricScope === "all"
+    ? metricCards
+    : metricCounts?.channelMetrics
+      ? channelMetricCards(metricCounts.channelMetrics[metricScope])
+      : metricCards;
+
   return (
     <>
       <div className={styles.liveStatus} aria-live="polite" data-state={connectionState}>
         {connectionState === "reconnecting" ? "Live updates reconnecting" : "Live updates active"}
       </div>
-      <div className={styles.metrics}>{metricCards.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
+      {metricCounts?.channelMetrics ? (
+        <div className={styles.metricFilters} aria-label="Metric channel">
+          {(["all", "website", "facebook"] as const).map((scope) => (
+            <button
+              key={scope}
+              type="button"
+              aria-label={`${scope[0].toUpperCase()}${scope.slice(1)} metrics`}
+              aria-pressed={metricScope === scope}
+              onClick={() => setMetricScope(scope)}
+            >
+              {scope[0].toUpperCase()}{scope.slice(1)}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <div className={styles.metrics}>{visibleMetricCards.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
       <LearningCandidateReview candidates={learningCandidates} canReview={canReview} />
       <CaseMemoryReview cases={caseMemories} canReview={canReview} />
       <ReplyAssistantClient

@@ -5,12 +5,15 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   customerServiceAiAttempts,
+  customerServiceConversations,
   customerServiceHumanReviews,
   customerServiceRateLimitBuckets,
+  customerServiceRetentionHolds,
   customerServiceReviewAlertOutbox,
   customerServiceReviewSelectors,
   customerServiceWebSessions,
   customerServiceWebsiteAssistantMessages,
+  customerServiceWebsiteMetricEvents,
 } from "./index";
 
 const initialWebsiteTables = [
@@ -233,6 +236,42 @@ describe("website customer service schema contract", () => {
 
     expect(migration).toContain('ADD COLUMN "website_decision" jsonb');
     expect(migration).toContain('ADD COLUMN "website_response_template_version" text');
+    expect(migration).not.toMatch(/^\s*(?:DROP\b|ALTER\s+TABLE\s+.+\s+DROP\b|TRUNCATE|DELETE\s+FROM)/im);
+  });
+
+  it("adds only hashed retention holds, bounded metric events, and an anonymization marker", () => {
+    expect(getTableColumns(customerServiceConversations)).toEqual(expect.objectContaining({
+      anonymizedAt: expect.anything(),
+    }));
+    expect([customerServiceRetentionHolds, customerServiceWebsiteMetricEvents].map(getTableName)).toEqual([
+      "customer_service_retention_holds",
+      "customer_service_website_metric_events",
+    ]);
+    expect(getTableColumns(customerServiceRetentionHolds)).toEqual(expect.objectContaining({
+      conversationId: expect.anything(),
+      reason: expect.anything(),
+      referenceHash: expect.anything(),
+      expiresAt: expect.anything(),
+      releasedAt: expect.anything(),
+    }));
+    expect(Object.keys(getTableColumns(customerServiceRetentionHolds))).not.toEqual(expect.arrayContaining([
+      "orderId", "customerId", "email", "legalNotes", "rawReference",
+    ]));
+    expect(getTableConfig(customerServiceWebsiteMetricEvents).checks.map((item) => item.name))
+      .toEqual(expect.arrayContaining([
+        "customer_service_website_metric_events_type_valid",
+        "customer_service_website_metric_events_hash_valid",
+        "customer_service_website_metric_events_expiry_valid",
+      ]));
+
+    const migrationDirectory = resolve(process.cwd(), "drizzle");
+    const migrationName = readdirSync(migrationDirectory).find((name) => /^0052_.+\.sql$/.test(name));
+    expect(migrationName).toEqual(expect.stringMatching(/^0052_.+\.sql$/));
+    const migration = readFileSync(resolve(migrationDirectory, migrationName ?? "missing"), "utf8");
+    expect(migration).toContain('CREATE TABLE "customer_service_retention_holds"');
+    expect(migration).toContain('CREATE TABLE "customer_service_website_metric_events"');
+    expect(migration).toContain('ADD COLUMN "anonymized_at"');
+    expect(migration).not.toMatch(/CREATE TABLE "(?:orders|payment_requests|payment_attempts|payment_ledger_entries)"/);
     expect(migration).not.toMatch(/^\s*(?:DROP\b|ALTER\s+TABLE\s+.+\s+DROP\b|TRUNCATE|DELETE\s+FROM)/im);
   });
 });

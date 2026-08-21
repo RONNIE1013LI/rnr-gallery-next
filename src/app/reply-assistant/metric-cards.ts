@@ -98,7 +98,39 @@ export function replyAssistantMetricCards(counts: PilotMetricCounts): readonly R
     ...learningMetricCards(metrics),
   ];
 }
-import { calculatePilotMetrics } from "@/server/customer-service/metrics";
-import type { PilotMetricCounts } from "@/server/customer-service/repositories/customer-service-repository";
+import { calculateChannelMetrics, calculatePilotMetrics } from "@/server/customer-service/metrics";
+import type {
+  ChannelMetricCounts,
+  PilotMetricCounts,
+} from "@/server/customer-service/repositories/customer-service-repository";
 
 export type ReplyAssistantMetricCard = readonly [string, string | number];
+
+export function channelMetricCards(counts: ChannelMetricCounts): readonly ReplyAssistantMetricCard[] {
+  const metrics = calculateChannelMetrics(counts);
+  return [
+    ["Sessions", metrics.sessions],
+    ["Meaningful turns", metrics.meaningfulTurns],
+    ["Responses", metrics.responses],
+    ["Direct template replies", metrics.directTemplateReplies],
+    ["No reply", metrics.noReply],
+    ["Human reviews", metrics.humanReviewsOpened],
+    ["Reviews resolved", metrics.humanReviewsResolved],
+    ["Alerts queued", metrics.alertsQueued],
+    ["Alerts sent", metrics.alertsSent],
+    ["Alerts failed", metrics.alertsFailed],
+    ["Website human replies", metrics.websiteHumanReplies],
+    ["Rate blocks", metrics.rateBlocks],
+    ["Budget blocks", metrics.budgetBlocks],
+    ["Provider calls", metrics.providerCalls],
+    ["Provider tokens", `${metrics.inputTokens} in / ${metrics.cachedInputTokens} cached / ${metrics.outputTokens} out`],
+    ["Provider spend", `$${(metrics.totalCostMicrousd / 1_000_000).toFixed(4)}`],
+    ["Provider latency", `${Math.round(metrics.averageProviderLatencyMs)}ms`],
+    ["Direct resolution", percent(metrics.directAutomatedResolutionRate)],
+    ["Human escalation", percent(metrics.humanEscalationRate)],
+    ["Public update latency", `${Math.round(metrics.averagePublicUpdateLatencyMs)}ms`],
+    ["Isolation violations", metrics.crossSessionIsolationViolations],
+    ["Automatic business actions", metrics.automaticBusinessActions],
+    ["Automatic sends", metrics.automaticSends],
+  ];
+}

@@ -586,6 +586,31 @@ describe("CustomerServiceEngine", () => {
       .toBe("website_customer_service_decision_v1");
   });
 
+  it("records Website NO_REPLY_NEEDED as a terminal metric marker without public text", async () => {
+    const current = setup("Thanks");
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: "Thanks", channel: "website" },
+      context: [{
+        role: "staff",
+        text: "Please send the original photo files.",
+        receivedAt: "2026-08-21T00:00:00.000Z",
+      }],
+    });
+    current.provider.generate.mockResolvedValueOnce(providerResult(websiteDecision({
+      response_type: "NO_REPLY_NEEDED",
+      intent: "tone_adjustment",
+      allowed_facts: [],
+    })));
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" }))
+      .resolves.toEqual({ status: "no_reply_needed", attemptId: "attempt-1" });
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      status: "abandoned",
+      providerErrorCode: "website_no_reply_needed",
+    }));
+    expect(current.repository.completeProviderAttempt.mock.calls[0]?.[0]).not.toHaveProperty("draftText");
+  });
+
   it("keeps Facebook on the existing unrestricted draft contract", async () => {
     const freeForm = "A Facebook draft remains free-form for Ronnie to review.";
     const current = setup("Can you explain the design process?", { reply: freeForm });

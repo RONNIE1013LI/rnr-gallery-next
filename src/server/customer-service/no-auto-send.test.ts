@@ -14,12 +14,14 @@ describe("reply assistant has no automatic send capability", () => {
       "src/app/api/meta/webhook/route-handler.ts",
       "src/app/api/customer-chat/messages/route-handler.ts",
       "src/app/api/customer-chat/updates/route-handler.ts",
+      "src/app/api/internal/customer-chat/retention/route-handler.ts",
       "src/app/api/reply-assistant/messages/route-handler.ts",
       "src/server/customer-service/runtime.ts",
     ]));
-    expect(inventory.scriptFiles.map((file) => file.relativePath)).toContain(
+    expect(inventory.scriptFiles.map((file) => file.relativePath)).toEqual(expect.arrayContaining([
       "scripts/cleanup-customer-service-attachments.ts",
-    );
+      "scripts/evaluate-website-customer-service.ts",
+    ]));
     expect(paths.some((file) => (
       /\.(?:test|spec)\.[^/]+$|\/(?:docs|fixtures|generated|test-support)\//.test(file)
     ))).toBe(false);

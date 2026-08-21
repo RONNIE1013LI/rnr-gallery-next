@@ -239,6 +239,33 @@ export type ReplyAssistantUpdatePage = Readonly<{
   caseMemories: ReplyAssistantCaseMemoryPage | null;
 }>;
 
+export type ChannelMetricCounts = Readonly<{
+  sessions: number;
+  meaningfulTurns: number;
+  responses: number;
+  directTemplateReplies: number;
+  noReply: number;
+  humanReviewsOpened: number;
+  humanReviewsResolved: number;
+  alertsQueued: number;
+  alertsSent: number;
+  alertsFailed: number;
+  websiteHumanReplies: number;
+  rateBlocks: number;
+  budgetBlocks: number;
+  providerCalls: number;
+  inputTokens: number;
+  cachedInputTokens: number;
+  outputTokens: number;
+  totalCostMicrousd: number;
+  totalLatencyMs: number;
+  publicUpdates: number;
+  totalPublicUpdateLatencyMs: number;
+  crossSessionIsolationViolations: 0;
+  automaticBusinessActions: 0;
+  automaticSends: 0;
+}>;
+
 export type PilotMetricCounts = Readonly<{
   totalIncomingEligible: number;
   rawCustomerEvents: number;
@@ -287,6 +314,7 @@ export type PilotMetricCounts = Readonly<{
   learningCandidatesApproved: number;
   learningCandidatesRejected: number;
   commonEditReasons: readonly Readonly<{ code: string; count: number }>[];
+  channelMetrics?: Readonly<Record<"facebook" | "website", ChannelMetricCounts>>;
 }>;
 
 export interface CustomerServiceRepository {
@@ -626,4 +654,14 @@ export interface CustomerServiceRepository {
   getReplyAssistantUiCursor(): Promise<string>;
   listReplyAssistantUpdates(cursor: string | null, limit: number): Promise<ReplyAssistantUpdatePage>;
   metricCounts(): Promise<PilotMetricCounts>;
+  runWebsiteRetention(input: Readonly<{
+    now: Date;
+    limit: number;
+  }>): Promise<Readonly<{
+    sessionsExpired: number;
+    rateBucketsDeleted: number;
+    rateBlockEventsDeleted: number;
+    reviewLinksExpired: number;
+    conversationsAnonymized: number;
+  }>>;
 }

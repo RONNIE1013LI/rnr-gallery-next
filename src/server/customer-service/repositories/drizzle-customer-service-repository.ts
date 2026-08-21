@@ -23,14 +23,17 @@ import {
   customerServiceMessages,
   customerServicePilotRuns,
   customerServiceRateLimitBuckets,
+  customerServiceRetentionHolds,
   customerServiceTurns,
   customerServiceUiChanges,
   customerServiceUiRevision,
   customerServiceWebSessions,
   customerServiceWebsiteAssistantMessages,
+  customerServiceWebsiteMetricEvents,
 } from "@/server/db/schema";
 import type {
   CustomerServiceRepository,
+  ChannelMetricCounts,
   FeedbackEventInput,
   GateBlockedAttemptInput,
   HashedIncomingMessage,
@@ -80,6 +83,109 @@ const WEBSITE_RATE_LIMITS = Object.freeze({
   networkMinute: 10,
   networkHour: 60,
 });
+const WEBSITE_CHAT_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
+const RETENTION_REDACTION = "[expired website chat]";
+
+function channelMetricCountsSql(channel: "facebook" | "website") {
+  return sql`jsonb_build_object(
+    'sessions', case when ${channel} = 'website'
+      then (select count(*) from customer_service_web_sessions)
+      else (select count(*) from customer_service_conversations where channel = 'facebook') end,
+    'meaningfulTurns', (select count(*) from customer_service_turns
+      where channel = ${channel}
+        and status <> 'open'
+        and suppression_reason is distinct from 'completed_acknowledgement'),
+    'responses', (
+      select count(*) from customer_service_conversation_events
+      where channel = ${channel} and role = 'staff' and event_type = 'human_outbound'
+    ) + case when ${channel} = 'website'
+      then (select count(*) from customer_service_website_assistant_messages)
+      else 0 end,
+    'directTemplateReplies', case when ${channel} = 'website'
+      then (select count(*) from customer_service_website_assistant_messages where kind = 'validated_ai')
+      else 0 end,
+    'noReply', (select count(*) from customer_service_ai_attempts attempts
+      join customer_service_messages messages on messages.id = attempts.message_id
+      where messages.channel = ${channel} and attempts.provider_error_code = 'website_no_reply_needed'),
+    'humanReviewsOpened', case when ${channel} = 'website'
+      then (select count(*) from customer_service_human_reviews) else 0 end,
+    'humanReviewsResolved', case when ${channel} = 'website'
+      then (select count(*) from customer_service_human_reviews where status = 'resolved') else 0 end,
+    'alertsQueued', case when ${channel} = 'website'
+      then (select count(*) from customer_service_review_alert_outbox) else 0 end,
+    'alertsSent', case when ${channel} = 'website'
+      then (select count(*) from customer_service_review_alert_outbox where status = 'sent') else 0 end,
+    'alertsFailed', case when ${channel} = 'website'
+      then (select count(*) from customer_service_review_alert_outbox where status = 'failed') else 0 end,
+    'websiteHumanReplies', case when ${channel} = 'website'
+      then (select count(*) from customer_service_conversation_events
+        where channel = 'website' and role = 'staff' and event_type = 'human_outbound') else 0 end,
+    'rateBlocks', case when ${channel} = 'website'
+      then (select count(*) from customer_service_website_metric_events where event_type = 'rate_block') else 0 end,
+    'budgetBlocks', (select count(*) from customer_service_ai_attempts attempts
+      join customer_service_messages messages on messages.id = attempts.message_id
+      where messages.channel = ${channel} and attempts.status = 'budget_blocked'),
+    'providerCalls', (select count(*) from customer_service_ai_attempts attempts
+      join customer_service_messages messages on messages.id = attempts.message_id
+      where messages.channel = ${channel} and attempts.provider_called),
+    'inputTokens', (select coalesce(sum(attempts.input_tokens), 0) from customer_service_ai_attempts attempts
+      join customer_service_messages messages on messages.id = attempts.message_id
+      where messages.channel = ${channel} and attempts.provider_called),
+    'cachedInputTokens', (select coalesce(sum(attempts.cached_input_tokens), 0) from customer_service_ai_attempts attempts
+      join customer_service_messages messages on messages.id = attempts.message_id
+      where messages.channel = ${channel} and attempts.provider_called),
+    'outputTokens', (select coalesce(sum(attempts.output_tokens), 0) from customer_service_ai_attempts attempts
+      join customer_service_messages messages on messages.id = attempts.message_id
+      where messages.channel = ${channel} and attempts.provider_called),
+    'totalCostMicrousd', (select coalesce(sum(attempts.estimated_cost_microusd), 0) from customer_service_ai_attempts attempts
+      join customer_service_messages messages on messages.id = attempts.message_id
+      where messages.channel = ${channel} and attempts.provider_called),
+    'totalLatencyMs', (select coalesce(sum(attempts.latency_ms), 0) from customer_service_ai_attempts attempts
+      join customer_service_messages messages on messages.id = attempts.message_id
+      where messages.channel = ${channel} and attempts.provider_called),
+    'publicUpdates', case when ${channel} = 'website'
+      then (select count(*) from customer_service_website_assistant_messages) else 0 end,
+    'totalPublicUpdateLatencyMs', case when ${channel} = 'website' then (
+      select coalesce(sum(greatest(0, extract(epoch from (published.published_at - messages.received_at)) * 1000)), 0)
+      from customer_service_website_assistant_messages published
+      join customer_service_messages messages on messages.id = published.message_id
+    ) else 0 end,
+    'crossSessionIsolationViolations', 0,
+    'automaticBusinessActions', 0,
+    'automaticSends', 0
+  )`;
+}
+
+function parseChannelMetricCounts(value: unknown): ChannelMetricCounts {
+  const row = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  const count = (name: keyof ChannelMetricCounts) => Number(row[name] ?? 0);
+  return Object.freeze({
+    sessions: count("sessions"),
+    meaningfulTurns: count("meaningfulTurns"),
+    responses: count("responses"),
+    directTemplateReplies: count("directTemplateReplies"),
+    noReply: count("noReply"),
+    humanReviewsOpened: count("humanReviewsOpened"),
+    humanReviewsResolved: count("humanReviewsResolved"),
+    alertsQueued: count("alertsQueued"),
+    alertsSent: count("alertsSent"),
+    alertsFailed: count("alertsFailed"),
+    websiteHumanReplies: count("websiteHumanReplies"),
+    rateBlocks: count("rateBlocks"),
+    budgetBlocks: count("budgetBlocks"),
+    providerCalls: count("providerCalls"),
+    inputTokens: count("inputTokens"),
+    cachedInputTokens: count("cachedInputTokens"),
+    outputTokens: count("outputTokens"),
+    totalCostMicrousd: count("totalCostMicrousd"),
+    totalLatencyMs: count("totalLatencyMs"),
+    publicUpdates: count("publicUpdates"),
+    totalPublicUpdateLatencyMs: count("totalPublicUpdateLatencyMs"),
+    crossSessionIsolationViolations: 0,
+    automaticBusinessActions: 0,
+    automaticSends: 0,
+  });
+}
 
 function isHash(value: string) {
   return /^[a-f0-9]{64}$/.test(value);
@@ -181,6 +287,19 @@ async function consumeWebsiteRateLimits(
   const networkAllowed = await consume(networkBuckets);
   if (!networkAllowed && input.isNewSession) return false;
   return (await consume(sessionBuckets)) && networkAllowed;
+}
+
+async function recordWebsiteRateBlock(
+  transaction: Transaction,
+  eventKeyHash: string,
+  occurredAt: Date,
+) {
+  await transaction.insert(customerServiceWebsiteMetricEvents).values({
+    eventType: "rate_block",
+    eventKeyHash,
+    occurredAt,
+    expiresAt: new Date(occurredAt.getTime() + 24 * 60 * 60 * 1_000),
+  }).onConflictDoNothing();
 }
 
 async function nextAttemptNumber(transaction: Transaction, messageId: string) {
@@ -1208,7 +1327,10 @@ export function createDrizzleCustomerServiceRepository(
             )).limit(1);
           if (duplicate) return { status: "duplicate" as const };
           const allowed = await consumeWebsiteRateLimits(transaction, input.websiteRateLimit, input.receivedAt);
-          if (!allowed) return { status: "rate_limited" as const };
+          if (!allowed) {
+            await recordWebsiteRateBlock(transaction, input.externalMessageKeyHash, input.receivedAt);
+            return { status: "rate_limited" as const };
+          }
         }
 
         const insertedConversation = await transaction.insert(customerServiceConversations).values({
@@ -1455,7 +1577,10 @@ export function createDrizzleCustomerServiceRepository(
               inArray(customerServiceTurns.status, ["open", "sealed"]),
               inArray(customerServiceTurns.processingStatus, ["pending", "running"]),
             )).limit(1).for("update");
-          if (runnableTurn) return { status: "rate_limited" as const };
+          if (runnableTurn) {
+            await recordWebsiteRateBlock(transaction, input.externalMessageKeyHash, input.receivedAt);
+            return { status: "rate_limited" as const };
+          }
         }
         const [message] = await transaction.insert(customerServiceMessages).values({
           conversationId: conversation.id,
@@ -4180,6 +4305,226 @@ export function createDrizzleCustomerServiceRepository(
       return reader(cursor, limit);
     },
 
+    async runWebsiteRetention(input) {
+      if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 500) {
+        throw new Error("website_retention_limit_invalid");
+      }
+      const expiredSessions = await database.execute(sql`
+        with selected as (
+          select ${customerServiceWebSessions.id} as id from ${customerServiceWebSessions}
+          where ${customerServiceWebSessions.expiresAt} <= ${input.now}
+          order by ${customerServiceWebSessions.expiresAt}, ${customerServiceWebSessions.id}
+          limit ${input.limit}
+          for update skip locked
+        )
+        delete from ${customerServiceWebSessions} sessions
+        using selected
+        where sessions.id = selected.id
+        returning sessions.id
+      `);
+      const expiredBuckets = await database.execute(sql`
+        with selected as (
+          select ${customerServiceRateLimitBuckets.id} as id from ${customerServiceRateLimitBuckets}
+          where ${customerServiceRateLimitBuckets.expiresAt} <= ${input.now}
+          order by ${customerServiceRateLimitBuckets.expiresAt}, ${customerServiceRateLimitBuckets.id}
+          limit ${input.limit}
+          for update skip locked
+        )
+        delete from ${customerServiceRateLimitBuckets} buckets
+        using selected
+        where buckets.id = selected.id
+        returning buckets.id
+      `);
+      const expiredRateBlocks = await database.execute(sql`
+        with selected as (
+          select ${customerServiceWebsiteMetricEvents.id} as id from ${customerServiceWebsiteMetricEvents}
+          where ${customerServiceWebsiteMetricEvents.expiresAt} <= ${input.now}
+          order by ${customerServiceWebsiteMetricEvents.expiresAt}, ${customerServiceWebsiteMetricEvents.id}
+          limit ${input.limit}
+          for update skip locked
+        )
+        delete from ${customerServiceWebsiteMetricEvents} events
+        using selected
+        where events.id = selected.id
+        returning events.id
+      `);
+      const sessionsExpired = expiredSessions.rows.length;
+      const rateBucketsDeleted = expiredBuckets.rows.length;
+      const rateBlockEventsDeleted = expiredRateBlocks.rows.length;
+      const reviewLinksExpired = await database.transaction(async (transaction) => {
+        await transaction.execute(sql`
+          with selected as (
+            select id from ${customerServiceReviewSelectors}
+            where ${customerServiceReviewSelectors.expiresAt} <= ${input.now}
+            order by ${customerServiceReviewSelectors.expiresAt}, ${customerServiceReviewSelectors.id}
+            limit ${input.limit}
+            for update skip locked
+          )
+          delete from ${customerServiceReviewSelectors} selectors
+          using selected
+          where selectors.id = selected.id
+        `);
+        const expired = await transaction.select({ id: customerServiceHumanReviews.id })
+          .from(customerServiceHumanReviews)
+          .where(and(
+            lte(customerServiceHumanReviews.deepLinkExpiresAt, input.now),
+            sql`not exists (
+              select 1 from ${customerServiceReviewAlertOutbox} alerts
+              where alerts.human_review_id = ${customerServiceHumanReviews.id}
+                and alerts.status = 'leased'
+            )`,
+          ))
+          .orderBy(asc(customerServiceHumanReviews.deepLinkExpiresAt), asc(customerServiceHumanReviews.id))
+          .limit(input.limit)
+          .for("update", { skipLocked: true });
+        if (!expired.length) return 0;
+        const ids = expired.map((item) => item.id);
+        await transaction.update(customerServiceReviewAlertOutbox).set({
+          status: "failed",
+          leaseToken: null,
+          leaseExpiresAt: null,
+          lastErrorCode: "deep_link_expired",
+        }).where(and(
+          inArray(customerServiceReviewAlertOutbox.humanReviewId, ids),
+          inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait"]),
+        ));
+        const cleared = await transaction.update(customerServiceHumanReviews).set({
+          deepLinkTokenHash: null,
+          deepLinkExpiresAt: null,
+        }).where(inArray(customerServiceHumanReviews.id, ids)).returning({ id: customerServiceHumanReviews.id });
+        return cleared.length;
+      });
+
+      const cutoff = new Date(input.now.getTime() - WEBSITE_CHAT_RETENTION_MS);
+      const candidates = await database.select({ id: customerServiceConversations.id })
+        .from(customerServiceConversations)
+        .where(and(
+          eq(customerServiceConversations.channel, "website"),
+          isNull(customerServiceConversations.anonymizedAt),
+          lte(customerServiceConversations.createdAt, cutoff),
+        ))
+        .orderBy(asc(customerServiceConversations.createdAt), asc(customerServiceConversations.id))
+        .limit(input.limit);
+      let conversationsAnonymized = 0;
+      for (const candidate of candidates) {
+        const anonymized = await database.transaction(async (transaction) => {
+          await lockConversation(transaction, candidate.id);
+          const [eligible] = await transaction.select({ id: customerServiceConversations.id })
+            .from(customerServiceConversations)
+            .where(and(
+              eq(customerServiceConversations.id, candidate.id),
+              eq(customerServiceConversations.channel, "website"),
+              isNull(customerServiceConversations.anonymizedAt),
+              lte(customerServiceConversations.createdAt, cutoff),
+              sql`not exists (
+                select 1 from ${customerServiceHumanReviews} reviews
+                where reviews.conversation_id = ${customerServiceConversations.id}
+                  and (reviews.status = 'open' or reviews.updated_at > ${cutoff})
+              )`,
+              sql`not exists (
+                select 1 from ${customerServiceRetentionHolds} holds
+                where holds.conversation_id = ${customerServiceConversations.id}
+                  and holds.released_at is null
+                  and (holds.expires_at is null or holds.expires_at > ${input.now})
+              )`,
+              sql`not exists (
+                select 1 from ${customerServiceMessages} messages
+                where messages.conversation_id = ${customerServiceConversations.id}
+                  and messages.received_at > ${cutoff}
+              )`,
+              sql`not exists (
+                select 1 from ${customerServiceConversationEvents} events
+                where events.conversation_id = ${customerServiceConversations.id}
+                  and events.received_at > ${cutoff}
+              )`,
+              sql`not exists (
+                select 1 from ${customerServiceWebsiteAssistantMessages} replies
+                where replies.conversation_id = ${customerServiceConversations.id}
+                  and replies.published_at > ${cutoff}
+              )`,
+              sql`not exists (
+                select 1 from ${customerServiceTurns} turns
+                where turns.conversation_id = ${customerServiceConversations.id}
+                  and turns.processing_status in ('pending', 'running')
+              )`,
+            )).limit(1).for("update");
+          if (!eligible) return false;
+
+          await transaction.update(customerServiceHumanReplyMatches).set({
+            humanFinalText: RETENTION_REDACTION,
+            contextSummary: RETENTION_REDACTION,
+          }).where(eq(customerServiceHumanReplyMatches.conversationId, candidate.id));
+          await transaction.update(customerServiceFeedbackEvents).set({
+            humanFinalText: RETENTION_REDACTION,
+          }).where(and(
+            isNotNull(customerServiceFeedbackEvents.humanFinalText),
+            sql`exists (
+              select 1 from ${customerServiceAiAttempts} attempts
+              join ${customerServiceMessages} messages on messages.id = attempts.message_id
+              where attempts.id = ${customerServiceFeedbackEvents.attemptId}
+                and messages.conversation_id = ${candidate.id}
+            )`,
+          ));
+          await transaction.update(customerServiceAiAttempts).set({
+            draftText: RETENTION_REDACTION,
+          }).where(and(
+            isNotNull(customerServiceAiAttempts.draftText),
+            sql`exists (
+              select 1 from ${customerServiceMessages} messages
+              where messages.id = ${customerServiceAiAttempts.messageId}
+                and messages.conversation_id = ${candidate.id}
+            )`,
+          ));
+          await transaction.update(customerServiceHumanReviews).set({
+            redactedSummary: RETENTION_REDACTION,
+            deepLinkTokenHash: null,
+            deepLinkExpiresAt: null,
+          }).where(eq(customerServiceHumanReviews.conversationId, candidate.id));
+          await transaction.update(customerServiceWebsiteAssistantMessages).set({
+            body: RETENTION_REDACTION,
+          }).where(eq(customerServiceWebsiteAssistantMessages.conversationId, candidate.id));
+          await transaction.update(customerServiceConversationEvents).set({
+            externalMessageKeyHash: sql`md5('retention-event:' || ${customerServiceConversationEvents.id}::text)
+              || md5('retention-event-2:' || ${customerServiceConversationEvents.id}::text)`,
+            body: RETENTION_REDACTION,
+            bodyHash: null,
+            redactionCodes: ["retention_anonymized"],
+            replyToExternalMessageKeyHash: null,
+            learningEligible: false,
+          }).where(eq(customerServiceConversationEvents.conversationId, candidate.id));
+          await transaction.update(customerServiceTurns).set({
+            body: RETENTION_REDACTION,
+          }).where(eq(customerServiceTurns.conversationId, candidate.id));
+          await transaction.update(customerServiceMessages).set({
+            externalMessageKeyHash: sql`md5('retention-message:' || ${customerServiceMessages.id}::text)
+              || md5('retention-message-2:' || ${customerServiceMessages.id}::text)`,
+            body: RETENTION_REDACTION,
+            customerText: null,
+            productContext: null,
+          }).where(eq(customerServiceMessages.conversationId, candidate.id));
+          const updated = await transaction.update(customerServiceConversations).set({
+            externalKeyHash: sql`md5('retention-conversation:' || ${customerServiceConversations.id}::text)
+              || md5('retention-conversation-2:' || ${customerServiceConversations.id}::text)`,
+            anonymizedAt: input.now,
+            updatedAt: input.now,
+          }).where(and(
+            eq(customerServiceConversations.id, candidate.id),
+            isNull(customerServiceConversations.anonymizedAt),
+          )).returning({ id: customerServiceConversations.id });
+          return updated.length === 1;
+        });
+        if (anonymized) conversationsAnonymized += 1;
+      }
+
+      return {
+        sessionsExpired,
+        rateBucketsDeleted,
+        rateBlockEventsDeleted,
+        reviewLinksExpired,
+        conversationsAnonymized,
+      };
+    },
+
     async metricCounts() {
       const result = await database.execute(sql`
         select
@@ -4250,6 +4595,10 @@ export function createDrizzleCustomerServiceRepository(
           (select count(*) from customer_service_learning_candidates where status = 'pending') as learning_candidates_pending,
           (select count(*) from customer_service_learning_candidates where status = 'approved') as learning_candidates_approved,
           (select count(*) from customer_service_learning_candidates where status = 'rejected') as learning_candidates_rejected,
+          jsonb_build_object(
+            'facebook', ${channelMetricCountsSql("facebook")},
+            'website', ${channelMetricCountsSql("website")}
+          ) as channel_metrics,
           (select coalesce(jsonb_agg(jsonb_build_object('code', reasons.code, 'count', reasons.reason_count)
             order by reasons.reason_count desc, reasons.code), '[]'::jsonb)
             from (
@@ -4320,6 +4669,14 @@ export function createDrizzleCustomerServiceRepository(
         learningCandidatesApproved: count("learning_candidates_approved"),
         learningCandidatesRejected: count("learning_candidates_rejected"),
         commonEditReasons,
+        channelMetrics: {
+          facebook: parseChannelMetricCounts(
+            (row.channel_metrics as Record<string, unknown> | undefined)?.facebook,
+          ),
+          website: parseChannelMetricCounts(
+            (row.channel_metrics as Record<string, unknown> | undefined)?.website,
+          ),
+        },
       };
     },
   };

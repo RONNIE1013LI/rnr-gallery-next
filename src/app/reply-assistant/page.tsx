@@ -93,6 +93,7 @@ export default async function ReplyAssistantPage({
         initialCursor={initialCursor}
         initialItems={initialItems}
         initialMetricCards={cards}
+        initialMetrics={rawMetrics}
         initialLearningCandidates={learningCandidates.items}
         initialCaseMemories={caseMemories.items}
         canReview={access.adminRole === "admin"}

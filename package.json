@@ -27,6 +27,7 @@
     "reply-assistant:evaluate:images": "tsx scripts/evaluate-reply-assistant-images.ts",
     "reply-assistant:evaluate:conversations": "tsx scripts/evaluate-customer-service-conversations.ts",
     "reply-assistant:evaluate:learning": "tsx scripts/evaluate-customer-service-learning.ts",
+    "reply-assistant:evaluate:website": "tsx scripts/evaluate-website-customer-service.ts",
     "reply-assistant:fixtures:images": "tsx scripts/generate-reply-assistant-image-fixtures.ts",
     "reply-assistant:images:cleanup": "tsx scripts/cleanup-customer-service-attachments.ts"
   },

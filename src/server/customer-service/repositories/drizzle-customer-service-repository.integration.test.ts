@@ -24,12 +24,14 @@ import {
   customerServiceMessages,
   customerServicePilotRuns,
   customerServiceRateLimitBuckets,
+  customerServiceRetentionHolds,
   customerServiceTurns,
   customerServiceUiChanges,
   customerServiceUiRevision,
   customerServiceWebSessions,
   customerServiceWebsiteAssistantMessages,
   customerServiceWebsiteBudgetState,
+  customerServiceWebsiteMetricEvents,
   user,
 } from "@/server/db/schema";
 import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
@@ -190,6 +192,8 @@ function imageCompletion(attemptId: string, status: "analyzed" | "provider_error
 
 async function clearTables() {
   await database.delete(customerServiceWebsiteAssistantMessages);
+  await database.delete(customerServiceRetentionHolds);
+  await database.delete(customerServiceWebsiteMetricEvents);
   await database.delete(customerServiceReviewAlertOutbox);
   await database.delete(customerServiceReviewSelectors);
   await database.delete(customerServiceHumanReviews);
@@ -215,6 +219,59 @@ async function clearTables() {
   await database.delete(customerServicePilotRuns);
   await database.delete(customerServiceUiChanges);
   await database.update(customerServiceUiRevision).set({ revision: 0, changedAt: new Date("2026-08-20T00:00:00.000Z") });
+}
+
+async function createRetentionConversation(input: Readonly<{
+  channel: "facebook" | "website";
+  marker: string;
+  at: Date;
+}>) {
+  const [conversation] = await database.insert(customerServiceConversations).values({
+    channel: input.channel,
+    externalKeyHash: createHash("sha256").update(`conversation:${input.marker}`).digest("hex"),
+    createdAt: input.at,
+    updatedAt: input.at,
+  }).returning({ id: customerServiceConversations.id });
+  const [message] = await database.insert(customerServiceMessages).values({
+    conversationId: conversation.id,
+    channel: input.channel,
+    externalMessageKeyHash: createHash("sha256").update(`message:${input.marker}`).digest("hex"),
+    body: `private-${input.marker}`,
+    customerText: `private-${input.marker}`,
+    receivedAt: input.at,
+    createdAt: input.at,
+    updatedAt: input.at,
+  }).returning({ id: customerServiceMessages.id });
+  const [turn] = await database.insert(customerServiceTurns).values({
+    conversationId: conversation.id,
+    channel: input.channel,
+    representativeMessageId: message.id,
+    body: `private-${input.marker}`,
+    status: "suppressed",
+    debounceUntil: input.at,
+    openedAt: input.at,
+    lastEventAt: input.at,
+    sealedAt: input.at,
+    suppressionReason: "completed_acknowledgement",
+    processingStatus: "completed",
+    nextRunAt: input.at,
+    processingCompletedAt: input.at,
+    createdAt: input.at,
+    updatedAt: input.at,
+  }).returning({ id: customerServiceTurns.id });
+  await database.insert(customerServiceConversationEvents).values({
+    conversationId: conversation.id,
+    turnId: turn.id,
+    legacyMessageId: message.id,
+    channel: input.channel,
+    externalMessageKeyHash: createHash("sha256").update(`event:${input.marker}`).digest("hex"),
+    role: "customer",
+    eventType: "customer_message",
+    body: `private-${input.marker}`,
+    receivedAt: input.at,
+    createdAt: input.at,
+  });
+  return { conversationId: conversation.id, messageId: message.id, turnId: turn.id };
 }
 
 async function activateFacebookPilot(name: string) {
@@ -3828,6 +3885,14 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
 
     expect(first).toMatchObject({ status: "turn_pending" });
     expect(second).toEqual({ status: "rate_limited" });
+    await expect(database.select().from(customerServiceWebsiteMetricEvents)).resolves.toEqual([
+      expect.objectContaining({
+        eventType: "rate_block",
+        eventKeyHash: "4".repeat(64),
+        occurredAt: websiteRateNow,
+        expiresAt: new Date("2026-08-20T00:00:00.000Z"),
+      }),
+    ]);
   });
 
   it.each([
@@ -8084,6 +8149,392 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       imageAwareTotalCostMicrousd: 65,
     });
     expect(queryCount).toBe(1);
+  });
+
+  it("reports channel-filtered Website metrics without counting Facebook work as Website", async () => {
+    const now = new Date("2026-08-22T00:00:00.000Z");
+    const website = await createRetentionConversation({ channel: "website", marker: "metrics-website", at: now });
+    const facebook = await createRetentionConversation({ channel: "facebook", marker: "metrics-facebook", at: now });
+    await database.insert(customerServiceWebSessions).values({
+      conversationId: website.conversationId,
+      sessionTokenHash: createHash("sha256").update("metrics-session").digest("hex"),
+      expiresAt: new Date("2026-08-29T00:00:00.000Z"),
+      lastSeenAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const [websiteAttempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: website.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      gateReasons: [],
+      knowledgeSources: [],
+      knowledgeVersion: "metrics-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "metrics-model",
+      draftText: approvedWebsiteDesignResponse,
+      ...approvedWebsiteDesignProof,
+      validatorCodes: [],
+      inputTokens: 100,
+      cachedInputTokens: 10,
+      outputTokens: 20,
+      estimatedCostMicrousd: 500,
+      latencyMs: 300,
+      completedAt: now,
+    }).returning({ id: customerServiceAiAttempts.id });
+    await database.insert(customerServiceWebsiteAssistantMessages).values({
+      conversationId: website.conversationId,
+      messageId: website.messageId,
+      turnId: website.turnId,
+      aiAttemptId: websiteAttempt.id,
+      kind: "validated_ai",
+      body: approvedWebsiteDesignResponse,
+      policyResult: "allowed",
+      knowledgeVersion: "metrics-v1",
+      publishedAt: new Date(now.getTime() + 500),
+    });
+    await database.insert(customerServiceAiAttempts).values([
+      {
+        messageId: website.messageId,
+        attemptNumber: 2,
+        trigger: "webhook_after",
+        intent: "unknown",
+        riskLevel: "low",
+        gateResult: "allowed",
+        gateReasons: [],
+        knowledgeSources: [],
+        knowledgeVersion: "metrics-v1",
+        status: "abandoned",
+        providerCalled: true,
+        provider: "mock",
+        model: "metrics-model",
+        validatorCodes: [],
+        inputTokens: 40,
+        cachedInputTokens: 4,
+        outputTokens: 8,
+        estimatedCostMicrousd: 200,
+        latencyMs: 100,
+        providerErrorCode: "website_no_reply_needed",
+        completedAt: now,
+      },
+      {
+        messageId: website.messageId,
+        attemptNumber: 3,
+        trigger: "webhook_after",
+        intent: "unknown",
+        riskLevel: "high",
+        gateResult: "budget_blocked",
+        gateReasons: ["budget_hard_stop"],
+        knowledgeSources: [],
+        knowledgeVersion: "metrics-v1",
+        status: "budget_blocked",
+        providerCalled: false,
+        validatorCodes: [],
+        completedAt: now,
+      },
+      {
+        messageId: facebook.messageId,
+        attemptNumber: 1,
+        trigger: "webhook_after",
+        intent: "design_process",
+        riskLevel: "low",
+        gateResult: "allowed",
+        gateReasons: [],
+        knowledgeSources: [],
+        knowledgeVersion: "metrics-v1",
+        status: "draft_ready",
+        providerCalled: true,
+        provider: "mock",
+        model: "metrics-model",
+        draftText: "Facebook draft remains internal.",
+        validatorCodes: [],
+        inputTokens: 999,
+        cachedInputTokens: 99,
+        outputTokens: 99,
+        estimatedCostMicrousd: 9_999,
+        latencyMs: 999,
+        completedAt: now,
+      },
+    ]);
+    const [review] = await database.insert(customerServiceHumanReviews).values({
+      conversationId: website.conversationId,
+      triggerTurnId: website.turnId,
+      generation: 1,
+      reason: "unresolved",
+      status: "open",
+      redactedSummary: "Safe summary",
+      openedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    }).returning({ id: customerServiceHumanReviews.id });
+    await database.insert(customerServiceReviewAlertOutbox).values({
+      humanReviewId: review.id,
+      status: "sent",
+      idempotencyKey: `metrics-alert:${review.id}`,
+      nextAttemptAt: now,
+      sentAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await database.insert(customerServiceConversationEvents).values({
+      conversationId: website.conversationId,
+      channel: "website",
+      externalMessageKeyHash: createHash("sha256").update("metrics-human-reply").digest("hex"),
+      role: "staff",
+      eventType: "human_outbound",
+      body: "Human reply",
+      receivedAt: now,
+      createdAt: now,
+    });
+    await database.insert(customerServiceWebsiteMetricEvents).values({
+      eventType: "rate_block",
+      eventKeyHash: createHash("sha256").update("metrics-rate-block").digest("hex"),
+      occurredAt: now,
+      expiresAt: new Date("2026-08-23T00:00:00.000Z"),
+    });
+
+    const metrics = await repository.metricCounts();
+
+    expect(metrics.channelMetrics?.website).toMatchObject({
+      sessions: 1,
+      directTemplateReplies: 1,
+      noReply: 1,
+      humanReviewsOpened: 1,
+      alertsQueued: 1,
+      alertsSent: 1,
+      websiteHumanReplies: 1,
+      rateBlocks: 1,
+      budgetBlocks: 1,
+      providerCalls: 2,
+      inputTokens: 140,
+      cachedInputTokens: 14,
+      outputTokens: 28,
+      totalCostMicrousd: 700,
+      totalLatencyMs: 400,
+      automaticBusinessActions: 0,
+      automaticSends: 0,
+    });
+    expect(metrics.channelMetrics?.facebook).toMatchObject({
+      sessions: 1,
+      providerCalls: 1,
+      inputTokens: 999,
+      totalCostMicrousd: 9_999,
+      directTemplateReplies: 0,
+      websiteHumanReplies: 0,
+      automaticBusinessActions: 0,
+      automaticSends: 0,
+    });
+  });
+
+  it("expires bounded Website credentials and anonymizes only old unprotected Website chat", async () => {
+    const now = new Date("2026-08-22T00:00:00.000Z");
+    const oldAt = new Date("2026-05-01T00:00:00.000Z");
+    const cutoff = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1_000);
+    const expired = await createRetentionConversation({ channel: "website", marker: "expired-chat", at: oldAt });
+    const activeReview = await createRetentionConversation({ channel: "website", marker: "active-review", at: oldAt });
+    const held = await createRetentionConversation({ channel: "website", marker: "legal-hold", at: oldAt });
+    const boundary = await createRetentionConversation({ channel: "website", marker: "boundary-chat", at: cutoff });
+    const recent = await createRetentionConversation({
+      channel: "website",
+      marker: "recent-chat",
+      at: new Date(cutoff.getTime() + 1),
+    });
+    const facebook = await createRetentionConversation({ channel: "facebook", marker: "facebook-chat", at: oldAt });
+    const [expiredAttempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: expired.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "retention-test",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "retention-test",
+      draftText: "private-expired-draft",
+      ...approvedWebsiteDesignProof,
+      completedAt: oldAt,
+      startedAt: oldAt,
+    }).returning({ id: customerServiceAiAttempts.id });
+    await database.insert(customerServiceFeedbackEvents).values({
+      attemptId: expiredAttempt.id,
+      action: "edited",
+      humanFinalText: "private-expired-feedback",
+      idempotencyKey: "retention-feedback",
+      createdAt: oldAt,
+    });
+    await database.insert(customerServiceWebSessions).values({
+      conversationId: expired.conversationId,
+      sessionTokenHash: createHash("sha256").update("expired-session").digest("hex"),
+      expiresAt: new Date("2026-05-08T00:00:00.000Z"),
+      lastSeenAt: oldAt,
+      createdAt: oldAt,
+      updatedAt: oldAt,
+    });
+    await database.insert(customerServiceWebSessions).values([
+      {
+        conversationId: activeReview.conversationId,
+        sessionTokenHash: createHash("sha256").update("boundary-session").digest("hex"),
+        expiresAt: now,
+        lastSeenAt: oldAt,
+        createdAt: oldAt,
+        updatedAt: oldAt,
+      },
+      {
+        conversationId: recent.conversationId,
+        sessionTokenHash: createHash("sha256").update("future-session").digest("hex"),
+        expiresAt: new Date(now.getTime() + 1),
+        lastSeenAt: oldAt,
+        createdAt: oldAt,
+        updatedAt: oldAt,
+      },
+    ]);
+    await database.insert(customerServiceRateLimitBuckets).values([
+      {
+        bucketKind: "network_hour",
+        bucketKeyHash: createHash("sha256").update("expired-bucket").digest("hex"),
+        windowStartedAt: oldAt,
+        expiresAt: new Date(oldAt.getTime() + 3_600_000),
+        requestCount: 1,
+        createdAt: oldAt,
+        updatedAt: oldAt,
+      },
+      {
+        bucketKind: "network_hour",
+        bucketKeyHash: createHash("sha256").update("boundary-bucket").digest("hex"),
+        windowStartedAt: new Date(now.getTime() - 3_600_000),
+        expiresAt: now,
+        requestCount: 1,
+        createdAt: oldAt,
+        updatedAt: oldAt,
+      },
+      {
+        bucketKind: "network_hour",
+        bucketKeyHash: createHash("sha256").update("future-bucket").digest("hex"),
+        windowStartedAt: new Date(now.getTime() - 3_600_000 + 1),
+        expiresAt: new Date(now.getTime() + 1),
+        requestCount: 1,
+        createdAt: oldAt,
+        updatedAt: oldAt,
+      },
+    ]);
+    await database.insert(customerServiceWebsiteMetricEvents).values([
+      {
+        eventType: "rate_block",
+        eventKeyHash: createHash("sha256").update("expired-rate-event").digest("hex"),
+        occurredAt: oldAt,
+        expiresAt: new Date(oldAt.getTime() + 24 * 60 * 60 * 1_000),
+      },
+      {
+        eventType: "rate_block",
+        eventKeyHash: createHash("sha256").update("boundary-rate-event").digest("hex"),
+        occurredAt: new Date(now.getTime() - 24 * 60 * 60 * 1_000),
+        expiresAt: now,
+      },
+      {
+        eventType: "rate_block",
+        eventKeyHash: createHash("sha256").update("future-rate-event").digest("hex"),
+        occurredAt: new Date(now.getTime() - 24 * 60 * 60 * 1_000 + 1),
+        expiresAt: new Date(now.getTime() + 1),
+      },
+    ]);
+    await database.insert(customerServiceHumanReviews).values({
+      conversationId: activeReview.conversationId,
+      triggerTurnId: activeReview.turnId,
+      generation: 1,
+      reason: "unresolved",
+      status: "open",
+      redactedSummary: "private-active-review",
+      openedAt: oldAt,
+      createdAt: oldAt,
+      updatedAt: oldAt,
+    });
+    await database.insert(customerServiceRetentionHolds).values({
+      conversationId: held.conversationId,
+      reason: "legal",
+      referenceHash: createHash("sha256").update("approved-legal-hold").digest("hex"),
+      createdAt: oldAt,
+    });
+
+    const first = await repository.runWebsiteRetention({ now, limit: 20 });
+    const second = await repository.runWebsiteRetention({ now, limit: 20 });
+    const conversations = await database.select({
+      id: customerServiceConversations.id,
+      channel: customerServiceConversations.channel,
+      anonymizedAt: customerServiceConversations.anonymizedAt,
+    }).from(customerServiceConversations);
+    const messages = await database.select({
+      conversationId: customerServiceMessages.conversationId,
+      body: customerServiceMessages.body,
+      customerText: customerServiceMessages.customerText,
+    }).from(customerServiceMessages);
+    const remainingSessions = await database.select().from(customerServiceWebSessions);
+    const remainingBuckets = await database.select().from(customerServiceRateLimitBuckets);
+    const remainingRateEvents = await database.select().from(customerServiceWebsiteMetricEvents);
+    const [anonymizedAttempt] = await database.select().from(customerServiceAiAttempts)
+      .where(eq(customerServiceAiAttempts.id, expiredAttempt.id));
+    const [anonymizedFeedback] = await database.select().from(customerServiceFeedbackEvents)
+      .where(eq(customerServiceFeedbackEvents.attemptId, expiredAttempt.id));
+
+    expect(first).toMatchObject({
+      sessionsExpired: 2,
+      rateBucketsDeleted: 2,
+      rateBlockEventsDeleted: 2,
+      conversationsAnonymized: 2,
+    });
+    expect(second).toEqual({
+      sessionsExpired: 0,
+      rateBucketsDeleted: 0,
+      rateBlockEventsDeleted: 0,
+      reviewLinksExpired: 0,
+      conversationsAnonymized: 0,
+    });
+    expect(conversations.find((item) => item.id === expired.conversationId)?.anonymizedAt).toEqual(now);
+    expect(conversations.find((item) => item.id === boundary.conversationId)?.anonymizedAt).toEqual(now);
+    expect(conversations.find((item) => item.id === activeReview.conversationId)?.anonymizedAt).toBeNull();
+    expect(conversations.find((item) => item.id === held.conversationId)?.anonymizedAt).toBeNull();
+    expect(conversations.find((item) => item.id === recent.conversationId)?.anonymizedAt).toBeNull();
+    expect(conversations.find((item) => item.id === facebook.conversationId)?.anonymizedAt).toBeNull();
+    expect(messages.find((item) => item.conversationId === expired.conversationId)).toMatchObject({
+      body: "[expired website chat]",
+      customerText: null,
+    });
+    expect(messages.find((item) => item.conversationId === activeReview.conversationId)?.body).toBe("private-active-review");
+    expect(messages.find((item) => item.conversationId === held.conversationId)?.body).toBe("private-legal-hold");
+    expect(messages.find((item) => item.conversationId === facebook.conversationId)?.body).toBe("private-facebook-chat");
+    expect(remainingSessions).toHaveLength(1);
+    expect(remainingSessions[0]?.expiresAt).toEqual(new Date(now.getTime() + 1));
+    expect(remainingBuckets).toHaveLength(1);
+    expect(remainingBuckets[0]?.expiresAt).toEqual(new Date(now.getTime() + 1));
+    expect(remainingRateEvents).toHaveLength(1);
+    expect(remainingRateEvents[0]?.expiresAt).toEqual(new Date(now.getTime() + 1));
+    expect(anonymizedAttempt.draftText).toBe("[expired website chat]");
+    expect(anonymizedFeedback.humanFinalText).toBe("[expired website chat]");
+  });
+
+  it("serializes two retention workers and anonymizes each conversation once", async () => {
+    const old = await createRetentionConversation({
+      channel: "website",
+      marker: "concurrent-retention",
+      at: new Date("2026-05-01T00:00:00.000Z"),
+    });
+    const now = new Date("2026-08-22T00:00:00.000Z");
+
+    const results = await Promise.all([
+      repository.runWebsiteRetention({ now, limit: 1 }),
+      competingRepository.runWebsiteRetention({ now, limit: 1 }),
+    ]);
+    const [conversation] = await database.select().from(customerServiceConversations)
+      .where(eq(customerServiceConversations.id, old.conversationId));
+
+    expect(results.reduce((sum, item) => sum + item.conversationsAnonymized, 0)).toBe(1);
+    expect(conversation.anonymizedAt).toEqual(now);
   });
 
   it("commits cleanup claims before slow deletes so two workers never delete the same key", async () => {

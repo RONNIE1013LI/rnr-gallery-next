@@ -1,7 +1,45 @@
 import { describe, expect, it } from "vitest";
-import { calculatePilotMetrics } from "./metrics";
+import { calculateChannelMetrics, calculatePilotMetrics } from "./metrics";
 
 describe("reply assistant pilot metrics", () => {
+  it("calculates Website resolution, escalation, provider, and public update metrics", () => {
+    const metrics = calculateChannelMetrics({
+      sessions: 8,
+      meaningfulTurns: 10,
+      responses: 9,
+      directTemplateReplies: 6,
+      noReply: 1,
+      humanReviewsOpened: 3,
+      humanReviewsResolved: 2,
+      alertsQueued: 3,
+      alertsSent: 1,
+      alertsFailed: 1,
+      websiteHumanReplies: 2,
+      rateBlocks: 4,
+      budgetBlocks: 1,
+      providerCalls: 7,
+      inputTokens: 700,
+      cachedInputTokens: 70,
+      outputTokens: 140,
+      totalCostMicrousd: 3_500,
+      totalLatencyMs: 2_100,
+      publicUpdates: 8,
+      totalPublicUpdateLatencyMs: 4_000,
+      crossSessionIsolationViolations: 0,
+      automaticBusinessActions: 0,
+      automaticSends: 0,
+    });
+
+    expect(metrics).toMatchObject({
+      directAutomatedResolutionRate: 0.7,
+      humanEscalationRate: 0.3,
+      averageProviderLatencyMs: 300,
+      averagePublicUpdateLatencyMs: 500,
+      automaticBusinessActions: 0,
+      automaticSends: 0,
+    });
+  });
+
   it("uses explicit stable denominators", () => {
     expect(calculatePilotMetrics({
       totalIncomingEligible: 20,
