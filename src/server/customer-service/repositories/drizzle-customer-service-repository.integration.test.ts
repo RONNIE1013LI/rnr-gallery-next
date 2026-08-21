@@ -39,6 +39,7 @@ import {
   createReviewAlertToken,
   hashReviewAlertToken,
 } from "../website/review-alert-service";
+import { REVIEW_ALERT_AUTOMATIC_RECOVERY_MAX_AGE_MS } from "../website/review-alert-policy";
 import { createDrizzleCustomerServiceRepository } from "./drizzle-customer-service-repository";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -781,6 +782,82 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     })).resolves.toEqual({ status: "sent" });
   });
 
+  it("atomically replaces a same-window old-secret selector and emits only the persisted current selector", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "8a".repeat(32),
+      networkHash: "8b".repeat(32),
+      messageHash: "8c".repeat(32),
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    await repository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-21T00:00:02.000Z"),
+      knowledgeVersion: "knowledge-v1",
+    });
+    await database.insert(user).values({
+      id: "task-13-selector-rotation-staff",
+      name: "Selector Rotation Staff",
+      email: "task-13-selector-rotation@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+    const issuanceTime = new Date("2026-08-22T12:00:00.000Z");
+    const oldRepository = createDrizzleCustomerServiceRepository(database, {
+      reviewSelectorSecret: "task-13-old-review-selector-secret-at-least-32-bytes",
+      now: () => issuanceTime,
+    });
+    const currentRepository = createDrizzleCustomerServiceRepository(database, {
+      reviewSelectorSecret: "task-13-current-review-selector-secret-at-least-32-bytes",
+      now: () => issuanceTime,
+    });
+    const competingCurrentRepository = createDrizzleCustomerServiceRepository(drizzle(competingPool), {
+      reviewSelectorSecret: "task-13-current-review-selector-secret-at-least-32-bytes",
+      now: () => issuanceTime,
+    });
+    const oldSelector = (await oldRepository.listQueue(100)).items[0].websiteReview?.selector;
+    if (!oldSelector) throw new Error("expected old-secret selector");
+
+    const [firstQueue, secondQueue] = await Promise.all([
+      currentRepository.listQueue(100),
+      competingCurrentRepository.listQueue(100),
+    ]);
+    const firstCurrentSelector = firstQueue.items[0].websiteReview?.selector;
+    const secondCurrentSelector = secondQueue.items[0].websiteReview?.selector;
+    if (!firstCurrentSelector || !secondCurrentSelector) throw new Error("expected current-secret selectors");
+
+    expect(firstCurrentSelector).toBe(secondCurrentSelector);
+    expect(firstCurrentSelector).not.toBe(oldSelector);
+    const selectors = await database.select().from(customerServiceReviewSelectors);
+    expect(selectors).toHaveLength(1);
+    expect(selectors[0]).toMatchObject({
+      selectorHash: createHash("sha256").update(firstCurrentSelector).digest("hex"),
+    });
+    expect(JSON.stringify(firstQueue)).not.toContain(selectors[0].humanReviewId);
+    expect(JSON.stringify(selectors[0])).not.toContain(firstCurrentSelector);
+    await expect(oldRepository.answerWebsiteReview({
+      reviewSelector: oldSelector,
+      text: "An old deployment selector must fail closed.",
+      actorUserId: "task-13-selector-rotation-staff",
+      now: issuanceTime,
+    })).resolves.toEqual({ status: "unavailable" });
+    await expect(currentRepository.answerWebsiteReview({
+      reviewSelector: firstCurrentSelector,
+      text: "The coordinated current-secret selector remains usable.",
+      actorUserId: "task-13-selector-rotation-staff",
+      now: issuanceTime,
+    })).resolves.toEqual({ status: "sent" });
+  });
+
   it("resolves a selector with one indexed candidate lookup instead of scanning review history", async () => {
     const target = await openTask13Review({
       sessionHash: "87".repeat(32),
@@ -1486,12 +1563,16 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
     let currentTime = new Date("2026-08-21T00:00:03.000Z");
     const providerCalls: string[] = [];
-    const providerEffects = new Set<string>();
+    const providerEffects: Array<{ idempotencyKey: string; acceptedAt: Date }> = [];
     const provider = {
       configured: true,
       send: vi.fn(async (message: { idempotencyKey: string }) => {
         providerCalls.push(message.idempotencyKey);
-        providerEffects.add(message.idempotencyKey);
+        const retained = providerEffects.find((effect) => (
+          effect.idempotencyKey === message.idempotencyKey
+          && currentTime.getTime() - effect.acceptedAt.getTime() < 24 * 60 * 60 * 1_000
+        ));
+        if (!retained) providerEffects.push({ idempotencyKey: message.idempotencyKey, acceptedAt: currentTime });
         return { providerMessageId: `accepted:${message.idempotencyKey}` };
       }),
     };
@@ -1518,18 +1599,143 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
 
     await expect(service.deliverNext()).rejects.toThrow("simulated_settlement_database_failure");
     failSettlement = false;
-    currentTime = new Date("2026-08-21T00:00:04.000Z");
+    currentTime = new Date("2026-08-21T22:00:03.000Z");
     await expect(service.deliverNext()).resolves.toEqual({ result: "sent" });
 
     expect(providerCalls).toHaveLength(2);
     expect(new Set(providerCalls).size).toBe(1);
-    expect(providerEffects.size).toBe(1);
+    expect(providerEffects).toHaveLength(1);
     const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
     expect(outbox).toMatchObject({ status: "sent", attemptCount: 2 });
     await expect(repository.claimDueReviewAlert({
       now: new Date("2026-08-22T00:00:00.000Z"),
       leaseExpiresAt: new Date("2026-08-22T00:05:00.000Z"),
     })).resolves.toBeNull();
+  });
+
+  it("terminalizes at the automatic recovery cutoff without a provider call and keeps the review visible", async () => {
+    await openTask13Review({
+      sessionHash: "ce".repeat(32),
+      networkHash: "cf".repeat(32),
+      messageHash: "d0".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000166",
+    });
+    const sendStartedAt = new Date("2026-08-21T00:00:03.000Z");
+    const first = await repository.claimDueReviewAlert({
+      now: sendStartedAt,
+      leaseExpiresAt: new Date("2026-08-21T00:00:04.000Z"),
+    });
+    if (!first) throw new Error("expected alert lease");
+    await repository.beginClaimedReviewAlertSend({
+      id: first.id,
+      leaseToken: first.leaseToken,
+      now: sendStartedAt,
+    });
+    const recoveryTime = new Date(sendStartedAt.getTime() + REVIEW_ALERT_AUTOMATIC_RECOVERY_MAX_AGE_MS);
+    const provider = {
+      configured: true,
+      send: vi.fn(async () => ({ providerMessageId: "must-not-send-after-cutoff" })),
+    };
+    const createRecoveryService = (currentRepository: typeof repository) => createReviewAlertService({
+      repository: currentRepository,
+      provider,
+      alertTo: "staff@rrgallery.example",
+      siteUrl: "https://rrgallery.example",
+      deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      now: () => recoveryTime,
+    });
+
+    await expect(Promise.all([
+      createRecoveryService(repository).deliverNext(),
+      createRecoveryService(competingRepository).deliverNext(),
+    ])).resolves.toEqual([{ result: "empty" }, { result: "empty" }]);
+
+    expect(provider.send).not.toHaveBeenCalled();
+    const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(outbox).toMatchObject({
+      status: "failed",
+      attemptCount: 1,
+      leaseToken: null,
+      leaseExpiresAt: null,
+      lastErrorCode: "provider_idempotency_window_expired_unknown_result",
+    });
+    const queue = await repository.listQueue(100);
+    expect(queue.items[0]).toMatchObject({
+      channel: "website",
+      websiteReview: { alertStatus: "failed" },
+    });
+    await expect(repository.claimDueReviewAlert({
+      now: new Date(recoveryTime.getTime() + 1),
+      leaseExpiresAt: new Date(recoveryTime.getTime() + 300_001),
+    })).resolves.toBeNull();
+  });
+
+  it("does not call a provider whose idempotency record expired after an accepted effect and process death", async () => {
+    await openTask13Review({
+      sessionHash: "d1".repeat(32),
+      networkHash: "d2".repeat(32),
+      messageHash: "d3".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000167",
+    });
+    let currentTime = new Date("2026-08-21T00:00:03.000Z");
+    const providerCalls: string[] = [];
+    const providerEffects: Array<{ idempotencyKey: string; acceptedAt: Date }> = [];
+    const provider = {
+      configured: true,
+      send: vi.fn(async (message: { idempotencyKey: string }) => {
+        providerCalls.push(message.idempotencyKey);
+        const retained = providerEffects.find((effect) => (
+          effect.idempotencyKey === message.idempotencyKey
+          && currentTime.getTime() - effect.acceptedAt.getTime() < 24 * 60 * 60 * 1_000
+        ));
+        if (!retained) providerEffects.push({ idempotencyKey: message.idempotencyKey, acceptedAt: currentTime });
+        return { providerMessageId: `accepted:${message.idempotencyKey}` };
+      }),
+    };
+    const firstService = createReviewAlertService({
+      repository: {
+        claimDueReviewAlert: repository.claimDueReviewAlert,
+        confirmClaimedReviewAlert: repository.confirmClaimedReviewAlert,
+        beginClaimedReviewAlertSend: repository.beginClaimedReviewAlertSend,
+        markReviewAlertSent: async () => { throw new Error("simulated_process_death_after_provider_acceptance"); },
+        retryReviewAlert: repository.retryReviewAlert,
+        markReviewAlertUncertain: repository.markReviewAlertUncertain,
+      },
+      provider,
+      alertTo: "staff@rrgallery.example",
+      siteUrl: "https://rrgallery.example",
+      deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      now: () => currentTime,
+      leaseMs: 1_000,
+    });
+    await expect(firstService.deliverNext()).rejects.toThrow("simulated_process_death_after_provider_acceptance");
+    expect(providerCalls).toHaveLength(1);
+    expect(providerEffects).toHaveLength(1);
+
+    currentTime = new Date("2026-08-22T01:00:03.000Z");
+    const recoveryService = (currentRepository: typeof repository) => createReviewAlertService({
+      repository: currentRepository,
+      provider,
+      alertTo: "staff@rrgallery.example",
+      siteUrl: "https://rrgallery.example",
+      deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      now: () => currentTime,
+    });
+    await expect(Promise.all([
+      recoveryService(repository).deliverNext(),
+      recoveryService(competingRepository).deliverNext(),
+    ])).resolves.toEqual([{ result: "empty" }, { result: "empty" }]);
+
+    expect(providerCalls).toHaveLength(1);
+    expect(providerEffects).toHaveLength(1);
+    const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(outbox).toMatchObject({
+      status: "failed",
+      attemptCount: 1,
+      lastErrorCode: "provider_idempotency_window_expired_unknown_result",
+    });
+    const [review] = await database.select().from(customerServiceHumanReviews);
+    expect(review).toMatchObject({ status: "open" });
   });
 
   it("terminalizes a resolved expired linearized lease without a stale retry", async () => {

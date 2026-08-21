@@ -59,6 +59,7 @@ import {
   createWebsiteReviewSelectorRecord,
   verifyWebsiteReviewSelector,
 } from "../website/review-selector";
+import { REVIEW_ALERT_AUTOMATIC_RECOVERY_MAX_AGE_MS } from "../website/review-alert-policy";
 import type {
   WebsitePublicUpdateCursor,
   WebsitePublicUpdateRecord,
@@ -714,15 +715,35 @@ export function createDrizzleCustomerServiceRepository(
       const record = selectorRecordForReview(review, selectorNow);
       return record ? [{ review, record }] : [];
     });
-    if (selectorRecords.length) {
-      await database.insert(customerServiceReviewSelectors).values(selectorRecords.map(({ review, record }) => ({
+    const persistedSelectorRecords = selectorRecords.length
+      ? await database.insert(customerServiceReviewSelectors).values(selectorRecords.map(({ review, record }) => ({
         humanReviewId: review.id,
         generation: review.generation,
         selectorHash: record.selectorHash,
         expiresAt: record.expiresAt,
-      }))).onConflictDoNothing();
-    }
-    const selectorByReview = new Map(selectorRecords.map(({ review, record }) => [review.id, record.selector]));
+      }))).onConflictDoUpdate({
+        target: [
+          customerServiceReviewSelectors.humanReviewId,
+          customerServiceReviewSelectors.generation,
+          customerServiceReviewSelectors.expiresAt,
+        ],
+        set: { selectorHash: sql`excluded.selector_hash` },
+      }).returning({
+        humanReviewId: customerServiceReviewSelectors.humanReviewId,
+        selectorHash: customerServiceReviewSelectors.selectorHash,
+      })
+      : [];
+    const persistedHashByReview = new Map(persistedSelectorRecords.map((record) => [
+      record.humanReviewId,
+      record.selectorHash,
+    ]));
+    // Secret rotation must be coordinated across serving processes. The returned-row check
+    // prevents this process from emitting a selector unless its current digest was persisted.
+    const selectorByReview = new Map(selectorRecords.flatMap(({ review, record }) => (
+      persistedHashByReview.get(review.id) === record.selectorHash
+        ? [[review.id, record.selector] as const]
+        : []
+    )));
     const reviewByConversation = new Map(reviewRows.map((review) => [review.conversationId, review]));
     const timelineRows = conversationIds.length
       ? await database.execute<{
@@ -1997,6 +2018,27 @@ export function createDrizzleCustomerServiceRepository(
           .for("update", { skipLocked: true })
           .limit(1);
         if (!row) return null;
+        const sendRecoveryCutoff = new Date(
+          input.now.getTime() - REVIEW_ALERT_AUTOMATIC_RECOVERY_MAX_AGE_MS,
+        );
+        if (
+          row.outbox.providerSendStartedAt
+          && row.outbox.providerSendStartedAt <= sendRecoveryCutoff
+        ) {
+          await transaction.update(customerServiceReviewAlertOutbox).set({
+            status: "failed",
+            leaseToken: null,
+            leaseExpiresAt: null,
+            lastErrorCode: "provider_idempotency_window_expired_unknown_result",
+            updatedAt: input.now,
+          }).where(and(
+            eq(customerServiceReviewAlertOutbox.id, row.outbox.id),
+            eq(customerServiceReviewAlertOutbox.status, "leased"),
+            eq(customerServiceReviewAlertOutbox.providerSendStartedAt, row.outbox.providerSendStartedAt),
+            lte(customerServiceReviewAlertOutbox.leaseExpiresAt, input.now),
+          ));
+          return null;
+        }
         const reviewReady = row.reviewStatus === "open"
           && Boolean(row.deepLinkExpiresAt && row.deepLinkExpiresAt > input.now);
         if (!reviewReady) {
