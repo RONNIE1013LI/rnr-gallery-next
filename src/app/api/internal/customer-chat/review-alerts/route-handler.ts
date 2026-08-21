@@ -1,6 +1,6 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
-type DeliveryResult = Readonly<{ result: "sent" | "retry_wait" | "uncertain" | "empty" | "not_configured" }>;
+type DeliveryResult = Readonly<{ result: "sent" | "retry_wait" | "uncertain" | "expired" | "empty" | "not_configured" }>;
 
 function authorized(header: string | null, secret: string) {
   if (!header?.startsWith("Bearer ") || secret.length < 32) return false;

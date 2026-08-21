@@ -51,6 +51,7 @@ export type WebsiteReviewAlertRepository = Readonly<{
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
 const retryDelaysMs = [60_000, 5 * 60_000, 30 * 60_000, 120 * 60_000, 720 * 60_000] as const;
 const unknownProviderCodes = new Set(["network_error", "invalid_provider_response"]);
+const expiredBeforeSendCode = "deep_link_expired_before_send";
 
 function validReviewId(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -135,13 +136,25 @@ export function createReviewAlertService(input: Readonly<{
       });
       if (!alert) return Object.freeze({ result: "empty" as const });
 
+      const message = alertMessage({
+        alert,
+        alertTo: input.alertTo,
+        siteUrl: input.siteUrl,
+        deepLinkSecret: input.deepLinkSecret,
+      });
+      const sendStartedAt = now();
+      if (alert.deepLinkExpiresAt.getTime() <= sendStartedAt.getTime()) {
+        await input.repository.markReviewAlertUncertain({
+          id: alert.id,
+          leaseToken: alert.leaseToken,
+          errorCode: expiredBeforeSendCode,
+          now: sendStartedAt,
+        });
+        return Object.freeze({ result: "expired" as const });
+      }
+
       try {
-        const sent = await input.provider.send(alertMessage({
-          alert,
-          alertTo: input.alertTo,
-          siteUrl: input.siteUrl,
-          deepLinkSecret: input.deepLinkSecret,
-        }));
+        const sent = await input.provider.send(message);
         await input.repository.markReviewAlertSent({
           id: alert.id,
           leaseToken: alert.leaseToken,

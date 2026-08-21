@@ -115,6 +115,43 @@ describe("website human-review alert delivery", () => {
     expect(rendered).toContain("realtime_required");
   });
 
+  it("does not send and terminally settles a lease when the deep link expires after claim", async () => {
+    const expiresAt = new Date("2026-08-21T00:00:01.000Z");
+    const repository = {
+      claimDueReviewAlert: vi.fn(async () => ({ ...delivery(), deepLinkExpiresAt: expiresAt })),
+      markReviewAlertSent: vi.fn(async () => true),
+      retryReviewAlert: vi.fn(async () => true),
+      markReviewAlertUncertain: vi.fn(async () => true),
+    };
+    const provider = {
+      configured: true,
+      send: vi.fn<CustomerEmailProvider["send"]>(async () => ({ providerMessageId: "resend-1" })),
+    };
+    const freshNow = vi.fn()
+      .mockReturnValueOnce(new Date("2026-08-21T00:00:00.999Z"))
+      .mockReturnValueOnce(expiresAt);
+    const service = createReviewAlertService({
+      repository,
+      provider,
+      alertTo: "staff@rrgallery.example",
+      siteUrl: "https://rrgallery.example",
+      deepLinkSecret: "review-link-secret-at-least-32-bytes",
+      now: freshNow,
+    });
+
+    await expect(service.deliverNext()).resolves.toEqual({ result: "expired" });
+
+    expect(provider.send).not.toHaveBeenCalled();
+    expect(repository.markReviewAlertUncertain).toHaveBeenCalledWith({
+      id: "outbox-1",
+      leaseToken: "lease-1",
+      errorCode: "deep_link_expired_before_send",
+      now: expiresAt,
+    });
+    expect(repository.markReviewAlertSent).not.toHaveBeenCalled();
+    expect(repository.retryReviewAlert).not.toHaveBeenCalled();
+  });
+
   it("retries known provider failures using the bounded retry schedule without affecting chat", async () => {
     const current = setup();
     current.provider.send.mockRejectedValueOnce(new EmailDeliveryError("rate_limited"));
