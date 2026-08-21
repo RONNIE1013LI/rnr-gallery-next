@@ -419,6 +419,21 @@ function allEmpty(decision: WebsiteDecision) {
     && decision.allowed_facts.length === 0;
 }
 
+export function getWebsiteDecisionPromptContract(intent: CustomerServiceIntent) {
+  return Object.freeze({
+    allowedFacts: Object.freeze(
+      (Object.entries(FACTS) as [AllowedFact, (typeof FACTS)[AllowedFact]][])
+        .filter(([, fact]) => fact.intent === intent)
+        .map(([name]) => name),
+    ),
+    followUpFields: Object.freeze(
+      (Object.entries(QUESTIONS) as [FollowUpField, (typeof QUESTIONS)[FollowUpField]][])
+        .filter(([, question]) => question.intents.includes(intent))
+        .map(([name]) => name),
+    ),
+  });
+}
+
 export function renderWebsiteDecision(input: Readonly<{
   decision: WebsiteDecision;
   expectedIntent: CustomerServiceIntent;

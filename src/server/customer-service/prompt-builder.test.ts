@@ -177,6 +177,33 @@ describe("customer service prompt builder", () => {
     expect(JSON.stringify(prompt.responseFormat.schema)).not.toMatch(/customer_reply|message_text|free.?text/i);
   });
 
+  it("spells out renderer-compatible decision shapes for common safe Website intents", () => {
+    const designPrompt = buildWebsiteDecisionPrompt({
+      intent: "design_process",
+      context: [{ role: "customer", text: "How does the design process work?", receivedAt: "2026-08-21T00:00:00.000Z" }],
+      productContext: null,
+      approvedCaseMemoryCount: 0,
+    });
+    const photoPrompt = buildWebsiteDecisionPrompt({
+      intent: "photo_guidance",
+      context: [{ role: "customer", text: "What photo quality works best?", receivedAt: "2026-08-21T00:00:00.000Z" }],
+      productContext: null,
+      approvedCaseMemoryCount: 0,
+    });
+
+    for (const prompt of [designPrompt, photoPrompt]) {
+      expect(prompt.instructions).toContain("ANSWER_SAFE requires missing_fields=[] and follow_up_fields=[]");
+      expect(prompt.instructions).toContain("ASK_FOR_INFORMATION requires allowed_facts=[]");
+      expect(prompt.instructions).toContain("missing_fields and follow_up_fields must be identical and in the same order");
+    }
+    expect(designPrompt.instructions).toContain(
+      "design_process facts: DESIGN_INPUTS, DESIGN_DRAFT_REVIEW_BEFORE_PRINTING",
+    );
+    expect(photoPrompt.instructions).toContain(
+      "photo_guidance facts: PHOTO_ORIGINAL_FILES, PHOTO_QUALITY_ASSESSMENT, PHOTO_COMBINE_SUBJECTS",
+    );
+  });
+
   it("labels customer and staff history without accepting a conversation selector", () => {
     const prompt = buildDraftPrompt({
       intent: "quote_information_collection",

@@ -4,6 +4,7 @@ import type { AnswerQualityGuide } from "./knowledge-retrieval";
 import type { ConversationContextItem } from "./repositories/customer-service-repository";
 import type { SafeProductContext } from "./types";
 import {
+  getWebsiteDecisionPromptContract,
   WEBSITE_DECISION_JSON_SCHEMA,
   WEBSITE_DECISION_SCHEMA_NAME,
 } from "./website/structured-decision";
@@ -38,6 +39,9 @@ export function buildWebsiteDecisionPrompt(input: Readonly<{
   approvedCaseMemoryCount: number;
 }>) {
   const customerContext = serializeWebsiteCustomerContext({ context: input.context });
+  const contract = getWebsiteDecisionPromptContract(input.intent);
+  const compatibleFacts = contract.allowedFacts.length > 0 ? contract.allowedFacts.join(", ") : "none";
+  const compatibleFollowUps = contract.followUpFields.length > 0 ? contract.followUpFields.join(", ") : "none";
   return {
     instructions: [
       "Select one Website customer-service decision using only the strict JSON schema.",
@@ -45,6 +49,10 @@ export function buildWebsiteDecisionPrompt(input: Readonly<{
       "Do not write customer-facing prose, copy customer text, reveal internal material, or invent a value.",
       "Use ANSWER_SAFE only for the expected low-risk intent and only with compatible allowed_facts.",
       "Use ASK_FOR_INFORMATION only to select fixed allowlisted follow-up fields.",
+      "ANSWER_SAFE requires missing_fields=[] and follow_up_fields=[], at least one compatible allowed_fact, and human_review_reason=NONE.",
+      "ASK_FOR_INFORMATION requires allowed_facts=[], human_review_reason=NONE, and missing_fields and follow_up_fields must be identical and in the same order.",
+      `${input.intent} facts: ${compatibleFacts}`,
+      `${input.intent} follow-up fields: ${compatibleFollowUps}`,
       "Use REALTIME_REQUIRED for any current price, shipping, ETA, availability, payment, order or delivery status need.",
       "Use HUMAN_REVIEW_REQUIRED for uncertainty, risk, private-record requests or unsupported actions.",
       "Use SYSTEM_FALLBACK when no schema-safe decision can be made.",
