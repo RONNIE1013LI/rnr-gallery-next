@@ -29,6 +29,8 @@ describe("FormsWorkbench", () => {
     />);
 
     expect(screen.getByRole("searchbox", { name: "Search Ref No. / Cust.Name" })).toHaveValue("07188");
+    expect(screen.getByRole("searchbox", { name: "Search Ref No. / Cust.Name" })).toHaveAttribute("placeholder", "Search name / order no.");
+    expect(screen.getByRole("button", { name: "Search orders" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Filter orders" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Export CSV" })).toHaveAttribute("href", expect.stringContaining("/api/forms/jobs/export"));
     expect(screen.getByRole("table", { name: "Orders data list" })).toBeInTheDocument();

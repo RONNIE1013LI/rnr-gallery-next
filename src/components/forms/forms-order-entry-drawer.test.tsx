@@ -60,7 +60,7 @@ describe("FormsOrderEntryDrawer", () => {
     expect(screen.getByRole("separator", { name: "Resize order entry" })).toHaveAttribute("aria-valuenow", "864");
   });
 
-  it("leaves the required Data list width at desktop and 390px", () => {
+  it("leaves the required Data list width at desktop and fills the 390px viewport", () => {
     viewport(1_000);
     const desktop = render(<FormsOrderEntryDrawer data={data} onClose={vi.fn()} />);
     expect(screen.getByRole("separator", { name: "Resize order entry" })).toHaveAttribute("aria-valuemax", "720");
@@ -69,8 +69,8 @@ describe("FormsOrderEntryDrawer", () => {
     desktop.unmount();
     viewport(390);
     render(<FormsOrderEntryDrawer data={data} onClose={vi.fn()} />);
-    expect(screen.getByRole("separator", { name: "Resize order entry" })).toHaveAttribute("aria-valuemax", "370");
-    expect(screen.getByRole("dialog", { name: "Order entry" })).toHaveStyle({ "--entry-drawer-width": "370px" });
+    expect(screen.getByRole("separator", { name: "Resize order entry" })).toHaveAttribute("aria-valuemax", "390");
+    expect(screen.getByRole("dialog", { name: "Order entry" })).toHaveStyle({ "--entry-drawer-width": "390px" });
   });
 
   it("guards unsaved manual entry before closing", () => {

@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { LuFilter } from "react-icons/lu";
 
 import type {
   FormFilterCondition,
@@ -136,7 +137,9 @@ export function FormsFilterBuilder({
         aria-label={conditions.length ? `Filter orders (${conditions.length} active)` : "Filter orders"}
         onClick={show}
       >
-        Filter{conditions.length ? ` · ${conditions.length}` : ""}
+        <span className={styles.filterButtonText}>Filter{conditions.length ? ` · ${conditions.length}` : ""}</span>
+        <LuFilter className={styles.filterButtonIcon} aria-hidden="true" />
+        {conditions.length ? <span className={styles.filterButtonCount} aria-hidden="true">{conditions.length}</span> : null}
       </button>
       {open ? (
         <>
@@ -165,6 +168,7 @@ export function FormsFilterBuilder({
               <option value="or">any condition</option>
             </select>
           </label>
+          <h3 className={styles.filterGroupTitle}>Field combinations</h3>
           <div className={styles.filterRows}>
             {draft.map((condition, index) => {
               const options = valueOptions[condition.field];

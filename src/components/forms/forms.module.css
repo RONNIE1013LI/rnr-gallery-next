@@ -436,7 +436,15 @@
 
 @media (max-width: 700px) {
   .orderEntryDrawer {
-    max-width: calc(100vw - 20px);
+    width: 100vw;
+    max-width: 100vw;
+    grid-template-columns: minmax(0, 1fr);
+    border-left: 0;
+    box-shadow: none;
+  }
+
+  .orderEntryResizeHandle {
+    display: none;
   }
 
   .orderEntryDrawerContent {
@@ -470,8 +478,30 @@
     min-height: 48px;
   }
 
-  .drawerHeader button {
-    min-width: 48px;
+  .orderEntryDrawer .drawerHeader button {
+    display: grid;
+    width: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    place-items: center;
+    padding: 6px;
+    border: 0;
+    outline-offset: 1px;
+    background: transparent;
+    font-size: 0;
+  }
+
+  .orderEntryDrawer .drawerHeader button::before {
+    content: "×";
+    display: grid;
+    width: 32px;
+    height: 32px;
+    place-items: center;
+    border: 1px solid var(--forms-border);
+    border-radius: 50%;
+    background: #fff;
+    font-size: 18px;
+    line-height: 1;
   }
 }
 
@@ -645,7 +675,15 @@
 }
 
 .quickSearch label {
+  position: relative;
   flex: 1 1 auto;
+}
+
+.quickSearchIcon,
+.quickSearchButtonIcon,
+.filterButtonIcon,
+.filterButtonCount {
+  display: none;
 }
 
 .quickSearch input,
@@ -765,6 +803,11 @@
 
 .filterBuilder {
   position: relative;
+}
+
+.filterGroupTitle {
+  margin: 14px 0 8px;
+  font-size: 13px;
 }
 
 .filterBackdrop {
@@ -1169,65 +1212,110 @@
 }
 
 .orderCard[data-urgent="true"] {
-  border-left: 4px solid #d92d20;
+  border-left-color: var(--forms-border);
 }
 
 .orderCard header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  padding: 12px;
-  border-bottom: 1px solid #e5e7eb;
-}
-
-.orderCard header div {
   display: grid;
-  gap: 3px;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+  padding: 4px 12px;
+  border-bottom: 1px solid #e5e7eb;
 }
 
 .orderCard header button {
   width: fit-content;
+  max-width: 100%;
+  min-width: 0;
   min-height: 44px;
-  padding: 8px 4px;
+  padding: 4px 0;
+  overflow: hidden;
   border: 0;
-  color: #c81e52;
+  color: #1f5d99;
   background: transparent;
+  font-size: 16px;
   font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   cursor: pointer;
 }
 
+.orderCard header time {
+  overflow: hidden;
+  color: var(--forms-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .orderCard header span {
-  padding: 3px 7px;
-  border-radius: 4px;
-  background: #eef0f3;
-  font-size: 11px;
-  font-weight: 700;
+  color: var(--forms-muted);
+  font-size: 12px;
 }
 
 .orderCard dl {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+  padding: 9px 12px 11px;
 }
 
 .orderCard dl div {
   min-width: 0;
-  padding: 10px 12px;
-  border-right: 1px solid #e5e7eb;
-  border-bottom: 1px solid #e5e7eb;
+  padding: 0;
+  border: 0;
 }
 
 .orderCard dt {
   color: var(--forms-muted);
-  font-size: 12px;
-  text-transform: uppercase;
+  font-size: 11px;
 }
 
 .orderCard dd {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
   margin-top: 2px;
-  overflow-wrap: anywhere;
+  padding: 8px 10px;
+  overflow: hidden;
+  border: 1px solid #d5d9df;
+  border-radius: 4px;
+  background: #fff;
   font-size: 14px;
   font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.orderCard dd[data-align="right"] {
+  justify-content: flex-end;
+  font-variant-numeric: tabular-nums;
+}
+
+.orderCard dd[data-field="deliveryMethod"][data-status="post"] {
+  color: #17311d;
+  background: #9bd86f;
+}
+
+.orderCard dd[data-field="deliveryMethod"][data-status="pickup"] {
+  color: #fff;
+  background: #3aa7a3;
+}
+
+.orderCard dd[data-field="deliveryMethod"][data-status="delivery"] {
+  color: #fff;
+  background: #f97066;
+}
+
+.orderCard dd[data-field="delivered"][data-status="no"] {
+  color: #fff;
+  background: #f04438;
+}
+
+.orderCard dd[data-field="delivered"][data-status="yes"] {
+  color: #fff;
+  background: #2e90fa;
 }
 
 @media (max-width: 680px) {
@@ -2028,6 +2116,164 @@
 .formsEditor select[name="paymentReconciliationStatus"]:has(option[value="Other"]:checked) { background: #55bfd0; }
 
 @media (max-width: 720px) {
+  .listToolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 48px;
+    gap: 6px;
+  }
+
+  .quickSearch {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+
+  .quickSearch label {
+    min-width: 0;
+  }
+
+  .quickSearchIcon {
+    position: absolute;
+    z-index: 1;
+    top: 50%;
+    left: 11px;
+    display: block;
+    color: #8b9098;
+    transform: translateY(-50%);
+    pointer-events: none;
+  }
+
+  .quickSearch input {
+    padding-left: 36px;
+    border-radius: 5px 0 0 5px;
+    font-size: 16px;
+  }
+
+  .quickSearch button {
+    width: 44px;
+    min-width: 44px;
+    padding: 0;
+  }
+
+  .quickSearchButtonText,
+  .filterButtonText {
+    display: none;
+  }
+
+  .quickSearchButtonIcon,
+  .filterButtonIcon {
+    display: block;
+    margin: auto;
+    font-size: 18px;
+  }
+
+  .filterBuilder {
+    width: 48px;
+  }
+
+  .filterButton {
+    position: relative;
+    width: 48px;
+    min-width: 48px;
+    padding: 0;
+  }
+
+  .filterButtonCount {
+    position: absolute;
+    top: 3px;
+    right: 3px;
+    display: grid;
+    min-width: 17px;
+    height: 17px;
+    place-items: center;
+    padding-inline: 4px;
+    border-radius: 9px;
+    color: #fff;
+    background: #1f5d99;
+    font-size: 10px;
+    font-weight: 750;
+  }
+
+  .savedViewSelect,
+  .personalViews,
+  .exportLink,
+  .toolbarSpacer {
+    display: none;
+  }
+
+  .filterBackdrop {
+    z-index: 109;
+    background: rgb(15 23 42 / 42%);
+  }
+
+  .filterPanel {
+    position: fixed;
+    z-index: 110;
+    inset: 0;
+    width: 100vw;
+    height: 100dvh;
+    padding: 14px;
+    overflow: auto;
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .filterHeading {
+    position: sticky;
+    z-index: 1;
+    top: -14px;
+    margin: -14px -14px 0;
+    padding: 10px 14px;
+    background: var(--forms-surface);
+  }
+
+  .filterMatch {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .filterPanel input,
+  .filterPanel select {
+    font-size: 16px;
+  }
+
+  .filterRow {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    padding: 10px 0;
+    border-bottom: 1px solid var(--forms-border);
+  }
+
+  .filterRow > :nth-child(3) {
+    grid-column: 1 / -1;
+    grid-row: auto;
+  }
+
+  .filterRow > button {
+    width: 100%;
+    grid-column: 1 / -1;
+  }
+
+  .addFilterButton {
+    width: 100%;
+  }
+
+  .filterActions {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .filterActions button,
+  .filterActions .filterApply {
+    width: 100%;
+    margin: 0;
+  }
+
+  .filterActions .filterApply {
+    order: -1;
+  }
+
   .galleryLink {
     display: none;
   }
@@ -2061,5 +2307,16 @@
   .orderCard header,
   .orderCard dl div {
     padding: 10px;
+  }
+
+  .formEntryPage input,
+  .formEntryPage select,
+  .formEntryPage textarea {
+    min-height: 44px;
+    font-size: 16px;
+  }
+
+  .formEntryPage button {
+    min-height: 44px;
   }
 }

@@ -9,7 +9,7 @@ import styles from "./forms.module.css";
 import { useContainedDialog } from "./use-contained-dialog";
 
 export function drawerSize(viewportWidth: number) {
-  const visibleListWidth = viewportWidth <= 700 ? 20 : 280;
+  const visibleListWidth = viewportWidth <= 700 ? 0 : 280;
   const max = Math.max(0, viewportWidth - visibleListWidth);
   const min = Math.min(520, max);
   return {

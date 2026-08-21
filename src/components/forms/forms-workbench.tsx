@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
+import { LuChevronRight, LuSearch } from "react-icons/lu";
 
 import type {
   FormFilterGroup,
@@ -115,15 +116,16 @@ export function FormsWorkbench({
         <form className={styles.quickSearch} method="get">
           <label>
             <span className={styles.visuallyHidden}>Search Ref No. / Cust.Name</span>
+            <LuSearch className={styles.quickSearchIcon} aria-hidden="true" />
             <input
               aria-label="Search Ref No. / Cust.Name"
               defaultValue={query.query}
               name="q"
-              placeholder="Search Ref No. / Cust.Name"
+              placeholder="Search name / order no."
               type="search"
             />
           </label>
-          <button type="submit">Search</button>
+          <button type="submit" aria-label="Search orders"><span className={styles.quickSearchButtonText}>Search</span><LuChevronRight className={styles.quickSearchButtonIcon} aria-hidden="true" /></button>
         </form>
         <FormsFilterBuilder
           conditions={query.conditions}
@@ -174,7 +176,7 @@ export function FormsWorkbench({
             onOpen={open}
             onSaved={() => router.refresh()}
           />
-          <FormsOrderCards rows={result.items} canViewFinance={canViewFinance} onOpen={open} />
+          <FormsOrderCards rows={result.items} startIndex={(result.page - 1) * query.pageSize} canViewFinance={canViewFinance} onOpen={open} />
         </>
       ) : (
         <div className={styles.formsEmptyState}>
