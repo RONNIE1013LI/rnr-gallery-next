@@ -1,5 +1,5 @@
 {
-  "id": "0b5f0367-a7a3-4c04-9650-1220bb460250",
+  "id": "9d749ead-9535-4f9d-bc6b-7f9f7216929c",
   "prevId": "a818e8f7-0be1-4dd3-a5f4-f3c1d7d9880f",
   "version": "7",
   "dialect": "postgresql",
@@ -5520,6 +5520,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "provider_send_started_at": {
+          "name": "provider_send_started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "last_error_code": {
           "name": "last_error_code",
           "type": "text",
@@ -5627,7 +5633,7 @@
       "checkConstraints": {
         "customer_service_review_alert_outbox_status_valid": {
           "name": "customer_service_review_alert_outbox_status_valid",
-          "value": "\"customer_service_review_alert_outbox\".\"status\" in ('pending', 'leased', 'sending', 'retry_wait', 'sent', 'failed')"
+          "value": "\"customer_service_review_alert_outbox\".\"status\" in ('pending', 'leased', 'retry_wait', 'sent', 'failed')"
         },
         "customer_service_review_alert_outbox_attempts_valid": {
           "name": "customer_service_review_alert_outbox_attempts_valid",
@@ -5639,11 +5645,143 @@
         },
         "customer_service_review_alert_outbox_lease_valid": {
           "name": "customer_service_review_alert_outbox_lease_valid",
-          "value": "(\"customer_service_review_alert_outbox\".\"status\" in ('leased', 'sending') and \"customer_service_review_alert_outbox\".\"lease_token\" is not null and \"customer_service_review_alert_outbox\".\"lease_expires_at\" is not null) or (\"customer_service_review_alert_outbox\".\"status\" not in ('leased', 'sending') and \"customer_service_review_alert_outbox\".\"lease_token\" is null and \"customer_service_review_alert_outbox\".\"lease_expires_at\" is null)"
+          "value": "(\"customer_service_review_alert_outbox\".\"status\" = 'leased' and \"customer_service_review_alert_outbox\".\"lease_token\" is not null and \"customer_service_review_alert_outbox\".\"lease_expires_at\" is not null) or (\"customer_service_review_alert_outbox\".\"status\" <> 'leased' and \"customer_service_review_alert_outbox\".\"lease_token\" is null and \"customer_service_review_alert_outbox\".\"lease_expires_at\" is null)"
         },
         "customer_service_review_alert_outbox_sent_valid": {
           "name": "customer_service_review_alert_outbox_sent_valid",
           "value": "(\"customer_service_review_alert_outbox\".\"status\" = 'sent' and \"customer_service_review_alert_outbox\".\"sent_at\" is not null) or (\"customer_service_review_alert_outbox\".\"status\" <> 'sent' and \"customer_service_review_alert_outbox\".\"sent_at\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_review_selectors": {
+      "name": "customer_service_review_selectors",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "human_review_id": {
+          "name": "human_review_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "selector_hash": {
+          "name": "selector_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_review_selectors_hash_unique": {
+          "name": "customer_service_review_selectors_hash_unique",
+          "columns": [
+            {
+              "expression": "selector_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_review_selectors_review_window_unique": {
+          "name": "customer_service_review_selectors_review_window_unique",
+          "columns": [
+            {
+              "expression": "human_review_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "generation",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_review_selectors_expiry_idx": {
+          "name": "customer_service_review_selectors_expiry_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_review_selectors_human_review_id_customer_service_human_reviews_id_fk": {
+          "name": "customer_service_review_selectors_human_review_id_customer_service_human_reviews_id_fk",
+          "tableFrom": "customer_service_review_selectors",
+          "tableTo": "customer_service_human_reviews",
+          "columnsFrom": [
+            "human_review_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_review_selectors_generation_valid": {
+          "name": "customer_service_review_selectors_generation_valid",
+          "value": "\"customer_service_review_selectors\".\"generation\" > 0"
+        },
+        "customer_service_review_selectors_hash_valid": {
+          "name": "customer_service_review_selectors_hash_valid",
+          "value": "\"customer_service_review_selectors\".\"selector_hash\" ~ '^[0-9a-f]{64}$'"
         }
       },
       "isRLSEnabled": false

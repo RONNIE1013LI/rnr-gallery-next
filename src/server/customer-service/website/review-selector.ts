@@ -24,7 +24,7 @@ function canonicalSelector(input: ReviewIdentity, expiresAtMs: number) {
   return `wrs1.${expiresAtMs.toString(36)}.${selectorMac(input, expiresAtMs)}`;
 }
 
-export function createWebsiteReviewSelector(input: ReviewIdentity & Readonly<{ now: Date }>) {
+export function createWebsiteReviewSelectorRecord(input: ReviewIdentity & Readonly<{ now: Date }>) {
   if (
     !input.reviewId
     || !Number.isSafeInteger(input.generation)
@@ -34,7 +34,15 @@ export function createWebsiteReviewSelector(input: ReviewIdentity & Readonly<{ n
   ) {
     throw new Error("website_review_selector_input_invalid");
   }
-  return canonicalSelector(input, selectorExpiry(input.now));
+  const expiresAt = new Date(selectorExpiry(input.now));
+  return Object.freeze({
+    selector: canonicalSelector(input, expiresAt.getTime()),
+    expiresAt,
+  });
+}
+
+export function createWebsiteReviewSelector(input: ReviewIdentity & Readonly<{ now: Date }>) {
+  return createWebsiteReviewSelectorRecord(input).selector;
 }
 
 export function verifyWebsiteReviewSelector(input: ReviewIdentity & Readonly<{

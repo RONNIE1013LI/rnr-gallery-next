@@ -15,6 +15,7 @@ import {
   customerServiceHumanReplyMatchEvents,
   customerServiceHumanReviews,
   customerServiceReviewAlertOutbox,
+  customerServiceReviewSelectors,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
   customerServiceImageJobs,
@@ -55,7 +56,7 @@ import {
 } from "../website/human-review";
 import { sanitizeWebsiteModelInput } from "../website/model-input-sanitizer";
 import {
-  createWebsiteReviewSelector,
+  createWebsiteReviewSelectorRecord,
   verifyWebsiteReviewSelector,
 } from "../website/review-selector";
 import type {
@@ -410,17 +411,25 @@ export function createDrizzleCustomerServiceRepository(
     await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + conversationId}))`);
   }
 
-  function selectorForReview(review: Readonly<{
+  function selectorRecordForReview(review: Readonly<{
     id: string;
     generation: number;
   }>, issuedAt = now()) {
     if (reviewSelectorSecret.length < 32) return null;
-    return createWebsiteReviewSelector({
+    const record = createWebsiteReviewSelectorRecord({
       reviewId: review.id,
       generation: review.generation,
       secret: reviewSelectorSecret,
       now: issuedAt,
     });
+    return Object.freeze({
+      ...record,
+      selectorHash: createHash("sha256").update(record.selector).digest("hex"),
+    });
+  }
+
+  function selectorForReview(review: Readonly<{ id: string; generation: number }>, issuedAt = now()) {
+    return selectorRecordForReview(review, issuedAt)?.selector ?? null;
   }
 
   function selectorMatchesReview(selector: string, review: Readonly<{
@@ -701,6 +710,19 @@ export function createDrizzleCustomerServiceRepository(
           eq(customerServiceHumanReviews.status, "open"),
         ))
       : [];
+    const selectorRecords = reviewRows.flatMap((review) => {
+      const record = selectorRecordForReview(review, selectorNow);
+      return record ? [{ review, record }] : [];
+    });
+    if (selectorRecords.length) {
+      await database.insert(customerServiceReviewSelectors).values(selectorRecords.map(({ review, record }) => ({
+        humanReviewId: review.id,
+        generation: review.generation,
+        selectorHash: record.selectorHash,
+        expiresAt: record.expiresAt,
+      }))).onConflictDoNothing();
+    }
+    const selectorByReview = new Map(selectorRecords.map(({ review, record }) => [review.id, record.selector]));
     const reviewByConversation = new Map(reviewRows.map((review) => [review.conversationId, review]));
     const timelineRows = conversationIds.length
       ? await database.execute<{
@@ -778,7 +800,7 @@ export function createDrizzleCustomerServiceRepository(
         const websiteReview = item.channel === "website"
           ? reviewByConversation.get(item.conversationId)
           : undefined;
-        const selector = websiteReview ? selectorForReview(websiteReview, selectorNow) : null;
+        const selector = websiteReview ? selectorByReview.get(websiteReview.id) ?? null : null;
         const websiteReviewDto: SafeQueuePage["items"][number]["websiteReview"] = websiteReview && selector ? {
           selector,
           reason: websiteReview.reason,
@@ -847,14 +869,25 @@ export function createDrizzleCustomerServiceRepository(
       ) return { status: "unavailable" as const };
 
       return database.transaction(async (transaction) => {
-        const candidates = await transaction.select({
+        const selectorHash = createHash("sha256").update(input.reviewSelector).digest("hex");
+        const [candidate] = await transaction.select({
           id: customerServiceHumanReviews.id,
           conversationId: customerServiceHumanReviews.conversationId,
           generation: customerServiceHumanReviews.generation,
-        }).from(customerServiceHumanReviews)
-          .where(eq(customerServiceHumanReviews.channel, "website"));
-        const candidate = candidates.find((review) => selectorMatchesReview(input.reviewSelector, review, input.now));
-        if (!candidate) return { status: "unavailable" as const };
+        }).from(customerServiceReviewSelectors)
+          .innerJoin(
+            customerServiceHumanReviews,
+            eq(customerServiceHumanReviews.id, customerServiceReviewSelectors.humanReviewId),
+          )
+          .where(and(
+            eq(customerServiceReviewSelectors.selectorHash, selectorHash),
+            eq(customerServiceReviewSelectors.generation, customerServiceHumanReviews.generation),
+            gt(customerServiceReviewSelectors.expiresAt, input.now),
+          ))
+          .limit(1);
+        if (!candidate || !selectorMatchesReview(input.reviewSelector, candidate, input.now)) {
+          return { status: "unavailable" as const };
+        }
 
         await lockConversation(transaction, candidate.conversationId);
         const [review] = await transaction.select({
@@ -974,7 +1007,13 @@ export function createDrizzleCustomerServiceRepository(
           updatedAt: input.now,
         }).where(and(
           eq(customerServiceReviewAlertOutbox.humanReviewId, review.id),
-          inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait", "leased"]),
+          or(
+            inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait"]),
+            and(
+              eq(customerServiceReviewAlertOutbox.status, "leased"),
+              isNull(customerServiceReviewAlertOutbox.providerSendStartedAt),
+            ),
+          ),
         ));
         await transaction.update(customerServiceConversations).set({ updatedAt: input.now })
           .where(and(
@@ -1918,8 +1957,32 @@ export function createDrizzleCustomerServiceRepository(
 
     async claimDueReviewAlert(input) {
       return database.transaction(async (transaction) => {
+        const eligible = or(
+          and(
+            eq(customerServiceHumanReviews.status, "open"),
+            gt(customerServiceHumanReviews.deepLinkExpiresAt, input.now),
+            lte(customerServiceReviewAlertOutbox.nextAttemptAt, input.now),
+            inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait"]),
+          ),
+          and(
+            eq(customerServiceReviewAlertOutbox.status, "leased"),
+            lte(customerServiceReviewAlertOutbox.leaseExpiresAt, input.now),
+          ),
+        );
+        const [identity] = await transaction.select({
+          id: customerServiceReviewAlertOutbox.id,
+          conversationId: customerServiceHumanReviews.conversationId,
+        }).from(customerServiceReviewAlertOutbox)
+          .innerJoin(customerServiceHumanReviews, eq(customerServiceHumanReviews.id, customerServiceReviewAlertOutbox.humanReviewId))
+          .where(eligible)
+          .orderBy(asc(customerServiceReviewAlertOutbox.createdAt), asc(customerServiceReviewAlertOutbox.id))
+          .limit(1);
+        if (!identity) return null;
+
+        await lockConversation(transaction, identity.conversationId);
         const [row] = await transaction.select({
           outbox: customerServiceReviewAlertOutbox,
+          reviewStatus: customerServiceHumanReviews.status,
           reason: customerServiceHumanReviews.reason,
           redactedSummary: customerServiceHumanReviews.redactedSummary,
           openedAt: customerServiceHumanReviews.openedAt,
@@ -1927,21 +1990,32 @@ export function createDrizzleCustomerServiceRepository(
         }).from(customerServiceReviewAlertOutbox)
           .innerJoin(customerServiceHumanReviews, eq(customerServiceHumanReviews.id, customerServiceReviewAlertOutbox.humanReviewId))
           .where(and(
-            eq(customerServiceHumanReviews.status, "open"),
-            lte(customerServiceReviewAlertOutbox.nextAttemptAt, input.now),
-            gt(customerServiceHumanReviews.deepLinkExpiresAt, input.now),
-            or(
-              inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait"]),
-              and(
-                eq(customerServiceReviewAlertOutbox.status, "leased"),
-                lte(customerServiceReviewAlertOutbox.leaseExpiresAt, input.now),
-              ),
-            ),
+            eq(customerServiceReviewAlertOutbox.id, identity.id),
+            eq(customerServiceHumanReviews.conversationId, identity.conversationId),
+            eligible,
           ))
-          .orderBy(asc(customerServiceReviewAlertOutbox.createdAt), asc(customerServiceReviewAlertOutbox.id))
           .for("update", { skipLocked: true })
           .limit(1);
-        if (!row || !row.deepLinkExpiresAt) return null;
+        if (!row) return null;
+        const reviewReady = row.reviewStatus === "open"
+          && Boolean(row.deepLinkExpiresAt && row.deepLinkExpiresAt > input.now);
+        if (!reviewReady) {
+          await transaction.update(customerServiceReviewAlertOutbox).set({
+            status: "failed",
+            leaseToken: null,
+            leaseExpiresAt: null,
+            lastErrorCode: row.reviewStatus === "open"
+              ? "deep_link_expired_after_send_started"
+              : "review_resolved_after_send_started",
+            updatedAt: input.now,
+          }).where(and(
+            eq(customerServiceReviewAlertOutbox.id, row.outbox.id),
+            eq(customerServiceReviewAlertOutbox.status, "leased"),
+            lte(customerServiceReviewAlertOutbox.leaseExpiresAt, input.now),
+          ));
+          return null;
+        }
+        if (!row.deepLinkExpiresAt) return null;
         const leaseToken = randomUUID();
         const [claimed] = await transaction.update(customerServiceReviewAlertOutbox).set({
           status: "leased",
@@ -2063,7 +2137,7 @@ export function createDrizzleCustomerServiceRepository(
           && Boolean(current.deepLinkExpiresAt && current.deepLinkExpiresAt > input.now);
         if (ready) {
           const [linearized] = await transaction.update(customerServiceReviewAlertOutbox).set({
-            status: "sending",
+            providerSendStartedAt: sql`coalesce(${customerServiceReviewAlertOutbox.providerSendStartedAt}, ${input.now})`,
             updatedAt: input.now,
           }).where(and(
             eq(customerServiceReviewAlertOutbox.id, input.id),
@@ -2100,8 +2174,9 @@ export function createDrizzleCustomerServiceRepository(
         updatedAt: input.now,
       }).where(and(
         eq(customerServiceReviewAlertOutbox.id, input.id),
-        eq(customerServiceReviewAlertOutbox.status, "sending"),
+        eq(customerServiceReviewAlertOutbox.status, "leased"),
         eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
+        isNotNull(customerServiceReviewAlertOutbox.providerSendStartedAt),
       )).returning({ id: customerServiceReviewAlertOutbox.id });
       void input.providerMessageId;
       return Boolean(updated);
@@ -2137,7 +2212,7 @@ export function createDrizzleCustomerServiceRepository(
           .limit(1)
           .for("update");
         if (
-          current?.outboxStatus !== "sending"
+          current?.outboxStatus !== "leased"
           || current.leaseToken !== input.leaseToken
         ) return "stale" as const;
 
@@ -2147,12 +2222,16 @@ export function createDrizzleCustomerServiceRepository(
           leaseToken: null,
           leaseExpiresAt: null,
           lastErrorCode: reviewOpen ? input.errorCode : "review_resolved_after_send_started",
-          ...(reviewOpen ? { nextAttemptAt: input.nextAttemptAt } : {}),
+          ...(reviewOpen ? {
+            nextAttemptAt: input.nextAttemptAt,
+            providerSendStartedAt: null,
+          } : {}),
           updatedAt: input.now,
         }).where(and(
           eq(customerServiceReviewAlertOutbox.id, input.id),
-          eq(customerServiceReviewAlertOutbox.status, "sending"),
+          eq(customerServiceReviewAlertOutbox.status, "leased"),
           eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
+          isNotNull(customerServiceReviewAlertOutbox.providerSendStartedAt),
         )).returning({ id: customerServiceReviewAlertOutbox.id });
         if (!updated) return "stale" as const;
         return reviewOpen ? "retry_wait" as const : "resolved" as const;
@@ -2168,7 +2247,7 @@ export function createDrizzleCustomerServiceRepository(
         updatedAt: input.now,
       }).where(and(
         eq(customerServiceReviewAlertOutbox.id, input.id),
-        inArray(customerServiceReviewAlertOutbox.status, ["leased", "sending"]),
+        eq(customerServiceReviewAlertOutbox.status, "leased"),
         eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
       )).returning({ id: customerServiceReviewAlertOutbox.id });
       return Boolean(updated);

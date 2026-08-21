@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { getTableColumns, getTableName } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
@@ -7,24 +7,31 @@ import {
   customerServiceHumanReviews,
   customerServiceRateLimitBuckets,
   customerServiceReviewAlertOutbox,
+  customerServiceReviewSelectors,
   customerServiceWebSessions,
   customerServiceWebsiteAssistantMessages,
 } from "./index";
 
-const websiteTables = [
+const initialWebsiteTables = [
   customerServiceWebSessions,
   customerServiceWebsiteAssistantMessages,
   customerServiceHumanReviews,
   customerServiceReviewAlertOutbox,
   customerServiceRateLimitBuckets,
 ];
+const websiteTables = [
+  ...initialWebsiteTables.slice(0, 3),
+  customerServiceReviewSelectors,
+  ...initialWebsiteTables.slice(3),
+];
 
 describe("website customer service schema contract", () => {
-  it("defines the five additive website persistence tables", () => {
+  it("defines the additive website persistence tables", () => {
     expect(websiteTables.map(getTableName)).toEqual([
       "customer_service_web_sessions",
       "customer_service_website_assistant_messages",
       "customer_service_human_reviews",
+      "customer_service_review_selectors",
       "customer_service_review_alert_outbox",
       "customer_service_rate_limit_buckets",
     ]);
@@ -79,8 +86,10 @@ describe("website customer service schema contract", () => {
   it("models one open human-review generation and one alert per incident", () => {
     const reviewConfig = getTableConfig(customerServiceHumanReviews);
     const outboxConfig = getTableConfig(customerServiceReviewAlertOutbox);
+    const selectorConfig = getTableConfig(customerServiceReviewSelectors);
     const reviewColumns = getTableColumns(customerServiceHumanReviews);
     const outboxColumns = getTableColumns(customerServiceReviewAlertOutbox);
+    const selectorColumns = getTableColumns(customerServiceReviewSelectors);
 
     expect(reviewColumns).toEqual(expect.objectContaining({
       conversationId: expect.anything(),
@@ -107,6 +116,7 @@ describe("website customer service schema contract", () => {
       nextAttemptAt: expect.anything(),
       leaseToken: expect.anything(),
       leaseExpiresAt: expect.anything(),
+      providerSendStartedAt: expect.anything(),
       lastErrorCode: expect.anything(),
       sentAt: expect.anything(),
     }));
@@ -114,6 +124,17 @@ describe("website customer service schema contract", () => {
       "customer_service_review_alert_outbox_review_unique",
       "customer_service_review_alert_outbox_idempotency_unique",
       "customer_service_review_alert_outbox_due_idx",
+    ]));
+    expect(selectorColumns).toEqual(expect.objectContaining({
+      humanReviewId: expect.anything(),
+      generation: expect.anything(),
+      selectorHash: expect.anything(),
+      expiresAt: expect.anything(),
+    }));
+    expect(selectorConfig.indexes.map((item) => item.config.name)).toEqual(expect.arrayContaining([
+      "customer_service_review_selectors_hash_unique",
+      "customer_service_review_selectors_review_window_unique",
+      "customer_service_review_selectors_expiry_idx",
     ]));
     expect(reviewConfig.checks.map((item) => item.name)).toEqual(expect.arrayContaining([
       "customer_service_human_reviews_channel_valid",
@@ -157,7 +178,7 @@ describe("website customer service schema contract", () => {
       "utf8",
     );
 
-    for (const table of websiteTables.map(getTableName)) {
+    for (const table of initialWebsiteTables.map(getTableName)) {
       expect(migration).toContain(`CREATE TABLE "${table}"`);
     }
     expect(migration.match(/CREATE TABLE "customer_service_/g)).toHaveLength(5);
@@ -165,5 +186,32 @@ describe("website customer service schema contract", () => {
     expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
     expect(migration).not.toMatch(/^\s*DROP\s+CONSTRAINT/im);
     expect(migration).not.toMatch(/\b(?:raw_ip|ip_address|session_token|access_token|secret)\b/i);
+  });
+
+  it("keeps every Task 10 through Task 13 website migration free of removal operations", () => {
+    const migrationDirectory = resolve(process.cwd(), "drizzle");
+    const migrations = readdirSync(migrationDirectory)
+      .filter((name) => /^00(?:44|49|50)_.+\.sql$/.test(name))
+      .sort()
+      .map((name) => ({
+        name,
+        sql: readFileSync(resolve(migrationDirectory, name), "utf8"),
+      }));
+
+    expect(migrations.map((migration) => migration.name)).toEqual([
+      "0044_website_customer_assistant.sql",
+      "0049_website_review_live_updates.sql",
+      expect.stringMatching(/^0050_.+\.sql$/),
+    ]);
+    for (const migration of migrations) {
+      expect(migration.sql, migration.name).not.toMatch(
+        /^\s*(?:DROP\b|ALTER\s+TABLE\s+.+\s+DROP\b|TRUNCATE|DELETE\s+FROM)/im,
+      );
+    }
+
+    const task13Migration = migrations.at(-1)?.sql ?? "";
+    expect(task13Migration).toContain('ADD COLUMN "provider_send_started_at"');
+    expect(task13Migration).toContain('CREATE TABLE "customer_service_review_selectors"');
+    expect(task13Migration).toContain('CREATE UNIQUE INDEX "customer_service_review_selectors_hash_unique"');
   });
 });

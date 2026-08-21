@@ -675,17 +675,38 @@ export const customerServiceHumanReviews = pgTable(
   ],
 );
 
+export const customerServiceReviewSelectors = pgTable(
+  "customer_service_review_selectors",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    humanReviewId: uuid("human_review_id").notNull().references(() => customerServiceHumanReviews.id, { onDelete: "restrict" }),
+    generation: integer("generation").notNull(),
+    selectorHash: text("selector_hash").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    uniqueIndex("customer_service_review_selectors_hash_unique").on(table.selectorHash),
+    uniqueIndex("customer_service_review_selectors_review_window_unique")
+      .on(table.humanReviewId, table.generation, table.expiresAt),
+    index("customer_service_review_selectors_expiry_idx").on(table.expiresAt),
+    check("customer_service_review_selectors_generation_valid", sql`${table.generation} > 0`),
+    check("customer_service_review_selectors_hash_valid", sql`${table.selectorHash} ~ '^[0-9a-f]{64}$'`),
+  ],
+);
+
 export const customerServiceReviewAlertOutbox = pgTable(
   "customer_service_review_alert_outbox",
   {
     id: uuid("id").defaultRandom().primaryKey(),
     humanReviewId: uuid("human_review_id").notNull().references(() => customerServiceHumanReviews.id, { onDelete: "restrict" }),
-    status: text("status").$type<"pending" | "leased" | "sending" | "retry_wait" | "sent" | "failed">().default("pending").notNull(),
+    status: text("status").$type<"pending" | "leased" | "retry_wait" | "sent" | "failed">().default("pending").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     attemptCount: integer("attempt_count").default(0).notNull(),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull(),
     leaseToken: text("lease_token"),
     leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    providerSendStartedAt: timestamp("provider_send_started_at", { withTimezone: true }),
     lastErrorCode: text("last_error_code"),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -697,13 +718,13 @@ export const customerServiceReviewAlertOutbox = pgTable(
     index("customer_service_review_alert_outbox_due_idx").on(table.status, table.nextAttemptAt, table.leaseExpiresAt),
     check(
       "customer_service_review_alert_outbox_status_valid",
-      sql`${table.status} in ('pending', 'leased', 'sending', 'retry_wait', 'sent', 'failed')`,
+      sql`${table.status} in ('pending', 'leased', 'retry_wait', 'sent', 'failed')`,
     ),
     check("customer_service_review_alert_outbox_attempts_valid", sql`${table.attemptCount} >= 0`),
     check("customer_service_review_alert_outbox_key_valid", sql`length(trim(${table.idempotencyKey})) > 0`),
     check(
       "customer_service_review_alert_outbox_lease_valid",
-      sql`(${table.status} in ('leased', 'sending') and ${table.leaseToken} is not null and ${table.leaseExpiresAt} is not null) or (${table.status} not in ('leased', 'sending') and ${table.leaseToken} is null and ${table.leaseExpiresAt} is null)`,
+      sql`(${table.status} = 'leased' and ${table.leaseToken} is not null and ${table.leaseExpiresAt} is not null) or (${table.status} <> 'leased' and ${table.leaseToken} is null and ${table.leaseExpiresAt} is null)`,
     ),
     check(
       "customer_service_review_alert_outbox_sent_valid",

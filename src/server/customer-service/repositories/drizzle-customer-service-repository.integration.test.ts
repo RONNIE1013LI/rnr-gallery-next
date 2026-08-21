@@ -16,6 +16,7 @@ import {
   customerServiceHumanReplyMatchEvents,
   customerServiceHumanReviews,
   customerServiceReviewAlertOutbox,
+  customerServiceReviewSelectors,
   customerServiceLearningCandidates,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
@@ -123,6 +124,7 @@ function imageCompletion(attemptId: string, status: "analyzed" | "provider_error
 async function clearTables() {
   await database.delete(customerServiceWebsiteAssistantMessages);
   await database.delete(customerServiceReviewAlertOutbox);
+  await database.delete(customerServiceReviewSelectors);
   await database.delete(customerServiceHumanReviews);
   await database.delete(customerServiceCaseRetrievals);
   await database.delete(customerServiceLearningCandidates);
@@ -779,6 +781,84 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     })).resolves.toEqual({ status: "sent" });
   });
 
+  it("resolves a selector with one indexed candidate lookup instead of scanning review history", async () => {
+    const target = await openTask13Review({
+      sessionHash: "87".repeat(32),
+      networkHash: "88".repeat(32),
+      messageHash: "89".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000161",
+    });
+    await database.insert(user).values({
+      id: "task-13-indexed-selector-staff",
+      name: "Indexed Selector Staff",
+      email: "task-13-indexed-selector@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+
+    const conversations = await database.insert(customerServiceConversations).values(
+      Array.from({ length: 250 }, (_, index) => ({
+        channel: "website" as const,
+        externalKeyHash: createHash("sha256").update(`task-13-selector-history-${index}`).digest("hex"),
+      })),
+    ).returning({ id: customerServiceConversations.id });
+    const messages = await database.insert(customerServiceMessages).values(
+      conversations.map((conversation, index) => ({
+        conversationId: conversation.id,
+        channel: "website" as const,
+        externalMessageKeyHash: createHash("sha256").update(`task-13-selector-message-${index}`).digest("hex"),
+        body: `Historical review ${index}`,
+        customerText: `Historical review ${index}`,
+        receivedAt: new Date(Date.UTC(2026, 6, 1, 0, 0, index)),
+      })),
+    ).returning({ id: customerServiceMessages.id, conversationId: customerServiceMessages.conversationId });
+    const turns = await database.insert(customerServiceTurns).values(messages.map((message, index) => ({
+      conversationId: message.conversationId,
+      channel: "website" as const,
+      representativeMessageId: message.id,
+      body: `Historical review ${index}`,
+      status: "sealed" as const,
+      debounceUntil: new Date("2026-07-01T00:00:00.000Z"),
+      openedAt: new Date("2026-07-01T00:00:00.000Z"),
+      lastEventAt: new Date("2026-07-01T00:00:00.000Z"),
+      sealedAt: new Date("2026-07-01T00:00:00.000Z"),
+      processingStatus: "completed" as const,
+      processingCompletedAt: new Date("2026-07-01T00:00:00.000Z"),
+      nextRunAt: new Date("2026-07-01T00:00:00.000Z"),
+    }))).returning({ id: customerServiceTurns.id, conversationId: customerServiceTurns.conversationId });
+    await database.insert(customerServiceHumanReviews).values(turns.map((turn) => ({
+      conversationId: turn.conversationId,
+      channel: "website" as const,
+      triggerTurnId: turn.id,
+      generation: 1,
+      reason: "unresolved" as const,
+      status: "open" as const,
+      redactedSummary: "Historical Website review.",
+      openedAt: new Date("2026-07-01T00:00:00.000Z"),
+    })));
+
+    const selectorQueries: string[] = [];
+    const selectorPool = new Pool({ connectionString: testDatabaseUrl });
+    const boundedRepository = createDrizzleCustomerServiceRepository(drizzle(selectorPool, {
+      logger: { logQuery: (query) => { selectorQueries.push(query); } },
+    }), { reviewSelectorSecret, now: selectorTestNow });
+    try {
+      await expect(boundedRepository.answerWebsiteReview({
+        reviewSelector: target.selector,
+        text: "Indexed selector lookup found only the authorized review.",
+        actorUserId: "task-13-indexed-selector-staff",
+        now: selectorTestNow(),
+      })).resolves.toEqual({ status: "sent" });
+    } finally {
+      await selectorPool.end();
+    }
+
+    expect(selectorQueries.filter((query) => query.includes("customer_service_review_selectors"))).toHaveLength(1);
+    expect(selectorQueries.some((query) => (
+      query.includes('from "customer_service_human_reviews"')
+      && query.includes('"customer_service_human_reviews"."channel" = $1')
+    ))).toBe(false);
+  });
+
   it("atomically answers one website review, seals stale work, publishes once, and is idempotent", async () => {
     const sessionHash = "91".repeat(32);
     const claimed = await claimWebsiteTurn({
@@ -1355,6 +1435,178 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       leaseToken: null,
     });
     expect(resolvedReview).toMatchObject({ status: "resolved" });
+  });
+
+  it("reclaims a linearized leased alert after a crash before provider invocation", async () => {
+    await openTask13Review({
+      sessionHash: "b6".repeat(32),
+      networkHash: "b7".repeat(32),
+      messageHash: "b8".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000162",
+    });
+    const first = await repository.claimDueReviewAlert({
+      now: new Date("2026-08-21T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-21T00:00:04.000Z"),
+    });
+    if (!first) throw new Error("expected first alert lease");
+    await expect(repository.confirmClaimedReviewAlert({
+      id: first.id,
+      leaseToken: first.leaseToken,
+      now: new Date("2026-08-21T00:00:03.000Z"),
+    })).resolves.toBe(true);
+    await expect(repository.beginClaimedReviewAlertSend({
+      id: first.id,
+      leaseToken: first.leaseToken,
+      now: new Date("2026-08-21T00:00:03.000Z"),
+    })).resolves.toBe(true);
+
+    const [linearized] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(linearized).toMatchObject({
+      status: "leased",
+      providerSendStartedAt: new Date("2026-08-21T00:00:03.000Z"),
+    });
+    const recovered = await competingRepository.claimDueReviewAlert({
+      now: new Date("2026-08-21T00:00:04.000Z"),
+      leaseExpiresAt: new Date("2026-08-21T00:05:04.000Z"),
+    });
+    expect(recovered).toMatchObject({
+      id: first.id,
+      idempotencyKey: first.idempotencyKey,
+      attemptCount: 2,
+    });
+    expect(recovered?.leaseToken).not.toBe(first.leaseToken);
+  });
+
+  it("recovers provider acceptance after settlement failure with one idempotent provider effect", async () => {
+    await openTask13Review({
+      sessionHash: "c6".repeat(32),
+      networkHash: "c7".repeat(32),
+      messageHash: "c8".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000163",
+    });
+    let currentTime = new Date("2026-08-21T00:00:03.000Z");
+    const providerCalls: string[] = [];
+    const providerEffects = new Set<string>();
+    const provider = {
+      configured: true,
+      send: vi.fn(async (message: { idempotencyKey: string }) => {
+        providerCalls.push(message.idempotencyKey);
+        providerEffects.add(message.idempotencyKey);
+        return { providerMessageId: `accepted:${message.idempotencyKey}` };
+      }),
+    };
+    let failSettlement = true;
+    const service = createReviewAlertService({
+      repository: {
+        claimDueReviewAlert: repository.claimDueReviewAlert,
+        confirmClaimedReviewAlert: repository.confirmClaimedReviewAlert,
+        beginClaimedReviewAlertSend: repository.beginClaimedReviewAlertSend,
+        markReviewAlertSent: async (input) => {
+          if (failSettlement) throw new Error("simulated_settlement_database_failure");
+          return repository.markReviewAlertSent(input);
+        },
+        retryReviewAlert: repository.retryReviewAlert,
+        markReviewAlertUncertain: repository.markReviewAlertUncertain,
+      },
+      provider,
+      alertTo: "staff@rrgallery.example",
+      siteUrl: "https://rrgallery.example",
+      deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      now: () => currentTime,
+      leaseMs: 1_000,
+    });
+
+    await expect(service.deliverNext()).rejects.toThrow("simulated_settlement_database_failure");
+    failSettlement = false;
+    currentTime = new Date("2026-08-21T00:00:04.000Z");
+    await expect(service.deliverNext()).resolves.toEqual({ result: "sent" });
+
+    expect(providerCalls).toHaveLength(2);
+    expect(new Set(providerCalls).size).toBe(1);
+    expect(providerEffects.size).toBe(1);
+    const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(outbox).toMatchObject({ status: "sent", attemptCount: 2 });
+    await expect(repository.claimDueReviewAlert({
+      now: new Date("2026-08-22T00:00:00.000Z"),
+      leaseExpiresAt: new Date("2026-08-22T00:05:00.000Z"),
+    })).resolves.toBeNull();
+  });
+
+  it("terminalizes a resolved expired linearized lease without a stale retry", async () => {
+    const review = await openTask13Review({
+      sessionHash: "d8".repeat(32),
+      networkHash: "d9".repeat(32),
+      messageHash: "da".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000164",
+    });
+    await database.insert(user).values({
+      id: "task-13-expired-linearized-staff",
+      name: "Expired Linearized Staff",
+      email: "task-13-expired-linearized@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+    const first = await repository.claimDueReviewAlert({
+      now: new Date("2026-08-21T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-21T00:00:04.000Z"),
+    });
+    if (!first) throw new Error("expected alert lease");
+    await repository.beginClaimedReviewAlertSend({
+      id: first.id,
+      leaseToken: first.leaseToken,
+      now: new Date("2026-08-21T00:00:03.000Z"),
+    });
+    await expect(competingRepository.answerWebsiteReview({
+      reviewSelector: review.selector,
+      text: "Manual resolution completed after the provider lease expired.",
+      actorUserId: "task-13-expired-linearized-staff",
+      now: new Date("2026-08-21T00:00:04.001Z"),
+    })).resolves.toEqual({ status: "sent" });
+
+    await expect(repository.claimDueReviewAlert({
+      now: new Date("2026-08-21T00:00:04.002Z"),
+      leaseExpiresAt: new Date("2026-08-21T00:05:04.000Z"),
+    })).resolves.toBeNull();
+    const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(outbox).toMatchObject({
+      status: "failed",
+      leaseToken: null,
+      leaseExpiresAt: null,
+      lastErrorCode: "review_resolved_after_send_started",
+    });
+  });
+
+  it("lets only one recovery worker reclaim an expired linearized lease", async () => {
+    await openTask13Review({
+      sessionHash: "db".repeat(32),
+      networkHash: "dc".repeat(32),
+      messageHash: "dd".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000165",
+    });
+    const first = await repository.claimDueReviewAlert({
+      now: new Date("2026-08-21T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-21T00:00:04.000Z"),
+    });
+    if (!first) throw new Error("expected alert lease");
+    await repository.beginClaimedReviewAlertSend({
+      id: first.id,
+      leaseToken: first.leaseToken,
+      now: new Date("2026-08-21T00:00:03.000Z"),
+    });
+
+    const recoveryInput = {
+      now: new Date("2026-08-21T00:00:04.000Z"),
+      leaseExpiresAt: new Date("2026-08-21T00:05:04.000Z"),
+    };
+    const recovered = await Promise.all([
+      repository.claimDueReviewAlert(recoveryInput),
+      competingRepository.claimDueReviewAlert(recoveryInput),
+    ]);
+    expect(recovered.filter(Boolean)).toHaveLength(1);
+    expect(recovered.find(Boolean)).toMatchObject({
+      id: first.id,
+      idempotencyKey: first.idempotencyKey,
+      attemptCount: 2,
+    });
   });
 
   it("can never answer a Facebook queue item through the website review action", async () => {
