@@ -7,6 +7,10 @@ import type {
 } from "../types";
 import type { ImageAnalysisResult } from "../image-analysis-schema";
 import type { ProtectedAttachmentSource } from "../attachments/attachment-source-protector";
+import type {
+  WebsitePublicUpdateCursor,
+  WebsitePublicUpdateRecord,
+} from "../website/public-updates";
 
 export type ImageJobStage = "policy" | "download" | "vision" | "cleanup" | "draft";
 
@@ -277,6 +281,11 @@ export type PilotMetricCounts = Readonly<{
 }>;
 
 export interface CustomerServiceRepository {
+  listWebsitePublicUpdates(input: Readonly<{
+    conversationId: string;
+    after: WebsitePublicUpdateCursor | null;
+    limit: number;
+  }>): Promise<readonly WebsitePublicUpdateRecord[]>;
   resolveWebsiteSession(input: Readonly<{
     sessionTokenHash: string;
     now: Date;

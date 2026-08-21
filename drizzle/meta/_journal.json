@@ -330,6 +330,13 @@
       "when": 1787293908343,
       "tag": "0046_dizzy_scarlet_witch",
       "breakpoints": true
+    },
+    {
+      "idx": 47,
+      "version": "7",
+      "when": 1787310951745,
+      "tag": "0047_slim_morlun",
+      "breakpoints": true
     }
   ]
 }

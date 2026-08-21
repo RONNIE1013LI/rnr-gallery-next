@@ -53,6 +53,10 @@ import {
   type WebsiteHumanReviewReason,
 } from "../website/human-review";
 import { sanitizeWebsiteModelInput } from "../website/model-input-sanitizer";
+import type {
+  WebsitePublicUpdateCursor,
+  WebsitePublicUpdateRecord,
+} from "../website/public-updates";
 import {
   createReplyAssistantUpdateReader,
   encodeReplyAssistantCursor,
@@ -86,6 +90,23 @@ function websiteBudgetScopeKeys(dailyScopeKey: string, website: boolean) {
   const date = /^daily:(\d{4}-\d{2}-\d{2})$/.exec(dailyScopeKey)?.[1];
   if (!date) throw new Error("customer_service_budget_daily_scope_invalid");
   return [`daily:website:${date}`, "total:website"] as const;
+}
+
+function websitePublicUpdateAfter(
+  createdAt: typeof customerServiceConversationEvents.createdAt | typeof customerServiceWebsiteAssistantMessages.publishedAt,
+  id: typeof customerServiceConversationEvents.id | typeof customerServiceWebsiteAssistantMessages.id,
+  source: WebsitePublicUpdateRecord["source"],
+  after: WebsitePublicUpdateCursor | null,
+) {
+  if (!after) return undefined;
+  const sourceOrder = source === "event" ? 0 : 1;
+  const afterSourceOrder = after.source === "event" ? 0 : 1;
+  if (sourceOrder < afterSourceOrder) return gt(createdAt, after.createdAt);
+  if (sourceOrder > afterSourceOrder) return or(gt(createdAt, after.createdAt), eq(createdAt, after.createdAt));
+  return or(
+    gt(createdAt, after.createdAt),
+    and(eq(createdAt, after.createdAt), gt(id, after.id)),
+  );
 }
 
 function websiteReviewReason(
@@ -688,6 +709,81 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
   }
 
   const repository: CustomerServiceRepository = {
+    async listWebsitePublicUpdates(input) {
+      if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 101) {
+        throw new Error("website_public_updates_limit_invalid");
+      }
+      const events = await database.select({
+        id: customerServiceConversationEvents.id,
+        role: customerServiceConversationEvents.role,
+        eventType: customerServiceConversationEvents.eventType,
+        body: customerServiceConversationEvents.body,
+        createdAt: customerServiceConversationEvents.createdAt,
+        processingAttempts: customerServiceTurns.processingAttempts,
+      }).from(customerServiceConversationEvents)
+        .leftJoin(customerServiceTurns, eq(customerServiceTurns.id, customerServiceConversationEvents.turnId))
+        .where(and(
+          eq(customerServiceConversationEvents.conversationId, input.conversationId),
+          eq(customerServiceConversationEvents.channel, "website"),
+          or(
+            eq(customerServiceConversationEvents.eventType, "customer_message"),
+            and(
+              eq(customerServiceConversationEvents.eventType, "human_outbound"),
+              eq(customerServiceConversationEvents.role, "staff"),
+            ),
+          ),
+          websitePublicUpdateAfter(
+            customerServiceConversationEvents.createdAt,
+            customerServiceConversationEvents.id,
+            "event",
+            input.after,
+          ),
+        ))
+        .orderBy(asc(customerServiceConversationEvents.createdAt), asc(customerServiceConversationEvents.id))
+        .limit(input.limit);
+      const assistantMessages = await database.select({
+        id: customerServiceWebsiteAssistantMessages.id,
+        kind: customerServiceWebsiteAssistantMessages.kind,
+        body: customerServiceWebsiteAssistantMessages.body,
+        createdAt: customerServiceWebsiteAssistantMessages.publishedAt,
+      }).from(customerServiceWebsiteAssistantMessages)
+        .where(and(
+          eq(customerServiceWebsiteAssistantMessages.conversationId, input.conversationId),
+          eq(customerServiceWebsiteAssistantMessages.channel, "website"),
+          websitePublicUpdateAfter(
+            customerServiceWebsiteAssistantMessages.publishedAt,
+            customerServiceWebsiteAssistantMessages.id,
+            "assistant",
+            input.after,
+          ),
+        ))
+        .orderBy(asc(customerServiceWebsiteAssistantMessages.publishedAt), asc(customerServiceWebsiteAssistantMessages.id))
+        .limit(input.limit);
+      return [...events.map((event): WebsitePublicUpdateRecord => ({
+        source: "event",
+        id: event.id,
+        role: event.role === "staff" ? "staff" : "customer",
+        text: event.body,
+        createdAt: event.createdAt,
+        state: event.eventType === "human_outbound"
+          ? "human_outbound"
+          : (event.processingAttempts ?? 0) > 0 ? "recovery" : "pending",
+      })), ...assistantMessages.map((message): WebsitePublicUpdateRecord => ({
+        source: "assistant",
+        id: message.id,
+        role: "assistant",
+        text: message.body,
+        createdAt: message.createdAt,
+        state: message.kind === "validated_ai" ? "committed_assistant" : "review",
+      }))].sort((left, right) => {
+        const timestamp = left.createdAt.getTime() - right.createdAt.getTime();
+        if (timestamp) return timestamp;
+        const source = (left.source === "event" ? 0 : 1) - (right.source === "event" ? 0 : 1);
+        if (source) return source;
+        return left.id.localeCompare(right.id);
+      }).slice(0, input.limit);
+    },
+
     async resolveWebsiteSession(input) {
       const [session] = await database.select({
         conversationId: customerServiceWebSessions.conversationId,
