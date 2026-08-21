@@ -43,4 +43,29 @@ describe("legal pages", () => {
     expect(screen.getByText(/both can take around two weeks to arrive/)).toBeVisible();
     expect(screen.queryByText(/Australia \(Standard Delivery\):.*approximately 5 business days/i)).not.toBeInTheDocument();
   });
+
+  it("states the approved cancellation and refund policy without deposit or balance wording", () => {
+    render(<TermsPage />);
+
+    expect(screen.getByRole("link", { name: "Cancellations and refunds" })).toHaveAttribute(
+      "href",
+      "#cancellations-and-refunds",
+    );
+    expect(screen.getByRole("heading", { name: "Cancellations and refunds" })).toHaveAttribute(
+      "id",
+      "cancellations-and-refunds",
+    );
+
+    const main = screen.getByRole("main");
+    expect(main).toHaveTextContent(
+      "Orders can be cancelled for a full refund after successful checkout and before design work begins.",
+    );
+    expect(main).toHaveTextContent(
+      "Once the initial design proof has been delivered, the design fee is non-refundable.",
+    );
+    expect(main).toHaveTextContent(
+      "The remaining amount may be refunded and will generally equal 50% of the total order value.",
+    );
+    expect(main).not.toHaveTextContent(/deposit|remaining balance|final payment/i);
+  });
 });

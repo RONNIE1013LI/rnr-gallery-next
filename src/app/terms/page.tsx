@@ -17,7 +17,7 @@ export default function TermsPage() {
           <ul>
             <li><a href="#custom-orders">Custom orders</a></li>
             <li><a href="#drafts-and-revisions">Drafts and revisions</a></li>
-            <li><a href="#deposits-and-cancellation">Deposits and cancellation</a></li>
+            <li><a href="#cancellations-and-refunds">Cancellations and refunds</a></li>
             <li><a href="#timing-and-urgent-service">Timing and urgent service</a></li>
             <li><a href="#printing-and-files">Printing, colour and supplied files</a></li>
             <li><a href="#contact">Contact</a></li>
@@ -36,11 +36,12 @@ export default function TermsPage() {
           different source photo after work begins may cost NZ$25; minor wording
           changes remain free unless otherwise agreed.
         </p>
-        <h2 id="deposits-and-cancellation">Deposits and cancellation</h2>
+        <h2 id="cancellations-and-refunds">Cancellations and refunds</h2>
         <p>
-          A deposit becomes non-refundable after a design or painting draft has
-          been completed. This reflects the personalised work already performed
-          and does not limit rights available under New Zealand consumer law.
+          Orders can be cancelled for a full refund after successful checkout and
+          before design work begins. Once the initial design proof has been delivered,
+          the design fee is non-refundable. The remaining amount may be refunded and
+          will generally equal 50% of the total order value.
         </p>
         <h2 id="timing-and-urgent-service">Timing and urgent service</h2>
         <p>
