@@ -169,7 +169,7 @@ export function HomepageV3({
     "canvas-landscape": "(max-width: 760px) 66vw, 35vw",
     "canvas-portrait": "(max-width: 760px) 33vw, 18vw",
     "wall-banner": "(max-width: 760px) 100vw, 53vw",
-    "grave-cover": "(max-width: 760px) 55vw, 27vw",
+    "grave-cover": "(max-width: 760px) 51vw, 27vw",
     "roll-up-banner": "(max-width: 760px) 45vw, 22vw",
   };
   const galleryLabels: Readonly<Record<HomepageGallerySlot, string>> = {

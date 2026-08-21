@@ -843,4 +843,22 @@ describe("HomepageV3", () => {
     expect(screen.getByRole("img", { name: portrait.altText }))
       .toHaveAttribute("loading", "lazy");
   });
+
+  it("uses the measured mobile grave-cover width for a retina-sized image candidate", () => {
+    const graveCover = galleryItem(
+      "7455ae174913c7653dfd5a5dff6219af0e7d9aea293bb6d2fb9178ece780be1b",
+      {
+        altText: "Grave cover",
+        productTypeSlug: "grave-cover",
+        productSlug: "grave-cover",
+        width: 600,
+        height: 1200,
+      },
+    );
+
+    render(<HomepageV3 registry={defaultProductRegistry} galleryItems={[graveCover]} />);
+
+    expect(screen.getByRole("img", { name: graveCover.altText }))
+      .toHaveAttribute("sizes", "(max-width: 760px) 51vw, 27vw");
+  });
 });
