@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { ReplyAssistantLiveDashboard } from "./live-dashboard";
+import { mergeReplyQueueItems, ReplyAssistantLiveDashboard } from "./live-dashboard";
 import type { PilotMetricCounts } from "@/server/customer-service/repositories/customer-service-repository";
 
 const baseItem = {
@@ -96,6 +96,27 @@ describe("ReplyAssistantLiveDashboard", () => {
   afterEach(() => {
     vi.useRealTimers();
     vi.restoreAllMocks();
+  });
+
+  it("keeps the selected deep-link review pinned while merging a full live queue", () => {
+    const selector = `wrs1.m8k6x0.${"A".repeat(43)}`;
+    const selected = {
+      ...baseItem,
+      messageId: "selected-review",
+      channel: "website" as const,
+      receivedAt: "2026-08-01T00:00:00.000Z",
+      websiteReview: { selector, reason: "high_risk" as const, alertStatus: "pending" as const },
+    };
+    const newer = Array.from({ length: 100 }, (_, index) => ({
+      ...baseItem,
+      messageId: `newer-${index}`,
+      receivedAt: new Date(Date.UTC(2026, 7, 2, 0, 0, index)).toISOString(),
+    }));
+
+    const merged = mergeReplyQueueItems([selected, ...newer], [], selector);
+
+    expect(merged).toHaveLength(100);
+    expect(merged[0]).toEqual(selected);
   });
 
   it("polls incremental updates and renders new messages, drafts, gate blocks, outbound replies, and learning changes", async () => {

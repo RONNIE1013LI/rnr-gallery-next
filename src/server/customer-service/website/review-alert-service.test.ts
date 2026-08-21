@@ -38,6 +38,7 @@ function delivery(overrides: Partial<{
 function setup() {
   const repository = {
     claimDueReviewAlert: vi.fn(async () => delivery()),
+    confirmClaimedReviewAlert: vi.fn(async () => true),
     markReviewAlertSent: vi.fn(async () => true),
     retryReviewAlert: vi.fn(async () => true),
     markReviewAlertUncertain: vi.fn(async () => true),
@@ -70,6 +71,11 @@ describe("website human-review alert delivery", () => {
     await expect(current.service.deliverNext()).resolves.toEqual({ result: "sent" });
 
     expect(current.provider.send).toHaveBeenCalledOnce();
+    expect(current.repository.confirmClaimedReviewAlert).toHaveBeenCalledWith({
+      id: "outbox-1",
+      leaseToken: "lease-1",
+      now,
+    });
     expect(current.provider.send).toHaveBeenCalledWith(expect.objectContaining({
       to: "staff@rrgallery.example",
       idempotencyKey: "review-alert:00000000-0000-4000-8000-000000000001",
@@ -88,6 +94,18 @@ describe("website human-review alert delivery", () => {
       providerMessageId: "resend-1",
       now,
     });
+  });
+
+  it("does not call the provider when manual resolution terminalizes the claimed alert", async () => {
+    const current = setup();
+    current.repository.confirmClaimedReviewAlert.mockResolvedValueOnce(false);
+
+    await expect(current.service.deliverNext()).resolves.toEqual({ result: "resolved" });
+
+    expect(current.provider.send).not.toHaveBeenCalled();
+    expect(current.repository.markReviewAlertSent).not.toHaveBeenCalled();
+    expect(current.repository.retryReviewAlert).not.toHaveBeenCalled();
+    expect(current.repository.markReviewAlertUncertain).not.toHaveBeenCalled();
   });
 
   it("excludes every customer-authored value from an alert email", async () => {
@@ -119,6 +137,7 @@ describe("website human-review alert delivery", () => {
     const expiresAt = new Date("2026-08-21T00:00:01.000Z");
     const repository = {
       claimDueReviewAlert: vi.fn(async () => ({ ...delivery(), deepLinkExpiresAt: expiresAt })),
+      confirmClaimedReviewAlert: vi.fn(async () => true),
       markReviewAlertSent: vi.fn(async () => true),
       retryReviewAlert: vi.fn(async () => true),
       markReviewAlertUncertain: vi.fn(async () => true),

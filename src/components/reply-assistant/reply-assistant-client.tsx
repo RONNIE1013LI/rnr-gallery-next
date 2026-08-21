@@ -101,11 +101,18 @@ export function ReplyAssistantClient({
 
   const items = liveItems === undefined
     ? fetchedItems
-    : [...new Map(liveItems.map((item) => [item.messageId, item])).values()]
-      .sort((left, right) => (
-        right.receivedAt.localeCompare(left.receivedAt) || right.messageId.localeCompare(left.messageId)
-      ))
-      .slice(0, 100);
+    : (() => {
+      const sorted = [...new Map(liveItems.map((item) => [item.messageId, item])).values()]
+        .sort((left, right) => (
+          right.receivedAt.localeCompare(left.receivedAt) || right.messageId.localeCompare(left.messageId)
+        ));
+      const selected = selectedReviewSelector
+        ? sorted.find((item) => item.websiteReview?.selector === selectedReviewSelector)
+        : undefined;
+      return selected
+        ? [selected, ...sorted.filter((item) => item.messageId !== selected.messageId)].slice(0, 100)
+        : sorted.slice(0, 100);
+    })();
 
   useEffect(() => {
     selectedCardRef.current?.scrollIntoView?.({ block: "nearest" });

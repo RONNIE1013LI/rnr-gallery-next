@@ -23,12 +23,15 @@ export default async function ReplyAssistantPage({
   const runtime = inboxEnabled ? createCustomerServiceRuntime() : null;
   const requestedReview = (await searchParams).review;
   let selectedReviewSelector: string | null = null;
+  let selectedReviewItem: SafeQueuePage["items"][number] | null = null;
   if (runtime && config.websiteEnabled && typeof requestedReview === "string") {
     try {
-      selectedReviewSelector = await runtime.repository.resolveWebsiteReviewDeepLink({
+      const resolved = await runtime.repository.resolveWebsiteReviewDeepLink({
         tokenHash: hashReviewAlertToken(requestedReview),
         now: new Date(),
       });
+      selectedReviewSelector = resolved?.selector ?? null;
+      selectedReviewItem = resolved?.item ?? null;
     } catch {
       selectedReviewSelector = null;
     }
@@ -75,6 +78,9 @@ export default async function ReplyAssistantPage({
       commonEditReasons: [],
     }, { items: [] }, { items: [] }];
   const cards = replyAssistantMetricCards(rawMetrics);
+  const initialItems = selectedReviewItem
+    ? [selectedReviewItem, ...queue.items.filter((item) => item.messageId !== selectedReviewItem.messageId)]
+    : queue.items;
 
   return (
     <section className={styles.page}>
@@ -85,7 +91,7 @@ export default async function ReplyAssistantPage({
       />
       <ReplyAssistantLiveDashboard
         initialCursor={initialCursor}
-        initialItems={queue.items}
+        initialItems={initialItems}
         initialMetricCards={cards}
         initialLearningCandidates={learningCandidates.items}
         initialCaseMemories={caseMemories.items}

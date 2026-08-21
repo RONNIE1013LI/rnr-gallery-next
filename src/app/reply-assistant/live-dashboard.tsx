@@ -27,12 +27,19 @@ type LiveUpdateResponse = Readonly<{
 export function mergeReplyQueueItems(
   current: readonly ReplyQueueItem[],
   changes: readonly ReplyQueueItem[],
+  selectedReviewSelector?: string | null,
 ) {
   const byId = new Map(current.map((item) => [item.messageId, item]));
   for (const item of changes) byId.set(item.messageId, item);
-  return [...byId.values()].sort((left, right) => (
+  const sorted = [...byId.values()].sort((left, right) => (
     right.receivedAt.localeCompare(left.receivedAt) || right.messageId.localeCompare(left.messageId)
-  )).slice(0, 100);
+  ));
+  const selected = selectedReviewSelector
+    ? sorted.find((item) => item.websiteReview?.selector === selectedReviewSelector)
+    : undefined;
+  return selected
+    ? [selected, ...sorted.filter((item) => item.messageId !== selected.messageId)].slice(0, 100)
+    : sorted.slice(0, 100);
 }
 
 export function ReplyAssistantLiveDashboard({
@@ -95,7 +102,9 @@ export function ReplyAssistantLiveDashboard({
         if (arrived.length) {
           setNewMessageIds((current) => [...new Set([...current, ...arrived])]);
         }
-        if (update.queueItems.length) setItems((current) => mergeReplyQueueItems(current, update.queueItems));
+        if (update.queueItems.length) {
+          setItems((current) => mergeReplyQueueItems(current, update.queueItems, selectedReviewSelector));
+        }
         if (update.metrics) setMetricCards(replyAssistantMetricCards(update.metrics));
         if (update.learningCandidates) setLearningCandidates(update.learningCandidates.items);
         if (update.caseMemories) setCaseMemories(update.caseMemories.items);
@@ -139,7 +148,7 @@ export function ReplyAssistantLiveDashboard({
       window.removeEventListener("focus", catchUp);
       window.removeEventListener("online", catchUp);
     };
-  }, []);
+  }, [selectedReviewSelector]);
 
   return (
     <>

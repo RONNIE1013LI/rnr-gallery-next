@@ -29,7 +29,7 @@ describe("reply assistant messages API", () => {
       imageAssessmentSummary: "Image 0 appears cropped; request an uncropped version.",
       humanReplyReceived: false,
       websiteReview: {
-        selector: "33333333-3333-4333-8333-333333333333",
+        selector: `wrs1.m8k6x0.${"A".repeat(43)}`,
         reason: "high_risk" as const,
         alertStatus: "sent" as const,
       },
@@ -57,7 +57,7 @@ describe("reply assistant messages API", () => {
       imageAssessmentSummary: "Image 0 appears cropped; request an uncropped version.",
       humanReplyReceived: false,
       websiteReview: {
-        selector: "33333333-3333-4333-8333-333333333333",
+        selector: `wrs1.m8k6x0.${"A".repeat(43)}`,
         reason: "high_risk",
         alertStatus: "sent",
       },

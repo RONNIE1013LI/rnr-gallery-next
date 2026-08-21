@@ -21,6 +21,7 @@ const item = {
     { role: "staff" as const, text: "Please send the original file.", receivedAt: "2026-08-17T00:01:00.000Z" },
   ],
 };
+const websiteSelector = `wrs1.m8k6x0.${"A".repeat(43)}`;
 
 describe("ReplyAssistantClient", () => {
   beforeEach(() => {
@@ -118,6 +119,40 @@ describe("ReplyAssistantClient", () => {
     expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
   });
 
+  it("pins a deep-linked website review even when 100 newer live items exist", () => {
+    const selector = `wrs1.m8k6x0.${"A".repeat(43)}`;
+    const selected = {
+      ...item,
+      messageId: "selected-old-website-review",
+      channel: "website" as const,
+      body: "Deep-linked older website review",
+      receivedAt: "2026-08-01T00:00:00.000Z",
+      latestAttemptId: null,
+      draftText: null,
+      gateResult: null,
+      websiteReview: { selector, reason: "high_risk" as const, alertStatus: "pending" as const },
+    };
+    const newer = Array.from({ length: 100 }, (_, index) => ({
+      ...item,
+      messageId: `newer-${index}`,
+      body: `Newer item ${index}`,
+      receivedAt: new Date(Date.UTC(2026, 7, 2, 0, 0, index)).toISOString(),
+      latestAttemptId: null,
+      draftText: null,
+      humanReplyReceived: true,
+      timeline: [],
+    }));
+
+    render(<ReplyAssistantClient
+      initialItems={[selected, ...newer]}
+      liveItems={[selected, ...newer]}
+      selectedReviewSelector={selector}
+    />);
+
+    expect(screen.getByText("Deep-linked older website review")).toBeInTheDocument();
+    expect(screen.getByLabelText("Website reply")).toBeInTheDocument();
+  });
+
   it("shows a Website review timeline, alert state, and only committed public replies", () => {
     render(<ReplyAssistantClient initialItems={[{
       ...item,
@@ -126,7 +161,7 @@ describe("ReplyAssistantClient", () => {
       draftText: "Internal AI draft that was never published",
       gateResult: "high_risk",
       websiteReview: {
-        selector: "33333333-3333-4333-8333-333333333333",
+        selector: websiteSelector,
         reason: "high_risk",
         alertStatus: "sent",
       },
@@ -158,7 +193,7 @@ describe("ReplyAssistantClient", () => {
       ...item,
       channel: "website" as const,
       websiteReview: {
-        selector: "33333333-3333-4333-8333-333333333333",
+        selector: websiteSelector,
         reason: "high_risk" as const,
         alertStatus: "sent" as const,
       },
@@ -188,7 +223,7 @@ describe("ReplyAssistantClient", () => {
       ...item,
       channel: "website" as const,
       websiteReview: {
-        selector: "33333333-3333-4333-8333-333333333333",
+        selector: websiteSelector,
         reason: "high_risk" as const,
         alertStatus: "sent" as const,
       },
@@ -213,7 +248,7 @@ describe("ReplyAssistantClient", () => {
       ...websiteItem,
       websiteReview: {
         ...websiteItem.websiteReview,
-        selector: "44444444-4444-4444-8444-444444444444",
+        selector: `wrs1.m8k6x0.${"B".repeat(43)}`,
       },
     }]} />);
     expect(editor).toHaveValue("Ronnie local website reply");

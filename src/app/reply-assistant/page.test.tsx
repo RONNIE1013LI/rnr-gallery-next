@@ -5,6 +5,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
   requirePermission: vi.fn(),
   resolveDeepLink: vi.fn(),
+  listQueue: vi.fn(),
   renderDashboard: vi.fn(),
 }));
 
@@ -72,7 +73,7 @@ vi.mock("@/server/customer-service/runtime", () => ({
       recoverDueHumanReplies: vi.fn(async () => ({ selected: 0, matched: 0, unmatched: 0 })),
       refreshLearningCandidates: vi.fn(async () => ({ checkpoint: 0, created: 0 })),
       getReplyAssistantUiCursor: vi.fn(async () => "cursor-1"),
-      listQueue: vi.fn(async () => ({ items: [] })),
+      listQueue: mocks.listQueue,
       metricCounts: vi.fn(async () => emptyCounts),
       listLearningCandidates: vi.fn(async () => ({ items: [] })),
       listCaseMemoryCandidates: vi.fn(async () => ({ items: [] })),
@@ -94,6 +95,7 @@ import ReplyAssistantPage from "./page";
 describe("Reply Assistant website-review deep link", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.listQueue.mockResolvedValue({ items: [] });
     mocks.requirePermission.mockResolvedValue({
       user: { id: "staff-1" },
       adminRole: "staff",
@@ -101,10 +103,15 @@ describe("Reply Assistant website-review deep link", () => {
     });
   });
 
-  it("authorizes first, hashes the token server-side, and passes only the matching review selector", async () => {
-    const rawToken = "A".repeat(43);
-    const reviewSelector = "33333333-3333-4333-8333-333333333333";
-    mocks.resolveDeepLink.mockResolvedValue(reviewSelector);
+  it("authorizes first, hashes the token server-side, and pins only the resolved safe queue item", async () => {
+    const rawToken = "Z".repeat(43);
+    const reviewSelector = `wrs1.m8k6x0.${"A".repeat(43)}`;
+    const targetItem = {
+      messageId: "safe-queue-message",
+      channel: "website",
+      websiteReview: { selector: reviewSelector, reason: "high_risk", alertStatus: "pending" },
+    };
+    mocks.resolveDeepLink.mockResolvedValue({ selector: reviewSelector, item: targetItem });
 
     render(await ReplyAssistantPage({ searchParams: Promise.resolve({ review: rawToken }) }));
 
@@ -115,8 +122,12 @@ describe("Reply Assistant website-review deep link", () => {
       now: expect.any(Date),
     });
     const props = mocks.renderDashboard.mock.calls[0]?.[0];
-    expect(props).toEqual(expect.objectContaining({ selectedReviewSelector: reviewSelector }));
+    expect(props).toEqual(expect.objectContaining({
+      selectedReviewSelector: reviewSelector,
+      initialItems: [targetItem],
+    }));
     expect(JSON.stringify(props)).not.toContain(rawToken);
+    expect(JSON.stringify(props)).not.toContain("33333333-3333-4333-8333-333333333333");
   });
 
   it("does not select an expired or tampered token", async () => {

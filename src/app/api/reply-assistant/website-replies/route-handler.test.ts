@@ -3,7 +3,7 @@ import { HttpError } from "@/server/auth/require-session";
 import { createWebsiteReplyHandler } from "./route-handler";
 
 const trustedOrigin = "https://admin.test";
-const reviewSelector = "33333333-3333-4333-8333-333333333333";
+const reviewSelector = `wrs1.m8k6x0.${"A".repeat(43)}`;
 
 function request(body: unknown) {
   return new Request(`${trustedOrigin}/api/reply-assistant/website-replies`, {

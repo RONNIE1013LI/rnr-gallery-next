@@ -1,4 +1,4 @@
-import { createHmac } from "node:crypto";
+import { createHash, createHmac, randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { Pool } from "pg";
@@ -43,14 +43,15 @@ import { createDrizzleCustomerServiceRepository } from "./drizzle-customer-servi
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 const enabled = Boolean(testDatabaseUrl) && isDedicatedTestDatabase(testDatabaseUrl, process.env.DATABASE_URL);
 const database = drizzle(testDatabaseUrl ?? "postgres://disabled.invalid/test");
-const repository = createDrizzleCustomerServiceRepository(database);
+const reviewSelectorSecret = "task-13-review-selector-secret-at-least-32-bytes";
+const repository = createDrizzleCustomerServiceRepository(database, { reviewSelectorSecret });
 const competingPool = new Pool({ connectionString: testDatabaseUrl ?? "postgres://disabled.invalid/test" });
-const competingRepository = createDrizzleCustomerServiceRepository(drizzle(competingPool));
+const competingRepository = createDrizzleCustomerServiceRepository(drizzle(competingPool), { reviewSelectorSecret });
 const publicationRacePool = new Pool({
   connectionString: testDatabaseUrl ?? "postgres://disabled.invalid/test",
   application_name: "task8_publication_race",
 });
-const publicationRaceRepository = createDrizzleCustomerServiceRepository(drizzle(publicationRacePool));
+const publicationRaceRepository = createDrizzleCustomerServiceRepository(drizzle(publicationRacePool), { reviewSelectorSecret });
 const sourceIdentitySecret = "integration-source-identity-secret";
 
 function sourceHash(value: string) {
@@ -220,19 +221,91 @@ async function ingestAndClaimWebsiteTurn(input: Readonly<{
   return claimed;
 }
 
-async function waitForAdvisoryLockWaiter() {
+async function waitForAdvisoryLockWaiter(minimum = 1) {
   for (let attempt = 0; attempt < 100; attempt += 1) {
     const result = await database.execute(sql`
-      select exists (
-        select 1 from pg_stat_activity
-        where pid <> pg_backend_pid() and wait_event_type = 'Lock'
-      ) as waiting
+      select count(*)::int as waiting
+      from pg_stat_activity
+      where pid <> pg_backend_pid() and wait_event_type = 'Lock'
     `);
-    const row = result.rows[0] as { waiting?: boolean } | undefined;
-    if (row?.waiting) return;
+    const row = result.rows[0] as { waiting?: number } | undefined;
+    if ((row?.waiting ?? 0) >= minimum) return;
     await new Promise((resolve) => setTimeout(resolve, 10));
   }
   throw new Error("database advisory lock waiter not observed");
+}
+
+async function openTask13Review(input: Readonly<{
+  sessionHash: string;
+  networkHash: string;
+  messageHash: string;
+  reviewId: string;
+}>) {
+  const claimed = await claimWebsiteTurn(input);
+  const attemptId = await repository.createGateBlockedAttempt({
+    messageId: claimed.messageId,
+    trigger: "webhook_after",
+    intent: "refund",
+    riskLevel: "high",
+    gateResult: "high_risk",
+    gateReasons: ["high_risk_topic"],
+    knowledgeVersion: "knowledge-v1",
+  });
+  await repository.openWebsiteHumanReview({
+    turnId: claimed.turnId,
+    leaseToken: claimed.leaseToken,
+    attemptId,
+    outcome: "gate_blocked",
+    now: new Date("2026-08-21T00:00:02.000Z"),
+    knowledgeVersion: "knowledge-v1",
+    reviewAlert: {
+      reviewId: input.reviewId,
+      deepLinkTokenHash: createHash("sha256").update(input.reviewId).digest("hex"),
+      deepLinkExpiresAt: new Date("2026-08-28T00:00:02.000Z"),
+      idempotencyKey: `review-alert:${input.reviewId}`,
+    },
+  });
+  const [turn] = await database.select({ conversationId: customerServiceTurns.conversationId })
+    .from(customerServiceTurns).where(eq(customerServiceTurns.id, claimed.turnId));
+  const selector = (await repository.listQueue(100)).items
+    .find((item) => item.messageId === claimed.messageId)?.websiteReview?.selector;
+  if (!selector) throw new Error("expected website review selector");
+  return { ...claimed, conversationId: turn.conversationId, selector };
+}
+
+async function createTask13RunningTurn(input: Readonly<{
+  conversationId: string;
+  messageHash: string;
+  text: string;
+  receivedAt: Date;
+}>) {
+  const [message] = await database.insert(customerServiceMessages).values({
+    conversationId: input.conversationId,
+    channel: "website",
+    externalMessageKeyHash: input.messageHash,
+    body: input.text,
+    customerText: input.text,
+    receivedAt: input.receivedAt,
+    ingestStatus: "processing",
+  }).returning({ id: customerServiceMessages.id });
+  const leaseToken = randomUUID();
+  const [turn] = await database.insert(customerServiceTurns).values({
+    conversationId: input.conversationId,
+    channel: "website",
+    representativeMessageId: message.id,
+    body: input.text,
+    status: "sealed",
+    debounceUntil: input.receivedAt,
+    openedAt: input.receivedAt,
+    lastEventAt: input.receivedAt,
+    sealedAt: input.receivedAt,
+    processingStatus: "running",
+    processingLeaseToken: leaseToken,
+    processingLeaseExpiresAt: new Date(input.receivedAt.getTime() + 300_000),
+    processingAttempts: 1,
+    nextRunAt: input.receivedAt,
+  }).returning({ id: customerServiceTurns.id });
+  return { turnId: turn.id, messageId: message.id, leaseToken };
 }
 
 describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
@@ -538,7 +611,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       latestAttemptId: null,
       draftText: null,
       websiteReview: {
-        selector: reviewId,
+        selector: expect.stringMatching(/^wrs1\.[a-z0-9]+\.[A-Za-z0-9_-]{43}$/),
         reason: "high_risk",
         alertStatus: "pending",
       },
@@ -547,11 +620,40 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
         { role: "assistant", text: "Thanks for letting us know. Our team needs to review this before replying, and we’ll get back to you as soon as we can." },
       ],
     });
+    const reviewSelector = queue.items[0].websiteReview?.selector;
+    if (!reviewSelector) throw new Error("expected opaque website review selector");
+    expect(reviewSelector).not.toContain(reviewId);
+    expect(JSON.stringify(queue)).not.toContain(reviewId);
     expect(JSON.stringify(queue)).not.toContain(rawToken);
-    await expect(repository.resolveWebsiteReviewDeepLink({
+    const newerConversations = await database.insert(customerServiceConversations).values(
+      Array.from({ length: 100 }, (_, index) => ({
+        channel: "facebook" as const,
+        externalKeyHash: createHash("sha256").update(`task-13-newer-conversation-${index}`).digest("hex"),
+      })),
+    ).returning({ id: customerServiceConversations.id });
+    await database.insert(customerServiceMessages).values(newerConversations.map((conversation, index) => ({
+      conversationId: conversation.id,
+      channel: "facebook" as const,
+      externalMessageKeyHash: createHash("sha256").update(`task-13-newer-message-${index}`).digest("hex"),
+      body: `Newer queue item ${index}`,
+      receivedAt: new Date(Date.UTC(2026, 7, 22, 1, 0, 0, index)),
+    })));
+    const newestQueue = await repository.listQueue(100);
+    expect(newestQueue.items.map((item) => item.messageId)).not.toContain(claimed.messageId);
+
+    const resolvedDeepLink = await repository.resolveWebsiteReviewDeepLink({
       tokenHash: hashReviewAlertToken(rawToken),
       now: new Date("2026-08-22T00:00:00.000Z"),
-    })).resolves.toBe(reviewId);
+    });
+    expect(resolvedDeepLink).toMatchObject({
+      selector: reviewSelector,
+      item: {
+        messageId: claimed.messageId,
+        channel: "website",
+        websiteReview: { selector: reviewSelector },
+      },
+    });
+    expect(JSON.stringify(resolvedDeepLink)).not.toContain(reviewId);
     await expect(repository.resolveWebsiteReviewDeepLink({
       tokenHash: "ff".repeat(32),
       now: new Date("2026-08-22T00:00:00.000Z"),
@@ -575,7 +677,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
     const update = await repository.listReplyAssistantUpdates(cursor, 250);
     expect(update.queueItems[0]).toMatchObject({
-      websiteReview: { selector: reviewId, alertStatus: "sent" },
+      websiteReview: { selector: reviewSelector, alertStatus: "sent" },
     });
   });
 
@@ -610,6 +712,9 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
         idempotencyKey: `review-alert:${reviewId}`,
       },
     });
+    const reviewSelector = (await repository.listQueue(100)).items
+      .find((item) => item.channel === "website")?.websiteReview?.selector;
+    if (!reviewSelector) throw new Error("expected website review selector");
     await repository.completeCustomerTurnProcessing({
       turnId: claimed.turnId,
       leaseToken: claimed.leaseToken,
@@ -649,7 +754,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     const beforeMetrics = await repository.metricCounts();
     const cursor = await repository.getReplyAssistantUiCursor();
     const input = {
-      reviewSelector: reviewId,
+      reviewSelector,
       text: "We have reviewed this for you.",
       actorUserId: "task-13-staff",
       now: new Date("2026-08-21T00:00:04.000Z"),
@@ -725,6 +830,319 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       tokenHash: "ab".repeat(32),
       now: new Date("2026-08-22T00:00:00.000Z"),
     })).resolves.toBeNull();
+  });
+
+  it("allows only one of two different staff replies to resolve the same review", async () => {
+    const review = await openTask13Review({
+      sessionHash: "c4".repeat(32),
+      networkHash: "c5".repeat(32),
+      messageHash: "c6".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000141",
+    });
+    await database.insert(user).values([
+      { id: "task-13-staff-a", name: "Staff A", email: "task-13-staff-a@example.test", role: "staff" },
+      { id: "task-13-staff-b", name: "Staff B", email: "task-13-staff-b@example.test", role: "staff" },
+    ]).onConflictDoNothing();
+
+    const results = await Promise.all([
+      repository.answerWebsiteReview({
+        reviewSelector: review.selector,
+        text: "Reply from staff A.",
+        actorUserId: "task-13-staff-a",
+        now: new Date("2026-08-21T00:00:04.000Z"),
+      }),
+      competingRepository.answerWebsiteReview({
+        reviewSelector: review.selector,
+        text: "Different reply from staff B.",
+        actorUserId: "task-13-staff-b",
+        now: new Date("2026-08-21T00:00:04.000Z"),
+      }),
+    ]);
+
+    expect(results).toEqual(expect.arrayContaining([{ status: "sent" }, { status: "unavailable" }]));
+    const outbound = await database.select().from(customerServiceConversationEvents).where(and(
+      eq(customerServiceConversationEvents.conversationId, review.conversationId),
+      eq(customerServiceConversationEvents.eventType, "human_outbound"),
+    ));
+    expect(outbound).toHaveLength(1);
+    expect(["Reply from staff A.", "Different reply from staff B."]).toContain(outbound[0].body);
+  });
+
+  it("serializes manual resolution ahead of concurrent review reuse without deadlock", async () => {
+    const review = await openTask13Review({
+      sessionHash: "c7".repeat(32),
+      networkHash: "c8".repeat(32),
+      messageHash: "c9".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000142",
+    });
+    const second = await createTask13RunningTurn({
+      conversationId: review.conversationId,
+      messageHash: "ca".repeat(32),
+      text: "A second blocked turn.",
+      receivedAt: new Date("2026-08-21T00:00:03.000Z"),
+    });
+    const secondAttemptId = await repository.createGateBlockedAttempt({
+      messageId: second.messageId,
+      trigger: "webhook_after",
+      intent: "unknown",
+      riskLevel: "high",
+      gateResult: "unresolved",
+      gateReasons: ["unresolved_policy"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    await database.insert(user).values({
+      id: "task-13-race-staff",
+      name: "Race Staff",
+      email: "task-13-race-staff@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+    const barrierKey = `turn:${review.conversationId}`;
+    const barrier = await competingPool.connect();
+    await barrier.query("begin");
+    await barrier.query("select pg_advisory_xact_lock(hashtext($1))", [barrierKey]);
+    let manual: ReturnType<typeof repository.answerWebsiteReview> | null = null;
+    let opening: ReturnType<typeof repository.openWebsiteHumanReview> | null = null;
+    try {
+      manual = repository.answerWebsiteReview({
+        reviewSelector: review.selector,
+        text: "Manual reply wins the conversation.",
+        actorUserId: "task-13-race-staff",
+        now: new Date("2026-08-21T00:00:04.000Z"),
+      });
+      await Promise.race([
+        waitForAdvisoryLockWaiter(),
+        manual.then((result) => { throw new Error(`manual review bypassed conversation lock: ${result.status}`); }),
+      ]);
+      opening = publicationRaceRepository.openWebsiteHumanReview({
+        turnId: second.turnId,
+        leaseToken: second.leaseToken,
+        attemptId: secondAttemptId,
+        outcome: "gate_blocked",
+        now: new Date("2026-08-21T00:00:04.000Z"),
+        knowledgeVersion: "knowledge-v1",
+      });
+      await waitForAdvisoryLockWaiter(2);
+      await barrier.query("commit");
+
+      await expect(Promise.all([manual, opening])).resolves.toEqual([
+        { status: "sent" },
+        { status: "cancelled" },
+      ]);
+    } finally {
+      await barrier.query("rollback").catch(() => undefined);
+      await Promise.allSettled([manual, opening].filter(Boolean));
+      barrier.release();
+    }
+  });
+
+  it("prevents stale validated publication when manual resolution enters first", async () => {
+    const review = await openTask13Review({
+      sessionHash: "cb".repeat(32),
+      networkHash: "cc".repeat(32),
+      messageHash: "cd".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000143",
+    });
+    const stale = await createTask13RunningTurn({
+      conversationId: review.conversationId,
+      messageHash: "ce".repeat(32),
+      text: "A stale AI turn.",
+      receivedAt: new Date("2026-08-21T00:00:03.000Z"),
+    });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: stale.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      gateReasons: [],
+      knowledgeVersion: "knowledge-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "This stale answer must remain private.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-21T00:00:03.500Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+    await database.insert(user).values({
+      id: "task-13-publication-staff",
+      name: "Publication Staff",
+      email: "task-13-publication-staff@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+    const barrierKey = `turn:${review.conversationId}`;
+    const barrier = await competingPool.connect();
+    await barrier.query("begin");
+    await barrier.query("select pg_advisory_xact_lock(hashtext($1))", [barrierKey]);
+    let manual: ReturnType<typeof repository.answerWebsiteReview> | null = null;
+    let publication: ReturnType<typeof repository.publishWebsiteValidatedAi> | null = null;
+    try {
+      manual = repository.answerWebsiteReview({
+        reviewSelector: review.selector,
+        text: "A human has answered this conversation.",
+        actorUserId: "task-13-publication-staff",
+        now: new Date("2026-08-21T00:00:04.000Z"),
+      });
+      await Promise.race([
+        waitForAdvisoryLockWaiter(),
+        manual.then((result) => { throw new Error(`manual publication race bypassed conversation lock: ${result.status}`); }),
+      ]);
+      publication = publicationRaceRepository.publishWebsiteValidatedAi({
+        turnId: stale.turnId,
+        leaseToken: stale.leaseToken,
+        attemptId: attempt.id,
+        now: new Date("2026-08-21T00:00:05.000Z"),
+      });
+      await Promise.race([
+        publication.then(() => undefined),
+        waitForAdvisoryLockWaiter(2),
+      ]);
+      await barrier.query("commit");
+
+      await expect(manual).resolves.toEqual({ status: "sent" });
+      await expect(publication).resolves.toEqual({ status: "cancelled" });
+      const published = await database.select().from(customerServiceWebsiteAssistantMessages)
+        .where(eq(customerServiceWebsiteAssistantMessages.kind, "validated_ai"));
+      expect(published).toHaveLength(0);
+    } finally {
+      await barrier.query("rollback").catch(() => undefined);
+      await Promise.allSettled([manual, publication].filter(Boolean));
+      barrier.release();
+    }
+  });
+
+  it("does not leave a causally stale customer turn runnable when ingest races manual resolution", async () => {
+    const review = await openTask13Review({
+      sessionHash: "d4".repeat(32),
+      networkHash: "d5".repeat(32),
+      messageHash: "d6".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000144",
+    });
+    await repository.completeCustomerTurnProcessing({
+      turnId: review.turnId,
+      leaseToken: review.leaseToken,
+      now: new Date("2026-08-21T00:00:02.500Z"),
+      outcome: "gate_blocked",
+    });
+    await database.insert(user).values({
+      id: "task-13-ingest-staff",
+      name: "Ingest Staff",
+      email: "task-13-ingest-staff@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+    const barrierKey = `turn:${review.conversationId}`;
+    const barrier = await competingPool.connect();
+    await barrier.query("begin");
+    await barrier.query("select pg_advisory_xact_lock(hashtext($1))", [barrierKey]);
+    let manual: ReturnType<typeof repository.answerWebsiteReview> | null = null;
+    let incoming: ReturnType<typeof repository.ingestConversationEvent> | null = null;
+    try {
+      manual = repository.answerWebsiteReview({
+        reviewSelector: review.selector,
+        text: "A human reply covers the earlier customer message.",
+        actorUserId: "task-13-ingest-staff",
+        now: new Date("2026-08-21T00:00:04.000Z"),
+      });
+      await Promise.race([
+        waitForAdvisoryLockWaiter(),
+        manual.then((result) => { throw new Error(`manual ingest race bypassed conversation lock: ${result.status}`); }),
+      ]);
+      incoming = competingRepository.ingestConversationEvent(websiteRateEvent({
+        sessionHash: "d4".repeat(32),
+        networkHash: "d5".repeat(32),
+        messageHash: "d7".repeat(32),
+        text: "A delayed detail sent before the staff reply.",
+        receivedAt: new Date("2026-08-21T00:00:03.500Z"),
+      }));
+      await Promise.race([
+        incoming.then(() => undefined),
+        waitForAdvisoryLockWaiter(2),
+      ]);
+      await barrier.query("commit");
+
+      await expect(manual).resolves.toEqual({ status: "sent" });
+      await expect(incoming).resolves.toEqual({ status: "context_only" });
+      const [delayedEvent] = await database.select({ turnId: customerServiceConversationEvents.turnId })
+        .from(customerServiceConversationEvents)
+        .where(eq(customerServiceConversationEvents.externalMessageKeyHash, "d7".repeat(32)));
+      const [delayedTurn] = await database.select().from(customerServiceTurns)
+        .where(eq(customerServiceTurns.id, delayedEvent.turnId!));
+      expect(delayedTurn).toMatchObject({
+        status: "suppressed",
+        processingStatus: "cancelled",
+        suppressionReason: "human_outbound_received",
+      });
+    } finally {
+      await barrier.query("rollback").catch(() => undefined);
+      await Promise.allSettled([manual, incoming].filter(Boolean));
+      barrier.release();
+    }
+  });
+
+  it("terminalizes a claimed alert when manual resolution wins before provider send", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "a6".repeat(32),
+      networkHash: "a7".repeat(32),
+      messageHash: "a8".repeat(32),
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    const reviewId = "00000000-0000-4000-8000-000000000139";
+    await repository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-21T00:00:02.000Z"),
+      knowledgeVersion: "knowledge-v1",
+      reviewAlert: {
+        reviewId,
+        deepLinkTokenHash: "fa".repeat(32),
+        deepLinkExpiresAt: new Date("2026-08-28T00:00:02.000Z"),
+        idempotencyKey: `review-alert:${reviewId}`,
+      },
+    });
+    const selector = (await repository.listQueue(100)).items[0].websiteReview?.selector;
+    if (!selector) throw new Error("expected website review selector");
+    await database.insert(user).values({
+      id: "task-13-alert-staff",
+      name: "Task 13 Alert Staff",
+      email: "task-13-alert-staff@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+    const alert = await repository.claimDueReviewAlert({
+      now: new Date("2026-08-21T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-21T00:05:03.000Z"),
+    });
+    if (!alert) throw new Error("expected claimed alert");
+
+    await expect(competingRepository.answerWebsiteReview({
+      reviewSelector: selector,
+      text: "We have handled this request.",
+      actorUserId: "task-13-alert-staff",
+      now: new Date("2026-08-21T00:00:04.000Z"),
+    })).resolves.toEqual({ status: "sent" });
+    await expect(repository.confirmClaimedReviewAlert({
+      id: alert.id,
+      leaseToken: alert.leaseToken,
+      now: new Date("2026-08-21T00:00:05.000Z"),
+    })).resolves.toBe(false);
+
+    const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(outbox).toMatchObject({
+      status: "failed",
+      leaseToken: null,
+      leaseExpiresAt: null,
+      lastErrorCode: "review_resolved_before_delivery",
+    });
   });
 
   it("can never answer a Facebook queue item through the website review action", async () => {

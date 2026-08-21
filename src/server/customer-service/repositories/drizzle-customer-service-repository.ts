@@ -54,6 +54,10 @@ import {
   type WebsiteHumanReviewReason,
 } from "../website/human-review";
 import { sanitizeWebsiteModelInput } from "../website/model-input-sanitizer";
+import {
+  createWebsiteReviewSelector,
+  verifyWebsiteReviewSelector,
+} from "../website/review-selector";
 import type {
   WebsitePublicUpdateCursor,
   WebsitePublicUpdateRecord,
@@ -76,10 +80,6 @@ const WEBSITE_RATE_LIMITS = Object.freeze({
 
 function isHash(value: string) {
   return /^[a-f0-9]{64}$/.test(value);
-}
-
-function isUuid(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function startOfUtcMinute(value: Date) {
@@ -396,7 +396,45 @@ async function validatedQueueImageAssessments(
   return assessments;
 }
 
-export function createDrizzleCustomerServiceRepository(database: Database): CustomerServiceRepository {
+export function createDrizzleCustomerServiceRepository(
+  database: Database,
+  options: Readonly<{ reviewSelectorSecret?: string }> = {},
+): CustomerServiceRepository {
+  const reviewSelectorSecret = options.reviewSelectorSecret ?? "";
+
+  async function lockConversation(transaction: Transaction, conversationId: string) {
+    await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + conversationId}))`);
+  }
+
+  function selectorForReview(review: Readonly<{
+    id: string;
+    generation: number;
+    openedAt: Date;
+  }>) {
+    if (reviewSelectorSecret.length < 32) return null;
+    return createWebsiteReviewSelector({
+      reviewId: review.id,
+      generation: review.generation,
+      openedAt: review.openedAt,
+      secret: reviewSelectorSecret,
+    });
+  }
+
+  function selectorMatchesReview(selector: string, review: Readonly<{
+    id: string;
+    generation: number;
+    openedAt: Date;
+  }>, now: Date) {
+    return reviewSelectorSecret.length >= 32 && verifyWebsiteReviewSelector({
+      selector,
+      reviewId: review.id,
+      generation: review.generation,
+      openedAt: review.openedAt,
+      secret: reviewSelectorSecret,
+      now,
+    });
+  }
+
   async function turnForMessage(transaction: Transaction, messageId: string) {
     const [turn] = await transaction.select({
       id: customerServiceTurns.id,
@@ -576,7 +614,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     }).from(customerServiceAiAttempts)
       .groupBy(customerServiceAiAttempts.messageId)
       .as("latest_attempts");
-    const eligible = sql`
+    const eligible = sql`(
       exists (
         select 1 from customer_service_turns turns
         where turns.representative_message_id = ${customerServiceMessages.id}
@@ -593,8 +631,8 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         select 1 from customer_service_conversation_events events
         where events.legacy_message_id = ${customerServiceMessages.id}
       )
-    `;
-    const rows = await database.select({
+    )`;
+    const queueQuery = database.select({
       messageId: customerServiceMessages.id,
       channel: customerServiceMessages.channel,
       conversationId: customerServiceMessages.conversationId,
@@ -621,6 +659,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         : eligible)
       .orderBy(desc(customerServiceMessages.receivedAt), desc(customerServiceMessages.id))
       .limit(Math.max(1, Math.min(500, limit)));
+    const rows = await queueQuery;
     const items = rows.map((row) => ({ ...row, receivedAt: row.receivedAt.toISOString() }));
     const attachmentRows = items.length
       ? await database.select({
@@ -647,6 +686,8 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       ? await database.select({
         id: customerServiceHumanReviews.id,
         conversationId: customerServiceHumanReviews.conversationId,
+        generation: customerServiceHumanReviews.generation,
+        openedAt: customerServiceHumanReviews.openedAt,
         reason: customerServiceHumanReviews.reason,
         alertStatus: customerServiceReviewAlertOutbox.status,
       }).from(customerServiceHumanReviews)
@@ -737,8 +778,9 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         const websiteReview = item.channel === "website"
           ? reviewByConversation.get(item.conversationId)
           : undefined;
-        const websiteReviewDto: SafeQueuePage["items"][number]["websiteReview"] = websiteReview ? {
-          selector: websiteReview.id,
+        const selector = websiteReview ? selectorForReview(websiteReview) : null;
+        const websiteReviewDto: SafeQueuePage["items"][number]["websiteReview"] = websiteReview && selector ? {
+          selector,
           reason: websiteReview.reason,
           alertStatus: websiteReview.alertStatus ?? "not_created",
         } : null;
@@ -767,8 +809,14 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
   const repository: CustomerServiceRepository = {
     async resolveWebsiteReviewDeepLink(input) {
       if (!isHash(input.tokenHash)) return null;
-      const [review] = await database.select({ id: customerServiceHumanReviews.id })
+      const [review] = await database.select({
+        id: customerServiceHumanReviews.id,
+        generation: customerServiceHumanReviews.generation,
+        openedAt: customerServiceHumanReviews.openedAt,
+        messageId: customerServiceTurns.representativeMessageId,
+      })
         .from(customerServiceHumanReviews)
+        .innerJoin(customerServiceTurns, eq(customerServiceTurns.id, customerServiceHumanReviews.triggerTurnId))
         .where(and(
           eq(customerServiceHumanReviews.channel, "website"),
           eq(customerServiceHumanReviews.status, "open"),
@@ -776,32 +824,65 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           gt(customerServiceHumanReviews.deepLinkExpiresAt, input.now),
         ))
         .limit(1);
-      return review?.id ?? null;
+      if (!review?.messageId) return null;
+      const selector = selectorForReview(review);
+      if (!selector) return null;
+      const item = (await loadQueuePage(1, [review.messageId])).items[0];
+      if (!item || item.channel !== "website" || !item.websiteReview) return null;
+      return {
+        selector,
+        item: {
+          ...item,
+          websiteReview: { ...item.websiteReview, selector },
+        },
+      };
     },
 
     async answerWebsiteReview(input) {
       const text = input.text.trim();
       if (
-        !isUuid(input.reviewSelector)
-        || !input.actorUserId.trim()
+        !input.actorUserId.trim()
         || Array.from(text).length < 1
         || Array.from(text).length > 2_000
         || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)
       ) return { status: "unavailable" as const };
 
       return database.transaction(async (transaction) => {
+        const candidates = await transaction.select({
+          id: customerServiceHumanReviews.id,
+          conversationId: customerServiceHumanReviews.conversationId,
+          generation: customerServiceHumanReviews.generation,
+          openedAt: customerServiceHumanReviews.openedAt,
+        }).from(customerServiceHumanReviews)
+          .where(and(
+            eq(customerServiceHumanReviews.channel, "website"),
+            gt(customerServiceHumanReviews.openedAt, new Date(input.now.getTime() - 30 * 24 * 60 * 60 * 1_000)),
+          ));
+        const candidate = candidates.find((review) => selectorMatchesReview(input.reviewSelector, review, input.now));
+        if (!candidate) return { status: "unavailable" as const };
+
+        await lockConversation(transaction, candidate.conversationId);
         const [review] = await transaction.select({
           id: customerServiceHumanReviews.id,
           conversationId: customerServiceHumanReviews.conversationId,
+          generation: customerServiceHumanReviews.generation,
+          openedAt: customerServiceHumanReviews.openedAt,
           triggerTurnId: customerServiceHumanReviews.triggerTurnId,
           channel: customerServiceHumanReviews.channel,
           status: customerServiceHumanReviews.status,
           resolutionEventId: customerServiceHumanReviews.resolutionEventId,
         }).from(customerServiceHumanReviews)
-          .where(eq(customerServiceHumanReviews.id, input.reviewSelector))
+          .where(and(
+            eq(customerServiceHumanReviews.id, candidate.id),
+            eq(customerServiceHumanReviews.conversationId, candidate.conversationId),
+          ))
           .limit(1)
           .for("update");
-        if (!review || review.channel !== "website") return { status: "unavailable" as const };
+        if (
+          !review
+          || review.channel !== "website"
+          || !selectorMatchesReview(input.reviewSelector, review, input.now)
+        ) return { status: "unavailable" as const };
 
         if (review.status === "resolved") {
           const [existing] = review.resolutionEventId
@@ -825,7 +906,6 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             : { status: "unavailable" as const };
         }
 
-        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'website-review:' + review.conversationId}))`);
         const externalMessageKeyHash = createHash("sha256")
           .update(`website-human-outbound\0${review.id}`)
           .digest("hex");
@@ -897,9 +977,10 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           lastErrorCode: "review_resolved_before_delivery",
           leaseToken: null,
           leaseExpiresAt: null,
+          updatedAt: input.now,
         }).where(and(
           eq(customerServiceReviewAlertOutbox.humanReviewId, review.id),
-          inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait"]),
+          inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait", "leased"]),
         ));
         await transaction.update(customerServiceConversations).set({ updatedAt: input.now })
           .where(and(
@@ -1089,7 +1170,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             )).limit(1);
 
         if (input.websiteRateLimit) {
-          await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + conversation.id}))`);
+          await lockConversation(transaction, conversation.id);
           await transaction.insert(customerServiceWebSessions).values({
             conversationId: conversation.id,
             channel: "website",
@@ -1123,7 +1204,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
 
         const body = input.text?.trim() || "[Image attachment]";
         if (input.role === "staff") {
-          await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + conversation.id}))`);
+          await lockConversation(transaction, conversation.id);
           const inserted = await transaction.insert(customerServiceConversationEvents).values({
             conversationId: conversation.id,
             channel: input.channel,
@@ -1277,8 +1358,19 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           throw new Error("customer_service_turn_debounce_invalid");
         }
         const debounceUntil = new Date(input.receivedAt.getTime() + debounceMs);
-        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + conversation.id}))`);
-        const canAggregate = input.attachments.length === 0 && customerText !== null;
+        await lockConversation(transaction, conversation.id);
+        const [coveringHumanReply] = input.channel === "website"
+          ? await transaction.select({ id: customerServiceConversationEvents.id })
+            .from(customerServiceConversationEvents)
+            .where(and(
+              eq(customerServiceConversationEvents.conversationId, conversation.id),
+              eq(customerServiceConversationEvents.channel, "website"),
+              eq(customerServiceConversationEvents.eventType, "human_outbound"),
+              gt(customerServiceConversationEvents.receivedAt, input.receivedAt),
+            )).limit(1)
+          : [];
+        const humanReplyWon = Boolean(coveringHumanReply);
+        const canAggregate = !humanReplyWon && input.attachments.length === 0 && customerText !== null;
         const [openTurn] = canAggregate
           ? await transaction.select({
             id: customerServiceTurns.id,
@@ -1336,6 +1428,14 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             channel: input.channel,
             representativeMessageId: message.id,
             body,
+            ...(humanReplyWon ? {
+              status: "suppressed" as const,
+              sealedAt: input.receivedAt,
+              suppressionReason: "human_outbound_received" as const,
+              processingStatus: "cancelled" as const,
+              processingCompletedAt: input.receivedAt,
+              lastProcessingError: "human_outbound_received",
+            } : {}),
             debounceUntil,
             nextRunAt: debounceUntil,
             openedAt: input.receivedAt,
@@ -1419,6 +1519,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             processingCompletedAt: input.receivedAt,
           }).where(eq(customerServiceTurns.id, turn.id));
         }
+        if (humanReplyWon) return { status: "context_only" as const };
         return {
           status: "turn_pending" as const,
           messageId: representativeMessageId,
@@ -1734,7 +1835,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           eq(customerServiceTurns.channel, "website"),
         )).limit(1);
         if (!identity) return { status: "cancelled" as const };
-        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + identity.conversationId}))`);
+        await lockConversation(transaction, identity.conversationId);
 
         const [turn] = await transaction.select({
           id: customerServiceTurns.id,
@@ -1760,7 +1861,6 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           : [];
         const response = websiteHumanReviewResponse(websiteReviewReason(input.outcome, attempt?.gateResult ?? null));
 
-        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'website-review:' + turn.conversationId}))`);
         const [existing] = await transaction.select({
           id: customerServiceHumanReviews.id,
           generation: customerServiceHumanReviews.generation,
@@ -1876,6 +1976,59 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       });
     },
 
+    async confirmClaimedReviewAlert(input) {
+      return database.transaction(async (transaction) => {
+        const [identity] = await transaction.select({
+          conversationId: customerServiceHumanReviews.conversationId,
+        }).from(customerServiceReviewAlertOutbox)
+          .innerJoin(
+            customerServiceHumanReviews,
+            eq(customerServiceHumanReviews.id, customerServiceReviewAlertOutbox.humanReviewId),
+          )
+          .where(eq(customerServiceReviewAlertOutbox.id, input.id))
+          .limit(1);
+        if (!identity) return false;
+
+        await lockConversation(transaction, identity.conversationId);
+        const [current] = await transaction.select({
+          outboxStatus: customerServiceReviewAlertOutbox.status,
+          leaseToken: customerServiceReviewAlertOutbox.leaseToken,
+          reviewStatus: customerServiceHumanReviews.status,
+          deepLinkExpiresAt: customerServiceHumanReviews.deepLinkExpiresAt,
+        }).from(customerServiceReviewAlertOutbox)
+          .innerJoin(
+            customerServiceHumanReviews,
+            eq(customerServiceHumanReviews.id, customerServiceReviewAlertOutbox.humanReviewId),
+          )
+          .where(and(
+            eq(customerServiceReviewAlertOutbox.id, input.id),
+            eq(customerServiceHumanReviews.conversationId, identity.conversationId),
+          ))
+          .limit(1)
+          .for("update");
+        const ready = current?.outboxStatus === "leased"
+          && current.leaseToken === input.leaseToken
+          && current.reviewStatus === "open"
+          && Boolean(current.deepLinkExpiresAt && current.deepLinkExpiresAt > input.now);
+        if (ready) return true;
+
+        await transaction.update(customerServiceReviewAlertOutbox).set({
+          status: "failed",
+          leaseToken: null,
+          leaseExpiresAt: null,
+          lastErrorCode: current?.reviewStatus === "open"
+            ? "deep_link_expired_before_send"
+            : "review_resolved_before_delivery",
+          updatedAt: input.now,
+        }).where(and(
+          eq(customerServiceReviewAlertOutbox.id, input.id),
+          eq(customerServiceReviewAlertOutbox.status, "leased"),
+          eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
+        ));
+        return false;
+      });
+    },
+
     async markReviewAlertSent(input) {
       const [updated] = await database.update(customerServiceReviewAlertOutbox).set({
         status: "sent",
@@ -1888,6 +2041,12 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         eq(customerServiceReviewAlertOutbox.id, input.id),
         eq(customerServiceReviewAlertOutbox.status, "leased"),
         eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
+        sql`exists (
+          select 1 from ${customerServiceHumanReviews}
+          where ${customerServiceHumanReviews.id} = ${customerServiceReviewAlertOutbox.humanReviewId}
+            and ${customerServiceHumanReviews.channel} = 'website'
+            and ${customerServiceHumanReviews.status} = 'open'
+        )`,
       )).returning({ id: customerServiceReviewAlertOutbox.id });
       void input.providerMessageId;
       return Boolean(updated);
@@ -1933,7 +2092,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           eq(customerServiceTurns.channel, "website"),
         )).limit(1);
         if (!identity) return { status: "cancelled" as const };
-        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + identity.conversationId}))`);
+        await lockConversation(transaction, identity.conversationId);
 
         const [turn] = await transaction.select({
           id: customerServiceTurns.id,

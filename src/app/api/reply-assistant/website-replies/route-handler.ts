@@ -10,7 +10,7 @@ const safeReplyText = z.string().transform((value) => value.trim()).refine((valu
 });
 
 const websiteReplySchema = z.object({
-  reviewSelector: z.string().uuid(),
+  reviewSelector: z.string().regex(/^wrs1\.[a-z0-9]+\.[A-Za-z0-9_-]{43}$/),
   text: safeReplyText,
 }).strict();
 

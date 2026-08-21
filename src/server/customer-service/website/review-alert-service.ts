@@ -27,6 +27,11 @@ export type ClaimedWebsiteReviewAlert = Readonly<{
 
 export type WebsiteReviewAlertRepository = Readonly<{
   claimDueReviewAlert(input: Readonly<{ now: Date; leaseExpiresAt: Date }>): Promise<ClaimedWebsiteReviewAlert | null>;
+  confirmClaimedReviewAlert(input: Readonly<{
+    id: string;
+    leaseToken: string;
+    now: Date;
+  }>): Promise<boolean>;
   markReviewAlertSent(input: Readonly<{
     id: string;
     leaseToken: string;
@@ -152,6 +157,12 @@ export function createReviewAlertService(input: Readonly<{
         });
         return Object.freeze({ result: "expired" as const });
       }
+      const stillOpen = await input.repository.confirmClaimedReviewAlert({
+        id: alert.id,
+        leaseToken: alert.leaseToken,
+        now: sendStartedAt,
+      });
+      if (!stillOpen) return Object.freeze({ result: "resolved" as const });
 
       try {
         const sent = await input.provider.send(message);

@@ -13,7 +13,9 @@ import { createResendEmailProvider } from "@/server/notifications/resend-email-p
 
 export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.env) {
   const config = parseCustomerServiceConfig(env);
-  const repository = createDrizzleCustomerServiceRepository(getDatabase());
+  const repository = createDrizzleCustomerServiceRepository(getDatabase(), {
+    ...(config.websiteEnabled ? { reviewSelectorSecret: config.websiteSessionSecret } : {}),
+  });
   const provider = config.provider === "openai"
     ? new OpenAIResponsesProvider({ apiKey: config.openaiApiKey, model: config.openaiModel })
     : new MockAiProvider();

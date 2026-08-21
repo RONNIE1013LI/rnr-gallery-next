@@ -290,7 +290,10 @@ export interface CustomerServiceRepository {
   resolveWebsiteReviewDeepLink(input: Readonly<{
     tokenHash: string;
     now: Date;
-  }>): Promise<string | null>;
+  }>): Promise<Readonly<{
+    selector: string;
+    item: SafeQueuePage["items"][number];
+  }> | null>;
   answerWebsiteReview(input: Readonly<{
     reviewSelector: string;
     text: string;
@@ -358,6 +361,11 @@ export interface CustomerServiceRepository {
     now: Date;
     leaseExpiresAt: Date;
   }>): Promise<ClaimedWebsiteReviewAlert | null>;
+  confirmClaimedReviewAlert(input: Readonly<{
+    id: string;
+    leaseToken: string;
+    now: Date;
+  }>): Promise<boolean>;
   markReviewAlertSent(input: Readonly<{
     id: string;
     leaseToken: string;
