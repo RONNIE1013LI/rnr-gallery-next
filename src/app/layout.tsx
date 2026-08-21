@@ -80,6 +80,7 @@ export default async function RootLayout({
           initialCustomerId={session?.user.id ?? null}
           initialMarket={parseMarketCookie(cookieStore.get(MARKET_COOKIE_NAME)?.value) ?? "NZ"}
           australiaEnabled={registryState.registry.markets.AU.enabled}
+          customerChatEnabled={process.env.WEBSITE_CUSTOMER_ASSISTANT_ENABLED?.trim().toLowerCase() === "true"}
           footerContent={{
             tagline: managed["footer.tagline"],
             email: managed["contact.email"],

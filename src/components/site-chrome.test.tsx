@@ -83,6 +83,34 @@ describe("SiteChrome", () => {
     expect(screen.getByText("Public footer")).toBeInTheDocument();
   });
 
+  it("mounts the customer chat only when the server-provided Website flag is enabled", () => {
+    state.pathname = "/shop";
+    const page = <main>Page</main>;
+    const first = render(<SiteChrome customerChatEnabled={false} footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}>{page}</SiteChrome>);
+    expect(screen.queryByRole("button", { name: "Chat with R&R Gallery" })).not.toBeInTheDocument();
+
+    first.unmount();
+    render(<SiteChrome customerChatEnabled footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}>{page}</SiteChrome>);
+    expect(screen.getByRole("button", { name: "Chat with R&R Gallery" })).toBeInTheDocument();
+  });
+
+  it.each([
+    "/admin/orders",
+    "/reply-assistant",
+    "/forms/orders",
+    "/order-system/jobs/job-1",
+    "/checkout",
+    "/payment/return",
+    "/account/sign-in",
+    "/orders/order-1",
+    "/proofs/proof-1",
+    "/privacy",
+  ])("never mounts customer chat on excluded route %s", (pathname) => {
+    state.pathname = pathname;
+    render(<SiteChrome customerChatEnabled footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}><main>Restricted page</main></SiteChrome>);
+    expect(screen.queryByRole("button", { name: "Chat with R&R Gallery" })).not.toBeInTheDocument();
+  });
+
   it("removes storefront header, footer and image protection from Admin", () => {
     state.pathname = "/admin/orders";
     render(<SiteChrome footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}><main>Admin page</main></SiteChrome>);

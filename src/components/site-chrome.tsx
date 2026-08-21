@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { ImageProtectionLayer } from "./image-protection";
+import { CustomerChat } from "./customer-chat/customer-chat";
 import { SiteFooter, type SiteFooterContent } from "./site-footer";
 import { SiteHeader } from "./site-header";
 import { CommerceIdentityProvider } from "./commerce-identity-provider";
@@ -15,12 +16,14 @@ export function SiteChrome({
   initialCustomerId = null,
   initialMarket = "NZ",
   australiaEnabled = false,
+  customerChatEnabled = false,
 }: Readonly<{
   children: React.ReactNode;
   footerContent: SiteFooterContent;
   initialCustomerId?: string | null;
   initialMarket?: Market;
   australiaEnabled?: boolean;
+  customerChatEnabled?: boolean;
 }>) {
   const pathname = usePathname();
   const router = useRouter();
@@ -28,6 +31,18 @@ export function SiteChrome({
   const isDedicatedWorkspace = pathname === "/admin" || pathname.startsWith("/admin/")
     || pathname === "/forms" || pathname.startsWith("/forms/")
     || pathname === "/order-system" || pathname.startsWith("/order-system/");
+  const customerChatExcluded = pathname === "/admin" || pathname.startsWith("/admin/")
+    || pathname === "/reply-assistant" || pathname.startsWith("/reply-assistant/")
+    || pathname === "/forms" || pathname.startsWith("/forms/")
+    || pathname === "/order-system" || pathname.startsWith("/order-system/")
+    || pathname === "/checkout" || pathname.startsWith("/checkout/")
+    || pathname === "/payment-return" || pathname.startsWith("/payment-return/")
+    || pathname === "/payment/return" || pathname.startsWith("/payment/return/")
+    || pathname === "/account" || pathname.startsWith("/account/")
+    || pathname === "/orders" || pathname.startsWith("/orders/")
+    || pathname === "/proof" || pathname.startsWith("/proof/")
+    || pathname === "/proofs" || pathname.startsWith("/proofs/")
+    || pathname === "/privacy" || pathname.startsWith("/privacy/");
   const market: Market = pathname === "/au" || pathname.startsWith("/au/")
     ? "AU"
     : initialMarket;
@@ -46,6 +61,7 @@ export function SiteChrome({
       <SiteHeader initialMarket={initialMarket} australiaEnabled={australiaEnabled} />
       {children}
       <SiteFooter content={footerContent} market={market} />
+      {customerChatEnabled && !customerChatExcluded ? <CustomerChat pathname={pathname} /> : null}
     </CommerceIdentityProvider>
   );
 }
