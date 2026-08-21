@@ -58,10 +58,11 @@ describe("forms data list page", () => {
         assignedOnly: false,
         canViewCustomerContact: true,
         canViewFinance: true,
+        canViewPaymentProof: true,
       }),
     );
     expect(screen.getByRole("table", { name: "Orders data list" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Export CSV" })).toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Export CSV" })).not.toBeInTheDocument();
   });
 
   it("scopes custom Staff listing to assigned jobs", async () => {
@@ -121,7 +122,7 @@ describe("forms data list page", () => {
     expect(listAssignees).toHaveBeenCalledOnce();
   });
 
-  it("does not load manual-entry data when create permission is absent", async () => {
+  it("loads filter metadata but not manual-entry product data when create permission is absent", async () => {
     requireFormsPage.mockResolvedValue({
       user: { id: "operator-4", email: "viewer@example.test" },
       formRole: "form_staff",
@@ -132,7 +133,7 @@ describe("forms data list page", () => {
     await FormsDataListPage({ searchParams: Promise.resolve({ entry: "new" }) });
 
     expect(productRegistry).not.toHaveBeenCalled();
-    expect(listFields).not.toHaveBeenCalled();
-    expect(listAssignees).not.toHaveBeenCalled();
+    expect(listFields).toHaveBeenCalledOnce();
+    expect(listAssignees).toHaveBeenCalledOnce();
   });
 });

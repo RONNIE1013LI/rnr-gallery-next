@@ -5,6 +5,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  productionFieldDefinitions,
+  productionFieldValues,
   productionJobItems,
   productionJobs,
   user,
@@ -21,6 +23,8 @@ const operatorId = `forms-operator-${suffix}`;
 const otherUserId = `forms-other-${suffix}`;
 const assignedJobId = randomUUID();
 const otherJobId = randomUUID();
+const customFieldId = randomUUID();
+const customNumberFieldId = randomUUID();
 const jobIds = [assignedJobId, otherJobId];
 
 describe("forms workbench repository", () => {
@@ -29,6 +33,21 @@ describe("forms workbench repository", () => {
       { id: operatorId, name: "Assigned Artist", email: `artist-${suffix}@example.test`, role: "form_staff" },
       { id: otherUserId, name: "Other Artist", email: `other-${suffix}@example.test`, role: "staff" },
     ]);
+    await database.insert(productionFieldDefinitions).values([{
+      id: customFieldId,
+      fieldKey: `campaign_${suffix.replaceAll("-", "").slice(0, 16)}`,
+      label: "Campaign note",
+      fieldType: "text",
+      section: "order",
+      showOnCreate: true,
+    }, {
+      id: customNumberFieldId,
+      fieldKey: `quantity_${suffix.replaceAll("-", "").slice(0, 16)}`,
+      label: "Custom quantity",
+      fieldType: "number",
+      section: "order",
+      showOnCreate: true,
+    }]);
     await database.insert(productionJobs).values([
       {
         id: assignedJobId,
@@ -76,18 +95,29 @@ describe("forms workbench repository", () => {
         amountPaidCents: 0,
         artistFeeCents: 0,
         materialCostCents: 0,
-        createdByUserId: otherUserId,
+        createdByUserId: operatorId,
       },
     ]);
     await database.insert(productionJobItems).values([
       { jobId: assignedJobId, position: 0, productTitle: "Canvas", sizeLabel: "A0", quantity: 1 },
       { jobId: otherJobId, position: 0, productTitle: "Banner", sizeLabel: "85 cm × 200 cm", quantity: 1 },
     ]);
+    await database.insert(productionFieldValues).values([{
+      jobId: assignedJobId,
+      fieldId: customFieldId,
+      value: "gold campaign",
+    }, {
+      jobId: assignedJobId,
+      fieldId: customNumberFieldId,
+      value: "15.00",
+    }]);
   });
 
   afterAll(async () => {
+    await database.delete(productionFieldValues).where(inArray(productionFieldValues.fieldId, [customFieldId, customNumberFieldId]));
     await database.delete(productionJobItems).where(inArray(productionJobItems.jobId, jobIds));
     await database.delete(productionJobs).where(inArray(productionJobs.id, jobIds));
+    await database.delete(productionFieldDefinitions).where(inArray(productionFieldDefinitions.id, [customFieldId, customNumberFieldId]));
     await database.delete(user).where(eq(user.id, operatorId));
     await database.delete(user).where(eq(user.id, otherUserId));
   });
@@ -180,5 +210,30 @@ describe("forms workbench repository", () => {
       },
     );
     expect(new Set(orResult.items.map((item) => item.id))).toEqual(new Set(jobIds));
+  });
+
+  it("filters existing manual-entry data including submitter, item size, finance, and configured values", async () => {
+    const result = await listFormOrders(
+      database,
+      parseFormWorkbenchQuery({
+        match: "and",
+        filter: [
+          `submittedByUserId~equals~${encodeURIComponent(otherUserId)}`,
+          "customerName~contains~Visible",
+          "size~contains~A0",
+          "amountOwing~greaterThan~100.00",
+          `custom%3A${customFieldId}~contains~gold`,
+          `custom%3A${customNumberFieldId}~between~10.00%2C20.00`,
+        ],
+      }),
+      {
+        actorUserId: operatorId,
+        assignedOnly: false,
+        canViewCustomerContact: true,
+        canViewFinance: true,
+      },
+    );
+
+    expect(result.items.map((item) => item.id)).toEqual([assignedJobId]);
   });
 });

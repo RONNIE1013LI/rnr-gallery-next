@@ -46,7 +46,10 @@ export function FormsSavedViews({
     setPending(true);
     setMessage("");
     try {
-      const response = await fetch(`/api/forms/views/${encodeURIComponent(view.id)}`, { method: "DELETE" });
+      const response = await fetch(`/api/forms/views/${encodeURIComponent(view.id)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
       const payload = await response.json().catch(() => ({})) as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "The view could not be deleted.");
       setMessage("View deleted.");

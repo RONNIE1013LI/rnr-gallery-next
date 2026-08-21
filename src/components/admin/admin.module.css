@@ -1265,6 +1265,26 @@
   font-weight: 720;
 }
 
+.invoiceWorkspaceDownload {
+  display: inline-flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: center;
+  padding: 9px 14px;
+  border: 1px solid #173247;
+  border-radius: 4px;
+  color: #fff;
+  background: #173247;
+  font-size: 12px;
+  font-weight: 720;
+  text-decoration: none;
+}
+
+.invoiceWorkspaceDownload:focus-visible {
+  outline: 2px solid rgb(23 50 71 / 28%);
+  outline-offset: 2px;
+}
+
 .invoiceWorkspaceLayout {
   display: grid;
   min-width: 0;
@@ -1596,6 +1616,11 @@
 
   .invoiceWorkspaceHeader button:not(.secondaryAdminButton),
   .invoiceWorkspaceHeader .secondaryAdminButton {
+    width: 100%;
+    min-height: 44px;
+  }
+
+  .invoiceWorkspaceDownload {
     width: 100%;
     min-height: 44px;
   }

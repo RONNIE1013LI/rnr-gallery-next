@@ -211,6 +211,7 @@ describe("ProductionJobForm", () => {
     );
     expect(download.compareDocumentPosition(customerAddress) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(dialog).getByRole("link", { name: "Download PDF" })).toBe(download);
+    expect(within(dialog.querySelector("header")!).getByRole("link", { name: "Download PDF" })).toBe(download);
     expect(fetchMock).toHaveBeenCalledOnce();
   });
 

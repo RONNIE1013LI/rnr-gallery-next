@@ -156,12 +156,16 @@ export function InvoicePanel({
   invoicePdfBase = "/api/admin/invoices",
   canEdit = true,
   downloadAtTop = false,
+  hideDownload = false,
+  onInvoiceLoaded,
 }: Readonly<{
   jobId: string;
   jobApiBase?: string;
   invoicePdfBase?: string;
   canEdit?: boolean;
   downloadAtTop?: boolean;
+  hideDownload?: boolean;
+  onInvoiceLoaded?: (invoiceId: string) => void;
 }>) {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -183,6 +187,7 @@ export function InvoicePanel({
       if (!response.ok || !body?.invoice) throw new Error(body?.error || "The invoice could not be loaded.");
       setInvoice(body.invoice);
       setDraft(editable(body.invoice));
+      onInvoiceLoaded?.(body.invoice.id);
     }).catch((error) => {
       if (error instanceof DOMException && error.name === "AbortError") return;
       setFeedback(error instanceof Error ? error.message : "The invoice could not be loaded.");
@@ -190,7 +195,7 @@ export function InvoicePanel({
       if (!controller.signal.aborted) setLoading(false);
     });
     return () => controller.abort();
-  }, [jobId, jobApiBase]);
+  }, [jobId, jobApiBase, onInvoiceLoaded]);
 
   const calculated = useMemo(() => draft && invoice ? totals(draft, invoice) : null, [draft, invoice]);
   const locked = !canEdit || invoice?.status !== "draft" || pending;
@@ -273,7 +278,7 @@ export function InvoicePanel({
         <span className={styles.invoiceStatus} data-status={invoice.status}>{invoice.status === "draft" ? "Draft" : invoice.status === "issued" ? "Issued" : "Void"}</span>
       </div>
       <p className={styles.mutedText}>Persistent GST invoice · prices include GST · all changes are recorded in the audit log.</p>
-      {downloadAtTop ? <div className={styles.invoicePrimaryActions}>
+      {downloadAtTop && !hideDownload ? <div className={styles.invoicePrimaryActions}>
         <a className={styles.secondaryAdminButton} href={`${invoicePdfBase}/${invoice.id}/pdf`}>Download PDF</a>
       </div> : null}
 
@@ -320,7 +325,7 @@ export function InvoicePanel({
       </div>
 
       <div className={styles.invoiceActions}>
-        {!downloadAtTop ? <a className={styles.secondaryAdminButton} href={`${invoicePdfBase}/${invoice.id}/pdf`}>Download PDF</a> : null}
+        {!downloadAtTop && !hideDownload ? <a className={styles.secondaryAdminButton} href={`${invoicePdfBase}/${invoice.id}/pdf`}>Download PDF</a> : null}
         {invoice.status === "draft" && canEdit ? <><button type="button" className={styles.secondaryAdminButton} onClick={saveDraft} disabled={pending}>Save draft</button><button type="button" onClick={issueInvoice} disabled={pending}>Issue invoice</button></> : null}
         {invoice.status === "issued" && canEdit ? <><label><span>Void reason</span><input value={voidReason} onChange={(event) => setVoidReason(event.target.value)} disabled={pending} /></label><button type="button" className={styles.dangerButton} onClick={voidInvoice} disabled={pending}>Void invoice</button></> : null}
       </div>

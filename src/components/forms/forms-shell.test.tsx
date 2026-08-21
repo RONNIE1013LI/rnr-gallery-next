@@ -30,7 +30,7 @@ describe("FormsShell", () => {
     expect(screen.getByRole("link", { name: "Data list" })).toHaveAttribute("href", "/order-system");
     expect(screen.getByRole("link", { name: "Data list" })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("link", { name: "Custom stats" })).toHaveAttribute("href", "/order-system/stats");
-    expect(screen.getByRole("link", { name: "Gallery" })).toHaveAttribute("href", "/");
+    expect(screen.queryByRole("link", { name: "Gallery" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Order entry" })).toHaveAttribute("href", "/order-system?q=07188&page=2&entry=new");
     expect(screen.getByText("Rosemary")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Log out" })).toBeInTheDocument();

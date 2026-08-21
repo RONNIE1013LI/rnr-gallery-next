@@ -11,7 +11,7 @@ import type {
   FormWorkbenchResult,
 } from "@/server/forms/forms-workbench-service";
 import { encodeFormFilterCondition } from "@/server/forms/forms-workbench-service";
-import { FormsFilterBuilder } from "./forms-filter-builder";
+import { FormsFilterBuilder, type FormsFilterCustomField } from "./forms-filter-builder";
 import { FormsJobDrawer } from "./forms-job-drawer";
 import { FormsOrderEntryDrawer } from "./forms-order-entry-drawer";
 import { FormsOrderCards } from "./forms-order-cards";
@@ -50,8 +50,11 @@ function queryString(query: FormWorkbenchQuery, page?: number) {
 export function FormsWorkbench({
   result,
   query,
-  canExport,
   canViewFinance,
+  canViewCustomerContact = false,
+  canViewPaymentProof = false,
+  filterCustomFields = [],
+  filterPeople = [],
   canManageViews = false,
   savedViews = [],
   canUpdate = false,
@@ -69,6 +72,10 @@ export function FormsWorkbench({
   query: FormWorkbenchQuery;
   canExport: boolean;
   canViewFinance: boolean;
+  canViewCustomerContact?: boolean;
+  canViewPaymentProof?: boolean;
+  filterCustomFields?: readonly FormsFilterCustomField[];
+  filterPeople?: readonly Readonly<{ id: string; name: string }>[];
   canManageViews?: boolean;
   savedViews?: readonly ProductionSavedView[];
   canUpdate?: boolean;
@@ -85,7 +92,6 @@ export function FormsWorkbench({
   const router = useRouter();
   const [showColumnStats, setShowColumnStats] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const exportQuery = queryString(query);
   const savedViewQuery = queryString({ ...query, query: "", pageSize: 20 });
   const visibleStats = {
     urgent: result.items.filter((row) => row.urgent).length,
@@ -131,35 +137,24 @@ export function FormsWorkbench({
           conditions={query.conditions}
           match={query.match}
           canViewFinance={canViewFinance}
+          canViewCustomerContact={canViewCustomerContact}
+          canViewPaymentProof={canViewPaymentProof}
+          people={filterPeople}
+          customFields={filterCustomFields}
+          preset={query.preset}
+          onPresetChange={(preset) => {
+            const next = queryString({ ...query, preset });
+            router.push(`/order-system${next ? `?${next}` : ""}`);
+          }}
+          savedSearches={canManageViews ? <FormsSavedViews
+            views={savedViews}
+            currentQuery={savedViewQuery}
+            onOpen={(savedQuery) => router.push(`/order-system?${savedQuery}`)}
+            onChanged={() => router.refresh()}
+          /> : null}
           onApply={applyFilters}
         />
-        <label className={styles.savedViewSelect}>
-          <span>View</span>
-          <select
-            value={query.preset}
-            name="preset"
-            aria-label="Saved order view"
-            onChange={(event) => {
-              const preset = event.target.value as FormWorkbenchQuery["preset"];
-              const next = queryString({ ...query, preset });
-              router.push(`/order-system${next ? `?${next}` : ""}`);
-            }}
-          >
-            <option value="all">All data</option>
-            <option value="lastSixMonths">Last 6 months</option>
-            <option value="lastYear">Last year</option>
-          </select>
-        </label>
-        {canManageViews ? <FormsSavedViews
-          views={savedViews}
-          currentQuery={savedViewQuery}
-          onOpen={(savedQuery) => router.push(`/order-system?${savedQuery}`)}
-          onChanged={() => router.refresh()}
-        /> : null}
         <span className={styles.toolbarSpacer} />
-        {canExport ? (
-          <a className={styles.exportLink} href={`/api/forms/jobs/export${exportQuery ? `?${exportQuery}` : ""}`}>Export CSV</a>
-        ) : null}
       </div>
 
       {result.items.length ? (

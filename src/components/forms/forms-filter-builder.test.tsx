@@ -39,6 +39,37 @@ describe("forms filter builder", () => {
     expect(apply).toHaveBeenCalledWith({ match: "and", conditions: [] });
   });
 
+  it("offers manual-entry fields, submitting operators, and configured fields with permission gating", () => {
+    const apply = vi.fn();
+    render(<FormsFilterBuilder
+      conditions={[]}
+      match="and"
+      canViewFinance
+      canViewCustomerContact
+      canViewPaymentProof
+      people={[{ id: "staff-1", name: "Rosemary" }]}
+      customFields={[{
+        id: "00000000-0000-4000-8000-000000000091",
+        label: "Campaign note",
+        fieldType: "text",
+        options: [],
+        section: "order",
+      }]}
+      onApply={apply}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders" }));
+    const field = screen.getByLabelText("Filter field 1");
+    expect(field).toHaveTextContent("Submitted by");
+    expect(field).toHaveTextContent("Customer name");
+    expect(field).toHaveTextContent("Amount owing");
+    expect(field).toHaveTextContent("Payment proof");
+    expect(field).toHaveTextContent("Campaign note");
+
+    fireEvent.change(field, { target: { value: "submittedByUserId" } });
+    expect(screen.getByLabelText("Filter value 1")).toHaveTextContent("Rosemary");
+  });
+
   it("traps focus, isolates the background and closes from the document or backdrop", async () => {
     const apply = vi.fn();
     render(<div>

@@ -63,6 +63,24 @@ function drawnText(document: PDFDocument) {
   }).join(" ");
 }
 
+function textPositions(document: PDFDocument) {
+  return document.getPages().flatMap((page) => {
+    const contents = page.node.Contents();
+    if (!contents) return [];
+    const references = contents instanceof PDFArray ? contents.asArray() : [contents];
+    return references.flatMap((reference) => {
+      const stream = document.context.lookup(reference);
+      if (!(stream instanceof PDFRawStream)) return [];
+      const decoded = new TextDecoder().decode(decodePDFRawStream(stream).decode());
+      return Array.from(decoded.matchAll(/1 0 0 1 ([\d.]+) ([\d.]+) Tm\s*<([0-9A-F]+)> Tj/g), (match) => ({
+        x: Number(match[1]),
+        y: Number(match[2]),
+        text: Buffer.from(match[3], "hex").toString("latin1"),
+      }));
+    });
+  });
+}
+
 describe("invoice PDF", () => {
   it("creates a valid server-side A4 tax invoice without executable content", async () => {
     const bytes = await createInvoicePdf(invoice);
@@ -86,5 +104,27 @@ describe("invoice PDF", () => {
     expect(text).toContain(`Tax Invoice # ${invoice.invoiceNumber}`);
     expect(text).toContain("Payment to:");
     expect(images?.keys().length ?? 0).toBeGreaterThan(0);
+  });
+
+  it("deduplicates customer identity and right-aligns the Deliver To block", async () => {
+    const customerName = "Ana Example";
+    const customerEmail = "ana@example.com";
+    const document = await PDFDocument.load(await createInvoicePdf({
+      ...invoice,
+      customerName,
+      customerEmail,
+      customerAddress: `${customerName}\n11 Example Street\n${customerEmail}`,
+      deliveryAddress: `${customerName}\n11 Example Street\n${customerEmail}`,
+    }));
+    const positions = textPositions(document);
+    const customerNameDraws = positions.filter((entry) => entry.text === customerName);
+    const customerEmailDraws = positions.filter((entry) => entry.text === customerEmail);
+    const deliverHeading = positions.find((entry) => entry.text === "Deliver To");
+    const deliveryStreet = positions.find((entry) => entry.text === "11 Example Street" && entry.x > 300);
+
+    expect(customerNameDraws).toHaveLength(3);
+    expect(customerEmailDraws).toHaveLength(2);
+    expect(deliverHeading?.x).toBeGreaterThan(490);
+    expect(deliveryStreet?.x).toBeGreaterThan(450);
   });
 });

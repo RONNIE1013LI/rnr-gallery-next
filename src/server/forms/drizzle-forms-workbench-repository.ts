@@ -22,7 +22,10 @@ import { displayFormReference } from "@/domain/forms/forms-parity";
 import {
   orders,
   productionJobItems,
+  productionJobFiles,
   productionJobs,
+  productionFieldDefinitions,
+  productionFieldValues,
   user,
 } from "@/server/db/schema";
 import { projectWebOrderFinance } from "@/server/production/production-job-finance";
@@ -41,6 +44,7 @@ export type FormWorkbenchAccess = Readonly<{
   assignedOnly: boolean;
   canViewCustomerContact: boolean;
   canViewFinance: boolean;
+  canViewPaymentProof?: boolean;
 }>;
 
 function presetStart(preset: FormWorkbenchQuery["preset"]) {
@@ -57,22 +61,159 @@ function filterCondition(
   access: FormWorkbenchAccess,
 ): SQL {
   const scalarValue = typeof condition.value === "string" ? condition.value : condition.value[0] ?? "";
+  const empty = condition.operator === "isEmpty";
+  const notEmpty = condition.operator === "isNotEmpty";
+  const escaped = scalarValue.replaceAll("%", "\\%").replaceAll("_", "\\_");
+  const textCondition = (expression: SQL<string>) => {
+    if (empty) return sql`coalesce(${expression}, '') = ''`;
+    if (notEmpty) return sql`coalesce(${expression}, '') <> ''`;
+    if (condition.operator === "contains") return ilike(expression, `%${escaped}%`);
+    if (condition.operator === "notEquals") return ne(expression, scalarValue);
+    return eq(expression, scalarValue);
+  };
+  const numberCondition = (expression: SQL<number>) => {
+    if (empty) return sql`${expression} is null`;
+    if (notEmpty) return sql`${expression} is not null`;
+    const cents = Math.round(Number(scalarValue) * 100);
+    if (condition.operator === "greaterThan") return gt(expression, cents);
+    if (condition.operator === "lessThan") return lt(expression, cents);
+    if (condition.operator === "between" && typeof condition.value !== "string") {
+      return and(
+        gte(expression, Math.round(Number(condition.value[0]) * 100)),
+        lte(expression, Math.round(Number(condition.value[1]) * 100)),
+      )!;
+    }
+    return eq(expression, cents);
+  };
+  const dateCondition = (expression: SQL<string>) => {
+    if (empty) return sql`${expression} is null`;
+    if (notEmpty) return sql`${expression} is not null`;
+    if (condition.operator === "before") return lt(expression, scalarValue);
+    if (condition.operator === "after") return gt(expression, scalarValue);
+    if (condition.operator === "between" && typeof condition.value !== "string") {
+      return and(gte(expression, condition.value[0] ?? ""), lte(expression, condition.value[1] ?? ""))!;
+    }
+    return eq(expression, scalarValue);
+  };
+
+  if (condition.field.startsWith("custom:")) {
+    const fieldId = condition.field.slice("custom:".length);
+    const accessCondition = and(
+      eq(productionFieldDefinitions.id, fieldId),
+      access.canViewFinance ? undefined : ne(productionFieldDefinitions.section, "finance"),
+      access.canViewCustomerContact ? undefined : ne(productionFieldDefinitions.section, "customer"),
+    );
+    const customValue = sql<string>`${productionFieldValues.value}`;
+    let valueMatch: SQL;
+    if (condition.operator === "before" || condition.operator === "after") {
+      const dateValue = sql`case when ${productionFieldDefinitions.fieldType} = 'date' and ${customValue} ~ '^\\d{4}-\\d{2}-\\d{2}$' then to_date(${customValue}, 'YYYY-MM-DD') else null end`;
+      valueMatch = condition.operator === "before"
+        ? sql`${dateValue} < to_date(${scalarValue}, 'YYYY-MM-DD')`
+        : sql`${dateValue} > to_date(${scalarValue}, 'YYYY-MM-DD')`;
+    } else if (condition.operator === "greaterThan" || condition.operator === "lessThan") {
+      const numericValue = sql`case when ${productionFieldDefinitions.fieldType} = 'number' and ${customValue} ~ '^\\d+(\\.\\d{1,2})?$' then ${customValue}::numeric else null end`;
+      valueMatch = condition.operator === "greaterThan"
+        ? sql`${numericValue} > ${Number(scalarValue)}`
+        : sql`${numericValue} < ${Number(scalarValue)}`;
+    } else if (condition.operator === "between" && typeof condition.value !== "string") {
+      if (/^\d{4}-\d{2}-\d{2}$/.test(condition.value[0] ?? "")) {
+        const dateValue = sql`case when ${productionFieldDefinitions.fieldType} = 'date' and ${customValue} ~ '^\\d{4}-\\d{2}-\\d{2}$' then to_date(${customValue}, 'YYYY-MM-DD') else null end`;
+        valueMatch = sql`${dateValue} between to_date(${condition.value[0]}, 'YYYY-MM-DD') and to_date(${condition.value[1]}, 'YYYY-MM-DD')`;
+      } else {
+        const numericValue = sql`case when ${productionFieldDefinitions.fieldType} = 'number' and ${customValue} ~ '^\\d+(\\.\\d{1,2})?$' then ${customValue}::numeric else null end`;
+        valueMatch = sql`${numericValue} between ${Number(condition.value[0])} and ${Number(condition.value[1])}`;
+      }
+    } else {
+      valueMatch = textCondition(customValue);
+    }
+    if (empty) {
+      return sql`not exists (
+        select 1 from ${productionFieldValues}
+        inner join ${productionFieldDefinitions} on ${productionFieldDefinitions.id} = ${productionFieldValues.fieldId}
+        where ${productionFieldValues.jobId} = ${productionJobs.id} and ${accessCondition}
+          and coalesce(${productionFieldValues.value}, '') <> ''
+      )`;
+    }
+    if (notEmpty) {
+      return sql`exists (
+        select 1 from ${productionFieldValues}
+        inner join ${productionFieldDefinitions} on ${productionFieldDefinitions.id} = ${productionFieldValues.fieldId}
+        where ${productionFieldValues.jobId} = ${productionJobs.id} and ${accessCondition}
+          and coalesce(${productionFieldValues.value}, '') <> ''
+      )`;
+    }
+    return sql`exists (
+      select 1 from ${productionFieldValues}
+      inner join ${productionFieldDefinitions} on ${productionFieldDefinitions.id} = ${productionFieldValues.fieldId}
+      where ${productionFieldValues.jobId} = ${productionJobs.id} and ${accessCondition} and ${valueMatch}
+    )`;
+  }
+
+  if (["customerEmail", "customerPhone", "deliveryAddress"].includes(condition.field) && !access.canViewCustomerContact) {
+    return sql`false`;
+  }
+  if (["amountPayable", "amountPaid", "amountOwing", "artistFee", "materialCost", "bankRecon"].includes(condition.field) && !access.canViewFinance) {
+    return sql`false`;
+  }
+  if (condition.field === "paymentProof" && !access.canViewPaymentProof) return sql`false`;
+
+  if (condition.field === "submittedAt" || condition.field === "updatedAt") {
+    const column = condition.field === "submittedAt" ? productionJobs.createdAt : productionJobs.updatedAt;
+    return dateCondition(sql<string>`${column}::date`);
+  }
+  if (condition.field === "reference") return textCondition(sql<string>`${productionJobs.jobNumber}`);
+  if (condition.field === "customerName") return textCondition(sql<string>`${productionJobs.customerName}`);
+  if (condition.field === "customerEmail") return textCondition(sql<string>`${productionJobs.customerEmail}`);
+  if (condition.field === "customerPhone") return textCondition(sql<string>`${productionJobs.customerPhone}`);
+  if (condition.field === "deliveryAddress") return textCondition(sql<string>`${productionJobs.deliveryAddress}`);
+  if (condition.field === "remark") return textCondition(sql<string>`${productionJobs.internalNotes}`);
+  if (condition.field === "productTitle" || condition.field === "size" || condition.field === "designText") {
+    const expression = condition.field === "productTitle"
+      ? sql<string>`${productionJobItems.productTitle}`
+      : condition.field === "size"
+        ? sql<string>`${productionJobItems.sizeLabel}`
+        : sql<string>`${productionJobItems.designText}`;
+    const match = textCondition(expression);
+    if (empty) return sql`not exists (select 1 from ${productionJobItems} where ${productionJobItems.jobId} = ${productionJobs.id} and coalesce(${expression}, '') <> '')`;
+    if (notEmpty) return sql`exists (select 1 from ${productionJobItems} where ${productionJobItems.jobId} = ${productionJobs.id} and coalesce(${expression}, '') <> '')`;
+    return sql`exists (select 1 from ${productionJobItems} where ${productionJobItems.jobId} = ${productionJobs.id} and ${match})`;
+  }
+  if (condition.field === "paymentProof") {
+    const existsProof = sql`exists (select 1 from ${productionJobFiles} where ${productionJobFiles.jobId} = ${productionJobs.id} and ${productionJobFiles.kind} = 'payment_proof')`;
+    return scalarValue === "true" ? existsProof : sql`not (${existsProof})`;
+  }
+  if (["fileSent", "downloaded", "printed", "completed", "customerNotified", "delivered"].includes(condition.field)) {
+    const column = condition.field === "fileSent" ? productionJobs.fileSentAt
+      : condition.field === "downloaded" ? productionJobs.downloadedAt
+        : condition.field === "printed" ? productionJobs.printedAt
+          : condition.field === "completed" ? productionJobs.completedAt
+            : condition.field === "customerNotified" ? productionJobs.customerNotifiedAt
+              : productionJobs.deliveredAt;
+    return scalarValue === "true" ? sql`${column} is not null` : sql`${column} is null`;
+  }
+  if (condition.field === "amountPayable") {
+    return numberCondition(sql<number>`coalesce(${productionJobs.amountPayableCents}, ${orders.totalInclGstCents})`);
+  }
+  if (condition.field === "amountPaid") {
+    return numberCondition(sql<number>`coalesce(${productionJobs.amountPaidCents}, case when ${orders.paymentStatus} = 'paid' then ${orders.totalInclGstCents} else 0 end)`);
+  }
+  if (condition.field === "amountOwing") {
+    return numberCondition(sql<number>`coalesce(${productionJobs.amountPayableCents}, ${orders.totalInclGstCents}, 0) - coalesce(${productionJobs.amountPaidCents}, case when ${orders.paymentStatus} = 'paid' then ${orders.totalInclGstCents} else 0 end, 0)`);
+  }
+  if (condition.field === "artistFee") return numberCondition(sql<number>`${productionJobs.artistFeeCents}`);
+  if (condition.field === "materialCost") return numberCondition(sql<number>`${productionJobs.materialCostCents}`);
+  if (condition.field === "submittedByUserId") {
+    if (empty) return isNull(productionJobs.createdByUserId);
+    if (notEmpty) return sql`${productionJobs.createdByUserId} is not null`;
+    return condition.operator === "notEquals" ? ne(productionJobs.createdByUserId, scalarValue) : eq(productionJobs.createdByUserId, scalarValue);
+  }
   if (condition.field === "urgent") {
     return eq(productionJobs.urgent, scalarValue === "true");
   }
-  if (condition.field === "neededDate") {
-    if (condition.operator === "before") return lt(productionJobs.neededDate, scalarValue);
-    if (condition.operator === "after") return gt(productionJobs.neededDate, scalarValue);
-    if (condition.operator === "between" && typeof condition.value !== "string") {
-      return and(
-        gte(productionJobs.neededDate, condition.value[0] ?? ""),
-        lte(productionJobs.neededDate, condition.value[1] ?? ""),
-      )!;
-    }
-    return eq(productionJobs.neededDate, scalarValue);
-  }
+  if (condition.field === "neededDate") return dateCondition(sql<string>`${productionJobs.neededDate}`);
   if (condition.field === "assignedUserId") {
-    if (condition.operator === "isEmpty") return isNull(productionJobs.assignedUserId);
+    if (empty) return isNull(productionJobs.assignedUserId);
+    if (notEmpty) return sql`${productionJobs.assignedUserId} is not null`;
     return condition.operator === "notEquals"
       ? ne(productionJobs.assignedUserId, scalarValue)
       : eq(productionJobs.assignedUserId, scalarValue);
@@ -87,9 +228,7 @@ function filterCondition(
         : condition.field === "status"
           ? sql<string>`coalesce(${orders.fulfilmentStatus}, ${productionJobs.manualStatus}, 'new')`
           : sql<string>`coalesce(${orders.paymentStatus}, ${productionJobs.manualPaymentStatus}, 'awaiting_payment')`;
-  return condition.operator === "notEquals"
-    ? ne(expression, scalarValue)
-    : eq(expression, scalarValue);
+  return textCondition(expression);
 }
 
 export function buildFormWorkbenchConditions(query: FormWorkbenchQuery, access: FormWorkbenchAccess) {
@@ -101,8 +240,10 @@ export function buildFormWorkbenchConditions(query: FormWorkbenchQuery, access: 
       ilike(productionJobs.jobNumber, pattern),
       ilike(productionJobs.webOrderNumber, pattern),
       ilike(productionJobs.customerName, pattern),
-      ilike(productionJobs.customerEmail, pattern),
-      ilike(productionJobs.customerPhone, pattern),
+      ...(access.canViewCustomerContact ? [
+        ilike(productionJobs.customerEmail, pattern),
+        ilike(productionJobs.customerPhone, pattern),
+      ] : []),
     )!);
   }
   if (access.assignedOnly) {

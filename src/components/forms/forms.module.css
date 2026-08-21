@@ -932,6 +932,36 @@
   background: var(--gallery-green);
 }
 
+.savedSearchWorkspace {
+  margin-top: 14px;
+  padding-top: 2px;
+  border-top: 1px solid var(--forms-border);
+}
+
+.filterPresetButtons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.filterPresetButtons button {
+  min-height: 36px;
+  padding: 5px 10px;
+  border: 1px solid var(--forms-border);
+  border-radius: 5px;
+  color: var(--forms-ink);
+  background: var(--forms-surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.filterPresetButtons button[aria-pressed="true"] {
+  border-color: #2f6ca7;
+  color: #1f5d99;
+  background: #eef6ff;
+}
+
 .formsEmptyState {
   display: grid;
   min-height: 320px;
@@ -2318,5 +2348,83 @@
 
   .formEntryPage button {
     min-height: 44px;
+  }
+}
+
+/* Data-list search occupies the former centered Gallery slot on wide screens. */
+@media (min-width: 1100px) {
+  .listToolbar {
+    position: fixed;
+    z-index: 51;
+    top: 5px;
+    left: 50%;
+    width: min(460px, calc(100vw - 720px));
+    min-width: 360px;
+    transform: translateX(-50%);
+  }
+
+  .quickSearch {
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+
+  .filterBuilder {
+    width: 34px;
+  }
+
+  .filterButton {
+    width: 34px;
+    min-width: 34px;
+    padding: 0;
+  }
+
+  .filterButtonText {
+    display: none;
+  }
+
+  .filterButtonIcon {
+    display: block;
+    margin: auto;
+    font-size: 15px;
+  }
+
+  .filterPanel {
+    right: 0;
+    left: auto;
+  }
+}
+
+@media (max-width: 680px) {
+  .orderCards {
+    gap: 6px;
+  }
+
+  .orderCard header {
+    gap: 6px;
+    padding: 1px 8px;
+  }
+
+  .orderCard dl {
+    gap: 4px 6px;
+    padding: 5px 8px 7px;
+  }
+
+  .orderCard dl div {
+    padding: 0;
+  }
+
+  .orderCard dd {
+    min-height: 36px;
+    margin-top: 1px;
+    padding: 4px 7px;
+    font-size: 13px;
+  }
+
+  .savedSearchWorkspace .personalViews {
+    display: flex;
+  }
+
+  .savedSearchWorkspace .personalViews input {
+    width: min(100%, 220px);
   }
 }

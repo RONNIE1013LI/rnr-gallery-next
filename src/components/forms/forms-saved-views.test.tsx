@@ -24,4 +24,27 @@ describe("forms saved views", () => {
     await waitFor(() => expect(request).toHaveBeenCalledWith("/api/forms/views", expect.objectContaining({ method: "POST" })));
     expect(changed).toHaveBeenCalled();
   });
+
+  it("sends saved-view deletes through the JSON mutation boundary", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: "deleted" })));
+    vi.stubGlobal("fetch", request);
+    const changed = vi.fn();
+    render(<FormsSavedViews
+      views={[{ id: "view-1", name: "Urgent", queryString: "filter=urgent%7Eequals%7Etrue" }]}
+      currentQuery="filter=urgent%7Eequals%7Etrue"
+      onChanged={changed}
+      onOpen={vi.fn()}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete Urgent" }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "/api/forms/views/view-1",
+      expect.objectContaining({
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      }),
+    ));
+    expect(changed).toHaveBeenCalled();
+  });
 });

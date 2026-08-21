@@ -83,6 +83,38 @@ describe("forms workbench query", () => {
     })).toThrow(FormFilterValidationError);
   });
 
+  it("accepts persisted manual-entry field families and configured custom fields", () => {
+    const customFieldId = "00000000-0000-4000-8000-000000000091";
+    expect(parseFormFilterGroup({
+      match: "and",
+      conditions: [
+        { field: "submittedByUserId", operator: "equals", value: "staff-1" },
+        { field: "customerName", operator: "contains", value: "Ana" },
+        { field: "amountOwing", operator: "greaterThan", value: "100.00" },
+        { field: "size", operator: "contains", value: "A1" },
+        { field: "paymentProof", operator: "equals", value: "true" },
+        { field: "completed", operator: "equals", value: "false" },
+        { field: `custom:${customFieldId}`, operator: "contains", value: "gold" },
+        { field: `custom:${customFieldId}`, operator: "between", value: ["10.00", "20.00"] },
+      ],
+    })).toMatchObject({
+      conditions: [
+        { field: "submittedByUserId", operator: "equals", value: "staff-1" },
+        { field: "customerName", operator: "contains", value: "Ana" },
+        { field: "amountOwing", operator: "greaterThan", value: "100.00" },
+        { field: "size", operator: "contains", value: "A1" },
+        { field: "paymentProof", operator: "equals", value: "true" },
+        { field: "completed", operator: "equals", value: "false" },
+        { field: `custom:${customFieldId}`, operator: "contains", value: "gold" },
+        { field: `custom:${customFieldId}`, operator: "between", value: ["10.00", "20.00"] },
+      ],
+    });
+    expect(() => parseFormFilterGroup({
+      match: "and",
+      conditions: [{ field: "custom:not-a-uuid", operator: "contains", value: "gold" }],
+    })).toThrow(FormFilterValidationError);
+  });
+
   it("parses at most twenty filters from shareable URL state", () => {
     const filters = Array.from({ length: 24 }, (_, index) =>
       index === 0 ? "urgent~equals~true" : "status~equals~new");

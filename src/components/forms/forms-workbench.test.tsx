@@ -32,7 +32,7 @@ describe("FormsWorkbench", () => {
     expect(screen.getByRole("searchbox", { name: "Search Ref No. / Cust.Name" })).toHaveAttribute("placeholder", "Search name / order no.");
     expect(screen.getByRole("button", { name: "Search orders" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Filter orders" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Export CSV" })).toHaveAttribute("href", expect.stringContaining("/api/forms/jobs/export"));
+    expect(screen.queryByRole("link", { name: "Export CSV" })).not.toBeInTheDocument();
     expect(screen.getByRole("table", { name: "Orders data list" })).toBeInTheDocument();
     expect(screen.getByLabelText("Mobile orders data list")).toBeInTheDocument();
     expect(screen.getByText("1 order")).toBeInTheDocument();
@@ -45,6 +45,26 @@ describe("FormsWorkbench", () => {
     fireEvent.click(screen.getByRole("button", { name: "Column stats" }));
     expect(screen.getByRole("region", { name: "Visible column statistics" })).toHaveTextContent("Urgent1");
     expect(screen.getByRole("region", { name: "Visible column statistics" })).toHaveTextContent("Amount payable");
+  });
+
+  it("keeps presets and personal saved searches inside the filter workspace", () => {
+    render(<FormsWorkbench
+      result={{ items: [formOrderRow], total: 1, page: 1, pageSize: 20, pageCount: 1 }}
+      query={parseFormWorkbenchQuery({ preset: "lastSixMonths" })}
+      canExport
+      canViewFinance
+      canManageViews
+      filterPeople={[{ id: "staff-1", name: "Rosemary" }]}
+      savedViews={[{ id: "view-1", name: "Waiting payment", queryString: "filter=paymentStatus%7Eequals%7Eawaiting_payment" }]}
+    />);
+
+    expect(screen.queryByLabelText("Saved order view")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders" }));
+    expect(screen.getByRole("heading", { name: "Saved searches" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "All data" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Last 6 months" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "Waiting payment" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Saved view name")).toBeInTheDocument();
   });
 
   it("provides a clear empty state", () => {

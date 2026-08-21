@@ -27,7 +27,6 @@ export function FormsShell({
             {canViewStats ? <Link href="/order-system/stats" aria-current={currentRoute === "/order-system/stats" ? "page" : undefined}>Custom stats</Link> : null}
           </nav>
         </div>
-        <Link className={styles.galleryLink} href="/">Gallery</Link>
         <div className={styles.operatorActions}>
           <span className={styles.operatorIdentity} title={operator.email}>
             {operator.name || operator.email || "Operator"}

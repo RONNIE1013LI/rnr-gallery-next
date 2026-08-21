@@ -193,6 +193,7 @@ export function ProductionJobForm({
   const [paymentRecovery, setPaymentRecovery] = useState<PaymentRecovery | null>(null);
   const [pasteFeedback, setPasteFeedback] = useState("");
   const [invoiceOpen, setInvoiceOpen] = useState(false);
+  const [persistedInvoiceId, setPersistedInvoiceId] = useState("");
   const [invoiceDraft, setInvoiceDraft] = useState<InvoiceWorkspaceDraft | null>(null);
   const [amountPayableCents, setAmountPayableCents] = useState(existingManualOrder?.amountPayableCents ?? 0);
   const [amountPaidCents, setAmountPaidCents] = useState(existingManualOrder?.amountPaidCents ?? 0);
@@ -878,7 +879,10 @@ export function ProductionJobForm({
     >
       <header className={styles.invoiceWorkspaceHeader}>
         <div><strong>Invoice</strong><span>INV-{existingManualOrder.jobNumber}</span></div>
-        <button type="button" onClick={() => setInvoiceOpen(false)}>Close</button>
+        <div>
+          {persistedInvoiceId ? <a className={styles.invoiceWorkspaceDownload} href={`${invoicePdfBase}/${persistedInvoiceId}/pdf`}>Download PDF</a> : null}
+          <button type="button" onClick={() => setInvoiceOpen(false)}>Close</button>
+        </div>
       </header>
       <div className={styles.persistedInvoiceOverlayBody}>
         <InvoicePanel
@@ -886,7 +890,8 @@ export function ProductionJobForm({
           jobApiBase={endpoint}
           invoicePdfBase={invoicePdfBase}
           canEdit={canManageFinance && canEdit}
-          downloadAtTop
+          hideDownload
+          onInvoiceLoaded={setPersistedInvoiceId}
         />
       </div>
     </div> : null}

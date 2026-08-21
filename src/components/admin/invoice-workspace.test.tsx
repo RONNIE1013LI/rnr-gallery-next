@@ -85,6 +85,25 @@ describe("InvoiceWorkspace", () => {
     expect(within(preview).getByText("Deliver To").parentElement).toHaveTextContent("8 George Street Sydney NSW 2000");
   });
 
+  it("does not repeat customer identity already present in the pasted address", () => {
+    const repeatedDraft = {
+      ...draft,
+      customerAddress: "Litea Murtagh\n2/6 Ryburn Road\nlitea@example.com",
+      deliveryAddress: "Litea Murtagh\n2/6 Ryburn Road\nlitea@example.com",
+    };
+    function RepeatedAddressHarness() {
+      const [value, setValue] = useState(repeatedDraft);
+      return <InvoiceWorkspace draft={value} onChange={setValue} onClose={vi.fn()} />;
+    }
+
+    render(<RepeatedAddressHarness />);
+    const customerBlock = within(screen.getByLabelText("Invoice live preview"))
+      .getByText("Customer Address").parentElement;
+
+    expect(customerBlock?.textContent?.match(/Litea Murtagh/g)).toHaveLength(1);
+    expect(customerBlock?.textContent?.match(/litea@example\.com/g)).toHaveLength(1);
+  });
+
   it("downloads a validated transient draft without a saved job id", async () => {
     const anchor = document.createElement("a");
     const click = vi.spyOn(anchor, "click").mockImplementation(() => undefined);

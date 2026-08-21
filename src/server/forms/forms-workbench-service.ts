@@ -7,14 +7,39 @@ export type FormFilterCondition = Readonly<{
 }>;
 
 export type FormFilterField =
+  | "submittedAt"
+  | "updatedAt"
+  | "reference"
+  | "productTitle"
+  | "size"
+  | "paymentProof"
+  | "amountPayable"
+  | "amountPaid"
+  | "amountOwing"
   | "urgent"
   | "neededDate"
   | "deliveryMethod"
+  | "deliveryAddress"
   | "customerSource"
+  | "customerName"
+  | "customerEmail"
+  | "customerPhone"
   | "status"
   | "paymentStatus"
   | "assignedUserId"
-  | "bankRecon";
+  | "submittedByUserId"
+  | "bankRecon"
+  | "remark"
+  | "designText"
+  | "fileSent"
+  | "downloaded"
+  | "printed"
+  | "completed"
+  | "customerNotified"
+  | "delivered"
+  | "artistFee"
+  | "materialCost"
+  | `custom:${string}`;
 
 export type FormFilterOperator =
   | "equals"
@@ -22,23 +47,39 @@ export type FormFilterOperator =
   | "before"
   | "after"
   | "between"
-  | "isEmpty";
+  | "contains"
+  | "greaterThan"
+  | "lessThan"
+  | "isEmpty"
+  | "isNotEmpty";
 
 export type FormFilterGroup = Readonly<{
   match: "and" | "or";
   conditions: readonly FormFilterCondition[];
 }>;
 
-const filterOperators: Readonly<Record<FormFilterField, readonly FormFilterOperator[]>> = {
-  urgent: ["equals"],
-  neededDate: ["equals", "before", "after", "between"],
-  deliveryMethod: ["equals", "notEquals"],
-  customerSource: ["equals", "notEquals"],
-  status: ["equals", "notEquals"],
-  paymentStatus: ["equals", "notEquals"],
-  assignedUserId: ["equals", "notEquals", "isEmpty"],
-  bankRecon: ["equals", "notEquals"],
-};
+const dateFields = new Set<FormFilterField>(["submittedAt", "updatedAt", "neededDate"]);
+const numberFields = new Set<FormFilterField>(["amountPayable", "amountPaid", "amountOwing", "artistFee", "materialCost"]);
+const booleanFields = new Set<FormFilterField>(["urgent", "paymentProof", "fileSent", "downloaded", "printed", "completed", "customerNotified", "delivered"]);
+const textFields = new Set<FormFilterField>(["reference", "productTitle", "size", "deliveryAddress", "customerName", "customerEmail", "customerPhone", "remark", "designText"]);
+const choiceFields = new Set<FormFilterField>(["deliveryMethod", "customerSource", "status", "paymentStatus", "assignedUserId", "submittedByUserId", "bankRecon"]);
+const customFieldPattern = /^custom:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const customOperators: readonly FormFilterOperator[] = ["contains", "equals", "notEquals", "before", "after", "between", "greaterThan", "lessThan", "isEmpty", "isNotEmpty"];
+
+function operatorsFor(field: FormFilterField): readonly FormFilterOperator[] {
+  if (dateFields.has(field)) return ["equals", "before", "after", "between", "isEmpty", "isNotEmpty"];
+  if (numberFields.has(field)) return ["equals", "greaterThan", "lessThan", "between", "isEmpty", "isNotEmpty"];
+  if (booleanFields.has(field)) return ["equals"];
+  if (textFields.has(field)) return ["contains", "equals", "notEquals", "isEmpty", "isNotEmpty"];
+  if (choiceFields.has(field)) return ["equals", "notEquals", "isEmpty", "isNotEmpty"];
+  return customOperators;
+}
+
+function recognizedField(value: string): value is FormFilterField {
+  return customFieldPattern.test(value) || dateFields.has(value as FormFilterField) ||
+    numberFields.has(value as FormFilterField) || booleanFields.has(value as FormFilterField) ||
+    textFields.has(value as FormFilterField) || choiceFields.has(value as FormFilterField);
+}
 const datePattern = /^\d{4}-\d{2}-\d{2}$/;
 
 export class FormFilterValidationError extends Error {
@@ -55,29 +96,41 @@ function validDate(value: string) {
 function conditionFrom(input: unknown): FormFilterCondition {
   if (!input || typeof input !== "object") throw new FormFilterValidationError();
   const source = input as Record<string, unknown>;
-  if (typeof source.field !== "string" || !(source.field in filterOperators)) {
+  if (typeof source.field !== "string" || !recognizedField(source.field)) {
     throw new FormFilterValidationError("Unknown order filter field");
   }
   const field = source.field as FormFilterField;
-  if (typeof source.operator !== "string" || !filterOperators[field].includes(source.operator as FormFilterOperator)) {
+  if (typeof source.operator !== "string" || !operatorsFor(field).includes(source.operator as FormFilterOperator)) {
     throw new FormFilterValidationError("Unsupported order filter operator");
   }
   const operator = source.operator as FormFilterOperator;
   const raw = source.value;
-  if (operator === "isEmpty") return Object.freeze({ field, operator, value: "" });
+  if (operator === "isEmpty" || operator === "isNotEmpty") return Object.freeze({ field, operator, value: "" });
   const values = Array.isArray(raw) ? raw : [raw];
   if (values.some((value) => typeof value !== "string" || !value.trim() || value.length > 255)) {
     throw new FormFilterValidationError("Order filter value is invalid");
   }
   const normalized = (values as string[]).map((value) => value.trim());
-  if (field === "urgent" && !["true", "false"].includes(normalized[0])) {
-    throw new FormFilterValidationError("Urgency must be true or false");
+  const customField = field.startsWith("custom:");
+  if (booleanFields.has(field) && !["true", "false"].includes(normalized[0])) {
+    throw new FormFilterValidationError("Boolean filter must be true or false");
   }
-  if (field === "neededDate") {
+  if (dateFields.has(field) || (customField && ["before", "after"].includes(operator))) {
     if (operator === "between" ? normalized.length !== 2 : normalized.length !== 1) {
       throw new FormFilterValidationError("Date range is incomplete");
     }
     if (!normalized.every(validDate)) throw new FormFilterValidationError("Date filter is invalid");
+  } else if (numberFields.has(field) || (customField && ["greaterThan", "lessThan"].includes(operator))) {
+    if (operator === "between" ? normalized.length !== 2 : normalized.length !== 1) {
+      throw new FormFilterValidationError("Number range is incomplete");
+    }
+    if (!normalized.every((value) => /^\d+(?:\.\d{1,2})?$/.test(value))) {
+      throw new FormFilterValidationError("Number filter is invalid");
+    }
+  } else if (customField && operator === "between") {
+    if (normalized.length !== 2 || (!normalized.every(validDate) && !normalized.every((value) => /^\d+(?:\.\d{1,2})?$/.test(value)))) {
+      throw new FormFilterValidationError("Custom range is invalid");
+    }
   } else if (normalized.length !== 1) {
     throw new FormFilterValidationError("Order filter has too many values");
   }

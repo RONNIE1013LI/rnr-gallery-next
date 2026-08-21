@@ -1,6 +1,7 @@
 import Image from "next/image";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { formatMarketMoney } from "@/domain/money";
+import { invoiceCustomerAddressLines, invoiceDeliveryAddressLines } from "@/server/invoices/invoice-address-lines";
 import type { InvoiceWorkspaceDraft, InvoiceWorkspaceTotals } from "./invoice-workspace";
 import styles from "./admin.module.css";
 
@@ -18,6 +19,8 @@ export function InvoicePreview({
   totals: InvoiceWorkspaceTotals;
 }>) {
   const money = (cents: number) => formatMarketMoney(cents, currency);
+  const customerAddress = invoiceCustomerAddressLines(draft).join("\n") || "—";
+  const deliveryAddress = invoiceDeliveryAddressLines(draft).join("\n") || "—";
   return (
     <article className={styles.invoicePaper} aria-label="Invoice live preview">
       <header className={styles.invoicePaperHeader}>
@@ -25,8 +28,8 @@ export function InvoicePreview({
         <div><strong>{draft.businessName}</strong><span>{draft.businessAddress}</span>{draft.gstNumber ? <span>GST No: {draft.gstNumber}</span> : null}</div>
       </header>
       <div className={styles.invoicePaperAddresses}>
-        <div><strong>Customer Address</strong><span>{[draft.customerName, draft.customerEmail, draft.customerAddress].filter(Boolean).join("\n") || "—"}</span></div>
-        <div><strong>Deliver To</strong><span>{draft.deliveryAddress || draft.customerAddress || "—"}</span></div>
+        <div><strong>Customer Address</strong><span>{customerAddress}</span></div>
+        <div><strong>Deliver To</strong><span>{deliveryAddress}</span></div>
       </div>
       <section className={styles.invoicePaperMeta}>
         <h3>Tax Invoice # {invoiceNumber}</h3>

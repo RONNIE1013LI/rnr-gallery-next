@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from "pdf-lib";
 import { formatMarketMoney } from "@/domain/money";
+import { invoiceCustomerAddressLines, invoiceDeliveryAddressLines } from "./invoice-address-lines";
 import type { InvoiceRecord } from "./invoice-service";
 
 const PAGE_WIDTH = 595.28;
@@ -129,16 +130,12 @@ export async function createInvoicePdf(invoice: InvoiceRecord) {
 
   let y = headerTop - 104;
   page.drawText("Customer Address", { x: MARGIN, y, size: 8, font: bold, color: INK });
-  page.drawText("Deliver To", { x: 305, y, size: 8, font: bold, color: INK });
+  drawRightLines(page, ["Deliver To"], { right, y, size: 8, font: bold, color: INK });
   y -= 16;
-  const customerLines = wrappedLines([
-    invoice.customerName,
-    invoice.customerEmail,
-    invoice.customerAddress,
-  ].filter(Boolean).join("\n"), regular, 9.5, 220);
-  const deliveryLines = wrappedLines(invoice.deliveryAddress || invoice.customerAddress, regular, 9.5, 220);
+  const customerLines = wrappedLines(invoiceCustomerAddressLines(invoice).join("\n"), regular, 9.5, 220);
+  const deliveryLines = wrappedLines(invoiceDeliveryAddressLines(invoice).join("\n"), regular, 9.5, 220);
   drawLines(page, customerLines, { x: MARGIN, y, font: regular, size: 9.5, lineHeight: 13 });
-  drawLines(page, deliveryLines, { x: 305, y, font: regular, size: 9.5, lineHeight: 13 });
+  drawRightLines(page, deliveryLines, { right, y, font: regular, size: 9.5, lineHeight: 13 });
   y -= Math.max(customerLines.length, deliveryLines.length, 1) * 13 + 22;
 
   const metaHeight = 66;

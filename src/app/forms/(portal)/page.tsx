@@ -42,6 +42,8 @@ export default async function FormsDataListPage({ searchParams }: Props) {
     access.formProfile,
     "view_finance",
   );
+  const canViewCustomerContact = hasFormPermission(access.formRole, access.formProfile, "view_customer_contact");
+  const canViewPaymentProof = hasFormPermission(access.formRole, access.formProfile, "view_payment_proof");
   const canManageViews = hasFormPermission(access.formRole, access.formProfile, "manage_views");
   const canUpdate = hasFormPermission(access.formRole, access.formProfile, "update_jobs");
   const canCreate = hasFormPermission(access.formRole, access.formProfile, "create_jobs");
@@ -49,16 +51,13 @@ export default async function FormsDataListPage({ searchParams }: Props) {
   const canViewFiles = hasFormPermission(access.formRole, access.formProfile, "view_files");
   const canUploadFiles = hasFormPermission(access.formRole, access.formProfile, "upload_files");
   const entryRequested = raw.entry === "new" && canCreate;
-  const [result, savedViews, assignees, entryResources] = await Promise.all([
+  const [result, savedViews, assignees, configuredFields, productRegistry] = await Promise.all([
     listFormOrders(getDatabase(), query, {
       actorUserId: access.user.id,
       assignedOnly: access.formProfile?.assignedOnly ?? false,
-      canViewCustomerContact: hasFormPermission(
-        access.formRole,
-        access.formProfile,
-        "view_customer_contact",
-      ),
+      canViewCustomerContact,
       canViewFinance,
+      canViewPaymentProof,
     }),
     canManageViews
       ? getFormsSavedViewRuntime().list({
@@ -66,20 +65,20 @@ export default async function FormsDataListPage({ searchParams }: Props) {
           email: access.user.email ?? "unknown@invalid.local",
         })
       : Promise.resolve([]),
-    canUpdate || entryRequested ? listProductionAssignees(getDatabase()) : Promise.resolve([]),
-    entryRequested
-      ? Promise.all([getSafePublicProductRegistry(), getAdminProductionFieldRuntime().list()])
-      : Promise.resolve(null),
+    listProductionAssignees(getDatabase()),
+    getAdminProductionFieldRuntime().list(),
+    entryRequested ? getSafePublicProductRegistry() : Promise.resolve(null),
   ]);
-  const orderEntry: FormsOrderEntryData | undefined = entryResources ? {
-    assignees,
+  const editableAssignees = canUpdate || entryRequested ? assignees : [];
+  const orderEntry: FormsOrderEntryData | undefined = productRegistry ? {
+    assignees: editableAssignees,
     canManageFinance: canUpdateFinance,
     canUploadFiles,
     submittedBy: access.user.name?.trim() || "Current operator",
-    productTitles: getRegistryProducts(entryResources[0].registry)
+    productTitles: getRegistryProducts(productRegistry.registry)
       .filter((product) => product.active)
       .map((product) => product.title),
-    customFields: entryResources[1].filter((field) =>
+    customFields: configuredFields.filter((field) =>
       field.enabled && field.showOnCreate && !field.legacyOnly && field.fieldType !== "file" &&
       (field.section !== "finance" || canUpdateFinance)
     ).map((field) => ({
@@ -97,6 +96,20 @@ export default async function FormsDataListPage({ searchParams }: Props) {
       query={query}
       canExport={hasFormPermission(access.formRole, access.formProfile, "export_jobs")}
       canViewFinance={canViewFinance}
+      canViewCustomerContact={canViewCustomerContact}
+      canViewPaymentProof={canViewPaymentProof}
+      filterCustomFields={configuredFields.filter((field) =>
+        field.enabled && !field.legacyOnly && field.fieldType !== "file" &&
+        (field.section !== "finance" || canViewFinance) &&
+        (field.section !== "customer" || canViewCustomerContact)
+      ).map((field) => ({
+        id: field.id,
+        label: field.label,
+        fieldType: field.fieldType as "text" | "textarea" | "number" | "date" | "select" | "radio",
+        options: field.options,
+        section: field.section,
+      }))}
+      filterPeople={assignees.map(({ id, name }) => ({ id, name }))}
       canManageViews={canManageViews}
       savedViews={savedViews}
       canUpdate={canUpdate}
@@ -107,7 +120,7 @@ export default async function FormsDataListPage({ searchParams }: Props) {
       canUploadFiles={canUploadFiles}
       canReviewProofs={hasFormPermission(access.formRole, access.formProfile, "update_production_status")}
       canDeleteFiles={hasFormPermission(access.formRole, access.formProfile, "delete_files")}
-      assignees={assignees}
+      assignees={editableAssignees}
       orderEntry={orderEntry}
     />
   );
