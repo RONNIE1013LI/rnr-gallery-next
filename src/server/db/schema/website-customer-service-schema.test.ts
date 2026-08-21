@@ -293,7 +293,15 @@ describe("website customer service schema contract", () => {
     expect(migration).toContain("customer_service_rate_limit_buckets_window_bounded");
     expect(migration).toContain("customer_service_review_alert_outbox_deduplicated_valid");
     expect(migration).toContain("customer_service_human_reviews_deep_link_expiry_idx");
+    const cleanup = 'DELETE FROM "customer_service_rate_limit_buckets"\n'
+      + 'WHERE "expires_at" > "window_started_at" + interval \'24 hours\';';
+    expect(migration).toContain(cleanup);
+    expect(migration.indexOf(cleanup)).toBeLessThan(
+      migration.indexOf('ADD CONSTRAINT "customer_service_rate_limit_buckets_window_bounded"'),
+    );
     expect(migration).not.toMatch(/CREATE TABLE "(?:orders|payment_requests|payment_attempts|payment_ledger_entries)"/);
-    expect(migration).not.toMatch(/^\s*(?:DROP\b|ALTER\s+TABLE\s+.+\s+DROP\b|TRUNCATE|DELETE\s+FROM)/im);
+    expect(migration.replace(cleanup, "")).not.toMatch(
+      /^\s*(?:DROP\b|ALTER\s+TABLE\s+.+\s+DROP\b|TRUNCATE|DELETE\s+FROM)/im,
+    );
   });
 });
