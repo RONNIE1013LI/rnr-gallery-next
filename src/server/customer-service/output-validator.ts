@@ -7,12 +7,35 @@ export type DraftValidationResult = Readonly<{
 
 export function validateDraft(
   draft: string,
-  { intent }: Readonly<{ intent: CustomerServiceIntent }>,
+  { intent, channel }: Readonly<{
+    intent: CustomerServiceIntent;
+    channel?: "facebook" | "website";
+  }>,
 ): DraftValidationResult {
   const value = String(draft ?? "").trim();
   if (!value) return { ok: false, codes: ["empty_draft"] };
   if (/\bas an ai\b|\bai assistant\b|valued enquiry/i.test(value)) {
     return { ok: false, codes: ["ai_style"] };
+  }
+  if (channel === "website") {
+    if (/\b(?:system|developer)\s+(?:prompt|message|instructions?)\b|\bconfirmed rules\b|\bAI-SCOPE-\d+\b|\bknowledge base\b|\bpolicy (?:ids?|rules?|status)\b/i.test(value)) {
+      return { ok: false, codes: ["internal_instruction_disclosure"] };
+    }
+    if (/https?:\/\/|\bwww\./i.test(value)) {
+      return { ok: false, codes: ["external_url"] };
+    }
+    if (
+      /\b(?:used|called|ran|invoked)\b.{0,40}\b(?:tool|api|action)\b/i.test(value)
+      || /\b(?:I|we)(?:['’]ve| have)?\s+(?:applied|created|placed|updated|changed|cancelled|canceled|processed|issued|booked|scheduled|marked|confirmed)\b.{0,80}\b(?:discount|order|payment|refund|shipping|delivery|booking|status)\b/i.test(value)
+    ) {
+      return { ok: false, codes: ["business_action_claim"] };
+    }
+    if (/\b(?:your|the)\s+(?:order|payment|refund|shipment|delivery)\b.{0,80}\b(?:is|was|has been|will be|will)\s+(?:paid|confirmed|approved|complete|completed|shipped|dispatched|ready|due|arrive|arriving)\b/i.test(value)) {
+      return { ok: false, codes: ["realtime_business_claim"] };
+    }
+    if (/\banother customer['’]?s\b|\bprivate case\b|\bcustomer record\b/i.test(value)) {
+      return { ok: false, codes: ["private_case_disclosure"] };
+    }
   }
   if (/\bguarantee(?:d)?\b|\brefund\b|\bcancel\b|\bcompensation\b|\bchargeback\b|\breprint\b/i.test(value)) {
     return { ok: false, codes: ["forbidden_commitment"] };

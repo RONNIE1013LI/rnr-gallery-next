@@ -39,13 +39,18 @@ describe("reply assistant security regression", () => {
 
   it("keeps every customer service secret server-only", () => {
     const inventory = loadProductionRuntimeSourceInventory();
+    expect(inventory.files.map((file) => file.relativePath)).toEqual(expect.arrayContaining([
+      "src/app/api/customer-chat/messages/route-handler.ts",
+      "src/app/api/customer-chat/updates/route-handler.ts",
+      "src/components/customer-chat/customer-chat.tsx",
+    ]));
     expect(productionSourcePathsMatching(
       inventory.files,
-      new RegExp(`${PUBLIC_ENV_PREFIX}(?:OPENAI|META|CUSTOMER_SERVICE)`, "i"),
+      new RegExp(`${PUBLIC_ENV_PREFIX}(?:OPENAI|META|CUSTOMER_SERVICE|CUSTOMER_CHAT|REPLY_ASSISTANT|RESEND)`, "i"),
     )).toEqual([]);
     expect(productionSourcePathsMatching(
       inventory.browserBoundaryFiles,
-      /(?:client_?secret|clientSecret|OPENAI_API_KEY|META_APP_SECRET|META_VERIFY_TOKEN|BLOB_READ_WRITE_TOKEN)/i,
+      /(?:client_?secret|clientSecret|OPENAI_API_KEY|META_APP_SECRET|META_VERIFY_TOKEN|BLOB_READ_WRITE_TOKEN|CUSTOMER_CHAT_SESSION_SECRET|CUSTOMER_CHAT_ABUSE_HASH_SECRET|REPLY_ASSISTANT_REVIEW_LINK_SECRET|RESEND_API_KEY)/i,
     )).toEqual([]);
   });
 

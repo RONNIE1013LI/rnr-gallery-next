@@ -312,6 +312,7 @@ export class CustomerServiceEngine {
       caseMemories = [];
     }
     const prompt = buildDraftPrompt({
+      ...(draftInput.current.channel === "website" ? { channel: "website" as const } : {}),
       intent: gate.intent,
       context: providerContext,
       rules: sources.rules,
@@ -333,7 +334,10 @@ export class CustomerServiceEngine {
     }
     try {
       const generated = await this.provider.generate(prompt);
-      const textValidation = this.outputValidator(generated.text, { intent: gate.intent });
+      const textValidation = this.outputValidator(generated.text, {
+        intent: gate.intent,
+        ...(draftInput.current.channel === "website" ? { channel: "website" as const } : {}),
+      });
       const validation = {
         ok: textValidation.ok,
         codes: textValidation.codes,
