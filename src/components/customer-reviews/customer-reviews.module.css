@@ -382,6 +382,7 @@
   .section { padding: var(--v3-section-standard, 4rem) 0; }
   .shell { width: calc(100% - 2.5rem); }
   .facebookSummary { width: min(100%, 18rem); justify-self: center; }
+  .facebookSummaryCount { font-size: .75rem; white-space: nowrap; }
   .carousel { grid-auto-columns: 88%; }
   .featuredImage { height: clamp(13.75rem, 65vw, 17.5rem); }
   .featuredCard { padding: 1.5rem; }

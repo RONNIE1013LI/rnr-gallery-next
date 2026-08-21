@@ -9,7 +9,7 @@ import styles from "./customer-reviews.module.css";
 const section: PublicCustomerReviewSection = {
   summary: {
     rating: 4.9,
-    recommendationCount: 280,
+    recommendationCount: 288,
     countIsApproximate: true,
     reviewsPageUrl: "https://www.facebook.com/RandRgallery/reviews/",
     lastVerifiedAt: "2026-08-20",
@@ -27,7 +27,7 @@ describe("CustomerReviewsSection", () => {
     expect(screen.getByText("Selected public recommendations originally shared on our Facebook Page.")).toBeInTheDocument();
     expect(screen.getByText("EXCELLENT")).toBeInTheDocument();
     expect(screen.getByLabelText("4.9 out of 5").querySelectorAll("svg")).toHaveLength(5);
-    expect(screen.getByText("Based on 280+ recommendations")).toBeInTheDocument();
+    expect(screen.getByText("100% Recommended (288 Reviews)")).toBeInTheDocument();
     expect(screen.getByText("facebook")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View all on Facebook" })).toHaveAttribute("target", "_blank");
     expect(screen.getByRole("link", { name: "View all on Facebook" })).toHaveAttribute("rel", "noopener noreferrer");
@@ -35,14 +35,18 @@ describe("CustomerReviewsSection", () => {
     expect(screen.getByText("Mereana K.")).toBeInTheDocument();
   });
 
-  it("omits the recommendation-count suffix when the published count is exact", () => {
+  it("uses the published recommendation count in the trust badge", () => {
     render(<CustomerReviewsSection data={{
       ...section,
-      summary: section.summary ? { ...section.summary, countIsApproximate: false } : null,
+      summary: section.summary ? {
+        ...section.summary,
+        recommendationCount: 315,
+        countIsApproximate: false,
+      } : null,
     }} />);
 
-    expect(screen.getByText("Based on 280 recommendations")).toBeInTheDocument();
-    expect(screen.queryByText("Based on 280+ recommendations")).not.toBeInTheDocument();
+    expect(screen.getByText("100% Recommended (315 Reviews)")).toBeInTheDocument();
+    expect(screen.queryByText("100% Recommended (288 Reviews)")).not.toBeInTheDocument();
   });
 
   it("uses initials rather than a synthetic image and preserves untrusted text as text", () => {
