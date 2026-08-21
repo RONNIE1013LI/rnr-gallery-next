@@ -21,7 +21,7 @@ and captured evidence. An unchecked item is not a pass.
 | --- | --- | --- |
 | Privacy and release-document content tests | PASS (8/8) | Local Vitest, 22 August 2026 |
 | Existing security/privacy/no-send inventories | PASS (114/114) | Local Vitest, 22 August 2026 |
-| Full Customer Service regression | PASS (82 files, 1,154 tests, 0 skipped) | Isolated test database, 22 August 2026 |
+| Full Customer Service regression | PASS (82 files, 1,156 tests, 0 skipped) | Isolated test database, 22 August 2026 |
 | Focused database regression | PASS (168/168, 0 skipped) | Isolated `rnr_phase37_test`, safety guard PASS |
 | Website structured evaluation | PASS (120/120) | 60 direct, 10 no reply, 40 human review, 0 over-block |
 | Phase 3.5 conversation evaluation | PASS (18/18) | 0 leakage, 0 unnecessary drafts, 0 bypass |
