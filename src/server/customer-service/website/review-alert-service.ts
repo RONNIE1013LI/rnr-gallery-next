@@ -32,6 +32,11 @@ export type WebsiteReviewAlertRepository = Readonly<{
     leaseToken: string;
     now: Date;
   }>): Promise<boolean>;
+  beginClaimedReviewAlertSend(input: Readonly<{
+    id: string;
+    leaseToken: string;
+    now: Date;
+  }>): Promise<boolean>;
   markReviewAlertSent(input: Readonly<{
     id: string;
     leaseToken: string;
@@ -44,7 +49,7 @@ export type WebsiteReviewAlertRepository = Readonly<{
     errorCode: string;
     nextAttemptAt: Date;
     now: Date;
-  }>): Promise<boolean>;
+  }>): Promise<"retry_wait" | "resolved" | "stale">;
   markReviewAlertUncertain(input: Readonly<{
     id: string;
     leaseToken: string;
@@ -163,37 +168,47 @@ export function createReviewAlertService(input: Readonly<{
         now: sendStartedAt,
       });
       if (!stillOpen) return Object.freeze({ result: "resolved" as const });
+      const sendLinearized = await input.repository.beginClaimedReviewAlertSend({
+        id: alert.id,
+        leaseToken: alert.leaseToken,
+        now: sendStartedAt,
+      });
+      if (!sendLinearized) return Object.freeze({ result: "resolved" as const });
 
+      let sent: Readonly<{ providerMessageId: string }>;
       try {
-        const sent = await input.provider.send(message);
-        await input.repository.markReviewAlertSent({
-          id: alert.id,
-          leaseToken: alert.leaseToken,
-          providerMessageId: sent.providerMessageId,
-          now: now(),
-        });
-        return Object.freeze({ result: "sent" as const });
+        sent = await input.provider.send(message);
       } catch (error) {
         const errorCode = error instanceof EmailDeliveryError ? error.code : "provider_error";
         if (unknownProviderCodes.has(errorCode)) {
-          await input.repository.markReviewAlertUncertain({
+          const settled = await input.repository.markReviewAlertUncertain({
             id: alert.id,
             leaseToken: alert.leaseToken,
             errorCode,
             now: now(),
           });
+          if (!settled) throw new Error("review_alert_uncertain_settlement_failed");
           return Object.freeze({ result: "uncertain" as const });
         }
         const delay = retryDelaysMs[Math.min(alert.attemptCount - 1, retryDelaysMs.length - 1)];
-        await input.repository.retryReviewAlert({
+        const settlement = await input.repository.retryReviewAlert({
           id: alert.id,
           leaseToken: alert.leaseToken,
           errorCode,
           nextAttemptAt: new Date(now().getTime() + delay),
           now: now(),
         });
-        return Object.freeze({ result: "retry_wait" as const });
+        if (settlement === "stale") throw new Error("review_alert_retry_settlement_failed");
+        return Object.freeze({ result: settlement as "retry_wait" | "resolved" });
       }
+      const settled = await input.repository.markReviewAlertSent({
+        id: alert.id,
+        leaseToken: alert.leaseToken,
+        providerMessageId: sent.providerMessageId,
+        now: now(),
+      });
+      if (!settled) throw new Error("review_alert_sent_settlement_failed");
+      return Object.freeze({ result: "sent" as const });
     },
   });
 }

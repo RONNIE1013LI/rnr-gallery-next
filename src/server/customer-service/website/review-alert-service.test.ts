@@ -8,6 +8,7 @@ import {
   createReviewAlertService,
   createReviewAlertToken,
   hashReviewAlertToken,
+  type WebsiteReviewAlertRepository,
 } from "./review-alert-service";
 
 const now = new Date("2026-08-21T00:00:00.000Z");
@@ -39,8 +40,9 @@ function setup() {
   const repository = {
     claimDueReviewAlert: vi.fn(async () => delivery()),
     confirmClaimedReviewAlert: vi.fn(async () => true),
+    beginClaimedReviewAlertSend: vi.fn(async () => true),
     markReviewAlertSent: vi.fn(async () => true),
-    retryReviewAlert: vi.fn(async () => true),
+    retryReviewAlert: vi.fn<WebsiteReviewAlertRepository["retryReviewAlert"]>(async () => "retry_wait"),
     markReviewAlertUncertain: vi.fn(async () => true),
   };
   const provider = {
@@ -72,6 +74,11 @@ describe("website human-review alert delivery", () => {
 
     expect(current.provider.send).toHaveBeenCalledOnce();
     expect(current.repository.confirmClaimedReviewAlert).toHaveBeenCalledWith({
+      id: "outbox-1",
+      leaseToken: "lease-1",
+      now,
+    });
+    expect(current.repository.beginClaimedReviewAlertSend).toHaveBeenCalledWith({
       id: "outbox-1",
       leaseToken: "lease-1",
       now,
@@ -108,6 +115,67 @@ describe("website human-review alert delivery", () => {
     expect(current.repository.markReviewAlertUncertain).not.toHaveBeenCalled();
   });
 
+  it("does not call the provider when manual resolution wins after confirmation but before send linearization", async () => {
+    const current = setup();
+    let manuallyResolved = false;
+    current.repository.confirmClaimedReviewAlert.mockImplementationOnce(async () => {
+      manuallyResolved = true;
+      return true;
+    });
+    current.repository.beginClaimedReviewAlertSend.mockImplementationOnce(async () => !manuallyResolved);
+
+    await expect(current.service.deliverNext()).resolves.toEqual({ result: "resolved" });
+
+    expect(current.repository.beginClaimedReviewAlertSend).toHaveBeenCalledOnce();
+    expect(current.provider.send).not.toHaveBeenCalled();
+    expect(current.repository.markReviewAlertSent).not.toHaveBeenCalled();
+  });
+
+  it("sends and settles when the worker durably linearizes before manual resolution", async () => {
+    const current = setup();
+    let manuallyResolved = false;
+    current.repository.beginClaimedReviewAlertSend.mockImplementationOnce(async () => {
+      manuallyResolved = true;
+      return true;
+    });
+    current.provider.send.mockImplementationOnce(async () => {
+      expect(manuallyResolved).toBe(true);
+      return { providerMessageId: "resend-linearized" };
+    });
+
+    await expect(current.service.deliverNext()).resolves.toEqual({ result: "sent" });
+
+    expect(current.provider.send).toHaveBeenCalledOnce();
+    expect(current.repository.markReviewAlertSent).toHaveBeenCalledWith({
+      id: "outbox-1",
+      leaseToken: "lease-1",
+      providerMessageId: "resend-linearized",
+      now,
+    });
+  });
+
+  it("reports resolved instead of retrying when manual resolution follows linearization and provider failure", async () => {
+    const current = setup();
+    current.provider.send.mockRejectedValueOnce(new EmailDeliveryError("rate_limited"));
+    current.repository.retryReviewAlert.mockResolvedValueOnce("resolved");
+
+    await expect(current.service.deliverNext()).resolves.toEqual({ result: "resolved" });
+
+    expect(current.provider.send).toHaveBeenCalledOnce();
+    expect(current.repository.retryReviewAlert).toHaveBeenCalledOnce();
+  });
+
+  it("does not retry after provider success when sent settlement fails", async () => {
+    const current = setup();
+    current.repository.markReviewAlertSent.mockRejectedValueOnce(new Error("database unavailable"));
+
+    await expect(current.service.deliverNext()).rejects.toThrow("database unavailable");
+
+    expect(current.provider.send).toHaveBeenCalledOnce();
+    expect(current.repository.retryReviewAlert).not.toHaveBeenCalled();
+    expect(current.repository.markReviewAlertUncertain).not.toHaveBeenCalled();
+  });
+
   it("excludes every customer-authored value from an alert email", async () => {
     const unsafeValues = [
       "021.234.5678",
@@ -138,8 +206,9 @@ describe("website human-review alert delivery", () => {
     const repository = {
       claimDueReviewAlert: vi.fn(async () => ({ ...delivery(), deepLinkExpiresAt: expiresAt })),
       confirmClaimedReviewAlert: vi.fn(async () => true),
+      beginClaimedReviewAlertSend: vi.fn(async () => true),
       markReviewAlertSent: vi.fn(async () => true),
-      retryReviewAlert: vi.fn(async () => true),
+      retryReviewAlert: vi.fn(async () => "retry_wait" as const),
       markReviewAlertUncertain: vi.fn(async () => true),
     };
     const provider = {

@@ -680,7 +680,7 @@ export const customerServiceReviewAlertOutbox = pgTable(
   {
     id: uuid("id").defaultRandom().primaryKey(),
     humanReviewId: uuid("human_review_id").notNull().references(() => customerServiceHumanReviews.id, { onDelete: "restrict" }),
-    status: text("status").$type<"pending" | "leased" | "retry_wait" | "sent" | "failed">().default("pending").notNull(),
+    status: text("status").$type<"pending" | "leased" | "sending" | "retry_wait" | "sent" | "failed">().default("pending").notNull(),
     idempotencyKey: text("idempotency_key").notNull(),
     attemptCount: integer("attempt_count").default(0).notNull(),
     nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull(),
@@ -697,13 +697,13 @@ export const customerServiceReviewAlertOutbox = pgTable(
     index("customer_service_review_alert_outbox_due_idx").on(table.status, table.nextAttemptAt, table.leaseExpiresAt),
     check(
       "customer_service_review_alert_outbox_status_valid",
-      sql`${table.status} in ('pending', 'leased', 'retry_wait', 'sent', 'failed')`,
+      sql`${table.status} in ('pending', 'leased', 'sending', 'retry_wait', 'sent', 'failed')`,
     ),
     check("customer_service_review_alert_outbox_attempts_valid", sql`${table.attemptCount} >= 0`),
     check("customer_service_review_alert_outbox_key_valid", sql`length(trim(${table.idempotencyKey})) > 0`),
     check(
       "customer_service_review_alert_outbox_lease_valid",
-      sql`(${table.status} = 'leased' and ${table.leaseToken} is not null and ${table.leaseExpiresAt} is not null) or (${table.status} <> 'leased' and ${table.leaseToken} is null and ${table.leaseExpiresAt} is null)`,
+      sql`(${table.status} in ('leased', 'sending') and ${table.leaseToken} is not null and ${table.leaseExpiresAt} is not null) or (${table.status} not in ('leased', 'sending') and ${table.leaseToken} is null and ${table.leaseExpiresAt} is null)`,
     ),
     check(
       "customer_service_review_alert_outbox_sent_valid",

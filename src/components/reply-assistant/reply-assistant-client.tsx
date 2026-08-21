@@ -19,7 +19,7 @@ export type ReplyQueueItem = Readonly<{
   websiteReview: Readonly<{
     selector: string;
     reason: "high_risk" | "unresolved" | "realtime_required" | "provider_error" | "output_blocked" | "budget_blocked" | "system_failure";
-    alertStatus: "not_created" | "pending" | "leased" | "retry_wait" | "sent" | "failed";
+    alertStatus: "not_created" | "pending" | "leased" | "sending" | "retry_wait" | "sent" | "failed";
   }> | null;
   timeline: readonly Readonly<{
     role: "customer" | "assistant" | "staff";

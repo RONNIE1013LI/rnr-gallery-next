@@ -398,9 +398,13 @@ async function validatedQueueImageAssessments(
 
 export function createDrizzleCustomerServiceRepository(
   database: Database,
-  options: Readonly<{ reviewSelectorSecret?: string }> = {},
+  options: Readonly<{
+    reviewSelectorSecret?: string;
+    now?: () => Date;
+  }> = {},
 ): CustomerServiceRepository {
   const reviewSelectorSecret = options.reviewSelectorSecret ?? "";
+  const now = options.now ?? (() => new Date());
 
   async function lockConversation(transaction: Transaction, conversationId: string) {
     await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + conversationId}))`);
@@ -409,27 +413,24 @@ export function createDrizzleCustomerServiceRepository(
   function selectorForReview(review: Readonly<{
     id: string;
     generation: number;
-    openedAt: Date;
-  }>) {
+  }>, issuedAt = now()) {
     if (reviewSelectorSecret.length < 32) return null;
     return createWebsiteReviewSelector({
       reviewId: review.id,
       generation: review.generation,
-      openedAt: review.openedAt,
       secret: reviewSelectorSecret,
+      now: issuedAt,
     });
   }
 
   function selectorMatchesReview(selector: string, review: Readonly<{
     id: string;
     generation: number;
-    openedAt: Date;
   }>, now: Date) {
     return reviewSelectorSecret.length >= 32 && verifyWebsiteReviewSelector({
       selector,
       reviewId: review.id,
       generation: review.generation,
-      openedAt: review.openedAt,
       secret: reviewSelectorSecret,
       now,
     });
@@ -607,7 +608,7 @@ export function createDrizzleCustomerServiceRepository(
     return { selected: claimed.length, deleted, failed };
   }
 
-  async function loadQueuePage(limit: number, messageIds?: readonly string[]) {
+  async function loadQueuePage(limit: number, messageIds?: readonly string[], selectorNow = now()) {
     const latestAttempts = database.select({
       messageId: customerServiceAiAttempts.messageId,
       attemptNumber: max(customerServiceAiAttempts.attemptNumber).as("latest_attempt_number"),
@@ -687,7 +688,6 @@ export function createDrizzleCustomerServiceRepository(
         id: customerServiceHumanReviews.id,
         conversationId: customerServiceHumanReviews.conversationId,
         generation: customerServiceHumanReviews.generation,
-        openedAt: customerServiceHumanReviews.openedAt,
         reason: customerServiceHumanReviews.reason,
         alertStatus: customerServiceReviewAlertOutbox.status,
       }).from(customerServiceHumanReviews)
@@ -778,7 +778,7 @@ export function createDrizzleCustomerServiceRepository(
         const websiteReview = item.channel === "website"
           ? reviewByConversation.get(item.conversationId)
           : undefined;
-        const selector = websiteReview ? selectorForReview(websiteReview) : null;
+        const selector = websiteReview ? selectorForReview(websiteReview, selectorNow) : null;
         const websiteReviewDto: SafeQueuePage["items"][number]["websiteReview"] = websiteReview && selector ? {
           selector,
           reason: websiteReview.reason,
@@ -812,7 +812,6 @@ export function createDrizzleCustomerServiceRepository(
       const [review] = await database.select({
         id: customerServiceHumanReviews.id,
         generation: customerServiceHumanReviews.generation,
-        openedAt: customerServiceHumanReviews.openedAt,
         messageId: customerServiceTurns.representativeMessageId,
       })
         .from(customerServiceHumanReviews)
@@ -825,9 +824,9 @@ export function createDrizzleCustomerServiceRepository(
         ))
         .limit(1);
       if (!review?.messageId) return null;
-      const selector = selectorForReview(review);
+      const selector = selectorForReview(review, input.now);
       if (!selector) return null;
-      const item = (await loadQueuePage(1, [review.messageId])).items[0];
+      const item = (await loadQueuePage(1, [review.messageId], input.now)).items[0];
       if (!item || item.channel !== "website" || !item.websiteReview) return null;
       return {
         selector,
@@ -852,12 +851,8 @@ export function createDrizzleCustomerServiceRepository(
           id: customerServiceHumanReviews.id,
           conversationId: customerServiceHumanReviews.conversationId,
           generation: customerServiceHumanReviews.generation,
-          openedAt: customerServiceHumanReviews.openedAt,
         }).from(customerServiceHumanReviews)
-          .where(and(
-            eq(customerServiceHumanReviews.channel, "website"),
-            gt(customerServiceHumanReviews.openedAt, new Date(input.now.getTime() - 30 * 24 * 60 * 60 * 1_000)),
-          ));
+          .where(eq(customerServiceHumanReviews.channel, "website"));
         const candidate = candidates.find((review) => selectorMatchesReview(input.reviewSelector, review, input.now));
         if (!candidate) return { status: "unavailable" as const };
 
@@ -866,7 +861,6 @@ export function createDrizzleCustomerServiceRepository(
           id: customerServiceHumanReviews.id,
           conversationId: customerServiceHumanReviews.conversationId,
           generation: customerServiceHumanReviews.generation,
-          openedAt: customerServiceHumanReviews.openedAt,
           triggerTurnId: customerServiceHumanReviews.triggerTurnId,
           channel: customerServiceHumanReviews.channel,
           status: customerServiceHumanReviews.status,
@@ -1993,6 +1987,7 @@ export function createDrizzleCustomerServiceRepository(
         const [current] = await transaction.select({
           outboxStatus: customerServiceReviewAlertOutbox.status,
           leaseToken: customerServiceReviewAlertOutbox.leaseToken,
+          leaseExpiresAt: customerServiceReviewAlertOutbox.leaseExpiresAt,
           reviewStatus: customerServiceHumanReviews.status,
           deepLinkExpiresAt: customerServiceHumanReviews.deepLinkExpiresAt,
         }).from(customerServiceReviewAlertOutbox)
@@ -2008,9 +2003,75 @@ export function createDrizzleCustomerServiceRepository(
           .for("update");
         const ready = current?.outboxStatus === "leased"
           && current.leaseToken === input.leaseToken
+          && Boolean(current.leaseExpiresAt && current.leaseExpiresAt > input.now)
           && current.reviewStatus === "open"
           && Boolean(current.deepLinkExpiresAt && current.deepLinkExpiresAt > input.now);
         if (ready) return true;
+
+        await transaction.update(customerServiceReviewAlertOutbox).set({
+          status: "failed",
+          leaseToken: null,
+          leaseExpiresAt: null,
+          lastErrorCode: current?.reviewStatus === "open"
+            ? "deep_link_expired_before_send"
+            : "review_resolved_before_delivery",
+          updatedAt: input.now,
+        }).where(and(
+          eq(customerServiceReviewAlertOutbox.id, input.id),
+          eq(customerServiceReviewAlertOutbox.status, "leased"),
+          eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
+        ));
+        return false;
+      });
+    },
+
+    async beginClaimedReviewAlertSend(input) {
+      return database.transaction(async (transaction) => {
+        const [identity] = await transaction.select({
+          conversationId: customerServiceHumanReviews.conversationId,
+        }).from(customerServiceReviewAlertOutbox)
+          .innerJoin(
+            customerServiceHumanReviews,
+            eq(customerServiceHumanReviews.id, customerServiceReviewAlertOutbox.humanReviewId),
+          )
+          .where(eq(customerServiceReviewAlertOutbox.id, input.id))
+          .limit(1);
+        if (!identity) return false;
+
+        await lockConversation(transaction, identity.conversationId);
+        const [current] = await transaction.select({
+          outboxStatus: customerServiceReviewAlertOutbox.status,
+          leaseToken: customerServiceReviewAlertOutbox.leaseToken,
+          leaseExpiresAt: customerServiceReviewAlertOutbox.leaseExpiresAt,
+          reviewStatus: customerServiceHumanReviews.status,
+          deepLinkExpiresAt: customerServiceHumanReviews.deepLinkExpiresAt,
+        }).from(customerServiceReviewAlertOutbox)
+          .innerJoin(
+            customerServiceHumanReviews,
+            eq(customerServiceHumanReviews.id, customerServiceReviewAlertOutbox.humanReviewId),
+          )
+          .where(and(
+            eq(customerServiceReviewAlertOutbox.id, input.id),
+            eq(customerServiceHumanReviews.conversationId, identity.conversationId),
+          ))
+          .limit(1)
+          .for("update");
+        const ready = current?.outboxStatus === "leased"
+          && current.leaseToken === input.leaseToken
+          && Boolean(current.leaseExpiresAt && current.leaseExpiresAt > input.now)
+          && current.reviewStatus === "open"
+          && Boolean(current.deepLinkExpiresAt && current.deepLinkExpiresAt > input.now);
+        if (ready) {
+          const [linearized] = await transaction.update(customerServiceReviewAlertOutbox).set({
+            status: "sending",
+            updatedAt: input.now,
+          }).where(and(
+            eq(customerServiceReviewAlertOutbox.id, input.id),
+            eq(customerServiceReviewAlertOutbox.status, "leased"),
+            eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
+          )).returning({ id: customerServiceReviewAlertOutbox.id });
+          return Boolean(linearized);
+        }
 
         await transaction.update(customerServiceReviewAlertOutbox).set({
           status: "failed",
@@ -2039,33 +2100,63 @@ export function createDrizzleCustomerServiceRepository(
         updatedAt: input.now,
       }).where(and(
         eq(customerServiceReviewAlertOutbox.id, input.id),
-        eq(customerServiceReviewAlertOutbox.status, "leased"),
+        eq(customerServiceReviewAlertOutbox.status, "sending"),
         eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
-        sql`exists (
-          select 1 from ${customerServiceHumanReviews}
-          where ${customerServiceHumanReviews.id} = ${customerServiceReviewAlertOutbox.humanReviewId}
-            and ${customerServiceHumanReviews.channel} = 'website'
-            and ${customerServiceHumanReviews.status} = 'open'
-        )`,
       )).returning({ id: customerServiceReviewAlertOutbox.id });
       void input.providerMessageId;
       return Boolean(updated);
     },
 
     async retryReviewAlert(input) {
-      const [updated] = await database.update(customerServiceReviewAlertOutbox).set({
-        status: "retry_wait",
-        leaseToken: null,
-        leaseExpiresAt: null,
-        lastErrorCode: input.errorCode,
-        nextAttemptAt: input.nextAttemptAt,
-        updatedAt: input.now,
-      }).where(and(
-        eq(customerServiceReviewAlertOutbox.id, input.id),
-        eq(customerServiceReviewAlertOutbox.status, "leased"),
-        eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
-      )).returning({ id: customerServiceReviewAlertOutbox.id });
-      return Boolean(updated);
+      return database.transaction(async (transaction) => {
+        const [identity] = await transaction.select({
+          conversationId: customerServiceHumanReviews.conversationId,
+        }).from(customerServiceReviewAlertOutbox)
+          .innerJoin(
+            customerServiceHumanReviews,
+            eq(customerServiceHumanReviews.id, customerServiceReviewAlertOutbox.humanReviewId),
+          )
+          .where(eq(customerServiceReviewAlertOutbox.id, input.id))
+          .limit(1);
+        if (!identity) return "stale" as const;
+
+        await lockConversation(transaction, identity.conversationId);
+        const [current] = await transaction.select({
+          outboxStatus: customerServiceReviewAlertOutbox.status,
+          leaseToken: customerServiceReviewAlertOutbox.leaseToken,
+          reviewStatus: customerServiceHumanReviews.status,
+        }).from(customerServiceReviewAlertOutbox)
+          .innerJoin(
+            customerServiceHumanReviews,
+            eq(customerServiceHumanReviews.id, customerServiceReviewAlertOutbox.humanReviewId),
+          )
+          .where(and(
+            eq(customerServiceReviewAlertOutbox.id, input.id),
+            eq(customerServiceHumanReviews.conversationId, identity.conversationId),
+          ))
+          .limit(1)
+          .for("update");
+        if (
+          current?.outboxStatus !== "sending"
+          || current.leaseToken !== input.leaseToken
+        ) return "stale" as const;
+
+        const reviewOpen = current.reviewStatus === "open";
+        const [updated] = await transaction.update(customerServiceReviewAlertOutbox).set({
+          status: reviewOpen ? "retry_wait" : "failed",
+          leaseToken: null,
+          leaseExpiresAt: null,
+          lastErrorCode: reviewOpen ? input.errorCode : "review_resolved_after_send_started",
+          ...(reviewOpen ? { nextAttemptAt: input.nextAttemptAt } : {}),
+          updatedAt: input.now,
+        }).where(and(
+          eq(customerServiceReviewAlertOutbox.id, input.id),
+          eq(customerServiceReviewAlertOutbox.status, "sending"),
+          eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
+        )).returning({ id: customerServiceReviewAlertOutbox.id });
+        if (!updated) return "stale" as const;
+        return reviewOpen ? "retry_wait" as const : "resolved" as const;
+      });
     },
 
     async markReviewAlertUncertain(input) {
@@ -2077,7 +2168,7 @@ export function createDrizzleCustomerServiceRepository(
         updatedAt: input.now,
       }).where(and(
         eq(customerServiceReviewAlertOutbox.id, input.id),
-        eq(customerServiceReviewAlertOutbox.status, "leased"),
+        inArray(customerServiceReviewAlertOutbox.status, ["leased", "sending"]),
         eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
       )).returning({ id: customerServiceReviewAlertOutbox.id });
       return Boolean(updated);

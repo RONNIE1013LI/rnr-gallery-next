@@ -351,6 +351,13 @@
       "when": 1787385600000,
       "tag": "0049_website_review_live_updates",
       "breakpoints": true
+    },
+    {
+      "idx": 50,
+      "version": "7",
+      "when": 1787385600001,
+      "tag": "0050_sticky_mysterio",
+      "breakpoints": true
     }
   ]
 }

@@ -44,18 +44,40 @@ const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 const enabled = Boolean(testDatabaseUrl) && isDedicatedTestDatabase(testDatabaseUrl, process.env.DATABASE_URL);
 const database = drizzle(testDatabaseUrl ?? "postgres://disabled.invalid/test");
 const reviewSelectorSecret = "task-13-review-selector-secret-at-least-32-bytes";
-const repository = createDrizzleCustomerServiceRepository(database, { reviewSelectorSecret });
+const selectorTestNow = () => new Date("2026-08-22T00:00:00.000Z");
+const repository = createDrizzleCustomerServiceRepository(database, { reviewSelectorSecret, now: selectorTestNow });
 const competingPool = new Pool({ connectionString: testDatabaseUrl ?? "postgres://disabled.invalid/test" });
-const competingRepository = createDrizzleCustomerServiceRepository(drizzle(competingPool), { reviewSelectorSecret });
+const competingRepository = createDrizzleCustomerServiceRepository(drizzle(competingPool), {
+  reviewSelectorSecret,
+  now: selectorTestNow,
+});
 const publicationRacePool = new Pool({
   connectionString: testDatabaseUrl ?? "postgres://disabled.invalid/test",
   application_name: "task8_publication_race",
 });
-const publicationRaceRepository = createDrizzleCustomerServiceRepository(drizzle(publicationRacePool), { reviewSelectorSecret });
+const publicationRaceRepository = createDrizzleCustomerServiceRepository(drizzle(publicationRacePool), {
+  reviewSelectorSecret,
+  now: selectorTestNow,
+});
 const sourceIdentitySecret = "integration-source-identity-secret";
+const selectorBase64urlAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
 function sourceHash(value: string) {
   return createHmac("sha256", sourceIdentitySecret).update(value).digest("hex");
+}
+
+function nonCanonicalSelectorAliases(selector: string) {
+  const [version, expiry, mac] = selector.split(".");
+  const canonicalIndex = selectorBase64urlAlphabet.indexOf(mac.at(-1) ?? "");
+  if (!version || !expiry || !mac || canonicalIndex < 0 || canonicalIndex % 4 !== 0) {
+    throw new Error("expected canonical website review selector");
+  }
+  return [
+    `${version}.0${expiry}.${mac}`,
+    `${selector.slice(0, -1)}${selectorBase64urlAlphabet[canonicalIndex + 1]}`,
+    `${selector.slice(0, -1)}${selectorBase64urlAlphabet[canonicalIndex + 2]}`,
+    `${selector.slice(0, -1)}${selectorBase64urlAlphabet[canonicalIndex + 3]}`,
+  ] as const;
 }
 
 function assessedAnalysis(safeSummary = "Image 0 is the likely main candidate.") {
@@ -669,16 +691,92 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       leaseExpiresAt: new Date("2026-08-22T00:05:00.000Z"),
     });
     if (!alert) throw new Error("expected alert claim");
-    await repository.markReviewAlertSent({
+    await expect(repository.confirmClaimedReviewAlert({
+      id: alert.id,
+      leaseToken: alert.leaseToken,
+      now: new Date("2026-08-22T00:00:01.000Z"),
+    })).resolves.toBe(true);
+    await expect(repository.beginClaimedReviewAlertSend({
+      id: alert.id,
+      leaseToken: alert.leaseToken,
+      now: new Date("2026-08-22T00:00:01.000Z"),
+    })).resolves.toBe(true);
+    await expect(repository.markReviewAlertSent({
       id: alert.id,
       leaseToken: alert.leaseToken,
       providerMessageId: "resend-task-13",
       now: new Date("2026-08-22T00:00:01.000Z"),
-    });
+    })).resolves.toBe(true);
     const update = await repository.listReplyAssistantUpdates(cursor, 250);
     expect(update.queueItems[0]).toMatchObject({
       websiteReview: { selector: reviewSelector, alertStatus: "sent" },
     });
+  });
+
+  it("renews a bounded selector for an open day-31 review and rejects textual aliases generically", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "84".repeat(32),
+      networkHash: "85".repeat(32),
+      messageHash: "86".repeat(32),
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    await repository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-21T00:00:02.000Z"),
+      knowledgeVersion: "knowledge-v1",
+    });
+    await database.insert(user).values({
+      id: "task-13-renewed-selector-staff",
+      name: "Renewed Selector Staff",
+      email: "task-13-renewed-selector@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+    let selectorNow = new Date("2026-08-21T12:00:00.000Z");
+    const timedRepository = createDrizzleCustomerServiceRepository(database, {
+      reviewSelectorSecret,
+      now: () => selectorNow,
+    });
+    const original = (await timedRepository.listQueue(100)).items[0].websiteReview?.selector;
+    if (!original) throw new Error("expected original website review selector");
+    await expect(timedRepository.listQueue(100)).resolves.toMatchObject({
+      items: [{ websiteReview: { selector: original } }],
+    });
+
+    selectorNow = new Date("2026-09-21T12:00:00.000Z");
+    const renewed = (await timedRepository.listQueue(100)).items[0].websiteReview?.selector;
+    if (!renewed) throw new Error("expected renewed website review selector");
+    expect(renewed).not.toBe(original);
+    for (const alias of nonCanonicalSelectorAliases(renewed)) {
+      await expect(timedRepository.answerWebsiteReview({
+        reviewSelector: alias,
+        text: "Alias must not send.",
+        actorUserId: "task-13-renewed-selector-staff",
+        now: selectorNow,
+      })).resolves.toEqual({ status: "unavailable" });
+    }
+    await expect(timedRepository.answerWebsiteReview({
+      reviewSelector: original,
+      text: "Expired selector must not send.",
+      actorUserId: "task-13-renewed-selector-staff",
+      now: selectorNow,
+    })).resolves.toEqual({ status: "unavailable" });
+    await expect(timedRepository.answerWebsiteReview({
+      reviewSelector: renewed,
+      text: "Fresh day-31 selector sends.",
+      actorUserId: "task-13-renewed-selector-staff",
+      now: selectorNow,
+    })).resolves.toEqual({ status: "sent" });
   });
 
   it("atomically answers one website review, seals stale work, publishes once, and is idempotent", async () => {
@@ -1145,6 +1243,120 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
   });
 
+  it("does not call the provider when manual resolution commits after confirmation but before send linearization", async () => {
+    const review = await openTask13Review({
+      sessionHash: "aa".repeat(32),
+      networkHash: "ab".repeat(32),
+      messageHash: "ac".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000151",
+    });
+    await database.insert(user).values({
+      id: "task-13-post-confirm-staff",
+      name: "Post Confirm Staff",
+      email: "task-13-post-confirm@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+    const provider = {
+      configured: true,
+      send: vi.fn(async () => ({ providerMessageId: "must-not-send" })),
+    };
+    const service = createReviewAlertService({
+      repository: {
+        claimDueReviewAlert: repository.claimDueReviewAlert,
+        confirmClaimedReviewAlert: async (input) => {
+          const confirmed = await repository.confirmClaimedReviewAlert(input);
+          if (confirmed) {
+            await competingRepository.answerWebsiteReview({
+              reviewSelector: review.selector,
+              text: "Manual resolution won before alert send linearization.",
+              actorUserId: "task-13-post-confirm-staff",
+              now: new Date("2026-08-21T00:00:04.000Z"),
+            });
+          }
+          return confirmed;
+        },
+        beginClaimedReviewAlertSend: repository.beginClaimedReviewAlertSend,
+        markReviewAlertSent: repository.markReviewAlertSent,
+        retryReviewAlert: repository.retryReviewAlert,
+        markReviewAlertUncertain: repository.markReviewAlertUncertain,
+      },
+      provider,
+      alertTo: "staff@rrgallery.example",
+      siteUrl: "https://rrgallery.example",
+      deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      now: () => new Date("2026-08-21T00:00:03.000Z"),
+    });
+
+    await expect(service.deliverNext()).resolves.toEqual({ result: "resolved" });
+
+    expect(provider.send).not.toHaveBeenCalled();
+    const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(outbox).toMatchObject({
+      status: "failed",
+      lastErrorCode: "review_resolved_before_delivery",
+      leaseToken: null,
+    });
+  });
+
+  it("settles sent deterministically when worker linearization commits before manual resolution", async () => {
+    const reviewId = "00000000-0000-4000-8000-000000000152";
+    const review = await openTask13Review({
+      sessionHash: "ad".repeat(32),
+      networkHash: "ae".repeat(32),
+      messageHash: "af".repeat(32),
+      reviewId,
+    });
+    await database.insert(user).values({
+      id: "task-13-post-linearization-staff",
+      name: "Post Linearization Staff",
+      email: "task-13-post-linearization@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+    const provider = {
+      configured: true,
+      send: vi.fn(async () => ({ providerMessageId: "resend-linearized" })),
+    };
+    const service = createReviewAlertService({
+      repository: {
+        claimDueReviewAlert: repository.claimDueReviewAlert,
+        confirmClaimedReviewAlert: repository.confirmClaimedReviewAlert,
+        beginClaimedReviewAlertSend: async (input) => {
+          const linearized = await repository.beginClaimedReviewAlertSend(input);
+          if (linearized) {
+            await competingRepository.answerWebsiteReview({
+              reviewSelector: review.selector,
+              text: "Manual resolution followed durable alert send linearization.",
+              actorUserId: "task-13-post-linearization-staff",
+              now: new Date("2026-08-21T00:00:04.000Z"),
+            });
+          }
+          return linearized;
+        },
+        markReviewAlertSent: repository.markReviewAlertSent,
+        retryReviewAlert: repository.retryReviewAlert,
+        markReviewAlertUncertain: repository.markReviewAlertUncertain,
+      },
+      provider,
+      alertTo: "staff@rrgallery.example",
+      siteUrl: "https://rrgallery.example",
+      deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      now: () => new Date("2026-08-21T00:00:03.000Z"),
+    });
+
+    await expect(service.deliverNext()).resolves.toEqual({ result: "sent" });
+
+    expect(provider.send).toHaveBeenCalledOnce();
+    const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
+    const [resolvedReview] = await database.select().from(customerServiceHumanReviews)
+      .where(eq(customerServiceHumanReviews.id, reviewId));
+    expect(outbox).toMatchObject({
+      status: "sent",
+      sentAt: new Date("2026-08-21T00:00:03.000Z"),
+      leaseToken: null,
+    });
+    expect(resolvedReview).toMatchObject({ status: "resolved" });
+  });
+
   it("can never answer a Facebook queue item through the website review action", async () => {
     await activateFacebookPilot("task-13-facebook-isolation");
     const incoming = await repository.ingestConversationEvent({
@@ -1312,6 +1524,16 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       leaseExpiresAt: new Date("2026-08-21T00:10:03.000Z"),
     });
     if (!second) throw new Error("expected reclaimed alert lease");
+    await expect(competingRepository.confirmClaimedReviewAlert({
+      id: second.id,
+      leaseToken: second.leaseToken,
+      now: new Date("2026-08-21T00:05:03.000Z"),
+    })).resolves.toBe(true);
+    await expect(competingRepository.beginClaimedReviewAlertSend({
+      id: second.id,
+      leaseToken: second.leaseToken,
+      now: new Date("2026-08-21T00:05:03.000Z"),
+    })).resolves.toBe(true);
 
     await expect(competingRepository.markReviewAlertSent({
       id: second.id,
@@ -1331,7 +1553,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       errorCode: "rate_limited",
       nextAttemptAt: new Date("2026-08-21T00:06:05.000Z"),
       now: new Date("2026-08-21T00:05:05.000Z"),
-    })).resolves.toBe(false);
+    })).resolves.toBe("stale");
 
     const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
     expect(outbox).toMatchObject({ status: "sent", attemptCount: 2, sentAt: new Date("2026-08-21T00:05:04.000Z") });

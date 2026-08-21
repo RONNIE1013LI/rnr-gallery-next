@@ -134,7 +134,7 @@ databaseDescribe("website customer service schema integration", () => {
     )).rejects.toMatchObject({ code: "23503" });
   });
 
-  it("rejects malformed policy snapshots and invalid alert leases", async () => {
+  it("accepts a linearized alert lease and rejects malformed policy snapshots and invalid leases", async () => {
     const conversation = await client.query<{ id: string }>(
       "insert into customer_service_conversations (channel, external_key_hash) values ('website', $1) returning id",
       [`website-policy-${randomUUID()}`],
@@ -165,5 +165,13 @@ databaseDescribe("website customer service schema integration", () => {
       "insert into customer_service_review_alert_outbox (human_review_id, status, idempotency_key, next_attempt_at) values ($1, 'leased', $2, now())",
       [review.rows[0]?.id, `invalid-lease-${randomUUID()}`],
     )).rejects.toMatchObject({ code: "23514" });
+    await expect(client.query(
+      "insert into customer_service_review_alert_outbox (human_review_id, status, idempotency_key, next_attempt_at) values ($1, 'sending', $2, now())",
+      [review.rows[0]?.id, `invalid-sending-${randomUUID()}`],
+    )).rejects.toMatchObject({ code: "23514" });
+    await expect(client.query(
+      "insert into customer_service_review_alert_outbox (human_review_id, status, idempotency_key, next_attempt_at, lease_token, lease_expires_at) values ($1, 'sending', $2, now(), $3, now() + interval '5 minutes')",
+      [review.rows[0]?.id, `valid-sending-${randomUUID()}`, randomUUID()],
+    )).resolves.toMatchObject({ rowCount: 1 });
   });
 });

@@ -200,7 +200,7 @@ export type SafeQueuePage = Readonly<{
     websiteReview: Readonly<{
       selector: string;
       reason: "high_risk" | "unresolved" | "realtime_required" | "provider_error" | "output_blocked" | "budget_blocked" | "system_failure";
-      alertStatus: "not_created" | "pending" | "leased" | "retry_wait" | "sent" | "failed";
+      alertStatus: "not_created" | "pending" | "leased" | "sending" | "retry_wait" | "sent" | "failed";
     }> | null;
     timeline: readonly Readonly<{
       role: "customer" | "assistant" | "staff";
@@ -366,6 +366,11 @@ export interface CustomerServiceRepository {
     leaseToken: string;
     now: Date;
   }>): Promise<boolean>;
+  beginClaimedReviewAlertSend(input: Readonly<{
+    id: string;
+    leaseToken: string;
+    now: Date;
+  }>): Promise<boolean>;
   markReviewAlertSent(input: Readonly<{
     id: string;
     leaseToken: string;
@@ -378,7 +383,7 @@ export interface CustomerServiceRepository {
     errorCode: string;
     nextAttemptAt: Date;
     now: Date;
-  }>): Promise<boolean>;
+  }>): Promise<"retry_wait" | "resolved" | "stale">;
   markReviewAlertUncertain(input: Readonly<{
     id: string;
     leaseToken: string;
