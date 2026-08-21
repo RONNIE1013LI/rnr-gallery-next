@@ -55,6 +55,10 @@ function setup(ingestResult:
   const waitUntil = vi.fn(async () => undefined);
   const kickImageJob = vi.fn(async () => undefined);
   const recoverHumanReplies = vi.fn(async () => ({ selected: 0, matched: 0, unmatched: 0 }));
+  const resolveCustomerProfile = vi.fn(async (input: Readonly<{
+    rawExternalConversationKey: string;
+    externalConversationKeyHash: string;
+  }>) => { events.push(`profile:${input.externalConversationKeyHash}`); });
   const scheduleAfter = vi.fn((task: () => Promise<void>) => { events.push("after:schedule"); scheduledTasks.push(task); });
   return {
     events,
@@ -64,6 +68,7 @@ function setup(ingestResult:
     waitUntil,
     kickImageJob,
     recoverHumanReplies,
+    resolveCustomerProfile,
     scheduleAfter,
     handlers: createMetaWebhookHandlers({
       config,
@@ -72,6 +77,7 @@ function setup(ingestResult:
       processTurn,
       kickImageJob,
       ...(withRecovery ? { recoverHumanReplies } : {}),
+      resolveCustomerProfile,
       scheduleAfter,
       createJobId: () => "00000000-0000-4000-8000-000000000101",
       now: () => new Date("2026-08-17T00:00:00.000Z"),
@@ -80,6 +86,34 @@ function setup(ingestResult:
 }
 
 describe("Meta webhook handler", () => {
+  it("resolves a customer profile only after persistence using the current raw PSID", async () => {
+    const current = setup();
+
+    expect((await current.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
+
+    const expectedHash = createHmac("sha256", config.idHashSecret).update("sender-1").digest("hex");
+    expect(current.events).toEqual([
+      "persist:commit",
+      `profile:${expectedHash}`,
+      "after:schedule",
+    ]);
+    expect(current.resolveCustomerProfile).toHaveBeenCalledWith({
+      rawExternalConversationKey: "sender-1",
+      externalConversationKeyHash: expectedHash,
+    });
+    expect(current.processTurn).not.toHaveBeenCalled();
+  });
+
+  it("fails soft when profile resolution fails and still schedules normal draft processing", async () => {
+    const current = setup();
+    current.resolveCustomerProfile.mockRejectedValueOnce(new Error("profile unavailable"));
+
+    expect((await current.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
+    expect(current.ingest).toHaveBeenCalledOnce();
+    expect(current.scheduleAfter).toHaveBeenCalledOnce();
+    expect(current.processTurn).not.toHaveBeenCalled();
+  });
+
   it("verifies the GET challenge", async () => {
     const { handlers } = setup();
     const response = await handlers.GET(new Request("https://example.test/api/meta/webhook?hub.mode=subscribe&hub.verify_token=verify-token&hub.challenge=123"));
@@ -120,6 +154,7 @@ describe("Meta webhook handler", () => {
     expect(current.scheduleAfter).not.toHaveBeenCalled();
     expect(current.recoverHumanReplies).not.toHaveBeenCalled();
     expect(current.processTurn).not.toHaveBeenCalled();
+    expect(current.resolveCustomerProfile).not.toHaveBeenCalled();
   });
 
   it("persists attachment-only staff echoes as non-learning context without generation", async () => {
@@ -172,7 +207,11 @@ describe("Meta webhook handler", () => {
   it("uses the durable exact-turn executor after the debounce deadline", async () => {
     const current = setup();
     expect((await current.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
-    expect(current.events).toEqual(["persist:commit", "after:schedule"]);
+    expect(current.events).toEqual([
+      "persist:commit",
+      expect.stringMatching(/^profile:[a-f0-9]{64}$/),
+      "after:schedule",
+    ]);
     await current.scheduledTasks[0]();
     expect(current.waitUntil).toHaveBeenCalledWith(new Date("2026-08-17T00:00:02.000Z"));
     expect(current.processTurn).toHaveBeenCalledOnce();
@@ -186,7 +225,10 @@ describe("Meta webhook handler", () => {
       attachments: [{ type: "image", payload: { url: "https://scontent.test/image.jpg" } }],
     })));
     expect(response.status).toBe(200);
-    expect(current.events).toEqual(["persist:commit"]);
+    expect(current.events).toEqual([
+      "persist:commit",
+      expect.stringMatching(/^profile:[a-f0-9]{64}$/),
+    ]);
     expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
       text: null,
       attachments: [{
@@ -246,7 +288,10 @@ describe("Meta webhook handler", () => {
     expect((await current.handlers.POST(signedRequest(messagePayload({
       attachments: [{ type: "image", payload: { url: "https://scontent.test/image.jpg" } }],
     })))).status).toBe(200);
-    expect(current.events).toEqual(["persist:commit"]);
+    expect(current.events).toEqual([
+      "persist:commit",
+      expect.stringMatching(/^profile:[a-f0-9]{64}$/),
+    ]);
     expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
       externalConversationKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       externalMessageKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),

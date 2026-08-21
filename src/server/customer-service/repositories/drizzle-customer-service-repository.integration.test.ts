@@ -131,6 +131,112 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   beforeEach(clearTables);
   afterAll(clearTables);
 
+  it("claims Facebook profile resolution once and reuses the cached display name", async () => {
+    await activateFacebookPilot("profile-cache");
+    const incoming = await createRecoveryTurn({
+      conversationHash: sourceHash("profile-customer"),
+      messageHash: sourceHash("profile-message"),
+    });
+    expect(incoming.status).toBe("turn_pending");
+    const now = new Date("2026-08-21T00:00:00.000Z");
+    const leaseExpiresAt = new Date("2026-08-21T00:00:30.000Z");
+
+    const [first, concurrent] = await Promise.all([
+      repository.claimFacebookProfileResolution({
+        externalConversationKeyHash: sourceHash("profile-customer"),
+        now,
+        leaseExpiresAt,
+      }),
+      repository.claimFacebookProfileResolution({
+        externalConversationKeyHash: sourceHash("profile-customer"),
+        now,
+        leaseExpiresAt,
+      }),
+    ]);
+    const claimed = first ?? concurrent;
+    expect([first, concurrent].filter(Boolean)).toHaveLength(1);
+    expect(claimed).not.toBeNull();
+    await expect(repository.completeFacebookProfileResolution({
+      conversationId: claimed!.conversationId,
+      status: "resolved",
+      customerDisplayName: "Tina Stuart",
+      resolvedAt: now,
+      retryAfter: new Date("2026-09-20T00:00:00.000Z"),
+      leaseExpiresAt,
+    })).resolves.toBe(true);
+
+    await expect(repository.claimFacebookProfileResolution({
+      externalConversationKeyHash: sourceHash("profile-customer"),
+      now: new Date("2026-08-22T00:00:00.000Z"),
+      leaseExpiresAt: new Date("2026-08-22T00:00:30.000Z"),
+    })).resolves.toBeNull();
+    if (incoming.status === "turn_pending") {
+      await expect(repository.sealDueCustomerTurn({
+        turnId: incoming.turnId,
+        now: new Date("2026-08-21T00:00:03.000Z"),
+      })).resolves.toMatchObject({ status: "sealed" });
+    }
+    await expect(repository.listQueue(10)).resolves.toEqual(expect.objectContaining({
+      items: [expect.objectContaining({ customerDisplayName: "Tina Stuart" })],
+    }));
+  });
+
+  it("keeps concurrent Facebook profile claims isolated by hashed conversation", async () => {
+    await activateFacebookPilot("profile-isolation");
+    await Promise.all([
+      createRecoveryTurn({ conversationHash: sourceHash("customer-a"), messageHash: sourceHash("message-a") }),
+      createRecoveryTurn({ conversationHash: sourceHash("customer-b"), messageHash: sourceHash("message-b") }),
+    ]);
+    const now = new Date("2026-08-21T00:00:00.000Z");
+    const leaseExpiresAt = new Date("2026-08-21T00:00:30.000Z");
+    const [a, b] = await Promise.all([
+      repository.claimFacebookProfileResolution({ externalConversationKeyHash: sourceHash("customer-a"), now, leaseExpiresAt }),
+      repository.claimFacebookProfileResolution({ externalConversationKeyHash: sourceHash("customer-b"), now, leaseExpiresAt }),
+    ]);
+
+    expect(a?.conversationId).toBeTruthy();
+    expect(b?.conversationId).toBeTruthy();
+    expect(a?.conversationId).not.toBe(b?.conversationId);
+  });
+
+  it("rejects completion from an expired Facebook profile lease", async () => {
+    await activateFacebookPilot("profile-stale-lease");
+    await createRecoveryTurn({
+      conversationHash: sourceHash("stale-profile-customer"),
+      messageHash: sourceHash("stale-profile-message"),
+    });
+    const firstLease = new Date("2026-08-21T00:00:10.000Z");
+    const first = await repository.claimFacebookProfileResolution({
+      externalConversationKeyHash: sourceHash("stale-profile-customer"),
+      now: new Date("2026-08-21T00:00:00.000Z"),
+      leaseExpiresAt: firstLease,
+    });
+    const secondLease = new Date("2026-08-21T00:00:21.000Z");
+    const second = await repository.claimFacebookProfileResolution({
+      externalConversationKeyHash: sourceHash("stale-profile-customer"),
+      now: new Date("2026-08-21T00:00:11.000Z"),
+      leaseExpiresAt: secondLease,
+    });
+    expect(second?.conversationId).toBe(first?.conversationId);
+
+    await expect(repository.completeFacebookProfileResolution({
+      conversationId: first!.conversationId,
+      status: "resolved",
+      customerDisplayName: "Wrong Customer",
+      resolvedAt: new Date("2026-08-21T00:00:11.000Z"),
+      retryAfter: new Date("2026-09-20T00:00:00.000Z"),
+      leaseExpiresAt: firstLease,
+    })).resolves.toBe(false);
+    await expect(repository.completeFacebookProfileResolution({
+      conversationId: second!.conversationId,
+      status: "resolved",
+      customerDisplayName: "Correct Customer",
+      resolvedAt: new Date("2026-08-21T00:00:11.000Z"),
+      retryAfter: new Date("2026-09-20T00:00:00.000Z"),
+      leaseExpiresAt: secondLease,
+    })).resolves.toBe(true);
+  });
+
   it("has additive continuous-learning tables with fail-closed defaults", async () => {
     const tables = await database.execute(sql`
       select table_name

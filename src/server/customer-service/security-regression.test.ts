@@ -45,8 +45,20 @@ describe("reply assistant security regression", () => {
     )).toEqual([]);
     expect(productionSourcePathsMatching(
       inventory.browserBoundaryFiles,
-      /(?:client_?secret|clientSecret|OPENAI_API_KEY|META_APP_SECRET|META_VERIFY_TOKEN|BLOB_READ_WRITE_TOKEN)/i,
+      /(?:client_?secret|clientSecret|OPENAI_API_KEY|META_APP_SECRET|META_VERIFY_TOKEN|BLOB_READ_WRITE_TOKEN|FACEBOOK_PROFILE_LOOKUP_TOKEN)/i,
     )).toEqual([]);
+  });
+
+  it("keeps Facebook profile lookup UI-only and unavailable as an arbitrary browser API", () => {
+    const inventory = loadProductionRuntimeSourceInventory();
+    const browserPaths = inventory.browserBoundaryFiles.map((file) => file.relativePath);
+    const promptAndLearning = inventory.serverFiles.filter((file) => (
+      /(?:prompt-builder|engine|learning|case-memory|golden)/.test(file.relativePath)
+    ));
+
+    expect(browserPaths.some((path) => /profile.*(?:route|handler)/i.test(path))).toBe(false);
+    expect(productionSourcePathsMatching(promptAndLearning, /customerDisplayName|profileResolution/i)).toEqual([]);
+    expect(productionSourcePathsMatching(inventory.files, /method:\s*["'`]POST["'`][\s\S]{0,300}graph\.facebook/i)).toEqual([]);
   });
 
   it("uses image analysis without enabling an image-generation tool", () => {

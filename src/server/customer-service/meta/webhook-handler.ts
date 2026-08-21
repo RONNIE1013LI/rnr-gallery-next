@@ -43,6 +43,10 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
   processTurn: (turnId: string) => Promise<unknown>;
   kickImageJob: (jobId: string) => Promise<unknown>;
   recoverHumanReplies?: (input: Readonly<{ now: Date; groupWindowMs: number; limit: number }>) => Promise<unknown>;
+  resolveCustomerProfile?: (input: Readonly<{
+    rawExternalConversationKey: string;
+    externalConversationKeyHash: string;
+  }>) => Promise<unknown>;
   scheduleAfter: (task: () => Promise<void>) => void;
   createJobId?: () => string;
   now?: () => Date;
@@ -88,6 +92,10 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
       let sawCustomerEvent = false;
       for (const message of adapter.normalize(payload)) {
         if (message.role === "customer") sawCustomerEvent = true;
+        const externalConversationKeyHash = hashExternalId(
+          message.externalConversationKey,
+          dependencies.config.idHashSecret,
+        );
         const outbound = message.role === "staff" && message.text !== null
           ? sanitizeHumanOutboundText(message.text)
           : null;
@@ -121,7 +129,7 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
           channel: message.channel,
           role: message.role,
           eventType: message.eventType,
-          externalConversationKeyHash: hashExternalId(message.externalConversationKey, dependencies.config.idHashSecret),
+          externalConversationKeyHash,
           externalMessageKeyHash: hashExternalId(message.externalMessageKey, dependencies.config.idHashSecret),
           text: outbound?.text ?? message.text,
           bodyHash: outbound?.bodyHash ?? null,
@@ -136,6 +144,16 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
           debounceMs: dependencies.config.conversationDebounceMs ?? 2_000,
           receivedAt: message.receivedAt,
         });
+        if (message.role === "customer" && dependencies.resolveCustomerProfile) {
+          try {
+            await dependencies.resolveCustomerProfile({
+              rawExternalConversationKey: message.externalConversationKey,
+              externalConversationKeyHash,
+            });
+          } catch {
+            // Profile labels are optional UI metadata and cannot affect message processing.
+          }
+        }
         if (result.status === "turn_pending" && !imageJob) {
           dependencies.scheduleAfter(async () => {
             try {

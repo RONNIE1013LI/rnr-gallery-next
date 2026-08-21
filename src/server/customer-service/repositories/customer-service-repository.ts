@@ -162,6 +162,7 @@ export type SafeQueuePage = Readonly<{
     imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
     imageAssessmentSummary: string | null;
     humanReplyReceived: boolean;
+    customerDisplayName?: string | null;
     timeline: readonly Readonly<{
       role: "customer" | "staff";
       text: string;
@@ -247,6 +248,20 @@ export type PilotMetricCounts = Readonly<{
 }>;
 
 export interface CustomerServiceRepository {
+  claimFacebookProfileResolution(input: Readonly<{
+    externalConversationKeyHash: string;
+    now: Date;
+    leaseExpiresAt: Date;
+  }>): Promise<Readonly<{ conversationId: string }> | null>;
+  completeFacebookProfileResolution(input: Readonly<{
+    conversationId: string;
+    resolvedAt: Date;
+    retryAfter: Date;
+    leaseExpiresAt: Date;
+  } & (
+    | Readonly<{ status: "resolved"; customerDisplayName: string }>
+    | Readonly<{ status: "temporary_failure" | "unavailable"; customerDisplayName: null }>
+  )>): Promise<boolean>;
   ingestConversationEvent(input: HashedConversationEvent): Promise<
     | Readonly<{ status: "turn_pending"; messageId: string; turnId: string; debounceUntil: Date }>
     | Readonly<{ status: "context_only" }>

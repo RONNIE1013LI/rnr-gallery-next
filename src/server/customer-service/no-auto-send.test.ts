@@ -33,6 +33,10 @@ describe("reply assistant has no automatic send capability", () => {
       inventory.files,
       /fetch\(\s*["'`]https:\/\/graph\.facebook\.com/i,
     )).toEqual([]);
+    expect(productionSourcePathsMatching(
+      inventory.files,
+      /graph\.facebook\.com[\s\S]{0,500}(?:method:\s*["'`]POST|\/messages\b)/i,
+    )).toEqual([]);
     expect(paths.some((file) => (
       /^src\/app\/api\/(?:reply-assistant|meta)\/(?:.*\/)?send\/route\.(?:c|m)?(?:j|t)sx?$/.test(file)
     ))).toBe(false);

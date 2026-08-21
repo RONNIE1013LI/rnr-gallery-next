@@ -76,6 +76,39 @@ describe("customer service schema contract", () => {
     ]);
   });
 
+  it("stores only cached UI profile state on conversations", () => {
+    const columns = getTableColumns(customerServiceConversations);
+
+    expect(columns).toEqual(expect.objectContaining({
+      customerDisplayName: expect.anything(),
+      profileResolutionStatus: expect.anything(),
+      profileResolvedAt: expect.anything(),
+      profileRetryAfter: expect.anything(),
+    }));
+    expect(columns.profileResolutionStatus.default).toBe("unresolved");
+    expect(Object.keys(columns)).not.toEqual(expect.arrayContaining([
+      "rawPsid",
+      "psid",
+      "profileToken",
+      "profilePic",
+    ]));
+  });
+
+  it("uses an additive migration for cached Facebook display names", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0038_facebook_customer_display_names.sql"),
+      "utf8",
+    );
+
+    expect(migration).toContain('ADD COLUMN "customer_display_name"');
+    expect(migration).toContain('ADD COLUMN "profile_resolution_status"');
+    expect(migration).toContain('ADD COLUMN "profile_resolved_at"');
+    expect(migration).toContain('ADD COLUMN "profile_retry_after"');
+    expect(migration).toContain("customer_service_conversations_profile_resolution_idx");
+    expect(migration).toContain("customer_service_conversations_profile_ui_change");
+    expect(migration).not.toMatch(/^\s*(?:DROP\s+(?:TABLE|COLUMN)|TRUNCATE|DELETE\s+FROM)/im);
+  });
+
   it("defines the five additive continuous-learning tables", () => {
     expect(continuousLearningTables.map(getTableName)).toEqual([
       "customer_service_human_reply_matches",

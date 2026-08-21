@@ -15,6 +15,7 @@ export type ReplyQueueItem = Readonly<{
   imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
   imageAssessmentSummary: string | null;
   humanReplyReceived: boolean;
+  customerDisplayName?: string | null;
   timeline: readonly Readonly<{
     role: "customer" | "staff";
     text: string;
@@ -131,6 +132,7 @@ export function ReplyAssistantClient({
       {items.length === 0 ? <p className={styles.empty}>No pilot messages yet.</p> : null}
       {items.map((item) => {
         const current = review(item);
+        const customerDisplayName = item.customerDisplayName?.trim() || "Customer";
         const gateBlocked = !item.draftText && item.gateResult !== null && item.gateResult !== "allowed";
         const imageOnly = item.attachmentCount > 0 && item.body === "[Image attachment]";
         const visualReviewRequired = imageOnly || item.imageAnalysisStatus === "human_review_required";
@@ -147,14 +149,14 @@ export function ReplyAssistantClient({
                 <span data-risk={requiresHumanReview}>{item.humanReplyReceived ? "human replied" : requiresHumanReview ? "Human review required" : item.status.replaceAll("_", " ")}</span>
               </div>
             </header>
-            <div className={styles.customerText}><strong>Customer</strong><p>{item.body}</p></div>
+            <div className={styles.customerText}><strong>{customerDisplayName}</strong><p>{item.body}</p></div>
             {item.timeline.length > 0 ? (
               <section className={styles.timeline} aria-label="Conversation timeline">
                 <strong>Conversation timeline</strong>
                 <ol>
                   {item.timeline.map((event, index) => (
                     <li key={`${event.receivedAt}-${index}`} data-role={event.role}>
-                      <span>{event.role === "staff" ? "R&R" : "Customer"}</span>
+                      <span>{event.role === "staff" ? "R&R" : customerDisplayName}</span>
                       <p>{event.text}</p>
                     </li>
                   ))}

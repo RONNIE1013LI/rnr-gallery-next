@@ -14,6 +14,7 @@ const item = {
   imageAnalysisStatus: "not_applicable" as const,
   imageAssessmentSummary: null,
   humanReplyReceived: false,
+  customerDisplayName: null,
   timeline: [
     { role: "customer" as const, text: "Can you use my blurry photo?", receivedAt: "2026-08-17T00:00:00.000Z" },
     { role: "staff" as const, text: "Please send the original file.", receivedAt: "2026-08-17T00:01:00.000Z" },
@@ -106,6 +107,33 @@ describe("ReplyAssistantClient", () => {
     expect(screen.getByText("R&R")).toBeInTheDocument();
     expect(screen.getByText("Please send the original file.")).toBeInTheDocument();
     expect(screen.queryByText("AI draft", { exact: false })).not.toBeInTheDocument();
+  });
+
+  it("uses one resolved customer name on the conversation card and customer timeline", () => {
+    render(<ReplyAssistantClient initialItems={[{ ...item, customerDisplayName: "Tina Stuart" }]} />);
+
+    expect(screen.getAllByText("Tina Stuart")).toHaveLength(2);
+    expect(screen.queryByText("Customer")).not.toBeInTheDocument();
+    expect(screen.getByText("R&R")).toBeInTheDocument();
+  });
+
+  it("falls back to Customer when profile lookup is unavailable", () => {
+    render(<ReplyAssistantClient initialItems={[item]} />);
+    expect(screen.getAllByText("Customer")).toHaveLength(2);
+  });
+
+  it("applies a live profile name update without overwriting a local draft edit", () => {
+    const { rerender } = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Reply draft"), { target: { value: "Ronnie local wording" } });
+
+    rerender(<ReplyAssistantClient
+      initialItems={[item]}
+      liveItems={[{ ...item, customerDisplayName: "Tina Stuart" }]}
+    />);
+
+    expect(screen.getAllByText("Tina Stuart")).toHaveLength(2);
+    expect(screen.getByLabelText("Reply draft")).toHaveValue("Ronnie local wording");
   });
 
   it("closes stale draft actions after an actual human reply", () => {

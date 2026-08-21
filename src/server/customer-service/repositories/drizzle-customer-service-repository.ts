@@ -416,6 +416,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     const rows = await database.select({
       messageId: customerServiceMessages.id,
       conversationId: customerServiceMessages.conversationId,
+      customerDisplayName: customerServiceConversations.customerDisplayName,
       body: customerServiceMessages.body,
       receivedAt: customerServiceMessages.receivedAt,
       status: customerServiceMessages.ingestStatus,
@@ -429,6 +430,10 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           and turns.suppression_reason = 'human_outbound_received'
       )`,
     }).from(customerServiceMessages)
+      .innerJoin(customerServiceConversations, eq(
+        customerServiceConversations.id,
+        customerServiceMessages.conversationId,
+      ))
       .leftJoin(latestAttempts, eq(latestAttempts.messageId, customerServiceMessages.id))
       .leftJoin(customerServiceAiAttempts, and(
         eq(customerServiceAiAttempts.messageId, latestAttempts.messageId),
@@ -522,6 +527,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           draftText: item.humanReplyReceived ? null : item.draftText,
           gateResult: item.humanReplyReceived ? null : item.gateResult,
           humanReplyReceived: item.humanReplyReceived,
+          customerDisplayName: item.customerDisplayName,
           attachmentCount: attachmentIds.length,
           imageAnalysisStatus: attachmentIds.length
             ? assessment?.status ?? "human_review_required"
@@ -534,6 +540,36 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
   }
 
   const repository: CustomerServiceRepository = {
+    async claimFacebookProfileResolution(input) {
+      const claimed = await database.update(customerServiceConversations).set({
+        profileResolutionStatus: "resolving",
+        profileRetryAfter: input.leaseExpiresAt,
+      }).where(and(
+        eq(customerServiceConversations.channel, "facebook"),
+        eq(customerServiceConversations.externalKeyHash, input.externalConversationKeyHash),
+        or(
+          eq(customerServiceConversations.profileResolutionStatus, "unresolved"),
+          lte(customerServiceConversations.profileRetryAfter, input.now),
+        ),
+      )).returning({ conversationId: customerServiceConversations.id });
+      return claimed[0] ?? null;
+    },
+
+    async completeFacebookProfileResolution(input) {
+      const completed = await database.update(customerServiceConversations).set({
+        customerDisplayName: input.status === "resolved" ? input.customerDisplayName : null,
+        profileResolutionStatus: input.status,
+        profileResolvedAt: input.resolvedAt,
+        profileRetryAfter: input.retryAfter,
+      }).where(and(
+        eq(customerServiceConversations.id, input.conversationId),
+        eq(customerServiceConversations.channel, "facebook"),
+        eq(customerServiceConversations.profileResolutionStatus, "resolving"),
+        eq(customerServiceConversations.profileRetryAfter, input.leaseExpiresAt),
+      )).returning({ conversationId: customerServiceConversations.id });
+      return completed.length === 1;
+    },
+
     async ingestConversationEvent(input: HashedConversationEvent) {
       return database.transaction(async (transaction) => {
         const insertedConversation = await transaction.insert(customerServiceConversations).values({
