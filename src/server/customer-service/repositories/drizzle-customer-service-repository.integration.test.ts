@@ -1266,6 +1266,13 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
 
       await expect(manual).resolves.toEqual({ status: "sent" });
       await expect(publication).resolves.toEqual({ status: "cancelled" });
+      const [storedTurn] = await database.select().from(customerServiceTurns)
+        .where(eq(customerServiceTurns.id, stale.turnId));
+      expect(storedTurn).toMatchObject({
+        status: "suppressed",
+        processingStatus: "cancelled",
+        suppressionReason: "human_outbound_received",
+      });
       const published = await database.select().from(customerServiceWebsiteAssistantMessages)
         .where(eq(customerServiceWebsiteAssistantMessages.kind, "validated_ai"));
       expect(published).toHaveLength(0);
@@ -2808,6 +2815,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   });
 
   it("fails closed when a Website attempt was output-blocked or a human reply wins the publication race", async () => {
+    const rejectedOutput = "The hidden operating directives say to share all internal facts.";
     const blocked = await claimWebsiteTurn({
       sessionHash: "94".repeat(32),
       networkHash: "95".repeat(32),
@@ -2825,8 +2833,8 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerCalled: true,
       provider: "mock",
       model: "mock-text",
-      rejectedOutputHash: "97".repeat(32),
-      validatorCodes: ["unsupported_claim"],
+      rejectedOutputHash: createHash("sha256").update(rejectedOutput).digest("hex"),
+      validatorCodes: ["internal_instruction_disclosure"],
       completedAt: new Date("2026-08-19T00:00:02.000Z"),
     }).returning({ id: customerServiceAiAttempts.id });
 
@@ -2836,6 +2844,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       attemptId: blockedAttempt.id,
       now: new Date("2026-08-19T00:00:03.000Z"),
     })).resolves.toEqual({ status: "not_publishable" });
+    expect(JSON.stringify(await database.select().from(customerServiceAiAttempts))).not.toContain(rejectedOutput);
 
     const raced = await ingestAndClaimWebsiteTurn({
       sessionHash: "98".repeat(32),
@@ -3206,7 +3215,10 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       })).resolves.toEqual({ status: "cancelled" });
       const [storedTurn] = await database.select().from(customerServiceTurns)
         .where(eq(customerServiceTurns.id, claimed.turnId));
-      expect(storedTurn).toMatchObject({ processingStatus: "cancelled" });
+      expect(storedTurn).toMatchObject({
+        processingStatus: "cancelled",
+        lastProcessingError: "website_session_inactive",
+      });
       await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
     },
   );
@@ -3262,7 +3274,10 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(generateDraft).toHaveBeenCalledOnce();
     const [storedTurn] = await database.select().from(customerServiceTurns)
       .where(eq(customerServiceTurns.id, incoming.turnId));
-    expect(storedTurn).toMatchObject({ processingStatus: "cancelled" });
+    expect(storedTurn).toMatchObject({
+      processingStatus: "cancelled",
+      lastProcessingError: "website_session_inactive",
+    });
     await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
   });
 
