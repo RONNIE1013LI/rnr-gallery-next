@@ -554,6 +554,110 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(outbox).toMatchObject({ status: "failed", attemptCount: 1, lastErrorCode: "network_error" });
   });
 
+  it("never claims an alert whose deep link has expired", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "d1".repeat(32),
+      networkHash: "d2".repeat(32),
+      messageHash: "d3".repeat(32),
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    const expiresAt = new Date("2026-08-21T00:00:03.000Z");
+    await repository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-21T00:00:02.000Z"),
+      knowledgeVersion: "knowledge-v1",
+      reviewAlert: {
+        reviewId: "00000000-0000-4000-8000-000000000114",
+        deepLinkTokenHash: "cd".repeat(32),
+        deepLinkExpiresAt: expiresAt,
+        idempotencyKey: "review-alert:00000000-0000-4000-8000-000000000114",
+      },
+    });
+
+    await expect(repository.claimDueReviewAlert({
+      now: expiresAt,
+      leaseExpiresAt: new Date("2026-08-21T00:05:03.000Z"),
+    })).resolves.toBeNull();
+
+    const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(outbox).toMatchObject({ status: "pending", attemptCount: 0 });
+  });
+
+  it("does not let a stale alert sender settle after another worker reclaims and settles its lease", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "e1".repeat(32),
+      networkHash: "e2".repeat(32),
+      messageHash: "e3".repeat(32),
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    await repository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-21T00:00:02.000Z"),
+      knowledgeVersion: "knowledge-v1",
+      reviewAlert: {
+        reviewId: "00000000-0000-4000-8000-000000000115",
+        deepLinkTokenHash: "de".repeat(32),
+        deepLinkExpiresAt: new Date("2026-08-28T00:00:02.000Z"),
+        idempotencyKey: "review-alert:00000000-0000-4000-8000-000000000115",
+      },
+    });
+    const first = await repository.claimDueReviewAlert({
+      now: new Date("2026-08-21T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-21T00:05:03.000Z"),
+    });
+    if (!first) throw new Error("expected first alert lease");
+    const second = await competingRepository.claimDueReviewAlert({
+      now: new Date("2026-08-21T00:05:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-21T00:10:03.000Z"),
+    });
+    if (!second) throw new Error("expected reclaimed alert lease");
+
+    await expect(competingRepository.markReviewAlertSent({
+      id: second.id,
+      leaseToken: second.leaseToken,
+      providerMessageId: "resend-second",
+      now: new Date("2026-08-21T00:05:04.000Z"),
+    })).resolves.toBe(true);
+    await expect(repository.markReviewAlertSent({
+      id: first.id,
+      leaseToken: first.leaseToken,
+      providerMessageId: "resend-stale",
+      now: new Date("2026-08-21T00:05:05.000Z"),
+    })).resolves.toBe(false);
+    await expect(repository.retryReviewAlert({
+      id: first.id,
+      leaseToken: first.leaseToken,
+      errorCode: "rate_limited",
+      nextAttemptAt: new Date("2026-08-21T00:06:05.000Z"),
+      now: new Date("2026-08-21T00:05:05.000Z"),
+    })).resolves.toBe(false);
+
+    const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(outbox).toMatchObject({ status: "sent", attemptCount: 2, sentAt: new Date("2026-08-21T00:05:04.000Z") });
+  });
+
   it("delivers exactly one Resend alert for one review generation with the persisted idempotency key", async () => {
     const claimed = await claimWebsiteTurn({
       sessionHash: "c1".repeat(32),

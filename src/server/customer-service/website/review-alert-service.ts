@@ -3,7 +3,6 @@ import {
   EmailDeliveryError,
   type CustomerEmailProvider,
 } from "@/server/notifications/customer-notification-service";
-import { sanitizeWebsiteModelInput } from "./model-input-sanitizer";
 
 export type WebsiteReviewAlertReason =
   | "high_risk"
@@ -67,8 +66,8 @@ function escapeHtml(value: string) {
   })[character]!);
 }
 
-function safeSummary(value: string) {
-  return sanitizeWebsiteModelInput(value).text.slice(0, 160) || "[Customer message removed]";
+function safeSummary(reason: WebsiteReviewAlertReason) {
+  return `Website chat requires human review (${reason}).`;
 }
 
 export function createReviewAlertToken(input: Readonly<{ reviewId: string; secret: string }>) {
@@ -94,7 +93,7 @@ function alertMessage(input: Readonly<{
   const token = createReviewAlertToken({ reviewId: input.alert.humanReviewId, secret: input.deepLinkSecret });
   const link = new URL("/reply-assistant", input.siteUrl);
   link.searchParams.set("review", token);
-  const summary = safeSummary(input.alert.redactedSummary);
+  const summary = safeSummary(input.alert.reason);
   const receivedAt = input.alert.openedAt.toISOString();
   const text = [
     "Website customer chat needs human review.",

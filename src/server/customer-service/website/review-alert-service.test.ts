@@ -90,6 +90,31 @@ describe("website human-review alert delivery", () => {
     });
   });
 
+  it("excludes every customer-authored value from an alert email", async () => {
+    const unsafeValues = [
+      "021.234.5678",
+      "7 Private Crescent, Wellington",
+      "4111 1111 1111 1111",
+      "sk_live_customer_secret",
+      "11111111-1111-4111-8111-111111111111",
+      "customer@example.test",
+      "<script>customerHtml()</script>",
+    ];
+    const current = setup();
+    current.repository.claimDueReviewAlert.mockResolvedValueOnce(delivery({
+      redactedSummary: unsafeValues.join(" | "),
+    }));
+
+    await expect(current.service.deliverNext()).resolves.toEqual({ result: "sent" });
+
+    const message = current.provider.send.mock.calls[0][0];
+    const rendered = `${message.text}\n${message.html}`;
+    for (const unsafeValue of unsafeValues) {
+      expect(rendered).not.toContain(unsafeValue);
+    }
+    expect(rendered).toContain("realtime_required");
+  });
+
   it("retries known provider failures using the bounded retry schedule without affecting chat", async () => {
     const current = setup();
     current.provider.send.mockRejectedValueOnce(new EmailDeliveryError("rate_limited"));

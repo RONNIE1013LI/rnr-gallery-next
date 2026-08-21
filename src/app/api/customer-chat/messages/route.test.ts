@@ -53,6 +53,7 @@ function setup(input: Readonly<{
   };
   const tasks: (() => Promise<void>)[] = [];
   const processTurn = vi.fn(async () => undefined);
+  const processReviewAlert = vi.fn(async () => undefined);
   const resolveProductContext = vi.fn(async (pathname: string) => (
     resolveSafeProductContext(pathname, registry)
   ));
@@ -65,6 +66,7 @@ function setup(input: Readonly<{
     repository,
     resolveProductContext,
     processTurn,
+    processReviewAlert,
     scheduleAfter: (task) => tasks.push(task),
     waitUntil: vi.fn(async () => undefined),
     now: () => now,
@@ -72,7 +74,7 @@ function setup(input: Readonly<{
     createSessionToken: () => sessionToken,
     resolveTrustedIp: () => "203.0.113.42",
   });
-  return { handler, repository, tasks, processTurn, resolveProductContext };
+  return { handler, repository, tasks, processTurn, processReviewAlert, resolveProductContext };
 }
 
 const validBody = {
@@ -104,6 +106,21 @@ describe("POST /api/customer-chat/messages", () => {
     expect(current.processTurn).toHaveBeenCalledWith("turn-private");
     expect(JSON.stringify(responseBody))
       .not.toMatch(/message-private|turn-private|conversation-private|policy|hash|secret/i);
+  });
+
+  it("keeps the accepted chat response and durable alert recovery path when best-effort alert delivery fails", async () => {
+    const current = setup();
+    current.processReviewAlert.mockRejectedValueOnce(new Error("email provider unavailable"));
+
+    const response = await current.handler.POST(request(validBody));
+
+    expect(response.status).toBe(202);
+    expect(await response.json()).toEqual({ status: "accepted" });
+    expect(current.repository.ingestConversationEvent).toHaveBeenCalledOnce();
+    expect(current.tasks).toHaveLength(1);
+    await expect(current.tasks[0]()).resolves.toBeUndefined();
+    expect(current.processTurn).toHaveBeenCalledWith("turn-private");
+    expect(current.processReviewAlert).toHaveBeenCalledOnce();
   });
 
   it("accepts a duplicate retry without scheduling duplicate processing", async () => {

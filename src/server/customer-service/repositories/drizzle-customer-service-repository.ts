@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, inArray, isNotNull, isNull, lte, max, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, max, or, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import {
   customerServiceAiAttempts,
@@ -1534,6 +1534,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           .innerJoin(customerServiceHumanReviews, eq(customerServiceHumanReviews.id, customerServiceReviewAlertOutbox.humanReviewId))
           .where(and(
             lte(customerServiceReviewAlertOutbox.nextAttemptAt, input.now),
+            gt(customerServiceHumanReviews.deepLinkExpiresAt, input.now),
             or(
               inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait"]),
               and(
