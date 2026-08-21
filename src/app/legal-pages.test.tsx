@@ -33,4 +33,14 @@ describe("legal pages", () => {
       "timing-and-urgent-service",
     );
   });
+
+  it("explains Australian DHL and standard delivery times separately from production", () => {
+    render(<TermsPage />);
+
+    expect(screen.getByText("Last updated: 21 August 2026")).toBeVisible();
+    expect(screen.getByText(/DHL usually takes around 2 days for delivery, excluding the production time/)).toBeVisible();
+    expect(screen.getByText(/Standard delivery is more affordable and usually takes around 7–10 days/)).toBeVisible();
+    expect(screen.getByText(/both can take around two weeks to arrive/)).toBeVisible();
+    expect(screen.queryByText(/Australia \(Standard Delivery\):.*approximately 5 business days/i)).not.toBeInTheDocument();
+  });
 });
