@@ -1,5 +1,12 @@
 # Phase 3.7 Website Customer Assistant Rollback Plan
 
+## Exercise status
+
+**Status: NOT RUN.** This is the Task 16 rollback evidence template. No Staging or
+Production rollback has been performed, and no verification item below is a recorded
+pass. Before an exercise, record the environment, timestamp, candidate deployment,
+previous known-good deployment, operator and evidence links.
+
 ## Owner
 
 Proposed rollback owner: Ronnie Li. Production rollout requires a fresh explicit sign-off; this document does not substitute for it.
@@ -39,14 +46,14 @@ Immediately disable Website Chat for:
 
 ## Verification after rollback
 
-- Website public API disabled: PASS/FAIL.
-- Facebook incoming and human outbound: PASS/FAIL.
-- Messenger automatic send count: 0.
-- Payment Requests routes and existing records: PASS/FAIL.
-- Checkout/payment smoke: PASS/FAIL without creating a real charge.
-- Database consistency and additive migrations: PASS/FAIL.
-- Alert worker state: PASS/FAIL.
-- Production alias points to known-good deployment: PASS/FAIL.
+- Website public API disabled: NOT RUN.
+- Facebook incoming and human outbound: NOT RUN.
+- Messenger automatic send count: NOT RUN.
+- Payment Requests routes and existing records: NOT RUN.
+- Checkout/payment smoke without creating a real charge: NOT RUN.
+- Database consistency and additive migrations: NOT RUN.
+- Alert worker state: NOT RUN.
+- Deployment alias points to the recorded known-good environment deployment: NOT RUN.
 
 ## Recovery window
 

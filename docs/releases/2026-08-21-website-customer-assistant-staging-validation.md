@@ -1,5 +1,25 @@
 # Phase 3.7 Website Customer Assistant Staging Validation
 
+## Evidence status
+
+**Status: NOT RUN.** This is the Task 16 Staging evidence template. No Preview or
+Production deployment, external provider check, browser check, or human sign-off is
+claimed by this document.
+
+Code-level evidence may be recorded below only after the named command has completed.
+External checks must include the environment, timestamp, candidate commit, operator,
+and captured evidence. An unchecked item is not a pass.
+
+| Evidence | Result | Command or artefact |
+| --- | --- | --- |
+| Privacy and release-document content tests | PASS (8/8) | Local Vitest, 22 August 2026 |
+| Existing security/privacy/no-send inventories | PASS (114/114) | Local Vitest, 22 August 2026 |
+| TypeScript | PASS | `npm run typecheck`, 22 August 2026 |
+| ESLint | PASS | Targeted ESLint, 22 August 2026 |
+| Diff/scope check | PASS | `git diff --check` and protected-path inventory, 22 August 2026 |
+| Preview deployment | NOT RUN | No deployment performed in this slice |
+| Production changes | NONE | Task 16 code/document slice explicitly excludes Production |
+
 ## Environment boundary
 
 - [ ] Preview deployment is built from the approved Phase 3.7 candidate stacked on the latest combined Production release.
@@ -107,4 +127,4 @@
 - [ ] Ronnie alert recipient and email wording approval.
 - [ ] Ronnie rollback owner approval.
 
-Staging is READY only when every technical item passes, all database suites have zero skips, human sign-offs are recorded, policy/cross-session leakage is zero, and Production remains unchanged.
+Staging is READY only when every technical item passes, all database suites have zero skips, human sign-offs are recorded, policy/cross-session leakage is zero, and Production remains unchanged. This template does not establish Staging readiness.
