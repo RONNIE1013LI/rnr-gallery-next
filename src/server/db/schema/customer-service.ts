@@ -78,6 +78,13 @@ export const customerServiceMessages = pgTable(
     direction: text("direction").$type<"incoming">().default("incoming").notNull(),
     body: text("body").notNull(),
     customerText: text("customer_text"),
+    productContext: jsonb("product_context").$type<Readonly<{
+      market: "NZ" | "AU";
+      productKey: string;
+      productTitle: string;
+      category: "canvas" | "banners";
+      pageKind: "product" | "configure";
+    }>>(),
     receivedAt: timestamp("received_at", { withTimezone: true }).notNull(),
     ingestStatus: text("ingest_status")
       .$type<"received" | "processing" | "draft_ready" | "blocked" | "provider_error" | "output_blocked">()
@@ -101,6 +108,22 @@ export const customerServiceMessages = pgTable(
     check("customer_service_messages_direction_valid", sql`${table.direction} = 'incoming'`),
     check("customer_service_messages_body_valid", sql`length(trim(${table.body})) > 0`),
     check("customer_service_messages_external_hash_valid", sql`length(trim(${table.externalMessageKeyHash})) > 0`),
+    check(
+      "customer_service_messages_product_context_valid",
+      sql`${table.productContext} is null or (
+        ${table.channel} = 'website'
+        and jsonb_typeof(${table.productContext}) = 'object'
+        and ${table.productContext} ?& array['market', 'productKey', 'productTitle', 'category', 'pageKind']
+        and (${table.productContext} - 'market' - 'productKey' - 'productTitle' - 'category' - 'pageKind') = '{}'::jsonb
+        and jsonb_typeof(${table.productContext}->'productKey') = 'string'
+        and jsonb_typeof(${table.productContext}->'productTitle') = 'string'
+        and ${table.productContext}->>'market' in ('NZ', 'AU')
+        and length(trim(${table.productContext}->>'productKey')) between 1 and 100
+        and length(trim(${table.productContext}->>'productTitle')) between 1 and 160
+        and ${table.productContext}->>'category' in ('canvas', 'banners')
+        and ${table.productContext}->>'pageKind' in ('product', 'configure')
+      )`,
+    ),
     check(
       "customer_service_messages_ingest_status_valid",
       sql`${table.ingestStatus} in ('received', 'processing', 'draft_ready', 'blocked', 'provider_error', 'output_blocked')`,

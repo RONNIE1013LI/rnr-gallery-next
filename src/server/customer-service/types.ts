@@ -4,6 +4,14 @@ export type CustomerServiceChannel = "facebook" | "website";
 export type ConversationRole = "customer" | "staff";
 export type ConversationEventType = "customer_message" | "human_outbound" | "system_event";
 
+export type SafeProductContext = Readonly<{
+  market: "NZ" | "AU";
+  productKey: string;
+  productTitle: string;
+  category: "canvas" | "banners";
+  pageKind: "product" | "configure";
+}>;
+
 export type NormalizedIncomingMessage = Readonly<{
   channel: CustomerServiceChannel;
   role: ConversationRole;
@@ -13,6 +21,7 @@ export type NormalizedIncomingMessage = Readonly<{
   externalReplyToMessageKey: string | null;
   text: string | null;
   attachments: readonly NormalizedAttachment[];
+  productContext?: SafeProductContext | null;
   receivedAt: Date;
 }>;
 

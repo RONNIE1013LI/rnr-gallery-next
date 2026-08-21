@@ -1695,6 +1695,155 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(JSON.stringify(loaded)).not.toContain("Other customer's private context");
   });
 
+  it("round-trips server-derived Website product context through durable draft loading", async () => {
+    const productContext = {
+      market: "NZ" as const,
+      productKey: "digital-oil-painting-canvas",
+      productTitle: "Digital Oil Painting Canvas",
+      category: "canvas" as const,
+      pageKind: "product" as const,
+    };
+    const pending = await repository.ingestConversationEvent({
+      channel: "website",
+      role: "customer",
+      externalConversationKeyHash: "c".repeat(64),
+      externalMessageKeyHash: "d".repeat(64),
+      text: "What details do you need?",
+      attachments: [],
+      imageJob: null,
+      productContext,
+      receivedAt: new Date("2026-08-21T00:00:00.000Z"),
+    });
+    expect(pending.status).toBe("turn_pending");
+    if (pending.status !== "turn_pending") return;
+
+    await expect(repository.loadDraftInput(pending.messageId, 6)).resolves.toMatchObject({
+      current: { channel: "website", productContext },
+    });
+  });
+
+  it("uses the chronologically latest Website product context and clears it when the latest fragment has none", async () => {
+    const first = await repository.ingestConversationEvent({
+      channel: "website",
+      role: "customer",
+      externalConversationKeyHash: "e".repeat(64),
+      externalMessageKeyHash: "1".repeat(64),
+      text: "I need a canvas",
+      attachments: [],
+      imageJob: null,
+      productContext: {
+        market: "NZ", productKey: "canvas-latest", productTitle: "Latest Canvas",
+        category: "canvas", pageKind: "product",
+      },
+      receivedAt: new Date("2026-08-21T00:00:01.000Z"),
+    });
+    expect(first.status).toBe("turn_pending");
+    if (first.status !== "turn_pending") return;
+    const earlier = await repository.ingestConversationEvent({
+      channel: "website",
+      role: "customer",
+      externalConversationKeyHash: "e".repeat(64),
+      externalMessageKeyHash: "2".repeat(64),
+      text: "Earlier fragment",
+      attachments: [],
+      imageJob: null,
+      productContext: {
+        market: "NZ", productKey: "banner-earlier", productTitle: "Earlier Banner",
+        category: "banners", pageKind: "product",
+      },
+      receivedAt: new Date("2026-08-21T00:00:00.000Z"),
+    });
+    expect(earlier.status).toBe("turn_pending");
+    if (earlier.status !== "turn_pending") return;
+    await expect(repository.loadDraftInput(earlier.messageId, 6)).resolves.toMatchObject({
+      current: { productContext: { productKey: "canvas-latest" } },
+    });
+
+    const latest = await repository.ingestConversationEvent({
+      channel: "website",
+      role: "customer",
+      externalConversationKeyHash: "e".repeat(64),
+      externalMessageKeyHash: "3".repeat(64),
+      text: "Now I am on a general page",
+      attachments: [],
+      imageJob: null,
+      productContext: null,
+      receivedAt: new Date("2026-08-21T00:00:02.000Z"),
+    });
+    expect(latest.status).toBe("turn_pending");
+    if (latest.status !== "turn_pending") return;
+    await expect(repository.loadDraftInput(latest.messageId, 6)).resolves.toMatchObject({
+      current: { productContext: null },
+    });
+  });
+
+  it("rejects malformed, oversized, and Facebook product context at the database boundary", async () => {
+    const [websiteConversation] = await database.insert(customerServiceConversations).values({
+      channel: "website",
+      externalKeyHash: "f".repeat(64),
+    }).returning({ id: customerServiceConversations.id });
+    const [facebookConversation] = await database.insert(customerServiceConversations).values({
+      channel: "facebook",
+      externalKeyHash: "0".repeat(64),
+    }).returning({ id: customerServiceConversations.id });
+    const base = {
+      externalMessageKeyHash: "9".repeat(64),
+      body: "test",
+      customerText: "test",
+      receivedAt: new Date("2026-08-21T00:00:00.000Z"),
+    };
+
+    await expect(database.insert(customerServiceMessages).values({
+      ...base,
+      conversationId: websiteConversation.id,
+      channel: "website",
+      productContext: {
+        market: "NZ", productKey: 123, productTitle: true,
+        category: "canvas", pageKind: "product",
+      } as never,
+    })).rejects.toThrow();
+    await expect(database.insert(customerServiceMessages).values({
+      ...base,
+      externalMessageKeyHash: "8".repeat(64),
+      conversationId: websiteConversation.id,
+      channel: "website",
+      productContext: {
+        market: "NZ", productKey: "x".repeat(101), productTitle: "Canvas",
+        category: "canvas", pageKind: "product",
+      },
+    })).rejects.toThrow();
+    await expect(database.insert(customerServiceMessages).values({
+      ...base,
+      externalMessageKeyHash: "6".repeat(64),
+      conversationId: websiteConversation.id,
+      channel: "website",
+      productContext: {
+        market: "NZ", productKey: "canvas", productTitle: "x".repeat(161),
+        category: "canvas", pageKind: "product",
+      },
+    })).rejects.toThrow();
+    await expect(database.insert(customerServiceMessages).values({
+      ...base,
+      externalMessageKeyHash: "5".repeat(64),
+      conversationId: websiteConversation.id,
+      channel: "website",
+      productContext: {
+        market: "NZ", productKey: "canvas", productTitle: "Canvas",
+        category: "canvas", pageKind: "product", privatePrice: 123,
+      } as never,
+    })).rejects.toThrow();
+    await expect(database.insert(customerServiceMessages).values({
+      ...base,
+      externalMessageKeyHash: "7".repeat(64),
+      conversationId: facebookConversation.id,
+      channel: "facebook",
+      productContext: {
+        market: "NZ", productKey: "canvas", productTitle: "Canvas",
+        category: "canvas", pageKind: "product",
+      },
+    })).rejects.toThrow();
+  });
+
   it("deduplicates concurrent webhook ingestion and allocates one pilot slot", async () => {
     await database.insert(customerServicePilotRuns).values({
       name: "test-facebook",

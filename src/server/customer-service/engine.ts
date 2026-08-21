@@ -11,6 +11,7 @@ import type { NormalizedAttachment } from "./attachments/types";
 import type { AiProvider } from "./providers/ai-provider";
 import type { CustomerServiceRepository } from "./repositories/customer-service-repository";
 import type { DraftGenerationRequest, DraftGenerationResult } from "./types";
+import { sanitizeWebsiteModelInput } from "./website/model-input-sanitizer";
 
 type EngineKnowledge = PolicyKnowledge & Readonly<{
   knowledgeVersion: string;
@@ -210,6 +211,34 @@ export class CustomerServiceEngine {
       };
     }
 
+    const currentWebsiteInput = draftInput.current.channel === "website"
+      ? sanitizeWebsiteModelInput(draftInput.current.text)
+      : null;
+    const websiteContextInputs = draftInput.current.channel === "website"
+      ? draftInput.context.map((item) => sanitizeWebsiteModelInput(item.text))
+      : [];
+    if (currentWebsiteInput?.reviewRequired) {
+      const attemptId = await this.repository.createGateBlockedAttempt({
+        messageId: request.messageId,
+        trigger: request.trigger,
+        intent: gate.intent,
+        riskLevel: "high",
+        gateResult: "unresolved",
+        gateReasons: ["website_sensitive_input"],
+        knowledgeVersion: this.knowledge.knowledgeVersion,
+      });
+      return { status: "gate_blocked", attemptId };
+    }
+    const providerContext = draftInput.current.channel === "website"
+      ? draftInput.context.map((item, index) => ({
+        ...item,
+        text: websiteContextInputs[index].text,
+      }))
+      : draftInput.context;
+    const providerQuery = draftInput.current.channel === "website"
+      ? currentWebsiteInput?.text ?? ""
+      : draftInput.current.text;
+
     const imageContext = await this.repository.selectImageContext(request.messageId);
     if (imageContext || attachmentSourceContext?.length) {
       const attemptId = await this.repository.createGateBlockedAttempt({
@@ -258,7 +287,7 @@ export class CustomerServiceEngine {
         market: "unknown",
         policyReferences: sources.rules.map((rule) => rule.id),
         knowledgeVersion: this.knowledge.knowledgeVersion,
-        query: draftInput.current.text,
+        query: providerQuery,
         limit: 3,
         now: new Date(),
       });
@@ -267,13 +296,16 @@ export class CustomerServiceEngine {
     }
     const prompt = buildDraftPrompt({
       intent: gate.intent,
-      context: draftInput.context,
+      context: providerContext,
       rules: sources.rules,
       examples: sources.examples,
       goldenExamples: sources.goldenExamples,
       qualityGuide: sources.qualityGuide,
       toneGuide: this.knowledge.toneGuide,
       caseMemories,
+      productContext: draftInput.current.channel === "website"
+        ? draftInput.current.productContext ?? null
+        : null,
     });
     const invocation = await this.repository.confirmProviderInvocation({
       attemptId: reservation.attemptId,

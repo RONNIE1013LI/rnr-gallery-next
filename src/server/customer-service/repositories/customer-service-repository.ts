@@ -3,6 +3,7 @@ import type {
   CustomerServiceChannel,
   DraftGenerationRequest,
   DraftGenerationResult,
+  SafeProductContext,
 } from "../types";
 import type { ImageAnalysisResult } from "../image-analysis-schema";
 import type { ProtectedAttachmentSource } from "../attachments/attachment-source-protector";
@@ -57,6 +58,7 @@ export type HashedIncomingMessage = Readonly<{
 export type HashedConversationEvent = HashedIncomingMessage & Readonly<{
   role: ConversationRole;
   eventType?: "customer_message" | "human_outbound";
+  productContext?: SafeProductContext | null;
   bodyHash?: string | null;
   redactionCodes?: readonly string[];
   replyToExternalMessageKeyHash?: string | null;
@@ -72,7 +74,12 @@ export type ConversationContextItem = Readonly<{
 }>;
 
 export type DraftInput = Readonly<{
-  current: Readonly<{ id: string; text: string | null; channel: CustomerServiceChannel }>;
+  current: Readonly<{
+    id: string;
+    text: string | null;
+    channel: CustomerServiceChannel;
+    productContext?: SafeProductContext | null;
+  }>;
   context: readonly ConversationContextItem[];
 }>;
 

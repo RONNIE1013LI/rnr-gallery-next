@@ -774,6 +774,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           externalMessageKeyHash: input.externalMessageKeyHash,
           body,
           customerText,
+          productContext: input.channel === "website" ? input.productContext ?? null : null,
           receivedAt: input.receivedAt,
         }).onConflictDoNothing().returning({ id: customerServiceMessages.id });
         if (!message) return { status: "duplicate" as const };
@@ -844,7 +845,12 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             body: customerServiceConversationEvents.body,
             legacyMessageId: customerServiceConversationEvents.legacyMessageId,
             receivedAt: customerServiceConversationEvents.receivedAt,
-          }).from(customerServiceConversationEvents).where(
+            productContext: customerServiceMessages.productContext,
+          }).from(customerServiceConversationEvents)
+            .leftJoin(customerServiceMessages, eq(
+              customerServiceMessages.id,
+              customerServiceConversationEvents.legacyMessageId,
+            )).where(
             eq(customerServiceConversationEvents.turnId, turn.id),
           ).orderBy(
             asc(customerServiceConversationEvents.receivedAt),
@@ -865,6 +871,9 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           await transaction.update(customerServiceMessages).set({
             body: orderedBody,
             customerText: orderedBody,
+            ...(input.channel === "website"
+              ? { productContext: lastEvent?.productContext ?? null }
+              : {}),
           }).where(eq(customerServiceMessages.id, representativeMessageId));
         }
         if (input.attachments.length) {
@@ -1299,6 +1308,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         id: customerServiceMessages.id,
         text: customerServiceMessages.customerText,
         channel: customerServiceMessages.channel,
+        productContext: customerServiceMessages.productContext,
         conversationId: customerServiceMessages.conversationId,
         receivedAt: customerServiceMessages.receivedAt,
         createdAt: customerServiceMessages.createdAt,
@@ -1386,7 +1396,12 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         || left.sortId.localeCompare(right.sortId)
       )).slice(-boundedLimit).map(({ role, text, receivedAt }) => ({ role, text, receivedAt }));
       return {
-        current: { id: current.id, text: current.text, channel: current.channel },
+        current: {
+          id: current.id,
+          text: current.text,
+          channel: current.channel,
+          productContext: current.channel === "website" ? current.productContext : null,
+        },
         context,
       };
     },

@@ -66,14 +66,17 @@ function textProvider(text = "Please send the original photo and we can assess i
   return {
     providerKind: "mock" as const,
     model: "mock",
-    generate: vi.fn(async () => ({
-      text,
-      provider: "mock" as const,
-      model: "mock",
-      usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
-      estimatedCostMicrousd: 0,
-      latencyMs: 1,
-    })),
+    generate: vi.fn(async (prompt: Readonly<{ instructions: string; input: string }>) => {
+      void prompt;
+      return {
+        text,
+        provider: "mock" as const,
+        model: "mock",
+        usage: { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 },
+        estimatedCostMicrousd: 0,
+        latencyMs: 1,
+      };
+    }),
   };
 }
 
@@ -297,6 +300,102 @@ describe("CustomerServiceEngine", () => {
       intentOverride: "quote_information_collection",
     }));
     expect(current.provider.generate).toHaveBeenCalledOnce();
+  });
+
+  it("minimizes Website conversation input after policy gate and includes only safe product identity", async () => {
+    const raw = "Can you explain the design process? Email tina@example.com or call +64 21 123 4567.";
+    const current = setup(raw);
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: {
+        id: "message-1",
+        text: raw,
+        channel: "website",
+        productContext: {
+          market: "NZ",
+          productKey: "digital-oil-painting-canvas",
+          productTitle: "Digital Oil Painting Canvas",
+          category: "canvas",
+          pageKind: "product",
+        },
+      },
+      context: [{ role: "customer", text: raw, receivedAt: "2026-08-21T00:00:00.000Z" }],
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+
+    expect(current.policyGate).toHaveBeenCalledWith(expect.objectContaining({ message: raw }));
+    const providerInput = current.provider.generate.mock.calls[0]?.[0];
+    if (!providerInput) throw new Error("expected provider input");
+    expect(providerInput?.input).not.toContain("tina@example.com");
+    expect(providerInput?.input).not.toContain("+64 21 123 4567");
+    expect(providerInput?.input).toContain("[email removed]");
+    expect(providerInput?.input).toContain("[phone removed]");
+    expect(providerInput?.input).toContain("Digital Oil Painting Canvas");
+    expect(providerInput?.instructions).not.toContain("Digital Oil Painting Canvas");
+    expect(providerInput?.instructions).not.toContain("startingPriceExGstCents");
+    expect(providerInput?.instructions).not.toContain("configuration");
+  });
+
+  it("routes Website payment identifiers to human review before provider reservation", async () => {
+    const raw = "Can you explain the design process using card 4111 1111 1111 1111?";
+    const current = setup(raw);
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: raw, channel: "website", productContext: null },
+      context: [{ role: "customer", text: raw, receivedAt: "2026-08-21T00:00:00.000Z" }],
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "gate_blocked", attemptId: "attempt-blocked" });
+
+    expect(current.policyGate).toHaveBeenCalledWith(expect.objectContaining({ message: raw }));
+    expect(current.repository.createGateBlockedAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      gateReasons: ["website_sensitive_input"],
+    }));
+    expect(current.repository.reserveProviderAttempt).not.toHaveBeenCalled();
+    expect(current.provider.generate).not.toHaveBeenCalled();
+  });
+
+  it("redacts historical payment details without blocking a later safe Website turn", async () => {
+    const current = setup("Can you explain the design process?");
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: {
+        id: "message-1",
+        text: "Can you explain the design process?",
+        channel: "website",
+        productContext: null,
+      },
+      context: [
+        {
+          role: "customer",
+          text: "My old card was 4111 1111 1111 1111.",
+          receivedAt: "2026-08-20T00:00:00.000Z",
+        },
+        {
+          role: "customer",
+          text: "Can you explain the design process?",
+          receivedAt: "2026-08-21T00:00:00.000Z",
+        },
+      ],
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+
+    expect(current.repository.reserveProviderAttempt).toHaveBeenCalledOnce();
+    expect(current.provider.generate).toHaveBeenCalledOnce();
+    expect(current.provider.generate.mock.calls[0]?.[0]?.input).toContain("[payment details removed]");
+    expect(current.provider.generate.mock.calls[0]?.[0]?.input).not.toContain("4111");
+  });
+
+  it("preserves the Facebook provider prompt without Website minimization", async () => {
+    const raw = "Can you explain the design process? Email tina@example.com.";
+    const current = setup(raw);
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+
+    expect(current.provider.generate.mock.calls[0]?.[0]?.input).toContain("tina@example.com");
   });
 
   it("does not let contextual intent override a current high-risk message", async () => {
