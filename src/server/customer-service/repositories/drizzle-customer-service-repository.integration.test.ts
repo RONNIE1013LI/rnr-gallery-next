@@ -19,9 +19,12 @@ import {
   customerServiceImageJobs,
   customerServiceMessages,
   customerServicePilotRuns,
+  customerServiceRateLimitBuckets,
   customerServiceTurns,
   customerServiceUiChanges,
   customerServiceUiRevision,
+  customerServiceWebSessions,
+  customerServiceWebsiteBudgetState,
   user,
 } from "@/server/db/schema";
 import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
@@ -92,7 +95,10 @@ async function clearTables() {
   await database.delete(customerServiceConversationEvents);
   await database.delete(customerServiceTurns);
   await database.delete(customerServiceMessages);
+  await database.delete(customerServiceRateLimitBuckets);
+  await database.delete(customerServiceWebSessions);
   await database.delete(customerServiceConversations);
+  await database.delete(customerServiceWebsiteBudgetState);
   await database.delete(customerServiceBudgetState);
   await database.delete(customerServicePilotRuns);
   await database.delete(customerServiceUiChanges);
@@ -103,6 +109,16 @@ async function activateFacebookPilot(name: string) {
   await database.insert(customerServicePilotRuns).values({
     name,
     channel: "facebook",
+    messageLimit: 100,
+    status: "active",
+    startedAt: new Date("2026-08-17T00:00:00.000Z"),
+  });
+}
+
+async function activateWebsitePilot(name: string) {
+  await database.insert(customerServicePilotRuns).values({
+    name,
+    channel: "website",
     messageLimit: 100,
     status: "active",
     startedAt: new Date("2026-08-17T00:00:00.000Z"),
@@ -125,6 +141,35 @@ async function createRecoveryTurn(input: Readonly<{
     debounceMs: 2_000,
     receivedAt: input.receivedAt ?? new Date("2026-08-19T00:00:00.000Z"),
   });
+}
+
+const websiteSessionExpiresAt = new Date("2026-08-26T00:00:00.000Z");
+const websiteRateNow = new Date("2026-08-19T00:00:00.000Z");
+
+function websiteRateEvent(input: Readonly<{
+  messageHash: string;
+  sessionHash: string;
+  networkHash: string;
+  receivedAt?: Date;
+  isNewSession?: boolean;
+}>) {
+  return {
+    channel: "website" as const,
+    role: "customer" as const,
+    externalConversationKeyHash: input.sessionHash,
+    externalMessageKeyHash: input.messageHash,
+    text: "Can you help with a custom banner?",
+    attachments: [],
+    imageJob: null,
+    debounceMs: 2_000,
+    receivedAt: input.receivedAt ?? websiteRateNow,
+    websiteRateLimit: {
+      sessionKeyHash: input.sessionHash,
+      networkKeyHash: input.networkHash,
+      sessionExpiresAt: websiteSessionExpiresAt,
+      isNewSession: input.isNewSession,
+    },
+  } as Parameters<typeof repository.ingestConversationEvent>[0];
 }
 
 describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
@@ -169,6 +214,397 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       order by column_name
     `);
     expect(eventColumns.rows).toHaveLength(5);
+  });
+
+  it("atomically enforces every website session and network request bucket", async () => {
+    const sessionHash = "1".repeat(64);
+    const networkHash = "2".repeat(64);
+    const minuteStart = new Date("2026-08-19T00:00:00.000Z");
+    const hourStart = new Date("2026-08-19T00:00:00.000Z");
+    const sessionStart = new Date(websiteSessionExpiresAt.getTime() - 7 * 24 * 60 * 60 * 1_000);
+    await database.insert(customerServiceRateLimitBuckets).values([
+      { bucketKind: "session_minute", bucketKeyHash: sessionHash, windowStartedAt: minuteStart, expiresAt: new Date("2026-08-19T00:01:00.000Z"), requestCount: 4 },
+      { bucketKind: "session_hour", bucketKeyHash: sessionHash, windowStartedAt: hourStart, expiresAt: new Date("2026-08-19T01:00:00.000Z"), requestCount: 29 },
+      { bucketKind: "session_total", bucketKeyHash: sessionHash, windowStartedAt: sessionStart, expiresAt: websiteSessionExpiresAt, requestCount: 99 },
+      { bucketKind: "network_minute", bucketKeyHash: networkHash, windowStartedAt: minuteStart, expiresAt: new Date("2026-08-19T00:01:00.000Z"), requestCount: 9 },
+      { bucketKind: "network_hour", bucketKeyHash: networkHash, windowStartedAt: hourStart, expiresAt: new Date("2026-08-19T01:00:00.000Z"), requestCount: 59 },
+    ]);
+
+    const first = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash,
+      networkHash,
+      messageHash: "3".repeat(64),
+    }));
+    const second = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash,
+      networkHash,
+      messageHash: "4".repeat(64),
+    }));
+
+    expect(first).toMatchObject({ status: "turn_pending" });
+    expect(second).toEqual({ status: "rate_limited" });
+  });
+
+  it.each([
+    ["session_minute", 5],
+    ["session_hour", 30],
+    ["session_total", 100],
+    ["network_minute", 10],
+    ["network_hour", 60],
+  ] as const)("enforces the %s website rate bucket independently", async (kind, limit) => {
+    const sessionHash = "0a".repeat(32);
+    const networkHash = "0b".repeat(32);
+    const minute = new Date("2026-08-19T00:00:00.000Z");
+    const hour = new Date("2026-08-19T00:00:00.000Z");
+    const session = new Date(websiteSessionExpiresAt.getTime() - 7 * 24 * 60 * 60 * 1_000);
+    const values = kind === "session_total"
+      ? { windowStartedAt: session, expiresAt: websiteSessionExpiresAt }
+      : kind.endsWith("minute")
+        ? { windowStartedAt: minute, expiresAt: new Date("2026-08-19T00:01:00.000Z") }
+        : { windowStartedAt: hour, expiresAt: new Date("2026-08-19T01:00:00.000Z") };
+    await database.insert(customerServiceRateLimitBuckets).values({
+      bucketKind: kind,
+      bucketKeyHash: kind.startsWith("network") ? networkHash : sessionHash,
+      ...values,
+      requestCount: limit,
+    });
+
+    const result = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash,
+      networkHash,
+      messageHash: createHmac("sha256", "independent-limit").update(kind).digest("hex"),
+    }));
+    const [blockedBucket] = await database.select({ count: customerServiceRateLimitBuckets.requestCount })
+      .from(customerServiceRateLimitBuckets)
+      .where(eq(customerServiceRateLimitBuckets.bucketKind, kind));
+
+    expect(result).toEqual({ status: "rate_limited" });
+    expect(blockedBucket?.count).toBe(limit);
+  });
+
+  it("does not create a session or conversation for a rate-limited first request", async () => {
+    const sessionHash = "0c".repeat(32);
+    const networkHash = "0d".repeat(32);
+    await database.insert(customerServiceRateLimitBuckets).values({
+      bucketKind: "network_minute",
+      bucketKeyHash: networkHash,
+      windowStartedAt: websiteRateNow,
+      expiresAt: new Date("2026-08-19T00:01:00.000Z"),
+      requestCount: 10,
+    });
+
+    const result = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash,
+      networkHash,
+      messageHash: "0e".repeat(32),
+      isNewSession: true,
+    }));
+    const sessions = await database.select().from(customerServiceWebSessions);
+    const conversations = await database.select().from(customerServiceConversations);
+    const sessionBuckets = await database.select().from(customerServiceRateLimitBuckets)
+      .where(sql`${customerServiceRateLimitBuckets.bucketKind} like 'session_%'`);
+
+    expect(result).toEqual({ status: "rate_limited" });
+    expect(sessions).toHaveLength(0);
+    expect(conversations).toHaveLength(0);
+    expect(sessionBuckets).toHaveLength(0);
+  });
+
+  it("allows only one concurrent request at the final website rate allowance", async () => {
+    const sessionHash = "5".repeat(64);
+    const networkHash = "6".repeat(64);
+    await database.insert(customerServiceRateLimitBuckets).values({
+      bucketKind: "session_minute",
+      bucketKeyHash: sessionHash,
+      windowStartedAt: websiteRateNow,
+      expiresAt: new Date("2026-08-19T00:01:00.000Z"),
+      requestCount: 4,
+    });
+
+    const results = await Promise.all([
+      repository.ingestConversationEvent(websiteRateEvent({ sessionHash, networkHash, messageHash: "7".repeat(64) })),
+      repository.ingestConversationEvent(websiteRateEvent({ sessionHash, networkHash, messageHash: "8".repeat(64) })),
+    ]);
+
+    expect(results.filter((result) => result.status === "turn_pending")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "rate_limited")).toHaveLength(1);
+  });
+
+  it("does not create a second runnable website turn after the first turn is sealed", async () => {
+    await activateWebsitePilot("website-one-runnable-turn");
+    const sessionHash = "9".repeat(64);
+    const networkHash = "a".repeat(64);
+    const first = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash,
+      networkHash,
+      messageHash: "b".repeat(64),
+    }));
+    if (first.status !== "turn_pending") throw new Error("expected website turn");
+    await repository.sealDueCustomerTurn({
+      turnId: first.turnId,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    });
+
+    const next = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash,
+      networkHash,
+      messageHash: "c".repeat(64),
+      receivedAt: new Date("2026-08-19T00:00:04.000Z"),
+    }));
+
+    expect(next).toEqual({ status: "rate_limited" });
+  });
+
+  it("allows a later website turn after the prior sealed turn completed", async () => {
+    await activateWebsitePilot("website-completed-turn-allows-next");
+    const sessionHash = "1a".repeat(32);
+    const networkHash = "1b".repeat(32);
+    const first = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash,
+      networkHash,
+      messageHash: "1c".repeat(32),
+    }));
+    if (first.status !== "turn_pending") throw new Error("expected website turn");
+    await repository.sealDueCustomerTurn({
+      turnId: first.turnId,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    });
+    await database.update(customerServiceTurns).set({
+      processingStatus: "completed",
+      processingCompletedAt: new Date("2026-08-19T00:00:04.000Z"),
+    }).where(eq(customerServiceTurns.id, first.turnId));
+
+    const next = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash,
+      networkHash,
+      messageHash: "1d".repeat(32),
+      receivedAt: new Date("2026-08-19T00:00:05.000Z"),
+    }));
+
+    expect(next.status).toBe("turn_pending");
+  });
+
+  it("commits abuse counts when one in-flight website turn rejects a new turn", async () => {
+    await activateWebsitePilot("website-rejected-counts");
+    const sessionHash = "2a".repeat(32);
+    const networkHash = "2b".repeat(32);
+    const first = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash,
+      networkHash,
+      messageHash: "2c".repeat(32),
+    }));
+    if (first.status !== "turn_pending") throw new Error("expected website turn");
+    await repository.sealDueCustomerTurn({
+      turnId: first.turnId,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    });
+
+    const rejected = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash,
+      networkHash,
+      messageHash: "2d".repeat(32),
+      receivedAt: new Date("2026-08-19T00:00:04.000Z"),
+    }));
+    const counts = await database.select({
+      kind: customerServiceRateLimitBuckets.bucketKind,
+      count: customerServiceRateLimitBuckets.requestCount,
+    }).from(customerServiceRateLimitBuckets);
+
+    expect(rejected).toEqual({ status: "rate_limited" });
+    expect(counts).toHaveLength(5);
+    expect(counts.every((bucket) => bucket.count === 2)).toBe(true);
+  });
+
+  it("does not count a duplicate website message twice", async () => {
+    const event = websiteRateEvent({
+      sessionHash: "3a".repeat(32),
+      networkHash: "3b".repeat(32),
+      messageHash: "3c".repeat(32),
+    });
+    expect((await repository.ingestConversationEvent(event)).status).toBe("turn_pending");
+    expect(await repository.ingestConversationEvent(event)).toEqual({ status: "duplicate" });
+
+    const counts = await database.select({ count: customerServiceRateLimitBuckets.requestCount })
+      .from(customerServiceRateLimitBuckets);
+    expect(counts).toHaveLength(5);
+    expect(counts.every((bucket) => bucket.count === 1)).toBe(true);
+  });
+
+  it("does not count concurrent duplicate website messages twice", async () => {
+    const event = websiteRateEvent({
+      sessionHash: "3d".repeat(32),
+      networkHash: "3e".repeat(32),
+      messageHash: "3f".repeat(32),
+    });
+
+    const results = await Promise.all([
+      repository.ingestConversationEvent(event),
+      repository.ingestConversationEvent(event),
+    ]);
+    const counts = await database.select({ count: customerServiceRateLimitBuckets.requestCount })
+      .from(customerServiceRateLimitBuckets);
+
+    expect(results.filter((result) => result.status === "turn_pending")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "duplicate")).toHaveLength(1);
+    expect(counts).toHaveLength(5);
+    expect(counts.every((bucket) => bucket.count === 1)).toBe(true);
+  });
+
+  it("reserves website and global budget scopes atomically while retaining the global hard stop", async () => {
+    const incoming = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash: "d".repeat(64),
+      networkHash: "e".repeat(64),
+      messageHash: "f".repeat(64),
+    }));
+    if (incoming.status !== "turn_pending") throw new Error("expected website turn");
+    const reservation = await repository.reserveProviderAttempt({
+      messageId: incoming.messageId,
+      trigger: "webhook_after",
+      intent: "product_difference",
+      riskLevel: "low",
+      gateReasons: [],
+      knowledgeSources: ["test"],
+      knowledgeVersion: "test-v1",
+      reservationMicrousd: 1_000,
+      dailyScopeKey: "daily:2026-08-19",
+      dailyHardStopMicrousd: 1_000,
+      totalHardStopMicrousd: 10_000,
+      websiteDailyWarningMicrousd: 5_000,
+      websiteDailyHardStopMicrousd: 10_000,
+      websiteTotalHardStopMicrousd: 10_000,
+    } as Parameters<typeof repository.reserveProviderAttempt>[0]);
+
+    expect(reservation.status).toBe("reserved");
+    const globalScopes = await database.select().from(customerServiceBudgetState)
+      .orderBy(asc(customerServiceBudgetState.scopeKey));
+    const websiteScopes = await database.select().from(customerServiceWebsiteBudgetState)
+      .orderBy(asc(customerServiceWebsiteBudgetState.scopeKey));
+    expect([...globalScopes, ...websiteScopes].map((scope) => scope.scopeKey).sort()).toEqual([
+      "daily:2026-08-19",
+      "daily:website:2026-08-19",
+      "total",
+      "total:website",
+    ].sort());
+
+    const globalBlocked = await repository.reserveProviderAttempt({
+      messageId: incoming.messageId,
+      trigger: "manual_regenerate",
+      intent: "product_difference",
+      riskLevel: "low",
+      gateReasons: [],
+      knowledgeSources: ["test"],
+      knowledgeVersion: "test-v1",
+      reservationMicrousd: 1,
+      dailyScopeKey: "daily:2026-08-19",
+      dailyHardStopMicrousd: 1_000,
+      totalHardStopMicrousd: 10_000,
+      websiteDailyWarningMicrousd: 5_000,
+      websiteDailyHardStopMicrousd: 10_000,
+      websiteTotalHardStopMicrousd: 10_000,
+    } as Parameters<typeof repository.reserveProviderAttempt>[0]);
+
+    expect(globalBlocked.status).toBe("budget_blocked");
+  });
+
+  it("derives website budget scopes from the persisted message under a final-allowance race", async () => {
+    const incoming = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash: "4a".repeat(32),
+      networkHash: "4b".repeat(32),
+      messageHash: "4c".repeat(32),
+    }));
+    if (incoming.status !== "turn_pending") throw new Error("expected website turn");
+    const reservation = {
+      messageId: incoming.messageId,
+      trigger: "manual_regenerate" as const,
+      intent: "product_difference",
+      riskLevel: "low" as const,
+      gateReasons: [],
+      knowledgeSources: ["test"],
+      knowledgeVersion: "test-v1",
+      reservationMicrousd: 1_000,
+      dailyScopeKey: "daily:2026-08-19",
+      dailyHardStopMicrousd: 100_000,
+      totalHardStopMicrousd: 100_000,
+      websiteDailyWarningMicrousd: 500,
+      websiteDailyHardStopMicrousd: 1_000,
+      websiteTotalHardStopMicrousd: 100_000,
+    };
+
+    const results = await Promise.all([
+      repository.reserveProviderAttempt(reservation),
+      repository.reserveProviderAttempt(reservation),
+    ]);
+
+    expect(results.filter((result) => result.status === "reserved")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "budget_blocked")).toHaveLength(1);
+  });
+
+  it("allows only one provider reservation at the global final allowance", async () => {
+    const incoming = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash: "4d".repeat(32),
+      networkHash: "4e".repeat(32),
+      messageHash: "4f".repeat(32),
+    }));
+    if (incoming.status !== "turn_pending") throw new Error("expected website turn");
+    const reservation = {
+      messageId: incoming.messageId,
+      trigger: "manual_regenerate" as const,
+      intent: "product_difference",
+      riskLevel: "low" as const,
+      gateReasons: [],
+      knowledgeSources: ["test"],
+      knowledgeVersion: "test-v1",
+      reservationMicrousd: 1_000,
+      dailyScopeKey: "daily:2026-08-19",
+      dailyHardStopMicrousd: 100_000,
+      totalHardStopMicrousd: 1_000,
+      websiteDailyWarningMicrousd: 50_000,
+      websiteDailyHardStopMicrousd: 100_000,
+      websiteTotalHardStopMicrousd: 100_000,
+    };
+
+    const results = await Promise.all([
+      repository.reserveProviderAttempt(reservation),
+      repository.reserveProviderAttempt(reservation),
+    ]);
+
+    expect(results.filter((result) => result.status === "reserved")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "budget_blocked")).toHaveLength(1);
+  });
+
+  it("surfaces a website daily warning durably without blocking reservation", async () => {
+    const incoming = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash: "5a".repeat(32),
+      networkHash: "5b".repeat(32),
+      messageHash: "5c".repeat(32),
+    }));
+    if (incoming.status !== "turn_pending") throw new Error("expected website turn");
+
+    const result = await repository.reserveProviderAttempt({
+      messageId: incoming.messageId,
+      trigger: "webhook_after",
+      intent: "product_difference",
+      riskLevel: "low",
+      gateReasons: [],
+      knowledgeSources: ["test"],
+      knowledgeVersion: "test-v1",
+      reservationMicrousd: 1_000,
+      dailyScopeKey: "daily:2026-08-19",
+      dailyHardStopMicrousd: 100_000,
+      totalHardStopMicrousd: 100_000,
+      websiteDailyWarningMicrousd: 1_000,
+      websiteDailyHardStopMicrousd: 10_000,
+      websiteTotalHardStopMicrousd: 100_000,
+    });
+    const warning = await database.execute(sql`
+      select warning_reached_at, warning_threshold_microusd
+      from customer_service_website_budget_state
+      where scope_key = 'daily:website:2026-08-19'
+    `);
+
+    expect(result.status).toBe("reserved");
+    expect(warning.rows[0]).toMatchObject({ warning_threshold_microusd: "1000" });
+    expect(warning.rows[0]?.warning_reached_at).not.toBeNull();
   });
 
   it("persists customer and staff events in one isolated conversation", async () => {

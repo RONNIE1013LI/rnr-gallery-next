@@ -23,6 +23,9 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
       reservationMicrousd: 1_000,
       dailyHardStopMicrousd: config.dailyHardStopMicrousd,
       totalHardStopMicrousd: config.totalHardStopMicrousd,
+      websiteDailyWarningMicrousd: config.websiteDailyWarningMicrousd,
+      websiteDailyHardStopMicrousd: config.websiteDailyHardStopMicrousd,
+      websiteTotalHardStopMicrousd: config.websiteTotalHardStopMicrousd,
     },
   });
   const imageJobRunner = config.imageAnalysisEnabled

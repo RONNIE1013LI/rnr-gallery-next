@@ -482,6 +482,26 @@ export const customerServiceBudgetState = pgTable(
   ],
 );
 
+export const customerServiceWebsiteBudgetState = pgTable(
+  "customer_service_website_budget_state",
+  {
+    scopeKey: text("scope_key").primaryKey(),
+    spentMicrousd: bigint("spent_microusd", { mode: "number" }).default(0).notNull(),
+    reservedMicrousd: bigint("reserved_microusd", { mode: "number" }).default(0).notNull(),
+    warningReachedAt: timestamp("warning_reached_at", { withTimezone: true }),
+    warningThresholdMicrousd: bigint("warning_threshold_microusd", { mode: "number" }),
+    updatedAt: updatedTimestamp(),
+  },
+  (table) => [
+    check("customer_service_website_budget_state_scope_valid", sql`${table.scopeKey} = 'total:website' or ${table.scopeKey} ~ '^daily:website:[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
+    check("customer_service_website_budget_state_amounts_valid", sql`${table.spentMicrousd} >= 0 and ${table.reservedMicrousd} >= 0`),
+    check(
+      "customer_service_website_budget_state_warning_valid",
+      sql`(${table.warningReachedAt} is null and ${table.warningThresholdMicrousd} is null) or (${table.warningReachedAt} is not null and ${table.warningThresholdMicrousd} > 0)`,
+    ),
+  ],
+);
+
 export const customerServiceWebSessions = pgTable(
   "customer_service_web_sessions",
   {

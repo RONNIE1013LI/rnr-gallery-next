@@ -3,19 +3,26 @@ import { websiteChannelAdapter } from "@/server/customer-service/adapters/websit
 import type { CustomerServiceRepository } from "@/server/customer-service/repositories/customer-service-repository";
 import type { SafeProductContext } from "@/server/customer-service/types";
 import {
-  ensureWebsiteSessionForPost,
+  createWebsiteSessionToken,
   hashWebsiteConversationKey,
+  hashWebsiteSessionToken,
   readWebsiteSessionToken,
+  WEBSITE_SESSION_MAX_AGE_SECONDS,
+  websiteSessionCookie,
 } from "@/server/customer-service/website/session";
 import {
   hashWebsiteClientMessageKey,
   parseWebsiteMessageRequest,
   serializeWebsiteSessionCookie,
 } from "@/server/customer-service/website/public-api";
+import {
+  hashTrustedNetworkBucket,
+  resolveTrustedClientIp,
+} from "@/server/customer-service/website/rate-limit";
 
 type WebsiteMessageRepository = Pick<
   CustomerServiceRepository,
-  "resolveWebsiteSession" | "ensureWebsiteSession" | "ingestConversationEvent"
+  "resolveWebsiteSession" | "ingestConversationEvent"
 >;
 
 type CookieEnvironment = "production" | "preview" | "development" | "test" | undefined;
@@ -34,6 +41,7 @@ type Dependencies = Readonly<{
   now?: () => Date;
   cookieEnvironment?: CookieEnvironment;
   createSessionToken?: () => string;
+  resolveTrustedIp?: (request: Request) => string;
 }>;
 
 const noStoreHeaders = { "Cache-Control": "no-store" };
@@ -71,22 +79,32 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
           ? await dependencies.resolveProductContext(input.pathname)
           : null;
         const receivedAt = (dependencies.now ?? (() => new Date()))();
-        const existingToken = readWebsiteSessionToken(request, dependencies.cookieEnvironment);
-        const ensured = await ensureWebsiteSessionForPost({
-          request,
-          repository: dependencies.repository,
-          secret: dependencies.sessionSecret,
-          now: receivedAt,
-          environment: dependencies.cookieEnvironment,
-          createToken: dependencies.createSessionToken,
-        });
-        const sessionToken = ensured.cookie?.value ?? existingToken;
-        if (!sessionToken) throw new Error("website_session_token_missing");
+        const cookieToken = readWebsiteSessionToken(request, dependencies.cookieEnvironment);
+        const existingSession = cookieToken
+          ? await dependencies.repository.resolveWebsiteSession({
+            sessionTokenHash: hashWebsiteSessionToken(cookieToken, dependencies.sessionSecret),
+            now: receivedAt,
+          })
+          : null;
+        const sessionToken = existingSession && cookieToken
+          ? cookieToken
+          : (dependencies.createSessionToken ?? createWebsiteSessionToken)();
+        const sessionExpiresAt = existingSession?.expiresAt
+          ?? new Date(receivedAt.getTime() + WEBSITE_SESSION_MAX_AGE_SECONDS * 1_000);
+        const sessionCookie = existingSession
+          ? null
+          : websiteSessionCookie(sessionToken, dependencies.cookieEnvironment);
         const conversationHash = hashWebsiteConversationKey(sessionToken, dependencies.sessionSecret);
         const messageHash = hashWebsiteClientMessageKey({
           conversationHash,
           clientKey: input.clientMessageKey,
           secret: dependencies.messageHashSecret,
+        });
+        const sessionKeyHash = hashWebsiteSessionToken(sessionToken, dependencies.sessionSecret);
+        const networkKeyHash = hashTrustedNetworkBucket({
+          ip: (dependencies.resolveTrustedIp ?? resolveTrustedClientIp)(request),
+          secret: dependencies.messageHashSecret,
+          now: receivedAt,
         });
         const [message] = websiteChannelAdapter.normalize({
           sessionKeyHash: conversationHash,
@@ -107,7 +125,14 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
           productContext: message.productContext ?? null,
           debounceMs: dependencies.debounceMs,
           receivedAt: message.receivedAt,
+          websiteRateLimit: {
+            sessionKeyHash,
+            networkKeyHash,
+            sessionExpiresAt,
+            isNewSession: !existingSession,
+          },
         });
+        if (result.status === "rate_limited") return json({ error: { code: "RATE_LIMITED" } }, 429);
         if (result.status === "turn_pending") {
           dependencies.scheduleAfter(async () => {
             try {
@@ -120,8 +145,8 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
         }
 
         const response = json({ status: "accepted" }, 202);
-        if (ensured.cookie) {
-          response.headers.append("Set-Cookie", serializeWebsiteSessionCookie(ensured.cookie));
+        if (sessionCookie) {
+          response.headers.append("Set-Cookie", serializeWebsiteSessionCookie(sessionCookie));
         }
         return response;
       } catch (error) {

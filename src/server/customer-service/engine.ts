@@ -50,6 +50,9 @@ export class CustomerServiceEngine {
     reservationMicrousd: number;
     dailyHardStopMicrousd: number;
     totalHardStopMicrousd: number;
+    websiteDailyWarningMicrousd: number;
+    websiteDailyHardStopMicrousd: number;
+    websiteTotalHardStopMicrousd: number;
   }>;
 
   constructor(input: Readonly<{
@@ -63,6 +66,9 @@ export class CustomerServiceEngine {
       reservationMicrousd: number;
       dailyHardStopMicrousd: number;
       totalHardStopMicrousd: number;
+      websiteDailyWarningMicrousd?: number;
+      websiteDailyHardStopMicrousd?: number;
+      websiteTotalHardStopMicrousd?: number;
     }>;
   }>) {
     this.repository = input.repository;
@@ -70,7 +76,13 @@ export class CustomerServiceEngine {
     this.policyGate = input.policyGate ?? evaluatePolicyGate;
     this.outputValidator = input.outputValidator ?? validateDraft;
     this.knowledge = input.knowledge;
-    this.budget = input.budget;
+    this.budget = {
+      ...input.budget,
+      websiteDailyWarningMicrousd: input.budget.websiteDailyWarningMicrousd
+        ?? input.budget.dailyHardStopMicrousd,
+      websiteDailyHardStopMicrousd: input.budget.websiteDailyHardStopMicrousd ?? input.budget.dailyHardStopMicrousd,
+      websiteTotalHardStopMicrousd: input.budget.websiteTotalHardStopMicrousd ?? input.budget.totalHardStopMicrousd,
+    };
   }
 
   private gateFor(text: string, context: Parameters<typeof resolveContextualIntent>[0]["history"]) {
@@ -269,6 +281,11 @@ export class CustomerServiceEngine {
       dailyScopeKey,
       dailyHardStopMicrousd: this.budget.dailyHardStopMicrousd,
       totalHardStopMicrousd: this.budget.totalHardStopMicrousd,
+      ...(draftInput.current.channel === "website" ? {
+        websiteDailyWarningMicrousd: this.budget.websiteDailyWarningMicrousd,
+        websiteDailyHardStopMicrousd: this.budget.websiteDailyHardStopMicrousd,
+        websiteTotalHardStopMicrousd: this.budget.websiteTotalHardStopMicrousd,
+      } : {}),
     });
     if (reservation.status === "budget_blocked") {
       return { status: "budget_blocked", attemptId: reservation.attemptId };

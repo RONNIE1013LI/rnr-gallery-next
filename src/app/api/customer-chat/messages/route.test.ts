@@ -29,7 +29,7 @@ function request(body: unknown, input: Readonly<{
 
 function setup(input: Readonly<{
   enabled?: boolean;
-  ingestResults?: readonly ({ status: "duplicate" } | {
+  ingestResults?: readonly ({ status: "duplicate" } | { status: "rate_limited" } | {
     status: "turn_pending";
     messageId: string;
     turnId: string;
@@ -70,6 +70,7 @@ function setup(input: Readonly<{
     now: () => now,
     cookieEnvironment: "preview",
     createSessionToken: () => sessionToken,
+    resolveTrustedIp: () => "203.0.113.42",
   });
   return { handler, repository, tasks, processTurn, resolveProductContext };
 }
@@ -125,6 +126,19 @@ describe("POST /api/customer-chat/messages", () => {
     expect(current.repository.ingestConversationEvent).toHaveBeenCalledTimes(2);
   });
 
+  it("returns 429 without scheduling processing when the database rejects website abuse", async () => {
+    const current = setup({ ingestResults: [{ status: "rate_limited" }] });
+
+    const response = await current.handler.POST(request(validBody));
+
+    expect(response.status).toBe(429);
+    expect(await response.json()).toEqual({ error: { code: "RATE_LIMITED" } });
+    expect(current.tasks).toHaveLength(0);
+    expect(current.processTurn).not.toHaveBeenCalled();
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(current.repository.ensureWebsiteSession).not.toHaveBeenCalled();
+  });
+
   it("fails closed before session creation when the feature is disabled", async () => {
     const current = setup({ enabled: false });
     const response = await current.handler.POST(request(validBody));
@@ -152,7 +166,8 @@ describe("POST /api/customer-chat/messages", () => {
 
   it("returns a generic failure without leaking internal errors", async () => {
     const current = setup();
-    current.repository.ensureWebsiteSession.mockRejectedValueOnce(new Error("private database host and token"));
+    current.repository.ingestConversationEvent.mockReset();
+    current.repository.ingestConversationEvent.mockRejectedValueOnce(new Error("private database host and token"));
     const response = await current.handler.POST(request(validBody));
     expect(response.status).toBe(500);
     const body = await response.json();

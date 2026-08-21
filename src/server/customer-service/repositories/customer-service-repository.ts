@@ -65,6 +65,12 @@ export type HashedConversationEvent = HashedIncomingMessage & Readonly<{
   learningEligible?: boolean;
   humanReplyGroupMs?: number;
   debounceMs?: number;
+  websiteRateLimit?: Readonly<{
+    sessionKeyHash: string;
+    networkKeyHash: string;
+    sessionExpiresAt: Date;
+    isNewSession?: boolean;
+  }>;
 }>;
 
 export type ConversationContextItem = Readonly<{
@@ -112,6 +118,9 @@ export type ProviderAttemptReservation = Readonly<{
   dailyScopeKey: string;
   dailyHardStopMicrousd: number;
   totalHardStopMicrousd: number;
+  websiteDailyWarningMicrousd?: number;
+  websiteDailyHardStopMicrousd?: number;
+  websiteTotalHardStopMicrousd?: number;
 }>;
 
 export type ProviderAttemptCompletion = Readonly<{
@@ -267,6 +276,7 @@ export interface CustomerServiceRepository {
   ingestConversationEvent(input: HashedConversationEvent): Promise<
     | Readonly<{ status: "turn_pending"; messageId: string; turnId: string; debounceUntil: Date }>
     | Readonly<{ status: "context_only" }>
+    | Readonly<{ status: "rate_limited" }>
     | Readonly<{ status: "duplicate" }>
   >;
   sealDueCustomerTurn(input: Readonly<{ turnId: string; now: Date }>): Promise<

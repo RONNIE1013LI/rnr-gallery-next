@@ -49,7 +49,9 @@ function repositoryFor(body: string | null, withImage = false) {
     reserveImageAnalysisAttempt: vi.fn<CustomerServiceRepository["reserveImageAnalysisAttempt"]>(async () => ({ status: "reserved" as const })),
     completeImageAnalysisAttempt: vi.fn(async () => undefined),
     markImageAttachmentDeleted: vi.fn(async () => undefined),
-    reserveProviderAttempt: vi.fn(async () => ({ status: "reserved" as const, attemptId: "attempt-1" })),
+    reserveProviderAttempt: vi.fn<CustomerServiceRepository["reserveProviderAttempt"]>(
+      async () => ({ status: "reserved" as const, attemptId: "attempt-1" }),
+    ),
     confirmProviderInvocation: vi.fn<CustomerServiceRepository["confirmProviderInvocation"]>(
       async () => ({ status: "allowed" as const }),
     ),
@@ -178,6 +180,19 @@ const attachmentContext = [{
 }];
 
 describe("CustomerServiceEngine", () => {
+  it("does not call the provider when repository budget admission is blocked", async () => {
+    const current = setup("Can you explain the design process?");
+    current.repository.reserveProviderAttempt.mockResolvedValueOnce({
+      status: "budget_blocked",
+      attemptId: "attempt-budget-blocked",
+    });
+
+    const result = await current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" });
+
+    expect(result.status).toBe("budget_blocked");
+    expect(current.provider.generate).not.toHaveBeenCalled();
+    expect(current.repository.confirmProviderInvocation).not.toHaveBeenCalled();
+  });
   it.each(["manual_generate", "manual_regenerate"] as const)(
     "routes image-bearing messages to human review without image or text providers: %s",
     async (trigger) => {

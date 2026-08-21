@@ -5,6 +5,7 @@ import {
   customerServiceAiAttempts,
   customerServiceAttachments,
   customerServiceBudgetState,
+  customerServiceWebsiteBudgetState,
   customerServiceCaseMemories,
   customerServiceCaseRetrievals,
   customerServiceConversationEvents,
@@ -18,6 +19,7 @@ import {
   customerServiceLearningCandidates,
   customerServiceMessages,
   customerServicePilotRuns,
+  customerServiceRateLimitBuckets,
   customerServiceTurns,
   customerServiceUiChanges,
   customerServiceUiRevision,
@@ -50,6 +52,76 @@ import {
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+
+const WEBSITE_RATE_LIMITS = Object.freeze({
+  sessionMinute: 5,
+  sessionHour: 30,
+  sessionTotal: 100,
+  networkMinute: 10,
+  networkHour: 60,
+});
+
+function isHash(value: string) {
+  return /^[a-f0-9]{64}$/.test(value);
+}
+
+function startOfUtcMinute(value: Date) {
+  return new Date(Math.floor(value.getTime() / 60_000) * 60_000);
+}
+
+function startOfUtcHour(value: Date) {
+  return new Date(Math.floor(value.getTime() / 3_600_000) * 3_600_000);
+}
+
+function websiteBudgetScopeKeys(dailyScopeKey: string, website: boolean) {
+  if (!website) return [] as const;
+  const date = /^daily:(\d{4}-\d{2}-\d{2})$/.exec(dailyScopeKey)?.[1];
+  if (!date) throw new Error("customer_service_budget_daily_scope_invalid");
+  return [`daily:website:${date}`, "total:website"] as const;
+}
+
+async function consumeWebsiteRateLimits(
+  transaction: Transaction,
+  input: NonNullable<HashedConversationEvent["websiteRateLimit"]>,
+  now: Date,
+) {
+  if (!isHash(input.sessionKeyHash) || !isHash(input.networkKeyHash) || input.sessionExpiresAt <= now) {
+    throw new Error("website_rate_limit_identity_invalid");
+  }
+  const minute = startOfUtcMinute(now);
+  const hour = startOfUtcHour(now);
+  const sessionStartedAt = new Date(input.sessionExpiresAt.getTime() - 7 * 24 * 60 * 60 * 1_000);
+  const networkBuckets = [
+    { kind: "network_hour" as const, key: input.networkKeyHash, window: hour, expiresAt: new Date(hour.getTime() + 3_600_000), limit: WEBSITE_RATE_LIMITS.networkHour },
+    { kind: "network_minute" as const, key: input.networkKeyHash, window: minute, expiresAt: new Date(minute.getTime() + 60_000), limit: WEBSITE_RATE_LIMITS.networkMinute },
+  ];
+  const sessionBuckets = [
+    { kind: "session_hour" as const, key: input.sessionKeyHash, window: hour, expiresAt: new Date(hour.getTime() + 3_600_000), limit: WEBSITE_RATE_LIMITS.sessionHour },
+    { kind: "session_minute" as const, key: input.sessionKeyHash, window: minute, expiresAt: new Date(minute.getTime() + 60_000), limit: WEBSITE_RATE_LIMITS.sessionMinute },
+    { kind: "session_total" as const, key: input.sessionKeyHash, window: sessionStartedAt, expiresAt: input.sessionExpiresAt, limit: WEBSITE_RATE_LIMITS.sessionTotal },
+  ];
+
+  const consume = async (buckets: typeof networkBuckets | typeof sessionBuckets) => {
+    let allowed = true;
+    for (const bucket of [...buckets].sort((left, right) => `${left.kind}:${left.key}`.localeCompare(`${right.kind}:${right.key}`))) {
+      const result = await transaction.execute(sql`
+        insert into ${customerServiceRateLimitBuckets} (
+          bucket_kind, bucket_key_hash, window_started_at, expires_at, request_count
+        ) values (${bucket.kind}, ${bucket.key}, ${bucket.window}, ${bucket.expiresAt}, 1)
+        on conflict (bucket_kind, bucket_key_hash, window_started_at) do update
+          set request_count = ${customerServiceRateLimitBuckets.requestCount} + 1,
+              updated_at = now()
+          where ${customerServiceRateLimitBuckets.requestCount} < ${bucket.limit}
+        returning id
+      `);
+      if (!result.rows.length) allowed = false;
+    }
+    return allowed;
+  };
+  const networkAllowed = await consume(networkBuckets);
+  if (!networkAllowed && input.isNewSession) return false;
+  return (await consume(sessionBuckets)) && networkAllowed;
+}
 
 async function nextAttemptNumber(transaction: Transaction, messageId: string) {
   await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${messageId}))`);
@@ -95,6 +167,57 @@ async function ensureBudgetRows(transaction: Transaction, keys: readonly string[
     .where(sql`${customerServiceBudgetState.scopeKey} in (${sql.join(keys.map((key) => sql`${key}`), sql`, `)})`)
     .orderBy(asc(customerServiceBudgetState.scopeKey))
     .for("update");
+}
+
+async function ensureWebsiteBudgetRows(transaction: Transaction, keys: readonly string[]) {
+  await transaction.insert(customerServiceWebsiteBudgetState)
+    .values(keys.map((scopeKey) => ({ scopeKey })))
+    .onConflictDoNothing();
+  return transaction.select().from(customerServiceWebsiteBudgetState)
+    .where(sql`${customerServiceWebsiteBudgetState.scopeKey} in (${sql.join(keys.map((key) => sql`${key}`), sql`, `)})`)
+    .orderBy(asc(customerServiceWebsiteBudgetState.scopeKey))
+    .for("update");
+}
+
+async function releaseProviderBudget(
+  transaction: Transaction,
+  dailyScopeKey: string,
+  channel: "facebook" | "website",
+  reserved: number,
+) {
+  await ensureBudgetRows(transaction, [dailyScopeKey, "total"].sort());
+  await transaction.update(customerServiceBudgetState).set({
+    reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${reserved})`,
+  }).where(sql`${customerServiceBudgetState.scopeKey} in (${dailyScopeKey}, 'total')`);
+  if (channel === "website") {
+    const websiteKeys = websiteBudgetScopeKeys(dailyScopeKey, true);
+    await ensureWebsiteBudgetRows(transaction, [...websiteKeys].sort());
+    await transaction.update(customerServiceWebsiteBudgetState).set({
+      reservedMicrousd: sql`greatest(0, ${customerServiceWebsiteBudgetState.reservedMicrousd} - ${reserved})`,
+    }).where(sql`${customerServiceWebsiteBudgetState.scopeKey} in (${sql.join(websiteKeys.map((key) => sql`${key}`), sql`, `)})`);
+  }
+}
+
+async function settleProviderBudget(
+  transaction: Transaction,
+  dailyScopeKey: string,
+  channel: "facebook" | "website",
+  reserved: number,
+  settled: number,
+) {
+  await ensureBudgetRows(transaction, [dailyScopeKey, "total"].sort());
+  await transaction.update(customerServiceBudgetState).set({
+    reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${reserved})`,
+    spentMicrousd: sql`${customerServiceBudgetState.spentMicrousd} + ${settled}`,
+  }).where(sql`${customerServiceBudgetState.scopeKey} in (${dailyScopeKey}, 'total')`);
+  if (channel === "website") {
+    const websiteKeys = websiteBudgetScopeKeys(dailyScopeKey, true);
+    await ensureWebsiteBudgetRows(transaction, [...websiteKeys].sort());
+    await transaction.update(customerServiceWebsiteBudgetState).set({
+      reservedMicrousd: sql`greatest(0, ${customerServiceWebsiteBudgetState.reservedMicrousd} - ${reserved})`,
+      spentMicrousd: sql`${customerServiceWebsiteBudgetState.spentMicrousd} + ${settled}`,
+    }).where(sql`${customerServiceWebsiteBudgetState.scopeKey} in (${sql.join(websiteKeys.map((key) => sql`${key}`), sql`, `)})`);
+  }
 }
 
 async function validatedAnalysisSummary(
@@ -604,6 +727,24 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
 
     async ingestConversationEvent(input: HashedConversationEvent) {
       return database.transaction(async (transaction) => {
+        if (input.websiteRateLimit) {
+          if (input.channel !== "website" || input.role !== "customer") {
+            throw new Error("website_rate_limit_event_invalid");
+          }
+          await transaction.execute(sql`
+            select pg_advisory_xact_lock(hashtext(${'website-message:' + input.externalMessageKeyHash}))
+          `);
+          const [duplicate] = await transaction.select({ id: customerServiceMessages.id })
+            .from(customerServiceMessages)
+            .where(and(
+              eq(customerServiceMessages.channel, "website"),
+              eq(customerServiceMessages.externalMessageKeyHash, input.externalMessageKeyHash),
+            )).limit(1);
+          if (duplicate) return { status: "duplicate" as const };
+          const allowed = await consumeWebsiteRateLimits(transaction, input.websiteRateLimit, input.receivedAt);
+          if (!allowed) return { status: "rate_limited" as const };
+        }
+
         const insertedConversation = await transaction.insert(customerServiceConversations).values({
           channel: input.channel,
           externalKeyHash: input.externalConversationKeyHash,
@@ -616,6 +757,39 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
               eq(customerServiceConversations.channel, input.channel),
               eq(customerServiceConversations.externalKeyHash, input.externalConversationKeyHash),
             )).limit(1);
+
+        if (input.websiteRateLimit) {
+          await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + conversation.id}))`);
+          await transaction.insert(customerServiceWebSessions).values({
+            conversationId: conversation.id,
+            channel: "website",
+            sessionTokenHash: input.websiteRateLimit.sessionKeyHash,
+            status: "active",
+            expiresAt: input.websiteRateLimit.sessionExpiresAt,
+            lastSeenAt: input.receivedAt,
+            createdAt: input.receivedAt,
+            updatedAt: input.receivedAt,
+          }).onConflictDoNothing();
+          const [session] = await transaction.select({
+            conversationId: customerServiceWebSessions.conversationId,
+          }).from(customerServiceWebSessions)
+            .where(and(
+              eq(customerServiceWebSessions.channel, "website"),
+              eq(customerServiceWebSessions.sessionTokenHash, input.websiteRateLimit.sessionKeyHash),
+              eq(customerServiceWebSessions.status, "active"),
+              sql`${customerServiceWebSessions.expiresAt} > ${input.receivedAt}`,
+            )).limit(1);
+          if (!session || session.conversationId !== conversation.id) {
+            throw new Error("website_session_conflict");
+          }
+          await transaction.update(customerServiceWebSessions).set({
+            lastSeenAt: input.receivedAt,
+            updatedAt: input.receivedAt,
+          }).where(and(
+            eq(customerServiceWebSessions.sessionTokenHash, input.websiteRateLimit.sessionKeyHash),
+            eq(customerServiceWebSessions.conversationId, conversation.id),
+          ));
+        }
 
         const body = input.text?.trim() || "[Image attachment]";
         if (input.role === "staff") {
@@ -768,17 +942,6 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         }
 
         const customerText = input.text?.trim() || null;
-        const [message] = await transaction.insert(customerServiceMessages).values({
-          conversationId: conversation.id,
-          channel: input.channel,
-          externalMessageKeyHash: input.externalMessageKeyHash,
-          body,
-          customerText,
-          productContext: input.channel === "website" ? input.productContext ?? null : null,
-          receivedAt: input.receivedAt,
-        }).onConflictDoNothing().returning({ id: customerServiceMessages.id });
-        if (!message) return { status: "duplicate" as const };
-
         const debounceMs = input.debounceMs ?? 2_000;
         if (!Number.isSafeInteger(debounceMs) || debounceMs < 250 || debounceMs > 10_000) {
           throw new Error("customer_service_turn_debounce_invalid");
@@ -807,6 +970,26 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         const mayExtend = Boolean(openTurn)
           && openTurn.fragmentCount < 8
           && combinedBody.length <= 2_400;
+        if (input.websiteRateLimit && !mayExtend) {
+          const [runnableTurn] = await transaction.select({ id: customerServiceTurns.id })
+            .from(customerServiceTurns)
+            .where(and(
+              eq(customerServiceTurns.conversationId, conversation.id),
+              inArray(customerServiceTurns.status, ["open", "sealed"]),
+              inArray(customerServiceTurns.processingStatus, ["pending", "running"]),
+            )).limit(1).for("update");
+          if (runnableTurn) return { status: "rate_limited" as const };
+        }
+        const [message] = await transaction.insert(customerServiceMessages).values({
+          conversationId: conversation.id,
+          channel: input.channel,
+          externalMessageKeyHash: input.externalMessageKeyHash,
+          body,
+          customerText,
+          productContext: input.channel === "website" ? input.productContext ?? null : null,
+          receivedAt: input.receivedAt,
+        }).onConflictDoNothing().returning({ id: customerServiceMessages.id });
+        if (!message) return { status: "duplicate" as const };
         const [turn] = mayExtend && openTurn
           ? await transaction.update(customerServiceTurns).set({
             openedAt: sql`least(${customerServiceTurns.openedAt}, ${input.receivedAt})`,
@@ -1051,6 +1234,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         const [turn] = await transaction.select({
           id: customerServiceTurns.id,
           messageId: customerServiceTurns.representativeMessageId,
+          channel: customerServiceTurns.channel,
         }).from(customerServiceTurns).where(and(
           eq(customerServiceTurns.id, candidateId),
           eq(customerServiceTurns.status, "sealed"),
@@ -1114,10 +1298,12 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         ) {
           if (latestAttempt.reservedCostMicrousd > 0) {
             const dailyScopeKey = localDateScopeKey(latestAttempt.startedAt);
-            await ensureBudgetRows(transaction, [dailyScopeKey, "total"].sort());
-            await transaction.update(customerServiceBudgetState).set({
-              reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${latestAttempt.reservedCostMicrousd})`,
-            }).where(sql`${customerServiceBudgetState.scopeKey} in (${dailyScopeKey}, 'total')`);
+            await releaseProviderBudget(
+              transaction,
+              dailyScopeKey,
+              turn.channel,
+              latestAttempt.reservedCostMicrousd,
+            );
           }
           await transaction.update(customerServiceAiAttempts).set({
             status: "abandoned",
@@ -2066,12 +2252,35 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           return { status: "human_reply_received" as const, attemptId: attempt.id };
         }
 
+        const [persistedMessage] = await transaction.select({ channel: customerServiceMessages.channel })
+          .from(customerServiceMessages)
+          .where(eq(customerServiceMessages.id, input.messageId))
+          .limit(1);
+        if (!persistedMessage) throw new Error("customer_service_message_not_found");
+        const website = persistedMessage.channel === "website";
+        if (website && (!input.websiteDailyWarningMicrousd
+          || !input.websiteDailyHardStopMicrousd
+          || !input.websiteTotalHardStopMicrousd)) {
+          throw new Error("customer_service_website_budget_config_missing");
+        }
         const rows = await ensureBudgetRows(transaction, [input.dailyScopeKey, "total"].sort());
         const daily = rows.find((row) => row.scopeKey === input.dailyScopeKey);
         const total = rows.find((row) => row.scopeKey === "total");
+        const websiteScopeKeys = websiteBudgetScopeKeys(input.dailyScopeKey, website);
+        const websiteRows = website
+          ? await ensureWebsiteBudgetRows(transaction, [...websiteScopeKeys].sort())
+          : [];
+        const websiteDailyScopeKey = website ? websiteScopeKeys[0] : null;
+        const websiteDaily = websiteDailyScopeKey
+          ? websiteRows.find((row) => row.scopeKey === websiteDailyScopeKey)
+          : null;
+        const websiteTotal = website ? websiteRows.find((row) => row.scopeKey === "total:website") : null;
         const blocked = !daily || !total
           || daily.spentMicrousd + daily.reservedMicrousd + input.reservationMicrousd > input.dailyHardStopMicrousd
-          || total.spentMicrousd + total.reservedMicrousd + input.reservationMicrousd > input.totalHardStopMicrousd;
+          || total.spentMicrousd + total.reservedMicrousd + input.reservationMicrousd > input.totalHardStopMicrousd
+          || (website && (!websiteDaily || !websiteTotal
+            || websiteDaily.spentMicrousd + websiteDaily.reservedMicrousd + input.reservationMicrousd > input.websiteDailyHardStopMicrousd!
+            || websiteTotal.spentMicrousd + websiteTotal.reservedMicrousd + input.reservationMicrousd > input.websiteTotalHardStopMicrousd!));
         if (blocked) {
           const attemptId = await insertGateAttempt(transaction, {
             messageId: input.messageId,
@@ -2092,6 +2301,18 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         await transaction.update(customerServiceBudgetState).set({
           reservedMicrousd: sql`${customerServiceBudgetState.reservedMicrousd} + ${input.reservationMicrousd}`,
         }).where(sql`${customerServiceBudgetState.scopeKey} in (${input.dailyScopeKey}, 'total')`);
+        if (website && websiteDailyScopeKey) {
+          await transaction.update(customerServiceWebsiteBudgetState).set({
+            reservedMicrousd: sql`${customerServiceWebsiteBudgetState.reservedMicrousd} + ${input.reservationMicrousd}`,
+          }).where(sql`${customerServiceWebsiteBudgetState.scopeKey} in (${sql.join(websiteScopeKeys.map((key) => sql`${key}`), sql`, `)})`);
+          await transaction.update(customerServiceWebsiteBudgetState).set({
+            warningReachedAt: sql`coalesce(${customerServiceWebsiteBudgetState.warningReachedAt}, now())`,
+            warningThresholdMicrousd: input.websiteDailyWarningMicrousd,
+          }).where(and(
+            eq(customerServiceWebsiteBudgetState.scopeKey, websiteDailyScopeKey),
+            sql`${customerServiceWebsiteBudgetState.spentMicrousd} + ${customerServiceWebsiteBudgetState.reservedMicrousd} >= ${input.websiteDailyWarningMicrousd!}`,
+          ));
+        }
         const [attempt] = await transaction.insert(customerServiceAiAttempts).values({
           messageId: input.messageId,
           attemptNumber: await nextAttemptNumber(transaction, input.messageId),
@@ -2114,7 +2335,9 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       return database.transaction(async (transaction) => {
         const [initial] = await transaction.select({
           messageId: customerServiceAiAttempts.messageId,
+          channel: customerServiceMessages.channel,
         }).from(customerServiceAiAttempts)
+          .innerJoin(customerServiceMessages, eq(customerServiceMessages.id, customerServiceAiAttempts.messageId))
           .where(eq(customerServiceAiAttempts.id, input.attemptId)).limit(1);
         if (!initial) throw new Error("customer_service_attempt_not_found");
         let turn = await turnForMessage(transaction, initial.messageId);
@@ -2138,10 +2361,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           || await hasHumanReplyAfterTurn(transaction, turn)
         );
         if (humanReplyReceived) {
-          await ensureBudgetRows(transaction, [input.dailyScopeKey, "total"].sort());
-          await transaction.update(customerServiceBudgetState).set({
-            reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${attempt.reserved})`,
-          }).where(sql`${customerServiceBudgetState.scopeKey} in (${input.dailyScopeKey}, 'total')`);
+          await releaseProviderBudget(transaction, input.dailyScopeKey, initial.channel, attempt.reserved);
           await transaction.update(customerServiceAiAttempts).set({
             status: "abandoned",
             providerCalled: false,
@@ -2662,7 +2882,9 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       await database.transaction(async (transaction) => {
         const [initial] = await transaction.select({
           messageId: customerServiceAiAttempts.messageId,
+          channel: customerServiceMessages.channel,
         }).from(customerServiceAiAttempts)
+          .innerJoin(customerServiceMessages, eq(customerServiceMessages.id, customerServiceAiAttempts.messageId))
           .where(eq(customerServiceAiAttempts.id, input.attemptId)).limit(1);
         if (!initial) throw new Error("customer_service_attempt_not_found");
         let turn = await turnForMessage(transaction, initial.messageId);
@@ -2682,12 +2904,14 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           .from(customerServiceImageJobs)
           .where(eq(customerServiceImageJobs.textAttemptId, input.attemptId)).limit(1);
         if (!imageJob) {
-          await ensureBudgetRows(transaction, [input.dailyScopeKey, "total"].sort());
           const settledCost = input.estimatedCostMicrousd ?? attempt.reserved;
-          await transaction.update(customerServiceBudgetState).set({
-            reservedMicrousd: sql`greatest(0, ${customerServiceBudgetState.reservedMicrousd} - ${attempt.reserved})`,
-            spentMicrousd: sql`${customerServiceBudgetState.spentMicrousd} + ${settledCost}`,
-          }).where(sql`${customerServiceBudgetState.scopeKey} in (${input.dailyScopeKey}, 'total')`);
+          await settleProviderBudget(
+            transaction,
+            input.dailyScopeKey,
+            initial.channel,
+            attempt.reserved,
+            settledCost,
+          );
         }
         const humanReplyReceived = Boolean(turn) && (
           (turn?.status === "suppressed" && turn.suppressionReason === "human_outbound_received")
