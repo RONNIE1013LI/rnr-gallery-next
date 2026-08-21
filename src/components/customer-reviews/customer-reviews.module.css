@@ -2,11 +2,16 @@
   --review-facebook: #1877f2;
   --review-card-border: #d9dde5;
   --review-card-muted: #606770;
+  --review-background-sand: #f2e9de;
   padding: var(--v3-section-standard, 6rem) 0;
   position: relative;
   z-index: 1;
   color: var(--v3-ink, #18211d);
   background: var(--v3-paper, #faf6ee);
+}
+
+.sectionSand {
+  background: var(--review-background-sand);
 }
 
 .shell {

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { AnalyticsRuntimeController } from "@/components/analytics-runtime-controller";
+import { CustomerReviewsSection } from "@/components/customer-reviews/customer-reviews-section";
 import { SiteChrome } from "@/components/site-chrome";
 import { isGa4Production } from "@/domain/analytics/runtime";
 import { getSafePublicContent } from "@/server/admin/admin-content-runtime";
@@ -8,6 +9,7 @@ import { getOptionalSession } from "@/server/auth/get-optional-session";
 import { cookies } from "next/headers";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { MARKET_COOKIE_NAME, parseMarketCookie } from "@/server/markets/market-cookie";
+import { getSafePublicCustomerReviewSection } from "@/server/customer-reviews/customer-review-runtime";
 import "./globals.css";
 
 const socialTitle = "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service";
@@ -58,7 +60,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const ga4Enabled = isGa4Production(process.env.VERCEL_ENV);
-  const [managed, session, registryState, cookieStore] = await Promise.all([
+  const [managed, session, registryState, cookieStore, reviewSection] = await Promise.all([
     getSafePublicContent([
       "footer.tagline",
       "contact.email",
@@ -67,6 +69,7 @@ export default async function RootLayout({
     getOptionalSession(),
     getSafePublicProductRegistry(),
     cookies(),
+    getSafePublicCustomerReviewSection(),
   ]);
 
   return (
@@ -85,6 +88,9 @@ export default async function RootLayout({
             email: managed["contact.email"],
             phone: managed["contact.phone"],
           }}
+          footerLead={reviewSection
+            ? <CustomerReviewsSection data={reviewSection} background="sand" />
+            : null}
         >
           {children}
         </SiteChrome>

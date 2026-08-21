@@ -12,12 +12,14 @@ import type { Market } from "@/domain/markets/types";
 export function SiteChrome({
   children,
   footerContent,
+  footerLead = null,
   initialCustomerId = null,
   initialMarket = "NZ",
   australiaEnabled = false,
 }: Readonly<{
   children: React.ReactNode;
   footerContent: SiteFooterContent;
+  footerLead?: React.ReactNode;
   initialCustomerId?: string | null;
   initialMarket?: Market;
   australiaEnabled?: boolean;
@@ -31,6 +33,12 @@ export function SiteChrome({
   const market: Market = pathname === "/au" || pathname.startsWith("/au/")
     ? "AU"
     : initialMarket;
+  const suppressFooterLead = pathname === "/" || pathname === "/au"
+    || pathname === "/account" || pathname.startsWith("/account/")
+    || pathname === "/checkout" || pathname.startsWith("/checkout/")
+    || pathname === "/orders" || pathname.startsWith("/orders/")
+    || pathname === "/pay" || pathname.startsWith("/pay/")
+    || pathname === "/reply-assistant" || pathname.startsWith("/reply-assistant/");
   useEffect(() => {
     if (initialMarket !== "AU") return;
     const destination = australianCommerceDestination(pathname);
@@ -45,6 +53,7 @@ export function SiteChrome({
       <ImageProtectionLayer />
       <SiteHeader initialMarket={initialMarket} australiaEnabled={australiaEnabled} />
       {children}
+      {!suppressFooterLead ? footerLead : null}
       <SiteFooter content={footerContent} market={market} />
     </CommerceIdentityProvider>
   );

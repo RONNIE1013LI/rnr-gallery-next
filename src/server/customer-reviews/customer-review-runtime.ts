@@ -1,3 +1,4 @@
+import { cache } from "react";
 import type { PublicCustomerReviewSection } from "@/domain/customer-reviews/types";
 import type { CustomerReviewMediaKind } from "@/domain/customer-reviews/types";
 import { getProductRegistryRuntime } from "@/server/admin/product-registry-runtime";
@@ -61,7 +62,7 @@ export async function persistCustomerReviewMutationWithMedia<T extends { id: str
   });
 }
 
-export async function getSafePublicCustomerReviewSection(
+export const getSafePublicCustomerReviewSection = cache(async function getSafePublicCustomerReviewSection(
   service: Readonly<{
     getSafePublicSection(): Promise<PublicCustomerReviewSection | null>;
   }> = getCustomerReviewRuntime(),
@@ -71,4 +72,4 @@ export async function getSafePublicCustomerReviewSection(
   } catch {
     return null;
   }
-}
+});
