@@ -247,6 +247,16 @@ export type PilotMetricCounts = Readonly<{
 }>;
 
 export interface CustomerServiceRepository {
+  resolveWebsiteSession(input: Readonly<{
+    sessionTokenHash: string;
+    now: Date;
+  }>): Promise<Readonly<{ conversationId: string; expiresAt: Date }> | null>;
+  ensureWebsiteSession(input: Readonly<{
+    sessionTokenHash: string;
+    externalConversationKeyHash: string;
+    now: Date;
+    expiresAt: Date;
+  }>): Promise<Readonly<{ conversationId: string; expiresAt: Date }>>;
   ingestConversationEvent(input: HashedConversationEvent): Promise<
     | Readonly<{ status: "turn_pending"; messageId: string; turnId: string; debounceUntil: Date }>
     | Readonly<{ status: "context_only" }>

@@ -21,6 +21,7 @@ import {
   customerServiceTurns,
   customerServiceUiChanges,
   customerServiceUiRevision,
+  customerServiceWebSessions,
 } from "@/server/db/schema";
 import type {
   CustomerServiceRepository,
@@ -534,6 +535,73 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
   }
 
   const repository: CustomerServiceRepository = {
+    async resolveWebsiteSession(input) {
+      const [session] = await database.select({
+        conversationId: customerServiceWebSessions.conversationId,
+        expiresAt: customerServiceWebSessions.expiresAt,
+      }).from(customerServiceWebSessions).where(and(
+        eq(customerServiceWebSessions.channel, "website"),
+        eq(customerServiceWebSessions.sessionTokenHash, input.sessionTokenHash),
+        eq(customerServiceWebSessions.status, "active"),
+        sql`${customerServiceWebSessions.expiresAt} > ${input.now}`,
+      )).limit(1);
+      return session ?? null;
+    },
+
+    async ensureWebsiteSession(input) {
+      return database.transaction(async (transaction) => {
+        await transaction.insert(customerServiceConversations).values({
+          channel: "website",
+          externalKeyHash: input.externalConversationKeyHash,
+          createdAt: input.now,
+          updatedAt: input.now,
+        }).onConflictDoNothing();
+        const [conversation] = await transaction.select({ id: customerServiceConversations.id })
+          .from(customerServiceConversations)
+          .where(and(
+            eq(customerServiceConversations.channel, "website"),
+            eq(customerServiceConversations.externalKeyHash, input.externalConversationKeyHash),
+          ))
+          .limit(1);
+        if (!conversation) throw new Error("website_session_conversation_missing");
+
+        await transaction.insert(customerServiceWebSessions).values({
+          conversationId: conversation.id,
+          channel: "website",
+          sessionTokenHash: input.sessionTokenHash,
+          status: "active",
+          expiresAt: input.expiresAt,
+          lastSeenAt: input.now,
+          createdAt: input.now,
+          updatedAt: input.now,
+        }).onConflictDoNothing();
+
+        const [session] = await transaction.select({
+          conversationId: customerServiceWebSessions.conversationId,
+          expiresAt: customerServiceWebSessions.expiresAt,
+        }).from(customerServiceWebSessions).where(and(
+          eq(customerServiceWebSessions.channel, "website"),
+          eq(customerServiceWebSessions.sessionTokenHash, input.sessionTokenHash),
+          eq(customerServiceWebSessions.status, "active"),
+          sql`${customerServiceWebSessions.expiresAt} > ${input.now}`,
+        )).limit(1);
+        if (!session || session.conversationId !== conversation.id) {
+          throw new Error("website_session_conflict");
+        }
+
+        await transaction.update(customerServiceWebSessions).set({
+          lastSeenAt: input.now,
+          updatedAt: input.now,
+        }).where(and(
+          eq(customerServiceWebSessions.sessionTokenHash, input.sessionTokenHash),
+          eq(customerServiceWebSessions.conversationId, conversation.id),
+          eq(customerServiceWebSessions.status, "active"),
+          sql`${customerServiceWebSessions.expiresAt} > ${input.now}`,
+        ));
+        return session;
+      });
+    },
+
     async ingestConversationEvent(input: HashedConversationEvent) {
       return database.transaction(async (transaction) => {
         const insertedConversation = await transaction.insert(customerServiceConversations).values({
