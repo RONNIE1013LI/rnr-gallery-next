@@ -26,6 +26,7 @@ export type CustomerServiceConfig = Readonly<{
   turnRecoverySecret: string;
   websiteSessionSecret: string;
   websiteAbuseHashSecret: string;
+  reviewLinkSecret: string;
   replyAssistantAlertTo: string;
   websiteDailyWarningMicrousd: number;
   websiteDailyHardStopMicrousd: number;
@@ -117,8 +118,15 @@ export function parseCustomerServiceConfig(
   if (imageAnalysisEnabled && provider === "openai") pricingForReviewedImageModel(imageAnalysisModel);
   const websiteSessionSecret = websiteEnabled ? requiredSecret(env, "CUSTOMER_CHAT_SESSION_SECRET") : "";
   const websiteAbuseHashSecret = websiteEnabled ? requiredSecret(env, "CUSTOMER_CHAT_ABUSE_HASH_SECRET") : "";
+  const reviewLinkSecret = websiteEnabled ? requiredSecret(env, "REPLY_ASSISTANT_REVIEW_LINK_SECRET") : "";
   if (websiteEnabled && websiteSessionSecret === websiteAbuseHashSecret) {
     throw new Error("CUSTOMER_CHAT_SESSION_SECRET and CUSTOMER_CHAT_ABUSE_HASH_SECRET must differ");
+  }
+  if (
+    websiteEnabled
+    && (reviewLinkSecret === websiteSessionSecret || reviewLinkSecret === websiteAbuseHashSecret)
+  ) {
+    throw new Error("REPLY_ASSISTANT_REVIEW_LINK_SECRET must differ from website session and abuse secrets");
   }
   const replyAssistantAlertTo = websiteEnabled ? requiredEmail(env, "REPLY_ASSISTANT_ALERT_TO") : "";
   const websiteDailyWarningMicrousd = websiteEnabled
@@ -174,6 +182,7 @@ export function parseCustomerServiceConfig(
     turnRecoverySecret: enabled || websiteEnabled ? requiredSecret(env, "CRON_SECRET") : "",
     websiteSessionSecret,
     websiteAbuseHashSecret,
+    reviewLinkSecret,
     replyAssistantAlertTo,
     websiteDailyWarningMicrousd,
     websiteDailyHardStopMicrousd,

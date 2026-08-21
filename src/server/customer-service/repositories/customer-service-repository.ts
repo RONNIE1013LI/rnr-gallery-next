@@ -369,8 +369,9 @@ export interface CustomerServiceRepository {
   beginClaimedReviewAlertSend(input: Readonly<{
     id: string;
     leaseToken: string;
+    payloadDigest: string;
     now: Date;
-  }>): Promise<boolean>;
+  }>): Promise<"send" | "resolved" | "payload_mismatch">;
   markReviewAlertSent(input: Readonly<{
     id: string;
     leaseToken: string;

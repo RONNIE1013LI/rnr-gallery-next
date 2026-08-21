@@ -707,6 +707,7 @@ export const customerServiceReviewAlertOutbox = pgTable(
     leaseToken: text("lease_token"),
     leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
     providerSendStartedAt: timestamp("provider_send_started_at", { withTimezone: true }),
+    providerPayloadDigest: text("provider_payload_digest"),
     lastErrorCode: text("last_error_code"),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
@@ -722,6 +723,10 @@ export const customerServiceReviewAlertOutbox = pgTable(
     ),
     check("customer_service_review_alert_outbox_attempts_valid", sql`${table.attemptCount} >= 0`),
     check("customer_service_review_alert_outbox_key_valid", sql`length(trim(${table.idempotencyKey})) > 0`),
+    check(
+      "customer_service_review_alert_outbox_payload_digest_valid",
+      sql`${table.providerPayloadDigest} is null or ${table.providerPayloadDigest} ~ '^[0-9a-f]{64}$'`,
+    ),
     check(
       "customer_service_review_alert_outbox_lease_valid",
       sql`(${table.status} = 'leased' and ${table.leaseToken} is not null and ${table.leaseExpiresAt} is not null) or (${table.status} <> 'leased' and ${table.leaseToken} is null and ${table.leaseExpiresAt} is null)`,

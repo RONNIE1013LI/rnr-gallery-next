@@ -2,6 +2,59 @@ import { describe, expect, it } from "vitest";
 import { parseCustomerServiceConfig, publicCustomerServiceConfig } from "./config";
 
 describe("customer service server config", () => {
+  it("requires a strong dedicated review-link secret when website alerts are enabled", () => {
+    const base = {
+      WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
+      CUSTOMER_CHAT_SESSION_SECRET: "website-session-secret-at-least-32-bytes",
+      CUSTOMER_CHAT_ABUSE_HASH_SECRET: "website-abuse-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_ALERT_TO: "support@example.test",
+      CRON_SECRET: "website-recovery-secret-at-least-32-bytes",
+    };
+
+    expect(() => parseCustomerServiceConfig(base))
+      .toThrow("REPLY_ASSISTANT_REVIEW_LINK_SECRET is required");
+    expect(() => parseCustomerServiceConfig({
+      ...base,
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: "too-short",
+    })).toThrow("REPLY_ASSISTANT_REVIEW_LINK_SECRET must be at least 32 characters");
+  });
+
+  it("keeps the review-link secret in a separate server-only config domain", () => {
+    const parsed = parseCustomerServiceConfig({
+      WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
+      CUSTOMER_CHAT_SESSION_SECRET: "website-session-secret-at-least-32-bytes",
+      CUSTOMER_CHAT_ABUSE_HASH_SECRET: "website-abuse-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: "review-link-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_ALERT_TO: "support@example.test",
+      CRON_SECRET: "website-recovery-secret-at-least-32-bytes",
+    });
+
+    expect(parsed).toMatchObject({
+      websiteSessionSecret: "website-session-secret-at-least-32-bytes",
+      reviewLinkSecret: "review-link-secret-at-least-32-bytes",
+    });
+    expect(JSON.stringify(publicCustomerServiceConfig(parsed))).not.toMatch(/review-link-secret/i);
+  });
+
+  it("rejects reuse of a website session or abuse secret for review links", () => {
+    const base = {
+      WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
+      CUSTOMER_CHAT_SESSION_SECRET: "website-session-secret-at-least-32-bytes",
+      CUSTOMER_CHAT_ABUSE_HASH_SECRET: "website-abuse-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_ALERT_TO: "support@example.test",
+      CRON_SECRET: "website-recovery-secret-at-least-32-bytes",
+    };
+
+    expect(() => parseCustomerServiceConfig({
+      ...base,
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: base.CUSTOMER_CHAT_SESSION_SECRET,
+    })).toThrow("REPLY_ASSISTANT_REVIEW_LINK_SECRET must differ from website session and abuse secrets");
+    expect(() => parseCustomerServiceConfig({
+      ...base,
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: base.CUSTOMER_CHAT_ABUSE_HASH_SECRET,
+    })).toThrow("REPLY_ASSISTANT_REVIEW_LINK_SECRET must differ from website session and abuse secrets");
+  });
+
   it("keeps website customer chat disabled by default", () => {
     expect(parseCustomerServiceConfig({})).toMatchObject({
       enabled: false,
@@ -14,6 +67,7 @@ describe("customer service server config", () => {
       WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
       CUSTOMER_CHAT_SESSION_SECRET: "website-session-secret-at-least-32-bytes",
       CUSTOMER_CHAT_ABUSE_HASH_SECRET: "website-abuse-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: "review-link-secret-at-least-32-bytes",
       REPLY_ASSISTANT_ALERT_TO: "support@example.test",
       CRON_SECRET: "website-recovery-secret-at-least-32-bytes",
     })).toMatchObject({
@@ -41,6 +95,7 @@ describe("customer service server config", () => {
       WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
       CUSTOMER_CHAT_SESSION_SECRET: "website-session-secret-at-least-32-bytes",
       CUSTOMER_CHAT_ABUSE_HASH_SECRET: "website-abuse-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: "review-link-secret-at-least-32-bytes",
       CRON_SECRET: "website-recovery-secret-at-least-32-bytes",
     })).toThrow("REPLY_ASSISTANT_ALERT_TO is required");
   });
@@ -50,6 +105,7 @@ describe("customer service server config", () => {
       WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
       CUSTOMER_CHAT_SESSION_SECRET: "website-session-secret-at-least-32-bytes",
       CUSTOMER_CHAT_ABUSE_HASH_SECRET: "website-abuse-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: "review-link-secret-at-least-32-bytes",
       CRON_SECRET: "website-recovery-secret-at-least-32-bytes",
     };
     expect(() => parseCustomerServiceConfig({ ...base, REPLY_ASSISTANT_ALERT_TO: "not-an-email" }))
@@ -63,6 +119,7 @@ describe("customer service server config", () => {
       WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
       CUSTOMER_CHAT_SESSION_SECRET: "website-session-secret-at-least-32-bytes",
       CUSTOMER_CHAT_ABUSE_HASH_SECRET: "website-abuse-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: "review-link-secret-at-least-32-bytes",
       REPLY_ASSISTANT_ALERT_TO: "support@example.test",
     })).toThrow("CRON_SECRET is required");
   });
@@ -80,6 +137,7 @@ describe("customer service server config", () => {
       WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
       CUSTOMER_CHAT_SESSION_SECRET: "website-session-secret-at-least-32-bytes",
       CUSTOMER_CHAT_ABUSE_HASH_SECRET: "website-abuse-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: "review-link-secret-at-least-32-bytes",
       REPLY_ASSISTANT_ALERT_TO: "support@example.test",
       CRON_SECRET: "website-recovery-secret-at-least-32-bytes",
       WEBSITE_CHAT_DAILY_HARD_STOP_USD: "0",
@@ -91,6 +149,7 @@ describe("customer service server config", () => {
       WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
       CUSTOMER_CHAT_SESSION_SECRET: "website-session-secret-at-least-32-bytes",
       CUSTOMER_CHAT_ABUSE_HASH_SECRET: "website-abuse-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: "review-link-secret-at-least-32-bytes",
       REPLY_ASSISTANT_ALERT_TO: "support@example.test",
       CRON_SECRET: "website-recovery-secret-at-least-32-bytes",
     };
@@ -113,6 +172,7 @@ describe("customer service server config", () => {
       WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
       CUSTOMER_CHAT_SESSION_SECRET: "shared-website-secret-at-least-32-bytes",
       CUSTOMER_CHAT_ABUSE_HASH_SECRET: "shared-website-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: "review-link-secret-at-least-32-bytes",
       REPLY_ASSISTANT_ALERT_TO: "support@example.test",
       CRON_SECRET: "website-recovery-secret-at-least-32-bytes",
     })).toThrow("CUSTOMER_CHAT_SESSION_SECRET and CUSTOMER_CHAT_ABUSE_HASH_SECRET must differ");
@@ -152,6 +212,7 @@ describe("customer service server config", () => {
       WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
       CUSTOMER_CHAT_SESSION_SECRET: "website-session-secret-at-least-32-bytes",
       CUSTOMER_CHAT_ABUSE_HASH_SECRET: "website-abuse-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: "review-link-secret-at-least-32-bytes",
       REPLY_ASSISTANT_ALERT_TO: "support@example.test",
       CRON_SECRET: "website-recovery-secret-at-least-32-bytes",
     });

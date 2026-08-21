@@ -35,8 +35,9 @@ export type WebsiteReviewAlertRepository = Readonly<{
   beginClaimedReviewAlertSend(input: Readonly<{
     id: string;
     leaseToken: string;
+    payloadDigest: string;
     now: Date;
-  }>): Promise<boolean>;
+  }>): Promise<"send" | "resolved" | "payload_mismatch">;
   markReviewAlertSent(input: Readonly<{
     id: string;
     leaseToken: string;
@@ -60,7 +61,11 @@ export type WebsiteReviewAlertRepository = Readonly<{
 
 const tokenPattern = /^[A-Za-z0-9_-]{43}$/;
 const retryDelaysMs = [60_000, 5 * 60_000, 30 * 60_000, 120 * 60_000, 720 * 60_000] as const;
-const unknownProviderCodes = new Set(["network_error", "invalid_provider_response"]);
+const unknownProviderCodes = new Set([
+  "network_error",
+  "invalid_provider_response",
+  "invalid_idempotent_request",
+]);
 const expiredBeforeSendCode = "deep_link_expired_before_send";
 
 function validReviewId(value: string) {
@@ -124,10 +129,31 @@ function alertMessage(input: Readonly<{
   });
 }
 
+function providerPayloadDigest(input: Readonly<{
+  from: string;
+  message: Readonly<{
+    to: string;
+    subject: string;
+    text: string;
+    html: string;
+    idempotencyKey: string;
+  }>;
+}>) {
+  return createHash("sha256").update(JSON.stringify({
+    from: input.from,
+    to: [input.message.to],
+    subject: input.message.subject,
+    text: input.message.text,
+    html: input.message.html,
+    idempotencyKey: input.message.idempotencyKey,
+  })).digest("hex");
+}
+
 export function createReviewAlertService(input: Readonly<{
   repository: WebsiteReviewAlertRepository;
   provider: CustomerEmailProvider;
   alertTo: string;
+  providerFrom: string;
   siteUrl: string;
   deepLinkSecret: string;
   now?: () => Date;
@@ -168,12 +194,17 @@ export function createReviewAlertService(input: Readonly<{
         now: sendStartedAt,
       });
       if (!stillOpen) return Object.freeze({ result: "resolved" as const });
+      const payloadDigest = providerPayloadDigest({ from: input.providerFrom, message });
       const sendLinearized = await input.repository.beginClaimedReviewAlertSend({
         id: alert.id,
         leaseToken: alert.leaseToken,
+        payloadDigest,
         now: sendStartedAt,
       });
-      if (!sendLinearized) return Object.freeze({ result: "resolved" as const });
+      if (sendLinearized === "payload_mismatch") {
+        return Object.freeze({ result: "uncertain" as const });
+      }
+      if (sendLinearized !== "send") return Object.freeze({ result: "resolved" as const });
 
       let sent: Readonly<{ providerMessageId: string }>;
       try {

@@ -43,7 +43,7 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
     repository,
     generateDraft: (messageId) => engine.generateDraft({ messageId, trigger: "webhook_after" }),
     knowledgeVersion: compiledKnowledge.knowledgeVersion,
-    ...(config.websiteEnabled ? { reviewAlertSecret: config.websiteSessionSecret } : {}),
+    ...(config.websiteEnabled ? { reviewAlertSecret: config.reviewLinkSecret } : {}),
   });
   const reviewAlertService = config.websiteEnabled
     ? createReviewAlertService({
@@ -53,8 +53,9 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
         EMAIL_FROM: env.EMAIL_FROM,
       }),
       alertTo: config.replyAssistantAlertTo,
+      providerFrom: env.EMAIL_FROM?.trim() ?? "",
       siteUrl: env.BETTER_AUTH_URL ?? "http://192.168.4.199:3000",
-      deepLinkSecret: config.websiteSessionSecret,
+      deepLinkSecret: config.reviewLinkSecret,
     })
     : undefined;
   return Object.freeze({ config, repository, engine, imageJobRunner, turnRecoveryRunner, reviewAlertService });

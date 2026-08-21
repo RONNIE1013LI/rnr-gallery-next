@@ -40,7 +40,9 @@ function setup() {
   const repository = {
     claimDueReviewAlert: vi.fn(async () => delivery()),
     confirmClaimedReviewAlert: vi.fn(async () => true),
-    beginClaimedReviewAlertSend: vi.fn(async () => true),
+    beginClaimedReviewAlertSend: vi.fn<WebsiteReviewAlertRepository["beginClaimedReviewAlertSend"]>(
+      async () => "send",
+    ),
     markReviewAlertSent: vi.fn(async () => true),
     retryReviewAlert: vi.fn<WebsiteReviewAlertRepository["retryReviewAlert"]>(async () => "retry_wait"),
     markReviewAlertUncertain: vi.fn(async () => true),
@@ -53,6 +55,7 @@ function setup() {
     repository,
     provider,
     alertTo: "staff@rrgallery.example",
+    providerFrom: "R&R Gallery <support@rrgallery.example>",
     siteUrl: "https://rrgallery.example",
     deepLinkSecret: "review-link-secret-at-least-32-bytes",
     now: () => now,
@@ -81,6 +84,7 @@ describe("website human-review alert delivery", () => {
     expect(current.repository.beginClaimedReviewAlertSend).toHaveBeenCalledWith({
       id: "outbox-1",
       leaseToken: "lease-1",
+      payloadDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
       now,
     });
     expect(current.provider.send).toHaveBeenCalledWith(expect.objectContaining({
@@ -103,6 +107,36 @@ describe("website human-review alert delivery", () => {
     });
   });
 
+  it("linearizes a canonical digest of every Resend idempotency-relevant payload field", async () => {
+    const current = setup();
+
+    await current.service.deliverNext();
+
+    const message = current.provider.send.mock.calls[0][0];
+    const expectedDigest = createHash("sha256").update(JSON.stringify({
+      from: "R&R Gallery <support@rrgallery.example>",
+      to: [message.to],
+      subject: message.subject,
+      text: message.text,
+      html: message.html,
+      idempotencyKey: message.idempotencyKey,
+    })).digest("hex");
+    expect(current.repository.beginClaimedReviewAlertSend).toHaveBeenCalledWith(expect.objectContaining({
+      payloadDigest: expectedDigest,
+    }));
+  });
+
+  it("stops before the provider when durable linearization detects payload config drift", async () => {
+    const current = setup();
+    current.repository.beginClaimedReviewAlertSend.mockResolvedValueOnce("payload_mismatch");
+
+    await expect(current.service.deliverNext()).resolves.toEqual({ result: "uncertain" });
+
+    expect(current.provider.send).not.toHaveBeenCalled();
+    expect(current.repository.retryReviewAlert).not.toHaveBeenCalled();
+    expect(current.repository.markReviewAlertUncertain).not.toHaveBeenCalled();
+  });
+
   it("does not call the provider when manual resolution terminalizes the claimed alert", async () => {
     const current = setup();
     current.repository.confirmClaimedReviewAlert.mockResolvedValueOnce(false);
@@ -122,7 +156,9 @@ describe("website human-review alert delivery", () => {
       manuallyResolved = true;
       return true;
     });
-    current.repository.beginClaimedReviewAlertSend.mockImplementationOnce(async () => !manuallyResolved);
+    current.repository.beginClaimedReviewAlertSend.mockImplementationOnce(async () => (
+      manuallyResolved ? "resolved" as const : "send" as const
+    ));
 
     await expect(current.service.deliverNext()).resolves.toEqual({ result: "resolved" });
 
@@ -136,7 +172,7 @@ describe("website human-review alert delivery", () => {
     let manuallyResolved = false;
     current.repository.beginClaimedReviewAlertSend.mockImplementationOnce(async () => {
       manuallyResolved = true;
-      return true;
+      return "send" as const;
     });
     current.provider.send.mockImplementationOnce(async () => {
       expect(manuallyResolved).toBe(true);
@@ -206,7 +242,9 @@ describe("website human-review alert delivery", () => {
     const repository = {
       claimDueReviewAlert: vi.fn(async () => ({ ...delivery(), deepLinkExpiresAt: expiresAt })),
       confirmClaimedReviewAlert: vi.fn(async () => true),
-      beginClaimedReviewAlertSend: vi.fn(async () => true),
+      beginClaimedReviewAlertSend: vi.fn<WebsiteReviewAlertRepository["beginClaimedReviewAlertSend"]>(
+        async () => "send",
+      ),
       markReviewAlertSent: vi.fn(async () => true),
       retryReviewAlert: vi.fn(async () => "retry_wait" as const),
       markReviewAlertUncertain: vi.fn(async () => true),
@@ -222,6 +260,7 @@ describe("website human-review alert delivery", () => {
       repository,
       provider,
       alertTo: "staff@rrgallery.example",
+      providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret: "review-link-secret-at-least-32-bytes",
       now: freshNow,
@@ -265,6 +304,21 @@ describe("website human-review alert delivery", () => {
       id: "outbox-1",
       leaseToken: "lease-1",
       errorCode: "network_error",
+      now,
+    });
+    expect(current.repository.retryReviewAlert).not.toHaveBeenCalled();
+  });
+
+  it("terminalizes Resend invalid_idempotent_request as an uncertain result", async () => {
+    const current = setup();
+    current.provider.send.mockRejectedValueOnce(new EmailDeliveryError("invalid_idempotent_request"));
+
+    await expect(current.service.deliverNext()).resolves.toEqual({ result: "uncertain" });
+
+    expect(current.repository.markReviewAlertUncertain).toHaveBeenCalledWith({
+      id: "outbox-1",
+      leaseToken: "lease-1",
+      errorCode: "invalid_idempotent_request",
       now,
     });
     expect(current.repository.retryReviewAlert).not.toHaveBeenCalled();

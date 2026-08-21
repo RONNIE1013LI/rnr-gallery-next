@@ -1,5 +1,5 @@
 {
-  "id": "9d749ead-9535-4f9d-bc6b-7f9f7216929c",
+  "id": "115ca742-6ba4-48e1-89af-342a476ce8aa",
   "prevId": "a818e8f7-0be1-4dd3-a5f4-f3c1d7d9880f",
   "version": "7",
   "dialect": "postgresql",
@@ -5526,6 +5526,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "provider_payload_digest": {
+          "name": "provider_payload_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "last_error_code": {
           "name": "last_error_code",
           "type": "text",
@@ -5642,6 +5648,10 @@
         "customer_service_review_alert_outbox_key_valid": {
           "name": "customer_service_review_alert_outbox_key_valid",
           "value": "length(trim(\"customer_service_review_alert_outbox\".\"idempotency_key\")) > 0"
+        },
+        "customer_service_review_alert_outbox_payload_digest_valid": {
+          "name": "customer_service_review_alert_outbox_payload_digest_valid",
+          "value": "\"customer_service_review_alert_outbox\".\"provider_payload_digest\" is null or \"customer_service_review_alert_outbox\".\"provider_payload_digest\" ~ '^[0-9a-f]{64}$'"
         },
         "customer_service_review_alert_outbox_lease_valid": {
           "name": "customer_service_review_alert_outbox_lease_valid",

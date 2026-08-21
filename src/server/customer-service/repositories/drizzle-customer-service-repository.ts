@@ -2033,9 +2033,9 @@ export function createDrizzleCustomerServiceRepository(
             updatedAt: input.now,
           }).where(and(
             eq(customerServiceReviewAlertOutbox.id, row.outbox.id),
-            eq(customerServiceReviewAlertOutbox.status, "leased"),
+            eq(customerServiceReviewAlertOutbox.status, row.outbox.status),
+            eq(customerServiceReviewAlertOutbox.attemptCount, row.outbox.attemptCount),
             eq(customerServiceReviewAlertOutbox.providerSendStartedAt, row.outbox.providerSendStartedAt),
-            lte(customerServiceReviewAlertOutbox.leaseExpiresAt, input.now),
           ));
           return null;
         }
@@ -2152,13 +2152,15 @@ export function createDrizzleCustomerServiceRepository(
           )
           .where(eq(customerServiceReviewAlertOutbox.id, input.id))
           .limit(1);
-        if (!identity) return false;
+        if (!identity) return "resolved" as const;
 
         await lockConversation(transaction, identity.conversationId);
         const [current] = await transaction.select({
           outboxStatus: customerServiceReviewAlertOutbox.status,
           leaseToken: customerServiceReviewAlertOutbox.leaseToken,
           leaseExpiresAt: customerServiceReviewAlertOutbox.leaseExpiresAt,
+          providerSendStartedAt: customerServiceReviewAlertOutbox.providerSendStartedAt,
+          providerPayloadDigest: customerServiceReviewAlertOutbox.providerPayloadDigest,
           reviewStatus: customerServiceHumanReviews.status,
           deepLinkExpiresAt: customerServiceHumanReviews.deepLinkExpiresAt,
         }).from(customerServiceReviewAlertOutbox)
@@ -2178,15 +2180,33 @@ export function createDrizzleCustomerServiceRepository(
           && current.reviewStatus === "open"
           && Boolean(current.deepLinkExpiresAt && current.deepLinkExpiresAt > input.now);
         if (ready) {
+          if (
+            (current.providerSendStartedAt && !current.providerPayloadDigest)
+            || (current.providerPayloadDigest && current.providerPayloadDigest !== input.payloadDigest)
+          ) {
+            await transaction.update(customerServiceReviewAlertOutbox).set({
+              status: "failed",
+              leaseToken: null,
+              leaseExpiresAt: null,
+              lastErrorCode: "provider_payload_config_drift_unknown_result",
+              updatedAt: input.now,
+            }).where(and(
+              eq(customerServiceReviewAlertOutbox.id, input.id),
+              eq(customerServiceReviewAlertOutbox.status, "leased"),
+              eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
+            ));
+            return "payload_mismatch" as const;
+          }
           const [linearized] = await transaction.update(customerServiceReviewAlertOutbox).set({
             providerSendStartedAt: sql`coalesce(${customerServiceReviewAlertOutbox.providerSendStartedAt}, ${input.now})`,
+            providerPayloadDigest: sql`coalesce(${customerServiceReviewAlertOutbox.providerPayloadDigest}, ${input.payloadDigest})`,
             updatedAt: input.now,
           }).where(and(
             eq(customerServiceReviewAlertOutbox.id, input.id),
             eq(customerServiceReviewAlertOutbox.status, "leased"),
             eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
           )).returning({ id: customerServiceReviewAlertOutbox.id });
-          return Boolean(linearized);
+          return linearized ? "send" as const : "resolved" as const;
         }
 
         await transaction.update(customerServiceReviewAlertOutbox).set({
@@ -2202,7 +2222,7 @@ export function createDrizzleCustomerServiceRepository(
           eq(customerServiceReviewAlertOutbox.status, "leased"),
           eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
         ));
-        return false;
+        return "resolved" as const;
       });
     },
 
@@ -2219,6 +2239,7 @@ export function createDrizzleCustomerServiceRepository(
         eq(customerServiceReviewAlertOutbox.status, "leased"),
         eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
         isNotNull(customerServiceReviewAlertOutbox.providerSendStartedAt),
+        isNotNull(customerServiceReviewAlertOutbox.providerPayloadDigest),
       )).returning({ id: customerServiceReviewAlertOutbox.id });
       void input.providerMessageId;
       return Boolean(updated);
@@ -2266,7 +2287,6 @@ export function createDrizzleCustomerServiceRepository(
           lastErrorCode: reviewOpen ? input.errorCode : "review_resolved_after_send_started",
           ...(reviewOpen ? {
             nextAttemptAt: input.nextAttemptAt,
-            providerSendStartedAt: null,
           } : {}),
           updatedAt: input.now,
         }).where(and(

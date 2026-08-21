@@ -117,6 +117,7 @@ describe("website customer service schema contract", () => {
       leaseToken: expect.anything(),
       leaseExpiresAt: expect.anything(),
       providerSendStartedAt: expect.anything(),
+      providerPayloadDigest: expect.anything(),
       lastErrorCode: expect.anything(),
       sentAt: expect.anything(),
     }));
@@ -211,6 +212,7 @@ describe("website customer service schema contract", () => {
 
     const task13Migration = migrations.at(-1)?.sql ?? "";
     expect(task13Migration).toContain('ADD COLUMN "provider_send_started_at"');
+    expect(task13Migration).toContain('ADD COLUMN "provider_payload_digest"');
     expect(task13Migration).toContain('CREATE TABLE "customer_service_review_selectors"');
     expect(task13Migration).toContain('CREATE UNIQUE INDEX "customer_service_review_selectors_hash_unique"');
   });

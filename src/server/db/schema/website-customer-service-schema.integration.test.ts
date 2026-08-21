@@ -170,8 +170,12 @@ databaseDescribe("website customer service schema integration", () => {
       [review.rows[0]?.id, `invalid-sending-${randomUUID()}`],
     )).rejects.toMatchObject({ code: "23514" });
     await expect(client.query(
-      "insert into customer_service_review_alert_outbox (human_review_id, status, idempotency_key, next_attempt_at, lease_token, lease_expires_at) values ($1, 'sending', $2, now(), $3, now() + interval '5 minutes')",
-      [review.rows[0]?.id, `valid-sending-${randomUUID()}`, randomUUID()],
+      "insert into customer_service_review_alert_outbox (human_review_id, status, idempotency_key, next_attempt_at, lease_token, lease_expires_at, provider_send_started_at, provider_payload_digest) values ($1, 'leased', $2, now(), $3, now() + interval '5 minutes', now(), $4)",
+      [review.rows[0]?.id, `valid-leased-${randomUUID()}`, randomUUID(), "ab".repeat(32)],
     )).resolves.toMatchObject({ rowCount: 1 });
+    await expect(client.query(
+      "update customer_service_review_alert_outbox set provider_payload_digest = 'not-a-sha256-digest' where human_review_id = $1",
+      [review.rows[0]?.id],
+    )).rejects.toMatchObject({ code: "23514" });
   });
 });
