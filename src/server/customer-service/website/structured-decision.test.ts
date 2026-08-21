@@ -104,12 +104,14 @@ describe("Website structured decision boundary", () => {
       text: rendered.ok && rendered.outcome === "rendered" ? rendered.text : rawSecret,
       decision: designDecision,
       templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+      productCategory: null,
     })).toBe(true);
     expect(verifyWebsiteRendererProof({
       intent: "design_process",
       text: rawSecret,
       decision: designDecision,
       templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+      productCategory: null,
     })).toBe(false);
   });
 
@@ -150,7 +152,30 @@ describe("Website structured decision boundary", () => {
       text,
       decision,
       templateVersion,
+      productCategory: null,
     })).toBe(false);
+  });
+
+  it("binds renderer proof to the authoritative product category while preserving null context", () => {
+    const bannerDecision = {
+      response_type: "ANSWER_SAFE",
+      intent: "product_differences",
+      product_type: "BANNER",
+      missing_fields: [],
+      follow_up_fields: [],
+      allowed_facts: ["BANNER_DISPLAY_OPTIONS"],
+      human_review_reason: "NONE",
+    } as const;
+    const proof = {
+      intent: "product_differences",
+      text: "Banners can suit event displays; tell us whether you need a wall or freestanding format.",
+      decision: bannerDecision,
+      templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+    } as const;
+
+    expect(verifyWebsiteRendererProof({ ...proof, productCategory: "canvas" })).toBe(false);
+    expect(verifyWebsiteRendererProof({ ...proof, productCategory: "banners" })).toBe(true);
+    expect(verifyWebsiteRendererProof({ ...proof, productCategory: null })).toBe(true);
   });
 
   it("rejects HIGH_RISK or REALTIME policy contexts before any safe rendering", () => {
@@ -260,6 +285,7 @@ describe("Website structured decision boundary", () => {
       text: expected as string,
       decision,
       templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+      productCategory: null,
     })).toBe(true);
   });
 });

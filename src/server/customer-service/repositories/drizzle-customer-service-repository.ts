@@ -2414,7 +2414,10 @@ export function createDrizzleCustomerServiceRepository(
           intent: customerServiceAiAttempts.intent,
           websiteDecision: customerServiceAiAttempts.websiteDecision,
           websiteResponseTemplateVersion: customerServiceAiAttempts.websiteResponseTemplateVersion,
-        }).from(customerServiceAiAttempts).where(and(
+          productContext: customerServiceMessages.productContext,
+        }).from(customerServiceAiAttempts)
+          .innerJoin(customerServiceMessages, eq(customerServiceMessages.id, customerServiceAiAttempts.messageId))
+          .where(and(
           eq(customerServiceAiAttempts.id, input.attemptId),
           eq(customerServiceAiAttempts.messageId, turn.messageId),
           eq(customerServiceAiAttempts.trigger, "webhook_after"),
@@ -2434,6 +2437,7 @@ export function createDrizzleCustomerServiceRepository(
             text: attempt.draftText,
             decision: attempt.websiteDecision,
             templateVersion: attempt.websiteResponseTemplateVersion,
+            productCategory: attempt.productContext?.category ?? null,
           })
         ) return { status: "not_publishable" as const };
 

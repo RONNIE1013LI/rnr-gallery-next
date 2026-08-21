@@ -19,7 +19,7 @@ Production changes: forbidden
 | 11 | Session-scoped incremental public updates | completed | Missing reader/route/repository; generic error; microsecond cursor duplication; index-plan and recovery-label regressions | Focused 20; serial full 857/857; typecheck/lint/db:check/no-send PASS; re-review Critical/Important 0 | 867ac92 + 613a8ec |
 | 12 | Public chat widget | completed | Missing widget/chrome mount; duplicate rendering; stale retry payload; route exclusions; Shift+Enter proof | Relevant 82/82 including no-send/security; typecheck/lint/diff PASS; re-review Critical/Important/Minor 0; browser smoke deferred to Staging | 3f9b401 + 0e38f80 |
 | 13 | Unified admin inbox and manual website reply | completed | Original UI/API gaps; six focused review rounds proved lock ordering, opaque selector integrity/renewal/indexing, deep-link pinning, alert linearization/recovery, provider idempotency horizon, immutable payload and provider-scope binding | Final independent review APPROVED; focused 104/104, provider-scope DB 2/2, repository DB 143/143, schema/session/public DB 47/47; typecheck/lint/db:check/migration replay/no-send PASS | 57870a2 + 0780028 + 641f83b + b09cd01 + 1d60b38 + c9f70f2 + bff544a |
-| 14 | Public security and prompt-injection regression | completed with approved structured-output amendment and review fixes | Original adversarial regression plus amendment; review RED proved unsupported strict-schema keywords, duplicate object-key collapse, discarded renderer proof, proof-less/mixed publication, and incomplete quote fields | Review fix focused 225/225; Customer Service 993 non-integration pass; fresh migrated DB 162/162 zero skip with 0051 ledger; type/lint/db:check/privacy/no-send PASS | 15f62df + this review-fix commit |
+| 14 | Public security and prompt-injection regression | completed with approved structured-output amendment and review fixes | Original adversarial regression plus amendment; review RED proved unsupported schema keywords, duplicate-key collapse, discarded renderer proof, proof-less/mixed publication, incomplete quote fields, and cross-product publication when authoritative message context was omitted | Final focused 226/226; parent Customer Service 993 non-integration pass; fresh migrated DB 167/167 zero skip with 0051 ledger; type/lint/db:check/privacy/no-send PASS | 15f62df + 261e504 + final product-context fix |
 | 15 | Metrics, retention, and evaluation | pending | pending | pending | pending |
 | 16 | Staging integration and release evidence | pending | pending | pending | pending |
 
@@ -34,7 +34,7 @@ Production changes: forbidden
 
 ## Load-bearing invariants
 
-- Website public replies require Policy Gate, strict allowlisted structured provider output, persisted canonical decision plus template version, exact publication-time re-rendering, and Output Validator PASS.
+- Website public replies require Policy Gate, strict allowlisted structured provider output, persisted canonical decision plus template version, authoritative persisted message product context, exact publication-time re-rendering, and Output Validator PASS.
 - HIGH RISK, UNRESOLVED, and REALTIME_REQUIRED are blocked before OpenAI.
 - Website human replies require an explicit admin/staff action and cannot target Facebook.
 - Facebook production behavior, Meta callback, Payment Requests, and Messenger no-send stay unchanged.

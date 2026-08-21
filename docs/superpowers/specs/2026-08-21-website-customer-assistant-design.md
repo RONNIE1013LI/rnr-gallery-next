@@ -43,7 +43,7 @@ flowchart TD
   PublicGet --> Publish
 ```
 
-The website publication layer is separate from generation. An AI attempt is not customer-visible merely because it is `draft_ready`. A Website `draft_ready` attempt persists its canonical validated decision and renderer-template version. Publication requires the same transaction to revalidate that decision, require the current matching template version, re-render the exact text, and verify channel `website`, gate `DRAFT_ALLOWED`, validator PASS, live session ownership, non-terminal turn, and no intervening human response.
+The website publication layer is separate from generation. An AI attempt is not customer-visible merely because it is `draft_ready`. A Website `draft_ready` attempt persists its canonical validated decision and renderer-template version. Publication requires the same transaction to load the authoritative server-derived product category from the persisted customer message, revalidate the decision, require the current matching template version, re-render the exact text with that category, and verify channel `website`, gate `DRAFT_ALLOWED`, validator PASS, live session ownership, non-terminal turn, and no intervening human response.
 
 ## Channel adapter
 
@@ -147,7 +147,7 @@ Public errors use generic codes and never expose provider, policy source, intern
 7. Verify the decision against the server Policy Gate result, detected intent, product context, and existing acknowledgement rules.
 8. Render only version-controlled server-owned fragments. Model and customer strings never enter the renderer.
 9. Run the existing Website Output Validator as defense-in-depth over the rendered text.
-10. Commit one customer-visible website assistant response with a unique AI-attempt reference. The publication CAS revalidates the stored canonical decision and template version, re-renders it, and rejects missing proof, invalid composition, version drift, or any exact-text mismatch.
+10. Commit one customer-visible website assistant response with a unique AI-attempt reference. The publication CAS revalidates the stored canonical decision and template version against the persisted message's server-derived product category, re-renders it, and rejects missing proof, cross-product proof, invalid composition, version drift, or any exact-text mismatch.
 
 ### Structured Website decisions
 

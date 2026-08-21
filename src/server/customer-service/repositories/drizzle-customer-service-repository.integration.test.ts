@@ -35,6 +35,7 @@ import {
 import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
 import { EmailDeliveryError } from "@/server/notifications/customer-notification-service";
 import { createCustomerTurnRecoveryRunner } from "../turn-recovery-runner";
+import type { SafeProductContext } from "../types";
 import {
   createReviewAlertService,
   createReviewAlertToken,
@@ -66,6 +67,35 @@ const approvedWebsiteDesignProof = Object.freeze({
   websiteDecision: approvedWebsiteDesignDecision,
   websiteResponseTemplateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
 });
+const websiteProductProofs: Readonly<Record<"canvas" | "banners", Readonly<{
+  decision: WebsiteDecision;
+  text: string;
+}>>> = Object.freeze({
+  canvas: Object.freeze({
+    decision: Object.freeze({
+      response_type: "ANSWER_SAFE",
+      intent: "product_differences",
+      product_type: "CANVAS",
+      missing_fields: [],
+      follow_up_fields: [],
+      allowed_facts: ["CANVAS_WALL_KEEPSAKE"] as const,
+      human_review_reason: "NONE",
+    }),
+    text: "Canvas suits a wall display and keepsake-style presentation.",
+  }),
+  banners: Object.freeze({
+    decision: Object.freeze({
+      response_type: "ANSWER_SAFE",
+      intent: "product_differences",
+      product_type: "BANNER",
+      missing_fields: [],
+      follow_up_fields: [],
+      allowed_facts: ["BANNER_DISPLAY_OPTIONS"] as const,
+      human_review_reason: "NONE",
+    }),
+    text: "Banners can suit event displays; tell us whether you need a wall or freestanding format.",
+  }),
+});
 const selectorTestNow = () => new Date("2026-08-22T00:00:00.000Z");
 const repository = createDrizzleCustomerServiceRepository(database, { reviewSelectorSecret, now: selectorTestNow });
 const competingPool = new Pool({ connectionString: testDatabaseUrl ?? "postgres://disabled.invalid/test" });
@@ -83,6 +113,16 @@ const publicationRaceRepository = createDrizzleCustomerServiceRepository(drizzle
 });
 const sourceIdentitySecret = "integration-source-identity-secret";
 const selectorBase64urlAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+
+function websiteProductContext(category: "canvas" | "banners"): SafeProductContext {
+  return Object.freeze({
+    market: "NZ",
+    productKey: category === "canvas" ? "digital-oil-painting-canvas" : "custom-event-banner",
+    productTitle: category === "canvas" ? "Digital Oil Painting Canvas" : "Custom Event Banner",
+    category,
+    pageKind: "product",
+  });
+}
 
 function sourceHash(value: string) {
   return createHmac("sha256", sourceIdentitySecret).update(value).digest("hex");
@@ -225,6 +265,7 @@ function websiteRateEvent(input: Readonly<{
   text?: string;
   receivedAt?: Date;
   isNewSession?: boolean;
+  productContext?: SafeProductContext | null;
 }>) {
   return {
     channel: "website" as const,
@@ -234,6 +275,7 @@ function websiteRateEvent(input: Readonly<{
     text: input.text ?? "Can you help with a custom banner?",
     attachments: [],
     imageJob: null,
+    productContext: input.productContext ?? null,
     debounceMs: 2_000,
     receivedAt: input.receivedAt ?? websiteRateNow,
     websiteRateLimit: {
@@ -250,6 +292,7 @@ async function claimWebsiteTurn(input: Readonly<{
   networkHash: string;
   messageHash: string;
   receivedAt?: Date;
+  productContext?: SafeProductContext | null;
 }>) {
   await activateWebsitePilot(`website-review-${input.messageHash.slice(0, 8)}`);
   return ingestAndClaimWebsiteTurn(input);
@@ -260,6 +303,7 @@ async function ingestAndClaimWebsiteTurn(input: Readonly<{
   networkHash: string;
   messageHash: string;
   receivedAt?: Date;
+  productContext?: SafeProductContext | null;
 }>) {
   const incoming = await repository.ingestConversationEvent(websiteRateEvent(input));
   if (incoming.status !== "turn_pending") throw new Error("expected website turn");
@@ -2830,6 +2874,136 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
         policyResult: "allowed",
         knowledgeVersion: "website-knowledge-v2",
       }),
+    ]);
+  });
+
+  it.each([
+    ["banner proof in canvas context", "canvas", "banners", "e1", "e2", "e3"],
+    ["canvas proof in banner context", "banners", "canvas", "e4", "e5", "e6"],
+  ] as const)("rejects %s at Website publication", async (
+    _case,
+    contextCategory,
+    proofCategory,
+    sessionByte,
+    networkByte,
+    messageByte,
+  ) => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: sessionByte.repeat(32),
+      networkHash: networkByte.repeat(32),
+      messageHash: messageByte.repeat(32),
+      productContext: websiteProductContext(contextCategory),
+    });
+    const proof = websiteProductProofs[proofCategory];
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "product_differences",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "website-product-proof-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: proof.text,
+      websiteDecision: proof.decision,
+      websiteResponseTemplateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId: attempt.id,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    })).resolves.toEqual({ status: "not_publishable" });
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
+  });
+
+  it.each([
+    ["canvas", "e7", "e8", "e9"],
+    ["banners", "f1", "f2", "f3"],
+  ] as const)("publishes a matching %s Website product proof", async (
+    category,
+    sessionByte,
+    networkByte,
+    messageByte,
+  ) => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: sessionByte.repeat(32),
+      networkHash: networkByte.repeat(32),
+      messageHash: messageByte.repeat(32),
+      productContext: websiteProductContext(category),
+    });
+    const proof = websiteProductProofs[category];
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "product_differences",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "website-product-proof-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: proof.text,
+      websiteDecision: proof.decision,
+      websiteResponseTemplateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId: attempt.id,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    })).resolves.toEqual({ status: "published" });
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toEqual([
+      expect.objectContaining({ body: proof.text, aiAttemptId: attempt.id }),
+    ]);
+  });
+
+  it("preserves product-specific Website publication when authoritative context is null", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "f4".repeat(32),
+      networkHash: "f5".repeat(32),
+      messageHash: "f6".repeat(32),
+      productContext: null,
+    });
+    const proof = websiteProductProofs.banners;
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "product_differences",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "website-product-proof-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: proof.text,
+      websiteDecision: proof.decision,
+      websiteResponseTemplateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId: attempt.id,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    })).resolves.toEqual({ status: "published" });
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toEqual([
+      expect.objectContaining({ body: proof.text }),
     ]);
   });
 

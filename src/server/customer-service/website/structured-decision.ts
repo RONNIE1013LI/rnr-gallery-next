@@ -501,6 +501,7 @@ export function verifyWebsiteRendererProof(input: Readonly<{
   text: string;
   decision: unknown;
   templateVersion: unknown;
+  productCategory: "canvas" | "banners" | null;
 }>) {
   if (
     !isEnumValue(INTENTS, input.intent)
@@ -511,7 +512,7 @@ export function verifyWebsiteRendererProof(input: Readonly<{
   const rendered = renderWebsiteDecision({
     decision: parsed.decision,
     expectedIntent: input.intent,
-    productCategory: null,
+    productCategory: input.productCategory,
     acknowledgementAllowed: false,
     policyDecision: "DRAFT_ALLOWED",
   });
