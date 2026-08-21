@@ -62,6 +62,7 @@ export const customerServiceConversations = pgTable(
   (table) => [
     uniqueIndex("customer_service_conversations_channel_external_unique")
       .on(table.channel, table.externalKeyHash),
+    unique("customer_service_conversations_id_channel_unique").on(table.id, table.channel),
     check("customer_service_conversations_channel_valid", sql`${table.channel} in ('facebook', 'website')`),
     check("customer_service_conversations_external_hash_valid", sql`length(trim(${table.externalKeyHash})) > 0`),
   ],
@@ -142,6 +143,7 @@ export const customerServiceTurns = pgTable(
     updatedAt: updatedTimestamp(),
   },
   (table) => [
+    unique("customer_service_turns_id_conversation_unique").on(table.id, table.conversationId),
     uniqueIndex("customer_service_turns_pilot_sequence_unique")
       .on(table.pilotRunId, table.pilotSequence)
       .where(sql`${table.pilotRunId} is not null and ${table.pilotSequence} is not null`),
@@ -405,6 +407,7 @@ export const customerServiceAiAttempts = pgTable(
   },
   (table) => [
     uniqueIndex("customer_service_ai_attempts_message_number_unique").on(table.messageId, table.attemptNumber),
+    unique("customer_service_ai_attempts_id_message_unique").on(table.id, table.messageId),
     index("customer_service_ai_attempts_message_started_idx").on(table.messageId, table.startedAt),
     index("customer_service_ai_attempts_status_started_idx").on(table.status, table.startedAt),
     check("customer_service_ai_attempts_number_valid", sql`${table.attemptNumber} > 0`),
@@ -453,6 +456,239 @@ export const customerServiceBudgetState = pgTable(
   (table) => [
     check("customer_service_budget_state_scope_valid", sql`${table.scopeKey} = 'total' or ${table.scopeKey} ~ '^daily:[0-9]{4}-[0-9]{2}-[0-9]{2}$'`),
     check("customer_service_budget_state_amounts_valid", sql`${table.spentMicrousd} >= 0 and ${table.reservedMicrousd} >= 0`),
+  ],
+);
+
+export const customerServiceWebSessions = pgTable(
+  "customer_service_web_sessions",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversationId: uuid("conversation_id").notNull(),
+    channel: text("channel").$type<"website">().default("website").notNull(),
+    sessionTokenHash: text("session_token_hash").notNull(),
+    status: text("status").$type<"active" | "expired" | "revoked">().default("active").notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp("last_seen_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: updatedTimestamp(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.conversationId, table.channel],
+      foreignColumns: [customerServiceConversations.id, customerServiceConversations.channel],
+      name: "customer_service_web_sessions_conversation_fk",
+    }).onDelete("restrict"),
+    uniqueIndex("customer_service_web_sessions_token_unique").on(table.sessionTokenHash),
+    uniqueIndex("customer_service_web_sessions_conversation_unique").on(table.conversationId),
+    index("customer_service_web_sessions_status_expiry_idx").on(table.status, table.expiresAt),
+    check("customer_service_web_sessions_channel_valid", sql`${table.channel} = 'website'`),
+    check("customer_service_web_sessions_status_valid", sql`${table.status} in ('active', 'expired', 'revoked')`),
+    check("customer_service_web_sessions_hash_valid", sql`${table.sessionTokenHash} ~ '^[0-9a-f]{64}$'`),
+    check("customer_service_web_sessions_expiry_valid", sql`${table.expiresAt} > ${table.createdAt}`),
+  ],
+);
+
+export const customerServiceWebsiteAssistantMessages = pgTable(
+  "customer_service_website_assistant_messages",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversationId: uuid("conversation_id").notNull(),
+    channel: text("channel").$type<"website">().default("website").notNull(),
+    messageId: uuid("message_id").notNull(),
+    turnId: uuid("turn_id").notNull(),
+    aiAttemptId: uuid("ai_attempt_id"),
+    kind: text("kind")
+      .$type<"validated_ai" | "policy_acknowledgement" | "provider_fallback">()
+      .notNull(),
+    body: text("body").notNull(),
+    policyResult: text("policy_result").notNull(),
+    gateReasons: jsonb("gate_reasons").$type<readonly string[]>().default([]).notNull(),
+    knowledgeVersion: text("knowledge_version").notNull(),
+    publishedAt: timestamp("published_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.conversationId, table.channel],
+      foreignColumns: [customerServiceConversations.id, customerServiceConversations.channel],
+      name: "customer_service_website_messages_conversation_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.messageId, table.conversationId],
+      foreignColumns: [customerServiceMessages.id, customerServiceMessages.conversationId],
+      name: "customer_service_website_messages_message_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.turnId, table.conversationId],
+      foreignColumns: [customerServiceTurns.id, customerServiceTurns.conversationId],
+      name: "customer_service_website_messages_turn_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.aiAttemptId, table.messageId],
+      foreignColumns: [customerServiceAiAttempts.id, customerServiceAiAttempts.messageId],
+      name: "customer_service_website_messages_attempt_fk",
+    }).onDelete("restrict"),
+    uniqueIndex("customer_service_website_assistant_messages_turn_unique").on(table.turnId),
+    uniqueIndex("customer_service_website_assistant_messages_attempt_unique")
+      .on(table.aiAttemptId)
+      .where(sql`${table.aiAttemptId} is not null`),
+    index("customer_service_website_assistant_messages_conversation_published_idx")
+      .on(table.conversationId, table.publishedAt, table.id),
+    check(
+      "customer_service_website_assistant_messages_kind_valid",
+      sql`${table.kind} in ('validated_ai', 'policy_acknowledgement', 'provider_fallback')`,
+    ),
+    check("customer_service_website_assistant_messages_channel_valid", sql`${table.channel} = 'website'`),
+    check(
+      "customer_service_website_assistant_messages_policy_valid",
+      sql`${table.policyResult} in ('allowed', 'high_risk', 'unresolved', 'realtime_required', 'budget_blocked', 'provider_error', 'output_blocked', 'system_failure')`,
+    ),
+    check(
+      "customer_service_website_assistant_messages_gate_reasons_valid",
+      sql`jsonb_typeof(${table.gateReasons}) = 'array'`,
+    ),
+    check(
+      "customer_service_website_assistant_messages_content_valid",
+      sql`length(trim(${table.body})) > 0 and length(trim(${table.knowledgeVersion})) > 0`,
+    ),
+    check(
+      "customer_service_website_assistant_messages_attempt_valid",
+      sql`(${table.kind} = 'validated_ai' and ${table.aiAttemptId} is not null) or (${table.kind} <> 'validated_ai' and ${table.aiAttemptId} is null)`,
+    ),
+  ],
+);
+
+export const customerServiceHumanReviews = pgTable(
+  "customer_service_human_reviews",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    conversationId: uuid("conversation_id").notNull(),
+    channel: text("channel").$type<"website">().default("website").notNull(),
+    triggerTurnId: uuid("trigger_turn_id").notNull(),
+    generation: integer("generation").notNull(),
+    reason: text("reason")
+      .$type<"high_risk" | "unresolved" | "realtime_required" | "provider_error" | "output_blocked" | "budget_blocked" | "system_failure">()
+      .notNull(),
+    status: text("status").$type<"open" | "resolved">().default("open").notNull(),
+    redactedSummary: text("redacted_summary").notNull(),
+    deepLinkTokenHash: text("deep_link_token_hash"),
+    deepLinkExpiresAt: timestamp("deep_link_expires_at", { withTimezone: true }),
+    openedAt: timestamp("opened_at", { withTimezone: true }).defaultNow().notNull(),
+    resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+    resolvedByUserId: text("resolved_by_user_id").references(() => user.id, { onDelete: "set null" }),
+    resolutionEventId: uuid("resolution_event_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: updatedTimestamp(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.conversationId, table.channel],
+      foreignColumns: [customerServiceConversations.id, customerServiceConversations.channel],
+      name: "customer_service_human_reviews_conversation_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.triggerTurnId, table.conversationId],
+      foreignColumns: [customerServiceTurns.id, customerServiceTurns.conversationId],
+      name: "customer_service_human_reviews_turn_fk",
+    }).onDelete("restrict"),
+    foreignKey({
+      columns: [table.resolutionEventId, table.conversationId],
+      foreignColumns: [customerServiceConversationEvents.id, customerServiceConversationEvents.conversationId],
+      name: "customer_service_human_reviews_resolution_event_fk",
+    }).onDelete("restrict"),
+    uniqueIndex("customer_service_human_reviews_conversation_generation_unique")
+      .on(table.conversationId, table.generation),
+    uniqueIndex("customer_service_human_reviews_open_conversation_unique")
+      .on(table.conversationId)
+      .where(sql`${table.status} = 'open'`),
+    uniqueIndex("customer_service_human_reviews_deep_link_unique")
+      .on(table.deepLinkTokenHash)
+      .where(sql`${table.deepLinkTokenHash} is not null`),
+    index("customer_service_human_reviews_status_opened_idx").on(table.status, table.openedAt),
+    check("customer_service_human_reviews_generation_valid", sql`${table.generation} > 0`),
+    check("customer_service_human_reviews_channel_valid", sql`${table.channel} = 'website'`),
+    check(
+      "customer_service_human_reviews_reason_valid",
+      sql`${table.reason} in ('high_risk', 'unresolved', 'realtime_required', 'provider_error', 'output_blocked', 'budget_blocked', 'system_failure')`,
+    ),
+    check("customer_service_human_reviews_status_valid", sql`${table.status} in ('open', 'resolved')`),
+    check(
+      "customer_service_human_reviews_summary_valid",
+      sql`length(trim(${table.redactedSummary})) > 0 and char_length(${table.redactedSummary}) <= 160`,
+    ),
+    check(
+      "customer_service_human_reviews_deep_link_valid",
+      sql`(${table.deepLinkTokenHash} is null and ${table.deepLinkExpiresAt} is null) or (${table.deepLinkTokenHash} ~ '^[0-9a-f]{64}$' and ${table.deepLinkExpiresAt} is not null)`,
+    ),
+    check(
+      "customer_service_human_reviews_resolution_valid",
+      sql`(${table.status} = 'open' and ${table.resolvedAt} is null and ${table.resolvedByUserId} is null and ${table.resolutionEventId} is null) or (${table.status} = 'resolved' and ${table.resolvedAt} is not null and ${table.resolutionEventId} is not null)`,
+    ),
+  ],
+);
+
+export const customerServiceReviewAlertOutbox = pgTable(
+  "customer_service_review_alert_outbox",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    humanReviewId: uuid("human_review_id").notNull().references(() => customerServiceHumanReviews.id, { onDelete: "restrict" }),
+    status: text("status").$type<"pending" | "leased" | "retry_wait" | "sent" | "failed">().default("pending").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    attemptCount: integer("attempt_count").default(0).notNull(),
+    nextAttemptAt: timestamp("next_attempt_at", { withTimezone: true }).notNull(),
+    leaseToken: text("lease_token"),
+    leaseExpiresAt: timestamp("lease_expires_at", { withTimezone: true }),
+    lastErrorCode: text("last_error_code"),
+    sentAt: timestamp("sent_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: updatedTimestamp(),
+  },
+  (table) => [
+    uniqueIndex("customer_service_review_alert_outbox_review_unique").on(table.humanReviewId),
+    uniqueIndex("customer_service_review_alert_outbox_idempotency_unique").on(table.idempotencyKey),
+    index("customer_service_review_alert_outbox_due_idx").on(table.status, table.nextAttemptAt, table.leaseExpiresAt),
+    check(
+      "customer_service_review_alert_outbox_status_valid",
+      sql`${table.status} in ('pending', 'leased', 'retry_wait', 'sent', 'failed')`,
+    ),
+    check("customer_service_review_alert_outbox_attempts_valid", sql`${table.attemptCount} >= 0`),
+    check("customer_service_review_alert_outbox_key_valid", sql`length(trim(${table.idempotencyKey})) > 0`),
+    check(
+      "customer_service_review_alert_outbox_lease_valid",
+      sql`(${table.status} = 'leased' and ${table.leaseToken} is not null and ${table.leaseExpiresAt} is not null) or (${table.status} <> 'leased' and ${table.leaseToken} is null and ${table.leaseExpiresAt} is null)`,
+    ),
+    check(
+      "customer_service_review_alert_outbox_sent_valid",
+      sql`(${table.status} = 'sent' and ${table.sentAt} is not null) or (${table.status} <> 'sent' and ${table.sentAt} is null)`,
+    ),
+  ],
+);
+
+export const customerServiceRateLimitBuckets = pgTable(
+  "customer_service_rate_limit_buckets",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    bucketKind: text("bucket_kind")
+      .$type<"session_minute" | "session_hour" | "session_total" | "network_minute" | "network_hour">()
+      .notNull(),
+    bucketKeyHash: text("bucket_key_hash").notNull(),
+    windowStartedAt: timestamp("window_started_at", { withTimezone: true }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    requestCount: integer("request_count").default(0).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: updatedTimestamp(),
+  },
+  (table) => [
+    uniqueIndex("customer_service_rate_limit_buckets_window_unique")
+      .on(table.bucketKind, table.bucketKeyHash, table.windowStartedAt),
+    index("customer_service_rate_limit_buckets_expiry_idx").on(table.expiresAt),
+    check(
+      "customer_service_rate_limit_buckets_kind_valid",
+      sql`${table.bucketKind} in ('session_minute', 'session_hour', 'session_total', 'network_minute', 'network_hour')`,
+    ),
+    check("customer_service_rate_limit_buckets_hash_valid", sql`${table.bucketKeyHash} ~ '^[0-9a-f]{64}$'`),
+    check("customer_service_rate_limit_buckets_count_valid", sql`${table.requestCount} >= 0`),
+    check("customer_service_rate_limit_buckets_expiry_valid", sql`${table.expiresAt} > ${table.windowStartedAt}`),
   ],
 );
 
