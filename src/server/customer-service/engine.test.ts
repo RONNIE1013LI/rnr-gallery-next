@@ -298,6 +298,23 @@ describe("CustomerServiceEngine", () => {
     expect(current.provider.generate).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["I want a refund", "gate_blocked"],
+    ["How much is an A1 canvas today?", "realtime_required"],
+    ["How many free revisions do I get?", "gate_blocked"],
+  ])("keeps website policy blocks in front of the provider: %s", async (message, expected) => {
+    const current = setup(message);
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: message, channel: "website" },
+      context: [{ role: "customer", text: message, receivedAt: "2026-08-20T00:00:00.000Z" }],
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" }))
+      .resolves.toMatchObject({ status: expected });
+    expect(current.provider.generate).not.toHaveBeenCalled();
+    expect(current.repository.reserveProviderAttempt).not.toHaveBeenCalled();
+  });
+
   it("uses same-conversation staff context to interpret a short location reply", async () => {
     const current = setup("Australia");
     current.repository.loadDraftInput.mockResolvedValue({

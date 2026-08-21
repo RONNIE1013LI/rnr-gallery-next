@@ -38,6 +38,7 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
   const turnRecoveryRunner = createCustomerTurnRecoveryRunner({
     repository,
     generateDraft: (messageId) => engine.generateDraft({ messageId, trigger: "webhook_after" }),
+    knowledgeVersion: compiledKnowledge.knowledgeVersion,
   });
   return Object.freeze({ config, repository, engine, imageJobRunner, turnRecoveryRunner });
 }

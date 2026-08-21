@@ -92,8 +92,10 @@ export type DraftInput = Readonly<{
 export type ClaimedCustomerTurn = Readonly<{
   turnId: string;
   messageId: string;
+  channel: CustomerServiceChannel;
   leaseToken: string;
   processingAttempt: number;
+  settledResult?: DraftGenerationResult;
 }>;
 
 export type GateBlockedAttemptInput = Readonly<{
@@ -297,6 +299,18 @@ export interface CustomerServiceRepository {
     now: Date;
     outcome: DraftGenerationResult["status"];
   }>): Promise<boolean>;
+  openWebsiteHumanReview(input: Readonly<{
+    turnId: string;
+    leaseToken: string;
+    attemptId: string | null;
+    outcome: DraftGenerationResult["status"] | "system_failure";
+    now: Date;
+    knowledgeVersion: string;
+  }>): Promise<
+    | Readonly<{ status: "opened"; reviewId: string; generation: number }>
+    | Readonly<{ status: "reused"; reviewId: string; generation: number }>
+    | Readonly<{ status: "cancelled" }>
+  >;
   retryCustomerTurnProcessing(input: Readonly<{
     turnId: string;
     leaseToken: string;

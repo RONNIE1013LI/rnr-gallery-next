@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { asc, eq, inArray, sql } from "drizzle-orm";
+import { Pool } from "pg";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 import {
   customerServiceAiAttempts,
@@ -13,6 +14,7 @@ import {
   customerServiceCaseRetrievals,
   customerServiceHumanReplyMatches,
   customerServiceHumanReplyMatchEvents,
+  customerServiceHumanReviews,
   customerServiceLearningCandidates,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
@@ -24,6 +26,7 @@ import {
   customerServiceUiChanges,
   customerServiceUiRevision,
   customerServiceWebSessions,
+  customerServiceWebsiteAssistantMessages,
   customerServiceWebsiteBudgetState,
   user,
 } from "@/server/db/schema";
@@ -34,6 +37,8 @@ const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 const enabled = Boolean(testDatabaseUrl) && isDedicatedTestDatabase(testDatabaseUrl, process.env.DATABASE_URL);
 const database = drizzle(testDatabaseUrl ?? "postgres://disabled.invalid/test");
 const repository = createDrizzleCustomerServiceRepository(database);
+const competingPool = new Pool({ connectionString: testDatabaseUrl ?? "postgres://disabled.invalid/test" });
+const competingRepository = createDrizzleCustomerServiceRepository(drizzle(competingPool));
 const sourceIdentitySecret = "integration-source-identity-secret";
 
 function sourceHash(value: string) {
@@ -81,6 +86,8 @@ function imageCompletion(attemptId: string, status: "analyzed" | "provider_error
 }
 
 async function clearTables() {
+  await database.delete(customerServiceWebsiteAssistantMessages);
+  await database.delete(customerServiceHumanReviews);
   await database.delete(customerServiceCaseRetrievals);
   await database.delete(customerServiceLearningCandidates);
   await database.delete(customerServiceCaseMemories);
@@ -172,9 +179,39 @@ function websiteRateEvent(input: Readonly<{
   } as Parameters<typeof repository.ingestConversationEvent>[0];
 }
 
+async function claimWebsiteTurn(input: Readonly<{
+  sessionHash: string;
+  networkHash: string;
+  messageHash: string;
+  receivedAt?: Date;
+}>) {
+  await activateWebsitePilot(`website-review-${input.messageHash.slice(0, 8)}`);
+  return ingestAndClaimWebsiteTurn(input);
+}
+
+async function ingestAndClaimWebsiteTurn(input: Readonly<{
+  sessionHash: string;
+  networkHash: string;
+  messageHash: string;
+  receivedAt?: Date;
+}>) {
+  const incoming = await repository.ingestConversationEvent(websiteRateEvent(input));
+  if (incoming.status !== "turn_pending") throw new Error("expected website turn");
+  const claimed = await repository.claimDueCustomerTurn({
+    turnId: incoming.turnId,
+    now: new Date((input.receivedAt ?? websiteRateNow).getTime() + 2_000),
+    leaseExpiresAt: new Date((input.receivedAt ?? websiteRateNow).getTime() + 302_000),
+  });
+  if (!claimed || claimed.channel !== "website") throw new Error("expected claimed website turn");
+  return claimed;
+}
+
 describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   beforeEach(clearTables);
-  afterAll(clearTables);
+  afterAll(async () => {
+    await clearTables();
+    await competingPool.end();
+  });
 
   it("has additive continuous-learning tables with fail-closed defaults", async () => {
     const tables = await database.execute(sql`
@@ -214,6 +251,508 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       order by column_name
     `);
     expect(eventColumns.rows).toHaveLength(5);
+  });
+
+  it("opens one website review generation for repeated blocked turns, then creates a new one after resolution", async () => {
+    const first = await claimWebsiteTurn({
+      sessionHash: "61".repeat(32),
+      networkHash: "62".repeat(32),
+      messageHash: "63".repeat(32),
+    });
+    const firstAttemptId = await repository.createGateBlockedAttempt({
+      messageId: first.messageId,
+      trigger: "webhook_after",
+      intent: "quote_information_collection",
+      riskLevel: "high",
+      gateResult: "realtime_required",
+      gateReasons: ["current_price"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    const firstReview = await repository.openWebsiteHumanReview({
+      turnId: first.turnId,
+      leaseToken: first.leaseToken,
+      attemptId: firstAttemptId,
+      outcome: "realtime_required",
+      now: new Date("2026-08-19T00:00:02.000Z"),
+      knowledgeVersion: "knowledge-v1",
+    });
+    expect(firstReview).toMatchObject({ status: "opened", generation: 1 });
+    await repository.completeCustomerTurnProcessing({
+      turnId: first.turnId,
+      leaseToken: first.leaseToken,
+      now: new Date("2026-08-19T00:00:02.000Z"),
+      outcome: "realtime_required",
+    });
+
+    const secondIncoming = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash: "61".repeat(32),
+      networkHash: "62".repeat(32),
+      messageHash: "64".repeat(32),
+      receivedAt: new Date("2026-08-19T00:00:04.000Z"),
+    }));
+    if (secondIncoming.status !== "turn_pending") throw new Error("expected second website turn");
+    const second = await repository.claimDueCustomerTurn({
+      turnId: secondIncoming.turnId,
+      now: new Date("2026-08-19T00:00:06.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:06.000Z"),
+    });
+    if (!second || second.channel !== "website") throw new Error("expected second claimed website turn");
+    const secondAttemptId = await repository.createGateBlockedAttempt({
+      messageId: second.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    const secondReview = await repository.openWebsiteHumanReview({
+      turnId: second.turnId,
+      leaseToken: second.leaseToken,
+      attemptId: secondAttemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-19T00:00:06.000Z"),
+      knowledgeVersion: "knowledge-v1",
+    });
+    expect(secondReview).toMatchObject({ status: "reused", generation: 1 });
+    expect(secondReview).toMatchObject({ reviewId: (firstReview as { reviewId: string }).reviewId });
+    await repository.completeCustomerTurnProcessing({
+      turnId: second.turnId,
+      leaseToken: second.leaseToken,
+      now: new Date("2026-08-19T00:00:06.000Z"),
+      outcome: "gate_blocked",
+    });
+
+    const [storedReview] = await database.select().from(customerServiceHumanReviews);
+    const [resolutionEvent] = await database.insert(customerServiceConversationEvents).values({
+      conversationId: storedReview.conversationId,
+      channel: "website",
+      externalMessageKeyHash: "65".repeat(32),
+      role: "staff",
+      eventType: "system_event",
+      body: "Review resolved",
+      redactionCodes: [],
+      learningEligible: false,
+      receivedAt: new Date("2026-08-19T00:00:07.000Z"),
+    }).returning({ id: customerServiceConversationEvents.id });
+    await database.update(customerServiceHumanReviews).set({
+      status: "resolved",
+      resolvedAt: new Date("2026-08-19T00:00:07.000Z"),
+      resolutionEventId: resolutionEvent.id,
+    }).where(eq(customerServiceHumanReviews.id, storedReview.id));
+
+    const thirdIncoming = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash: "61".repeat(32),
+      networkHash: "62".repeat(32),
+      messageHash: "66".repeat(32),
+      receivedAt: new Date("2026-08-19T00:00:08.000Z"),
+    }));
+    if (thirdIncoming.status !== "turn_pending") throw new Error("expected third website turn");
+    const third = await repository.claimDueCustomerTurn({
+      turnId: thirdIncoming.turnId,
+      now: new Date("2026-08-19T00:00:10.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:10.000Z"),
+    });
+    if (!third || third.channel !== "website") throw new Error("expected third claimed website turn");
+    const thirdReview = await repository.openWebsiteHumanReview({
+      turnId: third.turnId,
+      leaseToken: third.leaseToken,
+      attemptId: null,
+      outcome: "provider_error",
+      now: new Date("2026-08-19T00:00:10.000Z"),
+      knowledgeVersion: "knowledge-v1",
+    });
+    expect(thirdReview).toMatchObject({ status: "opened", generation: 2 });
+
+    const reviews = await database.select({
+      generation: customerServiceHumanReviews.generation,
+      status: customerServiceHumanReviews.status,
+    }).from(customerServiceHumanReviews).orderBy(asc(customerServiceHumanReviews.generation));
+    const acknowledgements = await database.select({
+      policyResult: customerServiceWebsiteAssistantMessages.policyResult,
+      body: customerServiceWebsiteAssistantMessages.body,
+    }).from(customerServiceWebsiteAssistantMessages)
+      .orderBy(asc(customerServiceWebsiteAssistantMessages.publishedAt));
+    expect(reviews).toEqual([{ generation: 1, status: "resolved" }, { generation: 2, status: "open" }]);
+    expect(acknowledgements).toHaveLength(3);
+    expect(acknowledgements[0]).toMatchObject({
+      policyResult: "realtime_required",
+      body: "I can help collect the details for our team. Please send the product, size, number of people/photos, required date, and your suburb or postcode if delivery is needed. We’ll review the current details and get back to you.",
+    });
+  });
+
+  it("uses the review and acknowledgement uniqueness constraints when two workers race", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "71".repeat(32),
+      networkHash: "72".repeat(32),
+      messageHash: "73".repeat(32),
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    const input = {
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked" as const,
+      now: new Date("2026-08-19T00:00:02.000Z"),
+      knowledgeVersion: "knowledge-v1",
+    };
+
+    const results = await Promise.all([
+      repository.openWebsiteHumanReview(input),
+      repository.openWebsiteHumanReview(input),
+    ]);
+    const reviews = await database.select().from(customerServiceHumanReviews);
+    const acknowledgements = await database.select().from(customerServiceWebsiteAssistantMessages);
+
+    expect(results.filter((result) => result.status === "opened")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "reused")).toHaveLength(1);
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0]).toMatchObject({ generation: 1, reason: "high_risk", status: "open" });
+    expect(acknowledgements).toHaveLength(1);
+  });
+
+  it("reuses exactly one open review when two distinct blocked turns race in one conversation", async () => {
+    await activateWebsitePilot("website-review-distinct-turn-race");
+    const first = await ingestAndClaimWebsiteTurn({
+      sessionHash: "74".repeat(32),
+      networkHash: "75".repeat(32),
+      messageHash: "76".repeat(32),
+    });
+    const [firstTurn] = await database.select({ conversationId: customerServiceTurns.conversationId })
+      .from(customerServiceTurns)
+      .where(eq(customerServiceTurns.id, first.turnId));
+    const [secondMessage] = await database.insert(customerServiceMessages).values({
+      conversationId: firstTurn.conversationId,
+      channel: "website",
+      externalMessageKeyHash: "77".repeat(32),
+      direction: "incoming",
+      body: "I also need help with an unresolved request.",
+      customerText: "I also need help with an unresolved request.",
+      receivedAt: new Date("2026-08-19T00:00:04.000Z"),
+      ingestStatus: "processing",
+    }).returning({ id: customerServiceMessages.id });
+    const secondLeaseToken = "website-distinct-turn-lease";
+    const [secondTurn] = await database.insert(customerServiceTurns).values({
+      conversationId: firstTurn.conversationId,
+      channel: "website",
+      representativeMessageId: secondMessage.id,
+      body: "I also need help with an unresolved request.",
+      status: "sealed",
+      debounceUntil: new Date("2026-08-19T00:00:06.000Z"),
+      openedAt: new Date("2026-08-19T00:00:04.000Z"),
+      lastEventAt: new Date("2026-08-19T00:00:04.000Z"),
+      sealedAt: new Date("2026-08-19T00:00:06.000Z"),
+      processingStatus: "running",
+      processingLeaseToken: secondLeaseToken,
+      processingLeaseExpiresAt: new Date("2026-08-19T00:05:06.000Z"),
+      processingAttempts: 1,
+      nextRunAt: new Date("2026-08-19T00:00:06.000Z"),
+    }).returning({ id: customerServiceTurns.id });
+    const second = {
+      turnId: secondTurn.id,
+      messageId: secondMessage.id,
+      leaseToken: secondLeaseToken,
+    };
+    const firstAttemptId = await repository.createGateBlockedAttempt({
+      messageId: first.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    const secondAttemptId = await repository.createGateBlockedAttempt({
+      messageId: second.messageId,
+      trigger: "webhook_after",
+      intent: "unknown",
+      riskLevel: "high",
+      gateResult: "unresolved",
+      gateReasons: ["unresolved_policy"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    const firstInput = {
+      turnId: first.turnId,
+      leaseToken: first.leaseToken,
+      attemptId: firstAttemptId,
+      outcome: "gate_blocked" as const,
+      now: new Date("2026-08-19T00:00:06.000Z"),
+      knowledgeVersion: "knowledge-v1",
+    };
+    const secondInput = {
+      turnId: second.turnId,
+      leaseToken: second.leaseToken,
+      attemptId: secondAttemptId,
+      outcome: "gate_blocked" as const,
+      now: new Date("2026-08-19T00:00:06.000Z"),
+      knowledgeVersion: "knowledge-v1",
+    };
+
+    const results = await Promise.all([
+      repository.openWebsiteHumanReview(firstInput),
+      competingRepository.openWebsiteHumanReview(secondInput),
+    ]);
+    await Promise.all([
+      repository.openWebsiteHumanReview(firstInput),
+      competingRepository.openWebsiteHumanReview(secondInput),
+    ]);
+
+    const reviews = await database.select().from(customerServiceHumanReviews);
+    const acknowledgements = await database.select({
+      conversationId: customerServiceWebsiteAssistantMessages.conversationId,
+      messageId: customerServiceWebsiteAssistantMessages.messageId,
+      turnId: customerServiceWebsiteAssistantMessages.turnId,
+      policyResult: customerServiceWebsiteAssistantMessages.policyResult,
+    }).from(customerServiceWebsiteAssistantMessages);
+
+    expect(results.filter((result) => result.status === "opened")).toHaveLength(1);
+    expect(results.filter((result) => result.status === "reused")).toHaveLength(1);
+    expect(new Set(results.flatMap((result) => result.status === "cancelled" ? [] : [result.reviewId])).size).toBe(1);
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0]).toMatchObject({ generation: 1, status: "open" });
+    expect(acknowledgements).toHaveLength(2);
+    expect(acknowledgements).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        conversationId: reviews[0].conversationId,
+        messageId: first.messageId,
+        turnId: first.turnId,
+        policyResult: "high_risk",
+      }),
+      expect.objectContaining({
+        conversationId: reviews[0].conversationId,
+        messageId: second.messageId,
+        turnId: second.turnId,
+        policyResult: "unresolved",
+      }),
+    ]));
+  });
+
+  it("keeps concurrent website reviews and attempt reasons isolated across conversations", async () => {
+    await activateWebsitePilot("website-review-conversation-isolation");
+    const first = await ingestAndClaimWebsiteTurn({
+      sessionHash: "78".repeat(32),
+      networkHash: "79".repeat(32),
+      messageHash: "7a".repeat(32),
+    });
+    const second = await ingestAndClaimWebsiteTurn({
+      sessionHash: "7b".repeat(32),
+      networkHash: "7c".repeat(32),
+      messageHash: "7d".repeat(32),
+      receivedAt: new Date("2026-08-19T00:00:01.000Z"),
+    });
+    const firstAttemptId = await repository.createGateBlockedAttempt({
+      messageId: first.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    const secondAttemptId = await repository.createGateBlockedAttempt({
+      messageId: second.messageId,
+      trigger: "webhook_after",
+      intent: "quote_information_collection",
+      riskLevel: "high",
+      gateResult: "realtime_required",
+      gateReasons: ["current_price"],
+      knowledgeVersion: "knowledge-v1",
+    });
+
+    const results = await Promise.all([
+      repository.openWebsiteHumanReview({
+        turnId: first.turnId,
+        leaseToken: first.leaseToken,
+        attemptId: secondAttemptId,
+        outcome: "gate_blocked",
+        now: new Date("2026-08-19T00:00:03.000Z"),
+        knowledgeVersion: "knowledge-v1",
+      }),
+      competingRepository.openWebsiteHumanReview({
+        turnId: second.turnId,
+        leaseToken: second.leaseToken,
+        attemptId: secondAttemptId,
+        outcome: "gate_blocked",
+        now: new Date("2026-08-19T00:00:03.000Z"),
+        knowledgeVersion: "knowledge-v1",
+      }),
+    ]);
+    const reviews = await database.select().from(customerServiceHumanReviews);
+    const acknowledgements = await database.select({
+      conversationId: customerServiceWebsiteAssistantMessages.conversationId,
+      messageId: customerServiceWebsiteAssistantMessages.messageId,
+      turnId: customerServiceWebsiteAssistantMessages.turnId,
+      policyResult: customerServiceWebsiteAssistantMessages.policyResult,
+    }).from(customerServiceWebsiteAssistantMessages);
+
+    expect(results.every((result) => result.status === "opened")).toBe(true);
+    expect(new Set(results.flatMap((result) => result.status === "cancelled" ? [] : [result.reviewId])).size).toBe(2);
+    expect(reviews).toHaveLength(2);
+    expect(reviews.every((review) => review.generation === 1 && review.status === "open")).toBe(true);
+    expect(acknowledgements).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        conversationId: reviews.find((review) => review.triggerTurnId === first.turnId)?.conversationId,
+        messageId: first.messageId,
+        turnId: first.turnId,
+        policyResult: "unresolved",
+      }),
+      expect.objectContaining({
+        conversationId: reviews.find((review) => review.triggerTurnId === second.turnId)?.conversationId,
+        messageId: second.messageId,
+        turnId: second.turnId,
+        policyResult: "realtime_required",
+      }),
+    ]));
+    expect(firstAttemptId).not.toBe(secondAttemptId);
+  });
+
+  it("reclaims a persisted website policy result for review after the original worker is interrupted", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "81".repeat(32),
+      networkHash: "82".repeat(32),
+      messageHash: "83".repeat(32),
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "quote_information_collection",
+      riskLevel: "high",
+      gateResult: "realtime_required",
+      gateReasons: ["current_shipping"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    await repository.retryCustomerTurnProcessing({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      nextRunAt: new Date("2026-08-19T00:01:00.000Z"),
+      errorCode: "worker_interrupted_before_review",
+    });
+
+    const recovered = await repository.claimDueCustomerTurn({
+      turnId: claimed.turnId,
+      now: new Date("2026-08-19T00:01:00.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:06:00.000Z"),
+    });
+
+    expect(recovered).toMatchObject({
+      turnId: claimed.turnId,
+      channel: "website",
+      settledResult: { status: "realtime_required", attemptId },
+    });
+  });
+
+  it.each([
+    ["high_risk", "gate_blocked", "high_risk", "gate_blocked"],
+    ["unresolved", "gate_blocked", "unresolved", "gate_blocked"],
+    ["budget_blocked", "budget_blocked", "budget_blocked", "budget_blocked"],
+    ["provider_error", "provider_error", "allowed", "provider_error"],
+    ["output_blocked", "output_blocked", "allowed", "output_blocked"],
+  ] as const)("reclaims persisted %s without creating a new attempt", async (
+    _case,
+    attemptStatus,
+    gateResult,
+    settledStatus,
+  ) => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "84".repeat(32),
+      networkHash: "85".repeat(32),
+      messageHash: "86".repeat(32),
+    });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: gateResult === "high_risk" ? "refund" : "quote_information_collection",
+      riskLevel: gateResult === "allowed" ? "low" : "high",
+      gateResult,
+      gateReasons: [gateResult],
+      knowledgeSources: [],
+      knowledgeVersion: "knowledge-v1",
+      status: attemptStatus,
+      providerCalled: attemptStatus === "provider_error" || attemptStatus === "output_blocked",
+      ...(attemptStatus === "provider_error" || attemptStatus === "output_blocked"
+        ? { provider: "mock" as const, model: "mock-text" }
+        : {}),
+      ...(attemptStatus === "output_blocked"
+        ? { rejectedOutputHash: "87".repeat(32), validatorCodes: ["unsupported_claim"] }
+        : {}),
+      ...(attemptStatus === "provider_error" ? { providerErrorCode: "provider_timeout" } : {}),
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+    await repository.retryCustomerTurnProcessing({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      nextRunAt: new Date("2026-08-19T00:01:00.000Z"),
+      errorCode: "worker_interrupted_before_review",
+    });
+
+    const recovered = await repository.claimDueCustomerTurn({
+      turnId: claimed.turnId,
+      now: new Date("2026-08-19T00:01:00.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:06:00.000Z"),
+    });
+    const storedAttempts = await database.select({ id: customerServiceAiAttempts.id })
+      .from(customerServiceAiAttempts)
+      .where(eq(customerServiceAiAttempts.messageId, claimed.messageId));
+
+    expect(recovered).toMatchObject({
+      turnId: claimed.turnId,
+      channel: "website",
+      settledResult: { status: settledStatus, attemptId: attempt.id },
+    });
+    expect(storedAttempts).toEqual([{ id: attempt.id }]);
+  });
+
+  it("cancels website review creation when a human outbound seals the active lease first", async () => {
+    const conversationHash = "88".repeat(32);
+    const claimed = await claimWebsiteTurn({
+      sessionHash: conversationHash,
+      networkHash: "89".repeat(32),
+      messageHash: "8a".repeat(32),
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    await repository.ingestConversationEvent({
+      channel: "website",
+      role: "staff",
+      eventType: "human_outbound",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "8b".repeat(32),
+      text: "Our team has reviewed this and will help you directly.",
+      bodyHash: "8c".repeat(32),
+      redactionCodes: [],
+      replyToExternalMessageKeyHash: null,
+      learningEligible: false,
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-19T00:00:03.000Z"),
+    });
+
+    await expect(repository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-19T00:00:04.000Z"),
+      knowledgeVersion: "knowledge-v1",
+    })).resolves.toEqual({ status: "cancelled" });
+    await expect(database.select().from(customerServiceHumanReviews)).resolves.toHaveLength(0);
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
   });
 
   it("atomically enforces every website session and network request bucket", async () => {

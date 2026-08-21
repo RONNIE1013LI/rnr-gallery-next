@@ -13,6 +13,7 @@ import {
   customerServiceFeedbackEvents,
   customerServiceHumanReplyMatches,
   customerServiceHumanReplyMatchEvents,
+  customerServiceHumanReviews,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
   customerServiceImageJobs,
@@ -24,6 +25,7 @@ import {
   customerServiceUiChanges,
   customerServiceUiRevision,
   customerServiceWebSessions,
+  customerServiceWebsiteAssistantMessages,
 } from "@/server/db/schema";
 import type {
   CustomerServiceRepository,
@@ -45,6 +47,11 @@ import { sanitizeCaseMemoryText } from "../learning/case-memory-sanitizer";
 import { scoreCaseMemory } from "../learning/case-retrieval";
 import { buildLearningSummary } from "../learning/learning-summary";
 import { localDateScopeKey } from "../usage-cost";
+import {
+  websiteHumanReviewResponse,
+  type WebsiteHumanReviewReason,
+} from "../website/human-review";
+import { sanitizeWebsiteModelInput } from "../website/model-input-sanitizer";
 import {
   createReplyAssistantUpdateReader,
   encodeReplyAssistantCursor,
@@ -78,6 +85,28 @@ function websiteBudgetScopeKeys(dailyScopeKey: string, website: boolean) {
   const date = /^daily:(\d{4}-\d{2}-\d{2})$/.exec(dailyScopeKey)?.[1];
   if (!date) throw new Error("customer_service_budget_daily_scope_invalid");
   return [`daily:website:${date}`, "total:website"] as const;
+}
+
+function websiteReviewReason(
+  outcome: Parameters<CustomerServiceRepository["openWebsiteHumanReview"]>[0]["outcome"],
+  gateResult: string | null,
+): WebsiteHumanReviewReason {
+  if (outcome === "gate_blocked") {
+    if (gateResult === "high_risk" || gateResult === "unresolved" || gateResult === "realtime_required") {
+      return gateResult;
+    }
+    return "unresolved";
+  }
+  if (outcome === "realtime_required") return "realtime_required";
+  if (outcome === "budget_blocked") return "budget_blocked";
+  if (outcome === "provider_error") return "provider_error";
+  if (outcome === "output_blocked") return "output_blocked";
+  return "system_failure";
+}
+
+function redactedWebsiteReviewSummary(body: string) {
+  const sanitized = sanitizeWebsiteModelInput(body).text;
+  return (sanitized || "[Customer message removed]").slice(0, 160);
 }
 
 async function consumeWebsiteRateLimits(
@@ -1252,6 +1281,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         const [latestAttempt] = await transaction.select({
           id: customerServiceAiAttempts.id,
           status: customerServiceAiAttempts.status,
+          gateResult: customerServiceAiAttempts.gateResult,
           providerCalled: customerServiceAiAttempts.providerCalled,
           reservedCostMicrousd: customerServiceAiAttempts.reservedCostMicrousd,
           startedAt: customerServiceAiAttempts.startedAt,
@@ -1260,7 +1290,27 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           turn.messageId,
         )).orderBy(desc(customerServiceAiAttempts.attemptNumber)).limit(1).for("update");
 
-        if (latestAttempt && [
+        const settledWebsiteResult = turn.channel === "website" && latestAttempt
+          ? (() => {
+            if (latestAttempt.status === "gate_blocked") {
+              return latestAttempt.gateResult === "realtime_required"
+                ? { status: "realtime_required" as const, attemptId: latestAttempt.id }
+                : { status: "gate_blocked" as const, attemptId: latestAttempt.id };
+            }
+            if (latestAttempt.status === "budget_blocked") {
+              return { status: "budget_blocked" as const, attemptId: latestAttempt.id };
+            }
+            if (latestAttempt.status === "provider_error") {
+              return { status: "provider_error" as const, attemptId: latestAttempt.id };
+            }
+            if (latestAttempt.status === "output_blocked") {
+              return { status: "output_blocked" as const, attemptId: latestAttempt.id };
+            }
+            return null;
+          })()
+          : null;
+
+        if (!settledWebsiteResult && latestAttempt && [
           "gate_blocked",
           "draft_ready",
           "output_blocked",
@@ -1341,8 +1391,10 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         return claimed ? {
           turnId: turn.id,
           messageId: turn.messageId,
+          channel: turn.channel,
           leaseToken,
           processingAttempt: claimed.processingAttempt,
+          ...(settledWebsiteResult ? { settledResult: settledWebsiteResult } : {}),
         } : null;
       });
     },
@@ -1361,6 +1413,80 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
       )).returning({ id: customerServiceTurns.id });
       return completed.length === 1;
+    },
+
+    async openWebsiteHumanReview(input) {
+      return database.transaction(async (transaction) => {
+        const [turn] = await transaction.select({
+          id: customerServiceTurns.id,
+          conversationId: customerServiceTurns.conversationId,
+          messageId: customerServiceTurns.representativeMessageId,
+          body: customerServiceTurns.body,
+        }).from(customerServiceTurns).where(and(
+          eq(customerServiceTurns.id, input.turnId),
+          eq(customerServiceTurns.channel, "website"),
+          eq(customerServiceTurns.status, "sealed"),
+          eq(customerServiceTurns.processingStatus, "running"),
+          eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
+        )).limit(1).for("update");
+        if (!turn?.messageId) return { status: "cancelled" as const };
+
+        const [attempt] = input.attemptId
+          ? await transaction.select({ gateResult: customerServiceAiAttempts.gateResult })
+            .from(customerServiceAiAttempts)
+            .where(and(
+              eq(customerServiceAiAttempts.id, input.attemptId),
+              eq(customerServiceAiAttempts.messageId, turn.messageId),
+            )).limit(1)
+          : [];
+        const response = websiteHumanReviewResponse(websiteReviewReason(input.outcome, attempt?.gateResult ?? null));
+
+        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'website-review:' + turn.conversationId}))`);
+        const [existing] = await transaction.select({
+          id: customerServiceHumanReviews.id,
+          generation: customerServiceHumanReviews.generation,
+        }).from(customerServiceHumanReviews).where(and(
+          eq(customerServiceHumanReviews.conversationId, turn.conversationId),
+          eq(customerServiceHumanReviews.status, "open"),
+        )).limit(1).for("update");
+
+        const review = existing ?? await (async () => {
+          const [latest] = await transaction.select({ generation: max(customerServiceHumanReviews.generation) })
+            .from(customerServiceHumanReviews)
+            .where(eq(customerServiceHumanReviews.conversationId, turn.conversationId));
+          const [created] = await transaction.insert(customerServiceHumanReviews).values({
+            conversationId: turn.conversationId,
+            channel: "website",
+            triggerTurnId: turn.id,
+            generation: (latest?.generation ?? 0) + 1,
+            reason: response.reason,
+            status: "open",
+            redactedSummary: redactedWebsiteReviewSummary(turn.body),
+            openedAt: input.now,
+          }).returning({
+            id: customerServiceHumanReviews.id,
+            generation: customerServiceHumanReviews.generation,
+          });
+          return created;
+        })();
+
+        await transaction.insert(customerServiceWebsiteAssistantMessages).values({
+          conversationId: turn.conversationId,
+          channel: "website",
+          messageId: turn.messageId,
+          turnId: turn.id,
+          kind: response.kind,
+          body: response.body,
+          policyResult: response.reason,
+          gateReasons: [response.reason],
+          knowledgeVersion: input.knowledgeVersion,
+          publishedAt: input.now,
+        }).onConflictDoNothing();
+
+        return existing
+          ? { status: "reused" as const, reviewId: review.id, generation: review.generation }
+          : { status: "opened" as const, reviewId: review.id, generation: review.generation };
+      });
     },
 
     async retryCustomerTurnProcessing(input) {
