@@ -36,6 +36,32 @@ describe("customer service server config", () => {
     expect(JSON.stringify(publicCustomerServiceConfig(parsed))).not.toMatch(/review-link-secret/i);
   });
 
+  it("derives a server-only provider-scope fingerprint that changes with the Resend key", () => {
+    const base = {
+      WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
+      CUSTOMER_CHAT_SESSION_SECRET: "website-session-secret-at-least-32-bytes",
+      CUSTOMER_CHAT_ABUSE_HASH_SECRET: "website-abuse-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_REVIEW_LINK_SECRET: "review-link-secret-at-least-32-bytes",
+      REPLY_ASSISTANT_ALERT_TO: "support@example.test",
+      CRON_SECRET: "website-recovery-secret-at-least-32-bytes",
+    };
+    const firstApiKey = "re_provider_scope_team_a_secret";
+    const secondApiKey = "re_provider_scope_team_b_secret";
+    const first = parseCustomerServiceConfig({ ...base, RESEND_API_KEY: firstApiKey });
+    const repeated = parseCustomerServiceConfig({ ...base, RESEND_API_KEY: firstApiKey });
+    const second = parseCustomerServiceConfig({ ...base, RESEND_API_KEY: secondApiKey });
+
+    expect(first.reviewAlertProviderScopeFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(second.reviewAlertProviderScopeFingerprint).toMatch(/^[0-9a-f]{64}$/);
+    expect(repeated.reviewAlertProviderScopeFingerprint).toBe(first.reviewAlertProviderScopeFingerprint);
+    expect(first.reviewAlertProviderScopeFingerprint).not.toBe(second.reviewAlertProviderScopeFingerprint);
+    expect(first.reviewAlertProviderScopeFingerprint).not.toContain(firstApiKey);
+    expect(JSON.stringify(publicCustomerServiceConfig(first))).not.toContain(firstApiKey);
+    expect(JSON.stringify(publicCustomerServiceConfig(first))).not.toContain(
+      first.reviewAlertProviderScopeFingerprint,
+    );
+  });
+
   it("rejects reuse of a website session or abuse secret for review links", () => {
     const base = {
       WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",

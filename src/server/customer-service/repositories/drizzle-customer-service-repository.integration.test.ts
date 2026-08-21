@@ -47,6 +47,7 @@ const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 const enabled = Boolean(testDatabaseUrl) && isDedicatedTestDatabase(testDatabaseUrl, process.env.DATABASE_URL);
 const database = drizzle(testDatabaseUrl ?? "postgres://disabled.invalid/test");
 const reviewSelectorSecret = "task-13-review-selector-secret-at-least-32-bytes";
+const reviewAlertProviderScopeFingerprint = "a1".repeat(32);
 const selectorTestNow = () => new Date("2026-08-22T00:00:00.000Z");
 const repository = createDrizzleCustomerServiceRepository(database, { reviewSelectorSecret, now: selectorTestNow });
 const competingPool = new Pool({ connectionString: testDatabaseUrl ?? "postgres://disabled.invalid/test" });
@@ -1450,6 +1451,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => new Date("2026-08-21T00:00:03.000Z"),
     });
 
@@ -1507,6 +1509,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => new Date("2026-08-21T00:00:03.000Z"),
     });
 
@@ -1560,6 +1563,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret,
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => currentTime,
       leaseMs: 1_000,
     });
@@ -1584,6 +1588,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret,
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => currentTime,
     });
     await expect(recoveryService.deliverNext()).resolves.toEqual({ result: "sent" });
@@ -1644,6 +1649,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => currentTime,
       leaseMs: 1_000,
     });
@@ -1718,6 +1724,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => currentTime,
       leaseMs: 1_000,
     });
@@ -1737,6 +1744,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => currentTime,
     });
     await expect(driftedService.deliverNext()).resolves.toEqual({ result: "uncertain" });
@@ -1756,6 +1764,87 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     await expect(driftedService.deliverNext()).resolves.toEqual({ result: "empty" });
     expect(providerCalls).toHaveLength(1);
     expect(providerEffects).toHaveLength(1);
+    const [review] = await database.select().from(customerServiceHumanReviews);
+    expect(review).toMatchObject({ status: "open" });
+  });
+
+  it("terminalizes provider-scope drift before recovering an accepted alert", async () => {
+    await openTask13Review({
+      sessionHash: "f1".repeat(32),
+      networkHash: "f2".repeat(32),
+      messageHash: "f3".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000174",
+    });
+    let currentTime = new Date("2026-08-21T00:00:03.000Z");
+    const firstApiKey = "re_provider_scope_team_a_secret";
+    const secondApiKey = "re_provider_scope_team_b_secret";
+    const firstScopeFingerprint = createHmac("sha256", "task-13-review-link-secret-at-least-32-bytes")
+      .update(`review-alert-provider-scope\0${firstApiKey}`)
+      .digest("hex");
+    const secondScopeFingerprint = createHmac("sha256", "task-13-review-link-secret-at-least-32-bytes")
+      .update(`review-alert-provider-scope\0${secondApiKey}`)
+      .digest("hex");
+    const provider = {
+      configured: true,
+      send: vi.fn(async (message: { idempotencyKey: string }) => ({
+        providerMessageId: `accepted:${message.idempotencyKey}`,
+      })),
+    };
+    const firstService = createReviewAlertService({
+      repository: {
+        claimDueReviewAlert: repository.claimDueReviewAlert,
+        confirmClaimedReviewAlert: repository.confirmClaimedReviewAlert,
+        beginClaimedReviewAlertSend: repository.beginClaimedReviewAlertSend,
+        markReviewAlertSent: async () => { throw new Error("simulated_process_death_after_provider_acceptance"); },
+        retryReviewAlert: repository.retryReviewAlert,
+        markReviewAlertUncertain: repository.markReviewAlertUncertain,
+      },
+      provider,
+      alertTo: "staff@rrgallery.example",
+      providerFrom: "R&R Gallery <support@rrgallery.example>",
+      siteUrl: "https://rrgallery.example",
+      deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint: firstScopeFingerprint,
+      now: () => currentTime,
+      leaseMs: 1_000,
+    });
+
+    await expect(firstService.deliverNext()).rejects.toThrow("simulated_process_death_after_provider_acceptance");
+    const [original] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(original).toMatchObject({
+      status: "leased",
+      providerSendStartedAt: currentTime,
+      providerPayloadDigest: expect.stringMatching(/^[0-9a-f]{64}$/),
+    });
+    const persisted = JSON.stringify(original);
+    expect(persisted).not.toContain(firstApiKey);
+    expect(persisted).not.toContain(secondApiKey);
+    expect(persisted).not.toContain(firstScopeFingerprint);
+    expect(persisted).not.toContain(secondScopeFingerprint);
+
+    currentTime = new Date("2026-08-21T22:00:03.000Z");
+    const recoveryService = createReviewAlertService({
+      repository,
+      provider,
+      alertTo: "staff@rrgallery.example",
+      providerFrom: "R&R Gallery <support@rrgallery.example>",
+      siteUrl: "https://rrgallery.example",
+      deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint: secondScopeFingerprint,
+      now: () => currentTime,
+    });
+    await expect(recoveryService.deliverNext()).resolves.toEqual({ result: "uncertain" });
+
+    expect(provider.send).toHaveBeenCalledOnce();
+    const [terminal] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(terminal).toMatchObject({
+      status: "failed",
+      providerSendStartedAt: original.providerSendStartedAt,
+      providerPayloadDigest: original.providerPayloadDigest,
+      lastErrorCode: "provider_payload_config_drift_unknown_result",
+      leaseToken: null,
+      leaseExpiresAt: null,
+    });
     const [review] = await database.select().from(customerServiceHumanReviews);
     expect(review).toMatchObject({ status: "open" });
   });
@@ -1786,6 +1875,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => currentTime,
       leaseMs: 1_000,
     });
@@ -1827,6 +1917,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => new Date("2026-08-21T00:00:03.000Z"),
     });
     await expect(service.deliverNext()).resolves.toEqual({ result: "uncertain" });
@@ -1872,6 +1963,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => recoveryTime,
     });
 
@@ -1936,6 +2028,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => currentTime,
       leaseMs: 1_000,
     });
@@ -1951,6 +2044,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret: "task-13-review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => currentTime,
     });
     await expect(Promise.all([
@@ -2299,6 +2393,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret,
+      providerScopeFingerprint: reviewAlertProviderScopeFingerprint,
       now: () => new Date("2026-08-21T00:00:03.000Z"),
     });
 

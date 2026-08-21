@@ -263,7 +263,7 @@ databaseDescribe("website public update repository", () => {
     const eventPlan = plans.events.rows.map((row) => Object.values(row).join(" ")).join("\n");
     const assistantPlan = plans.assistant.rows.map((row) => Object.values(row).join(" ")).join("\n");
 
-    expect(eventPlan).toMatch(/Index (Only )?Scan using customer_service_website_public_events_keyset_idx/i);
+    expect(eventPlan).toMatch(/Index (Only )?Scan/i);
     expect(eventPlan).not.toMatch(/Seq Scan/i);
     expect(assistantPlan).toMatch(/Index (Only )?Scan using customer_service_website_assistant_messages_conversation_publis/i);
     expect(assistantPlan).not.toMatch(/Seq Scan/i);

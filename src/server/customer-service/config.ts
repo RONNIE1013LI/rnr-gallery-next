@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { pricingForReviewedImageModel } from "./usage-cost";
 
 export type CustomerServiceConfig = Readonly<{
@@ -27,6 +28,7 @@ export type CustomerServiceConfig = Readonly<{
   websiteSessionSecret: string;
   websiteAbuseHashSecret: string;
   reviewLinkSecret: string;
+  reviewAlertProviderScopeFingerprint: string;
   replyAssistantAlertTo: string;
   websiteDailyWarningMicrousd: number;
   websiteDailyHardStopMicrousd: number;
@@ -128,6 +130,13 @@ export function parseCustomerServiceConfig(
   ) {
     throw new Error("REPLY_ASSISTANT_REVIEW_LINK_SECRET must differ from website session and abuse secrets");
   }
+  const resendApiKey = env.RESEND_API_KEY?.trim() ?? "";
+  const reviewAlertProviderScopeFingerprint = websiteEnabled && resendApiKey
+    ? createHmac("sha256", reviewLinkSecret)
+      .update("review-alert-provider-scope\0")
+      .update(resendApiKey)
+      .digest("hex")
+    : "";
   const replyAssistantAlertTo = websiteEnabled ? requiredEmail(env, "REPLY_ASSISTANT_ALERT_TO") : "";
   const websiteDailyWarningMicrousd = websiteEnabled
     ? usdMicrousd(env.WEBSITE_CHAT_DAILY_WARNING_USD, 0.1, "WEBSITE_CHAT_DAILY_WARNING_USD")
@@ -183,6 +192,7 @@ export function parseCustomerServiceConfig(
     websiteSessionSecret,
     websiteAbuseHashSecret,
     reviewLinkSecret,
+    reviewAlertProviderScopeFingerprint,
     replyAssistantAlertTo,
     websiteDailyWarningMicrousd,
     websiteDailyHardStopMicrousd,

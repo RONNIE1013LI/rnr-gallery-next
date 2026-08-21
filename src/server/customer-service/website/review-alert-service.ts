@@ -131,6 +131,7 @@ function alertMessage(input: Readonly<{
 
 function providerPayloadDigest(input: Readonly<{
   from: string;
+  providerScopeFingerprint: string;
   message: Readonly<{
     to: string;
     subject: string;
@@ -139,6 +140,9 @@ function providerPayloadDigest(input: Readonly<{
     idempotencyKey: string;
   }>;
 }>) {
+  if (!/^[0-9a-f]{64}$/.test(input.providerScopeFingerprint)) {
+    throw new Error("review_alert_provider_scope_invalid");
+  }
   return createHash("sha256").update(JSON.stringify({
     from: input.from,
     to: [input.message.to],
@@ -146,6 +150,7 @@ function providerPayloadDigest(input: Readonly<{
     text: input.message.text,
     html: input.message.html,
     idempotencyKey: input.message.idempotencyKey,
+    providerScopeFingerprint: input.providerScopeFingerprint,
   })).digest("hex");
 }
 
@@ -156,6 +161,7 @@ export function createReviewAlertService(input: Readonly<{
   providerFrom: string;
   siteUrl: string;
   deepLinkSecret: string;
+  providerScopeFingerprint: string;
   now?: () => Date;
   leaseMs?: number;
 }>) {
@@ -194,7 +200,11 @@ export function createReviewAlertService(input: Readonly<{
         now: sendStartedAt,
       });
       if (!stillOpen) return Object.freeze({ result: "resolved" as const });
-      const payloadDigest = providerPayloadDigest({ from: input.providerFrom, message });
+      const payloadDigest = providerPayloadDigest({
+        from: input.providerFrom,
+        message,
+        providerScopeFingerprint: input.providerScopeFingerprint,
+      });
       const sendLinearized = await input.repository.beginClaimedReviewAlertSend({
         id: alert.id,
         leaseToken: alert.leaseToken,

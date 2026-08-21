@@ -56,6 +56,7 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
       providerFrom: env.EMAIL_FROM?.trim() ?? "",
       siteUrl: env.BETTER_AUTH_URL ?? "http://192.168.4.199:3000",
       deepLinkSecret: config.reviewLinkSecret,
+      providerScopeFingerprint: config.reviewAlertProviderScopeFingerprint,
     })
     : undefined;
   return Object.freeze({ config, repository, engine, imageJobRunner, turnRecoveryRunner, reviewAlertService });

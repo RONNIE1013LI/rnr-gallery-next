@@ -12,6 +12,7 @@ import {
 } from "./review-alert-service";
 
 const now = new Date("2026-08-21T00:00:00.000Z");
+const providerScopeFingerprint = "a1".repeat(32);
 const rawToken = createReviewAlertToken({
   reviewId: "00000000-0000-4000-8000-000000000001",
   secret: "review-link-secret-at-least-32-bytes",
@@ -36,7 +37,7 @@ function delivery(overrides: Partial<{
   };
 }
 
-function setup() {
+function setup(scopeFingerprint = providerScopeFingerprint) {
   const repository = {
     claimDueReviewAlert: vi.fn(async () => delivery()),
     confirmClaimedReviewAlert: vi.fn(async () => true),
@@ -58,6 +59,7 @@ function setup() {
     providerFrom: "R&R Gallery <support@rrgallery.example>",
     siteUrl: "https://rrgallery.example",
     deepLinkSecret: "review-link-secret-at-least-32-bytes",
+    providerScopeFingerprint: scopeFingerprint,
     now: () => now,
   });
   return { repository, provider, service };
@@ -120,10 +122,27 @@ describe("website human-review alert delivery", () => {
       text: message.text,
       html: message.html,
       idempotencyKey: message.idempotencyKey,
+      providerScopeFingerprint,
     })).digest("hex");
     expect(current.repository.beginClaimedReviewAlertSend).toHaveBeenCalledWith(expect.objectContaining({
       payloadDigest: expectedDigest,
     }));
+  });
+
+  it("binds provider scope into the final digest without leaking the standalone fingerprint", async () => {
+    const first = setup("a1".repeat(32));
+    const second = setup("b2".repeat(32));
+
+    await first.service.deliverNext();
+    await second.service.deliverNext();
+
+    const firstDigest = first.repository.beginClaimedReviewAlertSend.mock.calls[0][0].payloadDigest;
+    const secondDigest = second.repository.beginClaimedReviewAlertSend.mock.calls[0][0].payloadDigest;
+    expect(firstDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(secondDigest).toMatch(/^[0-9a-f]{64}$/);
+    expect(firstDigest).not.toBe(secondDigest);
+    expect(JSON.stringify(first.provider.send.mock.calls[0][0])).not.toContain("a1".repeat(32));
+    expect(JSON.stringify(second.provider.send.mock.calls[0][0])).not.toContain("b2".repeat(32));
   });
 
   it("stops before the provider when durable linearization detects payload config drift", async () => {
@@ -263,6 +282,7 @@ describe("website human-review alert delivery", () => {
       providerFrom: "R&R Gallery <support@rrgallery.example>",
       siteUrl: "https://rrgallery.example",
       deepLinkSecret: "review-link-secret-at-least-32-bytes",
+      providerScopeFingerprint,
       now: freshNow,
     });
 
