@@ -36,6 +36,7 @@ import type {
   HashedConversationEvent,
   ProviderAttemptCompletion,
   ProviderAttemptReservation,
+  SafeQueuePage,
 } from "./customer-service-repository";
 import { parseImageAnalysisResult } from "../image-analysis-schema";
 import { IMAGE_LIMITS } from "../attachments/limits";
@@ -75,6 +76,10 @@ const WEBSITE_RATE_LIMITS = Object.freeze({
 
 function isHash(value: string) {
   return /^[a-f0-9]{64}$/.test(value);
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
 function startOfUtcMinute(value: Date) {
@@ -591,6 +596,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     `;
     const rows = await database.select({
       messageId: customerServiceMessages.id,
+      channel: customerServiceMessages.channel,
       conversationId: customerServiceMessages.conversationId,
       body: customerServiceMessages.body,
       receivedAt: customerServiceMessages.receivedAt,
@@ -634,35 +640,74 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
     }
     const assessments = await validatedQueueImageAssessments(database, attachmentIdsByMessage);
     const conversationIds = [...new Set(items.map((item) => item.conversationId))];
+    const websiteConversationIds = [...new Set(items
+      .filter((item) => item.channel === "website")
+      .map((item) => item.conversationId))];
+    const reviewRows = websiteConversationIds.length
+      ? await database.select({
+        id: customerServiceHumanReviews.id,
+        conversationId: customerServiceHumanReviews.conversationId,
+        reason: customerServiceHumanReviews.reason,
+        alertStatus: customerServiceReviewAlertOutbox.status,
+      }).from(customerServiceHumanReviews)
+        .leftJoin(
+          customerServiceReviewAlertOutbox,
+          eq(customerServiceReviewAlertOutbox.humanReviewId, customerServiceHumanReviews.id),
+        )
+        .where(and(
+          inArray(customerServiceHumanReviews.conversationId, websiteConversationIds),
+          eq(customerServiceHumanReviews.channel, "website"),
+          eq(customerServiceHumanReviews.status, "open"),
+        ))
+      : [];
+    const reviewByConversation = new Map(reviewRows.map((review) => [review.conversationId, review]));
     const timelineRows = conversationIds.length
       ? await database.execute<{
         conversation_id: string;
-        role: "customer" | "staff";
+        role: "customer" | "assistant" | "staff";
         body: string;
         received_at: Date;
       }>(sql`
         select conversation_id, role, body, received_at
         from (
-          select
-            conversation_id,
-            role,
-            body,
-            received_at,
-            created_at,
-            id,
-            row_number() over (
-              partition by conversation_id
-              order by received_at desc, created_at desc, id desc
-            ) as ordinal
-          from ${customerServiceConversationEvents}
-          where ${customerServiceConversationEvents.conversationId} in (${sql.join(
-            conversationIds.map((id) => sql`${id}`),
-            sql`, `,
-          )})
-            and ${customerServiceConversationEvents.eventType} in ('customer_message', 'human_outbound')
+          select *, row_number() over (
+            partition by conversation_id
+            order by received_at desc, created_at desc, source_order desc, id desc
+          ) as ordinal
+          from (
+            select
+              conversation_id,
+              role::text as role,
+              body,
+              received_at,
+              created_at,
+              id,
+              0 as source_order
+            from ${customerServiceConversationEvents}
+            where ${customerServiceConversationEvents.conversationId} in (${sql.join(
+              conversationIds.map((id) => sql`${id}`),
+              sql`, `,
+            )})
+              and ${customerServiceConversationEvents.eventType} in ('customer_message', 'human_outbound')
+            union all
+            select
+              conversation_id,
+              'assistant' as role,
+              body,
+              published_at as received_at,
+              created_at,
+              id,
+              1 as source_order
+            from ${customerServiceWebsiteAssistantMessages}
+            where ${customerServiceWebsiteAssistantMessages.conversationId} in (${sql.join(
+              conversationIds.map((id) => sql`${id}`),
+              sql`, `,
+            )})
+              and ${customerServiceWebsiteAssistantMessages.channel} = 'website'
+          ) combined
         ) recent
         where ordinal <= 8
-        order by conversation_id, received_at asc, created_at asc, id asc
+        order by conversation_id, received_at asc, created_at asc, source_order asc, id asc
       `)
       : { rows: [] as Array<{
         conversation_id: string;
@@ -671,7 +716,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         received_at: Date;
       }> };
     const timelineByConversation = new Map<string, Array<{
-      role: "customer" | "staff";
+      role: "customer" | "assistant" | "staff";
       text: string;
       receivedAt: string;
     }>>();
@@ -689,15 +734,25 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
       items: items.map((item) => {
         const attachmentIds = attachmentIdsByMessage.get(item.messageId) ?? [];
         const assessment = assessments.get(item.messageId);
+        const websiteReview = item.channel === "website"
+          ? reviewByConversation.get(item.conversationId)
+          : undefined;
+        const websiteReviewDto: SafeQueuePage["items"][number]["websiteReview"] = websiteReview ? {
+          selector: websiteReview.id,
+          reason: websiteReview.reason,
+          alertStatus: websiteReview.alertStatus ?? "not_created",
+        } : null;
         return {
           messageId: item.messageId,
+          channel: item.channel,
           body: item.body,
           receivedAt: item.receivedAt,
           status: item.status,
-          latestAttemptId: item.humanReplyReceived ? null : item.latestAttemptId,
-          draftText: item.humanReplyReceived ? null : item.draftText,
-          gateResult: item.humanReplyReceived ? null : item.gateResult,
+          latestAttemptId: item.humanReplyReceived || item.channel === "website" ? null : item.latestAttemptId,
+          draftText: item.humanReplyReceived || item.channel === "website" ? null : item.draftText,
+          gateResult: item.humanReplyReceived || item.channel === "website" ? null : item.gateResult,
           humanReplyReceived: item.humanReplyReceived,
+          websiteReview: websiteReviewDto,
           attachmentCount: attachmentIds.length,
           imageAnalysisStatus: attachmentIds.length
             ? assessment?.status ?? "human_review_required"
@@ -710,6 +765,151 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
   }
 
   const repository: CustomerServiceRepository = {
+    async resolveWebsiteReviewDeepLink(input) {
+      if (!isHash(input.tokenHash)) return null;
+      const [review] = await database.select({ id: customerServiceHumanReviews.id })
+        .from(customerServiceHumanReviews)
+        .where(and(
+          eq(customerServiceHumanReviews.channel, "website"),
+          eq(customerServiceHumanReviews.status, "open"),
+          eq(customerServiceHumanReviews.deepLinkTokenHash, input.tokenHash),
+          gt(customerServiceHumanReviews.deepLinkExpiresAt, input.now),
+        ))
+        .limit(1);
+      return review?.id ?? null;
+    },
+
+    async answerWebsiteReview(input) {
+      const text = input.text.trim();
+      if (
+        !isUuid(input.reviewSelector)
+        || !input.actorUserId.trim()
+        || Array.from(text).length < 1
+        || Array.from(text).length > 2_000
+        || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/.test(text)
+      ) return { status: "unavailable" as const };
+
+      return database.transaction(async (transaction) => {
+        const [review] = await transaction.select({
+          id: customerServiceHumanReviews.id,
+          conversationId: customerServiceHumanReviews.conversationId,
+          triggerTurnId: customerServiceHumanReviews.triggerTurnId,
+          channel: customerServiceHumanReviews.channel,
+          status: customerServiceHumanReviews.status,
+          resolutionEventId: customerServiceHumanReviews.resolutionEventId,
+        }).from(customerServiceHumanReviews)
+          .where(eq(customerServiceHumanReviews.id, input.reviewSelector))
+          .limit(1)
+          .for("update");
+        if (!review || review.channel !== "website") return { status: "unavailable" as const };
+
+        if (review.status === "resolved") {
+          const [existing] = review.resolutionEventId
+            ? await transaction.select({
+              body: customerServiceConversationEvents.body,
+              channel: customerServiceConversationEvents.channel,
+              role: customerServiceConversationEvents.role,
+              eventType: customerServiceConversationEvents.eventType,
+            }).from(customerServiceConversationEvents)
+              .where(and(
+                eq(customerServiceConversationEvents.id, review.resolutionEventId),
+                eq(customerServiceConversationEvents.conversationId, review.conversationId),
+              ))
+              .limit(1)
+            : [];
+          return existing?.channel === "website"
+            && existing.role === "staff"
+            && existing.eventType === "human_outbound"
+            && existing.body === text
+            ? { status: "duplicate" as const }
+            : { status: "unavailable" as const };
+        }
+
+        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'website-review:' + review.conversationId}))`);
+        const externalMessageKeyHash = createHash("sha256")
+          .update(`website-human-outbound\0${review.id}`)
+          .digest("hex");
+        const [event] = await transaction.insert(customerServiceConversationEvents).values({
+          conversationId: review.conversationId,
+          turnId: review.triggerTurnId,
+          channel: "website",
+          externalMessageKeyHash,
+          role: "staff",
+          eventType: "human_outbound",
+          body: text,
+          redactionCodes: [],
+          learningEligible: false,
+          receivedAt: input.now,
+        }).onConflictDoNothing().returning({ id: customerServiceConversationEvents.id });
+        if (!event) return { status: "unavailable" as const };
+
+        const [resolved] = await transaction.update(customerServiceHumanReviews).set({
+          status: "resolved",
+          resolvedAt: input.now,
+          resolvedByUserId: input.actorUserId,
+          resolutionEventId: event.id,
+        }).where(and(
+          eq(customerServiceHumanReviews.id, review.id),
+          eq(customerServiceHumanReviews.channel, "website"),
+          eq(customerServiceHumanReviews.status, "open"),
+        )).returning({ id: customerServiceHumanReviews.id });
+        if (!resolved) throw new Error("website_review_resolution_cas_failed");
+
+        const applicableTurns = await transaction.select({
+          id: customerServiceTurns.id,
+          messageId: customerServiceTurns.representativeMessageId,
+        }).from(customerServiceTurns).where(and(
+          eq(customerServiceTurns.conversationId, review.conversationId),
+          eq(customerServiceTurns.channel, "website"),
+          inArray(customerServiceTurns.status, ["open", "sealed"]),
+          or(
+            eq(customerServiceTurns.id, review.triggerTurnId),
+            inArray(customerServiceTurns.processingStatus, ["pending", "running"]),
+          ),
+        )).for("update");
+        const turnIds = applicableTurns.map((turn) => turn.id);
+        if (turnIds.length) {
+          await transaction.update(customerServiceTurns).set({
+            status: "suppressed",
+            sealedAt: input.now,
+            suppressionReason: "human_outbound_received",
+            processingStatus: "cancelled",
+            processingLeaseToken: null,
+            processingLeaseExpiresAt: null,
+            processingCompletedAt: input.now,
+            lastProcessingError: "human_outbound_received",
+          }).where(inArray(customerServiceTurns.id, turnIds));
+        }
+        const messageIds = applicableTurns
+          .map((turn) => turn.messageId)
+          .filter((messageId): messageId is string => Boolean(messageId));
+        if (messageIds.length) {
+          await transaction.update(customerServiceAiAttempts).set({
+            status: "abandoned",
+            draftText: null,
+          }).where(and(
+            inArray(customerServiceAiAttempts.messageId, messageIds),
+            eq(customerServiceAiAttempts.status, "draft_ready"),
+          ));
+        }
+        await transaction.update(customerServiceReviewAlertOutbox).set({
+          status: "failed",
+          lastErrorCode: "review_resolved_before_delivery",
+          leaseToken: null,
+          leaseExpiresAt: null,
+        }).where(and(
+          eq(customerServiceReviewAlertOutbox.humanReviewId, review.id),
+          inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait"]),
+        ));
+        await transaction.update(customerServiceConversations).set({ updatedAt: input.now })
+          .where(and(
+            eq(customerServiceConversations.id, review.conversationId),
+            eq(customerServiceConversations.channel, "website"),
+          ));
+        return { status: "sent" as const };
+      });
+    },
+
     async listWebsitePublicUpdates(input) {
       if (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 101) {
         throw new Error("website_public_updates_limit_invalid");
@@ -1633,6 +1833,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         }).from(customerServiceReviewAlertOutbox)
           .innerJoin(customerServiceHumanReviews, eq(customerServiceHumanReviews.id, customerServiceReviewAlertOutbox.humanReviewId))
           .where(and(
+            eq(customerServiceHumanReviews.status, "open"),
             lte(customerServiceReviewAlertOutbox.nextAttemptAt, input.now),
             gt(customerServiceHumanReviews.deepLinkExpiresAt, input.now),
             or(

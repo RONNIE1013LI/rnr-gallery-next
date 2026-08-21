@@ -36,7 +36,7 @@ export function createReplyAssistantUpdatesHandler(dependencies: Readonly<{
 
 const config = parseCustomerServiceConfig();
 export const { GET } = createReplyAssistantUpdatesHandler({
-  enabled: config.enabled,
+  enabled: config.enabled || config.websiteEnabled,
   requirePermission: requireAdminPermission,
   listUpdates: (cursor) => createCustomerServiceRuntime().repository.listReplyAssistantUpdates(cursor, 250),
 });

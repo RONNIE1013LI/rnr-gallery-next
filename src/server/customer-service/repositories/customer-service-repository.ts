@@ -186,6 +186,7 @@ export type FeedbackEventInput = Readonly<{
 export type SafeQueuePage = Readonly<{
   items: readonly Readonly<{
     messageId: string;
+    channel: CustomerServiceChannel;
     body: string;
     receivedAt: string;
     status: string;
@@ -196,8 +197,13 @@ export type SafeQueuePage = Readonly<{
     imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
     imageAssessmentSummary: string | null;
     humanReplyReceived: boolean;
+    websiteReview: Readonly<{
+      selector: string;
+      reason: "high_risk" | "unresolved" | "realtime_required" | "provider_error" | "output_blocked" | "budget_blocked" | "system_failure";
+      alertStatus: "not_created" | "pending" | "leased" | "retry_wait" | "sent" | "failed";
+    }> | null;
     timeline: readonly Readonly<{
-      role: "customer" | "staff";
+      role: "customer" | "assistant" | "staff";
       text: string;
       receivedAt: string;
     }>[];
@@ -281,6 +287,16 @@ export type PilotMetricCounts = Readonly<{
 }>;
 
 export interface CustomerServiceRepository {
+  resolveWebsiteReviewDeepLink(input: Readonly<{
+    tokenHash: string;
+    now: Date;
+  }>): Promise<string | null>;
+  answerWebsiteReview(input: Readonly<{
+    reviewSelector: string;
+    text: string;
+    actorUserId: string;
+    now: Date;
+  }>): Promise<Readonly<{ status: "sent" | "duplicate" | "unavailable" }>>;
   listWebsitePublicUpdates(input: Readonly<{
     conversationId: string;
     after: WebsitePublicUpdateCursor | null;

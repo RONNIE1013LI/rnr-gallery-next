@@ -3,6 +3,7 @@ import { parseCustomerServiceConfig } from "@/server/customer-service/config";
 import type { SafeQueuePage } from "@/server/customer-service/repositories/customer-service-repository";
 import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
 import { encodeReplyAssistantCursor } from "@/server/customer-service/live-updates";
+import { hashReviewAlertToken } from "@/server/customer-service/website/review-alert-service";
 import compiledKnowledge from "@/server/customer-service/knowledge/compiled-knowledge.json";
 import styles from "./reply-assistant.module.css";
 import { replyAssistantMetricCards } from "./metric-cards";
@@ -11,10 +12,27 @@ import { ReplyAssistantLiveDashboard } from "./live-dashboard";
 
 export const metadata = { title: "Reply Assistant | R&R Gallery" };
 
-export default async function ReplyAssistantPage() {
+export default async function ReplyAssistantPage({
+  searchParams = Promise.resolve({}),
+}: Readonly<{
+  searchParams?: Promise<Readonly<{ review?: string | string[] }>>;
+}>) {
   const access = await requireAdminPermission("use_reply_assistant");
   const config = parseCustomerServiceConfig();
-  const runtime = config.enabled ? createCustomerServiceRuntime() : null;
+  const inboxEnabled = config.enabled || config.websiteEnabled;
+  const runtime = inboxEnabled ? createCustomerServiceRuntime() : null;
+  const requestedReview = (await searchParams).review;
+  let selectedReviewSelector: string | null = null;
+  if (runtime && config.websiteEnabled && typeof requestedReview === "string") {
+    try {
+      selectedReviewSelector = await runtime.repository.resolveWebsiteReviewDeepLink({
+        tokenHash: hashReviewAlertToken(requestedReview),
+        now: new Date(),
+      });
+    } catch {
+      selectedReviewSelector = null;
+    }
+  }
   const emptyQueue: SafeQueuePage = { items: [] };
   if (runtime) {
     await runtime.repository.recoverDueHumanReplies({
@@ -60,7 +78,7 @@ export default async function ReplyAssistantPage() {
 
   return (
     <section className={styles.page}>
-      <header><div><p>Customer Service Pilot</p><h1>Reply Assistant</h1></div><strong data-enabled={config.enabled}>{config.enabled ? "Pilot enabled" : "Disabled"}</strong></header>
+      <header><div><p>Customer Service Pilot</p><h1>Reply Assistant</h1></div><strong data-enabled={inboxEnabled}>{inboxEnabled ? "Pilot enabled" : "Disabled"}</strong></header>
       <KnowledgeProvenance
         knowledgeVersion={compiledKnowledge.knowledgeVersion}
         metadata={compiledKnowledge.metadata}
@@ -72,6 +90,7 @@ export default async function ReplyAssistantPage() {
         initialLearningCandidates={learningCandidates.items}
         initialCaseMemories={caseMemories.items}
         canReview={access.adminRole === "admin"}
+        selectedReviewSelector={selectedReviewSelector}
       />
     </section>
   );

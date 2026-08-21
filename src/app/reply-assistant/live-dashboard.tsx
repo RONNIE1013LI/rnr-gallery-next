@@ -42,6 +42,7 @@ export function ReplyAssistantLiveDashboard({
   initialLearningCandidates,
   initialCaseMemories,
   canReview,
+  selectedReviewSelector,
 }: Readonly<{
   initialCursor: string;
   initialItems: readonly ReplyQueueItem[];
@@ -49,6 +50,7 @@ export function ReplyAssistantLiveDashboard({
   initialLearningCandidates: readonly LearningCandidateView[];
   initialCaseMemories: readonly CaseMemoryView[];
   canReview: boolean;
+  selectedReviewSelector?: string | null;
 }>) {
   const [items, setItems] = useState(initialItems);
   const [newMessageIds, setNewMessageIds] = useState<readonly string[]>([]);
@@ -152,6 +154,7 @@ export function ReplyAssistantLiveDashboard({
         liveItems={items}
         newMessageIds={newMessageIds}
         onRefresh={() => refreshRef.current()}
+        selectedReviewSelector={selectedReviewSelector}
       />
     </>
   );

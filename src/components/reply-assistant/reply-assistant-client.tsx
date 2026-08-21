@@ -5,6 +5,7 @@ import styles from "./reply-assistant.module.css";
 
 export type ReplyQueueItem = Readonly<{
   messageId: string;
+  channel: "facebook" | "website";
   body: string;
   receivedAt: string;
   status: string;
@@ -15,8 +16,13 @@ export type ReplyQueueItem = Readonly<{
   imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
   imageAssessmentSummary: string | null;
   humanReplyReceived: boolean;
+  websiteReview: Readonly<{
+    selector: string;
+    reason: "high_risk" | "unresolved" | "realtime_required" | "provider_error" | "output_blocked" | "budget_blocked" | "system_failure";
+    alertStatus: "not_created" | "pending" | "leased" | "retry_wait" | "sent" | "failed";
+  }> | null;
   timeline: readonly Readonly<{
-    role: "customer" | "staff";
+    role: "customer" | "assistant" | "staff";
     text: string;
     receivedAt: string;
   }>[];
@@ -26,6 +32,12 @@ type ReviewState = Readonly<{
   mode: "pending" | "editing" | "accepted" | "edited" | "rejected";
   text: string;
   sourceAttemptId: string | null;
+}>;
+
+type WebsiteReplyState = Readonly<{
+  text: string;
+  sourceReviewSelector: string;
+  status: "editing" | "sending" | "sent" | "error";
 }>;
 
 const replyDateTime = new Intl.DateTimeFormat("en-NZ", {
@@ -53,16 +65,21 @@ export function ReplyAssistantClient({
   liveItems,
   newMessageIds = [],
   onRefresh,
+  selectedReviewSelector = null,
 }: Readonly<{
   initialItems?: readonly ReplyQueueItem[];
   liveItems?: readonly ReplyQueueItem[];
   newMessageIds?: readonly string[];
   onRefresh?: () => void;
+  selectedReviewSelector?: string | null;
 }>) {
   const [fetchedItems, setFetchedItems] = useState<readonly ReplyQueueItem[]>(initialItems ?? []);
   const [reviews, setReviews] = useState<Record<string, ReviewState>>({});
+  const [websiteReplies, setWebsiteReplies] = useState<Record<string, WebsiteReplyState>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const feedbackSequence = useRef(0);
+  const websiteReplyInFlight = useRef(new Set<string>());
+  const selectedCardRef = useRef<HTMLElement | null>(null);
 
   async function refresh() {
     if (liveItems !== undefined) {
@@ -89,6 +106,10 @@ export function ReplyAssistantClient({
         right.receivedAt.localeCompare(left.receivedAt) || right.messageId.localeCompare(left.messageId)
       ))
       .slice(0, 100);
+
+  useEffect(() => {
+    selectedCardRef.current?.scrollIntoView?.({ block: "nearest" });
+  }, [selectedReviewSelector]);
 
   function review(item: ReplyQueueItem): ReviewState {
     return reviews[item.messageId] ?? {
@@ -126,35 +147,81 @@ export function ReplyAssistantClient({
     }
   }
 
+  async function sendWebsiteReply(item: ReplyQueueItem, current: WebsiteReplyState) {
+    if (!item.websiteReview || websiteReplyInFlight.current.has(item.messageId)) return;
+    const text = current.text.trim();
+    if (!text) return;
+    websiteReplyInFlight.current.add(item.messageId);
+    setWebsiteReplies((states) => ({
+      ...states,
+      [item.messageId]: { ...current, text, status: "sending" },
+    }));
+    try {
+      await jsonRequest("/api/reply-assistant/website-replies", {
+        reviewSelector: item.websiteReview.selector,
+        text,
+      });
+      setWebsiteReplies((states) => ({
+        ...states,
+        [item.messageId]: { ...current, text, status: "sent" },
+      }));
+      onRefresh?.();
+    } catch {
+      setWebsiteReplies((states) => ({
+        ...states,
+        [item.messageId]: { ...current, text, status: "error" },
+      }));
+    } finally {
+      websiteReplyInFlight.current.delete(item.messageId);
+    }
+  }
+
   return (
     <div className={styles.queue}>
       {items.length === 0 ? <p className={styles.empty}>No pilot messages yet.</p> : null}
       {items.map((item) => {
         const current = review(item);
+        const currentWebsiteReply = websiteReplies[item.messageId] ?? {
+          text: "",
+          sourceReviewSelector: item.websiteReview?.selector ?? "",
+          status: "editing" as const,
+        };
+        const websiteReviewChanged = Boolean(item.websiteReview)
+          && currentWebsiteReply.sourceReviewSelector !== item.websiteReview?.selector;
         const gateBlocked = !item.draftText && item.gateResult !== null && item.gateResult !== "allowed";
         const imageOnly = item.attachmentCount > 0 && item.body === "[Image attachment]";
         const visualReviewRequired = imageOnly || item.imageAnalysisStatus === "human_review_required";
-        const requiresHumanReview = gateBlocked || visualReviewRequired;
+        const requiresHumanReview = gateBlocked || visualReviewRequired || item.websiteReview !== null;
         const serverChanged = current.sourceAttemptId !== item.latestAttemptId;
         const approved = !serverChanged && (current.mode === "accepted" || current.mode === "edited");
         const locallyEditing = current.mode === "editing";
         return (
-          <article className={styles.message} key={item.messageId}>
+          <article
+            className={styles.message}
+            key={item.messageId}
+            data-selected={item.websiteReview?.selector === selectedReviewSelector}
+            ref={item.websiteReview?.selector === selectedReviewSelector ? selectedCardRef : undefined}
+          >
             <header>
               <time>{formatReplyReceivedAt(item.receivedAt)}</time>
               <div className={styles.statuses}>
+                <span className={styles.channelBadge} data-channel={item.channel}>{item.channel === "website" ? "Website" : "Facebook"}</span>
                 {newMessageIds.includes(item.messageId) ? <span className={styles.newBadge}>New</span> : null}
                 <span data-risk={requiresHumanReview}>{item.humanReplyReceived ? "human replied" : requiresHumanReview ? "Human review required" : item.status.replaceAll("_", " ")}</span>
+                {item.websiteReview ? <span className={styles.alertBadge} data-alert={item.websiteReview.alertStatus}>Alert {item.websiteReview.alertStatus.replaceAll("_", " ")}</span> : null}
               </div>
             </header>
             <div className={styles.customerText}><strong>Customer</strong><p>{item.body}</p></div>
             {item.timeline.length > 0 ? (
               <section className={styles.timeline} aria-label="Conversation timeline">
-                <strong>Conversation timeline</strong>
+                <div className={styles.timelineHeader}>
+                  <strong>Conversation timeline</strong>
+                  <span className={styles.timelineChannel}>{item.channel === "website" ? "Website" : "Facebook"}</span>
+                </div>
                 <ol>
                   {item.timeline.map((event, index) => (
                     <li key={`${event.receivedAt}-${index}`} data-role={event.role}>
-                      <span>{event.role === "staff" ? "R&R" : "Customer"}</span>
+                      <span>{event.role === "staff" ? "R&R" : event.role === "assistant" ? "Assistant" : "Customer"}</span>
                       <p>{event.text}</p>
                     </li>
                   ))}
@@ -168,7 +235,42 @@ export function ReplyAssistantClient({
               </section>
             ) : null}
 
-            {item.humanReplyReceived && !locallyEditing ? (
+            {item.channel === "website" ? (
+              item.humanReplyReceived ? (
+                <div className={styles.blocked}>Human website reply sent. Review resolved.</div>
+              ) : item.websiteReview ? (
+                <div className={styles.websiteReply}>
+                  <label htmlFor={`website-reply-${item.messageId}`}>Website reply</label>
+                  <textarea
+                    id={`website-reply-${item.messageId}`}
+                    value={currentWebsiteReply.text}
+                    maxLength={2_000}
+                    onChange={(event) => setWebsiteReplies((states) => ({
+                      ...states,
+                      [item.messageId]: {
+                        text: event.target.value,
+                        sourceReviewSelector: currentWebsiteReply.sourceReviewSelector,
+                        status: "editing",
+                      },
+                    }))}
+                  />
+                  {websiteReviewChanged ? (
+                    <div className={styles.serverChanged}>Server review changed. Your reply is preserved but cannot be sent.</div>
+                  ) : null}
+                  {currentWebsiteReply.status === "sent" ? <div className={styles.sendStatus}>Website reply sent.</div> : null}
+                  {currentWebsiteReply.status === "error" ? <div className={styles.serverChanged}>Reply was not sent. Review the case and try again.</div> : null}
+                  <div className={styles.actions}>
+                    <button
+                      type="button"
+                      disabled={!currentWebsiteReply.text.trim() || websiteReviewChanged || currentWebsiteReply.status === "sending" || currentWebsiteReply.status === "sent"}
+                      onClick={() => void sendWebsiteReply(item, currentWebsiteReply)}
+                    >Send website reply</button>
+                  </div>
+                </div>
+              ) : (
+                <div className={styles.blocked}>No open website review.</div>
+              )
+            ) : item.humanReplyReceived && !locallyEditing ? (
               <div className={styles.blocked}>Human reply sent in Meta. AI draft closed.</div>
             ) : gateBlocked ? (
               <>

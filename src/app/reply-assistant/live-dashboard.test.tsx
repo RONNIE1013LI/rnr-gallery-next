@@ -5,6 +5,7 @@ import type { PilotMetricCounts } from "@/server/customer-service/repositories/c
 
 const baseItem = {
   messageId: "11111111-1111-4111-8111-111111111111",
+  channel: "facebook" as const,
   body: "Can you combine photos?",
   receivedAt: "2026-08-20T00:00:00.000Z",
   status: "processing",
@@ -15,6 +16,7 @@ const baseItem = {
   imageAnalysisStatus: "not_applicable" as const,
   imageAssessmentSummary: null,
   humanReplyReceived: false,
+  websiteReview: null,
   timeline: [{ role: "customer" as const, text: "Can you combine photos?", receivedAt: "2026-08-20T00:00:00.000Z" }],
 };
 

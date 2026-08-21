@@ -7,6 +7,7 @@ import {
 
 const queueItem = (messageId: string, receivedAt: string) => ({
   messageId,
+  channel: "facebook" as const,
   body: `Message ${messageId}`,
   receivedAt,
   status: "received",
@@ -17,6 +18,7 @@ const queueItem = (messageId: string, receivedAt: string) => ({
   imageAnalysisStatus: "not_applicable" as const,
   imageAssessmentSummary: null,
   humanReplyReceived: false,
+  websiteReview: null,
   timeline: [],
 });
 

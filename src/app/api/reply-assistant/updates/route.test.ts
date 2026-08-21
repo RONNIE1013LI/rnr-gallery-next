@@ -7,6 +7,7 @@ const updatePage = {
   hasMore: false,
   queueItems: [{
     messageId: "11111111-1111-4111-8111-111111111111",
+    channel: "facebook" as const,
     body: "Hello",
     receivedAt: "2026-08-20T00:00:00.000Z",
     status: "draft_ready",
@@ -17,6 +18,7 @@ const updatePage = {
     imageAnalysisStatus: "not_applicable" as const,
     imageAssessmentSummary: null,
     humanReplyReceived: false,
+    websiteReview: null,
     timeline: [{ role: "customer" as const, text: "Hello", receivedAt: "2026-08-20T00:00:00.000Z" }],
   }],
   metrics: null,

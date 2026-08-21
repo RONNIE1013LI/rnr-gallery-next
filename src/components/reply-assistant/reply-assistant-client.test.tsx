@@ -4,6 +4,7 @@ import { formatReplyReceivedAt, ReplyAssistantClient } from "./reply-assistant-c
 
 const item = {
   messageId: "11111111-1111-4111-8111-111111111111",
+  channel: "facebook" as const,
   body: "Can you use my blurry photo?",
   receivedAt: "2026-08-17T00:00:00.000Z",
   status: "draft_ready",
@@ -14,6 +15,7 @@ const item = {
   imageAnalysisStatus: "not_applicable" as const,
   imageAssessmentSummary: null,
   humanReplyReceived: false,
+  websiteReview: null,
   timeline: [
     { role: "customer" as const, text: "Can you use my blurry photo?", receivedAt: "2026-08-17T00:00:00.000Z" },
     { role: "staff" as const, text: "Please send the original file.", receivedAt: "2026-08-17T00:01:00.000Z" },
@@ -106,6 +108,117 @@ describe("ReplyAssistantClient", () => {
     expect(screen.getByText("R&R")).toBeInTheDocument();
     expect(screen.getByText("Please send the original file.")).toBeInTheDocument();
     expect(screen.queryByText("AI draft", { exact: false })).not.toBeInTheDocument();
+  });
+
+  it("labels Facebook cards and timelines without adding the website reply action", () => {
+    render(<ReplyAssistantClient initialItems={[item]} />);
+
+    expect(screen.getAllByText("Facebook")).toHaveLength(2);
+    expect(screen.queryByRole("button", { name: "Send website reply" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
+  });
+
+  it("shows a Website review timeline, alert state, and only committed public replies", () => {
+    render(<ReplyAssistantClient initialItems={[{
+      ...item,
+      channel: "website",
+      status: "blocked",
+      draftText: "Internal AI draft that was never published",
+      gateResult: "high_risk",
+      websiteReview: {
+        selector: "33333333-3333-4333-8333-333333333333",
+        reason: "high_risk",
+        alertStatus: "sent",
+      },
+      timeline: [
+        { role: "customer", text: "Can I get a refund?", receivedAt: "2026-08-17T00:00:00.000Z" },
+        { role: "assistant", text: "Our team will review this and reply here.", receivedAt: "2026-08-17T00:00:01.000Z" },
+        { role: "staff", text: "We have reviewed your request.", receivedAt: "2026-08-17T00:02:00.000Z" },
+      ],
+    }]} />);
+
+    expect(screen.getAllByText("Website")).toHaveLength(2);
+    expect(screen.getByText("Alert sent")).toBeInTheDocument();
+    expect(screen.getByText("Assistant")).toBeInTheDocument();
+    expect(screen.getByText("Our team will review this and reply here.")).toBeInTheDocument();
+    expect(screen.getByText("We have reviewed your request.")).toBeInTheDocument();
+    expect(screen.queryByText("Internal AI draft that was never published")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Website reply")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
+  });
+
+  it("sends only safe reply text and the server-issued website review selector", async () => {
+    let release!: () => void;
+    const pending = new Promise<void>((resolve) => { release = resolve; });
+    vi.stubGlobal("fetch", vi.fn(async () => {
+      await pending;
+      return new Response(JSON.stringify({ sent: true }), { status: 201 });
+    }));
+    const websiteItem = {
+      ...item,
+      channel: "website" as const,
+      websiteReview: {
+        selector: "33333333-3333-4333-8333-333333333333",
+        reason: "high_risk" as const,
+        alertStatus: "sent" as const,
+      },
+    };
+    render(<ReplyAssistantClient initialItems={[websiteItem]} />);
+
+    fireEvent.change(screen.getByLabelText("Website reply"), { target: { value: "  We have reviewed this for you.  " } });
+    const send = screen.getByRole("button", { name: "Send website reply" });
+    fireEvent.click(send);
+    fireEvent.click(send);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    const [url, request] = vi.mocked(fetch).mock.calls[0] ?? [];
+    expect(url).toBe("/api/reply-assistant/website-replies");
+    expect(JSON.parse(String(request?.body))).toEqual({
+      reviewSelector: websiteItem.websiteReview.selector,
+      text: "We have reviewed this for you.",
+    });
+    expect(String(request?.body)).not.toMatch(/conversation|session|psid|messageId|attemptId/i);
+    expect(vi.mocked(fetch).mock.calls.map(([calledUrl]) => String(calledUrl)).join("\n")).not.toMatch(/openai|graph\.facebook|messenger|generate/i);
+    release();
+    await waitFor(() => expect(screen.getByText("Website reply sent.")).toBeInTheDocument());
+  });
+
+  it("preserves an unsent website reply while polling and blocks it when the review changes", () => {
+    const websiteItem = {
+      ...item,
+      channel: "website" as const,
+      websiteReview: {
+        selector: "33333333-3333-4333-8333-333333333333",
+        reason: "high_risk" as const,
+        alertStatus: "sent" as const,
+      },
+    };
+    const { rerender } = render(<ReplyAssistantClient initialItems={[websiteItem]} liveItems={[websiteItem]} />);
+    const editor = screen.getByLabelText("Website reply") as HTMLTextAreaElement;
+    fireEvent.change(editor, { target: { value: "Ronnie local website reply" } });
+
+    rerender(<ReplyAssistantClient initialItems={[websiteItem]} liveItems={[{
+      ...websiteItem,
+      timeline: [...websiteItem.timeline, {
+        role: "customer" as const,
+        text: "One more detail",
+        receivedAt: "2026-08-17T00:03:00.000Z",
+      }],
+    }]} />);
+    expect(screen.getByLabelText("Website reply")).toBe(editor);
+    expect(editor).toHaveValue("Ronnie local website reply");
+    expect(screen.getByRole("button", { name: "Send website reply" })).toBeEnabled();
+
+    rerender(<ReplyAssistantClient initialItems={[websiteItem]} liveItems={[{
+      ...websiteItem,
+      websiteReview: {
+        ...websiteItem.websiteReview,
+        selector: "44444444-4444-4444-8444-444444444444",
+      },
+    }]} />);
+    expect(editor).toHaveValue("Ronnie local website reply");
+    expect(screen.getByText("Server review changed. Your reply is preserved but cannot be sent.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send website reply" })).toBeDisabled();
   });
 
   it("closes stale draft actions after an actual human reply", () => {
