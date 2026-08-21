@@ -2,7 +2,7 @@ import { createHmac } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { asc, eq, inArray, sql } from "drizzle-orm";
 import { Pool } from "pg";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   customerServiceAiAttempts,
   customerServiceAttachments,
@@ -31,6 +31,7 @@ import {
   user,
 } from "@/server/db/schema";
 import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
+import { createCustomerTurnRecoveryRunner } from "../turn-recovery-runner";
 import { createDrizzleCustomerServiceRepository } from "./drizzle-customer-service-repository";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -39,6 +40,11 @@ const database = drizzle(testDatabaseUrl ?? "postgres://disabled.invalid/test");
 const repository = createDrizzleCustomerServiceRepository(database);
 const competingPool = new Pool({ connectionString: testDatabaseUrl ?? "postgres://disabled.invalid/test" });
 const competingRepository = createDrizzleCustomerServiceRepository(drizzle(competingPool));
+const publicationRacePool = new Pool({
+  connectionString: testDatabaseUrl ?? "postgres://disabled.invalid/test",
+  application_name: "task8_publication_race",
+});
+const publicationRaceRepository = createDrizzleCustomerServiceRepository(drizzle(publicationRacePool));
 const sourceIdentitySecret = "integration-source-identity-secret";
 
 function sourceHash(value: string) {
@@ -206,11 +212,27 @@ async function ingestAndClaimWebsiteTurn(input: Readonly<{
   return claimed;
 }
 
+async function waitForAdvisoryLockWaiter() {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    const result = await database.execute(sql`
+      select exists (
+        select 1 from pg_stat_activity
+        where pid <> pg_backend_pid() and wait_event_type = 'Lock'
+      ) as waiting
+    `);
+    const row = result.rows[0] as { waiting?: boolean } | undefined;
+    if (row?.waiting) return;
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+  throw new Error("database advisory lock waiter not observed");
+}
+
 describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   beforeEach(clearTables);
   afterAll(async () => {
     await clearTables();
     await competingPool.end();
+    await publicationRacePool.end();
   });
 
   it("has additive continuous-learning tables with fail-closed defaults", async () => {
@@ -266,7 +288,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       riskLevel: "high",
       gateResult: "realtime_required",
       gateReasons: ["current_price"],
-      knowledgeVersion: "knowledge-v1",
+      knowledgeVersion: "website-knowledge-v2",
     });
     const firstReview = await repository.openWebsiteHumanReview({
       turnId: first.turnId,
@@ -753,6 +775,660 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     })).resolves.toEqual({ status: "cancelled" });
     await expect(database.select().from(customerServiceHumanReviews)).resolves.toHaveLength(0);
     await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
+  });
+
+  it("keeps a validated Website draft internal until a leased publication commits it once", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "91".repeat(32),
+      networkHash: "92".repeat(32),
+      messageHash: "93".repeat(32),
+    });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      gateReasons: ["confirmed_draft_scope"],
+      knowledgeSources: ["DESIGN-01"],
+      knowledgeVersion: "website-knowledge-v2",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "Please send your photos, wording and preferred theme.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
+
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId: attempt.id,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    })).resolves.toEqual({ status: "published" });
+
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId: attempt.id,
+      now: new Date("2026-08-19T00:00:04.000Z"),
+    })).resolves.toEqual({ status: "cancelled" });
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toEqual([
+      expect.objectContaining({
+        turnId: claimed.turnId,
+        aiAttemptId: attempt.id,
+        kind: "validated_ai",
+        body: "Please send your photos, wording and preferred theme.",
+        policyResult: "allowed",
+        knowledgeVersion: "website-knowledge-v2",
+      }),
+    ]);
+  });
+
+  it("fails closed when a Website attempt was output-blocked or a human reply wins the publication race", async () => {
+    const blocked = await claimWebsiteTurn({
+      sessionHash: "94".repeat(32),
+      networkHash: "95".repeat(32),
+      messageHash: "96".repeat(32),
+    });
+    const [blockedAttempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: blocked.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "knowledge-v1",
+      status: "output_blocked",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      rejectedOutputHash: "97".repeat(32),
+      validatorCodes: ["unsupported_claim"],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: blocked.turnId,
+      leaseToken: blocked.leaseToken,
+      attemptId: blockedAttempt.id,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    })).resolves.toEqual({ status: "not_publishable" });
+
+    const raced = await ingestAndClaimWebsiteTurn({
+      sessionHash: "98".repeat(32),
+      networkHash: "99".repeat(32),
+      messageHash: "9a".repeat(32),
+      receivedAt: new Date("2026-08-19T00:00:10.000Z"),
+    });
+    const [racedAttempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: raced.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "knowledge-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "This must not become public.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:12.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+    await repository.ingestConversationEvent({
+      channel: "website",
+      role: "staff",
+      eventType: "human_outbound",
+      externalConversationKeyHash: "98".repeat(32),
+      externalMessageKeyHash: "9b".repeat(32),
+      text: "A staff member has replied.",
+      bodyHash: "9c".repeat(32),
+      redactionCodes: [],
+      replyToExternalMessageKeyHash: null,
+      learningEligible: false,
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-19T00:00:13.000Z"),
+    });
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: raced.turnId,
+      leaseToken: raced.leaseToken,
+      attemptId: racedAttempt.id,
+      now: new Date("2026-08-19T00:00:14.000Z"),
+    })).resolves.toEqual({ status: "cancelled" });
+
+    const messages = await database.select().from(customerServiceWebsiteAssistantMessages);
+    expect(messages).toHaveLength(0);
+    expect(JSON.stringify(messages)).not.toContain("This must not become public.");
+  });
+
+  it("does not publish a draft_ready Website attempt unless provider completion is recorded", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "aa".repeat(32),
+      networkHash: "ab".repeat(32),
+      messageHash: "ac".repeat(32),
+    });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "knowledge-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      draftText: "Unattributed draft must remain private.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId: attempt.id,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    })).resolves.toEqual({ status: "not_publishable" });
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
+  });
+
+  it("uses the turn and attempt uniqueness constraints when after and recovery publication race", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "9d".repeat(32),
+      networkHash: "9e".repeat(32),
+      messageHash: "9f".repeat(32),
+    });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "knowledge-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "One public response only.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+    const input = {
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId: attempt.id,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    };
+
+    const results = await Promise.all([
+      repository.publishWebsiteValidatedAi(input),
+      competingRepository.publishWebsiteValidatedAi(input),
+    ]);
+
+    expect(results.filter((result) => result.status === "published")).toHaveLength(1);
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(1);
+  });
+
+  it("reclaims a persisted validated Website draft for publication after an interrupted worker", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "ad".repeat(32),
+      networkHash: "ae".repeat(32),
+      messageHash: "af".repeat(32),
+    });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "knowledge-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "Recovered publication must appear once.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+    await repository.retryCustomerTurnProcessing({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      nextRunAt: new Date("2026-08-19T00:01:00.000Z"),
+      errorCode: "worker_interrupted_before_publication",
+    });
+
+    const recovered = await repository.claimDueCustomerTurn({
+      turnId: claimed.turnId,
+      now: new Date("2026-08-19T00:01:00.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:06:00.000Z"),
+    });
+
+    expect(recovered).toMatchObject({
+      turnId: claimed.turnId,
+      channel: "website",
+      settledResult: { status: "draft_ready", attemptId: attempt.id },
+    });
+    if (!recovered) throw new Error("expected recovered website publication turn");
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: recovered.turnId,
+      leaseToken: recovered.leaseToken,
+      attemptId: attempt.id,
+      now: new Date("2026-08-19T00:01:01.000Z"),
+    })).resolves.toEqual({ status: "published" });
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(1);
+  });
+
+  it("serializes a concurrent human outbound ahead of publication with the conversation advisory lock", async () => {
+    const sessionHash = "b1".repeat(32);
+    const claimed = await claimWebsiteTurn({
+      sessionHash,
+      networkHash: "b2".repeat(32),
+      messageHash: "b3".repeat(32),
+    });
+    const [turn] = await database.select({ conversationId: customerServiceTurns.conversationId })
+      .from(customerServiceTurns).where(eq(customerServiceTurns.id, claimed.turnId));
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "knowledge-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "A concurrent staff reply must keep this private.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+    const blocker = await competingPool.connect();
+    await blocker.query("begin");
+    await blocker.query("select pg_advisory_xact_lock(hashtext($1))", [`turn:${turn.conversationId}`]);
+    let publication: ReturnType<typeof publicationRaceRepository.publishWebsiteValidatedAi> | null = null;
+    try {
+      await blocker.query(
+        `insert into customer_service_conversation_events (
+          conversation_id, channel, external_message_key_hash, role, event_type, body,
+          body_hash, redaction_codes, learning_eligible, received_at
+        ) values ($1, 'website', $2, 'staff', 'human_outbound', $3, $4, '[]'::jsonb, false, $5)`,
+        [
+          turn.conversationId,
+          "b4".repeat(32),
+          "A staff member replied first.",
+          "b5".repeat(32),
+          new Date("2026-08-19T00:00:03.000Z"),
+        ],
+      );
+      publication = publicationRaceRepository.publishWebsiteValidatedAi({
+        turnId: claimed.turnId,
+        leaseToken: claimed.leaseToken,
+        attemptId: attempt.id,
+        now: new Date("2026-08-19T00:00:04.000Z"),
+      });
+      await Promise.race([
+        publication.then(() => undefined),
+        waitForAdvisoryLockWaiter(),
+      ]);
+      await blocker.query(
+        `update customer_service_turns set
+          status = 'suppressed', sealed_at = $2, suppression_reason = 'human_outbound_received',
+          processing_status = 'cancelled', processing_lease_token = null,
+          processing_lease_expires_at = null, processing_completed_at = $2
+        where id = $1 and status in ('open', 'sealed')`,
+        [claimed.turnId, new Date("2026-08-19T00:00:03.000Z")],
+      );
+      await blocker.query("commit");
+
+      await expect(publication).resolves.toEqual({ status: "cancelled" });
+    } finally {
+      await blocker.query("rollback").catch(() => undefined);
+      await publication?.catch(() => undefined);
+      blocker.release();
+    }
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
+  });
+
+  it("opens a governed system-failure review and terminates malformed publication proof", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "b6".repeat(32),
+      networkHash: "b7".repeat(32),
+      messageHash: "b8".repeat(32),
+    });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "knowledge-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      draftText: "Malformed proof must never be exposed.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+    await repository.retryCustomerTurnProcessing({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      nextRunAt: new Date("2026-08-19T00:01:00.000Z"),
+      errorCode: "worker_interrupted_before_publication",
+    });
+    const generateDraft = vi.fn(() => Promise.reject(new Error("provider must not be called")));
+    const runner = createCustomerTurnRecoveryRunner({
+      repository,
+      generateDraft,
+      knowledgeVersion: "knowledge-v1",
+      now: () => new Date("2026-08-19T00:01:00.000Z"),
+    });
+
+    await expect(runner.runOnce({ turnId: claimed.turnId })).resolves.toEqual({
+      claimed: 1,
+      completed: 1,
+      retried: 0,
+      cancelled: 0,
+    });
+    expect(generateDraft).not.toHaveBeenCalled();
+    await expect(database.select().from(customerServiceHumanReviews)).resolves.toEqual([
+      expect.objectContaining({ triggerTurnId: claimed.turnId, reason: "system_failure", status: "open" }),
+    ]);
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toEqual([
+      expect.objectContaining({ turnId: claimed.turnId, kind: "provider_fallback", policyResult: "system_failure" }),
+    ]);
+    const [storedTurn] = await database.select().from(customerServiceTurns)
+      .where(eq(customerServiceTurns.id, claimed.turnId));
+    expect(storedTurn).toMatchObject({ processingStatus: "completed" });
+    expect(JSON.stringify(await database.select().from(customerServiceWebsiteAssistantMessages)))
+      .not.toContain("Malformed proof must never be exposed.");
+    expect(attempt.id).toBeTruthy();
+  });
+
+  it.each(["manual_generate", "manual_regenerate"] as const)(
+    "never auto-publishes a %s attempt",
+    async (trigger) => {
+      const suffix = trigger === "manual_generate" ? "c1" : "c2";
+      const claimed = await claimWebsiteTurn({
+        sessionHash: suffix.repeat(32),
+        networkHash: (trigger === "manual_generate" ? "c3" : "c4").repeat(32),
+        messageHash: (trigger === "manual_generate" ? "c5" : "c6").repeat(32),
+      });
+      const [attempt] = await database.insert(customerServiceAiAttempts).values({
+        messageId: claimed.messageId,
+        attemptNumber: 1,
+        trigger,
+        intent: "design_process",
+        riskLevel: "low",
+        gateResult: "allowed",
+        knowledgeVersion: "knowledge-v1",
+        status: "draft_ready",
+        providerCalled: true,
+        provider: "mock",
+        model: "mock-text",
+        draftText: "Manual drafts remain staff-only.",
+        validatorCodes: [],
+        completedAt: new Date("2026-08-19T00:00:02.000Z"),
+      }).returning({ id: customerServiceAiAttempts.id });
+
+      await expect(repository.publishWebsiteValidatedAi({
+        turnId: claimed.turnId,
+        leaseToken: claimed.leaseToken,
+        attemptId: attempt.id,
+        now: new Date("2026-08-19T00:00:03.000Z"),
+      })).resolves.toEqual({ status: "not_publishable" });
+      await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
+    },
+  );
+
+  it.each(["expired", "revoked"] as const)(
+    "rejects publication and terminates the turn when the website session is %s",
+    async (sessionState) => {
+      const suffix = sessionState === "expired" ? "c7" : "c8";
+      const sessionHash = suffix.repeat(32);
+      const claimed = await claimWebsiteTurn({
+        sessionHash,
+        networkHash: (sessionState === "expired" ? "c9" : "ca").repeat(32),
+        messageHash: (sessionState === "expired" ? "cb" : "cc").repeat(32),
+      });
+      const [attempt] = await database.insert(customerServiceAiAttempts).values({
+        messageId: claimed.messageId,
+        attemptNumber: 1,
+        trigger: "webhook_after",
+        intent: "design_process",
+        riskLevel: "low",
+        gateResult: "allowed",
+        knowledgeVersion: "knowledge-v1",
+        status: "draft_ready",
+        providerCalled: true,
+        provider: "mock",
+        model: "mock-text",
+        draftText: "A stale session must not receive this.",
+        validatorCodes: [],
+        completedAt: new Date("2026-08-19T00:00:02.000Z"),
+      }).returning({ id: customerServiceAiAttempts.id });
+      await database.update(customerServiceWebSessions).set(sessionState === "expired"
+        ? { expiresAt: new Date("2026-08-19T00:00:02.500Z") }
+        : { status: "revoked" })
+        .where(eq(customerServiceWebSessions.sessionTokenHash, sessionHash));
+
+      await expect(repository.publishWebsiteValidatedAi({
+        turnId: claimed.turnId,
+        leaseToken: claimed.leaseToken,
+        attemptId: attempt.id,
+        now: new Date("2026-08-19T00:00:03.000Z"),
+      })).resolves.toEqual({ status: "cancelled" });
+      const [storedTurn] = await database.select().from(customerServiceTurns)
+        .where(eq(customerServiceTurns.id, claimed.turnId));
+      expect(storedTurn).toMatchObject({ processingStatus: "cancelled" });
+      await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
+    },
+  );
+
+  it("validates the website session at actual publication time after provider work", async () => {
+    const sessionHash = "dd".repeat(32);
+    const claimAt = new Date("2026-08-19T00:00:02.000Z");
+    const sessionExpiresAt = new Date("2026-08-19T00:00:04.000Z");
+    const publicationAt = new Date("2026-08-19T00:00:05.000Z");
+    await activateWebsitePilot("website-publication-time");
+    const incoming = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash,
+      networkHash: "de".repeat(32),
+      messageHash: "df".repeat(32),
+    }));
+    if (incoming.status !== "turn_pending") throw new Error("expected website turn");
+    await database.update(customerServiceWebSessions)
+      .set({ expiresAt: sessionExpiresAt })
+      .where(eq(customerServiceWebSessions.sessionTokenHash, sessionHash));
+    const generateDraft = vi.fn(async (messageId: string) => {
+      const [attempt] = await database.insert(customerServiceAiAttempts).values({
+        messageId,
+        attemptNumber: 1,
+        trigger: "webhook_after",
+        intent: "design_process",
+        riskLevel: "low",
+        gateResult: "allowed",
+        knowledgeVersion: "knowledge-v1",
+        status: "draft_ready",
+        providerCalled: true,
+        provider: "mock",
+        model: "mock-text",
+        draftText: "This expired-session reply must remain private.",
+        validatorCodes: [],
+        completedAt: publicationAt,
+      }).returning({ id: customerServiceAiAttempts.id });
+      return { status: "draft_ready" as const, attemptId: attempt.id };
+    });
+    const times = [claimAt, publicationAt];
+    const runner = createCustomerTurnRecoveryRunner({
+      repository,
+      generateDraft,
+      knowledgeVersion: "knowledge-v1",
+      now: () => times.shift() ?? publicationAt,
+    });
+
+    await expect(runner.runOnce({ turnId: incoming.turnId })).resolves.toEqual({
+      claimed: 1,
+      completed: 0,
+      retried: 0,
+      cancelled: 1,
+    });
+    expect(generateDraft).toHaveBeenCalledOnce();
+    const [storedTurn] = await database.select().from(customerServiceTurns)
+      .where(eq(customerServiceTurns.id, incoming.turnId));
+    expect(storedTurn).toMatchObject({ processingStatus: "cancelled" });
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
+  });
+
+  it("rejects stale publication when a newer customer turn exists in the same conversation", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "cd".repeat(32),
+      networkHash: "ce".repeat(32),
+      messageHash: "cf".repeat(32),
+    });
+    const [targetTurn] = await database.select({ conversationId: customerServiceTurns.conversationId })
+      .from(customerServiceTurns).where(eq(customerServiceTurns.id, claimed.turnId));
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "knowledge-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: "An obsolete answer must not become public.",
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+    const [newerMessage] = await database.insert(customerServiceMessages).values({
+      conversationId: targetTurn.conversationId,
+      channel: "website",
+      externalMessageKeyHash: "d0".repeat(32),
+      body: "A newer customer question",
+      customerText: "A newer customer question",
+      receivedAt: new Date("2026-08-19T00:00:02.500Z"),
+    }).returning({ id: customerServiceMessages.id });
+    const [newerTurn] = await database.insert(customerServiceTurns).values({
+      conversationId: targetTurn.conversationId,
+      channel: "website",
+      representativeMessageId: newerMessage.id,
+      body: "A newer customer question",
+      debounceUntil: new Date("2026-08-19T00:00:04.500Z"),
+      nextRunAt: new Date("2026-08-19T00:00:04.500Z"),
+      openedAt: new Date("2026-08-19T00:00:02.500Z"),
+      lastEventAt: new Date("2026-08-19T00:00:02.500Z"),
+    }).returning({ id: customerServiceTurns.id });
+    await database.insert(customerServiceConversationEvents).values({
+      conversationId: targetTurn.conversationId,
+      turnId: newerTurn.id,
+      legacyMessageId: newerMessage.id,
+      channel: "website",
+      externalMessageKeyHash: "d0".repeat(32),
+      role: "customer",
+      eventType: "customer_message",
+      body: "A newer customer question",
+      receivedAt: new Date("2026-08-19T00:00:02.500Z"),
+    });
+
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId: attempt.id,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    })).resolves.toEqual({ status: "cancelled" });
+    const [storedTurn] = await database.select().from(customerServiceTurns)
+      .where(eq(customerServiceTurns.id, claimed.turnId));
+    expect(storedTurn).toMatchObject({ processingStatus: "cancelled" });
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
+  });
+
+  it("opens provider-error review for an uncertain Website provider attempt without a second provider call", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "d1".repeat(32),
+      networkHash: "d2".repeat(32),
+      messageHash: "d3".repeat(32),
+    });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "knowledge-v1",
+      status: "provider_pending",
+      providerCalled: true,
+      reservedCostMicrousd: 0,
+    }).returning({ id: customerServiceAiAttempts.id });
+    const generateDraft = vi.fn(() => Promise.reject(new Error("provider must not be called twice")));
+    let releaseClaim!: () => void;
+    let observeClaim!: () => void;
+    const claimObserved = new Promise<void>((resolve) => { observeClaim = resolve; });
+    const claimRelease = new Promise<void>((resolve) => { releaseClaim = resolve; });
+    const recoveryRepository = {
+      ...repository,
+      async claimDueCustomerTurn(input: Parameters<typeof repository.claimDueCustomerTurn>[0]) {
+        const result = await repository.claimDueCustomerTurn(input);
+        observeClaim();
+        await claimRelease;
+        return result;
+      },
+    };
+    const runner = createCustomerTurnRecoveryRunner({
+      repository: recoveryRepository,
+      generateDraft,
+      knowledgeVersion: "knowledge-v1",
+      now: () => new Date("2026-08-19T00:06:00.000Z"),
+    });
+
+    const recovery = runner.runOnce({ turnId: claimed.turnId });
+    await claimObserved;
+    await repository.completeProviderAttempt({
+      attemptId: attempt.id,
+      status: "draft_ready",
+      provider: "mock",
+      model: "mock-text",
+      draftText: "A late provider result must not escape recovery review.",
+      validatorCodes: [],
+      inputTokens: 10,
+      cachedInputTokens: 0,
+      outputTokens: 5,
+      estimatedCostMicrousd: 20,
+      latencyMs: 100,
+      dailyScopeKey: "daily:2026-08-19",
+    });
+    releaseClaim();
+
+    await expect(recovery).resolves.toEqual({
+      claimed: 1,
+      completed: 1,
+      retried: 0,
+      cancelled: 0,
+    });
+    expect(generateDraft).not.toHaveBeenCalled();
+    await expect(database.select().from(customerServiceHumanReviews)).resolves.toEqual([
+      expect.objectContaining({ triggerTurnId: claimed.turnId, reason: "provider_error", status: "open" }),
+    ]);
+    const [storedAttempt] = await database.select().from(customerServiceAiAttempts)
+      .where(eq(customerServiceAiAttempts.id, attempt.id));
+    expect(storedAttempt).toMatchObject({ status: "draft_ready", providerCalled: true });
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toEqual([
+      expect.objectContaining({ kind: "provider_fallback", policyResult: "provider_error" }),
+    ]);
+    expect(JSON.stringify(await database.select().from(customerServiceWebsiteAssistantMessages)))
+      .not.toContain("A late provider result must not escape recovery review.");
   });
 
   it("atomically enforces every website session and network request bucket", async () => {

@@ -1,4 +1,5 @@
 import type { DraftGenerationResult, CustomerServiceChannel } from "./types";
+import { publishValidatedWebsiteDraft } from "./website/publication";
 
 type ClaimedTurn = Readonly<{
   turnId: string;
@@ -41,6 +42,12 @@ type RecoveryRepository = Readonly<{
     now: Date;
     knowledgeVersion: string;
   }>): Promise<Readonly<{ status: "opened" | "reused"; reviewId: string; generation: number }> | Readonly<{ status: "cancelled" }>>;
+  publishWebsiteValidatedAi(input: Readonly<{
+    turnId: string;
+    leaseToken: string;
+    attemptId: string;
+    now: Date;
+  }>): Promise<Readonly<{ status: "published" | "cancelled" | "not_publishable" }>>;
 }>;
 
 export type CustomerTurnRecoveryResult = Readonly<{
@@ -68,7 +75,7 @@ export function createCustomerTurnRecoveryRunner(input: Readonly<{
 
   async function completeWebsiteReview(
     claimed: ClaimedTurn,
-    startedAt: Date,
+    completedAt: Date,
     result: DraftGenerationResult | Readonly<{ status: "system_failure"; attemptId: string | null }>,
   ) {
     const review = await input.repository.openWebsiteHumanReview({
@@ -76,14 +83,14 @@ export function createCustomerTurnRecoveryRunner(input: Readonly<{
       leaseToken: claimed.leaseToken,
       attemptId: result.attemptId,
       outcome: result.status,
-      now: startedAt,
+      now: completedAt,
       knowledgeVersion: input.knowledgeVersion,
     });
     if (review.status === "cancelled") return { claimed: 1, completed: 0, retried: 0, cancelled: 1 };
     const completed = await input.repository.completeCustomerTurnProcessing({
       turnId: claimed.turnId,
       leaseToken: claimed.leaseToken,
-      now: startedAt,
+      now: completedAt,
       outcome: result.status === "system_failure" ? "provider_error" : result.status,
     });
     return { claimed: 1, completed: completed ? 1 : 0, retried: 0, cancelled: completed ? 0 : 1 };
@@ -121,6 +128,7 @@ export function createCustomerTurnRecoveryRunner(input: Readonly<{
 
       try {
         const result = claimed.settledResult ?? await input.generateDraft(claimed.messageId);
+        const completedAt = now();
         if (claimed.channel === "website" && [
           "gate_blocked",
           "realtime_required",
@@ -128,10 +136,32 @@ export function createCustomerTurnRecoveryRunner(input: Readonly<{
           "provider_error",
           "output_blocked",
         ].includes(result.status)) {
-          return completeWebsiteReview(claimed, startedAt, result);
+          return completeWebsiteReview(claimed, completedAt, result);
         }
         if (result.status === "provider_error") {
           return settleFailure(claimed, startedAt, "provider_error");
+        }
+        if (result.status === "draft_ready" && claimed.channel === "website") {
+          const publication = await publishValidatedWebsiteDraft({
+            repository: input.repository,
+            channel: claimed.channel,
+            turnId: claimed.turnId,
+            leaseToken: claimed.leaseToken,
+            attemptId: result.attemptId,
+            now: completedAt,
+          });
+          if (publication.status === "not_publishable") {
+            return completeWebsiteReview(claimed, now(), {
+              status: "system_failure",
+              attemptId: result.attemptId,
+            });
+          }
+          return {
+            claimed: 1,
+            completed: publication.status === "published" ? 1 : 0,
+            retried: 0,
+            cancelled: publication.status === "published" ? 0 : 1,
+          };
         }
         const completed = await input.repository.completeCustomerTurnProcessing({
           turnId: claimed.turnId,
@@ -142,7 +172,7 @@ export function createCustomerTurnRecoveryRunner(input: Readonly<{
         return { claimed: 1, completed: completed ? 1 : 0, retried: 0, cancelled: completed ? 0 : 1 };
       } catch {
         if (claimed.channel === "website") {
-          return completeWebsiteReview(claimed, startedAt, { status: "system_failure", attemptId: null });
+          return completeWebsiteReview(claimed, now(), { status: "system_failure", attemptId: null });
         }
         return settleFailure(claimed, startedAt, "turn_processing_interrupted");
       }

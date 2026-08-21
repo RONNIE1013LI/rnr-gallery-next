@@ -25,6 +25,9 @@ function setup() {
       | Readonly<{ status: "reused"; reviewId: string; generation: number }>
       | Readonly<{ status: "cancelled" }>
     >>(async () => ({ status: "opened", reviewId: "review-1", generation: 1 })),
+    publishWebsiteValidatedAi: vi.fn<() => Promise<Readonly<{
+      status: "published" | "cancelled" | "not_publishable";
+    }>>>(async () => ({ status: "published" })),
     completeCustomerTurnProcessing: vi.fn(async () => true),
     retryCustomerTurnProcessing: vi.fn(async () => true),
     exhaustCustomerTurnProcessing: vi.fn(async () => true),
@@ -138,6 +141,158 @@ describe("customer turn recovery runner", () => {
     expect(current.repository.retryCustomerTurnProcessing).not.toHaveBeenCalled();
   });
 
+  it("publishes a website draft only through the validated publication CAS", async () => {
+    const current = setup();
+    current.repository.claimDueCustomerTurn.mockResolvedValueOnce({
+      turnId: "turn-website",
+      messageId: "message-website",
+      channel: "website",
+      leaseToken: "lease-website",
+      processingAttempt: 1,
+    });
+    current.generateDraft.mockResolvedValueOnce({ status: "draft_ready", attemptId: "attempt-validated" });
+
+    await expect(current.runner.runOnce()).resolves.toEqual({
+      claimed: 1,
+      completed: 1,
+      retried: 0,
+      cancelled: 0,
+    });
+
+    expect(current.repository.publishWebsiteValidatedAi).toHaveBeenCalledWith({
+      turnId: "turn-website",
+      leaseToken: "lease-website",
+      attemptId: "attempt-validated",
+      now,
+    });
+    expect(current.repository.completeCustomerTurnProcessing).not.toHaveBeenCalled();
+  });
+
+  it("uses fresh completion time for website publication after provider work", async () => {
+    const current = setup();
+    const completedAt = new Date("2026-08-19T00:00:06.000Z");
+    const times = [now, completedAt];
+    const clock = vi.fn(() => times.shift() ?? completedAt);
+    current.repository.claimDueCustomerTurn.mockResolvedValueOnce({
+      turnId: "turn-website",
+      messageId: "message-website",
+      channel: "website",
+      leaseToken: "lease-website",
+      processingAttempt: 1,
+    });
+    const runner = createCustomerTurnRecoveryRunner({
+      repository: current.repository,
+      generateDraft: current.generateDraft,
+      knowledgeVersion: "knowledge-v1",
+      now: clock,
+      leaseMs: 300_000,
+    });
+
+    await runner.runOnce();
+
+    expect(current.repository.claimDueCustomerTurn).toHaveBeenCalledWith({
+      now,
+      leaseExpiresAt: new Date("2026-08-19T00:05:00.000Z"),
+    });
+    expect(current.repository.publishWebsiteValidatedAi).toHaveBeenCalledWith(expect.objectContaining({
+      now: completedAt,
+    }));
+  });
+
+  it("uses fresh completion time for website human-review decisions", async () => {
+    const current = setup();
+    const completedAt = new Date("2026-08-19T00:00:06.000Z");
+    const times = [now, completedAt];
+    current.repository.claimDueCustomerTurn.mockResolvedValueOnce({
+      turnId: "turn-website",
+      messageId: "message-website",
+      channel: "website",
+      leaseToken: "lease-website",
+      processingAttempt: 1,
+    });
+    current.generateDraft.mockResolvedValueOnce({ status: "output_blocked", attemptId: "attempt-blocked" });
+    const runner = createCustomerTurnRecoveryRunner({
+      repository: current.repository,
+      generateDraft: current.generateDraft,
+      knowledgeVersion: "knowledge-v1",
+      now: () => times.shift() ?? completedAt,
+      leaseMs: 300_000,
+    });
+
+    await runner.runOnce();
+
+    expect(current.repository.openWebsiteHumanReview).toHaveBeenCalledWith(expect.objectContaining({
+      now: completedAt,
+    }));
+    expect(current.repository.completeCustomerTurnProcessing).toHaveBeenCalledWith(expect.objectContaining({
+      now: completedAt,
+    }));
+  });
+
+  it("publishes a recovered persisted website draft without a second provider call", async () => {
+    const current = setup();
+    current.repository.claimDueCustomerTurn.mockResolvedValueOnce({
+      turnId: "turn-website",
+      messageId: "message-website",
+      channel: "website",
+      leaseToken: "lease-website",
+      processingAttempt: 2,
+      settledResult: { status: "draft_ready", attemptId: "attempt-persisted" },
+    });
+
+    await expect(current.runner.runOnce()).resolves.toEqual({
+      claimed: 1,
+      completed: 1,
+      retried: 0,
+      cancelled: 0,
+    });
+    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.repository.publishWebsiteValidatedAi).toHaveBeenCalledWith({
+      turnId: "turn-website",
+      leaseToken: "lease-website",
+      attemptId: "attempt-persisted",
+      now,
+    });
+  });
+
+  it("opens governed system-failure review when website publication proof is incomplete", async () => {
+    const current = setup();
+    current.repository.claimDueCustomerTurn.mockResolvedValueOnce({
+      turnId: "turn-website",
+      messageId: "message-website",
+      channel: "website",
+      leaseToken: "lease-website",
+      processingAttempt: 2,
+      settledResult: { status: "draft_ready", attemptId: "attempt-malformed" },
+    });
+    current.repository.publishWebsiteValidatedAi.mockResolvedValueOnce({ status: "not_publishable" });
+
+    await expect(current.runner.runOnce()).resolves.toEqual({
+      claimed: 1,
+      completed: 1,
+      retried: 0,
+      cancelled: 0,
+    });
+    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.repository.openWebsiteHumanReview).toHaveBeenCalledWith({
+      turnId: "turn-website",
+      leaseToken: "lease-website",
+      attemptId: "attempt-malformed",
+      outcome: "system_failure",
+      now,
+      knowledgeVersion: "knowledge-v1",
+    });
+  });
+
+  it("keeps Facebook draft generation on the existing internal-only completion path", async () => {
+    const current = setup();
+
+    await current.runner.runOnce();
+
+    expect(current.repository.publishWebsiteValidatedAi).not.toHaveBeenCalled();
+    expect(current.repository.completeCustomerTurnProcessing).toHaveBeenCalledOnce();
+  });
+
   it.each([
     ["gate_blocked", "attempt-gate"],
     ["realtime_required", "attempt-realtime"],
@@ -160,6 +315,7 @@ describe("customer turn recovery runner", () => {
       outcome: status,
       attemptId,
     }));
+    expect(current.repository.publishWebsiteValidatedAi).not.toHaveBeenCalled();
     expect(current.repository.retryCustomerTurnProcessing).not.toHaveBeenCalled();
   });
 

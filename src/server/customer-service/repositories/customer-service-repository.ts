@@ -311,6 +311,12 @@ export interface CustomerServiceRepository {
     | Readonly<{ status: "reused"; reviewId: string; generation: number }>
     | Readonly<{ status: "cancelled" }>
   >;
+  publishWebsiteValidatedAi(input: Readonly<{
+    turnId: string;
+    leaseToken: string;
+    attemptId: string;
+    now: Date;
+  }>): Promise<Readonly<{ status: "published" | "cancelled" | "not_publishable" }>>;
   retryCustomerTurnProcessing(input: Readonly<{
     turnId: string;
     leaseToken: string;

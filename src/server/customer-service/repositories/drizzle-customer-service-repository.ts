@@ -1285,9 +1285,9 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           providerCalled: customerServiceAiAttempts.providerCalled,
           reservedCostMicrousd: customerServiceAiAttempts.reservedCostMicrousd,
           startedAt: customerServiceAiAttempts.startedAt,
-        }).from(customerServiceAiAttempts).where(eq(
-          customerServiceAiAttempts.messageId,
-          turn.messageId,
+        }).from(customerServiceAiAttempts).where(and(
+          eq(customerServiceAiAttempts.messageId, turn.messageId),
+          eq(customerServiceAiAttempts.trigger, "webhook_after"),
         )).orderBy(desc(customerServiceAiAttempts.attemptNumber)).limit(1).for("update");
 
         const settledWebsiteResult = turn.channel === "website" && latestAttempt
@@ -1306,13 +1306,21 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             if (latestAttempt.status === "output_blocked") {
               return { status: "output_blocked" as const, attemptId: latestAttempt.id };
             }
+            if (latestAttempt.status === "draft_ready") {
+              return { status: "draft_ready" as const, attemptId: latestAttempt.id };
+            }
+            if (
+              ["pending", "provider_pending"].includes(latestAttempt.status)
+              && latestAttempt.providerCalled
+            ) {
+              return { status: "provider_error" as const, attemptId: latestAttempt.id };
+            }
             return null;
           })()
           : null;
 
         if (!settledWebsiteResult && latestAttempt && [
           "gate_blocked",
-          "draft_ready",
           "output_blocked",
           "budget_blocked",
           "abandoned",
@@ -1327,7 +1335,8 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         }
 
         if (
-          latestAttempt
+          turn.channel !== "website"
+          && latestAttempt
           && ["pending", "provider_pending"].includes(latestAttempt.status)
           && latestAttempt.providerCalled
         ) {
@@ -1417,6 +1426,15 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
 
     async openWebsiteHumanReview(input) {
       return database.transaction(async (transaction) => {
+        const [identity] = await transaction.select({
+          conversationId: customerServiceTurns.conversationId,
+        }).from(customerServiceTurns).where(and(
+          eq(customerServiceTurns.id, input.turnId),
+          eq(customerServiceTurns.channel, "website"),
+        )).limit(1);
+        if (!identity) return { status: "cancelled" as const };
+        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + identity.conversationId}))`);
+
         const [turn] = await transaction.select({
           id: customerServiceTurns.id,
           conversationId: customerServiceTurns.conversationId,
@@ -1486,6 +1504,150 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
         return existing
           ? { status: "reused" as const, reviewId: review.id, generation: review.generation }
           : { status: "opened" as const, reviewId: review.id, generation: review.generation };
+      });
+    },
+
+    async publishWebsiteValidatedAi(input) {
+      return database.transaction(async (transaction) => {
+        const [identity] = await transaction.select({
+          conversationId: customerServiceTurns.conversationId,
+        }).from(customerServiceTurns).where(and(
+          eq(customerServiceTurns.id, input.turnId),
+          eq(customerServiceTurns.channel, "website"),
+        )).limit(1);
+        if (!identity) return { status: "cancelled" as const };
+        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + identity.conversationId}))`);
+
+        const [turn] = await transaction.select({
+          id: customerServiceTurns.id,
+          conversationId: customerServiceTurns.conversationId,
+          messageId: customerServiceTurns.representativeMessageId,
+          lastEventAt: customerServiceTurns.lastEventAt,
+          createdAt: customerServiceTurns.createdAt,
+        }).from(customerServiceTurns).innerJoin(customerServiceWebSessions, and(
+          eq(customerServiceWebSessions.conversationId, customerServiceTurns.conversationId),
+          eq(customerServiceWebSessions.channel, "website"),
+          eq(customerServiceWebSessions.status, "active"),
+          sql`${customerServiceWebSessions.expiresAt} > ${input.now}`,
+        )).where(and(
+          eq(customerServiceTurns.id, input.turnId),
+          eq(customerServiceTurns.channel, "website"),
+          eq(customerServiceTurns.status, "sealed"),
+          eq(customerServiceTurns.processingStatus, "running"),
+          eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
+        )).limit(1).for("update");
+        if (!turn?.messageId) {
+          await transaction.update(customerServiceTurns).set({
+            processingStatus: "cancelled",
+            processingLeaseToken: null,
+            processingLeaseExpiresAt: null,
+            processingCompletedAt: input.now,
+            lastProcessingError: "website_session_inactive",
+          }).where(and(
+            eq(customerServiceTurns.id, input.turnId),
+            eq(customerServiceTurns.channel, "website"),
+            eq(customerServiceTurns.status, "sealed"),
+            eq(customerServiceTurns.processingStatus, "running"),
+            eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
+          ));
+          return { status: "cancelled" as const };
+        }
+
+        const [newerTurn] = await transaction.select({ id: customerServiceTurns.id })
+          .from(customerServiceTurns).where(and(
+            eq(customerServiceTurns.conversationId, turn.conversationId),
+            sql`${customerServiceTurns.id} <> ${turn.id}`,
+            or(
+              sql`${customerServiceTurns.openedAt} > ${turn.lastEventAt}`,
+              sql`${customerServiceTurns.createdAt} > ${turn.createdAt}`,
+            ),
+          )).limit(1);
+        if (newerTurn) {
+          await transaction.update(customerServiceTurns).set({
+            processingStatus: "cancelled",
+            processingLeaseToken: null,
+            processingLeaseExpiresAt: null,
+            processingCompletedAt: input.now,
+            lastProcessingError: "newer_customer_turn_exists",
+          }).where(and(
+            eq(customerServiceTurns.id, turn.id),
+            eq(customerServiceTurns.status, "sealed"),
+            eq(customerServiceTurns.processingStatus, "running"),
+            eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
+          ));
+          return { status: "cancelled" as const };
+        }
+
+        if (await hasHumanReplyAfterTurn(transaction, turn)) {
+          await transaction.update(customerServiceTurns).set({
+            processingStatus: "cancelled",
+            processingLeaseToken: null,
+            processingLeaseExpiresAt: null,
+            processingCompletedAt: input.now,
+            lastProcessingError: "human_outbound_received",
+          }).where(and(
+            eq(customerServiceTurns.id, turn.id),
+            eq(customerServiceTurns.status, "sealed"),
+            eq(customerServiceTurns.processingStatus, "running"),
+            eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
+          ));
+          return { status: "cancelled" as const };
+        }
+
+        const [attempt] = await transaction.select({
+          id: customerServiceAiAttempts.id,
+          draftText: customerServiceAiAttempts.draftText,
+          validatorCodes: customerServiceAiAttempts.validatorCodes,
+          knowledgeVersion: customerServiceAiAttempts.knowledgeVersion,
+          provider: customerServiceAiAttempts.provider,
+          model: customerServiceAiAttempts.model,
+          completedAt: customerServiceAiAttempts.completedAt,
+        }).from(customerServiceAiAttempts).where(and(
+          eq(customerServiceAiAttempts.id, input.attemptId),
+          eq(customerServiceAiAttempts.messageId, turn.messageId),
+          eq(customerServiceAiAttempts.trigger, "webhook_after"),
+          eq(customerServiceAiAttempts.status, "draft_ready"),
+          eq(customerServiceAiAttempts.gateResult, "allowed"),
+          eq(customerServiceAiAttempts.providerCalled, true),
+        )).limit(1).for("update");
+        if (
+          !attempt
+          || !attempt.completedAt
+          || !attempt.provider
+          || !attempt.model?.trim()
+          || !attempt.draftText?.trim()
+          || attempt.validatorCodes.length !== 0
+        ) return { status: "not_publishable" as const };
+
+        const [publication] = await transaction.insert(customerServiceWebsiteAssistantMessages).values({
+          conversationId: turn.conversationId,
+          channel: "website",
+          messageId: turn.messageId,
+          turnId: turn.id,
+          aiAttemptId: attempt.id,
+          kind: "validated_ai",
+          body: attempt.draftText,
+          policyResult: "allowed",
+          gateReasons: [],
+          knowledgeVersion: attempt.knowledgeVersion,
+          publishedAt: input.now,
+        }).onConflictDoNothing().returning({ id: customerServiceWebsiteAssistantMessages.id });
+        if (!publication) return { status: "not_publishable" as const };
+
+        const [completed] = await transaction.update(customerServiceTurns).set({
+          processingStatus: "completed",
+          processingLeaseToken: null,
+          processingLeaseExpiresAt: null,
+          processingCompletedAt: input.now,
+          lastProcessingError: null,
+        }).where(and(
+          eq(customerServiceTurns.id, turn.id),
+          eq(customerServiceTurns.status, "sealed"),
+          eq(customerServiceTurns.processingStatus, "running"),
+          eq(customerServiceTurns.processingLeaseToken, input.leaseToken),
+        )).returning({ id: customerServiceTurns.id });
+        if (!completed) throw new Error("customer_service_website_publication_turn_lost");
+        return { status: "published" as const };
       });
     },
 
