@@ -41,7 +41,8 @@ export type DraftGenerationResult =
       | "image_review_required"
       | "pilot_limit_reached"
       | "budget_blocked"
-      | "human_reply_received";
+      | "human_reply_received"
+      | "no_reply_needed";
     attemptId: string;
   }>;
 

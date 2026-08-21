@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { evaluatePolicyGate, type PolicyKnowledge } from "./policy-gate";
 import { retrieveKnowledge, type AnswerQualityGuide } from "./knowledge-retrieval";
 import { validateDraft } from "./output-validator";
-import { buildDraftPrompt } from "./prompt-builder";
+import { buildDraftPrompt, buildWebsiteDecisionPrompt } from "./prompt-builder";
 import { localDateScopeKey } from "./usage-cost";
 import { detectIntent } from "./intent-detection";
 import { resolveContextualIntent } from "./conversation/contextual-intent";
@@ -12,6 +12,8 @@ import type { AiProvider } from "./providers/ai-provider";
 import type { CustomerServiceRepository } from "./repositories/customer-service-repository";
 import type { DraftGenerationRequest, DraftGenerationResult } from "./types";
 import { sanitizeWebsiteModelInput } from "./website/model-input-sanitizer";
+import { classifyAcknowledgement } from "./conversation/acknowledgement";
+import { parseWebsiteDecision, renderWebsiteDecision } from "./website/structured-decision";
 
 type EngineKnowledge = PolicyKnowledge & Readonly<{
   knowledgeVersion: string;
@@ -311,20 +313,23 @@ export class CustomerServiceEngine {
     } catch {
       caseMemories = [];
     }
-    const prompt = buildDraftPrompt({
-      ...(draftInput.current.channel === "website" ? { channel: "website" as const } : {}),
-      intent: gate.intent,
-      context: providerContext,
-      rules: sources.rules,
-      examples: sources.examples,
-      goldenExamples: sources.goldenExamples,
-      qualityGuide: sources.qualityGuide,
-      toneGuide: this.knowledge.toneGuide,
-      caseMemories,
-      productContext: draftInput.current.channel === "website"
-        ? draftInput.current.productContext ?? null
-        : null,
-    });
+    const prompt = draftInput.current.channel === "website"
+      ? buildWebsiteDecisionPrompt({
+        intent: gate.intent,
+        context: providerContext,
+        productContext: draftInput.current.productContext ?? null,
+        approvedCaseMemoryCount: caseMemories.length,
+      })
+      : buildDraftPrompt({
+        intent: gate.intent,
+        context: providerContext,
+        rules: sources.rules,
+        examples: sources.examples,
+        goldenExamples: sources.goldenExamples,
+        qualityGuide: sources.qualityGuide,
+        toneGuide: this.knowledge.toneGuide,
+        caseMemories,
+      });
     const invocation = await this.repository.confirmProviderInvocation({
       attemptId: reservation.attemptId,
       dailyScopeKey,
@@ -334,7 +339,74 @@ export class CustomerServiceEngine {
     }
     try {
       const generated = await this.provider.generate(prompt);
-      const textValidation = this.outputValidator(generated.text, {
+      let candidateText = generated.text;
+      if (draftInput.current.channel === "website") {
+        const parsed = parseWebsiteDecision(generated.text);
+        if (!parsed.ok) {
+          await this.repository.completeProviderAttempt({
+            attemptId: reservation.attemptId,
+            status: "output_blocked",
+            provider: generated.provider,
+            model: generated.model,
+            rejectedOutputHash: createHash("sha256").update(generated.text).digest("hex"),
+            validatorCodes: [parsed.code],
+            inputTokens: generated.usage.inputTokens,
+            cachedInputTokens: generated.usage.cachedInputTokens,
+            outputTokens: generated.usage.outputTokens,
+            estimatedCostMicrousd: generated.estimatedCostMicrousd,
+            latencyMs: generated.latencyMs,
+            dailyScopeKey,
+          });
+          return { status: "output_blocked", attemptId: reservation.attemptId };
+        }
+        const acknowledgement = classifyAcknowledgement({
+          currentText: draftInput.current.text,
+          recentHistory: draftInput.context,
+        });
+        const rendered = renderWebsiteDecision({
+          decision: parsed.decision,
+          expectedIntent: gate.intent,
+          productCategory: draftInput.current.productContext?.category ?? null,
+          acknowledgementAllowed: acknowledgement.suppress,
+          policyDecision: gate.decision,
+        });
+        if (rendered.ok && rendered.outcome === "no_reply") {
+          await this.repository.completeProviderAttempt({
+            attemptId: reservation.attemptId,
+            status: "abandoned",
+            provider: generated.provider,
+            model: generated.model,
+            validatorCodes: [],
+            inputTokens: generated.usage.inputTokens,
+            cachedInputTokens: generated.usage.cachedInputTokens,
+            outputTokens: generated.usage.outputTokens,
+            estimatedCostMicrousd: generated.estimatedCostMicrousd,
+            latencyMs: generated.latencyMs,
+            dailyScopeKey,
+          });
+          return { status: "no_reply_needed", attemptId: reservation.attemptId };
+        }
+        if (!rendered.ok || rendered.outcome !== "rendered") {
+          const code = rendered.ok ? `website_decision_${rendered.outcome}` : rendered.code;
+          await this.repository.completeProviderAttempt({
+            attemptId: reservation.attemptId,
+            status: "output_blocked",
+            provider: generated.provider,
+            model: generated.model,
+            rejectedOutputHash: createHash("sha256").update(generated.text).digest("hex"),
+            validatorCodes: [code],
+            inputTokens: generated.usage.inputTokens,
+            cachedInputTokens: generated.usage.cachedInputTokens,
+            outputTokens: generated.usage.outputTokens,
+            estimatedCostMicrousd: generated.estimatedCostMicrousd,
+            latencyMs: generated.latencyMs,
+            dailyScopeKey,
+          });
+          return { status: "output_blocked", attemptId: reservation.attemptId };
+        }
+        candidateText = rendered.text;
+      }
+      const textValidation = this.outputValidator(candidateText, {
         intent: gate.intent,
         ...(draftInput.current.channel === "website" ? { channel: "website" as const } : {}),
       });
@@ -348,10 +420,10 @@ export class CustomerServiceEngine {
         provider: generated.provider,
         model: generated.model,
         ...(validation.ok
-          ? { draftText: generated.text }
+          ? { draftText: candidateText }
           : {
             draftText: undefined,
-            rejectedOutputHash: createHash("sha256").update(generated.text).digest("hex"),
+            rejectedOutputHash: createHash("sha256").update(candidateText).digest("hex"),
           }),
         validatorCodes: validation.codes,
         inputTokens: generated.usage.inputTokens,

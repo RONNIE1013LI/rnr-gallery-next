@@ -60,6 +60,7 @@ import {
   verifyWebsiteReviewSelector,
 } from "../website/review-selector";
 import { REVIEW_ALERT_AUTOMATIC_RECOVERY_MAX_AGE_MS } from "../website/review-alert-policy";
+import { verifyWebsiteRenderedResponse } from "../website/structured-decision";
 import type {
   WebsitePublicUpdateCursor,
   WebsitePublicUpdateRecord,
@@ -2410,6 +2411,7 @@ export function createDrizzleCustomerServiceRepository(
           provider: customerServiceAiAttempts.provider,
           model: customerServiceAiAttempts.model,
           completedAt: customerServiceAiAttempts.completedAt,
+          intent: customerServiceAiAttempts.intent,
         }).from(customerServiceAiAttempts).where(and(
           eq(customerServiceAiAttempts.id, input.attemptId),
           eq(customerServiceAiAttempts.messageId, turn.messageId),
@@ -2425,6 +2427,7 @@ export function createDrizzleCustomerServiceRepository(
           || !attempt.model?.trim()
           || !attempt.draftText?.trim()
           || attempt.validatorCodes.length !== 0
+          || !verifyWebsiteRenderedResponse({ intent: attempt.intent, text: attempt.draftText })
         ) return { status: "not_publishable" as const };
 
         const [publication] = await transaction.insert(customerServiceWebsiteAssistantMessages).values({

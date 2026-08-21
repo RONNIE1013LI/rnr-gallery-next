@@ -129,4 +129,36 @@ describe("OpenAI Responses provider", () => {
     await expect(provider.generate({ instructions: "x", input: "y" })).rejects.toThrow("OPENAI_API_KEY is required");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+
+  it("requests strict server-side JSON schema without changing ordinary responses", async () => {
+    const fetchSpy = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => new Response(JSON.stringify({
+      output_text: "{}",
+      usage: { input_tokens: 5, output_tokens: 2 },
+    }), { status: 200 }));
+    const provider = new OpenAIResponsesProvider({ apiKey: "test-only-secret", fetchImpl: fetchSpy });
+    const schema = {
+      type: "object",
+      properties: { response_type: { type: "string", enum: ["ANSWER_SAFE"] } },
+      required: ["response_type"],
+      additionalProperties: false,
+    } as const;
+
+    await provider.generate({
+      instructions: "select only",
+      input: "untrusted data",
+      responseFormat: { name: "website_customer_service_decision_v1", schema },
+    });
+
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(body.text).toEqual({
+      verbosity: "low",
+      format: {
+        type: "json_schema",
+        name: "website_customer_service_decision_v1",
+        strict: true,
+        schema,
+      },
+    });
+    expect(JSON.stringify(body)).not.toContain("test-only-secret");
+  });
 });

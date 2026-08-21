@@ -2,7 +2,7 @@
 
 ## Status
 
-- Design deliverable only. Implementation and Production are not authorized by this document.
+- The Website-only structured-output amendment is approved for implementation. Production remains unauthorized.
 - Baseline audit: `docs/audits/2026-08-21-website-customer-assistant-architecture-audit.md`.
 - Facebook remains human-review only with no `META_PAGE_ACCESS_TOKEN`, Messenger Send API, or automatic sending.
 - Website image input, Website Chat order actions, realtime tools, fine-tuning, and autonomous business actions are out of scope.
@@ -24,8 +24,10 @@ flowchart TD
   Persist --> Turn[Conversation turn and durable recovery]
   Turn --> Gate[Intent and Policy Gate]
   Gate -->|DRAFT_ALLOWED| Knowledge[Relevant knowledge and approved examples]
-  Knowledge --> Provider[OpenAI Responses API]
-  Provider --> Validator[Output Validator]
+  Knowledge --> Provider[OpenAI Responses API with strict JSON schema]
+  Provider --> Decision[Strict allowlisted decision parser]
+  Decision --> Renderer[Versioned server response renderer]
+  Renderer --> Validator[Output Validator defense in depth]
   Validator -->|PASS| Publish[Commit website assistant response]
   Gate -->|HIGH RISK / UNRESOLVED / REALTIME| Review[Open human-review incident]
   Validator -->|BLOCK| Review
@@ -41,7 +43,7 @@ flowchart TD
   PublicGet --> Publish
 ```
 
-The website publication layer is separate from generation. An AI attempt is not customer-visible merely because it is `draft_ready`. Publication requires the same transaction to verify channel `website`, gate `DRAFT_ALLOWED`, validator PASS, live session ownership, non-terminal turn, and no intervening human response.
+The website publication layer is separate from generation. An AI attempt is not customer-visible merely because it is `draft_ready`. Publication requires the same transaction to verify channel `website`, gate `DRAFT_ALLOWED`, exact intent-compatible server-rendered fragments, validator PASS, live session ownership, non-terminal turn, and no intervening human response.
 
 ## Channel adapter
 
@@ -139,10 +141,19 @@ Public errors use generic codes and never expose provider, policy source, intern
 1. Load same-session recent context.
 2. Detect intent.
 3. Run Policy Gate.
-4. Retrieve only relevant official knowledge, Golden Replies, approved Case Memory, and current conversation context.
-5. Call the reviewed low-cost provider under website and global cost reservations.
-6. Run the existing Output Validator.
-7. Commit one customer-visible website assistant response with a unique AI-attempt reference.
+4. Retrieve approved Case Memory only as a bounded action-selection signal; literal memory/customer reply text is not placed in the Website decision prompt.
+5. Call the reviewed low-cost provider under website and global cost reservations with a strict JSON schema.
+6. Parse an exact-key decision containing only allowlisted actions, intents, product types, missing/follow-up fields, fact enums, and a human-review reason. No customer-facing string field exists.
+7. Verify the decision against the server Policy Gate result, detected intent, product context, and existing acknowledgement rules.
+8. Render only version-controlled server-owned fragments. Model and customer strings never enter the renderer.
+9. Run the existing Website Output Validator as defense-in-depth over the rendered text.
+10. Commit one customer-visible website assistant response with a unique AI-attempt reference. The publication CAS independently rejects text outside the current intent-bound fragment registry.
+
+### Structured Website decisions
+
+The allowed actions are `ANSWER_SAFE`, `ASK_FOR_INFORMATION`, `NO_REPLY_NEEDED`, `HUMAN_REVIEW_REQUIRED`, `REALTIME_REQUIRED`, and `SYSTEM_FALLBACK`. Unknown keys, unknown enum values, duplicate slots, action/intent mismatches, product mismatches, unsupported facts, and arbitrary prose fail closed. Schema/provider failures use the existing fixed provider fallback, human-review incident, and deduplicated alert path.
+
+`HIGH_RISK`, `UNRESOLVED`, and supported or unsupported realtime requests remain blocked before provider invocation. A model decision cannot downgrade those states, supply a current value, perform an action, or create a link. `NO_REPLY_NEEDED` completes without a public response only when the existing acknowledgement classifier already permits suppression.
 
 ### REALTIME_REQUIRED
 
@@ -196,7 +207,7 @@ The existing precedence remains load-bearing for both channels:
 2. Current Realtime Data
 3. Approved Knowledge
 4. Golden Replies
-5. Approved Case Memory
+5. Approved Case Memory action-selection signal only
 6. Historical Experience
 
 Website context and public product context cannot override this order. An approved historical answer with an old price, shipping fee, ETA, capacity, promotion, balance, tracking result, or order state remains unusable as current data.
@@ -298,7 +309,9 @@ Detailed threats are in `docs/security/2026-08-21-website-customer-assistant-thr
 - same-origin JSON mutations;
 - bounded payloads and rate/cost reservations;
 - Policy Gate before provider;
-- Output Validator before publication;
+- strict Website decision schema and intent/policy compatibility before rendering;
+- versioned server-owned Website fragments, independently rechecked at publication;
+- Output Validator over rendered Website text as defense-in-depth;
 - no arbitrary conversation selector in public APIs;
 - no raw IP, session token, internal ID, or secret in logs/browser/model;
 - prompt text treated as untrusted data;

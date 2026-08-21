@@ -48,6 +48,7 @@ const enabled = Boolean(testDatabaseUrl) && isDedicatedTestDatabase(testDatabase
 const database = drizzle(testDatabaseUrl ?? "postgres://disabled.invalid/test");
 const reviewSelectorSecret = "task-13-review-selector-secret-at-least-32-bytes";
 const reviewAlertProviderScopeFingerprint = "a1".repeat(32);
+const approvedWebsiteDesignResponse = "We’ll collect your photos, wording, theme and colour preferences.\nWe’ll then prepare a design draft for you to review before printing.";
 const selectorTestNow = () => new Date("2026-08-22T00:00:00.000Z");
 const repository = createDrizzleCustomerServiceRepository(database, { reviewSelectorSecret, now: selectorTestNow });
 const competingPool = new Pool({ connectionString: testDatabaseUrl ?? "postgres://disabled.invalid/test" });
@@ -2782,7 +2783,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerCalled: true,
       provider: "mock",
       model: "mock-text",
-      draftText: "Please send your photos, wording and preferred theme.",
+      draftText: approvedWebsiteDesignResponse,
       validatorCodes: [],
       completedAt: new Date("2026-08-19T00:00:02.000Z"),
     }).returning({ id: customerServiceAiAttempts.id });
@@ -2807,7 +2808,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
         turnId: claimed.turnId,
         aiAttemptId: attempt.id,
         kind: "validated_ai",
-        body: "Please send your photos, wording and preferred theme.",
+        body: approvedWebsiteDesignResponse,
         policyResult: "allowed",
         knowledgeVersion: "website-knowledge-v2",
       }),
@@ -2925,6 +2926,43 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
   });
 
+  it("rejects unrestricted prose even when a Website attempt otherwise has complete publication proof", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "b1".repeat(32),
+      networkHash: "b2".repeat(32),
+      messageHash: "b3".repeat(32),
+    });
+    const unrestricted = "Your order update:\nShipped yesterday.";
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "production_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      gateReasons: ["confirmed_draft_scope"],
+      knowledgeSources: ["AI-SCOPE-06"],
+      knowledgeVersion: "website-structured-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: unrestricted,
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId: attempt.id,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    })).resolves.toEqual({ status: "not_publishable" });
+    const publicRows = await database.select().from(customerServiceWebsiteAssistantMessages);
+    expect(publicRows).toHaveLength(0);
+    expect(JSON.stringify(publicRows)).not.toContain(unrestricted);
+  });
+
   it("uses the turn and attempt uniqueness constraints when after and recovery publication race", async () => {
     const claimed = await claimWebsiteTurn({
       sessionHash: "9d".repeat(32),
@@ -2943,7 +2981,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerCalled: true,
       provider: "mock",
       model: "mock-text",
-      draftText: "One public response only.",
+      draftText: approvedWebsiteDesignResponse,
       validatorCodes: [],
       completedAt: new Date("2026-08-19T00:00:02.000Z"),
     }).returning({ id: customerServiceAiAttempts.id });
@@ -2981,7 +3019,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerCalled: true,
       provider: "mock",
       model: "mock-text",
-      draftText: "Recovered publication must appear once.",
+      draftText: approvedWebsiteDesignResponse,
       validatorCodes: [],
       completedAt: new Date("2026-08-19T00:00:02.000Z"),
     }).returning({ id: customerServiceAiAttempts.id });
@@ -5384,7 +5422,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerCalled: true,
       provider: "mock",
       model: "mock-text",
-      draftText: "Please send your photos and wording.",
+      draftText: approvedWebsiteDesignResponse,
       validatorCodes: [],
       completedAt: new Date("2026-08-19T00:00:03.000Z"),
     }).returning({ id: customerServiceAiAttempts.id });
@@ -5470,7 +5508,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       current: { channel: "website", text: "My theme is blue." },
       context: [
         { role: "customer", text: "Can you help with a custom banner?" },
-        { role: "staff", text: "Please send your photos and wording." },
+        { role: "staff", text: approvedWebsiteDesignResponse },
         { role: "staff", text: "We can also help with the wording." },
         { role: "customer", text: "My theme is blue." },
       ],
@@ -5557,7 +5595,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       providerCalled: true,
       provider: "mock",
       model: "mock-text",
-      draftText: "Committed Website reply.",
+      draftText: approvedWebsiteDesignResponse,
       validatorCodes: [],
       completedAt: sameBusinessTime,
     }).returning({ id: customerServiceAiAttempts.id });
@@ -5625,14 +5663,14 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     await expect(repository.loadDraftInput(current.messageId, 4)).resolves.toMatchObject({
       context: [
         { role: "customer", text: "Can you help with a custom banner?" },
-        { role: "staff", text: "Committed Website reply." },
+        { role: "staff", text: approvedWebsiteDesignResponse },
         { role: "staff", text: "Human Website reply." },
         { role: "customer", text: "Current Website customer turn." },
       ],
     });
     await expect(repository.loadDraftInput(current.messageId, 3)).resolves.toMatchObject({
       context: [
-        { role: "staff", text: "Committed Website reply." },
+        { role: "staff", text: approvedWebsiteDesignResponse },
         { role: "staff", text: "Human Website reply." },
         { role: "customer", text: "Current Website customer turn." },
       ],

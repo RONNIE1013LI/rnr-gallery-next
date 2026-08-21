@@ -143,7 +143,7 @@ export type ProviderAttemptReservation = Readonly<{
 
 export type ProviderAttemptCompletion = Readonly<{
   attemptId: string;
-  status: "draft_ready" | "output_blocked" | "provider_error";
+  status: "draft_ready" | "output_blocked" | "provider_error" | "abandoned";
   provider: "mock" | "openai";
   model: string;
   draftText?: string;
