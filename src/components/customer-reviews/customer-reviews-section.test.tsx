@@ -26,7 +26,10 @@ describe("CustomerReviewsSection", () => {
     expect(screen.getByRole("heading", { name: "Recommended by our customers." })).toBeInTheDocument();
     expect(screen.getByText("Selected public recommendations originally shared on our Facebook Page.")).toBeInTheDocument();
     expect(screen.getByText("EXCELLENT")).toBeInTheDocument();
-    expect(screen.getByLabelText("4.9 out of 5").querySelectorAll("svg")).toHaveLength(5);
+    const decorativeStars = document.querySelector(`.${styles.facebookSummaryStars}`);
+    expect(decorativeStars).toHaveAttribute("aria-hidden", "true");
+    expect(decorativeStars).not.toHaveAttribute("aria-label");
+    expect(decorativeStars?.querySelectorAll("svg")).toHaveLength(5);
     expect(screen.getByText("100% Recommended (288 Reviews)")).toBeInTheDocument();
     expect(screen.getByText("facebook")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "View all on Facebook" })).toHaveAttribute("target", "_blank");
