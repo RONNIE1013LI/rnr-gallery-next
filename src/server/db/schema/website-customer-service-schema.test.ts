@@ -4,6 +4,7 @@ import { getTableColumns, getTableName } from "drizzle-orm";
 import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
+  customerServiceAiAttempts,
   customerServiceHumanReviews,
   customerServiceRateLimitBuckets,
   customerServiceReviewAlertOutbox,
@@ -26,6 +27,13 @@ const websiteTables = [
 ];
 
 describe("website customer service schema contract", () => {
+  it("stores nullable canonical Website renderer proof on AI attempts", () => {
+    expect(getTableColumns(customerServiceAiAttempts)).toEqual(expect.objectContaining({
+      websiteDecision: expect.anything(),
+      websiteResponseTemplateVersion: expect.anything(),
+    }));
+  });
+
   it("defines the additive website persistence tables", () => {
     expect(websiteTables.map(getTableName)).toEqual([
       "customer_service_web_sessions",
@@ -215,5 +223,16 @@ describe("website customer service schema contract", () => {
     expect(task13Migration).toContain('ADD COLUMN "provider_payload_digest"');
     expect(task13Migration).toContain('CREATE TABLE "customer_service_review_selectors"');
     expect(task13Migration).toContain('CREATE UNIQUE INDEX "customer_service_review_selectors_hash_unique"');
+  });
+
+  it("adds Website renderer proof with a forward-only Task 14 migration", () => {
+    const migrationDirectory = resolve(process.cwd(), "drizzle");
+    const migrationName = readdirSync(migrationDirectory).find((name) => /^0051_.+\.sql$/.test(name));
+    expect(migrationName).toEqual(expect.stringMatching(/^0051_.+\.sql$/));
+    const migration = readFileSync(resolve(migrationDirectory, migrationName ?? "missing"), "utf8");
+
+    expect(migration).toContain('ADD COLUMN "website_decision" jsonb');
+    expect(migration).toContain('ADD COLUMN "website_response_template_version" text');
+    expect(migration).not.toMatch(/^\s*(?:DROP\b|ALTER\s+TABLE\s+.+\s+DROP\b|TRUNCATE|DELETE\s+FROM)/im);
   });
 });

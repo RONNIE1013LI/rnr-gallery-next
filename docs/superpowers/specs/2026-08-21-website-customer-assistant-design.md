@@ -43,7 +43,7 @@ flowchart TD
   PublicGet --> Publish
 ```
 
-The website publication layer is separate from generation. An AI attempt is not customer-visible merely because it is `draft_ready`. Publication requires the same transaction to verify channel `website`, gate `DRAFT_ALLOWED`, exact intent-compatible server-rendered fragments, validator PASS, live session ownership, non-terminal turn, and no intervening human response.
+The website publication layer is separate from generation. An AI attempt is not customer-visible merely because it is `draft_ready`. A Website `draft_ready` attempt persists its canonical validated decision and renderer-template version. Publication requires the same transaction to revalidate that decision, require the current matching template version, re-render the exact text, and verify channel `website`, gate `DRAFT_ALLOWED`, validator PASS, live session ownership, non-terminal turn, and no intervening human response.
 
 ## Channel adapter
 
@@ -147,7 +147,7 @@ Public errors use generic codes and never expose provider, policy source, intern
 7. Verify the decision against the server Policy Gate result, detected intent, product context, and existing acknowledgement rules.
 8. Render only version-controlled server-owned fragments. Model and customer strings never enter the renderer.
 9. Run the existing Website Output Validator as defense-in-depth over the rendered text.
-10. Commit one customer-visible website assistant response with a unique AI-attempt reference. The publication CAS independently rejects text outside the current intent-bound fragment registry.
+10. Commit one customer-visible website assistant response with a unique AI-attempt reference. The publication CAS revalidates the stored canonical decision and template version, re-renders it, and rejects missing proof, invalid composition, version drift, or any exact-text mismatch.
 
 ### Structured Website decisions
 
@@ -310,7 +310,7 @@ Detailed threats are in `docs/security/2026-08-21-website-customer-assistant-thr
 - bounded payloads and rate/cost reservations;
 - Policy Gate before provider;
 - strict Website decision schema and intent/policy compatibility before rendering;
-- versioned server-owned Website fragments, independently rechecked at publication;
+- versioned server-owned Website fragments, with the canonical decision and template version independently revalidated and exactly re-rendered at publication;
 - Output Validator over rendered Website text as defense-in-depth;
 - no arbitrary conversation selector in public APIs;
 - no raw IP, session token, internal ID, or secret in logs/browser/model;

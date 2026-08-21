@@ -1,5 +1,20 @@
 import { describe, expect, it, vi } from "vitest";
+import { WEBSITE_DECISION_JSON_SCHEMA } from "../website/structured-decision";
 import { OpenAIResponsesProvider } from "./openai-responses";
+
+function unsupportedStrictSchemaKeywords(value: unknown, path = "$", found: string[] = []): string[] {
+  if (Array.isArray(value)) {
+    value.forEach((item, index) => unsupportedStrictSchemaKeywords(item, `${path}[${index}]`, found));
+    return found;
+  }
+  if (typeof value !== "object" || value === null) return found;
+  const supported = new Set(["type", "enum", "properties", "required", "additionalProperties", "items", "maxItems"]);
+  for (const [key, child] of Object.entries(value)) {
+    if (!supported.has(key) && path !== "$.properties") found.push(`${path}.${key}`);
+    unsupportedStrictSchemaKeywords(child, key === "properties" ? `${path}.properties` : `${path}.${key}`, found);
+  }
+  return found;
+}
 
 describe("OpenAI Responses provider", () => {
   it("uses Responses API with storage disabled and returns safe usage", async () => {
@@ -160,5 +175,26 @@ describe("OpenAI Responses provider", () => {
       },
     });
     expect(JSON.stringify(body)).not.toContain("test-only-secret");
+  });
+
+  it("emits only the supported strict JSON Schema subset", async () => {
+    const fetchSpy = vi.fn(async (_input: string | URL | Request, _init?: RequestInit) => new Response(JSON.stringify({
+      output_text: "{}",
+      usage: { input_tokens: 1, output_tokens: 1 },
+    }), { status: 200 }));
+    const provider = new OpenAIResponsesProvider({ apiKey: "test-only-secret", fetchImpl: fetchSpy });
+
+    await provider.generate({
+      instructions: "select only",
+      input: "untrusted data",
+      responseFormat: {
+        name: "website_customer_service_decision_v1",
+        schema: WEBSITE_DECISION_JSON_SCHEMA,
+      },
+    });
+
+    const body = JSON.parse(String(fetchSpy.mock.calls[0]?.[1]?.body));
+    expect(unsupportedStrictSchemaKeywords(body.text.format.schema)).toEqual([]);
+    expect(JSON.stringify(body.text.format.schema)).not.toContain("uniqueItems");
   });
 });

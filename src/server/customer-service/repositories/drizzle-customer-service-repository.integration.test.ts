@@ -41,6 +41,10 @@ import {
   hashReviewAlertToken,
 } from "../website/review-alert-service";
 import { REVIEW_ALERT_AUTOMATIC_RECOVERY_MAX_AGE_MS } from "../website/review-alert-policy";
+import {
+  WEBSITE_RESPONSE_TEMPLATE_VERSION,
+  type WebsiteDecision,
+} from "../website/structured-decision";
 import { createDrizzleCustomerServiceRepository } from "./drizzle-customer-service-repository";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -49,6 +53,19 @@ const database = drizzle(testDatabaseUrl ?? "postgres://disabled.invalid/test");
 const reviewSelectorSecret = "task-13-review-selector-secret-at-least-32-bytes";
 const reviewAlertProviderScopeFingerprint = "a1".repeat(32);
 const approvedWebsiteDesignResponse = "We’ll collect your photos, wording, theme and colour preferences.\nWe’ll then prepare a design draft for you to review before printing.";
+const approvedWebsiteDesignDecision: WebsiteDecision = Object.freeze({
+  response_type: "ANSWER_SAFE",
+  intent: "design_process",
+  product_type: "UNSPECIFIED",
+  missing_fields: [],
+  follow_up_fields: [],
+  allowed_facts: ["DESIGN_INPUTS", "DESIGN_DRAFT_REVIEW_BEFORE_PRINTING"] as const,
+  human_review_reason: "NONE",
+});
+const approvedWebsiteDesignProof = Object.freeze({
+  websiteDecision: approvedWebsiteDesignDecision,
+  websiteResponseTemplateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+});
 const selectorTestNow = () => new Date("2026-08-22T00:00:00.000Z");
 const repository = createDrizzleCustomerServiceRepository(database, { reviewSelectorSecret, now: selectorTestNow });
 const competingPool = new Pool({ connectionString: testDatabaseUrl ?? "postgres://disabled.invalid/test" });
@@ -2784,6 +2801,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       provider: "mock",
       model: "mock-text",
       draftText: approvedWebsiteDesignResponse,
+      ...approvedWebsiteDesignProof,
       validatorCodes: [],
       completedAt: new Date("2026-08-19T00:00:02.000Z"),
     }).returning({ id: customerServiceAiAttempts.id });
@@ -2948,6 +2966,16 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       provider: "mock",
       model: "mock-text",
       draftText: unrestricted,
+      websiteDecision: {
+        response_type: "ANSWER_SAFE",
+        intent: "production_process",
+        product_type: "UNSPECIFIED",
+        missing_fields: [],
+        follow_up_fields: [],
+        allowed_facts: ["PRODUCTION_AFTER_APPROVAL"],
+        human_review_reason: "NONE",
+      },
+      websiteResponseTemplateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
       validatorCodes: [],
       completedAt: new Date("2026-08-19T00:00:02.000Z"),
     }).returning({ id: customerServiceAiAttempts.id });
@@ -2961,6 +2989,134 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     const publicRows = await database.select().from(customerServiceWebsiteAssistantMessages);
     expect(publicRows).toHaveLength(0);
     expect(JSON.stringify(publicRows)).not.toContain(unrestricted);
+  });
+
+  it("rejects a Website draft-ready attempt when canonical renderer proof is missing", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "c1".repeat(32),
+      networkHash: "c2".repeat(32),
+      messageHash: "c3".repeat(32),
+    });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "website-structured-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: approvedWebsiteDesignResponse,
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId: attempt.id,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    })).resolves.toEqual({ status: "not_publishable" });
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
+  });
+
+  it("rejects an impossible mixed fact/question Website response at publication", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "c4".repeat(32),
+      networkHash: "c5".repeat(32),
+      messageHash: "c6".repeat(32),
+    });
+    const mixedResponse = "We’ll collect your photos, wording, theme and colour preferences.\nWhat size do you need?";
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId,
+      attemptNumber: 1,
+      trigger: "webhook_after",
+      intent: "design_process",
+      riskLevel: "low",
+      gateResult: "allowed",
+      knowledgeVersion: "website-structured-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "mock-text",
+      draftText: mixedResponse,
+      ...approvedWebsiteDesignProof,
+      validatorCodes: [],
+      completedAt: new Date("2026-08-19T00:00:02.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+
+    await expect(repository.publishWebsiteValidatedAi({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId: attempt.id,
+      now: new Date("2026-08-19T00:00:03.000Z"),
+    })).resolves.toEqual({ status: "not_publishable" });
+    const publicRows = await database.select().from(customerServiceWebsiteAssistantMessages);
+    expect(publicRows).toHaveLength(0);
+    expect(JSON.stringify(publicRows)).not.toContain(mixedResponse);
+  });
+
+  it("rejects tampered text, template version drift, and invalid canonical decisions at publication", async () => {
+    const cases = [
+      {
+        hashes: ["c7", "c8", "c9"],
+        draftText: "We’ll collect your photos, wording, theme and colour preferences.",
+        decision: approvedWebsiteDesignDecision,
+        templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+      },
+      {
+        hashes: ["d1", "d2", "d3"],
+        draftText: approvedWebsiteDesignResponse,
+        decision: approvedWebsiteDesignDecision,
+        templateVersion: "website-response-v0",
+      },
+      {
+        hashes: ["d4", "d5", "d6"],
+        draftText: approvedWebsiteDesignResponse,
+        decision: { ...approvedWebsiteDesignDecision, customer_reply: "hidden prose" },
+        templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+      },
+    ] as const;
+
+    for (const testCase of cases) {
+      const claimed = await claimWebsiteTurn({
+        sessionHash: testCase.hashes[0].repeat(32),
+        networkHash: testCase.hashes[1].repeat(32),
+        messageHash: testCase.hashes[2].repeat(32),
+      });
+      const [attempt] = await database.insert(customerServiceAiAttempts).values({
+        messageId: claimed.messageId,
+        attemptNumber: 1,
+        trigger: "webhook_after",
+        intent: "design_process",
+        riskLevel: "low",
+        gateResult: "allowed",
+        knowledgeVersion: "website-structured-v1",
+        status: "draft_ready",
+        providerCalled: true,
+        provider: "mock",
+        model: "mock-text",
+        draftText: testCase.draftText,
+        websiteDecision: testCase.decision,
+        websiteResponseTemplateVersion: testCase.templateVersion,
+        validatorCodes: [],
+        completedAt: new Date("2026-08-19T00:00:02.000Z"),
+      }).returning({ id: customerServiceAiAttempts.id });
+
+      await expect(repository.publishWebsiteValidatedAi({
+        turnId: claimed.turnId,
+        leaseToken: claimed.leaseToken,
+        attemptId: attempt.id,
+        now: new Date("2026-08-19T00:00:03.000Z"),
+      })).resolves.toEqual({ status: "not_publishable" });
+      await database.update(customerServicePilotRuns).set({ status: "stopped" })
+        .where(eq(customerServicePilotRuns.channel, "website"));
+    }
+
+    await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
   });
 
   it("uses the turn and attempt uniqueness constraints when after and recovery publication race", async () => {
@@ -2982,6 +3138,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       provider: "mock",
       model: "mock-text",
       draftText: approvedWebsiteDesignResponse,
+      ...approvedWebsiteDesignProof,
       validatorCodes: [],
       completedAt: new Date("2026-08-19T00:00:02.000Z"),
     }).returning({ id: customerServiceAiAttempts.id });
@@ -3020,6 +3177,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       provider: "mock",
       model: "mock-text",
       draftText: approvedWebsiteDesignResponse,
+      ...approvedWebsiteDesignProof,
       validatorCodes: [],
       completedAt: new Date("2026-08-19T00:00:02.000Z"),
     }).returning({ id: customerServiceAiAttempts.id });
@@ -3431,7 +3589,9 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       status: "draft_ready",
       provider: "mock",
       model: "mock-text",
-      draftText: "A late provider result must not escape recovery review.",
+      draftText: approvedWebsiteDesignResponse,
+      websiteDecision: approvedWebsiteDesignDecision,
+      websiteResponseTemplateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
       validatorCodes: [],
       inputTokens: 10,
       cachedInputTokens: 0,
@@ -3454,12 +3614,17 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     ]);
     const [storedAttempt] = await database.select().from(customerServiceAiAttempts)
       .where(eq(customerServiceAiAttempts.id, attempt.id));
-    expect(storedAttempt).toMatchObject({ status: "draft_ready", providerCalled: true });
+    expect(storedAttempt).toMatchObject({
+      status: "draft_ready",
+      providerCalled: true,
+      websiteDecision: approvedWebsiteDesignDecision,
+      websiteResponseTemplateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+    });
     await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toEqual([
       expect.objectContaining({ kind: "provider_fallback", policyResult: "provider_error" }),
     ]);
     expect(JSON.stringify(await database.select().from(customerServiceWebsiteAssistantMessages)))
-      .not.toContain("A late provider result must not escape recovery review.");
+      .not.toContain(approvedWebsiteDesignResponse);
   });
 
   it("atomically enforces every website session and network request bucket", async () => {
@@ -4711,6 +4876,8 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       status: "abandoned",
       providerCalled: true,
       draftText: null,
+      websiteDecision: null,
+      websiteResponseTemplateVersion: null,
       estimatedCostMicrousd: 25,
     });
     const budgets = await database.select().from(customerServiceBudgetState);
@@ -5423,6 +5590,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       provider: "mock",
       model: "mock-text",
       draftText: approvedWebsiteDesignResponse,
+      ...approvedWebsiteDesignProof,
       validatorCodes: [],
       completedAt: new Date("2026-08-19T00:00:03.000Z"),
     }).returning({ id: customerServiceAiAttempts.id });
@@ -5596,6 +5764,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       provider: "mock",
       model: "mock-text",
       draftText: approvedWebsiteDesignResponse,
+      ...approvedWebsiteDesignProof,
       validatorCodes: [],
       completedAt: sameBusinessTime,
     }).returning({ id: customerServiceAiAttempts.id });

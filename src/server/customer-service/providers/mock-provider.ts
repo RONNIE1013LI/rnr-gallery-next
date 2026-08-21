@@ -13,10 +13,10 @@ export class MockAiProvider implements AiProvider {
       intent: expectedIntent,
       product_type: "UNSPECIFIED",
       missing_fields: expectedIntent === "quote_information_collection"
-        ? ["PRODUCT_TYPE", "SIZE", "PHOTO_COUNT"]
+        ? ["PRODUCT_TYPE", "SIZE", "PEOPLE_COUNT", "PHOTO_COUNT", "REQUIRED_DATE", "DELIVERY_LOCATION"]
         : expectedIntent === "tone_adjustment" ? ["WORDING"] : [],
       follow_up_fields: expectedIntent === "quote_information_collection"
-        ? ["PRODUCT_TYPE", "SIZE", "PHOTO_COUNT"]
+        ? ["PRODUCT_TYPE", "SIZE", "PEOPLE_COUNT", "PHOTO_COUNT", "REQUIRED_DATE", "DELIVERY_LOCATION"]
         : expectedIntent === "tone_adjustment" ? ["WORDING"] : [],
       allowed_facts: expectedIntent === "product_differences"
         ? ["CANVAS_WALL_KEEPSAKE", "BANNER_DISPLAY_OPTIONS"]

@@ -525,11 +525,11 @@ describe("CustomerServiceEngine", () => {
       websiteDecision({
         response_type: "ASK_FOR_INFORMATION",
         intent: "quote_information_collection",
-        missing_fields: ["PRODUCT_TYPE", "SIZE", "PHOTO_COUNT"],
-        follow_up_fields: ["PRODUCT_TYPE", "SIZE", "PHOTO_COUNT"],
+        missing_fields: ["PRODUCT_TYPE", "SIZE", "PEOPLE_COUNT", "PHOTO_COUNT", "REQUIRED_DATE", "DELIVERY_LOCATION"],
+        follow_up_fields: ["PRODUCT_TYPE", "SIZE", "PEOPLE_COUNT", "PHOTO_COUNT", "REQUIRED_DATE", "DELIVERY_LOCATION"],
         allowed_facts: [],
       }),
-      "Which product format are you considering?\nWhat size do you need?\nAbout how many photos would you like to include?",
+      "Which product format are you considering?\nWhat size do you need?\nAbout how many people and photos would you like to include?\nWhat date do you need it for?\nWhich suburb or postcode would delivery be to?",
     ],
     [
       "product_differences",
@@ -578,6 +578,8 @@ describe("CustomerServiceEngine", () => {
     expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
       status: "draft_ready",
       draftText: expected,
+      websiteDecision: JSON.parse(output),
+      websiteResponseTemplateVersion: "website-response-v1",
       validatorCodes: [],
     }));
     expect(current.provider.generate.mock.calls[0]?.[0]?.responseFormat?.name)

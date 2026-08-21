@@ -13,7 +13,11 @@ import type { CustomerServiceRepository } from "./repositories/customer-service-
 import type { DraftGenerationRequest, DraftGenerationResult } from "./types";
 import { sanitizeWebsiteModelInput } from "./website/model-input-sanitizer";
 import { classifyAcknowledgement } from "./conversation/acknowledgement";
-import { parseWebsiteDecision, renderWebsiteDecision } from "./website/structured-decision";
+import {
+  parseWebsiteDecision,
+  renderWebsiteDecision,
+  type WebsiteDecision,
+} from "./website/structured-decision";
 
 type EngineKnowledge = PolicyKnowledge & Readonly<{
   knowledgeVersion: string;
@@ -340,6 +344,10 @@ export class CustomerServiceEngine {
     try {
       const generated = await this.provider.generate(prompt);
       let candidateText = generated.text;
+      let websiteRendererProof: Readonly<{
+        decision: WebsiteDecision;
+        templateVersion: string;
+      }> | undefined;
       if (draftInput.current.channel === "website") {
         const parsed = parseWebsiteDecision(generated.text);
         if (!parsed.ok) {
@@ -405,6 +413,10 @@ export class CustomerServiceEngine {
           return { status: "output_blocked", attemptId: reservation.attemptId };
         }
         candidateText = rendered.text;
+        websiteRendererProof = {
+          decision: parsed.decision,
+          templateVersion: rendered.templateVersion,
+        };
       }
       const textValidation = this.outputValidator(candidateText, {
         intent: gate.intent,
@@ -420,7 +432,13 @@ export class CustomerServiceEngine {
         provider: generated.provider,
         model: generated.model,
         ...(validation.ok
-          ? { draftText: candidateText }
+          ? {
+            draftText: candidateText,
+            ...(websiteRendererProof ? {
+              websiteDecision: websiteRendererProof.decision,
+              websiteResponseTemplateVersion: websiteRendererProof.templateVersion,
+            } : {}),
+          }
           : {
             draftText: undefined,
             rejectedOutputHash: createHash("sha256").update(candidateText).digest("hex"),

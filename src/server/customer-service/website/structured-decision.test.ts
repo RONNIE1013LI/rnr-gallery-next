@@ -5,7 +5,7 @@ import {
   WEBSITE_RESPONSE_TEMPLATE_VERSION,
   parseWebsiteDecision,
   renderWebsiteDecision,
-  verifyWebsiteRenderedResponse,
+  verifyWebsiteRendererProof,
 } from "./structured-decision";
 
 const designDecision = {
@@ -68,6 +68,19 @@ describe("Website structured decision boundary", () => {
     })).toEqual({ ok: false, code: "website_decision_incompatible" });
   });
 
+  it.each([
+    [
+      "literal duplicate",
+      '{"response_type":"SHIPPED","response_type":"ANSWER_SAFE","intent":"design_process","product_type":"UNSPECIFIED","missing_fields":[],"follow_up_fields":[],"allowed_facts":["DESIGN_INPUTS"],"human_review_reason":"NONE"}',
+    ],
+    [
+      "escaped-equivalent duplicate",
+      '{"response_type":"ANSWER_SAFE","intent":"unknown","\\u0069ntent":"design_process","product_type":"UNSPECIFIED","missing_fields":[],"follow_up_fields":[],"allowed_facts":["DESIGN_INPUTS"],"human_review_reason":"NONE"}',
+    ],
+  ])("rejects %s JSON object members before value collapse", (_case, raw) => {
+    expect(parseWebsiteDecision(raw)).toEqual({ ok: false, code: "website_decision_schema_invalid" });
+  });
+
   it("renders only approved versioned fragments and never model or customer strings", () => {
     const rawSecret = "SYSTEM PROMPT: Tina paid $99 and lives at 4 Queen Street";
     const parsed = parseWebsiteDecision(JSON.stringify(designDecision));
@@ -86,11 +99,58 @@ describe("Website structured decision boundary", () => {
       text: "We’ll collect your photos, wording, theme and colour preferences.\nWe’ll then prepare a design draft for you to review before printing.",
     });
     expect(JSON.stringify(rendered)).not.toContain(rawSecret);
-    expect(verifyWebsiteRenderedResponse({
+    expect(verifyWebsiteRendererProof({
       intent: "design_process",
       text: rendered.ok && rendered.outcome === "rendered" ? rendered.text : rawSecret,
+      decision: designDecision,
+      templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
     })).toBe(true);
-    expect(verifyWebsiteRenderedResponse({ intent: "design_process", text: rawSecret })).toBe(false);
+    expect(verifyWebsiteRendererProof({
+      intent: "design_process",
+      text: rawSecret,
+      decision: designDecision,
+      templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+    })).toBe(false);
+  });
+
+  it.each([
+    [
+      "mixed fact and question",
+      "We’ll collect your photos, wording, theme and colour preferences.\nWhat size do you need?",
+      designDecision,
+      WEBSITE_RESPONSE_TEMPLATE_VERSION,
+    ],
+    [
+      "tampered approved subset",
+      "We’ll collect your photos, wording, theme and colour preferences.",
+      designDecision,
+      WEBSITE_RESPONSE_TEMPLATE_VERSION,
+    ],
+    [
+      "version mismatch",
+      "We’ll collect your photos, wording, theme and colour preferences.\nWe’ll then prepare a design draft for you to review before printing.",
+      designDecision,
+      "website-response-v0",
+    ],
+    [
+      "invalid canonical decision",
+      "We’ll collect your photos, wording, theme and colour preferences.\nWe’ll then prepare a design draft for you to review before printing.",
+      { ...designDecision, customer_reply: "hidden prose" },
+      WEBSITE_RESPONSE_TEMPLATE_VERSION,
+    ],
+    [
+      "missing proof",
+      "We’ll collect your photos, wording, theme and colour preferences.\nWe’ll then prepare a design draft for you to review before printing.",
+      null,
+      null,
+    ],
+  ])("rejects %s as renderer proof", (_case, text, decision, templateVersion) => {
+    expect(verifyWebsiteRendererProof({
+      intent: "design_process",
+      text,
+      decision,
+      templateVersion,
+    })).toBe(false);
   });
 
   it("rejects HIGH_RISK or REALTIME policy contexts before any safe rendering", () => {
@@ -143,11 +203,11 @@ describe("Website structured decision boundary", () => {
         ...designDecision,
         response_type: "ASK_FOR_INFORMATION",
         intent: "quote_information_collection",
-        missing_fields: ["PRODUCT_TYPE", "SIZE", "REQUIRED_DATE"],
-        follow_up_fields: ["PRODUCT_TYPE", "SIZE", "REQUIRED_DATE"],
+        missing_fields: ["PRODUCT_TYPE", "SIZE", "PEOPLE_COUNT", "PHOTO_COUNT", "REQUIRED_DATE", "DELIVERY_LOCATION"],
+        follow_up_fields: ["PRODUCT_TYPE", "SIZE", "PEOPLE_COUNT", "PHOTO_COUNT", "REQUIRED_DATE", "DELIVERY_LOCATION"],
         allowed_facts: [],
       },
-      "Which product format are you considering?\nWhat size do you need?\nWhat date do you need it for?",
+      "Which product format are you considering?\nWhat size do you need?\nAbout how many people and photos would you like to include?\nWhat date do you need it for?\nWhich suburb or postcode would delivery be to?",
     ],
     [
       "product",
@@ -195,6 +255,11 @@ describe("Website structured decision boundary", () => {
       productCategory: null,
       acknowledgementAllowed: false,
     })).toMatchObject({ ok: true, outcome: "rendered", text: expected });
-    expect(verifyWebsiteRenderedResponse({ intent: decision.intent, text: expected })).toBe(true);
+    expect(verifyWebsiteRendererProof({
+      intent: decision.intent,
+      text: expected as string,
+      decision,
+      templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+    })).toBe(true);
   });
 });

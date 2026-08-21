@@ -421,6 +421,8 @@ export const customerServiceAiAttempts = pgTable(
     provider: text("provider").$type<"mock" | "openai">(),
     model: text("model"),
     draftText: text("draft_text"),
+    websiteDecision: jsonb("website_decision").$type<Readonly<Record<string, unknown>>>(),
+    websiteResponseTemplateVersion: text("website_response_template_version"),
     rejectedOutputHash: text("rejected_output_hash"),
     validatorCodes: jsonb("validator_codes").$type<readonly string[]>().default([]).notNull(),
     inputTokens: integer("input_tokens"),

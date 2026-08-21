@@ -23,9 +23,11 @@ const INTENTS = [
   "unknown",
 ] as const satisfies readonly CustomerServiceIntent[];
 const PRODUCT_TYPES = ["CANVAS", "BANNER", "UNSPECIFIED"] as const;
+const MAX_DECISION_ARRAY_ITEMS = 6;
 const FOLLOW_UP_FIELDS = [
   "PRODUCT_TYPE",
   "SIZE",
+  "PEOPLE_COUNT",
   "PHOTO_COUNT",
   "ORIGINAL_PHOTOS",
   "WORDING",
@@ -88,8 +90,7 @@ function enumArraySchema(values: readonly string[]) {
   return Object.freeze({
     type: "array",
     items: enumSchema(values),
-    uniqueItems: true,
-    maxItems: 4,
+    maxItems: MAX_DECISION_ARRAY_ITEMS,
   });
 }
 
@@ -118,20 +119,151 @@ function isEnumValue<T extends string>(values: readonly T[], value: unknown): va
 
 function isEnumArray<T extends string>(values: readonly T[], value: unknown): value is readonly T[] {
   return Array.isArray(value)
-    && value.length <= 4
+    && value.length <= MAX_DECISION_ARRAY_ITEMS
     && value.every((item) => isEnumValue(values, item))
     && new Set(value).size === value.length;
 }
 
-export function parseWebsiteDecision(raw: string):
+class DuplicateKeyJsonScanner {
+  private index = 0;
+  private duplicateFound = false;
+
+  constructor(private readonly source: string) {}
+
+  scan() {
+    this.skipWhitespace();
+    this.scanValue();
+    this.skipWhitespace();
+    if (this.index !== this.source.length) throw new Error("invalid_json");
+    return this.duplicateFound;
+  }
+
+  private scanValue() {
+    const char = this.source[this.index];
+    if (char === "{") return this.scanObject();
+    if (char === "[") return this.scanArray();
+    if (char === '"') {
+      this.scanString();
+      return;
+    }
+    if (char === "t") return this.scanLiteral("true");
+    if (char === "f") return this.scanLiteral("false");
+    if (char === "n") return this.scanLiteral("null");
+    this.scanNumber();
+  }
+
+  private scanObject() {
+    this.index += 1;
+    const keys = new Set<string>();
+    this.skipWhitespace();
+    if (this.consume("}")) return;
+    while (true) {
+      if (this.source[this.index] !== '"') throw new Error("invalid_json");
+      const key = this.scanString();
+      if (keys.has(key)) this.duplicateFound = true;
+      keys.add(key);
+      this.skipWhitespace();
+      if (!this.consume(":")) throw new Error("invalid_json");
+      this.skipWhitespace();
+      this.scanValue();
+      this.skipWhitespace();
+      if (this.consume("}")) return;
+      if (!this.consume(",")) throw new Error("invalid_json");
+      this.skipWhitespace();
+    }
+  }
+
+  private scanArray() {
+    this.index += 1;
+    this.skipWhitespace();
+    if (this.consume("]")) return;
+    while (true) {
+      this.scanValue();
+      this.skipWhitespace();
+      if (this.consume("]")) return;
+      if (!this.consume(",")) throw new Error("invalid_json");
+      this.skipWhitespace();
+    }
+  }
+
+  private scanString() {
+    const start = this.index;
+    this.index += 1;
+    while (this.index < this.source.length) {
+      const char = this.source[this.index];
+      if (char === '"') {
+        this.index += 1;
+        return JSON.parse(this.source.slice(start, this.index)) as string;
+      }
+      if (char === "\\") {
+        this.index += 1;
+        const escape = this.source[this.index];
+        if (escape === "u") {
+          for (let offset = 1; offset <= 4; offset += 1) {
+            const digit = this.source.charCodeAt(this.index + offset);
+            const hexadecimal = (digit >= 48 && digit <= 57)
+              || (digit >= 65 && digit <= 70)
+              || (digit >= 97 && digit <= 102);
+            if (!hexadecimal) throw new Error("invalid_json");
+          }
+          this.index += 5;
+          continue;
+        }
+        if (!escape || !'"\\/bfnrt'.includes(escape)) throw new Error("invalid_json");
+        this.index += 1;
+        continue;
+      }
+      if ((char?.charCodeAt(0) ?? 0) < 0x20) throw new Error("invalid_json");
+      this.index += 1;
+    }
+    throw new Error("invalid_json");
+  }
+
+  private scanNumber() {
+    const start = this.index;
+    this.consume("-");
+    if (this.consume("0")) {
+      if (this.isDigit(this.source[this.index])) throw new Error("invalid_json");
+    } else {
+      if (!this.isDigit(this.source[this.index]) || this.source[this.index] === "0") throw new Error("invalid_json");
+      while (this.isDigit(this.source[this.index])) this.index += 1;
+    }
+    if (this.consume(".")) {
+      if (!this.isDigit(this.source[this.index])) throw new Error("invalid_json");
+      while (this.isDigit(this.source[this.index])) this.index += 1;
+    }
+    if (this.source[this.index] === "e" || this.source[this.index] === "E") {
+      this.index += 1;
+      if (this.source[this.index] === "+" || this.source[this.index] === "-") this.index += 1;
+      if (!this.isDigit(this.source[this.index])) throw new Error("invalid_json");
+      while (this.isDigit(this.source[this.index])) this.index += 1;
+    }
+    if (this.index === start) throw new Error("invalid_json");
+  }
+
+  private scanLiteral(literal: string) {
+    if (!this.source.startsWith(literal, this.index)) throw new Error("invalid_json");
+    this.index += literal.length;
+  }
+
+  private skipWhitespace() {
+    while ([" ", "\t", "\n", "\r"].includes(this.source[this.index] ?? "")) this.index += 1;
+  }
+
+  private consume(expected: string) {
+    if (this.source[this.index] !== expected) return false;
+    this.index += 1;
+    return true;
+  }
+
+  private isDigit(value: string | undefined) {
+    return value !== undefined && value >= "0" && value <= "9";
+  }
+}
+
+function parseWebsiteDecisionValue(value: unknown):
   | Readonly<{ ok: true; decision: WebsiteDecision }>
   | Readonly<{ ok: false; code: "website_decision_schema_invalid" }> {
-  let value: unknown;
-  try {
-    value = JSON.parse(raw);
-  } catch {
-    return { ok: false, code: "website_decision_schema_invalid" };
-  }
   if (!isRecord(value)) return { ok: false, code: "website_decision_schema_invalid" };
   const keys = Object.keys(value).sort();
   if (keys.length !== REQUIRED_KEYS.length || keys.some((key, index) => key !== [...REQUIRED_KEYS].sort()[index])) {
@@ -146,7 +278,31 @@ export function parseWebsiteDecision(raw: string):
     || !isEnumArray(ALLOWED_FACTS, value.allowed_facts)
     || !isEnumValue(HUMAN_REVIEW_REASONS, value.human_review_reason)
   ) return { ok: false, code: "website_decision_schema_invalid" };
-  return { ok: true, decision: value as WebsiteDecision };
+  return {
+    ok: true,
+    decision: Object.freeze({
+      response_type: value.response_type,
+      intent: value.intent,
+      product_type: value.product_type,
+      missing_fields: Object.freeze([...value.missing_fields]),
+      follow_up_fields: Object.freeze([...value.follow_up_fields]),
+      allowed_facts: Object.freeze([...value.allowed_facts]),
+      human_review_reason: value.human_review_reason,
+    }),
+  };
+}
+
+export function parseWebsiteDecision(raw: string):
+  | Readonly<{ ok: true; decision: WebsiteDecision }>
+  | Readonly<{ ok: false; code: "website_decision_schema_invalid" }> {
+  try {
+    if (new DuplicateKeyJsonScanner(raw).scan()) {
+      return { ok: false, code: "website_decision_schema_invalid" };
+    }
+    return parseWebsiteDecisionValue(JSON.parse(raw));
+  } catch {
+    return { ok: false, code: "website_decision_schema_invalid" };
+  }
 }
 
 const FACTS: Readonly<Record<AllowedFact, Readonly<{ intent: CustomerServiceIntent; text: string }>>> = Object.freeze({
@@ -204,6 +360,10 @@ const QUESTIONS: Readonly<Record<FollowUpField, Readonly<{
     intents: ["quote_information_collection", "design_process"],
     text: "What size do you need?",
   },
+  PEOPLE_COUNT: {
+    intents: ["quote_information_collection"],
+    text: "About how many people would you like included?",
+  },
   PHOTO_COUNT: {
     intents: ["quote_information_collection", "photo_guidance"],
     text: "About how many photos would you like to include?",
@@ -233,6 +393,19 @@ const QUESTIONS: Readonly<Record<FollowUpField, Readonly<{
     text: "Which suburb or postcode would delivery be to?",
   },
 });
+
+function renderQuestions(fields: readonly FollowUpField[]) {
+  const peopleIndex = fields.indexOf("PEOPLE_COUNT");
+  const photoIndex = fields.indexOf("PHOTO_COUNT");
+  if (peopleIndex >= 0 && photoIndex === peopleIndex + 1) {
+    return fields.flatMap((field, index) => {
+      if (index === peopleIndex) return ["About how many people and photos would you like to include?"];
+      if (index === photoIndex) return [];
+      return [QUESTIONS[field].text];
+    }).join("\n");
+  }
+  return fields.map((field) => QUESTIONS[field].text).join("\n");
+}
 
 function productCompatible(productType: ProductType, productCategory: "canvas" | "banners" | null) {
   if (productType === "UNSPECIFIED" || productCategory === null) return true;
@@ -298,7 +471,7 @@ export function renderWebsiteDecision(input: Readonly<{
     return {
       ok: true,
       outcome: "rendered",
-      text: decision.follow_up_fields.map((field) => QUESTIONS[field].text).join("\n"),
+      text: renderQuestions(decision.follow_up_fields),
       templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
     };
   }
@@ -323,17 +496,27 @@ export function renderWebsiteDecision(input: Readonly<{
     : { ok: false, code: "website_decision_incompatible" };
 }
 
-export function verifyWebsiteRenderedResponse(input: Readonly<{
+export function verifyWebsiteRendererProof(input: Readonly<{
   intent: string;
   text: string;
+  decision: unknown;
+  templateVersion: unknown;
 }>) {
-  const intent = input.intent;
-  if (!isEnumValue(INTENTS, intent) || input.text !== input.text.trim()) return false;
-  const lines = input.text.split("\n");
-  if (lines.length === 0 || lines.length > 4 || new Set(lines).size !== lines.length) return false;
-  const allowed = new Set([
-    ...Object.values(FACTS).filter((fact) => fact.intent === intent).map((fact) => fact.text),
-    ...Object.values(QUESTIONS).filter((question) => question.intents.includes(intent)).map((question) => question.text),
-  ]);
-  return lines.every((line) => allowed.has(line));
+  if (
+    !isEnumValue(INTENTS, input.intent)
+    || input.templateVersion !== WEBSITE_RESPONSE_TEMPLATE_VERSION
+  ) return false;
+  const parsed = parseWebsiteDecisionValue(input.decision);
+  if (!parsed.ok) return false;
+  const rendered = renderWebsiteDecision({
+    decision: parsed.decision,
+    expectedIntent: input.intent,
+    productCategory: null,
+    acknowledgementAllowed: false,
+    policyDecision: "DRAFT_ALLOWED",
+  });
+  return rendered.ok
+    && rendered.outcome === "rendered"
+    && rendered.templateVersion === input.templateVersion
+    && rendered.text === input.text;
 }

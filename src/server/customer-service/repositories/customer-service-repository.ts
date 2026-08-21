@@ -6,6 +6,7 @@ import type {
   SafeProductContext,
 } from "../types";
 import type { ImageAnalysisResult } from "../image-analysis-schema";
+import type { WebsiteDecision } from "../website/structured-decision";
 import type { ProtectedAttachmentSource } from "../attachments/attachment-source-protector";
 import type {
   WebsitePublicUpdateCursor,
@@ -147,6 +148,8 @@ export type ProviderAttemptCompletion = Readonly<{
   provider: "mock" | "openai";
   model: string;
   draftText?: string;
+  websiteDecision?: WebsiteDecision;
+  websiteResponseTemplateVersion?: string;
   rejectedOutputHash?: string;
   validatorCodes: readonly string[];
   inputTokens: number;

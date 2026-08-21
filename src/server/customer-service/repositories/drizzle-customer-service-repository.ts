@@ -60,7 +60,7 @@ import {
   verifyWebsiteReviewSelector,
 } from "../website/review-selector";
 import { REVIEW_ALERT_AUTOMATIC_RECOVERY_MAX_AGE_MS } from "../website/review-alert-policy";
-import { verifyWebsiteRenderedResponse } from "../website/structured-decision";
+import { verifyWebsiteRendererProof } from "../website/structured-decision";
 import type {
   WebsitePublicUpdateCursor,
   WebsitePublicUpdateRecord,
@@ -2412,6 +2412,8 @@ export function createDrizzleCustomerServiceRepository(
           model: customerServiceAiAttempts.model,
           completedAt: customerServiceAiAttempts.completedAt,
           intent: customerServiceAiAttempts.intent,
+          websiteDecision: customerServiceAiAttempts.websiteDecision,
+          websiteResponseTemplateVersion: customerServiceAiAttempts.websiteResponseTemplateVersion,
         }).from(customerServiceAiAttempts).where(and(
           eq(customerServiceAiAttempts.id, input.attemptId),
           eq(customerServiceAiAttempts.messageId, turn.messageId),
@@ -2427,7 +2429,12 @@ export function createDrizzleCustomerServiceRepository(
           || !attempt.model?.trim()
           || !attempt.draftText?.trim()
           || attempt.validatorCodes.length !== 0
-          || !verifyWebsiteRenderedResponse({ intent: attempt.intent, text: attempt.draftText })
+          || !verifyWebsiteRendererProof({
+            intent: attempt.intent,
+            text: attempt.draftText,
+            decision: attempt.websiteDecision,
+            templateVersion: attempt.websiteResponseTemplateVersion,
+          })
         ) return { status: "not_publishable" as const };
 
         const [publication] = await transaction.insert(customerServiceWebsiteAssistantMessages).values({
@@ -4078,12 +4085,19 @@ export function createDrizzleCustomerServiceRepository(
           (turn?.status === "suppressed" && turn.suppressionReason === "human_outbound_received")
           || await hasHumanReplyAfterTurn(transaction, turn)
         );
+        const keepWebsiteRendererProof = !humanReplyReceived
+          && initial.channel === "website"
+          && input.status === "draft_ready";
         await transaction.update(customerServiceAiAttempts).set({
           status: humanReplyReceived ? "abandoned" : input.status,
           providerCalled: true,
           provider: input.provider,
           model: input.model,
           draftText: !humanReplyReceived && input.status === "draft_ready" ? input.draftText : null,
+          websiteDecision: keepWebsiteRendererProof ? input.websiteDecision ?? null : null,
+          websiteResponseTemplateVersion: keepWebsiteRendererProof
+            ? input.websiteResponseTemplateVersion ?? null
+            : null,
           rejectedOutputHash: humanReplyReceived ? null : input.rejectedOutputHash ?? null,
           validatorCodes: input.validatorCodes,
           inputTokens: input.inputTokens,
