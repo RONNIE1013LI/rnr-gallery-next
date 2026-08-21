@@ -15,6 +15,7 @@ import {
   customerServiceHumanReplyMatches,
   customerServiceHumanReplyMatchEvents,
   customerServiceHumanReviews,
+  customerServiceReviewAlertOutbox,
   customerServiceLearningCandidates,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
@@ -32,6 +33,11 @@ import {
 } from "@/server/db/schema";
 import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
 import { createCustomerTurnRecoveryRunner } from "../turn-recovery-runner";
+import {
+  createReviewAlertService,
+  createReviewAlertToken,
+  hashReviewAlertToken,
+} from "../website/review-alert-service";
 import { createDrizzleCustomerServiceRepository } from "./drizzle-customer-service-repository";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -93,6 +99,7 @@ function imageCompletion(attemptId: string, status: "analyzed" | "provider_error
 
 async function clearTables() {
   await database.delete(customerServiceWebsiteAssistantMessages);
+  await database.delete(customerServiceReviewAlertOutbox);
   await database.delete(customerServiceHumanReviews);
   await database.delete(customerServiceCaseRetrievals);
   await database.delete(customerServiceLearningCandidates);
@@ -440,6 +447,166 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(reviews).toHaveLength(1);
     expect(reviews[0]).toMatchObject({ generation: 1, reason: "high_risk", status: "open" });
     expect(acknowledgements).toHaveLength(1);
+  });
+
+  it("atomically creates one durable alert outbox row with a new human-review incident", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "a1".repeat(32),
+      networkHash: "a2".repeat(32),
+      messageHash: "a3".repeat(32),
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+
+    const result = await repository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-21T00:00:02.000Z"),
+      knowledgeVersion: "knowledge-v1",
+      reviewAlert: {
+        reviewId: "00000000-0000-4000-8000-000000000111",
+        deepLinkTokenHash: "ab".repeat(32),
+        deepLinkExpiresAt: new Date("2026-08-28T00:00:02.000Z"),
+        idempotencyKey: "review-alert:00000000-0000-4000-8000-000000000111",
+      },
+    });
+
+    expect(result).toMatchObject({ status: "opened", reviewId: "00000000-0000-4000-8000-000000000111" });
+    const reviews = await database.select().from(customerServiceHumanReviews);
+    const outbox = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(reviews).toHaveLength(1);
+    expect(reviews[0]).toMatchObject({
+      deepLinkTokenHash: "ab".repeat(32),
+      deepLinkExpiresAt: new Date("2026-08-28T00:00:02.000Z"),
+    });
+    expect(outbox).toHaveLength(1);
+    expect(outbox[0]).toMatchObject({
+      humanReviewId: reviews[0].id,
+      idempotencyKey: "review-alert:00000000-0000-4000-8000-000000000111",
+      status: "pending",
+      attemptCount: 0,
+    });
+  });
+
+  it("leases a review alert to only one concurrent worker and never reclaims an uncertain provider result", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "b1".repeat(32),
+      networkHash: "b2".repeat(32),
+      messageHash: "b3".repeat(32),
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    await repository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-21T00:00:02.000Z"),
+      knowledgeVersion: "knowledge-v1",
+      reviewAlert: {
+        reviewId: "00000000-0000-4000-8000-000000000112",
+        deepLinkTokenHash: "bc".repeat(32),
+        deepLinkExpiresAt: new Date("2026-08-28T00:00:02.000Z"),
+        idempotencyKey: "review-alert:00000000-0000-4000-8000-000000000112",
+      },
+    });
+
+    const claimInput = {
+      now: new Date("2026-08-21T00:00:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-21T00:05:03.000Z"),
+    };
+    const [first, second] = await Promise.all([
+      repository.claimDueReviewAlert(claimInput),
+      competingRepository.claimDueReviewAlert(claimInput),
+    ]);
+    const winner = first ?? second;
+    expect([first, second].filter(Boolean)).toHaveLength(1);
+    if (!winner) throw new Error("expected one review alert lease");
+
+    await expect(repository.markReviewAlertUncertain({
+      id: winner.id,
+      leaseToken: winner.leaseToken,
+      errorCode: "network_error",
+      now: new Date("2026-08-21T00:00:04.000Z"),
+    })).resolves.toBe(true);
+    await expect(repository.claimDueReviewAlert({
+      now: new Date("2026-08-22T00:00:04.000Z"),
+      leaseExpiresAt: new Date("2026-08-22T00:05:04.000Z"),
+    })).resolves.toBeNull();
+
+    const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(outbox).toMatchObject({ status: "failed", attemptCount: 1, lastErrorCode: "network_error" });
+  });
+
+  it("delivers exactly one Resend alert for one review generation with the persisted idempotency key", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "c1".repeat(32),
+      networkHash: "c2".repeat(32),
+      messageHash: "c3".repeat(32),
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    const reviewId = "00000000-0000-4000-8000-000000000113";
+    const deepLinkSecret = "review-link-secret-at-least-32-bytes";
+    const rawToken = createReviewAlertToken({ reviewId, secret: deepLinkSecret });
+    await repository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-21T00:00:02.000Z"),
+      knowledgeVersion: "knowledge-v1",
+      reviewAlert: {
+        reviewId,
+        deepLinkTokenHash: hashReviewAlertToken(rawToken),
+        deepLinkExpiresAt: new Date("2026-08-28T00:00:02.000Z"),
+        idempotencyKey: `review-alert:${reviewId}`,
+      },
+    });
+    const provider = {
+      configured: true,
+      send: vi.fn(async () => ({ providerMessageId: "resend-1" })),
+    };
+    const service = createReviewAlertService({
+      repository,
+      provider,
+      alertTo: "staff@rrgallery.example",
+      siteUrl: "https://rrgallery.example",
+      deepLinkSecret,
+      now: () => new Date("2026-08-21T00:00:03.000Z"),
+    });
+
+    await expect(service.deliverNext()).resolves.toEqual({ result: "sent" });
+    await expect(service.deliverNext()).resolves.toEqual({ result: "empty" });
+    expect(provider.send).toHaveBeenCalledOnce();
+    expect(provider.send).toHaveBeenCalledWith(expect.objectContaining({
+      idempotencyKey: `review-alert:${reviewId}`,
+    }));
+    const [outbox] = await database.select().from(customerServiceReviewAlertOutbox);
+    expect(outbox).toMatchObject({ status: "sent", attemptCount: 1 });
   });
 
   it("reuses exactly one open review when two distinct blocked turns race in one conversation", async () => {

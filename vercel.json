@@ -15,6 +15,10 @@
     {
       "path": "/api/internal/reply-assistant/turn-recovery",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/internal/customer-chat/review-alerts",
+      "schedule": "* * * * *"
     }
   ]
 }

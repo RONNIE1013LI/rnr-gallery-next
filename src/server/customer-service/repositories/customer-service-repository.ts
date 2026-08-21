@@ -98,6 +98,18 @@ export type ClaimedCustomerTurn = Readonly<{
   settledResult?: DraftGenerationResult;
 }>;
 
+export type ClaimedWebsiteReviewAlert = Readonly<{
+  id: string;
+  humanReviewId: string;
+  idempotencyKey: string;
+  attemptCount: number;
+  leaseToken: string;
+  reason: "high_risk" | "unresolved" | "realtime_required" | "provider_error" | "output_blocked" | "budget_blocked" | "system_failure";
+  redactedSummary: string;
+  openedAt: Date;
+  deepLinkExpiresAt: Date;
+}>;
+
 export type GateBlockedAttemptInput = Readonly<{
   messageId: string;
   trigger: DraftGenerationRequest["trigger"];
@@ -306,11 +318,40 @@ export interface CustomerServiceRepository {
     outcome: DraftGenerationResult["status"] | "system_failure";
     now: Date;
     knowledgeVersion: string;
+    reviewAlert?: Readonly<{
+      reviewId: string;
+      deepLinkTokenHash: string;
+      deepLinkExpiresAt: Date;
+      idempotencyKey: string;
+    }>;
   }>): Promise<
     | Readonly<{ status: "opened"; reviewId: string; generation: number }>
     | Readonly<{ status: "reused"; reviewId: string; generation: number }>
     | Readonly<{ status: "cancelled" }>
   >;
+  claimDueReviewAlert(input: Readonly<{
+    now: Date;
+    leaseExpiresAt: Date;
+  }>): Promise<ClaimedWebsiteReviewAlert | null>;
+  markReviewAlertSent(input: Readonly<{
+    id: string;
+    leaseToken: string;
+    providerMessageId: string;
+    now: Date;
+  }>): Promise<boolean>;
+  retryReviewAlert(input: Readonly<{
+    id: string;
+    leaseToken: string;
+    errorCode: string;
+    nextAttemptAt: Date;
+    now: Date;
+  }>): Promise<boolean>;
+  markReviewAlertUncertain(input: Readonly<{
+    id: string;
+    leaseToken: string;
+    errorCode: string;
+    now: Date;
+  }>): Promise<boolean>;
   publishWebsiteValidatedAi(input: Readonly<{
     turnId: string;
     leaseToken: string;

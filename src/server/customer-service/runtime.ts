@@ -8,6 +8,8 @@ import { createDrizzleCustomerServiceRepository } from "./repositories/drizzle-c
 import { createPrivateAttachmentStore } from "./attachments/private-attachment-store";
 import { createImageJobRunner } from "./image-job-runner";
 import { createCustomerTurnRecoveryRunner } from "./turn-recovery-runner";
+import { createReviewAlertService } from "./website/review-alert-service";
+import { createResendEmailProvider } from "@/server/notifications/resend-email-provider";
 
 export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.env) {
   const config = parseCustomerServiceConfig(env);
@@ -39,6 +41,19 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
     repository,
     generateDraft: (messageId) => engine.generateDraft({ messageId, trigger: "webhook_after" }),
     knowledgeVersion: compiledKnowledge.knowledgeVersion,
+    ...(config.websiteEnabled ? { reviewAlertSecret: config.websiteSessionSecret } : {}),
   });
-  return Object.freeze({ config, repository, engine, imageJobRunner, turnRecoveryRunner });
+  const reviewAlertService = config.websiteEnabled
+    ? createReviewAlertService({
+      repository,
+      provider: createResendEmailProvider({
+        RESEND_API_KEY: env.RESEND_API_KEY,
+        EMAIL_FROM: env.EMAIL_FROM,
+      }),
+      alertTo: config.replyAssistantAlertTo,
+      siteUrl: env.BETTER_AUTH_URL ?? "http://192.168.4.199:3000",
+      deepLinkSecret: config.websiteSessionSecret,
+    })
+    : undefined;
+  return Object.freeze({ config, repository, engine, imageJobRunner, turnRecoveryRunner, reviewAlertService });
 }

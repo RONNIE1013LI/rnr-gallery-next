@@ -1,5 +1,7 @@
+import { randomUUID } from "node:crypto";
 import type { DraftGenerationResult, CustomerServiceChannel } from "./types";
 import { publishValidatedWebsiteDraft } from "./website/publication";
+import { createReviewAlertToken, hashReviewAlertToken } from "./website/review-alert-service";
 
 type ClaimedTurn = Readonly<{
   turnId: string;
@@ -41,6 +43,12 @@ type RecoveryRepository = Readonly<{
     outcome: DraftGenerationResult["status"] | "system_failure";
     now: Date;
     knowledgeVersion: string;
+    reviewAlert?: Readonly<{
+      reviewId: string;
+      deepLinkTokenHash: string;
+      deepLinkExpiresAt: Date;
+      idempotencyKey: string;
+    }>;
   }>): Promise<Readonly<{ status: "opened" | "reused"; reviewId: string; generation: number }> | Readonly<{ status: "cancelled" }>>;
   publishWebsiteValidatedAi(input: Readonly<{
     turnId: string;
@@ -66,6 +74,7 @@ export function createCustomerTurnRecoveryRunner(input: Readonly<{
   retryDelayMs?: number;
   maxRetryDelayMs?: number;
   maxAttempts?: number;
+  reviewAlertSecret?: string;
 }>) {
   const now = input.now ?? (() => new Date());
   const leaseMs = input.leaseMs ?? 300_000;
@@ -78,6 +87,10 @@ export function createCustomerTurnRecoveryRunner(input: Readonly<{
     completedAt: Date,
     result: DraftGenerationResult | Readonly<{ status: "system_failure"; attemptId: string | null }>,
   ) {
+    const reviewId = input.reviewAlertSecret ? randomUUID() : null;
+    const rawToken = reviewId && input.reviewAlertSecret
+      ? createReviewAlertToken({ reviewId, secret: input.reviewAlertSecret })
+      : null;
     const review = await input.repository.openWebsiteHumanReview({
       turnId: claimed.turnId,
       leaseToken: claimed.leaseToken,
@@ -85,6 +98,14 @@ export function createCustomerTurnRecoveryRunner(input: Readonly<{
       outcome: result.status,
       now: completedAt,
       knowledgeVersion: input.knowledgeVersion,
+      ...(reviewId && rawToken ? {
+        reviewAlert: {
+          reviewId,
+          deepLinkTokenHash: hashReviewAlertToken(rawToken),
+          deepLinkExpiresAt: new Date(completedAt.getTime() + 7 * 24 * 60 * 60_000),
+          idempotencyKey: `review-alert:${reviewId}`,
+        },
+      } : {}),
     });
     if (review.status === "cancelled") return { claimed: 1, completed: 0, retried: 0, cancelled: 1 };
     const completed = await input.repository.completeCustomerTurnProcessing({

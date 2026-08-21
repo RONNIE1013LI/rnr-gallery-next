@@ -14,6 +14,7 @@ import {
   customerServiceHumanReplyMatches,
   customerServiceHumanReplyMatchEvents,
   customerServiceHumanReviews,
+  customerServiceReviewAlertOutbox,
   customerServiceImageAnalysisAttempts,
   customerServiceImageAnalysisInputs,
   customerServiceImageJobs,
@@ -1473,6 +1474,7 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             .from(customerServiceHumanReviews)
             .where(eq(customerServiceHumanReviews.conversationId, turn.conversationId));
           const [created] = await transaction.insert(customerServiceHumanReviews).values({
+            ...(input.reviewAlert ? { id: input.reviewAlert.reviewId } : {}),
             conversationId: turn.conversationId,
             channel: "website",
             triggerTurnId: turn.id,
@@ -1480,11 +1482,24 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
             reason: response.reason,
             status: "open",
             redactedSummary: redactedWebsiteReviewSummary(turn.body),
+            ...(input.reviewAlert ? {
+              deepLinkTokenHash: input.reviewAlert.deepLinkTokenHash,
+              deepLinkExpiresAt: input.reviewAlert.deepLinkExpiresAt,
+            } : {}),
             openedAt: input.now,
           }).returning({
             id: customerServiceHumanReviews.id,
             generation: customerServiceHumanReviews.generation,
           });
+          if (input.reviewAlert) {
+            await transaction.insert(customerServiceReviewAlertOutbox).values({
+              humanReviewId: created.id,
+              status: "pending",
+              idempotencyKey: input.reviewAlert.idempotencyKey,
+              attemptCount: 0,
+              nextAttemptAt: input.now,
+            });
+          }
           return created;
         })();
 
@@ -1505,6 +1520,106 @@ export function createDrizzleCustomerServiceRepository(database: Database): Cust
           ? { status: "reused" as const, reviewId: review.id, generation: review.generation }
           : { status: "opened" as const, reviewId: review.id, generation: review.generation };
       });
+    },
+
+    async claimDueReviewAlert(input) {
+      return database.transaction(async (transaction) => {
+        const [row] = await transaction.select({
+          outbox: customerServiceReviewAlertOutbox,
+          reason: customerServiceHumanReviews.reason,
+          redactedSummary: customerServiceHumanReviews.redactedSummary,
+          openedAt: customerServiceHumanReviews.openedAt,
+          deepLinkExpiresAt: customerServiceHumanReviews.deepLinkExpiresAt,
+        }).from(customerServiceReviewAlertOutbox)
+          .innerJoin(customerServiceHumanReviews, eq(customerServiceHumanReviews.id, customerServiceReviewAlertOutbox.humanReviewId))
+          .where(and(
+            lte(customerServiceReviewAlertOutbox.nextAttemptAt, input.now),
+            or(
+              inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait"]),
+              and(
+                eq(customerServiceReviewAlertOutbox.status, "leased"),
+                lte(customerServiceReviewAlertOutbox.leaseExpiresAt, input.now),
+              ),
+            ),
+          ))
+          .orderBy(asc(customerServiceReviewAlertOutbox.createdAt), asc(customerServiceReviewAlertOutbox.id))
+          .for("update", { skipLocked: true })
+          .limit(1);
+        if (!row || !row.deepLinkExpiresAt) return null;
+        const leaseToken = randomUUID();
+        const [claimed] = await transaction.update(customerServiceReviewAlertOutbox).set({
+          status: "leased",
+          leaseToken,
+          leaseExpiresAt: input.leaseExpiresAt,
+          attemptCount: sql`${customerServiceReviewAlertOutbox.attemptCount} + 1`,
+          lastErrorCode: null,
+          updatedAt: input.now,
+        }).where(and(
+          eq(customerServiceReviewAlertOutbox.id, row.outbox.id),
+          eq(customerServiceReviewAlertOutbox.attemptCount, row.outbox.attemptCount),
+          inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait", "leased"]),
+        )).returning({ attemptCount: customerServiceReviewAlertOutbox.attemptCount });
+        if (!claimed) return null;
+        return {
+          id: row.outbox.id,
+          humanReviewId: row.outbox.humanReviewId,
+          idempotencyKey: row.outbox.idempotencyKey,
+          attemptCount: claimed.attemptCount,
+          leaseToken,
+          reason: row.reason,
+          redactedSummary: row.redactedSummary,
+          openedAt: row.openedAt,
+          deepLinkExpiresAt: row.deepLinkExpiresAt,
+        };
+      });
+    },
+
+    async markReviewAlertSent(input) {
+      const [updated] = await database.update(customerServiceReviewAlertOutbox).set({
+        status: "sent",
+        leaseToken: null,
+        leaseExpiresAt: null,
+        sentAt: input.now,
+        lastErrorCode: null,
+        updatedAt: input.now,
+      }).where(and(
+        eq(customerServiceReviewAlertOutbox.id, input.id),
+        eq(customerServiceReviewAlertOutbox.status, "leased"),
+        eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
+      )).returning({ id: customerServiceReviewAlertOutbox.id });
+      void input.providerMessageId;
+      return Boolean(updated);
+    },
+
+    async retryReviewAlert(input) {
+      const [updated] = await database.update(customerServiceReviewAlertOutbox).set({
+        status: "retry_wait",
+        leaseToken: null,
+        leaseExpiresAt: null,
+        lastErrorCode: input.errorCode,
+        nextAttemptAt: input.nextAttemptAt,
+        updatedAt: input.now,
+      }).where(and(
+        eq(customerServiceReviewAlertOutbox.id, input.id),
+        eq(customerServiceReviewAlertOutbox.status, "leased"),
+        eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
+      )).returning({ id: customerServiceReviewAlertOutbox.id });
+      return Boolean(updated);
+    },
+
+    async markReviewAlertUncertain(input) {
+      const [updated] = await database.update(customerServiceReviewAlertOutbox).set({
+        status: "failed",
+        leaseToken: null,
+        leaseExpiresAt: null,
+        lastErrorCode: input.errorCode,
+        updatedAt: input.now,
+      }).where(and(
+        eq(customerServiceReviewAlertOutbox.id, input.id),
+        eq(customerServiceReviewAlertOutbox.status, "leased"),
+        eq(customerServiceReviewAlertOutbox.leaseToken, input.leaseToken),
+      )).returning({ id: customerServiceReviewAlertOutbox.id });
+      return Boolean(updated);
     },
 
     async publishWebsiteValidatedAi(input) {

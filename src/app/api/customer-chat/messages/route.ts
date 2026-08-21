@@ -26,6 +26,7 @@ export async function POST(request: Request) {
       repository: customerService.repository,
       resolveProductContext: resolveCurrentSafeProductContext,
       processTurn: (turnId) => customerService.turnRecoveryRunner.runOnce({ turnId }),
+      processReviewAlert: () => customerService.reviewAlertService?.deliverNext() ?? Promise.resolve({ result: "not_configured" }),
       scheduleAfter: (task) => after(task),
     }).POST(request);
   } catch {

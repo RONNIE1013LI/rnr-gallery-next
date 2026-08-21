@@ -70,6 +70,14 @@ function requiredSecret(env: NodeJS.ProcessEnv | Record<string, string | undefin
   return value;
 }
 
+function requiredEmail(env: NodeJS.ProcessEnv | Record<string, string | undefined>, name: string) {
+  const value = required(env, name);
+  if (value.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
+    throw new Error(`${name} must be a valid email address`);
+  }
+  return value;
+}
+
 const hostnamePattern = /^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?))*$/;
 
 function attachmentAllowedHosts(value: string | undefined) {
@@ -112,7 +120,7 @@ export function parseCustomerServiceConfig(
   if (websiteEnabled && websiteSessionSecret === websiteAbuseHashSecret) {
     throw new Error("CUSTOMER_CHAT_SESSION_SECRET and CUSTOMER_CHAT_ABUSE_HASH_SECRET must differ");
   }
-  const replyAssistantAlertTo = websiteEnabled ? required(env, "REPLY_ASSISTANT_ALERT_TO") : "";
+  const replyAssistantAlertTo = websiteEnabled ? requiredEmail(env, "REPLY_ASSISTANT_ALERT_TO") : "";
   const websiteDailyWarningMicrousd = websiteEnabled
     ? usdMicrousd(env.WEBSITE_CHAT_DAILY_WARNING_USD, 0.1, "WEBSITE_CHAT_DAILY_WARNING_USD")
     : 100_000;

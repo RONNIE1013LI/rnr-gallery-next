@@ -45,6 +45,19 @@ describe("customer service server config", () => {
     })).toThrow("REPLY_ASSISTANT_ALERT_TO is required");
   });
 
+  it("accepts only one bounded server-side staff alert email", () => {
+    const base = {
+      WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
+      CUSTOMER_CHAT_SESSION_SECRET: "website-session-secret-at-least-32-bytes",
+      CUSTOMER_CHAT_ABUSE_HASH_SECRET: "website-abuse-secret-at-least-32-bytes",
+      CRON_SECRET: "website-recovery-secret-at-least-32-bytes",
+    };
+    expect(() => parseCustomerServiceConfig({ ...base, REPLY_ASSISTANT_ALERT_TO: "not-an-email" }))
+      .toThrow("REPLY_ASSISTANT_ALERT_TO must be a valid email address");
+    expect(() => parseCustomerServiceConfig({ ...base, REPLY_ASSISTANT_ALERT_TO: `${"a".repeat(250)}@example.test` }))
+      .toThrow("REPLY_ASSISTANT_ALERT_TO must be a valid email address");
+  });
+
   it("requires a recovery secret when website chat is enabled", () => {
     expect(() => parseCustomerServiceConfig({
       WEBSITE_CUSTOMER_ASSISTANT_ENABLED: "true",
