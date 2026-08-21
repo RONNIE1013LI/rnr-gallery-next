@@ -6,11 +6,15 @@ import { CustomerReviewCard } from "./customer-review-card";
 import { CustomerReviewCarousel } from "./customer-review-carousel";
 import styles from "./customer-reviews.module.css";
 
-export function CustomerReviewsSection({ data }: Readonly<{
+export function CustomerReviewsSection({ data, background = "ivory" }: Readonly<{
   data: PublicCustomerReviewSection;
+  background?: "ivory" | "sand";
 }>) {
   const { featured, summary } = data;
-  return <section className={styles.section} aria-label="Customer reviews">
+  return <section
+    className={`${styles.section} ${background === "sand" ? styles.sectionSand : ""}`}
+    aria-label="Customer reviews"
+  >
     <div className={styles.shell}>
       <header className={styles.sectionHeader}>
         <div><p className={styles.eyebrow}>REAL CUSTOMER REVIEWS</p><h2 id="customer-reviews-title">Recommended by our customers.</h2><p>Selected public recommendations originally shared on our Facebook Page.</p></div>

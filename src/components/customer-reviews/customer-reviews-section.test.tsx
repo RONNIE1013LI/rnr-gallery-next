@@ -1,5 +1,5 @@
 import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import type { PublicCustomerReviewSection } from "@/domain/customer-reviews/types";
 import { CustomerReviewsSection } from "./customer-reviews-section";
@@ -49,7 +49,16 @@ describe("CustomerReviewsSection", () => {
     expect(screen.queryByText("100% Recommended (288 Reviews)")).not.toBeInTheDocument();
   });
 
+  it("supports the shared Footer placement with the approved Soft Sand background", () => {
+    render(<CustomerReviewsSection data={section} background="sand" />);
+
+    expect(screen.getByRole("region", { name: "Customer reviews" }))
+      .toHaveClass(styles.section, styles.sectionSand);
+  });
+
   it("uses initials rather than a synthetic image and preserves untrusted text as text", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date("2026-08-20T12:00:00+12:00"));
     const unsafe = {
       ...section,
       featured: {
@@ -59,17 +68,21 @@ describe("CustomerReviewsSection", () => {
       },
       reviews: [],
     };
-    const { container } = render(<CustomerReviewsSection data={unsafe} />);
-    const featured = screen.getByRole("article", { name: "Featured recommendation from Aroha Te Rangi" });
+    try {
+      const { container } = render(<CustomerReviewsSection data={unsafe} />);
+      const featured = screen.getByRole("article", { name: "Featured recommendation from Aroha Te Rangi" });
 
-    expect(within(featured).getByText("AT")).toBeInTheDocument();
-    expect(within(featured).getByText(/<script>window\.bad=true<\/script>/)).toBeInTheDocument();
-    expect(container.querySelector("script")).toBeNull();
-    expect(featured.querySelector("img")).toBeNull();
-    expect(screen.getByText("today").closest("time")).toHaveAttribute("datetime", "2026-08-20");
-    expect(screen.getByText("today").closest("time")).toHaveAttribute("title", "20 August 2026");
-    expect(screen.queryByText(/Trustindex|Like|Comment|Share/)).not.toBeInTheDocument();
-    expect(container.querySelector('a[href="#"]')).toBeNull();
+      expect(within(featured).getByText("AT")).toBeInTheDocument();
+      expect(within(featured).getByText(/<script>window\.bad=true<\/script>/)).toBeInTheDocument();
+      expect(container.querySelector("script")).toBeNull();
+      expect(featured.querySelector("img")).toBeNull();
+      expect(screen.getByText("today").closest("time")).toHaveAttribute("datetime", "2026-08-20");
+      expect(screen.getByText("today").closest("time")).toHaveAttribute("title", "20 August 2026");
+      expect(screen.queryByText(/Trustindex|Like|Comment|Share/)).not.toBeInTheDocument();
+      expect(container.querySelector('a[href="#"]')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it.each([

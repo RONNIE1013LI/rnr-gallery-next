@@ -83,10 +83,109 @@ describe("SiteChrome", () => {
     expect(screen.getByText("Public footer")).toBeInTheDocument();
   });
 
+  it.each([
+    "/shop",
+    "/canvas",
+    "/banners",
+    "/products/roll-up-banner",
+    "/products/roll-up-banner/configure",
+    "/design-gallery",
+    "/cart",
+    "/help",
+    "/contact",
+    "/about",
+    "/terms",
+    "/privacy",
+    "/shipping-delivery",
+    "/au/shop",
+    "/au/products/roll-up-banner",
+  ])("renders the shared reviews immediately before the public footer on %s", (pathname) => {
+    state.pathname = pathname;
+    const { container } = render(
+      <SiteChrome
+        footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}
+        footerLead={<section aria-label="Customer reviews">Shared reviews</section>}
+      >
+        <main>Page content</main>
+      </SiteChrome>,
+    );
+
+    const page = screen.getByText("Page content");
+    const reviews = screen.getByRole("region", { name: "Customer reviews" });
+    const footer = screen.getByText("Public footer");
+
+    expect(container.textContent).toContain("Page contentShared reviewsPublic footer");
+    expect(page.compareDocumentPosition(reviews) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(reviews.compareDocumentPosition(footer) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it.each(["/", "/au"])("does not duplicate the homepage reviews on %s", (pathname) => {
+    state.pathname = pathname;
+    render(
+      <SiteChrome
+        footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}
+        footerLead={<section aria-label="Customer reviews">Shared reviews</section>}
+      >
+        <main><section aria-label="Customer reviews">Homepage reviews</section></main>
+      </SiteChrome>,
+    );
+
+    expect(screen.getAllByRole("region", { name: "Customer reviews" })).toHaveLength(1);
+    expect(screen.getByText("Homepage reviews")).toBeInTheDocument();
+    expect(screen.queryByText("Shared reviews")).not.toBeInTheDocument();
+  });
+
+  it.each([
+    "/account",
+    "/account/orders",
+    "/account/sign-in",
+    "/checkout",
+    "/checkout/start",
+    "/orders/RNR-8000",
+    "/pay/private-token",
+    "/reply-assistant",
+  ])("keeps shared reviews out of private or transactional route %s", (pathname) => {
+    state.pathname = pathname;
+    render(
+      <SiteChrome
+        footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}
+        footerLead={<section aria-label="Customer reviews">Shared reviews</section>}
+      >
+        <main>Private flow</main>
+      </SiteChrome>,
+    );
+
+    expect(screen.queryByText("Shared reviews")).not.toBeInTheDocument();
+    expect(screen.getByText("Public footer")).toBeInTheDocument();
+  });
+
+  it("leaves no reviews wrapper when the safe public review data is empty", () => {
+    state.pathname = "/shop";
+    render(
+      <SiteChrome
+        footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}
+        footerLead={null}
+      >
+        <main>Page</main>
+      </SiteChrome>,
+    );
+
+    expect(screen.queryByRole("region", { name: "Customer reviews" })).not.toBeInTheDocument();
+    expect(screen.getByText("Public footer")).toBeInTheDocument();
+  });
+
   it("removes storefront header, footer and image protection from Admin", () => {
     state.pathname = "/admin/orders";
-    render(<SiteChrome footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}><main>Admin page</main></SiteChrome>);
+    render(
+      <SiteChrome
+        footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}
+        footerLead={<section aria-label="Customer reviews">Shared reviews</section>}
+      >
+        <main>Admin page</main>
+      </SiteChrome>,
+    );
     expect(screen.getByText("Admin page")).toBeInTheDocument();
+    expect(screen.queryByText("Shared reviews")).not.toBeInTheDocument();
     expect(screen.queryByText("Public header")).not.toBeInTheDocument();
     expect(screen.queryByText("Public footer")).not.toBeInTheDocument();
     expect(screen.queryByText("Protection")).not.toBeInTheDocument();
