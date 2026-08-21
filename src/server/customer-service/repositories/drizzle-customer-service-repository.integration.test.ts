@@ -1844,6 +1844,35 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     })).rejects.toThrow();
   });
 
+  it("deduplicates concurrent Website retries into one message and one customer turn", async () => {
+    const event = {
+      channel: "website" as const,
+      role: "customer" as const,
+      externalConversationKeyHash: "4".repeat(64),
+      externalMessageKeyHash: "3".repeat(64),
+      text: "What details do you need for a quote?",
+      attachments: [],
+      imageJob: null,
+      productContext: null,
+      debounceMs: 2_000,
+      receivedAt: new Date("2026-08-21T00:00:00.000Z"),
+    };
+
+    const results = await Promise.all([
+      repository.ingestConversationEvent(event),
+      repository.ingestConversationEvent(event),
+    ]);
+    expect(results.map((result) => result.status).sort()).toEqual(["duplicate", "turn_pending"]);
+    const messages = await database.execute(sql`
+      select count(*)::int as count from customer_service_messages where channel = 'website'
+    `);
+    const turns = await database.execute(sql`
+      select count(*)::int as count from customer_service_turns where channel = 'website'
+    `);
+    expect(messages.rows[0]).toEqual({ count: 1 });
+    expect(turns.rows[0]).toEqual({ count: 1 });
+  });
+
   it("deduplicates concurrent webhook ingestion and allocates one pilot slot", async () => {
     await database.insert(customerServicePilotRuns).values({
       name: "test-facebook",
