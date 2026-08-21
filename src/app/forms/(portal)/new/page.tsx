@@ -42,7 +42,8 @@ export default async function NewFormsJobPage() {
           endpoint="/api/forms/jobs"
           detailBasePath="/order-system/jobs"
           backHref="/order-system"
-          submittedBy={access.user.email}
+          submittedBy={access.user.name?.trim() || "Current operator"}
+          manualEntryLayout
           productTitles={getRegistryProducts(registry).filter((product) => product.active).map((product) => product.title)}
           customFields={fields.filter((field) =>
             field.enabled && field.showOnCreate && !field.legacyOnly && field.fieldType !== "file" &&

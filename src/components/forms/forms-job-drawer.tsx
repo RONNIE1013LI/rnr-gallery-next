@@ -4,10 +4,14 @@ import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 import { ProductionJobDetail } from "@/components/admin/production-job-detail";
+import { displayFormReference } from "@/domain/forms/forms-parity";
+import { ResizableSeparator } from "@/components/shared/resizable-separator";
 import type { getProductionJobDetail, ProductionAssignee } from "@/server/production/drizzle-production-job-repository";
 import type { ProductionFileSummary } from "@/server/production/production-proof-service";
 import type { CustomerNotificationSummary } from "@/server/notifications/customer-notification-service";
 import styles from "./forms.module.css";
+import { ExistingManualProductionJobForm } from "./existing-manual-production-job-form";
+import { drawerSize } from "./forms-order-entry-drawer";
 import { useContainedDialog } from "./use-contained-dialog";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof getProductionJobDetail>>>;
@@ -30,6 +34,9 @@ function FormsJobDrawerSession({
   canViewFiles = false,
   canUploadFiles = false,
   canReviewProofs = false,
+  canUpdateDeliveryStatus = false,
+  canDeleteFiles = false,
+  onSaved,
 }: Readonly<{
   jobId: string;
   onClose: () => void;
@@ -39,6 +46,9 @@ function FormsJobDrawerSession({
   canViewFiles?: boolean;
   canUploadFiles?: boolean;
   canReviewProofs?: boolean;
+  canUpdateDeliveryStatus?: boolean;
+  canDeleteFiles?: boolean;
+  onSaved?: () => void;
 }>) {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [files, setFiles] = useState<readonly ProductionFileSummary[]>([]);
@@ -47,14 +57,24 @@ function FormsJobDrawerSession({
   const [revision, setRevision] = useState({ changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false });
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
-  const [width, setWidth] = useState(() => {
-    if (typeof window === "undefined") return 720;
-    const stored = Number(window.localStorage.getItem("rnr-forms-drawer-width"));
-    return Number.isFinite(stored) && stored >= 520 && stored <= 900 ? stored : 720;
-  });
+  const serverSize = drawerSize(1_200);
+  const [limits, setLimits] = useState({ min: serverSize.min, max: serverSize.max });
+  const [width, setWidth] = useState(serverSize.initial);
   const dialogRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const displayedReference = detail ? displayFormReference(detail.job.source, detail.job.jobNumber) : null;
+
+  useEffect(() => {
+    function fitToViewport() {
+      const next = drawerSize(window.innerWidth);
+      setLimits({ min: next.min, max: next.max });
+      setWidth((current) => Math.min(next.max, Math.max(next.min, current === serverSize.initial ? next.initial : current)));
+    }
+    fitToViewport();
+    window.addEventListener("resize", fitToViewport);
+    return () => window.removeEventListener("resize", fitToViewport);
+  }, [serverSize.initial]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -102,27 +122,50 @@ function FormsJobDrawerSession({
     }}>
       <div
         ref={dialogRef}
-        className={styles.jobDrawer}
+        className={styles.orderEntryDrawer}
         role="dialog"
         aria-modal="true"
-        aria-label={detail ? `Order ${detail.job.jobNumber}` : "Order editor"}
+        aria-label={displayedReference ? `Order ${displayedReference}` : "Order editor"}
         tabIndex={-1}
-        style={{ "--drawer-width": `${width}px` } as React.CSSProperties}
+        style={{ "--entry-drawer-width": `${width}px` } as React.CSSProperties}
       >
+        <ResizableSeparator
+          className={styles.orderEntryResizeHandle}
+          label="Resize order editor"
+          value={width}
+          min={limits.min}
+          max={limits.max}
+          step={20}
+          direction={-1}
+          onChange={setWidth}
+        />
+        <div className={styles.orderEntryDrawerPanel}>
         <header className={styles.drawerHeader}>
-          <div><strong>{detail?.job.jobNumber ?? "Loading order…"}</strong><span>{dirty ? "Unsaved changes" : "Order editor"}</span></div>
-          <label className={styles.drawerWidth}><span>Width</span><input aria-label="Editor width" type="range" min="520" max="900" step="20" value={width} onChange={(event) => {
-            const next = Number(event.target.value);
-            setWidth(next);
-            window.localStorage.setItem("rnr-forms-drawer-width", String(next));
-          }} /></label>
+          <div><strong>{displayedReference ?? "Loading order…"}</strong><span>{dirty ? "Unsaved changes" : "Order editor"}</span></div>
           <Link href={`/order-system/jobs/${encodeURIComponent(jobId)}`}>Open full editor</Link>
           <button ref={closeButtonRef} type="button" aria-label="Close order editor" onClick={close}>×</button>
         </header>
-        <div className={`${styles.drawerContent} ${styles.formsEditor}`} data-forms-editor onChangeCapture={() => setDirty(true)}>
+        <div className={`${styles.orderEntryDrawerContent} ${styles.formsEditor}`} data-forms-editor onChangeCapture={() => setDirty(true)}>
           {error ? <div className={styles.formsErrorState} role="alert"><strong>Order unavailable</strong><p>{error}</p><button type="button" onClick={onClose}>Return to data list</button></div> : null}
           {!detail && !error ? <div className={styles.drawerLoading} role="status">Loading order details…</div> : null}
-          {detail ? <ProductionJobDetail
+          {detail?.job.source === "manual" ? <ExistingManualProductionJobForm
+            detail={detail}
+            assignees={loadedAssignees}
+            files={files}
+            canManageFinance={canManageFinance}
+            canUploadFiles={canUploadFiles}
+            canDeleteFiles={canDeleteFiles}
+            canEdit={canUpdate}
+            canUpdateProductionStatus={canReviewProofs}
+            canUpdateDeliveryStatus={canUpdateDeliveryStatus}
+            jobApiBase="/api/forms/jobs"
+            invoicePdfBase="/api/forms/invoices"
+            onBack={close}
+            onSaved={() => {
+              setDirty(false);
+              onSaved?.();
+            }}
+          /> : detail ? <ProductionJobDetail
             detail={detail}
             assignees={loadedAssignees}
             canManageFinance={canManageFinance}
@@ -136,9 +179,12 @@ function FormsJobDrawerSession({
             canViewFiles={canViewFiles}
             canUploadFiles={canUploadFiles}
             canReviewProofs={canReviewProofs}
+            canDeleteFiles={canDeleteFiles}
             canRetryNotifications={canUploadFiles}
             canUpdateJob={canUpdate}
+            manualEntryLayout
           /> : null}
+        </div>
         </div>
       </div>
     </div>
@@ -154,6 +200,9 @@ export function FormsJobDrawer(props: Readonly<{
   canViewFiles?: boolean;
   canUploadFiles?: boolean;
   canReviewProofs?: boolean;
+  canUpdateDeliveryStatus?: boolean;
+  canDeleteFiles?: boolean;
+  onSaved?: () => void;
 }>) {
   return <FormsJobDrawerSession key={props.jobId} {...props} />;
 }

@@ -50,6 +50,43 @@ export function invoiceRequestDraft(draft: InvoiceWorkspaceDraft) {
   };
 }
 
+function InvoiceMoneyInput({
+  ariaLabel,
+  cents,
+  onCentsChange,
+}: Readonly<{
+  ariaLabel: string;
+  cents: number;
+  onCentsChange: (cents: number) => void;
+}>) {
+  const [displayValue, setDisplayValue] = useState(() => (cents / 100).toFixed(2));
+
+  function parse(value: string) {
+    if (!value || value === ".") return null;
+    const next = Math.round(Number(value) * 100);
+    return Number.isSafeInteger(next) && next >= 0 && next <= 100_000_000 ? next : null;
+  }
+
+  return <input
+    aria-label={ariaLabel}
+    inputMode="decimal"
+    pattern="[0-9]+(?:\.[0-9]{0,2})?"
+    value={displayValue}
+    onChange={(event) => {
+      const value = event.target.value;
+      if (!/^\d*(?:\.\d{0,2})?$/.test(value)) return;
+      setDisplayValue(value);
+      const next = parse(value);
+      if (next !== null) onCentsChange(next);
+    }}
+    onBlur={() => {
+      const next = parse(displayValue) ?? 0;
+      setDisplayValue((next / 100).toFixed(2));
+      onCentsChange(next);
+    }}
+  />;
+}
+
 export function InvoiceWorkspace({
   invoiceNumber = "INV-DRAFT",
   currency = "NZD",
@@ -140,7 +177,7 @@ export function InvoiceWorkspace({
             <label><span>Bank Account</span><input value={draft.bankAccount} onChange={(event) => field("bankAccount", event.target.value)} /></label>
           </div></section>
           <section><h3>To</h3><div className={styles.invoiceWorkspaceGrid}>
-            <label className={styles.fullField}><span>Customer / Delivery Address</span><textarea rows={5} value={draft.deliveryAddress} onChange={(event) => { field("deliveryAddress", event.target.value); }} /></label>
+            <label className={styles.fullField}><span>Customer / Delivery Address</span><textarea rows={5} value={draft.deliveryAddress} onChange={(event) => onChange({ ...draft, customerAddress: event.target.value, deliveryAddress: event.target.value })} /></label>
             <label><span>Customer Name</span><input value={draft.customerName} onChange={(event) => field("customerName", event.target.value)} /></label>
             <label><span>Customer Email</span><input type="email" value={draft.customerEmail} onChange={(event) => field("customerEmail", event.target.value)} /></label>
           </div></section>
@@ -148,10 +185,10 @@ export function InvoiceWorkspace({
             <label><span>Code</span><input aria-label={`Item ${index + 1} code`} value={current.code} onChange={(event) => item(current.key, { code: event.target.value })} /></label>
             <label><span>Description</span><textarea aria-label={`Item ${index + 1} description`} value={current.description} onChange={(event) => item(current.key, { description: event.target.value })} /></label>
             <label><span>Qty</span><input aria-label={`Item ${index + 1} quantity`} type="number" min="0.001" step="0.001" value={current.quantityMilli / 1_000} onChange={(event) => item(current.key, { quantityMilli: Math.max(1, Math.round(Number(event.target.value) * 1_000)) })} /></label>
-            <label><span>Price incl GST</span><input aria-label={`Item ${index + 1} price`} type="number" min="0" step="0.01" value={(current.rateInclGstCents / 100).toFixed(2)} onChange={(event) => item(current.key, { rateInclGstCents: Math.max(0, Math.round(Number(event.target.value) * 100)) })} /></label>
+            <label><span>Price incl GST</span><InvoiceMoneyInput ariaLabel={`Item ${index + 1} price`} cents={current.rateInclGstCents} onCentsChange={(rateInclGstCents) => item(current.key, { rateInclGstCents })} /></label>
           </div>)}</section>
           <section><h3>GST / Notes</h3><div className={styles.invoiceWorkspaceGrid}>
-            <label><span>Discount</span><input type="number" min="0" step="0.01" value={(draft.discountCents / 100).toFixed(2)} onChange={(event) => field("discountCents", Math.max(0, Math.round(Number(event.target.value) * 100)))} /></label>
+            <label><span>Discount</span><InvoiceMoneyInput ariaLabel="Discount" cents={draft.discountCents} onCentsChange={(discountCents) => field("discountCents", discountCents)} /></label>
             <label className={styles.fullField}><span>Notes</span><textarea rows={3} value={draft.notes} onChange={(event) => field("notes", event.target.value)} /></label>
             <label className={styles.fullField}><span>Terms</span><textarea rows={3} value={draft.terms} onChange={(event) => field("terms", event.target.value)} /></label>
           </div></section>

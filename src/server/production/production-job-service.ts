@@ -197,6 +197,11 @@ const manualJobSchema = z.object({
   artistFeeCents: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   materialCostCents: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER),
   artistPaid: z.boolean().default(false),
+  fileSent: z.boolean().default(false),
+  downloaded: z.boolean().default(false),
+  printed: z.boolean().default(false),
+  customerNotified: z.boolean().default(false),
+  delivered: z.boolean().default(false),
   completed: z.boolean().default(false),
   invoiceDraft: z.unknown().optional(),
   customFields: z.array(customFieldValueSchema).max(100).default([]).superRefine((values, context) => {
@@ -255,6 +260,11 @@ const jobUpdateSchema = z.object({
   jobId: z.string().uuid(),
   idempotencyKey: z.string().trim().min(8).max(255),
   expectedUpdatedAt: z.string().datetime(),
+  customerName: z.string().trim().min(1).max(190).optional(),
+  customerEmail: z.string().trim().toLowerCase().max(320).refine(
+    (value) => value === "" || z.string().email().safeParse(value).success,
+  ).optional(),
+  customerPhone: z.string().trim().max(80).optional(),
   assignedUserId: z.string().trim().min(1).max(255).nullable().optional(),
   urgent: z.boolean().optional(),
   customerSource: z.enum(customerSources).optional(),
@@ -272,6 +282,7 @@ const jobUpdateSchema = z.object({
       context.addIssue({ code: "custom", message: "Custom fields must be unique" });
     }
   }),
+  items: z.array(itemSchema).min(1).max(20).optional(),
 }).strict().superRefine((input, context) => {
   const mutableKeys = Object.keys(input).filter((key) => ![
     "jobId",
@@ -284,17 +295,30 @@ const jobUpdateSchema = z.object({
   if (input.milestones && Object.keys(input.milestones).length === 0) {
     context.addIssue({ code: "custom", path: ["milestones"], message: "No milestone was provided" });
   }
+  if (input.customerEmail !== undefined && input.customerPhone !== undefined &&
+    !input.customerEmail && !input.customerPhone) {
+    context.addIssue({
+      code: "custom",
+      path: ["customerEmail"],
+      message: "At least an email address or phone number is required",
+    });
+  }
 });
 
 type JobUpdate = z.output<typeof jobUpdateSchema>;
 
-export type CreateManualProductionJob = Readonly<Omit<ManualJob, "items" | "artistPaid" | "completed" | "invoiceDraft"> & {
+export type CreateManualProductionJob = Readonly<Omit<ManualJob, "items" | "artistPaid" | "fileSent" | "downloaded" | "printed" | "customerNotified" | "delivered" | "completed" | "invoiceDraft"> & {
   requestDigest: string;
   jobNumber: string;
   actor: AdminActor;
   createdAt: Date;
   canUpdateFinance: boolean;
   artistPaidAt: Date | null;
+  fileSentAt: Date | null;
+  downloadedAt: Date | null;
+  printedAt: Date | null;
+  customerNotifiedAt: Date | null;
+  deliveredAt: Date | null;
   completedAt: Date | null;
   items: readonly Readonly<z.output<typeof itemSchema> & { position: number }>[];
   invoice: Readonly<InvoiceDraft & ReturnType<typeof calculateInvoiceTotals> & {
@@ -432,7 +456,17 @@ export function createProductionJobService(
           throw new ProductionJobValidationError("Invoice data is invalid");
         }
       }
-      const { artistPaid, completed, invoiceDraft, ...persistedJob } = job;
+      const {
+        artistPaid,
+        fileSent,
+        downloaded,
+        printed,
+        customerNotified,
+        delivered,
+        completed,
+        invoiceDraft,
+        ...persistedJob
+      } = job;
       void invoiceDraft;
       const created = await repository.createManual({
         ...persistedJob,
@@ -442,6 +476,11 @@ export function createProductionJobService(
         createdAt,
         canUpdateFinance: permissions.canUpdateFinance,
         artistPaidAt: artistPaid ? createdAt : null,
+        fileSentAt: fileSent ? createdAt : null,
+        downloadedAt: downloaded ? createdAt : null,
+        printedAt: printed ? createdAt : null,
+        customerNotifiedAt: customerNotified ? createdAt : null,
+        deliveredAt: delivered ? createdAt : null,
         completedAt: completed ? createdAt : null,
         items: job.items.map((item, position) => Object.freeze({ ...item, position })),
         invoice,

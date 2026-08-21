@@ -262,3 +262,9 @@ export const FORM_ROLE_PRESETS = Object.freeze({
 });
 
 export type FormRolePresetKey = keyof typeof FORM_ROLE_PRESETS;
+
+export function displayFormReference(source: "web" | "manual", jobNumber: string) {
+  const reference = jobNumber.trim();
+  if (source === "manual" || /^web-/i.test(reference)) return reference;
+  return `Web-${reference}`;
+}

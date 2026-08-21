@@ -7,6 +7,42 @@ const jobId = "de31f47e-0fb9-438e-bef6-6bc45556d3bb";
 const fileId = "e23a9f59-bf54-4bb6-a7d0-9239c14cf819";
 
 describe("forms private file route", () => {
+  it("requires delete_files and removes only the scoped payment proof bytes", async () => {
+    const access = {
+      user: { id: "owner-1", email: "owner@example.test" },
+      formRole: "admin" as const,
+      formProfile: null,
+    };
+    const deletePaymentProof = vi.fn().mockResolvedValue({
+      result: "deleted",
+      storageKey: `${fileId}.bin`,
+    });
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const route = createFormsJobFileRoute({
+      requirePermission: vi.fn().mockResolvedValue(access),
+      assertScope: vi.fn().mockResolvedValue(undefined),
+      getPrivateFile: vi.fn(),
+      read: vi.fn(),
+      deletePaymentProof,
+      remove,
+      trustedOrigin: "https://shop.example.test",
+    });
+
+    const response = await route.DELETE(new Request(
+      `https://shop.example.test/api/forms/jobs/${jobId}/files/${fileId}`,
+      { method: "DELETE", headers: { Origin: "https://shop.example.test" } },
+    ), { params: Promise.resolve({ jobId, fileId }) });
+
+    expect(response.status).toBe(204);
+    expect(deletePaymentProof).toHaveBeenCalledWith(
+      { userId: "owner-1", email: "owner@example.test" },
+      jobId,
+      fileId,
+      { canDeleteFiles: true },
+    );
+    expect(remove).toHaveBeenCalledWith({ id: fileId, storageKey: `${fileId}.bin` });
+  });
+
   it("requires view_files rather than view_jobs before reading private storage", async () => {
     const weakGrant = vi.fn(async (permission: string) => {
       if (permission === "view_jobs") {

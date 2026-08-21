@@ -4,6 +4,7 @@ import {
   count,
   desc,
   eq,
+  getTableColumns,
   ilike,
   inArray,
   or,
@@ -307,7 +308,11 @@ export async function getProductionJobDetail(
         eq(productionFieldDefinitions.showOnDetail, true),
       ))
       .orderBy(asc(productionFieldDefinitions.sortOrder), asc(productionFieldDefinitions.label)),
-    database.select().from(adminAuditLogs)
+    database.select({
+      ...getTableColumns(adminAuditLogs),
+      actorName: user.name,
+    }).from(adminAuditLogs)
+      .leftJoin(user, eq(user.id, adminAuditLogs.actorUserId))
       .where(and(
         eq(adminAuditLogs.resourceType, "production_job"),
         eq(adminAuditLogs.resourceId, jobId),
@@ -433,6 +438,11 @@ export function createDrizzleProductionJobRepository(
           artistFeeCents: input.artistFeeCents,
           materialCostCents: input.materialCostCents,
           artistPaidAt: input.artistPaidAt,
+          fileSentAt: input.fileSentAt,
+          downloadedAt: input.downloadedAt,
+          printedAt: input.printedAt,
+          customerNotifiedAt: input.customerNotifiedAt,
+          deliveredAt: input.deliveredAt,
           completedAt: input.completedAt,
           createdByUserId: input.actor.userId,
           createdAt: input.createdAt,
@@ -562,7 +572,10 @@ export function createDrizzleProductionJobRepository(
         if (current.updatedAt.getTime() !== input.expectedUpdatedAt.getTime()) {
           return "conflict" as const;
         }
-        if (current.source === "web" && (input.manualStatus || input.finance)) {
+        if (current.source === "web" && (
+          input.manualStatus || input.finance || input.customerName !== undefined ||
+          input.customerEmail !== undefined || input.customerPhone !== undefined || input.items
+        )) {
           return "invalid_source" as const;
         }
         if (input.assignedUserId) {
@@ -578,6 +591,9 @@ export function createDrizzleProductionJobRepository(
           updatedAt: input.updatedAt,
         };
         for (const [key, value] of [
+          ["customerName", input.customerName],
+          ["customerEmail", input.customerEmail],
+          ["customerPhone", input.customerPhone],
           ["assignedUserId", input.assignedUserId],
           ["urgent", input.urgent],
           ["customerSource", input.customerSource],
@@ -651,6 +667,16 @@ export function createDrizzleProductionJobRepository(
             eq(productionJobs.updatedAt, input.expectedUpdatedAt),
           )).returning({ id: productionJobs.id });
         if (!updated) return "conflict" as const;
+
+        if (input.items) {
+          await transaction.delete(productionJobItems).where(eq(productionJobItems.jobId, input.jobId));
+          await transaction.insert(productionJobItems).values(input.items.map((item, position) => ({
+            ...item,
+            jobId: input.jobId,
+            position,
+          })));
+          changedFields.push("items");
+        }
 
         await transaction.insert(adminAuditLogs).values(buildAuditRecord({
           actorUserId: input.actor.userId,

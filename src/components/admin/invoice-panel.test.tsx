@@ -172,6 +172,27 @@ describe("InvoicePanel", () => {
     });
   });
 
+  it("allows complete invoice money entry and pads two decimals only on blur", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ invoice }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    })));
+    render(<InvoicePanel jobId={invoice.jobId} />);
+    await screen.findByText("INV-RRM-2026-ABC123");
+
+    const rate = screen.getByLabelText("Item 1 rate incl GST");
+    fireEvent.change(rate, { target: { value: "150" } });
+    expect((rate as HTMLInputElement).value).toBe("150");
+    fireEvent.blur(rate);
+    expect((rate as HTMLInputElement).value).toBe("150.00");
+
+    const discount = screen.getByLabelText("Discount (NZD)");
+    fireEvent.change(discount, { target: { value: "5" } });
+    expect((discount as HTMLInputElement).value).toBe("5");
+    fireEvent.blur(discount);
+    expect((discount as HTMLInputElement).value).toBe("5.00");
+  });
+
   it("issues a draft and locks the editor", async () => {
     const issued = { ...invoice, status: "issued", issuedAt: "2026-08-05T02:00:00.000Z", updatedAt: "2026-08-05T02:00:00.000Z" };
     const fetchMock = vi.fn()

@@ -1,4 +1,5 @@
 import type { getProductionJobDetail, ProductionAssignee } from "@/server/production/drizzle-production-job-repository";
+import { displayFormReference } from "@/domain/forms/forms-parity";
 import { ProductionJobControls } from "./production-job-controls";
 import { ProductionFilesPanel } from "./production-files-panel";
 import { InvoicePanel } from "./invoice-panel";
@@ -34,6 +35,8 @@ export function ProductionJobDetail({
   canReviewProofs = false,
   canRetryNotifications = false,
   canUpdateJob = false,
+  manualEntryLayout = false,
+  canDeleteFiles = false,
 }: Readonly<{
   detail: Detail;
   assignees: readonly ProductionAssignee[];
@@ -50,8 +53,11 @@ export function ProductionJobDetail({
   canReviewProofs?: boolean;
   canRetryNotifications?: boolean;
   canUpdateJob?: boolean;
+  manualEntryLayout?: boolean;
+  canDeleteFiles?: boolean;
 }>) {
   const { job } = detail;
+  const displayedReference = displayFormReference(job.source, job.jobNumber);
   const customFields = detail.customFields ?? [];
   const currentCustomFields = customFields.filter((field) => !field.legacyOnly);
   const legacyFields = customFields.filter((field) => field.legacyOnly);
@@ -64,6 +70,103 @@ export function ProductionJobDetail({
     ["Artist paid", job.artistPaidAt],
     ["Completed", job.completedAt],
   ] as const;
+  const manualLayout = manualEntryLayout && job.source === "manual";
+  if (manualLayout) {
+    const submittedBy = detail.audit.find((entry) => entry.action === "production_job.created")?.actorName?.trim()
+      || "Former staff";
+    const firstItem = detail.items[0];
+    return (
+      <div className={`${styles.orderDetailLayout} ${styles.manualEntryDetail}`}>
+        <div className={styles.detailMain}>
+          <section className={styles.manualRecordSummary}>
+            <div><span>Submitted by</span><strong>{submittedBy}</strong></div>
+            <div><span>Ref No.</span><strong>{displayedReference}</strong></div>
+            <div><span>Submitted at</span><strong>{dateTime.format(job.createdAt)}</strong></div>
+            <div><span>Updated at</span><strong>{dateTime.format(job.updatedAt)}</strong></div>
+          </section>
+
+          <section className={styles.panel}>
+            <h2>Product / Size</h2>
+            <dl className={styles.manualDetailRows}>
+              <div><dt>Size</dt><dd>{firstItem?.sizeLabel || "Not supplied"}</dd></div>
+              <div><dt>Size Other</dt><dd>{firstItem?.sizeLabel && !/^(A[0-5]|PullUpBanner|Banner )/.test(firstItem.sizeLabel) ? firstItem.sizeLabel : "—"}</dd></div>
+            </dl>
+          </section>
+
+          {detail.finance ? <section className={styles.panel}>
+            <h2>Payment</h2>
+            {canViewFiles ? <ProductionFilesPanel
+              jobId={job.id}
+              files={files}
+              notifications={notifications}
+              revision={revision}
+              canManageFinance={canManageFinance}
+              jobApiBase={jobApiBase}
+              canUploadFiles={canUploadFiles}
+              canReviewProofs={false}
+              canRetryNotifications={false}
+              canDeleteFiles={canDeleteFiles}
+              paymentProofOnly
+            /> : null}
+            <dl className={styles.manualDetailRows}>
+              <div><dt>AmtPayable</dt><dd>{amount(detail.finance.amountPayableCents)}</dd></div>
+              <div><dt>AmtPaid</dt><dd>{amount(detail.finance.amountPaidCents)}</dd></div>
+              <div><dt>AmtOwe</dt><dd>{amount(detail.finance.amountOwingCents)}</dd></div>
+              <div><dt>BankRecon</dt><dd>{job.paymentReconciliationStatus}</dd></div>
+            </dl>
+          </section> : null}
+
+          <section className={styles.panel}>
+            <h2>Design &amp; Notes</h2>
+            <dl className={styles.manualDetailRows}><div><dt>Remark</dt><dd className={styles.preWrapText}>{job.internalNotes || "—"}</dd></div></dl>
+          </section>
+
+          <section className={styles.panel}>
+            <h2>Delivery</h2>
+            <dl className={styles.manualDetailRows}>
+              <div><dt>Urgent?</dt><dd>{job.urgent ? "YES" : "NO"}</dd></div>
+              <div><dt>DlvryMethod</dt><dd>{label(job.deliveryMethod)}</dd></div>
+              <div><dt>DlvryDate</dt><dd>{job.neededDate}</dd></div>
+              <div><dt>DlvryAddr</dt><dd className={styles.preWrapText}>{job.deliveryAddress || "—"}</dd></div>
+            </dl>
+          </section>
+
+          <section className={styles.panel}>
+            <h2>Customer info</h2>
+            <dl className={styles.manualDetailRows}>
+              <div><dt>CustSource</dt><dd>{label(job.customerSource)}</dd></div>
+              <div><dt>Cust.Name</dt><dd>{job.customerName}</dd></div>
+              <div><dt>PhoneNo.</dt><dd>{job.customerPhone || "—"}</dd></div>
+              <div><dt>Email</dt><dd>{job.customerEmail || "—"}</dd></div>
+            </dl>
+          </section>
+
+          <section className={styles.panel}>
+            <h2>Internal Production Status</h2>
+            <dl className={styles.manualDetailRows}>
+              <div><dt>Assign Artist</dt><dd>{detail.assignee?.name ?? "NO"}</dd></div>
+              {milestones.filter(([name]) => name !== "Artist paid").map(([name, value]) => {
+                const displayedValue = name === "Delivered" && detail.status === "on_hold"
+                  ? "HOLD"
+                  : value ? "YES" : "NO";
+                return <div key={name}><dt>{name}</dt><dd>{displayedValue}</dd></div>;
+              })}
+            </dl>
+          </section>
+
+          {detail.finance ? <section className={styles.panel}>
+            <h2>Cost / Profit</h2>
+            <dl className={styles.manualDetailRows}><div><dt>Material Cost</dt><dd>{amount(detail.finance.materialCostCents ?? 0)}</dd></div></dl>
+          </section> : null}
+
+          <section className={styles.panel}>
+            <h2>Operation history</h2>
+            {detail.audit.length ? <div className={styles.timeline}>{detail.audit.map((entry) => <article key={entry.id}><strong>{label(entry.action.replaceAll(".", "_"))}</strong><span>{entry.actorName?.trim() || "Former staff"}</span><small>{dateTime.format(entry.createdAt)}</small></article>)}</div> : <p className={styles.mutedText}>No operation history recorded.</p>}
+          </section>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={styles.orderDetailLayout}>
       <div className={styles.detailMain}>
@@ -80,7 +183,7 @@ export function ProductionJobDetail({
           <div className={styles.panelHeading}><h2>Order info</h2><span>{job.source === "web" ? "Online order" : "Manual order"}</span></div>
           <dl className={styles.definitionGrid}>
             <div><dt>Web order number</dt><dd>{job.webOrderNumber || detail.orderNumber || "Not supplied"}</dd></div>
-            <div><dt>Production reference</dt><dd>{job.jobNumber}</dd></div>
+            <div><dt>Production reference</dt><dd>{displayedReference}</dd></div>
             <div><dt>Created</dt><dd>{dateTime.format(job.createdAt)}</dd></div>
             <div><dt>Updated</dt><dd>{dateTime.format(job.updatedAt)}</dd></div>
           </dl>

@@ -15,6 +15,22 @@ afterEach(() => {
 });
 
 describe("MarketSelector", () => {
+  it("uses country-only labels on mobile without changing the selected market", () => {
+    vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
+      matches: true,
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+    }));
+
+    render(<MarketSelector market="NZ" australiaEnabled pathname="/" />);
+
+    expect(screen.getByRole("combobox", { name: "Country and currency" })).toHaveValue("NZ");
+    expect(screen.getByRole("option", { name: "New Zealand" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Australia" })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: "New Zealand — NZD" })).not.toBeInTheDocument();
+    expect(document.querySelector(".site-header__market-icon")).toBeInTheDocument();
+  });
+
   it("clears only the active identity checkout state after a successful market change", async () => {
     setActiveCustomerId("user-a");
     localStorage.setItem("rnr:commerce:v1:user:user-a:cart", "user-a-cart");

@@ -250,6 +250,43 @@ export function createDrizzleProductionProofRepository(
       }
     },
 
+    async deletePaymentProof(input) {
+      return database.transaction(async (transaction) => {
+        const [file] = await transaction.select()
+          .from(productionJobFiles)
+          .where(and(
+            eq(productionJobFiles.id, input.fileId),
+            eq(productionJobFiles.jobId, input.jobId),
+          ))
+          .for("update")
+          .limit(1);
+        if (!file) return { result: "not_found" as const };
+        if (file.kind !== "payment_proof") return { result: "invalid_kind" as const };
+
+        await transaction.delete(productionJobFiles).where(and(
+          eq(productionJobFiles.id, input.fileId),
+          eq(productionJobFiles.jobId, input.jobId),
+        ));
+        await transaction.insert(adminAuditLogs).values({ ...buildAuditRecord({
+          actorUserId: input.actor.userId,
+          actorEmail: input.actor.email,
+          action: "production_file.deleted",
+          resourceType: "production_job",
+          resourceId: input.jobId,
+          beforeSummary: {
+            fileId: file.id,
+            kind: file.kind,
+            originalName: file.originalName,
+            sizeBytes: file.sizeBytes,
+          },
+          requestSource: "forms.jobs.files",
+          result: "success",
+          idempotencyKey: `payment-proof-delete:${file.id}`,
+        }), createdAt: input.createdAt });
+        return { result: "deleted" as const, storageKey: file.storageKey };
+      });
+    },
+
     async recordReview(input) {
       return database.transaction(async (transaction) => {
         const [priorByKey] = await transaction.select()

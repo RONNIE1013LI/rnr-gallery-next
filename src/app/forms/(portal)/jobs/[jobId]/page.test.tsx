@@ -43,6 +43,25 @@ vi.mock("@/components/admin/production-job-detail", () => ({
     data-invoice-api={props.invoicePdfBase}
     data-notification-api={props.notificationRetryEndpoint}
     data-finance-edit={String(props.canManageFinance)}
+    data-manual-entry={String((props as { manualEntryLayout?: boolean }).manualEntryLayout)}
+  />,
+}));
+vi.mock("@/components/forms/existing-manual-production-job-form", () => ({
+  ExistingManualProductionJobForm: (props: {
+    detail: { job: { customerEmail: string; customerPhone: string }; finance: unknown; audit: unknown[] };
+    jobApiBase: string;
+    invoicePdfBase: string;
+    canManageFinance: boolean;
+  }) => <div
+    data-testid="forms-job-detail"
+    data-email={props.detail.job.customerEmail}
+    data-phone={props.detail.job.customerPhone}
+    data-finance={String(Boolean(props.detail.finance))}
+    data-audit={String(props.detail.audit.length)}
+    data-job-api={props.jobApiBase}
+    data-invoice-api={props.invoicePdfBase}
+    data-finance-edit={String(props.canManageFinance)}
+    data-manual-entry="true"
   />,
 }));
 
@@ -94,8 +113,8 @@ describe("forms job detail page", () => {
     expect(rendered).toHaveAttribute("data-audit", "0");
     expect(rendered).toHaveAttribute("data-job-api", "/api/forms/jobs");
     expect(rendered).toHaveAttribute("data-invoice-api", "/api/forms/invoices");
-    expect(rendered).toHaveAttribute("data-notification-api", "/api/forms/notifications/retry");
     expect(rendered).toHaveAttribute("data-finance-edit", "false");
+    expect(rendered).toHaveAttribute("data-manual-entry", "true");
   });
 
   it("does not expose a job outside an assigned-only staff member's scope", async () => {
@@ -107,5 +126,19 @@ describe("forms job detail page", () => {
     detail.mockResolvedValue(privateDetail);
     await expect(FormsJobDetailPage({ params })).rejects.toThrow("not found");
     expect(notFound).toHaveBeenCalled();
+  });
+
+  it("shows Web- only for the displayed web-order reference", async () => {
+    requireFormsPage.mockResolvedValue({
+      user: { id: "artist-1", email: "artist@example.test" },
+      formRole: "owner",
+      formProfile: null,
+    });
+    detail.mockResolvedValue({ ...privateDetail, job: { ...privateDetail.job, source: "web" } });
+
+    render(await FormsJobDetailPage({ params }));
+
+    expect(screen.getByRole("heading", { level: 1, name: "Web-RNR-2026-ABC123" })).toBeInTheDocument();
+    expect(screen.getByText("Web-RNR-2026-ABC123", { selector: "nav span" })).toBeInTheDocument();
   });
 });

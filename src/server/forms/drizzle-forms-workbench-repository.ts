@@ -18,6 +18,7 @@ import {
 } from "drizzle-orm";
 
 import type { getDatabase } from "@/server/db/client";
+import { displayFormReference } from "@/domain/forms/forms-parity";
 import {
   orders,
   productionJobItems,
@@ -253,7 +254,7 @@ export async function listFormOrders(
       source: row.source,
       version: row.updatedAt.toISOString(),
       submittedAt: row.createdAt.toISOString(),
-      reference: row.jobNumber,
+      reference: displayFormReference(row.source, row.jobNumber),
       webOrderNumber: row.webOrderNumber || row.orderNumber || "",
       size: sizes.join(" · "),
       urgent: row.urgent,

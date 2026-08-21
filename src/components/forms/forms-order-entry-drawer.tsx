@@ -8,7 +8,7 @@ import type { FormsOrderEntryData } from "./forms-workbench";
 import styles from "./forms.module.css";
 import { useContainedDialog } from "./use-contained-dialog";
 
-function drawerSize(viewportWidth: number) {
+export function drawerSize(viewportWidth: number) {
   const visibleListWidth = viewportWidth <= 700 ? 20 : 280;
   const max = Math.max(0, viewportWidth - visibleListWidth);
   const min = Math.min(520, max);
@@ -95,6 +95,7 @@ export function FormsOrderEntryDrawer({
               detailBasePath="/order-system/jobs"
               backHref="/order-system"
               submittedBy={data.submittedBy}
+              manualEntryLayout
               productTitles={data.productTitles}
               customFields={data.customFields}
               invoiceBusiness={data.invoiceBusiness}

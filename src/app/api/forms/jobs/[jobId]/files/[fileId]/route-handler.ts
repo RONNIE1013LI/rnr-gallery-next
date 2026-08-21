@@ -3,8 +3,10 @@ import { HttpError } from "@/server/auth/require-session";
 import { assertFormsJobScope } from "@/server/forms/forms-job-scope";
 import { hasFormPermission, type FormPermission } from "@/server/forms/forms-permissions";
 import { requireFormPermission, type FormAccess } from "@/server/forms/require-forms";
+import { parseAuthConfig } from "@/server/auth/config";
+import { assertTrustedMutationRequest, MutationRequestError } from "@/server/http/mutation-request";
 import { ProductionJobNotFoundError } from "@/server/production/production-job-service";
-import { ProductionProofForbiddenError, ProductionProofNotFoundError } from "@/server/production/production-proof-service";
+import { ProductionProofForbiddenError, ProductionProofNotFoundError, ProductionProofValidationError } from "@/server/production/production-proof-service";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
@@ -15,6 +17,9 @@ type Dependencies = Readonly<{
   assertScope: typeof assertFormsJobScope;
   getPrivateFile: ProofRuntime["getPrivateFile"];
   read: ProofRuntime["read"];
+  deletePaymentProof?: ProofRuntime["deletePaymentProof"];
+  remove?: ProofRuntime["remove"];
+  trustedOrigin?: string;
 }>;
 type Context = Readonly<{ params: Promise<{ jobId: string; fileId: string }> }>;
 
@@ -25,7 +30,15 @@ function safeFilename(value: string) {
 export function createFormsJobFileRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => {
     const proof = getAdminProductionProofRuntime();
-    return { requirePermission: requireFormPermission, assertScope: assertFormsJobScope, getPrivateFile: proof.getPrivateFile, read: proof.read };
+    return {
+      requirePermission: requireFormPermission,
+      assertScope: assertFormsJobScope,
+      getPrivateFile: proof.getPrivateFile,
+      read: proof.read,
+      deletePaymentProof: proof.deletePaymentProof,
+      remove: proof.remove,
+      trustedOrigin: parseAuthConfig().origin,
+    };
   };
   return {
     async GET(request: Request, context: Context) {
@@ -54,8 +67,34 @@ export function createFormsJobFileRoute(dependencies?: Dependencies) {
         return Response.json({ error: "Production file is unavailable" }, { status: 500, headers: noStore });
       }
     },
+    async DELETE(request: Request, context: Context) {
+      try {
+        const deps = dependencies ?? defaults();
+        const access = await deps.requirePermission("delete_files");
+        assertTrustedMutationRequest(request, deps.trustedOrigin);
+        const { jobId, fileId } = await context.params;
+        await deps.assertScope(access, jobId);
+        if (!deps.deletePaymentProof || !deps.remove) throw new Error("Payment-proof deletion is unavailable");
+        const deleted = await deps.deletePaymentProof(
+          { userId: access.user.id, email: access.user.email ?? "unknown@invalid.local" },
+          jobId,
+          fileId,
+          { canDeleteFiles: true },
+        );
+        await deps.remove({ id: fileId, storageKey: deleted.storageKey });
+        return new Response(null, { status: 204, headers: noStore });
+      } catch (error) {
+        if (error instanceof HttpError) return Response.json({ error: error.message }, { status: error.status, headers: noStore });
+        if (error instanceof MutationRequestError) return Response.json({ error: error.message }, { status: error.status, headers: noStore });
+        if (error instanceof ProductionProofForbiddenError) return Response.json({ error: error.message }, { status: 403, headers: noStore });
+        if (error instanceof ProductionProofValidationError) return Response.json({ error: error.message }, { status: 400, headers: noStore });
+        if (error instanceof ProductionProofNotFoundError || error instanceof ProductionJobNotFoundError) return Response.json({ error: "Not found" }, { status: 404, headers: noStore });
+        return Response.json({ error: "Payment proof could not be deleted" }, { status: 500, headers: noStore });
+      }
+    },
   };
 }
 
 const route = createFormsJobFileRoute();
 export const GET = route.GET;
+export const DELETE = route.DELETE;

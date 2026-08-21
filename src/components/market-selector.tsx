@@ -1,7 +1,8 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { LuChevronDown } from "react-icons/lu";
 import type { Market } from "@/domain/markets/types";
 import {
   clearIdentityCheckoutState,
@@ -25,6 +26,17 @@ export function MarketSelector({
 }>) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
+  const [useMobileLabels, setUseMobileLabels] = useState(false);
+
+  useEffect(() => {
+    if (typeof window.matchMedia !== "function") return;
+    const query = window.matchMedia("(max-width: 560px)");
+    const syncLabels = () => setUseMobileLabels(query.matches);
+    syncLabels();
+    query.addEventListener?.("change", syncLabels);
+    return () => query.removeEventListener?.("change", syncLabels);
+  }, []);
+
   async function select(next: Market) {
     if (next === market) return;
     setPending(true);
@@ -67,9 +79,10 @@ export function MarketSelector({
         disabled={pending}
         onChange={(event) => void select(event.target.value as Market)}
       >
-        <option value="NZ">New Zealand — NZD</option>
-        <option value="AU" disabled={!australiaEnabled}>Australia — AUD</option>
+        <option value="NZ">{useMobileLabels ? "New Zealand" : "New Zealand — NZD"}</option>
+        <option value="AU" disabled={!australiaEnabled}>{useMobileLabels ? "Australia" : "Australia — AUD"}</option>
       </select>
+      <LuChevronDown aria-hidden="true" className="site-header__market-icon" />
     </label>
   );
 }

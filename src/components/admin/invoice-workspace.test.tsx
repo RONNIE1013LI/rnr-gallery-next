@@ -62,6 +62,29 @@ describe("InvoiceWorkspace", () => {
     expect(screen.getAllByText("NZ$230.00").length).toBeGreaterThan(0);
   });
 
+  it("allows a complete monetary amount to be entered without forcing 0.00 mid-entry", () => {
+    render(<Harness />);
+    const price = screen.getByLabelText("Item 1 price");
+
+    fireEvent.change(price, { target: { value: "" } });
+    expect(price).toHaveValue("");
+    fireEvent.change(price, { target: { value: "1234.56" } });
+
+    expect(price).toHaveValue("1234.56");
+    expect(within(screen.getByLabelText("Invoice live preview")).getAllByText("NZ$1,234.56").length).toBeGreaterThan(0);
+  });
+
+  it("keeps the customer and delivery address in sync in the combined address editor", () => {
+    render(<Harness />);
+    fireEvent.change(screen.getByLabelText("Customer / Delivery Address"), {
+      target: { value: "8 George Street\nSydney NSW 2000" },
+    });
+
+    const preview = screen.getByLabelText("Invoice live preview");
+    expect(within(preview).getByText("Customer Address").parentElement).toHaveTextContent("8 George Street Sydney NSW 2000");
+    expect(within(preview).getByText("Deliver To").parentElement).toHaveTextContent("8 George Street Sydney NSW 2000");
+  });
+
   it("downloads a validated transient draft without a saved job id", async () => {
     const anchor = document.createElement("a");
     const click = vi.spyOn(anchor, "click").mockImplementation(() => undefined);

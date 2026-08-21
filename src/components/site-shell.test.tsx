@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { SiteFooter } from "./site-footer";
@@ -226,6 +227,18 @@ describe("site shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
     expect(screen.getByRole("navigation", { name: "Mobile navigation" }))
       .toHaveClass("mobile-menu__drawer");
+  });
+
+  it("keeps the mobile header compact and only hides its logo before narrow screens become crowded", () => {
+    const stylesheet = readFileSync("src/app/globals.css", "utf8");
+    const mobileRules = stylesheet.match(/@media \(max-width: 560px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
+    const narrowRules = stylesheet.match(/@media \(max-width: 420px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
+
+    expect(mobileRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*2\.625rem/);
+    expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
+    expect(stylesheet).toMatch(/\.site-header__market select\s*\{[^}]*appearance:\s*none/);
+    expect(mobileRules).toMatch(/\.mobile-menu\s*\{[^}]*margin-left:\s*-0\.25rem/);
+    expect(mobileRules).toMatch(/\.mobile-menu > button,[\s\S]*?\.site-header__cart,[\s\S]*?min-height:\s*48px/);
   });
 
   it("closes the mobile menu after a navigation link is selected", () => {

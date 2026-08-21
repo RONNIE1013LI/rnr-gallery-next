@@ -161,6 +161,15 @@ export interface ProductionProofRepository {
   }>>;
   listJobFiles(jobId: string, permissions: Readonly<{ canViewFinance: boolean; canViewPaymentProof?: boolean }>): Promise<readonly ProductionFileSummary[]>;
   findPrivateFile(jobId: string, fileId: string): Promise<ProductionPrivateFile | null>;
+  deletePaymentProof(input: Readonly<{
+    jobId: string;
+    fileId: string;
+    actor: ProductionActor;
+    createdAt: Date;
+  }>): Promise<Readonly<{
+    result: "deleted" | "not_found" | "invalid_kind";
+    storageKey?: string;
+  }>>;
 }
 
 export class ProductionProofValidationError extends Error {
@@ -280,6 +289,33 @@ export function createProductionProofService(
       if (result.result === "conflict") throw new ProductionProofConflictError("This design draft already has a decision");
       if (!result.review) throw new Error("Production review repository returned no review");
       return Object.freeze({ result: result.result, review: result.review });
+    },
+
+    async deletePaymentProof(
+      actorInput: unknown,
+      jobIdInput: unknown,
+      fileIdInput: unknown,
+      permissions: Readonly<{ canDeleteFiles: boolean }>,
+    ) {
+      const actor = actorSchema.safeParse(actorInput);
+      const jobId = z.string().uuid().safeParse(jobIdInput);
+      const fileId = z.string().uuid().safeParse(fileIdInput);
+      if (!actor.success || !jobId.success || !fileId.success) {
+        throw new ProductionProofValidationError();
+      }
+      if (!permissions.canDeleteFiles) throw new ProductionProofForbiddenError("Delete-files permission is required");
+      const result = await repository.deletePaymentProof({
+        actor: actor.data,
+        jobId: jobId.data,
+        fileId: fileId.data,
+        createdAt: dependencies.now?.() ?? new Date(),
+      });
+      if (result.result === "not_found") throw new ProductionProofNotFoundError();
+      if (result.result === "invalid_kind") {
+        throw new ProductionProofValidationError("Only a payment proof can be deleted here");
+      }
+      if (!result.storageKey) throw new Error("Production proof repository returned no storage key");
+      return Object.freeze({ result: "deleted" as const, storageKey: result.storageKey });
     },
 
     async listCustomerProofs(

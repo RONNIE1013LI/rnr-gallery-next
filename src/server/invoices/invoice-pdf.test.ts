@@ -1,4 +1,4 @@
-import { PDFDocument } from "pdf-lib";
+import { decodePDFRawStream, PDFArray, PDFDict, PDFDocument, PDFName, PDFRawStream } from "pdf-lib";
 import { describe, expect, it } from "vitest";
 import type { InvoiceRecord } from "./invoice-service";
 import { createInvoicePdf } from "./invoice-pdf";
@@ -49,6 +49,20 @@ const invoice: InvoiceRecord = {
   }],
 };
 
+function drawnText(document: PDFDocument) {
+  return document.getPages().flatMap((page) => {
+    const contents = page.node.Contents();
+    if (!contents) return [];
+    const references = contents instanceof PDFArray ? contents.asArray() : [contents];
+    return references.flatMap((reference) => {
+      const stream = document.context.lookup(reference);
+      if (!(stream instanceof PDFRawStream)) return [];
+      const decoded = new TextDecoder().decode(decodePDFRawStream(stream).decode());
+      return Array.from(decoded.matchAll(/<([0-9A-F]+)> Tj/g), (match) => Buffer.from(match[1], "hex").toString("latin1"));
+    });
+  }).join(" ");
+}
+
 describe("invoice PDF", () => {
   it("creates a valid server-side A4 tax invoice without executable content", async () => {
     const bytes = await createInvoicePdf(invoice);
@@ -59,5 +73,18 @@ describe("invoice PDF", () => {
     expect(document.getTitle()).toBe("Tax Invoice INV-RRM-2026-ABC123");
     expect(document.getSubject()).toBe("R&R Gallery tax invoice");
     expect(new TextDecoder().decode(bytes)).not.toContain("/JavaScript");
+  });
+
+  it("uses the same key structure and brand image as the live invoice preview", async () => {
+    const document = await PDFDocument.load(await createInvoicePdf(invoice));
+    const text = drawnText(document);
+    const resources = document.getPage(0).node.Resources();
+    const images = resources?.lookupMaybe(PDFName.of("XObject"), PDFDict);
+
+    expect(text).toContain("Customer Address");
+    expect(text).toContain("Deliver To");
+    expect(text).toContain(`Tax Invoice # ${invoice.invoiceNumber}`);
+    expect(text).toContain("Payment to:");
+    expect(images?.keys().length ?? 0).toBeGreaterThan(0);
   });
 });

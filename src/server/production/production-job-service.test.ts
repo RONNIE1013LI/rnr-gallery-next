@@ -32,6 +32,11 @@ const validInput = {
   artistFeeCents: 4_000,
   materialCostCents: 2_500,
   artistPaid: true,
+  fileSent: true,
+  downloaded: true,
+  printed: false,
+  customerNotified: true,
+  delivered: false,
   completed: false,
   items: [{
     productTitle: " Roll-Up Banner ",
@@ -131,6 +136,11 @@ describe("manual production job service", () => {
       deliveryAddress: "11 Example Street\nAuckland 0632",
       paymentReconciliationStatus: "Arrive",
       artistPaidAt: new Date("2026-08-04T10:00:00.000Z"),
+      fileSentAt: new Date("2026-08-04T10:00:00.000Z"),
+      downloadedAt: new Date("2026-08-04T10:00:00.000Z"),
+      printedAt: null,
+      customerNotifiedAt: new Date("2026-08-04T10:00:00.000Z"),
+      deliveredAt: null,
       completedAt: null,
       designRequirements: "Use the blue background.",
       internalNotes: "Deposit received",
@@ -343,6 +353,39 @@ describe("manual production job service", () => {
     expect(repo.update).toHaveBeenCalledWith(expect.objectContaining({
       customerSource: "instagram",
     }));
+  });
+
+  it("accepts a complete saved manual-entry edit for customer and item fields", async () => {
+    const repo = repository();
+    const service = createProductionJobService(repo);
+    await service.update(actor, {
+      jobId: "00000000-0000-4000-8000-000000000001",
+      idempotencyKey: "update-complete-manual-entry",
+      expectedUpdatedAt: "2026-08-04T10:00:00.000Z",
+      customerName: " Updated Customer ",
+      customerEmail: " UPDATED@EXAMPLE.TEST ",
+      customerPhone: " +64 21 000 0000 ",
+      items: [{ productTitle: " Canvas ", sizeLabel: " A1 ", quantity: 1, designText: "", notes: "" }],
+    }, { canUpdateFinance: false });
+
+    expect(repo.update).toHaveBeenCalledWith(expect.objectContaining({
+      customerName: "Updated Customer",
+      customerEmail: "updated@example.test",
+      customerPhone: "+64 21 000 0000",
+      items: [{ productTitle: "Canvas", sizeLabel: "A1", quantity: 1, designText: "", notes: "" }],
+    }));
+  });
+
+  it("rejects a saved manual-entry edit that removes both customer contact methods", async () => {
+    const service = createProductionJobService(repository());
+    await expect(service.update(actor, {
+      jobId: "00000000-0000-4000-8000-000000000001",
+      idempotencyKey: "update-empty-contact",
+      expectedUpdatedAt: "2026-08-04T10:00:00.000Z",
+      customerName: "Customer",
+      customerEmail: "",
+      customerPhone: "",
+    }, { canUpdateFinance: false })).rejects.toThrow(ProductionJobValidationError);
   });
 
   it("requires finance permission before accepting manual payment or cost fields", async () => {

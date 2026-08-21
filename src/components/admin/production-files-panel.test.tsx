@@ -1,8 +1,14 @@
 import { fireEvent, render, screen } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProductionFilesPanel } from "./production-files-panel";
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ refresh: vi.fn() }) }));
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+  vi.restoreAllMocks();
+  vi.clearAllMocks();
+});
 
 const file = {
   id: "e23a9f59-bf54-4bb6-a7d0-9239c14cf819",
@@ -116,5 +122,75 @@ describe("production files panel", () => {
     expect(screen.queryByRole("button", { name: "Upload private file" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Record decision" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Retry customer email" })).not.toBeInTheDocument();
+  });
+
+  it("shows only durable payment proofs and an explicit confirmed delete action in manual entry mode", async () => {
+    const paymentProof = {
+      ...file,
+      id: "7ab7d2ff-0d82-4f42-ac2d-74dd7192d60b",
+      kind: "payment_proof" as const,
+      version: null,
+      originalName: "receipt.jpg",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("confirm", vi.fn(() => true));
+
+    render(<ProductionFilesPanel
+      jobId={file.jobId}
+      files={[file, paymentProof]}
+      revision={{ changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false }}
+      canManageFinance
+      canUploadFiles
+      canDeleteFiles
+      paymentProofOnly
+      jobApiBase="/api/forms/jobs"
+    />);
+
+    expect(screen.getByRole("img", { name: "Payment proof receipt.jpg" })).toHaveAttribute(
+      "src",
+      `/api/forms/jobs/${file.jobId}/files/${paymentProof.id}`,
+    );
+    expect(screen.queryByText("receipt.jpg · 2.0 KB")).not.toBeInTheDocument();
+    expect(screen.queryByText("draft-v2.jpg · 2.0 KB")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("File purpose")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("PaymtProved")).toHaveAttribute("accept", "image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf");
+    expect(screen.getByLabelText("PaymtProved")).toHaveAttribute("multiple");
+    expect(screen.getByRole("button", { name: "Delete receipt.jpg" })).toHaveTextContent("×");
+    fireEvent.click(screen.getByRole("button", { name: "Delete receipt.jpg" }));
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/forms/jobs/${file.jobId}/files/${paymentProof.id}`,
+      expect.objectContaining({ method: "DELETE" }),
+    );
+  });
+
+  it("uploads every selected saved-order payment proof as its own durable file", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "created" }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "created" }), { status: 201 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ProductionFilesPanel
+      jobId={file.jobId}
+      files={[]}
+      revision={{ changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false }}
+      canManageFinance
+      canUploadFiles
+      paymentProofOnly
+      jobApiBase="/api/forms/jobs"
+    />);
+
+    const input = screen.getByLabelText("PaymtProved");
+    fireEvent.change(input, { target: { files: [
+      new File([new Uint8Array([1])], "receipt-one.jpg", { type: "image/jpeg" }),
+      new File([new Uint8Array([2])], "receipt-two.jpg", { type: "image/jpeg" }),
+    ] } });
+    fireEvent.submit(screen.getByRole("button", { name: "Upload proof" }).closest("form")!);
+
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const first = fetchMock.mock.calls[0]?.[1]?.body as FormData;
+    const second = fetchMock.mock.calls[1]?.[1]?.body as FormData;
+    expect((first.get("file") as File).name).toBe("receipt-one.jpg");
+    expect((second.get("file") as File).name).toBe("receipt-two.jpg");
   });
 });

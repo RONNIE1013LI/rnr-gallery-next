@@ -5,6 +5,7 @@ import { createClientId } from "@/lib/client-id";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { formatMarketMoney } from "@/domain/money";
 import { InvoicePreview } from "./invoice-preview";
+import { MoneyCentsInput } from "./money-cents-input";
 import styles from "./admin.module.css";
 
 type InvoiceItem = Readonly<{
@@ -154,11 +155,13 @@ export function InvoicePanel({
   jobApiBase = "/api/admin/jobs",
   invoicePdfBase = "/api/admin/invoices",
   canEdit = true,
+  downloadAtTop = false,
 }: Readonly<{
   jobId: string;
   jobApiBase?: string;
   invoicePdfBase?: string;
   canEdit?: boolean;
+  downloadAtTop?: boolean;
 }>) {
   const [invoice, setInvoice] = useState<Invoice | null>(null);
   const [draft, setDraft] = useState<Draft | null>(null);
@@ -270,6 +273,9 @@ export function InvoicePanel({
         <span className={styles.invoiceStatus} data-status={invoice.status}>{invoice.status === "draft" ? "Draft" : invoice.status === "issued" ? "Issued" : "Void"}</span>
       </div>
       <p className={styles.mutedText}>Persistent GST invoice · prices include GST · all changes are recorded in the audit log.</p>
+      {downloadAtTop ? <div className={styles.invoicePrimaryActions}>
+        <a className={styles.secondaryAdminButton} href={`${invoicePdfBase}/${invoice.id}/pdf`}>Download PDF</a>
+      </div> : null}
 
       <div className={styles.invoiceMetaGrid}>
         <label><span>Invoice date</span><input type="date" value={draft.invoiceDate} onChange={(event) => updateField("invoiceDate", event.target.value)} disabled={locked} /></label>
@@ -291,7 +297,7 @@ export function InvoicePanel({
           <label><span>Code</span><input aria-label={`Item ${index + 1} code`} value={item.code} onChange={(event) => updateItem(item.key, { code: event.target.value })} disabled={locked} /></label>
           <label className={styles.invoiceDescription}><span>Description</span><textarea aria-label={`Item ${index + 1} description`} rows={2} value={item.description} onChange={(event) => updateItem(item.key, { description: event.target.value })} disabled={locked} /></label>
           <label><span>Quantity</span><input aria-label={`Item ${index + 1} quantity`} type="number" min="0.001" step="0.001" value={item.quantityMilli / 1_000} onChange={(event) => updateItem(item.key, { quantityMilli: Math.max(1, Math.round(Number(event.target.value) * 1_000)) })} disabled={locked} /></label>
-          <label><span>Rate incl GST</span><input aria-label={`Item ${index + 1} rate incl GST`} type="number" min="0" step="0.01" value={(item.rateInclGstCents / 100).toFixed(2)} onChange={(event) => updateItem(item.key, { rateInclGstCents: Math.max(0, Math.round(Number(event.target.value) * 100)) })} disabled={locked} /></label>
+          <label><span>Rate incl GST</span><MoneyCentsInput ariaLabel={`Item ${index + 1} rate incl GST`} cents={item.rateInclGstCents} onCentsChange={(rateInclGstCents) => updateItem(item.key, { rateInclGstCents })} disabled={locked} /></label>
           {invoice.status === "draft" && canEdit && draft.items.length > 1 ? <button type="button" className={styles.removeItemButton} onClick={() => setDraft((current) => current ? { ...current, items: current.items.filter((candidate) => candidate.key !== item.key) } : current)} disabled={pending}>Remove</button> : null}
         </fieldset>)}
       </div>
@@ -302,7 +308,7 @@ export function InvoicePanel({
           <label><span>Terms</span><textarea rows={3} value={draft.terms} onChange={(event) => updateField("terms", event.target.value)} disabled={locked} /></label>
         </div>
         <div>
-          <label className={styles.invoiceDiscount}><span>Discount ({invoice.currency})</span><input type="number" min="0" step="0.01" value={(draft.discountCents / 100).toFixed(2)} onChange={(event) => updateField("discountCents", Math.max(0, Math.round(Number(event.target.value) * 100)))} disabled={locked} /></label>
+          <label className={styles.invoiceDiscount}><span>Discount ({invoice.currency})</span><MoneyCentsInput ariaLabel={`Discount (${invoice.currency})`} cents={draft.discountCents} onCentsChange={(discountCents) => updateField("discountCents", discountCents)} disabled={locked} /></label>
           <dl className={styles.invoiceTotals} data-testid="invoice-totals">
             <div><dt>Gross{invoice.gstRateBasisPoints > 0 ? " incl GST" : ""}</dt><dd>{money(calculated.grossCents)}</dd></div>
             <div><dt>Discount</dt><dd>−{money(draft.discountCents)}</dd></div>
@@ -314,7 +320,7 @@ export function InvoicePanel({
       </div>
 
       <div className={styles.invoiceActions}>
-        <a className={styles.secondaryAdminButton} href={`${invoicePdfBase}/${invoice.id}/pdf`}>Download PDF</a>
+        {!downloadAtTop ? <a className={styles.secondaryAdminButton} href={`${invoicePdfBase}/${invoice.id}/pdf`}>Download PDF</a> : null}
         {invoice.status === "draft" && canEdit ? <><button type="button" className={styles.secondaryAdminButton} onClick={saveDraft} disabled={pending}>Save draft</button><button type="button" onClick={issueInvoice} disabled={pending}>Issue invoice</button></> : null}
         {invoice.status === "issued" && canEdit ? <><label><span>Void reason</span><input value={voidReason} onChange={(event) => setVoidReason(event.target.value)} disabled={pending} /></label><button type="button" className={styles.dangerButton} onClick={voidInvoice} disabled={pending}>Void invoice</button></> : null}
       </div>

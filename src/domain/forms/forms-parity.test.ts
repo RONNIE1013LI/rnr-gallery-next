@@ -6,9 +6,16 @@ import {
   FORM_OPTION_SETS,
   FORM_ROLE_PRESETS,
   FORM_STAT_WIDGET_TYPES,
+  displayFormReference,
 } from "./forms-parity";
 
 describe("forms source parity", () => {
+  it("keeps manual references numeric and visibly prefixes web references", () => {
+    expect(displayFormReference("manual", "08000")).toBe("08000");
+    expect(displayFormReference("web", "RNR-2026-ABC123")).toBe("Web-RNR-2026-ABC123");
+    expect(displayFormReference("web", "Web-RNR-2026-ABC123")).toBe("Web-RNR-2026-ABC123");
+  });
+
   it("preserves the source list order", () => {
     expect(FORM_LIST_COLUMNS.map((column) => column.label)).toEqual([
       "Submitted Time",

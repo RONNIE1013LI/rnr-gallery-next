@@ -45,6 +45,7 @@ function repository(overrides: Partial<ProductionProofRepository> = {}): Product
       reviewerType: "customer",
       createdAt: new Date("2026-08-04T00:00:00Z"),
     } }),
+    deletePaymentProof: vi.fn().mockResolvedValue({ result: "deleted", storageKey: reference.storageKey }),
     ...overrides,
   };
 }
@@ -101,6 +102,24 @@ describe("production proof service", () => {
     await expect(service.registerFile(actor, jobId, {
       kind: "payment_proof", idempotencyKey: "payment-proof-1", reference,
     }, { canManageFinance: false })).rejects.toBeInstanceOf(ProductionProofForbiddenError);
+  });
+
+  it("deletes only a job-owned payment proof through the repository boundary", async () => {
+    const repo = repository();
+    const service = createProductionProofService(repo);
+
+    await expect(service.deletePaymentProof(actor, jobId, reference.id, {
+      canDeleteFiles: false,
+    })).rejects.toBeInstanceOf(ProductionProofForbiddenError);
+
+    await expect(service.deletePaymentProof(actor, jobId, reference.id, {
+      canDeleteFiles: true,
+    })).resolves.toEqual({ result: "deleted", storageKey: reference.storageKey });
+    expect(repo.deletePaymentProof).toHaveBeenCalledWith(expect.objectContaining({
+      actor,
+      jobId,
+      fileId: reference.id,
+    }));
   });
 
   it("does not let finance permission substitute for payment-proof access", async () => {

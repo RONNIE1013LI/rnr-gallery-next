@@ -10,7 +10,7 @@ const data: FormsOrderEntryData = {
   assignees: [{ id: "artist-1", name: "Artist", email: "artist@example.test", role: "staff" }],
   canManageFinance: true,
   canUploadFiles: true,
-  submittedBy: "operator@example.test",
+  submittedBy: "Ronnie Li",
   productTitles: ["Photo Print Canvas"],
   customFields: [],
   invoiceBusiness: {
@@ -39,7 +39,8 @@ describe("FormsOrderEntryDrawer", () => {
   it("passes payment-proof upload capability into Order Entry", () => {
     render(<FormsOrderEntryDrawer data={data} onClose={vi.fn()} />);
 
-    expect(screen.getByLabelText("Payment proof")).toBeInTheDocument();
+    expect(screen.getByLabelText("PaymtProved")).toBeInTheDocument();
+    expect(screen.queryByText("operator@example.test")).not.toBeInTheDocument();
   });
 
   it("resizes from its left edge and resets when reopened", () => {
@@ -77,7 +78,7 @@ describe("FormsOrderEntryDrawer", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<FormsOrderEntryDrawer data={data} onClose={onClose} />);
 
-    fireEvent.change(screen.getByLabelText("Customer name"), { target: { value: "New customer" } });
+    fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "New customer" } });
     fireEvent.click(screen.getByRole("button", { name: "Close order entry" }));
     expect(confirm).toHaveBeenCalledWith("Discard this unsaved manual order?");
     expect(onClose).not.toHaveBeenCalled();
@@ -92,7 +93,7 @@ describe("FormsOrderEntryDrawer", () => {
     const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     render(<FormsOrderEntryDrawer data={data} onClose={onClose} />);
 
-    fireEvent.change(screen.getByLabelText("Payment proof"), {
+    fireEvent.change(screen.getByLabelText("PaymtProved"), {
       target: {
         files: [new File([new Uint8Array([0xff, 0xd8, 0xff])], "receipt.jpg", { type: "image/jpeg" })],
       },

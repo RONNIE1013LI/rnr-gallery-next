@@ -241,7 +241,11 @@ export function createFormsJobRoute(dependencies?: Dependencies) {
             { ...full, jobId },
             { canUpdateFinance: hasFormPermission(access.formRole, access.formProfile, "update_finance") },
           );
-          return Response.json({ result }, { headers: noStore });
+          const refreshed = await deps.detail(jobId, { canViewFinance: false });
+          return Response.json({
+            result,
+            version: refreshed?.job.updatedAt.toISOString() ?? full.expectedUpdatedAt,
+          }, { headers: noStore });
         }
         if (financeFields.has(patch.data.field) && !hasFormPermission(access.formRole, access.formProfile, "update_finance")) {
           throw new HttpError("Forbidden", 403);

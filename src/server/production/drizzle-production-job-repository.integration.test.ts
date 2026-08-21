@@ -163,6 +163,9 @@ describe("drizzle production job repository", () => {
       jobId: created.job.id,
       idempotencyKey: `update-${suffix}`,
       expectedUpdatedAt: adminDetail!.job.updatedAt.toISOString(),
+      customerName: "Updated Manual Customer",
+      customerEmail: "updated-manual@example.test",
+      customerPhone: "+64 21 999 8888",
       manualStatus: "designing",
       milestones: { fileSent: true },
       finance: {
@@ -172,6 +175,13 @@ describe("drizzle production job repository", () => {
         artistFeeCents: 4_000,
         materialCostCents: 2_500,
       },
+      items: [{
+        productTitle: "Canvas",
+        sizeLabel: "A1",
+        quantity: 1,
+        designText: "Updated wording",
+        notes: "Updated item note",
+      }],
     }, { canUpdateFinance: true });
     expect(updated).toBe("updated");
 
@@ -179,9 +189,15 @@ describe("drizzle production job repository", () => {
       canViewFinance: true,
     });
     expect(refreshed).toMatchObject({
+      job: {
+        customerName: "Updated Manual Customer",
+        customerEmail: "updated-manual@example.test",
+        customerPhone: "+64 21 999 8888",
+      },
       status: "designing",
       paymentStatus: "paid",
       finance: { amountOwingCents: 0, actualProfitCents: 16_500 },
+      items: [{ productTitle: "Canvas", sizeLabel: "A1", designText: "Updated wording", notes: "Updated item note" }],
     });
     expect(refreshed?.job.fileSentAt).toEqual(new Date("2026-08-04T11:00:00.000Z"));
     expect(await database.select().from(adminAuditLogs).where(and(

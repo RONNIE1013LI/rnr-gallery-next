@@ -19,16 +19,18 @@ vi.mock("@/domain/catalogue/product-registry", () => ({ getRegistryProducts: () 
 describe("forms manual entry page", () => {
   it("gates manual entry and renders the complete mature production form", async () => {
     requireFormsPage.mockResolvedValue({
-      user: { id: "operator-1", email: "operator@example.test" },
+      user: { id: "operator-1", name: "Ronnie Li", email: "operator@example.test" },
       formRole: "form_staff",
       formProfile: { preset: "manager", assignedOnly: false, permissions: { create_jobs: true, update_finance: false } },
     });
     render(await NewFormsJobPage());
     expect(requireFormsPage).toHaveBeenCalledWith("/order-system/new", "create_jobs");
     expect(screen.getByRole("heading", { name: "Order entry" })).toBeInTheDocument();
-    expect(screen.getByLabelText("Customer name")).toBeInTheDocument();
-    expect(screen.getByLabelText("Product")).toHaveAttribute("list", "rnr-production-products");
+    expect(screen.getByLabelText("Cust.Name")).toBeInTheDocument();
+    expect(screen.queryByLabelText("Product")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Web order number")).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Payment" })).not.toBeInTheDocument();
-    expect(screen.getByText("operator@example.test")).toBeInTheDocument();
+    expect(screen.getByText("Ronnie Li")).toBeInTheDocument();
+    expect(screen.queryByText("operator@example.test")).not.toBeInTheDocument();
   });
 });

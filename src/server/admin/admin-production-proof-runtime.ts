@@ -10,6 +10,7 @@ export function getAdminProductionProofRuntime() {
   return Object.freeze({
     registerFile: service.registerFile,
     recordReview: service.recordReview,
+    deletePaymentProof: service.deletePaymentProof,
     listFiles: service.listFiles,
     getPrivateFile: service.getPrivateFile,
     save: store.save.bind(store),

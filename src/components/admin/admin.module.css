@@ -1188,6 +1188,17 @@
   background: #e4ebf2;
 }
 
+.persistedInvoiceOverlay {
+  grid-template-rows: auto minmax(0, 1fr);
+}
+
+.persistedInvoiceOverlayBody {
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+
 .persistedInvoiceWorkspace {
   display: grid;
   grid-template-columns: minmax(360px, 0.75fr) minmax(560px, 1.25fr);
@@ -1791,6 +1802,11 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.invoicePrimaryActions {
+  display: flex;
+  justify-content: flex-end;
 }
 
 .invoiceItemsHeading h3 {
@@ -2853,6 +2869,76 @@
   padding: 7px;
 }
 
+.paymentProofPreviewGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.paymentProofPreviewCard {
+  min-width: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  padding: 6px;
+  border: 1px solid #d7dbe1;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.paymentProofPreviewMedia {
+  position: relative;
+  min-width: 0;
+  aspect-ratio: 4 / 3;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  border-radius: 4px;
+  color: #6b7280;
+  background: #eef0f3;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.paymentProofPreviewMedia img {
+  object-fit: cover;
+}
+
+.paymentProofPreviewCard > strong {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paymentProofDeleteButton {
+  width: 30px;
+  height: 30px;
+  position: absolute;
+  z-index: 1;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 999px;
+  color: #fff;
+  background: #c62828;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .22);
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.paymentProofDeleteButton:focus-visible {
+  outline: 3px solid #173f31;
+  outline-offset: 2px;
+}
+
 .productionFiles {
   display: grid;
 }
@@ -2860,6 +2946,20 @@
 .productionFiles > article {
   padding: 16px 0;
   border-bottom: 1px solid #e8e8eb;
+}
+
+.productionFiles.paymentProofPreviewGrid > article {
+  padding: 6px;
+  border-bottom: 1px solid #d7dbe1;
+}
+
+.productionFiles.paymentProofPreviewGrid .fileSummary {
+  display: grid;
+  gap: 6px;
+}
+
+.productionFiles.paymentProofPreviewGrid .fileSummary > div:last-child {
+  justify-items: start;
 }
 
 .productionFiles > article:last-child {
@@ -3470,6 +3570,180 @@
   font-weight: 700;
 }
 
+.manualEntryForm {
+  gap: 0;
+  border: 1px solid var(--admin-border);
+  background: #f7f8fa;
+}
+
+.manualEntryForm .formPanel {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--admin-border);
+  border-radius: 0;
+}
+
+.manualEntryForm .formSubmitBar {
+  position: static;
+  margin: 12px;
+}
+
+.manualEntryForm .formRecordSummary,
+.manualRecordSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border: 0;
+  border-bottom: 1px solid var(--admin-border);
+  background: #fff;
+}
+
+.manualRecordSummary > div {
+  min-width: 0;
+  padding: 10px 12px;
+  border-right: 1px solid var(--admin-border);
+}
+
+.manualRecordSummary > div:last-child {
+  border-right: 0;
+}
+
+.manualRecordSummary span {
+  display: block;
+  color: var(--admin-muted);
+  font-size: 11px;
+}
+
+.manualRecordSummary strong {
+  display: block;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.manualEntryForm .formSectionHeading,
+.manualEntryDetail .panel > h2 {
+  margin: 0;
+  padding: 7px 12px;
+  border-bottom: 1px solid var(--admin-border);
+  background: #f2f4f7;
+}
+
+.manualEntryForm .formSectionHeading h2,
+.manualEntryDetail .panel > h2 {
+  font-size: 12px;
+  font-weight: 750;
+  letter-spacing: 0;
+}
+
+.manualFieldRows,
+.manualDetailRows {
+  display: grid;
+  margin: 0;
+}
+
+.manualFieldRows > label,
+.manualDetailRows > div {
+  display: grid;
+  grid-template-columns: minmax(110px, 150px) minmax(0, 1fr);
+  min-width: 0;
+  border-bottom: 1px solid #e4e6ea;
+}
+
+.manualFieldRows > label:last-child,
+.manualDetailRows > div:last-child {
+  border-bottom: 0;
+}
+
+.manualFieldRows > label > span:first-child,
+.manualDetailRows dt {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  margin: 0;
+  padding: 6px 10px;
+  border-right: 1px solid #e4e6ea;
+  color: #56606e;
+  background: #fafbfc;
+  font-size: 12px;
+  font-weight: 700;
+  text-align: right;
+}
+
+.manualFieldRows > label > input,
+.manualFieldRows > label > select,
+.manualFieldRows > label > textarea,
+.manualFieldRows > label > div,
+.manualFieldRows > label > span:last-child,
+.manualDetailRows dd {
+  min-width: 0;
+  margin: 0;
+  padding: 6px 9px;
+}
+
+.manualFieldRows input,
+.manualFieldRows select,
+.manualFieldRows textarea {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #cfd3da;
+  border-radius: 3px;
+  background: #fff;
+  font: inherit;
+}
+
+.manualFieldRows .manualContentControl {
+  width: auto;
+  max-width: 100%;
+  justify-self: start;
+}
+
+.manualFieldRows textarea {
+  resize: vertical;
+}
+
+.manualToggleRow > span:last-child {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.manualToggleRow input {
+  width: 16px;
+  min-height: 16px;
+}
+
+.manualEntryDetail {
+  display: block;
+}
+
+.manualEntryDetail .detailMain {
+  gap: 0;
+  overflow: hidden;
+  border: 1px solid var(--admin-border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.manualEntryDetail .panel {
+  padding: 0;
+  border: 0;
+  border-bottom: 1px solid var(--admin-border);
+  border-radius: 0;
+}
+
+.manualEntryDetail .panel:last-child {
+  border-bottom: 0;
+}
+
+.manualEntryDetail .productionFiles,
+.manualEntryDetail .fileUploadForm,
+.manualEntryDetail .formFeedback,
+.manualEntryDetail .timeline,
+.manualEntryDetail .mutedText {
+  margin: 8px 12px;
+}
+
 .formSectionHeading {
   display: flex;
   align-items: flex-start;
@@ -4002,6 +4276,33 @@
 
   .formRecordSummary > div:last-child {
     border-bottom: 0;
+  }
+
+  .manualEntryForm .formRecordSummary,
+  .manualRecordSummary {
+    grid-template-columns: 1fr;
+  }
+
+  .manualRecordSummary > div {
+    border-right: 0;
+    border-bottom: 1px solid var(--admin-border);
+  }
+
+  .manualRecordSummary > div:last-child {
+    border-bottom: 0;
+  }
+
+  .manualFieldRows > label,
+  .manualDetailRows > div {
+    grid-template-columns: 1fr;
+  }
+
+  .manualFieldRows > label > span:first-child,
+  .manualDetailRows dt {
+    justify-content: flex-start;
+    border-right: 0;
+    border-bottom: 1px solid #eceef1;
+    text-align: left;
   }
 
   .fullField {

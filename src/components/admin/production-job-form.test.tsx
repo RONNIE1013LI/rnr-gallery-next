@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import type { ComponentType } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProductionJobForm } from "./production-job-form";
 
@@ -8,6 +9,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push }) }));
 
 afterEach(() => {
   vi.unstubAllGlobals();
+  vi.restoreAllMocks();
   vi.clearAllMocks();
 });
 
@@ -15,6 +17,34 @@ describe("ProductionJobForm", () => {
   const assignees = [
     { id: "staff-1", name: "Studio Artist", email: "artist@example.test" },
   ];
+  const ExistingManualEditor = ProductionJobForm as unknown as ComponentType<Record<string, unknown>>;
+  const existingManualOrder = {
+    id: "5b25574f-e1e4-4b29-927d-c24c5efc4d8b",
+    jobNumber: "08000",
+    expectedUpdatedAt: "2026-08-21T08:00:00.000Z",
+    submittedAt: "21 Aug 2026, 7:30 am",
+    updatedAt: "21 Aug 2026, 8:00 am",
+    submittedBy: "Ronnie Li",
+    size: "A2",
+    sizeOther: "",
+    customerName: "Saved Customer",
+    customerEmail: "saved@example.test",
+    customerPhone: "+64210000000",
+    customerSource: "messenger",
+    urgent: true,
+    neededDate: "2026-08-28",
+    deliveryMethod: "post",
+    deliveryAddress: "8 George Street\nSydney NSW 2000",
+    paymentReconciliationStatus: "Afterpay",
+    assignedUserId: "staff-1",
+    internalNotes: "Saved remark",
+    manualStatus: "designing",
+    amountPayableCents: 15_000,
+    amountPaidCents: 5_000,
+    materialCostCents: 2_500,
+    milestones: { fileSent: true, downloaded: false, printed: false, completed: false, customerNotified: false, delivered: false },
+    audit: [{ id: "audit-1", action: "production_job.created", actorName: "Ronnie Li", createdAt: "21 Aug 2026, 7:30 am" }],
+  };
 
   function fillRequiredManualOrder() {
     fireEvent.change(screen.getByLabelText("Customer name"), { target: { value: "Payment Customer" } });
@@ -22,6 +52,167 @@ describe("ProductionJobForm", () => {
     fireEvent.change(screen.getByLabelText("Product"), { target: { value: "Canvas" } });
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
   }
+
+  it("reopens a saved manual order in the same editable Data entry form and persists every field", async () => {
+    const onSaved = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "updated", version: "2026-08-21T09:00:00.000Z",
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: () => "manual-edit-request-0001" });
+
+    render(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance
+      canUploadFiles
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      existingManualOrder={existingManualOrder}
+      onSaved={onSaved}
+    />);
+
+    expect(screen.getByLabelText("Size")).toHaveValue("A2");
+    expect(screen.getByLabelText("Cust.Name")).toHaveValue("Saved Customer");
+    expect(screen.getByLabelText("Remark")).toHaveValue("Saved remark");
+    expect(screen.getByLabelText("File Sent")).toHaveValue("yes");
+    expect(screen.getByText("Production Job Created")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Updated Customer" } });
+    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save order" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/forms/jobs/${existingManualOrder.id}`,
+      expect.objectContaining({ method: "PATCH" }),
+    );
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(payload).toMatchObject({
+      expectedUpdatedAt: existingManualOrder.expectedUpdatedAt,
+      customerName: "Updated Customer",
+      customerEmail: "saved@example.test",
+      customerPhone: "+64210000000",
+      items: [{ productTitle: "Canvas", sizeLabel: "A1", quantity: 1 }],
+      finance: { amountPayableCents: 15_000, amountPaidCents: 5_000, materialCostCents: 2_500 },
+      milestones: { fileSent: true, downloaded: false },
+    });
+    expect(onSaved).toHaveBeenCalledOnce();
+  });
+
+  it("does not submit production, delivery or finance fields without their specific permissions", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "updated", version: "2026-08-21T09:00:00.000Z",
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance={false}
+      canUploadFiles={false}
+      canUpdateProductionStatus={false}
+      canUpdateDeliveryStatus={false}
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      existingManualOrder={existingManualOrder}
+    />);
+
+    expect(screen.getByLabelText("File Sent")).toBeDisabled();
+    expect(screen.getByLabelText("Delivered")).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { name: "Save order" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(payload).not.toHaveProperty("finance");
+    expect(payload).not.toHaveProperty("paymentReconciliationStatus");
+    expect(payload).not.toHaveProperty("milestones");
+    expect(payload).not.toHaveProperty("manualStatus");
+  });
+
+  it("normalizes every manual-entry money editor to two decimal places on blur", () => {
+    render(<ProductionJobForm assignees={assignees} canManageFinance manualEntryLayout />);
+
+    for (const label of ["AmtPayable", "AmtPaid", "Material Cost"]) {
+      const input = screen.getByLabelText(label);
+      fireEvent.change(input, { target: { value: "150" } });
+      expect((input as HTMLInputElement).value).toBe("150");
+      fireEvent.blur(input);
+      expect((input as HTMLInputElement).value).toBe("150.00");
+    }
+  });
+
+  it("opens the persisted invoice editor from the saved Data entry Invoice button", async () => {
+    const invoiceId = "00000000-0000-4000-8000-000000000010";
+    const persistedInvoice = {
+      id: invoiceId,
+      jobId: existingManualOrder.id,
+      invoiceNumber: "INV-08000",
+      status: "draft",
+      invoiceDate: "2026-08-21",
+      dueDate: "2026-08-28",
+      reference: "08000",
+      webOrderNumber: "",
+      businessName: "R&R Gallery",
+      businessAddress: "11 Para Close\nAuckland 0632\nNew Zealand",
+      businessEmail: "customerservice@rnrgallery.com",
+      businessPhone: "+64 21 023 48948",
+      businessWebsite: "https://rnrgallery.com/",
+      gstNumber: "125-796-389",
+      bankAccount: "04-0000-0000000-00",
+      customerName: "Saved Customer",
+      customerEmail: "saved@example.test",
+      customerAddress: "8 George Street\nSydney NSW 2000",
+      deliveryAddress: "8 George Street\nSydney NSW 2000",
+      currency: "NZD",
+      gstRateBasisPoints: 1500,
+      pricesIncludeGst: true,
+      grossCents: 15_000,
+      discountCents: 0,
+      subtotalExGstCents: 13_043,
+      gstCents: 1_957,
+      totalInclGstCents: 15_000,
+      notes: "Thank you for your business!",
+      terms: "Payment is due within 7 days.",
+      issuedAt: null,
+      voidedAt: null,
+      voidReason: null,
+      createdAt: "2026-08-21T08:00:00.000Z",
+      updatedAt: "2026-08-21T08:00:00.000Z",
+      items: [{
+        position: 0,
+        code: "A2",
+        description: "Canvas - A2",
+        quantityMilli: 1_000,
+        rateInclGstCents: 15_000,
+        lineTotalInclGstCents: 15_000,
+      }],
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ invoice: persistedInvoice }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      invoicePdfBase="/api/forms/invoices"
+      existingManualOrder={existingManualOrder}
+    />);
+    fireEvent.click(screen.getByRole("button", { name: "Invoice" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Edit invoice INV-08000" });
+    const customerAddress = await screen.findByLabelText("Customer address");
+    const download = screen.getByRole("link", { name: "Download PDF" });
+    expect(customerAddress).toHaveValue("8 George Street\nSydney NSW 2000");
+    expect(download).toHaveAttribute(
+      "href",
+      `/api/forms/invoices/${invoiceId}/pdf`,
+    );
+    expect(download.compareDocumentPosition(customerAddress) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(within(dialog).getByRole("link", { name: "Download PDF" })).toBe(download);
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
 
   it("shows manual finance fields only to administrators with finance permission", () => {
     const { rerender } = render(
@@ -155,6 +346,90 @@ describe("ProductionJobForm", () => {
         materialCostCents: 0,
       },
     });
+  });
+
+  it("previews and independently removes any number of selected payment-proof images", () => {
+    const createObjectURL = vi.spyOn(URL, "createObjectURL")
+      .mockReturnValueOnce("blob:receipt-one")
+      .mockReturnValueOnce("blob:receipt-two");
+    const revokeObjectURL = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+
+    render(<ProductionJobForm
+      assignees={assignees}
+      canManageFinance
+      canUploadFiles
+      manualEntryLayout
+    />);
+
+    const input = screen.getByLabelText("PaymtProved") as HTMLInputElement;
+    const first = new File([new Uint8Array([0xff, 0xd8, 0xff])], "receipt-one.jpg", { type: "image/jpeg" });
+    const second = new File([new Uint8Array([0xff, 0xd8, 0xff])], "receipt-two.jpg", { type: "image/jpeg" });
+    expect(input).toHaveAttribute("multiple");
+
+    fireEvent.change(input, { target: { files: [first, second] } });
+
+    expect(screen.getByRole("img", { name: "Payment proof receipt-one.jpg" })).toHaveAttribute("src", "blob:receipt-one");
+    expect(screen.getByRole("img", { name: "Payment proof receipt-two.jpg" })).toHaveAttribute("src", "blob:receipt-two");
+    expect(screen.queryByText("receipt-one.jpg")).not.toBeInTheDocument();
+    expect(screen.queryByText("receipt-two.jpg")).not.toBeInTheDocument();
+    expect(createObjectURL).toHaveBeenCalledTimes(2);
+
+    fireEvent.click(screen.getByRole("button", { name: "Remove receipt-one.jpg" }));
+
+    expect(screen.queryByRole("img", { name: "Payment proof receipt-one.jpg" })).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Payment proof receipt-two.jpg" })).toBeInTheDocument();
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:receipt-one");
+  });
+
+  it("uploads every selected payment proof before applying the paid status", async () => {
+    const jobId = "5b25574f-e1e4-4b29-927d-c24c5efc4d8b";
+    const updatedAt = "2026-08-17T00:00:00.000Z";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        result: "created",
+        job: { id: jobId, jobNumber: "08000", updatedAt },
+      }), { status: 201, headers: { "Content-Type": "application/json" } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "created" }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "created" }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ result: "updated" }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: vi.fn()
+      .mockReturnValueOnce("manual-create-many")
+      .mockReturnValueOnce("payment-upload-one")
+      .mockReturnValueOnce("payment-upload-two")
+      .mockReturnValueOnce("payment-status-many") });
+    vi.spyOn(URL, "createObjectURL")
+      .mockReturnValueOnce("blob:receipt-one")
+      .mockReturnValueOnce("blob:receipt-two");
+
+    render(<ProductionJobForm
+      assignees={assignees}
+      canManageFinance
+      canUploadFiles
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      detailBasePath="/order-system/jobs"
+    />);
+    fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Payment Customer" } });
+    fireEvent.change(screen.getByLabelText("PhoneNo."), { target: { value: "021 000 0000" } });
+    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
+    fireEvent.change(screen.getByLabelText("AmtPayable"), { target: { value: "230.50" } });
+    fireEvent.change(screen.getByLabelText("AmtPaid"), { target: { value: "230.50" } });
+    fireEvent.change(screen.getByLabelText("PaymtProved"), { target: { files: [
+      new File([new Uint8Array([1])], "receipt-one.jpg", { type: "image/jpeg" }),
+      new File([new Uint8Array([2])], "receipt-two.jpg", { type: "image/jpeg" }),
+    ] } });
+    fireEvent.click(screen.getByRole("button", { name: "Create production job" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    const firstUpload = fetchMock.mock.calls[1]?.[1]?.body as FormData;
+    const secondUpload = fetchMock.mock.calls[2]?.[1]?.body as FormData;
+    expect((firstUpload.get("file") as File).name).toBe("receipt-one.jpg");
+    expect(firstUpload.get("idempotencyKey")).toBe("payment-upload-one");
+    expect((secondUpload.get("file") as File).name).toBe("receipt-two.jpg");
+    expect(secondUpload.get("idempotencyKey")).toBe("payment-upload-two");
+    expect(fetchMock.mock.calls[3]?.[0]).toBe(`/api/forms/jobs/${jobId}`);
+    expect(push).toHaveBeenCalledWith(`/order-system/jobs/${jobId}`);
   });
 
   it("retries a failed proof upload without creating a duplicate order", async () => {
@@ -292,6 +567,119 @@ describe("ProductionJobForm", () => {
     expect(screen.getByRole("link", { name: "Back" })).toHaveAttribute("href", "/order-system");
   });
 
+  it("renders the compact eTeams field set only for Forms manual entry", () => {
+    render(
+      <ProductionJobForm
+        assignees={assignees}
+        canManageFinance
+        canUploadFiles
+        manualEntryLayout
+        submittedBy="Ronnie Li"
+      />,
+    );
+
+    expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual([
+      "Product / Size",
+      "Payment",
+      "Design & Notes",
+      "Delivery",
+      "Customer info",
+      "Internal Production Status",
+      "Cost / Profit",
+      "Operation history",
+    ]);
+    expect(screen.getByText("Ronnie Li")).toBeInTheDocument();
+    expect(screen.queryByText("operator@example.test")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Web order number")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Product")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Quantity")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Payment status")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Artist fee (NZD)")).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Artist paid")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Size")).toBeInTheDocument();
+    expect(screen.getByLabelText("Size Other")).toBeInTheDocument();
+    expect(screen.getByLabelText("PaymtProved")).toBeInTheDocument();
+    expect(screen.getByLabelText("AmtPayable")).toBeInTheDocument();
+    expect(screen.getByLabelText("AmtPaid")).toBeInTheDocument();
+    expect(screen.getByLabelText("AmtOwe")).toBeInTheDocument();
+    expect(screen.getByLabelText("BankRecon")).toBeInTheDocument();
+    expect(screen.getByLabelText("Remark")).toBeInTheDocument();
+    expect(screen.getByLabelText("DlvryAddr")).toBeInTheDocument();
+    expect(screen.getByLabelText("Cust.Name")).toBeInTheDocument();
+    expect(screen.getByLabelText("Material Cost")).toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Assign Artist" }).className).toContain("manualContentControl");
+    for (const label of ["File Sent", "Download", "Printed", "Completed", "Cust.Notified"]) {
+      const control = screen.getByRole("combobox", { name: label });
+      expect(within(control).getAllByRole("option").map((option) => option.textContent)).toEqual(["NO", "YES"]);
+      expect(control).toHaveDisplayValue("NO");
+      expect(control.className).toContain("manualContentControl");
+    }
+    const delivered = screen.getByRole("combobox", { name: "Delivered" });
+    expect(within(delivered).getAllByRole("option").map((option) => option.textContent)).toEqual(["NO", "YES", "HOLD"]);
+    expect(delivered).toHaveDisplayValue("NO");
+    expect(delivered.className).toContain("manualContentControl");
+    expect(screen.getByText("Operation history will appear after this manual order is saved.")).toBeInTheDocument();
+  });
+
+  it("submits explicit manual production statuses and maps Delivered HOLD to on hold", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "created",
+      job: { id: "ec5a34e2-2ca4-4ed7-906a-eb07aa781a03", jobNumber: "08000" },
+    }), { status: 201, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: () => "manual-status-request-0001" });
+
+    render(<ProductionJobForm
+      assignees={assignees}
+      canManageFinance={false}
+      manualEntryLayout
+    />);
+    fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Status Customer" } });
+    fireEvent.change(screen.getByLabelText("PhoneNo."), { target: { value: "021 000 0000" } });
+    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
+    fireEvent.change(screen.getByLabelText("File Sent"), { target: { value: "yes" } });
+    fireEvent.change(screen.getByLabelText("Delivered"), { target: { value: "hold" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create production job" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      manualStatus: "on_hold",
+      fileSent: true,
+      downloaded: false,
+      printed: false,
+      completed: false,
+      customerNotified: false,
+      delivered: false,
+    });
+  });
+
+  it("derives the hidden manual product from Size without changing the persisted item contract", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "created",
+      job: { id: "ec5a34e2-2ca4-4ed7-906a-eb07aa781a03", jobNumber: "08000" },
+    }), { status: 201, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: () => "manual-compact-request-0001" });
+
+    render(<ProductionJobForm
+      assignees={assignees}
+      canManageFinance={false}
+      manualEntryLayout
+    />);
+    fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Ana Customer" } });
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "ana@example.test" } });
+    fireEvent.change(screen.getByLabelText("DlvryDate"), { target: { value: "2026-08-28" } });
+    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create production job" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
+    expect(payload).toMatchObject({
+      webOrderNumber: "",
+      items: [{ productTitle: "Canvas", sizeLabel: "A2", quantity: 1 }],
+    });
+  });
+
   it("offers every approved Canvas and Banner size without Canvas dimension annotations", () => {
     render(<ProductionJobForm assignees={assignees} canManageFinance />);
 
@@ -336,15 +724,14 @@ describe("ProductionJobForm", () => {
 
   it("fills only empty customer fields from a pasted NZ delivery block", () => {
     render(<ProductionJobForm assignees={assignees} canManageFinance />);
+    const pasted = "Litea Murtagh\n2/6 Ryburn Road, Mount Wellington, Auckland 1062\n027-7199394\nLiteamurtagh@live.com";
     fireEvent.paste(screen.getByLabelText("Delivery address"), {
-      clipboardData: { getData: () => "Litea Murtagh\n2/6 Ryburn Road, Mount Wellington, Auckland 1062\n027-7199394\nLiteamurtagh@live.com" },
+      clipboardData: { getData: () => pasted },
     });
     expect(screen.getByLabelText("Customer name")).toHaveValue("Litea Murtagh");
     expect(screen.getByLabelText("Phone")).toHaveValue("+64277199394");
     expect(screen.getByLabelText("Email")).toHaveValue("liteamurtagh@live.com");
-    expect(screen.getByLabelText("Delivery address")).toHaveValue(
-      "2/6 Ryburn Road, Mount Wellington, Auckland 1062",
-    );
+    expect(screen.getByLabelText("Delivery address")).toHaveValue(pasted);
   });
 
   it("does not overwrite existing customer fields when pasting", () => {
@@ -352,13 +739,14 @@ describe("ProductionJobForm", () => {
     fireEvent.change(screen.getByLabelText("Customer name"), { target: { value: "Existing Name" } });
     fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "+64210000000" } });
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "existing@example.com" } });
+    const pasted = "New Name\n8 George Street Sydney NSW 2000\n0412 345 678\nnew@example.com";
     fireEvent.paste(screen.getByLabelText("Delivery address"), {
-      clipboardData: { getData: () => "New Name\n8 George Street Sydney NSW 2000\n0412 345 678\nnew@example.com" },
+      clipboardData: { getData: () => pasted },
     });
     expect(screen.getByLabelText("Customer name")).toHaveValue("Existing Name");
     expect(screen.getByLabelText("Phone")).toHaveValue("+64210000000");
     expect(screen.getByLabelText("Email")).toHaveValue("existing@example.com");
-    expect(screen.getByLabelText("Delivery address")).toHaveValue("8 George Street Sydney NSW 2000");
+    expect(screen.getByLabelText("Delivery address")).toHaveValue(pasted);
   });
 
   it("creates a manual job with safe staff finance defaults and opens the detail", async () => {

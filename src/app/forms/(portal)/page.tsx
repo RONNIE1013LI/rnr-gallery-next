@@ -75,7 +75,7 @@ export default async function FormsDataListPage({ searchParams }: Props) {
     assignees,
     canManageFinance: canUpdateFinance,
     canUploadFiles,
-    submittedBy: access.user.email ?? "Current operator",
+    submittedBy: access.user.name?.trim() || "Current operator",
     productTitles: getRegistryProducts(entryResources[0].registry)
       .filter((product) => product.active)
       .map((product) => product.title),
@@ -106,6 +106,7 @@ export default async function FormsDataListPage({ searchParams }: Props) {
       canViewFiles={canViewFiles}
       canUploadFiles={canUploadFiles}
       canReviewProofs={hasFormPermission(access.formRole, access.formProfile, "update_production_status")}
+      canDeleteFiles={hasFormPermission(access.formRole, access.formProfile, "delete_files")}
       assignees={assignees}
       orderEntry={orderEntry}
     />
