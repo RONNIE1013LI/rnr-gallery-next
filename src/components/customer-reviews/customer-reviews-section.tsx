@@ -25,7 +25,7 @@ export function CustomerReviewsSection({ data }: Readonly<{
         </div> : null}
       </header>
       <div className={`${styles.featuredLayout} ${featured.featuredImage ? "" : styles.featuredWithoutImage}`}>
-        {featured.featuredImage ? <div className={styles.featuredImage}><Image src={featured.featuredImage.url} alt={featured.productDisplayLabel ? `${featured.productDisplayLabel} shared with this customer recommendation` : "Customer image shared with this recommendation"} fill sizes="(max-width: 760px) calc(100vw - 40px), 42vw" unoptimized /></div> : null}
+        {featured.featuredImage ? <div className={styles.featuredImage}><Image src={featured.featuredImage.url} alt={featured.productDisplayLabel ? `${featured.productDisplayLabel} shared with this customer recommendation` : "Customer image shared with this recommendation"} width={featured.featuredImage.width} height={featured.featuredImage.height} sizes="(max-width: 900px) calc(100vw - 48px), 42vw" unoptimized /></div> : null}
         <CustomerReviewCard review={featured} featured />
       </div>
       {data.reviews.length ? <CustomerReviewCarousel reviews={data.reviews} /> : null}

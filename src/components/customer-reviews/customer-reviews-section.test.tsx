@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { PublicCustomerReviewSection } from "@/domain/customer-reviews/types";
 import { CustomerReviewsSection } from "./customer-reviews-section";
 import { featuredReview, secondReview } from "./test-fixtures";
+import styles from "./customer-reviews.module.css";
 
 const section: PublicCustomerReviewSection = {
   summary: {
@@ -65,5 +66,41 @@ describe("CustomerReviewsSection", () => {
     expect(screen.getByText("today").closest("time")).toHaveAttribute("title", "20 August 2026");
     expect(screen.queryByText(/Trustindex|Like|Comment|Share/)).not.toBeInTheDocument();
     expect(container.querySelector('a[href="#"]')).toBeNull();
+  });
+
+  it.each([
+    { label: "portrait", width: 900, height: 1_600 },
+    { label: "landscape", width: 1_600, height: 900 },
+  ])("keeps a $label featured image in normal document flow", ({ width, height }) => {
+    render(<CustomerReviewsSection data={{
+      ...section,
+      featured: {
+        ...featuredReview,
+        featuredImage: {
+          url: `/review-media/${featuredReview.id}/featured-image`,
+          mimeType: "image/webp",
+          width,
+          height,
+        },
+      },
+    }} />);
+
+    const image = screen.getByRole("img", {
+      name: "Digital Oil Painting Canvas shared with this customer recommendation",
+    });
+    expect(image).toHaveAttribute("width", String(width));
+    expect(image).toHaveAttribute("height", String(height));
+    expect(image).not.toHaveAttribute("data-nimg", "fill");
+    expect(image).not.toHaveStyle({ position: "absolute" });
+    expect(image.parentElement).toHaveClass(styles.featuredImage);
+  });
+
+  it("keeps the text-only featured variant to a single content column", () => {
+    const { container } = render(<CustomerReviewsSection data={section} />);
+    const layout = container.querySelector(`.${styles.featuredLayout}`);
+
+    expect(layout).toHaveClass(styles.featuredWithoutImage);
+    expect(layout?.children).toHaveLength(1);
+    expect(layout?.querySelector("img")).toBeNull();
   });
 });

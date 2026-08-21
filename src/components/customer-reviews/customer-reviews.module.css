@@ -110,14 +110,20 @@
 }
 
 .featuredImage {
-  position: relative;
-  min-height: 100%;
-  aspect-ratio: 4 / 3;
+  min-width: 0;
+  height: clamp(22.5rem, 31vw, 26.875rem);
+  overflow: hidden;
+  border-radius: 1rem 0 0 1rem;
   background: #ece9e2;
 }
 
 .featuredImage img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  max-width: 100%;
   object-fit: cover;
+  object-position: center;
 }
 
 .reviewCard {
@@ -131,6 +137,7 @@
 
 .featuredCard {
   display: flex;
+  min-width: 0;
   min-height: 100%;
   flex-direction: column;
   justify-content: center;
@@ -357,7 +364,10 @@
   .sectionHeader { grid-template-columns: 1fr; gap: 1.5rem; }
   .facebookSummary { width: min(100%, 18rem); min-width: 0; }
   .featuredLayout { grid-template-columns: 1fr; }
-  .featuredImage { min-height: auto; }
+  .featuredImage {
+    height: clamp(15rem, 38vw, 22rem);
+    border-radius: 1rem 1rem 0 0;
+  }
   .carousel { grid-auto-columns: calc((100% - 1rem) / 2); }
 }
 
@@ -366,6 +376,7 @@
   .shell { width: calc(100% - 2.5rem); }
   .facebookSummary { width: min(100%, 18rem); justify-self: center; }
   .carousel { grid-auto-columns: 88%; }
+  .featuredImage { height: clamp(13.75rem, 65vw, 17.5rem); }
   .featuredCard { padding: 1.5rem; }
   .reviewCard { padding: 1.125rem; }
 }
