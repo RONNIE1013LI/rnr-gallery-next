@@ -76,6 +76,12 @@ describe("customer service policy gate", () => {
     "Can you explain the design process and show me the most recent proof?",
     "What wording is on the proof that belongs to me?",
     "Can you explain the design process and show us our proof?",
+    "Can you show me the recent proof?",
+    "Can you show me the up-to-date proof?",
+    "Can you show me the proof that is mine?",
+    "Can you explain the design process and show us our proofs?",
+    "Can you show me the current prοof?",
+    "Can you show me the proof we are using now?",
   ])("recognizes Website private-record ownership and recency: %s", (message) => {
     expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge, channel: "website" })).toMatchObject({
       decision: "REALTIME_DATA_REQUIRED",
@@ -87,6 +93,8 @@ describe("customer service policy gate", () => {
     "Can you explain the design process from order confirmation to draft review?",
     "In the general design process, do you confirm the order before preparing a draft?",
     "What details do you need to prepare a quote and later create a draft after the order is confirmed?",
+    "How is a design draft created, and can you explain the general process to me?",
+    "Can you explain how a design draft is created before a finished product is prepared for me?",
   ])("keeps generic Website order and draft process questions eligible: %s", (message) => {
     expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge, channel: "website" })).toMatchObject({
       decision: "DRAFT_ALLOWED",

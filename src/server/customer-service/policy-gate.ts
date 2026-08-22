@@ -47,28 +47,45 @@ const REALTIME_PATTERNS = [
 ];
 
 function isPrivateCurrentDesignRecordRequest(message: string) {
-  const words = message.toLocaleLowerCase("en-NZ").match(/[a-z0-9]+/g) ?? [];
+  const confusables = new Map([
+    ["ο", "o"],
+    ["о", "o"],
+  ]);
+  const normalized = [...message.normalize("NFKC").toLocaleLowerCase("en-NZ")]
+    .map((character) => confusables.get(character) ?? character)
+    .join("");
+  const words = (normalized.match(/[a-z0-9]+/g) ?? []).map((word) => (
+    word === "drafts" ? "draft" : word === "proofs" ? "proof" : word
+  ));
   const artifactIndexes = words.flatMap((word, index) => (
     word === "draft" || word === "proof" ? [index] : []
   ));
   if (!artifactIndexes.length) return false;
 
-  const wordSet = new Set(words);
-  const privateMarkers = new Set(["my", "our", "current", "latest", "newest", "updated", "revised"]);
-  if (artifactIndexes.some((artifactIndex) => words.some((word, index) => (
-    privateMarkers.has(word) && Math.abs(index - artifactIndex) <= 4
-  )))) return true;
+  const privateMarkers = new Set([
+    "my", "our", "mine", "ours", "current", "latest", "newest", "recent", "updated", "revised",
+  ]);
+  return artifactIndexes.some((artifactIndex) => {
+    const start = Math.max(0, artifactIndex - 5);
+    const end = Math.min(words.length, artifactIndex + 7);
+    const window = words.slice(start, end);
+    const wordSet = new Set(window);
+    const phrase = window.join(" ");
+    if (window.some((word) => privateMarkers.has(word))) return true;
+    if (["most recent", "up to date", "using now", "in use"].some((value) => phrase.includes(value))) return true;
+    if (["is mine", "is ours", "belongs to me", "belongs to us"].some((value) => phrase.includes(value))) return true;
 
-  const phrases = words.map((word, index) => `${word} ${words[index + 1] ?? ""}`.trim());
-  if (phrases.includes("most recent")) return true;
-  if (["me", "us"].some((owner) => (
-    phrases.includes(`for ${owner}`) || phrases.includes(`to ${owner}`)
-  )) && ["prepared", "created", "made", "belongs"].some((word) => wordSet.has(word))) return true;
+    const hasPersonalPreparation = ["prepared", "created", "made"].some((word) => wordSet.has(word))
+      && ["for me", "for us"].some((value) => phrase.includes(value));
+    if (hasPersonalPreparation) return true;
 
-  const hasSpecificOrder = words.some((word, index) => word === "order" && (
-    ["my", "our"].includes(words[index - 1] ?? "") || /^\d+$/.test(words[index + 1] ?? "")
-  ));
-  return hasSpecificOrder && ["linked", "attached", "for", "of"].some((word) => wordSet.has(word));
+    const orderIndex = window.indexOf("order");
+    const hasSpecificOrder = orderIndex >= 0 && (
+      ["my", "our"].includes(window[orderIndex - 1] ?? "")
+      || /^\d+$/.test(window[orderIndex + 1] ?? "")
+    );
+    return hasSpecificOrder && ["linked", "attached", "for", "of"].some((word) => wordSet.has(word));
+  });
 }
 
 const INTENT_RULES: Record<CustomerServiceIntent, readonly string[]> = {
