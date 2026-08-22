@@ -33,13 +33,14 @@ describe("PrivacyPage", () => {
     expect(policy).toMatch(/system failures/i);
     expect(policy).toMatch(/OpenAI.+technical processor and service provider/i);
     expect(policy).toMatch(/only.+relevant, minimised.+message and context/i);
-    expect(policy).toMatch(/API data sharing is disabled/i);
+    expect(policy).not.toMatch(/API data sharing is disabled/i);
     expect(policy).toMatch(/store: false/i);
     expect(policy).toMatch(/request-level API storage is disabled/i);
     expect(policy).toMatch(/may process or retain limited data/i);
     expect(policy).toMatch(/contract.+security.+legal obligations/i);
     expect(policy).toMatch(/names.+customer content.+advertising.+profiling.+AI training/i);
-    expect(policy).toMatch(/no autonomous customer messaging/i);
+    expect(policy).toMatch(/low-risk enquiries.+approved server-side templates/i);
+    expect(policy).toMatch(/does not allow AI to send Facebook messages/i);
     expect(policy).not.toMatch(/zero retention/i);
   });
 

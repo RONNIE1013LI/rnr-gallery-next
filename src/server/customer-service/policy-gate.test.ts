@@ -44,6 +44,18 @@ describe("customer service policy gate", () => {
     })).toMatchObject({ decision: "REALTIME_DATA_REQUIRED", providerAllowed: false });
   });
 
+  it.each([
+    "Can I see my design draft?",
+    "Can I review my current design draft?",
+    "Can I see the draft for order 123456?",
+  ])("blocks private or current design records before a provider: %s", (message) => {
+    expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge })).toMatchObject({
+      decision: "REALTIME_DATA_REQUIRED",
+      providerAllowed: false,
+      reason: "realtime_data_required",
+    });
+  });
+
   it("checks current high-risk and realtime wording before a contextual intent override", () => {
     expect(evaluatePolicyGate({
       message: "I want a refund",

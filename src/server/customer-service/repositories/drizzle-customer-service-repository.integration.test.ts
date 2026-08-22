@@ -4636,6 +4636,35 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(turn).toMatchObject({ status: "sealed", processingStatus: "running", processingAttempts: 1 });
   });
 
+  it("never claims a disabled channel during shared recovery", async () => {
+    await activateWebsitePilot("recovery-channel-filter-website");
+    const website = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash: "cf".repeat(32),
+      networkHash: "ce".repeat(32),
+      messageHash: "cd".repeat(32),
+      receivedAt: new Date("2026-08-19T00:00:00.000Z"),
+    }));
+    if (website.status !== "turn_pending") throw new Error("expected website turn");
+    await activateFacebookPilot("recovery-channel-filter-facebook");
+    const facebook = await createRecoveryTurn({
+      conversationHash: "cc".repeat(32),
+      messageHash: "cb".repeat(32),
+      receivedAt: new Date("2026-08-19T00:00:01.000Z"),
+    });
+    if (facebook.status !== "turn_pending") throw new Error("expected facebook turn");
+
+    const claimed = await repository.claimDueCustomerTurn({
+      channels: ["facebook"],
+      now: new Date("2026-08-19T00:00:04.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T00:05:04.000Z"),
+    });
+
+    expect(claimed?.turnId).toBe(facebook.turnId);
+    const [websiteTurn] = await database.select().from(customerServiceTurns)
+      .where(eq(customerServiceTurns.id, website.turnId));
+    expect(websiteTurn).toMatchObject({ status: "open", processingStatus: "pending" });
+  });
+
   it("allows only one claimant when after and recovery workers race", async () => {
     await activateFacebookPilot("recovery-after-race");
     const incoming = await createRecoveryTurn({

@@ -15,6 +15,7 @@ type ClaimedTurn = Readonly<{
 type RecoveryRepository = Readonly<{
   claimDueCustomerTurn(input: Readonly<{
     turnId?: string;
+    channels?: readonly CustomerServiceChannel[];
     now: Date;
     leaseExpiresAt: Date;
   }>): Promise<ClaimedTurn | null>;
@@ -75,6 +76,7 @@ export function createCustomerTurnRecoveryRunner(input: Readonly<{
   maxRetryDelayMs?: number;
   maxAttempts?: number;
   reviewAlertSecret?: string;
+  allowedChannels?: readonly CustomerServiceChannel[];
 }>) {
   const now = input.now ?? (() => new Date());
   const leaseMs = input.leaseMs ?? 300_000;
@@ -142,6 +144,7 @@ export function createCustomerTurnRecoveryRunner(input: Readonly<{
       const startedAt = now();
       const claimed = await input.repository.claimDueCustomerTurn({
         ...(options.turnId ? { turnId: options.turnId } : {}),
+        ...(input.allowedChannels ? { channels: input.allowedChannels } : {}),
         now: startedAt,
         leaseExpiresAt: new Date(startedAt.getTime() + leaseMs),
       });

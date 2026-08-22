@@ -43,6 +43,10 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
     repository,
     generateDraft: (messageId) => engine.generateDraft({ messageId, trigger: "webhook_after" }),
     knowledgeVersion: compiledKnowledge.knowledgeVersion,
+    allowedChannels: [
+      ...(config.enabled ? ["facebook" as const] : []),
+      ...(config.websiteEnabled ? ["website" as const] : []),
+    ],
     ...(config.websiteEnabled ? { reviewAlertSecret: config.reviewLinkSecret } : {}),
   });
   const reviewAlertService = config.websiteEnabled

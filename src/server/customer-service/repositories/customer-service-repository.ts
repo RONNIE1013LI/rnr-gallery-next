@@ -362,6 +362,7 @@ export interface CustomerServiceRepository {
   >;
   claimDueCustomerTurn(input: Readonly<{
     turnId?: string;
+    channels?: readonly CustomerServiceChannel[];
     now: Date;
     leaseExpiresAt: Date;
   }>): Promise<ClaimedCustomerTurn | null>;

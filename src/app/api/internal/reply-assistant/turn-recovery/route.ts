@@ -6,7 +6,9 @@ export const maxDuration = 30;
 
 async function handle(request: Request) {
   const customerService = createCustomerServiceRuntime();
-  if (!customerService.config.enabled) return new Response(null, { status: 404 });
+  if (!customerService.config.enabled && !customerService.config.websiteEnabled) {
+    return new Response(null, { status: 404 });
+  }
   return createTurnRecoveryHandler({
     secret: customerService.config.turnRecoverySecret,
     runOnce: () => customerService.turnRecoveryRunner.runOnce(),

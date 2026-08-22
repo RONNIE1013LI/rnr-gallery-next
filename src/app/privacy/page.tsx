@@ -91,15 +91,17 @@ export default function PrivacyPage() {
           AI-assisted customer service on our Website supports response preparation.
           The model operates under policy controls, with human review or escalation
           for high-risk enquiries, requests requiring current or real-time information,
-          and system failures. There is no autonomous customer messaging.
+          and system failures. For low-risk enquiries, the Website may display replies
+          assembled from approved server-side templates. This does not allow AI to send
+          Facebook messages.
         </p>
         <p>
           OpenAI acts as a technical processor and service provider. We send only the
           relevant, minimised customer message and context needed to prepare a response.
-          API data sharing is disabled. We also use <code>store: false</code>, which
-          means request-level API storage is disabled. This setting does not mean that
-          no data is retained: OpenAI may process or retain limited data under our
-          contract and for security or legal obligations.
+          We use <code>store: false</code>, which means request-level API storage is
+          disabled. This setting does not mean that no data is retained: OpenAI may
+          process or retain limited data under our contract and for security or legal
+          obligations.
         </p>
         <p>
           We do not use names or customer content for advertising, profiling or AI

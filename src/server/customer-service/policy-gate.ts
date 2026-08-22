@@ -43,6 +43,8 @@ const REALTIME_PATTERNS = [
   /pickup (?:address|hours|time)|where (?:can i|do i) (?:pick up|pickup|collect)/i,
   /\bpromotion\b/i,
   /how long.*(?:production|design|print)|when.*(?:ready|complete|finish)/i,
+  /\b(?:my|current)\b.{0,40}\b(?:design )?(?:draft|proof)\b/i,
+  /\b(?:draft|proof)\b.{0,40}\b(?:for|of)\b.{0,20}\border\b/i,
 ];
 
 const INTENT_RULES: Record<CustomerServiceIntent, readonly string[]> = {

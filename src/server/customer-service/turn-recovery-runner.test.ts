@@ -82,6 +82,26 @@ describe("customer turn recovery runner", () => {
     });
   });
 
+  it("passes the enabled channel allowlist to the repository claim", async () => {
+    const current = setup();
+    const runner = createCustomerTurnRecoveryRunner({
+      repository: current.repository,
+      generateDraft: current.generateDraft,
+      knowledgeVersion: "knowledge-v1",
+      allowedChannels: ["facebook"],
+      now: () => now,
+      leaseMs: 300_000,
+    });
+
+    await runner.runOnce();
+
+    expect(current.repository.claimDueCustomerTurn).toHaveBeenCalledWith({
+      channels: ["facebook"],
+      now,
+      leaseExpiresAt: new Date("2026-08-19T00:05:00.000Z"),
+    });
+  });
+
   it("does nothing when another worker or a human reply already owns the turn", async () => {
     const current = setup();
     current.repository.claimDueCustomerTurn.mockResolvedValueOnce(null);

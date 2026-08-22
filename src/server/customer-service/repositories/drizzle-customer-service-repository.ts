@@ -1846,6 +1846,7 @@ export function createDrizzleCustomerServiceRepository(
       if (input.leaseExpiresAt.getTime() <= input.now.getTime()) {
         throw new Error("customer_service_turn_lease_invalid");
       }
+      if (input.channels?.length === 0) return null;
 
       const candidateId = await database.transaction(async (transaction) => {
         const conditions = [
@@ -1864,6 +1865,7 @@ export function createDrizzleCustomerServiceRepository(
           )`,
         ];
         if (input.turnId) conditions.push(eq(customerServiceTurns.id, input.turnId));
+        if (input.channels) conditions.push(inArray(customerServiceTurns.channel, input.channels));
         const [candidate] = await transaction.select({ id: customerServiceTurns.id })
           .from(customerServiceTurns)
           .where(and(...conditions))
