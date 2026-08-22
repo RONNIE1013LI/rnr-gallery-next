@@ -7,11 +7,11 @@ database validation were run on 22 August 2026. Production was not changed. Fina
 readiness remains blocked by authenticated Preview browser validation and the four
 Ronnie sign-offs listed below.
 
-Candidate: `773ae3de4b639ab3d51376ff2b7310af00faa59c`
+Candidate: `8ec0a3a68c5ed2408ecea579dfa431a81871a9a2`
 
 Preview: `https://rnr-gallery-reply-preview.vercel.app`
 
-Deployment: `dpl_2GbWPz5nPVt7Mg2j9w26tfzFLNLz`
+Deployment: `dpl_G9beEGmKmBkBKxHRbx1Aj9mYGJZf`
 
 Code-level evidence may be recorded below only after the named command has completed.
 External checks must include the environment, timestamp, candidate commit, operator,
@@ -21,7 +21,7 @@ and captured evidence. An unchecked item is not a pass.
 | --- | --- | --- |
 | Privacy and release-document content tests | PASS (8/8) | Local Vitest, 22 August 2026 |
 | Existing security/privacy/no-send inventories | PASS (114/114) | Local Vitest, 22 August 2026 |
-| Full Customer Service regression | PASS (82 files, 1,156 tests, 0 skipped) | Isolated test database, 22 August 2026 |
+| Full Customer Service regression | PASS (82 files, 1,161 tests, 0 skipped) | Isolated test database, 22 August 2026 |
 | Focused database regression | PASS (168/168, 0 skipped) | Isolated `rnr_phase37_test`, safety guard PASS |
 | Website structured evaluation | PASS (120/120) | 60 direct, 10 no reply, 40 human review, 0 over-block |
 | Phase 3.5 conversation evaluation | PASS (18/18) | 0 leakage, 0 unnecessary drafts, 0 bypass |
@@ -33,7 +33,7 @@ and captured evidence. An unchecked item is not a pass.
 | Diff/scope check | PASS | `git diff --check` and protected-path inventory, 22 August 2026 |
 | Preview deployment | PASS | Ready Preview deployment above |
 | Real OpenAI structured-output sample | PASS | 6/6 eligible FAQ replies rendered after remediation |
-| Real human-review alerts | PASS | HIGH RISK, REALTIME and duplicate incident evidence |
+| Real human-review alerts | PROVIDER ACCEPTED | 11/11 outbox rows sent once; recipient receipt awaits Ronnie |
 | Public 390x844 browser | PASS | No overflow; dialog/focus/Escape/accessibility names pass |
 | Authenticated 390x844 admin browser | BLOCKED | Google OAuth `redirect_uri_mismatch` for Preview callback |
 | Production changes | NONE | No Production deploy, callback, database or feature flag change |
@@ -164,6 +164,13 @@ Staging is READY only when every technical item passes, all database suites have
   micro-USD per call.
 - HIGH RISK, UNRESOLVED and REALTIME_REQUIRED remained blocked before provider.
   Duplicate incident delivery created one persisted review and one alert.
+- Private/current draft requests are now blocked as REALTIME_REQUIRED before the
+  provider. Real Preview evidence: `Can I see my design draft?` produced a
+  `gate_blocked` attempt with `provider_called=false`; a general design-process
+  question in the same deployment remained `draft_ready`.
+- Website recovery claims now carry a database-enforced channel allowlist. The
+  isolated PostgreSQL regression proves that a Facebook-only recovery worker leaves
+  an earlier due Website turn open and claims only the Facebook turn.
 
 ## Browser evidence
 
@@ -181,6 +188,21 @@ Staging is READY only when every technical item passes, all database suites have
    validation.
 2. Ronnie must review at least 20 representative Website replies.
 3. Ronnie must approve the final Privacy wording and 90-day retention disclosure.
-4. Ronnie must approve the alert recipient/email wording and rollback ownership.
+4. Ronnie must confirm receipt of a Staging alert and approve the alert recipient,
+   email wording and rollback ownership.
 5. Confirm in the OpenAI organization UI that API data sharing is disabled; this
    document does not infer that setting from `store: false`.
+
+## External alert evidence
+
+- Environment: Vercel Preview with isolated Staging PostgreSQL.
+- Operator: Codex. Evidence captured 22 August 2026 after deployment
+  `dpl_G9beEGmKmBkBKxHRbx1Aj9mYGJZf`.
+- `REPLY_ASSISTANT_ALERT_TO` is an encrypted, branch-scoped Preview variable;
+  `RESEND_API_KEY` and `EMAIL_FROM` are configured server-side. No value was read or
+  recorded in this document.
+- Database outbox evidence: 11 rows, 11 `sent`, 0 non-sent, one attempt each,
+  provider-start marker and payload digest present for every row. Accepted send
+  timestamps span `2026-08-21T22:59:25.653Z` to `2026-08-22T00:09:47.557Z`.
+- This proves provider acceptance and durable single-attempt settlement, not inbox
+  delivery. Ronnie receipt confirmation remains a human sign-off blocker.
