@@ -7,11 +7,11 @@ database validation were run on 22 August 2026. Production was not changed. Fina
 readiness remains blocked by authenticated Preview browser validation and the four
 Ronnie sign-offs listed below.
 
-Candidate: `8ec0a3a68c5ed2408ecea579dfa431a81871a9a2`
+Implementation candidate: `09d68af07e1bfdd994cda9c9ab03637157b1b541`
 
 Preview: `https://rnr-gallery-reply-preview.vercel.app`
 
-Deployment: `dpl_G9beEGmKmBkBKxHRbx1Aj9mYGJZf`
+Deployment: `dpl_HLArMg8mNZeTcwL8aP9dnob254nd`
 
 Code-level evidence may be recorded below only after the named command has completed.
 External checks must include the environment, timestamp, candidate commit, operator,
@@ -21,7 +21,7 @@ and captured evidence. An unchecked item is not a pass.
 | --- | --- | --- |
 | Privacy and release-document content tests | PASS (8/8) | Local Vitest, 22 August 2026 |
 | Existing security/privacy/no-send inventories | PASS (114/114) | Local Vitest, 22 August 2026 |
-| Full Customer Service regression | PASS (82 files, 1,161 tests, 0 skipped) | Isolated test database, 22 August 2026 |
+| Full Customer Service regression | PASS (83 files, 1,215 tests, 0 skipped) | Isolated test database, 22 August 2026 |
 | Focused database regression | PASS (168/168, 0 skipped) | Isolated `rnr_phase37_test`, safety guard PASS |
 | Website structured evaluation | PASS (120/120) | 60 direct, 10 no reply, 40 human review, 0 over-block |
 | Phase 3.5 conversation evaluation | PASS (18/18) | 0 leakage, 0 unnecessary drafts, 0 bypass |
@@ -168,6 +168,15 @@ Staging is READY only when every technical item passes, all database suites have
   provider. Real Preview evidence: `Can I see my design draft?` produced a
   `gate_blocked` attempt with `provider_called=false`; a general design-process
   question in the same deployment remained `draft_ready`.
+- Final real Preview mutation evidence on deployment
+  `dpl_HLArMg8mNZeTcwL8aP9dnob254nd`: a mixed-script current-proof request was
+  `realtime_required`, `gate_blocked`, and `provider_called=false`. A generic
+  draft-process question remained `allowed` and `draft_ready`, with 721 input
+  tokens, 68 output tokens, 226 micro-USD, and 2,484 ms latency.
+- Final independent review at implementation candidate `09d68af`: Critical 0,
+  Important 0. The bounded mutation matrix verified private-record blocking,
+  generic-process eligibility, Website evaluator channel parity, Facebook
+  isolation, structured rendering, and no-send.
 - Website recovery claims now carry a database-enforced channel allowlist. The
   isolated PostgreSQL regression proves that a Facebook-only recovery worker leaves
   an earlier due Website turn open and claims only the Facebook turn.
