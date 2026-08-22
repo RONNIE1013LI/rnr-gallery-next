@@ -191,7 +191,7 @@ export function FormsFilterBuilder({
   }
 
   function apply() {
-    const ready = draft.filter((condition) => condition.operator === "isEmpty" ||
+    const ready = draft.filter((condition) => condition.operator === "isEmpty" || condition.operator === "isNotEmpty" ||
       (typeof condition.value === "string" ? condition.value : condition.value.every(Boolean)));
     onApply({ match: draftMatch, conditions: ready });
     close();

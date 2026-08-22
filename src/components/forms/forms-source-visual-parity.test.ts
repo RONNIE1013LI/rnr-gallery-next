@@ -17,6 +17,15 @@ describe("Forms source visual parity", () => {
     expect(css).toContain("min-height: 48px;");
   });
 
+  it("keeps saved searches available throughout the tablet filter layout", () => {
+    const savedSearchRule = css.lastIndexOf(".savedSearchWorkspace .personalViews");
+    const enclosingTabletRule = css.lastIndexOf("@media (max-width: 720px)", savedSearchRule);
+    const enclosingPhoneRule = css.lastIndexOf("@media (max-width: 680px)", savedSearchRule);
+
+    expect(savedSearchRule).toBeGreaterThan(0);
+    expect(enclosingTabletRule).toBeGreaterThan(enclosingPhoneRule);
+  });
+
   it("preserves the source field-specific option colours", () => {
     expect(css).toContain('.statusValue[data-field="deliveryMethod"][data-status="email"]');
     expect(css).toContain("background: #944fb2;");

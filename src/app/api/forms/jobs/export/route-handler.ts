@@ -71,11 +71,13 @@ export function createFormsJobsExportRoute(dependencies?: Dependencies) {
         const query = parseFormWorkbenchQuery(queryRecord(new URL(request.url).searchParams));
         const canViewFinance = hasFormPermission(actor.formRole, actor.formProfile, "view_finance");
         const canViewCustomerContact = hasFormPermission(actor.formRole, actor.formProfile, "view_customer_contact");
+        const canViewPaymentProof = hasFormPermission(actor.formRole, actor.formProfile, "view_payment_proof");
         const access: FormWorkbenchAccess = {
           actorUserId: actor.user.id,
           assignedOnly: actor.formProfile?.assignedOnly ?? false,
           canViewCustomerContact,
           canViewFinance,
+          canViewPaymentProof,
         };
         const rows: FormOrderRow[] = [];
         let page = 1;

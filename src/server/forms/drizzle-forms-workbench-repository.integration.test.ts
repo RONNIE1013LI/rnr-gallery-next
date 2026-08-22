@@ -5,6 +5,8 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import {
+  checkoutSessions,
+  orders,
   productionFieldDefinitions,
   productionFieldValues,
   productionJobItems,
@@ -23,9 +25,17 @@ const operatorId = `forms-operator-${suffix}`;
 const otherUserId = `forms-other-${suffix}`;
 const assignedJobId = randomUUID();
 const otherJobId = randomUUID();
+const refundedJobId = randomUUID();
+const cancelledJobId = randomUUID();
+const refundedOrderId = randomUUID();
+const cancelledOrderId = randomUUID();
+const refundedSessionId = randomUUID();
+const cancelledSessionId = randomUUID();
 const customFieldId = randomUUID();
 const customNumberFieldId = randomUUID();
-const jobIds = [assignedJobId, otherJobId];
+const jobIds = [assignedJobId, otherJobId, refundedJobId, cancelledJobId];
+const orderIds = [refundedOrderId, cancelledOrderId];
+const sessionIds = [refundedSessionId, cancelledSessionId];
 
 describe("forms workbench repository", () => {
   beforeAll(async () => {
@@ -48,6 +58,36 @@ describe("forms workbench repository", () => {
       section: "order",
       showOnCreate: true,
     }]);
+    await database.insert(checkoutSessions).values([
+      { id: refundedSessionId, tokenDigest: `refunded-${suffix}`, expiresAt: new Date("2099-01-01T00:00:00Z") },
+      { id: cancelledSessionId, tokenDigest: `cancelled-${suffix}`, expiresAt: new Date("2099-01-01T00:00:00Z") },
+    ]);
+    const orderValues = (id: string, checkoutSessionId: string, orderNumber: string, paymentStatus: "refunded" | "cancelled") => ({
+      id,
+      orderNumber,
+      checkoutSessionId,
+      checkoutSessionVersion: 1,
+      idempotencyKey: randomUUID(),
+      customerEmail: `${paymentStatus}-${suffix}@example.test`,
+      pricingSnapshot: {} as (typeof orders.$inferInsert)["pricingSnapshot"],
+      deliveryMethod: "pickup" as const,
+      shippingServiceCode: "pickup",
+      shippingServiceName: "Pickup",
+      productSubtotalExGstCents: 8_696,
+      productGstCents: 1_304,
+      productTotalInclGstCents: 10_000,
+      shippingExGstCents: 0,
+      shippingGstCents: 0,
+      shippingTotalInclGstCents: 0,
+      totalExGstCents: 8_696,
+      totalGstCents: 1_304,
+      totalInclGstCents: 10_000,
+      paymentStatus,
+    });
+    await database.insert(orders).values([
+      orderValues(refundedOrderId, refundedSessionId, `RNR-REF-${suffix.slice(0, 6)}`, "refunded"),
+      orderValues(cancelledOrderId, cancelledSessionId, `RNR-CAN-${suffix.slice(0, 6)}`, "cancelled"),
+    ]);
     await database.insert(productionJobs).values([
       {
         id: assignedJobId,
@@ -97,6 +137,30 @@ describe("forms workbench repository", () => {
         materialCostCents: 0,
         createdByUserId: operatorId,
       },
+      {
+        id: refundedJobId,
+        jobNumber: `RNR-REF-${suffix.slice(0, 6)}`,
+        source: "web",
+        orderId: refundedOrderId,
+        customerName: "Refunded Customer",
+        customerEmail: `refunded-${suffix}@example.test`,
+        customerPhone: "",
+        customerSource: "web",
+        neededDate: "2026-08-20",
+        deliveryMethod: "pickup",
+      },
+      {
+        id: cancelledJobId,
+        jobNumber: `RNR-CAN-${suffix.slice(0, 6)}`,
+        source: "web",
+        orderId: cancelledOrderId,
+        customerName: "Cancelled Customer",
+        customerEmail: `cancelled-${suffix}@example.test`,
+        customerPhone: "",
+        customerSource: "web",
+        neededDate: "2026-08-20",
+        deliveryMethod: "pickup",
+      },
     ]);
     await database.insert(productionJobItems).values([
       { jobId: assignedJobId, position: 0, productTitle: "Canvas", sizeLabel: "A0", quantity: 1 },
@@ -117,6 +181,8 @@ describe("forms workbench repository", () => {
     await database.delete(productionFieldValues).where(inArray(productionFieldValues.fieldId, [customFieldId, customNumberFieldId]));
     await database.delete(productionJobItems).where(inArray(productionJobItems.jobId, jobIds));
     await database.delete(productionJobs).where(inArray(productionJobs.id, jobIds));
+    await database.delete(orders).where(inArray(orders.id, orderIds));
+    await database.delete(checkoutSessions).where(inArray(checkoutSessions.id, sessionIds));
     await database.delete(productionFieldDefinitions).where(inArray(productionFieldDefinitions.id, [customFieldId, customNumberFieldId]));
     await database.delete(user).where(eq(user.id, operatorId));
     await database.delete(user).where(eq(user.id, otherUserId));
@@ -209,7 +275,7 @@ describe("forms workbench repository", () => {
         canViewFinance: false,
       },
     );
-    expect(new Set(orResult.items.map((item) => item.id))).toEqual(new Set(jobIds));
+    expect(new Set(orResult.items.map((item) => item.id))).toEqual(new Set([assignedJobId, otherJobId]));
   });
 
   it("filters existing manual-entry data including submitter, item size, finance, and configured values", async () => {
@@ -235,5 +301,43 @@ describe("forms workbench repository", () => {
     );
 
     expect(result.items.map((item) => item.id)).toEqual([assignedJobId]);
+  });
+
+  it("matches visible Web-prefixed references in quick and field searches", async () => {
+    const visibleReference = `Web-RNR-REF-${suffix.slice(0, 6)}`;
+    const access = {
+      actorUserId: operatorId,
+      assignedOnly: false,
+      canViewCustomerContact: true,
+      canViewFinance: true,
+    };
+
+    const quick = await listFormOrders(database, parseFormWorkbenchQuery({ q: visibleReference }), access);
+    const filtered = await listFormOrders(database, parseFormWorkbenchQuery({
+      filter: `reference~equals~${encodeURIComponent(visibleReference)}`,
+    }), access);
+
+    expect(quick.items.map((item) => item.id)).toEqual([refundedJobId]);
+    expect(filtered.items.map((item) => item.id)).toEqual([refundedJobId]);
+  });
+
+  it("filters web finance using the same refunded and cancelled projection shown in the list", async () => {
+    const access = {
+      actorUserId: operatorId,
+      assignedOnly: false,
+      canViewCustomerContact: true,
+      canViewFinance: true,
+    };
+    const refundedPaid = await listFormOrders(database, parseFormWorkbenchQuery({
+      q: suffix.slice(0, 6),
+      filter: "amountPaid~equals~100.00",
+    }), access);
+    const zeroOwing = await listFormOrders(database, parseFormWorkbenchQuery({
+      q: suffix.slice(0, 6),
+      filter: "amountOwing~equals~0.00",
+    }), access);
+
+    expect(refundedPaid.items.map((item) => item.id)).toContain(refundedJobId);
+    expect(zeroOwing.items.map((item) => item.id)).toEqual(expect.arrayContaining([refundedJobId, cancelledJobId]));
   });
 });

@@ -26,6 +26,7 @@ describe("forms jobs route", () => {
       assignedOnly: true,
       canViewCustomerContact: true,
       canViewFinance: false,
+      canViewPaymentProof: false,
     });
   });
 

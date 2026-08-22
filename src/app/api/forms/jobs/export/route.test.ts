@@ -33,6 +33,9 @@ describe("forms jobs CSV export", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Content-Disposition")).toContain("attachment");
     expect(await response.text()).toContain("'=FORMULA()");
+    expect(list).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+      canViewPaymentProof: true,
+    }));
     expect(recordExport).toHaveBeenCalledWith(expect.objectContaining({ rowCount: 1, filterCount: 1 }));
   });
 

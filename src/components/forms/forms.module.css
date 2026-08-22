@@ -2232,6 +2232,14 @@
     display: none;
   }
 
+  .savedSearchWorkspace .personalViews {
+    display: flex;
+  }
+
+  .savedSearchWorkspace .personalViews input {
+    width: min(100%, 220px);
+  }
+
   .filterBackdrop {
     z-index: 109;
     background: rgb(15 23 42 / 42%);
@@ -2420,11 +2428,4 @@
     font-size: 13px;
   }
 
-  .savedSearchWorkspace .personalViews {
-    display: flex;
-  }
-
-  .savedSearchWorkspace .personalViews input {
-    width: min(100%, 220px);
-  }
 }

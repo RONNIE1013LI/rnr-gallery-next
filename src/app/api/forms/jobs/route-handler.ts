@@ -84,6 +84,11 @@ export function createFormsJobsRoute(dependencies?: Dependencies) {
             access.formProfile,
             "view_finance",
           ),
+          canViewPaymentProof: hasFormPermission(
+            access.formRole,
+            access.formProfile,
+            "view_payment_proof",
+          ),
         });
         return Response.json(result, { headers: noStore });
       } catch (error) {

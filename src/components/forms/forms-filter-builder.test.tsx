@@ -70,6 +70,21 @@ describe("forms filter builder", () => {
     expect(screen.getByLabelText("Filter value 1")).toHaveTextContent("Rosemary");
   });
 
+  it("keeps value-free is-not-empty conditions when applying filters", () => {
+    const apply = vi.fn();
+    render(<FormsFilterBuilder conditions={[]} match="and" canViewFinance onApply={apply} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders" }));
+    fireEvent.change(screen.getByLabelText("Filter field 1"), { target: { value: "reference" } });
+    fireEvent.change(screen.getByLabelText("Filter operator 1"), { target: { value: "isNotEmpty" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+
+    expect(apply).toHaveBeenCalledWith({
+      match: "and",
+      conditions: [{ field: "reference", operator: "isNotEmpty", value: "" }],
+    });
+  });
+
   it("traps focus, isolates the background and closes from the document or backdrop", async () => {
     const apply = vi.fn();
     render(<div>

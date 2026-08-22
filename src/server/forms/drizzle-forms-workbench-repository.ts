@@ -56,6 +56,42 @@ function presetStart(preset: FormWorkbenchQuery["preset"]) {
   return start;
 }
 
+function visibleReferenceExpression() {
+  return sql<string>`case
+    when ${productionJobs.source} = 'manual' or ${productionJobs.jobNumber} ~* '^web-'
+      then ${productionJobs.jobNumber}
+    else 'Web-' || ${productionJobs.jobNumber}
+  end`;
+}
+
+function amountPayableExpression() {
+  return sql<number>`case
+    when ${productionJobs.source} = 'web' then coalesce(${orders.totalInclGstCents}, 0)
+    else coalesce(${productionJobs.amountPayableCents}, 0)
+  end`;
+}
+
+function amountPaidExpression() {
+  return sql<number>`case
+    when ${productionJobs.source} = 'web' then case
+      when ${orders.paymentStatus} in ('paid', 'refunded') then coalesce(${orders.totalInclGstCents}, 0)
+      else 0
+    end
+    else coalesce(${productionJobs.amountPaidCents}, 0)
+  end`;
+}
+
+function amountOwingExpression() {
+  return sql<number>`case
+    when ${productionJobs.source} = 'web' then case
+      when ${orders.paymentStatus} in ('awaiting_payment', 'processing', 'failed')
+        then coalesce(${orders.totalInclGstCents}, 0)
+      else 0
+    end
+    else coalesce(${productionJobs.amountPayableCents}, 0) - coalesce(${productionJobs.amountPaidCents}, 0)
+  end`;
+}
+
 function filterCondition(
   condition: FormFilterCondition,
   access: FormWorkbenchAccess,
@@ -161,7 +197,7 @@ function filterCondition(
     const column = condition.field === "submittedAt" ? productionJobs.createdAt : productionJobs.updatedAt;
     return dateCondition(sql<string>`${column}::date`);
   }
-  if (condition.field === "reference") return textCondition(sql<string>`${productionJobs.jobNumber}`);
+  if (condition.field === "reference") return textCondition(visibleReferenceExpression());
   if (condition.field === "customerName") return textCondition(sql<string>`${productionJobs.customerName}`);
   if (condition.field === "customerEmail") return textCondition(sql<string>`${productionJobs.customerEmail}`);
   if (condition.field === "customerPhone") return textCondition(sql<string>`${productionJobs.customerPhone}`);
@@ -192,13 +228,13 @@ function filterCondition(
     return scalarValue === "true" ? sql`${column} is not null` : sql`${column} is null`;
   }
   if (condition.field === "amountPayable") {
-    return numberCondition(sql<number>`coalesce(${productionJobs.amountPayableCents}, ${orders.totalInclGstCents})`);
+    return numberCondition(amountPayableExpression());
   }
   if (condition.field === "amountPaid") {
-    return numberCondition(sql<number>`coalesce(${productionJobs.amountPaidCents}, case when ${orders.paymentStatus} = 'paid' then ${orders.totalInclGstCents} else 0 end)`);
+    return numberCondition(amountPaidExpression());
   }
   if (condition.field === "amountOwing") {
-    return numberCondition(sql<number>`coalesce(${productionJobs.amountPayableCents}, ${orders.totalInclGstCents}, 0) - coalesce(${productionJobs.amountPaidCents}, case when ${orders.paymentStatus} = 'paid' then ${orders.totalInclGstCents} else 0 end, 0)`);
+    return numberCondition(amountOwingExpression());
   }
   if (condition.field === "artistFee") return numberCondition(sql<number>`${productionJobs.artistFeeCents}`);
   if (condition.field === "materialCost") return numberCondition(sql<number>`${productionJobs.materialCostCents}`);
@@ -237,7 +273,7 @@ export function buildFormWorkbenchConditions(query: FormWorkbenchQuery, access: 
     const escaped = query.query.replaceAll("%", "\\%").replaceAll("_", "\\_");
     const pattern = `%${escaped}%`;
     conditions.push(or(
-      ilike(productionJobs.jobNumber, pattern),
+      ilike(visibleReferenceExpression(), pattern),
       ilike(productionJobs.webOrderNumber, pattern),
       ilike(productionJobs.customerName, pattern),
       ...(access.canViewCustomerContact ? [
