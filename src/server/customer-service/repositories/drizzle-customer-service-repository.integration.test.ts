@@ -348,6 +348,7 @@ async function claimWebsiteTurn(input: Readonly<{
   sessionHash: string;
   networkHash: string;
   messageHash: string;
+  text?: string;
   receivedAt?: Date;
   productContext?: SafeProductContext | null;
 }>) {
@@ -359,6 +360,7 @@ async function ingestAndClaimWebsiteTurn(input: Readonly<{
   sessionHash: string;
   networkHash: string;
   messageHash: string;
+  text?: string;
   receivedAt?: Date;
   productContext?: SafeProductContext | null;
 }>) {
@@ -506,6 +508,40 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       order by column_name
     `);
     expect(eventColumns.rows).toHaveLength(5);
+  });
+
+  it("publishes the intent-specific damaged-order acknowledgement through the repository path", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "d1".repeat(32),
+      networkHash: "d2".repeat(32),
+      messageHash: "d3".repeat(32),
+      text: "My order arrived damaged.",
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "unknown",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+
+    await expect(repository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-19T00:00:02.000Z"),
+      knowledgeVersion: "knowledge-v1",
+    })).resolves.toMatchObject({ status: "opened" });
+
+    const [message] = await database.select({ body: customerServiceWebsiteAssistantMessages.body })
+      .from(customerServiceWebsiteAssistantMessages)
+      .where(eq(customerServiceWebsiteAssistantMessages.messageId, claimed.messageId));
+    expect(message?.body).toBe(
+      "I’m sorry to hear that. Please send your order number and a few clear photos showing the damage. I’ll pass this to our team to review before we confirm the next step.",
+    );
   });
 
   it("opens one website review generation for repeated blocked turns, then creates a new one after resolution", async () => {

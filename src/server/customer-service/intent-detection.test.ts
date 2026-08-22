@@ -14,6 +14,7 @@ describe("customer service intent detection", () => {
     ["How does payment work before design starts?", "payment_process"],
     ["How many free revisions do I get?", "revision_policy"],
     ["Hi there", "tone_adjustment"],
+    ["Can you help me with something?", "tone_adjustment"],
   ] as const)("detects %s", (message, expected) => {
     expect(detectIntent(message)).toBe(expected);
   });

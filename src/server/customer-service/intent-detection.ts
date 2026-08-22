@@ -40,7 +40,7 @@ export function detectIntent(message: string): CustomerServiceIntent {
   if (/production process|production steps|how.*(?:made|produced)|what happens after.*(?:photo|detail)|production workflow/.test(value)) {
     return "production_process";
   }
-  if (/^(?:hi|hello|hey|kia ora|kiaora)\b|thank you|thanks|make (?:this|it) (?:warmer|friendlier)|tone/.test(value)) {
+  if (/^(?:hi|hello|hey|kia ora|kiaora)\b|thank you|thanks|make (?:this|it) (?:warmer|friendlier)|tone|^can you help me(?: with (?:something|this))?\??$/.test(value)) {
     return "tone_adjustment";
   }
   return "unknown";

@@ -22,6 +22,7 @@ describe("customer service policy gate", () => {
     "I need a reprint for this misprint",
     "I want compensation",
     "I am filing a chargeback",
+    "I think I was charged twice",
     "Can you guarantee delivery by Friday?",
     "Can you guarantee this urgent order tomorrow?",
   ])("blocks high-risk message before a provider: %s", (message) => {

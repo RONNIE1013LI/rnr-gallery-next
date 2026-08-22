@@ -2,10 +2,11 @@
 
 ## Evidence status
 
-**Status: TECHNICAL VALIDATION COMPLETE; STAGING NOT READY.** Preview and isolated
-database validation were run on 22 August 2026. Production was not changed. Final
-readiness remains blocked by authenticated Preview browser validation and the four
-Ronnie sign-offs listed below.
+**Status: STAGING READY.** Preview and isolated database validation were run on
+22 August 2026. Production was not changed. Preview OAuth, authenticated mobile
+validation, Website response quality, Privacy wording, email delivery, exactly-once
+alerting, secure deep-link access and rollback ownership are approved. The final
+focused recheck found no remaining Critical or Important issue.
 
 Implementation candidate: `09d68af07e1bfdd994cda9c9ab03637157b1b541`
 
@@ -23,7 +24,8 @@ and captured evidence. An unchecked item is not a pass.
 | Existing security/privacy/no-send inventories | PASS (114/114) | Local Vitest, 22 August 2026 |
 | Full Customer Service regression | PASS (83 files, 1,215 tests, 0 skipped) | Isolated test database, 22 August 2026 |
 | Focused database regression | PASS (168/168, 0 skipped) | Isolated `rnr_phase37_test`, safety guard PASS |
-| Website structured evaluation | PASS (120/120) | 60 direct, 10 no reply, 40 human review, 0 over-block |
+| Website structured evaluation after quality remediation | PASS (120/120) | 60 direct, 10 no reply, 40 human review, 0 over-block |
+| Ronnie wording remediation | PASS | 14/14 reviewed response cases represented by fixed server-side templates/fragments and approved by Ronnie after final spot review |
 | Phase 3.5 conversation evaluation | PASS (18/18) | 0 leakage, 0 unnecessary drafts, 0 bypass |
 | Phase 3.6 learning evaluation | PASS (50/50) | 0 policy/realtime leakage, 0 high-risk reuse |
 | Payment Requests critical regression | PASS (113/113) | No real payment created |
@@ -33,9 +35,14 @@ and captured evidence. An unchecked item is not a pass.
 | Diff/scope check | PASS | `git diff --check` and protected-path inventory, 22 August 2026 |
 | Preview deployment | PASS | Ready Preview deployment above |
 | Real OpenAI structured-output sample | PASS | 6/6 eligible FAQ replies rendered after remediation |
-| Real human-review alerts | PROVIDER ACCEPTED | 11/11 outbox rows sent once; recipient receipt awaits Ronnie |
+| Final focused Website regression | PASS (29 files, 465/465, 0 skipped) | Isolated PostgreSQL, 22 August 2026 |
+| Final security/privacy/no-send regression | PASS (118/118) | Local Vitest, 22 August 2026 |
+| Final email dedupe/deep-link regression | PASS (181/181) | Local Vitest, 22 August 2026 |
+| Final privacy database audit | PASS | 11 tables/11 rows; 0 forbidden rows, columns, scope violations or rollback residue |
+| Real human-review alerts | PASS | Provider accepted; Ronnie confirmed exactly one inbox delivery and correct authenticated deep link |
 | Public 390x844 browser | PASS | No overflow; dialog/focus/Escape/accessibility names pass |
-| Authenticated 390x844 admin browser | BLOCKED | Google OAuth `redirect_uri_mismatch` for Preview callback |
+| Authenticated 390x844 admin browser | PASS | Preview OAuth callback added without changing localhost/Production; Admin login and protected page verified, no overflow or console errors |
+| OpenAI API input/output sharing | PASS | Organization Data controls showed `Share inputs and outputs with OpenAI` = Disabled, 22 August 2026 at 13:16 NZST |
 | Production changes | NONE | No Production deploy, callback, database or feature flag change |
 
 ## Environment boundary
@@ -120,8 +127,8 @@ and captured evidence. An unchecked item is not a pass.
 ## Privacy and data governance
 
 - [ ] OpenAI request uses `store: false`.
-- [ ] OpenAI organization is not opted into API data sharing.
-- [ ] `/privacy` wording is reviewed by Ronnie and accurately covers AI chat/provider/retention.
+- [x] OpenAI organization is not opted into API data sharing.
+- [x] `/privacy` wording is reviewed by Ronnie and accurately covers AI chat/provider/retention.
 - [ ] No claim of Zero Data Retention unless separately approved and verified.
 - [ ] Chat data does not enter Golden Replies, Learning Candidates, or Case Memory without human review.
 - [ ] Secret, privacy, client-bundle, log, and database scans pass.
@@ -140,12 +147,12 @@ and captured evidence. An unchecked item is not a pass.
 
 ## Human sign-offs
 
-- [ ] Ronnie AI quality review: at least 20 website responses.
-- [ ] Ronnie privacy and 90-day retention approval.
-- [ ] Ronnie alert recipient and email wording approval.
-- [ ] Ronnie rollback owner approval.
+- [x] Ronnie Website response quality sign-off: `PASS` for the current structured Website Assistant customer-facing responses. This does not permit weakening Policy Gate, REALTIME_REQUIRED, HIGH RISK, structured output or server-side template rendering.
+- [x] Ronnie privacy and 90-day retention approval (`APPROVED`, with OpenAI described as a technical service provider).
+- [x] Ronnie alert recipient, exactly-once inbox delivery and secure deep-link approval.
+- [x] Ronnie rollback owner approval (`Ronnie Li`, approved 22 August 2026).
 
-Staging is READY only when every technical item passes, all database suites have zero skips, human sign-offs are recorded, policy/cross-session leakage is zero, and Production remains unchanged. This document currently records **Staging NOT READY**.
+Staging is READY only when every technical item passes, all database suites have zero skips, human sign-offs are recorded, policy/cross-session leakage is zero, and Production remains unchanged. The accepted full checklist plus the final focused recheck now record **Staging READY**.
 
 ## Structured-output quality evidence
 
@@ -187,20 +194,41 @@ Staging is READY only when every technical item passes, all database suites have
   351 px inside the viewport; no clipped control or console error observed.
 - Dialog has the accessible name `Chat with R&R Gallery`; focus enters the message
   textarea, Escape closes it, and focus returns to the launcher.
-- Authenticated `/reply-assistant` mobile validation remains blocked because the
-  Google OAuth client rejects the Preview callback with `redirect_uri_mismatch`.
+- Authenticated `/reply-assistant` at 390x844: Admin OAuth login PASS; protected page
+  rendered Website/Facebook channel state, timelines, review state, learning/case data,
+  metrics and knowledge provenance with document scroll width 375 inside a 390 px
+  viewport and zero console errors.
 
 ## Remaining blockers
 
-1. Add the Preview Google OAuth callback URL to the approved Google client, then
-   complete authenticated admin/staff/customer authorization and 390x844 admin UI
-   validation.
-2. Ronnie must review at least 20 representative Website replies.
-3. Ronnie must approve the final Privacy wording and 90-day retention disclosure.
-4. Ronnie must confirm receipt of a Staging alert and approve the alert recipient,
-   email wording and rollback ownership.
-5. Confirm in the OpenAI organization UI that API data sharing is disabled; this
-   document does not infer that setting from `store: false`.
+None for Staging. Production deployment and public Website Chat enablement remain a
+separate rollout decision.
+
+## Website response quality remediation
+
+- Initial Ronnie review: 6 approved, 14 needs edit, 0 rejected; direct approval 30%,
+  assisted acceptance 100%. This result is not recorded as a Production quality PASS.
+- Final remediation spot review: 13 approved, 1 needs edit, 0 rejected. The remaining
+  A3-price reply was corrected to avoid implying that one answer necessarily completes
+  quote collection, after which Ronnie approved all 14 remediated responses and recorded
+  Website response quality as `PASS`.
+- The 14 edited answers are implemented only as version-controlled, allowlisted
+  `website-response-v1` fragments or intent-specific human-review templates. Website
+  model prose remains structurally unable to reach a customer.
+- Vague openings now clarify rather than escalate. Product recommendations answer
+  directly and include a reason. Quote continuation confirms the supplied detail before
+  asking only the next relevant fields, with delivery location conditional on delivery.
+- Current price and shipping questions remain blocked before the provider, then receive
+  a narrowly targeted information request. Damage, cancellation/refund, duplicate-charge
+  and private issues remain human-review cases with safe intent-specific next steps.
+- Provider/output/system failure uses the approved system-failure wording and tells the
+  customer not to submit the message again.
+- Duplicate-charge wording is now explicitly HIGH RISK before provider invocation.
+- Deterministic 120-case evaluation remained unchanged: policy bypass 0, unsupported
+  realtime claims 0, direct unsafe free text 0, cross-session leakage 0, automatic
+  business actions 0 and automatic sends 0.
+- Email provider acceptance, actual inbox delivery, exactly-once receipt and the
+  authenticated deep-link destination are `PASS`, confirmed by Ronnie.
 
 ## External alert evidence
 
@@ -213,5 +241,23 @@ Staging is READY only when every technical item passes, all database suites have
 - Database outbox evidence: 11 rows, 11 `sent`, 0 non-sent, one attempt each,
   provider-start marker and payload digest present for every row. Accepted send
   timestamps span `2026-08-21T22:59:25.653Z` to `2026-08-22T00:09:47.557Z`.
-- This proves provider acceptance and durable single-attempt settlement, not inbox
-  delivery. Ronnie receipt confirmation remains a human sign-off blocker.
+- Ronnie subsequently confirmed one actual inbox delivery, no duplicate alert, and that
+  `Open Reply Assistant` authenticated successfully into the correct Website conversation.
+
+## Final focused recheck
+
+- Website focused regression: 29 files, 465/465 PASS, 0 skipped, using an isolated
+  PostgreSQL test database whose safety guard and additive migrations passed.
+- Unchanged Website evaluation: 120/120 gate and outcome matches; 60 direct replies,
+  10 no-reply outcomes, 40 human-review outcomes, 0 over-block, 100% required-information
+  coverage and naturalness.
+- Safety: policy bypass/violation 0/0, cross-session leakage 0, unsupported realtime
+  claims 0, unsafe model prose 0, automatic business actions 0 and automatic sends 0.
+- Email and deep link: focused regression 181/181 PASS; exactly-once delivery and correct
+  authenticated conversation access confirmed by Ronnie.
+- Static verification: TypeScript PASS; ESLint 0 errors (10 existing test-only warnings);
+  production build PASS; diff, privacy, secret and no-send scans PASS.
+- Browser: public Website Chat and authenticated `/reply-assistant` both passed at
+  390x844 with document width 375/375, no clipped controls, no horizontal overflow and
+  no console errors.
+- Final findings: Critical 0; Important 0.

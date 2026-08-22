@@ -5,6 +5,7 @@ export const WEBSITE_DECISION_SCHEMA_NAME = "website_customer_service_decision_v
 
 const RESPONSE_TYPES = [
   "ANSWER_SAFE",
+  "ANSWER_AND_ASK",
   "ASK_FOR_INFORMATION",
   "NO_REPLY_NEEDED",
   "HUMAN_REVIEW_REQUIRED",
@@ -35,15 +36,23 @@ const FOLLOW_UP_FIELDS = [
   "COLOUR_PREFERENCES",
   "REQUIRED_DATE",
   "DELIVERY_LOCATION",
+  "DELIVERY_LOCATION_IF_REQUIRED",
 ] as const;
 const ALLOWED_FACTS = [
   "CANVAS_WALL_KEEPSAKE",
+  "CANVAS_PERMANENT_KEEPSAKE_RECOMMENDATION",
   "BANNER_DISPLAY_OPTIONS",
+  "ROLL_UP_FREESTANDING_RECOMMENDATION",
+  "OPEN_HELP_CLARIFICATION",
   "DESIGN_INPUTS",
   "DESIGN_DRAFT_REVIEW_BEFORE_PRINTING",
   "PHOTO_ORIGINAL_FILES",
   "PHOTO_QUALITY_ASSESSMENT",
   "PHOTO_COMBINE_SUBJECTS",
+  "A3_SIZE_NOTED",
+  "HAPPY_50TH_BIRTHDAY_MUM_WORDING_NOTED",
+  "SIZE_NOTED",
+  "WORDING_NOTED",
   "PRODUCTION_AFTER_APPROVAL",
   "DELIVERY_AFTER_CONFIRMATION",
   "PAYMENT_DEPOSIT_STARTS_DESIGN",
@@ -305,14 +314,30 @@ export function parseWebsiteDecision(raw: string):
   }
 }
 
-const FACTS: Readonly<Record<AllowedFact, Readonly<{ intent: CustomerServiceIntent; text: string }>>> = Object.freeze({
+const FACTS: Readonly<Record<AllowedFact, Readonly<{
+  intent: CustomerServiceIntent;
+  text: string;
+  requiresMessage?: RegExp;
+}>>> = Object.freeze({
   CANVAS_WALL_KEEPSAKE: {
     intent: "product_differences",
     text: "Canvas suits a wall display and keepsake-style presentation.",
   },
+  CANVAS_PERMANENT_KEEPSAKE_RECOMMENDATION: {
+    intent: "product_differences",
+    text: "Yes. Canvas is a good option for a permanent keepsake, especially if you’d like something designed for long-term wall display.",
+  },
   BANNER_DISPLAY_OPTIONS: {
     intent: "product_differences",
     text: "Banners can suit event displays; tell us whether you need a wall or freestanding format.",
+  },
+  ROLL_UP_FREESTANDING_RECOMMENDATION: {
+    intent: "product_differences",
+    text: "For a freestanding display, I’d recommend the Roll-up Banner. It comes with its own stand, so it’s easy to set up and move without needing a wall.",
+  },
+  OPEN_HELP_CLARIFICATION: {
+    intent: "tone_adjustment",
+    text: "Of course 😊 What can I help you with?",
   },
   DESIGN_INPUTS: {
     intent: "design_process",
@@ -332,7 +357,25 @@ const FACTS: Readonly<Record<AllowedFact, Readonly<{ intent: CustomerServiceInte
   },
   PHOTO_COMBINE_SUBJECTS: {
     intent: "photo_guidance",
-    text: "We can combine people or pets from separate original photos, subject to assessing the files.",
+    text: "Yes, we can combine people or pets from different photos into one design. Please send the original photos where possible so we can check the quality and let you know what will work best.",
+  },
+  A3_SIZE_NOTED: {
+    intent: "quote_information_collection",
+    text: "Thanks, A3 noted 😊",
+    requiresMessage: /\bA3\b/i,
+  },
+  HAPPY_50TH_BIRTHDAY_MUM_WORDING_NOTED: {
+    intent: "design_process",
+    text: "Perfect, “Happy 50th Birthday Mum” noted 😊",
+    requiresMessage: /happy 50th birthday mum/i,
+  },
+  SIZE_NOTED: {
+    intent: "quote_information_collection",
+    text: "Thanks, the size is noted 😊",
+  },
+  WORDING_NOTED: {
+    intent: "design_process",
+    text: "Perfect, your wording is noted 😊",
   },
   PRODUCTION_AFTER_APPROVAL: {
     intent: "production_process",
@@ -392,9 +435,19 @@ const QUESTIONS: Readonly<Record<FollowUpField, Readonly<{
     intents: ["quote_information_collection"],
     text: "Which suburb or postcode would delivery be to?",
   },
+  DELIVERY_LOCATION_IF_REQUIRED: {
+    intents: ["quote_information_collection"],
+    text: "If delivery is required, please also send your suburb or postcode.",
+  },
 });
 
 function renderQuestions(fields: readonly FollowUpField[]) {
+  if (fields.join("|") === "PEOPLE_COUNT|PHOTO_COUNT|REQUIRED_DATE|DELIVERY_LOCATION_IF_REQUIRED") {
+    return "About how many people and photos would you like to include, and what date do you need it for? If delivery is required, please also send your suburb or postcode.";
+  }
+  if (fields.join("|") === "THEME|COLOUR_PREFERENCES") {
+    return "What theme or background style would you like? If you have any preferred colours, please let us know as well.";
+  }
   const peopleIndex = fields.indexOf("PEOPLE_COUNT");
   const photoIndex = fields.indexOf("PHOTO_COUNT");
   if (peopleIndex >= 0 && photoIndex === peopleIndex + 1) {
@@ -438,6 +491,7 @@ export function renderWebsiteDecision(input: Readonly<{
   decision: WebsiteDecision;
   expectedIntent: CustomerServiceIntent;
   productCategory: "canvas" | "banners" | null;
+  messageText?: string;
   acknowledgementAllowed: boolean;
   policyDecision?: "DRAFT_ALLOWED" | "NEEDS_HUMAN_REVIEW" | "REALTIME_DATA_REQUIRED";
 }>):
@@ -455,6 +509,10 @@ export function renderWebsiteDecision(input: Readonly<{
   if (decision.allowed_facts.some((fact) => FACTS[fact].intent !== decision.intent)) {
     return { ok: false, code: "website_decision_incompatible" };
   }
+  if (decision.allowed_facts.some((fact) => {
+    const required = FACTS[fact].requiresMessage;
+    return required ? !required.test(input.messageText ?? "") : false;
+  })) return { ok: false, code: "website_decision_incompatible" };
   if ([...decision.missing_fields, ...decision.follow_up_fields]
     .some((field) => !QUESTIONS[field].intents.includes(decision.intent))) {
     return { ok: false, code: "website_decision_incompatible" };
@@ -471,6 +529,22 @@ export function renderWebsiteDecision(input: Readonly<{
       ok: true,
       outcome: "rendered",
       text: decision.allowed_facts.map((fact) => FACTS[fact].text).join("\n"),
+      templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+    };
+  }
+  if (decision.response_type === "ANSWER_AND_ASK") {
+    const sameFields = decision.missing_fields.length === decision.follow_up_fields.length
+      && decision.missing_fields.every((field, index) => decision.follow_up_fields[index] === field);
+    if (
+      !sameFields
+      || decision.allowed_facts.length === 0
+      || decision.follow_up_fields.length === 0
+      || decision.human_review_reason !== "NONE"
+    ) return { ok: false, code: "website_decision_incompatible" };
+    return {
+      ok: true,
+      outcome: "rendered",
+      text: `${decision.allowed_facts.map((fact) => FACTS[fact].text).join(" ")} ${renderQuestions(decision.follow_up_fields)}`,
       templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
     };
   }
@@ -517,6 +591,7 @@ export function verifyWebsiteRendererProof(input: Readonly<{
   decision: unknown;
   templateVersion: unknown;
   productCategory: "canvas" | "banners" | null;
+  messageText?: string;
 }>) {
   if (
     !isEnumValue(INTENTS, input.intent)
@@ -528,6 +603,7 @@ export function verifyWebsiteRendererProof(input: Readonly<{
     decision: parsed.decision,
     expectedIntent: input.intent,
     productCategory: input.productCategory,
+    messageText: input.messageText,
     acknowledgementAllowed: false,
     policyDecision: "DRAFT_ALLOWED",
   });

@@ -28,7 +28,7 @@ const HIGH_RISK_PATTERNS = [
   /damaged goods|arrived damaged|item.*damaged|\bbroken\b|\bcracked\b|\btorn\b/i,
   /\bmisprint(?:ed)?\b|\breprint\b|printed wrong|wrong print|printing error/i,
   /\bcompensation\b|\bdiscount\b|store credit|partial refund/i,
-  /\bchargeback\b|payment dispute|dispute.*payment|payment.*disput/i,
+  /\bchargeback\b|payment dispute|dispute.*payment|payment.*disput|charged twice|duplicate charge|charged (?:two times|again)|two charges/i,
   /consumer rights/i,
   /guarantee.*deliver|deliver.*guarantee|guaranteed delivery/i,
   /guarantee.*urgent|urgent.*guarantee|guarantee.*complet|complet.*guarantee/i,

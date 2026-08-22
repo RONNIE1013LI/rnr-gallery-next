@@ -96,17 +96,23 @@ export default function PrivacyPage() {
           Facebook messages.
         </p>
         <p>
-          OpenAI acts as a technical processor and service provider. We send only the
-          relevant, minimised customer message and context needed to prepare a response.
-          We use <code>store: false</code>, which means request-level API storage is
-          disabled. This setting does not mean that no data is retained: OpenAI may
-          process or retain limited data under our contract and for security or legal
-          obligations.
+          We may provide OpenAI, acting as a technical service provider, with the
+          relevant and minimised message content and recent Website conversation context
+          needed to process your enquiry. We use <code>store: false</code>, which means
+          request-level API storage is disabled. This does not mean zero retention:
+          OpenAI may process or retain limited data where permitted under its service
+          terms or required for security, abuse prevention or legal obligations.
         </p>
         <p>
-          We do not use names or customer content for advertising, profiling or AI
-          training. Customer-facing responses remain subject to approved policy controls,
-          templates and human review where required.
+          Sharing of API inputs and outputs with OpenAI is currently disabled. We do not
+          authorise Website customer conversations to be used for external model training
+          unless this is separately enabled, appropriately disclosed and expressly
+          authorised.
+        </p>
+        <p>
+          Authorised R&amp;R Gallery staff may review Website conversations and AI-assisted
+          responses. AI does not independently approve refunds, compensation, discounts,
+          payments, order changes or other high-risk customer-service decisions.
         </p>
 
         <h2>Information you need to provide</h2>

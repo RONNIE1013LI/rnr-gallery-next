@@ -2076,7 +2076,10 @@ export function createDrizzleCustomerServiceRepository(
               eq(customerServiceAiAttempts.messageId, turn.messageId),
             )).limit(1)
           : [];
-        const response = websiteHumanReviewResponse(websiteReviewReason(input.outcome, attempt?.gateResult ?? null));
+        const response = websiteHumanReviewResponse(
+          websiteReviewReason(input.outcome, attempt?.gateResult ?? null),
+          { message: turn.body },
+        );
 
         const [existing] = await transaction.select({
           id: customerServiceHumanReviews.id,
@@ -2584,6 +2587,7 @@ export function createDrizzleCustomerServiceRepository(
           websiteDecision: customerServiceAiAttempts.websiteDecision,
           websiteResponseTemplateVersion: customerServiceAiAttempts.websiteResponseTemplateVersion,
           productContext: customerServiceMessages.productContext,
+          messageText: customerServiceMessages.body,
         }).from(customerServiceAiAttempts)
           .innerJoin(customerServiceMessages, eq(customerServiceMessages.id, customerServiceAiAttempts.messageId))
           .where(and(
@@ -2607,6 +2611,7 @@ export function createDrizzleCustomerServiceRepository(
             decision: attempt.websiteDecision,
             templateVersion: attempt.websiteResponseTemplateVersion,
             productCategory: attempt.productContext?.category ?? null,
+            messageText: attempt.messageText,
           })
         ) return { status: "not_publishable" as const };
 

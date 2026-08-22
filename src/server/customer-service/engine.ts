@@ -380,6 +380,7 @@ export class CustomerServiceEngine {
           decision: parsed.decision,
           expectedIntent: gate.intent,
           productCategory: draftInput.current.productContext?.category ?? null,
+          messageText: draftInput.current.text,
           acknowledgementAllowed: acknowledgement.suppress,
           policyDecision: gate.decision,
         });

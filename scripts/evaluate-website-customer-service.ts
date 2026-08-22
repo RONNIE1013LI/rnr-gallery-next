@@ -216,6 +216,7 @@ export async function evaluateWebsiteConversationCases(input: Readonly<{
       decision: parsed.decision,
       expectedIntent: gate.intent,
       productCategory: item.productCategory,
+      messageText: item.message,
       acknowledgementAllowed: item.acknowledgementAllowed,
       policyDecision: gate.decision,
     });

@@ -31,17 +31,20 @@ describe("PrivacyPage", () => {
     expect(policy).toMatch(/high-risk/i);
     expect(policy).toMatch(/real-time/i);
     expect(policy).toMatch(/system failures/i);
-    expect(policy).toMatch(/OpenAI.+technical processor and service provider/i);
-    expect(policy).toMatch(/only.+relevant, minimised.+message and context/i);
-    expect(policy).not.toMatch(/API data sharing is disabled/i);
+    expect(policy).toMatch(/OpenAI.+technical service provider/i);
+    expect(policy).not.toMatch(/OpenAI.+processor/i);
+    expect(policy).toMatch(/relevant and minimised message content.+recent Website conversation context/i);
+    expect(policy).toMatch(/Sharing of API inputs and outputs with OpenAI is currently disabled/i);
     expect(policy).toMatch(/store: false/i);
     expect(policy).toMatch(/request-level API storage is disabled/i);
     expect(policy).toMatch(/may process or retain limited data/i);
-    expect(policy).toMatch(/contract.+security.+legal obligations/i);
-    expect(policy).toMatch(/names.+customer content.+advertising.+profiling.+AI training/i);
+    expect(policy).toMatch(/service terms.+security.+abuse prevention.+legal obligations/i);
+    expect(policy).toMatch(/Website customer conversations.+external model training.+separately enabled.+disclosed.+authorised/i);
+    expect(policy).toMatch(/does not independently approve refunds.+compensation.+discounts.+payments.+order changes/i);
     expect(policy).toMatch(/low-risk enquiries.+approved server-side templates/i);
     expect(policy).toMatch(/does not allow AI to send Facebook messages/i);
-    expect(policy).not.toMatch(/zero retention/i);
+    expect(policy).toMatch(/does not mean zero retention/i);
+    expect(policy).not.toMatch(/(?:provides?|guarantees?|offers?) zero retention/i);
   });
 
   it("states the Website conversation, session, and rate-data retention limits", () => {
