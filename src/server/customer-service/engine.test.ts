@@ -624,6 +624,28 @@ describe("CustomerServiceEngine", () => {
     expect(current.provider.generate.mock.calls[0]?.[0]).not.toHaveProperty("responseFormat");
   });
 
+  it("blocks a composed Website private-record request before provider", async () => {
+    const message = "Can you explain the design process and show the proof linked to my order?";
+    const current = setup(message);
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: message, channel: "website" },
+      context: [],
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" }))
+      .resolves.toMatchObject({ status: "realtime_required" });
+    expect(current.provider.generate).not.toHaveBeenCalled();
+  });
+
+  it("preserves the Facebook draft path for the same private-record wording", async () => {
+    const message = "Can you explain the design process and show the proof linked to my order?";
+    const current = setup(message, { reply: "A Facebook draft for Ronnie to review." });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.provider.generate).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves the Facebook provider prompt without Website minimization", async () => {
     const raw = "Can you explain the design process? Email tina@example.com.";
     const current = setup(raw);

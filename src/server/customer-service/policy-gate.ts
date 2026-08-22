@@ -1,4 +1,5 @@
 import { detectIntent, isGenericBannerQuoteEnquiry, type CustomerServiceIntent } from "./intent-detection";
+import type { CustomerServiceChannel } from "./types";
 
 export type PolicyRule = Readonly<{
   id: string;
@@ -45,10 +46,19 @@ const REALTIME_PATTERNS = [
   /how long.*(?:production|design|print)|when.*(?:ready|complete|finish)/i,
 ];
 
-const PRIVATE_CURRENT_RECORD_PATTERNS = [
-  /\b(?:my|current)\b.{0,40}\b(?:design )?(?:draft|proof)\b/i,
-  /\b(?:draft|proof)\b.{0,40}\b(?:for|of|attached to)\b.{0,20}\border\b/i,
-];
+function isPrivateCurrentDesignRecordRequest(message: string) {
+  const words = message.toLocaleLowerCase("en-NZ").match(/[a-z0-9]+/g) ?? [];
+  if (!words.some((word) => word === "draft" || word === "proof")) return false;
+
+  const wordSet = new Set(words);
+  if (["my", "current", "latest"].some((word) => wordSet.has(word))) return true;
+  if (wordSet.has("order")) return true;
+
+  const pairs = words.slice(0, -1).map((word, index) => `${word} ${words[index + 1]}`);
+  if (pairs.includes("for me") || pairs.includes("prepared for") || pairs.includes("created for")) return true;
+  return wordSet.has("you") && ["prepared", "created", "made", "linked", "attached"]
+    .some((word) => wordSet.has(word));
+}
 
 const INTENT_RULES: Record<CustomerServiceIntent, readonly string[]> = {
   tone_adjustment: ["AI-SCOPE-01"],
@@ -62,8 +72,13 @@ const INTENT_RULES: Record<CustomerServiceIntent, readonly string[]> = {
   unknown: [],
 };
 
-function realtimeReason(message: string, intent: CustomerServiceIntent, isContextualQuoteDetail: boolean) {
-  if (PRIVATE_CURRENT_RECORD_PATTERNS.some((pattern) => pattern.test(message))) {
+function realtimeReason(
+  message: string,
+  intent: CustomerServiceIntent,
+  isContextualQuoteDetail: boolean,
+  channel: CustomerServiceChannel | undefined,
+) {
+  if (channel === "website" && isPrivateCurrentDesignRecordRequest(message)) {
     return "realtime_data_required";
   }
   if (intent === "quote_information_collection") {
@@ -84,11 +99,13 @@ function realtimeReason(message: string, intent: CustomerServiceIntent, isContex
 export function evaluatePolicyGate({
   message,
   knowledge,
+  channel,
   intentOverride,
   isContextualQuoteDetail = false,
 }: Readonly<{
   message: string;
   knowledge: PolicyKnowledge;
+  channel?: CustomerServiceChannel;
   intentOverride?: CustomerServiceIntent;
   isContextualQuoteDetail?: boolean;
 }>): PolicyGateResult {
@@ -107,7 +124,7 @@ export function evaluatePolicyGate({
     };
   }
 
-  if (realtimeReason(value, intent, isContextualQuoteDetail)) {
+  if (realtimeReason(value, intent, isContextualQuoteDetail, channel)) {
     return {
       decision: "REALTIME_DATA_REQUIRED",
       providerAllowed: false,

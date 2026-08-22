@@ -91,7 +91,11 @@ export class CustomerServiceEngine {
     };
   }
 
-  private gateFor(text: string, context: Parameters<typeof resolveContextualIntent>[0]["history"]) {
+  private gateFor(
+    text: string,
+    context: Parameters<typeof resolveContextualIntent>[0]["history"],
+    channel: "facebook" | "website",
+  ) {
     const resolved = resolveContextualIntent({
       currentText: text,
       history: context,
@@ -100,6 +104,7 @@ export class CustomerServiceEngine {
     return this.policyGate({
       message: text,
       knowledge: this.knowledge,
+      channel,
       intentOverride: resolved.intent,
       isContextualQuoteDetail: resolved.inherited && resolved.reason === "pending_quote_detail",
     });
@@ -122,7 +127,7 @@ export class CustomerServiceEngine {
       });
       return { status: "blocked", code: "image_only_without_text" };
     }
-    const gate = this.gateFor(draftInput.current.text, draftInput.context);
+    const gate = this.gateFor(draftInput.current.text, draftInput.context, draftInput.current.channel);
     if (gate.providerAllowed) return { status: "allowed" };
     const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
       ? "realtime_required"
@@ -159,7 +164,7 @@ export class CustomerServiceEngine {
       });
       return { status: "image_review_required", attemptId };
     }
-    const gate = this.gateFor(draftInput.current.text, draftInput.context);
+    const gate = this.gateFor(draftInput.current.text, draftInput.context, draftInput.current.channel);
     if (!gate.providerAllowed) {
       const attemptId = await this.repository.createGateBlockedAttempt({
         messageId: input.messageId,
@@ -207,7 +212,7 @@ export class CustomerServiceEngine {
       });
       return { status: "image_review_required", attemptId };
     }
-    const gate = this.gateFor(draftInput.current.text, draftInput.context);
+    const gate = this.gateFor(draftInput.current.text, draftInput.context, draftInput.current.channel);
     if (!gate.providerAllowed) {
       const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
         ? "realtime_required"

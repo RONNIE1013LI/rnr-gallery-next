@@ -52,10 +52,34 @@ describe("customer service policy gate", () => {
     "How does the deposit process work for the current proof?",
     "Can you explain the design process and show me the proof attached to order 123456?",
   ])("blocks private or current design records before a provider: %s", (message) => {
-    expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge })).toMatchObject({
+    expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge, channel: "website" })).toMatchObject({
       decision: "REALTIME_DATA_REQUIRED",
       providerAllowed: false,
       reason: "realtime_data_required",
+    });
+  });
+
+  it.each([
+    "What details do you need from my current\ndesign draft to prepare a quote?",
+    "Can you explain the design process and show me the latest proof?",
+    "What wording is on the draft you prepared for me?",
+    "Can you explain the design process and show the proof linked to my order?",
+  ])("fails closed for Website private-record wording variants: %s", (message) => {
+    expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge, channel: "website" })).toMatchObject({
+      decision: "REALTIME_DATA_REQUIRED",
+      providerAllowed: false,
+      reason: "realtime_data_required",
+    });
+  });
+
+  it("does not change the existing Facebook gate for private-record wording", () => {
+    expect(evaluatePolicyGate({
+      message: "What details do you need from my current design draft to prepare a quote?",
+      knowledge: compiledKnowledge,
+      channel: "facebook",
+    })).toMatchObject({
+      decision: "DRAFT_ALLOWED",
+      providerAllowed: true,
     });
   });
 
