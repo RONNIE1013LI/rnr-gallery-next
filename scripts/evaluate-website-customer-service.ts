@@ -189,7 +189,11 @@ export async function evaluateWebsiteConversationCases(input: Readonly<{
 }>) {
   const effects = input.effects ?? createWebsiteEvaluationEffectRecorder();
   const results = await Promise.all(input.cases.map(async (item) => {
-    const gate = evaluatePolicyGate({ message: item.message, knowledge: input.knowledge });
+    const gate = evaluatePolicyGate({
+      message: item.message,
+      knowledge: input.knowledge,
+      channel: "website",
+    });
     if (!await ownsEvaluationConversation(item)) {
       effects.record("session_block");
       return { item, gateDecision: gate.decision, outcome: "session_blocked" as const, text: "", fields: [] as readonly string[], providerCalled: false, ownershipResolution: "website_session" as const };

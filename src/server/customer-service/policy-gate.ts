@@ -48,16 +48,27 @@ const REALTIME_PATTERNS = [
 
 function isPrivateCurrentDesignRecordRequest(message: string) {
   const words = message.toLocaleLowerCase("en-NZ").match(/[a-z0-9]+/g) ?? [];
-  if (!words.some((word) => word === "draft" || word === "proof")) return false;
+  const artifactIndexes = words.flatMap((word, index) => (
+    word === "draft" || word === "proof" ? [index] : []
+  ));
+  if (!artifactIndexes.length) return false;
 
   const wordSet = new Set(words);
-  if (["my", "current", "latest"].some((word) => wordSet.has(word))) return true;
-  if (wordSet.has("order")) return true;
+  const privateMarkers = new Set(["my", "our", "current", "latest", "newest", "updated", "revised"]);
+  if (artifactIndexes.some((artifactIndex) => words.some((word, index) => (
+    privateMarkers.has(word) && Math.abs(index - artifactIndex) <= 4
+  )))) return true;
 
-  const pairs = words.slice(0, -1).map((word, index) => `${word} ${words[index + 1]}`);
-  if (pairs.includes("for me") || pairs.includes("prepared for") || pairs.includes("created for")) return true;
-  return wordSet.has("you") && ["prepared", "created", "made", "linked", "attached"]
-    .some((word) => wordSet.has(word));
+  const phrases = words.map((word, index) => `${word} ${words[index + 1] ?? ""}`.trim());
+  if (phrases.includes("most recent")) return true;
+  if (["me", "us"].some((owner) => (
+    phrases.includes(`for ${owner}`) || phrases.includes(`to ${owner}`)
+  )) && ["prepared", "created", "made", "belongs"].some((word) => wordSet.has(word))) return true;
+
+  const hasSpecificOrder = words.some((word, index) => word === "order" && (
+    ["my", "our"].includes(words[index - 1] ?? "") || /^\d+$/.test(words[index + 1] ?? "")
+  ));
+  return hasSpecificOrder && ["linked", "attached", "for", "of"].some((word) => wordSet.has(word));
 }
 
 const INTENT_RULES: Record<CustomerServiceIntent, readonly string[]> = {

@@ -108,6 +108,30 @@ describe("Website structured decision evaluation", () => {
     }))).toThrow("website_evaluation_fixture_invalid");
   });
 
+  it("evaluates private-record policy using the production Website channel", async () => {
+    const report = await evaluateWebsiteConversationCases({
+      cases: [{
+        id: "private-record-channel",
+        category: "realtime",
+        message: "Can you show us our latest proof?",
+        expectedGateDecision: "REALTIME_DATA_REQUIRED",
+        expectedOutcome: "human_review",
+        providerOutput: null,
+        productCategory: null,
+        acknowledgementAllowed: false,
+        sessionScenario: "owner",
+        expectedRequiredFields: [],
+      }],
+      knowledge: compiledKnowledge,
+    });
+
+    expect(report.summary).toMatchObject({
+      gateMatches: 1,
+      providerCalls: 0,
+      policyBypasses: 0,
+    });
+  });
+
   it("uses production session ownership and catches a cross-session mutation", async () => {
     const cases = parseWebsiteConversationCases(readFileSync(resolve(
       "src/server/customer-service/fixtures/website-conversation-evaluation-cases.jsonl",

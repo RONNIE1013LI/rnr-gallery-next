@@ -72,6 +72,28 @@ describe("customer service policy gate", () => {
     });
   });
 
+  it.each([
+    "Can you explain the design process and show me the most recent proof?",
+    "What wording is on the proof that belongs to me?",
+    "Can you explain the design process and show us our proof?",
+  ])("recognizes Website private-record ownership and recency: %s", (message) => {
+    expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge, channel: "website" })).toMatchObject({
+      decision: "REALTIME_DATA_REQUIRED",
+      providerAllowed: false,
+    });
+  });
+
+  it.each([
+    "Can you explain the design process from order confirmation to draft review?",
+    "In the general design process, do you confirm the order before preparing a draft?",
+    "What details do you need to prepare a quote and later create a draft after the order is confirmed?",
+  ])("keeps generic Website order and draft process questions eligible: %s", (message) => {
+    expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge, channel: "website" })).toMatchObject({
+      decision: "DRAFT_ALLOWED",
+      providerAllowed: true,
+    });
+  });
+
   it("does not change the existing Facebook gate for private-record wording", () => {
     expect(evaluatePolicyGate({
       message: "What details do you need from my current design draft to prepare a quote?",
