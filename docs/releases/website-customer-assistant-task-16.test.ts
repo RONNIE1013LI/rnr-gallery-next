@@ -6,18 +6,17 @@ const readReleaseDocument = (name: string) =>
   readFileSync(join(process.cwd(), "docs", "releases", name), "utf8");
 
 describe("Task 16 release evidence templates", () => {
-  it("records completed Staging evidence without declaring readiness", () => {
+  it("records the approved final Staging readiness evidence", () => {
     const staging = readReleaseDocument(
       "2026-08-21-website-customer-assistant-staging-validation.md",
     );
 
-    expect(staging).toContain("**Status: TECHNICAL VALIDATION COMPLETE; STAGING NOT READY.**");
+    expect(staging).toContain("**Status: STAGING READY.**");
     expect(staging).toContain("| Preview deployment | PASS |");
     expect(staging).toContain("| Production changes | NONE |");
-    expect(staging).toContain("Google OAuth `redirect_uri_mismatch`");
-    expect(staging).toContain("Ronnie must review at least 20 representative Website replies");
-    expect(staging).toContain("This document currently records **Staging NOT READY**.");
-    expect(staging).not.toMatch(/- \[x\]/i);
+    expect(staging).toContain("Ronnie Website response quality sign-off: `PASS`");
+    expect(staging).toContain("Ronnie alert recipient, exactly-once inbox delivery and secure deep-link approval");
+    expect(staging).toContain("The accepted full checklist plus the final focused recheck now record **Staging READY**.");
   });
 
   it("does not present an unperformed rollback check as passing", () => {
