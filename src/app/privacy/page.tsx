@@ -11,7 +11,7 @@ export default function PrivacyPage() {
     <main id="main-content" className={styles.legalPage}>
       <article>
         <h1>Privacy Policy</h1>
-        <p><strong>Last updated: 30 July 2026</strong></p>
+        <p><strong>Last updated: 22 August 2026</strong></p>
         <p>
           This privacy statement explains how R&amp;R Gallery handles personal
           information when you browse our website, contact us, submit photos or
@@ -86,6 +86,35 @@ export default function PrivacyPage() {
           separate permission to do so.
         </p>
 
+        <h2>AI-assisted Website customer service</h2>
+        <p>
+          AI-assisted customer service on our Website supports response preparation.
+          The model operates under policy controls, with human review or escalation
+          for high-risk enquiries, requests requiring current or real-time information,
+          and system failures. For low-risk enquiries, the Website may display replies
+          assembled from approved server-side templates. This does not allow AI to send
+          Facebook messages.
+        </p>
+        <p>
+          We may provide OpenAI, acting as a technical service provider, with the
+          relevant and minimised message content and recent Website conversation context
+          needed to process your enquiry. We use <code>store: false</code>, which means
+          request-level API storage is disabled. This does not mean zero retention:
+          OpenAI may process or retain limited data where permitted under its service
+          terms or required for security, abuse prevention or legal obligations.
+        </p>
+        <p>
+          Sharing of API inputs and outputs with OpenAI is currently disabled. We do not
+          authorise Website customer conversations to be used for external model training
+          unless this is separately enabled, appropriately disclosed and expressly
+          authorised.
+        </p>
+        <p>
+          Authorised R&amp;R Gallery staff may review Website conversations and AI-assisted
+          responses. AI does not independently approve refunds, compensation, discounts,
+          payments, order changes or other high-risk customer-service decisions.
+        </p>
+
         <h2>Information you need to provide</h2>
         <p>
           You can browse the website without placing an order. Information marked
@@ -123,6 +152,10 @@ export default function PrivacyPage() {
         <p>
           You can restrict cookies in your browser, but blocking essential cookies
           may prevent the cart or checkout from working correctly.
+        </p>
+        <p>
+          The essential Website session cookie used for customer service lasts seven
+          days. Related rate data used to prevent misuse is kept for no more than 24 hours.
         </p>
 
         <h2 id="information-sharing">Who we share information with</h2>
@@ -171,6 +204,12 @@ export default function PrivacyPage() {
           disposed of when it is no longer reasonably required. You may request
           earlier deletion, subject to any legal, accounting, fraud-prevention or
           dispute-related reason that requires us to retain it.
+        </p>
+        <p>
+          Anonymous Website conversations are retained for up to 90 days unless a
+          conversation is linked to a business record, protected by an active human
+          review or approved hold, or required to be kept longer for an order, payment,
+          legal, audit, security, fraud-prevention or dispute reason.
         </p>
 
         <h2 id="your-privacy-rights">Access, correction and deletion</h2>

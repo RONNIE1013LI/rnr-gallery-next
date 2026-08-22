@@ -1,4 +1,5 @@
 import type { CustomerServiceIntent } from "./intent-detection";
+import { validateWebsitePublicOutput } from "./website/output-safety-validator";
 
 export type DraftValidationResult = Readonly<{
   ok: boolean;
@@ -7,12 +8,19 @@ export type DraftValidationResult = Readonly<{
 
 export function validateDraft(
   draft: string,
-  { intent }: Readonly<{ intent: CustomerServiceIntent }>,
+  { intent, channel }: Readonly<{
+    intent: CustomerServiceIntent;
+    channel?: "facebook" | "website";
+  }>,
 ): DraftValidationResult {
   const value = String(draft ?? "").trim();
   if (!value) return { ok: false, codes: ["empty_draft"] };
   if (/\bas an ai\b|\bai assistant\b|valued enquiry/i.test(value)) {
     return { ok: false, codes: ["ai_style"] };
+  }
+  if (channel === "website") {
+    const websiteSafety = validateWebsitePublicOutput(value, intent);
+    if (!websiteSafety.ok) return { ok: false, codes: [websiteSafety.code] };
   }
   if (/\bguarantee(?:d)?\b|\brefund\b|\bcancel\b|\bcompensation\b|\bchargeback\b|\breprint\b/i.test(value)) {
     return { ok: false, codes: ["forbidden_commitment"] };

@@ -17,6 +17,7 @@ describe("reply assistant messages API", () => {
     const requirePermission = vi.fn(async () => ({ user: { id: "staff-1" }, adminRole: "staff" as const }));
     const list = vi.fn(async () => ({ items: [{
       messageId: "11111111-1111-4111-8111-111111111111",
+      channel: "website" as const,
       body: "Hello",
       receivedAt: "2026-08-17T00:00:00.000Z",
       status: "received",
@@ -26,6 +27,17 @@ describe("reply assistant messages API", () => {
       attachmentCount: 1,
       imageAnalysisStatus: "assessed" as const,
       imageAssessmentSummary: "Image 0 appears cropped; request an uncropped version.",
+      humanReplyReceived: false,
+      websiteReview: {
+        selector: `wrs1.m8k6x0.${"A".repeat(43)}`,
+        reason: "high_risk" as const,
+        alertStatus: "sent" as const,
+      },
+      timeline: [{
+        role: "assistant" as const,
+        text: "Please send the original photo.",
+        receivedAt: "2026-08-17T00:00:01.000Z",
+      }],
     }] }));
     const response = await createMessagesHandler({ enabled: true, requirePermission, list }).GET();
     expect(requirePermission).toHaveBeenCalledWith("use_reply_assistant");
@@ -33,6 +45,7 @@ describe("reply assistant messages API", () => {
     const body = await response.json();
     expect(body).toEqual({ items: [{
       messageId: "11111111-1111-4111-8111-111111111111",
+      channel: "website",
       body: "Hello",
       receivedAt: "2026-08-17T00:00:00.000Z",
       status: "received",
@@ -42,7 +55,19 @@ describe("reply assistant messages API", () => {
       attachmentCount: 1,
       imageAnalysisStatus: "assessed",
       imageAssessmentSummary: "Image 0 appears cropped; request an uncropped version.",
+      humanReplyReceived: false,
+      websiteReview: {
+        selector: `wrs1.m8k6x0.${"A".repeat(43)}`,
+        reason: "high_risk",
+        alertStatus: "sent",
+      },
+      timeline: [{
+        role: "assistant",
+        text: "Please send the original photo.",
+        receivedAt: "2026-08-17T00:00:01.000Z",
+      }],
     }] });
     expect(JSON.stringify(body)).not.toMatch(forbiddenDtoPattern);
+    expect(JSON.stringify(body)).not.toMatch(/deep.?link|token|conversationId|session|psid/i);
   });
 });

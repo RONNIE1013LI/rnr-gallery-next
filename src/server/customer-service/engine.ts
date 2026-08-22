@@ -2,13 +2,22 @@ import { createHash } from "node:crypto";
 import { evaluatePolicyGate, type PolicyKnowledge } from "./policy-gate";
 import { retrieveKnowledge, type AnswerQualityGuide } from "./knowledge-retrieval";
 import { validateDraft } from "./output-validator";
-import { buildDraftPrompt } from "./prompt-builder";
+import { buildDraftPrompt, buildWebsiteDecisionPrompt } from "./prompt-builder";
 import { localDateScopeKey } from "./usage-cost";
+import { detectIntent } from "./intent-detection";
+import { resolveContextualIntent } from "./conversation/contextual-intent";
 import type { AttachmentProcessor } from "./attachments/attachment-processor";
 import type { NormalizedAttachment } from "./attachments/types";
 import type { AiProvider } from "./providers/ai-provider";
 import type { CustomerServiceRepository } from "./repositories/customer-service-repository";
 import type { DraftGenerationRequest, DraftGenerationResult } from "./types";
+import { sanitizeWebsiteModelInput } from "./website/model-input-sanitizer";
+import { classifyAcknowledgement } from "./conversation/acknowledgement";
+import {
+  parseWebsiteDecision,
+  renderWebsiteDecision,
+  type WebsiteDecision,
+} from "./website/structured-decision";
 
 type EngineKnowledge = PolicyKnowledge & Readonly<{
   knowledgeVersion: string;
@@ -18,6 +27,15 @@ type EngineKnowledge = PolicyKnowledge & Readonly<{
     customer: string;
     reply: string;
     risk: string;
+    provenance: string;
+  }>[];
+  historicalExamples: readonly Readonly<{
+    id: string;
+    intent: string;
+    status: string;
+    customerQuestion: string;
+    approvedAnswer: string;
+    policyReferences: readonly string[];
     provenance: string;
   }>[];
   goldenReplies: readonly Readonly<{
@@ -38,6 +56,9 @@ export class CustomerServiceEngine {
     reservationMicrousd: number;
     dailyHardStopMicrousd: number;
     totalHardStopMicrousd: number;
+    websiteDailyWarningMicrousd: number;
+    websiteDailyHardStopMicrousd: number;
+    websiteTotalHardStopMicrousd: number;
   }>;
 
   constructor(input: Readonly<{
@@ -51,6 +72,9 @@ export class CustomerServiceEngine {
       reservationMicrousd: number;
       dailyHardStopMicrousd: number;
       totalHardStopMicrousd: number;
+      websiteDailyWarningMicrousd?: number;
+      websiteDailyHardStopMicrousd?: number;
+      websiteTotalHardStopMicrousd?: number;
     }>;
   }>) {
     this.repository = input.repository;
@@ -58,7 +82,32 @@ export class CustomerServiceEngine {
     this.policyGate = input.policyGate ?? evaluatePolicyGate;
     this.outputValidator = input.outputValidator ?? validateDraft;
     this.knowledge = input.knowledge;
-    this.budget = input.budget;
+    this.budget = {
+      ...input.budget,
+      websiteDailyWarningMicrousd: input.budget.websiteDailyWarningMicrousd
+        ?? input.budget.dailyHardStopMicrousd,
+      websiteDailyHardStopMicrousd: input.budget.websiteDailyHardStopMicrousd ?? input.budget.dailyHardStopMicrousd,
+      websiteTotalHardStopMicrousd: input.budget.websiteTotalHardStopMicrousd ?? input.budget.totalHardStopMicrousd,
+    };
+  }
+
+  private gateFor(
+    text: string,
+    context: Parameters<typeof resolveContextualIntent>[0]["history"],
+    channel: "facebook" | "website",
+  ) {
+    const resolved = resolveContextualIntent({
+      currentText: text,
+      history: context,
+      baseIntent: detectIntent(text),
+    });
+    return this.policyGate({
+      message: text,
+      knowledge: this.knowledge,
+      channel,
+      intentOverride: resolved.intent,
+      isContextualQuoteDetail: resolved.inherited && resolved.reason === "pending_quote_detail",
+    });
   }
 
   async checkImageJobPolicy(messageId: string): Promise<
@@ -78,7 +127,7 @@ export class CustomerServiceEngine {
       });
       return { status: "blocked", code: "image_only_without_text" };
     }
-    const gate = this.policyGate({ message: draftInput.current.text, knowledge: this.knowledge });
+    const gate = this.gateFor(draftInput.current.text, draftInput.context, draftInput.current.channel);
     if (gate.providerAllowed) return { status: "allowed" };
     const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
       ? "realtime_required"
@@ -115,7 +164,7 @@ export class CustomerServiceEngine {
       });
       return { status: "image_review_required", attemptId };
     }
-    const gate = this.policyGate({ message: draftInput.current.text, knowledge: this.knowledge });
+    const gate = this.gateFor(draftInput.current.text, draftInput.context, draftInput.current.channel);
     if (!gate.providerAllowed) {
       const attemptId = await this.repository.createGateBlockedAttempt({
         messageId: input.messageId,
@@ -163,7 +212,7 @@ export class CustomerServiceEngine {
       });
       return { status: "image_review_required", attemptId };
     }
-    const gate = this.policyGate({ message: draftInput.current.text, knowledge: this.knowledge });
+    const gate = this.gateFor(draftInput.current.text, draftInput.context, draftInput.current.channel);
     if (!gate.providerAllowed) {
       const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
         ? "realtime_required"
@@ -184,6 +233,34 @@ export class CustomerServiceEngine {
         attemptId,
       };
     }
+
+    const currentWebsiteInput = draftInput.current.channel === "website"
+      ? sanitizeWebsiteModelInput(draftInput.current.text)
+      : null;
+    const websiteContextInputs = draftInput.current.channel === "website"
+      ? draftInput.context.map((item) => sanitizeWebsiteModelInput(item.text))
+      : [];
+    if (currentWebsiteInput?.reviewRequired) {
+      const attemptId = await this.repository.createGateBlockedAttempt({
+        messageId: request.messageId,
+        trigger: request.trigger,
+        intent: gate.intent,
+        riskLevel: "high",
+        gateResult: "unresolved",
+        gateReasons: ["website_sensitive_input"],
+        knowledgeVersion: this.knowledge.knowledgeVersion,
+      });
+      return { status: "gate_blocked", attemptId };
+    }
+    const providerContext = draftInput.current.channel === "website"
+      ? draftInput.context.map((item, index) => ({
+        ...item,
+        text: websiteContextInputs[index].text,
+      }))
+      : draftInput.context;
+    const providerQuery = draftInput.current.channel === "website"
+      ? currentWebsiteInput?.text ?? ""
+      : draftInput.current.text;
 
     const imageContext = await this.repository.selectImageContext(request.messageId);
     if (imageContext || attachmentSourceContext?.length) {
@@ -215,23 +292,143 @@ export class CustomerServiceEngine {
       dailyScopeKey,
       dailyHardStopMicrousd: this.budget.dailyHardStopMicrousd,
       totalHardStopMicrousd: this.budget.totalHardStopMicrousd,
+      ...(draftInput.current.channel === "website" ? {
+        websiteDailyWarningMicrousd: this.budget.websiteDailyWarningMicrousd,
+        websiteDailyHardStopMicrousd: this.budget.websiteDailyHardStopMicrousd,
+        websiteTotalHardStopMicrousd: this.budget.websiteTotalHardStopMicrousd,
+      } : {}),
     });
     if (reservation.status === "budget_blocked") {
       return { status: "budget_blocked", attemptId: reservation.attemptId };
     }
+    if (reservation.status === "human_reply_received") {
+      return { status: "human_reply_received", attemptId: reservation.attemptId };
+    }
 
-    const prompt = buildDraftPrompt({
-      intent: gate.intent,
-      context: draftInput.context,
-      rules: sources.rules,
-      examples: sources.examples,
-      goldenExamples: sources.goldenExamples,
-      qualityGuide: sources.qualityGuide,
-      toneGuide: this.knowledge.toneGuide,
+    let caseMemories: Awaited<ReturnType<CustomerServiceRepository["retrieveApprovedCaseMemories"]>> = [];
+    try {
+      caseMemories = await this.repository.retrieveApprovedCaseMemories({
+        attemptId: reservation.attemptId,
+        intent: gate.intent,
+        riskClass: gate.riskLevel === "high" ? "medium" : gate.riskLevel,
+        productCategory: null,
+        market: "unknown",
+        policyReferences: sources.rules.map((rule) => rule.id),
+        knowledgeVersion: this.knowledge.knowledgeVersion,
+        query: providerQuery,
+        limit: 3,
+        now: new Date(),
+      });
+    } catch {
+      caseMemories = [];
+    }
+    const prompt = draftInput.current.channel === "website"
+      ? buildWebsiteDecisionPrompt({
+        intent: gate.intent,
+        context: providerContext,
+        productContext: draftInput.current.productContext ?? null,
+        approvedCaseMemoryCount: caseMemories.length,
+      })
+      : buildDraftPrompt({
+        intent: gate.intent,
+        context: providerContext,
+        rules: sources.rules,
+        examples: sources.examples,
+        goldenExamples: sources.goldenExamples,
+        qualityGuide: sources.qualityGuide,
+        toneGuide: this.knowledge.toneGuide,
+        caseMemories,
+      });
+    const invocation = await this.repository.confirmProviderInvocation({
+      attemptId: reservation.attemptId,
+      dailyScopeKey,
     });
+    if (invocation.status === "human_reply_received") {
+      return { status: "human_reply_received", attemptId: reservation.attemptId };
+    }
     try {
       const generated = await this.provider.generate(prompt);
-      const textValidation = this.outputValidator(generated.text, { intent: gate.intent });
+      let candidateText = generated.text;
+      let websiteRendererProof: Readonly<{
+        decision: WebsiteDecision;
+        templateVersion: string;
+      }> | undefined;
+      if (draftInput.current.channel === "website") {
+        const parsed = parseWebsiteDecision(generated.text);
+        if (!parsed.ok) {
+          await this.repository.completeProviderAttempt({
+            attemptId: reservation.attemptId,
+            status: "output_blocked",
+            provider: generated.provider,
+            model: generated.model,
+            rejectedOutputHash: createHash("sha256").update(generated.text).digest("hex"),
+            validatorCodes: [parsed.code],
+            inputTokens: generated.usage.inputTokens,
+            cachedInputTokens: generated.usage.cachedInputTokens,
+            outputTokens: generated.usage.outputTokens,
+            estimatedCostMicrousd: generated.estimatedCostMicrousd,
+            latencyMs: generated.latencyMs,
+            dailyScopeKey,
+          });
+          return { status: "output_blocked", attemptId: reservation.attemptId };
+        }
+        const acknowledgement = classifyAcknowledgement({
+          currentText: draftInput.current.text,
+          recentHistory: draftInput.context,
+        });
+        const rendered = renderWebsiteDecision({
+          decision: parsed.decision,
+          expectedIntent: gate.intent,
+          productCategory: draftInput.current.productContext?.category ?? null,
+          messageText: draftInput.current.text,
+          acknowledgementAllowed: acknowledgement.suppress,
+          policyDecision: gate.decision,
+        });
+        if (rendered.ok && rendered.outcome === "no_reply") {
+          await this.repository.completeProviderAttempt({
+            attemptId: reservation.attemptId,
+            status: "abandoned",
+            provider: generated.provider,
+            model: generated.model,
+            validatorCodes: [],
+            inputTokens: generated.usage.inputTokens,
+            cachedInputTokens: generated.usage.cachedInputTokens,
+            outputTokens: generated.usage.outputTokens,
+            estimatedCostMicrousd: generated.estimatedCostMicrousd,
+            latencyMs: generated.latencyMs,
+            providerErrorCode: "website_no_reply_needed",
+            dailyScopeKey,
+          });
+          return { status: "no_reply_needed", attemptId: reservation.attemptId };
+        }
+        if (!rendered.ok || rendered.outcome !== "rendered") {
+          const code = rendered.ok ? `website_decision_${rendered.outcome}` : rendered.code;
+          await this.repository.completeProviderAttempt({
+            attemptId: reservation.attemptId,
+            status: "output_blocked",
+            provider: generated.provider,
+            model: generated.model,
+            rejectedOutputHash: createHash("sha256").update(generated.text).digest("hex"),
+            validatorCodes: [code],
+            inputTokens: generated.usage.inputTokens,
+            cachedInputTokens: generated.usage.cachedInputTokens,
+            outputTokens: generated.usage.outputTokens,
+            estimatedCostMicrousd: generated.estimatedCostMicrousd,
+            latencyMs: generated.latencyMs,
+            dailyScopeKey,
+          });
+          return { status: "output_blocked", attemptId: reservation.attemptId };
+        }
+        candidateText = rendered.text;
+        websiteRendererProof = {
+          decision: parsed.decision,
+          templateVersion: rendered.templateVersion,
+        };
+      }
+      const textValidation = this.outputValidator(candidateText, {
+        intent: gate.intent,
+        ...(draftInput.current.channel === "website" ? { channel: "website" as const } : {}),
+      });
       const validation = {
         ok: textValidation.ok,
         codes: textValidation.codes,
@@ -242,10 +439,16 @@ export class CustomerServiceEngine {
         provider: generated.provider,
         model: generated.model,
         ...(validation.ok
-          ? { draftText: generated.text }
+          ? {
+            draftText: candidateText,
+            ...(websiteRendererProof ? {
+              websiteDecision: websiteRendererProof.decision,
+              websiteResponseTemplateVersion: websiteRendererProof.templateVersion,
+            } : {}),
+          }
           : {
             draftText: undefined,
-            rejectedOutputHash: createHash("sha256").update(generated.text).digest("hex"),
+            rejectedOutputHash: createHash("sha256").update(candidateText).digest("hex"),
           }),
         validatorCodes: validation.codes,
         inputTokens: generated.usage.inputTokens,

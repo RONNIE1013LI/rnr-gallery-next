@@ -22,6 +22,7 @@ describe("customer service policy gate", () => {
     "I need a reprint for this misprint",
     "I want compensation",
     "I am filing a chargeback",
+    "I think I was charged twice",
     "Can you guarantee delivery by Friday?",
     "Can you guarantee this urgent order tomorrow?",
   ])("blocks high-risk message before a provider: %s", (message) => {
@@ -42,6 +43,104 @@ describe("customer service policy gate", () => {
       message: "What is my order status?",
       knowledge: compiledKnowledge,
     })).toMatchObject({ decision: "REALTIME_DATA_REQUIRED", providerAllowed: false });
+  });
+
+  it.each([
+    "Can I see my design draft?",
+    "Can I review my current design draft?",
+    "Can I see the draft for order 123456?",
+    "What details do you need from my current design draft to prepare a quote?",
+    "How does the deposit process work for the current proof?",
+    "Can you explain the design process and show me the proof attached to order 123456?",
+  ])("blocks private or current design records before a provider: %s", (message) => {
+    expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge, channel: "website" })).toMatchObject({
+      decision: "REALTIME_DATA_REQUIRED",
+      providerAllowed: false,
+      reason: "realtime_data_required",
+    });
+  });
+
+  it.each([
+    "What details do you need from my current\ndesign draft to prepare a quote?",
+    "Can you explain the design process and show me the latest proof?",
+    "What wording is on the draft you prepared for me?",
+    "Can you explain the design process and show the proof linked to my order?",
+  ])("fails closed for Website private-record wording variants: %s", (message) => {
+    expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge, channel: "website" })).toMatchObject({
+      decision: "REALTIME_DATA_REQUIRED",
+      providerAllowed: false,
+      reason: "realtime_data_required",
+    });
+  });
+
+  it.each([
+    "Can you explain the design process and show me the most recent proof?",
+    "What wording is on the proof that belongs to me?",
+    "Can you explain the design process and show us our proof?",
+    "Can you show me the recent proof?",
+    "Can you show me the up-to-date proof?",
+    "Can you show me the proof that is mine?",
+    "Can you explain the design process and show us our proofs?",
+    "Can you show me the current prοof?",
+    "Can you show me the proof we are using now?",
+  ])("recognizes Website private-record ownership and recency: %s", (message) => {
+    expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge, channel: "website" })).toMatchObject({
+      decision: "REALTIME_DATA_REQUIRED",
+      providerAllowed: false,
+    });
+  });
+
+  it.each([
+    "Can you explain the design process from order confirmation to draft review?",
+    "In the general design process, do you confirm the order before preparing a draft?",
+    "What details do you need to prepare a quote and later create a draft after the order is confirmed?",
+    "How is a design draft created, and can you explain the general process to me?",
+    "Can you explain how a design draft is created before a finished product is prepared for me?",
+  ])("keeps generic Website order and draft process questions eligible: %s", (message) => {
+    expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge, channel: "website" })).toMatchObject({
+      decision: "DRAFT_ALLOWED",
+      providerAllowed: true,
+    });
+  });
+
+  it("does not change the existing Facebook gate for private-record wording", () => {
+    expect(evaluatePolicyGate({
+      message: "What details do you need from my current design draft to prepare a quote?",
+      knowledge: compiledKnowledge,
+      channel: "facebook",
+    })).toMatchObject({
+      decision: "DRAFT_ALLOWED",
+      providerAllowed: true,
+    });
+  });
+
+  it("checks current high-risk and realtime wording before a contextual intent override", () => {
+    expect(evaluatePolicyGate({
+      message: "I want a refund",
+      intentOverride: "quote_information_collection",
+      knowledge: compiledKnowledge,
+    })).toMatchObject({ providerAllowed: false, reason: "high_risk_topic" });
+    expect(evaluatePolicyGate({
+      message: "How much is it?",
+      intentOverride: "quote_information_collection",
+      knowledge: compiledKnowledge,
+    })).toMatchObject({ providerAllowed: false, reason: "realtime_data_required" });
+    expect(evaluatePolicyGate({
+      message: "Australia",
+      intentOverride: "quote_information_collection",
+      knowledge: compiledKnowledge,
+    })).toMatchObject({ providerAllowed: true, intent: "quote_information_collection" });
+    expect(evaluatePolicyGate({
+      message: "A1",
+      intentOverride: "quote_information_collection",
+      isContextualQuoteDetail: true,
+      knowledge: compiledKnowledge,
+    })).toMatchObject({ providerAllowed: true, intent: "quote_information_collection" });
+    expect(evaluatePolicyGate({
+      message: "How much is A1?",
+      intentOverride: "quote_information_collection",
+      knowledge: compiledKnowledge,
+    })).toMatchObject({ providerAllowed: false, reason: "realtime_data_required" });
   });
 
   it("blocks evidence-based and unresolved supporting rules", () => {

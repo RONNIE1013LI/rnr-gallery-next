@@ -1,0 +1,206 @@
+.root {
+  position: fixed;
+  right: max(12px, env(safe-area-inset-right));
+  bottom: max(12px, env(safe-area-inset-bottom));
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.launcher,
+.sendButton,
+.closeButton {
+  border: 0;
+  cursor: pointer;
+}
+
+.launcher {
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  color: var(--text-on-dark);
+  background: var(--brand-green);
+  border: 1px solid color-mix(in srgb, var(--brand-gold) 56%, transparent);
+  border-radius: 50%;
+  box-shadow: 0 0.75rem 1.75rem rgb(20 43 37 / 24%);
+}
+
+.launcher svg,
+.sendButton svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+.panel {
+  width: min(380px, calc(100vw - 24px));
+  max-height: min(620px, calc(100dvh - 96px));
+  display: grid;
+  grid-template-rows: auto minmax(5rem, 1fr) auto auto auto;
+  overflow: hidden;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  box-shadow: 0 1.25rem 2.75rem rgb(20 43 37 / 22%);
+}
+
+.header {
+  min-height: 3.75rem;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--text-on-dark);
+  background: var(--brand-green);
+}
+
+.header div {
+  min-width: 0;
+  display: grid;
+  line-height: 1.2;
+}
+
+.header strong {
+  font-family: var(--font-display);
+  font-size: 1rem;
+}
+
+.header span {
+  margin-top: 0.2rem;
+  color: var(--text-on-dark-muted);
+  font-size: 0.75rem;
+}
+
+.closeButton {
+  width: 2rem;
+  height: 2rem;
+  flex: 0 0 auto;
+  color: inherit;
+  background: transparent;
+  font-size: 1.45rem;
+  line-height: 1;
+}
+
+.transcript {
+  min-height: 0;
+  padding: 0.9rem;
+  display: grid;
+  align-content: start;
+  gap: 0.8rem;
+  overflow-y: auto;
+}
+
+.message {
+  max-width: 88%;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.message[data-role="customer"] {
+  justify-self: end;
+  text-align: right;
+}
+
+.message span {
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.message p {
+  padding: 0.55rem 0.65rem;
+  overflow-wrap: anywhere;
+  background: var(--ivory);
+  border-left: 2px solid var(--brand-gold);
+  font-size: 0.875rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.message[data-role="customer"] p {
+  color: var(--text-on-dark);
+  background: var(--gallery-green);
+  border-right: 2px solid var(--brand-gold);
+  border-left: 0;
+}
+
+.status {
+  min-height: 1.35rem;
+  padding: 0 0.9rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.composer {
+  padding: 0.7rem 0.9rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 2.5rem;
+  align-items: end;
+  gap: 0.55rem;
+  border-top: 1px solid var(--border);
+}
+
+.composerLabel > span {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.composer textarea {
+  width: 100%;
+  min-height: 2.5rem;
+  max-height: 7rem;
+  padding: 0.55rem 0.65rem;
+  resize: vertical;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 0.4rem;
+  line-height: 1.4;
+}
+
+.sendButton {
+  width: 2.5rem;
+  height: 2.5rem;
+  display: grid;
+  place-items: center;
+  color: var(--text-on-dark);
+  background: var(--gallery-green);
+  border-radius: 50%;
+}
+
+.sendButton:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.retryButton {
+  min-height: 2.25rem;
+  margin: 0 0.9rem 0.7rem;
+  justify-self: start;
+  padding: 0.25rem 0;
+  color: var(--aged-gold-text);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.liveRegion {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}

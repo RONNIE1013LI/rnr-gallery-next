@@ -38,25 +38,40 @@ function messagePayload(overrides: Record<string, unknown> = {}) {
   };
 }
 
-function setup(ingestResult: { status: "created"; messageId: string; pilotSequence: number } | { status: "duplicate"; messageId: string } | { status: "pilot_complete"; messageId: string } = { status: "created", messageId: "internal-1", pilotSequence: 1 }) {
+function setup(ingestResult:
+  | { status: "turn_pending"; messageId: string; turnId: string; debounceUntil: Date }
+  | { status: "context_only" }
+  | { status: "duplicate" }
+  = {
+    status: "turn_pending",
+    messageId: "internal-1",
+    turnId: "turn-1",
+    debounceUntil: new Date("2026-08-17T00:00:02.000Z"),
+  }, withRecovery = false) {
   const events: string[] = [];
   const scheduledTasks: Array<() => Promise<void>> = [];
   const ingest = vi.fn(async () => { events.push("persist:commit"); return ingestResult; });
-  const generateDraft = vi.fn(async () => undefined);
+  const processTurn = vi.fn(async () => undefined);
+  const waitUntil = vi.fn(async () => undefined);
   const kickImageJob = vi.fn(async () => undefined);
+  const recoverHumanReplies = vi.fn(async () => ({ selected: 0, matched: 0, unmatched: 0 }));
   const scheduleAfter = vi.fn((task: () => Promise<void>) => { events.push("after:schedule"); scheduledTasks.push(task); });
   return {
     events,
     scheduledTasks,
     ingest,
-    generateDraft,
+    processTurn,
+    waitUntil,
     kickImageJob,
+    recoverHumanReplies,
     scheduleAfter,
     handlers: createMetaWebhookHandlers({
       config,
       ingest,
-      generateDraft,
+      waitUntil,
+      processTurn,
       kickImageJob,
+      ...(withRecovery ? { recoverHumanReplies } : {}),
       scheduleAfter,
       createJobId: () => "00000000-0000-4000-8000-000000000101",
       now: () => new Date("2026-08-17T00:00:00.000Z"),
@@ -88,11 +103,80 @@ describe("Meta webhook handler", () => {
     adapterFactory.mockRestore();
   });
 
-  it("filters echoes without persistence or scheduling", async () => {
-    const current = setup();
-    expect((await current.handlers.POST(signedRequest(messagePayload({ is_echo: true })))).status).toBe(200);
-    expect(current.ingest).not.toHaveBeenCalled();
+  it("persists staff echoes as context without scheduling a draft", async () => {
+    const current = setup({ status: "context_only" }, true);
+    const echo = messagePayload({ is_echo: true });
+    echo.entry[0].messaging[0].sender.id = "page-1";
+    Object.assign(echo.entry[0].messaging[0], { recipient: { id: "customer-1" } });
+    expect((await current.handlers.POST(signedRequest(echo))).status).toBe(200);
+    expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      role: "staff",
+      eventType: "human_outbound",
+      text: "How do I prepare my photos?",
+      bodyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      redactionCodes: [],
+      learningEligible: true,
+    }));
     expect(current.scheduleAfter).not.toHaveBeenCalled();
+    expect(current.recoverHumanReplies).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
+  });
+
+  it("persists attachment-only staff echoes as non-learning context without generation", async () => {
+    const current = setup({ status: "context_only" }, true);
+    const echo = messagePayload({
+      text: undefined,
+      is_echo: true,
+      attachments: [{ type: "image", payload: { url: "https://scontent.test/private.jpg" } }],
+    });
+    echo.entry[0].messaging[0].sender.id = "page-1";
+    Object.assign(echo.entry[0].messaging[0], { recipient: { id: "customer-1" } });
+
+    expect((await current.handlers.POST(signedRequest(echo))).status).toBe(200);
+    expect(current.ingest).toHaveBeenCalledWith(expect.objectContaining({
+      role: "staff",
+      eventType: "human_outbound",
+      text: "[Staff sent an attachment]",
+      redactionCodes: ["attachment_only_withheld"],
+      learningEligible: false,
+      attachments: [],
+      imageJob: null,
+    }));
+    expect(current.scheduleAfter).not.toHaveBeenCalled();
+    expect(current.recoverHumanReplies).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
+  });
+
+  it("uses customer incoming events to recover interrupted human reply groups", async () => {
+    const current = setup(undefined, true);
+    expect((await current.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
+    expect(current.scheduledTasks).toHaveLength(2);
+    await current.scheduledTasks[1]();
+    expect(current.recoverHumanReplies).toHaveBeenCalledWith({
+      now: expect.any(Date),
+      groupWindowMs: 90_000,
+      limit: 25,
+    });
+  });
+
+  it("delegates a delayed terminal turn to the durable executor without local generation", async () => {
+    const current = setup();
+    await current.handlers.POST(signedRequest(messagePayload()));
+    current.processTurn.mockResolvedValueOnce(undefined);
+
+    await current.scheduledTasks[0]();
+
+    expect(current.processTurn).toHaveBeenCalledWith("turn-1");
+  });
+
+  it("uses the durable exact-turn executor after the debounce deadline", async () => {
+    const current = setup();
+    expect((await current.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
+    expect(current.events).toEqual(["persist:commit", "after:schedule"]);
+    await current.scheduledTasks[0]();
+    expect(current.waitUntil).toHaveBeenCalledWith(new Date("2026-08-17T00:00:02.000Z"));
+    expect(current.processTurn).toHaveBeenCalledOnce();
+    expect(current.processTurn).toHaveBeenCalledWith("turn-1");
   });
 
   it("persists image-only metadata for human review without retaining or scheduling its source", async () => {
@@ -125,7 +209,7 @@ describe("Meta webhook handler", () => {
 
     expect(current.scheduleAfter).not.toHaveBeenCalled();
     expect(current.kickImageJob).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
   });
 
   it("never combines an image-only event with a later text-only event", async () => {
@@ -153,7 +237,7 @@ describe("Meta webhook handler", () => {
     }));
     expect(current.scheduleAfter).toHaveBeenCalledOnce();
     await current.scheduledTasks[0]();
-    expect(current.generateDraft).toHaveBeenCalledOnce();
+    expect(current.processTurn).toHaveBeenCalledOnce();
     expect(current.kickImageJob).not.toHaveBeenCalled();
   });
 
@@ -185,7 +269,7 @@ describe("Meta webhook handler", () => {
     expect(JSON.stringify(current.ingest.mock.calls)).not.toContain("https://scontent.test/image.jpg");
     expect(current.scheduleAfter).not.toHaveBeenCalled();
     expect(current.kickImageJob).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
   });
 
   it("persists mixed image/file metadata and forces human review with zero deferred providers", async () => {
@@ -212,7 +296,7 @@ describe("Meta webhook handler", () => {
     expect(JSON.stringify(current.ingest.mock.calls)).not.toMatch(/scontent\.test|private\.pdf/);
     expect(current.scheduleAfter).not.toHaveBeenCalled();
     expect(current.kickImageJob).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
   });
 
   it("fails closed when valid images overflow with trailing unsupported metadata", async () => {
@@ -247,23 +331,24 @@ describe("Meta webhook handler", () => {
     expect(JSON.stringify(current.ingest.mock.calls)).not.toMatch(/scontent\.test|private\.pdf|overflow\.jpg/);
     expect(current.scheduleAfter).not.toHaveBeenCalled();
     expect(current.kickImageJob).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
   });
 
   it("does not schedule duplicates or run when disabled", async () => {
-    const duplicate = setup({ status: "duplicate", messageId: "internal-1" });
+    const duplicate = setup({ status: "duplicate" });
     expect((await duplicate.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
     expect(duplicate.scheduleAfter).not.toHaveBeenCalled();
 
-    const pilotComplete = setup({ status: "pilot_complete", messageId: "internal-1" });
-    expect((await pilotComplete.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
-    expect(pilotComplete.scheduleAfter).not.toHaveBeenCalled();
+    const contextOnly = setup({ status: "context_only" });
+    expect((await contextOnly.handlers.POST(signedRequest(messagePayload()))).status).toBe(200);
+    expect(contextOnly.scheduleAfter).not.toHaveBeenCalled();
 
     const disabled = setup();
     disabled.handlers = createMetaWebhookHandlers({
       config: { ...config, enabled: false },
       ingest: disabled.ingest,
-      generateDraft: disabled.generateDraft,
+      waitUntil: disabled.waitUntil,
+      processTurn: disabled.processTurn,
       kickImageJob: disabled.kickImageJob,
       scheduleAfter: disabled.scheduleAfter,
     });
@@ -282,6 +367,6 @@ describe("Meta webhook handler", () => {
     expect(response.status).toBe(200);
     expect(current.scheduledTasks).toHaveLength(0);
     expect(current.kickImageJob).not.toHaveBeenCalled();
-    expect(current.generateDraft).not.toHaveBeenCalled();
+    expect(current.processTurn).not.toHaveBeenCalled();
   });
 });

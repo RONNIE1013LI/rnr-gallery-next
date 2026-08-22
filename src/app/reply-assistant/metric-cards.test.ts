@@ -1,29 +1,46 @@
 import { describe, expect, it } from "vitest";
-import { pilotMetricCards } from "./metric-cards";
+import { channelMetricCards } from "./metric-cards";
 
-describe("reply assistant image metric cards", () => {
-  it("shows the required image context, outcome, cost, and feedback measures", () => {
-    const cards = pilotMetricCards({
-      imageContexts: 8,
-      imageAnalysesSucceeded: 6,
-      imageAnalysesBlocked: 2,
-      imageAnalysisSuccessRate: 0.75,
-      imageRequestOriginalRate: 0.5,
-      averageImageAwareCostPerDraftMicrousd: 250,
-      imageAwareDirectAcceptanceRate: 0.5,
-      imageAwareEditRate: 0.25,
-      imageAwareRejectionRate: 0.125,
+describe("Reply Assistant channel metric cards", () => {
+  it("shows Website operations and keeps zero-action invariants visible", () => {
+    const cards = channelMetricCards({
+      sessions: 4,
+      meaningfulTurns: 10,
+      responses: 8,
+      directTemplateReplies: 6,
+      noReply: 1,
+      humanReviewsOpened: 3,
+      humanReviewsResolved: 2,
+      alertsQueued: 3,
+      alertsDeduplicated: 2,
+      alertsSent: 2,
+      alertsFailed: 1,
+      websiteHumanReplies: 2,
+      rateBlocks: 4,
+      budgetBlocks: 1,
+      providerCalls: 7,
+      inputTokens: 700,
+      cachedInputTokens: 70,
+      outputTokens: 140,
+      totalCostMicrousd: 3_500,
+      totalLatencyMs: 2_100,
+      publicUpdates: 8,
+      totalPublicUpdateLatencyMs: 4_000,
+      crossSessionIsolation: "test_only_invariant",
+      automaticBusinessActions: 0,
+      automaticSends: 0,
     });
-    expect(Object.fromEntries(cards)).toEqual({
-      "Image contexts": 8,
-      "Image analyses passed": 6,
-      "Image analyses blocked": 2,
-      "Image analysis success": "75%",
-      "Request original": "50%",
-      "Image-aware avg cost": "$0.0003",
-      "Image-aware direct": "50%",
-      "Image-aware edited": "25%",
-      "Image-aware rejected": "13%",
-    });
+
+    expect(cards).toEqual(expect.arrayContaining([
+      ["Sessions", 4],
+      ["Direct template replies", 6],
+      ["No reply", 1],
+      ["Human reviews", 3],
+      ["Alerts deduplicated", 2],
+      ["Provider tokens", "700 in / 70 cached / 140 out"],
+      ["Automatic business actions", 0],
+      ["Automatic sends", 0],
+      ["Cross-session isolation", "Invariant / test-only"],
+    ]));
   });
 });

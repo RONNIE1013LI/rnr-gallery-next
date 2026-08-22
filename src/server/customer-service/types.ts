@@ -1,13 +1,27 @@
 import type { NormalizedAttachment } from "./attachments/types";
 
 export type CustomerServiceChannel = "facebook" | "website";
+export type ConversationRole = "customer" | "staff";
+export type ConversationEventType = "customer_message" | "human_outbound" | "system_event";
+
+export type SafeProductContext = Readonly<{
+  market: "NZ" | "AU";
+  productKey: string;
+  productTitle: string;
+  category: "canvas" | "banners";
+  pageKind: "product" | "configure";
+}>;
 
 export type NormalizedIncomingMessage = Readonly<{
   channel: CustomerServiceChannel;
+  role: ConversationRole;
+  eventType: Exclude<ConversationEventType, "system_event">;
   externalConversationKey: string;
   externalMessageKey: string;
+  externalReplyToMessageKey: string | null;
   text: string | null;
   attachments: readonly NormalizedAttachment[];
+  productContext?: SafeProductContext | null;
   receivedAt: Date;
 }>;
 
@@ -26,7 +40,9 @@ export type DraftGenerationResult =
       | "provider_error"
       | "image_review_required"
       | "pilot_limit_reached"
-      | "budget_blocked";
+      | "budget_blocked"
+      | "human_reply_received"
+      | "no_reply_needed";
     attemptId: string;
   }>;
 

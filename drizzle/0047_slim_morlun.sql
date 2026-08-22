@@ -1,0 +1,1 @@
+CREATE INDEX "customer_service_conversation_events_conversation_created_idx" ON "customer_service_conversation_events" USING btree ("conversation_id","created_at","id");

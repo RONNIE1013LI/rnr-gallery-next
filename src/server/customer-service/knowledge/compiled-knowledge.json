@@ -1,5 +1,19 @@
 {
-  "knowledgeVersion": "9d0d8e655ec51e0514922f209e8e1722511c3f1dcf054f1b4d310998ba717d29",
+  "knowledgeVersion": "894aa90cd6e228d303bfb55fd15de5e7525014432e47786bf85e3921a6705b92",
+  "metadata": {
+    "buildVersion": "1",
+    "sourceCommit": "15c5d55fd3430d439108f36b2a6eafb91b9aa22f",
+    "compiledAt": "2026-08-20T03:05:44.817Z",
+    "sourceChecksum": "24a8af5368043e8b4f296f4cbce295f21912609661cd57fafcc4bc121c608536",
+    "sourceCounts": {
+      "policyRules": 58,
+      "replyExamples": 20,
+      "goldenReplies": 20,
+      "historicalExamples": 20,
+      "approvedHistoricalExamples": 8,
+      "qualityGuides": 7
+    }
+  },
   "rules": [
     {
       "id": "AI-GOV-01",
@@ -223,12 +237,12 @@
     },
     {
       "id": "ORDER-03",
-      "text": "Card and Afterpay are the supported online payment methods.",
-      "evidenceStatus": "CONFIRMED",
+      "text": "Afterpay and ZIP are available.",
+      "evidenceStatus": "UNRESOLVED",
       "highRisk": false,
       "realtimeRequired": true,
-      "source": "Ronnie approved Card and Afterpay only payment scope",
-      "lastConfirmed": "2026-08-18",
+      "source": "Runtime/template statement without current payment-provider verification",
+      "lastConfirmed": "Not recorded",
       "mayAnswerAutomatically": false,
       "requiresHumanEscalation": true
     },
@@ -804,6 +818,106 @@
       "reply": "Sorry about that, and thank you for letting us know. Please send a clear photo or mark the area you’re concerned about, and our team will check the best way to help.",
       "risk": "escalate",
       "provenance": "customer_brain.md"
+    }
+  ],
+  "historicalExamples": [
+    {
+      "id": "legacy-product-format-01",
+      "intent": "product_differences",
+      "status": "APPROVED_REUSABLE",
+      "customerQuestion": "Which product format should I choose?",
+      "approvedAnswer": "It depends on how you would like to display it. Canvas is best for a permanent wall display or keepsake, a wall banner hangs with eyelets, and a roll-up banner is freestanding. Will it be displayed on a wall or freestanding?",
+      "policyReferences": [
+        "AI-SCOPE-02",
+        "PRODUCT-04",
+        "PRODUCT-05",
+        "PRODUCT-06"
+      ],
+      "provenance": "customer_brain.md"
+    },
+    {
+      "id": "legacy-banner-enquiry-02",
+      "intent": "quote_information_collection",
+      "status": "APPROVED_REUSABLE",
+      "customerQuestion": "Can I get more information about your banners?",
+      "approvedAnswer": "Hi, thanks for reaching out. We offer wall hanging banners and freestanding roll-up banners. Which type are you interested in, and what is the occasion?",
+      "policyReferences": [
+        "AI-SCOPE-03",
+        "PRODUCT-05",
+        "PRODUCT-06"
+      ],
+      "provenance": "customer_brain.md"
+    },
+    {
+      "id": "legacy-canvas-quote-05",
+      "intent": "quote_information_collection",
+      "status": "APPROVED_REUSABLE",
+      "customerQuestion": "How much is a custom painting canvas?",
+      "approvedAnswer": "The price depends on the canvas size and the total number of people or pets. Please send the size and people or pet count so the team can check the current quote.",
+      "policyReferences": [
+        "AI-SCOPE-03"
+      ],
+      "provenance": "customer_brain.md"
+    },
+    {
+      "id": "legacy-merge-photos-06",
+      "intent": "photo_guidance",
+      "status": "APPROVED_REUSABLE",
+      "customerQuestion": "Can you combine people from different photos?",
+      "approvedAnswer": "Yes, we can often combine people or pets from different photos, subject to checking the original files. Please send the originals so the team can assess them.",
+      "policyReferences": [
+        "AI-SCOPE-05",
+        "DESIGN-05"
+      ],
+      "provenance": "server.test.js"
+    },
+    {
+      "id": "legacy-blurry-photo-07",
+      "intent": "photo_guidance",
+      "status": "APPROVED_REUSABLE",
+      "customerQuestion": "My photos are blurry. Can you still use them?",
+      "approvedAnswer": "Please send the original files and we can assess their quality. What is possible will depend on the original image quality, so restoration and print suitability cannot be guaranteed before review.",
+      "policyReferences": [
+        "AI-SCOPE-05",
+        "DESIGN-04",
+        "PHOTO-01"
+      ],
+      "provenance": "Ronnie Phase 3.1 remediation confirmation"
+    },
+    {
+      "id": "legacy-design-preview-08",
+      "intent": "design_process",
+      "status": "APPROVED_REUSABLE",
+      "customerQuestion": "Will I see the design before printing?",
+      "approvedAnswer": "Yes, we will send a design draft for you to review and approve before printing. You can let us know if adjustments are needed before final approval.",
+      "policyReferences": [
+        "AI-SCOPE-04",
+        "DESIGN-01",
+        "DESIGN-06"
+      ],
+      "provenance": "customer_brain.md and server.test.js"
+    },
+    {
+      "id": "legacy-photos-later-16",
+      "intent": "tone_adjustment",
+      "status": "APPROVED_REUSABLE",
+      "customerQuestion": "Can I send the photos later?",
+      "approvedAnswer": "Sure, no problem. Feel free to contact us when you are ready.",
+      "policyReferences": [
+        "AI-SCOPE-01"
+      ],
+      "provenance": "customer_brain.md and server.test.js"
+    },
+    {
+      "id": "legacy-memorial-17",
+      "intent": "tone_adjustment",
+      "status": "APPROVED_REUSABLE",
+      "customerQuestion": "This is in memory of my mum.",
+      "approvedAnswer": "We would be honoured to help create something special in memory of your mum. Please send the photos and let us know which product and size you are considering.",
+      "policyReferences": [
+        "AI-SCOPE-01"
+      ],
+      "provenance": "current conversation history"
     }
   ],
   "goldenReplies": [

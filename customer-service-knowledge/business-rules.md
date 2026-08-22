@@ -65,7 +65,7 @@ Ask one clear qualifying question at a time when the request is unclear.
 - Split/weekly payments are accepted in the current Messenger rules.
 - Remaining balance may be paid when the order is ready to post or collect.
 - Customers are asked to use their name as the payment reference and send payment confirmation.
-- Card and Afterpay are the supported online methods, but current operational availability must be read from live payment configuration.
+- ZIP Pay and Afterpay are described as available, but availability must be read from a live payment configuration in the future.
 - Bank account details exist in runtime code and must not be copied into a public AI knowledge base.
 - Payment disputes, chargebacks, failed payments, disputed balances, refunds, discounts, and compensation are `HIGH RISK` and always require human handling.
 

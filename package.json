@@ -5,6 +5,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "npm run knowledge:build",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
@@ -21,8 +22,12 @@
     "admin:role": "tsx scripts/set-admin-role.ts",
     "knowledge:build": "tsx scripts/compile-customer-service-knowledge.ts --write",
     "knowledge:check": "tsx scripts/compile-customer-service-knowledge.ts --check",
+    "knowledge:audit-legacy": "tsx scripts/audit-legacy-reply-assistant-feedback.ts",
     "reply-assistant:pilot": "tsx scripts/configure-reply-assistant-pilot.ts",
     "reply-assistant:evaluate:images": "tsx scripts/evaluate-reply-assistant-images.ts",
+    "reply-assistant:evaluate:conversations": "tsx scripts/evaluate-customer-service-conversations.ts",
+    "reply-assistant:evaluate:learning": "tsx scripts/evaluate-customer-service-learning.ts",
+    "reply-assistant:evaluate:website": "tsx scripts/evaluate-website-customer-service.ts",
     "reply-assistant:fixtures:images": "tsx scripts/generate-reply-assistant-image-fixtures.ts",
     "reply-assistant:images:cleanup": "tsx scripts/cleanup-customer-service-attachments.ts"
   },

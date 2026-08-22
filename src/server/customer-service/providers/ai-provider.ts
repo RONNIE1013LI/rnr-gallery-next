@@ -1,6 +1,10 @@
 export type AiProviderRequest = Readonly<{
   instructions: string;
   input: string;
+  responseFormat?: Readonly<{
+    name: string;
+    schema: Readonly<Record<string, unknown>>;
+  }>;
 }>;
 
 export type AiProviderResult = Readonly<{
