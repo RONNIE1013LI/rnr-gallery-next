@@ -329,6 +329,7 @@ export async function listFormOrders(
       deliveryMethod: productionJobs.deliveryMethod,
       assignedUserId: productionJobs.assignedUserId,
       createdByUserId: productionJobs.createdByUserId,
+      legacySource: productionJobs.legacySource,
       manualStatus: productionJobs.manualStatus,
       orderStatus: orders.fulfilmentStatus,
       manualPaymentStatus: productionJobs.manualPaymentStatus,
@@ -362,7 +363,10 @@ export async function listFormOrders(
     ...(row.assignedUserId ? [row.assignedUserId] : []),
     ...(row.createdByUserId ? [row.createdByUserId] : []),
   ]))];
-  const [items, people, finances] = await Promise.all([
+  const legacyJobIds = rows
+    .filter((row) => !row.createdByUserId && row.legacySource === "rnrgallery-order-system")
+    .map((row) => row.id);
+  const [items, people, finances, legacySubmitters] = await Promise.all([
     jobIds.length
       ? database.select({
           jobId: productionJobItems.jobId,
@@ -391,9 +395,24 @@ export async function listFormOrders(
           .leftJoin(orders, eq(orders.id, productionJobs.orderId))
           .where(inArray(productionJobs.id, jobIds))
       : Promise.resolve([]),
+    legacyJobIds.length
+      ? database.select({
+          jobId: productionFieldValues.jobId,
+          value: productionFieldValues.value,
+        }).from(productionFieldValues)
+          .innerJoin(
+            productionFieldDefinitions,
+            eq(productionFieldDefinitions.id, productionFieldValues.fieldId),
+          )
+          .where(and(
+            inArray(productionFieldValues.jobId, legacyJobIds),
+            eq(productionFieldDefinitions.fieldKey, "submitted_by_name"),
+          ))
+      : Promise.resolve([]),
   ]);
 
   const names = new Map(people.map((person) => [person.id, person.name]));
+  const legacySubmittedBy = new Map(legacySubmitters.map((row) => [row.jobId, row.value.trim()]));
   type FinanceProjection = NonNullable<FormOrderRow["finance"]>;
   const finance = new Map<string, FinanceProjection>(finances.map((row) => {
     if (row.source === "web") {
@@ -456,7 +475,11 @@ export async function listFormOrders(
       bankRecon: row.bankRecon,
       finance: access.canViewFinance ? finance.get(row.id) ?? null : null,
       remark: row.internalNotes,
-      submittedBy: row.createdByUserId ? names.get(row.createdByUserId) ?? "Unknown" : "System",
+      submittedBy: row.createdByUserId
+        ? names.get(row.createdByUserId) ?? "Unknown"
+        : row.legacySource === "rnrgallery-order-system"
+          ? legacySubmittedBy.get(row.id) || "System"
+          : "System",
     });
   });
   const total = Number(totalRows[0]?.total ?? 0);

@@ -27,13 +27,14 @@ const assignedJobId = randomUUID();
 const otherJobId = randomUUID();
 const refundedJobId = randomUUID();
 const cancelledJobId = randomUUID();
+const legacyJobId = randomUUID();
 const refundedOrderId = randomUUID();
 const cancelledOrderId = randomUUID();
 const refundedSessionId = randomUUID();
 const cancelledSessionId = randomUUID();
 const customFieldId = randomUUID();
 const customNumberFieldId = randomUUID();
-const jobIds = [assignedJobId, otherJobId, refundedJobId, cancelledJobId];
+const jobIds = [assignedJobId, otherJobId, refundedJobId, cancelledJobId, legacyJobId];
 const orderIds = [refundedOrderId, cancelledOrderId];
 const sessionIds = [refundedSessionId, cancelledSessionId];
 
@@ -161,11 +162,36 @@ describe("forms workbench repository", () => {
         neededDate: "2026-08-20",
         deliveryMethod: "pickup",
       },
+      {
+        id: legacyJobId,
+        jobNumber: `07L-${suffix.slice(0, 6)}`,
+        source: "manual",
+        idempotencyKey: `legacy:rnrgallery-order-system:${suffix}`,
+        requestDigest: "c".repeat(64),
+        legacySource: "rnrgallery-order-system",
+        legacyOrderId: suffix,
+        customerName: "Legacy Customer",
+        customerEmail: "",
+        customerPhone: "",
+        customerSource: "rnr",
+        manualStatus: "completed",
+        manualPaymentStatus: "paid",
+        neededDate: "2026-08-21",
+        deliveryMethod: "pickup",
+        amountPayableCents: 0,
+        amountPaidCents: 0,
+        artistFeeCents: 0,
+        materialCostCents: 0,
+      },
     ]);
     await database.insert(productionJobItems).values([
       { jobId: assignedJobId, position: 0, productTitle: "Canvas", sizeLabel: "A0", quantity: 1 },
       { jobId: otherJobId, position: 0, productTitle: "Banner", sizeLabel: "85 cm × 200 cm", quantity: 1 },
     ]);
+    const [submittedByField] = await database.select({ id: productionFieldDefinitions.id })
+      .from(productionFieldDefinitions)
+      .where(eq(productionFieldDefinitions.fieldKey, "submitted_by_name"));
+    if (!submittedByField) throw new Error("Submitted-by fixture field is missing");
     await database.insert(productionFieldValues).values([{
       jobId: assignedJobId,
       fieldId: customFieldId,
@@ -174,11 +200,15 @@ describe("forms workbench repository", () => {
       jobId: assignedJobId,
       fieldId: customNumberFieldId,
       value: "15.00",
+    }, {
+      jobId: legacyJobId,
+      fieldId: submittedByField.id,
+      value: "  Former Operator  ",
     }]);
   });
 
   afterAll(async () => {
-    await database.delete(productionFieldValues).where(inArray(productionFieldValues.fieldId, [customFieldId, customNumberFieldId]));
+    await database.delete(productionFieldValues).where(inArray(productionFieldValues.jobId, jobIds));
     await database.delete(productionJobItems).where(inArray(productionJobItems.jobId, jobIds));
     await database.delete(productionJobs).where(inArray(productionJobs.id, jobIds));
     await database.delete(orders).where(inArray(orders.id, orderIds));
@@ -238,6 +268,24 @@ describe("forms workbench repository", () => {
         artistFeeCents: 5000,
       },
     });
+  });
+
+  it("projects auth, legacy and system submitters with the approved precedence", async () => {
+    const result = await listFormOrders(
+      database,
+      parseFormWorkbenchQuery({ q: suffix.slice(0, 6) }),
+      {
+        actorUserId: operatorId,
+        assignedOnly: false,
+        canViewCustomerContact: false,
+        canViewFinance: false,
+      },
+    );
+    const submittedBy = new Map(result.items.map((item) => [item.id, item.submittedBy]));
+
+    expect(submittedBy.get(assignedJobId)).toBe("Other Artist");
+    expect(submittedBy.get(legacyJobId)).toBe("Former Operator");
+    expect(submittedBy.get(refundedJobId)).toBe("System");
   });
 
   it("combines validated operational filters with AND or OR matching", async () => {
