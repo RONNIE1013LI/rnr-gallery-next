@@ -48,6 +48,9 @@ describe("customer service policy gate", () => {
     "Can I see my design draft?",
     "Can I review my current design draft?",
     "Can I see the draft for order 123456?",
+    "What details do you need from my current design draft to prepare a quote?",
+    "How does the deposit process work for the current proof?",
+    "Can you explain the design process and show me the proof attached to order 123456?",
   ])("blocks private or current design records before a provider: %s", (message) => {
     expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge })).toMatchObject({
       decision: "REALTIME_DATA_REQUIRED",
