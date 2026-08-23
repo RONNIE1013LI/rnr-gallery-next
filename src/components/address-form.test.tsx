@@ -60,6 +60,22 @@ describe("AddressForm", () => {
     expect(screen.getByLabelText("Email address")).toBeInTheDocument();
   });
 
+  it("shows the checkout market as a read-only country instead of a manual selector", () => {
+    render(
+      <AddressForm
+        lockedCountry="AU"
+        onChange={() => undefined}
+        value={{ ...emptyAddress, country: "AU" }}
+      />,
+    );
+
+    const country = screen.getByLabelText("Country");
+    expect(country).toHaveRole("textbox");
+    expect(country).toHaveAttribute("readonly");
+    expect(country).toHaveValue("Australia");
+    expect(screen.queryByRole("combobox", { name: "Country" })).not.toBeInTheDocument();
+  });
+
   it("switches to the canonical Australian state selector and clears an incompatible region", () => {
     render(<ControlledAddressForm />);
 

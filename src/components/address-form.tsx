@@ -18,6 +18,7 @@ type AddressFormProps = {
   errors?: AddressFieldErrors;
   disabled?: boolean;
   googleMapsApiKey?: string;
+  lockedCountry?: SupportedCountry;
 };
 
 type FieldName = keyof AddressInput;
@@ -48,6 +49,7 @@ export function AddressForm({
   errors = {},
   disabled = false,
   googleMapsApiKey = process.env.NEXT_PUBLIC_GOOGLE_MAPS_API_KEY ?? "",
+  lockedCountry,
 }: AddressFormProps) {
   const idPrefix = useId();
 
@@ -75,25 +77,30 @@ export function AddressForm({
           inputId={`${idPrefix}-country`}
           label="Country"
         >
-          <select
+          {lockedCountry ? <input
             {...fieldAttributes("country")}
-            autoComplete="country"
-            onChange={(event) =>
-              onChange({
-                ...value,
-                country: event.target.value as SupportedCountry,
-                building: "",
-                street: "",
-                suburb: "",
-                region: "",
-                postcode: "",
-              })
-            }
-            value={value.country}
-          >
-            <option value="NZ">New Zealand</option>
-            <option value="AU">Australia</option>
-          </select>
+            autoComplete="country-name"
+            readOnly
+            value={lockedCountry === "AU" ? "Australia" : "New Zealand"}
+          /> : <select
+              {...fieldAttributes("country")}
+              autoComplete="country"
+              onChange={(event) =>
+                onChange({
+                  ...value,
+                  country: event.target.value as SupportedCountry,
+                  building: "",
+                  street: "",
+                  suburb: "",
+                  region: "",
+                  postcode: "",
+                })
+              }
+              value={value.country}
+            >
+              <option value="NZ">New Zealand</option>
+              <option value="AU">Australia</option>
+            </select>}
         </FieldShell>
 
         <FieldShell

@@ -85,6 +85,34 @@ describe("CheckoutView", () => {
       .not.toContain(CART_STORAGE_KEY);
   });
 
+  it("locks checkout country to the header market and ignores saved addresses from another market", async () => {
+    render(<CheckoutView market="AU" savedAddresses={[address, australianSavedAddress]} />);
+    await checkoutReady();
+
+    expect(screen.getByLabelText("Country")).toHaveValue("Australia");
+    expect(screen.getByLabelText("Country")).toHaveAttribute("readonly");
+    expect(screen.queryByRole("combobox", { name: "Country" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Full name")).toHaveValue("Mia Chen");
+    expect(screen.queryByRole("option", { name: /Aroha Ngata/ })).not.toBeInTheDocument();
+  });
+
+  it("does not restore a checkout draft from a different header market", async () => {
+    sessionStorage.setItem(checkoutDraftStorageKey, JSON.stringify({
+      schemaVersion: 1,
+      cartSnapshot: JSON.stringify(cart),
+      billing: { ...address, id: undefined },
+      delivery: { ...address, id: undefined },
+      different: false,
+    }));
+
+    render(<CheckoutView market="AU" savedAddresses={[australianSavedAddress]} />);
+    await checkoutReady();
+
+    expect(screen.getByLabelText("Country")).toHaveValue("Australia");
+    expect(screen.getByLabelText("Full name")).toHaveValue("Mia Chen");
+    expect(screen.queryByText(/checkout details were restored/i)).not.toBeInTheDocument();
+  });
+
   it("tracks shipping only after every review API accepts the repriced cart", async () => {
     localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(postCart));
     const repricedAud = { ...repriced, market: "AU", currency: "AUD", taxJurisdiction: "NONE", taxRateBasisPoints: 0 };
@@ -301,13 +329,17 @@ describe("CheckoutView", () => {
     });
   });
 
-  it("supports a separate Australian delivery address with the same form", async () => {
-    render(<CheckoutView savedAddresses={[address]} />);
+  it("locks a separate Australian delivery address to the same checkout market", async () => {
+    render(<CheckoutView market="AU" savedAddresses={[australianSavedAddress]} />);
     await checkoutReady();
     fireEvent.click(screen.getByLabelText("Deliver to a different address"));
     const countries = screen.getAllByLabelText("Country");
-    fireEvent.change(countries[1], { target: { value: "AU" } });
-    expect(screen.getAllByLabelText("State / territory")).toHaveLength(1);
+    expect(countries).toHaveLength(2);
+    for (const country of countries) {
+      expect(country).toHaveValue("Australia");
+      expect(country).toHaveAttribute("readonly");
+    }
+    expect(screen.getAllByLabelText("State / territory")).toHaveLength(2);
     expect(screen.getAllByLabelText("Full name")).toHaveLength(2);
   });
 
@@ -337,7 +369,7 @@ describe("CheckoutView", () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: dhl, options: [standard, dhl] } }) })
       .mockResolvedValueOnce(methodsResponse);
     vi.stubGlobal("fetch", fetchMock);
-    render(<CheckoutView savedAddresses={[australianSavedAddress]} />);
+    render(<CheckoutView market="AU" savedAddresses={[australianSavedAddress]} />);
     await checkoutReady();
 
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
@@ -420,13 +452,12 @@ describe("CheckoutView", () => {
       .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
       .mockResolvedValueOnce(methodsResponse);
     vi.stubGlobal("fetch", fetchMock);
-    render(<CheckoutView savedAddresses={[address]} />);
+    render(<CheckoutView market="AU" savedAddresses={[australianSavedAddress]} />);
     await checkoutReady();
     fireEvent.click(screen.getByLabelText("Deliver to a different address"));
-    fireEvent.change(screen.getAllByLabelText("Country")[1], { target: { value: "AU" } });
     fireEvent.change(screen.getAllByLabelText("Street address")[1], { target: { value: "25 George Street" } });
     fireEvent.change(screen.getAllByLabelText("Suburb")[1], { target: { value: "Sydney" } });
-    fireEvent.change(screen.getByLabelText("State / territory"), { target: { value: "NSW" } });
+    fireEvent.change(screen.getAllByLabelText("State / territory")[1], { target: { value: "NSW" } });
     fireEvent.change(screen.getAllByLabelText("Postcode")[1], { target: { value: "2000" } });
     fireEvent.change(screen.getAllByLabelText("Phone")[1], { target: { value: "+61412345678" } });
     fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
@@ -435,7 +466,7 @@ describe("CheckoutView", () => {
     const body = JSON.parse(fetchMock.mock.calls[0][1].body);
     expect(body.useDifferentDeliveryAddress).toBe(true);
     expect(body.deliveryMethod).toBe("post");
-    expect(body.deliveryAddress).toEqual({ country: "AU", fullName: "Aroha Ngata", building: "", street: "25 George Street", suburb: "Sydney", region: "NSW", postcode: "2000", phone: "+61412345678", email: "aroha@example.test" });
+    expect(body.deliveryAddress).toEqual({ country: "AU", fullName: "Mia Chen", building: "", street: "25 George Street", suburb: "Sydney", region: "NSW", postcode: "2000", phone: "+61412345678", email: "mia@example.test" });
     expect(JSON.stringify(body)).not.toContain("saved-1");
   });
 

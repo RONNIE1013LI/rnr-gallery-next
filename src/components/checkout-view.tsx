@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
 import type { AddressInput } from "@/domain/address/types";
+import type { Market } from "@/domain/markets/types";
 import { ADDRESS_FIELD_LIMITS, addressInputSchema } from "@/domain/address/schema";
 import { readAttribution } from "@/domain/analytics/attribution";
 import { emitAnalyticsEvent } from "@/domain/analytics/client";
@@ -132,11 +133,12 @@ function isDraftAddress(value: unknown): value is AddressInput {
     .every((field) => typeof address[field] === "string" && (address[field] as string).length <= limits[field]);
 }
 
-function readCheckoutDraft(storage: Storage, cartSnapshot: string): CheckoutDraft | null {
+function readCheckoutDraft(storage: Storage, cartSnapshot: string, market: Market): CheckoutDraft | null {
   try {
     const value = JSON.parse(storage.getItem(getActiveCheckoutDraftStorageKey()) ?? "null") as Partial<CheckoutDraft> | null;
     if (!value || value.schemaVersion !== 1 || value.cartSnapshot !== cartSnapshot) return null;
     if (!isDraftAddress(value.billing) || !isDraftAddress(value.delivery)) return null;
+    if (value.billing.country !== market || value.delivery.country !== market) return null;
     if (typeof value.different !== "boolean") return null;
     return value as CheckoutDraft;
   } catch {
@@ -202,14 +204,22 @@ function trackCheckoutEvent(
   }
 }
 
-export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: CheckoutSavedAddress[] }) {
+export function CheckoutView({
+  market = "NZ",
+  savedAddresses = [],
+}: {
+  market?: Market;
+  savedAddresses?: CheckoutSavedAddress[];
+}) {
   const { push } = useRouter();
   const snapshot = useSyncExternalStore(subscribeToCart, getCartSnapshot, () => EMPTY_CART_JSON);
   const cart = parseStoredCart(snapshot);
-  const first = savedAddresses[0];
-  const [billing, setBilling] = useState<AddressInput>(first ? addressInput(first) : emptyAddress);
+  const marketAddresses = savedAddresses.filter((address) => address.country === market);
+  const first = marketAddresses[0];
+  const initialAddress = first ? addressInput(first) : { ...emptyAddress, country: market };
+  const [billing, setBilling] = useState<AddressInput>(initialAddress);
   const [different, setDifferent] = useState(false);
-  const [delivery, setDelivery] = useState<AddressInput>(first ? addressInput(first) : emptyAddress);
+  const [delivery, setDelivery] = useState<AddressInput>(initialAddress);
   const method = cart.items[0]?.deliveryPreference ?? "post";
   const [reviewedCart, setReviewedCart] = useState<RepricedCheckoutCart | null>(null);
   const [reviewedVersion, setReviewedVersion] = useState<number | null>(null);
@@ -406,7 +416,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
         setDraftChecked(true);
         return;
       }
-      const draft = readCheckoutDraft(window.sessionStorage, snapshot);
+      const draft = readCheckoutDraft(window.sessionStorage, snapshot, market);
       if (draft) {
         setBilling(draft.billing);
         setDelivery(draft.delivery);
@@ -420,7 +430,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       setDraftChecked(true);
     });
     return () => { active = false; };
-  }, [cart.items.length, draftChecked, snapshot]);
+  }, [cart.items.length, draftChecked, market, snapshot]);
 
   useEffect(() => {
     if (!draftChecked || cart.items.length === 0 || paymentIntent) return;
@@ -632,10 +642,10 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
     />
     <div className={styles.checkoutLayout}>
     <form aria-label="Checkout details" className={styles.checkoutForm} noValidate onSubmit={(event) => { event.preventDefault(); void review(); }}>
-      {savedAddresses.length ? <label className={styles.savedAddressSelect}>Saved billing address<select disabled={checkoutLocked} value={billingSavedId} onChange={(event) => { setBillingSavedId(event.target.value); const selected = savedAddresses.find((address) => address.id === event.target.value); if (selected) setBilling(addressInput(selected)); }}><option value="">Enter manually</option>{savedAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}
-      <fieldset><legend>Billing address</legend><AddressForm value={billing} onChange={setBilling} errors={billingErrors} disabled={checkoutLocked} /></fieldset>
+      {marketAddresses.length ? <label className={styles.savedAddressSelect}>Saved billing address<select disabled={checkoutLocked} value={billingSavedId} onChange={(event) => { setBillingSavedId(event.target.value); const selected = marketAddresses.find((address) => address.id === event.target.value); if (selected) setBilling(addressInput(selected)); }}><option value="">Enter manually</option>{marketAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}
+      <fieldset><legend>Billing address</legend><AddressForm value={billing} onChange={(value) => setBilling({ ...value, country: market })} errors={billingErrors} disabled={checkoutLocked} lockedCountry={market} /></fieldset>
       <label className={styles.checkoutToggle}><input disabled={checkoutLocked} type="checkbox" checked={different} onChange={(event) => setDifferent(event.target.checked)} /> Deliver to a different address</label>
-      {different ? <fieldset><legend>Delivery address</legend>{savedAddresses.length ? <label className={styles.savedAddressSelect}>Saved delivery address<select disabled={checkoutLocked} value={deliverySavedId} onChange={(event) => { setDeliverySavedId(event.target.value); const selected = savedAddresses.find((address) => address.id === event.target.value); if (selected) setDelivery(addressInput(selected)); }}><option value="">Enter manually</option>{savedAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}<AddressForm value={delivery} onChange={setDelivery} errors={deliveryErrors} disabled={checkoutLocked} /></fieldset> : null}
+      {different ? <fieldset><legend>Delivery address</legend>{marketAddresses.length ? <label className={styles.savedAddressSelect}>Saved delivery address<select disabled={checkoutLocked} value={deliverySavedId} onChange={(event) => { setDeliverySavedId(event.target.value); const selected = marketAddresses.find((address) => address.id === event.target.value); if (selected) setDelivery(addressInput(selected)); }}><option value="">Enter manually</option>{marketAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}<AddressForm value={delivery} onChange={(value) => setDelivery({ ...value, country: market })} errors={deliveryErrors} disabled={checkoutLocked} lockedCountry={market} /></fieldset> : null}
       <button className={`${styles.secondaryButton} ${styles.checkoutReviewButton}`} type="submit" disabled={checkoutLocked}>{!recoveryChecked ? "Checking order status…" : pending === "review" ? "Reviewing…" : "Review delivery & totals"}</button>
       <p aria-live="polite" className={styles.checkoutMessage}>{message}</p>
     </form>
