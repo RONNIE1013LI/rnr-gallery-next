@@ -88,6 +88,8 @@ export function ExistingManualProductionJobForm({
       action: entry.action,
       actorName: entry.actorName?.trim() || "Former staff",
       createdAt: dateTime.format(entry.createdAt),
+      beforeSummary: entry.beforeSummary && typeof entry.beforeSummary === "object" ? entry.beforeSummary : null,
+      afterSummary: entry.afterSummary && typeof entry.afterSummary === "object" ? entry.afterSummary : null,
     })),
   };
 

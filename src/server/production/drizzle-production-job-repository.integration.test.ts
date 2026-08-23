@@ -200,10 +200,27 @@ describe("drizzle production job repository", () => {
       items: [{ productTitle: "Canvas", sizeLabel: "A1", designText: "Updated wording", notes: "Updated item note" }],
     });
     expect(refreshed?.job.fileSentAt).toEqual(new Date("2026-08-04T11:00:00.000Z"));
-    expect(await database.select().from(adminAuditLogs).where(and(
+    const auditRows = await database.select().from(adminAuditLogs).where(and(
       eq(adminAuditLogs.resourceType, "production_job"),
       eq(adminAuditLogs.resourceId, created.job.id),
-    ))).toHaveLength(2);
+    ));
+    expect(auditRows).toHaveLength(2);
+    expect(auditRows.find((entry) => entry.action === "production_job.updated")?.afterSummary).toMatchObject({
+      changedFields: [
+        "customerName", "customerEmail", "customerPhone", "manualStatus",
+        "fileSentAt", "manualPaymentStatus", "amountPaidCents", "items",
+      ],
+      changes: [
+        { field: "customerName" },
+        { field: "customerEmail" },
+        { field: "customerPhone" },
+        { field: "manualStatus", before: "new", after: "designing" },
+        { field: "fileSentAt", before: "NO", after: "YES" },
+        { field: "manualPaymentStatus", before: "processing", after: "paid" },
+        { field: "amountPaidCents", before: "$100.00", after: "$230.00" },
+        { field: "items" },
+      ],
+    });
   });
 
   it("versions private drafts, redacts payment proofs and keeps proof decisions immutable", async () => {

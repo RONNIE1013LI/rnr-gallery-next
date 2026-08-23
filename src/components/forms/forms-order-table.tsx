@@ -35,6 +35,11 @@ const sourceOptions = [
 ].map(([value, label]) => ({ value, label }));
 const bankOptions = ["Not checked", "Arrive", "Afterpay", "Stripe", "Wise", "waitting..", "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other"]
   .map((value) => ({ value, label: value }));
+const deliveredOptions = [
+  { value: "no", label: "NO" },
+  { value: "yes", label: "YES" },
+  { value: "hold", label: "HOLD" },
+];
 
 function StatusValue({ field, value }: Readonly<{ field: string; value: string }>) {
   return <span className={styles.statusValue} data-field={field} data-status={formsStatusKey(value)}>{value}</span>;
@@ -67,7 +72,12 @@ function CellDisplay({
   if (column === "customerNotified") return <StatusValue field={column} value={milestoneValue(row, "customerNotified")} />;
   if (column === "printed") return <StatusValue field={column} value={milestoneValue(row, "printed")} />;
   if (column === "completed") return <StatusValue field={column} value={milestoneValue(row, "completed")} />;
-  if (column === "delivered") return <StatusValue field={column} value={milestoneValue(row, "delivered")} />;
+  if (column === "delivered") {
+    const value = row.source === "manual" && row.status === "on_hold"
+      ? "HOLD"
+      : milestoneValue(row, "delivered");
+    return <StatusValue field={column} value={value} />;
+  }
   if (column === "bankRecon") return row.bankRecon ? <StatusValue field={column} value={row.bankRecon} /> : "—";
   if (column === "amountOwing") return row.finance ? formsMoney.format(row.finance.amountOwingCents / 100) : "—";
   if (column === "amountPaid") return row.finance ? formsMoney.format(row.finance.amountPaidCents / 100) : "—";
@@ -94,6 +104,10 @@ function inlineDefinition(row: FormOrderRow, column: string, access: EditAccess)
     return { field, kind: "boolean", value: row.milestones[field] } as const;
   }
   if (column === "delivered" && access.canUpdateDeliveryStatus) {
+    if (row.source === "manual") {
+      const value = row.status === "on_hold" ? "hold" : row.milestones.delivered ? "yes" : "no";
+      return { field: "delivered", kind: "select", value, options: deliveredOptions } as const;
+    }
     return { field: "delivered", kind: "boolean", value: row.milestones.delivered } as const;
   }
   if (access.canUpdateFinance && column === "bankRecon") {

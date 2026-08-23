@@ -46,6 +46,36 @@ describe("forms job inline update route", () => {
     );
   });
 
+  it("maps manual Delivered HOLD to on-hold without marking delivery complete", async () => {
+    const update = vi.fn().mockResolvedValue("updated");
+    const detail = vi.fn().mockResolvedValue({
+      job: {
+        source: "manual",
+        manualStatus: "designing",
+        updatedAt: new Date("2026-08-05T02:00:00.000Z"),
+      },
+    });
+    const route = createFormsJobRoute({
+      requirePermission: vi.fn().mockResolvedValue(adminAccess),
+      update,
+      detail,
+      trustedOrigin: "https://shop.example.test",
+    });
+
+    const response = await route.PATCH(request({
+      field: "delivered", value: "hold",
+      expectedUpdatedAt: "2026-08-05T01:00:00.000Z",
+      idempotencyKey: "inline-delivered-hold",
+    }), context);
+
+    expect(response.status).toBe(200);
+    expect(update).toHaveBeenCalledWith(
+      { userId: "admin-1", email: "admin@example.test" },
+      expect.objectContaining({ manualStatus: "on_hold", milestones: { delivered: false } }),
+      { canUpdateFinance: true },
+    );
+  });
+
   it("accepts the mature full-detail editor payload through the same production service", async () => {
     const update = vi.fn().mockResolvedValue("updated");
     const route = createFormsJobRoute({

@@ -46,12 +46,13 @@ describe("forms workbench query", () => {
   });
 
   it("accepts only the source page sizes and known date presets", () => {
+    expect(parseFormWorkbenchQuery({})).toMatchObject({ pageSize: 100 });
     expect(parseFormWorkbenchQuery({ perPage: "50", preset: "lastSixMonths" })).toMatchObject({
       pageSize: 50,
       preset: "lastSixMonths",
     });
     expect(parseFormWorkbenchQuery({ perPage: "30", preset: "future" })).toMatchObject({
-      pageSize: 20,
+      pageSize: 100,
       preset: "all",
     });
   });

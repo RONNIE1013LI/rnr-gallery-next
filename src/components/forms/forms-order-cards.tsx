@@ -47,7 +47,10 @@ export function FormsOrderCards({
               <div><dt>AmtPayable</dt><dd>{amount(row.finance.amountPayableCents)}</dd></div>
             </> : null}
             <div><dt>DlvryMethod</dt><dd data-field="deliveryMethod" data-status={row.deliveryMethod}>{formsLabel(row.deliveryMethod)}</dd></div>
-            <div><dt>Delivered</dt><dd data-field="delivered" data-status={row.milestones.delivered ? "yes" : "no"}>{row.milestones.delivered ? "YES" : "NO"}</dd></div>
+            <div><dt>Delivered</dt><dd
+              data-field="delivered"
+              data-status={row.source === "manual" && row.status === "on_hold" ? "hold" : row.milestones.delivered ? "yes" : "no"}
+            >{row.source === "manual" && row.status === "on_hold" ? "HOLD" : row.milestones.delivered ? "YES" : "NO"}</dd></div>
           </dl>
         </article>
       ))}

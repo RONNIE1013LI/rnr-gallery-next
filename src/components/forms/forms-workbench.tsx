@@ -35,7 +35,7 @@ export type FormsOrderEntryData = Readonly<{
 function queryString(query: FormWorkbenchQuery, page?: number) {
   const params = new URLSearchParams();
   if (query.query) params.set("q", query.query);
-  if (query.pageSize !== 20) params.set("perPage", String(query.pageSize));
+  if (query.pageSize !== 100) params.set("perPage", String(query.pageSize));
   if (query.match !== "and") params.set("match", query.match);
   if (query.sort !== "submittedAt") params.set("sort", query.sort);
   if (query.direction !== "desc") params.set("direction", query.direction);
@@ -147,7 +147,7 @@ export function FormsWorkbench({
           }}
           renderSavedSearches={canManageViews ? (group) => <FormsSavedViews
             views={savedViews}
-            currentQuery={group ? queryString({ ...query, query: "", pageSize: 20, match: group.match, conditions: group.conditions }) : ""}
+            currentQuery={group ? queryString({ ...query, query: "", pageSize: 100, match: group.match, conditions: group.conditions }) : ""}
             onOpen={(savedQuery) => router.push(`/order-system?${savedQuery}`)}
             onChanged={() => router.refresh()}
           /> : undefined}

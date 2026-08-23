@@ -242,11 +242,11 @@ export function parseFormWorkbenchQuery(
 ): FormWorkbenchQuery {
   const rawPage = Number(scalar(input.page));
   const rawPageSize = Number(scalar(input.perPage));
-  const pageSize: 20 | 50 | 100 = rawPageSize >= 100
-    ? 100
+  const pageSize: 20 | 50 | 100 = rawPageSize === 20
+    ? 20
     : rawPageSize === 50
       ? 50
-      : 20;
+      : 100;
   const match = scalar(input.match) === "or" ? "or" : "and";
   const rawSort = scalar(input.sort);
   const sort = rawSort === "updatedAt" || rawSort === "neededDate" || rawSort === "reference"

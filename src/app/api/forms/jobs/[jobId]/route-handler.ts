@@ -46,7 +46,7 @@ const detailEnvelopeSchema = z.object({
 }).passthrough();
 
 const booleanFields = new Set<FormInlineFieldKey>([
-  "fileSent", "downloaded", "customerNotified", "printed", "completed", "delivered",
+  "fileSent", "downloaded", "customerNotified", "printed", "completed",
 ]);
 const financeFields = new Set<FormInlineFieldKey>(["bankRecon", "amountPaid", "amountPayable", "artistFee"]);
 
@@ -124,6 +124,21 @@ async function updateFields(
   if (patch.field === "assignArtist") {
     if (patch.value !== false) throw new ProductionJobValidationError("Choose an artist to assign this job");
     return { ...base, assignedUserId: null };
+  }
+  if (patch.field === "delivered") {
+    if (typeof patch.value === "boolean") return { ...base, milestones: { delivered: patch.value } };
+    if (!["no", "yes", "hold"].includes(String(patch.value))) throw new ProductionJobValidationError();
+    const detail = await deps.detail(jobId, { canViewFinance: false });
+    if (!detail) throw new ProductionJobNotFoundError();
+    if (detail.job.source !== "manual") throw new ProductionJobValidationError();
+    if (patch.value === "hold") {
+      return { ...base, manualStatus: "on_hold", milestones: { delivered: false } };
+    }
+    return {
+      ...base,
+      ...(detail.job.manualStatus === "on_hold" ? { manualStatus: "new" } : {}),
+      milestones: { delivered: patch.value === "yes" },
+    };
   }
   if (booleanFields.has(patch.field)) {
     if (typeof patch.value !== "boolean") throw new ProductionJobValidationError();
@@ -250,7 +265,7 @@ export function createFormsJobRoute(dependencies?: Dependencies) {
         if (financeFields.has(patch.data.field) && !hasFormPermission(access.formRole, access.formProfile, "update_finance")) {
           throw new HttpError("Forbidden", 403);
         }
-        if (booleanFields.has(patch.data.field)) {
+        if (booleanFields.has(patch.data.field) || patch.data.field === "delivered") {
           const permission = patch.data.field === "delivered" ? "update_delivery_status" : "update_production_status";
           if (!hasFormPermission(access.formRole, access.formProfile, permission)) throw new HttpError("Forbidden", 403);
         }

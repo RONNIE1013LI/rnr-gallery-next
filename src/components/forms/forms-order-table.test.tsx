@@ -74,4 +74,17 @@ describe("FormsOrderTable", () => {
     expect(container.querySelector('[data-field="customerSource"][data-status="email"]')).toHaveTextContent("Email");
     expect(container.querySelector('[data-field="bankRecon"][data-status="not-checked"]')).toHaveTextContent("Not checked");
   });
+
+  it("shows and edits the manual Delivered HOLD state", () => {
+    render(<FormsOrderTable
+      rows={[{ ...formOrderRow, source: "manual", status: "on_hold", milestones: { ...formOrderRow.milestones, delivered: false } }]}
+      canViewFinance canUpdate canUpdateDeliveryStatus
+      onOpen={vi.fn()} onSaved={vi.fn()}
+    />);
+
+    expect(screen.getByText("HOLD")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit Delivered for 07188" }));
+    expect(within(screen.getByLabelText("Delivered for 07188")).getAllByRole("option").map((option) => option.textContent))
+      .toEqual(["NO", "YES", "HOLD"]);
+  });
 });

@@ -64,6 +64,8 @@ export type ExistingManualProductionOrder = Readonly<{
     action: string;
     actorName: string;
     createdAt: string;
+    beforeSummary?: Readonly<Record<string, unknown>> | null;
+    afterSummary?: Readonly<Record<string, unknown>> | null;
   }>[];
 }>;
 
@@ -161,6 +163,72 @@ function auditLabel(value: string) {
   return value.replaceAll(".", "_").replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+const auditFieldLabels: Readonly<Record<string, string>> = Object.freeze({
+  assignedUserId: "Assigned artist",
+  amountPaidCents: "Amount paid",
+  amountPayableCents: "Amount payable",
+  artistFeeCents: "Artist fee",
+  artistPaidAt: "Artist paid",
+  completedAt: "Completed",
+  customerName: "Customer name",
+  customerEmail: "Customer email",
+  customerPhone: "Customer phone",
+  customerSource: "Customer source",
+  deliveryAddress: "Delivery address",
+  deliveryMethod: "Delivery method",
+  delivered: "Delivered",
+  deliveredAt: "Delivered",
+  downloadedAt: "Download",
+  fileSentAt: "File sent",
+  internalNotes: "Remark",
+  items: "Product / size",
+  manualPaymentStatus: "Payment status",
+  manualStatus: "Order status",
+  materialCostCents: "Material cost",
+  neededDate: "Delivery date",
+  paymentReconciliationStatus: "Bank reconciliation",
+  printedAt: "Printed",
+  customerNotifiedAt: "Customer notified",
+});
+
+const privateAuditFields = new Set([
+  "customerName", "customerEmail", "customerPhone", "assignedUserId",
+  "deliveryAddress", "designRequirements", "internalNotes", "remark",
+]);
+
+function auditFieldLabel(field: string) {
+  return auditFieldLabels[field] ?? auditLabel(field);
+}
+
+function summaryField(summary: Readonly<Record<string, unknown>> | null | undefined) {
+  return typeof summary?.fieldKey === "string" ? summary.fieldKey : null;
+}
+
+function auditDescription(entry: ExistingManualProductionOrder["audit"][number]) {
+  const beforeField = summaryField(entry.beforeSummary);
+  const afterField = summaryField(entry.afterSummary);
+  if (beforeField && beforeField === afterField) {
+    if (privateAuditFields.has(beforeField)) return `${auditFieldLabel(beforeField)} updated`;
+    const before = String(entry.beforeSummary?.value ?? "—");
+    const after = String(entry.afterSummary?.value ?? "—");
+    return `${auditFieldLabel(beforeField)}: ${before} → ${after}`;
+  }
+  const changes = entry.afterSummary?.changes;
+  if (Array.isArray(changes) && changes.length) {
+    return changes.map((change) => {
+      if (!change || typeof change !== "object" || typeof (change as { field?: unknown }).field !== "string") return null;
+      const detail = change as { field: string; before?: unknown; after?: unknown };
+      if (!("before" in detail) && !("after" in detail)) return `${auditFieldLabel(detail.field)} updated`;
+      return `${auditFieldLabel(detail.field)}: ${String(detail.before ?? "—")} → ${String(detail.after ?? "—")}`;
+    }).filter(Boolean).join("; ");
+  }
+  const changedFields = entry.afterSummary?.changedFields;
+  if (Array.isArray(changedFields) && changedFields.every((field) => typeof field === "string")) {
+    return `Changed: ${changedFields.map(auditFieldLabel).join(", ")}`;
+  }
+  return auditLabel(entry.action);
+}
+
 export function ProductionJobForm({
   assignees,
   canManageFinance,
@@ -201,6 +269,7 @@ export function ProductionJobForm({
   const [materialCostCents, setMaterialCostCents] = useState(existingManualOrder?.materialCostCents ?? 0);
   const [savedPaymentProofs, setSavedPaymentProofs] = useState(() => existingPaymentProofs.filter((file) => file.kind === "payment_proof"));
   const [expectedUpdatedAt, setExpectedUpdatedAt] = useState(existingManualOrder?.expectedUpdatedAt ?? "");
+  const [visibleAuditCount, setVisibleAuditCount] = useState(5);
   const formRef = useRef<HTMLFormElement>(null);
   const customerNameRef = useRef<HTMLInputElement>(null);
   const customerEmailRef = useRef<HTMLInputElement>(null);
@@ -209,16 +278,34 @@ export function ProductionJobForm({
   const deliveryAddressRef = useRef<HTMLTextAreaElement>(null);
   const paymentProofRef = useRef<HTMLInputElement>(null);
   const paymentProofsRef = useRef<readonly PendingPaymentProof[]>([]);
+  const focusedValues = useRef(new WeakMap<EventTarget, string>());
+  const autoSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const nextPaymentProofId = useRef(1);
   const operatorName = existingManualOrder?.submittedBy ?? submittedBy;
   const visibleSubmittedBy = operatorName.includes("@") ? "Current operator" : operatorName.trim() || "Current operator";
   const formDisabled = pending || Boolean(existingManualOrder && !canEdit);
 
   useEffect(() => () => {
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
     for (const proof of paymentProofsRef.current) {
       if (proof.previewUrl) URL.revokeObjectURL(proof.previewUrl);
     }
   }, []);
+
+  function fieldValue(target: EventTarget) {
+    if (target instanceof HTMLInputElement && target.type === "checkbox") return String(target.checked);
+    if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement) return target.value;
+    return "";
+  }
+
+  function requestAutoSave(delay = 0) {
+    if (!existingManualOrder || !canEdit || pending || paymentRecovery) return;
+    if (autoSaveTimer.current) clearTimeout(autoSaveTimer.current);
+    autoSaveTimer.current = setTimeout(() => {
+      autoSaveTimer.current = null;
+      if (formRef.current?.checkValidity()) formRef.current.requestSubmit();
+    }, delay);
+  }
 
   function pasteCustomerDetails(event: ClipboardEvent<HTMLTextAreaElement>) {
     const textValue = event.clipboardData.getData("text/plain");
@@ -571,7 +658,7 @@ export function ProductionJobForm({
         }
         paymentProofsRef.current = [];
         setPaymentProofs([]);
-        setFeedback(`Saved ${existingManualOrder.jobNumber}.`);
+        setFeedback("");
         onSaved?.();
         setPending(false);
         return;
@@ -618,7 +705,23 @@ export function ProductionJobForm({
 
   return (
     <>
-    <form ref={formRef} className={`${styles.productionForm} ${manualEntryLayout ? styles.manualEntryForm : ""}`} onSubmit={submit}>
+    <form
+      ref={formRef}
+      className={`${styles.productionForm} ${manualEntryLayout ? styles.manualEntryForm : ""}`}
+      onSubmit={submit}
+      onFocusCapture={(event) => {
+        if (existingManualOrder) focusedValues.current.set(event.target, fieldValue(event.target));
+      }}
+      onBlurCapture={(event) => {
+        if (!existingManualOrder || event.target instanceof HTMLSelectElement ||
+          (event.target instanceof HTMLInputElement && ["checkbox", "file"].includes(event.target.type))) return;
+        if (focusedValues.current.get(event.target) !== fieldValue(event.target)) requestAutoSave();
+      }}
+      onChangeCapture={(event) => {
+        if (event.target instanceof HTMLSelectElement ||
+          (event.target instanceof HTMLInputElement && ["checkbox", "file"].includes(event.target.type))) requestAutoSave();
+      }}
+    >
       <div className={styles.formUtilityBar}>
         <span>Data entry</span>
         <div>
@@ -729,8 +832,15 @@ export function ProductionJobForm({
         </section> : null}
 
         <section className={styles.formPanel}>
-          <div className={styles.formSectionHeading}><div><h2>Operation history</h2></div></div>
-          {existingManualOrder?.audit.length ? <div className={styles.timeline}>{existingManualOrder.audit.map((entry) => <article key={entry.id}><strong>{auditLabel(entry.action)}</strong><span>{entry.actorName}</span><small>{entry.createdAt}</small></article>)}</div> : <p className={styles.mutedText}>Operation history will appear after this manual order is saved.</p>}
+          <div className={styles.formSectionHeading}><div><h2>Change log</h2></div></div>
+          {existingManualOrder?.audit.length ? <>
+            <div className={styles.timeline}>{existingManualOrder.audit.slice(0, visibleAuditCount).map((entry) => <article key={entry.id}><strong>{auditDescription(entry)}</strong><small>{entry.actorName} · {entry.createdAt}</small></article>)}</div>
+            {visibleAuditCount < existingManualOrder.audit.length ? <button
+              type="button"
+              className={styles.historyLoadMore}
+              onClick={() => setVisibleAuditCount((count) => count + 5)}
+            >LOAD MORE</button> : null}
+          </> : <p className={styles.mutedText}>Change history will appear after this manual order is submitted.</p>}
         </section>
       </> : <>
 
@@ -867,7 +977,7 @@ export function ProductionJobForm({
             ? "Retrying…"
             : paymentRecovery.phase === "upload_proof" ? "Retry payment proof" : "Retry payment status"}
         </button> : null}
-        {canEdit ? <button type="submit" disabled={pending || Boolean(paymentRecovery)}>{pending ? (existingManualOrder ? "Saving…" : "Creating…") : existingManualOrder ? "Save order" : "Create production job"}</button> : null}
+        {canEdit && !existingManualOrder ? <button type="submit" disabled={pending || Boolean(paymentRecovery)}>{pending ? "Creating…" : manualEntryLayout ? "Submit order" : "Create production job"}</button> : null}
       </div>
     </form>
     {!existingManualOrder && invoiceOpen && invoiceDraft ? <InvoiceWorkspace draft={invoiceDraft} onChange={setInvoiceDraft} onClose={() => setInvoiceOpen(false)} /> : null}

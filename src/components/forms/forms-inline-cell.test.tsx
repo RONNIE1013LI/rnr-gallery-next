@@ -25,8 +25,25 @@ describe("forms inline cell", () => {
     fireEvent.change(screen.getByLabelText("Printed for 07188"), { target: { value: "true" } });
 
     await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    expect(screen.queryByText("Saved")).not.toBeInTheDocument();
     const body = JSON.parse(String(vi.mocked(request).mock.calls[0][1]?.body));
     expect(body).toMatchObject({ field: "printed", value: true });
+  });
+
+  it("keeps the editor at the original visible field width", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, right: 58, bottom: 24, left: 0,
+      width: 58, height: 24, toJSON: () => ({}),
+    });
+    render(<FormsInlineCell
+      jobId="job-1" reference="07188" field="printed" label="Printed"
+      value={false} version="2026-08-05T01:00:00.000Z" kind="boolean"
+      onSaved={vi.fn()}
+    >NO</FormsInlineCell>);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Printed for 07188" }));
+
+    expect(screen.getByLabelText("Printed for 07188").parentElement).toHaveStyle({ width: "58px" });
   });
 
   it("autosaves the selected option value and ignores an unchanged selection", async () => {

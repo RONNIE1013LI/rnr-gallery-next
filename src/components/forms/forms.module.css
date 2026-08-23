@@ -1222,6 +1222,8 @@
 .inlineEditor input,
 .inlineEditor select {
   width: 120px;
+  max-width: 100%;
+  min-width: 0;
   min-height: 44px;
   padding: 3px 5px;
   border: 1px solid #8d949e;
@@ -1989,6 +1991,7 @@
 .statusValue[data-status="yes"] { background: #2e90fa; }
 .statusValue[data-status="no"],
 .statusValue[data-status="urgent"] { background: #f04438; }
+.statusValue[data-status="hold"] { background: #f79009; }
 .statusValue[data-status="normal"],
 .statusValue[data-status="walk-in"] { background: #98a2b3; }
 
@@ -2037,6 +2040,7 @@
 .inlineEditor select[data-status="yes"] { background: #2e90fa; }
 .inlineEditor select[data-status="no"],
 .inlineEditor select[data-status="urgent"] { background: #f04438; }
+.inlineEditor select[data-status="hold"] { background: #f79009; }
 .inlineEditor select[data-status="normal"] { background: #98a2b3; }
 .inlineEditor select[data-field="deliveryMethod"][data-status="pickup"] { background: #3aa7a3; }
 .inlineEditor select[data-field="deliveryMethod"][data-status="delivery"] { background: #f97066; }

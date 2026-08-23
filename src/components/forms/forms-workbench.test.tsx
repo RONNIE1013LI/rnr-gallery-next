@@ -24,7 +24,7 @@ describe("FormsWorkbench", () => {
 
   it("renders source-style list controls, table, mobile cards and footer", () => {
     render(<FormsWorkbench
-      result={{ items: [formOrderRow], total: 1, page: 1, pageSize: 20, pageCount: 1 }}
+      result={{ items: [formOrderRow], total: 1, page: 1, pageSize: 100, pageCount: 1 }}
       query={parseFormWorkbenchQuery({ q: "07188" })}
       canExport
       canViewFinance
@@ -39,7 +39,7 @@ describe("FormsWorkbench", () => {
     expect(screen.getByLabelText("Mobile orders data list")).toBeInTheDocument();
     expect(screen.getByText("1 order")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Column stats" })).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Orders per page" })).toHaveValue("20");
+    expect(screen.getByRole("combobox", { name: "Orders per page" })).toHaveValue("100");
 
     fireEvent.click(screen.getAllByRole("button", { name: "Open order 07188" })[0]);
     expect(screen.getByRole("dialog", { name: "Drawer job-1" })).toBeInTheDocument();
@@ -51,7 +51,7 @@ describe("FormsWorkbench", () => {
 
   it("keeps presets and personal saved searches inside the filter workspace", () => {
     render(<FormsWorkbench
-      result={{ items: [formOrderRow], total: 1, page: 1, pageSize: 20, pageCount: 1 }}
+      result={{ items: [formOrderRow], total: 1, page: 1, pageSize: 100, pageCount: 1 }}
       query={parseFormWorkbenchQuery({ preset: "lastSixMonths" })}
       canExport
       canViewFinance
@@ -73,7 +73,7 @@ describe("FormsWorkbench", () => {
     const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: "created" }), { status: 201 }));
     vi.stubGlobal("fetch", request);
     render(<FormsWorkbench
-      result={{ items: [formOrderRow], total: 1, page: 1, pageSize: 20, pageCount: 1 }}
+      result={{ items: [formOrderRow], total: 1, page: 1, pageSize: 100, pageCount: 1 }}
       query={parseFormWorkbenchQuery({})}
       canExport
       canViewFinance
@@ -98,7 +98,7 @@ describe("FormsWorkbench", () => {
 
   it("provides a clear empty state", () => {
     render(<FormsWorkbench
-      result={{ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 }}
+      result={{ items: [], total: 0, page: 1, pageSize: 100, pageCount: 0 }}
       query={parseFormWorkbenchQuery({ q: "missing" })}
       canExport={false}
       canViewFinance={false}
@@ -109,7 +109,7 @@ describe("FormsWorkbench", () => {
 
   it("closes manual entry without losing the Data list query or table", () => {
     render(<FormsWorkbench
-      result={{ items: [formOrderRow], total: 40, page: 2, pageSize: 20, pageCount: 2 }}
+      result={{ items: [formOrderRow], total: 40, page: 2, pageSize: 100, pageCount: 1 }}
       query={parseFormWorkbenchQuery({ q: "07188", page: "2" })}
       canExport
       canViewFinance

@@ -58,6 +58,7 @@ export function FormsInlineCell({
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [conflict, setConflict] = useState(false);
+  const [editorWidth, setEditorWidth] = useState<number | null>(null);
   const autosaves = kind === "select" || kind === "boolean";
   const draftStatus = kind === "boolean" ? (draft === "true" ? "yes" : "no") : formsStatusKey(draft);
 
@@ -82,7 +83,7 @@ export function FormsInlineCell({
         throw new Error(payload.error ?? "The value could not be saved.");
       }
       setEditing(false);
-      setMessage("Saved");
+      setMessage("");
       onSaved(payload.version);
     } catch (error) {
       setDraft(original);
@@ -100,18 +101,24 @@ export function FormsInlineCell({
           className={styles.inlineValue}
           type="button"
           aria-label={`Edit ${label} for ${reference}`}
-          onClick={() => { setDraft(original); setMessage(""); setConflict(false); setEditing(true); }}
+          onClick={(event) => {
+            setDraft(original);
+            setMessage("");
+            setConflict(false);
+            setEditorWidth(autosaves ? event.currentTarget.getBoundingClientRect().width : null);
+            setEditing(true);
+          }}
         >
           {children ?? (original || "—")}
         </button>
-        {message ? <small role="status" data-error={message !== "Saved"}>{message}</small> : null}
+        {message ? <small role="status" data-error="true">{message}</small> : null}
         {conflict ? <button type="button" className={styles.inlineReload} onClick={onReload}>Reload row</button> : null}
       </span>
     );
   }
 
   return (
-    <span className={styles.inlineEditor}>
+    <span className={styles.inlineEditor} style={editorWidth ? { width: `${editorWidth}px` } : undefined}>
       {kind === "select" || kind === "boolean" ? (
         <select
           aria-label={`${label} for ${reference}`}

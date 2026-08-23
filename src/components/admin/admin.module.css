@@ -3137,6 +3137,21 @@
   color: var(--admin-muted);
 }
 
+.historyLoadMore {
+  width: fit-content;
+  margin-top: 12px;
+  padding: 7px 11px;
+  border: 1px solid var(--admin-border);
+  border-radius: 3px;
+  background: #fff;
+  color: var(--admin-text);
+  font-size: 12px;
+}
+
+.historyLoadMore:hover {
+  background: #f6f7f8;
+}
+
 .compactForm {
   display: grid;
   gap: 12px;

@@ -34,6 +34,7 @@ import {
   type ProductionJobRepository,
 } from "./production-job-service";
 import { projectWebOrderFinance } from "./production-job-finance";
+import { productionJobAuditChanges, type ProductionJobAuditChange } from "./production-job-audit";
 
 type Database = ReturnType<typeof getDatabase>;
 
@@ -586,7 +587,23 @@ export function createDrizzleProductionJobRepository(
           }
         }
 
-        const changedFields: string[] = [];
+        const currentItems = input.items
+          ? await transaction.select({
+              productTitle: productionJobItems.productTitle,
+              sizeLabel: productionJobItems.sizeLabel,
+              quantity: productionJobItems.quantity,
+              designText: productionJobItems.designText,
+              notes: productionJobItems.notes,
+            }).from(productionJobItems)
+              .where(eq(productionJobItems.jobId, input.jobId))
+              .orderBy(asc(productionJobItems.position))
+          : [];
+        const changes: ProductionJobAuditChange[] = [...productionJobAuditChanges(
+          current,
+          { ...input, ...(input.finance ?? {}) },
+          currentItems,
+          input.items,
+        )];
         const values: Partial<typeof productionJobs.$inferInsert> = {
           updatedAt: input.updatedAt,
         };
@@ -614,7 +631,6 @@ export function createDrizzleProductionJobRepository(
         ] as const) {
           if (value !== undefined) {
             Object.assign(values, { [key]: value });
-            changedFields.push(key);
           }
         }
         if (input.finance) {
@@ -625,7 +641,6 @@ export function createDrizzleProductionJobRepository(
             artistFeeCents: input.finance.artistFeeCents,
             materialCostCents: input.finance.materialCostCents,
           });
-          changedFields.push("finance");
         }
         if (input.customFields) {
           const definitions = await transaction.select().from(productionFieldDefinitions)
@@ -659,7 +674,7 @@ export function createDrizzleProductionJobRepository(
               },
             });
           }
-          changedFields.push("customFields");
+          if (input.customFields.length) changes.push({ field: "customFields" });
         }
         const [updated] = await transaction.update(productionJobs).set(values)
           .where(and(
@@ -675,8 +690,9 @@ export function createDrizzleProductionJobRepository(
             jobId: input.jobId,
             position,
           })));
-          changedFields.push("items");
         }
+
+        const changedFields = changes.map((change) => change.field);
 
         await transaction.insert(adminAuditLogs).values(buildAuditRecord({
           actorUserId: input.actor.userId,
@@ -688,6 +704,7 @@ export function createDrizzleProductionJobRepository(
           afterSummary: {
             updatedAt: input.updatedAt.toISOString(),
             changedFields,
+            changes,
           },
           requestSource: "admin.jobs.detail",
           result: "success",

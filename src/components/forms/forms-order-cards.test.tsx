@@ -39,6 +39,17 @@ describe("FormsOrderCards", () => {
     expect(screen.queryByText("AmtPayable")).not.toBeInTheDocument();
   });
 
+  it("shows HOLD for a manual order that is on hold", () => {
+    render(<FormsOrderCards
+      rows={[{ ...formOrderRow, source: "manual", status: "on_hold" }]}
+      startIndex={0}
+      canViewFinance
+      onOpen={vi.fn()}
+    />);
+
+    expect(screen.getByText("HOLD")).toHaveAttribute("data-status", "hold");
+  });
+
   it("keeps a long website reference available when its mobile display is truncated", () => {
     const reference = "Web-RNR-2026-7B7F730CD3";
     render(<FormsOrderCards rows={[{ ...formOrderRow, reference }]} startIndex={0} canViewFinance onOpen={vi.fn()} />);

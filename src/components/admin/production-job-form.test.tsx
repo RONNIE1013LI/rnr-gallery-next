@@ -43,7 +43,21 @@ describe("ProductionJobForm", () => {
     amountPaidCents: 5_000,
     materialCostCents: 2_500,
     milestones: { fileSent: true, downloaded: false, printed: false, completed: false, customerNotified: false, delivered: false },
-    audit: [{ id: "audit-1", action: "production_job.created", actorName: "Ronnie Li", createdAt: "21 Aug 2026, 7:30 am" }],
+    audit: [
+      {
+        id: "audit-3", action: "production_job.updated", actorName: "Ronnie Li", createdAt: "21 Aug 2026, 8:30 am",
+        afterSummary: { changes: [
+          { field: "manualStatus", before: "designing", after: "on hold" },
+          { field: "customerEmail" },
+        ] },
+      },
+      {
+        id: "audit-2", action: "production_job.updated", actorName: "Rosemary", createdAt: "21 Aug 2026, 8:00 am",
+        beforeSummary: { fieldKey: "delivered", value: "NO" },
+        afterSummary: { fieldKey: "delivered", value: "HOLD" },
+      },
+      { id: "audit-1", action: "production_job.created", actorName: "Ronnie Li", createdAt: "21 Aug 2026, 7:30 am" },
+    ],
   };
 
   function fillRequiredManualOrder() {
@@ -76,9 +90,9 @@ describe("ProductionJobForm", () => {
     expect(screen.getByLabelText("Remark")).toHaveValue("Saved remark");
     expect(screen.getByLabelText("File Sent")).toHaveValue("yes");
     expect(screen.getByText("Production Job Created")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save order" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Updated Customer" } });
-    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save order" }));
+    fireEvent.blur(screen.getByLabelText("Cust.Name"));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(fetchMock).toHaveBeenCalledWith(
@@ -91,7 +105,7 @@ describe("ProductionJobForm", () => {
       customerName: "Updated Customer",
       customerEmail: "saved@example.test",
       customerPhone: "+64210000000",
-      items: [{ productTitle: "Canvas", sizeLabel: "A1", quantity: 1 }],
+      items: [{ productTitle: "Canvas", sizeLabel: "A2", quantity: 1 }],
       finance: { amountPayableCents: 15_000, amountPaidCents: 5_000, materialCostCents: 2_500 },
       milestones: { fileSent: true, downloaded: false },
     });
@@ -117,7 +131,9 @@ describe("ProductionJobForm", () => {
 
     expect(screen.getByLabelText("File Sent")).toBeDisabled();
     expect(screen.getByLabelText("Delivered")).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { name: "Save order" }));
+    expect(screen.queryByRole("button", { name: "Save order" })).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Updated Customer" } });
+    fireEvent.blur(screen.getByLabelText("Cust.Name"));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
@@ -420,7 +436,7 @@ describe("ProductionJobForm", () => {
       new File([new Uint8Array([1])], "receipt-one.jpg", { type: "image/jpeg" }),
       new File([new Uint8Array([2])], "receipt-two.jpg", { type: "image/jpeg" }),
     ] } });
-    fireEvent.click(screen.getByRole("button", { name: "Create production job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     const firstUpload = fetchMock.mock.calls[1]?.[1]?.body as FormData;
@@ -587,7 +603,7 @@ describe("ProductionJobForm", () => {
       "Customer info",
       "Internal Production Status",
       "Cost / Profit",
-      "Operation history",
+      "Change log",
     ]);
     expect(screen.getByText("Ronnie Li")).toBeInTheDocument();
     expect(screen.queryByText("operator@example.test")).not.toBeInTheDocument();
@@ -619,7 +635,64 @@ describe("ProductionJobForm", () => {
     expect(within(delivered).getAllByRole("option").map((option) => option.textContent)).toEqual(["NO", "YES", "HOLD"]);
     expect(delivered).toHaveDisplayValue("NO");
     expect(delivered.className).toContain("manualContentControl");
-    expect(screen.getByText("Operation history will appear after this manual order is saved.")).toBeInTheDocument();
+    expect(screen.getByText("Change history will appear after this manual order is submitted.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Submit order" })).toBeInTheDocument();
+  });
+
+  it("autosaves a changed existing select and shows the exact history change", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "updated", version: "2026-08-21T09:00:00.000Z",
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance={false}
+      canUpdateProductionStatus
+      canUpdateDeliveryStatus
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      existingManualOrder={existingManualOrder}
+    />);
+
+    expect(screen.getByText("Delivered: NO → HOLD")).toBeInTheDocument();
+    expect(screen.getByText("Order status: designing → on hold; Customer email updated")).toBeInTheDocument();
+    expect(screen.getByText(/Rosemary/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Save order" })).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText("Delivered"), { target: { value: "hold" } });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
+      manualStatus: "on_hold",
+      milestones: { delivered: false },
+    });
+  });
+
+  it("shows five change-log entries initially and reveals more on request", () => {
+    const audit = Array.from({ length: 7 }, (_, index) => ({
+      id: `audit-load-${index}`,
+      action: "production_job.updated",
+      actorName: "Rosemary",
+      createdAt: `23 Aug 2026, 12:0${index} pm`,
+      beforeSummary: { fieldKey: "delivered", value: `OLD-${index}` },
+      afterSummary: { fieldKey: "delivered", value: `NEW-${index}` },
+    }));
+    render(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance={false}
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      existingManualOrder={{ ...existingManualOrder, audit }}
+    />);
+
+    expect(screen.getByRole("heading", { name: "Change log" })).toBeInTheDocument();
+    expect(screen.getByText("Delivered: OLD-4 → NEW-4")).toBeInTheDocument();
+    expect(screen.queryByText("Delivered: OLD-5 → NEW-5")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "LOAD MORE" }));
+
+    expect(screen.getByText("Delivered: OLD-6 → NEW-6")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "LOAD MORE" })).not.toBeInTheDocument();
   });
 
   it("submits explicit manual production statuses and maps Delivered HOLD to on hold", async () => {
@@ -640,7 +713,7 @@ describe("ProductionJobForm", () => {
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
     fireEvent.change(screen.getByLabelText("File Sent"), { target: { value: "yes" } });
     fireEvent.change(screen.getByLabelText("Delivered"), { target: { value: "hold" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create production job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
@@ -671,7 +744,7 @@ describe("ProductionJobForm", () => {
     fireEvent.change(screen.getByLabelText("Email"), { target: { value: "ana@example.test" } });
     fireEvent.change(screen.getByLabelText("DlvryDate"), { target: { value: "2026-08-28" } });
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
-    fireEvent.click(screen.getByRole("button", { name: "Create production job" }));
+    fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     const payload = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));

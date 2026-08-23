@@ -52,6 +52,38 @@ final result: passed
 
 ---
 
+# Forms change-log reference QA — 2026-08-23
+
+- Source visual truth: `/Users/ronnieli/Desktop/Snipaste_2026-08-23_12-49-20.jpg` (935 × 474 px).
+- Implementation target: existing manual Order entry `Change log` in the Forms editor.
+- Intended viewport/state: desktop Order entry, saved manual order with at least seven audit entries; first five visible and `LOAD MORE` available.
+- Implementation screenshot: unavailable.
+
+## Required fidelity surfaces
+
+- Fonts and typography: implementation reuses the existing Forms/Admin typography; each change is the primary line and operator plus timestamp is one muted metadata line.
+- Spacing and layout rhythm: entries use the existing compact timeline separators; the initial batch is five rows and the bordered `LOAD MORE` control sits below the list.
+- Colors and visual tokens: existing Forms/Admin neutral borders, white surface and muted metadata tokens are retained.
+- Image quality and asset fidelity: the reference contains no raster assets or icons that need recreation.
+- Copy and content: heading is `Change log`; entries name the changed field and show safe old/new values when allowed; the control is `LOAD MORE`.
+
+## Comparison evidence and blocker
+
+- The source reference was opened and inspected.
+- The local implementation was started at `http://127.0.0.1:3001/order-system`, but the route could not render because this isolated worktree has no safe `DATABASE_URL` or `BETTER_AUTH_URL` configured.
+- No Production credentials or Production database were used as a workaround.
+- Component interaction is covered by an automated test proving five initial rows, hidden sixth row, `LOAD MORE` expansion, and removal of the button after all seven rows are visible.
+- Because there is no browser-rendered implementation screenshot, a visual source-versus-implementation comparison and console check cannot be claimed.
+
+## Findings
+
+- No code-level interaction blocker remains in the focused component test.
+- Browser visual comparison is blocked by the missing isolated local runtime configuration.
+
+final result: blocked
+
+---
+
 # Footer payment-logo placement and crop QA — 2026-08-16
 
 - Source visual truth: `/Users/ronnieli/Desktop/Snipaste_2026-08-16_22-01-20.jpg` (392 × 85 px).
