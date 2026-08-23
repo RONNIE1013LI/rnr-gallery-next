@@ -42,6 +42,7 @@ const postCart: Cart = {
   items: cart.items.map((item) => ({ ...item, deliveryPreference: "post" as const })),
 };
 const address = { id: "saved-1", country: "NZ" as const, fullName: "Aroha Ngata", building: "", street: "12 Queen Street", suburb: "Auckland Central", region: "Auckland", postcode: "1010", phone: "+64211234567", email: "aroha@example.test" };
+const australianSavedAddress = { id: "saved-au", country: "AU" as const, fullName: "Mia Chen", building: "", street: "55 George Street", suburb: "Sydney", region: "NSW", postcode: "2000", phone: "+61412345678", email: "mia@example.test" };
 const repriced = { version: 1, market: "NZ", currency: "NZD", taxJurisdiction: "NZ_GST", taxRateBasisPoints: 1500, priceBookRevision: 1, orderDate: "2026-08-03", items: [{ clientItemId: cart.items[0].id, productKey: "photo-print-canvas", productSlug: "photo-print-canvas", productTitle: "Photo Print Canvas", sizeKey: "a4", sizeLabel: "A4", orientation: "landscape", peoplePets: 0, photoSubmissionMethod: "later", designText: "Family", notes: "", neededDate: "2026-08-10", urgentServiceConfirmed: false, urgentService: { workingDays: 5, feeInclGstCents: 0 }, quantity: 1, uploadReferences: [], unitPrice: { lines: [], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475 }, lineSubtotalExGstCents: 6500, lineGstCents: 975, lineTotalInclGstCents: 7475 }], subtotalExGstCents: 6500, gstCents: 975, totalInclGstCents: 7475, discountCents: 0, designSurchargeCents: 0, itemCount: 1, cartDigest: "a".repeat(64) };
 const paymentIntentStorageKey = "rnr:commerce:v1:guest:checkout:payment-intent";
 const checkoutDraftStorageKey = "rnr:commerce:v1:guest:checkout:draft";
@@ -308,6 +309,51 @@ describe("CheckoutView", () => {
     fireEvent.change(countries[1], { target: { value: "AU" } });
     expect(screen.getAllByLabelText("State / territory")).toHaveLength(1);
     expect(screen.getAllByLabelText("Full name")).toHaveLength(2);
+  });
+
+  it("defaults Australian checkout to Standard and lets the customer select DHL Express", async () => {
+    localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(postCart));
+    const repricedAud = {
+      ...repriced,
+      market: "AU",
+      currency: "AUD",
+      taxJurisdiction: "NONE",
+      taxRateBasisPoints: 0,
+    };
+    const standard = {
+      method: "post", serviceCode: "au-standard", serviceName: "Standard Shipping",
+      amountExGstCents: 4_500, gstCents: 0, amountInclGstCents: 4_500,
+      currency: "AUD", provenance: "internal-fixed", isTest: false,
+    };
+    const dhl = {
+      method: "post", serviceCode: "au-dhl-express", serviceName: "DHL Express",
+      amountExGstCents: 6_600, gstCents: 0, amountInclGstCents: 6_600,
+      currency: "AUD", provenance: "internal-fixed", isTest: false,
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repricedAud } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: standard, options: [standard, dhl] } }) })
+      .mockResolvedValueOnce(methodsResponse)
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: dhl, options: [standard, dhl] } }) })
+      .mockResolvedValueOnce(methodsResponse);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CheckoutView savedAddresses={[australianSavedAddress]} />);
+    await checkoutReady();
+
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+
+    const standardInput = await screen.findByRole("radio", { name: /Standard Shipping.*A\$45\.00 AUD/ });
+    const dhlInput = screen.getByRole("radio", { name: /DHL Express.*A\$66\.00 AUD/ });
+    expect(standardInput).toBeChecked();
+    expect(dhlInput).not.toBeChecked();
+
+    fireEvent.click(dhlInput);
+
+    await waitFor(() => expect(dhlInput).toBeChecked());
+    expect(JSON.parse(fetchMock.mock.calls[3][1].body)).toEqual({
+      serviceCode: "au-dhl-express",
+    });
+    expect(await screen.findByText("A$140.75 AUD")).toBeInTheDocument();
   });
 
   it("shows clear recovery routes for an empty browser cart", () => {

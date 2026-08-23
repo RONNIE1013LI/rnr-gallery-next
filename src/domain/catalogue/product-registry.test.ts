@@ -105,7 +105,7 @@ describe("authoritative product registry", () => {
     });
   });
 
-  it("migrates a legacy v2 AU fixed-shipping snapshot without changing manual prices", () => {
+  it("normalizes a legacy AU shipping snapshot to the fixed Standard and DHL methods without changing manual prices", () => {
     const legacy = structuredClone(defaultProductRegistry);
     const australia = legacy.markets.AU;
     let amount = 10_000;
@@ -119,12 +119,12 @@ describe("authoritative product registry", () => {
     australia.tax = { registered: true, rateBasisPoints: 1_234 };
     australia.enabled = false;
     australia.shippingMethods = [{
-      key: "au-standard",
-      label: "Australia standard delivery",
+      key: "au-live-carrier",
+      label: "GoSweetSpot live delivery",
       method: "post",
-      source: "fixed",
+      source: "carrier",
       active: true,
-      amountInclTaxCents: 4_500,
+      amountInclTaxCents: null,
     }];
     const expectedProducts = structuredClone(legacy.products);
     const expectedPricing = structuredClone(legacy.pricing);
@@ -140,14 +140,24 @@ describe("authoritative product registry", () => {
     expect(parsed.markets.NZ).toEqual(expectedNewZealand);
     expect(parsed.markets.AU).toEqual({
       ...expectedAustralia,
-      shippingMethods: [{
-        key: "au-live-carrier",
-        label: "GoSweetSpot live delivery",
-        method: "post",
-        source: "carrier",
-        active: true,
-        amountInclTaxCents: null,
-      }],
+      shippingMethods: [
+        {
+          key: "au-standard",
+          label: "Standard Shipping",
+          method: "post",
+          source: "fixed",
+          active: true,
+          amountInclTaxCents: null,
+        },
+        {
+          key: "au-dhl-express",
+          label: "DHL Express",
+          method: "post",
+          source: "fixed",
+          active: true,
+          amountInclTaxCents: null,
+        },
+      ],
     });
   });
 

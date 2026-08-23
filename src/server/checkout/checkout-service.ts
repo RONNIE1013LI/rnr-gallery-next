@@ -112,7 +112,7 @@ export function createCheckoutService({
       return state;
     },
 
-    async quoteShipping(sessionId: string) {
+    async quoteShipping(sessionId: string, requestedServiceCode?: string) {
       const state = await repository.getCheckoutState(sessionId);
       if (
         !state ||
@@ -131,9 +131,11 @@ export function createCheckoutService({
           state.version,
         );
         if (!cleared) throw new InvalidCheckoutStateError();
+        const option = await shippingService.pickup();
         return Object.freeze({
           selectedQuoteId: null,
-          option: await shippingService.pickup(),
+          option,
+          options: Object.freeze([option]),
         });
       }
 
@@ -149,6 +151,7 @@ export function createCheckoutService({
         state.cartSnapshot,
         state.deliveryAddress,
         registryState.registry.markets[snapshotMarket],
+        requestedServiceCode,
       );
       const persisted = await repository.persistAndSelectShippingQuote({
         sessionId,
@@ -160,6 +163,7 @@ export function createCheckoutService({
       return Object.freeze({
         selectedQuoteId: persisted.id,
         option: quoted.option,
+        options: quoted.options,
       });
     },
   };

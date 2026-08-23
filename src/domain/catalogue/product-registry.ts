@@ -22,6 +22,7 @@ import { DEFAULT_URGENT_SERVICE_FEES_INCL_GST_CENTS } from "@/domain/scheduling/
 import {
   assertMarketCheckoutReady,
   assertMarketPriceBookStructure,
+  AUSTRALIA_FIXED_SHIPPING_METHODS,
   createDefaultMarketPriceBooks,
   marketPriceBooksSchema,
   type MarketPriceBooks,
@@ -454,7 +455,7 @@ function addMissingBaselineProducts(value: unknown): unknown {
   return normalized;
 }
 
-function migrateLegacyAustraliaShipping(value: unknown): unknown {
+function normalizeAustraliaShipping(value: unknown): unknown {
   if (!isRecord(value) || value.schemaVersion !== 2 || !isRecord(value.markets)) {
     return value;
   }
@@ -462,24 +463,11 @@ function migrateLegacyAustraliaShipping(value: unknown): unknown {
   if (!isRecord(australia) || !Array.isArray(australia.shippingMethods)) {
     return value;
   }
-  const [shipping] = australia.shippingMethods;
-  if (
-    australia.shippingMethods.length !== 1 ||
-    !isRecord(shipping) ||
-    shipping.key !== "au-standard" ||
-    shipping.method !== "post" ||
-    shipping.source !== "fixed"
-  ) {
+  if (JSON.stringify(australia.shippingMethods) ===
+    JSON.stringify(AUSTRALIA_FIXED_SHIPPING_METHODS)) {
     return value;
   }
-  australia.shippingMethods = [{
-    key: "au-live-carrier",
-    label: "GoSweetSpot live delivery",
-    method: "post",
-    source: "carrier",
-    active: true,
-    amountInclTaxCents: null,
-  }];
+  australia.shippingMethods = structuredClone(AUSTRALIA_FIXED_SHIPPING_METHODS);
   return value;
 }
 
@@ -555,7 +543,7 @@ export function parseProductRegistry(value: unknown): ProductRegistryDocument {
     };
   }
 
-  normalized = migrateLegacyAustraliaShipping(normalized);
+  normalized = normalizeAustraliaShipping(normalized);
   normalized = addMissingBaselineProducts(normalized);
 
   const parsed = documentSchema.safeParse(normalized);

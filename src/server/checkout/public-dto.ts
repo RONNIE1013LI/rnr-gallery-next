@@ -14,7 +14,11 @@ export type PublicCheckoutDTO = Readonly<{
 }>;
 
 export type PublicShippingDTO = Readonly<{
-  option: Readonly<{
+  option: PublicShippingOptionDTO;
+  options: readonly PublicShippingOptionDTO[];
+}>;
+
+type PublicShippingOptionDTO = Readonly<{
     method: ShippingOption["method"];
     serviceCode: string;
     serviceName: string;
@@ -25,7 +29,6 @@ export type PublicShippingDTO = Readonly<{
     provenance: ShippingOption["provenance"];
     isTest: boolean;
     expiresAt?: string;
-  }>;
 }>;
 
 export function toPublicCheckoutDTO(state: CheckoutStateRecord): PublicCheckoutDTO {
@@ -49,20 +52,22 @@ export function toPublicCheckoutDTO(state: CheckoutStateRecord): PublicCheckoutD
 
 export function toPublicShippingDTO(result: {
   option: ShippingOption;
+  options: readonly ShippingOption[];
 }): PublicShippingDTO {
-  const { option } = result;
+  const toOption = (option: ShippingOption): PublicShippingOptionDTO => Object.freeze({
+    method: option.method,
+    serviceCode: option.serviceCode,
+    serviceName: option.serviceName,
+    amountExGstCents: option.amountExGstCents,
+    gstCents: option.gstCents,
+    amountInclGstCents: option.amountInclGstCents,
+    currency: option.currency,
+    provenance: option.provenance,
+    isTest: option.isTest,
+    ...(option.expiresAt ? { expiresAt: option.expiresAt.toISOString() } : {}),
+  });
   return Object.freeze({
-    option: Object.freeze({
-      method: option.method,
-      serviceCode: option.serviceCode,
-      serviceName: option.serviceName,
-      amountExGstCents: option.amountExGstCents,
-      gstCents: option.gstCents,
-      amountInclGstCents: option.amountInclGstCents,
-      currency: option.currency,
-      provenance: option.provenance,
-      isTest: option.isTest,
-      ...(option.expiresAt ? { expiresAt: option.expiresAt.toISOString() } : {}),
-    }),
+    option: toOption(result.option),
+    options: Object.freeze(result.options.map(toOption)),
   });
 }

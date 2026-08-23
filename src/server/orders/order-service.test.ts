@@ -258,6 +258,7 @@ describe("atomic order service", () => {
       checkout.cartSnapshot,
       address,
       defaultProductRegistry.markets.NZ,
+      "post",
     );
     expect(repo.createAtomicOrder).toHaveBeenCalledWith(expect.objectContaining({
       shipping: expect.objectContaining({

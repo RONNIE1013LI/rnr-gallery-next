@@ -135,6 +135,18 @@ function shippingService() {
         isTest: true,
         expiresAt: new Date("2026-08-02T12:15:00.000Z"),
       },
+      options: [{
+        method: "post",
+        serviceCode: "test-post-nz",
+        serviceName: "Test Post — not a live carrier rate",
+        amountExGstCents: 2_000,
+        gstCents: 300,
+        amountInclGstCents: 2_300,
+        currency: "NZD",
+        provenance: "local-test",
+        isTest: true,
+        expiresAt: new Date("2026-08-02T12:15:00.000Z"),
+      }],
     }),
   };
 }
@@ -271,11 +283,12 @@ describe("checkout service", () => {
       totalInclGstCents: 40_000,
       gstCents: 0,
     });
-    await service.quoteShipping(sessionId);
+    await service.quoteShipping(sessionId, "au-dhl-express");
     expect(shipping.quotePost).toHaveBeenCalledWith(
       state.cartSnapshot,
       state.deliveryAddress,
       registry.markets.AU,
+      "au-dhl-express",
     );
   });
 
@@ -347,6 +360,7 @@ describe("checkout service", () => {
     await expect(service.quoteShipping(sessionId)).resolves.toMatchObject({
       selectedQuoteId: null,
       option: { method: "pickup", amountInclGstCents: 0 },
+      options: [{ method: "pickup", amountInclGstCents: 0 }],
     });
     expect(repo.clearSelectedShippingQuote).toHaveBeenCalledWith(sessionId, 3);
     expect(shipping.quotePost).not.toHaveBeenCalled();
@@ -368,6 +382,7 @@ describe("checkout service", () => {
     await expect(service.quoteShipping(sessionId)).resolves.toMatchObject({
       selectedQuoteId: "20000000-0000-4000-8000-000000000001",
       option: { method: "post", provenance: "local-test", isTest: true },
+      options: [{ method: "post", provenance: "local-test", isTest: true }],
     });
     expect(repo.persistAndSelectShippingQuote).toHaveBeenCalledWith({
       sessionId,

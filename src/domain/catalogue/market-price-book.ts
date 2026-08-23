@@ -60,6 +60,25 @@ export type MarketPriceBooks = {
   AU: MarketPriceBook & { market: "AU"; currency: "AUD" };
 };
 
+export const AUSTRALIA_FIXED_SHIPPING_METHODS: MarketShippingPrice[] = [
+  {
+    key: "au-standard",
+    label: "Standard Shipping",
+    method: "post",
+    source: "fixed",
+    active: true,
+    amountInclTaxCents: null,
+  },
+  {
+    key: "au-dhl-express",
+    label: "DHL Express",
+    method: "post",
+    source: "fixed",
+    active: true,
+    amountInclTaxCents: null,
+  },
+];
+
 type LegacyRegistryShape = {
   products: Array<{
     key: string;
@@ -346,14 +365,7 @@ export function createDefaultMarketPriceBooks(
       urgentServiceFees: urgentPrices(registry, "AU"),
       designSurcharges: [],
       discounts: [],
-      shippingMethods: [{
-        key: "au-live-carrier",
-        label: "GoSweetSpot live delivery",
-        method: "post",
-        source: "carrier",
-        active: true,
-        amountInclTaxCents: null,
-      }],
+      shippingMethods: structuredClone(AUSTRALIA_FIXED_SHIPPING_METHODS),
     },
   };
 }
@@ -423,11 +435,10 @@ export function assertMarketPriceBookStructure(registry: RegistryWithMarkets): v
     if (!book.shippingMethods.some((method) => method.active)) {
       throw new MarketPriceBookValidationError("At least one shipping method must be active.");
     }
-    if (market === "AU" && book.shippingMethods.some((method) =>
-      method.method !== "post" || method.source !== "carrier"
-    )) {
+    if (market === "AU" && JSON.stringify(book.shippingMethods) !==
+      JSON.stringify(AUSTRALIA_FIXED_SHIPPING_METHODS)) {
       throw new MarketPriceBookValidationError(
-        "Australia shipping must use carrier-backed delivery.",
+        "Australia shipping must use the fixed Standard and DHL methods.",
       );
     }
     if (book.designSurcharges.length > 0 || book.discounts.length > 0) {
@@ -491,7 +502,14 @@ export function getMarketCompleteness(
     }
   }
   for (const shipping of book.shippingMethods) {
-    if (shipping.active && shipping.source === "fixed" && shipping.amountInclTaxCents === null) {
+    const fixedAustraliaTable = market === "AU" &&
+      AUSTRALIA_FIXED_SHIPPING_METHODS.some((method) => method.key === shipping.key);
+    if (
+      shipping.active &&
+      shipping.source === "fixed" &&
+      shipping.amountInclTaxCents === null &&
+      !fixedAustraliaTable
+    ) {
       missingKeys.push(`shippingMethods.${shipping.key}`);
     }
   }

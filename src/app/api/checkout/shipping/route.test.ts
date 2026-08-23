@@ -8,7 +8,12 @@ const origin = "https://shop.example.test";
 const token = "a".repeat(43);
 const sessionId = "10000000-0000-4000-8000-000000000001";
 
-function request(cookie = token, requestOrigin = origin, customerId: string | null = null) {
+function request(
+  cookie = token,
+  requestOrigin = origin,
+  customerId: string | null = null,
+  body: unknown = {},
+) {
   return new Request(`${origin}/api/checkout/shipping`, {
     method: "POST",
     headers: {
@@ -17,7 +22,7 @@ function request(cookie = token, requestOrigin = origin, customerId: string | nu
       "Sec-Fetch-Site": requestOrigin === origin ? "same-origin" : "cross-site",
       ...(cookie ? { Cookie: `${getCheckoutSessionCookieName(customerId)}=${cookie}` } : {}),
     },
-    body: "{}",
+    body: JSON.stringify(body),
   });
 }
 
@@ -46,6 +51,13 @@ describe("POST /api/checkout/shipping", () => {
         provenance: "local-test", isTest: true,
         expiresAt: new Date("2026-08-02T12:15:00.000Z"),
       },
+      options: [{
+        method: "post", serviceCode: "post", serviceName: "Post",
+        amountExGstCents: 2_000, gstCents: 300, amountInclGstCents: 2_300,
+        currency: "NZD",
+        provenance: "local-test", isTest: true,
+        expiresAt: new Date("2026-08-02T12:15:00.000Z"),
+      }],
     }) };
     const handler = createCheckoutShippingRoute({
       repository: repository(),
@@ -59,20 +71,48 @@ describe("POST /api/checkout/shipping", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     const body = await response.json();
-    expect(body).toEqual({ shipping: { option: {
-      method: "post",
+    expect(body.shipping.option).toMatchObject({
       serviceCode: "post",
-      serviceName: "Post",
-      amountExGstCents: 2_000,
-      gstCents: 300,
       amountInclGstCents: 2_300,
       currency: "NZD",
-      provenance: "local-test",
-      isTest: true,
-      expiresAt: "2026-08-02T12:15:00.000Z",
-    } } });
+    });
+    expect(body.shipping.options).toEqual([body.shipping.option]);
     expect(JSON.stringify(body)).not.toContain("selectedQuoteId");
     expect(service.quoteShipping).toHaveBeenCalledWith(sessionId);
+  });
+
+  it("passes an allowed requested Australia shipping service to the server", async () => {
+    const service = { quoteShipping: vi.fn().mockResolvedValue({
+      selectedQuoteId: "20000000-0000-4000-8000-000000000001",
+      option: {
+        method: "post", serviceCode: "au-dhl-express", serviceName: "DHL Express",
+        amountExGstCents: 6_600, gstCents: 0, amountInclGstCents: 6_600,
+        currency: "AUD", provenance: "internal-fixed", isTest: false,
+      },
+      options: [],
+    }) };
+    const handler = createCheckoutShippingRoute({
+      repository: repository(), checkoutService: service,
+      getOptionalSession: async () => null, trustedOrigin: origin,
+    });
+
+    expect((await handler(request(token, origin, null, {
+      serviceCode: "au-dhl-express",
+    }))).status).toBe(200);
+    expect(service.quoteShipping).toHaveBeenCalledWith(sessionId, "au-dhl-express");
+  });
+
+  it("rejects malformed shipping service input before quoting", async () => {
+    const service = { quoteShipping: vi.fn() };
+    const handler = createCheckoutShippingRoute({
+      repository: repository(), checkoutService: service,
+      getOptionalSession: async () => null, trustedOrigin: origin,
+    });
+
+    expect((await handler(request(token, origin, null, {
+      serviceCode: "x".repeat(121),
+    }))).status).toBe(400);
+    expect(service.quoteShipping).not.toHaveBeenCalled();
   });
 
   it("rejects a missing cookie and a foreign signed-in owner", async () => {

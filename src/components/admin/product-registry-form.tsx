@@ -389,8 +389,8 @@ export function ProductRegistryForm({
 
           <fieldset className={styles.formPanel}>
             <legend>Australia shipping</legend>
-            <p><strong>GoSweetSpot live delivery</strong></p>
-            <p>Calculated from the delivery address and package sizes at checkout.</p>
+            <p><strong>Standard Shipping and DHL Express use the fixed Australia rate table.</strong></p>
+            <p>Australia fulfilment is created manually in GoSweetSpot after the order is paid.</p>
           </fieldset>
 
           <div className={styles.registryFormActions}>

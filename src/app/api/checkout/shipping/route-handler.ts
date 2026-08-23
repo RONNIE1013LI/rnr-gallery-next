@@ -29,7 +29,9 @@ const noStoreHeaders = { "Cache-Control": "no-store" };
 type ShippingQuoteResult = Awaited<
   ReturnType<ReturnType<typeof createCheckoutService>["quoteShipping"]>
 >;
-type ShippingQuoter = { quoteShipping(sessionId: string): Promise<ShippingQuoteResult> };
+type ShippingQuoter = {
+  quoteShipping(sessionId: string, requestedServiceCode?: string): Promise<ShippingQuoteResult>;
+};
 type Dependencies = Readonly<{
   repository: CheckoutStateRepository;
   checkoutService: ShippingQuoter;
@@ -89,6 +91,13 @@ export function createCheckoutShippingRoute(dependencies?: Dependencies) {
       if (!body || typeof body !== "object" || Array.isArray(body)) {
         throw new SyntaxError("Request body is invalid");
       }
+      const serviceCode = (body as { serviceCode?: unknown }).serviceCode;
+      if (
+        serviceCode !== undefined &&
+        (typeof serviceCode !== "string" || serviceCode.length < 1 || serviceCode.length > 120)
+      ) {
+        throw new SyntaxError("Shipping service is invalid");
+      }
       const authenticated = await deps.getOptionalSession(request.headers);
       const customerId = authenticated?.user.id ?? null;
       const token = readCheckoutSessionToken(request, customerId);
@@ -102,7 +111,9 @@ export function createCheckoutShippingRoute(dependencies?: Dependencies) {
         throw new CheckoutAccessError(authenticated ? 403 : 401);
       }
 
-      const result = await deps.checkoutService.quoteShipping(session.id);
+      const result = serviceCode === undefined
+        ? await deps.checkoutService.quoteShipping(session.id)
+        : await deps.checkoutService.quoteShipping(session.id, serviceCode);
       return json({ shipping: toPublicShippingDTO(result) });
     } catch (error) {
       return errorResponse(error);

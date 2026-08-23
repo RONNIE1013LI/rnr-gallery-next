@@ -30,15 +30,25 @@ function completeAustraliaDraft(): typeof defaultProductRegistry {
 }
 
 describe("market price books", () => {
-  it("uses a carrier-backed delivery method for Australia", () => {
-    expect(defaultProductRegistry.markets.AU.shippingMethods).toEqual([{
-      key: "au-live-carrier",
-      label: "GoSweetSpot live delivery",
-      method: "post",
-      source: "carrier",
-      active: true,
-      amountInclTaxCents: null,
-    }]);
+  it("uses separate fixed Standard and DHL methods for Australia", () => {
+    expect(defaultProductRegistry.markets.AU.shippingMethods).toEqual([
+      {
+        key: "au-standard",
+        label: "Standard Shipping",
+        method: "post",
+        source: "fixed",
+        active: true,
+        amountInclTaxCents: null,
+      },
+      {
+        key: "au-dhl-express",
+        label: "DHL Express",
+        method: "post",
+        source: "fixed",
+        active: true,
+        amountInclTaxCents: null,
+      },
+    ]);
   });
 
   it("uses fixed Bundle retail prices for NZ and AU without conversion", () => {

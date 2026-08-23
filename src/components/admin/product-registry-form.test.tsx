@@ -129,8 +129,8 @@ describe("product registry editor", () => {
     expect(
       within(screen.getByRole("group", { name: "Australia shipping" })).queryAllByRole("textbox"),
     ).toHaveLength(0);
-    expect(screen.getByText("GoSweetSpot live delivery")).toBeVisible();
-    expect(screen.getByText("Calculated from the delivery address and package sizes at checkout.")).toBeVisible();
+    expect(screen.getByText("Standard Shipping and DHL Express use the fixed Australia rate table.")).toBeVisible();
+    expect(screen.getByText("Australia fulfilment is created manually in GoSweetSpot after the order is paid.")).toBeVisible();
     fireEvent.change(screen.getByLabelText("Roll-Up Banner · standard final price (AUD)"), {
       target: { value: "320.00" },
     });
@@ -156,13 +156,9 @@ describe("product registry editor", () => {
         (size: { sizeKey: string }) => size.sizeKey === "standard",
       ).amountInclTaxCents,
     ).toBe(32_000);
-    expect(payload.priceBook.shippingMethods).toEqual([{
-      key: "au-live-carrier",
-      label: "GoSweetSpot live delivery",
-      method: "post",
-      source: "carrier",
-      active: true,
-      amountInclTaxCents: null,
-    }]);
+    expect(payload.priceBook.shippingMethods).toEqual([
+      expect.objectContaining({ key: "au-standard", source: "fixed" }),
+      expect.objectContaining({ key: "au-dhl-express", source: "fixed" }),
+    ]);
   });
 });

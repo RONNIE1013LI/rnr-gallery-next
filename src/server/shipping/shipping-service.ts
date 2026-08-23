@@ -15,6 +15,7 @@ import type {
   ShippingQuoteProvider,
   ShippingQuoteRequest,
 } from "./types";
+import { quoteAustraliaFixedShipping } from "./australia-fixed-shipping";
 
 type ShippingEnvironment = Readonly<Record<string, string | undefined>>;
 
@@ -135,12 +136,29 @@ export function createShippingService({
       cart: RepricedCheckoutCart,
       address: NormalizedAddress,
       priceBook?: MarketPriceBook,
+      requestedServiceCode?: string,
     ) {
       if (cart.market !== address.country) {
         throw new ShippingUnavailableError("The shipping destination does not match the cart market");
       }
-      const packages = packagesFor(cart);
       const destination = destinationFor(address);
+      if (cart.market === "AU") {
+        try {
+          return quoteAustraliaFixedShipping(
+            cart,
+            destination,
+            priceBook,
+            requestedServiceCode,
+            now(),
+          );
+        } catch (error) {
+          throw new ShippingUnavailableError(
+            error instanceof Error ? error.message : "Australia shipping is unavailable",
+            { cause: error },
+          );
+        }
+      }
+      const packages = packagesFor(cart);
       const digest = requestDigest(cart, destination, packages);
       if (!provider) throw new ShippingUnavailableError();
       try {
@@ -159,21 +177,26 @@ export function createShippingService({
         });
         const quote = await provider.quote(request);
         assertCurrentPositiveQuote(quote, now(), cart.currency);
+        if (requestedServiceCode && requestedServiceCode !== quote.serviceCode) {
+          throw new ShippingUnavailableError("The selected shipping method is unavailable");
+        }
+        const option = Object.freeze({
+          method: "post" as const,
+          serviceCode: quote.serviceCode,
+          serviceName: quote.serviceName,
+          amountExGstCents: quote.amountExGstCents,
+          gstCents: quote.gstCents,
+          amountInclGstCents: quote.amountInclGstCents,
+          currency: quote.currency,
+          provenance: quote.provider,
+          isTest: quote.isTest,
+          expiresAt: quote.expiresAt,
+        });
         return Object.freeze({
           requestDigest: digest,
           quote,
-          option: Object.freeze({
-            method: "post" as const,
-            serviceCode: quote.serviceCode,
-            serviceName: quote.serviceName,
-            amountExGstCents: quote.amountExGstCents,
-            gstCents: quote.gstCents,
-            amountInclGstCents: quote.amountInclGstCents,
-            currency: quote.currency,
-            provenance: quote.provider,
-            isTest: quote.isTest,
-            expiresAt: quote.expiresAt,
-          }),
+          option,
+          options: Object.freeze([option]),
         });
       } catch (error) {
         if (error instanceof ShippingUnavailableError) throw error;

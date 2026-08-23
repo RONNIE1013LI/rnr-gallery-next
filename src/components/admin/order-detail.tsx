@@ -3,6 +3,7 @@ import { PaymentLedgerPanel } from "./payment-ledger-panel";
 import type { getAdminOrderDetail } from "@/server/admin/drizzle-admin-order-repository";
 import type { AdminOrderPaymentSummaryDTO } from "@/server/payment-requests/types";
 import { formatMarketMoney } from "@/domain/money";
+import { getPackageProfiles } from "@/server/shipping/package-registry";
 import styles from "./admin.module.css";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof getAdminOrderDetail>>>;
@@ -26,6 +27,28 @@ function addressLines(address: Detail["addresses"][number]) {
     `${address.region} ${address.postcode}`.trim(),
     address.country,
   ].filter(Boolean);
+}
+
+function countryName(country: string) {
+  if (country === "AU") return "Australia";
+  if (country === "NZ") return "New Zealand";
+  return country;
+}
+
+function packageReferences(items: Detail["items"]) {
+  return items.flatMap((item) => {
+    try {
+      return getPackageProfiles(item.productKey, item.sizeKey).map((profile) => ({
+        key: `${item.id}:${profile.productKey}:${profile.sizeKey}`,
+        label: `${profile.productKey} · ${profile.sizeKey}`,
+        quantity: item.quantity,
+        dimensions: `${profile.lengthMm} × ${profile.widthMm} × ${profile.heightMm} mm`,
+        weight: `${Number((profile.weightGrams / 1_000).toFixed(2))} kg`,
+      }));
+    } catch {
+      return [];
+    }
+  });
 }
 
 function UploadList({ uploads }: Readonly<{ uploads: Detail["uploads"] }>) {
@@ -64,6 +87,10 @@ export function AdminOrderDetail({
 }>) {
   const { order } = detail;
   const amount = (cents: number) => formatMarketMoney(cents, order.currency);
+  const deliveryAddress = detail.addresses.find((address) => address.kind === "delivery");
+  const australiaManualFulfilment = deliveryAddress?.country === "AU" &&
+    order.shippingProvider === "internal-fixed";
+  const packages = australiaManualFulfilment ? packageReferences(detail.items) : [];
   return (
     <div className={styles.orderDetailLayout}>
       <div className={styles.detailMain}>
@@ -147,14 +174,27 @@ export function AdminOrderDetail({
 
         {paymentSummary ? <PaymentLedgerPanel summary={paymentSummary} /> : null}
 
-        <section className={styles.panel}>
-          <h2>Shipping</h2>
+        <section aria-labelledby="admin-order-shipping-heading" className={styles.panel}>
+          <h2 id="admin-order-shipping-heading">Shipping</h2>
           <dl className={styles.definitionGrid}>
-            <div><dt>Service</dt><dd>{order.shippingServiceName}</dd></div>
+            {deliveryAddress ? <div><dt>Country</dt><dd>{countryName(deliveryAddress.country)}</dd></div> : null}
+            <div><dt>Method</dt><dd>{order.shippingServiceName}</dd></div>
             <div><dt>Provider</dt><dd>{order.shippingProvider ? label(order.shippingProvider) : "Pickup"}</dd></div>
-            <div><dt>Shipping total</dt><dd>{amount(order.shippingTotalInclGstCents)}</dd></div>
+            <div><dt>Shipping charged</dt><dd>{amount(order.shippingTotalInclGstCents)}</dd></div>
+            {australiaManualFulfilment ? <div><dt>Fulfilment</dt><dd>Manual GoSweetSpot booking</dd></div> : null}
             <div><dt>Tracking</dt><dd>{order.trackingNumber ?? "Not added"}</dd></div>
           </dl>
+          {deliveryAddress ? <div className={styles.customerText}>
+            <strong>Customer address</strong>
+            <address>{addressLines(deliveryAddress).map((line) => <span key={line}>{line}</span>)}</address>
+          </div> : null}
+          {packages.length ? <div className={styles.customerText}>
+            <strong>Package reference</strong>
+            <ul>{packages.map((item) => <li key={item.key}>
+              {item.label} × {item.quantity} · {item.dimensions} · {item.weight}
+            </li>)}</ul>
+            <p>Reference only — not used to calculate Australia shipping.</p>
+          </div> : null}
         </section>
 
         <section className={styles.panel}>

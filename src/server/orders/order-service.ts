@@ -196,6 +196,7 @@ export function createOrderService({
             cart,
             state.deliveryAddress,
             (registry ?? defaultProductRegistry).markets[market],
+            reviewed.shipping.serviceCode,
           ).then((result) => ({
             kind: "post" as const,
             requestDigest: result.requestDigest,

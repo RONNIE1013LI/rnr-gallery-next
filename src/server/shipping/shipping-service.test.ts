@@ -11,6 +11,7 @@ import {
   selectShippingProvider,
   ShippingUnavailableError,
 } from "./shipping-service";
+import { AUSTRALIA_FIXED_SHIPPING_RATES } from "./australia-fixed-shipping";
 import type { ShippingQuoteProvider, ShippingQuoteRequest } from "./types";
 
 const now = new Date("2026-08-02T12:00:00.000Z");
@@ -72,7 +73,13 @@ function provider(overrides: Partial<ShippingQuoteProvider> = {}): ShippingQuote
   };
 }
 
-function australianFixture(input: unknown = cartInput()) {
+function australianFixture(
+  input: unknown = cartInput(),
+  tax: { registered: boolean; rateBasisPoints: number } = {
+    registered: false,
+    rateBasisPoints: 1_000,
+  },
+) {
   const registry = structuredClone(defaultProductRegistry);
   for (const product of registry.markets.AU.products) {
     for (const size of product.sizes) size.amountInclTaxCents = 40_000;
@@ -83,6 +90,7 @@ function australianFixture(input: unknown = cartInput()) {
   for (const fee of registry.markets.AU.urgentServiceFees) fee.amountInclTaxCents = 10_000;
   for (const shipping of registry.markets.AU.shippingMethods) shipping.amountInclTaxCents = 4_500;
   registry.markets.AU.enabled = true;
+  registry.markets.AU.tax = tax;
   const parsed = parseProductRegistry(registry);
   return {
     registry: parsed,
@@ -151,6 +159,24 @@ function bannerBundleCart(quantity = 1, sizeKey = "rollup-wall-200x100") {
 }
 
 describe("shipping service", () => {
+  it("keeps the complete confirmed Australia fixed-rate table", () => {
+    expect(AUSTRALIA_FIXED_SHIPPING_RATES).toEqual({
+      canvas: {
+        a4: { standard: 4_500, dhlExpress: 6_600 },
+        a3: { standard: 4_500, dhlExpress: 6_600 },
+        a2: { standard: 4_500, dhlExpress: 6_600 },
+        a1: { standard: 5_500, dhlExpress: 7_800 },
+        a0: { standard: 12_000, dhlExpress: 18_600 },
+      },
+      rollUpBanner: { standard: 6_500, dhlExpress: 8_200 },
+      wallBanner: {
+        "160x80": { standard: 4_000, dhlExpress: 7_800 },
+        "200x100": { standard: 4_000, dhlExpress: 7_800 },
+        "300x150": { standard: 11_000, dhlExpress: 14_800 },
+      },
+    });
+  });
+
   it("returns explicit internal NZ$0 Pickup without calling a provider", async () => {
     const quoteProvider = provider();
     const service = createShippingService({ provider: quoteProvider, now: () => now });
@@ -269,25 +295,10 @@ describe("shipping service", () => {
     ]).size).toBe(3);
   });
 
-  it("quotes an AU Bundle from carrier packages", async () => {
+  it("quotes an AU Bundle from the fixed component table without calling a provider", async () => {
     const quoteProvider = provider({
       key: "gosweetspot",
-      quote: vi.fn().mockImplementation((request: ShippingQuoteRequest) => {
-        const tax = includedTaxFromGross(3_000, request.taxPolicy);
-        return Promise.resolve({
-          provider: "gosweetspot" as const,
-          serviceCode: "au-standard",
-          serviceName: "AU standard",
-          amountExGstCents: tax.amountExTaxCents,
-          gstCents: tax.taxCents,
-          amountInclGstCents: tax.amountInclTaxCents,
-          currency: request.currency,
-          providerReference: "gosweetspot-au-ref",
-          expiresAt: new Date("2026-08-02T12:15:00.000Z"),
-          rawResponseHash: "h".repeat(64),
-          isTest: false,
-        });
-      }),
+      quote: vi.fn().mockRejectedValue(new Error("GoSweetSpot is unavailable")),
     });
     const fixture = australianFixture(bannerBundleCartInput(2));
     const service = createShippingService({ provider: quoteProvider, now: () => now });
@@ -298,51 +309,105 @@ describe("shipping service", () => {
       fixture.registry.markets.AU,
     );
 
-    expect(quoteProvider.quote).toHaveBeenCalledWith(expect.objectContaining({
-      market: "AU",
-      currency: "AUD",
-      taxPolicy: {
-        jurisdiction: "NONE",
-        registered: false,
-        rateBasisPoints: 1_000,
-      },
-      destination: expect.objectContaining({ countryCode: "AU", city: "NSW" }),
-    }));
-    expect(vi.mocked(quoteProvider.quote).mock.calls[0][0].packages).toHaveLength(4);
+    expect(quoteProvider.availability).not.toHaveBeenCalled();
+    expect(quoteProvider.quote).not.toHaveBeenCalled();
     expect(result.option).toMatchObject({
+      serviceCode: "au-standard",
       currency: "AUD",
-      provenance: "gosweetspot",
-      amountInclGstCents: 3_000,
+      provenance: "internal-fixed",
+      amountInclGstCents: 21_000,
+    });
+    expect(result.options).toMatchObject([
+      { serviceCode: "au-standard", amountInclGstCents: 21_000 },
+      { serviceCode: "au-dhl-express", amountInclGstCents: 32_000 },
+    ]);
+  });
+
+  it("selects DHL Express explicitly while keeping Standard as the default", async () => {
+    const fixture = australianFixture();
+    const service = createShippingService({ provider: null, now: () => now });
+
+    const standard = await service.quotePost(
+      fixture.cart,
+      fixture.address,
+      fixture.registry.markets.AU,
+    );
+    const express = await service.quotePost(
+      fixture.cart,
+      fixture.address,
+      fixture.registry.markets.AU,
+      "au-dhl-express",
+    );
+
+    expect(standard.option).toMatchObject({
+      serviceCode: "au-standard",
+      amountInclGstCents: 4_500,
+    });
+    expect(express.option).toMatchObject({
+      serviceCode: "au-dhl-express",
+      amountInclGstCents: 6_600,
     });
   });
 
-  it.each([
-    ["a missing provider", null],
-    ["a NZD quote", provider({ quote: vi.fn().mockResolvedValue({
-      provider: "local-test", serviceCode: "wrong-currency", serviceName: "Wrong currency",
-      amountExGstCents: 3_000, gstCents: 0, amountInclGstCents: 3_000, currency: "NZD",
-      providerReference: "wrong-currency", expiresAt: new Date("2026-08-02T12:15:00.000Z"),
-      rawResponseHash: "e".repeat(64), isTest: true,
-    }) })],
-    ["an expired AUD quote", provider({ quote: vi.fn().mockResolvedValue({
-      provider: "local-test", serviceCode: "expired", serviceName: "Expired",
-      amountExGstCents: 3_000, gstCents: 0, amountInclGstCents: 3_000, currency: "AUD",
-      providerReference: "expired", expiresAt: now,
-      rawResponseHash: "f".repeat(64), isTest: true,
-    }) })],
-    ["a non-positive AUD quote", provider({ quote: vi.fn().mockResolvedValue({
-      provider: "local-test", serviceCode: "free", serviceName: "Free",
-      amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "AUD",
-      providerReference: "free", expiresAt: new Date("2026-08-02T12:15:00.000Z"),
-      rawResponseHash: "g".repeat(64), isTest: true,
-    }) })],
-  ])("does not fall back to fixed AU shipping for %s", async (_name, quoteProvider) => {
-    const fixture = australianFixture();
+  it("keeps a fixed AUD total when Australian GST is enabled and splits tax from that total", async () => {
+    const fixture = australianFixture(cartInput(), {
+      registered: true,
+      rateBasisPoints: 1_000,
+    });
 
-    await expect(
-      createShippingService({ provider: quoteProvider, now: () => now })
-        .quotePost(fixture.cart, fixture.address, fixture.registry.markets.AU),
-    ).rejects.toBeInstanceOf(ShippingUnavailableError);
+    const result = await createShippingService({ provider: null, now: () => now }).quotePost(
+      fixture.cart,
+      fixture.address,
+      fixture.registry.markets.AU,
+    );
+
+    expect(result.option).toMatchObject({
+      amountExGstCents: 4_091,
+      gstCents: 409,
+      amountInclGstCents: 4_500,
+      currency: "AUD",
+    });
+  });
+
+  it("adds the fixed Australia rate once for every physical item", async () => {
+    const fixture = australianFixture({
+      ...cartInput(),
+      items: [{ ...cartInput().items[0], sizeKey: "a1", quantity: 3 }],
+    });
+
+    const result = await createShippingService({ provider: null, now: () => now })
+      .quotePost(fixture.cart, fixture.address, fixture.registry.markets.AU);
+
+    expect(result.option.amountInclGstCents).toBe(16_500);
+    expect(result.options[1].amountInclGstCents).toBe(23_400);
+  });
+
+  it.each([
+    ["custom-themed-wall-banner", "160x80"],
+    ["digital-oil-painting-banner", "160x80"],
+    ["grave-cover", "standard"],
+  ])("prices %s:%s in the same fixed class as a 200 x 100 Wall Banner", async (
+    productKey,
+    sizeKey,
+  ) => {
+    const fixture = australianFixture({
+      ...cartInput(),
+      items: [{
+        ...cartInput().items[0],
+        productKey,
+        sizeKey,
+        orientation: undefined,
+        peoplePets: productKey === "digital-oil-painting-banner" ? 1 : 0,
+      }],
+    });
+
+    const result = await createShippingService({ provider: null, now: () => now })
+      .quotePost(fixture.cart, fixture.address, fixture.registry.markets.AU);
+
+    expect(result.options).toMatchObject([
+      { serviceCode: "au-standard", amountInclGstCents: 4_000 },
+      { serviceCode: "au-dhl-express", amountInclGstCents: 7_800 },
+    ]);
   });
 
   it("rejects a destination whose country does not match the repriced cart market", async () => {

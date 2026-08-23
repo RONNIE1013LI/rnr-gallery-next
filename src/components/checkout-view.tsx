@@ -20,6 +20,7 @@ import {
 import { type Cart } from "@/domain/cart/types";
 import { cartToCheckoutInput } from "@/domain/cart/checkout-input";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
+import { formatMarketMoney } from "@/domain/money";
 import type { PublicShippingDTO } from "@/server/checkout/public-dto";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
 import type { PaymentActionDTO } from "@/server/payments/public-dto";
@@ -213,6 +214,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   const [reviewedCart, setReviewedCart] = useState<RepricedCheckoutCart | null>(null);
   const [reviewedVersion, setReviewedVersion] = useState<number | null>(null);
   const [shipping, setShipping] = useState<PublicShippingDTO["option"] | null>(null);
+  const [shippingOptions, setShippingOptions] = useState<PublicShippingDTO["options"]>([]);
   const [reviewKey, setReviewKey] = useState("");
   const [paymentMethods, setPaymentMethods] = useState<readonly PaymentMethodOption[]>([]);
   const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<PaymentMethodKey | null>(null);
@@ -222,7 +224,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
   const [paymentAction, setPaymentAction] = useState<PaymentActionDTO | null>(null);
   const [recoveryChecked, setRecoveryChecked] = useState(false);
   const [draftChecked, setDraftChecked] = useState(false);
-  const [pending, setPending] = useState<"review" | "order" | null>(null);
+  const [pending, setPending] = useState<"review" | "shipping" | "order" | null>(null);
   const [billingErrors, setBillingErrors] = useState<AddressFieldErrors>({});
   const [deliveryErrors, setDeliveryErrors] = useState<AddressFieldErrors>({});
   const [billingSavedId, setBillingSavedId] = useState(first?.id ?? "");
@@ -293,6 +295,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
     setReviewedCart(null);
     setReviewedVersion(null);
     setShipping(null);
+    setShippingOptions([]);
     setReviewKey("");
     setPaymentMethods([]);
     setSelectedPaymentMethod(null);
@@ -513,7 +516,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       const session = await postJson("/api/checkout/session", { cart: canonicalCheckoutCart(cart), billingAddress: billing, useDifferentDeliveryAddress: different, ...(different ? { deliveryAddress: delivery } : {}), deliveryMethod });
       const quote = await postJson("/api/checkout/shipping", {});
       const payment = await postJson("/api/checkout/payment-methods", { checkoutVersion: session.checkout.version, cartDigest: session.checkout.cart.cartDigest }) as { methods: readonly PaymentMethodOption[] };
-      setReviewedCart(session.checkout.cart); setReviewedVersion(session.checkout.version); setShipping(quote.shipping.option); setReviewKey(currentKey);
+      setReviewedCart(session.checkout.cart); setReviewedVersion(session.checkout.version); setShipping(quote.shipping.option); setShippingOptions(quote.shipping.options ?? [quote.shipping.option]); setReviewKey(currentKey);
       setPaymentMethods(payment.methods);
       setSelectedPaymentMethod(payment.methods.find((option) => option.method === "card")?.method ?? payment.methods[0]?.method ?? null);
       setPaymentReviewKey(currentKey);
@@ -521,8 +524,53 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       trackCheckoutEvent("add_shipping_info", session.checkout.cart, {
         shipping_tier: quote.shipping.option.serviceName,
       });
-    } catch (error) { const fields = error instanceof CheckoutApiError ? error.fields as { billingAddress?: AddressFieldErrors; deliveryAddress?: AddressFieldErrors } | undefined : undefined; if (fields?.billingAddress) setBillingErrors(fields.billingAddress); if (fields?.deliveryAddress) setDeliveryErrors(fields.deliveryAddress); setReviewedCart(null); setReviewedVersion(null); setShipping(null); setReviewKey(""); setPaymentMethods([]); setSelectedPaymentMethod(null); setPaymentReviewKey(""); setMessage(reviewErrorMessage(error)); requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); }
+    } catch (error) { const fields = error instanceof CheckoutApiError ? error.fields as { billingAddress?: AddressFieldErrors; deliveryAddress?: AddressFieldErrors } | undefined : undefined; if (fields?.billingAddress) setBillingErrors(fields.billingAddress); if (fields?.deliveryAddress) setDeliveryErrors(fields.deliveryAddress); setReviewedCart(null); setReviewedVersion(null); setShipping(null); setShippingOptions([]); setReviewKey(""); setPaymentMethods([]); setSelectedPaymentMethod(null); setPaymentReviewKey(""); setMessage(reviewErrorMessage(error)); requestAnimationFrame(() => document.querySelector<HTMLElement>('[aria-invalid="true"]')?.focus()); }
     finally { reviewing.current = false; setPending(null); }
+  }
+
+  async function selectShippingService(serviceCode: string) {
+    if (
+      pending ||
+      paymentIntent ||
+      !isReviewed ||
+      !reviewedCart ||
+      reviewedVersion === null ||
+      shipping?.serviceCode === serviceCode
+    ) return;
+    setPending("shipping");
+    setPaymentReviewKey("");
+    setMessage("");
+    try {
+      const quote = await postJson("/api/checkout/shipping", { serviceCode }) as {
+        shipping: PublicShippingDTO;
+      };
+      const payment = await postJson("/api/checkout/payment-methods", {
+        checkoutVersion: reviewedVersion,
+        cartDigest: reviewedCart.cartDigest,
+      }) as { methods: readonly PaymentMethodOption[] };
+      setShipping(quote.shipping.option);
+      setShippingOptions(quote.shipping.options);
+      setPaymentMethods(payment.methods);
+      setSelectedPaymentMethod((current) =>
+        payment.methods.some((option) => option.method === current)
+          ? current
+          : payment.methods.find((option) => option.method === "card")?.method
+            ?? payment.methods[0]?.method
+            ?? null,
+      );
+      setPaymentReviewKey(currentKey);
+      setMessage(`${quote.shipping.option.serviceName} selected.`);
+      trackCheckoutEvent("add_shipping_info", reviewedCart, {
+        shipping_tier: quote.shipping.option.serviceName,
+      });
+    } catch (error) {
+      setPaymentMethods([]);
+      setSelectedPaymentMethod(null);
+      setPaymentReviewKey("");
+      setMessage(reviewErrorMessage(error));
+    } finally {
+      setPending(null);
+    }
   }
 
   async function placeOrder() {
@@ -591,7 +639,7 @@ export function CheckoutView({ savedAddresses = [] }: { savedAddresses?: Checkou
       <button className={`${styles.secondaryButton} ${styles.checkoutReviewButton}`} type="submit" disabled={checkoutLocked}>{!recoveryChecked ? "Checking order status…" : pending === "review" ? "Reviewing…" : "Review delivery & totals"}</button>
       <p aria-live="polite" className={styles.checkoutMessage}>{message}</p>
     </form>
-    <aside className={styles.checkoutSummary}><p className={styles.eyebrow}>Your order</p><h2>Order summary</h2>{reviewedCart && !isReviewed ? <p className={styles.checkoutMessage}>Changes need review.</p> : null}<CheckoutOrderSummary cart={isReviewed ? reviewedCart : null} shipping={isReviewed ? shipping : null} />{hasPaymentAuthority ? <PaymentMethods methods={paymentMethods} value={selectedPaymentMethod} onChange={setSelectedPaymentMethod} disabled={checkoutLocked} /> : null}<button className={styles.primaryButton} type="button" disabled={paymentIntent ? Boolean(pending) : !hasPaymentAuthority || !selectedPaymentMethod || paymentMethods.length === 0 || Boolean(pending)} onClick={placeOrder}>{pending === "order" ? "Preparing payment…" : paymentIntent?.phase === "starting_payment" ? "Retry payment recovery" : paymentIntent ? "Retry order recovery" : selectedPaymentMethod === "card" ? "Continue to secure card payment" : selectedPaymentMethod === "afterpay" ? "Continue to Afterpay" : "Continue to payment"}</button></aside>
+    <aside className={styles.checkoutSummary}><p className={styles.eyebrow}>Your order</p><h2>Order summary</h2>{reviewedCart && !isReviewed ? <p className={styles.checkoutMessage}>Changes need review.</p> : null}{isReviewed && shippingOptions.length > 1 ? <fieldset className={styles.shippingMethodSelector}><legend>Shipping method</legend><div>{shippingOptions.map((option) => <label key={option.serviceCode}><input type="radio" name="shippingService" value={option.serviceCode} checked={shipping?.serviceCode === option.serviceCode} disabled={checkoutLocked} onChange={() => void selectShippingService(option.serviceCode)} /><span>{option.serviceName}</span><strong>{formatMarketMoney(option.amountInclGstCents, option.currency)}</strong></label>)}</div></fieldset> : null}<CheckoutOrderSummary cart={isReviewed ? reviewedCart : null} shipping={isReviewed ? shipping : null} />{hasPaymentAuthority ? <PaymentMethods methods={paymentMethods} value={selectedPaymentMethod} onChange={setSelectedPaymentMethod} disabled={checkoutLocked} /> : null}<button className={styles.primaryButton} type="button" disabled={paymentIntent ? Boolean(pending) : !hasPaymentAuthority || !selectedPaymentMethod || paymentMethods.length === 0 || Boolean(pending)} onClick={placeOrder}>{pending === "order" ? "Preparing payment…" : pending === "shipping" ? "Updating shipping…" : paymentIntent?.phase === "starting_payment" ? "Retry payment recovery" : paymentIntent ? "Retry order recovery" : selectedPaymentMethod === "card" ? "Continue to secure card payment" : selectedPaymentMethod === "afterpay" ? "Continue to Afterpay" : "Continue to payment"}</button></aside>
     </div>
   </>;
 }
