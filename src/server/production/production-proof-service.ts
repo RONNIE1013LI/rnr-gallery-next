@@ -21,7 +21,7 @@ const fileSchema = z.object({
     originalName: z.string().trim().min(1).max(255),
     mimeType: z.enum(["image/jpeg", "image/png", "image/webp", "image/heic", "image/heif", "application/pdf"]),
     size: z.number().int().min(1).max(25 * 1024 * 1024),
-    storageKey: z.string().regex(/^[0-9a-f-]{36}\.bin$/i),
+    storageKey: z.string().regex(/^(?:private-uploads\/)?[0-9a-f-]{36}\.bin$/i),
     sha256: z.string().regex(/^[0-9a-f]{64}$/),
   }).strict(),
 }).strict().superRefine((file, context) => {

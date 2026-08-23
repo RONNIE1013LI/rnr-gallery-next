@@ -68,6 +68,20 @@ describe("production proof service", () => {
     }));
   });
 
+  it("accepts the production Blob storage-key format", async () => {
+    const repo = repository();
+    const service = createProductionProofService(repo);
+
+    await expect(service.registerFile(actor, jobId, {
+      kind: "payment_proof",
+      idempotencyKey: "payment-proof-blob-1",
+      reference: {
+        ...reference,
+        storageKey: `private-uploads/${reference.id}.bin`,
+      },
+    }, { canManageFinance: true })).resolves.toMatchObject({ result: "created" });
+  });
+
   it("returns an exact upload retry and rejects reuse with different file metadata", async () => {
     const existing = {
       id: reference.id, jobId: "de31f47e-0fb9-438e-bef6-6bc45556d3bb",
