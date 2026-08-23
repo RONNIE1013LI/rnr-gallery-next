@@ -145,7 +145,7 @@ describe("FormsStatsDashboard", () => {
     expect(screen.getByRole("heading", { name: "Weekly sales" })).toBeInTheDocument();
   });
 
-  it("confirms and encodes a successful delete before removing the report", async () => {
+  it("confirms, encodes, and sends a JSON delete before removing the report", async () => {
     const report = { ...weeklySales, name: "Weekly sales & tax" };
     const onDeleted = vi.fn();
     vi.spyOn(window, "confirm").mockReturnValue(true);
@@ -156,7 +156,10 @@ describe("FormsStatsDashboard", () => {
     render(<FormsStatsDashboard layouts={[report]} canManage canViewFinance onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={onDeleted} />);
     fireEvent.click(screen.getByRole("button", { name: "Delete Weekly sales & tax" }));
     expect(window.confirm).toHaveBeenCalledWith('Delete "Weekly sales & tax"?');
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/forms/stats/layout?name=Weekly%20sales%20%26%20tax", expect.objectContaining({ method: "DELETE" })));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/forms/stats/layout?name=Weekly%20sales%20%26%20tax", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+    }));
     expect(onDeleted).toHaveBeenCalledWith(report);
   });
 

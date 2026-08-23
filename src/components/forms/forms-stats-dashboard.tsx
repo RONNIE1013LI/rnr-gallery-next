@@ -124,7 +124,10 @@ export function FormsStatsDashboard({
     setFeedback("");
     setDeletingName(layout.name);
     try {
-      const response = await fetch(`/api/forms/stats/layout?name=${encodeURIComponent(layout.name)}`, { method: "DELETE" });
+      const response = await fetch(`/api/forms/stats/layout?name=${encodeURIComponent(layout.name)}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+      });
       const body = await response.json().catch(() => null) as { removed?: boolean; error?: string } | null;
       if (!response.ok || !body?.removed) throw new Error(body?.error || "The report could not be deleted.");
       onDeleted(layout);
