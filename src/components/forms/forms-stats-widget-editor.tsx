@@ -90,10 +90,12 @@ function queryForType(query: FormStatQuery, type: FormStatWidgetType): FormStatQ
 export function FormsStatsWidgetEditor({
   widget,
   canViewFinance,
+  disabled = false,
   onChange,
 }: Readonly<{
   widget: FormStatWidget;
   canViewFinance: boolean;
+  disabled?: boolean;
   onChange: (widget: FormStatWidget) => void;
 }>) {
   const availableDimensions = FORM_STAT_DIMENSIONS.filter((dimension) => canViewFinance || !financeDimensions.has(dimension));
@@ -118,6 +120,7 @@ export function FormsStatsWidgetEditor({
         <span>Widget title</span>
         <input
           aria-label="Widget title"
+          disabled={disabled}
           maxLength={100}
           value={widget.title}
           onChange={(event) => onChange({ ...widget, title: event.target.value })}
@@ -126,7 +129,7 @@ export function FormsStatsWidgetEditor({
 
       {isStatisticWidget && widget.query ? <label>
         <span>Chart type</span>
-        <select aria-label="Chart type" value={widget.type} onChange={(event) => changeType(event.target.value as FormStatWidgetType)}>
+        <select aria-label="Chart type" disabled={disabled} value={widget.type} onChange={(event) => changeType(event.target.value as FormStatWidgetType)}>
           {["bar", "pie", "line", "table", "number"].map((type) => (
             <option key={type} value={type}>{chartTypeLabels[type as FormStatWidgetType]}</option>
           ))}
@@ -137,6 +140,7 @@ export function FormsStatsWidgetEditor({
         <span>X axis</span>
         <select
           aria-label="X axis"
+          disabled={disabled}
           value={widget.query.dimension ?? ""}
           onChange={(event) => {
             const dimension = event.target.value as FormStatDimension;
@@ -158,6 +162,7 @@ export function FormsStatsWidgetEditor({
         <span>Time unit</span>
         <select
           aria-label="Time unit"
+          disabled={disabled}
           value={widget.query.timeUnit}
           onChange={(event) => changeQuery({ ...widget.query!, timeUnit: event.target.value as FormStatTimeUnit })}
         >
@@ -170,6 +175,7 @@ export function FormsStatsWidgetEditor({
           <span>Y axis</span>
           <select
             aria-label="Y axis"
+            disabled={disabled}
             value={widget.query.measure}
             onChange={(event) => {
               const measure = event.target.value as FormStatMeasure;
@@ -187,6 +193,7 @@ export function FormsStatsWidgetEditor({
           <span>Aggregation</span>
           <select
             aria-label="Aggregation"
+            disabled={disabled}
             value={widget.query.aggregation}
             onChange={(event) => changeQuery({ ...widget.query!, aggregation: event.target.value as FormStatAggregation })}
           >
@@ -201,6 +208,7 @@ export function FormsStatsWidgetEditor({
           <span>Sort</span>
           <select
             aria-label="Sort"
+            disabled={disabled}
             value={widget.query.sort}
             onChange={(event) => changeQuery({ ...widget.query!, sort: event.target.value as FormStatSort })}
           >
@@ -215,6 +223,7 @@ export function FormsStatsWidgetEditor({
         <span>Text content</span>
         <textarea
           aria-label="Text content"
+          disabled={disabled}
           maxLength={2000}
           rows={5}
           value={widget.text ?? ""}

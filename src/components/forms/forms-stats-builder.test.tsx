@@ -53,16 +53,31 @@ describe("FormsStatsBuilder", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add number" }));
     fireEvent.click(screen.getByRole("button", { name: "Add text" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "Move Text up" }));
+    fireEvent.click(screen.getByRole("button", { name: "Move Text up, widget 2 of 2" }));
     const canvas = screen.getByRole("region", { name: "Report canvas" });
     expect(within(canvas).getAllByRole("article").map((item) => item.getAttribute("data-widget-type"))).toEqual(["text", "number"]);
 
-    fireEvent.click(screen.getByRole("button", { name: "Select Number" }));
-    expect(screen.getByRole("button", { name: "Select Number" })).toHaveAttribute("aria-pressed", "true");
+    fireEvent.click(screen.getByRole("button", { name: "Select Number, widget 2 of 2" }));
+    expect(screen.getByRole("button", { name: "Select Number, widget 2 of 2" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByLabelText("Widget title")).toHaveValue("Number");
-    fireEvent.click(screen.getByRole("button", { name: "Remove Number" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Number, widget 2 of 2" }));
     expect(within(canvas).queryByRole("heading", { name: "Number" })).not.toBeInTheDocument();
     expect(screen.getByText("Select a control to change its settings.")).toBeInTheDocument();
+  });
+
+  it("distinguishes duplicate titles by position and updates labels after reorder", () => {
+    render(<FormsStatsBuilder initialLayout={null} canViewFinance onBack={vi.fn()} onSaved={vi.fn()} />);
+    fireEvent.click(screen.getByRole("button", { name: "Add number" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add number" }));
+
+    const first = screen.getByRole("button", { name: "Select Number, widget 1 of 2" });
+    const second = screen.getByRole("button", { name: "Select Number, widget 2 of 2" });
+    expect(first.closest("article")).toHaveAttribute("data-widget-id", "widget-1");
+    expect(second.closest("article")).toHaveAttribute("data-widget-id", "widget-2");
+
+    fireEvent.click(screen.getByRole("button", { name: "Move Number up, widget 2 of 2" }));
+    expect(screen.getByRole("button", { name: "Select Number, widget 1 of 2" }).closest("article")).toHaveAttribute("data-widget-id", "widget-2");
+    expect(screen.getByRole("button", { name: "Select Number, widget 2 of 2" }).closest("article")).toHaveAttribute("data-widget-id", "widget-1");
   });
 
   it("guards dirty Back while a pristine draft returns immediately", () => {
@@ -165,12 +180,100 @@ describe("FormsStatsBuilder", () => {
       }],
     });
 
-    pending.resolve(jsonResponse({ layout: { id: "saved-layout" } }));
+    pending.resolve(jsonResponse({ layout: { id: "00000000-0000-4000-8000-000000000001" } }));
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith({
-      id: "saved-layout",
+      id: "00000000-0000-4000-8000-000000000001",
       name: "Order totals",
       widgets: [expect.objectContaining({ id: "widget-1", type: "number" })],
     }));
+  });
+
+  it("locks every draft and navigation path for the complete save transaction", async () => {
+    const pending = Promise.withResolvers<Response>();
+    const fetchMock = vi.fn<typeof fetch>(() => pending.promise);
+    const onBack = vi.fn();
+    const onSaved = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<FormsStatsBuilder initialLayout={null} canViewFinance onBack={onBack} onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText("Report name"), { target: { value: "Locked report" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add number" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add text" }));
+    fireEvent.click(screen.getByRole("button", { name: "Select Number, widget 1 of 2" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(screen.getByRole("region", { name: "Custom report builder" })).toHaveAttribute("aria-busy", "true");
+    expect(screen.getByRole("status", { name: "Saving report" })).toHaveTextContent("Saving report…");
+    expect(screen.getByLabelText("Report name")).toBeDisabled();
+    expect(screen.getByLabelText("Widget title")).toBeDisabled();
+    for (const name of ["Add bar chart", "Add pie chart", "Add line chart", "Add table", "Add number", "Add divider", "Add text"]) {
+      expect(screen.getByRole("button", { name })).toBeDisabled();
+      expect(screen.getByRole("button", { name })).toHaveAttribute("draggable", "false");
+    }
+    for (const name of [
+      "Select Number, widget 1 of 2", "Move Number up, widget 1 of 2", "Move Number down, widget 1 of 2", "Remove Number, widget 1 of 2",
+      "Back", "Preview", "Save",
+    ]) expect(screen.getByRole("button", { name })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Report name"), { target: { value: "Changed" } });
+    fireEvent.change(screen.getByLabelText("Widget title"), { target: { value: "Changed widget" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add number" }));
+    fireEvent.click(screen.getByRole("button", { name: "Remove Number, widget 1 of 2" }));
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    const dataTransfer = { setData: vi.fn(), getData: vi.fn(() => "pie"), effectAllowed: "move", dropEffect: "move" };
+    fireEvent.dragStart(screen.getByRole("button", { name: "Add pie chart" }), { dataTransfer });
+    fireEvent.drop(screen.getByRole("region", { name: "Report canvas" }), { dataTransfer });
+
+    expect(screen.getByLabelText("Report name")).toHaveValue("Locked report");
+    expect(screen.getByLabelText("Widget title")).toHaveValue("Number");
+    expect(within(screen.getByRole("region", { name: "Report canvas" })).getAllByRole("article")).toHaveLength(2);
+    expect(onBack).not.toHaveBeenCalled();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    pending.resolve(jsonResponse({ layout: { id: "00000000-0000-4000-8000-000000000001" } }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+  });
+
+  it("aborts an in-flight save on unmount and ignores its stale success", async () => {
+    const pending = Promise.withResolvers<Response>();
+    let signal: AbortSignal | undefined;
+    const onSaved = vi.fn();
+    vi.stubGlobal("fetch", vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+      signal = init?.signal ?? undefined;
+      return pending.promise;
+    }));
+    const { unmount } = render(<FormsStatsBuilder initialLayout={null} canViewFinance onBack={vi.fn()} onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText("Report name"), { target: { value: "Unmounted report" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add number" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+    await waitFor(() => expect(signal).toBeInstanceOf(AbortSignal));
+
+    unmount();
+    expect(signal!.aborted).toBe(true);
+    pending.resolve(jsonResponse({ layout: { id: "00000000-0000-4000-8000-000000000001" } }));
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(onSaved).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["missing", {}],
+    ["empty", { id: "" }],
+    ["non-UUID", { id: "saved-layout" }],
+  ])("retains the draft when a 2xx save response has a %s layout id", async (_case, layout) => {
+    const onSaved = vi.fn();
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(jsonResponse({ layout }))));
+    render(<FormsStatsBuilder initialLayout={null} canViewFinance onBack={vi.fn()} onSaved={onSaved} />);
+    fireEvent.change(screen.getByLabelText("Report name"), { target: { value: "Response check" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add number" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The saved report response was invalid. Try saving again.");
+    expect(screen.getByLabelText("Report name")).toHaveValue("Response check");
+    expect(screen.getByRole("heading", { name: "Number" })).toBeInTheDocument();
+    expect(onSaved).not.toHaveBeenCalled();
   });
 
   it("rejects an invalid draft before PUT and retains a failed-save draft for retry", async () => {
@@ -192,7 +295,7 @@ describe("FormsStatsBuilder", () => {
     expect(onSaved).not.toHaveBeenCalled();
   });
 
-  it("loads and edits an existing saved layout without changing its stable widget id", () => {
+  it("loads an existing saved layout with an immutable name and stable widget id", () => {
     const initialLayout: FormsStatsDashboardLayout = {
       id: "weekly-sales",
       name: "Weekly sales",
@@ -204,6 +307,10 @@ describe("FormsStatsBuilder", () => {
       }],
     };
     render(<FormsStatsBuilder initialLayout={initialLayout} canViewFinance onBack={vi.fn()} onSaved={vi.fn()} />);
+    expect(screen.getByLabelText("Report name")).toHaveValue("Weekly sales");
+    expect(screen.getByLabelText("Report name")).toHaveAttribute("readonly");
+    expect(screen.getByText("Saved report names cannot be changed. Create a new report to use a different name.")).toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Report name"), { target: { value: "Renamed report" } });
     expect(screen.getByLabelText("Report name")).toHaveValue("Weekly sales");
     expect(screen.getByLabelText("Widget title")).toHaveValue("Weekly orders");
     fireEvent.change(screen.getByLabelText("Widget title"), { target: { value: "Orders by week" } });

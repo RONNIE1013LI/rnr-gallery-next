@@ -40,7 +40,7 @@ describe("FormsStatsWorkbench", () => {
     vi.stubGlobal("crypto", { randomUUID: () => `widget-${++nextId}` });
     vi.stubGlobal("fetch", vi.fn((_input: string | URL | Request, init?: RequestInit) => {
       if (init?.method === "PUT") {
-        return Promise.resolve(new Response(JSON.stringify({ layout: { id: "saved-layout" } }), { status: 200, headers: { "Content-Type": "application/json" } }));
+        return Promise.resolve(new Response(JSON.stringify({ layout: { id: "00000000-0000-4000-8000-000000000001" } }), { status: 200, headers: { "Content-Type": "application/json" } }));
       }
       return Promise.resolve(new Response(JSON.stringify({ stat: { query: { measure: "order_count", aggregation: "count", sort: "default" }, value: 4 } }), { status: 200, headers: { "Content-Type": "application/json" } }));
     }));
@@ -54,6 +54,30 @@ describe("FormsStatsWorkbench", () => {
     expect(await screen.findByRole("heading", { name: "Saved report" })).toBeInTheDocument();
     expect(screen.getByTestId("forms-stats-workbench")).toHaveAttribute("data-mode", "dashboard");
     expect(await screen.findByText("4")).toBeInTheDocument();
+  });
+
+  it("saves an edit under its immutable original name and replaces the existing report", async () => {
+    const layoutId = "00000000-0000-4000-8000-000000000002";
+    const fetchMock = vi.fn((_input: string | URL | Request, init?: RequestInit) => init?.method === "PUT"
+      ? Promise.resolve(new Response(JSON.stringify({ layout: { id: layoutId } }), { status: 200, headers: { "Content-Type": "application/json" } }))
+      : Promise.resolve(new Response(JSON.stringify({ stat: { metric: "job_count", value: 12 } }), { status: 200, headers: { "Content-Type": "application/json" } })));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<FormsStatsWorkbench canManage canViewFinance layouts={[{
+      id: layoutId,
+      name: "Weekly sales",
+      widgets: [{ id: "orders", type: "number", title: "Orders", metric: "job_count" }],
+    }]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Weekly sales" }));
+    expect(screen.getByLabelText("Report name")).toHaveAttribute("readonly");
+    fireEvent.change(screen.getByLabelText("Report name"), { target: { value: "Renamed report" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("heading", { name: "Weekly sales" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Renamed report" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("heading", { name: "Weekly sales" })).toHaveLength(1);
+    const put = fetchMock.mock.calls.find(([, init]) => init?.method === "PUT");
+    expect(JSON.parse(String(put?.[1]?.body))).toMatchObject({ name: "Weekly sales" });
   });
 
   it("keeps the builder open when saving fails", async () => {

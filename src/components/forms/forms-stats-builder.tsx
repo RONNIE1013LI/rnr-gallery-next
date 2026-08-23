@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { z } from "zod";
 
 import type { FormStatistic } from "@/server/forms/drizzle-forms-stats-repository";
 import { parseFormStatsLayout, type FormStatWidget, type FormStatsLayout } from "@/server/forms/forms-stats-service";
@@ -15,6 +16,7 @@ import { FormsStatsWidgetResult, type FormsStatsWidgetState } from "./forms-stat
 import styles from "./forms.module.css";
 
 const emptyQueryContext: FormsStatsQueryContext = Object.freeze({});
+const savedLayoutResponseSchema = z.object({ layout: z.object({ id: z.string().uuid() }) });
 const paletteTypes = new Set<FormStatWidgetType>(["bar", "pie", "line", "table", "number", "divider", "text"]);
 const paletteControls: readonly Readonly<{
   type: FormStatWidgetType;
@@ -78,10 +80,20 @@ export function FormsStatsBuilder({
   const [states, setStates] = useState<StatisticStates>({});
   const [feedback, setFeedback] = useState("");
   const [saving, setSaving] = useState(false);
-  const savingRef = useRef(false);
+  const mountedRef = useRef(true);
+  const saveOperationRef = useRef<AbortController | null>(null);
   const [initialSnapshot] = useState(() => draftSnapshot(initialLayout?.name ?? "", initialLayout?.widgets ?? []));
   const selectedWidget = widgets.find((widget) => widget.id === selectedId) ?? null;
   const dirty = draftSnapshot(name, widgets) !== initialSnapshot;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      saveOperationRef.current?.abort();
+      saveOperationRef.current = null;
+    };
+  }, []);
 
   const previewRequests = useMemo(() => {
     if (!previewLayout) return [];
@@ -125,16 +137,19 @@ export function FormsStatsBuilder({
   }
 
   function changeName(value: string) {
+    if (saveOperationRef.current || initialLayout) return;
     clearPreview();
     setName(value);
   }
 
   function changeWidgets(next: readonly FormStatWidget[]) {
+    if (saveOperationRef.current) return;
     clearPreview();
     setWidgets(next);
   }
 
   function addWidget(type: FormStatWidgetType) {
+    if (saveOperationRef.current) return;
     if (widgets.length >= 24) {
       setFeedback("A report can contain no more than 24 controls.");
       return;
@@ -145,6 +160,7 @@ export function FormsStatsBuilder({
   }
 
   function moveWidget(id: string, offset: -1 | 1) {
+    if (saveOperationRef.current) return;
     const index = widgets.findIndex((widget) => widget.id === id);
     const target = index + offset;
     if (index < 0 || target < 0 || target >= widgets.length) return;
@@ -154,31 +170,37 @@ export function FormsStatsBuilder({
   }
 
   function removeWidget(id: string) {
+    if (saveOperationRef.current) return;
     changeWidgets(widgets.filter((widget) => widget.id !== id));
     if (selectedId === id) setSelectedId(null);
   }
 
   function changeSelected(widget: FormStatWidget) {
+    if (saveOperationRef.current) return;
     changeWidgets(widgets.map((entry) => entry.id === widget.id ? widget : entry));
   }
 
   function dragStart(event: DragEvent<HTMLButtonElement>, type: FormStatWidgetType) {
+    if (saveOperationRef.current) return;
     event.dataTransfer.effectAllowed = "copy";
     event.dataTransfer.setData("text/plain", type);
   }
 
   function drop(event: DragEvent<HTMLElement>) {
     event.preventDefault();
+    if (saveOperationRef.current) return;
     const type = event.dataTransfer.getData("text/plain") as FormStatWidgetType;
     if (paletteTypes.has(type)) addWidget(type);
   }
 
   function back() {
+    if (saveOperationRef.current) return;
     if (dirty && !window.confirm("Discard unsaved report changes?")) return;
     onBack();
   }
 
   function preview() {
+    if (saveOperationRef.current) return;
     setFeedback("");
     try {
       setPreviewLayout(parseFormStatsLayout({ name: name.trim() || "Preview", widgets }, { canViewFinance }));
@@ -188,7 +210,7 @@ export function FormsStatsBuilder({
   }
 
   async function save() {
-    if (savingRef.current) return;
+    if (saveOperationRef.current) return;
     let layout: FormStatsLayout;
     try {
       layout = parseFormStatsLayout({ name, widgets }, { canViewFinance });
@@ -196,7 +218,8 @@ export function FormsStatsBuilder({
       setFeedback("Enter a report name and check every control setting.");
       return;
     }
-    savingRef.current = true;
+    const controller = new AbortController();
+    saveOperationRef.current = controller;
     setSaving(true);
     setFeedback("");
     try {
@@ -204,22 +227,29 @@ export function FormsStatsBuilder({
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: layout.name, widgets: layout.widgets }),
+        signal: controller.signal,
       });
-      const body = await response.json().catch(() => null) as { layout?: { id?: unknown }; error?: string } | null;
-      if (!response.ok || typeof body?.layout?.id !== "string") {
-        throw new Error(body?.error || "The report could not be saved.");
+      const body = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok) throw new Error(body?.error || "The report could not be saved.");
+      const parsedResponse = savedLayoutResponseSchema.safeParse(body);
+      if (!parsedResponse.success) {
+        throw new Error("The saved report response was invalid. Try saving again.");
       }
-      onSaved({ id: body.layout.id, name: layout.name, widgets: layout.widgets });
+      if (controller.signal.aborted || saveOperationRef.current !== controller || !mountedRef.current) return;
+      onSaved({ id: parsedResponse.data.layout.id, name: layout.name, widgets: layout.widgets });
     } catch (error) {
+      if (controller.signal.aborted || saveOperationRef.current !== controller || !mountedRef.current) return;
       setFeedback(error instanceof Error ? error.message : "The report could not be saved.");
     } finally {
-      savingRef.current = false;
-      setSaving(false);
+      if (saveOperationRef.current === controller) {
+        saveOperationRef.current = null;
+        if (mountedRef.current) setSaving(false);
+      }
     }
   }
 
   return (
-    <section className={styles.statsBuilder} aria-labelledby="custom-report-builder-title">
+    <section className={styles.statsBuilder} aria-busy={saving} aria-labelledby="custom-report-builder-title">
       <header className={styles.statsBuilderHeader}>
         <div>
           <p>Custom stats</p>
@@ -234,7 +264,8 @@ export function FormsStatsBuilder({
             <h3>Layout controls</h3>
             <div className={styles.statsPaletteGrid}>{paletteControls.filter((control) => control.group === "layout").map((control) => (
               <button
-                draggable
+                disabled={saving}
+                draggable={!saving}
                 key={control.type}
                 type="button"
                 onClick={() => addWidget(control.type)}
@@ -246,7 +277,8 @@ export function FormsStatsBuilder({
             <h3>Stat controls</h3>
             <div className={styles.statsPaletteGrid}>{paletteControls.filter((control) => control.group === "stat").map((control) => (
               <button
-                draggable
+                disabled={saving}
+                draggable={!saving}
                 key={control.type}
                 type="button"
                 onClick={() => addWidget(control.type)}
@@ -268,6 +300,7 @@ export function FormsStatsBuilder({
           </div> : widgets.map((widget, index) => {
             const request = buildFormsStatsStatisticRequest(widget, queryContext);
             const previewing = Boolean(previewLayout);
+            const position = `widget ${index + 1} of ${widgets.length}`;
             return <article
               className={styles.statsCanvasWidget}
               data-selected={selectedId === widget.id}
@@ -281,10 +314,10 @@ export function FormsStatsBuilder({
                   <h3>{widget.title}</h3>
                 </div>
                 <div className={styles.statsCanvasActions}>
-                  <button type="button" aria-label={`Select ${widget.title}`} aria-pressed={selectedId === widget.id} onClick={() => setSelectedId(widget.id)}>Select</button>
-                  <button type="button" aria-label={`Move ${widget.title} up`} disabled={index === 0} onClick={() => moveWidget(widget.id, -1)}>Up</button>
-                  <button type="button" aria-label={`Move ${widget.title} down`} disabled={index === widgets.length - 1} onClick={() => moveWidget(widget.id, 1)}>Down</button>
-                  <button type="button" aria-label={`Remove ${widget.title}`} onClick={() => removeWidget(widget.id)}>Remove</button>
+                  <button type="button" aria-label={`Select ${widget.title}, ${position}`} aria-pressed={selectedId === widget.id} disabled={saving} onClick={() => { if (!saveOperationRef.current) setSelectedId(widget.id); }}>Select</button>
+                  <button type="button" aria-label={`Move ${widget.title} up, ${position}`} disabled={saving || index === 0} onClick={() => moveWidget(widget.id, -1)}>Up</button>
+                  <button type="button" aria-label={`Move ${widget.title} down, ${position}`} disabled={saving || index === widgets.length - 1} onClick={() => moveWidget(widget.id, 1)}>Down</button>
+                  <button type="button" aria-label={`Remove ${widget.title}, ${position}`} disabled={saving} onClick={() => removeWidget(widget.id)}>Remove</button>
                 </div>
               </header>
               {widget.type === "text" || widget.type === "divider" || previewing
@@ -303,25 +336,35 @@ export function FormsStatsBuilder({
           <section>
             <h3>Control settings</h3>
             {selectedWidget
-              ? <FormsStatsWidgetEditor widget={selectedWidget} canViewFinance={canViewFinance} onChange={changeSelected} />
+              ? <FormsStatsWidgetEditor widget={selectedWidget} canViewFinance={canViewFinance} disabled={saving} onChange={changeSelected} />
               : <p>Select a control to change its settings.</p>}
           </section>
           <section>
             <h3>Report settings</h3>
             <label>
               <span>Report name</span>
-              <input aria-label="Report name" maxLength={80} value={name} onChange={(event) => changeName(event.target.value)} />
+              <input
+                aria-describedby={initialLayout ? "saved-report-name-hint" : undefined}
+                aria-label="Report name"
+                disabled={saving}
+                maxLength={80}
+                readOnly={Boolean(initialLayout)}
+                value={name}
+                onChange={initialLayout ? undefined : (event) => changeName(event.target.value)}
+              />
             </label>
+            {initialLayout ? <p className={styles.statsEditorNote} id="saved-report-name-hint">Saved report names cannot be changed. Create a new report to use a different name.</p> : null}
           </section>
         </aside>
       </div>
 
+      {saving ? <p className={styles.statsLoading} role="status" aria-label="Saving report">Saving report…</p> : null}
       {feedback ? <p className={styles.formFeedback} role="alert">{feedback}</p> : null}
       <footer className={styles.statsBuilderFooter}>
-        <button type="button" onClick={back}>Back</button>
+        <button type="button" disabled={saving} onClick={back}>Back</button>
         <div>
           <button type="button" disabled={saving} onClick={preview}>Preview</button>
-          <button type="button" disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : "Save"}</button>
+          <button type="button" aria-label="Save" disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : "Save"}</button>
         </div>
       </footer>
     </section>
