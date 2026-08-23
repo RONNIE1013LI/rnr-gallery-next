@@ -5,7 +5,7 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { checkoutSessions, orders, productionJobItems, productionJobs, user } from "@/server/db/schema";
-import { selectMigrationTarget, verifySelectedTestDatabaseIsolation, type DatabaseIdentity } from "../../../scripts/migration-safety";
+import { selectMigrationTarget, verifyDatabaseIdentity, type DatabaseIdentity } from "../../../scripts/migration-safety";
 import { parseFormWorkbenchQuery } from "./forms-workbench-service";
 import { queryFormStatistic } from "./drizzle-forms-stats-repository";
 
@@ -44,7 +44,7 @@ const orderIds = [webOrderId, financeAverageOrderId];
 const sessionIds = [webSessionId, financeAverageSessionId];
 let verifiedDatabase: Readonly<{ database: string; serverPort: number }> | null = null;
 
-async function identifyDatabase(url: string): Promise<DatabaseIdentity> {
+async function identifyDatabase(url: string): Promise<DatabaseIdentity & { serverPort: number }> {
   const pool = new Pool({ connectionString: url });
   try {
     const { rows } = await pool.query<{
@@ -62,7 +62,7 @@ async function identifyDatabase(url: string): Promise<DatabaseIdentity> {
     if (!identity) throw new Error("Test database identity query returned no row");
     return {
       database: identity.database,
-      serverAddress: identity.server_address,
+      hostname: identity.server_address,
       serverPort: identity.server_port,
       serverVersion: identity.server_version,
       inRecovery: identity.in_recovery,
@@ -73,13 +73,10 @@ async function identifyDatabase(url: string): Promise<DatabaseIdentity> {
 }
 
 async function verifyFixtureDatabase() {
-  const target = selectMigrationTarget({ environment: "test", env: { TEST_DATABASE_URL: databaseUrl } });
-  const safeIdentity = await verifySelectedTestDatabaseIsolation({
-    target,
-    env: { TEST_DATABASE_URL: databaseUrl },
-    identifyDatabase,
-  });
-  verifiedDatabase = { database: safeIdentity.database, serverPort: safeIdentity.serverPort };
+  const target = selectMigrationTarget({ environment: "test", env: { TEST_DATABASE_URL: approvedDatabaseUrl } });
+  const identity = await identifyDatabase(approvedDatabaseUrl);
+  const safeIdentity = verifyDatabaseIdentity(target, identity);
+  verifiedDatabase = { database: safeIdentity.database, serverPort: identity.serverPort };
 }
 
 describe("forms stats repository", () => {
