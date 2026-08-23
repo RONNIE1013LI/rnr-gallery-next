@@ -239,9 +239,45 @@ function filterCondition(
   if (condition.field === "artistFee") return numberCondition(sql<number>`${productionJobs.artistFeeCents}`);
   if (condition.field === "materialCost") return numberCondition(sql<number>`${productionJobs.materialCostCents}`);
   if (condition.field === "submittedByUserId") {
-    if (empty) return isNull(productionJobs.createdByUserId);
-    if (notEmpty) return sql`${productionJobs.createdByUserId} is not null`;
-    return condition.operator === "notEquals" ? ne(productionJobs.createdByUserId, scalarValue) : eq(productionJobs.createdByUserId, scalarValue);
+    const migratedSubmitterHasValue = sql<boolean>`exists (
+      select 1 from ${productionFieldValues}
+      inner join ${productionFieldDefinitions}
+        on ${productionFieldDefinitions.id} = ${productionFieldValues.fieldId}
+      where ${productionFieldValues.jobId} = ${productionJobs.id}
+        and ${productionFieldDefinitions.fieldKey} = 'submitted_by_name'
+        and btrim(${productionFieldValues.value}) <> ''
+    )`;
+    const hasVisibleSubmitter = sql<boolean>`(
+      ${productionJobs.createdByUserId} is not null
+      or (
+        ${productionJobs.createdByUserId} is null
+        and ${productionJobs.legacySource} = 'rnrgallery-order-system'
+        and ${migratedSubmitterHasValue}
+      )
+    )`;
+    const migratedSubmitterMatches = sql<boolean>`exists (
+      select 1 from ${productionFieldValues}
+      inner join ${productionFieldDefinitions}
+        on ${productionFieldDefinitions.id} = ${productionFieldValues.fieldId}
+      inner join ${user} on ${user.id} = ${scalarValue}
+      where ${productionFieldValues.jobId} = ${productionJobs.id}
+        and ${productionFieldDefinitions.fieldKey} = 'submitted_by_name'
+        and lower(btrim(${productionFieldValues.value})) = lower(btrim(${user.name}))
+    )`;
+    const visibleSubmitterMatches = sql<boolean>`(
+      coalesce(${productionJobs.createdByUserId} = ${scalarValue}, false)
+      or (
+        ${productionJobs.createdByUserId} is null
+        and ${productionJobs.legacySource} = 'rnrgallery-order-system'
+        and ${migratedSubmitterMatches}
+      )
+    )`;
+    if (empty) return sql`not (${hasVisibleSubmitter})`;
+    if (notEmpty) return hasVisibleSubmitter;
+    if (condition.operator === "notEquals") {
+      return sql`${hasVisibleSubmitter} and not (${visibleSubmitterMatches})`;
+    }
+    return visibleSubmitterMatches;
   }
   if (condition.field === "urgent") {
     return eq(productionJobs.urgent, scalarValue === "true");

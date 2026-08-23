@@ -23,6 +23,7 @@ const database = drizzle(testDatabaseUrl);
 const suffix = randomUUID();
 const operatorId = `forms-operator-${suffix}`;
 const otherUserId = `forms-other-${suffix}`;
+const legacySubmitterId = `forms-legacy-submitter-${suffix}`;
 const assignedJobId = randomUUID();
 const otherJobId = randomUUID();
 const refundedJobId = randomUUID();
@@ -43,6 +44,7 @@ describe("forms workbench repository", () => {
     await database.insert(user).values([
       { id: operatorId, name: "Assigned Artist", email: `artist-${suffix}@example.test`, role: "form_staff" },
       { id: otherUserId, name: "Other Artist", email: `other-${suffix}@example.test`, role: "staff" },
+      { id: legacySubmitterId, name: "Former Operator", email: `legacy-${suffix}@example.test`, role: "staff" },
     ]);
     await database.insert(productionFieldDefinitions).values([{
       id: customFieldId,
@@ -216,6 +218,7 @@ describe("forms workbench repository", () => {
     await database.delete(productionFieldDefinitions).where(inArray(productionFieldDefinitions.id, [customFieldId, customNumberFieldId]));
     await database.delete(user).where(eq(user.id, operatorId));
     await database.delete(user).where(eq(user.id, otherUserId));
+    await database.delete(user).where(eq(user.id, legacySubmitterId));
   });
 
   it("enforces assigned-only scope and removes protected payloads before return", async () => {
@@ -349,6 +352,50 @@ describe("forms workbench repository", () => {
     );
 
     expect(result.items.map((item) => item.id)).toEqual([assignedJobId]);
+  });
+
+  it("matches a migrated submitter name when the filter value is the current staff account", async () => {
+    const result = await listFormOrders(
+      database,
+      parseFormWorkbenchQuery({
+        filter: `submittedByUserId~equals~${encodeURIComponent(legacySubmitterId)}`,
+      }),
+      {
+        actorUserId: operatorId,
+        assignedOnly: false,
+        canViewCustomerContact: false,
+        canViewFinance: false,
+      },
+    );
+
+    expect(result.items.map((item) => item.id)).toEqual([legacyJobId]);
+  });
+
+  it("uses the visible migrated submitter for empty and not-equals comparisons", async () => {
+    const access = {
+      actorUserId: operatorId,
+      assignedOnly: false,
+      canViewCustomerContact: false,
+      canViewFinance: false,
+    };
+    const reference = `07L-${suffix.slice(0, 6)}`;
+
+    const notEmpty = await listFormOrders(database, parseFormWorkbenchQuery({
+      q: reference,
+      filter: "submittedByUserId~isNotEmpty~",
+    }), access);
+    const empty = await listFormOrders(database, parseFormWorkbenchQuery({
+      q: reference,
+      filter: "submittedByUserId~isEmpty~",
+    }), access);
+    const notOtherUser = await listFormOrders(database, parseFormWorkbenchQuery({
+      q: reference,
+      filter: `submittedByUserId~notEquals~${encodeURIComponent(otherUserId)}`,
+    }), access);
+
+    expect(notEmpty.items.map((item) => item.id)).toEqual([legacyJobId]);
+    expect(empty.items).toEqual([]);
+    expect(notOtherUser.items.map((item) => item.id)).toEqual([legacyJobId]);
   });
 
   it("matches visible Web-prefixed references in quick and field searches", async () => {
