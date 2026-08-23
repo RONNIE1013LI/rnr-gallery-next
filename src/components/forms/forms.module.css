@@ -205,6 +205,98 @@
   gap: 12px;
 }
 
+.statsDashboard {
+  display: grid;
+  gap: 12px;
+}
+
+.statsCreatePanel,
+.statsReportCard {
+  width: 100%;
+  border: 1px solid var(--forms-border);
+  border-radius: 7px;
+  background: var(--forms-surface);
+}
+
+.statsCreatePanel,
+.statsReportHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.statsCreatePanel {
+  padding: 14px;
+  border-color: #9bc8aa;
+  background: #eff8f3;
+}
+
+.statsCreatePanel h2,
+.statsReportHeader h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.statsCreatePanel p,
+.statsReportHeader p {
+  margin: 4px 0 0;
+  color: var(--forms-muted);
+  font-size: 13px;
+}
+
+.statsCreatePanel button,
+.statsReportActions button {
+  min-height: 40px;
+  padding: 7px 10px;
+  border: 1px solid var(--forms-border);
+  border-radius: var(--radius-button);
+  color: var(--forms-ink);
+  background: #fff;
+}
+
+.statsReportCard {
+  overflow: hidden;
+}
+
+.statsReportHeader {
+  padding: 14px;
+  border-bottom: 1px solid var(--forms-border);
+}
+
+.statsReportActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.statsReportWidgets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  padding: 14px;
+}
+
+.statsReportWidget {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--forms-border);
+  border-radius: 6px;
+}
+
+.statsReportWidget[data-type="bar"],
+.statsReportWidget[data-type="line"],
+.statsReportWidget[data-type="table"],
+.statsReportWidget[data-type="text"],
+.statsReportWidget[data-type="divider"] {
+  grid-column: span 2;
+}
+
+.statsReportWidget h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+}
+
 .columnStatsPanel {
   padding: 10px 12px;
   border: 1px solid var(--forms-border);
@@ -709,12 +801,30 @@
 }
 
 @media (max-width: 900px) {
+  .statsReportWidgets {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .statsGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
 
 @media (max-width: 600px) {
+  .statsCreatePanel,
+  .statsReportHeader {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .statsReportWidgets {
+    grid-template-columns: 1fr;
+  }
+
+  .statsReportWidget[data-type] {
+    grid-column: auto;
+  }
+
   .statsGrid {
     grid-template-columns: 1fr;
   }
