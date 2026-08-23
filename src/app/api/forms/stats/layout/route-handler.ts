@@ -65,7 +65,9 @@ export function createFormsStatsLayoutRoute(dependencies?: Dependencies) {
         const deps = dependencies ?? defaults();
         const access = await deps.requirePermission("manage_stats");
         assertTrustedMutationRequest(request, deps.trustedOrigin);
-        const name = z.string().trim().min(1).max(80).safeParse(new URL(request.url).searchParams.get("name"));
+        const names = new URL(request.url).searchParams.getAll("name");
+        if (names.length !== 1) throw new FormStatsValidationError();
+        const name = z.string().trim().min(1).max(80).safeParse(names[0]);
         if (!name.success) throw new FormStatsValidationError();
         return Response.json({ removed: await deps.remove(access.user.id, name.data) }, { headers: noStore });
       } catch (error) {

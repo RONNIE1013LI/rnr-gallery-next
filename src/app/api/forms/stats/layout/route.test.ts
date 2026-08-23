@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { HttpError } from "@/server/auth/require-session";
 import { createFormsStatsLayoutRoute } from "./route-handler";
 
 const origin = "https://shop.example.test";
@@ -14,6 +15,7 @@ describe("forms stats layout route", () => {
     const requirePermission = vi.fn().mockResolvedValue(access);
     const route = createFormsStatsLayoutRoute({ requirePermission, list, save, remove: vi.fn(), trustedOrigin: origin });
     expect((await route.GET(new Request(`${origin}/api/forms/stats/layout`))).status).toBe(200);
+    expect(list).toHaveBeenCalledWith("manager-1");
     const response = await route.PUT(new Request(`${origin}/api/forms/stats/layout`, {
       method: "PUT", headers: { "Content-Type": "application/json", Origin: origin },
       body: JSON.stringify({ name: "Daily", widgets: [{ id: "w1", type: "number", metric: "job_count", title: "Orders" }] }),
@@ -66,5 +68,68 @@ describe("forms stats layout route", () => {
       method: "PUT", headers: { "Content-Type": "application/json", Origin: "https://untrusted.example.test" }, body: financeLayout,
     }))).status).toBe(403);
     expect(save).not.toHaveBeenCalled();
+  });
+
+  it("deletes the named layout for the current operator after trusted-origin and permission checks", async () => {
+    const remove = vi.fn().mockResolvedValue(true);
+    const requirePermission = vi.fn().mockResolvedValue(access);
+    const route = createFormsStatsLayoutRoute({
+      requirePermission, list: vi.fn(), save: vi.fn(), remove, trustedOrigin: origin,
+    });
+
+    const response = await route.DELETE(new Request(`${origin}/api/forms/stats/layout?name=Weekly`, {
+      method: "DELETE", headers: { Origin: origin },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(requirePermission).toHaveBeenCalledWith("manage_stats");
+    expect(remove).toHaveBeenCalledWith("manager-1", "Weekly");
+  });
+
+  it.each([
+    ["a missing name", ""],
+    ["an invalid name", "?name=%20"],
+    ["repeated names", "?name=Weekly&name=Finance"],
+  ])("rejects delete requests with %s before removing a layout", async (_name, suffix) => {
+    const remove = vi.fn();
+    const route = createFormsStatsLayoutRoute({
+      requirePermission: vi.fn().mockResolvedValue(access), list: vi.fn(), save: vi.fn(), remove, trustedOrigin: origin,
+    });
+
+    const response = await route.DELETE(new Request(`${origin}/api/forms/stats/layout${suffix}`, {
+      method: "DELETE", headers: { Origin: origin },
+    }));
+
+    expect(response.status).toBe(422);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("rejects an untrusted delete request before removing a layout", async () => {
+    const remove = vi.fn();
+    const route = createFormsStatsLayoutRoute({
+      requirePermission: vi.fn().mockResolvedValue(access), list: vi.fn(), save: vi.fn(), remove, trustedOrigin: origin,
+    });
+
+    const response = await route.DELETE(new Request(`${origin}/api/forms/stats/layout?name=Weekly`, {
+      method: "DELETE", headers: { Origin: "https://untrusted.example.test" },
+    }));
+
+    expect(response.status).toBe(403);
+    expect(remove).not.toHaveBeenCalled();
+  });
+
+  it("rejects an operator without manage_stats before removing a layout", async () => {
+    const remove = vi.fn();
+    const route = createFormsStatsLayoutRoute({
+      requirePermission: vi.fn().mockRejectedValue(new HttpError("Forbidden", 403)),
+      list: vi.fn(), save: vi.fn(), remove, trustedOrigin: origin,
+    });
+
+    const response = await route.DELETE(new Request(`${origin}/api/forms/stats/layout?name=Weekly`, {
+      method: "DELETE", headers: { Origin: origin },
+    }));
+
+    expect(response.status).toBe(403);
+    expect(remove).not.toHaveBeenCalled();
   });
 });

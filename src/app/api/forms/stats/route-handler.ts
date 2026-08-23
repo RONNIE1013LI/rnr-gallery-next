@@ -62,13 +62,15 @@ export function createFormsStatsRoute(dependencies?: Dependencies) {
         const access = await deps.requirePermission("view_stats");
         const url = new URL(request.url);
         const canViewFinance = hasFormPermission(access.formRole, access.formProfile, "view_finance");
-        const hasMetric = url.searchParams.has("metric");
+        const metricValues = url.searchParams.getAll("metric");
+        const hasMetric = metricValues.length > 0;
         const hasCustomStatistic = statRequestKeys.some((key) => url.searchParams.has(key));
         let statistic: Parameters<QueryStatistic>[2];
 
         if (hasMetric) {
           if (hasCustomStatistic) throw new FormStatsValidationError();
-          const metric = z.enum(FORM_STAT_METRICS).safeParse(url.searchParams.get("metric"));
+          if (metricValues.length !== 1) throw new FormStatsValidationError();
+          const metric = z.enum(FORM_STAT_METRICS).safeParse(metricValues[0]);
           if (!metric.success) throw new FormStatsValidationError();
           if (isFinanceStatMetric(metric.data) && !canViewFinance) throw new HttpError("Forbidden", 403);
           statistic = metric.data;

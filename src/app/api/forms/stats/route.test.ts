@@ -63,6 +63,26 @@ describe("forms stats route", () => {
     expect(query).not.toHaveBeenCalled();
   });
 
+  it.each([
+    ["valid metrics", "metric=job_count&metric=urgent_count"],
+    ["a valid metric and a finance metric", "metric=job_count&metric=amount_paid_total"],
+    ["a valid and an invalid metric", "metric=job_count&metric=not_a_metric"],
+  ])("rejects repeated legacy metric parameters containing %s before repository execution", async (_name, parameters) => {
+    const query = vi.fn();
+    const route = createFormsStatsRoute({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: { id: "artist-1" }, formRole: "form_staff",
+        formProfile: { preset: "artist", assignedOnly: true, permissions: { view_stats: true, view_finance: false } },
+      }),
+      query,
+    });
+
+    const response = await route.GET(new Request(`https://shop.example.test/api/forms/stats?${parameters}`));
+
+    expect(response.status).toBe(422);
+    expect(query).not.toHaveBeenCalled();
+  });
+
   it("rejects finance metrics before repository execution without finance permission", async () => {
     const query = vi.fn();
     const route = createFormsStatsRoute({
