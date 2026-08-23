@@ -3,6 +3,7 @@ import { allocateOrderNumber, formatOrderNumber } from "./order-number";
 
 describe("numeric order numbers", () => {
   it.each([
+    [7_242, "07242"],
     [8_000, "08000"],
     [8_001, "08001"],
     [99_999, "99999"],
