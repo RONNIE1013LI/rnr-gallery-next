@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
 import {
   defaultProductRegistry,
@@ -14,6 +14,10 @@ import {
 import type { ShippingQuoteProvider, ShippingQuoteRequest } from "./types";
 
 const now = new Date("2026-08-02T12:00:00.000Z");
+
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
 const address: NormalizedAddress = {
   country: "NZ",
   fullName: "Aroha Ngata",
@@ -383,6 +387,35 @@ describe("shipping service", () => {
 });
 
 describe("shipping provider selection", () => {
+  it("passes an explicit staging environment to GoSweetSpot", async () => {
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify({
+      rates: [{ description: "Test Shipping", shortCode: "TEST", rate: 5 }],
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const selected = selectShippingProvider({
+      GOSWEETSPOT_APP_ID: "staging-app",
+      GOSWEETSPOT_HMAC_SECRET: "staging-secret",
+      GOSWEETSPOT_RATE_TAX_MODE: "incl_gst",
+      GOSWEETSPOT_ENVIRONMENT: "staging",
+    });
+
+    await createShippingService({ provider: selected, now: () => now }).quotePost(cart(), address);
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://stg-checkout.gosweetspot.com/CustomApi/Rates/staging-app",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
+  it("rejects an unknown GoSweetSpot environment", () => {
+    expect(selectShippingProvider({
+      GOSWEETSPOT_APP_ID: "app",
+      GOSWEETSPOT_HMAC_SECRET: "secret",
+      GOSWEETSPOT_RATE_TAX_MODE: "incl_gst",
+      GOSWEETSPOT_ENVIRONMENT: "typo",
+    })).toBeNull();
+  });
+
   it("selects GoSweetSpot only with complete credentials and tax mode", () => {
     expect(selectShippingProvider({
       GOSWEETSPOT_APP_ID: "app",

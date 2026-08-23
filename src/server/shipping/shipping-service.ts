@@ -191,16 +191,19 @@ export function selectShippingProvider(
   const appId = env.GOSWEETSPOT_APP_ID?.trim();
   const secret = env.GOSWEETSPOT_HMAC_SECRET?.trim();
   const rateTaxMode = env.GOSWEETSPOT_RATE_TAX_MODE?.trim();
+  const environment = env.GOSWEETSPOT_ENVIRONMENT?.trim() || "production";
   if (
     appId &&
     secret &&
-    (rateTaxMode === "incl_gst" || rateTaxMode === "ex_gst")
+    (rateTaxMode === "incl_gst" || rateTaxMode === "ex_gst") &&
+    (environment === "production" || environment === "staging")
   ) {
     const timeout = Number(env.GOSWEETSPOT_TIMEOUT_MS ?? 5_000);
     return createGoSweetSpotShippingProvider({
       appId,
       secret,
       rateTaxMode,
+      environment,
       timeoutMs: Number.isFinite(timeout) && timeout > 0 ? timeout : 5_000,
     });
   }

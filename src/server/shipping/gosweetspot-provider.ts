@@ -35,11 +35,13 @@ const responseSchema = z.union([
 ]);
 
 type RateTaxMode = "incl_gst" | "ex_gst";
+type GoSweetSpotEnvironment = "production" | "staging";
 
 type GoSweetSpotOptions = Readonly<{
   appId?: string;
   secret?: string;
   rateTaxMode?: RateTaxMode;
+  environment?: GoSweetSpotEnvironment;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
   now?: () => Date;
@@ -85,6 +87,10 @@ export function createGoSweetSpotShippingProvider(
   const fetchImpl = options.fetchImpl ?? fetch;
   const now = options.now ?? (() => new Date());
   const timeoutMs = options.timeoutMs ?? 5_000;
+  const environment = options.environment ?? "production";
+  const checkoutOrigin = environment === "staging"
+    ? "https://stg-checkout.gosweetspot.com"
+    : "https://checkout.gosweetspot.com";
 
   return Object.freeze({
     key: "gosweetspot" as const,
@@ -149,7 +155,7 @@ export function createGoSweetSpotShippingProvider(
 
       try {
         const response = await fetchImpl(
-          `https://checkout.gosweetspot.com/CustomApi/Rates/${encodeURIComponent(options.appId)}`,
+          `${checkoutOrigin}/CustomApi/Rates/${encodeURIComponent(options.appId)}`,
           {
             method: "POST",
             headers: {
@@ -192,7 +198,7 @@ export function createGoSweetSpotShippingProvider(
           providerReference: `${selected.shortcode}:${rawResponseHash.slice(0, 16)}`,
           expiresAt: new Date(now().getTime() + 15 * 60 * 1_000),
           rawResponseHash,
-          isTest: false,
+          isTest: environment === "staging",
         });
       } catch (error) {
         if (error instanceof ShippingProviderError) throw error;

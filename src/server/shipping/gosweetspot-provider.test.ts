@@ -52,6 +52,29 @@ const auRequest: ShippingQuoteRequest = {
 };
 
 describe("GoSweetSpot shipping provider", () => {
+  it("uses the staging Custom API only when explicitly configured", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      rates: [{ description: "Test Shipping", shortCode: "TEST", rate: 5 }],
+    }), { status: 200 }));
+    const provider = createGoSweetSpotShippingProvider({
+      appId: "staging-app",
+      secret: "staging-secret",
+      rateTaxMode: "incl_gst",
+      environment: "staging",
+      fetchImpl: fetchImpl as typeof fetch,
+    });
+
+    await expect(provider.quote(request)).resolves.toMatchObject({
+      serviceCode: "TEST",
+      amountInclGstCents: 500,
+      isTest: true,
+    });
+    expect(fetchImpl).toHaveBeenCalledWith(
+      "https://stg-checkout.gosweetspot.com/CustomApi/Rates/staging-app",
+      expect.objectContaining({ method: "POST" }),
+    );
+  });
+
   it("signs the exact raw request and returns the cheapest positive rate", async () => {
     const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => {
       const body = String(init?.body);
