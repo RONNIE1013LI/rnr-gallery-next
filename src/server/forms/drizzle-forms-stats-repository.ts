@@ -15,13 +15,12 @@ import type {
 type Database = ReturnType<typeof getDatabase>;
 type StatisticRow = Readonly<{ label: string; value: number }>;
 type CategoryDimension = Exclude<FormStatDimension, "submitted_at" | "needed_date">;
+type StatisticValue = Readonly<{ value: number; rows?: never }>;
+type StatisticRows = Readonly<{ rows: readonly StatisticRow[]; value?: never }>;
 
-export type FormStatistic = Readonly<{
-  metric?: FormStatMetric;
-  query?: FormStatRequest;
-  value?: number;
-  rows?: readonly StatisticRow[];
-}>;
+export type LegacyFormStatistic = Readonly<{ metric: FormStatMetric }> & (StatisticValue | StatisticRows);
+export type GroupedFormStatistic = Readonly<{ query: FormStatRequest }> & (StatisticValue | StatisticRows);
+export type FormStatistic = LegacyFormStatistic | GroupedFormStatistic;
 
 function numeric(value: unknown) {
   return Number(value ?? 0);
@@ -52,10 +51,10 @@ const measureExpressions: Readonly<Record<Exclude<FormStatMeasure, "order_count"
   amount_payable: payable,
   amount_paid: paid,
   amount_owing: owing,
-  artist_fee: sql<number>`coalesce(${productionJobs.artistFeeCents}, 0)`,
-  material_cost: sql<number>`coalesce(${productionJobs.materialCostCents}, 0)`,
+  artist_fee: sql<number>`case when ${productionJobs.source} = 'web' then null else coalesce(${productionJobs.artistFeeCents}, 0) end`,
+  material_cost: sql<number>`case when ${productionJobs.source} = 'web' then null else coalesce(${productionJobs.materialCostCents}, 0) end`,
   actual_profit: sql<number>`case
-    when ${productionJobs.source} = 'web' then 0
+    when ${productionJobs.source} = 'web' then null
     else coalesce(${productionJobs.amountPaidCents}, 0) - coalesce(${productionJobs.artistFeeCents}, 0) - coalesce(${productionJobs.materialCostCents}, 0)
   end`,
 };
@@ -88,6 +87,13 @@ function dateBucket(column: SQL, timeUnit: NonNullable<FormStatRequest["timeUnit
   return sql<string>`to_char(date_trunc('month', ${AucklandTime}), 'YYYY-MM')`;
 }
 
+function calendarDateBucket(column: SQL, timeUnit: NonNullable<FormStatRequest["timeUnit"]>) {
+  const date = sql`to_date(nullif(btrim(${column}), ''), 'YYYY-MM-DD')`;
+  if (timeUnit === "day") return sql<string>`coalesce(to_char(date_trunc('day', ${date}), 'YYYY-MM-DD'), 'Unspecified')`;
+  if (timeUnit === "week") return sql<string>`coalesce(to_char(date_trunc('week', ${date}), 'IYYY "W"IW'), 'Unspecified')`;
+  return sql<string>`coalesce(to_char(date_trunc('month', ${date}), 'YYYY-MM'), 'Unspecified')`;
+}
+
 function dimensionExpression(request: FormStatRequest) {
   if (request.dimension === "submitted_at") {
     if (!request.timeUnit) throw new Error("A time unit is required for submitted_at statistics.");
@@ -95,7 +101,7 @@ function dimensionExpression(request: FormStatRequest) {
   }
   if (request.dimension === "needed_date") {
     if (!request.timeUnit) throw new Error("A time unit is required for needed_date statistics.");
-    return dateBucket(sql`to_date(${productionJobs.neededDate}, 'YYYY-MM-DD')`, request.timeUnit);
+    return calendarDateBucket(sql`${productionJobs.neededDate}`, request.timeUnit);
   }
   if (!request.dimension) return null;
   const expression = categoryDimensionExpressions[request.dimension];
@@ -117,7 +123,12 @@ function groupedLimit(request: FormStatRequest) {
   return 24;
 }
 
-function groupedOrder(label: SQL<string>, value: SQL<number>, sort: FormStatSort) {
+function isTimeSeries(request: FormStatRequest) {
+  return request.dimension === "submitted_at" || request.dimension === "needed_date";
+}
+
+function groupedOrder(label: SQL<string>, value: SQL<number>, sort: FormStatSort, timeSeries: boolean) {
+  if (sort === "default" && timeSeries) return [desc(label)];
   if (sort === "label_desc") return [desc(label)];
   if (sort === "value_asc") return [asc(value), asc(label)];
   if (sort === "value_desc") return [desc(value), asc(label)];
@@ -139,7 +150,7 @@ async function queryGroupedStatistic(
   query: FormWorkbenchQuery,
   access: FormWorkbenchAccess,
   request: FormStatRequest,
-): Promise<FormStatistic> {
+): Promise<GroupedFormStatistic> {
   const conditions = buildFormWorkbenchConditions(query, access);
   const where = conditions.length ? and(...conditions) : undefined;
   const resolved = resolvedQuery(request);
@@ -161,11 +172,12 @@ async function queryGroupedStatistic(
     .leftJoin(user, eq(user.id, productionJobs.assignedUserId))
     .where(where)
     .groupBy(label)
-    .orderBy(...groupedOrder(label, value, resolved.sort))
+    .orderBy(...groupedOrder(label, value, resolved.sort, isTimeSeries(resolved)))
     .limit(groupedLimit(resolved));
+  const normalizedRows = rows.map((row) => Object.freeze({ label: row.label, value: numeric(row.value) }));
   return Object.freeze({
     query: resolved,
-    rows: Object.freeze(rows.map((row) => Object.freeze({ label: row.label, value: numeric(row.value) }))),
+    rows: Object.freeze(isTimeSeries(resolved) && resolved.sort === "default" ? normalizedRows.reverse() : normalizedRows),
   });
 }
 
@@ -174,7 +186,7 @@ async function queryLegacyStatistic(
   query: FormWorkbenchQuery,
   access: FormWorkbenchAccess,
   metric: FormStatMetric,
-): Promise<FormStatistic> {
+): Promise<LegacyFormStatistic> {
   const conditions = buildFormWorkbenchConditions(query, access);
   const where = conditions.length ? and(...conditions) : undefined;
   if (metric === "job_count" || metric === "urgent_count") {
@@ -225,6 +237,24 @@ async function queryLegacyStatistic(
   return Object.freeze({ metric, rows: Object.freeze(rows.map((row) => Object.freeze({ label: row.label, value: numeric(row.value) }))) });
 }
 
+export function queryFormStatistic(
+  database: Database,
+  query: FormWorkbenchQuery,
+  access: FormWorkbenchAccess,
+  request: FormStatMetric,
+): Promise<LegacyFormStatistic>;
+export function queryFormStatistic(
+  database: Database,
+  query: FormWorkbenchQuery,
+  access: FormWorkbenchAccess,
+  request: FormStatRequest,
+): Promise<GroupedFormStatistic>;
+export function queryFormStatistic(
+  database: Database,
+  query: FormWorkbenchQuery,
+  access: FormWorkbenchAccess,
+  request: FormStatRequest | FormStatMetric,
+): Promise<FormStatistic>;
 export async function queryFormStatistic(
   database: Database,
   query: FormWorkbenchQuery,

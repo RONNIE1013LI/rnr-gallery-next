@@ -1,14 +1,18 @@
 import { randomUUID } from "node:crypto";
-import { eq, inArray } from "drizzle-orm";
+import { inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { checkoutSessions, orders, productionJobItems, productionJobs, user } from "@/server/db/schema";
+import { selectMigrationTarget, verifySelectedTestDatabaseIsolation, type DatabaseIdentity } from "../../../scripts/migration-safety";
 import { parseFormWorkbenchQuery } from "./forms-workbench-service";
 import { queryFormStatistic } from "./drizzle-forms-stats-repository";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required");
+const approvedDatabaseUrl = "postgresql://postgres@127.0.0.1:55448/rnr_forms_stats_test";
+if (databaseUrl !== approvedDatabaseUrl) throw new Error("The exact approved TEST_DATABASE_URL is required");
 const database = drizzle(databaseUrl);
 const suffix = randomUUID();
 const actorId = `stats-actor-${suffix}`;
@@ -18,42 +22,133 @@ const unassignedJobId = randomUUID();
 const webJobId = randomUUID();
 const webOrderId = randomUUID();
 const webSessionId = randomUUID();
-const jobIds = [...assignedJobIds, unassignedJobId, webJobId];
+const emptyNeededDateJobId = randomUUID();
+const financeAverageManualJobId = randomUUID();
+const financeAverageWebJobId = randomUUID();
+const financeAverageOrderId = randomUUID();
+const financeAverageSessionId = randomUUID();
+const overflowJobIds = Array.from({ length: 61 }, () => randomUUID());
+const emptyNeededDateMarker = randomUUID();
+const financeAverageMarker = randomUUID();
+const overflowMarker = randomUUID();
+const jobIds = [
+  ...assignedJobIds,
+  unassignedJobId,
+  webJobId,
+  emptyNeededDateJobId,
+  financeAverageManualJobId,
+  financeAverageWebJobId,
+  ...overflowJobIds,
+];
+const orderIds = [webOrderId, financeAverageOrderId];
+const sessionIds = [webSessionId, financeAverageSessionId];
+let verifiedDatabase: Readonly<{ database: string; serverPort: number }> | null = null;
+
+async function identifyDatabase(url: string): Promise<DatabaseIdentity> {
+  const pool = new Pool({ connectionString: url });
+  try {
+    const { rows } = await pool.query<{
+      database: string;
+      server_address: string;
+      server_port: number;
+      server_version: string;
+      in_recovery: boolean;
+    }>(`select current_database() as database,
+          host(inet_server_addr()) as server_address,
+          inet_server_port() as server_port,
+          version() as server_version,
+          pg_is_in_recovery() as in_recovery`);
+    const identity = rows[0];
+    if (!identity) throw new Error("Test database identity query returned no row");
+    return {
+      database: identity.database,
+      serverAddress: identity.server_address,
+      serverPort: identity.server_port,
+      serverVersion: identity.server_version,
+      inRecovery: identity.in_recovery,
+    };
+  } finally {
+    await pool.end();
+  }
+}
+
+async function verifyFixtureDatabase() {
+  const target = selectMigrationTarget({ environment: "test", env: { TEST_DATABASE_URL: databaseUrl } });
+  const safeIdentity = await verifySelectedTestDatabaseIsolation({
+    target,
+    env: { TEST_DATABASE_URL: databaseUrl },
+    identifyDatabase,
+  });
+  verifiedDatabase = { database: safeIdentity.database, serverPort: safeIdentity.serverPort };
+}
 
 describe("forms stats repository", () => {
   beforeAll(async () => {
+    await verifyFixtureDatabase();
     await database.insert(user).values([
       { id: actorId, name: "Stats Artist", email: `stats-${suffix}@example.test`, role: "form_staff" },
       { id: otherArtistId, name: "Other Stats Artist", email: `stats-other-${suffix}@example.test`, role: "form_staff" },
     ]);
-    await database.insert(checkoutSessions).values({
-      id: webSessionId,
-      tokenDigest: `stats-session-${suffix}`,
-      expiresAt: new Date("2099-01-01T00:00:00Z"),
-      completedAt: new Date("2026-08-24T00:00:00Z"),
-    });
-    await database.insert(orders).values({
-      id: webOrderId,
-      orderNumber: `RNR-STATS-${suffix.slice(0, 10)}`,
-      checkoutSessionId: webSessionId,
-      checkoutSessionVersion: 1,
-      idempotencyKey: `stats-order-${suffix}`,
-      customerEmail: `stats-web-${suffix}@example.test`,
-      pricingSnapshot: {} as (typeof orders.$inferInsert)["pricingSnapshot"],
-      deliveryMethod: "pickup",
-      shippingServiceCode: "pickup",
-      shippingServiceName: "Pickup",
-      productSubtotalExGstCents: 14_783,
-      productGstCents: 2_217,
-      productTotalInclGstCents: 17_000,
-      shippingExGstCents: 0,
-      shippingGstCents: 0,
-      shippingTotalInclGstCents: 0,
-      totalExGstCents: 14_783,
-      totalGstCents: 2_217,
-      totalInclGstCents: 17_000,
-      paymentStatus: "paid",
-    });
+    await database.insert(checkoutSessions).values([
+      {
+        id: webSessionId,
+        tokenDigest: `stats-session-${suffix}`,
+        expiresAt: new Date("2099-01-01T00:00:00Z"),
+        completedAt: new Date("2026-08-24T00:00:00Z"),
+      },
+      {
+        id: financeAverageSessionId,
+        tokenDigest: `stats-finance-session-${suffix}`,
+        expiresAt: new Date("2099-01-01T00:00:00Z"),
+        completedAt: new Date("2026-08-24T00:00:00Z"),
+      },
+    ]);
+    await database.insert(orders).values([
+      {
+        id: webOrderId,
+        orderNumber: `RNR-STATS-${suffix.slice(0, 10)}`,
+        checkoutSessionId: webSessionId,
+        checkoutSessionVersion: 1,
+        idempotencyKey: `stats-order-${suffix}`,
+        customerEmail: `stats-web-${suffix}@example.test`,
+        pricingSnapshot: {} as (typeof orders.$inferInsert)["pricingSnapshot"],
+        deliveryMethod: "pickup",
+        shippingServiceCode: "pickup",
+        shippingServiceName: "Pickup",
+        productSubtotalExGstCents: 14_783,
+        productGstCents: 2_217,
+        productTotalInclGstCents: 17_000,
+        shippingExGstCents: 0,
+        shippingGstCents: 0,
+        shippingTotalInclGstCents: 0,
+        totalExGstCents: 14_783,
+        totalGstCents: 2_217,
+        totalInclGstCents: 17_000,
+        paymentStatus: "paid",
+      },
+      {
+        id: financeAverageOrderId,
+        orderNumber: `RNR-FINANCE-${financeAverageMarker}`,
+        checkoutSessionId: financeAverageSessionId,
+        checkoutSessionVersion: 1,
+        idempotencyKey: `stats-finance-order-${suffix}`,
+        customerEmail: "finance-average-web@example.test",
+        pricingSnapshot: {} as (typeof orders.$inferInsert)["pricingSnapshot"],
+        deliveryMethod: "pickup",
+        shippingServiceCode: "pickup",
+        shippingServiceName: "Pickup",
+        productSubtotalExGstCents: 10_000,
+        productGstCents: 0,
+        productTotalInclGstCents: 10_000,
+        shippingExGstCents: 0,
+        shippingGstCents: 0,
+        shippingTotalInclGstCents: 0,
+        totalExGstCents: 10_000,
+        totalGstCents: 0,
+        totalInclGstCents: 10_000,
+        paymentStatus: "paid",
+      },
+    ]);
     await database.insert(productionJobs).values([
       {
         id: assignedJobIds[0],
@@ -138,6 +233,90 @@ describe("forms stats repository", () => {
         assignedUserId: otherArtistId,
         createdAt: new Date("2026-08-24T12:30:00Z"),
       },
+      {
+        id: emptyNeededDateJobId,
+        jobNumber: `EMPTY-DATE-${emptyNeededDateMarker}`,
+        source: "manual",
+        idempotencyKey: `stats-empty-date-${suffix}`,
+        requestDigest: "4".repeat(64),
+        legacySource: "rnrgallery-order-system",
+        legacyOrderId: emptyNeededDateMarker,
+        customerName: "Empty delivery date",
+        customerEmail: "empty-date@example.test",
+        customerPhone: "0210000000",
+        customerSource: "market",
+        manualStatus: "new",
+        manualPaymentStatus: "processing",
+        urgent: false,
+        neededDate: "",
+        deliveryMethod: "courier",
+        assignedUserId: actorId,
+        amountPayableCents: 0,
+        amountPaidCents: 0,
+        artistFeeCents: 0,
+        materialCostCents: 0,
+        createdAt: new Date("2026-08-24T12:45:00Z"),
+      },
+      {
+        id: financeAverageManualJobId,
+        jobNumber: `FINANCE-MANUAL-${financeAverageMarker}`,
+        source: "manual",
+        idempotencyKey: `stats-finance-manual-${suffix}`,
+        requestDigest: "5".repeat(64),
+        customerName: "Finance average manual",
+        customerEmail: "finance-average-manual@example.test",
+        customerPhone: "0210000000",
+        customerSource: "market",
+        manualStatus: "new",
+        manualPaymentStatus: "paid",
+        urgent: false,
+        neededDate: "2026-08-25",
+        deliveryMethod: "courier",
+        assignedUserId: actorId,
+        amountPayableCents: 10_000,
+        amountPaidCents: 10_000,
+        artistFeeCents: 2_000,
+        materialCostCents: 1_000,
+        createdAt: new Date("2026-08-24T13:00:00Z"),
+      },
+      {
+        id: financeAverageWebJobId,
+        jobNumber: `FINANCE-WEB-${financeAverageMarker}`,
+        source: "web",
+        orderId: financeAverageOrderId,
+        customerName: "Finance average web",
+        customerEmail: "finance-average-web@example.test",
+        customerPhone: "0210000000",
+        customerSource: "web",
+        webOrderNumber: `RNR-FINANCE-${financeAverageMarker}`,
+        urgent: false,
+        neededDate: "2026-08-25",
+        deliveryMethod: "pickup",
+        assignedUserId: otherArtistId,
+        createdAt: new Date("2026-08-24T13:15:00Z"),
+      },
+      ...overflowJobIds.map((id, index) => ({
+        id,
+        jobNumber: `OVERFLOW-${overflowMarker}-${index}`,
+        source: "manual" as const,
+        idempotencyKey: `stats-overflow-${suffix}-${index}`,
+        requestDigest: String(index).padStart(64, "0"),
+        customerName: "Overflow bucket",
+        customerEmail: "overflow@example.test",
+        customerPhone: "0210000000",
+        customerSource: "market" as const,
+        manualStatus: "new" as const,
+        manualPaymentStatus: "processing" as const,
+        urgent: false,
+        neededDate: "2026-08-25",
+        deliveryMethod: "courier" as const,
+        assignedUserId: actorId,
+        amountPayableCents: 0,
+        amountPaidCents: 0,
+        artistFeeCents: 0,
+        materialCostCents: 0,
+        createdAt: new Date(Date.UTC(2025, 0, 6 + (index * 7), 12)),
+      })),
     ]);
     await database.insert(productionJobItems).values([
       { jobId: assignedJobIds[0], position: 0, productTitle: "Stats Canvas", sizeLabel: "40x50", quantity: 1 },
@@ -148,12 +327,16 @@ describe("forms stats repository", () => {
   afterAll(async () => {
     await database.delete(productionJobItems).where(inArray(productionJobItems.jobId, jobIds));
     await database.delete(productionJobs).where(inArray(productionJobs.id, jobIds));
-    await database.delete(orders).where(eq(orders.id, webOrderId));
-    await database.delete(checkoutSessions).where(eq(checkoutSessions.id, webSessionId));
+    await database.delete(orders).where(inArray(orders.id, orderIds));
+    await database.delete(checkoutSessions).where(inArray(checkoutSessions.id, sessionIds));
     await database.delete(user).where(inArray(user.id, [actorId, otherArtistId]));
     await expect(database.select({ id: productionJobs.id }).from(productionJobs).where(inArray(productionJobs.id, jobIds))).resolves.toEqual([]);
-    await expect(database.select({ id: orders.id }).from(orders).where(eq(orders.id, webOrderId))).resolves.toEqual([]);
-    await expect(database.select({ id: checkoutSessions.id }).from(checkoutSessions).where(eq(checkoutSessions.id, webSessionId))).resolves.toEqual([]);
+    await expect(database.select({ id: orders.id }).from(orders).where(inArray(orders.id, orderIds))).resolves.toEqual([]);
+    await expect(database.select({ id: checkoutSessions.id }).from(checkoutSessions).where(inArray(checkoutSessions.id, sessionIds))).resolves.toEqual([]);
+  });
+
+  it("verifies the exact dedicated database identity before fixture writes", () => {
+    expect(verifiedDatabase).toEqual({ database: "rnr_forms_stats_test", serverPort: 5432 });
   });
 
   it("applies workbench scope to count, categories and finance totals", async () => {
@@ -236,5 +419,49 @@ describe("forms stats repository", () => {
     await expect(queryFormStatistic(database, emptyQuery, assignedAccess, {
       measure: "amount_payable", aggregation: "sum", sort: "default",
     })).resolves.toMatchObject({ value: 0 });
+  });
+
+  it("keeps needed dates as Auckland calendar buckets and labels empty values", async () => {
+    const access = { actorUserId: actorId, assignedOnly: false, canViewCustomerContact: false, canViewFinance: true };
+    const utcPool = new Pool({ connectionString: databaseUrl, max: 1 });
+    try {
+      await utcPool.query("set time zone 'UTC'");
+      await expect(queryFormStatistic(drizzle(utcPool), parseFormWorkbenchQuery({ q: `STATS-${suffix.slice(0, 6)}-0` }), access, {
+        dimension: "needed_date", timeUnit: "day", measure: "order_count", aggregation: "count", sort: "default",
+      })).resolves.toMatchObject({ rows: [{ label: "2026-08-20", value: 1 }] });
+    } finally {
+      await utcPool.end();
+    }
+    await expect(queryFormStatistic(database, parseFormWorkbenchQuery({ q: `STATS-${suffix.slice(0, 6)}-0` }), access, {
+      dimension: "needed_date", timeUnit: "day", measure: "order_count", aggregation: "count", sort: "default",
+    })).resolves.toMatchObject({ rows: [{ label: "2026-08-20", value: 1 }] });
+    await expect(queryFormStatistic(database, parseFormWorkbenchQuery({ q: emptyNeededDateMarker }), access, {
+      dimension: "needed_date", timeUnit: "day", measure: "order_count", aggregation: "count", sort: "default",
+    })).resolves.toMatchObject({ rows: [{ label: "Unspecified", value: 1 }] });
+  });
+
+  it("selects the newest default time buckets while presenting them chronologically", async () => {
+    const query = parseFormWorkbenchQuery({ q: overflowMarker });
+    const access = { actorUserId: actorId, assignedOnly: true, canViewCustomerContact: false, canViewFinance: true };
+    const statistic = await queryFormStatistic(database, query, access, {
+      dimension: "submitted_at", timeUnit: "week", measure: "order_count", aggregation: "count", sort: "default",
+    });
+    expect(statistic.rows).toHaveLength(60);
+    expect(statistic.rows?.[0]).toEqual({ label: "2025 W03", value: 1 });
+    expect(statistic.rows?.at(-1)).toEqual({ label: "2026 W10", value: 1 });
+  });
+
+  it("excludes unavailable web production finance values from averages", async () => {
+    const query = parseFormWorkbenchQuery({ q: financeAverageMarker });
+    const access = { actorUserId: actorId, assignedOnly: false, canViewCustomerContact: false, canViewFinance: true };
+    await expect(queryFormStatistic(database, query, access, {
+      measure: "artist_fee", aggregation: "average", sort: "default",
+    })).resolves.toMatchObject({ value: 2_000 });
+    await expect(queryFormStatistic(database, query, access, {
+      measure: "material_cost", aggregation: "average", sort: "default",
+    })).resolves.toMatchObject({ value: 1_000 });
+    await expect(queryFormStatistic(database, query, access, {
+      measure: "actual_profit", aggregation: "average", sort: "default",
+    })).resolves.toMatchObject({ value: 7_000 });
   });
 });
