@@ -81,6 +81,11 @@ export function MarketSwitchDialog({
       }
       const first = controls[0];
       const last = controls[controls.length - 1];
+      if (!controls.includes(document.activeElement as HTMLElement)) {
+        event.preventDefault();
+        (event.shiftKey ? last : first).focus();
+        return;
+      }
       if (event.shiftKey && document.activeElement === first) {
         event.preventDefault();
         last.focus();

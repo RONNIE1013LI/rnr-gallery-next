@@ -150,4 +150,31 @@ describe("MarketSwitchDialog", () => {
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onCancel).not.toHaveBeenCalled();
   });
+
+  it("contains both Tab directions when a repeated conflict re-enables controls", () => {
+    const props = {
+      state,
+      onDateChange: vi.fn(),
+      onConfirmUrgent: vi.fn(),
+      onTryDates: vi.fn(),
+      onCancel: vi.fn(),
+    };
+    const { rerender } = render(<MarketSwitchDialog {...props} pending />);
+    const dialog = screen.getByRole("dialog", { name: "Review urgent service" });
+    expect(dialog).toHaveFocus();
+
+    rerender(<MarketSwitchDialog {...props} pending={false} />);
+    expect(screen.getByRole("button", {
+      name: "Confirm urgent service and switch",
+    })).toBeEnabled();
+    expect(dialog).toHaveFocus();
+
+    expect(fireEvent.keyDown(document, { key: "Tab" })).toBe(false);
+    expect(screen.getByLabelText("Completion date for Custom Themed Canvas"))
+      .toHaveFocus();
+
+    dialog.focus();
+    expect(fireEvent.keyDown(document, { key: "Tab", shiftKey: true })).toBe(false);
+    expect(screen.getByRole("button", { name: "Cancel" })).toHaveFocus();
+  });
 });
