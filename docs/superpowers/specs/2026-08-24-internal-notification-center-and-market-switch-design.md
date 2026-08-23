@@ -20,7 +20,7 @@ This is an additive change. Existing customer emails, customer recipients, payme
 - Each verified recipient independently subscribes to one or more of five topics:
   - `manual_order_created`
   - `web_order_paid`
-  - `payment_request_paid`
+  - `payment_request_paid` (standalone Payment Requests only)
   - `proof_approved`
   - `proof_changes_requested`
 - Website order notifications are created only after payment first reaches the verified paid state.
@@ -119,10 +119,10 @@ One row represents one event-recipient delivery.
 - `id`: UUID primary key
 - `event_key`: unique `<topic>:<source-event-id>:<recipient-id>` value
 - `topic`: one of the five fixed topics
-- `source_event_id`: immutable UUID order, payment-request, or proof-review event identity
-- `resource_type`: `order`, `payment_request`, or `proof_review`
+- `source_event_id`: immutable UUID production-job, order, payment-request, or proof-review event identity
+- `resource_type`: `production_job`, `order`, `payment_request`, or `proof_review`
 - `resource_id`: authoritative UUID internal resource ID; the polymorphic reference is validated by the event producer rather than a cross-table foreign key
-- `resource_reference`: safe display reference such as order or request number
+- `resource_reference`: safe display reference such as job, order, or request number
 - `recipient_id`: FK to the recipient row
 - `recipient_email`: immutable normalized delivery snapshot
 - `payload`: minimal versioned JSON needed to render the internal message
@@ -195,9 +195,9 @@ All Admin mutations use trusted-origin validation, bounded schemas, and idempote
 
 ### Event points
 
-- `manual_order_created`: after the first successful commit of an order whose source is `manual`; source event ID is the Order ID.
+- `manual_order_created`: after the first successful commit of a production job whose source is `manual`; source event ID is the Production Job ID.
 - `web_order_paid`: after a website order first reaches the verified paid state; source event ID is the Order ID.
-- `payment_request_paid`: after a standalone or order-linked payment request first reaches `paid`; source event ID is the Payment Request ID.
+- `payment_request_paid`: after a standalone Payment Request first reaches `paid`; source event ID is the Payment Request ID. Order-linked requests do not emit this topic.
 - `proof_approved`: after a customer proof-review record with decision `approved` commits; source event ID is the proof-review record ID.
 - `proof_changes_requested`: after a customer proof-review record with decision `changes_requested` commits; source event ID is the proof-review record ID.
 
@@ -341,7 +341,7 @@ Production work must originate from a clean integration of current `origin/main`
 - duplicate payment callbacks and proof actions do not duplicate rows;
 - manual order commit produces the manual event;
 - website paid transition produces the paid event only once;
-- payment-request paid transition produces the event only once;
+- standalone payment-request paid transition produces the event only once, while order-linked requests do not emit it;
 - proof approval and change-request review IDs produce distinct events;
 - zero recipients is a successful business path; and
 - customer outbox rows and recipients remain unchanged.
