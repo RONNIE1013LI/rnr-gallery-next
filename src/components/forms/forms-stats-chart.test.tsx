@@ -47,6 +47,7 @@ describe("FormsStatsChart", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     vi.unstubAllGlobals();
   });
 
@@ -141,6 +142,29 @@ describe("FormsStatsChart", () => {
     expect(table.className).toContain("srOnly");
     expect(table).not.toHaveStyle({ display: "none" });
     expect(container.querySelector(".recharts-line-curve")).toBeInTheDocument();
+  });
+
+  it("renders every bar at 15 pixels wide", async () => {
+    const { container } = await renderSizedChart(weeklyPayableWidget, weeklyPayableStat);
+    await waitFor(
+      () => expect(container.querySelectorAll(".recharts-bar-rectangle .recharts-rectangle")).toHaveLength(2),
+      { timeout: 2_500 },
+    );
+    const bars = [...container.querySelectorAll(".recharts-bar-rectangle .recharts-rectangle")];
+
+    expect(bars.map((bar) => bar.getAttribute("width"))).toEqual(["15", "15"]);
+  });
+
+  it.each(["bar", "line"] as const)("opens wide %s charts at the newest data", async (type) => {
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(1_200);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(640);
+    const rows = Array.from({ length: 16 }, (_, index) => ({ label: `2026 W${index + 1}`, value: index + 1 }));
+
+    await renderSizedChart({ ...weeklyPayableWidget, type }, { query: weeklyPayableWidget.query!, rows });
+    const summary = document.getElementById("form-stat-chart-weekly-payable-summary")!;
+    const scroller = summary.parentElement as HTMLElement;
+
+    expect(scroller.scrollLeft).toBe(560);
   });
 
   it("caps a 366-point chart width inside the scroller", async () => {

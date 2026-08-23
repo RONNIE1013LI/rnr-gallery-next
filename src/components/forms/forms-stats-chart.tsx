@@ -1,5 +1,6 @@
 "use client";
 
+import { useLayoutEffect, useRef } from "react";
 import {
   Bar,
   BarChart,
@@ -141,7 +142,7 @@ function chartContent(widget: FormStatWidget, stat: FormStatistic, rows: readonl
     <XAxis dataKey="label" />
     <YAxis width={axisWidth} tickFormatter={(value) => formatStatisticAxisValue(widget, Number(value), stat)} />
     {tooltip}
-    <Bar dataKey="value" name="Value" fill="#173c31" radius={[3, 3, 0, 0]} />
+    <Bar dataKey="value" name="Value" fill="#173c31" radius={[3, 3, 0, 0]} barSize={15} />
   </BarChart>;
 }
 
@@ -150,8 +151,17 @@ export function FormsStatsChart({ widget, stat, instanceId = widget.id }: Readon
   const summaryId = `form-stat-chart-${instanceId}-summary`;
   const isPieFallback = widget.type === "pie" && isUnsafePieData(rows);
   const chartWidth = widget.type === "bar" || widget.type === "line" ? Math.min(3600, Math.max(520, rows.length * 56)) : 520;
+  const scrollerRef = useRef<HTMLDivElement>(null);
+
+  useLayoutEffect(() => {
+    if (widget.type !== "bar" && widget.type !== "line") return;
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    scroller.scrollLeft = Math.max(0, scroller.scrollWidth - scroller.clientWidth);
+  }, [chartWidth, rows.length, widget.type]);
+
   return (
-    <div className={styles.statChartScroller}>
+    <div className={styles.statChartScroller} ref={scrollerRef}>
       <p className={styles.srOnly} id={summaryId}>{rows.length} data points. An equivalent data table follows.</p>
       {isPieFallback ? <p className={styles.statChartFallback} role="status">Pie charts require positive values. Use a bar or line chart instead.</p> : (
         <div className={styles.statChart} style={{ minWidth: `${chartWidth}px` }}>
