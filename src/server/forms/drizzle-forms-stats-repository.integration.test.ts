@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { checkoutSessions, orders, productionJobItems, productionJobs, user } from "@/server/db/schema";
 import { selectMigrationTarget, verifySelectedTestDatabaseIsolation, type DatabaseIdentity } from "../../../scripts/migration-safety";
@@ -11,8 +11,6 @@ import { queryFormStatistic } from "./drizzle-forms-stats-repository";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required");
-const approvedDatabaseUrl = "postgresql://postgres@127.0.0.1:55448/rnr_forms_stats_test";
-if (databaseUrl !== approvedDatabaseUrl) throw new Error("The exact approved TEST_DATABASE_URL is required");
 const database = drizzle(databaseUrl);
 const suffix = randomUUID();
 const actorId = `stats-actor-${suffix}`;
@@ -72,19 +70,22 @@ async function identifyDatabase(url: string): Promise<DatabaseIdentity> {
   }
 }
 
-async function verifyFixtureDatabase() {
-  const target = selectMigrationTarget({ environment: "test", env: { TEST_DATABASE_URL: databaseUrl } });
+async function verifyFixtureDatabase(
+  env: Readonly<Record<string, string | undefined>>,
+  identify: (url: string) => Promise<DatabaseIdentity> = identifyDatabase,
+) {
+  const target = selectMigrationTarget({ environment: "test", env });
   const safeIdentity = await verifySelectedTestDatabaseIsolation({
     target,
-    env: { TEST_DATABASE_URL: databaseUrl },
-    identifyDatabase,
+    env,
+    identifyDatabase: identify,
   });
-  verifiedDatabase = { database: safeIdentity.database, serverPort: safeIdentity.serverPort };
+  return { database: safeIdentity.database, serverPort: safeIdentity.serverPort };
 }
 
 describe("forms stats repository", () => {
   beforeAll(async () => {
-    await verifyFixtureDatabase();
+    verifiedDatabase = await verifyFixtureDatabase(process.env);
     await database.insert(user).values([
       { id: actorId, name: "Stats Artist", email: `stats-${suffix}@example.test`, role: "form_staff" },
       { id: otherArtistId, name: "Other Stats Artist", email: `stats-other-${suffix}@example.test`, role: "form_staff" },
@@ -336,7 +337,79 @@ describe("forms stats repository", () => {
   });
 
   it("verifies the exact dedicated database identity before fixture writes", () => {
-    expect(verifiedDatabase).toEqual({ database: "rnr_forms_stats_test", serverPort: 5432 });
+    expect(verifiedDatabase?.database).toBe("rnr_forms_stats_test");
+    expect(verifiedDatabase?.serverPort).toBeGreaterThan(0);
+  });
+
+  it("rejects protected application targets before test fixture identity lookup", async () => {
+    const guardTestUrl = "postgresql://tester@127.0.0.1:55448/rnr_forms_stats_guard_test";
+    const identify = vi.fn(async () => {
+      throw new Error("identity lookup must not run for an equal protected URL");
+    });
+
+    await expect(verifyFixtureDatabase({
+      TEST_DATABASE_URL: guardTestUrl,
+      DATABASE_URL: guardTestUrl,
+    }, identify)).rejects.toThrow("The test database must differ from application and production databases");
+    expect(identify).not.toHaveBeenCalled();
+  });
+
+  it("compares protected target aliases through physical identity verification", async () => {
+    const guardTestUrl = "postgresql://tester@127.0.0.1:55448/rnr_forms_stats_guard_test";
+    const protectedAlias = "postgresql://application@localhost:55448/rnr_forms_stats_guard_test";
+    const identify = vi.fn(async (): Promise<DatabaseIdentity> => ({
+      database: "rnr_forms_stats_guard_test",
+      serverAddress: "127.0.0.1",
+      serverPort: 5432,
+      serverVersion: "PostgreSQL test",
+      inRecovery: false,
+    }));
+
+    await expect(verifyFixtureDatabase({
+      TEST_DATABASE_URL: guardTestUrl,
+      PRODUCTION_DATABASE_URL: protectedAlias,
+    }, identify)).rejects.toThrow("The test database must differ from every protected physical database");
+    expect(identify).toHaveBeenCalledWith(guardTestUrl);
+    expect(identify).toHaveBeenCalledWith(protectedAlias);
+  });
+
+  it("rejects non-loopback test URLs before fixture identity lookup", async () => {
+    const guardTestUrl = "postgresql://tester@127.0.0.1:55448/rnr_forms_stats_guard_test";
+    const identify = vi.fn(async (): Promise<DatabaseIdentity> => ({
+      database: "rnr_forms_stats_guard_test",
+      serverAddress: "127.0.0.1",
+      serverPort: 5432,
+      serverVersion: "PostgreSQL test",
+      inRecovery: false,
+    }));
+
+    await expect(verifyFixtureDatabase({
+      TEST_DATABASE_URL: guardTestUrl.replace("127.0.0.1", "203.0.113.10"),
+    }, identify)).rejects.toThrow("TEST_DATABASE_URL must use a loopback host");
+    expect(identify).not.toHaveBeenCalled();
+  });
+
+  it("rejects mismatched physical database names and ports before fixture writes", async () => {
+    const guardTestUrl = "postgresql://tester@127.0.0.1:55448/rnr_forms_stats_guard_test";
+    const nameMismatch = vi.fn(async (): Promise<DatabaseIdentity> => ({
+      database: "wrong_test_database",
+      serverAddress: "127.0.0.1",
+      serverPort: 5432,
+      serverVersion: "PostgreSQL test",
+      inRecovery: false,
+    }));
+    await expect(verifyFixtureDatabase({ TEST_DATABASE_URL: guardTestUrl }, nameMismatch))
+      .rejects.toThrow("Database identity mismatch; migration refused");
+
+    const portMismatch = vi.fn(async (): Promise<DatabaseIdentity> => ({
+      database: "rnr_forms_stats_guard_test",
+      serverAddress: "127.0.0.1",
+      serverPort: 0,
+      serverVersion: "PostgreSQL test",
+      inRecovery: false,
+    }));
+    await expect(verifyFixtureDatabase({ TEST_DATABASE_URL: guardTestUrl }, portMismatch))
+      .rejects.toThrow("Database identity mismatch; migration refused");
   });
 
   it("applies workbench scope to count, categories and finance totals", async () => {
