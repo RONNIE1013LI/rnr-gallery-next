@@ -103,11 +103,16 @@ export function MarketSelector({
   async function runSwitch(next: Market, candidateCart: Cart) {
     if (pendingRef.current) return;
     pendingRef.current = true;
+    const initiatingCustomerId = getActiveCustomerId();
     setPending(true);
     setError(null);
     try {
       const repository = createBrowserCartRepository(window.localStorage);
       const result = await attemptSwitch(next, candidateCart);
+      if (getActiveCustomerId() !== initiatingCustomerId) {
+        setDialogState(null);
+        return;
+      }
       if (!result.ok) {
         const payload = result.payload;
         if (
@@ -136,14 +141,16 @@ export function MarketSelector({
       clearIdentityCheckoutState(
         window.localStorage,
         window.sessionStorage,
-        getActiveCustomerId(),
+        initiatingCustomerId,
       );
       window.dispatchEvent(new CustomEvent("rnr:market-changed", { detail: { market: next } }));
       setDialogState(null);
       router.push(marketSwitchDestination(pathname, next));
     } catch {
       setDialogState(null);
-      setError("The market could not be changed.");
+      if (getActiveCustomerId() === initiatingCustomerId) {
+        setError("The market could not be changed.");
+      }
     } finally {
       pendingRef.current = false;
       setPending(false);

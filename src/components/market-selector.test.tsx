@@ -168,6 +168,59 @@ describe("MarketSelector", () => {
     expect(refresh).not.toHaveBeenCalled();
   });
 
+  it("discards an in-flight success when the active commerce identity changes", async () => {
+    setActiveCustomerId("user-a");
+    const originalUserCart = seedCart([item()], "user-a");
+    const originalGuestCart = seedCart([
+      item({ id: "guest-item", productTitle: "Guest Canvas" }),
+    ]);
+    localStorage.setItem("rnr:commerce:v1:user:user-a:checkout:pending", "user-a-pending");
+    localStorage.setItem("rnr:commerce:v1:guest:checkout:pending", "guest-pending");
+    sessionStorage.setItem("rnr:commerce:v1:user:user-a:checkout:payment-intent", "user-a-payment");
+    sessionStorage.setItem("rnr:commerce:v1:guest:checkout:payment-intent", "guest-payment");
+    const cartChanged = vi.fn();
+    const unsubscribe = subscribeToCart(cartChanged);
+    const marketChanged = vi.fn();
+    window.addEventListener("rnr:market-changed", marketChanged);
+    let resolveSwitch!: (response: Response) => void;
+    const pendingSwitch = new Promise<Response>((resolve) => { resolveSwitch = resolve; });
+    const fetchMock = vi.fn().mockReturnValue(pendingSwitch);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MarketSelector market="NZ" australiaEnabled pathname="/" />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Country and currency" }), {
+      target: { value: "AU" },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    setActiveCustomerId(null);
+    resolveSwitch(successResponse([item()]));
+
+    await waitFor(() => expect(screen.getByRole("combobox", {
+      name: "Country and currency",
+    })).not.toBeDisabled());
+    const cartChangedCalls = cartChanged.mock.calls.length;
+    const marketChangedCalls = marketChanged.mock.calls.length;
+    unsubscribe();
+    window.removeEventListener("rnr:market-changed", marketChanged);
+
+    expect(localStorage.getItem("rnr:commerce:v1:user:user-a:cart"))
+      .toBe(JSON.stringify(originalUserCart));
+    expect(localStorage.getItem("rnr:commerce:v1:guest:cart"))
+      .toBe(JSON.stringify(originalGuestCart));
+    expect(localStorage.getItem("rnr:commerce:v1:user:user-a:checkout:pending"))
+      .toBe("user-a-pending");
+    expect(localStorage.getItem("rnr:commerce:v1:guest:checkout:pending"))
+      .toBe("guest-pending");
+    expect(sessionStorage.getItem("rnr:commerce:v1:user:user-a:checkout:payment-intent"))
+      .toBe("user-a-payment");
+    expect(sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent"))
+      .toBe("guest-payment");
+    expect(cartChangedCalls).toBe(0);
+    expect(marketChangedCalls).toBe(0);
+    expect(push).not.toHaveBeenCalled();
+    expect(refresh).not.toHaveBeenCalled();
+  });
+
   it("opens an urgent review and confirms only affected items before one navigation", async () => {
     const items = [
       item(),

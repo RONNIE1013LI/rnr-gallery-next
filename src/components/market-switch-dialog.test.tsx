@@ -139,6 +139,14 @@ describe("MarketSwitchDialog", () => {
     expect(screen.getByRole("button", { name: "Try these dates" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
 
+    const dialog = screen.getByRole("dialog", { name: "Review urgent service" });
+    expect(dialog).toHaveAttribute("tabindex", "-1");
+    expect(dialog).toHaveFocus();
+    expect(fireEvent.keyDown(document, { key: "Tab" })).toBe(false);
+    expect(dialog).toHaveFocus();
+    expect(fireEvent.keyDown(document, { key: "Tab", shiftKey: true })).toBe(false);
+    expect(dialog).toHaveFocus();
+
     fireEvent.keyDown(document, { key: "Escape" });
     expect(onCancel).not.toHaveBeenCalled();
   });

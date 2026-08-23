@@ -52,6 +52,7 @@ export function MarketSwitchDialog({
   useEffect(() => {
     pendingRef.current = pending;
     onCancelRef.current = onCancel;
+    if (pending) dialogRef.current?.focus();
   }, [onCancel, pending]);
 
   useEffect(() => {
@@ -60,7 +61,8 @@ export function MarketSwitchDialog({
       ? document.activeElement
       : null;
     document.body.style.overflow = "hidden";
-    dialogRef.current?.querySelector<HTMLElement>(focusableSelector)?.focus();
+    const dialog = dialogRef.current;
+    (dialog?.querySelector<HTMLElement>(focusableSelector) ?? dialog)?.focus();
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -72,7 +74,11 @@ export function MarketSwitchDialog({
       const controls = Array.from(
         dialogRef.current?.querySelectorAll<HTMLElement>(focusableSelector) ?? [],
       );
-      if (controls.length === 0) return;
+      if (controls.length === 0) {
+        event.preventDefault();
+        dialogRef.current?.focus();
+        return;
+      }
       const first = controls[0];
       const last = controls[controls.length - 1];
       if (event.shiftKey && document.activeElement === first) {
@@ -101,6 +107,7 @@ export function MarketSwitchDialog({
         className={styles.dialog}
         role="dialog"
         aria-modal="true"
+        tabIndex={-1}
         aria-labelledby="market-switch-dialog-title"
         aria-describedby="market-switch-dialog-message"
       >
