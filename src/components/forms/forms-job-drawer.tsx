@@ -11,7 +11,7 @@ import type { ProductionFileSummary } from "@/server/production/production-proof
 import type { CustomerNotificationSummary } from "@/server/notifications/customer-notification-service";
 import styles from "./forms.module.css";
 import { ExistingManualProductionJobForm } from "./existing-manual-production-job-form";
-import { drawerSize } from "./forms-order-entry-drawer";
+import { usePersistentDrawerWidth } from "./forms-order-entry-drawer";
 import { useContainedDialog } from "./use-contained-dialog";
 
 type Detail = NonNullable<Awaited<ReturnType<typeof getProductionJobDetail>>>;
@@ -57,24 +57,11 @@ function FormsJobDrawerSession({
   const [revision, setRevision] = useState({ changesRequested: 0, freeRevisionsRemaining: 2, requiresAdditionalChargeReview: false });
   const [error, setError] = useState("");
   const [dirty, setDirty] = useState(false);
-  const serverSize = drawerSize(1_200);
-  const [limits, setLimits] = useState({ min: serverSize.min, max: serverSize.max });
-  const [width, setWidth] = useState(serverSize.initial);
+  const { limits, width, chooseWidth } = usePersistentDrawerWidth();
   const dialogRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const displayedReference = detail ? displayFormReference(detail.job.source, detail.job.jobNumber) : null;
-
-  useEffect(() => {
-    function fitToViewport() {
-      const next = drawerSize(window.innerWidth);
-      setLimits({ min: next.min, max: next.max });
-      setWidth((current) => Math.min(next.max, Math.max(next.min, current === serverSize.initial ? next.initial : current)));
-    }
-    fitToViewport();
-    window.addEventListener("resize", fitToViewport);
-    return () => window.removeEventListener("resize", fitToViewport);
-  }, [serverSize.initial]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -137,7 +124,7 @@ function FormsJobDrawerSession({
           max={limits.max}
           step={20}
           direction={-1}
-          onChange={setWidth}
+          onChange={chooseWidth}
         />
         <div className={styles.orderEntryDrawerPanel}>
         <header className={styles.drawerHeader}>

@@ -19,6 +19,47 @@ export function drawerSize(viewportWidth: number) {
   };
 }
 
+const drawerWidthStorageKey = "rnr:forms:order-drawer-width";
+
+export function usePersistentDrawerWidth() {
+  const serverSize = drawerSize(1_200);
+  const [limits, setLimits] = useState({ min: serverSize.min, max: serverSize.max });
+  const [width, setWidth] = useState(serverSize.initial);
+  const preferredWidth = useRef<number | null>(null);
+
+  useEffect(() => {
+    try {
+      const stored = Number(window.localStorage.getItem(drawerWidthStorageKey));
+      preferredWidth.current = Number.isFinite(stored) && stored > 0 ? stored : null;
+    } catch {
+      preferredWidth.current = null;
+    }
+
+    function fitToViewport() {
+      const next = drawerSize(window.innerWidth);
+      setLimits({ min: next.min, max: next.max });
+      const requested = preferredWidth.current ?? next.initial;
+      setWidth(Math.min(next.max, Math.max(next.min, requested)));
+    }
+    fitToViewport();
+    window.addEventListener("resize", fitToViewport);
+    return () => window.removeEventListener("resize", fitToViewport);
+  }, []);
+
+  function chooseWidth(next: number) {
+    if (limits.min === limits.max) return;
+    preferredWidth.current = next;
+    setWidth(next);
+    try {
+      window.localStorage.setItem(drawerWidthStorageKey, String(next));
+    } catch {
+      // A blocked storage surface should not disable drawer resizing.
+    }
+  }
+
+  return { limits, width, chooseWidth };
+}
+
 export function FormsOrderEntryDrawer({
   data,
   onClose,
@@ -26,24 +67,11 @@ export function FormsOrderEntryDrawer({
   data: FormsOrderEntryData;
   onClose: () => void;
 }>) {
-  const serverSize = drawerSize(1_200);
-  const [limits, setLimits] = useState({ min: serverSize.min, max: serverSize.max });
-  const [width, setWidth] = useState(serverSize.initial);
+  const { limits, width, chooseWidth } = usePersistentDrawerWidth();
   const [dirty, setDirty] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
-
-  useEffect(() => {
-    function fitToViewport() {
-      const next = drawerSize(window.innerWidth);
-      setLimits({ min: next.min, max: next.max });
-      setWidth((current) => Math.min(next.max, Math.max(next.min, current === serverSize.initial ? next.initial : current)));
-    }
-    fitToViewport();
-    window.addEventListener("resize", fitToViewport);
-    return () => window.removeEventListener("resize", fitToViewport);
-  }, [serverSize.initial]);
 
   function close() {
     if (dirty && !window.confirm("Discard this unsaved manual order?")) return;
@@ -79,7 +107,7 @@ export function FormsOrderEntryDrawer({
           max={limits.max}
           step={20}
           direction={-1}
-          onChange={setWidth}
+          onChange={chooseWidth}
         />
         <div className={styles.orderEntryDrawerPanel}>
           <header className={styles.drawerHeader}>

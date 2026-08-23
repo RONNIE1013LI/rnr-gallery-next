@@ -22,6 +22,7 @@ const detail = {
 };
 
 afterEach(() => {
+  window.localStorage.clear();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -54,16 +55,20 @@ describe("FormsJobDrawer", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 
-  it("uses the same left-edge drag resize contract as Order entry", async () => {
+  it("uses the same persistent left-edge resize contract as Order entry", async () => {
     Object.defineProperty(window, "innerWidth", { configurable: true, value: 1_200 });
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({ detail }), { status: 200, headers: { "Content-Type": "application/json" } })));
-    render(<FormsJobDrawer jobId="job-1" onClose={vi.fn()} assignees={[]} canManageFinance={false} />);
+    const first = render(<FormsJobDrawer jobId="job-1" onClose={vi.fn()} assignees={[]} canManageFinance={false} />);
 
     const dialog = await screen.findByRole("dialog", { name: "Order Web-07188" });
     const separator = screen.getByRole("separator", { name: "Resize order editor" });
     expect(separator).toHaveAttribute("aria-valuemax", "920");
     fireEvent.keyDown(separator, { key: "ArrowLeft" });
     expect(dialog).toHaveStyle({ "--entry-drawer-width": "884px" });
+
+    first.unmount();
+    render(<FormsJobDrawer jobId="job-2" onClose={vi.fn()} assignees={[]} canManageFinance={false} />);
+    expect(await screen.findByRole("separator", { name: "Resize order editor" })).toHaveAttribute("aria-valuenow", "884");
   });
 
   it("requires confirmation before closing after an editor value changes", async () => {

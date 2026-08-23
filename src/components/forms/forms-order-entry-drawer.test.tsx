@@ -32,6 +32,7 @@ function viewport(width: number) {
 
 afterEach(() => {
   viewport(originalInnerWidth);
+  window.localStorage.clear();
   vi.restoreAllMocks();
 });
 
@@ -43,7 +44,7 @@ describe("FormsOrderEntryDrawer", () => {
     expect(screen.queryByText("operator@example.test")).not.toBeInTheDocument();
   });
 
-  it("resizes from its left edge and resets when reopened", () => {
+  it("resizes from its left edge and restores the chosen width when reopened", () => {
     viewport(1_200);
     const first = render(<FormsOrderEntryDrawer data={data} onClose={vi.fn()} />);
     const dialog = screen.getByRole("dialog", { name: "Order entry" });
@@ -57,7 +58,7 @@ describe("FormsOrderEntryDrawer", () => {
 
     first.unmount();
     render(<FormsOrderEntryDrawer data={data} onClose={vi.fn()} />);
-    expect(screen.getByRole("separator", { name: "Resize order entry" })).toHaveAttribute("aria-valuenow", "864");
+    expect(screen.getByRole("separator", { name: "Resize order entry" })).toHaveAttribute("aria-valuenow", "884");
   });
 
   it("leaves the required Data list width at desktop and fills the 390px viewport", () => {
@@ -65,12 +66,19 @@ describe("FormsOrderEntryDrawer", () => {
     const desktop = render(<FormsOrderEntryDrawer data={data} onClose={vi.fn()} />);
     expect(screen.getByRole("separator", { name: "Resize order entry" })).toHaveAttribute("aria-valuemax", "720");
     expect(screen.getByRole("dialog", { name: "Order entry" })).toHaveStyle({ "--entry-drawer-width": "720px" });
+    fireEvent.keyDown(screen.getByRole("separator", { name: "Resize order entry" }), { key: "ArrowRight" });
+    expect(screen.getByRole("dialog", { name: "Order entry" })).toHaveStyle({ "--entry-drawer-width": "700px" });
 
     desktop.unmount();
     viewport(390);
-    render(<FormsOrderEntryDrawer data={data} onClose={vi.fn()} />);
+    const mobile = render(<FormsOrderEntryDrawer data={data} onClose={vi.fn()} />);
     expect(screen.getByRole("separator", { name: "Resize order entry" })).toHaveAttribute("aria-valuemax", "390");
     expect(screen.getByRole("dialog", { name: "Order entry" })).toHaveStyle({ "--entry-drawer-width": "390px" });
+
+    mobile.unmount();
+    viewport(1_200);
+    render(<FormsOrderEntryDrawer data={data} onClose={vi.fn()} />);
+    expect(screen.getByRole("separator", { name: "Resize order entry" })).toHaveAttribute("aria-valuenow", "700");
   });
 
   it("guards unsaved manual entry before closing", () => {

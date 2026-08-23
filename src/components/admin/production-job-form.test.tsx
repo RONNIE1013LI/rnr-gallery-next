@@ -60,6 +60,14 @@ describe("ProductionJobForm", () => {
     ],
   };
 
+  function manualGroup(name: string) {
+    return screen.getByRole("radiogroup", { name });
+  }
+
+  function chooseManualOption(groupName: string, optionName: string) {
+    fireEvent.click(within(manualGroup(groupName)).getByRole("radio", { name: optionName }));
+  }
+
   function fillRequiredManualOrder() {
     fireEvent.change(screen.getByLabelText("Customer name"), { target: { value: "Payment Customer" } });
     fireEvent.change(screen.getByLabelText("Phone"), { target: { value: "021 000 0000" } });
@@ -85,10 +93,10 @@ describe("ProductionJobForm", () => {
       onSaved={onSaved}
     />);
 
-    expect(screen.getByLabelText("Size")).toHaveValue("A2");
+    expect(within(manualGroup("Size")).getByRole("radio", { name: "A2" })).toBeChecked();
     expect(screen.getByLabelText("Cust.Name")).toHaveValue("Saved Customer");
     expect(screen.getByLabelText("Remark")).toHaveValue("Saved remark");
-    expect(screen.getByLabelText("File Sent")).toHaveValue("yes");
+    expect(within(manualGroup("File Sent")).getByRole("radio", { name: "YES" })).toBeChecked();
     expect(screen.getByText("Production Job Created")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save order" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Updated Customer" } });
@@ -129,8 +137,8 @@ describe("ProductionJobForm", () => {
       existingManualOrder={existingManualOrder}
     />);
 
-    expect(screen.getByLabelText("File Sent")).toBeDisabled();
-    expect(screen.getByLabelText("Delivered")).toBeDisabled();
+    expect(within(manualGroup("File Sent")).getByRole("radio", { name: "YES" })).toBeDisabled();
+    expect(within(manualGroup("Delivered")).getByRole("radio", { name: "HOLD" })).toBeDisabled();
     expect(screen.queryByRole("button", { name: "Save order" })).not.toBeInTheDocument();
     fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Updated Customer" } });
     fireEvent.blur(screen.getByLabelText("Cust.Name"));
@@ -431,7 +439,7 @@ describe("ProductionJobForm", () => {
     />);
     fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Payment Customer" } });
     fireEvent.change(screen.getByLabelText("PhoneNo."), { target: { value: "021 000 0000" } });
-    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
+    chooseManualOption("Size", "A2");
     fireEvent.change(screen.getByLabelText("AmtPayable"), { target: { value: "230.50" } });
     fireEvent.change(screen.getByLabelText("AmtPaid"), { target: { value: "230.50" } });
     fireEvent.change(screen.getByLabelText("PaymtProved"), { target: { files: [
@@ -615,28 +623,27 @@ describe("ProductionJobForm", () => {
     expect(screen.queryByLabelText("Payment status")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Artist fee (NZD)")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Artist paid")).not.toBeInTheDocument();
-    expect(screen.getByLabelText("Size")).toBeInTheDocument();
+    expect(manualGroup("Size")).toBeInTheDocument();
     expect(screen.getByLabelText("Size Other")).toBeInTheDocument();
     expect(screen.getByLabelText("PaymtProved")).toBeInTheDocument();
     expect(screen.getByLabelText("AmtPayable")).toBeInTheDocument();
     expect(screen.getByLabelText("AmtPaid")).toBeInTheDocument();
     expect(screen.getByLabelText("AmtOwe")).toBeInTheDocument();
-    expect(screen.getByLabelText("BankRecon")).toBeInTheDocument();
+    expect(manualGroup("BankRecon")).toBeInTheDocument();
     expect(screen.getByLabelText("Remark")).toBeInTheDocument();
     expect(screen.getByLabelText("DlvryAddr")).toBeInTheDocument();
     expect(screen.getByLabelText("Cust.Name")).toBeInTheDocument();
     expect(screen.getByLabelText("Material Cost")).toBeInTheDocument();
-    expect(screen.getByRole("combobox", { name: "Assign Artist" }).className).toContain("manualContentControl");
+    expect(manualGroup("Assign Artist")).toBeInTheDocument();
     for (const label of ["File Sent", "Download", "Printed", "Completed", "Cust.Notified"]) {
-      const control = screen.getByRole("combobox", { name: label });
-      expect(within(control).getAllByRole("option").map((option) => option.textContent)).toEqual(["NO", "YES"]);
-      expect(control).toHaveDisplayValue("NO");
-      expect(control.className).toContain("manualContentControl");
+      const control = manualGroup(label);
+      expect(within(control).getAllByRole("radio").map((option) => option.parentElement?.textContent)).toEqual(["YES", "NO"]);
+      expect(within(control).getByRole("radio", { name: "NO" })).toBeChecked();
     }
-    const delivered = screen.getByRole("combobox", { name: "Delivered" });
-    expect(within(delivered).getAllByRole("option").map((option) => option.textContent)).toEqual(["NO", "YES", "HOLD"]);
-    expect(delivered).toHaveDisplayValue("NO");
-    expect(delivered.className).toContain("manualContentControl");
+    const delivered = manualGroup("Delivered");
+    expect(within(delivered).getAllByRole("radio").map((option) => option.parentElement?.textContent)).toEqual(["YES", "NO", "HOLD"]);
+    expect(within(delivered).getByRole("radio", { name: "NO" })).toBeChecked();
+    expect(screen.queryAllByRole("combobox")).toHaveLength(0);
     expect(screen.getByText("Change history will appear after this manual order is submitted.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Submit order" })).toBeInTheDocument();
   });
@@ -662,7 +669,7 @@ describe("ProductionJobForm", () => {
     expect(screen.getByText(/Rosemary/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Save order" })).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByLabelText("Delivered"), { target: { value: "hold" } });
+    chooseManualOption("Delivered", "HOLD");
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
     expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toMatchObject({
       manualStatus: "on_hold",
@@ -712,9 +719,9 @@ describe("ProductionJobForm", () => {
     />);
     fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Status Customer" } });
     fireEvent.change(screen.getByLabelText("PhoneNo."), { target: { value: "021 000 0000" } });
-    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
-    fireEvent.change(screen.getByLabelText("File Sent"), { target: { value: "yes" } });
-    fireEvent.change(screen.getByLabelText("Delivered"), { target: { value: "hold" } });
+    chooseManualOption("Size", "A2");
+    chooseManualOption("File Sent", "YES");
+    chooseManualOption("Delivered", "HOLD");
     fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
@@ -743,9 +750,9 @@ describe("ProductionJobForm", () => {
       manualEntryLayout
     />);
     fireEvent.change(screen.getByLabelText("Cust.Name"), { target: { value: "Ana Customer" } });
-    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "ana@example.test" } });
+    fireEvent.change(screen.getByRole("textbox", { name: "Email" }), { target: { value: "ana@example.test" } });
     fireEvent.change(screen.getByLabelText("DlvryDate"), { target: { value: "2026-08-28" } });
-    fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
+    chooseManualOption("Size", "A2");
     fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());

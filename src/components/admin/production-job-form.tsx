@@ -117,6 +117,80 @@ type PendingPaymentProof = Readonly<{
   previewUrl: string | null;
 }>;
 
+type ManualChoice = Readonly<{ value: string; label: string }>;
+
+const manualBankChoices: readonly ManualChoice[] = [
+  "Not checked", "Arrive", "Afterpay", "Stripe", "Wise", "waitting..",
+  "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other",
+].map((value) => ({ value, label: value }));
+
+const manualDeliveryChoices: readonly ManualChoice[] = [
+  { value: "pickup", label: "Pick up" },
+  { value: "delivery", label: "Delivery" },
+  { value: "post", label: "Post" },
+  { value: "email", label: "Email" },
+  { value: "courier", label: "Courier" },
+  { value: "australia_shipping", label: "Australia Shipping" },
+  { value: "other", label: "Other" },
+];
+
+const manualCustomerSourceChoices: readonly ManualChoice[] = [
+  { value: "phone", label: "Phone" },
+  { value: "messenger", label: "Messenger" },
+  { value: "email", label: "Email" },
+  { value: "whatsapp", label: "WhatsApp" },
+  { value: "instagram", label: "Instagram" },
+  { value: "tiktok", label: "TikTok" },
+  { value: "market", label: "Market" },
+  { value: "walk_in", label: "Walk in" },
+  { value: "other", label: "Other" },
+  { value: "rnr", label: "R&R" },
+  { value: "wechat", label: "WeChat" },
+];
+
+const manualYesNoChoices: readonly ManualChoice[] = [
+  { value: "yes", label: "YES" },
+  { value: "no", label: "NO" },
+];
+
+function ManualChoiceRow({
+  label,
+  name,
+  defaultValue,
+  choices,
+  disabled = false,
+  required = false,
+}: Readonly<{
+  label: string;
+  name: string;
+  defaultValue: string;
+  choices: readonly ManualChoice[];
+  disabled?: boolean;
+  required?: boolean;
+}>) {
+  return <div className={styles.manualChoiceRow}>
+    <span>{label}</span>
+    <div className={styles.manualChoiceOptions} role="radiogroup" aria-label={label}>
+      {choices.map((choice) => <label
+        className={styles.manualChoiceOption}
+        data-field={name}
+        data-value={choice.value}
+        key={choice.value}
+      >
+        <input
+          type="radio"
+          name={name}
+          value={choice.value}
+          defaultChecked={choice.value === defaultValue}
+          disabled={disabled}
+          required={required}
+        />
+        <span>{choice.label}</span>
+      </label>)}
+    </div>
+  </div>;
+}
+
 const fallbackInvoiceBusiness: InvoiceBusiness = Object.freeze({
   name: "R&R Gallery",
   address: "11 Para Close\nFairview Heights\nAuckland 0632\nNew Zealand",
@@ -311,10 +385,10 @@ export function ProductionJobForm({
     const textValue = event.clipboardData.getData("text/plain");
     if (!textValue.includes("\n")) return;
     event.preventDefault();
-    const parsed = parseCustomerBlock(
-      textValue,
-      deliveryMethodRef.current?.value ?? "post",
-    );
+    const deliveryMethod = formRef.current
+      ? String(new FormData(formRef.current).get("deliveryMethod") ?? "post")
+      : deliveryMethodRef.current?.value ?? "post";
+    const parsed = parseCustomerBlock(textValue, deliveryMethod);
     if (deliveryAddressRef.current) deliveryAddressRef.current.value = textValue;
     const filled: string[] = [];
     if (parsed.customerName && customerNameRef.current && !customerNameRef.current.value.trim()) {
@@ -714,12 +788,12 @@ export function ProductionJobForm({
       }}
       onBlurCapture={(event) => {
         if (!existingManualOrder || event.target instanceof HTMLSelectElement ||
-          (event.target instanceof HTMLInputElement && ["checkbox", "file"].includes(event.target.type))) return;
+          (event.target instanceof HTMLInputElement && ["checkbox", "file", "radio"].includes(event.target.type))) return;
         if (focusedValues.current.get(event.target) !== fieldValue(event.target)) requestAutoSave();
       }}
       onChangeCapture={(event) => {
         if (event.target instanceof HTMLSelectElement ||
-          (event.target instanceof HTMLInputElement && ["checkbox", "file"].includes(event.target.type))) requestAutoSave();
+          (event.target instanceof HTMLInputElement && ["checkbox", "file", "radio"].includes(event.target.type))) requestAutoSave();
       }}
     >
       <div className={styles.formUtilityBar}>
@@ -747,10 +821,14 @@ export function ProductionJobForm({
         <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Product / Size</h2></div></div>
           <div className={styles.manualFieldRows}>
-            <label><span>Size</span><select name="item-0-size" defaultValue={existingManualOrder?.size ?? ""} required disabled={formDisabled}>
-              <option value="" disabled>Please choose</option>
-              {FORM_OPTION_SETS.size.map((size) => <option key={size} value={size}>{size}</option>)}
-            </select></label>
+            <ManualChoiceRow
+              label="Size"
+              name="item-0-size"
+              defaultValue={existingManualOrder?.size ?? ""}
+              choices={FORM_OPTION_SETS.size.map((size) => ({ value: size, label: size }))}
+              required
+              disabled={formDisabled}
+            />
             <label><span>Size Other</span><input name="item-0-size-other" defaultValue={existingManualOrder?.sizeOther ?? ""} maxLength={190} disabled={formDisabled} /></label>
           </div>
         </section>
@@ -782,7 +860,7 @@ export function ProductionJobForm({
             <label><span>AmtPayable</span><MoneyCentsInput ariaLabel="AmtPayable" name="amountPayable" cents={amountPayableCents} onCentsChange={setAmountPayableCents} required disabled={formDisabled} /></label>
             <label><span>AmtPaid</span><MoneyCentsInput ariaLabel="AmtPaid" name="amountPaid" cents={amountPaidCents} onCentsChange={setAmountPaidCents} required disabled={formDisabled} /></label>
             <label><span>AmtOwe</span><input value={(Math.max(0, amountPayableCents - amountPaidCents) / 100).toFixed(2)} readOnly aria-readonly="true" /></label>
-            <label><span>BankRecon</span><select className={styles.manualContentControl} name="paymentReconciliationStatus" defaultValue={existingManualOrder?.paymentReconciliationStatus ?? "Not checked"} disabled={formDisabled}>{["Not checked", "Arrive", "Afterpay", "Stripe", "Wise", "waitting..", "Checked1", "Checked2", "Checked3", "Checked4", "Checked5", "Checked6", "Other"].map((status) => <option value={status} key={status}>{status}</option>)}</select></label>
+            <ManualChoiceRow label="BankRecon" name="paymentReconciliationStatus" defaultValue={existingManualOrder?.paymentReconciliationStatus ?? "Not checked"} choices={manualBankChoices} disabled={formDisabled} />
           </div>
         </section> : null}
 
@@ -796,10 +874,8 @@ export function ProductionJobForm({
         <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Delivery</h2></div></div>
           <div className={styles.manualFieldRows}>
-            <label className={styles.manualToggleRow}><span>Urgent?</span><span><input name="urgent" type="checkbox" defaultChecked={existingManualOrder?.urgent ?? false} disabled={formDisabled} /> Urgent</span></label>
-            <label><span>DlvryMethod</span><select className={styles.manualContentControl} ref={deliveryMethodRef} name="deliveryMethod" defaultValue={existingManualOrder?.deliveryMethod ?? "post"} disabled={formDisabled}>
-              <option value="post">Post</option><option value="pickup">Pick up</option><option value="delivery">Delivery</option><option value="courier">Courier</option><option value="australia_shipping">Australia Shipping</option><option value="email">Email</option><option value="other">Other</option>
-            </select></label>
+            <ManualChoiceRow label="Urgent?" name="urgent" defaultValue={existingManualOrder?.urgent ? "on" : "no"} choices={[{ value: "no", label: "Normal" }, { value: "on", label: "Urgent" }]} disabled={formDisabled} />
+            <ManualChoiceRow label="DlvryMethod" name="deliveryMethod" defaultValue={existingManualOrder?.deliveryMethod ?? "post"} choices={manualDeliveryChoices} disabled={formDisabled} />
             <label><span>DlvryDate</span><input className={styles.manualContentControl} name="neededDate" type="date" defaultValue={existingManualOrder?.neededDate ?? defaultNeededDate()} required disabled={formDisabled} /></label>
             <label><span>DlvryAddr</span><div><textarea ref={deliveryAddressRef} name="deliveryAddress" defaultValue={existingManualOrder?.deliveryAddress ?? ""} rows={5} maxLength={5000} onPaste={pasteCustomerDetails} disabled={formDisabled} />{pasteFeedback ? <p className={styles.fieldHint} role="status">{pasteFeedback}</p> : null}</div></label>
           </div>
@@ -808,9 +884,7 @@ export function ProductionJobForm({
         <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Customer info</h2></div></div>
           <div className={styles.manualFieldRows}>
-            <label><span>CustSource</span><select className={styles.manualContentControl} name="customerSource" defaultValue={existingManualOrder?.customerSource ?? "messenger"} disabled={formDisabled}>
-              <option value="phone">Phone</option><option value="messenger">Messenger</option><option value="email">Email</option><option value="whatsapp">WhatsApp</option><option value="instagram">Instagram</option><option value="tiktok">TikTok</option><option value="market">Market</option><option value="walk_in">Walk in</option><option value="other">Other</option><option value="rnr">R&amp;R</option><option value="wechat">WeChat</option>
-            </select></label>
+            <ManualChoiceRow label="CustSource" name="customerSource" defaultValue={existingManualOrder?.customerSource ?? "messenger"} choices={manualCustomerSourceChoices} disabled={formDisabled} />
             <label><span>Cust.Name</span><input ref={customerNameRef} name="customerName" defaultValue={existingManualOrder?.customerName ?? ""} required maxLength={190} disabled={formDisabled} /></label>
             <label><span>PhoneNo.</span><input ref={customerPhoneRef} name="customerPhone" defaultValue={existingManualOrder?.customerPhone ?? ""} type="tel" maxLength={80} disabled={formDisabled} /></label>
             <label><span>Email</span><input ref={customerEmailRef} name="customerEmail" defaultValue={existingManualOrder?.customerEmail ?? ""} type="email" maxLength={320} disabled={formDisabled} /></label>
@@ -821,9 +895,9 @@ export function ProductionJobForm({
         <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Internal Production Status</h2></div></div>
           <div className={styles.manualFieldRows}>
-            <label><span>Assign Artist</span><select className={styles.manualContentControl} name="assignedUserId" defaultValue={existingManualOrder?.assignedUserId ?? ""} disabled={formDisabled}><option value="">NO</option>{assignees.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}</select></label>
-            {([ ["fileSent", "File Sent"], ["downloaded", "Download"], ["printed", "Printed"], ["completed", "Completed"], ["customerNotified", "Cust.Notified"] ] as const).map(([name, text]) => <label key={name}><span>{text}</span><select className={styles.manualContentControl} name={name} defaultValue={existingManualOrder?.milestones[name] ? "yes" : "no"} disabled={formDisabled || !canUpdateProductionStatus}><option value="no">NO</option><option value="yes">YES</option></select></label>)}
-            <label><span>Delivered</span><select className={styles.manualContentControl} name="delivered" defaultValue={existingManualOrder?.manualStatus === "on_hold" ? "hold" : existingManualOrder?.milestones.delivered ? "yes" : "no"} disabled={formDisabled || !canUpdateDeliveryStatus}><option value="no">NO</option><option value="yes">YES</option><option value="hold">HOLD</option></select></label>
+            <ManualChoiceRow label="Assign Artist" name="assignedUserId" defaultValue={existingManualOrder?.assignedUserId ?? ""} choices={[{ value: "", label: "NO" }, ...assignees.map((person) => ({ value: person.id, label: person.name }))]} disabled={formDisabled} />
+            {([ ["fileSent", "File Sent"], ["downloaded", "Download"], ["printed", "Printed"], ["completed", "Completed"], ["customerNotified", "Cust.Notified"] ] as const).map(([name, text]) => <ManualChoiceRow key={name} label={text} name={name} defaultValue={existingManualOrder?.milestones[name] ? "yes" : "no"} choices={manualYesNoChoices} disabled={formDisabled || !canUpdateProductionStatus} />)}
+            <ManualChoiceRow label="Delivered" name="delivered" defaultValue={existingManualOrder?.manualStatus === "on_hold" ? "hold" : existingManualOrder?.milestones.delivered ? "yes" : "no"} choices={[...manualYesNoChoices, { value: "hold", label: "HOLD" }]} disabled={formDisabled || !canUpdateDeliveryStatus} />
           </div>
         </section>
 
