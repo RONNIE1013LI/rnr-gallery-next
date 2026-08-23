@@ -31,7 +31,7 @@ import {
   type RepricedCheckoutItem,
 } from "./types";
 
-type RepriceCartOptions = Readonly<{
+export type RepriceCartOptions = Readonly<{
   now?: Date;
   galleryDesigns?: ReadonlyMap<string, GalleryDesignSnapshot>;
   registry?: ProductRegistryDocument;
