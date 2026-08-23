@@ -199,4 +199,33 @@ describe("FormsStatsDashboard", () => {
     expect(screen.getByRole("button", { name: "Create custom stat" })).toBeInTheDocument();
     expect(screen.getByText("No custom reports have been saved yet.")).toBeInTheDocument();
   });
+
+  it("keeps mixed and all-invalid stored reports visible with accessible warnings", async () => {
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(JSON.stringify({ stat: { query: orderCountQuery, value: 4 } }), { status: 200, headers: { "Content-Type": "application/json" } }))));
+    render(<FormsStatsDashboard layouts={[
+      {
+        id: "mixed-report",
+        name: "Mixed report",
+        widgets: [{ id: "orders", type: "number", title: "Orders", query: orderCountQuery }],
+        skippedWidgetCount: 1,
+        warning: "1 stale widget was skipped.",
+      },
+      {
+        id: "all-invalid-report",
+        name: "Legacy report",
+        widgets: [],
+        skippedWidgetCount: 2,
+        warning: "2 stale widgets were skipped.",
+      },
+    ]} canManage canViewFinance onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={vi.fn()} />);
+
+    expect(screen.getByRole("heading", { name: "Mixed report" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Legacy report" })).toBeInTheDocument();
+    expect(screen.getByText("Empty report")).toBeInTheDocument();
+    expect(screen.queryByText("No custom reports have been saved yet.")).not.toBeInTheDocument();
+    expect(await screen.findByText("4")).toBeInTheDocument();
+    expect(screen.getAllByRole("status")).toHaveLength(2);
+    expect(screen.getByText("1 stale widget was skipped.")).toBeInTheDocument();
+    expect(screen.getByText("2 stale widgets were skipped.")).toBeInTheDocument();
+  });
 });

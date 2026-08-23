@@ -54,6 +54,10 @@ export type FormStatsLayout = Readonly<{
   name: string;
   widgets: readonly FormStatWidget[];
 }>;
+export type StoredFormStatsLayout = FormStatsLayout & Readonly<{
+  skippedWidgetCount: number;
+  warning?: string;
+}>;
 
 const financeMetrics = new Set<FormStatMetric>([
   "amount_payable_total", "amount_paid_total", "amount_owing_total",
@@ -136,15 +140,53 @@ export function parseFormStatsLayout(
   value: unknown,
   permissions: Readonly<{ canViewFinance: boolean }> = { canViewFinance: true },
 ): FormStatsLayout {
+  const parsed = parseFormStatsLayoutEnvelope(value);
+  const widgets = parsed.widgets.map((widget) => parseFormStatsWidget(widget, permissions));
+  if (new Set(widgets.map((widget) => widget.id)).size !== widgets.length) throw new FormStatsValidationError();
+  return Object.freeze({ name: parsed.name, widgets: Object.freeze(widgets) });
+}
+
+export function parseStoredFormStatsLayout(
+  value: unknown,
+  permissions: Readonly<{ canViewFinance: boolean }> = { canViewFinance: true },
+): StoredFormStatsLayout {
+  const parsed = parseFormStatsLayoutEnvelope(value);
+  const widgets: FormStatWidget[] = [];
+  const widgetIds = new Set<string>();
+  let skippedWidgetCount = 0;
+  for (const value of parsed.widgets) {
+    try {
+      const widget = parseFormStatsWidget(value, permissions);
+      if (widgetIds.has(widget.id)) {
+        skippedWidgetCount += 1;
+        continue;
+      }
+      widgetIds.add(widget.id);
+      widgets.push(widget);
+    } catch (error) {
+      if (!(error instanceof FormStatsValidationError)) throw error;
+      skippedWidgetCount += 1;
+    }
+  }
+  const warning = skippedWidgetCount === 0
+    ? undefined
+    : `${skippedWidgetCount} stale ${skippedWidgetCount === 1 ? "widget was" : "widgets were"} skipped.`;
+  return Object.freeze({
+    name: parsed.name,
+    widgets: Object.freeze(widgets),
+    skippedWidgetCount,
+    ...(warning ? { warning } : {}),
+  });
+}
+
+function parseFormStatsLayoutEnvelope(value: unknown) {
   const serialized = JSON.stringify(value);
   if (serialized === undefined || new TextEncoder().encode(serialized).byteLength > 50_000) {
     throw new FormStatsValidationError();
   }
   const parsed = layoutSchema.safeParse(value);
   if (!parsed.success) throw new FormStatsValidationError();
-  const widgets = parsed.data.widgets.map((widget) => parseFormStatsWidget(widget, permissions));
-  if (new Set(widgets.map((widget) => widget.id)).size !== widgets.length) throw new FormStatsValidationError();
-  return Object.freeze({ name: parsed.data.name, widgets: Object.freeze(widgets) });
+  return parsed.data;
 }
 
 export function isFinanceStatMetric(metric: FormStatMetric) {

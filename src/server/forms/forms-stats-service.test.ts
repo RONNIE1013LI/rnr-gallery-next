@@ -5,6 +5,7 @@ import {
   parseFormStatRequest,
   parseFormStatsLayout,
   parseFormStatsWidget,
+  parseStoredFormStatsLayout,
 } from "./forms-stats-service";
 
 describe("forms stats validation", () => {
@@ -117,5 +118,81 @@ describe("forms stats validation", () => {
       metric: "job_count",
       title: "Orders",
     })).toEqual(expect.objectContaining({ metric: "job_count" }));
+  });
+
+  it("retains valid stored widgets and reports the exact invalid-widget count", () => {
+    expect(parseStoredFormStatsLayout({
+      name: "Daily",
+      widgets: [
+        { id: "valid", type: "number", metric: "job_count", title: "Orders" },
+        { id: "invalid", type: "sql", title: "Unsafe", query: "select *" },
+      ],
+    })).toEqual({
+      name: "Daily",
+      widgets: [{ id: "valid", type: "number", metric: "job_count", title: "Orders" }],
+      skippedWidgetCount: 1,
+      warning: "1 stale widget was skipped.",
+    });
+  });
+
+  it("retains an all-invalid stored report with an empty widget list and warning", () => {
+    expect(parseStoredFormStatsLayout({
+      name: "Legacy report",
+      widgets: [{ id: "invalid", type: "sql", title: "Unsafe" }],
+    })).toEqual({
+      name: "Legacy report",
+      widgets: [],
+      skippedWidgetCount: 1,
+      warning: "1 stale widget was skipped.",
+    });
+  });
+
+  it("keeps only the first valid stored widget for a duplicate ID", () => {
+    expect(parseStoredFormStatsLayout({
+      name: "Duplicate IDs",
+      widgets: [
+        { id: "same", type: "number", metric: "job_count", title: "Orders" },
+        { id: "same", type: "text", title: "Notes", text: "Duplicate" },
+      ],
+    })).toEqual({
+      name: "Duplicate IDs",
+      widgets: [{ id: "same", type: "number", metric: "job_count", title: "Orders" }],
+      skippedWidgetCount: 1,
+      warning: "1 stale widget was skipped.",
+    });
+  });
+
+  it("skips stored finance widgets without finance permission", () => {
+    expect(parseStoredFormStatsLayout({
+      name: "Finance",
+      widgets: [
+        { id: "orders", type: "number", metric: "job_count", title: "Orders" },
+        { id: "paid", type: "number", metric: "amount_paid_total", title: "Paid" },
+      ],
+    }, { canViewFinance: false })).toEqual({
+      name: "Finance",
+      widgets: [{ id: "orders", type: "number", metric: "job_count", title: "Orders" }],
+      skippedWidgetCount: 1,
+      warning: "1 stale widget was skipped.",
+    });
+  });
+
+  it("keeps stored-layout envelope bounds and strict save validation", () => {
+    expect(() => parseStoredFormStatsLayout({ name: " ", widgets: [] })).toThrow(FormStatsValidationError);
+    expect(() => parseStoredFormStatsLayout({
+      name: "Too many",
+      widgets: Array.from({ length: 25 }, (_, index) => ({ id: `w${index}`, type: "number", metric: "job_count", title: "Orders" })),
+    })).toThrow(FormStatsValidationError);
+    expect(() => parseStoredFormStatsLayout({
+      name: "Unicode layout",
+      widgets: Array.from({ length: 24 }, (_, index) => ({ id: `w${index}`, type: "text", title: "Notes", text: "€".repeat(1_000) })),
+    })).toThrow(FormStatsValidationError);
+    expect(() => parseFormStatsLayout({
+      name: "Strict save",
+      widgets: [
+        { id: "valid", type: "number", metric: "job_count", title: "Orders" },
+        { id: "invalid", type: "sql", title: "Unsafe" },
+      ],
+    })).toThrow(FormStatsValidationError);
   });
 });

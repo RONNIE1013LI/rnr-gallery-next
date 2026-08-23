@@ -3,7 +3,7 @@ import styles from "@/components/forms/forms.module.css";
 import { getDatabase } from "@/server/db/client";
 import { listFormStatsLayouts } from "@/server/forms/drizzle-forms-stats-layout-repository";
 import { hasFormPermission } from "@/server/forms/forms-permissions";
-import { parseFormStatsLayout } from "@/server/forms/forms-stats-service";
+import { parseStoredFormStatsLayout } from "@/server/forms/forms-stats-service";
 import { encodeFormFilterCondition, parseFormWorkbenchQuery } from "@/server/forms/forms-workbench-service";
 import { requireFormsPage } from "@/server/forms/require-forms-page";
 
@@ -28,7 +28,7 @@ export default async function FormsStatsPage({ searchParams }: Props) {
   const records = await listFormStatsLayouts(getDatabase(), access.user.id);
   const layouts = records.flatMap((record) => {
     try {
-      const parsed = parseFormStatsLayout({ name: record.name, widgets: record.widgets }, { canViewFinance });
+      const parsed = parseStoredFormStatsLayout({ name: record.name, widgets: record.widgets }, { canViewFinance });
       return [{ id: record.id, ...parsed }];
     } catch {
       return [];

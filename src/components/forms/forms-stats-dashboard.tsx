@@ -11,6 +11,8 @@ export type FormsStatsDashboardLayout = Readonly<{
   id: string;
   name: string;
   widgets: readonly FormStatWidget[];
+  skippedWidgetCount?: number;
+  warning?: string;
 }>;
 
 type StatisticRequest = Readonly<{ key: string; url: string }>;
@@ -152,6 +154,7 @@ export function FormsStatsDashboard({
               <button type="button" aria-label={`Delete ${layout.name}`} disabled={deletingName !== null} onClick={() => void deleteLayout(layout)}>Delete</button>
             </div> : null}
           </header>
+          {layout.warning ? <p className={styles.statsReportWarning} role="status" aria-label={`${layout.name} warning`}>{layout.warning}</p> : null}
           <div className={styles.statsReportWidgets}>
             {layout.widgets.map((widget) => {
               const request = buildFormsStatsStatisticRequest(widget, queryContext);
