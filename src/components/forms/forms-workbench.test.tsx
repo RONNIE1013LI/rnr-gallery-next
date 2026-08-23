@@ -1,5 +1,5 @@
-import { fireEvent, render, screen } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseFormWorkbenchQuery } from "@/server/forms/forms-workbench-service";
 import { formOrderRow } from "./forms-test-data";
@@ -19,6 +19,8 @@ describe("FormsWorkbench", () => {
     push.mockReset();
     replace.mockReset();
   });
+
+  afterEach(() => vi.unstubAllGlobals());
 
   it("renders source-style list controls, table, mobile cards and footer", () => {
     render(<FormsWorkbench
@@ -65,6 +67,33 @@ describe("FormsWorkbench", () => {
     expect(screen.getByRole("button", { name: "Last 6 months" })).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByRole("button", { name: "Waiting payment" })).toBeInTheDocument();
     expect(screen.getByLabelText("Saved view name")).toBeInTheDocument();
+  });
+
+  it("saves the current filter draft without requiring a search first", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: "created" }), { status: 201 }));
+    vi.stubGlobal("fetch", request);
+    render(<FormsWorkbench
+      result={{ items: [formOrderRow], total: 1, page: 1, pageSize: 20, pageCount: 1 }}
+      query={parseFormWorkbenchQuery({})}
+      canExport
+      canViewFinance
+      canManageViews
+      filterPeople={[{ id: "staff-1", name: "Rosemary" }]}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders" }));
+    fireEvent.change(screen.getByLabelText("Updated date from"), { target: { value: "2026-08-01" } });
+    fireEvent.change(screen.getByLabelText("Updated date to"), { target: { value: "2026-08-23" } });
+    fireEvent.change(screen.getByLabelText("Artist"), { target: { value: "staff-1" } });
+    fireEvent.change(screen.getByLabelText("Saved view name"), { target: { value: "August artist" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save current view" }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    const payload = JSON.parse(String(request.mock.calls[0]?.[1]?.body)) as { name: string; queryString: string };
+    expect(payload).toEqual({
+      name: "August artist",
+      queryString: "filter=updatedAt%7Ebetween%7E2026-08-01%252C2026-08-23&filter=assignedUserId%7Eequals%7Estaff-1",
+    });
   });
 
   it("provides a clear empty state", () => {

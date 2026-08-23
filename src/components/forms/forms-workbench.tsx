@@ -92,7 +92,6 @@ export function FormsWorkbench({
   const router = useRouter();
   const [showColumnStats, setShowColumnStats] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const savedViewQuery = queryString({ ...query, query: "", pageSize: 20 });
   const visibleStats = {
     urgent: result.items.filter((row) => row.urgent).length,
     completed: result.items.filter((row) => row.milestones.completed).length,
@@ -146,12 +145,12 @@ export function FormsWorkbench({
             const next = queryString({ ...query, preset });
             router.push(`/order-system${next ? `?${next}` : ""}`);
           }}
-          savedSearches={canManageViews ? <FormsSavedViews
+          renderSavedSearches={canManageViews ? (group) => <FormsSavedViews
             views={savedViews}
-            currentQuery={savedViewQuery}
+            currentQuery={group ? queryString({ ...query, query: "", pageSize: 20, match: group.match, conditions: group.conditions }) : ""}
             onOpen={(savedQuery) => router.push(`/order-system?${savedQuery}`)}
             onChanged={() => router.refresh()}
-          /> : null}
+          /> : undefined}
           onApply={applyFilters}
         />
         <span className={styles.toolbarSpacer} />

@@ -519,3 +519,16 @@ final result: passed
 - The combined comparison confirms that the former empty area now contains one restrained support message and one coherent CTA without creating a competing visual hierarchy.
 
 final result: passed
+
+## Funnel filter visual QA — 2026-08-23
+
+Result: passed
+
+- Reference: `Snipaste_2026-08-23_11-30-36.jpg` (1111 × 364), supplied with the request.
+- Implementation: actual `FormsFilterBuilder` rendered at desktop width with the filter panel open (1080 × 460), compared side by side with the reference.
+- Responsive check: 390 × 844; the panel fills the viewport and remains scrollable.
+- Intermediate-width and overflow check: at 900 × 700 the panel stayed inside the viewport (`x=16`, width `853`) and a 951px-tall 18-condition draft scrolled to the visible Search/Reset controls.
+- Verified states: date range, artist, boolean field condition, add condition, saved-search name, enabled Search, enabled Save search, and Reset.
+- Browser console: no new warning or error was produced after the isolated preview environment was configured; the tab retained one earlier `BETTER_AUTH_URL is required` error from the failed first load.
+
+final result: passed

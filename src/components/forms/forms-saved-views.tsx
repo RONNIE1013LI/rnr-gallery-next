@@ -75,11 +75,11 @@ export function FormsSavedViews({
           aria-label="Saved view name"
           value={name}
           maxLength={80}
-          placeholder="View name"
+          placeholder="Saved filter name"
           onChange={(event) => setName(event.target.value)}
         />
       </label>
-      <button type="button" disabled={pending || !name.trim() || !currentQuery} onClick={() => void save()}>Save current view</button>
+      <button type="button" aria-label="Save current view" disabled={pending || !name.trim() || !currentQuery} onClick={() => void save()}>Save search</button>
       <span className={styles.savedViewMessage} role="status">{message}</span>
     </div>
   );

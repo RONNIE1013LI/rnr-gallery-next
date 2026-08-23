@@ -4,6 +4,117 @@ import { describe, expect, it, vi } from "vitest";
 import { FormsFilterBuilder } from "./forms-filter-builder";
 
 describe("forms filter builder", () => {
+  it("shows common updated-date and artist controls while keeping advanced conditions separate", () => {
+    const apply = vi.fn();
+    render(<FormsFilterBuilder
+      conditions={[
+        { field: "updatedAt", operator: "between", value: ["2026-08-01", "2026-08-23"] },
+        { field: "assignedUserId", operator: "equals", value: "staff-1" },
+        { field: "urgent", operator: "equals", value: "true" },
+      ]}
+      match="and"
+      canViewFinance
+      people={[{ id: "staff-1", name: "Rosemary" }]}
+      onApply={apply}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders (3 active)" }));
+
+    expect(screen.getByRole("heading", { name: "Common conditions" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Updated date from")).toHaveValue("2026-08-01");
+    expect(screen.getByLabelText("Updated date to")).toHaveValue("2026-08-23");
+    expect(screen.getByLabelText("Artist")).toHaveValue("staff-1");
+    expect(screen.getByLabelText("Filter field 1")).toHaveValue("urgent");
+
+    fireEvent.change(screen.getByLabelText("Updated date from"), { target: { value: "2026-08-02" } });
+    fireEvent.change(screen.getByLabelText("Updated date to"), { target: { value: "2026-08-22" } });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+
+    expect(apply).toHaveBeenCalledWith({
+      match: "and",
+      conditions: [
+        { field: "updatedAt", operator: "between", value: ["2026-08-02", "2026-08-22"] },
+        { field: "assignedUserId", operator: "equals", value: "staff-1" },
+        { field: "urgent", operator: "equals", value: "true" },
+      ],
+    });
+  });
+
+  it("starts with a choose-field row instead of silently applying urgency", () => {
+    const apply = vi.fn();
+    render(<FormsFilterBuilder conditions={[]} match="and" canViewFinance onApply={apply} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders" }));
+    expect(screen.getByLabelText("Filter field 1")).toHaveValue("");
+    expect(screen.getByRole("option", { name: "Choose field" })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    expect(apply).toHaveBeenCalledWith({ match: "and", conditions: [] });
+  });
+
+  it("fails closed for incomplete or reversed updated-date ranges", () => {
+    render(<FormsFilterBuilder conditions={[]} match="and" canViewFinance onApply={vi.fn()} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders" }));
+    fireEvent.change(screen.getByLabelText("Updated date from"), { target: { value: "2026-08-23" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("Choose both dates in chronological order.");
+    expect(screen.getByRole("button", { name: "Apply filters" })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Updated date to"), { target: { value: "2026-08-01" } });
+    expect(screen.getByRole("button", { name: "Apply filters" })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Updated date to"), { target: { value: "2026-08-23" } });
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Apply filters" })).toBeEnabled();
+  });
+
+  it("keeps common and advanced conditions within the shared 20-filter limit", () => {
+    render(<FormsFilterBuilder
+      conditions={[
+        { field: "updatedAt", operator: "between", value: ["2026-08-01", "2026-08-23"] },
+        ...Array.from({ length: 19 }, () => ({ field: "urgent", operator: "equals", value: "true" } as const)),
+      ]}
+      match="and"
+      canViewFinance
+      people={[{ id: "staff-1", name: "Rosemary" }]}
+      onApply={vi.fn()}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders (20 active)" }));
+    expect(screen.getByRole("button", { name: "+ Add condition" })).toBeDisabled();
+
+    fireEvent.change(screen.getByLabelText("Artist"), { target: { value: "staff-1" } });
+    expect(screen.getByRole("alert")).toHaveTextContent("Use no more than 20 total conditions.");
+    expect(screen.getByRole("button", { name: "Apply filters" })).toBeDisabled();
+  });
+
+  it("resets the open draft and active preset without applying or closing", () => {
+    const apply = vi.fn();
+    const changePreset = vi.fn();
+    render(<FormsFilterBuilder
+      conditions={[
+        { field: "updatedAt", operator: "between", value: ["2026-08-01", "2026-08-23"] },
+        { field: "urgent", operator: "equals", value: "true" },
+      ]}
+      match="or"
+      canViewFinance
+      preset="lastYear"
+      onPresetChange={changePreset}
+      onApply={apply}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders (2 active)" }));
+    fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
+
+    expect(screen.getByRole("dialog", { name: "Order filters" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Match")).toHaveValue("and");
+    expect(screen.getByLabelText("Updated date from")).toHaveValue("");
+    expect(screen.getByLabelText("Updated date to")).toHaveValue("");
+    expect(screen.getByLabelText("Filter field 1")).toHaveValue("");
+    expect(changePreset).toHaveBeenCalledWith("all");
+    expect(apply).not.toHaveBeenCalled();
+  });
+
   it("opens accessibly, applies a validated filter and restores focus on Escape", () => {
     const apply = vi.fn();
     render(<FormsFilterBuilder conditions={[]} match="and" canViewFinance onApply={apply} />);
@@ -24,7 +135,7 @@ describe("forms filter builder", () => {
     expect(trigger).toHaveFocus();
   });
 
-  it("hides financial filters and can reset active filters", () => {
+  it("hides financial filters and can reset the active draft", () => {
     const apply = vi.fn();
     render(<FormsFilterBuilder
       conditions={[{ field: "status", operator: "equals", value: "new" }]}
@@ -36,7 +147,9 @@ describe("forms filter builder", () => {
     fireEvent.click(screen.getByRole("button", { name: "Filter orders (1 active)" }));
     expect(screen.queryByRole("option", { name: "Bank reconciliation" })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Reset filters" }));
-    expect(apply).toHaveBeenCalledWith({ match: "and", conditions: [] });
+    expect(screen.getByRole("dialog", { name: "Order filters" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter field 1")).toHaveValue("");
+    expect(apply).not.toHaveBeenCalled();
   });
 
   it("offers manual-entry fields, submitting operators, and configured fields with permission gating", () => {

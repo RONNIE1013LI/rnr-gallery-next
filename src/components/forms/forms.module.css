@@ -818,16 +818,43 @@
 }
 
 .filterPanel {
-  position: absolute;
+  position: fixed;
   z-index: 20;
-  top: calc(100% + 6px);
-  left: 0;
-  width: min(760px, calc(100vw - 32px));
+  top: 62px;
+  left: 50%;
+  width: min(1080px, calc(100vw - 32px));
+  max-height: calc(100dvh - 78px);
   padding: 14px;
+  overflow: auto;
   border: 1px solid var(--forms-border);
   border-radius: 8px;
   background: var(--forms-surface);
   box-shadow: 0 16px 40px rgb(31 35 41 / 14%);
+  transform: translateX(-50%);
+}
+
+.filterCommonRow {
+  display: grid;
+  grid-template-columns: auto minmax(138px, 170px) auto minmax(138px, 170px) minmax(150px, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.filterCommonRow > span:first-child {
+  color: var(--forms-muted);
+  font-size: 14px;
+}
+
+.filterRangeSeparator {
+  color: var(--forms-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.filterValidation {
+  margin: 6px 0 0;
+  color: #b42318;
+  font-size: 13px;
 }
 
 .filterHeading,
@@ -861,6 +888,11 @@
   background: var(--forms-surface);
   font: inherit;
   cursor: pointer;
+}
+
+.filterActions button:disabled {
+  cursor: not-allowed;
+  opacity: .5;
 }
 
 .filterHeading button,
@@ -1407,11 +1439,21 @@
     position: fixed;
     inset: 12px;
     width: auto;
+    max-height: none;
     overflow: auto;
+    transform: none;
   }
 
   .filterRow {
     grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 48px;
+  }
+
+  .filterCommonRow {
+    grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr);
+  }
+
+  .filterCommonRow > select {
+    grid-column: 2 / -1;
   }
 
   .filterRow > :nth-child(3) {
@@ -1613,7 +1655,7 @@
   }
 
   .filterPanel {
-    top: calc(100% + 3px);
+    top: calc(var(--forms-header-height) + 6px);
     padding: 9px;
     border-radius: 3px;
     box-shadow: 0 8px 24px rgb(31 35 41 / 12%);
@@ -2283,6 +2325,18 @@
     border-bottom: 1px solid var(--forms-border);
   }
 
+  .filterCommonRow {
+    grid-template-columns: 1fr auto 1fr;
+  }
+
+  .filterCommonRow > span:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .filterCommonRow > select {
+    grid-column: 1 / -1;
+  }
+
   .filterRow > :nth-child(3) {
     grid-column: 1 / -1;
     grid-row: auto;
@@ -2396,10 +2450,6 @@
     font-size: 15px;
   }
 
-  .filterPanel {
-    right: 0;
-    left: auto;
-  }
 }
 
 @media (max-width: 680px) {

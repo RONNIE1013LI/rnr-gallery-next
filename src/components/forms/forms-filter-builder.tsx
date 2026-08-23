@@ -14,6 +14,12 @@ import { useContainedDialog } from "./use-contained-dialog";
 
 type FilterKind = "text" | "date" | "number" | "boolean" | "select" | "user";
 type FilterOption = Readonly<{ value: string; label: string }>;
+const MAX_FILTER_CONDITIONS = 20;
+type DraftFilterCondition = Readonly<{
+  field: FormFilterField | "";
+  operator: FormFilterOperator;
+  value: string | readonly string[];
+}>;
 type FilterDefinition = Readonly<{
   value: FormFilterField;
   label: string;
@@ -118,14 +124,76 @@ function customDefinition(field: FormsFilterCustomField): FilterDefinition {
   };
 }
 
-function newCondition(): FormFilterCondition {
-  return { field: "urgent", operator: "equals", value: "true" };
+function newCondition(): DraftFilterCondition {
+  return { field: "", operator: "contains", value: "" };
 }
 
 function normalizedForField(field: FilterDefinition, people: readonly FilterOption[]): FormFilterCondition {
   if (field.kind === "date") return { field: field.value, operator: "equals", value: new Date().toISOString().slice(0, 10) };
   const first = (field.kind === "user" ? people : field.options)?.[0]?.value ?? "";
   return { field: field.value, operator: field.kind === "text" ? "contains" : "equals", value: first };
+}
+
+function splitCommonConditions(conditions: readonly FormFilterCondition[]) {
+  let updatedFrom = "";
+  let updatedTo = "";
+  let artist = "";
+  const advanced: FormFilterCondition[] = [];
+
+  for (const condition of conditions) {
+    if (!updatedFrom && condition.field === "updatedAt" && condition.operator === "between" && Array.isArray(condition.value)) {
+      updatedFrom = condition.value[0] ?? "";
+      updatedTo = condition.value[1] ?? "";
+    } else if (!artist && condition.field === "assignedUserId" && condition.operator === "equals" && typeof condition.value === "string") {
+      artist = condition.value;
+    } else {
+      advanced.push(condition);
+    }
+  }
+
+  return {
+    updatedFrom,
+    updatedTo,
+    artist,
+    advanced: advanced.length ? advanced : [newCondition()],
+  };
+}
+
+function compileFilterGroup(
+  match: "and" | "or",
+  updatedFrom: string,
+  updatedTo: string,
+  artist: string,
+  draft: readonly DraftFilterCondition[],
+): FormFilterGroup | null {
+  if (filterDraftError(updatedFrom, updatedTo, artist, draft)) return null;
+  const conditions: FormFilterCondition[] = [];
+  if (updatedFrom && updatedTo) {
+    conditions.push({ field: "updatedAt", operator: "between", value: [updatedFrom, updatedTo] });
+  }
+  if (artist) conditions.push({ field: "assignedUserId", operator: "equals", value: artist });
+  for (const condition of draft) {
+    if (!condition.field) continue;
+    if (condition.operator !== "isEmpty" && condition.operator !== "isNotEmpty") {
+      const complete = typeof condition.value === "string" ? Boolean(condition.value) : condition.value.every(Boolean);
+      if (!complete) continue;
+    }
+    conditions.push({ ...condition, field: condition.field });
+  }
+  return { match, conditions };
+}
+
+function filterDraftError(
+  updatedFrom: string,
+  updatedTo: string,
+  artist: string,
+  draft: readonly DraftFilterCondition[],
+) {
+  if ((updatedFrom && !updatedTo) || (!updatedFrom && updatedTo) || (updatedFrom && updatedTo && updatedFrom > updatedTo)) {
+    return "Choose both dates in chronological order.";
+  }
+  const total = (updatedFrom && updatedTo ? 1 : 0) + (artist ? 1 : 0) + draft.filter((condition) => condition.field).length;
+  return total > MAX_FILTER_CONDITIONS ? `Use no more than ${MAX_FILTER_CONDITIONS} total conditions.` : null;
 }
 
 export function FormsFilterBuilder({
@@ -138,7 +206,7 @@ export function FormsFilterBuilder({
   customFields = [],
   preset = "all",
   onPresetChange,
-  savedSearches,
+  renderSavedSearches,
   onApply,
 }: Readonly<{
   conditions: readonly FormFilterCondition[];
@@ -150,7 +218,7 @@ export function FormsFilterBuilder({
   customFields?: readonly FormsFilterCustomField[];
   preset?: "all" | "lastSixMonths" | "lastYear";
   onPresetChange?: (preset: "all" | "lastSixMonths" | "lastYear") => void;
-  savedSearches?: ReactNode;
+  renderSavedSearches?: (group: FormFilterGroup | null) => ReactNode;
   onApply: (group: FormFilterGroup) => void;
 }>) {
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -158,8 +226,12 @@ export function FormsFilterBuilder({
   const backdropRef = useRef<HTMLDivElement>(null);
   const matchRef = useRef<HTMLSelectElement>(null);
   const [open, setOpen] = useState(false);
+  const initial = splitCommonConditions(conditions);
   const [draftMatch, setDraftMatch] = useState<"and" | "or">(match);
-  const [draft, setDraft] = useState<readonly FormFilterCondition[]>(conditions.length ? conditions : [newCondition()]);
+  const [draftUpdatedFrom, setDraftUpdatedFrom] = useState(initial.updatedFrom);
+  const [draftUpdatedTo, setDraftUpdatedTo] = useState(initial.updatedTo);
+  const [draftArtist, setDraftArtist] = useState(initial.artist);
+  const [draft, setDraft] = useState<readonly DraftFilterCondition[]>(initial.advanced);
   const peopleOptions = people.map((person) => ({ value: person.id, label: person.name }));
   const availableFields = [...baseFields, ...customFields.map(customDefinition)].filter((field) =>
     (canViewFinance || !field.finance) &&
@@ -168,8 +240,12 @@ export function FormsFilterBuilder({
   );
 
   function show() {
+    const next = splitCommonConditions(conditions);
     setDraftMatch(match);
-    setDraft(conditions.length ? conditions : [newCondition()]);
+    setDraftUpdatedFrom(next.updatedFrom);
+    setDraftUpdatedTo(next.updatedTo);
+    setDraftArtist(next.artist);
+    setDraft(next.advanced);
     setOpen(true);
   }
 
@@ -186,16 +262,29 @@ export function FormsFilterBuilder({
     onClose: close,
   });
 
-  function update(index: number, next: FormFilterCondition) {
+  function update(index: number, next: DraftFilterCondition) {
     setDraft((current) => current.map((condition, position) => position === index ? next : condition));
   }
 
   function apply() {
-    const ready = draft.filter((condition) => condition.operator === "isEmpty" || condition.operator === "isNotEmpty" ||
-      (typeof condition.value === "string" ? condition.value : condition.value.every(Boolean)));
-    onApply({ match: draftMatch, conditions: ready });
+    const group = compileFilterGroup(draftMatch, draftUpdatedFrom, draftUpdatedTo, draftArtist, draft);
+    if (!group) return;
+    onApply(group);
     close();
   }
+
+  function resetDraft() {
+    setDraftMatch("and");
+    setDraftUpdatedFrom("");
+    setDraftUpdatedTo("");
+    setDraftArtist("");
+    setDraft([newCondition()]);
+    onPresetChange?.("all");
+  }
+
+  const draftError = filterDraftError(draftUpdatedFrom, draftUpdatedTo, draftArtist, draft);
+  const compiledDraft = compileFilterGroup(draftMatch, draftUpdatedFrom, draftUpdatedTo, draftArtist, draft);
+  const occupiedSlots = draft.length + (draftUpdatedFrom || draftUpdatedTo ? 1 : 0) + (draftArtist ? 1 : 0);
 
   return (
     <div className={styles.filterBuilder}>
@@ -238,11 +327,36 @@ export function FormsFilterBuilder({
               <option value="or">any condition</option>
             </select>
           </label>
+          <h3 className={styles.filterGroupTitle}>Common conditions</h3>
+          <div className={styles.filterCommonRow}>
+            <span>Updated date</span>
+            <input
+              aria-label="Updated date from"
+              type="date"
+              value={draftUpdatedFrom}
+              onChange={(event) => setDraftUpdatedFrom(event.target.value)}
+            />
+            <span className={styles.filterRangeSeparator}>to</span>
+            <input
+              aria-label="Updated date to"
+              type="date"
+              value={draftUpdatedTo}
+              onChange={(event) => setDraftUpdatedTo(event.target.value)}
+            />
+            <select aria-label="Artist" value={draftArtist} onChange={(event) => setDraftArtist(event.target.value)}>
+              <option value="">Artist</option>
+              {peopleOptions.map((person) => <option key={person.value} value={person.value}>{person.label}</option>)}
+              {draftArtist && !peopleOptions.some((person) => person.value === draftArtist)
+                ? <option value={draftArtist}>Unavailable artist</option>
+                : null}
+            </select>
+          </div>
+          {draftError ? <p className={styles.filterValidation} role="alert">{draftError}</p> : null}
           <h3 className={styles.filterGroupTitle}>Field combinations</h3>
           <div className={styles.filterRows}>
             {draft.map((condition, index) => {
-              const definition = availableFields.find((field) => field.value === condition.field) ?? availableFields[0] ?? baseFields[0];
-              const options = definition.kind === "user" ? peopleOptions : definition.options;
+              const definition = condition.field ? availableFields.find((field) => field.value === condition.field) : undefined;
+              const options = definition?.kind === "user" ? peopleOptions : definition?.options;
               const isBetween = condition.operator === "between";
               const isNoValue = condition.operator === "isEmpty" || condition.operator === "isNotEmpty";
               const values = typeof condition.value === "string" ? [condition.value] : condition.value;
@@ -252,15 +366,16 @@ export function FormsFilterBuilder({
                     aria-label={`Filter field ${index + 1}`}
                     value={condition.field}
                     onChange={(event) => {
-                      const next = availableFields.find((field) => field.value === event.target.value) ?? availableFields[0] ?? baseFields[0];
-                      update(index, normalizedForField(next, peopleOptions));
+                      const next = availableFields.find((field) => field.value === event.target.value);
+                      update(index, next ? normalizedForField(next, peopleOptions) : newCondition());
                     }}
                   >
+                    <option value="">Choose field</option>
                     {availableFields.map((field) => (
                       <option key={field.value} value={field.value}>{field.label}</option>
                     ))}
                   </select>
-                  <select
+                  {definition ? <select
                     aria-label={`Filter operator ${index + 1}`}
                     value={condition.operator}
                     onChange={(event) => {
@@ -273,8 +388,8 @@ export function FormsFilterBuilder({
                     }}
                   >
                     {operatorsFor(definition).map((operator) => <option key={operator} value={operator}>{operatorLabels[operator]}</option>)}
-                  </select>
-                  {isNoValue ? <span className={styles.filterNoValue}>No value needed</span> : options ? (
+                  </select> : <select aria-label={`Filter operator ${index + 1}`} value="" disabled><option value="">Contains</option></select>}
+                  {!definition ? <input aria-label={`Filter value ${index + 1}`} value="" placeholder="Value" disabled readOnly /> : isNoValue ? <span className={styles.filterNoValue}>No value needed</span> : options ? (
                     <select
                       aria-label={`Filter value ${index + 1}`}
                       value={values[0] ?? ""}
@@ -309,7 +424,12 @@ export function FormsFilterBuilder({
               );
             })}
           </div>
-          <button type="button" className={styles.addFilterButton} onClick={() => setDraft((current) => current.length < 20 ? [...current, newCondition()] : current)}>+ Add condition</button>
+          <button
+            type="button"
+            className={styles.addFilterButton}
+            disabled={occupiedSlots >= MAX_FILTER_CONDITIONS}
+            onClick={() => setDraft((current) => [...current, newCondition()])}
+          >+ Add condition</button>
           <section className={styles.savedSearchWorkspace} aria-labelledby="saved-searches-heading">
             <h3 id="saved-searches-heading" className={styles.filterGroupTitle}>Saved searches</h3>
             <div className={styles.filterPresetButtons}>
@@ -326,11 +446,11 @@ export function FormsFilterBuilder({
                 >{label}</button>
               ))}
             </div>
-            {savedSearches}
+            {renderSavedSearches?.(compiledDraft)}
           </section>
           <div className={styles.filterActions}>
-            <button type="button" onClick={() => { onApply({ match: "and", conditions: [] }); close(); }}>Reset filters</button>
-            <button type="button" className={styles.filterApply} onClick={apply}>Apply filters</button>
+            <button type="button" onClick={resetDraft}>Reset filters</button>
+            <button type="button" aria-label="Apply filters" className={styles.filterApply} disabled={!compiledDraft} onClick={apply}>Search</button>
           </div>
         </div>
         </>
