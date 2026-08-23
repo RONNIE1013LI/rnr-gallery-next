@@ -22,4 +22,49 @@ describe("forms stats layout route", () => {
     expect(save).toHaveBeenCalledWith("manager-1", expect.objectContaining({ name: "Daily" }));
     expect(requirePermission).toHaveBeenCalledWith("manage_stats");
   });
+
+  it("saves an allowlisted custom query widget for the current operator", async () => {
+    const save = vi.fn().mockResolvedValue({ id: "layout-1", name: "Weekly", widgets: [] });
+    const route = createFormsStatsLayoutRoute({
+      requirePermission: vi.fn().mockResolvedValue(access), list: vi.fn(), save, remove: vi.fn(), trustedOrigin: origin,
+    });
+
+    const response = await route.PUT(new Request(`${origin}/api/forms/stats/layout`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Origin: origin },
+      body: JSON.stringify({
+        name: "Weekly",
+        widgets: [{
+          id: "weekly-orders", type: "line", title: "Weekly orders",
+          query: { dimension: "submitted_at", timeUnit: "week", measure: "order_count", aggregation: "count", sort: "default" },
+        }],
+      }),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(save).toHaveBeenCalledWith("manager-1", expect.objectContaining({
+      widgets: [expect.objectContaining({ query: expect.objectContaining({ dimension: "submitted_at", timeUnit: "week" }) })],
+    }));
+  });
+
+  it("rejects finance layouts and untrusted origins before saving", async () => {
+    const save = vi.fn();
+    const route = createFormsStatsLayoutRoute({
+      requirePermission: vi.fn().mockResolvedValue(access), list: vi.fn(), save, remove: vi.fn(), trustedOrigin: origin,
+    });
+    const financeLayout = JSON.stringify({
+      name: "Finance",
+      widgets: [{
+        id: "paid-total", type: "number", title: "Paid",
+        query: { measure: "amount_paid", aggregation: "sum", sort: "default" },
+      }],
+    });
+
+    expect((await route.PUT(new Request(`${origin}/api/forms/stats/layout`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Origin: origin }, body: financeLayout,
+    }))).status).toBe(422);
+    expect((await route.PUT(new Request(`${origin}/api/forms/stats/layout`, {
+      method: "PUT", headers: { "Content-Type": "application/json", Origin: "https://untrusted.example.test" }, body: financeLayout,
+    }))).status).toBe(403);
+    expect(save).not.toHaveBeenCalled();
+  });
 });
