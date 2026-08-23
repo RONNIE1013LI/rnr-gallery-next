@@ -115,11 +115,46 @@ function isUnsafePieData(rows: readonly StatisticRow[]) {
   return rows.some((row) => row.value < 0) || rows.reduce((total, row) => total + row.value, 0) <= 0;
 }
 
+function BarTooltipCursor({
+  x,
+  y,
+  width,
+  height,
+  className,
+}: Readonly<{
+  x?: number;
+  y?: number;
+  width?: number;
+  height?: number;
+  className?: string;
+}>) {
+  if (x === undefined || y === undefined || width === undefined || height === undefined) return null;
+  const centerX = x + width / 2;
+  return <line
+    className={className}
+    x1={centerX}
+    x2={centerX}
+    y1={y}
+    y2={y + height}
+    stroke="#aeb4bb"
+    strokeWidth={1}
+    strokeDasharray="3 3"
+    pointerEvents="none"
+  />;
+}
+
+function chartAxisWidth(widget: FormStatWidget, stat: FormStatistic) {
+  return isMoneyStatistic(widget, stat) ? 112 : 60;
+}
+
 function chartContent(widget: FormStatWidget, stat: FormStatistic, rows: readonly StatisticRow[], summaryId: string) {
-  const tooltip = <Tooltip content={<FormsStatsTooltip widget={widget} stat={stat} />} />;
+  const tooltip = <Tooltip
+    content={<FormsStatsTooltip widget={widget} stat={stat} />}
+    cursor={widget.type === "bar" ? <BarTooltipCursor /> : undefined}
+  />;
   const chartLabel = `${widget.title} chart`;
   const chartAccessibility = { "aria-label": chartLabel, "aria-describedby": summaryId };
-  const axisWidth = isMoneyStatistic(widget, stat) ? 112 : 60;
+  const axisWidth = chartAxisWidth(widget, stat);
   if (widget.type === "pie") {
     return <PieChart accessibilityLayer {...chartAccessibility}>
       {tooltip}
@@ -150,7 +185,11 @@ export function FormsStatsChart({ widget, stat, instanceId = widget.id }: Readon
   const rows = stat.rows ?? [];
   const summaryId = `form-stat-chart-${instanceId}-summary`;
   const isPieFallback = widget.type === "pie" && isUnsafePieData(rows);
-  const chartWidth = widget.type === "bar" || widget.type === "line" ? Math.min(3600, Math.max(520, rows.length * 56)) : 520;
+  const chartWidth = widget.type === "bar"
+    ? Math.max(520, rows.length * 20 + chartAxisWidth(widget, stat) + 10)
+    : widget.type === "line"
+      ? Math.min(3600, Math.max(520, rows.length * 56))
+      : 520;
   const scrollerRef = useRef<HTMLDivElement>(null);
 
   useLayoutEffect(() => {

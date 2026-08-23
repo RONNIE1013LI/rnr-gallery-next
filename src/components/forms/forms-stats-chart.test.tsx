@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FormStatistic } from "@/server/forms/drizzle-forms-stats-repository";
@@ -10,6 +10,19 @@ class SizedResizeObserver {
 
   observe(target: Element) {
     this.callback([{ contentRect: { width: 640, height: 260 }, target } as ResizeObserverEntry], this as unknown as ResizeObserver);
+  }
+
+  unobserve() {}
+
+  disconnect() {}
+}
+
+class MinWidthResizeObserver {
+  constructor(private readonly callback: ResizeObserverCallback) {}
+
+  observe(target: Element) {
+    const minimumWidth = Number.parseFloat((target as HTMLElement).style.minWidth) || 0;
+    this.callback([{ contentRect: { width: Math.max(640, minimumWidth), height: 260 }, target } as ResizeObserverEntry], this as unknown as ResizeObserver);
   }
 
   unobserve() {}
@@ -153,6 +166,72 @@ describe("FormsStatsChart", () => {
     const bars = [...container.querySelectorAll(".recharts-bar-rectangle .recharts-rectangle")];
 
     expect(bars.map((bar) => bar.getAttribute("width"))).toEqual(["15", "15"]);
+  });
+
+  it("keeps 15 pixel bars close together in wide charts", async () => {
+    vi.stubGlobal("ResizeObserver", MinWidthResizeObserver);
+    const rows = Array.from({ length: 40 }, (_, index) => ({ label: `2026 W${index + 1}`, value: index + 1 }));
+
+    const { container } = await renderSizedChart(weeklyPayableWidget, { query: weeklyPayableWidget.query!, rows });
+    const summary = document.getElementById("form-stat-chart-weekly-payable-summary")!;
+    await waitFor(
+      () => expect(container.querySelectorAll(".recharts-bar-rectangle .recharts-rectangle")).toHaveLength(40),
+      { timeout: 2_500 },
+    );
+    const bars = [...container.querySelectorAll(".recharts-bar-rectangle .recharts-rectangle")];
+    const firstX = Number(bars[0]!.getAttribute("x"));
+    const secondX = Number(bars[1]!.getAttribute("x"));
+    const barWidth = Number(bars[0]!.getAttribute("width"));
+
+    expect((summary.nextElementSibling as HTMLElement).style.minWidth).toBe("922px");
+    expect(barWidth).toBe(15);
+    expect(secondX - firstX - barWidth).toBeCloseTo(5, 5);
+  });
+
+  it("preserves 15 pixel bars and five pixel gaps for a full daily year", async () => {
+    vi.stubGlobal("ResizeObserver", MinWidthResizeObserver);
+    const rows = Array.from({ length: 366 }, (_, index) => ({ label: `Day ${index + 1}`, value: index + 1 }));
+
+    const { container } = await renderSizedChart(weeklyPayableWidget, { query: weeklyPayableWidget.query!, rows });
+    const summary = document.getElementById("form-stat-chart-weekly-payable-summary")!;
+    await waitFor(
+      () => expect(container.querySelectorAll(".recharts-bar-rectangle .recharts-rectangle")).toHaveLength(366),
+      { timeout: 2_500 },
+    );
+    const bars = [...container.querySelectorAll(".recharts-bar-rectangle .recharts-rectangle")];
+    const firstX = Number(bars[0]!.getAttribute("x"));
+    const secondX = Number(bars[1]!.getAttribute("x"));
+    const barWidth = Number(bars[0]!.getAttribute("width"));
+
+    expect((summary.nextElementSibling as HTMLElement).style.minWidth).toBe("7442px");
+    expect(barWidth).toBe(15);
+    expect(secondX - firstX - barWidth).toBeCloseTo(5, 5);
+  });
+
+  it("uses a thin dashed center line instead of a shaded bar hover cursor", async () => {
+    const { container } = await renderSizedChart(weeklyPayableWidget, weeklyPayableStat);
+
+    const firstBar = await waitFor(() => {
+      const bar = container.querySelector(".recharts-bar-rectangle .recharts-rectangle");
+      expect(bar).toBeInTheDocument();
+      return bar!;
+    }, { timeout: 2_500 });
+    fireEvent.mouseMove(firstBar, { clientX: 180, clientY: 100 });
+    const cursor = await waitFor(() => {
+      const line = container.querySelector("line.recharts-tooltip-cursor");
+      expect(line).toBeInTheDocument();
+      return line!;
+    });
+
+    expect(screen.getByRole("status")).toHaveTextContent("2026 W34");
+    expect(cursor).toHaveAttribute("stroke-dasharray", "3 3");
+    expect(cursor).toHaveAttribute("stroke-width", "1");
+    expect(cursor.getAttribute("x1")).toBe(cursor.getAttribute("x2"));
+    expect(Number(cursor.getAttribute("x1"))).toBeCloseTo(
+      Number(firstBar.getAttribute("x")) + Number(firstBar.getAttribute("width")) / 2,
+      5,
+    );
+    expect(container.querySelector("path.recharts-tooltip-cursor")).not.toBeInTheDocument();
   });
 
   it.each(["bar", "line"] as const)("opens wide %s charts at the newest data", async (type) => {
