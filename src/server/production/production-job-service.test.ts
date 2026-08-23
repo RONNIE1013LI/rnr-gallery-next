@@ -57,6 +57,7 @@ function repository(overrides: Partial<ProductionJobRepository> = {}): Productio
       updatedAt: new Date("2026-08-04T10:00:00.000Z"),
     }),
     update: vi.fn().mockResolvedValue("updated"),
+    deleteManual: vi.fn().mockResolvedValue({ result: "deleted", jobNumber: "08000", files: [] }),
     ...overrides,
   };
 }

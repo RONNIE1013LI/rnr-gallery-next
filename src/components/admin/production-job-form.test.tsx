@@ -452,6 +452,7 @@ describe("ProductionJobForm", () => {
     const link = await screen.findByRole("link", { name: "View payment proof saved-receipt.jpg" });
     expect(link).toHaveAttribute("href", `/api/forms/jobs/${existingManualOrder.id}/files/${proofId}`);
     expect(link).toHaveAttribute("target", "_blank");
+    expect(link.closest("label")).toBeNull();
     expect(screen.getByRole("img", { name: "Payment proof saved-receipt.jpg" })).toBeInTheDocument();
   });
 
@@ -480,6 +481,48 @@ describe("ProductionJobForm", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("Upload unavailable");
     expect(screen.getByRole("img", { name: "Payment proof failed-receipt.jpg" })).toBeInTheDocument();
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
+  });
+
+  it("requires the exact reference before an administrator deletes a manual order", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "deleted",
+      jobNumber: existingManualOrder.jobNumber,
+      storageCleanupFailed: 0,
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const prompt = vi.fn().mockReturnValueOnce("wrong").mockReturnValueOnce(existingManualOrder.jobNumber);
+    const onDeleted = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("prompt", prompt);
+    vi.stubGlobal("crypto", { randomUUID: () => "delete-manual-order-0001" });
+
+    render(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance
+      canUploadFiles
+      canDeleteJob
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      existingManualOrder={existingManualOrder}
+      onDeleted={onDeleted}
+    />);
+
+    const deleteButton = screen.getByRole("button", { name: `Delete order ${existingManualOrder.jobNumber}` });
+    fireEvent.click(deleteButton);
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fireEvent.click(deleteButton);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/forms/jobs/${existingManualOrder.id}`,
+      expect.objectContaining({
+        method: "DELETE",
+        body: JSON.stringify({
+          expectedJobNumber: existingManualOrder.jobNumber,
+          idempotencyKey: "delete-manual-order-0001",
+        }),
+      }),
+    );
+    expect(onDeleted).toHaveBeenCalledOnce();
   });
 
   it("uploads every selected payment proof before applying the paid status", async () => {

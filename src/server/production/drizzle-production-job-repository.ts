@@ -18,6 +18,7 @@ import {
   invoices,
   orders,
   productionJobItems,
+  productionJobFiles,
   productionJobs,
   productionFieldDefinitions,
   productionFieldValues,
@@ -28,6 +29,7 @@ import {
 import { buildAuditRecord } from "@/server/admin/audit-service";
 import {
   ProductionJobConflictError,
+  ProductionJobNotFoundError,
   ProductionJobValidationError,
   deriveManualJobFinance,
   type ProductionJobFilters,
@@ -711,6 +713,61 @@ export function createDrizzleProductionJobRepository(
           idempotencyKey: input.idempotencyKey,
         }));
         return "updated" as const;
+      });
+    },
+
+    async deleteManual(input) {
+      return database.transaction(async (transaction) => {
+        const [current] = await transaction.select({
+          id: productionJobs.id,
+          jobNumber: productionJobs.jobNumber,
+          source: productionJobs.source,
+        }).from(productionJobs)
+          .where(eq(productionJobs.id, input.jobId))
+          .for("update")
+          .limit(1);
+        if (!current) throw new ProductionJobNotFoundError();
+        if (current.source !== "manual") {
+          throw new ProductionJobValidationError("Website orders cannot be deleted here");
+        }
+        if (current.jobNumber !== input.expectedJobNumber) {
+          throw new ProductionJobConflictError("The order reference does not match");
+        }
+        const [invoice] = await transaction.select({ id: invoices.id }).from(invoices)
+          .where(eq(invoices.jobId, input.jobId))
+          .limit(1);
+        if (invoice) {
+          throw new ProductionJobConflictError("Orders with an invoice cannot be deleted");
+        }
+        const files = await transaction.select({
+          id: productionJobFiles.id,
+          storageKey: productionJobFiles.storageKey,
+        }).from(productionJobFiles)
+          .where(eq(productionJobFiles.jobId, input.jobId));
+        const [deleted] = await transaction.delete(productionJobs)
+          .where(eq(productionJobs.id, input.jobId))
+          .returning({ id: productionJobs.id });
+        if (!deleted) throw new ProductionJobConflictError("The order changed before it was deleted");
+        await transaction.insert(adminAuditLogs).values(buildAuditRecord({
+          actorUserId: input.actor.userId,
+          actorEmail: input.actor.email,
+          action: "production_job.deleted",
+          resourceType: "production_job",
+          resourceId: input.jobId,
+          beforeSummary: {
+            jobNumber: current.jobNumber,
+            source: current.source,
+            fileCount: files.length,
+          },
+          requestSource: "forms.jobs.detail",
+          result: "success",
+          idempotencyKey: input.idempotencyKey,
+        }));
+        return Object.freeze({
+          result: "deleted" as const,
+          jobNumber: current.jobNumber,
+          files: Object.freeze(files.map((file) => Object.freeze(file))),
+        });
       });
     },
   };

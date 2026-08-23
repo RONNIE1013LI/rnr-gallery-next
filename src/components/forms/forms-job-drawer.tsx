@@ -36,6 +36,7 @@ function FormsJobDrawerSession({
   canReviewProofs = false,
   canUpdateDeliveryStatus = false,
   canDeleteFiles = false,
+  canDeleteJob = false,
   onSaved,
 }: Readonly<{
   jobId: string;
@@ -48,6 +49,7 @@ function FormsJobDrawerSession({
   canReviewProofs?: boolean;
   canUpdateDeliveryStatus?: boolean;
   canDeleteFiles?: boolean;
+  canDeleteJob?: boolean;
   onSaved?: () => void;
 }>) {
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -142,6 +144,7 @@ function FormsJobDrawerSession({
             canManageFinance={canManageFinance}
             canUploadFiles={canUploadFiles}
             canDeleteFiles={canDeleteFiles}
+            canDeleteJob={canDeleteJob}
             canEdit={canUpdate}
             canUpdateProductionStatus={canReviewProofs}
             canUpdateDeliveryStatus={canUpdateDeliveryStatus}
@@ -150,6 +153,11 @@ function FormsJobDrawerSession({
             onBack={close}
             onSaved={() => {
               setDirty(false);
+              onSaved?.();
+            }}
+            onDeleted={() => {
+              setDirty(false);
+              onClose();
               onSaved?.();
             }}
           /> : detail ? <ProductionJobDetail
@@ -189,6 +197,7 @@ export function FormsJobDrawer(props: Readonly<{
   canReviewProofs?: boolean;
   canUpdateDeliveryStatus?: boolean;
   canDeleteFiles?: boolean;
+  canDeleteJob?: boolean;
   onSaved?: () => void;
 }>) {
   return <FormsJobDrawerSession key={props.jobId} {...props} />;

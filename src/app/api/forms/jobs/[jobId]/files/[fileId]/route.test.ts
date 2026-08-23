@@ -2,11 +2,16 @@ import { describe, expect, it, vi } from "vitest";
 import { HttpError } from "@/server/auth/require-session";
 import { buildFormAccessProfile } from "@/server/forms/forms-permissions";
 import { createFormsJobFileRoute } from "./route-handler";
+import * as publicRoute from "./route";
 
 const jobId = "de31f47e-0fb9-438e-bef6-6bc45556d3bb";
 const fileId = "e23a9f59-bf54-4bb6-a7d0-9239c14cf819";
 
 describe("forms private file route", () => {
+  it("exports the payment-proof delete handler through the Next.js route", () => {
+    expect(publicRoute.DELETE).toBeTypeOf("function");
+  });
+
   it("requires delete_files and removes only the scoped payment proof bytes", async () => {
     const access = {
       user: { id: "owner-1", email: "owner@example.test" },

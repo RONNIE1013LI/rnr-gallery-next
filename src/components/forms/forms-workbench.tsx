@@ -65,6 +65,7 @@ export function FormsWorkbench({
   canUploadFiles = false,
   canReviewProofs = false,
   canDeleteFiles = false,
+  canDeleteJobs = false,
   assignees = [],
   orderEntry,
 }: Readonly<{
@@ -86,6 +87,7 @@ export function FormsWorkbench({
   canUploadFiles?: boolean;
   canReviewProofs?: boolean;
   canDeleteFiles?: boolean;
+  canDeleteJobs?: boolean;
   assignees?: readonly Readonly<{ id: string; name: string; email: string; role: "admin" | "staff" | "form_staff" }>[];
   orderEntry?: FormsOrderEntryData;
 }>) {
@@ -235,6 +237,7 @@ export function FormsWorkbench({
         canReviewProofs={canReviewProofs}
         canUpdateDeliveryStatus={canUpdateDeliveryStatus}
         canDeleteFiles={canDeleteFiles}
+        canDeleteJob={canDeleteJobs}
         onSaved={() => router.refresh()}
       /> : null}
       {orderEntry ? <FormsOrderEntryDrawer data={orderEntry} onClose={closeOrderEntry} /> : null}

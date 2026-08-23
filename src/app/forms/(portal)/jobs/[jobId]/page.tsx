@@ -78,6 +78,7 @@ export default async function FormsJobDetailPage({ params }: Props) {
         canManageFinance={canManageFinance}
         canUploadFiles={canUploadFiles}
         canDeleteFiles={canDeleteFiles}
+        canDeleteJob={access.formRole === "admin"}
         canEdit={canUpdate}
         canUpdateProductionStatus={canReviewProofs}
         canUpdateDeliveryStatus={hasFormPermission(access.formRole, access.formProfile, "update_delivery_status")}

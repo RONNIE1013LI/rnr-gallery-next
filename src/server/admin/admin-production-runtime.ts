@@ -10,8 +10,9 @@ import { allocateOrderNumber } from "@/server/orders/order-number";
 
 export function getAdminProductionRuntime() {
   const database = getDatabase();
+  const repository = createDrizzleProductionJobRepository(database);
   const service = createProductionJobService(
-    createDrizzleProductionJobRepository(database),
+    repository,
     { createJobNumber: () => allocateOrderNumber(database) },
   );
   return Object.freeze({
@@ -26,5 +27,10 @@ export function getAdminProductionRuntime() {
     assignees: () => listProductionAssignees(database),
     createManual: service.createManual,
     update: service.update,
+    deleteManual: (
+      actor: Readonly<{ userId: string; email: string }>,
+      jobId: string,
+      input: Readonly<{ expectedJobNumber: string; idempotencyKey: string }>,
+    ) => repository.deleteManual({ actor, jobId, ...input }),
   });
 }

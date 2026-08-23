@@ -353,6 +353,16 @@ export interface ProductionJobRepository {
   update(
     input: UpdateProductionJob,
   ): Promise<"updated" | "duplicate" | "conflict" | "not_found" | "invalid_source">;
+  deleteManual(input: Readonly<{
+    actor: Readonly<{ userId: string; email: string }>;
+    jobId: string;
+    expectedJobNumber: string;
+    idempotencyKey: string;
+  }>): Promise<Readonly<{
+    result: "deleted";
+    jobNumber: string;
+    files: readonly Readonly<{ id: string; storageKey: string }>[];
+  }>>;
 }
 
 export class ProductionJobValidationError extends Error {

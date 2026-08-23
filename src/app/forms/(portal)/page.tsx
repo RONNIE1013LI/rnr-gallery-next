@@ -120,6 +120,7 @@ export default async function FormsDataListPage({ searchParams }: Props) {
       canUploadFiles={canUploadFiles}
       canReviewProofs={hasFormPermission(access.formRole, access.formProfile, "update_production_status")}
       canDeleteFiles={hasFormPermission(access.formRole, access.formProfile, "delete_files")}
+      canDeleteJobs={access.formRole === "admin"}
       assignees={editableAssignees}
       orderEntry={orderEntry}
     />

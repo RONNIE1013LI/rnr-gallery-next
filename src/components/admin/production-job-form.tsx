@@ -87,8 +87,10 @@ type Props = Readonly<{
   canEdit?: boolean;
   canUpdateProductionStatus?: boolean;
   canUpdateDeliveryStatus?: boolean;
+  canDeleteJob?: boolean;
   invoicePdfBase?: string;
   onSaved?: () => void;
+  onDeleted?: () => void;
   onBack?: () => void;
 }>;
 
@@ -321,8 +323,10 @@ export function ProductionJobForm({
   canEdit = true,
   canUpdateProductionStatus = true,
   canUpdateDeliveryStatus = true,
+  canDeleteJob = false,
   invoicePdfBase = "/api/admin/invoices",
   onSaved,
+  onDeleted,
   onBack,
 }: Props) {
   const router = useRouter();
@@ -506,6 +510,37 @@ export function ProductionJobForm({
       setSavedPaymentProofs((current) => current.filter((candidate) => candidate.id !== file.id));
     } catch (error) {
       setPaymentProofError(error instanceof Error ? error.message : "The payment proof could not be deleted.");
+    } finally {
+      setPending(false);
+    }
+  }
+
+  async function deleteExistingManualOrder() {
+    if (!existingManualOrder || !canDeleteJob) return;
+    const confirmation = window.prompt(
+      `Type ${existingManualOrder.jobNumber} to permanently delete this order.`,
+    );
+    if (confirmation?.trim() !== existingManualOrder.jobNumber) return;
+    setPending(true);
+    setFeedback("");
+    try {
+      const response = await fetch(`${endpoint}/${existingManualOrder.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expectedJobNumber: existingManualOrder.jobNumber,
+          idempotencyKey: createClientId(),
+        }),
+      });
+      const result = await response.json().catch(() => null) as { error?: string } | null;
+      if (!response.ok) throw new Error(result?.error || "The order could not be deleted.");
+      if (onDeleted) onDeleted();
+      else {
+        router.push(backHref);
+        router.refresh();
+      }
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "The order could not be deleted.");
     } finally {
       setPending(false);
     }
@@ -868,7 +903,7 @@ export function ProductionJobForm({
         {canManageFinance ? <section className={styles.formPanel}>
           <div className={styles.formSectionHeading}><div><h2>Payment</h2></div></div>
           <div className={styles.manualFieldRows}>
-            {canUploadFiles ? <label><span>PaymtProved</span><div>
+            {canUploadFiles ? <div className={styles.manualFileRow}><span>PaymtProved</span><div>
               <input className={styles.paymentProofFileInput} ref={paymentProofRef} name="paymentProof" type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" aria-label="PaymtProved" aria-describedby="payment-proof-help payment-proof-error" onChange={(event) => selectPaymentProofs(event.currentTarget.files ?? [])} disabled={formDisabled} />
               {savedPaymentProofs.length || paymentProofs.length ? <div className={styles.paymentProofPreviewGrid}>
                 {savedPaymentProofs.map((proof) => <article className={styles.paymentProofPreviewCard} key={proof.id}>
@@ -888,7 +923,7 @@ export function ProductionJobForm({
                 </article>)}</div> : null}
               <small id="payment-proof-help" className={styles.fieldHint}>Choose any number of JPG, PNG, WebP, HEIC, HEIF or PDF files. Maximum 25 MB each.</small>
               {paymentProofError ? <p id="payment-proof-error" className={styles.fieldHint} role="alert">{paymentProofError}</p> : null}
-            </div></label> : null}
+            </div></div> : null}
             <label><span>AmtPayable</span><MoneyCentsInput ariaLabel="AmtPayable" name="amountPayable" cents={amountPayableCents} onCentsChange={setAmountPayableCents} required disabled={formDisabled} /></label>
             <label><span>AmtPaid</span><MoneyCentsInput ariaLabel="AmtPaid" name="amountPaid" cents={amountPaidCents} onCentsChange={setAmountPaidCents} required disabled={formDisabled} /></label>
             <label><span>AmtOwe</span><input value={(Math.max(0, amountPayableCents - amountPaidCents) / 100).toFixed(2)} readOnly aria-readonly="true" /></label>
@@ -1080,6 +1115,13 @@ export function ProductionJobForm({
 
       <div className={styles.formSubmitBar}>
         <p aria-live="polite">{feedback}</p>
+        {existingManualOrder && canDeleteJob ? <button
+          type="button"
+          className={styles.dangerButton}
+          aria-label={`Delete order ${existingManualOrder.jobNumber}`}
+          disabled={pending}
+          onClick={() => void deleteExistingManualOrder()}
+        >Delete order</button> : null}
         {paymentRecovery ? <button type="button" onClick={retryPaymentRecovery} disabled={pending}>
           {pending
             ? "Retrying…"

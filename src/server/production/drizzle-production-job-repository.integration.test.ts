@@ -8,6 +8,7 @@ import {
   invoiceItems,
   invoices,
   productionJobs,
+  productionJobFiles,
   user,
 } from "@/server/db/schema";
 import {
@@ -221,6 +222,14 @@ describe("drizzle production job repository", () => {
         { field: "items" },
       ],
     });
+    await expect(repository.deleteManual({
+      actor: { userId: actorId, email: `manager-${suffix}@example.test` },
+      jobId: created.job.id,
+      expectedJobNumber: created.job.jobNumber,
+      idempotencyKey: `delete-invoiced-${suffix}`,
+    })).rejects.toThrow("Orders with an invoice cannot be deleted");
+    await expect(database.select({ id: productionJobs.id }).from(productionJobs)
+      .where(eq(productionJobs.id, created.job.id))).resolves.toHaveLength(1);
   });
 
   it("versions private drafts, redacts payment proofs and keeps proof decisions immutable", async () => {
@@ -277,5 +286,82 @@ describe("drizzle production job repository", () => {
     expect(staffFiles.files.some((file) => file.kind === "payment_proof")).toBe(false);
     expect(financeOnlyFiles.files.some((file) => file.kind === "payment_proof")).toBe(false);
     expect(paymentProofFiles.files.some((file) => file.kind === "payment_proof")).toBe(true);
+  });
+
+  it("hard-deletes a manual order while retaining a deletion audit and returning storage cleanup keys", async () => {
+    const repository = createDrizzleProductionJobRepository(database) as ReturnType<typeof createDrizzleProductionJobRepository> & {
+      deleteManual: (input: {
+        actor: { userId: string; email: string };
+        jobId: string;
+        expectedJobNumber: string;
+        idempotencyKey: string;
+      }) => Promise<{ result: string; jobNumber: string; files: readonly { id: string; storageKey: string }[] }>;
+    };
+    expect(repository.deleteManual).toBeTypeOf("function");
+
+    const jobId = randomUUID();
+    const fileId = randomUUID();
+    const jobNumber = `DELETE-${suffix.slice(0, 8)}`;
+    jobIds.push(jobId);
+    await database.insert(productionJobs).values({
+      id: jobId,
+      jobNumber,
+      source: "manual",
+      idempotencyKey: `delete-seed-${suffix}`,
+      requestDigest: "d".repeat(64),
+      customerName: "Delete Test",
+      customerEmail: "",
+      customerPhone: "0210000000",
+      customerSource: "phone",
+      manualStatus: "new",
+      manualPaymentStatus: "awaiting_payment",
+      urgent: false,
+      neededDate: "2026-08-30",
+      deliveryMethod: "pickup",
+      amountPayableCents: 0,
+      amountPaidCents: 0,
+      artistFeeCents: 0,
+      materialCostCents: 0,
+      createdByUserId: actorId,
+    });
+    await database.insert(productionJobFiles).values({
+      id: fileId,
+      jobId,
+      kind: "payment_proof",
+      originalName: "delete-test.jpg",
+      mediaType: "image/jpeg",
+      sizeBytes: 3,
+      storageKey: `private-uploads/${fileId}.bin`,
+      sha256: "a".repeat(64),
+      idempotencyKey: `delete-file-${suffix}`,
+      requestDigest: "b".repeat(64),
+      uploadedByUserId: actorId,
+    });
+
+    await expect(repository.deleteManual({
+      actor: { userId: actorId, email: `manager-${suffix}@example.test` },
+      jobId,
+      expectedJobNumber: "WRONG",
+      idempotencyKey: `delete-wrong-ref-${suffix}`,
+    })).rejects.toThrow("The order reference does not match");
+    await expect(database.select({ id: productionJobs.id }).from(productionJobs)
+      .where(eq(productionJobs.id, jobId))).resolves.toHaveLength(1);
+
+    await expect(repository.deleteManual({
+      actor: { userId: actorId, email: `manager-${suffix}@example.test` },
+      jobId,
+      expectedJobNumber: jobNumber,
+      idempotencyKey: `delete-order-${suffix}`,
+    })).resolves.toEqual({
+      result: "deleted",
+      jobNumber,
+      files: [{ id: fileId, storageKey: `private-uploads/${fileId}.bin` }],
+    });
+    await expect(database.select().from(productionJobs).where(eq(productionJobs.id, jobId))).resolves.toEqual([]);
+    await expect(database.select().from(adminAuditLogs).where(and(
+      eq(adminAuditLogs.resourceType, "production_job"),
+      eq(adminAuditLogs.resourceId, jobId),
+      eq(adminAuditLogs.action, "production_job.deleted"),
+    ))).resolves.toHaveLength(1);
   });
 });

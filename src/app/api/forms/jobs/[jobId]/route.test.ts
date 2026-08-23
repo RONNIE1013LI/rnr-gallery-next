@@ -4,6 +4,7 @@ import { HttpError } from "@/server/auth/require-session";
 import { normalizeStaffAccessProfile } from "@/server/auth/staff-access-profile";
 import { ProductionJobConflictError } from "@/server/production/production-job-service";
 import { createFormsJobRoute } from "./route-handler";
+import * as publicRoute from "./route";
 
 const adminAccess = {
   user: { id: "admin-1", email: "admin@example.test" },
@@ -11,6 +12,7 @@ const adminAccess = {
   formProfile: null,
 };
 const context = { params: Promise.resolve({ jobId: "550e8400-e29b-41d4-a716-446655440000" }) };
+type RouteContext = typeof context;
 
 function request(body: object, origin = "https://shop.example.test") {
   return new Request("https://shop.example.test/api/forms/jobs/550e8400-e29b-41d4-a716-446655440000", {
@@ -20,7 +22,78 @@ function request(body: object, origin = "https://shop.example.test") {
   });
 }
 
+function deleteRequest(body: object, origin = "https://shop.example.test") {
+  return new Request("https://shop.example.test/api/forms/jobs/550e8400-e29b-41d4-a716-446655440000", {
+    method: "DELETE",
+    headers: { "content-type": "application/json", origin },
+    body: JSON.stringify(body),
+  });
+}
+
 describe("forms job inline update route", () => {
+  it("exports an order delete handler through the Next.js route", () => {
+    expect(publicRoute.DELETE).toBeTypeOf("function");
+  });
+
+  it("lets only an administrator delete a manual order and cleans its stored files", async () => {
+    const removeManual = vi.fn().mockResolvedValue({
+      result: "deleted",
+      jobNumber: "07243",
+      files: [{ id: "file-1", storageKey: "private-uploads/file-1.bin" }],
+    });
+    const remove = vi.fn().mockResolvedValue(undefined);
+    const route = createFormsJobRoute({
+      requirePermission: vi.fn().mockResolvedValue(adminAccess),
+      update: vi.fn(),
+      detail: vi.fn(),
+      removeManual,
+      remove,
+      trustedOrigin: "https://shop.example.test",
+    } as never) as ReturnType<typeof createFormsJobRoute> & {
+      DELETE: (request: Request, context: RouteContext) => Promise<Response>;
+    };
+
+    const response = await route.DELETE(deleteRequest({
+      expectedJobNumber: "07243",
+      idempotencyKey: "delete-order-07243",
+    }), context);
+
+    expect(response.status).toBe(200);
+    expect(removeManual).toHaveBeenCalledWith(
+      { userId: "admin-1", email: "admin@example.test" },
+      "550e8400-e29b-41d4-a716-446655440000",
+      { expectedJobNumber: "07243", idempotencyKey: "delete-order-07243" },
+    );
+    expect(remove).toHaveBeenCalledWith({ id: "file-1", storageKey: "private-uploads/file-1.bin" });
+    await expect(response.json()).resolves.toMatchObject({ result: "deleted", jobNumber: "07243", storageCleanupFailed: 0 });
+  });
+
+  it("denies order deletion to non-admin Forms staff", async () => {
+    const removeManual = vi.fn();
+    const route = createFormsJobRoute({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: { id: "manager-1", email: "manager@example.test" },
+        formRole: "form_staff",
+        formProfile: null,
+      }),
+      update: vi.fn(),
+      detail: vi.fn(),
+      removeManual,
+      remove: vi.fn(),
+      trustedOrigin: "https://shop.example.test",
+    } as never) as ReturnType<typeof createFormsJobRoute> & {
+      DELETE: (request: Request, context: RouteContext) => Promise<Response>;
+    };
+
+    const response = await route.DELETE(deleteRequest({
+      expectedJobNumber: "07243",
+      idempotencyKey: "delete-order-07243",
+    }), context);
+
+    expect(response.status).toBe(403);
+    expect(removeManual).not.toHaveBeenCalled();
+  });
+
   it("maps an inline milestone to the existing audited production update", async () => {
     const update = vi.fn().mockResolvedValue("updated");
     const route = createFormsJobRoute({

@@ -26,6 +26,8 @@ type Dependencies = Readonly<{
   requirePermission: (permission: FormPermission) => Promise<Access>;
   update: ProductionRuntime["update"];
   detail: ProductionRuntime["detail"];
+  removeManual?: ProductionRuntime["deleteManual"];
+  remove?: ReturnType<typeof getAdminProductionProofRuntime>["remove"];
   listFiles?: ReturnType<typeof getAdminProductionProofRuntime>["listFiles"];
   listNotifications?: ReturnType<typeof getCustomerNotificationRuntime>["listForJob"];
   assignees?: ProductionRuntime["assignees"];
@@ -44,6 +46,10 @@ const detailEnvelopeSchema = z.object({
   expectedUpdatedAt: z.string().datetime(),
   idempotencyKey: z.string().trim().min(8).max(255),
 }).passthrough();
+const deleteEnvelopeSchema = z.object({
+  expectedJobNumber: z.string().trim().min(1).max(190),
+  idempotencyKey: z.string().trim().min(8).max(255),
+}).strict();
 
 const booleanFields = new Set<FormInlineFieldKey>([
   "fileSent", "downloaded", "customerNotified", "printed", "completed",
@@ -175,6 +181,8 @@ export function createFormsJobRoute(dependencies?: Dependencies) {
       requirePermission: requireFormPermission,
       update: production.update,
       detail: production.detail,
+      removeManual: production.deleteManual,
+      remove: proof.remove,
       listFiles: proof.listFiles,
       listNotifications: getCustomerNotificationRuntime().listForJob,
       assignees: production.assignees,
@@ -284,9 +292,36 @@ export function createFormsJobRoute(dependencies?: Dependencies) {
         return errorResponse(error);
       }
     },
+    async DELETE(request: Request, context: Context) {
+      try {
+        const deps = dependencies ?? defaults();
+        const access = await deps.requirePermission("update_jobs");
+        if (access.formRole !== "admin") throw new HttpError("Forbidden", 403);
+        assertTrustedMutationRequest(request, deps.trustedOrigin);
+        const parsed = deleteEnvelopeSchema.safeParse(await parseBoundedJson(request));
+        if (!parsed.success || !deps.removeManual || !deps.remove) {
+          throw new ProductionJobValidationError();
+        }
+        const { jobId } = await context.params;
+        const deleted = await deps.removeManual(
+          { userId: access.user.id, email: access.user.email ?? "unknown@invalid.local" },
+          jobId,
+          parsed.data,
+        );
+        const cleanup = await Promise.allSettled(deleted.files.map((file) => deps.remove!(file)));
+        return Response.json({
+          result: deleted.result,
+          jobNumber: deleted.jobNumber,
+          storageCleanupFailed: cleanup.filter((result) => result.status === "rejected").length,
+        }, { headers: noStore });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    },
   };
 }
 
 const route = createFormsJobRoute();
 export const GET = route.GET;
 export const PATCH = route.PATCH;
+export const DELETE = route.DELETE;

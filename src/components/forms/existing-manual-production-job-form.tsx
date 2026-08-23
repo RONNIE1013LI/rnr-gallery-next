@@ -30,9 +30,11 @@ export function ExistingManualProductionJobForm({
   canEdit,
   canUpdateProductionStatus,
   canUpdateDeliveryStatus,
+  canDeleteJob,
   jobApiBase,
   invoicePdfBase,
   onSaved,
+  onDeleted,
   onBack,
 }: Readonly<{
   detail: Detail;
@@ -44,9 +46,11 @@ export function ExistingManualProductionJobForm({
   canEdit: boolean;
   canUpdateProductionStatus: boolean;
   canUpdateDeliveryStatus: boolean;
+  canDeleteJob?: boolean;
   jobApiBase: string;
   invoicePdfBase: string;
   onSaved?: () => void;
+  onDeleted?: () => void;
   onBack?: () => void;
 }>) {
   const firstItem = detail.items[0];
@@ -101,6 +105,7 @@ export function ExistingManualProductionJobForm({
     canEdit={canEdit}
     canUpdateProductionStatus={canUpdateProductionStatus}
     canUpdateDeliveryStatus={canUpdateDeliveryStatus}
+    canDeleteJob={canDeleteJob}
     endpoint={jobApiBase}
     detailBasePath="/order-system/jobs"
     backHref="/order-system"
@@ -109,6 +114,7 @@ export function ExistingManualProductionJobForm({
     existingManualOrder={existingManualOrder}
     existingPaymentProofs={files}
     onSaved={onSaved}
+    onDeleted={onDeleted}
     onBack={onBack}
   />;
 }

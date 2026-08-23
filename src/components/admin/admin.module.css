@@ -3748,6 +3748,7 @@
 }
 
 .manualFieldRows > label,
+.manualFileRow,
 .manualChoiceRow,
 .manualDetailRows > div {
   display: grid;
@@ -3760,12 +3761,14 @@
 }
 
 .manualFieldRows > label:last-child,
+.manualFileRow:last-child,
 .manualChoiceRow:last-child,
 .manualDetailRows > div:last-child {
   border-bottom: 0;
 }
 
 .manualFieldRows > label > span:first-child,
+.manualFileRow > span:first-child,
 .manualChoiceRow > span:first-child,
 .manualDetailRows dt {
   display: flex;
@@ -3789,6 +3792,7 @@
 .manualFieldRows > label > select,
 .manualFieldRows > label > textarea,
 .manualFieldRows > label > div,
+.manualFileRow > div,
 .manualFieldRows > label > span:last-child,
 .manualDetailRows dd {
   min-width: 0;
@@ -4200,6 +4204,11 @@
   cursor: pointer;
 }
 
+.formSubmitBar .dangerButton {
+  border-color: #8a2d1f;
+  background: #8a2d1f;
+}
+
 .primaryAdminButton:disabled,
 .formSubmitBar button:disabled,
 .secondaryAdminButton:disabled {
@@ -4531,12 +4540,14 @@
   }
 
   .manualFieldRows > label,
+  .manualFileRow,
   .manualChoiceRow,
   .manualDetailRows > div {
     grid-template-columns: 1fr;
   }
 
   .manualFieldRows > label > span:first-child,
+  .manualFileRow > span:first-child,
   .manualChoiceRow > span:first-child,
   .manualDetailRows dt {
     justify-content: flex-start;
