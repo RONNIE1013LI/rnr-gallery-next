@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 
+import { FormsStatsBuilder } from "./forms-stats-builder";
 import { FormsStatsDashboard, type FormsStatsDashboardLayout, type FormsStatsQueryContext } from "./forms-stats-dashboard";
 import styles from "./forms.module.css";
 
@@ -35,6 +36,19 @@ export function FormsStatsWorkbench({
     setMode("builder");
   }
 
+  function closeBuilder() {
+    setEditingLayout(null);
+    setMode("dashboard");
+  }
+
+  function saved(layout: Layout) {
+    setSavedLayouts((current) => [
+      ...current.filter((entry) => entry.id !== layout.id && entry.name !== layout.name),
+      layout,
+    ].sort((left, right) => left.name.localeCompare(right.name)));
+    closeBuilder();
+  }
+
   return (
     <section className={styles.statsWorkbench} data-testid="forms-stats-workbench" data-mode={mode} data-layout-id={editingLayout?.id ?? ""}>
       {mode === "dashboard" ? <FormsStatsDashboard
@@ -45,6 +59,13 @@ export function FormsStatsWorkbench({
         onCreate={() => openBuilder(null)}
         onEdit={openBuilder}
         onDeleted={(layout) => setSavedLayouts((current) => current.filter((entry) => entry.id !== layout.id))}
+      /> : null}
+      {mode === "builder" ? <FormsStatsBuilder
+        initialLayout={editingLayout}
+        canViewFinance={canViewFinance}
+        queryContext={queryContext}
+        onBack={closeBuilder}
+        onSaved={saved}
       /> : null}
     </section>
   );

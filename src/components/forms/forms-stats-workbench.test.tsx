@@ -9,13 +9,17 @@ afterEach(() => {
 });
 
 describe("FormsStatsWorkbench", () => {
-  it("enters the builder boundary from the create control", () => {
+  it("opens the real custom report builder from the create control and returns on Back", () => {
     render(<FormsStatsWorkbench canManage canViewFinance layouts={[]} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Create custom stat" }));
 
     expect(screen.getByTestId("forms-stats-workbench")).toHaveAttribute("data-mode", "builder");
     expect(screen.getByTestId("forms-stats-workbench")).toHaveAttribute("data-layout-id", "");
+    expect(screen.getByRole("heading", { name: "Custom report builder" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByTestId("forms-stats-workbench")).toHaveAttribute("data-mode", "dashboard");
+    expect(screen.getByRole("button", { name: "Create custom stat" })).toBeInTheDocument();
   });
 
   it("passes the selected saved layout through the edit boundary and enters builder mode", () => {
@@ -27,7 +31,44 @@ describe("FormsStatsWorkbench", () => {
     }]} />);
     fireEvent.click(screen.getByRole("button", { name: "Edit Weekly sales" }));
     expect(screen.getByTestId("forms-stats-workbench")).toHaveAttribute("data-mode", "builder");
-    expect(screen.queryByRole("heading", { name: "Weekly sales" })).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Custom report builder" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Report name")).toHaveValue("Weekly sales");
+  });
+
+  it("returns to the dashboard with the server-saved layout only after Save succeeds", async () => {
+    let nextId = 0;
+    vi.stubGlobal("crypto", { randomUUID: () => `widget-${++nextId}` });
+    vi.stubGlobal("fetch", vi.fn((_input: string | URL | Request, init?: RequestInit) => {
+      if (init?.method === "PUT") {
+        return Promise.resolve(new Response(JSON.stringify({ layout: { id: "saved-layout" } }), { status: 200, headers: { "Content-Type": "application/json" } }));
+      }
+      return Promise.resolve(new Response(JSON.stringify({ stat: { query: { measure: "order_count", aggregation: "count", sort: "default" }, value: 4 } }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    }));
+    render(<FormsStatsWorkbench canManage canViewFinance layouts={[]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create custom stat" }));
+    fireEvent.change(screen.getByLabelText("Report name"), { target: { value: "Saved report" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add number" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("heading", { name: "Saved report" })).toBeInTheDocument();
+    expect(screen.getByTestId("forms-stats-workbench")).toHaveAttribute("data-mode", "dashboard");
+    expect(await screen.findByText("4")).toBeInTheDocument();
+  });
+
+  it("keeps the builder open when saving fails", async () => {
+    vi.stubGlobal("crypto", { randomUUID: () => "widget-1" });
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(JSON.stringify({ error: "Could not save" }), { status: 500, headers: { "Content-Type": "application/json" } }))));
+    render(<FormsStatsWorkbench canManage canViewFinance layouts={[]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Create custom stat" }));
+    fireEvent.change(screen.getByLabelText("Report name"), { target: { value: "Unsaved report" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add number" }));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Could not save");
+    expect(screen.getByTestId("forms-stats-workbench")).toHaveAttribute("data-mode", "builder");
+    expect(screen.getByLabelText("Report name")).toHaveValue("Unsaved report");
   });
 
   it("reconciles saved reports when the server layouts prop changes", async () => {

@@ -297,6 +297,254 @@
   font-size: 14px;
 }
 
+.statsBuilder {
+  display: grid;
+  min-width: 0;
+  max-width: 100%;
+  gap: 10px;
+}
+
+.statsBuilderHeader,
+.statsBuilderFooter,
+.statsBuilderFooter > div,
+.statsCanvasWidget > header,
+.statsCanvasActions {
+  display: flex;
+  align-items: center;
+}
+
+.statsBuilderHeader,
+.statsBuilderFooter,
+.statsCanvasWidget > header {
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.statsBuilderHeader {
+  padding: 12px 14px;
+  border: 1px solid var(--forms-border);
+  border-radius: 7px;
+  background: var(--forms-surface);
+}
+
+.statsBuilderHeader p,
+.statsBuilderHeader h2,
+.statsPalette h3,
+.statsSettings h3,
+.statsCanvasWidget h3,
+.statsCanvasWidget p,
+.statsSettings p {
+  margin: 0;
+}
+
+.statsBuilderHeader p,
+.statsBuilderHeader span,
+.statsCanvasWidget header span,
+.statsPreviewHint,
+.statsSettings p,
+.statsEditorNote {
+  color: var(--forms-muted);
+  font-size: 12px;
+}
+
+.statsBuilderHeader h2 {
+  font-size: 18px;
+}
+
+.statsBuilderColumns {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
+.statsPalette,
+.statsSettings,
+.statsBuilderCanvas {
+  min-width: 0;
+  border: 1px solid var(--forms-border);
+  border-radius: 7px;
+}
+
+.statsPalette,
+.statsSettings {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding: 12px;
+  background: var(--forms-surface);
+}
+
+.statsPalette section,
+.statsSettings section,
+.statsWidgetEditor,
+.statsPaletteGrid {
+  display: grid;
+  gap: 8px;
+}
+
+.statsPalette h3,
+.statsSettings h3 {
+  font-size: 13px;
+}
+
+.statsPalette button,
+.statsCanvasActions button,
+.statsBuilderFooter button {
+  min-height: 38px;
+  padding: 6px 9px;
+  border: 1px solid var(--forms-border);
+  border-radius: var(--radius-button);
+  color: var(--forms-ink);
+  background: #fff;
+  font: inherit;
+  cursor: pointer;
+}
+
+.statsPalette button {
+  text-align: left;
+}
+
+.statsPalette button:focus-visible,
+.statsCanvasActions button:focus-visible,
+.statsBuilderFooter button:focus-visible,
+.statsWidgetEditor input:focus-visible,
+.statsWidgetEditor select:focus-visible,
+.statsWidgetEditor textarea:focus-visible,
+.statsSettings input:focus-visible {
+  outline: 2px solid var(--gallery-green);
+  outline-offset: 2px;
+}
+
+.statsCanvasActions button:disabled,
+.statsBuilderFooter button:disabled {
+  cursor: not-allowed;
+  opacity: .5;
+}
+
+.statsBuilderCanvas {
+  display: grid;
+  align-content: start;
+  gap: 10px;
+  padding: 12px;
+  overflow-x: hidden;
+  background: var(--forms-canvas);
+}
+
+.statsCanvasEmpty {
+  display: grid;
+  min-height: 220px;
+  place-content: center;
+  padding: 24px;
+  border: 1px dashed #9aa3ad;
+  border-radius: 6px;
+  color: var(--forms-muted);
+  text-align: center;
+}
+
+.statsCanvasEmpty p {
+  margin: 4px 0 0;
+}
+
+.statsCanvasWidget {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--forms-border);
+  border-radius: 6px;
+  background: var(--forms-surface);
+}
+
+.statsCanvasWidget[data-selected="true"] {
+  border-color: var(--gallery-green);
+  box-shadow: 0 0 0 2px rgb(23 60 49 / 12%);
+}
+
+.statsCanvasWidget > header {
+  align-items: flex-start;
+  margin-bottom: 10px;
+}
+
+.statsCanvasWidget h3 {
+  overflow-wrap: anywhere;
+  font-size: 14px;
+}
+
+.statsCanvasWidget header span {
+  text-transform: capitalize;
+}
+
+.statsCanvasActions {
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.statsCanvasActions button {
+  min-height: 30px;
+  padding: 3px 6px;
+  font-size: 11px;
+}
+
+.statsCanvasActions button[aria-pressed="true"] {
+  border-color: var(--gallery-green);
+  color: #fff;
+  background: var(--gallery-green);
+}
+
+.statsWidgetEditor label,
+.statsSettings > section > label {
+  display: grid;
+  gap: 4px;
+  color: var(--forms-muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.statsWidgetEditor input,
+.statsWidgetEditor select,
+.statsWidgetEditor textarea,
+.statsSettings input {
+  width: 100%;
+  min-width: 0;
+  min-height: 40px;
+  padding: 6px 8px;
+  border: 1px solid var(--forms-border);
+  border-radius: 5px;
+  color: var(--forms-ink);
+  background: #fff;
+  font: inherit;
+  font-weight: 400;
+}
+
+.statsWidgetEditor textarea {
+  min-height: 100px;
+  resize: vertical;
+}
+
+.statsBuilderFooter {
+  padding: 10px 12px;
+  border: 1px solid var(--forms-border);
+  border-radius: 7px;
+  background: var(--forms-surface);
+}
+
+.statsBuilderFooter > div {
+  gap: 8px;
+}
+
+.statsBuilderFooter > div button:last-child {
+  border-color: var(--gallery-green);
+  color: #fff;
+  background: var(--gallery-green);
+}
+
+@media (min-width: 901px) {
+  .statsBuilderColumns {
+    grid-template-columns: minmax(160px, 190px) minmax(0, 1fr) minmax(220px, 280px);
+    align-items: start;
+  }
+}
+
 .columnStatsPanel {
   padding: 10px 12px;
   border: 1px solid var(--forms-border);
@@ -831,6 +1079,23 @@
 
   .statWidget[data-type] {
     grid-column: auto;
+  }
+
+  .statsBuilderHeader,
+  .statsCanvasWidget > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .statsCanvasActions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .statsCanvasActions button,
+  .statsPalette button,
+  .statsBuilderFooter button {
+    min-height: 44px;
   }
 }
 

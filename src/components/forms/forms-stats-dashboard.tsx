@@ -24,7 +24,7 @@ export type FormsStatsQueryContext = Readonly<{
 }>;
 const emptyQueryContext: FormsStatsQueryContext = Object.freeze({});
 
-function statisticRequest(widget: FormStatWidget, queryContext: FormsStatsQueryContext): StatisticRequest | null {
+export function buildFormsStatsStatisticRequest(widget: FormStatWidget, queryContext: FormsStatsQueryContext): StatisticRequest | null {
   const params = new URLSearchParams();
   if (widget.metric) {
     params.set("metric", widget.metric);
@@ -71,7 +71,7 @@ export function FormsStatsDashboard({
     const unique = new Map<string, StatisticRequest>();
     for (const layout of layouts) {
       for (const widget of layout.widgets) {
-        const request = statisticRequest(widget, queryContext);
+        const request = buildFormsStatsStatisticRequest(widget, queryContext);
         if (request) unique.set(request.key, request);
       }
     }
@@ -154,7 +154,7 @@ export function FormsStatsDashboard({
           </header>
           <div className={styles.statsReportWidgets}>
             {layout.widgets.map((widget) => {
-              const request = statisticRequest(widget, queryContext);
+              const request = buildFormsStatsStatisticRequest(widget, queryContext);
               return <section className={styles.statsReportWidget} key={widget.id} data-type={widget.type}>
                 <h3>{widget.title}</h3>
                 <FormsStatsWidgetResult widget={widget} stat={request ? stats[request.key] : undefined} state={request ? states[request.key] : undefined} instanceId={`${layout.id}-${widget.id}`} />
