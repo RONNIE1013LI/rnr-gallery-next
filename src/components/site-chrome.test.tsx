@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 const state = vi.hoisted(() => ({ pathname: "/", search: "", replace: vi.fn() }));
@@ -7,13 +7,73 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(state.search),
   useRouter: () => ({ replace: state.replace }),
 }));
-vi.mock("./site-header", () => ({ SiteHeader: () => <header>Public header</header> }));
-vi.mock("./site-footer", () => ({ SiteFooter: () => <footer>Public footer</footer> }));
+vi.mock("./site-header", () => ({
+  SiteHeader: ({ initialMarket = "NZ" }: { initialMarket?: string }) => (
+    <header><span>Public header</span><output aria-label="Header market">{initialMarket}</output></header>
+  ),
+}));
+vi.mock("./site-footer", () => ({
+  SiteFooter: ({ market }: { market: string }) => (
+    <footer><span>Public footer</span><output aria-label="Footer market">{market}</output></footer>
+  ),
+}));
 vi.mock("./image-protection", () => ({ ImageProtectionLayer: () => <div>Protection</div> }));
 
 import { SiteChrome } from "./site-chrome";
 
 describe("SiteChrome", () => {
+  it("keeps a fresh AU layout on NZ after the market switch event reaches the root route", async () => {
+    state.pathname = "/au";
+    state.search = "";
+    state.replace.mockClear();
+    const props = {
+      initialMarket: "AU" as const,
+      australiaEnabled: true,
+      footerContent: { tagline: "x", email: "a@b.test", phone: "+64" },
+    };
+    const { rerender } = render(
+      <SiteChrome {...props}><main>Australia</main></SiteChrome>,
+    );
+
+    fireEvent(window, new CustomEvent("rnr:market-changed", {
+      detail: { market: "NZ" },
+    }));
+    state.pathname = "/";
+    rerender(<SiteChrome {...props}><main>New Zealand</main></SiteChrome>);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Header market")).toHaveTextContent("NZ");
+      expect(screen.getByLabelText("Footer market")).toHaveTextContent("NZ");
+      expect(state.replace).not.toHaveBeenCalled();
+    });
+  });
+
+  it("updates visible chrome for an AU event without adding a replace navigation", async () => {
+    state.pathname = "/";
+    state.search = "";
+    state.replace.mockClear();
+    const props = {
+      initialMarket: "NZ" as const,
+      australiaEnabled: true,
+      footerContent: { tagline: "x", email: "a@b.test", phone: "+64" },
+    };
+    const { rerender } = render(
+      <SiteChrome {...props}><main>New Zealand</main></SiteChrome>,
+    );
+
+    fireEvent(window, new CustomEvent("rnr:market-changed", {
+      detail: { market: "AU" },
+    }));
+    state.pathname = "/au";
+    rerender(<SiteChrome {...props}><main>Australia</main></SiteChrome>);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Header market")).toHaveTextContent("AU");
+      expect(screen.getByLabelText("Footer market")).toHaveTextContent("AU");
+      expect(state.replace).not.toHaveBeenCalled();
+    });
+  });
+
   it.each([
     ["/", "/au"],
     ["/shop", "/au/shop"],
