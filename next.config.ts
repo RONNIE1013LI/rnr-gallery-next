@@ -30,6 +30,9 @@ export function buildSecurityHeaders(nodeEnv: string | undefined) {
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["192.168.4.199"],
   images: {
+    deviceSizes: [480, 640, 672, 704, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    imageSizes: [32, 48, 64, 96, 128, 256, 320, 384],
+    qualities: [60, 75],
     localPatterns: [
       { pathname: "/**", search: "" },
       { pathname: "/gallery-images/**" },
