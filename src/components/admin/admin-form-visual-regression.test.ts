@@ -27,6 +27,21 @@ describe("Admin form visual refinements", () => {
     expect(mobile).toMatch(/\.formEntryPage input,[\s\S]*?min-height:\s*44px;/);
   });
 
+  it("keeps manual choice pills compact on phones", () => {
+    const mobile = adminCss.slice(adminCss.lastIndexOf("@media (max-width: 680px)"));
+    const options = cssRule(mobile, ".manualChoiceOptions");
+    const option = cssRule(mobile, ".manualChoiceOption");
+    const radio = cssRule(mobile, ".manualFieldRows .manualChoiceOption input");
+
+    expect(options).toContain("gap: 4px;");
+    expect(options).toContain("padding: 6px;");
+    expect(option).toContain("min-height: 30px;");
+    expect(option).toContain("padding: 5px 8px 5px 6px;");
+    expect(option).toContain("font-size: 12px;");
+    expect(radio).toContain("width: 14px;");
+    expect(radio).toContain("min-height: 14px;");
+  });
+
   it("lets mobile Order Entry fill the viewport with a compact visible close control", () => {
     const mobile = formsCss.slice(formsCss.indexOf("@media (max-width: 700px)"));
     expect(mobile).toMatch(/\.orderEntryDrawer\s*\{[\s\S]*?max-width:\s*100vw;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);

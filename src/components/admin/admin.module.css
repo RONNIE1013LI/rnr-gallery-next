@@ -4570,18 +4570,19 @@ a.paymentProofPreviewMedia {
   }
 
   .manualChoiceOptions {
-    padding: 9px;
+    gap: 4px;
+    padding: 6px;
   }
 
   .manualChoiceOption {
-    min-height: 36px;
-    padding: 7px 10px 7px 7px;
-    font-size: 14px;
+    min-height: 30px;
+    padding: 5px 8px 5px 6px;
+    font-size: 12px;
   }
 
   .manualFieldRows .manualChoiceOption input {
-    width: 18px;
-    min-height: 18px;
+    width: 14px;
+    min-height: 14px;
   }
 
   .manualToggleRow input {
