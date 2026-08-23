@@ -456,6 +456,47 @@ describe("ProductionJobForm", () => {
     expect(screen.getByRole("img", { name: "Payment proof saved-receipt.jpg" })).toBeInTheDocument();
   });
 
+  it("deletes a saved payment proof with the JSON mutation contract", async () => {
+    const savedProof = {
+      id: "6f99f301-f798-4cde-b1f1-44d6c08bdf2d",
+      jobId: existingManualOrder.id,
+      kind: "payment_proof" as const,
+      version: null,
+      originalName: "saved-receipt.jpg",
+      mediaType: "image/jpeg",
+      sizeBytes: 3,
+      createdAt: new Date("2026-08-23T05:00:00.000Z"),
+      review: null,
+    };
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 204 }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("confirm", vi.fn(() => true));
+
+    render(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance
+      canUploadFiles
+      canDeleteFiles
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      existingManualOrder={existingManualOrder}
+      existingPaymentProofs={[savedProof]}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Delete saved-receipt.jpg" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/forms/jobs/${existingManualOrder.id}/files/${savedProof.id}`,
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
+    );
+    expect(screen.queryByRole("img", { name: "Payment proof saved-receipt.jpg" })).not.toBeInTheDocument();
+  });
+
   it("keeps the selected proof visible when immediate saving fails", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "Upload unavailable" }), {
       status: 503,

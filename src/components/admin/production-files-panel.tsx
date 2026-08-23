@@ -162,7 +162,11 @@ export function ProductionFilesPanel({
     setPending(true);
     setFeedback("");
     try {
-      const response = await fetch(`${jobApiBase}/${jobId}/files/${file.id}`, { method: "DELETE" });
+      const response = await fetch(`${jobApiBase}/${jobId}/files/${file.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
       const result = await response.json().catch(() => null) as { error?: string } | null;
       if (!response.ok) throw new Error(result?.error || "The payment proof could not be deleted.");
       setFeedback("Payment proof deleted.");

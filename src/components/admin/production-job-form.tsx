@@ -504,7 +504,11 @@ export function ProductionJobForm({
     setPending(true);
     setPaymentProofError("");
     try {
-      const response = await fetch(`${endpoint}/${existingManualOrder.id}/files/${file.id}`, { method: "DELETE" });
+      const response = await fetch(`${endpoint}/${existingManualOrder.id}/files/${file.id}`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
       const result = await response.json().catch(() => null) as { error?: string } | null;
       if (!response.ok) throw new Error(result?.error || "The payment proof could not be deleted.");
       setSavedPaymentProofs((current) => current.filter((candidate) => candidate.id !== file.id));

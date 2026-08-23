@@ -162,7 +162,11 @@ describe("production files panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Delete receipt.jpg" }));
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/forms/jobs/${file.jobId}/files/${paymentProof.id}`,
-      expect.objectContaining({ method: "DELETE" }),
+      {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
     );
   });
 
