@@ -167,11 +167,11 @@ describe("market selection route", () => {
     });
   });
 
-  it("returns a full authoritative AUD repricing when changing a non-empty cart", async () => {
+  it("returns ready for an authoritative AUD cart beyond the urgent fee bands", async () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-08-24T00:00:00.000Z"));
     const route = createMarketRoute({
-      current: vi.fn().mockResolvedValue({ revision: 9, registry: enabledAuRegistry(0) }),
+      current: vi.fn().mockResolvedValue({ revision: 9, registry: enabledAuRegistry() }),
       trustedOrigin: origin,
     });
     try {
@@ -181,7 +181,7 @@ describe("market selection route", () => {
           clientItemId: "00000000-0000-4000-8000-000000000010",
           productKey: "photo-print-canvas", sizeKey: "a4", orientation: "landscape",
           peoplePets: 0, photoSubmissionMethod: "later", designText: "", notes: "",
-          neededDate: "2026-08-28", urgentServiceConfirmed: false, quantity: 1,
+          neededDate: "2026-09-24", urgentServiceConfirmed: false, quantity: 1,
           uploadReferences: [],
         }],
       }));

@@ -80,6 +80,27 @@ describe("market-switch target-market preflight", () => {
     }
   });
 
+  it("returns ready for a valid completion date beyond the urgent fee bands", () => {
+    const result = preflightMarketSwitch(cart([item(FIRST_ID, {
+      neededDate: "2026-09-24",
+    })]), {
+      now: NOW,
+      registry: enabledAuRegistry(),
+      market: "AU",
+      registryRevision: 9,
+    });
+
+    expect(result).toMatchObject({
+      result: "ready",
+      cart: {
+        market: "AU",
+        currency: "AUD",
+        totalInclGstCents: 40_000,
+        items: [{ urgentServiceConfirmed: false, urgentService: { feeInclGstCents: 0 } }],
+      },
+    });
+  });
+
   it("preserves already-confirmed items while reporting only unconfirmed items", () => {
     const result = preflightMarketSwitch(cart([
       item(FIRST_ID, { urgentServiceConfirmed: true }),
