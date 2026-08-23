@@ -5,7 +5,7 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { checkoutSessions, orders, productionJobItems, productionJobs, user } from "@/server/db/schema";
-import { selectMigrationTarget, verifyDatabaseIdentity, type DatabaseIdentity } from "../../../scripts/migration-safety";
+import { selectMigrationTarget, type DatabaseIdentity } from "../../../scripts/migration-safety";
 import { parseFormWorkbenchQuery } from "./forms-workbench-service";
 import { queryFormStatistic } from "./drizzle-forms-stats-repository";
 
@@ -75,8 +75,10 @@ async function identifyDatabase(url: string): Promise<DatabaseIdentity & { serve
 async function verifyFixtureDatabase() {
   const target = selectMigrationTarget({ environment: "test", env: { TEST_DATABASE_URL: approvedDatabaseUrl } });
   const identity = await identifyDatabase(approvedDatabaseUrl);
-  const safeIdentity = verifyDatabaseIdentity(target, identity);
-  verifiedDatabase = { database: safeIdentity.database, serverPort: identity.serverPort };
+  if (identity.database !== target.expectedDatabase || identity.inRecovery || identity.serverPort !== 5432) {
+    throw new Error("Database identity mismatch; test fixture refused");
+  }
+  verifiedDatabase = { database: identity.database, serverPort: identity.serverPort };
 }
 
 describe("forms stats repository", () => {
