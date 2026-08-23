@@ -396,6 +396,8 @@ describe("ProductionJobForm", () => {
 
     expect(screen.getByRole("img", { name: "Payment proof receipt-one.jpg" })).toHaveAttribute("src", "blob:receipt-one");
     expect(screen.getByRole("img", { name: "Payment proof receipt-two.jpg" })).toHaveAttribute("src", "blob:receipt-two");
+    expect(screen.getByRole("link", { name: "View payment proof receipt-one.jpg" })).toHaveAttribute("href", "blob:receipt-one");
+    expect(screen.getByRole("link", { name: "View payment proof receipt-one.jpg" })).toHaveAttribute("target", "_blank");
     expect(screen.queryByText("receipt-one.jpg")).not.toBeInTheDocument();
     expect(screen.queryByText("receipt-two.jpg")).not.toBeInTheDocument();
     expect(createObjectURL).toHaveBeenCalledTimes(2);
@@ -406,6 +408,78 @@ describe("ProductionJobForm", () => {
     expect(screen.queryByRole("img", { name: "Payment proof receipt-one.jpg" })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Payment proof receipt-two.jpg" })).toBeInTheDocument();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:receipt-one");
+  });
+
+  it("immediately saves a selected proof on an existing manual order and opens the protected original", async () => {
+    const proofId = "6f99f301-f798-4cde-b1f1-44d6c08bdf2d";
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "created",
+      file: {
+        id: proofId,
+        jobId: existingManualOrder.id,
+        kind: "payment_proof",
+        version: null,
+        originalName: "saved-receipt.jpg",
+        mediaType: "image/jpeg",
+        sizeBytes: 3,
+        createdAt: "2026-08-23T05:00:00.000Z",
+        review: null,
+      },
+    }), { status: 201, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: () => "existing-proof-upload-0001" });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:saved-receipt");
+    vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => undefined);
+
+    render(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance
+      canUploadFiles
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      existingManualOrder={existingManualOrder}
+    />);
+
+    const proof = new File([new Uint8Array([0xff, 0xd8, 0xff])], "saved-receipt.jpg", { type: "image/jpeg" });
+    fireEvent.change(screen.getByLabelText("PaymtProved"), { target: { files: [proof] } });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/forms/jobs/${existingManualOrder.id}/files`,
+      expect.objectContaining({ method: "POST" }),
+    );
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
+    const link = await screen.findByRole("link", { name: "View payment proof saved-receipt.jpg" });
+    expect(link).toHaveAttribute("href", `/api/forms/jobs/${existingManualOrder.id}/files/${proofId}`);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("img", { name: "Payment proof saved-receipt.jpg" })).toBeInTheDocument();
+  });
+
+  it("keeps the selected proof visible when immediate saving fails", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ error: "Upload unavailable" }), {
+      status: 503,
+      headers: { "Content-Type": "application/json" },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: () => "existing-proof-upload-0002" });
+    vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:failed-receipt");
+
+    render(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance
+      canUploadFiles
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      existingManualOrder={existingManualOrder}
+    />);
+
+    fireEvent.change(screen.getByLabelText("PaymtProved"), { target: { files: [
+      new File([new Uint8Array([1])], "failed-receipt.jpg", { type: "image/jpeg" }),
+    ] } });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Upload unavailable");
+    expect(screen.getByRole("img", { name: "Payment proof failed-receipt.jpg" })).toBeInTheDocument();
+    expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
   });
 
   it("uploads every selected payment proof before applying the paid status", async () => {

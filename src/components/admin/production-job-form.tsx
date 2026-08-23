@@ -422,6 +422,34 @@ export function ProductionJobForm({
       paymentProofsRef.current = next;
       return next;
     });
+    if (existingManualOrder && additions.length) {
+      void saveExistingPaymentProofs(additions);
+    }
+  }
+
+  async function saveExistingPaymentProofs(proofs: readonly PendingPaymentProof[]) {
+    if (!existingManualOrder) return;
+    setPending(true);
+    for (const proof of proofs) {
+      try {
+        const [saved] = await uploadProofFiles(existingManualOrder.id, [{
+          proof: proof.file,
+          uploadIdempotencyKey: createClientId(),
+        }]);
+        if (!saved) throw new Error("The payment proof could not be uploaded.");
+        setSavedPaymentProofs((current) => [...current, saved]);
+        setPaymentProofs((current) => {
+          const next = current.filter((candidate) => candidate.id !== proof.id);
+          paymentProofsRef.current = next;
+          return next;
+        });
+        if (proof.previewUrl) URL.revokeObjectURL(proof.previewUrl);
+      } catch (error) {
+        setPaymentProofError(error instanceof Error ? error.message : "The payment proof could not be uploaded.");
+        break;
+      }
+    }
+    setPending(false);
   }
 
   function removePaymentProof(id: number) {
@@ -484,15 +512,19 @@ export function ProductionJobForm({
   }
 
   async function uploadProofFiles(jobId: string, proofs: readonly Readonly<{ proof: File; uploadIdempotencyKey: string }>[]) {
+    const uploaded: ProductionFileSummary[] = [];
     for (const current of proofs) {
       const uploadBody = new FormData();
       uploadBody.set("kind", "payment_proof");
       uploadBody.set("idempotencyKey", current.uploadIdempotencyKey);
       uploadBody.set("file", current.proof);
       const response = await fetch(`${endpoint}/${jobId}/files`, { method: "POST", body: uploadBody });
-      const result = await response.json().catch(() => null) as { error?: string } | null;
+      const result = await response.json().catch(() => null) as { error?: string; file?: ProductionFileSummary } | null;
       if (!response.ok) throw new Error(result?.error || "The payment proof could not be uploaded.");
+      if (!result?.file) throw new Error("The payment proof upload response was incomplete.");
+      uploaded.push(result.file);
     }
+    return uploaded;
   }
 
   async function uploadPaymentProof(recovery: PaymentRecovery) {
@@ -793,7 +825,7 @@ export function ProductionJobForm({
       }}
       onChangeCapture={(event) => {
         if (event.target instanceof HTMLSelectElement ||
-          (event.target instanceof HTMLInputElement && ["checkbox", "file", "radio"].includes(event.target.type))) requestAutoSave();
+          (event.target instanceof HTMLInputElement && ["checkbox", "radio"].includes(event.target.type))) requestAutoSave();
       }}
     >
       <div className={styles.formUtilityBar}>
@@ -841,13 +873,13 @@ export function ProductionJobForm({
               {savedPaymentProofs.length || paymentProofs.length ? <div className={styles.paymentProofPreviewGrid}>
                 {savedPaymentProofs.map((proof) => <article className={styles.paymentProofPreviewCard} key={proof.id}>
                   <div className={styles.paymentProofPreviewMedia}>
-                    {proof.mediaType.startsWith("image/") && existingManualOrder ? <Image src={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} alt={`Payment proof ${proof.originalName}`} fill sizes="120px" unoptimized /> : <span>PDF</span>}
+                    {proof.mediaType.startsWith("image/") && existingManualOrder ? <a href={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} target="_blank" rel="noreferrer" aria-label={`View payment proof ${proof.originalName}`}><Image src={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} alt={`Payment proof ${proof.originalName}`} fill sizes="120px" unoptimized /></a> : <span>PDF</span>}
                   </div>
                   {canDeleteFiles && canEdit ? <button type="button" className={styles.paymentProofDeleteButton} aria-label={`Delete ${proof.originalName}`} disabled={pending} onClick={(event) => { event.preventDefault(); void deleteSavedPaymentProof(proof); }}><span aria-hidden="true">×</span></button> : null}
                 </article>)}
                 {paymentProofs.map((proof) => <article className={styles.paymentProofPreviewCard} key={proof.id}>
                   <div className={styles.paymentProofPreviewMedia}>
-                    {proof.previewUrl ? <Image src={proof.previewUrl} alt={`Payment proof ${proof.file.name}`} fill sizes="120px" unoptimized /> : <span>PDF</span>}
+                    {proof.previewUrl ? <a href={proof.previewUrl} target="_blank" rel="noreferrer" aria-label={`View payment proof ${proof.file.name}`}><Image src={proof.previewUrl} alt={`Payment proof ${proof.file.name}`} fill sizes="120px" unoptimized /></a> : <span>PDF</span>}
                   </div>
                   <button type="button" className={styles.paymentProofDeleteButton} aria-label={`Remove ${proof.file.name}`} disabled={pending} onClick={(event) => {
                     event.preventDefault();
