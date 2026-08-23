@@ -136,7 +136,10 @@ export function parseFormStatsLayout(
   value: unknown,
   permissions: Readonly<{ canViewFinance: boolean }> = { canViewFinance: true },
 ): FormStatsLayout {
-  if (JSON.stringify(value).length > 50_000) throw new FormStatsValidationError();
+  const serialized = JSON.stringify(value);
+  if (serialized === undefined || new TextEncoder().encode(serialized).byteLength > 50_000) {
+    throw new FormStatsValidationError();
+  }
   const parsed = layoutSchema.safeParse(value);
   if (!parsed.success) throw new FormStatsValidationError();
   const widgets = parsed.data.widgets.map((widget) => parseFormStatsWidget(widget, permissions));

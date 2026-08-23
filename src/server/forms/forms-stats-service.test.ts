@@ -30,6 +30,18 @@ describe("forms stats validation", () => {
     })).toThrow(FormStatsValidationError);
   });
 
+  it("rejects layouts over 50 KB when measured as UTF-8 bytes", () => {
+    expect(() => parseFormStatsLayout({
+      name: "Unicode layout",
+      widgets: Array.from({ length: 24 }, (_, index) => ({
+        id: `w${index}`,
+        type: "text",
+        title: "Notes",
+        text: "€".repeat(1_000),
+      })),
+    })).toThrow(FormStatsValidationError);
+  });
+
   it("accepts a dated custom statistics query", () => {
     expect(parseFormStatRequest({
       dimension: "submitted_at",
