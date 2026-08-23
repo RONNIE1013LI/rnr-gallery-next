@@ -151,6 +151,11 @@ describe("production files panel", () => {
       "src",
       `/api/forms/jobs/${file.jobId}/files/${paymentProof.id}`,
     );
+    const previewLink = screen.getByRole("link", { name: "View payment proof receipt.jpg" });
+    expect(previewLink).toHaveAttribute("href", `/api/forms/jobs/${file.jobId}/files/${paymentProof.id}`);
+    expect(previewLink).toHaveAttribute("target", "_blank");
+    expect(previewLink.parentElement?.tagName).toBe("ARTICLE");
+    expect(previewLink.className).toContain("paymentProofPreviewMedia");
     expect(screen.queryByText("receipt.jpg · 2.0 KB")).not.toBeInTheDocument();
     expect(screen.queryByText("draft-v2.jpg · 2.0 KB")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("File purpose")).not.toBeInTheDocument();

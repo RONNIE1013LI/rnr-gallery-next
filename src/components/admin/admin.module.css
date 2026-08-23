@@ -2962,6 +2962,11 @@
   object-fit: cover;
 }
 
+a.paymentProofPreviewMedia {
+  cursor: zoom-in;
+  text-decoration: none;
+}
+
 .paymentProofPreviewCard > strong {
   min-width: 0;
   overflow: hidden;

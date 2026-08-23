@@ -521,10 +521,9 @@ export function ProductionJobForm({
 
   async function deleteExistingManualOrder() {
     if (!existingManualOrder || !canDeleteJob) return;
-    const confirmation = window.prompt(
-      `Type ${existingManualOrder.jobNumber} to permanently delete this order.`,
-    );
-    if (confirmation?.trim() !== existingManualOrder.jobNumber) return;
+    if (!window.confirm(
+      `Permanently delete manual order ${existingManualOrder.jobNumber}? Its invoice and attached files will also be deleted.`,
+    )) return;
     setPending(true);
     setFeedback("");
     try {
@@ -911,15 +910,11 @@ export function ProductionJobForm({
               <input className={styles.paymentProofFileInput} ref={paymentProofRef} name="paymentProof" type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" aria-label="PaymtProved" aria-describedby="payment-proof-help payment-proof-error" onChange={(event) => selectPaymentProofs(event.currentTarget.files ?? [])} disabled={formDisabled} />
               {savedPaymentProofs.length || paymentProofs.length ? <div className={styles.paymentProofPreviewGrid}>
                 {savedPaymentProofs.map((proof) => <article className={styles.paymentProofPreviewCard} key={proof.id}>
-                  <div className={styles.paymentProofPreviewMedia}>
-                    {proof.mediaType.startsWith("image/") && existingManualOrder ? <a href={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} target="_blank" rel="noreferrer" aria-label={`View payment proof ${proof.originalName}`}><Image src={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} alt={`Payment proof ${proof.originalName}`} fill sizes="120px" unoptimized /></a> : <span>PDF</span>}
-                  </div>
+                  {proof.mediaType.startsWith("image/") && existingManualOrder ? <a className={styles.paymentProofPreviewMedia} href={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} target="_blank" rel="noreferrer" aria-label={`View payment proof ${proof.originalName}`}><Image src={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} alt={`Payment proof ${proof.originalName}`} fill sizes="120px" unoptimized /></a> : <div className={styles.paymentProofPreviewMedia}><span>PDF</span></div>}
                   {canDeleteFiles && canEdit ? <button type="button" className={styles.paymentProofDeleteButton} aria-label={`Delete ${proof.originalName}`} disabled={pending} onClick={(event) => { event.preventDefault(); void deleteSavedPaymentProof(proof); }}><span aria-hidden="true">×</span></button> : null}
                 </article>)}
                 {paymentProofs.map((proof) => <article className={styles.paymentProofPreviewCard} key={proof.id}>
-                  <div className={styles.paymentProofPreviewMedia}>
-                    {proof.previewUrl ? <a href={proof.previewUrl} target="_blank" rel="noreferrer" aria-label={`View payment proof ${proof.file.name}`}><Image src={proof.previewUrl} alt={`Payment proof ${proof.file.name}`} fill sizes="120px" unoptimized /></a> : <span>PDF</span>}
-                  </div>
+                  {proof.previewUrl ? <a className={styles.paymentProofPreviewMedia} href={proof.previewUrl} target="_blank" rel="noreferrer" aria-label={`View payment proof ${proof.file.name}`}><Image src={proof.previewUrl} alt={`Payment proof ${proof.file.name}`} fill sizes="120px" unoptimized /></a> : <div className={styles.paymentProofPreviewMedia}><span>PDF</span></div>}
                   <button type="button" className={styles.paymentProofDeleteButton} aria-label={`Remove ${proof.file.name}`} disabled={pending} onClick={(event) => {
                     event.preventDefault();
                     removePaymentProof(proof.id);

@@ -398,6 +398,8 @@ describe("ProductionJobForm", () => {
     expect(screen.getByRole("img", { name: "Payment proof receipt-two.jpg" })).toHaveAttribute("src", "blob:receipt-two");
     expect(screen.getByRole("link", { name: "View payment proof receipt-one.jpg" })).toHaveAttribute("href", "blob:receipt-one");
     expect(screen.getByRole("link", { name: "View payment proof receipt-one.jpg" })).toHaveAttribute("target", "_blank");
+    expect(screen.getByRole("link", { name: "View payment proof receipt-one.jpg" }).parentElement?.tagName).toBe("ARTICLE");
+    expect(screen.getByRole("link", { name: "View payment proof receipt-one.jpg" }).className).toContain("paymentProofPreviewMedia");
     expect(screen.queryByText("receipt-one.jpg")).not.toBeInTheDocument();
     expect(screen.queryByText("receipt-two.jpg")).not.toBeInTheDocument();
     expect(createObjectURL).toHaveBeenCalledTimes(2);
@@ -452,6 +454,8 @@ describe("ProductionJobForm", () => {
     const link = await screen.findByRole("link", { name: "View payment proof saved-receipt.jpg" });
     expect(link).toHaveAttribute("href", `/api/forms/jobs/${existingManualOrder.id}/files/${proofId}`);
     expect(link).toHaveAttribute("target", "_blank");
+    expect(link.parentElement?.tagName).toBe("ARTICLE");
+    expect(link.className).toContain("paymentProofPreviewMedia");
     expect(link.closest("label")).toBeNull();
     expect(screen.getByRole("img", { name: "Payment proof saved-receipt.jpg" })).toBeInTheDocument();
   });
@@ -524,16 +528,16 @@ describe("ProductionJobForm", () => {
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
   });
 
-  it("requires the exact reference before an administrator deletes a manual order", async () => {
+  it("lets an administrator delete a manual order after one confirmation", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       result: "deleted",
       jobNumber: existingManualOrder.jobNumber,
       storageCleanupFailed: 0,
     }), { status: 200, headers: { "Content-Type": "application/json" } }));
-    const prompt = vi.fn().mockReturnValueOnce("wrong").mockReturnValueOnce(existingManualOrder.jobNumber);
+    const confirm = vi.fn(() => true);
     const onDeleted = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
-    vi.stubGlobal("prompt", prompt);
+    vi.stubGlobal("confirm", confirm);
     vi.stubGlobal("crypto", { randomUUID: () => "delete-manual-order-0001" });
 
     render(<ExistingManualEditor
@@ -549,10 +553,8 @@ describe("ProductionJobForm", () => {
 
     const deleteButton = screen.getByRole("button", { name: `Delete order ${existingManualOrder.jobNumber}` });
     fireEvent.click(deleteButton);
-    expect(fetchMock).not.toHaveBeenCalled();
-
-    fireEvent.click(deleteButton);
     await waitFor(() => expect(fetchMock).toHaveBeenCalledOnce());
+    expect(confirm).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/forms/jobs/${existingManualOrder.id}`,
       expect.objectContaining({

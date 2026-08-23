@@ -733,12 +733,9 @@ export function createDrizzleProductionJobRepository(
         if (current.jobNumber !== input.expectedJobNumber) {
           throw new ProductionJobConflictError("The order reference does not match");
         }
-        const [invoice] = await transaction.select({ id: invoices.id }).from(invoices)
+        const deletedInvoices = await transaction.delete(invoices)
           .where(eq(invoices.jobId, input.jobId))
-          .limit(1);
-        if (invoice) {
-          throw new ProductionJobConflictError("Orders with an invoice cannot be deleted");
-        }
+          .returning({ id: invoices.id });
         const files = await transaction.select({
           id: productionJobFiles.id,
           storageKey: productionJobFiles.storageKey,
@@ -757,6 +754,7 @@ export function createDrizzleProductionJobRepository(
           beforeSummary: {
             jobNumber: current.jobNumber,
             source: current.source,
+            invoiceCount: deletedInvoices.length,
             fileCount: files.length,
           },
           requestSource: "forms.jobs.detail",

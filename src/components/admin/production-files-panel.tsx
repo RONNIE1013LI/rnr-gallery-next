@@ -208,9 +208,13 @@ export function ProductionFilesPanel({
 
       {visibleFiles.length ? <div className={`${styles.productionFiles} ${paymentProofOnly ? styles.paymentProofPreviewGrid : ""}`}>{visibleFiles.map((file) => (
         <article className={paymentProofOnly ? styles.paymentProofPreviewCard : undefined} key={file.id}>
-          {paymentProofOnly ? <div className={styles.paymentProofPreviewMedia}>
-            {file.mediaType.startsWith("image/") ? <Image src={`${jobApiBase}/${jobId}/files/${file.id}`} alt={`Payment proof ${file.originalName}`} fill sizes="160px" unoptimized /> : <span>PDF</span>}
-          </div> : null}
+          {paymentProofOnly ? file.mediaType.startsWith("image/") ? <a
+            className={styles.paymentProofPreviewMedia}
+            href={`${jobApiBase}/${jobId}/files/${file.id}`}
+            target="_blank"
+            rel="noreferrer"
+            aria-label={`View payment proof ${file.originalName}`}
+          ><Image src={`${jobApiBase}/${jobId}/files/${file.id}`} alt={`Payment proof ${file.originalName}`} fill sizes="160px" unoptimized /></a> : <div className={styles.paymentProofPreviewMedia}><span>PDF</span></div> : null}
           {paymentProofOnly && canDeleteFiles ? <button type="button" className={styles.paymentProofDeleteButton} disabled={pending} aria-label={`Delete ${file.originalName}`} onClick={() => void deletePaymentProof(file)}><span aria-hidden="true">×</span></button> : null}
           <div className={styles.fileSummary}>
             <div><strong>{fileTitle(file)}</strong><span>{paymentProofOnly ? `${(file.sizeBytes / 1024).toFixed(file.sizeBytes < 10240 ? 1 : 0)} KB` : `${file.originalName} · ${(file.sizeBytes / 1024).toFixed(file.sizeBytes < 10240 ? 1 : 0)} KB`}</span></div>

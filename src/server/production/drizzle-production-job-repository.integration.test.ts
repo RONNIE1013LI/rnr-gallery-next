@@ -227,9 +227,11 @@ describe("drizzle production job repository", () => {
       jobId: created.job.id,
       expectedJobNumber: created.job.jobNumber,
       idempotencyKey: `delete-invoiced-${suffix}`,
-    })).rejects.toThrow("Orders with an invoice cannot be deleted");
+    })).resolves.toMatchObject({ result: "deleted", jobNumber: created.job.jobNumber });
     await expect(database.select({ id: productionJobs.id }).from(productionJobs)
-      .where(eq(productionJobs.id, created.job.id))).resolves.toHaveLength(1);
+      .where(eq(productionJobs.id, created.job.id))).resolves.toHaveLength(0);
+    await expect(database.select({ id: invoices.id }).from(invoices)
+      .where(eq(invoices.jobId, created.job.id))).resolves.toHaveLength(0);
   });
 
   it("versions private drafts, redacts payment proofs and keeps proof decisions immutable", async () => {
