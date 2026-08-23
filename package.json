@@ -4,6 +4,7 @@
   "packageManager": "npm@11.16.0",
   "private": true,
   "scripts": {
+    "prebuild": "tsx scripts/verify-production-deployment-source.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
