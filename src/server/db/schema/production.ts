@@ -133,6 +133,8 @@ export const productionJobs = pgTable(
     orderId: uuid("order_id").references(() => orders.id, { onDelete: "restrict" }),
     idempotencyKey: text("idempotency_key"),
     requestDigest: text("request_digest"),
+    legacySource: text("legacy_source"),
+    legacyOrderId: text("legacy_order_id"),
     customerName: text("customer_name").notNull(),
     customerEmail: text("customer_email").notNull(),
     customerPhone: text("customer_phone").notNull(),
