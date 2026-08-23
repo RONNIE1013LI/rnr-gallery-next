@@ -5,13 +5,38 @@ import {
   MutationRequestError,
   parseBoundedJson,
 } from "@/server/http/mutation-request";
-import { repriceCart } from "@/domain/checkout/reprice-cart";
+import {
+  preflightMarketSwitch,
+  type MarketSwitchUrgentIssue,
+} from "@/domain/checkout/market-switch-preflight";
 import { InvalidCheckoutCartError } from "@/domain/checkout/types";
+import { ZodError } from "zod";
+
+type MarketRouteFailure = Readonly<{
+  error: string;
+  code:
+    | "unsupported_market"
+    | "market_unavailable"
+    | "urgent_confirmation_required"
+    | "invalid_cart"
+    | "market_switch_failed";
+  issues?: readonly MarketSwitchUrgentIssue[];
+}>;
 
 type Dependencies = Readonly<{
   current: ReturnType<typeof getProductRegistryRuntime>["current"];
   trustedOrigin?: string;
 }>;
+
+function failureResponse(
+  body: MarketRouteFailure,
+  status: number,
+) {
+  return Response.json(body, {
+    status,
+    headers: { "Cache-Control": "no-store" },
+  });
+}
 
 export function createMarketRoute(dependencies?: Dependencies) {
   return {
@@ -22,15 +47,33 @@ export function createMarketRoute(dependencies?: Dependencies) {
         const body = await parseBoundedJson(request) as { market?: unknown; cart?: unknown };
         const market = parseMarketCookie(typeof body.market === "string" ? body.market : null);
         if (!market) {
-          return Response.json({ error: "Choose a supported market." }, { status: 422 });
+          return failureResponse({
+            error: "Choose a supported market.",
+            code: "unsupported_market",
+          }, 422);
         }
         const { registry, revision } = await current();
         if (!registry.markets[market].enabled) {
-          return Response.json({ error: "This market is not available yet." }, { status: 409 });
+          return failureResponse({
+            error: "This market is not available yet.",
+            code: "market_unavailable",
+          }, 409);
         }
-        const cart = body.cart === undefined
-          ? undefined
-          : repriceCart(body.cart, { registry, registryRevision: revision, market });
+        const preflight = body.cart === undefined
+          ? null
+          : preflightMarketSwitch(body.cart, {
+              registry,
+              registryRevision: revision,
+              market,
+            });
+        if (preflight?.result === "urgent_confirmation_required") {
+          return failureResponse({
+            error: "Confirm urgent service or choose another completion date.",
+            code: "urgent_confirmation_required",
+            issues: preflight.issues,
+          }, 409);
+        }
+        const cart = preflight?.result === "ready" ? preflight.cart : undefined;
         return Response.json(
           { market, currency: registry.markets[market].currency, ...(cart ? { cart } : {}) },
           {
@@ -42,12 +85,21 @@ export function createMarketRoute(dependencies?: Dependencies) {
         );
       } catch (error) {
         if (error instanceof MutationRequestError) {
-          return Response.json({ error: error.message }, { status: error.status });
+          return failureResponse({
+            error: "The market could not be changed.",
+            code: "market_switch_failed",
+          }, error.status);
         }
-        if (error instanceof InvalidCheckoutCartError) {
-          return Response.json({ error: error.message }, { status: 409 });
+        if (error instanceof InvalidCheckoutCartError || error instanceof ZodError) {
+          return failureResponse({
+            error: "The cart could not be repriced for this market.",
+            code: "invalid_cart",
+          }, 409);
         }
-        return Response.json({ error: "The market could not be changed." }, { status: 500 });
+        return failureResponse({
+          error: "The market could not be changed.",
+          code: "market_switch_failed",
+        }, 500);
       }
     },
   };
