@@ -4,13 +4,27 @@ import { getDatabase } from "@/server/db/client";
 import { listFormStatsLayouts } from "@/server/forms/drizzle-forms-stats-layout-repository";
 import { hasFormPermission } from "@/server/forms/forms-permissions";
 import { parseFormStatsLayout } from "@/server/forms/forms-stats-service";
+import { encodeFormFilterCondition, parseFormWorkbenchQuery } from "@/server/forms/forms-workbench-service";
 import { requireFormsPage } from "@/server/forms/require-forms-page";
 
 export const metadata = { title: "Custom stats" };
 
-export default async function FormsStatsPage() {
+type Props = Readonly<{
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}>;
+
+export default async function FormsStatsPage({ searchParams }: Props) {
   const access = await requireFormsPage("/order-system/stats", "view_stats");
   const canViewFinance = hasFormPermission(access.formRole, access.formProfile, "view_finance");
+  const workbenchQuery = parseFormWorkbenchQuery(await searchParams);
+  const queryContext = {
+    ...(workbenchQuery.query ? { q: workbenchQuery.query } : {}),
+    ...(workbenchQuery.preset !== "all" ? { preset: workbenchQuery.preset } : {}),
+    ...(workbenchQuery.conditions.length ? {
+      match: workbenchQuery.match,
+      filters: workbenchQuery.conditions.map(encodeFormFilterCondition),
+    } : {}),
+  };
   const records = await listFormStatsLayouts(getDatabase(), access.user.id);
   const layouts = records.flatMap((record) => {
     try {
@@ -32,6 +46,7 @@ export default async function FormsStatsPage() {
         layouts={layouts}
         canManage={hasFormPermission(access.formRole, access.formProfile, "manage_stats")}
         canViewFinance={canViewFinance}
+        queryContext={queryContext}
       />
     </section>
   );

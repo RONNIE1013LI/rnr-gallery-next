@@ -11,10 +11,12 @@ export function FormsStatsWidgetResult({
   widget,
   stat,
   state,
+  instanceId,
 }: Readonly<{
   widget: FormStatWidget;
   stat?: FormStatistic;
   state?: FormsStatsWidgetState;
+  instanceId?: string;
 }>) {
   if (widget.type === "divider") return <hr className={styles.statDivider} aria-label={widget.title} />;
   if (widget.type === "text") return <p className={styles.statText}>{widget.text}</p>;
@@ -29,7 +31,7 @@ export function FormsStatsWidgetResult({
   }
   if (widget.type === "table") return <FormsStatsDataTable widget={widget} stat={stat} />;
   if (widget.type === "bar" || widget.type === "line" || widget.type === "pie") {
-    return <FormsStatsChart widget={widget} stat={stat} />;
+    return <FormsStatsChart widget={widget} stat={stat} instanceId={instanceId} />;
   }
   return <p className={styles.statsEmpty}>No statistics are available.</p>;
 }

@@ -29,4 +29,21 @@ describe("FormsStatsWorkbench", () => {
     expect(screen.getByTestId("forms-stats-workbench")).toHaveAttribute("data-mode", "builder");
     expect(screen.queryByRole("heading", { name: "Weekly sales" })).not.toBeInTheDocument();
   });
+
+  it("reconciles saved reports when the server layouts prop changes", async () => {
+    const { rerender } = render(<FormsStatsWorkbench canManage canViewFinance layouts={[{
+      id: "weekly-sales",
+      name: "Weekly sales",
+      widgets: [],
+    }]} />);
+
+    rerender(<FormsStatsWorkbench canManage canViewFinance layouts={[{
+      id: "monthly-sales",
+      name: "Monthly sales",
+      widgets: [],
+    }]} />);
+
+    expect(await screen.findByRole("heading", { name: "Monthly sales" })).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Weekly sales" })).not.toBeInTheDocument();
+  });
 });
