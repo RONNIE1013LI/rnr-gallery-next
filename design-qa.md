@@ -52,6 +52,25 @@ final result: passed
 
 ---
 
+## Payment-proof lightbox visual QA — 2026-08-24
+
+- Source visual truth: `/tmp/codex-remote-attachments/01a026e2-2cec-7122-a8b8-ee1c882d7d60/4EF73D48-5845-49C4-97FC-80099AEC7F79/1-照片-1.jpg` (589 × 1280 px).
+- Implementation screenshot: `/tmp/rnr-payment-proof-lightbox-mobile.png` (590 × 1280 px).
+- Viewport: 590 × 1280 CSS px at DPR 1; no density normalization was required.
+- State: page-level payment-proof lightbox open with two image proofs and both navigation arrows visible. A non-sensitive product image was used in the local visual harness, so the comparison evaluates viewer chrome and image containment rather than customer content.
+- Full-view comparison: source and implementation were opened together at the same mobile height. The implementation matches the dimmed page, near-full-width contained image, centered edge arrows and red circular close control overlapping the upper-right corner.
+- Focused crop: not required because the close control, both arrows, image frame and corner overlap remain clearly readable in the full 590px capture.
+- Typography/copy: the viewer displays no filename or extra visible copy; every control retains an accessible label.
+- Spacing/layout: the mobile frame uses `min(84dvh, 960px)`, matching the source's tall near-top presentation without cropping the proof.
+- Colors/tokens: dark translucent overlay, black image stage, white arrow controls and red/white close control follow the source.
+- Image fidelity: real proofs render directly in unoptimized contain mode; no generated or CSS-drawn image replaces them.
+- Interaction evidence: browser checks passed for next, previous and close; automated tests also cover keyboard left-arrow and Escape. The final browser console contained 0 errors and 0 warnings.
+- Comparison history: the first 760px mobile cap was materially too short and low. It was increased to `min(84dvh, 960px)` and the unnecessary backdrop blur was removed; the post-fix capture has no remaining P0/P1/P2 finding.
+
+final result: passed
+
+---
+
 # Forms change-log reference QA — 2026-08-23
 
 - Source visual truth: `/Users/ronnieli/Desktop/Snipaste_2026-08-23_12-49-20.jpg` (935 × 474 px).

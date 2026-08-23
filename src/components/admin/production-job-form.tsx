@@ -2,6 +2,8 @@
 
 import Image from "next/image";
 import { ClipboardEvent, FormEvent, useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { LuChevronLeft, LuChevronRight, LuX } from "react-icons/lu";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClientId } from "@/lib/client-id";
@@ -118,6 +120,80 @@ type PendingPaymentProof = Readonly<{
   file: File;
   previewUrl: string | null;
 }>;
+
+type PaymentProofViewerItem = Readonly<{
+  key: string;
+  name: string;
+  src: string;
+}>;
+
+function PaymentProofLightbox({
+  images,
+  initialKey,
+  onClose,
+}: Readonly<{
+  images: readonly PaymentProofViewerItem[];
+  initialKey: string;
+  onClose: () => void;
+}>) {
+  const initialIndex = Math.max(0, images.findIndex((image) => image.key === initialKey));
+  const [activeIndex, setActiveIndex] = useState(initialIndex);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
+  const onCloseRef = useRef(onClose);
+
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
+
+  useEffect(() => {
+    const previousOverflow = document.body.style.overflow;
+    const previouslyFocused = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    document.body.style.overflow = "hidden";
+    closeButtonRef.current?.focus();
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") onCloseRef.current();
+      if (event.key === "ArrowLeft") setActiveIndex((current) => (current - 1 + images.length) % images.length);
+      if (event.key === "ArrowRight") setActiveIndex((current) => (current + 1) % images.length);
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = previousOverflow;
+      previouslyFocused?.focus();
+    };
+  }, [images.length]);
+
+  const activeImage = images[activeIndex] ?? images[0];
+  if (!activeImage || typeof document === "undefined") return null;
+
+  function move(delta: number) {
+    setActiveIndex((current) => (current + delta + images.length) % images.length);
+  }
+
+  return createPortal(
+    <div className={styles.paymentProofLightboxOverlay}>
+      <section className={styles.paymentProofLightboxDialog} role="dialog" aria-modal="true" aria-label="Payment proof viewer">
+        <div className={styles.paymentProofLightboxImage}>
+          <Image src={activeImage.src} alt={`Payment proof ${activeImage.name}`} fill sizes="100vw" unoptimized priority />
+        </div>
+        <button ref={closeButtonRef} type="button" className={styles.paymentProofLightboxClose} aria-label="Close payment proof viewer" onClick={onClose}>
+          <LuX aria-hidden="true" />
+        </button>
+        {images.length > 1 ? <>
+          <button type="button" className={`${styles.paymentProofLightboxArrow} ${styles.paymentProofLightboxPrevious}`} aria-label="Previous payment proof" onClick={() => move(-1)}>
+            <LuChevronLeft aria-hidden="true" />
+          </button>
+          <button type="button" className={`${styles.paymentProofLightboxArrow} ${styles.paymentProofLightboxNext}`} aria-label="Next payment proof" onClick={() => move(1)}>
+            <LuChevronRight aria-hidden="true" />
+          </button>
+        </> : null}
+      </section>
+    </div>,
+    document.body,
+  );
+}
 
 type ManualChoice = Readonly<{ value: string; label: string }>;
 
@@ -346,6 +422,7 @@ export function ProductionJobForm({
   const [artistFeeCents, setArtistFeeCents] = useState(0);
   const [materialCostCents, setMaterialCostCents] = useState(existingManualOrder?.materialCostCents ?? 0);
   const [savedPaymentProofs, setSavedPaymentProofs] = useState(() => existingPaymentProofs.filter((file) => file.kind === "payment_proof"));
+  const [viewingPaymentProofKey, setViewingPaymentProofKey] = useState<string | null>(null);
   const [expectedUpdatedAt, setExpectedUpdatedAt] = useState(existingManualOrder?.expectedUpdatedAt ?? "");
   const [visibleAuditCount, setVisibleAuditCount] = useState(5);
   const formRef = useRef<HTMLFormElement>(null);
@@ -847,6 +924,19 @@ export function ProductionJobForm({
     setNextItemKey((current) => current + 1);
   }
 
+  const paymentProofViewerImages: readonly PaymentProofViewerItem[] = [
+    ...savedPaymentProofs.flatMap((proof) => proof.mediaType.startsWith("image/") && existingManualOrder ? [{
+      key: `saved:${proof.id}`,
+      name: proof.originalName,
+      src: `${endpoint}/${existingManualOrder.id}/files/${proof.id}`,
+    }] : []),
+    ...paymentProofs.flatMap((proof) => proof.previewUrl ? [{
+      key: `pending:${proof.id}`,
+      name: proof.file.name,
+      src: proof.previewUrl,
+    }] : []),
+  ];
+
   return (
     <>
     <form
@@ -910,11 +1000,11 @@ export function ProductionJobForm({
               <input className={styles.paymentProofFileInput} ref={paymentProofRef} name="paymentProof" type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" aria-label="PaymtProved" aria-describedby="payment-proof-help payment-proof-error" onChange={(event) => selectPaymentProofs(event.currentTarget.files ?? [])} disabled={formDisabled} />
               {savedPaymentProofs.length || paymentProofs.length ? <div className={styles.paymentProofPreviewGrid}>
                 {savedPaymentProofs.map((proof) => <article className={styles.paymentProofPreviewCard} key={proof.id}>
-                  {proof.mediaType.startsWith("image/") && existingManualOrder ? <a className={styles.paymentProofPreviewMedia} href={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} target="_blank" rel="noreferrer" aria-label={`View payment proof ${proof.originalName}`}><Image src={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} alt={`Payment proof ${proof.originalName}`} fill sizes="120px" unoptimized /></a> : <div className={styles.paymentProofPreviewMedia}><span>PDF</span></div>}
+                  {proof.mediaType.startsWith("image/") && existingManualOrder ? <button type="button" className={styles.paymentProofPreviewMedia} aria-label={`View payment proof ${proof.originalName}`} onClick={() => setViewingPaymentProofKey(`saved:${proof.id}`)}><Image src={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} alt={`Payment proof ${proof.originalName}`} fill sizes="120px" unoptimized /></button> : <div className={styles.paymentProofPreviewMedia}><span>PDF</span></div>}
                   {canDeleteFiles && canEdit ? <button type="button" className={styles.paymentProofDeleteButton} aria-label={`Delete ${proof.originalName}`} disabled={pending} onClick={(event) => { event.preventDefault(); void deleteSavedPaymentProof(proof); }}><span aria-hidden="true">×</span></button> : null}
                 </article>)}
                 {paymentProofs.map((proof) => <article className={styles.paymentProofPreviewCard} key={proof.id}>
-                  {proof.previewUrl ? <a className={styles.paymentProofPreviewMedia} href={proof.previewUrl} target="_blank" rel="noreferrer" aria-label={`View payment proof ${proof.file.name}`}><Image src={proof.previewUrl} alt={`Payment proof ${proof.file.name}`} fill sizes="120px" unoptimized /></a> : <div className={styles.paymentProofPreviewMedia}><span>PDF</span></div>}
+                  {proof.previewUrl ? <button type="button" className={styles.paymentProofPreviewMedia} aria-label={`View payment proof ${proof.file.name}`} onClick={() => setViewingPaymentProofKey(`pending:${proof.id}`)}><Image src={proof.previewUrl} alt={`Payment proof ${proof.file.name}`} fill sizes="120px" unoptimized /></button> : <div className={styles.paymentProofPreviewMedia}><span>PDF</span></div>}
                   <button type="button" className={styles.paymentProofDeleteButton} aria-label={`Remove ${proof.file.name}`} disabled={pending} onClick={(event) => {
                     event.preventDefault();
                     removePaymentProof(proof.id);
@@ -1129,6 +1219,12 @@ export function ProductionJobForm({
         {canEdit && !existingManualOrder ? <button type="submit" disabled={pending || Boolean(paymentRecovery)}>{pending ? "Creating…" : manualEntryLayout ? "Submit order" : "Create production job"}</button> : null}
       </div>
     </form>
+    {viewingPaymentProofKey ? <PaymentProofLightbox
+      key={viewingPaymentProofKey}
+      images={paymentProofViewerImages}
+      initialKey={viewingPaymentProofKey}
+      onClose={() => setViewingPaymentProofKey(null)}
+    /> : null}
     {!existingManualOrder && invoiceOpen && invoiceDraft ? <InvoiceWorkspace draft={invoiceDraft} onChange={setInvoiceDraft} onClose={() => setInvoiceOpen(false)} /> : null}
     {existingManualOrder && invoiceOpen ? <div
       className={`${styles.invoiceWorkspaceOverlay} ${styles.persistedInvoiceOverlay}`}

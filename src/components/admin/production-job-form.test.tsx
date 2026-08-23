@@ -396,10 +396,8 @@ describe("ProductionJobForm", () => {
 
     expect(screen.getByRole("img", { name: "Payment proof receipt-one.jpg" })).toHaveAttribute("src", "blob:receipt-one");
     expect(screen.getByRole("img", { name: "Payment proof receipt-two.jpg" })).toHaveAttribute("src", "blob:receipt-two");
-    expect(screen.getByRole("link", { name: "View payment proof receipt-one.jpg" })).toHaveAttribute("href", "blob:receipt-one");
-    expect(screen.getByRole("link", { name: "View payment proof receipt-one.jpg" })).toHaveAttribute("target", "_blank");
-    expect(screen.getByRole("link", { name: "View payment proof receipt-one.jpg" }).parentElement?.tagName).toBe("ARTICLE");
-    expect(screen.getByRole("link", { name: "View payment proof receipt-one.jpg" }).className).toContain("paymentProofPreviewMedia");
+    expect(screen.getByRole("button", { name: "View payment proof receipt-one.jpg" }).parentElement?.tagName).toBe("ARTICLE");
+    expect(screen.getByRole("button", { name: "View payment proof receipt-one.jpg" }).className).toContain("paymentProofPreviewMedia");
     expect(screen.queryByText("receipt-one.jpg")).not.toBeInTheDocument();
     expect(screen.queryByText("receipt-two.jpg")).not.toBeInTheDocument();
     expect(createObjectURL).toHaveBeenCalledTimes(2);
@@ -410,6 +408,44 @@ describe("ProductionJobForm", () => {
     expect(screen.queryByRole("img", { name: "Payment proof receipt-one.jpg" })).not.toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Payment proof receipt-two.jpg" })).toBeInTheDocument();
     expect(revokeObjectURL).toHaveBeenCalledWith("blob:receipt-one");
+  });
+
+  it("opens payment proofs in an in-page carousel with corner close and arrow navigation", () => {
+    vi.spyOn(URL, "createObjectURL")
+      .mockReturnValueOnce("blob:receipt-one")
+      .mockReturnValueOnce("blob:receipt-two");
+
+    render(<ProductionJobForm
+      assignees={assignees}
+      canManageFinance
+      canUploadFiles
+      manualEntryLayout
+    />);
+
+    fireEvent.change(screen.getByLabelText("PaymtProved"), { target: { files: [
+      new File([new Uint8Array([1])], "receipt-one.jpg", { type: "image/jpeg" }),
+      new File([new Uint8Array([2])], "receipt-two.jpg", { type: "image/jpeg" }),
+    ] } });
+
+    fireEvent.click(screen.getByRole("button", { name: "View payment proof receipt-one.jpg" }));
+
+    const viewer = screen.getByRole("dialog", { name: "Payment proof viewer" });
+    expect(within(viewer).getByRole("img", { name: "Payment proof receipt-one.jpg" })).toHaveAttribute("src", "blob:receipt-one");
+    expect(within(viewer).getByRole("button", { name: "Previous payment proof" })).toBeInTheDocument();
+    expect(within(viewer).getByRole("button", { name: "Next payment proof" })).toBeInTheDocument();
+
+    fireEvent.click(within(viewer).getByRole("button", { name: "Next payment proof" }));
+    expect(within(viewer).getByRole("img", { name: "Payment proof receipt-two.jpg" })).toHaveAttribute("src", "blob:receipt-two");
+
+    fireEvent.keyDown(window, { key: "ArrowLeft" });
+    expect(within(viewer).getByRole("img", { name: "Payment proof receipt-one.jpg" })).toHaveAttribute("src", "blob:receipt-one");
+
+    fireEvent.click(within(viewer).getByRole("button", { name: "Close payment proof viewer" }));
+    expect(screen.queryByRole("dialog", { name: "Payment proof viewer" })).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "View payment proof receipt-two.jpg" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(screen.queryByRole("dialog", { name: "Payment proof viewer" })).not.toBeInTheDocument();
   });
 
   it("immediately saves a selected proof on an existing manual order and opens the protected original", async () => {
@@ -451,13 +487,16 @@ describe("ProductionJobForm", () => {
       expect.objectContaining({ method: "POST" }),
     );
     expect(fetchMock.mock.calls.some(([, init]) => init?.method === "PATCH")).toBe(false);
-    const link = await screen.findByRole("link", { name: "View payment proof saved-receipt.jpg" });
-    expect(link).toHaveAttribute("href", `/api/forms/jobs/${existingManualOrder.id}/files/${proofId}`);
-    expect(link).toHaveAttribute("target", "_blank");
-    expect(link.parentElement?.tagName).toBe("ARTICLE");
-    expect(link.className).toContain("paymentProofPreviewMedia");
-    expect(link.closest("label")).toBeNull();
+    const previewButton = await screen.findByRole("button", { name: "View payment proof saved-receipt.jpg" });
+    expect(previewButton.parentElement?.tagName).toBe("ARTICLE");
+    expect(previewButton.className).toContain("paymentProofPreviewMedia");
+    expect(previewButton.closest("label")).toBeNull();
     expect(screen.getByRole("img", { name: "Payment proof saved-receipt.jpg" })).toBeInTheDocument();
+    fireEvent.click(previewButton);
+    expect(within(screen.getByRole("dialog", { name: "Payment proof viewer" })).getByRole("img", { name: "Payment proof saved-receipt.jpg" })).toHaveAttribute(
+      "src",
+      `/api/forms/jobs/${existingManualOrder.id}/files/${proofId}`,
+    );
   });
 
   it("deletes a saved payment proof with the JSON mutation contract", async () => {
