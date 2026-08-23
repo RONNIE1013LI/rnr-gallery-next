@@ -42,6 +42,7 @@ CREATE TABLE "internal_notification_recipients" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "internal_notification_recipients_email_normalized" CHECK (length("internal_notification_recipients"."email") > 0 and "internal_notification_recipients"."email" = lower(trim("internal_notification_recipients"."email"))),
 	CONSTRAINT "internal_notification_recipients_status_valid" CHECK ("internal_notification_recipients"."status" in ('pending_verification', 'active', 'disabled')),
+	CONSTRAINT "internal_notification_recipients_verification_token_digest_format" CHECK ("internal_notification_recipients"."verification_token_digest" is null or "internal_notification_recipients"."verification_token_digest" ~ '^[0-9a-f]{64}$'),
 	CONSTRAINT "internal_notification_recipients_lifecycle_valid" CHECK ((
         ("internal_notification_recipients"."status" = 'pending_verification'
           and "internal_notification_recipients"."verification_token_digest" is not null

@@ -66,6 +66,10 @@ export const internalNotificationRecipients = pgTable(
       sql`${table.status} in ('pending_verification', 'active', 'disabled')`,
     ),
     check(
+      "internal_notification_recipients_verification_token_digest_format",
+      sql`${table.verificationTokenDigest} is null or ${table.verificationTokenDigest} ~ '^[0-9a-f]{64}$'`,
+    ),
+    check(
       "internal_notification_recipients_lifecycle_valid",
       sql`(
         (${table.status} = 'pending_verification'

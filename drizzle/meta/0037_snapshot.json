@@ -1,5 +1,5 @@
 {
-  "id": "55b46680-e3f3-45b1-89ab-3eb154bbe410",
+  "id": "87056028-8d1e-4fd7-8f96-e3226df84beb",
   "prevId": "3d1e8148-93c6-45b7-86e0-486ee7f05e77",
   "version": "7",
   "dialect": "postgresql",
@@ -4983,6 +4983,10 @@
         "internal_notification_recipients_status_valid": {
           "name": "internal_notification_recipients_status_valid",
           "value": "\"internal_notification_recipients\".\"status\" in ('pending_verification', 'active', 'disabled')"
+        },
+        "internal_notification_recipients_verification_token_digest_format": {
+          "name": "internal_notification_recipients_verification_token_digest_format",
+          "value": "\"internal_notification_recipients\".\"verification_token_digest\" is null or \"internal_notification_recipients\".\"verification_token_digest\" ~ '^[0-9a-f]{64}$'"
         },
         "internal_notification_recipients_lifecycle_valid": {
           "name": "internal_notification_recipients_lifecycle_valid",
