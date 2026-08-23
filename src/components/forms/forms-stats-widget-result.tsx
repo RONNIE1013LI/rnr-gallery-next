@@ -1,3 +1,5 @@
+"use client";
+
 import type { FormStatistic } from "@/server/forms/drizzle-forms-stats-repository";
 import type { FormStatWidget } from "@/server/forms/forms-stats-service";
 import { FormsStatsChart, FormsStatsDataTable, formatStatisticValue } from "./forms-stats-chart";

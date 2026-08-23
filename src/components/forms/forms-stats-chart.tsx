@@ -55,6 +55,10 @@ export function formatStatisticValue(widget: FormStatWidget, value: number, stat
     : integer.format(value);
 }
 
+export function formatStatisticAxisValue(widget: FormStatWidget, value: number, stat?: FormStatistic) {
+  return formatStatisticValue(widget, value, stat);
+}
+
 function tooltipMeasure(widget: FormStatWidget, stat?: FormStatistic) {
   const query = queryFor(widget, stat);
   if (query) return `${measureLabels[query.measure]} (${query.aggregation[0]!.toUpperCase()}${query.aggregation.slice(1)})`;
@@ -88,14 +92,22 @@ export function FormsStatsTooltip({
   );
 }
 
-export function FormsStatsDataTable({ widget, stat }: Readonly<{ widget: FormStatWidget; stat: FormStatistic }>) {
+export function FormsStatsDataTable({
+  widget,
+  stat,
+  visuallyHidden = false,
+}: Readonly<{ widget: FormStatWidget; stat: FormStatistic; visuallyHidden?: boolean }>) {
   const rows = stat.rows ?? [];
   return (
-    <table className={styles.statDataTable} aria-label={`${widget.title} data`}>
+    <table className={`${styles.statDataTable}${visuallyHidden ? ` ${styles.srOnly}` : ""}`} aria-label={`${widget.title} data`}>
       <thead><tr><th scope="col">Category</th><th scope="col">Value</th></tr></thead>
       <tbody>{rows.map((row) => <tr key={row.label}><td>{row.label}</td><td>{formatStatisticValue(widget, row.value, stat)}</td></tr>)}</tbody>
     </table>
   );
+}
+
+function isUnsafePieData(rows: readonly StatisticRow[]) {
+  return rows.some((row) => row.value < 0) || rows.reduce((total, row) => total + row.value, 0) <= 0;
 }
 
 function chartContent(widget: FormStatWidget, stat: FormStatistic, rows: readonly StatisticRow[]) {
@@ -103,7 +115,7 @@ function chartContent(widget: FormStatWidget, stat: FormStatistic, rows: readonl
   if (widget.type === "pie") {
     return <PieChart accessibilityLayer>
       {tooltip}
-      <Pie data={rows} dataKey="value" nameKey="label" name="Value" outerRadius="80%">
+      <Pie data={rows} dataKey="value" nameKey="label" name="Value" outerRadius="80%" isAnimationActive={false}>
         {rows.map((row, index) => <Cell key={row.label} fill={chartColors[index % chartColors.length]} />)}
       </Pie>
     </PieChart>;
@@ -112,7 +124,7 @@ function chartContent(widget: FormStatWidget, stat: FormStatistic, rows: readonl
     return <LineChart data={rows} accessibilityLayer>
       <CartesianGrid stroke="#d7d9de" strokeDasharray="3 3" />
       <XAxis dataKey="label" />
-      <YAxis />
+      <YAxis tickFormatter={(value) => formatStatisticAxisValue(widget, Number(value), stat)} />
       {tooltip}
       <Line type="monotone" dataKey="value" name="Value" stroke="#173c31" strokeWidth={2} dot />
     </LineChart>;
@@ -120,7 +132,7 @@ function chartContent(widget: FormStatWidget, stat: FormStatistic, rows: readonl
   return <BarChart data={rows} accessibilityLayer>
     <CartesianGrid stroke="#d7d9de" strokeDasharray="3 3" />
     <XAxis dataKey="label" />
-    <YAxis />
+    <YAxis tickFormatter={(value) => formatStatisticAxisValue(widget, Number(value), stat)} />
     {tooltip}
     <Bar dataKey="value" name="Value" fill="#173c31" radius={[3, 3, 0, 0]} />
   </BarChart>;
@@ -128,14 +140,20 @@ function chartContent(widget: FormStatWidget, stat: FormStatistic, rows: readonl
 
 export function FormsStatsChart({ widget, stat }: Readonly<{ widget: FormStatWidget; stat: FormStatistic }>) {
   const rows = stat.rows ?? [];
+  const summaryId = `form-stat-chart-${widget.id}-summary`;
+  const isPieFallback = widget.type === "pie" && isUnsafePieData(rows);
+  const chartWidth = widget.type === "bar" || widget.type === "line" ? Math.max(520, rows.length * 72) : 520;
   return (
     <div className={styles.statChartScroller}>
-      <div className={styles.statChart} role="img" aria-label={`${widget.title} chart`}>
-        <ResponsiveContainer width="100%" height={260} minWidth={520}>
-          {chartContent(widget, stat, rows)}
-        </ResponsiveContainer>
-      </div>
-      <FormsStatsDataTable widget={widget} stat={stat} />
+      <p className={styles.srOnly} id={summaryId}>{widget.title} chart</p>
+      {isPieFallback ? <p className={styles.statChartFallback} role="status">Pie charts require positive values. Use a bar or line chart instead.</p> : (
+        <div className={styles.statChart} aria-describedby={summaryId} style={{ minWidth: `${chartWidth}px` }}>
+          <ResponsiveContainer width="100%" height={260} minWidth={chartWidth}>
+            {chartContent(widget, stat, rows)}
+          </ResponsiveContainer>
+        </div>
+      )}
+      <FormsStatsDataTable widget={widget} stat={stat} visuallyHidden />
     </div>
   );
 }
