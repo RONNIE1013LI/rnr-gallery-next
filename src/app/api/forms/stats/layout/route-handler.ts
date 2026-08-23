@@ -8,7 +8,12 @@ import {
   saveFormStatsLayout,
 } from "@/server/forms/drizzle-forms-stats-layout-repository";
 import { hasFormPermission, type FormPermission } from "@/server/forms/forms-permissions";
-import { FormStatsValidationError, parseFormStatsLayout, type FormStatsLayout } from "@/server/forms/forms-stats-service";
+import {
+  FormStatsValidationError,
+  parseFormStatsLayout,
+  parseStoredFormStatsLayout,
+  type FormStatsLayout,
+} from "@/server/forms/forms-stats-service";
 import { requireFormPermission, type FormAccess } from "@/server/forms/require-forms";
 import { assertTrustedMutationRequest, MutationRequestError, parseBoundedJson } from "@/server/http/mutation-request";
 
@@ -29,6 +34,25 @@ function errorResponse(error: unknown) {
   return Response.json({ error: "The statistics layout request could not be completed." }, { status: 500, headers: noStore });
 }
 
+function sanitizeStoredLayouts(records: unknown, canViewFinance: boolean) {
+  if (!Array.isArray(records)) throw new Error("Invalid statistics layout records");
+  return records.flatMap((record) => {
+    if (!record || typeof record !== "object") return [];
+    const candidate = record as Readonly<{ id?: unknown; name?: unknown; widgets?: unknown }>;
+    if (typeof candidate.id !== "string" || candidate.id.length === 0) return [];
+    try {
+      const layout = parseStoredFormStatsLayout(
+        { name: candidate.name, widgets: candidate.widgets },
+        { canViewFinance },
+      );
+      return [{ id: candidate.id, ...layout }];
+    } catch (error) {
+      if (error instanceof FormStatsValidationError) return [];
+      throw error;
+    }
+  });
+}
+
 export function createFormsStatsLayoutRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => ({
     requirePermission: requireFormPermission,
@@ -42,7 +66,9 @@ export function createFormsStatsLayoutRoute(dependencies?: Dependencies) {
         void request;
         const deps = dependencies ?? defaults();
         const access = await deps.requirePermission("view_stats");
-        return Response.json({ layouts: await deps.list(access.user.id) }, { headers: noStore });
+        const records = await deps.list(access.user.id);
+        const canViewFinance = hasFormPermission(access.formRole, access.formProfile, "view_finance");
+        return Response.json({ layouts: sanitizeStoredLayouts(records, canViewFinance) }, { headers: noStore });
       } catch (error) {
         return errorResponse(error);
       }
