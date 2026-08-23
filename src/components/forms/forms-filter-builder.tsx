@@ -218,7 +218,7 @@ export function FormsFilterBuilder({
   customFields?: readonly FormsFilterCustomField[];
   preset?: "all" | "lastSixMonths" | "lastYear";
   onPresetChange?: (preset: "all" | "lastSixMonths" | "lastYear") => void;
-  renderSavedSearches?: (group: FormFilterGroup | null) => ReactNode;
+  renderSavedSearches?: (group: FormFilterGroup | null, close: () => void) => ReactNode;
   onApply: (group: FormFilterGroup) => void;
 }>) {
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -269,8 +269,8 @@ export function FormsFilterBuilder({
   function apply() {
     const group = compileFilterGroup(draftMatch, draftUpdatedFrom, draftUpdatedTo, draftArtist, draft);
     if (!group) return;
-    onApply(group);
     close();
+    onApply(group);
   }
 
   function resetDraft() {
@@ -442,11 +442,14 @@ export function FormsFilterBuilder({
                   key={value}
                   type="button"
                   aria-pressed={preset === value}
-                  onClick={() => onPresetChange?.(value)}
+                  onClick={() => {
+                    close();
+                    onPresetChange?.(value);
+                  }}
                 >{label}</button>
               ))}
             </div>
-            {renderSavedSearches?.(compiledDraft)}
+            {renderSavedSearches?.(compiledDraft, close)}
           </section>
           <div className={styles.filterActions}>
             <button type="button" onClick={resetDraft}>Reset filters</button>

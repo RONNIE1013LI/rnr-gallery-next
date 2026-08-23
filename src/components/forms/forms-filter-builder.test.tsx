@@ -135,6 +135,49 @@ describe("forms filter builder", () => {
     expect(trigger).toHaveFocus();
   });
 
+  it("closes after Search applies the current filters", () => {
+    const apply = vi.fn();
+    render(<FormsFilterBuilder conditions={[]} match="and" canViewFinance onApply={apply} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+
+    expect(apply).toHaveBeenCalledOnce();
+    expect(screen.queryByRole("dialog", { name: "Order filters" })).not.toBeInTheDocument();
+  });
+
+  it("closes after choosing a saved date preset", () => {
+    render(<FormsFilterBuilder
+      conditions={[]}
+      match="and"
+      canViewFinance
+      onPresetChange={vi.fn()}
+      onApply={vi.fn()}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders" }));
+    fireEvent.click(screen.getByRole("button", { name: "Last 6 months" }));
+
+    expect(screen.queryByRole("dialog", { name: "Order filters" })).not.toBeInTheDocument();
+  });
+
+  it("lets a saved search close the funnel before opening its query", () => {
+    render(<FormsFilterBuilder
+      conditions={[]}
+      match="and"
+      canViewFinance
+      renderSavedSearches={(_group, close) => (
+        <button type="button" onClick={() => close?.()}>Saved post orders</button>
+      )}
+      onApply={vi.fn()}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders" }));
+    fireEvent.click(screen.getByRole("button", { name: "Saved post orders" }));
+
+    expect(screen.queryByRole("dialog", { name: "Order filters" })).not.toBeInTheDocument();
+  });
+
   it("hides financial filters and can reset the active draft", () => {
     const apply = vi.fn();
     render(<FormsFilterBuilder

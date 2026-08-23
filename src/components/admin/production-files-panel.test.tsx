@@ -156,7 +156,9 @@ describe("production files panel", () => {
     expect(screen.queryByLabelText("File purpose")).not.toBeInTheDocument();
     expect(screen.getByLabelText("PaymtProved")).toHaveAttribute("accept", "image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf");
     expect(screen.getByLabelText("PaymtProved")).toHaveAttribute("multiple");
+    expect(screen.getByLabelText("PaymtProved").className).toContain("paymentProofFileInput");
     expect(screen.getByRole("button", { name: "Delete receipt.jpg" })).toHaveTextContent("×");
+    expect(screen.getByRole("button", { name: "Delete receipt.jpg" }).parentElement?.tagName).toBe("ARTICLE");
     fireEvent.click(screen.getByRole("button", { name: "Delete receipt.jpg" }));
     expect(fetchMock).toHaveBeenCalledWith(
       `/api/forms/jobs/${file.jobId}/files/${paymentProof.id}`,

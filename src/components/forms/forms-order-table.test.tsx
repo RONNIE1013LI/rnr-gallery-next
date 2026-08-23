@@ -13,7 +13,7 @@ describe("FormsOrderTable", () => {
       "DlvryDate", "DlvryMethod", "Customer Source", "Cust.Name",
       "Assign Artist", "Artist", "File Sent", "Download", "Customer Notified",
       "Printed", "Completed", "Delivered", "BankRecon", "AmtOwe", "AmtPaid",
-      "AmtPayable", "Artist's Fee", "Remark", "Submitted By",
+      "AmtPayable", "Remark", "Submitted By",
     ]);
     expect(screen.getByText("$130.00")).toBeInTheDocument();
     expect(within(table).getByRole("cell", { name: "1" })).toBeInTheDocument();

@@ -145,10 +145,13 @@ export function FormsWorkbench({
             const next = queryString({ ...query, preset });
             router.push(`/order-system${next ? `?${next}` : ""}`);
           }}
-          renderSavedSearches={canManageViews ? (group) => <FormsSavedViews
+          renderSavedSearches={canManageViews ? (group, closeFilters) => <FormsSavedViews
             views={savedViews}
             currentQuery={group ? queryString({ ...query, query: "", pageSize: 100, match: group.match, conditions: group.conditions }) : ""}
-            onOpen={(savedQuery) => router.push(`/order-system?${savedQuery}`)}
+            onOpen={(savedQuery) => {
+              closeFilters();
+              router.push(`/order-system?${savedQuery}`);
+            }}
             onChanged={() => router.refresh()}
           /> : undefined}
           onApply={applyFilters}

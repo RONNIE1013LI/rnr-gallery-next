@@ -52,4 +52,22 @@ describe("FormsShell", () => {
     expect(screen.queryByRole("link", { name: "Custom stats" })).not.toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Order entry" })).not.toBeInTheDocument();
   });
+
+  it("gives the data list a route-specific scroll container without changing other pages", () => {
+    const dataList = render(
+      <FormsShell operator={{ name: "Viewer" }} canCreateJobs={false} canViewStats currentPath="/order-system">
+        <p>Data list</p>
+      </FormsShell>,
+    );
+    const dataListClass = screen.getByRole("main").className;
+    dataList.unmount();
+
+    render(
+      <FormsShell operator={{ name: "Viewer" }} canCreateJobs={false} canViewStats currentPath="/order-system/stats">
+        <p>Stats</p>
+      </FormsShell>,
+    );
+
+    expect(dataListClass).not.toBe(screen.getByRole("main").className);
+  });
 });

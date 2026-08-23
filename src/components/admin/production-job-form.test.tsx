@@ -382,6 +382,7 @@ describe("ProductionJobForm", () => {
     const first = new File([new Uint8Array([0xff, 0xd8, 0xff])], "receipt-one.jpg", { type: "image/jpeg" });
     const second = new File([new Uint8Array([0xff, 0xd8, 0xff])], "receipt-two.jpg", { type: "image/jpeg" });
     expect(input).toHaveAttribute("multiple");
+    expect(input.className).toContain("paymentProofFileInput");
 
     fireEvent.change(input, { target: { files: [first, second] } });
 
@@ -390,6 +391,7 @@ describe("ProductionJobForm", () => {
     expect(screen.queryByText("receipt-one.jpg")).not.toBeInTheDocument();
     expect(screen.queryByText("receipt-two.jpg")).not.toBeInTheDocument();
     expect(createObjectURL).toHaveBeenCalledTimes(2);
+    expect(screen.getByRole("button", { name: "Remove receipt-one.jpg" }).parentElement?.tagName).toBe("ARTICLE");
 
     fireEvent.click(screen.getByRole("button", { name: "Remove receipt-one.jpg" }));
 

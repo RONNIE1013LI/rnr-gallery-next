@@ -198,7 +198,7 @@ export function ProductionFilesPanel({
           <option value="print_file">Print file</option>
           {canManageFinance ? <option value="payment_proof">Payment proof</option> : null}
         </select></label>}
-        <label className={styles.fileInput}><span>{paymentProofOnly ? "PaymtProved" : acceptsPdf ? "Payment proof file" : "Image file"}</span><input name="file" type="file" multiple={paymentProofOnly} accept={acceptedFileTypes} required disabled={pending} /></label>
+        <label className={styles.fileInput}><span>{paymentProofOnly ? "PaymtProved" : acceptsPdf ? "Payment proof file" : "Image file"}</span><input className={paymentProofOnly ? styles.paymentProofFileInput : undefined} name="file" type="file" multiple={paymentProofOnly} accept={acceptedFileTypes} required disabled={pending} /></label>
         <button type="submit" disabled={pending}>{paymentProofOnly ? "Upload proof" : "Upload private file"}</button>
       </form> : null}
 
@@ -206,8 +206,8 @@ export function ProductionFilesPanel({
         <article className={paymentProofOnly ? styles.paymentProofPreviewCard : undefined} key={file.id}>
           {paymentProofOnly ? <div className={styles.paymentProofPreviewMedia}>
             {file.mediaType.startsWith("image/") ? <Image src={`${jobApiBase}/${jobId}/files/${file.id}`} alt={`Payment proof ${file.originalName}`} fill sizes="160px" unoptimized /> : <span>PDF</span>}
-            {canDeleteFiles ? <button type="button" className={styles.paymentProofDeleteButton} disabled={pending} aria-label={`Delete ${file.originalName}`} onClick={() => void deletePaymentProof(file)}><span aria-hidden="true">×</span></button> : null}
           </div> : null}
+          {paymentProofOnly && canDeleteFiles ? <button type="button" className={styles.paymentProofDeleteButton} disabled={pending} aria-label={`Delete ${file.originalName}`} onClick={() => void deletePaymentProof(file)}><span aria-hidden="true">×</span></button> : null}
           <div className={styles.fileSummary}>
             <div><strong>{fileTitle(file)}</strong><span>{paymentProofOnly ? `${(file.sizeBytes / 1024).toFixed(file.sizeBytes < 10240 ? 1 : 0)} KB` : `${file.originalName} · ${(file.sizeBytes / 1024).toFixed(file.sizeBytes < 10240 ? 1 : 0)} KB`}</span></div>
             <div><small>{dateTime.format(file.createdAt)}</small><a href={`${jobApiBase}/${jobId}/files/${file.id}?download=1`}>Download</a>{!paymentProofOnly && canDeleteFiles ? <button type="button" disabled={pending} aria-label={`Delete ${file.originalName}`} onClick={() => void deletePaymentProof(file)}>Delete</button> : null}</div>

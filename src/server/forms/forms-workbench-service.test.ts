@@ -61,7 +61,8 @@ describe("forms workbench query", () => {
     expect(visibleFormColumns({ canViewFinance: false }).map((column) => column.key)).not.toEqual(
       expect.arrayContaining(["bankRecon", "amountOwing", "amountPaid", "amountPayable", "artistFee"]),
     );
-    expect(visibleFormColumns({ canViewFinance: true })).toHaveLength(24);
+    expect(visibleFormColumns({ canViewFinance: true }).map((column) => column.key)).not.toContain("artistFee");
+    expect(visibleFormColumns({ canViewFinance: true })).toHaveLength(23);
   });
 
   it("validates bounded AND/OR operational filters", () => {

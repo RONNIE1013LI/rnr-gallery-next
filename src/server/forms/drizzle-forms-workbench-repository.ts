@@ -225,7 +225,11 @@ function filterCondition(
           : condition.field === "completed" ? productionJobs.completedAt
             : condition.field === "customerNotified" ? productionJobs.customerNotifiedAt
               : productionJobs.deliveredAt;
-    return scalarValue === "true" ? sql`${column} is not null` : sql`${column} is null`;
+    if (scalarValue === "true") return sql`${column} is not null`;
+    if (condition.field === "delivered") {
+      return sql`${column} is null and coalesce(${productionJobs.manualStatus}, 'new') <> 'on_hold'`;
+    }
+    return sql`${column} is null`;
   }
   if (condition.field === "amountPayable") {
     return numberCondition(amountPayableExpression());

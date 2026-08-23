@@ -282,7 +282,7 @@ export function visibleFormColumns(
   access: Readonly<{ canViewFinance: boolean }>,
 ) {
   return Object.freeze(FORM_LIST_COLUMNS.filter(
-    (column) => access.canViewFinance || !("finance" in column && column.finance),
+    (column) => column.key !== "artistFee" && (access.canViewFinance || !("finance" in column && column.finance)),
   ));
 }
 

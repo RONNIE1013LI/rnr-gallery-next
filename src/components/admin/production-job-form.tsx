@@ -759,21 +759,23 @@ export function ProductionJobForm({
           <div className={styles.formSectionHeading}><div><h2>Payment</h2></div></div>
           <div className={styles.manualFieldRows}>
             {canUploadFiles ? <label><span>PaymtProved</span><div>
-              <input ref={paymentProofRef} name="paymentProof" type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" aria-label="PaymtProved" aria-describedby="payment-proof-help payment-proof-error" onChange={(event) => selectPaymentProofs(event.currentTarget.files ?? [])} disabled={formDisabled} />
+              <input className={styles.paymentProofFileInput} ref={paymentProofRef} name="paymentProof" type="file" multiple accept="image/jpeg,image/png,image/webp,image/heic,image/heif,application/pdf" aria-label="PaymtProved" aria-describedby="payment-proof-help payment-proof-error" onChange={(event) => selectPaymentProofs(event.currentTarget.files ?? [])} disabled={formDisabled} />
               {savedPaymentProofs.length || paymentProofs.length ? <div className={styles.paymentProofPreviewGrid}>
-                {savedPaymentProofs.map((proof) => <article className={styles.paymentProofPreviewCard} key={proof.id}><div className={styles.paymentProofPreviewMedia}>
-                  {proof.mediaType.startsWith("image/") && existingManualOrder ? <Image src={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} alt={`Payment proof ${proof.originalName}`} fill sizes="120px" unoptimized /> : <span>PDF</span>}
+                {savedPaymentProofs.map((proof) => <article className={styles.paymentProofPreviewCard} key={proof.id}>
+                  <div className={styles.paymentProofPreviewMedia}>
+                    {proof.mediaType.startsWith("image/") && existingManualOrder ? <Image src={`${endpoint}/${existingManualOrder.id}/files/${proof.id}`} alt={`Payment proof ${proof.originalName}`} fill sizes="120px" unoptimized /> : <span>PDF</span>}
+                  </div>
                   {canDeleteFiles && canEdit ? <button type="button" className={styles.paymentProofDeleteButton} aria-label={`Delete ${proof.originalName}`} disabled={pending} onClick={(event) => { event.preventDefault(); void deleteSavedPaymentProof(proof); }}><span aria-hidden="true">×</span></button> : null}
-                </div></article>)}
+                </article>)}
                 {paymentProofs.map((proof) => <article className={styles.paymentProofPreviewCard} key={proof.id}>
-                <div className={styles.paymentProofPreviewMedia}>
-                  {proof.previewUrl ? <Image src={proof.previewUrl} alt={`Payment proof ${proof.file.name}`} fill sizes="120px" unoptimized /> : <span>PDF</span>}
+                  <div className={styles.paymentProofPreviewMedia}>
+                    {proof.previewUrl ? <Image src={proof.previewUrl} alt={`Payment proof ${proof.file.name}`} fill sizes="120px" unoptimized /> : <span>PDF</span>}
+                  </div>
                   <button type="button" className={styles.paymentProofDeleteButton} aria-label={`Remove ${proof.file.name}`} disabled={pending} onClick={(event) => {
                     event.preventDefault();
                     removePaymentProof(proof.id);
                   }}><span aria-hidden="true">×</span></button>
-                </div>
-              </article>)}</div> : null}
+                </article>)}</div> : null}
               <small id="payment-proof-help" className={styles.fieldHint}>Choose any number of JPG, PNG, WebP, HEIC, HEIF or PDF files. Maximum 25 MB each.</small>
               {paymentProofError ? <p id="payment-proof-error" className={styles.fieldHint} role="alert">{paymentProofError}</p> : null}
             </div></label> : null}

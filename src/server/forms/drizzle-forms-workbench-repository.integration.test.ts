@@ -128,7 +128,7 @@ describe("forms workbench repository", () => {
         customerEmail: "hidden@example.test",
         customerPhone: "0220000000",
         customerSource: "market",
-        manualStatus: "new",
+        manualStatus: "on_hold",
         manualPaymentStatus: "awaiting_payment",
         urgent: false,
         neededDate: "2026-08-15",
@@ -151,6 +151,7 @@ describe("forms workbench repository", () => {
         customerSource: "web",
         neededDate: "2026-08-20",
         deliveryMethod: "pickup",
+        deliveredAt: new Date("2026-08-19T01:00:00Z"),
       },
       {
         id: cancelledJobId,
@@ -327,6 +328,41 @@ describe("forms workbench repository", () => {
       },
     );
     expect(new Set(orResult.items.map((item) => item.id))).toEqual(new Set([assignedJobId, otherJobId]));
+  });
+
+  it("does not treat a held order as Delivered No", async () => {
+    const result = await listFormOrders(
+      database,
+      parseFormWorkbenchQuery({
+        q: suffix.slice(0, 6),
+        filter: "delivered~equals~false",
+      }),
+      {
+        actorUserId: operatorId,
+        assignedOnly: false,
+        canViewCustomerContact: false,
+        canViewFinance: false,
+      },
+    );
+
+    expect(result.items.map((item) => item.id)).toContain(assignedJobId);
+    expect(result.items.map((item) => item.id)).not.toContain(otherJobId);
+
+    const delivered = await listFormOrders(
+      database,
+      parseFormWorkbenchQuery({
+        q: suffix.slice(0, 6),
+        filter: "delivered~equals~true",
+      }),
+      {
+        actorUserId: operatorId,
+        assignedOnly: false,
+        canViewCustomerContact: false,
+        canViewFinance: false,
+      },
+    );
+    expect(delivered.items.map((item) => item.id)).toContain(refundedJobId);
+    expect(delivered.items.map((item) => item.id)).not.toContain(assignedJobId);
   });
 
   it("filters existing manual-entry data including submitter, item size, finance, and configured values", async () => {

@@ -35,7 +35,10 @@ export function FormsShell({
           {canCreateJobs ? <FormsOrderEntryLink currentPath={currentPath} /> : null}
         </div>
       </header>
-      <main id="main-content" className={styles.workspace}>{children}</main>
+      <main
+        id="main-content"
+        className={`${styles.workspace}${currentRoute === "/order-system" ? ` ${styles.dataListWorkspace}` : ""}`}
+      >{children}</main>
     </div>
   );
 }
