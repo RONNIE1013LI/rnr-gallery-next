@@ -48,9 +48,13 @@ function legacyMoney(widget: FormStatWidget) {
     || widget.metric === "amount_owing_total";
 }
 
-export function formatStatisticValue(widget: FormStatWidget, value: number, stat?: FormStatistic) {
+function isMoneyStatistic(widget: FormStatWidget, stat?: FormStatistic) {
   const query = queryFor(widget, stat);
-  return (query && moneyMeasures.has(query.measure)) || legacyMoney(widget)
+  return (query && moneyMeasures.has(query.measure)) || legacyMoney(widget);
+}
+
+export function formatStatisticValue(widget: FormStatWidget, value: number, stat?: FormStatistic) {
+  return isMoneyStatistic(widget, stat)
     ? money.format(value / 100)
     : integer.format(value);
 }
@@ -110,10 +114,13 @@ function isUnsafePieData(rows: readonly StatisticRow[]) {
   return rows.some((row) => row.value < 0) || rows.reduce((total, row) => total + row.value, 0) <= 0;
 }
 
-function chartContent(widget: FormStatWidget, stat: FormStatistic, rows: readonly StatisticRow[]) {
+function chartContent(widget: FormStatWidget, stat: FormStatistic, rows: readonly StatisticRow[], summaryId: string) {
   const tooltip = <Tooltip content={<FormsStatsTooltip widget={widget} stat={stat} />} />;
+  const chartLabel = `${widget.title} chart`;
+  const chartAccessibility = { "aria-label": chartLabel, "aria-describedby": summaryId, title: chartLabel };
+  const axisWidth = isMoneyStatistic(widget, stat) ? 112 : 60;
   if (widget.type === "pie") {
-    return <PieChart accessibilityLayer>
+    return <PieChart accessibilityLayer {...chartAccessibility}>
       {tooltip}
       <Pie data={rows} dataKey="value" nameKey="label" name="Value" outerRadius="80%" isAnimationActive={false}>
         {rows.map((row, index) => <Cell key={row.label} fill={chartColors[index % chartColors.length]} />)}
@@ -121,18 +128,18 @@ function chartContent(widget: FormStatWidget, stat: FormStatistic, rows: readonl
     </PieChart>;
   }
   if (widget.type === "line") {
-    return <LineChart data={rows} accessibilityLayer>
+    return <LineChart data={rows} accessibilityLayer {...chartAccessibility}>
       <CartesianGrid stroke="#d7d9de" strokeDasharray="3 3" />
       <XAxis dataKey="label" />
-      <YAxis tickFormatter={(value) => formatStatisticAxisValue(widget, Number(value), stat)} />
+      <YAxis width={axisWidth} tickFormatter={(value) => formatStatisticAxisValue(widget, Number(value), stat)} />
       {tooltip}
       <Line type="monotone" dataKey="value" name="Value" stroke="#173c31" strokeWidth={2} dot />
     </LineChart>;
   }
-  return <BarChart data={rows} accessibilityLayer>
+  return <BarChart data={rows} accessibilityLayer {...chartAccessibility}>
     <CartesianGrid stroke="#d7d9de" strokeDasharray="3 3" />
     <XAxis dataKey="label" />
-    <YAxis tickFormatter={(value) => formatStatisticAxisValue(widget, Number(value), stat)} />
+    <YAxis width={axisWidth} tickFormatter={(value) => formatStatisticAxisValue(widget, Number(value), stat)} />
     {tooltip}
     <Bar dataKey="value" name="Value" fill="#173c31" radius={[3, 3, 0, 0]} />
   </BarChart>;
@@ -142,14 +149,14 @@ export function FormsStatsChart({ widget, stat }: Readonly<{ widget: FormStatWid
   const rows = stat.rows ?? [];
   const summaryId = `form-stat-chart-${widget.id}-summary`;
   const isPieFallback = widget.type === "pie" && isUnsafePieData(rows);
-  const chartWidth = widget.type === "bar" || widget.type === "line" ? Math.max(520, rows.length * 72) : 520;
+  const chartWidth = widget.type === "bar" || widget.type === "line" ? Math.min(3600, Math.max(520, rows.length * 56)) : 520;
   return (
     <div className={styles.statChartScroller}>
       <p className={styles.srOnly} id={summaryId}>{widget.title} chart</p>
       {isPieFallback ? <p className={styles.statChartFallback} role="status">Pie charts require positive values. Use a bar or line chart instead.</p> : (
         <div className={styles.statChart} aria-describedby={summaryId} style={{ minWidth: `${chartWidth}px` }}>
           <ResponsiveContainer width="100%" height={260} minWidth={chartWidth}>
-            {chartContent(widget, stat, rows)}
+            {chartContent(widget, stat, rows, summaryId)}
           </ResponsiveContainer>
         </div>
       )}

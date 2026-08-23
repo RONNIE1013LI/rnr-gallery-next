@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FormStatistic } from "@/server/forms/drizzle-forms-stats-repository";
@@ -85,29 +85,64 @@ describe("FormsStatsChart", () => {
     expect(container.querySelector(".recharts-pie-sector")).not.toBeInTheDocument();
   });
 
-  it("keeps Recharts focus and live-tooltip descendants outside an image role", async () => {
-    const { container } = await renderSizedChart(weeklyPayableWidget, weeklyPayableStat);
-    const summary = screen.getByText("Weekly payable chart");
-    const focusable = container.querySelector('[tabindex="0"]');
+  it.each(["bar", "line", "pie"] as const)("gives the focusable %s chart root its own accessible name and reference", async (type) => {
+    const { container } = await renderSizedChart({ ...weeklyPayableWidget, type }, weeklyPayableStat);
+    const summary = document.getElementById("form-stat-chart-weekly-payable-summary")!;
+    const focusable = screen.getByRole("application", { name: "Weekly payable chart" });
 
     expect(screen.queryByRole("img", { name: "Weekly payable chart" })).not.toBeInTheDocument();
     expect(summary.tagName).toBe("P");
     expect(focusable).toBeInTheDocument();
+    expect(focusable).toHaveAttribute("aria-describedby", "form-stat-chart-weekly-payable-summary");
     expect(focusable?.closest('[role="img"]')).toBeNull();
     expect(container.querySelector('[role="status"]')).not.toBeInTheDocument();
+  });
+
+  it("uses keyboard navigation on the named chart to update the live tooltip", async () => {
+    await renderSizedChart(weeklyPayableWidget, weeklyPayableStat);
+    const chart = screen.getByRole("application", { name: "Weekly payable chart" });
+
+    fireEvent.focus(chart);
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("2026 W34"));
+    expect(screen.getByRole("status")).toHaveTextContent("$6,971.06");
+
+    fireEvent.keyDown(chart, { key: "ArrowRight" });
+    await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("2026 W35"));
+    expect(screen.getByRole("status")).toHaveTextContent("$3,105.00");
+  });
+
+  it("gives a large monetary Y axis enough room for NZD tick text", async () => {
+    const { container } = await renderSizedChart(weeklyPayableWidget, {
+      query: weeklyPayableWidget.query!,
+      rows: [{ label: "2026 W34", value: 10_000_000 }, { label: "2026 W35", value: 8_000_000 }],
+    });
+    expect(container.querySelector(".recharts-cartesian-grid-horizontal line")).toHaveAttribute("x1", "117");
+    expect([...container.querySelectorAll("svg text")].map((node) => node.textContent).join(" ")).toContain("$100,000.00");
+
+    const countWidget: FormStatWidget = { ...weeklyPayableWidget, query: { measure: "order_count", aggregation: "count", sort: "default" } };
+    const countChart = await renderSizedChart(countWidget, { query: countWidget.query!, rows: weeklyPayableStat.rows! });
+    expect(countChart.container.querySelector(".recharts-cartesian-grid-horizontal line")).toHaveAttribute("x1", "65");
   });
 
   it("grows wide bar and line charts within the chart scroller while hiding duplicate table visuals", async () => {
     const rows = Array.from({ length: 16 }, (_, index) => ({ label: `2026 W${index + 1}`, value: index + 1 }));
     const { container } = await renderSizedChart({ ...weeklyPayableWidget, type: "line" }, { query: weeklyPayableWidget.query!, rows });
-    const summary = screen.getByText("Weekly payable chart");
+    const summary = document.getElementById("form-stat-chart-weekly-payable-summary")!;
     const chart = summary.nextElementSibling as HTMLElement;
     const table = screen.getByRole("table", { name: "Weekly payable data" });
 
-    expect(chart.style.minWidth).toBe("1152px");
+    expect(chart.style.minWidth).toBe("896px");
     expect(table.className).toContain("srOnly");
     expect(table).not.toHaveStyle({ display: "none" });
     expect(container.querySelector(".recharts-line-curve")).toBeInTheDocument();
+  });
+
+  it("caps a 366-point chart width inside the scroller", async () => {
+    const rows = Array.from({ length: 366 }, (_, index) => ({ label: `2026-01-${index + 1}`, value: index + 1 }));
+    await renderSizedChart({ ...weeklyPayableWidget, type: "line" }, { query: weeklyPayableWidget.query!, rows });
+    const summary = document.getElementById("form-stat-chart-weekly-payable-summary")!;
+
+    expect((summary.nextElementSibling as HTMLElement).style.minWidth).toBe("3600px");
   });
 
   it("renders the exact active tooltip label, measure, aggregation, and formatted value", () => {
