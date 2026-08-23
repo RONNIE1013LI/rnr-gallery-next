@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { FormStatistic } from "@/server/forms/drizzle-forms-stats-repository";
@@ -85,15 +85,20 @@ describe("FormsStatsChart", () => {
     expect(container.querySelector(".recharts-pie-sector")).not.toBeInTheDocument();
   });
 
-  it.each(["bar", "line", "pie"] as const)("gives the focusable %s chart root its own accessible name and reference", async (type) => {
+  it.each(["bar", "line", "pie"] as const)("gives the focusable %s chart root a distinct useful description", async (type) => {
     const { container } = await renderSizedChart({ ...weeklyPayableWidget, type }, weeklyPayableStat);
     const summary = document.getElementById("form-stat-chart-weekly-payable-summary")!;
     const focusable = screen.getByRole("application", { name: "Weekly payable chart" });
 
     expect(screen.queryByRole("img", { name: "Weekly payable chart" })).not.toBeInTheDocument();
     expect(summary.tagName).toBe("P");
+    expect(summary).toHaveTextContent("2 data points. An equivalent data table follows.");
+    expect(summary).not.toHaveTextContent("Weekly payable chart");
     expect(focusable).toBeInTheDocument();
+    expect(focusable).toHaveAttribute("aria-label", "Weekly payable chart");
     expect(focusable).toHaveAttribute("aria-describedby", "form-stat-chart-weekly-payable-summary");
+    expect(container.querySelectorAll('[aria-describedby="form-stat-chart-weekly-payable-summary"]')).toHaveLength(1);
+    expect(focusable.querySelector("title")).not.toHaveTextContent("Weekly payable chart");
     expect(focusable?.closest('[role="img"]')).toBeNull();
     expect(container.querySelector('[role="status"]')).not.toBeInTheDocument();
   });
@@ -102,11 +107,12 @@ describe("FormsStatsChart", () => {
     await renderSizedChart(weeklyPayableWidget, weeklyPayableStat);
     const chart = screen.getByRole("application", { name: "Weekly payable chart" });
 
-    fireEvent.focus(chart);
+    chart.focus();
+    expect(document.activeElement).toBe(chart);
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("2026 W34"));
     expect(screen.getByRole("status")).toHaveTextContent("$6,971.06");
 
-    fireEvent.keyDown(chart, { key: "ArrowRight" });
+    chart.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, key: "ArrowRight" }));
     await waitFor(() => expect(screen.getByRole("status")).toHaveTextContent("2026 W35"));
     expect(screen.getByRole("status")).toHaveTextContent("$3,105.00");
   });

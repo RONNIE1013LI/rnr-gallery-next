@@ -117,7 +117,7 @@ function isUnsafePieData(rows: readonly StatisticRow[]) {
 function chartContent(widget: FormStatWidget, stat: FormStatistic, rows: readonly StatisticRow[], summaryId: string) {
   const tooltip = <Tooltip content={<FormsStatsTooltip widget={widget} stat={stat} />} />;
   const chartLabel = `${widget.title} chart`;
-  const chartAccessibility = { "aria-label": chartLabel, "aria-describedby": summaryId, title: chartLabel };
+  const chartAccessibility = { "aria-label": chartLabel, "aria-describedby": summaryId };
   const axisWidth = isMoneyStatistic(widget, stat) ? 112 : 60;
   if (widget.type === "pie") {
     return <PieChart accessibilityLayer {...chartAccessibility}>
@@ -152,9 +152,9 @@ export function FormsStatsChart({ widget, stat }: Readonly<{ widget: FormStatWid
   const chartWidth = widget.type === "bar" || widget.type === "line" ? Math.min(3600, Math.max(520, rows.length * 56)) : 520;
   return (
     <div className={styles.statChartScroller}>
-      <p className={styles.srOnly} id={summaryId}>{widget.title} chart</p>
+      <p className={styles.srOnly} id={summaryId}>{rows.length} data points. An equivalent data table follows.</p>
       {isPieFallback ? <p className={styles.statChartFallback} role="status">Pie charts require positive values. Use a bar or line chart instead.</p> : (
-        <div className={styles.statChart} aria-describedby={summaryId} style={{ minWidth: `${chartWidth}px` }}>
+        <div className={styles.statChart} style={{ minWidth: `${chartWidth}px` }}>
           <ResponsiveContainer width="100%" height={260} minWidth={chartWidth}>
             {chartContent(widget, stat, rows, summaryId)}
           </ResponsiveContainer>
