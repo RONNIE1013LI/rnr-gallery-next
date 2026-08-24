@@ -30,7 +30,6 @@ export default async function AdminDashboardPage() {
     <section className={styles.pageSection}>
       <header className={styles.pageHeader}>
         <div>
-          <p className={styles.adminEyebrow}>R&amp;R Gallery Admin</p>
           <h1>Operations overview</h1>
           <p>Live order, catalogue and provider status. No test records or estimated business data are inserted here.</p>
         </div>

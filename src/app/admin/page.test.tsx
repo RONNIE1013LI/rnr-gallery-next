@@ -29,6 +29,7 @@ describe("admin dashboard", () => {
 
     expect(requireAdminPage).toHaveBeenCalledWith("/admin", "access_admin");
     expect(screen.getByRole("heading", { name: "Operations overview" })).toBeInTheDocument();
+    expect(screen.queryByText("R&R Gallery Admin")).not.toBeInTheDocument();
     expect(screen.getByText("RNR-2026-TEST")).toBeInTheDocument();
     expect(screen.getByText("GoSweetSpot")).toBeInTheDocument();
     expect(screen.getByText("$9,876.00")).toBeInTheDocument();
