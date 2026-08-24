@@ -21,11 +21,21 @@ type SnapshotTable = Readonly<{
   checkConstraints: Record<string, SnapshotCheck>;
   [key: string]: unknown;
 }>;
-type Snapshot = Readonly<{
+type Snapshot = {
   id: string;
   prevId: string;
+  version: string;
+  dialect: string;
   tables: Record<string, SnapshotTable>;
-}>;
+  enums: Record<string, unknown>;
+  schemas: Record<string, unknown>;
+  sequences: Record<string, unknown>;
+  roles: Record<string, unknown>;
+  policies: Record<string, unknown>;
+  views: Record<string, unknown>;
+  _meta: unknown;
+  [key: string]: unknown;
+};
 
 function loadJson<T>(path: string): T {
   return JSON.parse(readFileSync(resolve(path), "utf8")) as T;
@@ -64,6 +74,9 @@ describe("migration lineage artifacts", () => {
       when: 1787609642192,
       tag: "20260824221402_ai_human_review_notifications",
     });
+    expect(
+      sha256("drizzle/20260824221402_ai_human_review_notifications.sql"),
+    ).toBe("28052f2c7f1b075892c10f66589cbde1859386c6b9dd7ac2f79642aa282d9fc1");
   });
 
   it("keeps the latest applied snapshot at the 71-table pre-notification schema", () => {
@@ -103,7 +116,8 @@ describe("migration lineage artifacts", () => {
     const current = loadJson<Snapshot>(
       "drizzle/meta/20260824221402_snapshot.json",
     );
-    const normalizedCurrentTables = structuredClone(current.tables);
+    const normalizedPrevious = structuredClone(previous);
+    const normalizedCurrent = structuredClone(current);
     const changes = [
       {
         table: "public.internal_notification_outbox",
@@ -126,15 +140,16 @@ describe("migration lineage artifacts", () => {
     ] as const;
 
     expect(current.prevId).toBe(previous.id);
-    expect(Object.keys(current.tables)).toEqual(Object.keys(previous.tables));
+    normalizedCurrent.id = normalizedPrevious.id;
+    normalizedCurrent.prevId = normalizedPrevious.prevId;
     for (const change of changes) {
       expect(
         current.tables[change.table]?.checkConstraints[change.constraint],
       ).toEqual({ name: change.constraint, value: change.value });
-      normalizedCurrentTables[change.table].checkConstraints[
+      normalizedCurrent.tables[change.table].checkConstraints[
         change.constraint
       ] = previous.tables[change.table].checkConstraints[change.constraint];
     }
-    expect(normalizedCurrentTables).toEqual(previous.tables);
+    expect(normalizedCurrent).toEqual(normalizedPrevious);
   });
 });
