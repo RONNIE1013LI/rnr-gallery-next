@@ -27,6 +27,11 @@ function marketFromChangedEvent(event: Event): Market | null {
   return market === "NZ" || market === "AU" ? market : null;
 }
 
+function explicitMarketForPathname(pathname: string): Market | null {
+  if (pathname === "/au" || pathname.startsWith("/au/")) return "AU";
+  return australianCommerceDestination(pathname) ? "NZ" : null;
+}
+
 export function SiteChrome({
   children,
   footerContent,
@@ -46,6 +51,7 @@ export function SiteChrome({
   const router = useRouter();
   const searchParams = useSearchParams();
   const [previousPathname, setPreviousPathname] = useState(pathname);
+  const [selectedMarket, setSelectedMarket] = useState(initialMarket);
   const [marketTransition, setMarketTransition] = useState<MarketTransition | null>(null);
   if (pathname !== previousPathname) {
     setPreviousPathname(pathname);
@@ -65,9 +71,9 @@ export function SiteChrome({
   const effectiveOverride = activeOverride && (
     !activeOverride.settled || pathname === activeOverride.targetPathname
   ) ? activeOverride : null;
-  const market: Market = effectiveOverride?.market ?? (
-    pathname === "/au" || pathname.startsWith("/au/") ? "AU" : initialMarket
-  );
+  const market: Market = effectiveOverride?.market
+    ?? explicitMarketForPathname(pathname)
+    ?? selectedMarket;
   const suppressFooterLead = pathname === "/" || pathname === "/au"
     || pathname === "/account" || pathname.startsWith("/account/")
     || pathname === "/checkout" || pathname.startsWith("/checkout/")
@@ -79,6 +85,7 @@ export function SiteChrome({
       const nextMarket = marketFromChangedEvent(event);
       if (nextMarket) {
         const targetPathname = marketSwitchDestination(pathname, nextMarket);
+        setSelectedMarket(nextMarket);
         setMarketTransition({
           market: nextMarket,
           sourcePathname: pathname,
