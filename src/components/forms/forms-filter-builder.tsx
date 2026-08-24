@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LuFilter } from "react-icons/lu";
 
 import type {
@@ -261,6 +261,18 @@ export function FormsFilterBuilder({
     returnFocusRef: triggerRef,
     onClose: close,
   });
+
+  useEffect(() => {
+    if (!open) return;
+
+    function closeFromOutsideClick(event: MouseEvent) {
+      if (event.target instanceof Node && dialogRef.current?.contains(event.target)) return;
+      setOpen(false);
+    }
+
+    document.addEventListener("click", closeFromOutsideClick);
+    return () => document.removeEventListener("click", closeFromOutsideClick);
+  }, [open]);
 
   function update(index: number, next: DraftFilterCondition) {
     setDraft((current) => current.map((condition, position) => position === index ? next : condition));

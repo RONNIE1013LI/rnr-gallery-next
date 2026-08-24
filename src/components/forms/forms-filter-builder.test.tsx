@@ -161,6 +161,25 @@ describe("forms filter builder", () => {
     expect(screen.queryByRole("dialog", { name: "Order filters" })).not.toBeInTheDocument();
   });
 
+  it("stays open for panel clicks and closes for a click anywhere outside the panel", async () => {
+    render(<div>
+      <button type="button">Outside action</button>
+      <FormsFilterBuilder conditions={[]} match="and" canViewFinance onApply={vi.fn()} />
+    </div>);
+
+    const outsideAction = screen.getByRole("button", { name: "Outside action" });
+    const trigger = screen.getByRole("button", { name: "Filter orders" });
+    fireEvent.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Order filters" });
+
+    fireEvent.click(screen.getByLabelText("Match"));
+    expect(dialog).toBeInTheDocument();
+
+    fireEvent.click(outsideAction);
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Order filters" })).not.toBeInTheDocument());
+    expect(trigger).toHaveFocus();
+  });
+
   it("lets a saved search close the funnel before opening its query", () => {
     render(<FormsFilterBuilder
       conditions={[]}

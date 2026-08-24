@@ -1389,6 +1389,14 @@
   font: inherit;
 }
 
+.filterPanel select {
+  height: 44px;
+  box-sizing: border-box;
+  line-height: 1.2;
+  -webkit-appearance: menulist;
+  appearance: auto;
+}
+
 .filterRows {
   display: grid;
   gap: 6px;
@@ -1985,6 +1993,10 @@
     min-height: 48px;
   }
 
+  .filterPanel select {
+    height: 48px;
+  }
+
   .filterHeading button,
   .filterRow > button,
   .personalViewList span button:last-child,
@@ -2151,6 +2163,10 @@
     padding-block: 3px;
     border-radius: 3px;
     font-size: 12px;
+  }
+
+  .filterPanel select {
+    height: 28px;
   }
 
   .filterHeading button,

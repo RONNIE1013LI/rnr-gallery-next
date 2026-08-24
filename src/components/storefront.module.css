@@ -2027,6 +2027,14 @@
   font: inherit;
 }
 
+.formField select {
+  height: 48px;
+  box-sizing: border-box;
+  line-height: 1.2;
+  -webkit-appearance: menulist;
+  appearance: auto;
+}
+
 .formField input[type="date"] {
   display: block;
   inline-size: 100%;
