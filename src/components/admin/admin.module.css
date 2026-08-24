@@ -338,7 +338,8 @@
 
 .notificationWarnings p {
   padding: 10px 12px;
-  border-left: 3px solid #a87825;
+  border: 1px solid #d8c18d;
+  border-radius: 8px;
   color: #654d1f;
   background: #fff9ed;
   font-size: 12px;
@@ -806,7 +807,8 @@
 
 .configurationWarning {
   padding: 9px 10px;
-  border-left: 3px solid #a87825;
+  border: 1px solid #d8c18d;
+  border-radius: 8px;
   color: #654d1f;
   background: #fff9ed;
   font-size: 12px;
@@ -3060,7 +3062,8 @@
 .customerText {
   margin-top: 14px;
   padding: 12px;
-  border-left: 3px solid #b6c5bb;
+  border: 1px solid #cbd4ce;
+  border-radius: 8px;
   background: #f6f8f6;
 }
 
@@ -3141,12 +3144,13 @@
 .proofGuidance {
   margin: 0 0 18px;
   padding: 12px 14px;
-  border-left: 3px solid #345c45;
+  border: 1px solid #b9cec0;
+  border-radius: 8px;
   background: #f3f7f4;
 }
 
 .proofGuidance[data-warning="true"] {
-  border-left-color: #a87825;
+  border-color: #d8c18d;
   background: #fff9ed;
 }
 
@@ -3440,12 +3444,13 @@ button.paymentProofPreviewMedia {
 .proofDecision {
   margin-top: 12px;
   padding: 10px 12px;
-  border-left: 3px solid #345c45;
+  border: 1px solid #b9cec0;
+  border-radius: 8px;
   background: #f3f7f4;
 }
 
 .proofDecision[data-decision="changes_requested"] {
-  border-left-color: #a87825;
+  border-color: #d8c18d;
   background: #fff9ed;
 }
 
@@ -3498,7 +3503,8 @@ button.paymentProofPreviewMedia {
 
 .safetyNotice {
   padding: 10px 12px;
-  border-left: 3px solid #a87825;
+  border: 1px solid #d8c18d;
+  border-radius: 8px;
   color: #5d471f;
   background: #fff9ed;
   font-size: 13px;

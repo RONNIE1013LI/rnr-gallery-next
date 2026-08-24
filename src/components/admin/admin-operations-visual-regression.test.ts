@@ -42,4 +42,8 @@ describe("Admin operational visual system", () => {
     expect(cssRule(contract, ".filterPanel")).toContain("grid-template-columns: 1fr;");
     expect(cssRule(contract, ".filterActions > *")).toContain("min-height: 44px;");
   });
+
+  it("uses complete semantic borders instead of decorative side tabs", () => {
+    expect(css).not.toMatch(/border-left:\s*3px solid/);
+  });
 });
