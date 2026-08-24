@@ -185,6 +185,9 @@ export const productionJobs = pgTable(
     uniqueIndex("production_jobs_idempotency_key_unique")
       .on(table.idempotencyKey)
       .where(sql`${table.idempotencyKey} is not null`),
+    uniqueIndex("production_jobs_legacy_identity_unique")
+      .on(table.legacySource, table.legacyOrderId)
+      .where(sql`${table.legacySource} is not null and ${table.legacyOrderId} is not null`),
     index("production_jobs_created_at_idx").on(table.createdAt),
     index("production_jobs_needed_date_idx").on(table.neededDate),
     index("production_jobs_assigned_user_idx").on(table.assignedUserId),
@@ -241,11 +244,11 @@ export const productionJobs = pgTable(
     ),
     check(
       "production_jobs_needed_date_valid",
-      sql`${table.neededDate} ~ '^\\d{4}-\\d{2}-\\d{2}$'`,
+      sql`(${table.legacySource} is not null and ${table.legacySource} = 'rnrgallery-order-system') or ${table.neededDate} ~ '^\\d{4}-\\d{2}-\\d{2}$'`,
     ),
     check(
       "production_jobs_customer_present",
-      sql`length(trim(${table.customerName})) > 0 and (length(trim(${table.customerEmail})) > 0 or length(trim(${table.customerPhone})) > 0)`,
+      sql`length(trim(${table.customerName})) > 0 and (length(trim(${table.customerEmail})) > 0 or length(trim(${table.customerPhone})) > 0 or (${table.legacySource} is not null and ${table.legacySource} = 'rnrgallery-order-system'))`,
     ),
     check(
       "production_jobs_job_number_present",
@@ -260,7 +263,15 @@ export const productionJobs = pgTable(
     ),
     check(
       "production_jobs_paid_not_over_payable",
-      sql`${table.amountPaidCents} is null or ${table.amountPayableCents} is null or ${table.amountPaidCents} <= ${table.amountPayableCents}`,
+      sql`(${table.legacySource} is not null and ${table.legacySource} = 'rnrgallery-order-system') or ${table.amountPaidCents} is null or ${table.amountPayableCents} is null or ${table.amountPaidCents} <= ${table.amountPayableCents}`,
+    ),
+    check(
+      "production_jobs_legacy_identity_pair",
+      sql`(${table.legacySource} is null and ${table.legacyOrderId} is null) or (${table.legacySource} is not null and ${table.legacyOrderId} is not null)`,
+    ),
+    check(
+      "production_jobs_legacy_source_valid",
+      sql`${table.legacySource} is null or ${table.legacySource} in ('rnrgallery-order-system')`,
     ),
   ],
 );

@@ -7,6 +7,7 @@ export * from "./customer-reviews";
 export * from "./gallery";
 export * from "./internal-notifications";
 export * from "./orders";
+export * from "./order-system-migration";
 export * from "./payments";
 export * from "./production";
 export * from "./uploads";

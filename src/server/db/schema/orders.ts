@@ -58,8 +58,8 @@ export type OrderNotificationKind =
 export type OrderNotificationStatus = "pending" | "sending" | "sent" | "failed";
 
 export const orderNumberSequence = pgSequence("rnr_order_number_seq", {
-  startWith: 8_000,
-  minValue: 8_000,
+  startWith: 1,
+  minValue: 1,
   increment: 1,
 });
 

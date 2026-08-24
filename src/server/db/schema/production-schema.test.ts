@@ -22,12 +22,15 @@ function columns(table: Parameters<typeof getTableConfig>[0]) {
 describe("production job schema", () => {
   it("keeps production work separate from immutable ecommerce orders", () => {
     expect(getTableName(productionJobs)).toBe("production_jobs");
-    expect(columns(productionJobs)).toEqual(expect.arrayContaining([
+    expect(columns(productionJobs)).toEqual([
+      "id",
       "job_number",
       "source",
       "order_id",
       "idempotency_key",
       "request_digest",
+      "legacy_source",
+      "legacy_order_id",
       "customer_name",
       "customer_email",
       "customer_phone",
@@ -57,7 +60,19 @@ describe("production job schema", () => {
       "created_by_user_id",
       "created_at",
       "updated_at",
-    ]));
+    ]);
+  });
+
+  it("gives imported historical jobs a paired, allowlisted source identity", () => {
+    expect(getTableConfig(productionJobs).checks.map((check) => check.name)).toEqual(
+      expect.arrayContaining([
+        "production_jobs_legacy_identity_pair",
+        "production_jobs_legacy_source_valid",
+      ]),
+    );
+    expect(getTableConfig(productionJobs).indexes.map((item) => item.config.name)).toContain(
+      "production_jobs_legacy_identity_unique",
+    );
   });
 
   it("keeps configurable and historical form values without weakening typed job fields", () => {
