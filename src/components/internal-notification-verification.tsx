@@ -16,7 +16,11 @@ export function InternalNotificationVerification({ token }: Readonly<{ token: st
     try {
       const response = await fetch(
         `/api/notification-email/verify/${encodeURIComponent(token)}`,
-        { method: "POST" },
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        },
       );
       const body = await response.json().catch(() => null) as {
         result?: string;

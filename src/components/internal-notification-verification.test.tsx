@@ -29,7 +29,11 @@ describe("InternalNotificationVerification", () => {
     expect(fetchMock).toHaveBeenCalledOnce();
     expect(fetchMock).toHaveBeenCalledWith(
       "/api/notification-email/verify/OpaqueToken_123456789012345678901234567890",
-      { method: "POST" },
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      },
     );
     expect(button).toBeDisabled();
 
