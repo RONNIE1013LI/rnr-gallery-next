@@ -340,6 +340,40 @@
   border: 1px solid var(--border);
 }
 
+.adminGalleryFilterDisclosure {
+  min-width: 0;
+}
+
+.adminGalleryFilterDisclosure > summary {
+  min-height: 48px;
+  padding: 0.75rem 0.9rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  cursor: pointer;
+  font-size: 0.875rem;
+  font-weight: 750;
+  list-style: none;
+}
+
+.adminGalleryFilterDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.adminGalleryFilterDisclosure > summary span:last-child {
+  color: var(--gallery-green);
+  font-size: 0.8125rem;
+}
+
+.adminGalleryFilterDisclosure[open] > summary {
+  margin-bottom: 0.75rem;
+}
+
 .adminGalleryFilters {
   display: grid;
   grid-template-columns: minmax(16rem, 1fr) minmax(10rem, 14rem) auto;
@@ -417,6 +451,20 @@
   background: #eee9df;
 }
 
+.adminGalleryArtworkUnavailable {
+  width: 5.5rem;
+  height: 5.5rem;
+  padding: 0.5rem;
+  display: grid;
+  place-items: center;
+  color: var(--muted);
+  background: #eee9df;
+  font-size: 0.6875rem;
+  font-weight: 750;
+  line-height: 1.25;
+  text-align: center;
+}
+
 .adminGalleryArtwork h2 {
   overflow-wrap: anywhere;
   font-size: 0.95rem;
@@ -460,6 +508,10 @@
   gap: 0.8rem;
 }
 
+.adminGalleryFooter {
+  display: contents;
+}
+
 .adminGalleryActions a {
   min-width: 44px;
   min-height: 44px;
@@ -468,6 +520,35 @@
   color: var(--gallery-green);
   font-size: 0.875rem;
   font-weight: 750;
+}
+
+.adminGalleryPagination {
+  min-height: 48px;
+  padding-top: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1rem;
+  color: var(--muted);
+  font-size: 0.8125rem;
+  font-weight: 700;
+}
+
+.adminGalleryPagination button {
+  min-width: 88px;
+  min-height: 44px;
+  padding: 0.6rem 0.85rem;
+  color: var(--gallery-green);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  cursor: pointer;
+  font: inherit;
+}
+
+.adminGalleryPagination button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
 }
 
 @media (max-width: 48rem) {
@@ -480,6 +561,16 @@
   .adminGalleryFilters input,
   .adminGalleryFilters select {
     min-height: 48px;
+  }
+}
+
+@media (min-width: 768px) {
+  .adminGalleryFilterDisclosure > summary {
+    display: none;
+  }
+
+  .adminGalleryFilterDisclosure:not([open]) > .adminGalleryFilters {
+    display: grid;
   }
 }
 
@@ -628,24 +719,97 @@
   }
 
   .adminGalleryTable {
-    border-inline: 0;
+    display: grid;
+    gap: 0.75rem;
+    overflow: visible;
+    border: 0;
+    background: transparent;
   }
 
   .adminGalleryFilters {
     grid-template-columns: 1fr;
+    padding: 0.875rem;
+    border-radius: 0.75rem;
+  }
+
+  .adminGalleryFilterDisclosure:not([open]) > .adminGalleryFilters {
+    display: none;
   }
 
   .adminGalleryRow {
     grid-template-columns: 1fr;
     gap: 0.75rem;
+    min-height: 0;
+    padding: 0.875rem;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    background: var(--paper);
+  }
+
+  .adminGalleryArtwork {
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0.75rem;
+  }
+
+  .adminGalleryArtwork img,
+  .adminGalleryArtworkUnavailable {
+    width: 4.5rem;
+    height: 4.5rem;
+    border-radius: 0.4rem;
+  }
+
+  .adminGalleryArtwork h2 {
+    font-size: 0.9375rem;
+  }
+
+  .adminGalleryMeta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.2rem 0.65rem;
+  }
+
+  .adminGalleryMeta strong {
+    width: 100%;
+  }
+
+  .adminGalleryProduct {
+    color: var(--muted);
+    font-size: 0.8125rem;
+  }
+
+  .adminGalleryFooter {
+    padding-top: 0.75rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .adminGalleryActions {
+    margin-left: auto;
   }
 
   .adminGalleryProduct,
-  .adminGalleryActions,
-  .adminStatusActive,
-  .adminStatusTrashed {
+  .adminGalleryFooter {
     grid-column: 1;
     grid-row: auto;
+  }
+
+  .adminGalleryActions a {
+    min-height: 44px;
+    padding-inline: 0.75rem;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    text-decoration: none;
+  }
+
+  .adminGalleryPagination {
+    justify-content: space-between;
+  }
+
+  .adminGalleryPagination button {
+    min-height: 48px;
   }
 
   .adminFormGrid {
