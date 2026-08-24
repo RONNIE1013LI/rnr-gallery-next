@@ -63,6 +63,7 @@ describe("Admin notification settings page", () => {
         payment_request_paid: 0,
         proof_approved: 0,
         proof_changes_requested: 0,
+        website_ai_human_review_required: 0,
       },
     }));
     expect(screen.getByRole("heading", { name: "Notification emails" })).toBeInTheDocument();
