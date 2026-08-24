@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it, vi } from "vitest";
+import type { CustomerEmailMessage } from "./customer-notification-service";
 import {
   InternalNotificationRecipientConflictError,
   createInternalNotificationRecipientService,
@@ -151,6 +152,39 @@ describe("internal notification recipient service", () => {
       idempotencyKey: "reissue-1",
     });
     expect(JSON.stringify(result)).not.toContain(rawToken);
+  });
+
+  it("uses different non-sensitive provider idempotency keys for different tokens issued at the same time", async () => {
+    const firstToken = Buffer.alloc(32, 11).toString("base64url");
+    const secondToken = Buffer.alloc(32, 12).toString("base64url");
+    const createToken = vi.fn()
+      .mockReturnValueOnce(firstToken)
+      .mockReturnValueOnce(secondToken);
+    const repo = repository();
+    const send = vi.fn(async (message: CustomerEmailMessage) => ({ providerMessageId: message.to }));
+    const subject = createInternalNotificationRecipientService(repo, {
+      provider: { configured: true, send },
+      siteUrl: "https://rrgallery.co.nz",
+      now: () => now,
+      createToken,
+    });
+
+    await subject.resendVerification(actor, {
+      recipientId: recipient().id,
+      idempotencyKey: "same-clock-first",
+    });
+    await subject.resendVerification(actor, {
+      recipientId: recipient().id,
+      idempotencyKey: "same-clock-second",
+    });
+
+    const keys = send.mock.calls.map(([message]) => message.idempotencyKey);
+    expect(keys).toEqual([
+      `internal-recipient-verification:${recipient().id}:d4f235e0d9d4aa54ff116724a7e17c1802d74018c0995cd60de5b8477386b9e2`,
+      `internal-recipient-verification:${recipient().id}:f51176ef958dc042f2f952ebf5bec7ae150503b4f0999eb1de136d56432dce5c`,
+    ]);
+    expect(JSON.stringify(keys)).not.toContain(firstToken);
+    expect(JSON.stringify(keys)).not.toContain(secondToken);
   });
 
   it("hashes opaque tokens for single-use repository verification", async () => {

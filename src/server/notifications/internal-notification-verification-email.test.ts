@@ -6,8 +6,8 @@ describe("internal notification verification email", () => {
     const message = verificationMessage({
       id: "87b8c9f4-116d-4f2e-8cb2-17133c833e5a",
       email: "orders@example.com",
-      verificationIssuedAt: new Date("2026-08-24T01:02:03.000Z"),
-    }, "raw/token+with spaces", "https://rrgallery.co.nz/base");
+    }, "raw/token+with spaces", "https://rrgallery.co.nz/base",
+    "d4f235e0d9d4aa54ff116724a7e17c1802d74018c0995cd60de5b8477386b9e2");
 
     expect(message).toEqual({
       to: "orders@example.com",
@@ -21,7 +21,7 @@ describe("internal notification verification email", () => {
         "This link expires in 24 hours. If you did not expect this message, you can ignore it.",
       ].join("\n"),
       html: "<p>Hello,</p><p>Confirm this email address to receive the selected R&amp;R Gallery internal notifications:</p><p><a href=\"https://rrgallery.co.nz/notification-email/verify/raw%2Ftoken%2Bwith%20spaces\">Verify notification email</a></p><p>This link expires in 24 hours. If you did not expect this message, you can ignore it.</p>",
-      idempotencyKey: "internal-recipient-verification:87b8c9f4-116d-4f2e-8cb2-17133c833e5a:2026-08-24T01:02:03.000Z",
+      idempotencyKey: "internal-recipient-verification:87b8c9f4-116d-4f2e-8cb2-17133c833e5a:d4f235e0d9d4aa54ff116724a7e17c1802d74018c0995cd60de5b8477386b9e2",
     });
   });
 });

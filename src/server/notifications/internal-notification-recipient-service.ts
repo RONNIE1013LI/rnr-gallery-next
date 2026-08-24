@@ -6,7 +6,10 @@ import {
   type InternalNotificationTopic,
 } from "./internal-notification-types";
 import type { CustomerEmailProvider } from "./customer-notification-service";
-import { verificationMessage } from "./internal-notification-verification-email";
+import {
+  createInternalNotificationVerificationLifecycleId,
+  verificationMessage,
+} from "./internal-notification-verification-email";
 
 const verificationLifetimeMs = 24 * 60 * 60 * 1000;
 
@@ -134,9 +137,13 @@ export function createInternalNotificationRecipientService(
   function issueVerification() {
     const rawToken = dependencies.createToken?.() ?? randomBytes(32).toString("base64url");
     const issuedAt = dependencies.now?.() ?? new Date();
+    const verificationTokenDigest = digestToken(rawToken);
     return Object.freeze({
       rawToken,
-      verificationTokenDigest: digestToken(rawToken),
+      verificationTokenDigest,
+      verificationLifecycleId: createInternalNotificationVerificationLifecycleId(
+        verificationTokenDigest,
+      ),
       verificationIssuedAt: issuedAt,
       verificationExpiresAt: new Date(issuedAt.getTime() + verificationLifetimeMs),
     });
@@ -150,8 +157,7 @@ export function createInternalNotificationRecipientService(
       await dependencies.provider.send(verificationMessage({
         id: recipient.id,
         email: recipient.email,
-        verificationIssuedAt: verification.verificationIssuedAt,
-      }, verification.rawToken, dependencies.siteUrl));
+      }, verification.rawToken, dependencies.siteUrl, verification.verificationLifecycleId));
       return "sent" as const;
     } catch {
       return dependencies.provider.configured ? "failed" as const : "not_configured" as const;
