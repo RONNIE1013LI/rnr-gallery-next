@@ -10,6 +10,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const pgClient = vi.hoisted(() => ({
+  construct: vi.fn(),
   connect: vi.fn(),
   query: vi.fn(),
   end: vi.fn(),
@@ -18,6 +19,9 @@ const pgClient = vi.hoisted(() => ({
 vi.mock("pg", () => ({
   default: {
     Client: class {
+      constructor() {
+        pgClient.construct();
+      }
       connect = pgClient.connect;
       query = pgClient.query;
       end = pgClient.end;
@@ -31,6 +35,7 @@ import {
   readLocalMigrationLineage,
   type MigrationLineageEntry,
 } from "./migration-lineage";
+import { verifyMigrationLineage } from "./migrate-database";
 
 const local: readonly MigrationLineageEntry[] = [
   {
@@ -55,9 +60,18 @@ const local: readonly MigrationLineageEntry[] = [
 
 const temporaryRoots: string[] = [];
 
+type TestJournalEntry = Readonly<{
+  version?: unknown;
+  idx?: unknown;
+  when?: unknown;
+  tag?: unknown;
+  breakpoints?: unknown;
+}>;
+
 function writeLocalLineage(
-  entries: readonly Readonly<{ idx: number; when: number | string; tag: string }>[],
+  entries: readonly TestJournalEntry[],
   sqlByTag: Readonly<Record<string, string>>,
+  journalFields: Readonly<{ version?: unknown; dialect?: unknown }> = {},
 ) {
   const rootDir = mkdtempSync(join(tmpdir(), "migration-lineage-"));
   temporaryRoots.push(rootDir);
@@ -65,7 +79,12 @@ function writeLocalLineage(
   writeFileSync(join(rootDir, "drizzle", "meta", "_journal.json"), JSON.stringify({
     version: "7",
     dialect: "postgresql",
-    entries,
+    ...journalFields,
+    entries: entries.map((entry) => ({
+      version: "7",
+      breakpoints: true,
+      ...entry,
+    })),
   }));
   for (const [tag, sql] of Object.entries(sqlByTag)) {
     writeFileSync(join(rootDir, "drizzle", `${tag}.sql`), sql);
@@ -136,7 +155,7 @@ describe("local migration lineage", () => {
     const secondSql = "select 2;\n";
     const rootDir = writeLocalLineage([
       { idx: 0, when: 1000, tag: "0000_alpha" },
-      { idx: 1, when: "2000", tag: "0001_beta" },
+      { idx: 1, when: 2000, tag: "0001_beta" },
     ], {
       "0000_alpha": firstSql,
       "0001_beta": secondSql,
@@ -200,12 +219,85 @@ describe("local migration lineage", () => {
     expect(() => readLocalMigrationLineage(rootDir))
       .toThrow(/ambiguous.*hash/i);
   });
+
+  it("rejects an invalid or incomplete top-level journal structure", () => {
+    const wrongDialectRoot = writeLocalLineage([
+      { idx: 0, when: 1000, tag: "0000_alpha" },
+    ], {
+      "0000_alpha": "select 1;\n",
+    }, { dialect: "sqlite" });
+    const missingVersionRoot = writeLocalLineage([
+      { idx: 0, when: 1000, tag: "0000_alpha" },
+    ], {
+      "0000_alpha": "select 1;\n",
+    }, { version: undefined });
+
+    expect(() => readLocalMigrationLineage(wrongDialectRoot)).toThrow(/dialect/i);
+    expect(() => readLocalMigrationLineage(missingVersionRoot)).toThrow(/version/i);
+  });
+
+  it("rejects entries with missing required journal fields", () => {
+    const requiredFields: readonly (keyof TestJournalEntry)[] = [
+      "version",
+      "breakpoints",
+      "idx",
+      "when",
+      "tag",
+    ];
+
+    for (const field of requiredFields) {
+      const rootDir = writeLocalLineage([{
+        version: "7",
+        breakpoints: true,
+        idx: 0,
+        when: 1000,
+        tag: "0000_alpha",
+        [field]: undefined,
+      }], {
+        "0000_alpha": "select 1;\n",
+      });
+
+      expect(() => readLocalMigrationLineage(rootDir), field)
+        .toThrow(new RegExp(field, "i"));
+    }
+  });
+
+  it("rejects invalid journal entry field values", () => {
+    const invalidEntries: readonly Readonly<{
+      field: keyof TestJournalEntry;
+      value: unknown;
+    }>[] = [
+      { field: "version", value: "6" },
+      { field: "breakpoints", value: "true" },
+      { field: "idx", value: "0" },
+      { field: "when", value: "1000" },
+      { field: "tag", value: "../0000_alpha" },
+    ];
+
+    for (const { field, value } of invalidEntries) {
+      const rootDir = writeLocalLineage([{
+        idx: 0,
+        when: 1000,
+        tag: "0000_alpha",
+        [field]: value,
+      }], {
+        "0000_alpha": "select 1;\n",
+      });
+
+      expect(() => readLocalMigrationLineage(rootDir), field)
+        .toThrow(new RegExp(field, "i"));
+    }
+  });
 });
 
 describe("applied migration lineage", () => {
   beforeEach(() => {
+    pgClient.construct.mockReset();
     pgClient.connect.mockReset().mockResolvedValue(undefined);
     pgClient.query.mockReset().mockImplementation(async (statement: string) => {
+      if (/to_regclass/i.test(statement)) {
+        return { rows: [{ migrationTable: "drizzle.__drizzle_migrations" }] };
+      }
       if (/select id, hash, created_at/i.test(statement)) {
         return {
           rows: [
@@ -245,10 +337,86 @@ describe("applied migration lineage", () => {
     expect(pgClient.query.mock.calls.map(([statement]) => statement)).toEqual([
       "BEGIN READ ONLY",
       "SET LOCAL statement_timeout = 10000",
+      expect.stringMatching(/to_regclass/i),
       expect.stringMatching(/FROM drizzle\.__drizzle_migrations[\s\S]*ORDER BY id/i),
       "ROLLBACK",
     ]);
     expect(pgClient.end).toHaveBeenCalledOnce();
+  });
+
+  it("returns an empty lineage when a fresh database has no migration table", async () => {
+    pgClient.query.mockImplementation(async (statement: string) => {
+      if (/to_regclass/i.test(statement)) {
+        return { rows: [{ migrationTable: null }] };
+      }
+      if (/select id, hash, created_at/i.test(statement)) {
+        throw new Error("relation drizzle.__drizzle_migrations does not exist");
+      }
+      return { rows: [] };
+    });
+
+    await expect(readAppliedMigrationLineage("postgresql://db.example/app"))
+      .resolves.toEqual([]);
+    expect(pgClient.query.mock.calls.map(([statement]) => statement)).toEqual([
+      "BEGIN READ ONLY",
+      "SET LOCAL statement_timeout = 10000",
+      expect.stringMatching(/to_regclass/i),
+      "ROLLBACK",
+    ]);
+  });
+
+  it("allows a SERIAL id gap left by a failed migration retry", async () => {
+    pgClient.query.mockImplementation(async (statement: string) => {
+      if (/to_regclass/i.test(statement)) {
+        return { rows: [{ migrationTable: "drizzle.__drizzle_migrations" }] };
+      }
+      if (/select id, hash, created_at/i.test(statement)) {
+        return {
+          rows: [
+            {
+              id: 1,
+              hash: "1111111111111111111111111111111111111111111111111111111111111111",
+              createdAt: "1000",
+            },
+            {
+              id: 3,
+              hash: "2222222222222222222222222222222222222222222222222222222222222222",
+              createdAt: "2000",
+            },
+          ],
+        };
+      }
+      return { rows: [] };
+    });
+
+    const applied = await readAppliedMigrationLineage("postgresql://db.example/app");
+
+    expect(applied).toEqual(local.slice(0, 2).map((entry, position) => ({
+      position,
+      hash: entry.hash,
+      createdAt: entry.createdAt,
+    })));
+    expect(() => assertAppliedMigrationPrefix(applied, local)).not.toThrow();
+  });
+
+  it("allows the default verifier composition on a fresh database", async () => {
+    const rootDir = writeLocalLineage([
+      { idx: 0, when: 1000, tag: "0000_alpha" },
+    ], {
+      "0000_alpha": "select 1;\n",
+    });
+    pgClient.query.mockImplementation(async (statement: string) => {
+      if (/to_regclass/i.test(statement)) {
+        return { rows: [{ migrationTable: null }] };
+      }
+      if (/select id, hash, created_at/i.test(statement)) {
+        throw new Error("relation drizzle.__drizzle_migrations does not exist");
+      }
+      return { rows: [] };
+    });
+
+    await expect(verifyMigrationLineage("postgresql://db.example/app", rootDir))
+      .resolves.toBeUndefined();
   });
 
   it("does not expose connection values when database reading fails", async () => {
@@ -266,5 +434,20 @@ describe("applied migration lineage", () => {
     expect(failure).toEqual(new Error("Applied migration lineage could not be read"));
     expect(String(failure)).not.toContain("user:secret");
     expect(pgClient.end).toHaveBeenCalledOnce();
+  });
+
+  it("sanitizes a synchronous pg client construction failure", async () => {
+    pgClient.construct.mockImplementationOnce(() => {
+      throw new Error("constructor exposed postgresql://user:secret@db.example/app");
+    });
+
+    const failure = await readAppliedMigrationLineage(
+      "postgresql://user:secret@db.example/app",
+    ).catch((error: unknown) => error);
+
+    expect(failure).toEqual(new Error("Applied migration lineage could not be read"));
+    expect(String(failure)).not.toContain("user:secret");
+    expect(pgClient.connect).not.toHaveBeenCalled();
+    expect(pgClient.end).not.toHaveBeenCalled();
   });
 });
