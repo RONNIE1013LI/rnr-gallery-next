@@ -71,6 +71,12 @@ Each entry must use the exact SQL content that produced the corresponding Produc
 
 ## Repository changes
 
+### Application schema restoration
+
+The reconciled `0055` snapshot and a fresh Drizzle generation must be compared before the notification migration is accepted. If the generator proposes dropping or altering Production-applied objects because their TypeScript schema definitions never reached `main`, restore those definitions from the exact reviewed Git branch that produced the applied migration. This restoration changes application metadata only; it must not emit a new migration for objects already present in Production.
+
+The restoration must cover every Production-applied table, column, constraint, index, enum, and sequence represented by `0055`. It must preserve the current notification schema and must not copy unrelated runtime/service implementation from historical branches.
+
 ### Migration artifacts
 
 - Add the missing exact-hash SQL files required by Production IDs 36–54.
@@ -83,6 +89,8 @@ Each entry must use the exact SQL content that produced the corresponding Produc
   - `internal_notification_subscriptions`
   - `internal_notification_outbox`
 - It must not alter an existing Production table.
+
+Drizzle derives a generated numeric prefix from journal position, not the highest historical tag. If it generates a collision such as `0054_internal_notification_center`, retain the generated SQL and snapshot bytes only after semantic review, restore the applied `0054` snapshot, rename the new artifacts to `0056`, and set the journal tag/timestamp to the approved values. This metadata normalization must pass Drizzle check, full replay, and exact-prefix tests; it must never edit generated SQL to conceal schema drift.
 
 ### Permanent safety gate
 

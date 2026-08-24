@@ -38,7 +38,7 @@
 
 **Interfaces:**
 - Consumes: the read-only 54-row Production ledger and exact matching Git SQL blobs.
-- Produces: a local journal whose complete current history is the immutable 54-row Production prefix, plus a latest applied `0055_snapshot.json` for Task 3.
+- Produces: a local journal whose complete current history is the immutable 54-row Production prefix, plus a latest applied `0055_snapshot.json` for Tasks 3–4.
 
 - [ ] **Step 1: Capture the sanitized Production ledger**
 
@@ -251,7 +251,68 @@ git commit -m "feat: guard migration lineage before execution"
 
 ---
 
-### Task 3: Regenerate internal notifications as canonical migration 0056
+### Task 3: Restore Production-applied application schema definitions
+
+**Files:**
+- Modify: `src/server/db/schema/customer-service.ts`
+- Modify: `src/server/db/schema/customer-service-schema.test.ts`
+- Create: `src/server/db/schema/order-system-migration.ts`
+- Create: `src/server/db/schema/order-system-migration-schema.test.ts`
+- Modify: `src/server/db/schema/orders.ts`
+- Modify: `src/server/db/schema/production.ts`
+- Modify: `src/server/db/schema/production-schema.test.ts`
+- Modify: `src/server/db/schema/index.ts`
+
+**Interfaces:**
+- Consumes: exact reviewed schema definitions from `data/order-system-migration` that produced the canonical `0055_snapshot.json`.
+- Produces: current TypeScript schema metadata containing all 71 Production-applied public tables, 953 columns, represented constraints/indexes, and the applied order-number sequence definition, while retaining the three notification table definitions for Task 4.
+
+- [ ] **Step 1: Write RED schema-presence tests**
+
+Add literal assertions for the 20 missing table names, the four changed-table column sets, the `production_jobs` legacy constraints/index, and the applied sequence options. Tests must import real Drizzle table objects and inspect their configuration; they must not grep source text.
+
+- [ ] **Step 2: Run RED**
+
+```bash
+npm run test:run -- \
+  src/server/db/schema/customer-service-schema.test.ts \
+  src/server/db/schema/order-system-migration-schema.test.ts \
+  src/server/db/schema/production-schema.test.ts
+```
+
+Expected: FAIL because the 20 tables and applied schema details are not currently exported.
+
+- [ ] **Step 3: Restore only the reviewed schema metadata**
+
+Use `data/order-system-migration` as the reviewed source for `customer-service.ts`, `order-system-migration.ts`, the applied portions of `orders.ts` and `production.ts`, and their focused tests. Merge `index.ts` so both the restored schema and current `internal-notifications` exports remain present. Do not copy runtime services, routes, jobs, migration commands, or unrelated application behavior.
+
+- [ ] **Step 4: Run GREEN and regression tests**
+
+```bash
+npm run test:run -- \
+  src/server/db/schema/customer-service-schema.test.ts \
+  src/server/db/schema/order-system-migration-schema.test.ts \
+  src/server/db/schema/production-schema.test.ts \
+  src/server/db/schema/internal-notifications-schema.test.ts
+npm run typecheck
+npm run lint
+git diff --check
+```
+
+Expected: PASS with zero lint errors.
+
+- [ ] **Step 5: Self-review and commit**
+
+Confirm the diff is limited to schema metadata/tests and retains current internal-notification exports. Commit:
+
+```bash
+git add src/server/db/schema
+git commit -m "fix: restore production applied schema definitions"
+```
+
+---
+
+### Task 4: Regenerate internal notifications as canonical migration 0056
 
 **Files:**
 - Create: `drizzle/0056_internal_notification_center.sql`
@@ -286,6 +347,8 @@ npm run db:generate -- --name internal_notification_center
 
 If Drizzle proposes any existing-table alteration, stop and report the exact objects instead of editing generated SQL to hide drift.
 
+Because Drizzle names by journal position, it may initially create `0054_internal_notification_center.sql` and overwrite the tracked `0054_snapshot.json`. In that case: preserve the generated candidate bytes, restore the applied `0054_snapshot.json` from HEAD, move the candidate SQL/snapshot to `0056_internal_notification_center.sql` and `0056_snapshot.json`, then set journal entry index 54 to tag `0056_internal_notification_center` and timestamp `1787525686969`. Do not change the generated SQL body.
+
 - [ ] **Step 3: Inspect generated SQL semantically**
 
 Allow only CREATE/ALTER FK/index/check operations whose targets are:
@@ -317,7 +380,7 @@ git commit -m "feat: append notification schema to canonical lineage"
 
 ---
 
-### Task 4: Prove fresh replay and Production catalog equivalence
+### Task 5: Prove fresh replay and Production catalog equivalence
 
 **Files:**
 - Create: `scripts/schema-catalog.ts`
@@ -327,7 +390,7 @@ git commit -m "feat: append notification schema to canonical lineage"
 - Modify: `package.json`
 
 **Interfaces:**
-- Consumes: canonical lineage from Tasks 1–3 and two database URLs supplied only at runtime.
+- Consumes: canonical lineage from Tasks 1–4 and two database URLs supplied only at runtime.
 - Produces: a safe JSON reconciliation summary containing database name, applied count, matching prefix count, catalog object counts, differences, and no credentials.
 
 - [ ] **Step 1: Write RED catalog-normalization tests**
@@ -424,14 +487,14 @@ git commit -m "test: verify migration replay against production lineage"
 
 ---
 
-### Task 5: Close the migration freeze and run release gates
+### Task 6: Close the migration freeze and run release gates
 
 **Files:**
 - Modify: `AGENTS.md`
 - Modify: `docs/superpowers/specs/2026-08-24-migration-lineage-reconciliation-design.md`
 
 **Interfaces:**
-- Consumes: clean independent reviews and exact reconciliation output from Tasks 1–4.
+- Consumes: clean independent reviews and exact reconciliation output from Tasks 1–5.
 - Produces: a repository policy requiring the permanent lineage check before Production migrations and a release-ready reconciliation record.
 
 - [ ] **Step 1: Verify the freeze exit conditions**
@@ -503,7 +566,7 @@ Review from `f6f0980f959d460d8ea1f35531624e37000bb78d` through HEAD with strict 
 
 ## Post-plan authorized release sequence
 
-After all five tasks and whole-branch review are approved, continue the user's already-approved release without another routine approval prompt:
+After all six tasks and whole-branch review are approved, continue the user's already-approved release without another routine approval prompt:
 
 1. Fetch `origin --prune` and stop on drift.
 2. Fast-forward push the clean reconciled HEAD to `origin/main`; never force-push.
