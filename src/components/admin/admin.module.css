@@ -170,25 +170,42 @@
   }
 
   .mobileMenuPanel {
-    position: absolute;
-    top: 50px;
-    left: 0;
-    width: min(320px, calc(100vw - 40px));
-    padding: 10px;
-    border: 1px solid var(--admin-border);
-    border-radius: 12px;
+    position: fixed;
+    inset: 64px 0 0;
+    width: auto;
+    padding: 16px max(16px, env(safe-area-inset-right)) calc(20px + env(safe-area-inset-bottom)) max(16px, env(safe-area-inset-left));
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    border-top: 1px solid var(--admin-border);
     background: #fff;
-    box-shadow: 0 16px 40px rgb(0 0 0 / 15%);
   }
 
   .mobileMenu .navigation a {
-    min-height: 48px;
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    padding: 9px 10px;
+  }
+
+  .mobileMenu .navigation a:hover,
+  .mobileMenu .navigation a:focus-visible {
+    color: #fff;
   }
 
   .mobileMenu .navigation {
-    max-height: min(70dvh, 620px);
-    gap: 12px;
-    overflow-y: auto;
+    max-height: none;
+    gap: 10px;
+    overflow: visible;
+  }
+
+  .mobileMenu .navigationGroup {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px 8px;
+  }
+
+  .mobileMenu .navigationGroup > span {
+    grid-column: 1 / -1;
+    padding: 4px 10px 2px;
   }
 }
 

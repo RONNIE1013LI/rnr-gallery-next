@@ -46,4 +46,26 @@ describe("Admin operational visual system", () => {
   it("uses complete semantic borders instead of decorative side tabs", () => {
     expect(css).not.toMatch(/border-left:\s*3px solid/);
   });
+
+  it("keeps the full mobile administration menu visible without nested clipping", () => {
+    const panel = cssRule(css, ".mobileMenuPanel");
+    const navigation = cssRule(css, ".mobileMenu .navigation");
+    const groups = cssRule(css, ".mobileMenu .navigationGroup");
+
+    expect(panel).toContain("position: fixed;");
+    expect(panel).toContain("inset: 64px 0 0;");
+    expect(panel).toContain("overflow-y: auto;");
+    expect(navigation).toContain("max-height: none;");
+    expect(navigation).toContain("overflow: visible;");
+    expect(groups).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+  });
+
+  it("keeps mobile navigation text readable on hover and keyboard focus", () => {
+    const activeLink = cssRule(
+      css,
+      ".mobileMenu .navigation a:hover,\n  .mobileMenu .navigation a:focus-visible",
+    );
+
+    expect(activeLink).toContain("color: #fff;");
+  });
 });
