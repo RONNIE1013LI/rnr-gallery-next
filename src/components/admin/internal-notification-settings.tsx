@@ -408,7 +408,7 @@ export function InternalNotificationSettings({ recipients: initialRecipients, co
                       Cancel
                     </button>
                   </>
-                ) : recipient.status === "active" ? (
+                ) : recipient.status !== "disabled" ? (
                   <button
                     type="button"
                     disabled={pendingAction !== null}
@@ -432,7 +432,7 @@ export function InternalNotificationSettings({ recipients: initialRecipients, co
                     onClick={() => void reenableRecipient(recipient, selectedReenableTopics)}
                   >Re-enable and send verification</button>
                 ) : null}
-                {recipient.status === "active" ? (
+                {recipient.status !== "disabled" ? (
                   <button
                     type="button"
                     disabled={pendingAction !== null}

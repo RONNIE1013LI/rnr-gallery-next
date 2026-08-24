@@ -171,9 +171,9 @@ describe("InternalNotificationSettings", () => {
     expect(within(active).queryByRole("button", { name: /verification/i })).not.toBeInTheDocument();
 
     const pending = screen.getByRole("article", { name: "pending@example.test" });
+    expect(within(pending).getByRole("button", { name: "Edit subscriptions" })).toBeInTheDocument();
     expect(within(pending).getByRole("button", { name: "Resend verification" })).toBeInTheDocument();
-    expect(within(pending).queryByRole("button", { name: "Edit subscriptions" })).not.toBeInTheDocument();
-    expect(within(pending).queryByRole("button", { name: "Delete pending@example.test" })).not.toBeInTheDocument();
+    expect(within(pending).getByRole("button", { name: "Delete pending@example.test" })).toBeInTheDocument();
 
     const disabled = screen.getByRole("article", { name: "disabled@example.test" });
     expect(within(disabled).queryByRole("button", { name: "Edit subscriptions" })).not.toBeInTheDocument();
@@ -217,7 +217,8 @@ describe("InternalNotificationSettings", () => {
     expect(screen.getByText("Subscriptions updated.")).toBeInTheDocument();
   });
 
-  it("reuses a failed edit key but creates a new key when edited topics change", async () => {
+  it("PATCHes pending subscriptions, reuses a failed key, and changes key with topics", async () => {
+    const pending = recipient({ status: "pending_verification", verifiedAt: null });
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ error: "Subscriptions failed." }, 500));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("crypto", {
@@ -225,7 +226,7 @@ describe("InternalNotificationSettings", () => {
         .mockReturnValueOnce("recipient-edit-retry")
         .mockReturnValueOnce("recipient-edit-changed"),
     });
-    render(<InternalNotificationSettings recipients={[recipient()]} coverage={emptyCoverage} />);
+    render(<InternalNotificationSettings recipients={[pending]} coverage={emptyCoverage} />);
 
     const card = screen.getByRole("article", { name: "ops@example.test" });
     fireEvent.click(within(card).getByRole("button", { name: "Edit subscriptions" }));
@@ -239,6 +240,12 @@ describe("InternalNotificationSettings", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
 
     const bodies = fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)));
+    for (const call of fetchMock.mock.calls) {
+      expect(call[0]).toBe(
+        "/api/admin/notification-recipients/10000000-0000-4000-8000-000000000001",
+      );
+      expect(call[1]).toMatchObject({ method: "PATCH" });
+    }
     expect(bodies.map((body) => body.idempotencyKey)).toEqual([
       "recipient-edit-retry",
       "recipient-edit-retry",
@@ -278,11 +285,12 @@ describe("InternalNotificationSettings", () => {
     }
   });
 
-  it("requires confirmation and reuses the same failed delete key on retry", async () => {
+  it("confirms and DELETEs pending recipients with the same failed retry key", async () => {
+    const pending = recipient({ status: "pending_verification", verifiedAt: null });
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ error: "The notification email could not be deleted." }, 500))
       .mockResolvedValueOnce(jsonResponse({
-        recipient: recipient({ status: "disabled", disabledAt: new Date("2026-08-24T02:00:00.000Z") }),
+        recipient: { ...pending, status: "disabled", disabledAt: new Date("2026-08-24T02:00:00.000Z") },
       }));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("crypto", { randomUUID: () => "recipient-disable-id" });
@@ -290,8 +298,8 @@ describe("InternalNotificationSettings", () => {
       .mockReturnValue(true)
       .mockReturnValueOnce(false);
     render(<InternalNotificationSettings
-      recipients={[recipient()]}
-      coverage={{ ...emptyCoverage, web_order_paid: 1 }}
+      recipients={[pending]}
+      coverage={emptyCoverage}
     />);
 
     const remove = screen.getByRole("button", { name: "Delete ops@example.test" });
