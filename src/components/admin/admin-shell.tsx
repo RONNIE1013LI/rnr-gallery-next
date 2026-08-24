@@ -15,24 +15,49 @@ type AdminShellProps = Readonly<{
   children: React.ReactNode;
 }>;
 
-const navigation = [
-  { label: "Dashboard", href: "/admin", permission: "access_admin" },
-  { label: "Orders", href: "/admin/orders", permission: "view_orders" },
-  { label: "Production", href: "/admin/jobs", permission: "view_production_jobs" },
-  { label: "Customers", href: "/admin/customers", permission: "view_customers" },
-  { label: "Users", href: "/admin/users", permission: "manage_roles" },
-  { label: "Products", href: "/admin/products", permission: "manage_prices" },
-  { label: "Design Gallery", href: "/admin/design-gallery", permission: "manage_gallery" },
-  { label: "Content", href: "/admin/content", permission: "manage_content" },
-  { label: "Customer Reviews", href: "/admin/customer-reviews", permission: "manage_reviews" },
-  { label: "Media", href: "/admin/media", permission: "delete_media" },
-  { label: "Shipping", href: "/admin/settings/shipping", permission: "manage_shipping" },
-  { label: "Payment", href: "/admin/settings/payment", permission: "manage_payment" },
-  { label: "Payment Requests", href: "/admin/payment-requests", permission: "manage_payment" },
-  { label: "Email templates", href: "/admin/settings/email-templates", permission: "manage_content" },
-  { label: "Notification emails", href: "/admin/settings/notifications", permission: "manage_roles" },
-  { label: "Audit Log", href: "/admin/audit", permission: "view_audit" },
-  { label: "Reply Assistant", href: "/reply-assistant", permission: "use_reply_assistant" },
+const dashboardNavigation = { label: "Dashboard", href: "/admin", permission: "access_admin" } as const;
+const navigationGroups = [
+  {
+    label: "Orders",
+    items: [
+      { label: "Orders", href: "/admin/orders", permission: "view_orders" },
+      { label: "Customers", href: "/admin/customers", permission: "view_customers" },
+    ],
+  },
+  {
+    label: "Production",
+    items: [
+      { label: "Production", href: "/admin/jobs", permission: "view_production_jobs" },
+      { label: "Shipping", href: "/admin/settings/shipping", permission: "manage_shipping" },
+    ],
+  },
+  {
+    label: "Content",
+    items: [
+      { label: "Products", href: "/admin/products", permission: "manage_prices" },
+      { label: "Design Gallery", href: "/admin/design-gallery", permission: "manage_gallery" },
+      { label: "Content", href: "/admin/content", permission: "manage_content" },
+      { label: "Customer Reviews", href: "/admin/customer-reviews", permission: "manage_reviews" },
+      { label: "Media", href: "/admin/media", permission: "delete_media" },
+    ],
+  },
+  {
+    label: "Finance",
+    items: [
+      { label: "Payment", href: "/admin/settings/payment", permission: "manage_payment" },
+      { label: "Payment Requests", href: "/admin/payment-requests", permission: "manage_payment" },
+    ],
+  },
+  {
+    label: "System",
+    items: [
+      { label: "Users", href: "/admin/users", permission: "manage_roles" },
+      { label: "Email templates", href: "/admin/settings/email-templates", permission: "manage_content" },
+      { label: "Notification emails", href: "/admin/settings/notifications", permission: "manage_roles" },
+      { label: "Audit Log", href: "/admin/audit", permission: "view_audit" },
+      { label: "Reply Assistant", href: "/reply-assistant", permission: "use_reply_assistant" },
+    ],
+  },
 ] as const;
 
 function Navigation({ ariaLabel = "Administration", role, permissions, onNavigate }: Readonly<{
@@ -41,13 +66,25 @@ function Navigation({ ariaLabel = "Administration", role, permissions, onNavigat
   permissions: readonly AdminPermission[];
   onNavigate?: () => void;
 }>) {
+  const canOpen = (permission: AdminPermission) => hasAdminPermission(role, permissions, permission);
   return (
     <nav className={styles.navigation} aria-label={ariaLabel}>
-      {navigation
-        .filter((item) => hasAdminPermission(role, permissions, item.permission))
-        .map((item) => (
-          <Link href={item.href} key={item.href} onClick={onNavigate}>{item.label}</Link>
-        ))}
+      {canOpen(dashboardNavigation.permission) ? (
+        <Link className={styles.navigationHome} href={dashboardNavigation.href} onClick={onNavigate}>
+          {dashboardNavigation.label}
+        </Link>
+      ) : null}
+      {navigationGroups.map((group) => {
+        const items = group.items.filter((item) => canOpen(item.permission));
+        return items.length ? (
+          <div className={styles.navigationGroup} key={group.label}>
+            <span>{group.label}</span>
+            {items.map((item) => (
+              <Link href={item.href} key={item.href} onClick={onNavigate}>{item.label}</Link>
+            ))}
+          </div>
+        ) : null;
+      })}
     </nav>
   );
 }

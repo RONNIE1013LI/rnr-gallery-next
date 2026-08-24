@@ -66,6 +66,28 @@ describe("AdminShell", () => {
     expect(screen.queryByRole("link", { name: "Users" })).not.toBeInTheDocument();
   });
 
+  it("renders only navigation groups that contain a permitted destination", () => {
+    render(
+      <AdminShell
+        administrator={{
+          name: "Studio Staff",
+          email: "staff@example.test",
+          role: "staff",
+          permissions: ["access_admin", "view_orders"],
+        }}
+      >
+        <p>Page content</p>
+      </AdminShell>,
+    );
+
+    expect(screen.getByText("Orders", { selector: "span" })).toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Orders" })).toBeInTheDocument();
+    expect(screen.queryByText("Production", { selector: "span" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Content", { selector: "span" })).not.toBeInTheDocument();
+    expect(screen.queryByText("Finance", { selector: "span" })).not.toBeInTheDocument();
+    expect(screen.queryByText("System", { selector: "span" })).not.toBeInTheDocument();
+  });
+
   it("closes the mobile navigation after a destination is selected", () => {
     render(
       <AdminShell
