@@ -52,6 +52,23 @@ describe("forms filter builder", () => {
     expect(apply).toHaveBeenCalledWith({ match: "and", conditions: [] });
   });
 
+  it("keeps each remove control inside its own condition row", () => {
+    render(<FormsFilterBuilder
+      conditions={[
+        { field: "urgent", operator: "equals", value: "true" },
+        { field: "status", operator: "equals", value: "new" },
+      ]}
+      match="and"
+      canViewFinance
+      onApply={vi.fn()}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders (2 active)" }));
+
+    expect(screen.getByRole("button", { name: "Remove condition 1" }).closest('[data-filter-row="true"]')).not.toBeNull();
+    expect(screen.getByRole("button", { name: "Remove condition 2" }).closest('[data-filter-row="true"]')).not.toBeNull();
+  });
+
   it("fails closed for incomplete or reversed updated-date ranges", () => {
     render(<FormsFilterBuilder conditions={[]} match="and" canViewFinance onApply={vi.fn()} />);
 

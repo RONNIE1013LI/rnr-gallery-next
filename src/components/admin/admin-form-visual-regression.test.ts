@@ -54,4 +54,16 @@ describe("Admin form visual refinements", () => {
     expect(mobile).toMatch(/\.listToolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*48px;/);
     expect(mobile).toMatch(/\.filterPanel\s*\{[\s\S]*?inset:\s*0;[\s\S]*?width:\s*100vw;[\s\S]*?height:\s*100dvh;/);
   });
+
+  it("keeps each mobile filter condition compact with a row-local remove control", () => {
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    expect(mobile).toMatch(/\.filterRow\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)\s*44px;/);
+    expect(mobile).toMatch(/\.filterRow > :nth-child\(3\)\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*3;/);
+    expect(mobile).toMatch(/\.filterRow > button\s*\{[\s\S]*?width:\s*44px;[\s\S]*?grid-column:\s*3;/);
+    expect(mobile).toMatch(/\.savedSearchWorkspace \.personalViews input\s*\{[\s\S]*?width:\s*100%;/);
+  });
+
+  it("styles the native upload surface without replacing the file input", () => {
+    expect(adminCss).toMatch(/input\[type="file"\]::file-selector-button[\s\S]*?min-height:\s*32px;/);
+  });
 });

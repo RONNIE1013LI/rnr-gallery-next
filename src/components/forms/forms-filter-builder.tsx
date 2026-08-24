@@ -373,7 +373,7 @@ export function FormsFilterBuilder({
               const isNoValue = condition.operator === "isEmpty" || condition.operator === "isNotEmpty";
               const values = typeof condition.value === "string" ? [condition.value] : condition.value;
               return (
-                <div className={styles.filterRow} key={`${index}-${condition.field}`}>
+                <div className={styles.filterRow} data-filter-row="true" key={`${index}-${condition.field}`}>
                   <select
                     aria-label={`Filter field ${index + 1}`}
                     value={condition.field}
@@ -429,7 +429,7 @@ export function FormsFilterBuilder({
                   )}
                   <button
                     type="button"
-                    aria-label={`Remove filter ${index + 1}`}
+                    aria-label={`Remove condition ${index + 1}`}
                     onClick={() => setDraft((current) => current.filter((_, position) => position !== index))}
                   >×</button>
                 </div>

@@ -2892,7 +2892,7 @@
   }
 
   .savedSearchWorkspace .personalViews input {
-    width: min(100%, 220px);
+    width: 100%;
   }
 
   .filterBackdrop {
@@ -2933,7 +2933,7 @@
   }
 
   .filterRow {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(2, minmax(0, 1fr)) 44px;
     padding: 10px 0;
     border-bottom: 1px solid var(--forms-border);
   }
@@ -2951,13 +2951,14 @@
   }
 
   .filterRow > :nth-child(3) {
-    grid-column: 1 / -1;
+    grid-column: 1 / 3;
     grid-row: auto;
   }
 
   .filterRow > button {
-    width: 100%;
-    grid-column: 1 / -1;
+    width: 44px;
+    grid-column: 3;
+    grid-row: 2;
   }
 
   .addFilterButton {
