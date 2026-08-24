@@ -39,7 +39,7 @@ export function FormsOrderCards({
             <time dateTime={row.submittedAt}>{submittedAtFormat.format(new Date(row.submittedAt))}</time>
             <span>#{startIndex + index + 1}</span>
           </header>
-          <dl>
+          <dl role="group" aria-label={`Operational details for order ${row.reference}`}>
             <div><dt>Cust.Name</dt><dd>{row.customerName || "—"}</dd></div>
             <div><dt>Size</dt><dd>{row.size || "—"}</dd></div>
             {canViewFinance && row.finance ? <>

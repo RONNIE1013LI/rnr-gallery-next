@@ -5,6 +5,21 @@ import { FormsOrderCards } from "./forms-order-cards";
 import { formOrderRow } from "./forms-test-data";
 
 describe("FormsOrderCards", () => {
+  it("keeps each compact card's operational fields grouped with its order-opening control", () => {
+    const onOpen = vi.fn();
+    render(<FormsOrderCards rows={[formOrderRow]} startIndex={0} canViewFinance onOpen={onOpen} />);
+
+    const details = screen.getByRole("group", { name: "Operational details for order 07188" });
+    expect(details).toContainElement(screen.getByText("Cust.Name"));
+    expect(details).toContainElement(screen.getByText("Size"));
+    expect(details).toContainElement(screen.getByText("AmtPayable"));
+    expect(details).toContainElement(screen.getByText("DlvryMethod"));
+    expect(details).toContainElement(screen.getByText("Delivered"));
+
+    fireEvent.click(screen.getByRole("button", { name: "Open order 07188" }));
+    expect(onOpen).toHaveBeenCalledWith("job-1");
+  });
+
   it("shows only the approved compact mobile order fields", () => {
     const onOpen = vi.fn();
     render(<FormsOrderCards rows={[formOrderRow]} startIndex={0} canViewFinance onOpen={onOpen} />);
@@ -47,6 +62,24 @@ describe("FormsOrderCards", () => {
       onOpen={vi.fn()}
     />);
 
+    expect(screen.getByText("HOLD")).toHaveAttribute("data-status", "hold");
+  });
+
+  it("retains delivery and delivery-completion status hooks across compact cards", () => {
+    render(<FormsOrderCards
+      rows={[
+        { ...formOrderRow, id: "job-email", reference: "07189", deliveryMethod: "email", milestones: { ...formOrderRow.milestones, delivered: true } },
+        { ...formOrderRow, id: "job-courier", reference: "07190", deliveryMethod: "courier" },
+        { ...formOrderRow, id: "job-hold", reference: "07191", source: "manual", status: "on_hold" },
+      ]}
+      startIndex={0}
+      canViewFinance
+      onOpen={vi.fn()}
+    />);
+
+    expect(screen.getByText("Email")).toHaveAttribute("data-status", "email");
+    expect(screen.getByText("Courier")).toHaveAttribute("data-status", "courier");
+    expect(screen.getByText("YES")).toHaveAttribute("data-status", "yes");
     expect(screen.getByText("HOLD")).toHaveAttribute("data-status", "hold");
   });
 

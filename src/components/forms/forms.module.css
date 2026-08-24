@@ -1890,6 +1890,17 @@
   background: #f97066;
 }
 
+.orderCard dd[data-field="deliveryMethod"][data-status="email"] {
+  color: #fff;
+  background: #944fb2;
+}
+
+.orderCard dd[data-field="deliveryMethod"][data-status="courier"],
+.orderCard dd[data-field="deliveryMethod"][data-status="australia-shipping"] {
+  color: #fff;
+  background: #15b8a6;
+}
+
 .orderCard dd[data-field="delivered"][data-status="no"] {
   color: #fff;
   background: #f04438;
@@ -1898,6 +1909,11 @@
 .orderCard dd[data-field="delivered"][data-status="yes"] {
   color: #fff;
   background: #2e90fa;
+}
+
+.orderCard dd[data-field="delivered"][data-status="hold"] {
+  color: #fff;
+  background: #f79009;
 }
 
 @media (max-width: 680px) {
@@ -3063,17 +3079,17 @@
 
 @media (max-width: 680px) {
   .orderCards {
-    gap: 6px;
+    gap: 5px;
   }
 
   .orderCard header {
-    gap: 6px;
-    padding: 1px 8px;
+    gap: 4px;
+    padding: 0 8px;
   }
 
   .orderCard dl {
-    gap: 4px 6px;
-    padding: 5px 8px 7px;
+    gap: 3px 5px;
+    padding: 4px 8px 6px;
   }
 
   .orderCard dl div {
@@ -3081,7 +3097,7 @@
   }
 
   .orderCard dd {
-    min-height: 36px;
+    min-height: 44px;
     margin-top: 1px;
     padding: 4px 7px;
     font-size: 13px;
