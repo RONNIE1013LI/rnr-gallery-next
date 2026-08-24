@@ -7,6 +7,7 @@ import {
   PaymentProviderRequestError,
   PaymentProviderVerificationError,
   paymentTargetReference,
+  type PaymentEligibilityContext,
   type PaymentProvider,
   type ProviderPaymentTarget,
   type VerifiedPaymentResult,
@@ -23,6 +24,8 @@ type Money = Readonly<{
 type ConfigurationResponse = Readonly<{
   minimumAmount?: Money | null;
   maximumAmount: Money;
+  merchantCountry?: "NZ" | "AU";
+  CBT?: unknown;
 }>;
 
 type CheckoutResponse = Readonly<{
@@ -80,7 +83,10 @@ function isMoney(value: unknown): value is Money {
 function isConfiguration(value: unknown): value is ConfigurationResponse {
   return isRecord(value) &&
     (value.minimumAmount === undefined || value.minimumAmount === null || isMoney(value.minimumAmount)) &&
-    isMoney(value.maximumAmount);
+    isMoney(value.maximumAmount) &&
+    (value.merchantCountry === undefined ||
+      value.merchantCountry === "NZ" ||
+      value.merchantCountry === "AU");
 }
 
 function isCheckout(value: unknown): value is CheckoutResponse {
@@ -132,21 +138,80 @@ function amount(order: ProviderPaymentTarget): Money {
 
 function configurationLimits(
   response: ConfigurationResponse,
+  order: PaymentEligibilityContext,
+  config: EnabledAfterpayConfig,
+): AfterpayLimits | null {
+  if (
+    response.merchantCountry !== undefined &&
+    response.merchantCountry !== config.merchantCountry
+  ) {
+    throw verificationFailure();
+  }
+
+  if (
+    order.billingAddress?.country === config.merchantCountry &&
+    order.currency === config.currency
+  ) {
+    return moneyLimits(
+      response.minimumAmount,
+      response.maximumAmount,
+      config.currency,
+      [config.merchantCountry],
+    );
+  }
+
+  if (
+    (order.currency !== "NZD" && order.currency !== "AUD") ||
+    !order.billingAddress ||
+    !isRecord(response.CBT) ||
+    response.CBT.enabled !== true ||
+    !Array.isArray(response.CBT.countries) ||
+    !response.CBT.countries.every((country) => country === "NZ" || country === "AU") ||
+    !response.CBT.countries.includes(order.billingAddress.country) ||
+    !isRecord(response.CBT.limits)
+  ) {
+    return null;
+  }
+
+  const currencyLimits = response.CBT.limits[order.currency];
+  if (
+    !isRecord(currencyLimits) ||
+    (currencyLimits.minimumAmount !== undefined &&
+      currencyLimits.minimumAmount !== null &&
+      !isMoney(currencyLimits.minimumAmount)) ||
+    !isMoney(currencyLimits.maximumAmount)
+  ) {
+    return null;
+  }
+
+  return moneyLimits(
+    currencyLimits.minimumAmount as Money | null | undefined,
+    currencyLimits.maximumAmount,
+    order.currency,
+    [order.billingAddress.country],
+  );
+}
+
+function moneyLimits(
+  minimumAmount: Money | null | undefined,
+  maximumAmount: Money,
   expectedCurrency: Money["currency"],
+  consumerCountries: readonly ("NZ" | "AU")[],
 ): AfterpayLimits {
   if (
-    response.maximumAmount.currency !== expectedCurrency ||
-    (response.minimumAmount && response.minimumAmount.currency !== expectedCurrency)
+    maximumAmount.currency !== expectedCurrency ||
+    (minimumAmount && minimumAmount.currency !== expectedCurrency)
   ) throw verificationFailure();
-  const minimumAmountCents = response.minimumAmount
-    ? moneyToCents(response.minimumAmount)
+  const minimumAmountCents = minimumAmount
+    ? moneyToCents(minimumAmount)
     : 0;
-  const maximumAmountCents = moneyToCents(response.maximumAmount);
+  const maximumAmountCents = moneyToCents(maximumAmount);
   if (maximumAmountCents < minimumAmountCents) throw verificationFailure();
   return Object.freeze({
     currency: expectedCurrency,
     minimumAmountCents,
     maximumAmountCents,
+    consumerCountries: Object.freeze([...consumerCountries]),
   });
 }
 
@@ -332,13 +397,13 @@ export function createAfterpayProvider({
     }
   }
 
-  async function limits() {
+  async function limits(order: PaymentEligibilityContext) {
     const response = await providerJson({
       method: "GET",
-      path: "/v2/configuration",
+      path: "/v2/configuration?include=activeCountries&include=cbt&include=merchantCountry",
       validate: isConfiguration,
     });
-    return configurationLimits(response, config.currency);
+    return configurationLimits(response, order, config);
   }
 
   async function retrieveAuthority(
@@ -395,12 +460,16 @@ export function createAfterpayProvider({
     refundCapability: "unsupported",
 
     async availability(order) {
-      return afterpayEligibility(order, config, await limits());
+      return afterpayEligibility(order, config, await limits(order));
     },
 
     async createOrReuse(input) {
       assertTrustedMerchantUrls(input);
-      const eligibility = afterpayEligibility(input.order, config, await limits());
+      const eligibility = afterpayEligibility(
+        input.order,
+        config,
+        await limits(input.order),
+      );
       if (!eligibility.available) throw verificationFailure();
       const names = contactName(input.order.customer.fullName);
       const response = await providerJson({

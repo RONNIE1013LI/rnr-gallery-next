@@ -119,6 +119,7 @@ describe("Afterpay eligibility", () => {
       currency: "NZD",
       minimumAmountCents: 100,
       maximumAmountCents: 200_000,
+      consumerCountries: ["NZ"],
     })).toEqual({ available: false, reason: "country" });
   });
 
@@ -126,9 +127,10 @@ describe("Afterpay eligibility", () => {
     currency: "NZD" as const,
     minimumAmountCents: 100,
     maximumAmountCents: 200_000,
+    consumerCountries: ["NZ"] as const,
   };
 
-  it("requires matching merchant country, currency and fetched limits", () => {
+  it("requires matching consumer country, currency and fetched limits", () => {
     expect(afterpayEligibility(orderFor("NZ", "NZD"), afterpayConfig, limits)).toEqual({
       available: true,
     });
@@ -144,6 +146,22 @@ describe("Afterpay eligibility", () => {
       available: false,
       reason: "limits",
     });
+  });
+
+  it("allows an Australian AUD order only when fetched CBT limits include Australia", () => {
+    const australianCbtLimits = {
+      currency: "AUD" as const,
+      minimumAmountCents: 100,
+      maximumAmountCents: 200_000,
+      consumerCountries: ["AU"] as const,
+    };
+
+    expect(
+      afterpayEligibility(orderFor("AU", "AUD"), afterpayConfig, australianCbtLimits),
+    ).toEqual({ available: true });
+    expect(
+      afterpayEligibility(orderFor("NZ", "AUD"), afterpayConfig, australianCbtLimits),
+    ).toEqual({ available: false, reason: "country" });
   });
 
   it.each([99, 200_001])("rejects an amount outside fetched limits", (amountCents) => {
@@ -188,6 +206,7 @@ describe("paymentEligibility", () => {
         currency: "NZD" as const,
         minimumAmountCents: 100,
         maximumAmountCents: 200_000,
+        consumerCountries: ["NZ"] as const,
       };
 
       expect(stripeEligibility(order, stripeConfig)).toEqual({

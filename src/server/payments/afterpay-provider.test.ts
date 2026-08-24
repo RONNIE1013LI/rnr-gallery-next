@@ -75,6 +75,34 @@ function configuration(currency: "NZD" | "AUD" = "NZD") {
   };
 }
 
+function cbtConfiguration({
+  enabled = true,
+  countries = ["AU"],
+  includeAudLimits = true,
+}: {
+  enabled?: boolean;
+  countries?: readonly ("NZ" | "AU")[];
+  includeAudLimits?: boolean;
+} = {}) {
+  return {
+    ...configuration("NZD"),
+    merchantCountry: "NZ",
+    CBT: {
+      enabled,
+      countries,
+      limits: includeAudLimits
+        ? {
+            AUD: {
+              exchangeRate: "0.9200",
+              minimumAmount: { amount: "1.00", currency: "AUD" },
+              maximumAmount: { amount: "2000.00", currency: "AUD" },
+            },
+          }
+        : {},
+    },
+  };
+}
+
 function checkoutResponse(
   environment: "sandbox" | "production" = "sandbox",
   country: "NZ" | "AU" = "NZ",
@@ -201,7 +229,9 @@ describe("Afterpay provider", () => {
 
       const session = await provider.createOrReuse(sessionInput(paymentOrder));
 
-      expect(fetchImpl.mock.calls[0]?.[0]).toBe(`${apiBase}/v2/configuration`);
+      expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+        `${apiBase}/v2/configuration?include=activeCountries&include=cbt&include=merchantCountry`,
+      );
       expect(fetchImpl.mock.calls[1]?.[0]).toBe(`${apiBase}/v2/checkouts`);
       expect(new URL(session.kind === "redirect" ? session.redirectUrl : "https://invalid.test").host)
         .toBe(portalHost);
@@ -293,6 +323,55 @@ describe("Afterpay provider", () => {
     expect(JSON.parse(String(request.body))).toMatchObject({
       amount: { amount: "339.99", currency: "AUD" },
       merchantReference: australianOrder.orderNumber,
+    });
+  });
+
+  it("uses the NZ merchant CBT capability for an Australian AUD checkout", async () => {
+    const australianOrder = Object.freeze({
+      ...order("AU"),
+      amountCents: 33_999,
+    });
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse(cbtConfiguration()))
+      .mockResolvedValueOnce(jsonResponse(cbtConfiguration()))
+      .mockResolvedValueOnce(jsonResponse({
+        ...checkoutResponse("sandbox", "AU"),
+        amount: { amount: "339.99", currency: "AUD" },
+        merchantReference: australianOrder.orderNumber,
+      }));
+    const provider = createAfterpayProvider({
+      config: config("sandbox", "NZ"),
+      fetchImpl,
+    });
+
+    await expect(provider.availability(australianOrder)).resolves.toEqual({
+      available: true,
+    });
+    await expect(provider.createOrReuse(sessionInput(australianOrder)))
+      .resolves.toMatchObject({ providerReference: token });
+
+    const request = fetchImpl.mock.calls[2]?.[1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toMatchObject({
+      amount: { amount: "339.99", currency: "AUD" },
+      billing: { countryCode: "AU" },
+      shipping: { countryCode: "AU" },
+      merchantReference: australianOrder.orderNumber,
+    });
+  });
+
+  it.each([
+    ["CBT is disabled", cbtConfiguration({ enabled: false })],
+    ["Australia is not enabled", cbtConfiguration({ countries: ["NZ"] })],
+    ["AUD limits are absent", cbtConfiguration({ includeAudLimits: false })],
+  ])("keeps Australian Afterpay unavailable when %s", async (_name, response) => {
+    const provider = createAfterpayProvider({
+      config: config("sandbox", "NZ"),
+      fetchImpl: vi.fn().mockResolvedValue(jsonResponse(response)),
+    });
+
+    await expect(provider.availability(order("AU"))).resolves.toEqual({
+      available: false,
+      reason: "limits",
     });
   });
 

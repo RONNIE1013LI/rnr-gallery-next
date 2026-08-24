@@ -30,6 +30,7 @@ export type AfterpayLimits = Readonly<{
   currency: "NZD" | "AUD";
   minimumAmountCents: number;
   maximumAmountCents: number;
+  consumerCountries: readonly ("NZ" | "AU")[];
 }>;
 
 const LOCAL_CARD_CURRENCIES = new Set<PaymentCurrency>([
@@ -69,16 +70,29 @@ export function afterpayEligibility(
 ): PaymentEligibilityResult {
   if (!hasValidAmount(order)) return unavailable("amount");
   if (!config.enabled) return unavailable("configuration");
-  if (
-    !order.billingAddress ||
-    !order.deliveryAddress ||
-    order.billingAddress.country !== config.merchantCountry
-  ) {
+  if (!order.billingAddress || !order.deliveryAddress) {
     return unavailable("country");
   }
-  if (order.currency !== config.currency) return unavailable("currency");
   if (!limits) return unavailable("limits");
+  if (
+    limits.consumerCountries.length === 0 ||
+    limits.consumerCountries.some((country) => country !== "NZ" && country !== "AU")
+  ) {
+    return unavailable("limits");
+  }
+  if (!limits.consumerCountries.includes(order.billingAddress.country)) {
+    return unavailable("country");
+  }
   if (limits.currency !== order.currency) return unavailable("currency");
+  if (COUNTRY_CURRENCY[order.billingAddress.country] !== order.currency) {
+    return unavailable("currency");
+  }
+  if (
+    order.billingAddress.country === config.merchantCountry &&
+    order.currency !== config.currency
+  ) {
+    return unavailable("currency");
+  }
   if (
     !Number.isSafeInteger(limits.minimumAmountCents) ||
     !Number.isSafeInteger(limits.maximumAmountCents) ||
