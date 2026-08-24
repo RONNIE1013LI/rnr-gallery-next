@@ -51,12 +51,15 @@ export function FormsStatsWorkbench({
 
   return (
     <section className={styles.statsWorkbench} data-testid="forms-stats-workbench" data-mode={mode} data-layout-id={editingLayout?.id ?? ""}>
+      <header className={styles.statsPageToolbar}>
+        <div><h1>Custom stats</h1><p>Track production volume, delivery mix, work status and authorised finance totals.</p></div>
+        {canManage && mode === "dashboard" ? <button type="button" onClick={() => openBuilder(null)}>Create custom stat</button> : null}
+      </header>
       {mode === "dashboard" ? <FormsStatsDashboard
         layouts={savedLayouts}
         canManage={canManage}
         canViewFinance={canViewFinance}
         queryContext={queryContext}
-        onCreate={() => openBuilder(null)}
         onEdit={openBuilder}
         onDeleted={(layout) => setSavedLayouts((current) => current.filter((entry) => entry.id !== layout.id))}
       /> : null}
