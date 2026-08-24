@@ -105,7 +105,7 @@ export function FormsInlineCell({
             setDraft(original);
             setMessage("");
             setConflict(false);
-            setEditorWidth(autosaves ? event.currentTarget.getBoundingClientRect().width : null);
+            setEditorWidth(event.currentTarget.getBoundingClientRect().width);
             setEditing(true);
           }}
         >

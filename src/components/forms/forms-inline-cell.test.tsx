@@ -46,6 +46,22 @@ describe("forms inline cell", () => {
     expect(screen.getByLabelText("Printed for 07188").parentElement).toHaveStyle({ width: "58px" });
   });
 
+  it("keeps a manual editor at the original visible field width", () => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 0, y: 0, top: 0, right: 74, bottom: 24, left: 0,
+      width: 74, height: 24, toJSON: () => ({}),
+    });
+    render(<FormsInlineCell
+      jobId="job-1" reference="07188" field="amountPaid" label="AmtPaid"
+      value={13000} version="2026-08-05T01:00:00.000Z" kind="money"
+      onSaved={vi.fn()}
+    >$130.00</FormsInlineCell>);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit AmtPaid for 07188" }));
+
+    expect(screen.getByLabelText("AmtPaid for 07188").parentElement).toHaveStyle({ width: "74px" });
+  });
+
   it("autosaves the selected option value and ignores an unchanged selection", async () => {
     const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: "updated" }), { status: 200 }));
     vi.stubGlobal("fetch", request);

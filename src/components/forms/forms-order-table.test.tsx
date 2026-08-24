@@ -26,6 +26,15 @@ describe("FormsOrderTable", () => {
     expect(screen.getByRole("cell", { name: "101" })).toBeInTheDocument();
   });
 
+  it("keeps stable column hooks for visual grouping", () => {
+    render(<FormsOrderTable rows={[formOrderRow]} canViewFinance onOpen={vi.fn()} />);
+
+    expect(screen.getByRole("columnheader", { name: "Ref No." }))
+      .toHaveAttribute("data-column", "reference");
+    expect(screen.getByRole("columnheader", { name: "AmtPayable" }))
+      .toHaveAttribute("data-column", "amountPayable");
+  });
+
   it("omits finance columns and opens the selected reference", () => {
     const onOpen = vi.fn();
     render(<FormsOrderTable rows={[{ ...formOrderRow, finance: null, bankRecon: null }]} canViewFinance={false} onOpen={onOpen} />);
