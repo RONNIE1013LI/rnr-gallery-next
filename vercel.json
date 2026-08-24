@@ -11,6 +11,18 @@
     {
       "path": "/api/internal/uploads/cleanup",
       "schedule": "17 * * * *"
+    },
+    {
+      "path": "/api/internal/reply-assistant/turn-recovery",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/internal/customer-chat/review-alerts",
+      "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/internal/customer-chat/retention",
+      "schedule": "13 4 * * *"
     }
   ]
 }

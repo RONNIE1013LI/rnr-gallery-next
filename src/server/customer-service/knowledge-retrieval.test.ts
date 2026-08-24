@@ -43,6 +43,24 @@ describe("customer service knowledge retrieval", () => {
     expect(result.goldenExamples.every((example) => (
       validateDraft(example.approvedAnswer, { intent: "product_differences" }).ok
     ))).toBe(true);
+    expect(result.examples).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        customer: "Which product format should I choose?",
+        provenance: "customer_brain.md",
+      }),
+    ]));
+  });
+
+  it("never injects excluded, unrelated, high-risk or realtime historical examples", () => {
+    const gate = evaluatePolicyGate({
+      message: "How does the design process work?",
+      knowledge: compiledKnowledge,
+    });
+    const result = retrieveKnowledge({ gate, knowledge: compiledKnowledge });
+
+    expect(result.examples.every((example) => example.intent === "design_process")).toBe(true);
+    expect(result.examples.map((example) => example.provenance)).toContain("customer_brain.md and server.test.js");
+    expect(JSON.stringify(result.examples)).not.toMatch(/refund|urgent|\$\s*\d|five working days/i);
   });
 
   it("returns the complete confirmed design-process bundle", () => {

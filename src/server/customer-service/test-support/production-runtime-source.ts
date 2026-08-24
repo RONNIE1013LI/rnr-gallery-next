@@ -29,8 +29,11 @@ interface RuntimeRoot {
 const RUNTIME_ROOTS: readonly RuntimeRoot[] = [
   { relativePath: "src/server/customer-service", server: true },
   { relativePath: "src/app/api/meta", server: true },
+  { relativePath: "src/app/api/customer-chat", server: true },
+  { relativePath: "src/app/api/internal/customer-chat", server: true },
   { relativePath: "src/app/api/reply-assistant", server: true, browserBoundary: true },
   { relativePath: "src/app/reply-assistant", server: true, browserBoundary: true },
+  { relativePath: "src/components/customer-chat", browserBoundary: true },
   { relativePath: "src/components/reply-assistant", browserBoundary: true },
   {
     relativePath: "scripts",

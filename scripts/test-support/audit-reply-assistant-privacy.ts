@@ -2,7 +2,6 @@ import { createHash, randomInt, randomUUID } from "node:crypto";
 import { Client } from "pg";
 import { isDedicatedTestDatabase } from "../../src/server/db/test-database-safety";
 
-const EXPECTED_DATABASE = "rnr_reply_image_test";
 const TABLES = [
   "customer_service_pilot_runs",
   "customer_service_conversations",
@@ -13,6 +12,8 @@ const TABLES = [
   "customer_service_attachments",
   "customer_service_image_analysis_attempts",
   "customer_service_image_analysis_inputs",
+  "customer_service_retention_holds",
+  "customer_service_website_metric_events",
 ] as const;
 
 type TableName = typeof TABLES[number];
@@ -30,7 +31,6 @@ async function main() {
   const safetyDatabaseUrl = process.env.DATABASE_URL;
   if (
     !testDatabaseUrl
-    || databaseName(testDatabaseUrl) !== EXPECTED_DATABASE
     || !isDedicatedTestDatabase(testDatabaseUrl, safetyDatabaseUrl)
   ) {
     throw new Error("privacy_audit_database_boundary_invalid");
@@ -45,6 +45,8 @@ async function main() {
     feedback: randomUUID(),
     attachment: randomUUID(),
     imageAttempt: randomUUID(),
+    retentionHold: randomUUID(),
+    websiteMetricEvent: randomUUID(),
   };
   const scopeDigits = randomInt(100_000_000).toString().padStart(8, "0");
   const budgetScope = `daily:${scopeDigits.slice(0, 4)}-${scopeDigits.slice(4, 6)}-${scopeDigits.slice(6)}`;
@@ -165,6 +167,18 @@ async function main() {
        VALUES ($1, 65, 0)`,
       [budgetScope],
     );
+    await client.query(
+      `INSERT INTO customer_service_retention_holds
+        (id, conversation_id, reason, reference_hash)
+       VALUES ($1, $2, 'legal', $3)`,
+      [ids.retentionHold, ids.conversation, hash(`${marker}:retention-hold`)],
+    );
+    await client.query(
+      `INSERT INTO customer_service_website_metric_events
+        (id, event_type, event_key_hash, occurred_at, expires_at)
+       VALUES ($1, 'rate_block', $2, now(), now() + interval '24 hours')`,
+      [ids.websiteMetricEvent, hash(`${marker}:rate-block`)],
+    );
 
     const credentialPrefix = ["s", "k"].join("");
     const longLivedMetaPrefix = ["E", "AA"].join("");
@@ -249,6 +263,8 @@ async function main() {
       ["customer_service_attachments", "id", ids.attachment],
       ["customer_service_image_analysis_attempts", "id", ids.imageAttempt],
       ["customer_service_image_analysis_inputs", "analysis_attempt_id", ids.imageAttempt],
+      ["customer_service_retention_holds", "id", ids.retentionHold],
+      ["customer_service_website_metric_events", "id", ids.websiteMetricEvent],
     ] as const;
     let residualRowsAfterRollback = 0;
     for (const [table, column, value] of residualChecks) {
@@ -262,7 +278,7 @@ async function main() {
 
     process.stdout.write(`${JSON.stringify({
       status: "PASS",
-      database: EXPECTED_DATABASE,
+      database: databaseName(testDatabaseUrl),
       transaction: "rolled_back",
       tablesInspected: TABLES.length,
       rowsInspected,

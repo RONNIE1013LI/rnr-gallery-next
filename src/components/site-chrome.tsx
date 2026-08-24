@@ -3,6 +3,7 @@
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ImageProtectionLayer } from "./image-protection";
+import { CustomerChat } from "./customer-chat/customer-chat";
 import { SiteFooter, type SiteFooterContent } from "./site-footer";
 import { SiteHeader } from "./site-header";
 import { CommerceIdentityProvider } from "./commerce-identity-provider";
@@ -39,6 +40,7 @@ export function SiteChrome({
   initialCustomerId = null,
   initialMarket = "NZ",
   australiaEnabled = false,
+  customerChatEnabled = false,
 }: Readonly<{
   children: React.ReactNode;
   footerContent: SiteFooterContent;
@@ -46,6 +48,7 @@ export function SiteChrome({
   initialCustomerId?: string | null;
   initialMarket?: Market;
   australiaEnabled?: boolean;
+  customerChatEnabled?: boolean;
 }>) {
   const pathname = usePathname();
   const router = useRouter();
@@ -75,6 +78,20 @@ export function SiteChrome({
   const market: Market = effectiveOverride?.market
     ?? explicitMarketForPathname(pathname)
     ?? selectedMarket;
+  const customerChatExcluded = pathname === "/admin" || pathname.startsWith("/admin/")
+    || pathname === "/reply-assistant" || pathname.startsWith("/reply-assistant/")
+    || pathname === "/forms" || pathname.startsWith("/forms/")
+    || pathname === "/order-system" || pathname.startsWith("/order-system/")
+    || pathname === "/checkout" || pathname.startsWith("/checkout/")
+    || pathname === "/payment-return" || pathname.startsWith("/payment-return/")
+    || pathname === "/payment/return" || pathname.startsWith("/payment/return/")
+    || pathname === "/account" || pathname.startsWith("/account/")
+    || pathname === "/orders" || pathname.startsWith("/orders/")
+    || pathname === "/proof" || pathname.startsWith("/proof/")
+    || pathname === "/proofs" || pathname.startsWith("/proofs/")
+    || pathname === "/privacy" || pathname.startsWith("/privacy/")
+    || pathname === "/privacy-policy" || pathname.startsWith("/privacy-policy/")
+    || pathname === "/pay" || pathname.startsWith("/pay/");
   const suppressFooterLead = pathname === "/" || pathname === "/au"
     || pathname === "/account" || pathname.startsWith("/account/")
     || pathname === "/checkout" || pathname.startsWith("/checkout/")
@@ -118,6 +135,7 @@ export function SiteChrome({
       {children}
       {!suppressFooterLead ? footerLead : null}
       <SiteFooter content={footerContent} market={market} />
+      {customerChatEnabled && !customerChatExcluded ? <CustomerChat pathname={pathname} /> : null}
     </CommerceIdentityProvider>
   );
 }

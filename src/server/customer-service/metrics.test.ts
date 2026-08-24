@@ -1,10 +1,54 @@
 import { describe, expect, it } from "vitest";
-import { calculatePilotMetrics } from "./metrics";
+import { calculateChannelMetrics, calculatePilotMetrics } from "./metrics";
 
 describe("reply assistant pilot metrics", () => {
+  it("calculates Website resolution, escalation, provider, and public update metrics", () => {
+    const metrics = calculateChannelMetrics({
+      sessions: 8,
+      meaningfulTurns: 10,
+      responses: 9,
+      directTemplateReplies: 6,
+      noReply: 1,
+      humanReviewsOpened: 3,
+      humanReviewsResolved: 2,
+      alertsQueued: 3,
+      alertsDeduplicated: 2,
+      alertsSent: 1,
+      alertsFailed: 1,
+      websiteHumanReplies: 2,
+      rateBlocks: 4,
+      budgetBlocks: 1,
+      providerCalls: 7,
+      inputTokens: 700,
+      cachedInputTokens: 70,
+      outputTokens: 140,
+      totalCostMicrousd: 3_500,
+      totalLatencyMs: 2_100,
+      publicUpdates: 8,
+      totalPublicUpdateLatencyMs: 4_000,
+      crossSessionIsolation: "test_only_invariant",
+      automaticBusinessActions: 0,
+      automaticSends: 0,
+    });
+
+    expect(metrics).toMatchObject({
+      directAutomatedResolutionRate: 0.7,
+      humanEscalationRate: 0.3,
+      averageProviderLatencyMs: 300,
+      averagePublicUpdateLatencyMs: 500,
+      automaticBusinessActions: 0,
+      automaticSends: 0,
+    });
+  });
+
   it("uses explicit stable denominators", () => {
     expect(calculatePilotMetrics({
       totalIncomingEligible: 20,
+      rawCustomerEvents: 24,
+      staffContextEvents: 8,
+      meaningfulTurns: 20,
+      aggregatedFragments: 4,
+      acknowledgementsSuppressed: 2,
       draftsGenerated: 10,
       acceptedUnchanged: 4,
       editedAccepted: 3,
@@ -33,6 +77,19 @@ describe("reply assistant pilot metrics", () => {
       imageAwareRejected: 0,
       imageRequestOriginalRecommendations: 2,
       imageAwareTotalCostMicrousd: 900,
+      totalActualHumanReplies: 12,
+      matchedHumanReplies: 8,
+      unmatchedHumanReplies: 4,
+      acceptedUnchangedHumanReplies: 3,
+      editedHumanReplies: 4,
+      independentlyWrittenHumanReplies: 1,
+      reusableCaseMemories: 5,
+      excludedHighRiskCases: 2,
+      casesRetrievedInDrafts: 7,
+      learningCandidatesPending: 4,
+      learningCandidatesApproved: 2,
+      learningCandidatesRejected: 1,
+      commonEditReasons: [{ code: "missing_next_step", count: 4 }],
     })).toMatchObject({
       directAcceptanceRate: 0.4,
       assistedAcceptanceRate: 0.7,
@@ -56,6 +113,8 @@ describe("reply assistant pilot metrics", () => {
   it("returns zero for zero denominators", () => {
     expect(calculatePilotMetrics({
       totalIncomingEligible: 0, draftsGenerated: 0, acceptedUnchanged: 0, editedAccepted: 0,
+      rawCustomerEvents: 0, staffContextEvents: 0, meaningfulTurns: 0,
+      aggregatedFragments: 0, acknowledgementsSuppressed: 0,
       rejected: 0, gateBlocked: 0, outputValidatorBlocked: 0, providerCalls: 0,
       policyViolationAttempts: 0, totalCostMicrousd: 0, totalLatencyMs: 0,
       imageProviderCalls: 0, imageInputTokens: 0, imageCachedInputTokens: 0,
@@ -65,6 +124,13 @@ describe("reply assistant pilot metrics", () => {
       imageAwareDraftsGenerated: 0, imageAwareAcceptedUnchanged: 0,
       imageAwareEditedAccepted: 0, imageAwareRejected: 0,
       imageRequestOriginalRecommendations: 0, imageAwareTotalCostMicrousd: 0,
+      totalActualHumanReplies: 0, matchedHumanReplies: 0, unmatchedHumanReplies: 0,
+      acceptedUnchangedHumanReplies: 0, editedHumanReplies: 0,
+      independentlyWrittenHumanReplies: 0, reusableCaseMemories: 0,
+      excludedHighRiskCases: 0, casesRetrievedInDrafts: 0,
+      learningCandidatesPending: 0, learningCandidatesApproved: 0,
+      learningCandidatesRejected: 0,
+      commonEditReasons: [],
     })).toMatchObject({
       directAcceptanceRate: 0,
       policyViolationRate: 0,

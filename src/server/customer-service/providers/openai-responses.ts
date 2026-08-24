@@ -64,7 +64,17 @@ export class OpenAIResponsesProvider implements AiProvider {
         store: false,
         reasoning: { effort: "none" },
         max_output_tokens: 220,
-        text: { verbosity: "low" },
+        text: {
+          verbosity: "low",
+          ...(request.responseFormat ? {
+            format: {
+              type: "json_schema",
+              name: request.responseFormat.name,
+              strict: true,
+              schema: request.responseFormat.schema,
+            },
+          } : {}),
+        },
       }),
       signal: AbortSignal.timeout(20_000),
     });

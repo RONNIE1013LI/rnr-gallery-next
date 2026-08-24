@@ -1,4 +1,5 @@
 import { detectIntent, isGenericBannerQuoteEnquiry, type CustomerServiceIntent } from "./intent-detection";
+import type { CustomerServiceChannel } from "./types";
 
 export type PolicyRule = Readonly<{
   id: string;
@@ -27,7 +28,7 @@ const HIGH_RISK_PATTERNS = [
   /damaged goods|arrived damaged|item.*damaged|\bbroken\b|\bcracked\b|\btorn\b/i,
   /\bmisprint(?:ed)?\b|\breprint\b|printed wrong|wrong print|printing error/i,
   /\bcompensation\b|\bdiscount\b|store credit|partial refund/i,
-  /\bchargeback\b|payment dispute|dispute.*payment|payment.*disput/i,
+  /\bchargeback\b|payment dispute|dispute.*payment|payment.*disput|charged twice|duplicate charge|charged (?:two times|again)|two charges/i,
   /consumer rights/i,
   /guarantee.*deliver|deliver.*guarantee|guaranteed delivery/i,
   /guarantee.*urgent|urgent.*guarantee|guarantee.*complet|complet.*guarantee/i,
@@ -45,6 +46,48 @@ const REALTIME_PATTERNS = [
   /how long.*(?:production|design|print)|when.*(?:ready|complete|finish)/i,
 ];
 
+function isPrivateCurrentDesignRecordRequest(message: string) {
+  const confusables = new Map([
+    ["ο", "o"],
+    ["о", "o"],
+  ]);
+  const normalized = [...message.normalize("NFKC").toLocaleLowerCase("en-NZ")]
+    .map((character) => confusables.get(character) ?? character)
+    .join("");
+  const words = (normalized.match(/[a-z0-9]+/g) ?? []).map((word) => (
+    word === "drafts" ? "draft" : word === "proofs" ? "proof" : word
+  ));
+  const artifactIndexes = words.flatMap((word, index) => (
+    word === "draft" || word === "proof" ? [index] : []
+  ));
+  if (!artifactIndexes.length) return false;
+
+  const privateMarkers = new Set([
+    "my", "our", "mine", "ours", "current", "latest", "newest", "recent", "updated", "revised",
+  ]);
+  return artifactIndexes.some((artifactIndex) => {
+    const start = Math.max(0, artifactIndex - 5);
+    const end = Math.min(words.length, artifactIndex + 7);
+    const window = words.slice(start, end);
+    const wordSet = new Set(window);
+    const phrase = window.join(" ");
+    if (window.some((word) => privateMarkers.has(word))) return true;
+    if (["most recent", "up to date", "using now", "in use"].some((value) => phrase.includes(value))) return true;
+    if (["is mine", "is ours", "belongs to me", "belongs to us"].some((value) => phrase.includes(value))) return true;
+
+    const hasPersonalPreparation = ["prepared", "created", "made"].some((word) => wordSet.has(word))
+      && ["for me", "for us"].some((value) => phrase.includes(value));
+    if (hasPersonalPreparation) return true;
+
+    const orderIndex = window.indexOf("order");
+    const hasSpecificOrder = orderIndex >= 0 && (
+      ["my", "our"].includes(window[orderIndex - 1] ?? "")
+      || /^\d+$/.test(window[orderIndex + 1] ?? "")
+    );
+    return hasSpecificOrder && ["linked", "attached", "for", "of"].some((word) => wordSet.has(word));
+  });
+}
+
 const INTENT_RULES: Record<CustomerServiceIntent, readonly string[]> = {
   tone_adjustment: ["AI-SCOPE-01"],
   product_differences: ["AI-SCOPE-02"],
@@ -57,9 +100,20 @@ const INTENT_RULES: Record<CustomerServiceIntent, readonly string[]> = {
   unknown: [],
 };
 
-function realtimeReason(message: string, intent: CustomerServiceIntent) {
+function realtimeReason(
+  message: string,
+  intent: CustomerServiceIntent,
+  isContextualQuoteDetail: boolean,
+  channel: CustomerServiceChannel | undefined,
+) {
+  if (channel === "website" && isPrivateCurrentDesignRecordRequest(message)) {
+    return "realtime_data_required";
+  }
   if (intent === "quote_information_collection") {
     if (isGenericBannerQuoteEnquiry(message)) return "";
+    if (isContextualQuoteDetail && !/\bhow much\b|\bcurrent price\b|\bprice (?:is|for)\b|\bcost (?:is|of|for)\b|\bquote for\b/i.test(message)) {
+      return "";
+    }
     return /\bhow much\b|\bcurrent price\b|\bprice (?:is|for)\b|\bcost (?:is|of|for)\b|\bA[0-4]\b|\b\d+\s*[x×]\s*\d+\b/i.test(message)
       ? "realtime_data_required"
       : "";
@@ -73,9 +127,18 @@ function realtimeReason(message: string, intent: CustomerServiceIntent) {
 export function evaluatePolicyGate({
   message,
   knowledge,
-}: Readonly<{ message: string; knowledge: PolicyKnowledge }>): PolicyGateResult {
+  channel,
+  intentOverride,
+  isContextualQuoteDetail = false,
+}: Readonly<{
+  message: string;
+  knowledge: PolicyKnowledge;
+  channel?: CustomerServiceChannel;
+  intentOverride?: CustomerServiceIntent;
+  isContextualQuoteDetail?: boolean;
+}>): PolicyGateResult {
   const value = String(message ?? "").trim();
-  const intent = detectIntent(value);
+  const intent = intentOverride ?? detectIntent(value);
 
   if (HIGH_RISK_PATTERNS.some((pattern) => pattern.test(value))) {
     return {
@@ -89,7 +152,7 @@ export function evaluatePolicyGate({
     };
   }
 
-  if (realtimeReason(value, intent)) {
+  if (realtimeReason(value, intent, isContextualQuoteDetail, channel)) {
     return {
       decision: "REALTIME_DATA_REQUIRED",
       providerAllowed: false,

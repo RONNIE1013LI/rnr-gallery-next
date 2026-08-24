@@ -24,7 +24,7 @@ export function createMessagesHandler(dependencies: Readonly<{
 
 const config = parseCustomerServiceConfig();
 export const { GET } = createMessagesHandler({
-  enabled: config.enabled,
+  enabled: config.enabled || config.websiteEnabled,
   requirePermission: requireAdminPermission,
   list: () => createCustomerServiceRuntime().repository.listQueue(100),
 });

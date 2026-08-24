@@ -31,6 +31,7 @@ export const ADMIN_PERMISSION_KEYS = [
   "export_production_jobs",
   "manage_production_fields",
   "use_reply_assistant",
+  "review_reply_learning",
 ] as const;
 
 export type AdminPermission = (typeof ADMIN_PERMISSION_KEYS)[number];

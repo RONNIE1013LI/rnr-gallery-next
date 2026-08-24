@@ -21,7 +21,7 @@ Current keyword/regex branches cover:
 - Birthday-banner qualification.
 - Wall/landscape/hanging banner pricing.
 - Digital painting banner pricing by size and face count.
-- Card, Afterpay, unsupported-provider, and weekly payment enquiries.
+- Afterpay, ZIP, and weekly payment enquiries.
 - Location and pickup address.
 - Reference-artwork requests.
 - Pets/furbabies.
@@ -70,7 +70,7 @@ The code contains complete English reply text rather than retrieving approved te
 - Fixed shipping statements for Brisbane, Porirua, Saturday, and 28 August.
 - Fixed production estimate of five working days.
 - Fixed urgent fee and two-day definition.
-- Fixed deposit, split-payment, and Afterpay wording, plus legacy unsupported-provider wording.
+- Fixed deposit, split-payment, Afterpay, and ZIP wording.
 - Refund/non-refundable explanations.
 - Revision allowance, extra revision fee, and photo-redrawing fee.
 - Tracking and balance placeholders.
@@ -92,7 +92,7 @@ Only the canvas image exists in `public/images/`. The wall-banner and digital-ba
 
 `classifyAutoSendRisk()` returns `low` or `high`.
 
-High-risk matching includes refund, cancellation, complaints, dissatisfaction, deadlines, urgency, deposits, bank/payment/balance, supported or unsupported provider questions, revisions/changes, printing status, and redraws. Unknown messages default to high risk.
+High-risk matching includes refund, cancellation, complaints, dissatisfaction, deadlines, urgency, deposits, bank/payment/balance, Afterpay/ZIP, revisions/changes, printing status, and redraws. Unknown messages default to high risk.
 
 Narrow low-risk exceptions exist for revision-count enquiries, product-format questions, and generic “more information” questions. Standard price, size, product, shipping, location, theme, photo, simple-design, praise, and follow-up phrases can also be low risk.
 

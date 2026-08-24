@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -22,6 +23,25 @@ export type CompiledReplyExample = Readonly<{
   customer: string;
   reply: string;
   risk: string;
+  provenance: string;
+}>;
+
+export type HistoricalExampleStatus =
+  | "APPROVED_REUSABLE"
+  | "EVIDENCE_ONLY"
+  | "OUTDATED"
+  | "SPECIAL_CASE"
+  | "HIGH_RISK"
+  | "DO_NOT_USE"
+  | "CONFLICT";
+
+export type CompiledHistoricalExample = Readonly<{
+  id: string;
+  intent: string;
+  status: "APPROVED_REUSABLE";
+  customerQuestion: string;
+  approvedAnswer: string;
+  policyReferences: readonly string[];
   provenance: string;
 }>;
 
@@ -57,10 +77,25 @@ export type CompiledAnswerQualityGuide = Readonly<{
 
 export type CompiledCustomerServiceKnowledge = Readonly<{
   knowledgeVersion: string;
+  metadata: Readonly<{
+    buildVersion: "1";
+    sourceCommit: string;
+    compiledAt: string;
+    sourceChecksum: string;
+    sourceCounts: Readonly<{
+      policyRules: number;
+      replyExamples: number;
+      goldenReplies: number;
+      historicalExamples: number;
+      approvedHistoricalExamples: number;
+      qualityGuides: number;
+    }>;
+  }>;
   rules: readonly CompiledPolicyRule[];
   answerableFacts: readonly string[];
   toneGuide: string;
   replyExamples: readonly CompiledReplyExample[];
+  historicalExamples: readonly CompiledHistoricalExample[];
   goldenReplies: readonly CompiledGoldenReply[];
   qualityGuides: Readonly<Record<string, CompiledAnswerQualityGuide>>;
 }>;
@@ -129,6 +164,57 @@ function parseReplyExamples(jsonl: string): CompiledReplyExample[] {
       throw new Error(`Invalid reply example JSONL at line ${index + 1}`);
     }
   });
+  return examples;
+}
+
+const HISTORICAL_STATUSES = new Set<HistoricalExampleStatus>([
+  "APPROVED_REUSABLE", "EVIDENCE_ONLY", "OUTDATED", "SPECIAL_CASE",
+  "HIGH_RISK", "DO_NOT_USE", "CONFLICT",
+]);
+
+const HIGH_RISK_HISTORY = /\b(?:refund|cancel(?:lation)?|damaged?|misprint|reprint|compensation|chargeback|payment dispute|consumer rights|guarantee)\b/i;
+const REALTIME_FACT = /\$\s*\d|\b\d+(?:\.\d+)?%\s*GST\b|\b\d+\s*(?:working|business)?\s*days?\b|\bshipping (?:is|costs?)\b|\bdelivery (?:is|costs?)\b/i;
+
+function parseHistoricalExamples(jsonl: string, rules: readonly CompiledPolicyRule[]) {
+  const examples: CompiledHistoricalExample[] = [];
+  const ids = new Set<string>();
+  const confirmedIds = confirmedRuleIds(rules);
+
+  jsonl.split(/\r?\n/).forEach((line, index) => {
+    if (!line.trim()) return;
+    try {
+      const parsed = JSON.parse(line) as Record<string, unknown>;
+      const id = stringValue(parsed, "id");
+      if (ids.has(id)) throw new Error(`duplicate id ${id}`);
+      ids.add(id);
+      const status = stringValue(parsed, "status") as HistoricalExampleStatus;
+      if (!HISTORICAL_STATUSES.has(status)) throw new Error(`invalid status ${status}`);
+      const customerQuestion = stringValue(parsed, "customer_question");
+      const approvedAnswer = stringValue(parsed, "approved_answer");
+      const policyReferences = stringArray(parsed, "policy_references");
+      if (status !== "APPROVED_REUSABLE") return;
+      if (HIGH_RISK_HISTORY.test(`${customerQuestion}\n${approvedAnswer}`)) {
+        throw new Error("high-risk content cannot be approved reusable");
+      }
+      if (REALTIME_FACT.test(approvedAnswer)) {
+        throw new Error("realtime fact cannot be approved reusable");
+      }
+      assertConfirmedSources(policyReferences, confirmedIds, `Historical example ${id}`);
+      examples.push(Object.freeze({
+        id,
+        intent: stringValue(parsed, "intent"),
+        status,
+        customerQuestion,
+        approvedAnswer,
+        policyReferences,
+        provenance: stringValue(parsed, "provenance"),
+      }));
+    } catch (error) {
+      const reason = error instanceof Error ? `: ${error.message}` : "";
+      throw new Error(`Invalid historical example JSONL at line ${index + 1}${reason}`);
+    }
+  });
+
   return examples;
 }
 
@@ -241,8 +327,42 @@ function parseQualityGuides(json: string, rules: readonly CompiledPolicyRule[]) 
   return Object.freeze(guides);
 }
 
-export function compileCustomerServiceKnowledge(sourceDir: string): CompiledCustomerServiceKnowledge {
+const GOVERNED_SOURCE_FILES = [
+  "policy-source-map.md",
+  "tone-guide.md",
+  "reply-examples.jsonl",
+  "golden-replies.jsonl",
+  "answer-quality-guide.json",
+  "historical-examples.jsonl",
+] as const;
+
+function sourceChecksum(sourceDir: string) {
+  const hash = createHash("sha256");
+  for (const fileName of GOVERNED_SOURCE_FILES) {
+    hash.update(`${fileName}\0`);
+    hash.update(read(sourceDir, fileName));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+function jsonlCount(value: string) {
+  return value.split(/\r?\n/).filter((line) => line.trim()).length;
+}
+
+export function compileCustomerServiceKnowledge(
+  sourceDir: string,
+  build: Readonly<{ sourceCommit: string; compiledAt: string }> = {
+    sourceCommit: "local",
+    compiledAt: "1970-01-01T00:00:00.000Z",
+  },
+): CompiledCustomerServiceKnowledge {
   const rules = parseRules(read(sourceDir, "policy-source-map.md"));
+  const replyExamples = parseReplyExamples(read(sourceDir, "reply-examples.jsonl"));
+  const goldenReplies = parseGoldenReplies(read(sourceDir, "golden-replies.jsonl"), rules);
+  const qualityGuides = parseQualityGuides(read(sourceDir, "answer-quality-guide.json"), rules);
+  const historicalSource = read(sourceDir, "historical-examples.jsonl");
+  const historicalExamples = parseHistoricalExamples(historicalSource, rules);
   const answerableFacts = rules
     .filter((rule) => (
       rule.evidenceStatus === "CONFIRMED"
@@ -254,12 +374,44 @@ export function compileCustomerServiceKnowledge(sourceDir: string): CompiledCust
     rules,
     answerableFacts,
     toneGuide: read(sourceDir, "tone-guide.md").trim(),
-    replyExamples: parseReplyExamples(read(sourceDir, "reply-examples.jsonl")),
-    goldenReplies: parseGoldenReplies(read(sourceDir, "golden-replies.jsonl"), rules),
-    qualityGuides: parseQualityGuides(read(sourceDir, "answer-quality-guide.json"), rules),
+    replyExamples,
+    historicalExamples,
+    goldenReplies,
+    qualityGuides,
   });
   const knowledgeVersion = createHash("sha256").update(JSON.stringify(payload)).digest("hex");
-  return Object.freeze({ knowledgeVersion, ...payload });
+  const metadata = Object.freeze({
+    buildVersion: "1" as const,
+    sourceCommit: build.sourceCommit,
+    compiledAt: build.compiledAt,
+    sourceChecksum: sourceChecksum(sourceDir),
+    sourceCounts: Object.freeze({
+      policyRules: rules.length,
+      replyExamples: replyExamples.length,
+      goldenReplies: goldenReplies.length,
+      historicalExamples: jsonlCount(historicalSource),
+      approvedHistoricalExamples: historicalExamples.length,
+      qualityGuides: Object.keys(qualityGuides).length,
+    }),
+  });
+  return Object.freeze({ knowledgeVersion, metadata, ...payload });
+}
+
+export function resolveSourceCommit(
+  env: NodeJS.ProcessEnv | Record<string, string | undefined>,
+  gitFallback: () => string = () => execFileSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" }).trim(),
+  artifactFallback?: string,
+) {
+  const configured = env.CUSTOMER_SERVICE_KNOWLEDGE_SOURCE_COMMIT?.trim();
+  if (configured) return configured;
+  const vercelCommit = env.VERCEL_GIT_COMMIT_SHA?.trim();
+  if (vercelCommit) return vercelCommit;
+  try {
+    return gitFallback();
+  } catch (error) {
+    if (artifactFallback?.trim()) return artifactFallback.trim();
+    throw error;
+  }
 }
 
 function runCli() {
@@ -272,13 +424,24 @@ function runCli() {
     process.cwd(),
     "src/server/customer-service/knowledge/compiled-knowledge.json",
   );
-  const output = `${JSON.stringify(compileCustomerServiceKnowledge(sourceDir), null, 2)}\n`;
   if (mode === "--check") {
+    const existing = JSON.parse(readFileSync(outputPath, "utf8")) as CompiledCustomerServiceKnowledge;
+    const output = `${JSON.stringify(compileCustomerServiceKnowledge(sourceDir, {
+      sourceCommit: existing.metadata.sourceCommit,
+      compiledAt: existing.metadata.compiledAt,
+    }), null, 2)}\n`;
     if (readFileSync(outputPath, "utf8") !== output) {
       throw new Error("Compiled customer-service knowledge is out of date");
     }
     return;
   }
+  const existingSourceCommit = existsSync(outputPath)
+    ? (JSON.parse(readFileSync(outputPath, "utf8")) as CompiledCustomerServiceKnowledge).metadata.sourceCommit
+    : undefined;
+  const output = `${JSON.stringify(compileCustomerServiceKnowledge(sourceDir, {
+    sourceCommit: resolveSourceCommit(process.env, undefined, existingSourceCommit),
+    compiledAt: process.env.CUSTOMER_SERVICE_KNOWLEDGE_COMPILED_AT?.trim() || new Date().toISOString(),
+  }), null, 2)}\n`;
   mkdirSync(dirname(outputPath), { recursive: true });
   writeFileSync(outputPath, output);
 }

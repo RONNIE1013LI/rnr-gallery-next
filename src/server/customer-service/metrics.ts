@@ -1,7 +1,26 @@
-import type { PilotMetricCounts } from "./repositories/customer-service-repository";
+import type {
+  ChannelMetricCounts,
+  PilotMetricCounts,
+} from "./repositories/customer-service-repository";
 
 function ratio(value: number, denominator: number) {
   return denominator > 0 ? value / denominator : 0;
+}
+
+export function calculateChannelMetrics(counts: ChannelMetricCounts) {
+  return Object.freeze({
+    ...counts,
+    directAutomatedResolutionRate: ratio(
+      counts.directTemplateReplies + counts.noReply,
+      counts.meaningfulTurns,
+    ),
+    humanEscalationRate: ratio(counts.humanReviewsOpened, counts.meaningfulTurns),
+    averageProviderLatencyMs: ratio(counts.totalLatencyMs, counts.providerCalls),
+    averagePublicUpdateLatencyMs: ratio(
+      counts.totalPublicUpdateLatencyMs,
+      counts.publicUpdates,
+    ),
+  });
 }
 
 export function calculatePilotMetrics(counts: PilotMetricCounts) {
