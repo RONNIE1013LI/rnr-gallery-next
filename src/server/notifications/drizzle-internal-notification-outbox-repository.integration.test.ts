@@ -334,6 +334,151 @@ describe("internal notification outbox persistence", () => {
     expect(rows.filter(({ topic }) => topic === "proof_approved")).toHaveLength(2);
   });
 
+  it("uses the committed subscription snapshot when an update locks first", async () => {
+    const recipient = await insertRecipient({
+      label: "subscription-update-first",
+      status: "active",
+      topics: ["web_order_paid"],
+    });
+    const webEvent = event({ topic: "web_order_paid" });
+    const proofEvent = event({ topic: "proof_approved" });
+    const subscriptionsReplaced = deferred();
+    const releaseUpdate = deferred();
+    const updateTransaction = database.transaction(async (transaction) => {
+      await transaction.select({ id: internalNotificationRecipients.id })
+        .from(internalNotificationRecipients)
+        .where(eq(internalNotificationRecipients.id, recipient.id))
+        .for("update")
+        .limit(1);
+      await transaction.delete(internalNotificationSubscriptions).where(
+        eq(internalNotificationSubscriptions.recipientId, recipient.id),
+      );
+      await transaction.insert(internalNotificationSubscriptions).values({
+        recipientId: recipient.id,
+        topic: "proof_approved",
+        createdAt: now,
+        updatedAt: now,
+      });
+      subscriptionsReplaced.resolve();
+      await releaseUpdate.promise;
+    });
+    const updateSettlement = updateTransaction.then(
+      () => ({ status: "fulfilled" as const }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+    await subscriptionsReplaced.promise;
+
+    const webEnqueue = database.transaction(async (transaction) => {
+      await transaction.execute(sql`set local statement_timeout = '750ms'`);
+      return enqueueInternalNotifications(transaction, webEvent);
+    });
+    const webSettlement = webEnqueue.then(
+      (count) => ({ status: "fulfilled" as const, count }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+    let updateResult: Awaited<typeof updateSettlement>;
+    let webResult: Awaited<typeof webSettlement>;
+    try {
+      await waitForBlockedRecipientOperation();
+    } finally {
+      releaseUpdate.resolve();
+      [updateResult, webResult] = await Promise.all([
+        updateSettlement,
+        webSettlement,
+      ]);
+    }
+
+    expect(updateResult).toEqual({ status: "fulfilled" });
+    expect(webResult).toEqual({ status: "fulfilled", count: 0 });
+    await expect(enqueue(proofEvent)).resolves.toBe(1);
+    const rows = await database.select({ topic: internalNotificationOutbox.topic })
+      .from(internalNotificationOutbox)
+      .where(eq(internalNotificationOutbox.recipientId, recipient.id));
+    expect(rows).toEqual([{ topic: "proof_approved" }]);
+  });
+
+  it("keeps the old subscription snapshot when enqueue locks first", async () => {
+    const recipient = await insertRecipient({
+      label: "subscription-enqueue-first",
+      status: "active",
+      topics: ["web_order_paid"],
+    });
+    const firstWebEvent = event({ topic: "web_order_paid" });
+    const laterWebEvent = event({ topic: "web_order_paid" });
+    const laterProofEvent = event({ topic: "proof_approved" });
+    const eventInserted = deferred<number>();
+    const releaseEnqueue = deferred();
+    const enqueueTransaction = database.transaction(async (transaction) => {
+      const count = await enqueueInternalNotifications(transaction, firstWebEvent);
+      eventInserted.resolve(count);
+      await releaseEnqueue.promise;
+      return count;
+    });
+    const enqueueSettlement = enqueueTransaction.then(
+      (count) => ({ status: "fulfilled" as const, count }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+    expect(await eventInserted.promise).toBe(1);
+
+    const updateTransaction = database.transaction(async (transaction) => {
+      await transaction.execute(sql`set local statement_timeout = '750ms'`);
+      await transaction.select({ id: internalNotificationRecipients.id })
+        .from(internalNotificationRecipients)
+        .where(eq(internalNotificationRecipients.id, recipient.id))
+        .for("update")
+        .limit(1);
+      await transaction.delete(internalNotificationSubscriptions).where(
+        eq(internalNotificationSubscriptions.recipientId, recipient.id),
+      );
+      await transaction.insert(internalNotificationSubscriptions).values({
+        recipientId: recipient.id,
+        topic: "proof_approved",
+        createdAt: now,
+        updatedAt: now,
+      });
+    });
+    const updateSettlement = updateTransaction.then(
+      () => ({ status: "fulfilled" as const }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+    let enqueueResult: Awaited<typeof enqueueSettlement>;
+    let updateResult: Awaited<typeof updateSettlement>;
+    try {
+      await waitForBlockedRecipientOperation();
+    } finally {
+      releaseEnqueue.resolve();
+      [enqueueResult, updateResult] = await Promise.all([
+        enqueueSettlement,
+        updateSettlement,
+      ]);
+    }
+
+    expect(enqueueResult).toEqual({ status: "fulfilled", count: 1 });
+    expect(updateResult).toEqual({ status: "fulfilled" });
+    await expect(enqueue(laterWebEvent)).resolves.toBe(0);
+    await expect(enqueue(laterProofEvent)).resolves.toBe(1);
+    const rows = await database.select({
+      topic: internalNotificationOutbox.topic,
+      sourceEventId: internalNotificationOutbox.sourceEventId,
+      status: internalNotificationOutbox.status,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.recipientId, recipient.id),
+    );
+    expect(rows).toEqual(expect.arrayContaining([
+      {
+        topic: "web_order_paid",
+        sourceEventId: firstWebEvent.sourceEventId,
+        status: "pending",
+      },
+      {
+        topic: "proof_approved",
+        sourceEventId: laterProofEvent.sourceEventId,
+        status: "pending",
+      },
+    ]));
+    expect(rows).toHaveLength(2);
+  });
+
   it("canonicalizes UUIDs so uppercase and lowercase replays share one event key", async () => {
     const recipient = await insertRecipient({
       label: "canonical-uuid",

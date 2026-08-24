@@ -71,6 +71,15 @@ export async function enqueueInternalNotifications(
   event: InternalNotificationEvent,
 ): Promise<number> {
   const validEvent = parseEvent(event);
+  const lockedRecipients = await transaction.select({
+    id: internalNotificationRecipients.id,
+  }).from(internalNotificationRecipients)
+    .where(eq(internalNotificationRecipients.status, "active"))
+    .orderBy(asc(internalNotificationRecipients.id))
+    .for("share", { of: internalNotificationRecipients });
+
+  if (lockedRecipients.length === 0) return 0;
+
   const recipients = await transaction.select({
     id: internalNotificationRecipients.id,
     email: internalNotificationRecipients.email,
@@ -85,8 +94,14 @@ export async function enqueueInternalNotifications(
         eq(internalNotificationSubscriptions.topic, validEvent.topic),
       ),
     )
-    .where(eq(internalNotificationRecipients.status, "active"))
-    .for("share", { of: internalNotificationRecipients });
+    .where(and(
+      eq(internalNotificationRecipients.status, "active"),
+      inArray(
+        internalNotificationRecipients.id,
+        lockedRecipients.map(({ id }) => id),
+      ),
+    ))
+    .orderBy(asc(internalNotificationRecipients.id));
 
   if (recipients.length === 0) return 0;
 
