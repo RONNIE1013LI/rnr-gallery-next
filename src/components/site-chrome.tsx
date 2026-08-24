@@ -6,8 +6,18 @@ import { ImageProtectionLayer } from "./image-protection";
 import { SiteFooter, type SiteFooterContent } from "./site-footer";
 import { SiteHeader } from "./site-header";
 import { CommerceIdentityProvider } from "./commerce-identity-provider";
-import { australianCommerceDestination } from "@/domain/markets/market";
+import {
+  australianCommerceDestination,
+  marketSwitchDestination,
+} from "@/domain/markets/market";
 import type { Market } from "@/domain/markets/types";
+
+type MarketTransition = Readonly<{
+  market: Market;
+  sourcePathname: string;
+  targetPathname: string;
+  settled: boolean;
+}>;
 
 function marketFromChangedEvent(event: Event): Market | null {
   if (!(event instanceof CustomEvent)) return null;
@@ -35,11 +45,27 @@ export function SiteChrome({
   const pathname = usePathname();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [marketOverride, setMarketOverride] = useState<Market | null>(null);
+  const [previousPathname, setPreviousPathname] = useState(pathname);
+  const [marketTransition, setMarketTransition] = useState<MarketTransition | null>(null);
+  if (pathname !== previousPathname) {
+    setPreviousPathname(pathname);
+    setMarketTransition((current) => {
+      if (!current) return null;
+      if (pathname === current.targetPathname) return { ...current, settled: true };
+      if (!current.settled && pathname === current.sourcePathname) return current;
+      return null;
+    });
+  }
   const isDedicatedWorkspace = pathname === "/admin" || pathname.startsWith("/admin/")
     || pathname === "/forms" || pathname.startsWith("/forms/")
     || pathname === "/order-system" || pathname.startsWith("/order-system/");
-  const market: Market = marketOverride ?? (
+  const activeOverride = marketTransition && (
+    pathname === marketTransition.sourcePathname || pathname === marketTransition.targetPathname
+  ) ? marketTransition : null;
+  const effectiveOverride = activeOverride && (
+    !activeOverride.settled || pathname === activeOverride.targetPathname
+  ) ? activeOverride : null;
+  const market: Market = effectiveOverride?.market ?? (
     pathname === "/au" || pathname.startsWith("/au/") ? "AU" : initialMarket
   );
   const suppressFooterLead = pathname === "/" || pathname === "/au"
@@ -51,20 +77,28 @@ export function SiteChrome({
   useEffect(() => {
     function handleMarketChanged(event: Event) {
       const nextMarket = marketFromChangedEvent(event);
-      if (nextMarket) setMarketOverride(nextMarket);
+      if (nextMarket) {
+        const targetPathname = marketSwitchDestination(pathname, nextMarket);
+        setMarketTransition({
+          market: nextMarket,
+          sourcePathname: pathname,
+          targetPathname,
+          settled: targetPathname === pathname,
+        });
+      }
     }
 
     window.addEventListener("rnr:market-changed", handleMarketChanged);
     return () => window.removeEventListener("rnr:market-changed", handleMarketChanged);
-  }, []);
+  }, [pathname]);
   useEffect(() => {
-    if (marketOverride !== null || initialMarket !== "AU") return;
+    if (effectiveOverride !== null || initialMarket !== "AU") return;
     const destination = australianCommerceDestination(pathname);
     if (destination && destination !== pathname) {
       const query = searchParams.toString();
       router.replace(`${destination}${query ? `?${query}` : ""}`);
     }
-  }, [initialMarket, marketOverride, pathname, router, searchParams]);
+  }, [effectiveOverride, initialMarket, pathname, router, searchParams]);
   if (isDedicatedWorkspace) return children;
   return (
     <CommerceIdentityProvider initialCustomerId={initialCustomerId}>

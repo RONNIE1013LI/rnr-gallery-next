@@ -64,6 +64,12 @@ async function attemptSwitch(next: Market, candidateCart: Cart) {
   return { ok: true as const, payload };
 }
 
+function hasStaleUrgentDate(state: MarketSwitchDialogState): boolean {
+  return state.issues.some((issue) => state.cart.items.find(
+    (item) => item.id === issue.clientItemId,
+  )?.neededDate !== issue.neededDate);
+}
+
 export function MarketSelector({
   market,
   australiaEnabled,
@@ -176,7 +182,7 @@ export function MarketSelector({
   }
 
   function confirmUrgent() {
-    if (!dialogState || pendingRef.current) return;
+    if (!dialogState || pendingRef.current || hasStaleUrgentDate(dialogState)) return;
     const urgentIds = new Set(dialogState.issues.map((issue) => issue.clientItemId));
     const confirmedCart: Cart = {
       version: 1,
@@ -217,6 +223,7 @@ export function MarketSelector({
         <MarketSwitchDialog
           state={dialogState}
           pending={pending}
+          confirmDisabled={hasStaleUrgentDate(dialogState)}
           onDateChange={changeDate}
           onConfirmUrgent={confirmUrgent}
           onTryDates={tryDates}

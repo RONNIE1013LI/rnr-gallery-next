@@ -74,6 +74,104 @@ describe("SiteChrome", () => {
     });
   });
 
+  it("derives NZ chrome from the route after NZ to AU then browser Back", async () => {
+    state.pathname = "/";
+    state.search = "";
+    state.replace.mockClear();
+    const props = {
+      initialMarket: "NZ" as const,
+      australiaEnabled: true,
+      footerContent: { tagline: "x", email: "a@b.test", phone: "+64" },
+    };
+    const { rerender } = render(
+      <SiteChrome {...props}><main>New Zealand</main></SiteChrome>,
+    );
+
+    fireEvent(window, new CustomEvent("rnr:market-changed", {
+      detail: { market: "AU" },
+    }));
+    state.pathname = "/au";
+    rerender(<SiteChrome {...props}><main>Australia</main></SiteChrome>);
+    expect(screen.getByLabelText("Header market")).toHaveTextContent("AU");
+
+    state.pathname = "/";
+    rerender(<SiteChrome {...props}><main>New Zealand again</main></SiteChrome>);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Header market")).toHaveTextContent("NZ");
+      expect(screen.getByLabelText("Footer market")).toHaveTextContent("NZ");
+      expect(state.replace).not.toHaveBeenCalled();
+    });
+  });
+
+  it("derives AU chrome from the route after AU to NZ then browser Back", async () => {
+    state.pathname = "/au";
+    state.search = "";
+    state.replace.mockClear();
+    const props = {
+      initialMarket: "AU" as const,
+      australiaEnabled: true,
+      footerContent: { tagline: "x", email: "a@b.test", phone: "+64" },
+    };
+    const { rerender } = render(
+      <SiteChrome {...props}><main>Australia</main></SiteChrome>,
+    );
+
+    fireEvent(window, new CustomEvent("rnr:market-changed", {
+      detail: { market: "NZ" },
+    }));
+    state.pathname = "/";
+    rerender(<SiteChrome {...props}><main>New Zealand</main></SiteChrome>);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Header market")).toHaveTextContent("NZ");
+      expect(state.replace).not.toHaveBeenCalled();
+    });
+
+    state.pathname = "/au";
+    rerender(<SiteChrome {...props}><main>Australia again</main></SiteChrome>);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Header market")).toHaveTextContent("AU");
+      expect(screen.getByLabelText("Footer market")).toHaveTextContent("AU");
+      expect(state.replace).not.toHaveBeenCalled();
+    });
+  });
+
+  it("expires a same-path shared-route market switch after later client navigation", async () => {
+    state.pathname = "/designs/wedding-canvas";
+    state.search = "";
+    state.replace.mockClear();
+    const props = {
+      initialMarket: "NZ" as const,
+      australiaEnabled: true,
+      footerContent: { tagline: "x", email: "a@b.test", phone: "+64" },
+    };
+    const { rerender } = render(
+      <SiteChrome {...props}><main>Design</main></SiteChrome>,
+    );
+
+    fireEvent(window, new CustomEvent("rnr:market-changed", {
+      detail: { market: "AU" },
+    }));
+    rerender(<SiteChrome {...props}><main>Australian design</main></SiteChrome>);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Header market")).toHaveTextContent("AU");
+      expect(state.replace).not.toHaveBeenCalled();
+    });
+
+    state.pathname = "/help";
+    rerender(<SiteChrome {...props}><main>Help</main></SiteChrome>);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Header market")).toHaveTextContent("NZ");
+      expect(screen.getByLabelText("Footer market")).toHaveTextContent("NZ");
+      expect(state.replace).not.toHaveBeenCalled();
+    });
+
+    state.pathname = "/designs/wedding-canvas";
+    rerender(<SiteChrome {...props}><main>Design again</main></SiteChrome>);
+    expect(screen.getByLabelText("Header market")).toHaveTextContent("NZ");
+  });
+
   it.each([
     ["/", "/au"],
     ["/shop", "/au/shop"],

@@ -3,7 +3,7 @@
 ## Implementation
 
 - Exported the existing `RepriceCartOptions` type from `reprice-cart.ts` without changing `repriceCart` behavior.
-- Added `preflightMarketSwitch` in `market-switch-preflight.ts`. It parses the input, creates an in-memory preview with all urgent confirmations assumed, derives every unconfirmed fee-bearing issue from the authoritative repriced preview, and only reprices the original input when ready. It does not mutate or persist confirmation flags.
+- Added `preflightMarketSwitch` in `market-switch-preflight.ts`. It parses the input and first attempts ordinary authoritative repricing. If urgent confirmation blocks it, each item is checked independently and only a blocked item is repriced with confirmation assumed to derive that item's authoritative issue. It does not mutate or persist confirmation flags.
 - Added focused unit coverage for authoritative AU titles/currency/fees, all urgent issues in one response, already-confirmed items, ready results, and malformed/unavailable cart errors.
 
 ## Files

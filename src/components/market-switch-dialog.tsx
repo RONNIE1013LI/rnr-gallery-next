@@ -33,6 +33,7 @@ export type MarketSwitchDialogState = Readonly<{
 export function MarketSwitchDialog({
   state,
   pending,
+  confirmDisabled = false,
   onDateChange,
   onConfirmUrgent,
   onTryDates,
@@ -40,6 +41,7 @@ export function MarketSwitchDialog({
 }: Readonly<{
   state: MarketSwitchDialogState;
   pending: boolean;
+  confirmDisabled?: boolean;
   onDateChange: (clientItemId: string, neededDate: string) => void;
   onConfirmUrgent: () => void;
   onTryDates: () => void;
@@ -151,7 +153,7 @@ export function MarketSwitchDialog({
           <button
             className={styles.primaryAction}
             type="button"
-            disabled={pending}
+            disabled={pending || confirmDisabled}
             onClick={onConfirmUrgent}
           >
             {pending ? "Switching market…" : "Confirm urgent service and switch"}

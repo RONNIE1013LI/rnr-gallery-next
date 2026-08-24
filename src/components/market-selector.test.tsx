@@ -306,6 +306,58 @@ describe("MarketSelector", () => {
     expect(push).not.toHaveBeenCalled();
   });
 
+  it("requires refreshed authoritative fees before confirming an edited urgent date", async () => {
+    seedCart();
+    const editedItem = item({ neededDate: "2026-08-27" });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(urgentResponse([issue({
+        neededDate: "2026-08-28",
+        urgentWorkingDays: 5,
+        urgentFeeInclGstCents: 10_000,
+      })]))
+      .mockResolvedValueOnce(urgentResponse([issue({
+        neededDate: "2026-08-27",
+        urgentWorkingDays: 4,
+        urgentFeeInclGstCents: 15_000,
+      })]))
+      .mockImplementationOnce(async (_url, init) => {
+        const body = JSON.parse(String(init?.body));
+        expect(body.cart.items[0]).toMatchObject({
+          clientItemId: "item-1",
+          neededDate: "2026-08-27",
+          urgentServiceConfirmed: true,
+        });
+        return successResponse([{ ...editedItem, urgentServiceConfirmed: true }]);
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MarketSelector market="NZ" australiaEnabled pathname="/" />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Country and currency" }), {
+      target: { value: "AU" },
+    });
+    const date = await screen.findByLabelText("Completion date for Custom Themed Canvas");
+    fireEvent.change(date, { target: { value: "2026-08-27" } });
+
+    const staleConfirm = screen.getByRole("button", {
+      name: "Confirm urgent service and switch",
+    });
+    expect(staleConfirm).toBeDisabled();
+    fireEvent.click(staleConfirm);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Try these dates" }));
+
+    expect(await screen.findByText("A$150.00 AUD")).toBeInTheDocument();
+    const refreshedConfirm = screen.getByRole("button", {
+      name: "Confirm urgent service and switch",
+    });
+    expect(refreshedConfirm).toBeEnabled();
+    fireEvent.click(refreshedConfirm);
+
+    await waitFor(() => expect(push).toHaveBeenCalledWith("/au"));
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("cancels without changing cart, checkout state, events, or navigation", async () => {
     const original = seedCart();
     localStorage.setItem("rnr:commerce:v1:guest:checkout:pending", "pending");
