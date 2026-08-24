@@ -16,9 +16,9 @@ import {
   paymentLedgerEntries,
   paymentRequestNotificationOutbox,
   paymentRequests,
-  user,
   webhookEvents,
 } from "@/server/db/schema";
+import { enqueueInternalNotifications } from "@/server/notifications/drizzle-internal-notification-outbox-repository";
 import type {
   OrderPaymentStatus,
   PaymentAttemptStatus,
@@ -377,24 +377,18 @@ async function applyRequestVerifiedResult(
         target: paymentRequestNotificationOutbox.eventKey,
       });
     }
-    const administrators = await transaction.select({
-      id: user.id,
-      email: user.email,
-    }).from(user).where(eq(user.role, "admin"));
-    if (administrators.length) {
-      await transaction.insert(paymentRequestNotificationOutbox).values(
-        administrators.map((administrator) => ({
-          eventKey: `admin-payment-request-received:${request.id}:${administrator.id}`,
-          kind: "admin_payment_request_received" as const,
-          paymentRequestId: request.id,
-          recipientName: "R&R Gallery team",
-          recipientEmail: administrator.email,
-          availableAt: now,
-          createdAt: now,
-          updatedAt: now,
-        })),
-      ).onConflictDoNothing({
-        target: paymentRequestNotificationOutbox.eventKey,
+    if (request.kind === "standalone") {
+      await enqueueInternalNotifications(transaction, {
+        topic: "payment_request_paid",
+        sourceEventId: request.id,
+        resourceType: "payment_request",
+        resourceId: request.id,
+        resourceReference: request.requestNumber,
+        payload: {
+          version: 1,
+          adminPath: `/admin/payment-requests/${request.id}`,
+        },
+        createdAt: now,
       });
     }
     if (order) {

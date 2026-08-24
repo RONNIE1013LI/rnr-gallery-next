@@ -11,6 +11,7 @@ import {
   productionProofReviews,
 } from "@/server/db/schema";
 import { buildAuditRecord } from "@/server/admin/audit-service";
+import { enqueueInternalNotifications } from "@/server/notifications/drizzle-internal-notification-outbox-repository";
 import type {
   CustomerProofAccess,
   ProductionFileSummary,
@@ -570,6 +571,17 @@ export function createDrizzleProductionProofRepository(
           result: "success",
           idempotencyKey: input.idempotencyKey,
         }));
+        await enqueueInternalNotifications(transaction, {
+          topic: input.decision === "approved"
+            ? "proof_approved"
+            : "proof_changes_requested",
+          sourceEventId: review.id,
+          resourceType: "proof_review",
+          resourceId: review.id,
+          resourceReference: input.orderNumber,
+          payload: { version: 1, adminPath: `/admin/jobs/${job.jobId}` },
+          createdAt: input.createdAt,
+        });
         return { result: "created" as const, review: Object.freeze({
           id: review.id,
           fileId: review.fileId,

@@ -7,6 +7,9 @@ import {
   adminAuditLogs,
   checkoutSessions,
   customerNotificationOutbox,
+  internalNotificationOutbox,
+  internalNotificationRecipients,
+  internalNotificationSubscriptions,
   orders,
   orderStatusHistory,
   productionJobFiles,
@@ -37,6 +40,8 @@ const unpaidOrderNumber = `RNR-2026-U${suffix.slice(0, 11)}`;
 const tokenDigest = "a".repeat(64);
 const actorEmail = `proof-actor-${suffix}@example.test`;
 const customerEmail = `proof-customer-${suffix}@example.test`;
+const notificationRecipientId = randomUUID();
+const notificationRecipientEmail = `proof-notifications-${suffix.toLowerCase()}@example.test`;
 
 describe("customer proof flow", () => {
   beforeAll(async () => {
@@ -44,6 +49,29 @@ describe("customer proof flow", () => {
     await database.insert(user).values([
       { id: actorId, name: "Proof Manager", email: actorEmail, role: "admin" },
       { id: customerId, name: "Proof Customer", email: customerEmail, role: "customer" },
+    ]);
+    await database.insert(internalNotificationRecipients).values({
+      id: notificationRecipientId,
+      email: notificationRecipientEmail,
+      status: "active",
+      verifiedAt: createdAt,
+      createdByUserId: actorId,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    await database.insert(internalNotificationSubscriptions).values([
+      {
+        recipientId: notificationRecipientId,
+        topic: "proof_approved",
+        createdAt,
+        updatedAt: createdAt,
+      },
+      {
+        recipientId: notificationRecipientId,
+        topic: "proof_changes_requested",
+        createdAt,
+        updatedAt: createdAt,
+      },
     ]);
     await database.insert(checkoutSessions).values([
       {
@@ -167,6 +195,10 @@ describe("customer proof flow", () => {
     await database.delete(productionJobs).where(inArray(productionJobs.id, [jobId, unpaidJobId]));
     await database.delete(orders).where(inArray(orders.id, [orderId, unpaidOrderId]));
     await database.delete(checkoutSessions).where(inArray(checkoutSessions.id, [checkoutSessionId, unpaidCheckoutSessionId]));
+    await database.delete(internalNotificationOutbox)
+      .where(eq(internalNotificationOutbox.recipientId, notificationRecipientId));
+    await database.delete(internalNotificationRecipients)
+      .where(eq(internalNotificationRecipients.id, notificationRecipientId));
     await database.delete(user).where(inArray(user.id, [actorId, customerId]));
     await pool.end();
   });
@@ -232,7 +264,7 @@ describe("customer proof flow", () => {
     })).rejects.toMatchObject({ name: "ProductionProofValidationError" });
 
     now = new Date("2026-08-05T03:00:00.000Z");
-    await expect(service.recordCustomerReview(orderNumber, {
+    const changeRequest = await service.recordCustomerReview(orderNumber, {
       kind: "customer",
       userId: customerId,
     }, {
@@ -240,7 +272,8 @@ describe("customer proof flow", () => {
       decision: "changes_requested",
       notes: "Move the title and use the warmer background.",
       idempotencyKey: `customer-change-${suffix}`,
-    })).resolves.toMatchObject({ result: "created" });
+    });
+    expect(changeRequest).toMatchObject({ result: "created" });
     expect((await database.select({ status: orders.fulfilmentStatus }).from(orders)
       .where(eq(orders.id, orderId)))[0]?.status).toBe("designing");
 
@@ -297,6 +330,33 @@ describe("customer proof flow", () => {
     ]));
     expect(await database.select().from(customerNotificationOutbox)
       .where(eq(customerNotificationOutbox.jobId, jobId))).toHaveLength(4);
+    expect(await database.select().from(internalNotificationOutbox)
+      .where(eq(internalNotificationOutbox.recipientId, notificationRecipientId)))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          eventKey: `proof_changes_requested:${changeRequest.review.id}:${notificationRecipientId}`,
+          topic: "proof_changes_requested",
+          sourceEventId: changeRequest.review.id,
+          resourceType: "proof_review",
+          resourceId: changeRequest.review.id,
+          resourceReference: orderNumber,
+          recipientEmail: notificationRecipientEmail,
+          payload: { version: 1, adminPath: `/admin/jobs/${jobId}` },
+        }),
+        expect.objectContaining({
+          eventKey: `proof_approved:${approval.review.id}:${notificationRecipientId}`,
+          topic: "proof_approved",
+          sourceEventId: approval.review.id,
+          resourceType: "proof_review",
+          resourceId: approval.review.id,
+          resourceReference: orderNumber,
+          recipientEmail: notificationRecipientEmail,
+          payload: { version: 1, adminPath: `/admin/jobs/${jobId}` },
+        }),
+      ]));
+    expect(await database.select().from(internalNotificationOutbox)
+      .where(eq(internalNotificationOutbox.recipientId, notificationRecipientId)))
+      .toHaveLength(2);
     expect(await database.select().from(orderStatusHistory)
       .where(eq(orderStatusHistory.orderId, orderId))).toHaveLength(6);
 

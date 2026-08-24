@@ -27,6 +27,7 @@ import {
   type OrderPaymentStatus,
 } from "@/server/db/schema";
 import { buildAuditRecord } from "@/server/admin/audit-service";
+import { enqueueInternalNotifications } from "@/server/notifications/drizzle-internal-notification-outbox-repository";
 import {
   ProductionJobConflictError,
   ProductionJobNotFoundError,
@@ -542,6 +543,15 @@ export function createDrizzleProductionJobRepository(
           result: "success",
           idempotencyKey: input.idempotencyKey,
         }));
+        await enqueueInternalNotifications(transaction, {
+          topic: "manual_order_created",
+          sourceEventId: job.id,
+          resourceType: "production_job",
+          resourceId: job.id,
+          resourceReference: job.jobNumber,
+          payload: { version: 1, adminPath: `/admin/jobs/${job.id}` },
+          createdAt: input.createdAt,
+        });
         return {
           id: job.id,
           jobNumber: job.jobNumber,

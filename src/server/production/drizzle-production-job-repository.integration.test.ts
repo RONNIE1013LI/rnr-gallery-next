@@ -5,6 +5,9 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   adminAuditLogs,
+  internalNotificationOutbox,
+  internalNotificationRecipients,
+  internalNotificationSubscriptions,
   invoiceItems,
   invoices,
   productionJobs,
@@ -33,6 +36,8 @@ const suffix = randomUUID();
 const actorId = `production-actor-${suffix}`;
 const artistId = `production-artist-${suffix}`;
 const formArtistId = `production-form-artist-${suffix}`;
+const notificationRecipientId = randomUUID();
+const notificationRecipientEmail = `production-notifications-${suffix}@example.test`;
 const jobIds: string[] = [];
 
 describe("drizzle production job repository", () => {
@@ -42,6 +47,22 @@ describe("drizzle production job repository", () => {
       { id: artistId, name: "Production Artist", email: `artist-${suffix}@example.test`, role: "staff" },
       { id: formArtistId, name: "Forms Artist", email: `forms-artist-${suffix}@example.test`, role: "form_staff" },
     ]);
+    const createdAt = new Date("2026-08-04T09:00:00.000Z");
+    await database.insert(internalNotificationRecipients).values({
+      id: notificationRecipientId,
+      email: notificationRecipientEmail,
+      status: "active",
+      verifiedAt: createdAt,
+      createdByUserId: actorId,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    await database.insert(internalNotificationSubscriptions).values({
+      recipientId: notificationRecipientId,
+      topic: "manual_order_created",
+      createdAt,
+      updatedAt: createdAt,
+    });
   });
 
   afterAll(async () => {
@@ -63,6 +84,10 @@ describe("drizzle production job repository", () => {
       ));
       await database.delete(productionJobs).where(inArray(productionJobs.id, jobIds));
     }
+    await database.delete(internalNotificationOutbox)
+      .where(eq(internalNotificationOutbox.recipientId, notificationRecipientId));
+    await database.delete(internalNotificationRecipients)
+      .where(eq(internalNotificationRecipients.id, notificationRecipientId));
     await database.delete(user).where(inArray(user.id, [actorId, artistId, formArtistId]));
     await pool.end();
   });
@@ -78,10 +103,11 @@ describe("drizzle production job repository", () => {
       createJobNumber: () => `RRM-2026-${suffix.slice(0, 10).toUpperCase()}`,
       now: () => new Date("2026-08-04T10:00:00.000Z"),
     });
-    const created = await service.createManual({
+    const actor = {
       userId: actorId,
       email: `manager-${suffix}@example.test`,
-    }, {
+    };
+    const createInput = {
       idempotencyKey: `manual-${suffix}`,
       customerName: "Manual Customer",
       customerEmail: "manual@example.test",
@@ -113,9 +139,27 @@ describe("drizzle production job repository", () => {
         customerName: "Manual Customer", customerEmail: "manual@example.test", customerAddress: "11 Example Street", deliveryAddress: "11 Example Street",
         discountCents: 0, notes: "Thanks", terms: "Seven days", items: [{ code: "PRD", description: "Roll-Up Banner", quantityMilli: 1_000, rateInclGstCents: 23_000 }],
       },
-    }, { canUpdateFinance: true });
+    };
+    const created = await service.createManual(actor, createInput, { canUpdateFinance: true });
     jobIds.push(created.job.id);
     expect(created.job.updatedAt).toEqual(new Date("2026-08-04T10:00:00.000Z"));
+
+    await expect(service.createManual(actor, createInput, { canUpdateFinance: true }))
+      .resolves.toMatchObject({ result: "duplicate", job: { id: created.job.id } });
+    await expect(database.select().from(internalNotificationOutbox).where(eq(
+      internalNotificationOutbox.sourceEventId,
+      created.job.id,
+    ))).resolves.toEqual([
+      expect.objectContaining({
+        eventKey: `manual_order_created:${created.job.id}:${notificationRecipientId}`,
+        topic: "manual_order_created",
+        resourceType: "production_job",
+        resourceId: created.job.id,
+        resourceReference: created.job.jobNumber,
+        recipientEmail: notificationRecipientEmail,
+        payload: { version: 1, adminPath: `/admin/jobs/${created.job.id}` },
+      }),
+    ]);
 
     await expect(database.select().from(invoices).where(eq(invoices.jobId, created.job.id)))
       .resolves.toEqual([expect.objectContaining({ invoiceNumber: `INV-${created.job.jobNumber}`, reference: created.job.jobNumber, totalInclGstCents: 23_000 })]);

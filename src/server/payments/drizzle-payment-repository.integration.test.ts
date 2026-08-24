@@ -3,7 +3,15 @@ import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { orderNotificationOutbox, orders, paymentAttempts, webhookEvents } from "@/server/db/schema";
+import {
+  internalNotificationOutbox,
+  internalNotificationRecipients,
+  internalNotificationSubscriptions,
+  orderNotificationOutbox,
+  orders,
+  paymentAttempts,
+  webhookEvents,
+} from "@/server/db/schema";
 import {
   PaymentRepositoryConflictError,
   PaymentVerificationMismatchError,
@@ -25,6 +33,7 @@ const suffix = randomUUID();
 const orderIds: string[] = [];
 const sessionIds: string[] = [];
 const customerIds: string[] = [];
+const notificationRecipientIds: string[] = [];
 
 const nzPricingSnapshot = {
   schemaVersion: 1,
@@ -192,6 +201,16 @@ describe("Drizzle payment repository", () => {
     await pool.query("delete from payment_attempts where order_id = any($1::uuid[])", [orderIds]);
     await pool.query("delete from orders where id = any($1::uuid[])", [orderIds]);
     await pool.query("delete from checkout_sessions where id = any($1::uuid[])", [sessionIds]);
+    if (notificationRecipientIds.length) {
+      await database.delete(internalNotificationOutbox).where(inArray(
+        internalNotificationOutbox.recipientId,
+        notificationRecipientIds,
+      ));
+      await database.delete(internalNotificationRecipients).where(inArray(
+        internalNotificationRecipients.id,
+        notificationRecipientIds,
+      ));
+    }
     if (customerIds.length) {
       await pool.query("delete from \"user\" where id = any($1::text[])", [customerIds]);
     }
@@ -789,6 +808,10 @@ describe("Drizzle payment repository", () => {
         status: "pending",
       }),
     ]);
+    await expect(database.select().from(internalNotificationOutbox).where(eq(
+      internalNotificationOutbox.sourceEventId,
+      order.orderId,
+    ))).resolves.toEqual([]);
     const paidBefore = await paymentRows(order.orderId, claim.attempt.id);
     await repository.applyVerifiedResult({
       attemptId: claim.attempt.id,
@@ -973,14 +996,32 @@ describe("Drizzle payment repository", () => {
     ]);
   });
 
-  it("queues a distinct paid-order notification for each administrator", async () => {
+  it("queues one configured website-paid notification across webhook and reconciliation retries", async () => {
     const adminId = `payment-admin-${randomUUID()}`;
     const adminEmail = "payer@example.test";
+    const recipientId = randomUUID();
     customerIds.push(adminId);
+    notificationRecipientIds.push(recipientId);
     await pool.query(
       `insert into "user" (id, name, email, role) values ($1, 'Payment Admin', $2, 'admin')`,
       [adminId, adminEmail],
     );
+    const createdAt = new Date("2026-08-24T08:00:00.000Z");
+    await database.insert(internalNotificationRecipients).values({
+      id: recipientId,
+      email: adminEmail,
+      status: "active",
+      verifiedAt: createdAt,
+      createdByUserId: adminId,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    await database.insert(internalNotificationSubscriptions).values({
+      recipientId,
+      topic: "web_order_paid",
+      createdAt,
+      updatedAt: createdAt,
+    });
     const order = await createOrder();
     const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
     const providerReference = `admin-notification-${randomUUID()}`;
@@ -992,28 +1033,43 @@ describe("Drizzle payment repository", () => {
       status: "processing",
     });
 
-    await repository.applyVerifiedResult({
-      attemptId: claim.attempt.id,
+    const result = {
+      providerReference,
+      providerStatus: "succeeded",
+      amountCents: 7_475,
+      currency: "NZD" as const,
+      orderNumber: order.orderNumber,
+      status: "paid" as const,
+    };
+    const webhook = {
+      provider: "stripe" as const,
+      providerEventId: `evt-web-order-paid-${randomUUID()}`,
+      payloadSha256: "8".repeat(64),
       result: {
-        providerReference,
-        providerStatus: "succeeded",
-        amountCents: 7_475,
-        currency: "NZD",
-        orderNumber: order.orderNumber,
-        status: "paid",
+        ...result,
       },
-      source: "reconciliation",
-    });
+    };
 
-    await expect(database.select().from(orderNotificationOutbox).where(eq(
-      orderNotificationOutbox.eventKey,
-      `admin-order-received:${order.orderId}:${adminId}`,
+    await expect(repository.applyVerifiedWebhookEventAtomically(webhook)).resolves.toBe("applied");
+    await expect(repository.applyVerifiedWebhookEventAtomically(webhook)).resolves.toBe("duplicate");
+    await expect(repository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      result,
+      source: "reconciliation",
+    })).resolves.toMatchObject({ order: { paymentStatus: "paid" } });
+
+    await expect(database.select().from(internalNotificationOutbox).where(eq(
+      internalNotificationOutbox.sourceEventId,
+      order.orderId,
     ))).resolves.toEqual([
       expect.objectContaining({
-        kind: "admin_order_received",
-        orderId: order.orderId,
+        eventKey: `web_order_paid:${order.orderId}:${recipientId}`,
+        topic: "web_order_paid",
+        resourceType: "order",
+        resourceId: order.orderId,
+        resourceReference: order.orderNumber,
         recipientEmail: adminEmail,
-        status: "pending",
+        payload: { version: 1, adminPath: `/admin/orders/${order.orderId}` },
       }),
     ]);
     await expect(database.select({
@@ -1022,10 +1078,9 @@ describe("Drizzle payment repository", () => {
     }).from(orderNotificationOutbox).where(eq(
       orderNotificationOutbox.orderId,
       order.orderId,
-    ))).resolves.toEqual(expect.arrayContaining([
+    ))).resolves.toEqual([
       { kind: "payment_confirmed", recipientEmail: adminEmail },
-      { kind: "admin_order_received", recipientEmail: adminEmail },
-    ]));
+    ]);
   });
 
   it.each(["after_event_insert", "after_transition", "before_processed_result"] as const)(

@@ -5,6 +5,9 @@ import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   checkoutSessions,
+  internalNotificationOutbox,
+  internalNotificationRecipients,
+  internalNotificationSubscriptions,
   orderAddresses,
   orders,
   paymentAttempts,
@@ -35,6 +38,9 @@ const orderIds: string[] = [];
 const sessionIds: string[] = [];
 const requestIds: string[] = [];
 const webhookEventIds: string[] = [];
+const notificationRecipientIds: string[] = [];
+const notificationRecipientId = randomUUID();
+const notificationRecipientEmail = `payment-request-ops-${suffix}@example.test`;
 
 async function createOrder(totalCents = 40_000) {
   const [session] = await database.insert(checkoutSessions).values({
@@ -190,6 +196,16 @@ describe("payment request balance transactions", () => {
     }
     if (sessionIds.length) {
       await database.delete(checkoutSessions).where(inArray(checkoutSessions.id, sessionIds));
+    }
+    if (notificationRecipientIds.length) {
+      await database.delete(internalNotificationOutbox).where(inArray(
+        internalNotificationOutbox.recipientId,
+        notificationRecipientIds,
+      ));
+      await database.delete(internalNotificationRecipients).where(inArray(
+        internalNotificationRecipients.id,
+        notificationRecipientIds,
+      ));
     }
     await database.delete(user).where(eq(user.id, actorId));
     await pool.end();
@@ -466,6 +482,23 @@ describe("payment request balance transactions", () => {
   });
 
   it("binds and applies one verified online payment ledger entry idempotently", async () => {
+    const createdAt = new Date("2026-08-24T08:30:00.000Z");
+    notificationRecipientIds.push(notificationRecipientId);
+    await database.insert(internalNotificationRecipients).values({
+      id: notificationRecipientId,
+      email: notificationRecipientEmail,
+      status: "active",
+      verifiedAt: createdAt,
+      createdByUserId: actorId,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    await database.insert(internalNotificationSubscriptions).values({
+      recipientId: notificationRecipientId,
+      topic: "payment_request_paid",
+      createdAt,
+      updatedAt: createdAt,
+    });
     const order = await createOrder();
     const request = await remember(repository.createRequest(orderRequest(order.id, 20_000)));
     const claim = await repository.preflightAndClaimAttempt({
@@ -518,6 +551,10 @@ describe("payment request balance transactions", () => {
       outstandingCents: 20_000,
       reservedCents: 0,
     });
+    await expect(database.select().from(internalNotificationOutbox).where(eq(
+      internalNotificationOutbox.sourceEventId,
+      request.id,
+    ))).resolves.toEqual([]);
   });
 
   it("applies a verified Payment Request webhook atomically and deduplicates it", async () => {
@@ -573,9 +610,22 @@ describe("payment request balance transactions", () => {
       item.recipientEmail === "payer@example.test"
     )).toHaveLength(1);
     expect(notifications.filter((item) =>
-      item.kind === "admin_payment_request_received" &&
-      item.recipientEmail === `${actorId}@example.test`
-    )).toHaveLength(1);
+      item.kind === "admin_payment_request_received"
+    )).toHaveLength(0);
+    await expect(database.select().from(internalNotificationOutbox).where(eq(
+      internalNotificationOutbox.sourceEventId,
+      request.id,
+    ))).resolves.toEqual([
+      expect.objectContaining({
+        eventKey: `payment_request_paid:${request.id}:${notificationRecipientId}`,
+        topic: "payment_request_paid",
+        resourceType: "payment_request",
+        resourceId: request.id,
+        resourceReference: request.requestNumber,
+        recipientEmail: notificationRecipientEmail,
+        payload: { version: 1, adminPath: `/admin/payment-requests/${request.id}` },
+      }),
+    ]);
   });
 
   it("repairs missing notifications only for paid requests backed by the ledger", async () => {
