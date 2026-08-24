@@ -91,17 +91,17 @@ export function createAdminNotificationRecipientVerificationRoute(
   dependencies?: Dependencies,
 ) {
   const defaults = (): Dependencies => {
-    const recipients = getInternalNotificationRecipientRuntime();
     return {
       requirePermission: requireAdminPermission,
-      resendVerification: recipients.resendVerification,
+      resendVerification: (adminActor, input) => getInternalNotificationRecipientRuntime()
+        .resendVerification(adminActor, input),
     };
   };
 
   return Object.freeze({
     async POST(request: Request, context: Context) {
-      const deps = dependencies ?? defaults();
       try {
+        const deps = dependencies ?? defaults();
         const access = await deps.requirePermission("manage_roles");
         assertTrustedMutationRequest(request, deps.trustedOrigin);
         const [{ recipientId }, body] = await Promise.all([

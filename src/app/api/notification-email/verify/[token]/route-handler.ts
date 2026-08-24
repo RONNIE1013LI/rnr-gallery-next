@@ -19,13 +19,13 @@ export function createPublicNotificationEmailVerificationRoute(
   dependencies?: Dependencies,
 ) {
   const defaults = (): Dependencies => ({
-    verify: getInternalNotificationRecipientRuntime().verify,
+    verify: (rawToken) => getInternalNotificationRecipientRuntime().verify(rawToken),
   });
 
   return Object.freeze({
     async POST(request: Request, context: Context) {
-      const deps = dependencies ?? defaults();
       try {
+        const deps = dependencies ?? defaults();
         assertTrustedMutationRequest(request, deps.trustedOrigin);
         const { token } = await context.params;
         const recipient = await deps.verify(token);

@@ -101,18 +101,17 @@ function activeCoverage(recipients: Awaited<ReturnType<RecipientRuntime["list"]>
 
 export function createAdminNotificationRecipientsRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => {
-    const recipients = getInternalNotificationRecipientRuntime();
     return {
       requirePermission: requireAdminPermission,
-      list: recipients.list,
-      add: recipients.add,
+      list: () => getInternalNotificationRecipientRuntime().list(),
+      add: (adminActor, input) => getInternalNotificationRecipientRuntime().add(adminActor, input),
     };
   };
 
   return Object.freeze({
     async GET() {
-      const deps = dependencies ?? defaults();
       try {
+        const deps = dependencies ?? defaults();
         await deps.requirePermission("manage_roles");
         const recipients = await deps.list();
         return Response.json(
@@ -125,8 +124,8 @@ export function createAdminNotificationRecipientsRoute(dependencies?: Dependenci
     },
 
     async POST(request: Request) {
-      const deps = dependencies ?? defaults();
       try {
+        const deps = dependencies ?? defaults();
         const access = await deps.requirePermission("manage_roles");
         assertTrustedMutationRequest(request, deps.trustedOrigin);
         const result = await deps.add(actor(access), await parseJsonObject(request));

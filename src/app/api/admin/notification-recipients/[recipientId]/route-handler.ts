@@ -94,18 +94,19 @@ function errorResponse(error: unknown, operation: "updated" | "disabled") {
 
 export function createAdminNotificationRecipientRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => {
-    const recipients = getInternalNotificationRecipientRuntime();
     return {
       requirePermission: requireAdminPermission,
-      updateSubscriptions: recipients.updateSubscriptions,
-      disable: recipients.disable,
+      updateSubscriptions: (adminActor, input) => getInternalNotificationRecipientRuntime()
+        .updateSubscriptions(adminActor, input),
+      disable: (adminActor, input) => getInternalNotificationRecipientRuntime()
+        .disable(adminActor, input),
     };
   };
 
   return Object.freeze({
     async PATCH(request: Request, context: Context) {
-      const deps = dependencies ?? defaults();
       try {
+        const deps = dependencies ?? defaults();
         const access = await deps.requirePermission("manage_roles");
         assertTrustedMutationRequest(request, deps.trustedOrigin);
         const [{ recipientId }, body] = await Promise.all([
@@ -123,8 +124,8 @@ export function createAdminNotificationRecipientRoute(dependencies?: Dependencie
     },
 
     async DELETE(request: Request, context: Context) {
-      const deps = dependencies ?? defaults();
       try {
+        const deps = dependencies ?? defaults();
         const access = await deps.requirePermission("manage_roles");
         assertTrustedMutationRequest(request, deps.trustedOrigin);
         const [{ recipientId }, body] = await Promise.all([

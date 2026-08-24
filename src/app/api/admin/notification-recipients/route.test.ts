@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "@/server/auth/require-session";
 import {
   InternalNotificationRecipientConflictError,
@@ -6,6 +6,18 @@ import {
   type InternalNotificationRecipientView,
 } from "@/server/notifications/internal-notification-recipient-service";
 import { createAdminNotificationRecipientsRoute } from "./route-handler";
+
+const { defaultRequirePermission, runtimeGetter } = vi.hoisted(() => ({
+  defaultRequirePermission: vi.fn(),
+  runtimeGetter: vi.fn(),
+}));
+
+vi.mock("@/server/auth/require-admin", () => ({
+  requireAdminPermission: defaultRequirePermission,
+}));
+vi.mock("@/server/notifications/internal-notification-recipient-runtime", () => ({
+  getInternalNotificationRecipientRuntime: runtimeGetter,
+}));
 
 const origin = "http://localhost:3000";
 
@@ -54,6 +66,48 @@ function dependencies(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Admin notification recipient collection route", () => {
+  beforeEach(() => {
+    defaultRequirePermission.mockReset();
+    runtimeGetter.mockReset();
+  });
+
+  it("maps default runtime initialization failures to a no-store 500", async () => {
+    defaultRequirePermission.mockResolvedValue({
+      user: { id: "admin-1", email: "owner@example.test" },
+      adminRole: "admin",
+    });
+    runtimeGetter.mockImplementation(() => {
+      throw new Error("private runtime configuration failure");
+    });
+
+    const response = await createAdminNotificationRecipientsRoute().GET();
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual({
+      error: "Notification recipients could not be loaded.",
+    });
+  });
+
+  it("does not initialize the default business runtime or read a Staff mutation body", async () => {
+    defaultRequirePermission.mockRejectedValue(new HttpError("Forbidden", 403));
+    let bodyRead = false;
+    const source = mutationRequest({ email: "must-not-be-read@example.test" });
+    const unreadRequest = new Proxy(source, {
+      get(target, property) {
+        if (property === "body") bodyRead = true;
+        const value = Reflect.get(target, property, target) as unknown;
+        return typeof value === "function" ? value.bind(target) : value;
+      },
+    });
+    const route = createAdminNotificationRecipientsRoute();
+
+    expect((await route.GET()).status).toBe(403);
+    expect((await route.POST(unreadRequest)).status).toBe(403);
+    expect(runtimeGetter).not.toHaveBeenCalled();
+    expect(bodyRead).toBe(false);
+  });
+
   it("lists only Admin-safe recipients with active coverage and no-store", async () => {
     const list = vi.fn().mockResolvedValue([
       recipient(),
@@ -144,6 +198,30 @@ describe("Admin notification recipient collection route", () => {
       verificationDelivery: "failed",
     });
     expect(JSON.stringify(body)).not.toContain("token");
+  });
+
+  it("fails closed when an authenticated Admin session has no real email", async () => {
+    const add = vi.fn();
+    const route = createAdminNotificationRecipientsRoute(dependencies({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: { id: "admin-1" },
+        adminRole: "admin",
+      }),
+      add,
+    }));
+
+    const response = await route.POST(mutationRequest({
+      email: "ops@example.test",
+      topics: ["web_order_paid"],
+      idempotencyKey: "recipient-create-no-actor-email",
+    }));
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual({
+      error: "The notification recipient could not be saved.",
+    });
+    expect(add).not.toHaveBeenCalled();
   });
 
   it("rejects Staff, cross-origin, non-JSON, and oversized create requests before add", async () => {

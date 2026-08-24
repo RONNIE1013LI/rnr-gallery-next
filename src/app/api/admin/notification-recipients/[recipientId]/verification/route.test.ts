@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HttpError } from "@/server/auth/require-session";
 import {
   InternalNotificationRecipientConflictError,
@@ -7,6 +7,18 @@ import {
   type InternalNotificationRecipientView,
 } from "@/server/notifications/internal-notification-recipient-service";
 import { createAdminNotificationRecipientVerificationRoute } from "./route-handler";
+
+const { defaultRequirePermission, runtimeGetter } = vi.hoisted(() => ({
+  defaultRequirePermission: vi.fn(),
+  runtimeGetter: vi.fn(),
+}));
+
+vi.mock("@/server/auth/require-admin", () => ({
+  requireAdminPermission: defaultRequirePermission,
+}));
+vi.mock("@/server/notifications/internal-notification-recipient-runtime", () => ({
+  getInternalNotificationRecipientRuntime: runtimeGetter,
+}));
 
 const origin = "http://localhost:3000";
 const recipientId = "10000000-0000-4000-8000-000000000001";
@@ -53,6 +65,32 @@ function dependencies(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Admin notification recipient verification route", () => {
+  beforeEach(() => {
+    defaultRequirePermission.mockReset();
+    runtimeGetter.mockReset();
+  });
+
+  it("maps default runtime initialization failures to a no-store 500", async () => {
+    defaultRequirePermission.mockResolvedValue({
+      user: { id: "admin-1", email: "owner@example.test" },
+      adminRole: "admin",
+    });
+    runtimeGetter.mockImplementation(() => {
+      throw new Error("private runtime configuration failure");
+    });
+
+    const response = await createAdminNotificationRecipientVerificationRoute().POST(
+      request({ idempotencyKey: "recipient-resend-runtime-failure" }),
+      context,
+    );
+
+    expect(response.status).toBe(500);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    await expect(response.json()).resolves.toEqual({
+      error: "Verification could not be resent.",
+    });
+  });
+
   it("reissues verification for the path recipient and returns provider outcome safely", async () => {
     const resendVerification = vi.fn().mockResolvedValue({
       recipient: recipient(),
