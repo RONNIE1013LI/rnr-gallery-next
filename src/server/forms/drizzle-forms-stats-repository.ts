@@ -116,13 +116,6 @@ function aggregateExpression(request: FormStatRequest) {
   return sql<number>`coalesce(round(avg(${expression})), 0)`;
 }
 
-function groupedLimit(request: FormStatRequest) {
-  if (request.dimension === "submitted_at" || request.dimension === "needed_date") {
-    return request.timeUnit === "day" ? 366 : 60;
-  }
-  return 24;
-}
-
 function isTimeSeries(request: FormStatRequest) {
   return request.dimension === "submitted_at" || request.dimension === "needed_date";
 }
@@ -172,8 +165,7 @@ async function queryGroupedStatistic(
     .leftJoin(user, eq(user.id, productionJobs.assignedUserId))
     .where(where)
     .groupBy(label)
-    .orderBy(...groupedOrder(label, value, resolved.sort, isTimeSeries(resolved)))
-    .limit(groupedLimit(resolved));
+    .orderBy(...groupedOrder(label, value, resolved.sort, isTimeSeries(resolved)));
   const normalizedRows = rows.map((row) => Object.freeze({ label: row.label, value: numeric(row.value) }));
   return Object.freeze({
     query: resolved,
@@ -219,8 +211,7 @@ async function queryLegacyStatistic(
       .leftJoin(orders, eq(orders.id, productionJobs.orderId))
       .where(where)
       .groupBy(label)
-      .orderBy(desc(label))
-      .limit(metric === "daily_orders" ? 366 : 60);
+      .orderBy(desc(label));
     return Object.freeze({ metric, rows: Object.freeze(rows.reverse().map((row) => Object.freeze({ label: row.label, value: numeric(row.value) }))) });
   }
 
@@ -232,8 +223,7 @@ async function queryLegacyStatistic(
     .leftJoin(orders, eq(orders.id, productionJobs.orderId))
     .where(where)
     .groupBy(label)
-    .orderBy(desc(count()))
-    .limit(24);
+    .orderBy(desc(count()));
   return Object.freeze({ metric, rows: Object.freeze(rows.map((row) => Object.freeze({ label: row.label, value: numeric(row.value) }))) });
 }
 

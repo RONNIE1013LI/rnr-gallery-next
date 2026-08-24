@@ -439,14 +439,14 @@ describe("forms stats repository", () => {
     })).resolves.toMatchObject({ rows: [{ label: "Unspecified", value: 1 }] });
   });
 
-  it("selects the newest default time buckets while presenting them chronologically", async () => {
+  it("returns every default time bucket while presenting them chronologically", async () => {
     const query = parseFormWorkbenchQuery({ q: overflowMarker });
     const access = { actorUserId: actorId, assignedOnly: true, canViewCustomerContact: false, canViewFinance: true };
     const statistic = await queryFormStatistic(database, query, access, {
       dimension: "submitted_at", timeUnit: "week", measure: "order_count", aggregation: "count", sort: "default",
     });
-    expect(statistic.rows).toHaveLength(60);
-    expect(statistic.rows?.[0]).toEqual({ label: "2025 W03", value: 1 });
+    expect(statistic.rows).toHaveLength(61);
+    expect(statistic.rows?.[0]).toEqual({ label: "2025 W02", value: 1 });
     expect(statistic.rows?.at(-1)).toEqual({ label: "2026 W10", value: 1 });
   });
 

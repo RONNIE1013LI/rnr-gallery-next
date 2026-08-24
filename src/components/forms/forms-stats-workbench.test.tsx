@@ -9,6 +9,14 @@ afterEach(() => {
 });
 
 describe("FormsStatsWorkbench", () => {
+  it("uses one compact title-and-action toolbar", () => {
+    render(<FormsStatsWorkbench canManage canViewFinance layouts={[]} />);
+
+    expect(screen.getByRole("heading", { name: "Custom stats", level: 1 })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Create custom stat" })).toBeInTheDocument();
+    expect(screen.queryByText("Create a custom report")).not.toBeInTheDocument();
+  });
+
   it("opens the real custom report builder from the create control and returns on Back", () => {
     render(<FormsStatsWorkbench canManage canViewFinance layouts={[]} />);
 

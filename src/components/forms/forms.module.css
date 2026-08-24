@@ -216,7 +216,7 @@
   gap: 12px;
 }
 
-.statsCreatePanel,
+.statsPageToolbar,
 .statsReportCard {
   width: 100%;
   border: 1px solid var(--forms-border);
@@ -224,7 +224,7 @@
   background: var(--forms-surface);
 }
 
-.statsCreatePanel,
+.statsPageToolbar,
 .statsReportHeader {
   display: flex;
   align-items: center;
@@ -232,26 +232,26 @@
   gap: 12px;
 }
 
-.statsCreatePanel {
-  padding: 14px;
+.statsPageToolbar {
+  padding: 8px 12px;
   border-color: #9bc8aa;
   background: #eff8f3;
 }
 
-.statsCreatePanel h2,
+.statsPageToolbar h1,
 .statsReportHeader h2 {
   margin: 0;
   font-size: 16px;
 }
 
-.statsCreatePanel p,
+.statsPageToolbar p,
 .statsReportHeader p {
   margin: 4px 0 0;
   color: var(--forms-muted);
   font-size: 13px;
 }
 
-.statsCreatePanel button,
+.statsPageToolbar button,
 .statsReportActions button {
   min-height: 40px;
   padding: 7px 10px;
@@ -1075,10 +1075,24 @@
 }
 
 @media (max-width: 600px) {
-  .statsCreatePanel,
   .statsReportHeader {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .statsPageToolbar {
+    gap: 8px;
+    padding: 6px 8px;
+  }
+
+  .statsPageToolbar p {
+    display: none;
+  }
+
+  .statsPageToolbar button {
+    min-height: 34px;
+    padding: 5px 8px;
+    font-size: 12px;
   }
 
   .statsReportWidgets {

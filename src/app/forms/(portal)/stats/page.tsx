@@ -36,12 +36,6 @@ export default async function FormsStatsPage({ searchParams }: Props) {
   });
   return (
     <section className={styles.formsPage}>
-      <header className={styles.formsPageHeader}>
-        <div>
-          <h1>Custom stats</h1>
-          <p>Track production volume, delivery mix, work status and authorised finance totals.</p>
-        </div>
-      </header>
       <FormsStatsWorkbench
         layouts={layouts}
         canManage={hasFormPermission(access.formRole, access.formProfile, "manage_stats")}

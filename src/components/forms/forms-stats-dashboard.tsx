@@ -57,7 +57,6 @@ export function FormsStatsDashboard({
   canManage,
   canViewFinance,
   queryContext = emptyQueryContext,
-  onCreate,
   onEdit,
   onDeleted,
 }: Readonly<{
@@ -65,7 +64,6 @@ export function FormsStatsDashboard({
   canManage: boolean;
   canViewFinance: boolean;
   queryContext?: FormsStatsQueryContext;
-  onCreate: () => void;
   onEdit: (layout: FormsStatsDashboardLayout) => void;
   onDeleted: (layout: FormsStatsDashboardLayout) => void;
 }>) {
@@ -143,10 +141,6 @@ export function FormsStatsDashboard({
 
   return (
     <section className={styles.statsDashboard} aria-label="Saved custom reports" data-can-view-finance={canViewFinance}>
-      {canManage ? <div className={styles.statsCreatePanel}>
-        <div><h2>Create a custom report</h2><p>Choose the statistics and layout for a saved report.</p></div>
-        <button type="button" onClick={onCreate}>Create custom stat</button>
-      </div> : null}
       {feedback ? <p className={styles.formFeedback} role="alert">{feedback}</p> : null}
       {layouts.length === 0 ? <p className={styles.statsEmpty}>No custom reports have been saved yet.</p> : layouts.map((layout) => (
         <article className={styles.statsReportCard} key={layout.id}>

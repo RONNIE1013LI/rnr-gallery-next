@@ -41,8 +41,7 @@ describe("FormsStatsDashboard", () => {
   it("shows a full saved report and requests each canonical statistic once", async () => {
     const fetchMock = vi.fn(() => Promise.resolve(new Response(JSON.stringify({ stat: { query: orderCountQuery, value: 12 } }), { status: 200, headers: { "Content-Type": "application/json" } })));
     vi.stubGlobal("fetch", fetchMock);
-    render(<FormsStatsDashboard layouts={[weeklySales]} canManage canViewFinance onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "Create custom stat" })).toBeInTheDocument();
+    render(<FormsStatsDashboard layouts={[weeklySales]} canManage canViewFinance onEdit={vi.fn()} onDeleted={vi.fn()} />);
     expect(screen.getByRole("heading", { name: "Weekly sales" })).toBeInTheDocument();
     expect(await screen.findAllByText("12")).toHaveLength(2);
     expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -58,7 +57,6 @@ describe("FormsStatsDashboard", () => {
       canManage
       canViewFinance
       queryContext={{ q: "portrait", preset: "lastYear", match: "or", filters: ["urgent~equals~true", "status~equals~designing"] }}
-      onCreate={vi.fn()}
       onEdit={vi.fn()}
       onDeleted={vi.fn()}
     />);
@@ -80,10 +78,10 @@ describe("FormsStatsDashboard", () => {
       signals.push(init.signal);
       return signals.length === 1 ? first.promise : second.promise;
     }));
-    const { rerender } = render(<FormsStatsDashboard layouts={[weeklySales]} canManage canViewFinance queryContext={{ q: "first" }} onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={vi.fn()} />);
+    const { rerender } = render(<FormsStatsDashboard layouts={[weeklySales]} canManage canViewFinance queryContext={{ q: "first" }} onEdit={vi.fn()} onDeleted={vi.fn()} />);
 
     expect(await screen.findAllByRole("status")).toHaveLength(2);
-    rerender(<FormsStatsDashboard layouts={[weeklySales]} canManage canViewFinance queryContext={{ q: "second" }} onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={vi.fn()} />);
+    rerender(<FormsStatsDashboard layouts={[weeklySales]} canManage canViewFinance queryContext={{ q: "second" }} onEdit={vi.fn()} onDeleted={vi.fn()} />);
     await waitFor(() => expect(signals).toHaveLength(2));
     expect(signals[0]!.aborted).toBe(true);
 
@@ -104,7 +102,7 @@ describe("FormsStatsDashboard", () => {
     render(<FormsStatsDashboard layouts={[
       { id: "report-one", name: "First report", widgets: [chartWidget] },
       { id: "report-two", name: "Second report", widgets: [chartWidget] },
-    ]} canManage canViewFinance onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={vi.fn()} />);
+    ]} canManage canViewFinance onEdit={vi.fn()} onDeleted={vi.fn()} />);
 
     const charts = await screen.findAllByRole("application", { name: "Order status chart" });
     const descriptions = charts.map((chart) => chart.getAttribute("aria-describedby"));
@@ -114,7 +112,7 @@ describe("FormsStatsDashboard", () => {
 
   it("hides management controls from viewers while keeping report data visible", async () => {
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(JSON.stringify({ stat: { query: orderCountQuery, value: 3 } }), { status: 200, headers: { "Content-Type": "application/json" } }))));
-    render(<FormsStatsDashboard layouts={[weeklySales]} canManage={false} canViewFinance={false} onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={vi.fn()} />);
+    render(<FormsStatsDashboard layouts={[weeklySales]} canManage={false} canViewFinance={false} onEdit={vi.fn()} onDeleted={vi.fn()} />);
     expect(screen.queryByRole("button", { name: "Create custom stat" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Edit Weekly sales" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Delete Weekly sales" })).not.toBeInTheDocument();
@@ -124,7 +122,7 @@ describe("FormsStatsDashboard", () => {
   it("emits the selected saved layout through the edit boundary", () => {
     const onEdit = vi.fn();
     vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(new Response(JSON.stringify({ stat: { query: orderCountQuery, value: 3 } }), { status: 200, headers: { "Content-Type": "application/json" } }))));
-    render(<FormsStatsDashboard layouts={[weeklySales]} canManage canViewFinance onCreate={vi.fn()} onEdit={onEdit} onDeleted={vi.fn()} />);
+    render(<FormsStatsDashboard layouts={[weeklySales]} canManage canViewFinance onEdit={onEdit} onDeleted={vi.fn()} />);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit Weekly sales" }));
 
@@ -139,7 +137,7 @@ describe("FormsStatsDashboard", () => {
     render(<FormsStatsDashboard layouts={[{ ...weeklySales, widgets: [
       { id: "orders", type: "number", title: "Orders", query: orderCountQuery },
       { id: "delivery", type: "table", title: "Delivery", query: deliveryQuery },
-    ] }]} canManage canViewFinance onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={vi.fn()} />);
+    ] }]} canManage canViewFinance onEdit={vi.fn()} onDeleted={vi.fn()} />);
     expect(await screen.findByText("7")).toBeInTheDocument();
     expect(await screen.findByRole("alert")).toHaveTextContent("Statistic unavailable.");
     expect(screen.getByRole("heading", { name: "Weekly sales" })).toBeInTheDocument();
@@ -153,7 +151,7 @@ describe("FormsStatsDashboard", () => {
       ? Promise.resolve(new Response(JSON.stringify({ removed: true }), { status: 200 }))
       : Promise.resolve(new Response(JSON.stringify({ stat: { query: orderCountQuery, value: 1 } }), { status: 200, headers: { "Content-Type": "application/json" } })));
     vi.stubGlobal("fetch", fetchMock);
-    render(<FormsStatsDashboard layouts={[report]} canManage canViewFinance onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={onDeleted} />);
+    render(<FormsStatsDashboard layouts={[report]} canManage canViewFinance onEdit={vi.fn()} onDeleted={onDeleted} />);
     fireEvent.click(screen.getByRole("button", { name: "Delete Weekly sales & tax" }));
     expect(window.confirm).toHaveBeenCalledWith('Delete "Weekly sales & tax"?');
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/forms/stats/layout?name=Weekly%20sales%20%26%20tax", {
@@ -168,7 +166,7 @@ describe("FormsStatsDashboard", () => {
     vi.stubGlobal("fetch", vi.fn((input: string | URL | Request, init?: RequestInit) => init?.method === "DELETE"
       ? Promise.resolve(new Response(JSON.stringify({ error: "Delete failed" }), { status: 500, headers: { "Content-Type": "application/json" } }))
       : Promise.resolve(new Response(JSON.stringify({ stat: { query: orderCountQuery, value: 1 } }), { status: 200, headers: { "Content-Type": "application/json" } }))));
-    render(<FormsStatsDashboard layouts={[weeklySales]} canManage canViewFinance onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={vi.fn()} />);
+    render(<FormsStatsDashboard layouts={[weeklySales]} canManage canViewFinance onEdit={vi.fn()} onDeleted={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Delete Weekly sales" }));
     expect(await screen.findByRole("alert")).toHaveTextContent("Delete failed");
     expect(screen.getByRole("heading", { name: "Weekly sales" })).toBeInTheDocument();
@@ -183,7 +181,7 @@ describe("FormsStatsDashboard", () => {
       : Promise.resolve(new Response(JSON.stringify({ stat: { query: orderCountQuery, value: 1 } }), { status: 200, headers: { "Content-Type": "application/json" } })));
     vi.stubGlobal("fetch", fetchMock);
 
-    render(<FormsStatsDashboard layouts={[weeklySales, secondReport]} canManage canViewFinance onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={vi.fn()} />);
+    render(<FormsStatsDashboard layouts={[weeklySales, secondReport]} canManage canViewFinance onEdit={vi.fn()} onDeleted={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: "Delete Weekly sales" }));
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/forms/stats/layout?name=Weekly%20sales", expect.objectContaining({ method: "DELETE" })));
@@ -197,9 +195,8 @@ describe("FormsStatsDashboard", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Delete Monthly sales" })).not.toBeDisabled());
   });
 
-  it("shows an empty saved-report state while preserving create access", () => {
-    render(<FormsStatsDashboard layouts={[]} canManage canViewFinance onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={vi.fn()} />);
-    expect(screen.getByRole("button", { name: "Create custom stat" })).toBeInTheDocument();
+  it("shows an empty saved-report state", () => {
+    render(<FormsStatsDashboard layouts={[]} canManage canViewFinance onEdit={vi.fn()} onDeleted={vi.fn()} />);
     expect(screen.getByText("No custom reports have been saved yet.")).toBeInTheDocument();
   });
 
@@ -220,7 +217,7 @@ describe("FormsStatsDashboard", () => {
         skippedWidgetCount: 2,
         warning: "2 stale widgets were skipped.",
       },
-    ]} canManage canViewFinance onCreate={vi.fn()} onEdit={vi.fn()} onDeleted={vi.fn()} />);
+    ]} canManage canViewFinance onEdit={vi.fn()} onDeleted={vi.fn()} />);
 
     expect(screen.getByRole("heading", { name: "Mixed report" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Legacy report" })).toBeInTheDocument();

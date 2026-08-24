@@ -246,12 +246,12 @@ describe("FormsStatsChart", () => {
     expect(scroller.scrollLeft).toBe(560);
   });
 
-  it("caps a 366-point chart width inside the scroller", async () => {
+  it("keeps the full width of every point inside the horizontal scroller", async () => {
     const rows = Array.from({ length: 366 }, (_, index) => ({ label: `2026-01-${index + 1}`, value: index + 1 }));
     await renderSizedChart({ ...weeklyPayableWidget, type: "line" }, { query: weeklyPayableWidget.query!, rows });
     const summary = document.getElementById("form-stat-chart-weekly-payable-summary")!;
 
-    expect((summary.nextElementSibling as HTMLElement).style.minWidth).toBe("3600px");
+    expect((summary.nextElementSibling as HTMLElement).style.minWidth).toBe("20496px");
   });
 
   it("renders the exact active tooltip label, measure, aggregation, and formatted value", () => {

@@ -188,7 +188,7 @@ export function FormsStatsChart({ widget, stat, instanceId = widget.id }: Readon
   const chartWidth = widget.type === "bar"
     ? Math.max(520, rows.length * 20 + chartAxisWidth(widget, stat) + 10)
     : widget.type === "line"
-      ? Math.min(3600, Math.max(520, rows.length * 56))
+      ? Math.max(520, rows.length * 56)
       : 520;
   const scrollerRef = useRef<HTMLDivElement>(null);
 
