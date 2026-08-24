@@ -126,9 +126,9 @@ const nullableTimestamp = {
 };
 
 describe("internal notification schema", () => {
-  it("keeps migration 0037 additive over the exact 0036 snapshot lineage", () => {
-    const previous = readSnapshot("0036");
-    const current = readSnapshot("0037");
+  it("keeps migration 0056 additive over the exact 0055 snapshot lineage", () => {
+    const previous = readSnapshot("0055");
+    const current = readSnapshot("0056");
     const addedTables = Object.keys(current.tables)
       .filter((name) => !(name in previous.tables))
       .sort();
@@ -146,7 +146,7 @@ describe("internal notification schema", () => {
     for (const [name, table] of Object.entries(previous.tables)) {
       expect(
         current.tables[name],
-        `${name} changed across additive migration 0037`,
+        `${name} changed across additive migration 0056`,
       ).toEqual(table);
     }
     expect(current.tables["public.production_jobs"]).toEqual(
