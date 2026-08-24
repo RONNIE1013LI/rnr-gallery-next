@@ -1,6 +1,6 @@
 {
-  "id": "87056028-8d1e-4fd7-8f96-e3226df84beb",
-  "prevId": "3d1e8148-93c6-45b7-86e0-486ee7f05e77",
+  "id": "0d5f9997-3fb5-47dd-af58-e543367706f6",
+  "prevId": "b8dc73b4-964d-4e7d-8ad1-a8fcb049d7d5",
   "version": "7",
   "dialect": "postgresql",
   "tables": {
@@ -1861,6 +1861,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "website_decision": {
+          "name": "website_decision",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "website_response_template_version": {
+          "name": "website_response_template_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "rejected_output_hash": {
           "name": "rejected_output_hash",
           "type": "text",
@@ -2012,7 +2024,16 @@
         }
       },
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "customer_service_ai_attempts_id_message_unique": {
+          "name": "customer_service_ai_attempts_id_message_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "message_id"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "customer_service_ai_attempts_number_valid": {
@@ -2364,6 +2385,735 @@
       },
       "isRLSEnabled": false
     },
+    "public.customer_service_case_memories": {
+      "name": "customer_service_case_memories",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "human_reply_match_id": {
+          "name": "human_reply_match_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "intent": {
+          "name": "intent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "normalized_situation": {
+          "name": "normalized_situation",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "customer_turn_summary": {
+          "name": "customer_turn_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context_summary": {
+          "name": "context_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ai_draft": {
+          "name": "ai_draft",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "human_final_reply": {
+          "name": "human_final_reply",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "edit_classification": {
+          "name": "edit_classification",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "edit_reason_codes": {
+          "name": "edit_reason_codes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "product_category": {
+          "name": "product_category",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "market": {
+          "name": "market",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'unknown'"
+        },
+        "deadline_context": {
+          "name": "deadline_context",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "policy_references": {
+          "name": "policy_references",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "knowledge_version": {
+          "name": "knowledge_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "risk_class": {
+          "name": "risk_class",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "eligibility_status": {
+          "name": "eligibility_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending_review'"
+        },
+        "source_confidence": {
+          "name": "source_confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "exclusion_codes": {
+          "name": "exclusion_codes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "approved_by_user_id": {
+          "name": "approved_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_case_memories_match_unique": {
+          "name": "customer_service_case_memories_match_unique",
+          "columns": [
+            {
+              "expression": "human_reply_match_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_case_memories_retrieval_idx": {
+          "name": "customer_service_case_memories_retrieval_idx",
+          "columns": [
+            {
+              "expression": "eligibility_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "intent",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "product_category",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "market",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_case_memories_human_reply_match_id_customer_service_human_reply_matches_id_fk": {
+          "name": "customer_service_case_memories_human_reply_match_id_customer_service_human_reply_matches_id_fk",
+          "tableFrom": "customer_service_case_memories",
+          "tableTo": "customer_service_human_reply_matches",
+          "columnsFrom": [
+            "human_reply_match_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_case_memories_approved_by_user_id_user_id_fk": {
+          "name": "customer_service_case_memories_approved_by_user_id_user_id_fk",
+          "tableFrom": "customer_service_case_memories",
+          "tableTo": "user",
+          "columnsFrom": [
+            "approved_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_case_memories_status_valid": {
+          "name": "customer_service_case_memories_status_valid",
+          "value": "\"customer_service_case_memories\".\"eligibility_status\" in ('pending_review', 'approved_reusable', 'excluded', 'revoked')"
+        },
+        "customer_service_case_memories_market_valid": {
+          "name": "customer_service_case_memories_market_valid",
+          "value": "\"customer_service_case_memories\".\"market\" in ('NZ', 'AU', 'other', 'unknown')"
+        },
+        "customer_service_case_memories_risk_valid": {
+          "name": "customer_service_case_memories_risk_valid",
+          "value": "\"customer_service_case_memories\".\"risk_class\" in ('low', 'medium')"
+        },
+        "customer_service_case_memories_confidence_valid": {
+          "name": "customer_service_case_memories_confidence_valid",
+          "value": "\"customer_service_case_memories\".\"source_confidence\" in ('medium', 'high')"
+        },
+        "customer_service_case_memories_content_valid": {
+          "name": "customer_service_case_memories_content_valid",
+          "value": "length(trim(\"customer_service_case_memories\".\"intent\")) > 0 and length(trim(\"customer_service_case_memories\".\"normalized_situation\")) > 0 and length(trim(\"customer_service_case_memories\".\"customer_turn_summary\")) > 0 and length(trim(\"customer_service_case_memories\".\"context_summary\")) > 0 and length(trim(\"customer_service_case_memories\".\"human_final_reply\")) > 0"
+        },
+        "customer_service_case_memories_decision_valid": {
+          "name": "customer_service_case_memories_decision_valid",
+          "value": "(\"customer_service_case_memories\".\"eligibility_status\" = 'pending_review' and \"customer_service_case_memories\".\"approved_by_user_id\" is null and \"customer_service_case_memories\".\"decided_at\" is null) or (\"customer_service_case_memories\".\"eligibility_status\" <> 'pending_review' and \"customer_service_case_memories\".\"decided_at\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_case_retrievals": {
+      "name": "customer_service_case_retrievals",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "attempt_id": {
+          "name": "attempt_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "case_memory_id": {
+          "name": "case_memory_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "rank": {
+          "name": "rank",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "total_score": {
+          "name": "total_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "score_components": {
+          "name": "score_components",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'::jsonb"
+        },
+        "threshold_passed": {
+          "name": "threshold_passed",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "injected": {
+          "name": "injected",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "exclusion_reason": {
+          "name": "exclusion_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "latency_ms": {
+          "name": "latency_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_case_retrievals_attempt_case_unique": {
+          "name": "customer_service_case_retrievals_attempt_case_unique",
+          "columns": [
+            {
+              "expression": "attempt_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "case_memory_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_case_retrievals_attempt_rank_idx": {
+          "name": "customer_service_case_retrievals_attempt_rank_idx",
+          "columns": [
+            {
+              "expression": "attempt_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "rank",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_case_retrievals_attempt_id_customer_service_ai_attempts_id_fk": {
+          "name": "customer_service_case_retrievals_attempt_id_customer_service_ai_attempts_id_fk",
+          "tableFrom": "customer_service_case_retrievals",
+          "tableTo": "customer_service_ai_attempts",
+          "columnsFrom": [
+            "attempt_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_case_retrievals_case_memory_id_customer_service_case_memories_id_fk": {
+          "name": "customer_service_case_retrievals_case_memory_id_customer_service_case_memories_id_fk",
+          "tableFrom": "customer_service_case_retrievals",
+          "tableTo": "customer_service_case_memories",
+          "columnsFrom": [
+            "case_memory_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_case_retrievals_score_valid": {
+          "name": "customer_service_case_retrievals_score_valid",
+          "value": "\"customer_service_case_retrievals\".\"total_score\" between 0 and 100 and \"customer_service_case_retrievals\".\"latency_ms\" >= 0 and (\"customer_service_case_retrievals\".\"rank\" is null or \"customer_service_case_retrievals\".\"rank\" > 0)"
+        },
+        "customer_service_case_retrievals_injection_valid": {
+          "name": "customer_service_case_retrievals_injection_valid",
+          "value": "\"customer_service_case_retrievals\".\"injected\" = false or (\"customer_service_case_retrievals\".\"threshold_passed\" = true and \"customer_service_case_retrievals\".\"rank\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_conversation_events": {
+      "name": "customer_service_conversation_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "legacy_message_id": {
+          "name": "legacy_message_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "external_message_key_hash": {
+          "name": "external_message_key_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "role": {
+          "name": "role",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'customer_message'"
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body_hash": {
+          "name": "body_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "redaction_codes": {
+          "name": "redaction_codes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "reply_to_external_message_key_hash": {
+          "name": "reply_to_external_message_key_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "learning_eligible": {
+          "name": "learning_eligible",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
+        },
+        "received_at": {
+          "name": "received_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_conversation_events_channel_external_unique": {
+          "name": "customer_service_conversation_events_channel_external_unique",
+          "columns": [
+            {
+              "expression": "channel",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "external_message_key_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_conversation_events_conversation_received_idx": {
+          "name": "customer_service_conversation_events_conversation_received_idx",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "received_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_conversation_events_conversation_created_idx": {
+          "name": "customer_service_conversation_events_conversation_created_idx",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_website_public_events_keyset_idx": {
+          "name": "customer_service_website_public_events_keyset_idx",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"customer_service_conversation_events\".\"channel\" = 'website' and (\"customer_service_conversation_events\".\"event_type\" = 'customer_message' or (\"customer_service_conversation_events\".\"event_type\" = 'human_outbound' and \"customer_service_conversation_events\".\"role\" = 'staff'))",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_conversation_events_turn_idx": {
+          "name": "customer_service_conversation_events_turn_idx",
+          "columns": [
+            {
+              "expression": "turn_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_conversation_events_conversation_id_customer_service_conversations_id_fk": {
+          "name": "customer_service_conversation_events_conversation_id_customer_service_conversations_id_fk",
+          "tableFrom": "customer_service_conversation_events",
+          "tableTo": "customer_service_conversations",
+          "columnsFrom": [
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_conversation_events_turn_id_customer_service_turns_id_fk": {
+          "name": "customer_service_conversation_events_turn_id_customer_service_turns_id_fk",
+          "tableFrom": "customer_service_conversation_events",
+          "tableTo": "customer_service_turns",
+          "columnsFrom": [
+            "turn_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_conversation_events_legacy_message_id_customer_service_messages_id_fk": {
+          "name": "customer_service_conversation_events_legacy_message_id_customer_service_messages_id_fk",
+          "tableFrom": "customer_service_conversation_events",
+          "tableTo": "customer_service_messages",
+          "columnsFrom": [
+            "legacy_message_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "customer_service_conversation_events_id_conversation_unique": {
+          "name": "customer_service_conversation_events_id_conversation_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "conversation_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_conversation_events_channel_valid": {
+          "name": "customer_service_conversation_events_channel_valid",
+          "value": "\"customer_service_conversation_events\".\"channel\" in ('facebook', 'website')"
+        },
+        "customer_service_conversation_events_role_valid": {
+          "name": "customer_service_conversation_events_role_valid",
+          "value": "\"customer_service_conversation_events\".\"role\" in ('customer', 'staff')"
+        },
+        "customer_service_conversation_events_type_valid": {
+          "name": "customer_service_conversation_events_type_valid",
+          "value": "\"customer_service_conversation_events\".\"event_type\" in ('customer_message', 'human_outbound', 'system_event')"
+        },
+        "customer_service_conversation_events_role_type_valid": {
+          "name": "customer_service_conversation_events_role_type_valid",
+          "value": "(\"customer_service_conversation_events\".\"role\" = 'customer' and \"customer_service_conversation_events\".\"event_type\" = 'customer_message') or (\"customer_service_conversation_events\".\"role\" = 'staff' and \"customer_service_conversation_events\".\"event_type\" in ('human_outbound', 'system_event'))"
+        },
+        "customer_service_conversation_events_body_valid": {
+          "name": "customer_service_conversation_events_body_valid",
+          "value": "length(trim(\"customer_service_conversation_events\".\"body\")) > 0"
+        },
+        "customer_service_conversation_events_external_hash_valid": {
+          "name": "customer_service_conversation_events_external_hash_valid",
+          "value": "length(trim(\"customer_service_conversation_events\".\"external_message_key_hash\")) > 0"
+        },
+        "customer_service_conversation_events_customer_message_valid": {
+          "name": "customer_service_conversation_events_customer_message_valid",
+          "value": "(\"customer_service_conversation_events\".\"role\" = 'customer' and \"customer_service_conversation_events\".\"legacy_message_id\" is not null) or (\"customer_service_conversation_events\".\"role\" = 'staff' and \"customer_service_conversation_events\".\"legacy_message_id\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.customer_service_conversations": {
       "name": "customer_service_conversations",
       "schema": "",
@@ -2386,6 +3136,12 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "anonymized_at": {
+          "name": "anonymized_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         },
         "created_at": {
           "name": "created_at",
@@ -2423,11 +3179,47 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "customer_service_conversations_retention_idx": {
+          "name": "customer_service_conversations_retention_idx",
+          "columns": [
+            {
+              "expression": "channel",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "anonymized_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
+      "uniqueConstraints": {
+        "customer_service_conversations_id_channel_unique": {
+          "name": "customer_service_conversations_id_channel_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "channel"
+          ]
+        }
+      },
       "policies": {},
       "checkConstraints": {
         "customer_service_conversations_channel_valid": {
@@ -2595,6 +3387,701 @@
         "customer_service_feedback_events_content_valid": {
           "name": "customer_service_feedback_events_content_valid",
           "value": "(\"customer_service_feedback_events\".\"action\" = 'rejected' and \"customer_service_feedback_events\".\"human_final_text\" is null and \"customer_service_feedback_events\".\"reason_code\" is not null) or (\"customer_service_feedback_events\".\"action\" <> 'rejected' and length(trim(\"customer_service_feedback_events\".\"human_final_text\")) > 0)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_human_reply_match_events": {
+      "name": "customer_service_human_reply_match_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "match_id": {
+          "name": "match_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_id": {
+          "name": "event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ordinal": {
+          "name": "ordinal",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_human_reply_match_events_event_unique": {
+          "name": "customer_service_human_reply_match_events_event_unique",
+          "columns": [
+            {
+              "expression": "event_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_human_reply_match_events_match_ordinal_unique": {
+          "name": "customer_service_human_reply_match_events_match_ordinal_unique",
+          "columns": [
+            {
+              "expression": "match_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "ordinal",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_human_reply_match_events_match_conversation_fk": {
+          "name": "customer_service_human_reply_match_events_match_conversation_fk",
+          "tableFrom": "customer_service_human_reply_match_events",
+          "tableTo": "customer_service_human_reply_matches",
+          "columnsFrom": [
+            "match_id",
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id",
+            "conversation_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_human_reply_match_events_event_conversation_fk": {
+          "name": "customer_service_human_reply_match_events_event_conversation_fk",
+          "tableFrom": "customer_service_human_reply_match_events",
+          "tableTo": "customer_service_conversation_events",
+          "columnsFrom": [
+            "event_id",
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id",
+            "conversation_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_human_reply_match_events_ordinal_valid": {
+          "name": "customer_service_human_reply_match_events_ordinal_valid",
+          "value": "\"customer_service_human_reply_match_events\".\"ordinal\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_human_reply_matches": {
+      "name": "customer_service_human_reply_matches",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "first_outbound_at": {
+          "name": "first_outbound_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_outbound_at": {
+          "name": "last_outbound_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "ai_attempt_id": {
+          "name": "ai_attempt_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "human_final_text": {
+          "name": "human_final_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "context_summary": {
+          "name": "context_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "match_method": {
+          "name": "match_method",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'none'"
+        },
+        "confidence": {
+          "name": "confidence",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'low'"
+        },
+        "match_score": {
+          "name": "match_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "edit_classification": {
+          "name": "edit_classification",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "similarity_score": {
+          "name": "similarity_score",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "edit_reason_codes": {
+          "name": "edit_reason_codes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "intent": {
+          "name": "intent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "risk_class": {
+          "name": "risk_class",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "policy_references": {
+          "name": "policy_references",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "exclusion_codes": {
+          "name": "exclusion_codes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_human_reply_matches_conversation_outbound_idx": {
+          "name": "customer_service_human_reply_matches_conversation_outbound_idx",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "first_outbound_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_human_reply_matches_status_created_idx": {
+          "name": "customer_service_human_reply_matches_status_created_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_human_reply_matches_conversation_id_customer_service_conversations_id_fk": {
+          "name": "customer_service_human_reply_matches_conversation_id_customer_service_conversations_id_fk",
+          "tableFrom": "customer_service_human_reply_matches",
+          "tableTo": "customer_service_conversations",
+          "columnsFrom": [
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_human_reply_matches_turn_id_customer_service_turns_id_fk": {
+          "name": "customer_service_human_reply_matches_turn_id_customer_service_turns_id_fk",
+          "tableFrom": "customer_service_human_reply_matches",
+          "tableTo": "customer_service_turns",
+          "columnsFrom": [
+            "turn_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_human_reply_matches_ai_attempt_id_customer_service_ai_attempts_id_fk": {
+          "name": "customer_service_human_reply_matches_ai_attempt_id_customer_service_ai_attempts_id_fk",
+          "tableFrom": "customer_service_human_reply_matches",
+          "tableTo": "customer_service_ai_attempts",
+          "columnsFrom": [
+            "ai_attempt_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "customer_service_human_reply_matches_id_conversation_unique": {
+          "name": "customer_service_human_reply_matches_id_conversation_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "conversation_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_human_reply_matches_status_valid": {
+          "name": "customer_service_human_reply_matches_status_valid",
+          "value": "\"customer_service_human_reply_matches\".\"status\" in ('pending', 'matched', 'unmatched', 'excluded')"
+        },
+        "customer_service_human_reply_matches_confidence_valid": {
+          "name": "customer_service_human_reply_matches_confidence_valid",
+          "value": "\"customer_service_human_reply_matches\".\"confidence\" in ('low', 'medium', 'high')"
+        },
+        "customer_service_human_reply_matches_method_valid": {
+          "name": "customer_service_human_reply_matches_method_valid",
+          "value": "\"customer_service_human_reply_matches\".\"match_method\" in ('none', 'reply_to', 'single_eligible_turn')"
+        },
+        "customer_service_human_reply_matches_score_valid": {
+          "name": "customer_service_human_reply_matches_score_valid",
+          "value": "\"customer_service_human_reply_matches\".\"match_score\" between 0 and 100 and (\"customer_service_human_reply_matches\".\"similarity_score\" is null or \"customer_service_human_reply_matches\".\"similarity_score\" between 0 and 10000)"
+        },
+        "customer_service_human_reply_matches_time_valid": {
+          "name": "customer_service_human_reply_matches_time_valid",
+          "value": "\"customer_service_human_reply_matches\".\"last_outbound_at\" >= \"customer_service_human_reply_matches\".\"first_outbound_at\""
+        },
+        "customer_service_human_reply_matches_content_valid": {
+          "name": "customer_service_human_reply_matches_content_valid",
+          "value": "length(trim(\"customer_service_human_reply_matches\".\"human_final_text\")) > 0 and length(trim(\"customer_service_human_reply_matches\".\"context_summary\")) > 0"
+        },
+        "customer_service_human_reply_matches_pair_valid": {
+          "name": "customer_service_human_reply_matches_pair_valid",
+          "value": "(\"customer_service_human_reply_matches\".\"status\" = 'matched' and \"customer_service_human_reply_matches\".\"turn_id\" is not null) or (\"customer_service_human_reply_matches\".\"status\" = 'unmatched' and \"customer_service_human_reply_matches\".\"turn_id\" is null and \"customer_service_human_reply_matches\".\"ai_attempt_id\" is null) or (\"customer_service_human_reply_matches\".\"status\" in ('pending', 'excluded'))"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_human_reviews": {
+      "name": "customer_service_human_reviews",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'website'"
+        },
+        "trigger_turn_id": {
+          "name": "trigger_turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "redacted_summary": {
+          "name": "redacted_summary",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "deep_link_token_hash": {
+          "name": "deep_link_token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "deep_link_expires_at": {
+          "name": "deep_link_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "opened_at": {
+          "name": "opened_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "resolved_at": {
+          "name": "resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolved_by_user_id": {
+          "name": "resolved_by_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "resolution_event_id": {
+          "name": "resolution_event_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_human_reviews_conversation_generation_unique": {
+          "name": "customer_service_human_reviews_conversation_generation_unique",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "generation",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_human_reviews_open_conversation_unique": {
+          "name": "customer_service_human_reviews_open_conversation_unique",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"customer_service_human_reviews\".\"status\" = 'open'",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_human_reviews_deep_link_unique": {
+          "name": "customer_service_human_reviews_deep_link_unique",
+          "columns": [
+            {
+              "expression": "deep_link_token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"customer_service_human_reviews\".\"deep_link_token_hash\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_human_reviews_status_opened_idx": {
+          "name": "customer_service_human_reviews_status_opened_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "opened_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_human_reviews_deep_link_expiry_idx": {
+          "name": "customer_service_human_reviews_deep_link_expiry_idx",
+          "columns": [
+            {
+              "expression": "deep_link_expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "where": "\"customer_service_human_reviews\".\"deep_link_expires_at\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_human_reviews_resolved_by_user_id_user_id_fk": {
+          "name": "customer_service_human_reviews_resolved_by_user_id_user_id_fk",
+          "tableFrom": "customer_service_human_reviews",
+          "tableTo": "user",
+          "columnsFrom": [
+            "resolved_by_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
+        "customer_service_human_reviews_conversation_fk": {
+          "name": "customer_service_human_reviews_conversation_fk",
+          "tableFrom": "customer_service_human_reviews",
+          "tableTo": "customer_service_conversations",
+          "columnsFrom": [
+            "conversation_id",
+            "channel"
+          ],
+          "columnsTo": [
+            "id",
+            "channel"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_human_reviews_turn_fk": {
+          "name": "customer_service_human_reviews_turn_fk",
+          "tableFrom": "customer_service_human_reviews",
+          "tableTo": "customer_service_turns",
+          "columnsFrom": [
+            "trigger_turn_id",
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id",
+            "conversation_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_human_reviews_resolution_event_fk": {
+          "name": "customer_service_human_reviews_resolution_event_fk",
+          "tableFrom": "customer_service_human_reviews",
+          "tableTo": "customer_service_conversation_events",
+          "columnsFrom": [
+            "resolution_event_id",
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id",
+            "conversation_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_human_reviews_generation_valid": {
+          "name": "customer_service_human_reviews_generation_valid",
+          "value": "\"customer_service_human_reviews\".\"generation\" > 0"
+        },
+        "customer_service_human_reviews_channel_valid": {
+          "name": "customer_service_human_reviews_channel_valid",
+          "value": "\"customer_service_human_reviews\".\"channel\" = 'website'"
+        },
+        "customer_service_human_reviews_reason_valid": {
+          "name": "customer_service_human_reviews_reason_valid",
+          "value": "\"customer_service_human_reviews\".\"reason\" in ('high_risk', 'unresolved', 'realtime_required', 'provider_error', 'output_blocked', 'budget_blocked', 'system_failure')"
+        },
+        "customer_service_human_reviews_status_valid": {
+          "name": "customer_service_human_reviews_status_valid",
+          "value": "\"customer_service_human_reviews\".\"status\" in ('open', 'resolved')"
+        },
+        "customer_service_human_reviews_summary_valid": {
+          "name": "customer_service_human_reviews_summary_valid",
+          "value": "length(trim(\"customer_service_human_reviews\".\"redacted_summary\")) > 0 and char_length(\"customer_service_human_reviews\".\"redacted_summary\") <= 160"
+        },
+        "customer_service_human_reviews_deep_link_valid": {
+          "name": "customer_service_human_reviews_deep_link_valid",
+          "value": "(\"customer_service_human_reviews\".\"deep_link_token_hash\" is null and \"customer_service_human_reviews\".\"deep_link_expires_at\" is null) or (\"customer_service_human_reviews\".\"deep_link_token_hash\" ~ '^[0-9a-f]{64}$' and \"customer_service_human_reviews\".\"deep_link_expires_at\" is not null)"
+        },
+        "customer_service_human_reviews_resolution_valid": {
+          "name": "customer_service_human_reviews_resolution_valid",
+          "value": "(\"customer_service_human_reviews\".\"status\" = 'open' and \"customer_service_human_reviews\".\"resolved_at\" is null and \"customer_service_human_reviews\".\"resolved_by_user_id\" is null and \"customer_service_human_reviews\".\"resolution_event_id\" is null) or (\"customer_service_human_reviews\".\"status\" = 'resolved' and \"customer_service_human_reviews\".\"resolved_at\" is not null and \"customer_service_human_reviews\".\"resolution_event_id\" is not null)"
         }
       },
       "isRLSEnabled": false
@@ -3359,6 +4846,193 @@
       },
       "isRLSEnabled": false
     },
+    "public.customer_service_learning_candidates": {
+      "name": "customer_service_learning_candidates",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "candidate_kind": {
+          "name": "candidate_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "intent": {
+          "name": "intent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "proposed_change": {
+          "name": "proposed_change",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "evidence_count": {
+          "name": "evidence_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "distinct_case_count": {
+          "name": "distinct_case_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason_codes": {
+          "name": "reason_codes",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "source_case_memory_ids": {
+          "name": "source_case_memory_ids",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "evidence_signature": {
+          "name": "evidence_signature",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "approved_text": {
+          "name": "approved_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "reviewer_user_id": {
+          "name": "reviewer_user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decision_reason": {
+          "name": "decision_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "decided_at": {
+          "name": "decided_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_learning_candidates_evidence_unique": {
+          "name": "customer_service_learning_candidates_evidence_unique",
+          "columns": [
+            {
+              "expression": "evidence_signature",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_learning_candidates_status_created_idx": {
+          "name": "customer_service_learning_candidates_status_created_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_learning_candidates_reviewer_user_id_user_id_fk": {
+          "name": "customer_service_learning_candidates_reviewer_user_id_user_id_fk",
+          "tableFrom": "customer_service_learning_candidates",
+          "tableTo": "user",
+          "columnsFrom": [
+            "reviewer_user_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_learning_candidates_kind_valid": {
+          "name": "customer_service_learning_candidates_kind_valid",
+          "value": "\"customer_service_learning_candidates\".\"candidate_kind\" in ('golden_example', 'answer_quality_rule', 'knowledge_change')"
+        },
+        "customer_service_learning_candidates_status_valid": {
+          "name": "customer_service_learning_candidates_status_valid",
+          "value": "\"customer_service_learning_candidates\".\"status\" in ('pending', 'approved', 'rejected', 'superseded')"
+        },
+        "customer_service_learning_candidates_evidence_valid": {
+          "name": "customer_service_learning_candidates_evidence_valid",
+          "value": "\"customer_service_learning_candidates\".\"evidence_count\" >= 3 and \"customer_service_learning_candidates\".\"distinct_case_count\" >= 3 and \"customer_service_learning_candidates\".\"distinct_case_count\" <= \"customer_service_learning_candidates\".\"evidence_count\""
+        },
+        "customer_service_learning_candidates_content_valid": {
+          "name": "customer_service_learning_candidates_content_valid",
+          "value": "length(trim(\"customer_service_learning_candidates\".\"intent\")) > 0 and length(trim(\"customer_service_learning_candidates\".\"proposed_change\")) > 0 and length(trim(\"customer_service_learning_candidates\".\"evidence_signature\")) > 0"
+        },
+        "customer_service_learning_candidates_decision_valid": {
+          "name": "customer_service_learning_candidates_decision_valid",
+          "value": "(\"customer_service_learning_candidates\".\"status\" = 'pending' and \"customer_service_learning_candidates\".\"reviewer_user_id\" is null and \"customer_service_learning_candidates\".\"decided_at\" is null) or (\"customer_service_learning_candidates\".\"status\" <> 'pending' and \"customer_service_learning_candidates\".\"reviewer_user_id\" is not null and \"customer_service_learning_candidates\".\"decided_at\" is not null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
     "public.customer_service_messages": {
       "name": "customer_service_messages",
       "schema": "",
@@ -3404,6 +5078,12 @@
         "customer_text": {
           "name": "customer_text",
           "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "product_context": {
+          "name": "product_context",
+          "type": "jsonb",
           "primaryKey": false,
           "notNull": false
         },
@@ -3585,6 +5265,10 @@
           "name": "customer_service_messages_external_hash_valid",
           "value": "length(trim(\"customer_service_messages\".\"external_message_key_hash\")) > 0"
         },
+        "customer_service_messages_product_context_valid": {
+          "name": "customer_service_messages_product_context_valid",
+          "value": "\"customer_service_messages\".\"product_context\" is null or (\n        \"customer_service_messages\".\"channel\" = 'website'\n        and jsonb_typeof(\"customer_service_messages\".\"product_context\") = 'object'\n        and \"customer_service_messages\".\"product_context\" ?& array['market', 'productKey', 'productTitle', 'category', 'pageKind']\n        and (\"customer_service_messages\".\"product_context\" - 'market' - 'productKey' - 'productTitle' - 'category' - 'pageKind') = '{}'::jsonb\n        and jsonb_typeof(\"customer_service_messages\".\"product_context\"->'productKey') = 'string'\n        and jsonb_typeof(\"customer_service_messages\".\"product_context\"->'productTitle') = 'string'\n        and \"customer_service_messages\".\"product_context\"->>'market' in ('NZ', 'AU')\n        and length(trim(\"customer_service_messages\".\"product_context\"->>'productKey')) between 1 and 100\n        and length(trim(\"customer_service_messages\".\"product_context\"->>'productTitle')) between 1 and 160\n        and \"customer_service_messages\".\"product_context\"->>'category' in ('canvas', 'banners')\n        and \"customer_service_messages\".\"product_context\"->>'pageKind' in ('product', 'configure')\n      )"
+        },
         "customer_service_messages_ingest_status_valid": {
           "name": "customer_service_messages_ingest_status_valid",
           "value": "\"customer_service_messages\".\"ingest_status\" in ('received', 'processing', 'draft_ready', 'blocked', 'provider_error', 'output_blocked')"
@@ -3719,6 +5403,1643 @@
         "customer_service_pilot_runs_completion_valid": {
           "name": "customer_service_pilot_runs_completion_valid",
           "value": "(\"customer_service_pilot_runs\".\"status\" = 'completed' and \"customer_service_pilot_runs\".\"completed_at\" is not null) or (\"customer_service_pilot_runs\".\"status\" <> 'completed' and \"customer_service_pilot_runs\".\"completed_at\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_rate_limit_buckets": {
+      "name": "customer_service_rate_limit_buckets",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "bucket_kind": {
+          "name": "bucket_kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "bucket_key_hash": {
+          "name": "bucket_key_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "window_started_at": {
+          "name": "window_started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "request_count": {
+          "name": "request_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_rate_limit_buckets_window_unique": {
+          "name": "customer_service_rate_limit_buckets_window_unique",
+          "columns": [
+            {
+              "expression": "bucket_kind",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "bucket_key_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "window_started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_rate_limit_buckets_expiry_idx": {
+          "name": "customer_service_rate_limit_buckets_expiry_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_rate_limit_buckets_kind_valid": {
+          "name": "customer_service_rate_limit_buckets_kind_valid",
+          "value": "\"customer_service_rate_limit_buckets\".\"bucket_kind\" in ('session_minute', 'session_hour', 'session_total', 'network_minute', 'network_hour')"
+        },
+        "customer_service_rate_limit_buckets_hash_valid": {
+          "name": "customer_service_rate_limit_buckets_hash_valid",
+          "value": "\"customer_service_rate_limit_buckets\".\"bucket_key_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "customer_service_rate_limit_buckets_count_valid": {
+          "name": "customer_service_rate_limit_buckets_count_valid",
+          "value": "\"customer_service_rate_limit_buckets\".\"request_count\" >= 0"
+        },
+        "customer_service_rate_limit_buckets_expiry_valid": {
+          "name": "customer_service_rate_limit_buckets_expiry_valid",
+          "value": "\"customer_service_rate_limit_buckets\".\"expires_at\" > \"customer_service_rate_limit_buckets\".\"window_started_at\""
+        },
+        "customer_service_rate_limit_buckets_window_bounded": {
+          "name": "customer_service_rate_limit_buckets_window_bounded",
+          "value": "\"customer_service_rate_limit_buckets\".\"expires_at\" <= \"customer_service_rate_limit_buckets\".\"window_started_at\" + interval '24 hours'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_retention_holds": {
+      "name": "customer_service_retention_holds",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reason": {
+          "name": "reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "reference_hash": {
+          "name": "reference_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "released_at": {
+          "name": "released_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_retention_holds_reference_unique": {
+          "name": "customer_service_retention_holds_reference_unique",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reason",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "reference_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_retention_holds_active_idx": {
+          "name": "customer_service_retention_holds_active_idx",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "released_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_retention_holds_conversation_id_customer_service_conversations_id_fk": {
+          "name": "customer_service_retention_holds_conversation_id_customer_service_conversations_id_fk",
+          "tableFrom": "customer_service_retention_holds",
+          "tableTo": "customer_service_conversations",
+          "columnsFrom": [
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_retention_holds_reason_valid": {
+          "name": "customer_service_retention_holds_reason_valid",
+          "value": "\"customer_service_retention_holds\".\"reason\" in ('order', 'dispute', 'legal')"
+        },
+        "customer_service_retention_holds_reference_valid": {
+          "name": "customer_service_retention_holds_reference_valid",
+          "value": "\"customer_service_retention_holds\".\"reference_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "customer_service_retention_holds_release_valid": {
+          "name": "customer_service_retention_holds_release_valid",
+          "value": "\"customer_service_retention_holds\".\"released_at\" is null or \"customer_service_retention_holds\".\"released_at\" >= \"customer_service_retention_holds\".\"created_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_review_alert_outbox": {
+      "name": "customer_service_review_alert_outbox",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "human_review_id": {
+          "name": "human_review_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "idempotency_key": {
+          "name": "idempotency_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "attempt_count": {
+          "name": "attempt_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "deduplicated_count": {
+          "name": "deduplicated_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "next_attempt_at": {
+          "name": "next_attempt_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "lease_token": {
+          "name": "lease_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "lease_expires_at": {
+          "name": "lease_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_send_started_at": {
+          "name": "provider_send_started_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "provider_payload_digest": {
+          "name": "provider_payload_digest",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "last_error_code": {
+          "name": "last_error_code",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "sent_at": {
+          "name": "sent_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_review_alert_outbox_review_unique": {
+          "name": "customer_service_review_alert_outbox_review_unique",
+          "columns": [
+            {
+              "expression": "human_review_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_review_alert_outbox_idempotency_unique": {
+          "name": "customer_service_review_alert_outbox_idempotency_unique",
+          "columns": [
+            {
+              "expression": "idempotency_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_review_alert_outbox_due_idx": {
+          "name": "customer_service_review_alert_outbox_due_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_attempt_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "lease_expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_review_alert_outbox_human_review_id_customer_service_human_reviews_id_fk": {
+          "name": "customer_service_review_alert_outbox_human_review_id_customer_service_human_reviews_id_fk",
+          "tableFrom": "customer_service_review_alert_outbox",
+          "tableTo": "customer_service_human_reviews",
+          "columnsFrom": [
+            "human_review_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_review_alert_outbox_status_valid": {
+          "name": "customer_service_review_alert_outbox_status_valid",
+          "value": "\"customer_service_review_alert_outbox\".\"status\" in ('pending', 'leased', 'retry_wait', 'sent', 'failed')"
+        },
+        "customer_service_review_alert_outbox_attempts_valid": {
+          "name": "customer_service_review_alert_outbox_attempts_valid",
+          "value": "\"customer_service_review_alert_outbox\".\"attempt_count\" >= 0"
+        },
+        "customer_service_review_alert_outbox_deduplicated_valid": {
+          "name": "customer_service_review_alert_outbox_deduplicated_valid",
+          "value": "\"customer_service_review_alert_outbox\".\"deduplicated_count\" >= 0"
+        },
+        "customer_service_review_alert_outbox_key_valid": {
+          "name": "customer_service_review_alert_outbox_key_valid",
+          "value": "length(trim(\"customer_service_review_alert_outbox\".\"idempotency_key\")) > 0"
+        },
+        "customer_service_review_alert_outbox_payload_digest_valid": {
+          "name": "customer_service_review_alert_outbox_payload_digest_valid",
+          "value": "\"customer_service_review_alert_outbox\".\"provider_payload_digest\" is null or \"customer_service_review_alert_outbox\".\"provider_payload_digest\" ~ '^[0-9a-f]{64}$'"
+        },
+        "customer_service_review_alert_outbox_lease_valid": {
+          "name": "customer_service_review_alert_outbox_lease_valid",
+          "value": "(\"customer_service_review_alert_outbox\".\"status\" = 'leased' and \"customer_service_review_alert_outbox\".\"lease_token\" is not null and \"customer_service_review_alert_outbox\".\"lease_expires_at\" is not null) or (\"customer_service_review_alert_outbox\".\"status\" <> 'leased' and \"customer_service_review_alert_outbox\".\"lease_token\" is null and \"customer_service_review_alert_outbox\".\"lease_expires_at\" is null)"
+        },
+        "customer_service_review_alert_outbox_sent_valid": {
+          "name": "customer_service_review_alert_outbox_sent_valid",
+          "value": "(\"customer_service_review_alert_outbox\".\"status\" = 'sent' and \"customer_service_review_alert_outbox\".\"sent_at\" is not null) or (\"customer_service_review_alert_outbox\".\"status\" <> 'sent' and \"customer_service_review_alert_outbox\".\"sent_at\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_review_selectors": {
+      "name": "customer_service_review_selectors",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "human_review_id": {
+          "name": "human_review_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "generation": {
+          "name": "generation",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "selector_hash": {
+          "name": "selector_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_review_selectors_hash_unique": {
+          "name": "customer_service_review_selectors_hash_unique",
+          "columns": [
+            {
+              "expression": "selector_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_review_selectors_review_window_unique": {
+          "name": "customer_service_review_selectors_review_window_unique",
+          "columns": [
+            {
+              "expression": "human_review_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "generation",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_review_selectors_expiry_idx": {
+          "name": "customer_service_review_selectors_expiry_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_review_selectors_human_review_id_customer_service_human_reviews_id_fk": {
+          "name": "customer_service_review_selectors_human_review_id_customer_service_human_reviews_id_fk",
+          "tableFrom": "customer_service_review_selectors",
+          "tableTo": "customer_service_human_reviews",
+          "columnsFrom": [
+            "human_review_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_review_selectors_generation_valid": {
+          "name": "customer_service_review_selectors_generation_valid",
+          "value": "\"customer_service_review_selectors\".\"generation\" > 0"
+        },
+        "customer_service_review_selectors_hash_valid": {
+          "name": "customer_service_review_selectors_hash_valid",
+          "value": "\"customer_service_review_selectors\".\"selector_hash\" ~ '^[0-9a-f]{64}$'"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_turns": {
+      "name": "customer_service_turns",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "representative_message_id": {
+          "name": "representative_message_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'open'"
+        },
+        "debounce_until": {
+          "name": "debounce_until",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "opened_at": {
+          "name": "opened_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_event_at": {
+          "name": "last_event_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sealed_at": {
+          "name": "sealed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "suppression_reason": {
+          "name": "suppression_reason",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "fragment_count": {
+          "name": "fragment_count",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 1
+        },
+        "pilot_run_id": {
+          "name": "pilot_run_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "pilot_sequence": {
+          "name": "pilot_sequence",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "processing_status": {
+          "name": "processing_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'pending'"
+        },
+        "processing_lease_token": {
+          "name": "processing_lease_token",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "processing_lease_expires_at": {
+          "name": "processing_lease_expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "processing_attempts": {
+          "name": "processing_attempts",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "next_run_at": {
+          "name": "next_run_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "last_processing_error": {
+          "name": "last_processing_error",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "processing_completed_at": {
+          "name": "processing_completed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_turns_pilot_sequence_unique": {
+          "name": "customer_service_turns_pilot_sequence_unique",
+          "columns": [
+            {
+              "expression": "pilot_run_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "pilot_sequence",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"customer_service_turns\".\"pilot_run_id\" is not null and \"customer_service_turns\".\"pilot_sequence\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_turns_conversation_last_event_idx": {
+          "name": "customer_service_turns_conversation_last_event_idx",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "last_event_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_turns_status_debounce_idx": {
+          "name": "customer_service_turns_status_debounce_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "debounce_until",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_turns_processing_due_idx": {
+          "name": "customer_service_turns_processing_due_idx",
+          "columns": [
+            {
+              "expression": "processing_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "next_run_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "processing_lease_expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_turns_conversation_id_customer_service_conversations_id_fk": {
+          "name": "customer_service_turns_conversation_id_customer_service_conversations_id_fk",
+          "tableFrom": "customer_service_turns",
+          "tableTo": "customer_service_conversations",
+          "columnsFrom": [
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_turns_representative_message_id_customer_service_messages_id_fk": {
+          "name": "customer_service_turns_representative_message_id_customer_service_messages_id_fk",
+          "tableFrom": "customer_service_turns",
+          "tableTo": "customer_service_messages",
+          "columnsFrom": [
+            "representative_message_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_turns_pilot_run_id_customer_service_pilot_runs_id_fk": {
+          "name": "customer_service_turns_pilot_run_id_customer_service_pilot_runs_id_fk",
+          "tableFrom": "customer_service_turns",
+          "tableTo": "customer_service_pilot_runs",
+          "columnsFrom": [
+            "pilot_run_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {
+        "customer_service_turns_id_conversation_unique": {
+          "name": "customer_service_turns_id_conversation_unique",
+          "nullsNotDistinct": false,
+          "columns": [
+            "id",
+            "conversation_id"
+          ]
+        }
+      },
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_turns_channel_valid": {
+          "name": "customer_service_turns_channel_valid",
+          "value": "\"customer_service_turns\".\"channel\" in ('facebook', 'website')"
+        },
+        "customer_service_turns_status_valid": {
+          "name": "customer_service_turns_status_valid",
+          "value": "\"customer_service_turns\".\"status\" in ('open', 'sealed', 'suppressed', 'pilot_complete')"
+        },
+        "customer_service_turns_body_valid": {
+          "name": "customer_service_turns_body_valid",
+          "value": "length(trim(\"customer_service_turns\".\"body\")) > 0"
+        },
+        "customer_service_turns_fragment_count_valid": {
+          "name": "customer_service_turns_fragment_count_valid",
+          "value": "\"customer_service_turns\".\"fragment_count\" > 0"
+        },
+        "customer_service_turns_processing_status_valid": {
+          "name": "customer_service_turns_processing_status_valid",
+          "value": "\"customer_service_turns\".\"processing_status\" in ('pending', 'running', 'completed', 'cancelled')"
+        },
+        "customer_service_turns_processing_attempts_valid": {
+          "name": "customer_service_turns_processing_attempts_valid",
+          "value": "\"customer_service_turns\".\"processing_attempts\" >= 0"
+        },
+        "customer_service_turns_processing_lease_valid": {
+          "name": "customer_service_turns_processing_lease_valid",
+          "value": "(\"customer_service_turns\".\"processing_status\" = 'running' and \"customer_service_turns\".\"processing_lease_token\" is not null and \"customer_service_turns\".\"processing_lease_expires_at\" is not null) or (\"customer_service_turns\".\"processing_status\" <> 'running' and \"customer_service_turns\".\"processing_lease_token\" is null and \"customer_service_turns\".\"processing_lease_expires_at\" is null)"
+        },
+        "customer_service_turns_pilot_pair_valid": {
+          "name": "customer_service_turns_pilot_pair_valid",
+          "value": "(\"customer_service_turns\".\"pilot_run_id\" is null and \"customer_service_turns\".\"pilot_sequence\" is null) or (\"customer_service_turns\".\"pilot_run_id\" is not null and \"customer_service_turns\".\"pilot_sequence\" is not null and \"customer_service_turns\".\"pilot_sequence\" > 0)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_ui_changes": {
+      "name": "customer_service_ui_changes",
+      "schema": "",
+      "columns": {
+        "scope": {
+          "name": "scope",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_key": {
+          "name": "entity_key",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "revision": {
+          "name": "revision",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "changed_at": {
+          "name": "changed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_ui_changes_scope_entity_unique": {
+          "name": "customer_service_ui_changes_scope_entity_unique",
+          "columns": [
+            {
+              "expression": "scope",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entity_key",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_ui_changes_revision_idx": {
+          "name": "customer_service_ui_changes_revision_idx",
+          "columns": [
+            {
+              "expression": "revision",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_ui_changes_scope_valid": {
+          "name": "customer_service_ui_changes_scope_valid",
+          "value": "\"customer_service_ui_changes\".\"scope\" in ('queue_message', 'queue_conversation', 'metrics', 'learning_candidates', 'case_memories')"
+        },
+        "customer_service_ui_changes_entity_valid": {
+          "name": "customer_service_ui_changes_entity_valid",
+          "value": "length(trim(\"customer_service_ui_changes\".\"entity_key\")) > 0"
+        },
+        "customer_service_ui_changes_revision_valid": {
+          "name": "customer_service_ui_changes_revision_valid",
+          "value": "\"customer_service_ui_changes\".\"revision\" > 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_ui_revision": {
+      "name": "customer_service_ui_revision",
+      "schema": "",
+      "columns": {
+        "singleton": {
+          "name": "singleton",
+          "type": "integer",
+          "primaryKey": true,
+          "notNull": true,
+          "default": 1
+        },
+        "revision": {
+          "name": "revision",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "changed_at": {
+          "name": "changed_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_ui_revision_singleton_valid": {
+          "name": "customer_service_ui_revision_singleton_valid",
+          "value": "\"customer_service_ui_revision\".\"singleton\" = 1"
+        },
+        "customer_service_ui_revision_value_valid": {
+          "name": "customer_service_ui_revision_value_valid",
+          "value": "\"customer_service_ui_revision\".\"revision\" >= 0"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_web_sessions": {
+      "name": "customer_service_web_sessions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'website'"
+        },
+        "session_token_hash": {
+          "name": "session_token_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'active'"
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_seen_at": {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_web_sessions_token_unique": {
+          "name": "customer_service_web_sessions_token_unique",
+          "columns": [
+            {
+              "expression": "session_token_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_web_sessions_conversation_unique": {
+          "name": "customer_service_web_sessions_conversation_unique",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_web_sessions_status_expiry_idx": {
+          "name": "customer_service_web_sessions_status_expiry_idx",
+          "columns": [
+            {
+              "expression": "status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_web_sessions_conversation_fk": {
+          "name": "customer_service_web_sessions_conversation_fk",
+          "tableFrom": "customer_service_web_sessions",
+          "tableTo": "customer_service_conversations",
+          "columnsFrom": [
+            "conversation_id",
+            "channel"
+          ],
+          "columnsTo": [
+            "id",
+            "channel"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_web_sessions_channel_valid": {
+          "name": "customer_service_web_sessions_channel_valid",
+          "value": "\"customer_service_web_sessions\".\"channel\" = 'website'"
+        },
+        "customer_service_web_sessions_status_valid": {
+          "name": "customer_service_web_sessions_status_valid",
+          "value": "\"customer_service_web_sessions\".\"status\" in ('active', 'expired', 'revoked')"
+        },
+        "customer_service_web_sessions_hash_valid": {
+          "name": "customer_service_web_sessions_hash_valid",
+          "value": "\"customer_service_web_sessions\".\"session_token_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "customer_service_web_sessions_expiry_valid": {
+          "name": "customer_service_web_sessions_expiry_valid",
+          "value": "\"customer_service_web_sessions\".\"expires_at\" > \"customer_service_web_sessions\".\"created_at\""
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_website_assistant_messages": {
+      "name": "customer_service_website_assistant_messages",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "conversation_id": {
+          "name": "conversation_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "channel": {
+          "name": "channel",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'website'"
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "turn_id": {
+          "name": "turn_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "ai_attempt_id": {
+          "name": "ai_attempt_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "kind": {
+          "name": "kind",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "body": {
+          "name": "body",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "policy_result": {
+          "name": "policy_result",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "gate_reasons": {
+          "name": "gate_reasons",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'[]'::jsonb"
+        },
+        "knowledge_version": {
+          "name": "knowledge_version",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "published_at": {
+          "name": "published_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_website_assistant_messages_turn_unique": {
+          "name": "customer_service_website_assistant_messages_turn_unique",
+          "columns": [
+            {
+              "expression": "turn_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_website_assistant_messages_attempt_unique": {
+          "name": "customer_service_website_assistant_messages_attempt_unique",
+          "columns": [
+            {
+              "expression": "ai_attempt_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "where": "\"customer_service_website_assistant_messages\".\"ai_attempt_id\" is not null",
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_website_assistant_messages_conversation_published_idx": {
+          "name": "customer_service_website_assistant_messages_conversation_published_idx",
+          "columns": [
+            {
+              "expression": "conversation_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "published_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "customer_service_website_messages_conversation_fk": {
+          "name": "customer_service_website_messages_conversation_fk",
+          "tableFrom": "customer_service_website_assistant_messages",
+          "tableTo": "customer_service_conversations",
+          "columnsFrom": [
+            "conversation_id",
+            "channel"
+          ],
+          "columnsTo": [
+            "id",
+            "channel"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_website_messages_message_fk": {
+          "name": "customer_service_website_messages_message_fk",
+          "tableFrom": "customer_service_website_assistant_messages",
+          "tableTo": "customer_service_messages",
+          "columnsFrom": [
+            "message_id",
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id",
+            "conversation_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_website_messages_turn_fk": {
+          "name": "customer_service_website_messages_turn_fk",
+          "tableFrom": "customer_service_website_assistant_messages",
+          "tableTo": "customer_service_turns",
+          "columnsFrom": [
+            "turn_id",
+            "conversation_id"
+          ],
+          "columnsTo": [
+            "id",
+            "conversation_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        },
+        "customer_service_website_messages_attempt_fk": {
+          "name": "customer_service_website_messages_attempt_fk",
+          "tableFrom": "customer_service_website_assistant_messages",
+          "tableTo": "customer_service_ai_attempts",
+          "columnsFrom": [
+            "ai_attempt_id",
+            "message_id"
+          ],
+          "columnsTo": [
+            "id",
+            "message_id"
+          ],
+          "onDelete": "restrict",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_website_assistant_messages_kind_valid": {
+          "name": "customer_service_website_assistant_messages_kind_valid",
+          "value": "\"customer_service_website_assistant_messages\".\"kind\" in ('validated_ai', 'policy_acknowledgement', 'provider_fallback')"
+        },
+        "customer_service_website_assistant_messages_channel_valid": {
+          "name": "customer_service_website_assistant_messages_channel_valid",
+          "value": "\"customer_service_website_assistant_messages\".\"channel\" = 'website'"
+        },
+        "customer_service_website_assistant_messages_policy_valid": {
+          "name": "customer_service_website_assistant_messages_policy_valid",
+          "value": "\"customer_service_website_assistant_messages\".\"policy_result\" in ('allowed', 'high_risk', 'unresolved', 'realtime_required', 'budget_blocked', 'provider_error', 'output_blocked', 'system_failure')"
+        },
+        "customer_service_website_assistant_messages_gate_reasons_valid": {
+          "name": "customer_service_website_assistant_messages_gate_reasons_valid",
+          "value": "jsonb_typeof(\"customer_service_website_assistant_messages\".\"gate_reasons\") = 'array'"
+        },
+        "customer_service_website_assistant_messages_content_valid": {
+          "name": "customer_service_website_assistant_messages_content_valid",
+          "value": "length(trim(\"customer_service_website_assistant_messages\".\"body\")) > 0 and length(trim(\"customer_service_website_assistant_messages\".\"knowledge_version\")) > 0"
+        },
+        "customer_service_website_assistant_messages_attempt_valid": {
+          "name": "customer_service_website_assistant_messages_attempt_valid",
+          "value": "(\"customer_service_website_assistant_messages\".\"kind\" = 'validated_ai' and \"customer_service_website_assistant_messages\".\"ai_attempt_id\" is not null) or (\"customer_service_website_assistant_messages\".\"kind\" <> 'validated_ai' and \"customer_service_website_assistant_messages\".\"ai_attempt_id\" is null)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_website_budget_state": {
+      "name": "customer_service_website_budget_state",
+      "schema": "",
+      "columns": {
+        "scope_key": {
+          "name": "scope_key",
+          "type": "text",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "spent_microusd": {
+          "name": "spent_microusd",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "reserved_microusd": {
+          "name": "reserved_microusd",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": true,
+          "default": 0
+        },
+        "warning_reached_at": {
+          "name": "warning_reached_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "warning_threshold_microusd": {
+          "name": "warning_threshold_microusd",
+          "type": "bigint",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {},
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_website_budget_state_scope_valid": {
+          "name": "customer_service_website_budget_state_scope_valid",
+          "value": "\"customer_service_website_budget_state\".\"scope_key\" = 'total:website' or \"customer_service_website_budget_state\".\"scope_key\" ~ '^daily:website:[0-9]{4}-[0-9]{2}-[0-9]{2}$'"
+        },
+        "customer_service_website_budget_state_amounts_valid": {
+          "name": "customer_service_website_budget_state_amounts_valid",
+          "value": "\"customer_service_website_budget_state\".\"spent_microusd\" >= 0 and \"customer_service_website_budget_state\".\"reserved_microusd\" >= 0"
+        },
+        "customer_service_website_budget_state_warning_valid": {
+          "name": "customer_service_website_budget_state_warning_valid",
+          "value": "(\"customer_service_website_budget_state\".\"warning_reached_at\" is null and \"customer_service_website_budget_state\".\"warning_threshold_microusd\" is null) or (\"customer_service_website_budget_state\".\"warning_reached_at\" is not null and \"customer_service_website_budget_state\".\"warning_threshold_microusd\" > 0)"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.customer_service_website_metric_events": {
+      "name": "customer_service_website_metric_events",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "event_type": {
+          "name": "event_type",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "event_key_hash": {
+          "name": "event_key_hash",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "occurred_at": {
+          "name": "occurred_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "expires_at": {
+          "name": "expires_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "customer_service_website_metric_events_key_unique": {
+          "name": "customer_service_website_metric_events_key_unique",
+          "columns": [
+            {
+              "expression": "event_type",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "event_key_hash",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "customer_service_website_metric_events_expiry_idx": {
+          "name": "customer_service_website_metric_events_expiry_idx",
+          "columns": [
+            {
+              "expression": "expires_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "customer_service_website_metric_events_type_valid": {
+          "name": "customer_service_website_metric_events_type_valid",
+          "value": "\"customer_service_website_metric_events\".\"event_type\" = 'rate_block'"
+        },
+        "customer_service_website_metric_events_hash_valid": {
+          "name": "customer_service_website_metric_events_hash_valid",
+          "value": "\"customer_service_website_metric_events\".\"event_key_hash\" ~ '^[0-9a-f]{64}$'"
+        },
+        "customer_service_website_metric_events_expiry_valid": {
+          "name": "customer_service_website_metric_events_expiry_valid",
+          "value": "\"customer_service_website_metric_events\".\"expires_at\" > \"customer_service_website_metric_events\".\"occurred_at\" and \"customer_service_website_metric_events\".\"expires_at\" <= \"customer_service_website_metric_events\".\"occurred_at\" + interval '24 hours'"
         }
       },
       "isRLSEnabled": false
@@ -4580,505 +7901,6 @@
         "gallery_designs_trashed_at_valid": {
           "name": "gallery_designs_trashed_at_valid",
           "value": "(\"gallery_designs\".\"status\" = 'active' and \"gallery_designs\".\"trashed_at\" is null) or (\"gallery_designs\".\"status\" = 'trashed' and \"gallery_designs\".\"trashed_at\" is not null)"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.internal_notification_outbox": {
-      "name": "internal_notification_outbox",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "event_key": {
-          "name": "event_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "topic": {
-          "name": "topic",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "source_event_id": {
-          "name": "source_event_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resource_type": {
-          "name": "resource_type",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resource_id": {
-          "name": "resource_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "resource_reference": {
-          "name": "resource_reference",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "recipient_id": {
-          "name": "recipient_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "recipient_email": {
-          "name": "recipient_email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending'"
-        },
-        "attempts": {
-          "name": "attempts",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "default": 0
-        },
-        "available_at": {
-          "name": "available_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "last_attempt_at": {
-          "name": "last_attempt_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "sent_at": {
-          "name": "sent_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "provider_message_id": {
-          "name": "provider_message_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "last_error_code": {
-          "name": "last_error_code",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancelled_at": {
-          "name": "cancelled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "cancellation_reason": {
-          "name": "cancellation_reason",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "internal_notification_outbox_event_key_unique": {
-          "name": "internal_notification_outbox_event_key_unique",
-          "columns": [
-            {
-              "expression": "event_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "internal_notification_outbox_recipient_id_idx": {
-          "name": "internal_notification_outbox_recipient_id_idx",
-          "columns": [
-            {
-              "expression": "recipient_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "internal_notification_outbox_status_available_idx": {
-          "name": "internal_notification_outbox_status_available_idx",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "available_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "internal_notification_outbox_recipient_id_internal_notification_recipients_id_fk": {
-          "name": "internal_notification_outbox_recipient_id_internal_notification_recipients_id_fk",
-          "tableFrom": "internal_notification_outbox",
-          "tableTo": "internal_notification_recipients",
-          "columnsFrom": [
-            "recipient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "internal_notification_outbox_topic_valid": {
-          "name": "internal_notification_outbox_topic_valid",
-          "value": "\"internal_notification_outbox\".\"topic\" in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested')"
-        },
-        "internal_notification_outbox_resource_type_valid": {
-          "name": "internal_notification_outbox_resource_type_valid",
-          "value": "\"internal_notification_outbox\".\"resource_type\" in ('production_job', 'order', 'payment_request', 'proof_review')"
-        },
-        "internal_notification_outbox_status_valid": {
-          "name": "internal_notification_outbox_status_valid",
-          "value": "\"internal_notification_outbox\".\"status\" in ('pending', 'sending', 'sent', 'failed', 'cancelled')"
-        },
-        "internal_notification_outbox_payload_object": {
-          "name": "internal_notification_outbox_payload_object",
-          "value": "jsonb_typeof(\"internal_notification_outbox\".\"payload\") = 'object'"
-        },
-        "internal_notification_outbox_attempts_nonnegative": {
-          "name": "internal_notification_outbox_attempts_nonnegative",
-          "value": "\"internal_notification_outbox\".\"attempts\" >= 0"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.internal_notification_recipients": {
-      "name": "internal_notification_recipients",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "email": {
-          "name": "email",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "status": {
-          "name": "status",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "'pending_verification'"
-        },
-        "verification_token_digest": {
-          "name": "verification_token_digest",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verification_expires_at": {
-          "name": "verification_expires_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verification_issued_at": {
-          "name": "verification_issued_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "verified_at": {
-          "name": "verified_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_by_user_id": {
-          "name": "created_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "disabled_by_user_id": {
-          "name": "disabled_by_user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "disabled_at": {
-          "name": "disabled_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "internal_notification_recipients_email_unique": {
-          "name": "internal_notification_recipients_email_unique",
-          "columns": [
-            {
-              "expression": "email",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "internal_notification_recipients_verification_token_digest_unique": {
-          "name": "internal_notification_recipients_verification_token_digest_unique",
-          "columns": [
-            {
-              "expression": "verification_token_digest",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "internal_notification_recipients_status_idx": {
-          "name": "internal_notification_recipients_status_idx",
-          "columns": [
-            {
-              "expression": "status",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "internal_notification_recipients_created_by_user_id_user_id_fk": {
-          "name": "internal_notification_recipients_created_by_user_id_user_id_fk",
-          "tableFrom": "internal_notification_recipients",
-          "tableTo": "user",
-          "columnsFrom": [
-            "created_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "restrict",
-          "onUpdate": "no action"
-        },
-        "internal_notification_recipients_disabled_by_user_id_user_id_fk": {
-          "name": "internal_notification_recipients_disabled_by_user_id_user_id_fk",
-          "tableFrom": "internal_notification_recipients",
-          "tableTo": "user",
-          "columnsFrom": [
-            "disabled_by_user_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "set null",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "internal_notification_recipients_email_normalized": {
-          "name": "internal_notification_recipients_email_normalized",
-          "value": "length(\"internal_notification_recipients\".\"email\") > 0 and \"internal_notification_recipients\".\"email\" = lower(trim(\"internal_notification_recipients\".\"email\"))"
-        },
-        "internal_notification_recipients_status_valid": {
-          "name": "internal_notification_recipients_status_valid",
-          "value": "\"internal_notification_recipients\".\"status\" in ('pending_verification', 'active', 'disabled')"
-        },
-        "internal_notification_recipients_verification_token_digest_format": {
-          "name": "internal_notification_recipients_verification_token_digest_format",
-          "value": "\"internal_notification_recipients\".\"verification_token_digest\" is null or \"internal_notification_recipients\".\"verification_token_digest\" ~ '^[0-9a-f]{64}$'"
-        },
-        "internal_notification_recipients_lifecycle_valid": {
-          "name": "internal_notification_recipients_lifecycle_valid",
-          "value": "(\n        (\"internal_notification_recipients\".\"status\" = 'pending_verification'\n          and \"internal_notification_recipients\".\"verification_token_digest\" is not null\n          and \"internal_notification_recipients\".\"verification_issued_at\" is not null\n          and \"internal_notification_recipients\".\"verification_expires_at\" is not null\n          and \"internal_notification_recipients\".\"verification_expires_at\" > \"internal_notification_recipients\".\"verification_issued_at\"\n          and \"internal_notification_recipients\".\"verified_at\" is null\n          and \"internal_notification_recipients\".\"disabled_at\" is null\n          and \"internal_notification_recipients\".\"disabled_by_user_id\" is null)\n        or (\"internal_notification_recipients\".\"status\" = 'active'\n          and \"internal_notification_recipients\".\"verification_token_digest\" is null\n          and \"internal_notification_recipients\".\"verification_issued_at\" is null\n          and \"internal_notification_recipients\".\"verification_expires_at\" is null\n          and \"internal_notification_recipients\".\"verified_at\" is not null\n          and \"internal_notification_recipients\".\"disabled_at\" is null\n          and \"internal_notification_recipients\".\"disabled_by_user_id\" is null)\n        or (\"internal_notification_recipients\".\"status\" = 'disabled'\n          and \"internal_notification_recipients\".\"verification_token_digest\" is null\n          and \"internal_notification_recipients\".\"verification_issued_at\" is null\n          and \"internal_notification_recipients\".\"verification_expires_at\" is null\n          and \"internal_notification_recipients\".\"disabled_at\" is not null)\n      )"
-        }
-      },
-      "isRLSEnabled": false
-    },
-    "public.internal_notification_subscriptions": {
-      "name": "internal_notification_subscriptions",
-      "schema": "",
-      "columns": {
-        "recipient_id": {
-          "name": "recipient_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "topic": {
-          "name": "topic",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "updated_at": {
-          "name": "updated_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        }
-      },
-      "indexes": {
-        "internal_notification_subscriptions_topic_idx": {
-          "name": "internal_notification_subscriptions_topic_idx",
-          "columns": [
-            {
-              "expression": "topic",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "recipient_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {
-        "internal_notification_subscriptions_recipient_id_internal_notification_recipients_id_fk": {
-          "name": "internal_notification_subscriptions_recipient_id_internal_notification_recipients_id_fk",
-          "tableFrom": "internal_notification_subscriptions",
-          "tableTo": "internal_notification_recipients",
-          "columnsFrom": [
-            "recipient_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "cascade",
-          "onUpdate": "no action"
-        }
-      },
-      "compositePrimaryKeys": {
-        "internal_notification_subscriptions_recipient_id_topic_pk": {
-          "name": "internal_notification_subscriptions_recipient_id_topic_pk",
-          "columns": [
-            "recipient_id",
-            "topic"
-          ]
-        }
-      },
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "internal_notification_subscriptions_topic_valid": {
-          "name": "internal_notification_subscriptions_topic_valid",
-          "value": "\"internal_notification_subscriptions\".\"topic\" in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested')"
         }
       },
       "isRLSEnabled": false
