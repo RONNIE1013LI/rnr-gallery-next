@@ -52,6 +52,7 @@ export function SiteChrome({
   const searchParams = useSearchParams();
   const [previousPathname, setPreviousPathname] = useState(pathname);
   const [selectedMarket, setSelectedMarket] = useState(initialMarket);
+  const [hasSuccessfulMarketSelection, setHasSuccessfulMarketSelection] = useState(false);
   const [marketTransition, setMarketTransition] = useState<MarketTransition | null>(null);
   if (pathname !== previousPathname) {
     setPreviousPathname(pathname);
@@ -85,6 +86,7 @@ export function SiteChrome({
       const nextMarket = marketFromChangedEvent(event);
       if (nextMarket) {
         const targetPathname = marketSwitchDestination(pathname, nextMarket);
+        setHasSuccessfulMarketSelection(true);
         setSelectedMarket(nextMarket);
         setMarketTransition({
           market: nextMarket,
@@ -99,13 +101,15 @@ export function SiteChrome({
     return () => window.removeEventListener("rnr:market-changed", handleMarketChanged);
   }, [pathname]);
   useEffect(() => {
-    if (effectiveOverride !== null || initialMarket !== "AU") return;
+    if (hasSuccessfulMarketSelection || effectiveOverride !== null || initialMarket !== "AU") {
+      return;
+    }
     const destination = australianCommerceDestination(pathname);
     if (destination && destination !== pathname) {
       const query = searchParams.toString();
       router.replace(`${destination}${query ? `?${query}` : ""}`);
     }
-  }, [effectiveOverride, initialMarket, pathname, router, searchParams]);
+  }, [effectiveOverride, hasSuccessfulMarketSelection, initialMarket, pathname, router, searchParams]);
   if (isDedicatedWorkspace) return children;
   return (
     <CommerceIdentityProvider initialCustomerId={initialCustomerId}>

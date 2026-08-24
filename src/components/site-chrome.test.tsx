@@ -48,6 +48,100 @@ describe("SiteChrome", () => {
     });
   });
 
+  it("keeps later NZ commerce navigation after a successful AU to NZ switch", async () => {
+    state.pathname = "/au";
+    state.search = "";
+    state.replace.mockClear();
+    const props = {
+      initialMarket: "AU" as const,
+      australiaEnabled: true,
+      footerContent: { tagline: "x", email: "a@b.test", phone: "+64" },
+    };
+    const { rerender } = render(
+      <SiteChrome {...props}><main>Australia</main></SiteChrome>,
+    );
+
+    fireEvent(window, new CustomEvent("rnr:market-changed", {
+      detail: { market: "NZ" },
+    }));
+    state.pathname = "/";
+    rerender(<SiteChrome {...props}><main>New Zealand</main></SiteChrome>);
+    expect(screen.getByLabelText("Header market")).toHaveTextContent("NZ");
+
+    state.pathname = "/shop";
+    rerender(<SiteChrome {...props}><main>Shop</main></SiteChrome>);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Header market")).toHaveTextContent("NZ");
+      expect(screen.getByLabelText("Footer market")).toHaveTextContent("NZ");
+      expect(state.replace).not.toHaveBeenCalled();
+    });
+  });
+
+  it("keeps NZ commerce navigation after a successful shared-design switch", async () => {
+    state.pathname = "/designs/wedding-canvas";
+    state.search = "";
+    state.replace.mockClear();
+    const props = {
+      initialMarket: "AU" as const,
+      australiaEnabled: true,
+      footerContent: { tagline: "x", email: "a@b.test", phone: "+64" },
+    };
+    const { rerender } = render(
+      <SiteChrome {...props}><main>Australian design</main></SiteChrome>,
+    );
+
+    fireEvent(window, new CustomEvent("rnr:market-changed", {
+      detail: { market: "NZ" },
+    }));
+    rerender(<SiteChrome {...props}><main>New Zealand design</main></SiteChrome>);
+    expect(screen.getByLabelText("Header market")).toHaveTextContent("NZ");
+
+    state.pathname = "/shop";
+    rerender(<SiteChrome {...props}><main>Shop</main></SiteChrome>);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Header market")).toHaveTextContent("NZ");
+      expect(screen.getByLabelText("Footer market")).toHaveTextContent("NZ");
+      expect(state.replace).not.toHaveBeenCalled();
+    });
+  });
+
+  it("does not re-enable stale alignment after switching back to the initial market", async () => {
+    state.pathname = "/au";
+    state.search = "";
+    state.replace.mockClear();
+    const props = {
+      initialMarket: "AU" as const,
+      australiaEnabled: true,
+      footerContent: { tagline: "x", email: "a@b.test", phone: "+64" },
+    };
+    const { rerender } = render(
+      <SiteChrome {...props}><main>Australia</main></SiteChrome>,
+    );
+
+    fireEvent(window, new CustomEvent("rnr:market-changed", {
+      detail: { market: "NZ" },
+    }));
+    state.pathname = "/";
+    rerender(<SiteChrome {...props}><main>New Zealand</main></SiteChrome>);
+    fireEvent(window, new CustomEvent("rnr:market-changed", {
+      detail: { market: "AU" },
+    }));
+    state.pathname = "/au";
+    rerender(<SiteChrome {...props}><main>Australia again</main></SiteChrome>);
+    expect(screen.getByLabelText("Header market")).toHaveTextContent("AU");
+
+    state.pathname = "/shop";
+    rerender(<SiteChrome {...props}><main>NZ shop route</main></SiteChrome>);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Header market")).toHaveTextContent("NZ");
+      expect(screen.getByLabelText("Footer market")).toHaveTextContent("NZ");
+      expect(state.replace).not.toHaveBeenCalled();
+    });
+  });
+
   it("updates visible chrome for an AU event without adding a replace navigation", async () => {
     state.pathname = "/";
     state.search = "";
