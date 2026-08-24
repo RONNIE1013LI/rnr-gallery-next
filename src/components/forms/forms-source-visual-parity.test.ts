@@ -17,6 +17,14 @@ describe("Forms source visual parity", () => {
     expect(css).toContain("min-height: 48px;");
   });
 
+  it("keeps wide-screen results and pagination in explicit grid rows", () => {
+    const wideScreenRules = css.slice(css.indexOf("@media (min-width: 1100px)"));
+
+    expect(wideScreenRules).toContain("grid-template-rows: minmax(0, 1fr) auto;");
+    expect(wideScreenRules).toMatch(/\.listBody\s*{\s*grid-row: 1;/);
+    expect(wideScreenRules).toMatch(/\.listFooter\s*{\s*grid-row: 2;/);
+  });
+
   it("keeps saved searches available throughout the tablet filter layout", () => {
     const savedSearchRule = css.lastIndexOf(".savedSearchWorkspace .personalViews");
     const enclosingTabletRule = css.lastIndexOf("@media (max-width: 720px)", savedSearchRule);

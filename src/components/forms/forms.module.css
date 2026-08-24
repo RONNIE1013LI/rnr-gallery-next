@@ -153,6 +153,12 @@
   gap: 10px;
 }
 
+.listBody {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+}
+
 .formsPage {
   display: grid;
   min-width: 0;
@@ -2060,6 +2066,12 @@
     gap: 6px;
   }
 
+  .listBody {
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
   .listToolbar {
     min-height: 32px;
     flex-wrap: wrap;
@@ -2871,6 +2883,18 @@
 
 /* Data-list search occupies the former centered Gallery slot on wide screens. */
 @media (min-width: 1100px) {
+  .workbench {
+    grid-template-rows: minmax(0, 1fr) auto;
+  }
+
+  .listBody {
+    grid-row: 1;
+  }
+
+  .listFooter {
+    grid-row: 2;
+  }
+
   .listToolbar {
     position: fixed;
     z-index: 51;

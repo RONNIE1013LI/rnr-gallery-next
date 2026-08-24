@@ -35,6 +35,9 @@ describe("FormsWorkbench", () => {
     expect(screen.getByRole("button", { name: "Search orders" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Filter orders" })).toBeInTheDocument();
     expect(screen.queryByRole("link", { name: "Export CSV" })).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "Order results" })).toContainElement(
+      screen.getByRole("table", { name: "Orders data list" }),
+    );
     expect(screen.getByRole("table", { name: "Orders data list" })).toBeInTheDocument();
     expect(screen.getByLabelText("Mobile orders data list")).toBeInTheDocument();
     expect(screen.getByText("1 order")).toBeInTheDocument();

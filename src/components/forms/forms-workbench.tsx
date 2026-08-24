@@ -161,41 +161,43 @@ export function FormsWorkbench({
         <span className={styles.toolbarSpacer} />
       </div>
 
-      {result.items.length ? (
-        <>
-          <FormsOrderTable
-            rows={result.items}
-            startIndex={(result.page - 1) * query.pageSize}
-            canViewFinance={canViewFinance}
-            canUpdate={canUpdate}
-            canUpdateFinance={canUpdateFinance}
-            canUpdateProductionStatus={canUpdateProductionStatus}
-            canUpdateDeliveryStatus={canUpdateDeliveryStatus}
-            assignees={assignees}
-            onOpen={open}
-            onSaved={() => router.refresh()}
-          />
-          <FormsOrderCards rows={result.items} startIndex={(result.page - 1) * query.pageSize} canViewFinance={canViewFinance} onOpen={open} />
-        </>
-      ) : (
-        <div className={styles.formsEmptyState}>
-          <h1>No orders match these filters.</h1>
-          <p>Clear the current search or filters to return to the full data list.</p>
-          <Link href="/order-system">Clear filters</Link>
-        </div>
-      )}
+      <div className={styles.listBody} role="region" aria-label="Order results">
+        {result.items.length ? (
+          <>
+            <FormsOrderTable
+              rows={result.items}
+              startIndex={(result.page - 1) * query.pageSize}
+              canViewFinance={canViewFinance}
+              canUpdate={canUpdate}
+              canUpdateFinance={canUpdateFinance}
+              canUpdateProductionStatus={canUpdateProductionStatus}
+              canUpdateDeliveryStatus={canUpdateDeliveryStatus}
+              assignees={assignees}
+              onOpen={open}
+              onSaved={() => router.refresh()}
+            />
+            <FormsOrderCards rows={result.items} startIndex={(result.page - 1) * query.pageSize} canViewFinance={canViewFinance} onOpen={open} />
+          </>
+        ) : (
+          <div className={styles.formsEmptyState}>
+            <h1>No orders match these filters.</h1>
+            <p>Clear the current search or filters to return to the full data list.</p>
+            <Link href="/order-system">Clear filters</Link>
+          </div>
+        )}
 
-      {showColumnStats ? <section className={styles.columnStatsPanel} aria-label="Visible column statistics">
-        <header><strong>Visible rows</strong><span>Current page only · use Custom stats for all matching orders</span></header>
-        <dl>
-          <div><dt>Displayed</dt><dd>{result.items.length}</dd></div>
-          <div><dt>Urgent</dt><dd>{visibleStats.urgent}</dd></div>
-          <div><dt>Completed</dt><dd>{visibleStats.completed}</dd></div>
-          <div><dt>Post</dt><dd>{visibleStats.post}</dd></div>
-          <div><dt>Pickup</dt><dd>{visibleStats.pickup}</dd></div>
-          {canViewFinance ? <><div><dt>Amount payable</dt><dd>{new Intl.NumberFormat("en-NZ", { style: "currency", currency: "NZD" }).format(visibleStats.payable / 100)}</dd></div><div><dt>Amount paid</dt><dd>{new Intl.NumberFormat("en-NZ", { style: "currency", currency: "NZD" }).format(visibleStats.paid / 100)}</dd></div><div><dt>Amount owing</dt><dd>{new Intl.NumberFormat("en-NZ", { style: "currency", currency: "NZD" }).format(visibleStats.owing / 100)}</dd></div></> : null}
-        </dl>
-      </section> : null}
+        {showColumnStats ? <section className={styles.columnStatsPanel} aria-label="Visible column statistics">
+          <header><strong>Visible rows</strong><span>Current page only · use Custom stats for all matching orders</span></header>
+          <dl>
+            <div><dt>Displayed</dt><dd>{result.items.length}</dd></div>
+            <div><dt>Urgent</dt><dd>{visibleStats.urgent}</dd></div>
+            <div><dt>Completed</dt><dd>{visibleStats.completed}</dd></div>
+            <div><dt>Post</dt><dd>{visibleStats.post}</dd></div>
+            <div><dt>Pickup</dt><dd>{visibleStats.pickup}</dd></div>
+            {canViewFinance ? <><div><dt>Amount payable</dt><dd>{new Intl.NumberFormat("en-NZ", { style: "currency", currency: "NZD" }).format(visibleStats.payable / 100)}</dd></div><div><dt>Amount paid</dt><dd>{new Intl.NumberFormat("en-NZ", { style: "currency", currency: "NZD" }).format(visibleStats.paid / 100)}</dd></div><div><dt>Amount owing</dt><dd>{new Intl.NumberFormat("en-NZ", { style: "currency", currency: "NZD" }).format(visibleStats.owing / 100)}</dd></div></> : null}
+          </dl>
+        </section> : null}
+      </div>
 
       <footer className={styles.listFooter}>
         <strong>{result.total} {result.total === 1 ? "order" : "orders"}</strong>
