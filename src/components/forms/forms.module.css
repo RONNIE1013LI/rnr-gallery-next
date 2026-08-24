@@ -308,7 +308,7 @@
 .statsReportWidget[data-type="table"],
 .statsReportWidget[data-type="text"],
 .statsReportWidget[data-type="divider"] {
-  grid-column: span 2;
+  grid-column: 1 / -1;
 }
 
 .statsReportWidget h3 {
@@ -927,7 +927,7 @@
 .statWidget[data-type="table"],
 .statWidget[data-type="text"],
 .statWidget[data-type="divider"] {
-  grid-column: span 2;
+  grid-column: 1 / -1;
 }
 
 .statWidget > header {
@@ -1005,6 +1005,7 @@
 }
 
 .statChartScroller {
+  width: 100%;
   min-width: 0;
   max-width: 100%;
   overflow-x: auto;
@@ -1093,7 +1094,7 @@
   }
 
   .statsPageToolbar button {
-    min-height: 34px;
+    min-height: 44px;
     padding: 5px 8px;
     font-size: 12px;
   }
