@@ -264,6 +264,222 @@
   }
 }
 
+.notificationSettings {
+  display: grid;
+  gap: 20px;
+}
+
+.notificationCoverage,
+.notificationAddForm,
+.notificationRecipientCard {
+  padding: 20px;
+  border: 1px solid var(--admin-border);
+  border-radius: 12px;
+  background: var(--admin-surface);
+}
+
+.notificationCoverage,
+.notificationCoverage > div:first-child,
+.notificationAddForm,
+.notificationRecipients {
+  display: grid;
+  gap: 14px;
+}
+
+.notificationCoverage h2,
+.notificationCoverage p,
+.notificationAddForm h2,
+.notificationAddForm p,
+.notificationRecipients h2,
+.notificationRecipientCard h3,
+.notificationRecipientCard p {
+  margin: 0;
+}
+
+.notificationCoverage > div:first-child > p,
+.notificationAddForm > div > p,
+.notificationRecipientCard header p {
+  color: var(--admin-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.notificationWarnings {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 8px;
+}
+
+.notificationWarnings p {
+  padding: 10px 12px;
+  border-left: 3px solid #a87825;
+  color: #654d1f;
+  background: #fff9ed;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.notificationEmailField {
+  display: grid;
+  gap: 7px;
+  color: #3f4045;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.notificationEmailField input {
+  width: min(100%, 620px);
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid #c7c7cc;
+  border-radius: 7px;
+  background: #fff;
+  font: inherit;
+}
+
+.notificationAddForm fieldset,
+.notificationRecipientCard fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.notificationAddForm legend,
+.notificationRecipientCard legend {
+  margin-bottom: 8px;
+  color: #3f4045;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.notificationTopicChoices,
+.notificationTopicChips,
+.notificationRecipientActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.notificationTopicChoices label,
+.notificationTopicChips span {
+  display: inline-flex;
+  min-height: 34px;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 10px;
+  border: 1px solid #dedee2;
+  border-radius: 999px;
+  background: #f8f8fa;
+  font-size: 12px;
+}
+
+.notificationTopicChoices input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+}
+
+.notificationAddForm > button,
+.notificationRecipientActions button {
+  min-height: 44px;
+  padding: 9px 14px;
+  border: 1px solid #1d1d1f;
+  border-radius: var(--radius-button);
+  color: #fff;
+  background: #1d1d1f;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+
+.notificationAddForm > button {
+  width: fit-content;
+}
+
+.notificationRecipientActions button + button {
+  border-color: #c7c7cc;
+  color: #1d1d1f;
+  background: #fff;
+}
+
+.notificationAddForm > button:disabled,
+.notificationRecipientActions button:disabled {
+  opacity: .55;
+  cursor: wait;
+}
+
+.notificationFeedback {
+  min-height: 20px;
+  margin: 0;
+  color: #3d604b;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+.notificationRecipientCard {
+  display: grid;
+  gap: 16px;
+}
+
+.notificationRecipientCard header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.notificationRecipientCard h3 {
+  overflow-wrap: anywhere;
+  font-size: 16px;
+}
+
+.notificationStatus {
+  flex: 0 0 auto;
+  padding: 5px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.notificationStatus_active {
+  color: #245235;
+  background: #eaf5ed;
+}
+
+.notificationStatus_pending_verification {
+  color: #725419;
+  background: #fff3d4;
+}
+
+.notificationStatus_disabled {
+  color: #6a6b70;
+  background: #eeeeef;
+}
+
+@media (max-width: 560px) {
+  .notificationCoverage,
+  .notificationAddForm,
+  .notificationRecipientCard {
+    padding: 16px;
+  }
+
+  .notificationRecipientCard header {
+    display: grid;
+  }
+
+  .notificationStatus {
+    width: fit-content;
+  }
+
+  .notificationRecipientActions button,
+  .notificationAddForm > button {
+    width: 100%;
+    min-height: 44px;
+  }
+}
+
 .contentGroups {
   display: grid;
   gap: 28px;

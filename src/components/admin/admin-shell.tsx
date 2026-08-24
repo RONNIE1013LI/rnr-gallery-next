@@ -30,6 +30,7 @@ const navigation = [
   { label: "Payment", href: "/admin/settings/payment", permission: "manage_payment" },
   { label: "Payment Requests", href: "/admin/payment-requests", permission: "manage_payment" },
   { label: "Email templates", href: "/admin/settings/email-templates", permission: "manage_content" },
+  { label: "Notification emails", href: "/admin/settings/notifications", permission: "manage_roles" },
   { label: "Audit Log", href: "/admin/audit", permission: "view_audit" },
   { label: "Reply Assistant", href: "/reply-assistant", permission: "use_reply_assistant" },
 ] as const;
