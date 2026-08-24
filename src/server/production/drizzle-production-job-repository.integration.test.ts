@@ -26,6 +26,7 @@ import {
 } from "./drizzle-production-job-repository";
 import { createDrizzleProductionProofRepository } from "./drizzle-production-proof-repository";
 import { createProductionProofService } from "./production-proof-service";
+import { enqueueInternalNotifications } from "@/server/notifications/drizzle-internal-notification-outbox-repository";
 
 const databaseUrl = process.env.TEST_DATABASE_URL;
 if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required");
@@ -276,6 +277,99 @@ describe("drizzle production job repository", () => {
       .where(eq(productionJobs.id, created.job.id))).resolves.toHaveLength(0);
     await expect(database.select({ id: invoices.id }).from(invoices)
       .where(eq(invoices.jobId, created.job.id))).resolves.toHaveLength(0);
+  });
+
+  it("rolls back internal notification enqueue with the outer business transaction", async () => {
+    const sourceEventId = randomUUID();
+    await expect(database.transaction(async (transaction) => {
+      const inserted = await enqueueInternalNotifications(transaction, {
+        topic: "manual_order_created",
+        sourceEventId,
+        resourceType: "production_job",
+        resourceId: sourceEventId,
+        resourceReference: `ROLLBACK-${suffix.slice(0, 8)}`,
+        payload: { version: 1, adminPath: `/admin/jobs/${sourceEventId}` },
+        createdAt: new Date("2026-08-24T09:00:00.000Z"),
+      });
+      expect(inserted).toBe(1);
+      throw new Error("rollback-test");
+    })).rejects.toThrow("rollback-test");
+
+    await expect(database.select().from(internalNotificationOutbox).where(eq(
+      internalNotificationOutbox.sourceEventId,
+      sourceEventId,
+    ))).resolves.toEqual([]);
+  });
+
+  it("creates a manual order successfully with zero eligible notification recipients", async () => {
+    let createdJobId: string | null = null;
+    await database.delete(internalNotificationSubscriptions).where(and(
+      eq(internalNotificationSubscriptions.recipientId, notificationRecipientId),
+      eq(internalNotificationSubscriptions.topic, "manual_order_created"),
+    ));
+    try {
+      const service = createProductionJobService(
+        createDrizzleProductionJobRepository(database),
+        {
+          createJobNumber: () => `RRM-ZERO-${suffix.slice(0, 8).toUpperCase()}`,
+          now: () => new Date("2026-08-24T09:30:00.000Z"),
+        },
+      );
+      const result = await service.createManual({
+        userId: actorId,
+        email: `manager-${suffix}@example.test`,
+      }, {
+        idempotencyKey: `manual-zero-recipient-${suffix}`,
+        customerName: "Zero Recipient Manual",
+        customerEmail: "",
+        customerPhone: "021 000 0000",
+        customerSource: "phone",
+        urgent: false,
+        neededDate: "2026-09-01",
+        deliveryMethod: "pickup",
+        assignedUserId: null,
+        designRequirements: "Zero recipient transaction",
+        internalNotes: "",
+        manualStatus: "new",
+        manualPaymentStatus: "awaiting_payment",
+        amountPayableCents: 0,
+        amountPaidCents: 0,
+        artistFeeCents: 0,
+        materialCostCents: 0,
+        items: [{
+          productTitle: "Canvas",
+          sizeLabel: "A4",
+          quantity: 1,
+          designText: "",
+          notes: "",
+        }],
+      }, { canUpdateFinance: true });
+      expect(result).toMatchObject({ result: "created" });
+      createdJobId = result.job.id;
+      jobIds.push(createdJobId);
+      await expect(database.select().from(internalNotificationOutbox).where(eq(
+        internalNotificationOutbox.sourceEventId,
+        createdJobId,
+      ))).resolves.toEqual([]);
+    } finally {
+      await database.insert(internalNotificationSubscriptions).values({
+        recipientId: notificationRecipientId,
+        topic: "manual_order_created",
+        createdAt: new Date("2026-08-04T09:00:00.000Z"),
+        updatedAt: new Date("2026-08-04T09:00:00.000Z"),
+      }).onConflictDoNothing();
+      if (createdJobId) {
+        await database.delete(internalNotificationOutbox).where(eq(
+          internalNotificationOutbox.sourceEventId,
+          createdJobId,
+        ));
+        await database.delete(adminAuditLogs).where(and(
+          eq(adminAuditLogs.resourceType, "production_job"),
+          eq(adminAuditLogs.resourceId, createdJobId),
+        ));
+        await database.delete(productionJobs).where(eq(productionJobs.id, createdJobId));
+      }
+    }
   });
 
   it("versions private drafts, redacts payment proofs and keeps proof decisions immutable", async () => {

@@ -35,6 +35,49 @@ const sessionIds: string[] = [];
 const customerIds: string[] = [];
 const notificationRecipientIds: string[] = [];
 
+async function withWebOrderPaidRecipient<T>(
+  run: (recipient: Readonly<{ id: string; email: string }>) => Promise<T>,
+) {
+  const actorId = `payment-notification-actor-${randomUUID()}`;
+  const recipientId = randomUUID();
+  const email = `payment-notifications-${recipientId}@example.test`;
+  const createdAt = new Date("2026-08-24T08:00:00.000Z");
+  customerIds.push(actorId);
+  notificationRecipientIds.push(recipientId);
+  try {
+    await pool.query(
+      `insert into "user" (id, name, email, role) values ($1, 'Payment Notification Admin', $2, 'admin')`,
+      [actorId, email],
+    );
+    await database.insert(internalNotificationRecipients).values({
+      id: recipientId,
+      email,
+      status: "active",
+      verifiedAt: createdAt,
+      createdByUserId: actorId,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    await database.insert(internalNotificationSubscriptions).values({
+      recipientId,
+      topic: "web_order_paid",
+      createdAt,
+      updatedAt: createdAt,
+    });
+    return await run(Object.freeze({ id: recipientId, email }));
+  } finally {
+    await database.delete(internalNotificationOutbox)
+      .where(eq(internalNotificationOutbox.recipientId, recipientId));
+    await database.delete(internalNotificationRecipients)
+      .where(eq(internalNotificationRecipients.id, recipientId));
+    await pool.query(`delete from "user" where id = $1`, [actorId]);
+    const recipientIndex = notificationRecipientIds.indexOf(recipientId);
+    if (recipientIndex >= 0) notificationRecipientIds.splice(recipientIndex, 1);
+    const actorIndex = customerIds.indexOf(actorId);
+    if (actorIndex >= 0) customerIds.splice(actorIndex, 1);
+  }
+}
+
 const nzPricingSnapshot = {
   schemaVersion: 1,
   market: "NZ",
@@ -775,7 +818,7 @@ describe("Drizzle payment repository", () => {
     expect(returnStateConsumedAt).toBeNull();
   });
 
-  it("applies verified money atomically and preserves terminal state exactly", async () => {
+  it("applies verified money with zero eligible recipients and preserves terminal state exactly", async () => {
     const order = await createOrder();
     const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
     const reference = `verified-${randomUUID()}`;
@@ -997,31 +1040,7 @@ describe("Drizzle payment repository", () => {
   });
 
   it("queues one configured website-paid notification across webhook and reconciliation retries", async () => {
-    const adminId = `payment-admin-${randomUUID()}`;
-    const adminEmail = "payer@example.test";
-    const recipientId = randomUUID();
-    customerIds.push(adminId);
-    notificationRecipientIds.push(recipientId);
-    await pool.query(
-      `insert into "user" (id, name, email, role) values ($1, 'Payment Admin', $2, 'admin')`,
-      [adminId, adminEmail],
-    );
-    const createdAt = new Date("2026-08-24T08:00:00.000Z");
-    await database.insert(internalNotificationRecipients).values({
-      id: recipientId,
-      email: adminEmail,
-      status: "active",
-      verifiedAt: createdAt,
-      createdByUserId: adminId,
-      createdAt,
-      updatedAt: createdAt,
-    });
-    await database.insert(internalNotificationSubscriptions).values({
-      recipientId,
-      topic: "web_order_paid",
-      createdAt,
-      updatedAt: createdAt,
-    });
+    await withWebOrderPaidRecipient(async (recipient) => {
     const order = await createOrder();
     const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
     const providerReference = `admin-notification-${randomUUID()}`;
@@ -1063,12 +1082,12 @@ describe("Drizzle payment repository", () => {
       order.orderId,
     ))).resolves.toEqual([
       expect.objectContaining({
-        eventKey: `web_order_paid:${order.orderId}:${recipientId}`,
+        eventKey: `web_order_paid:${order.orderId}:${recipient.id}`,
         topic: "web_order_paid",
         resourceType: "order",
         resourceId: order.orderId,
         resourceReference: order.orderNumber,
-        recipientEmail: adminEmail,
+        recipientEmail: recipient.email,
         payload: { version: 1, adminPath: `/admin/orders/${order.orderId}` },
       }),
     ]);
@@ -1079,13 +1098,15 @@ describe("Drizzle payment repository", () => {
       orderNotificationOutbox.orderId,
       order.orderId,
     ))).resolves.toEqual([
-      { kind: "payment_confirmed", recipientEmail: adminEmail },
+      { kind: "payment_confirmed", recipientEmail: "payer@example.test" },
     ]);
+    });
   });
 
   it.each(["after_event_insert", "after_transition", "before_processed_result"] as const)(
     "rolls back webhook fault at %s and permits replay",
     async (faultAt) => {
+      await withWebOrderPaidRecipient(async (recipient) => {
       const order = await createOrder();
       const claim = await repository.createOrClaimNonterminalAttempt(claimInput(order.orderId));
       const reference = `webhook-${randomUUID()}`;
@@ -1103,15 +1124,56 @@ describe("Drizzle payment repository", () => {
           orderNumber: order.orderNumber, status: "paid" as const,
         },
       };
+      const beforeFault = await paymentRows(order.orderId, claim.attempt.id);
+      expect(beforeFault).toMatchObject({
+        order: { paymentStatus: "awaiting_payment" },
+        attempt: { status: "processing" },
+      });
       await expect(repository.applyVerifiedWebhookEventAtomically({ ...input, faultAt }))
         .rejects.toThrow("Injected payment repository fault");
       expect(await database.select().from(webhookEvents)
         .where(eq(webhookEvents.providerEventId, input.providerEventId))).toHaveLength(0);
+      await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toEqual(beforeFault);
+      await expect(database.select().from(internalNotificationOutbox).where(eq(
+        internalNotificationOutbox.sourceEventId,
+        order.orderId,
+      ))).resolves.toEqual([]);
+      await expect(database.select().from(orderNotificationOutbox).where(and(
+        eq(orderNotificationOutbox.orderId, order.orderId),
+        inArray(orderNotificationOutbox.kind, ["payment_confirmed", "payment_failed"]),
+      ))).resolves.toEqual([]);
       await expect(repository.applyVerifiedWebhookEventAtomically(input)).resolves.toBe("applied");
       await expect(repository.applyVerifiedWebhookEventAtomically(input)).resolves.toBe("duplicate");
       await expect(repository.applyVerifiedWebhookEventAtomically({
         ...input, payloadSha256: "d".repeat(64),
       })).resolves.toBe("hash_mismatch");
+      await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toMatchObject({
+        order: { paymentStatus: "paid" },
+        attempt: { status: "paid" },
+      });
+      await expect(database.select().from(webhookEvents)
+        .where(eq(webhookEvents.providerEventId, input.providerEventId))).resolves.toHaveLength(1);
+      await expect(database.select().from(internalNotificationOutbox).where(eq(
+        internalNotificationOutbox.sourceEventId,
+        order.orderId,
+      ))).resolves.toEqual([
+        expect.objectContaining({
+          eventKey: `web_order_paid:${order.orderId}:${recipient.id}`,
+          topic: "web_order_paid",
+          recipientEmail: recipient.email,
+        }),
+      ]);
+      await expect(database.select().from(orderNotificationOutbox).where(and(
+        eq(orderNotificationOutbox.orderId, order.orderId),
+        inArray(orderNotificationOutbox.kind, ["payment_confirmed", "payment_failed"]),
+      ))).resolves.toEqual([
+        expect.objectContaining({
+          eventKey: `payment-confirmed:${order.orderId}`,
+          kind: "payment_confirmed",
+          recipientEmail: "payer@example.test",
+        }),
+      ]);
+      });
     },
   );
 

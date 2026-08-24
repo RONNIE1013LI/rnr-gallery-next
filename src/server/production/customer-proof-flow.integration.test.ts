@@ -390,6 +390,186 @@ describe("customer proof flow", () => {
     )).resolves.toMatchObject({ attempts: 6 });
   });
 
+  it("records both customer proof decisions successfully with zero eligible recipients", async () => {
+    const fixtureSessionIds: string[] = [];
+    const fixtureOrderIds: string[] = [];
+    const fixtureJobIds: string[] = [];
+    const fixtureFileIds: string[] = [];
+    const reviewIds: string[] = [];
+    await database.delete(internalNotificationSubscriptions).where(and(
+      eq(internalNotificationSubscriptions.recipientId, notificationRecipientId),
+      inArray(internalNotificationSubscriptions.topic, [
+        "proof_approved",
+        "proof_changes_requested",
+      ]),
+    ));
+    try {
+      const service = createProductionProofService(
+        createDrizzleProductionProofRepository(database),
+      );
+      for (const [index, decision] of [
+        "approved",
+        "changes_requested",
+      ].entries()) {
+        const sessionId = randomUUID();
+        const fixtureOrderId = randomUUID();
+        const fixtureJobId = randomUUID();
+        const fileId = randomUUID();
+        const fixtureOrderNumber = `RNR-2026-Z${decision === "approved" ? "A" : "C"}${suffix.slice(0, 8)}`;
+        const createdAt = new Date(`2026-08-06T0${index + 1}:00:00.000Z`);
+        fixtureSessionIds.push(sessionId);
+        fixtureOrderIds.push(fixtureOrderId);
+        fixtureJobIds.push(fixtureJobId);
+        fixtureFileIds.push(fileId);
+        await database.insert(checkoutSessions).values({
+          id: sessionId,
+          tokenDigest: `${index + 2}`.repeat(64),
+          version: 1,
+          completedAt: createdAt,
+          expiresAt: new Date("2099-01-01T00:00:00.000Z"),
+          createdAt,
+          updatedAt: createdAt,
+        });
+        await database.insert(orders).values({
+          id: fixtureOrderId,
+          orderNumber: fixtureOrderNumber,
+          checkoutSessionId: sessionId,
+          checkoutSessionVersion: 1,
+          idempotencyKey: randomUUID(),
+          customerEmail,
+          pricingSnapshot: {} as (typeof orders.$inferInsert)["pricingSnapshot"],
+          deliveryMethod: "pickup",
+          shippingServiceCode: "pickup",
+          shippingServiceName: "Pickup",
+          productSubtotalExGstCents: 0,
+          productGstCents: 0,
+          productTotalInclGstCents: 0,
+          shippingExGstCents: 0,
+          shippingGstCents: 0,
+          shippingTotalInclGstCents: 0,
+          totalExGstCents: 0,
+          totalGstCents: 0,
+          totalInclGstCents: 0,
+          paymentStatus: "paid",
+          fulfilmentStatus: "awaiting_customer",
+          createdAt,
+          updatedAt: createdAt,
+        });
+        await database.insert(productionJobs).values({
+          id: fixtureJobId,
+          jobNumber: fixtureOrderNumber,
+          source: "web",
+          orderId: fixtureOrderId,
+          customerName: "Zero Recipient Proof Customer",
+          customerEmail,
+          customerPhone: "+64210000000",
+          customerSource: "web",
+          urgent: false,
+          neededDate: "2026-08-20",
+          deliveryMethod: "pickup",
+          designRequirements: "Zero recipient review",
+          internalNotes: "",
+          createdAt,
+          updatedAt: createdAt,
+        });
+        await database.insert(productionJobFiles).values({
+          id: fileId,
+          jobId: fixtureJobId,
+          kind: "design_draft",
+          version: 1,
+          originalName: "zero-recipient-proof.jpg",
+          mediaType: "image/jpeg",
+          sizeBytes: 3,
+          storageKey: `${fileId}.bin`,
+          sha256: `${index + 4}`.repeat(64),
+          idempotencyKey: `zero-recipient-proof-file-${fileId}`,
+          requestDigest: `${index + 6}`.repeat(64),
+          uploadedByUserId: actorId,
+          createdAt,
+        });
+
+        const result = await service.recordCustomerReview(fixtureOrderNumber, {
+          kind: "signed",
+          fileId,
+        }, {
+          fileId,
+          decision: decision as "approved" | "changes_requested",
+          notes: decision === "approved" ? "" : "Please revise the layout.",
+          idempotencyKey: `zero-recipient-proof-review-${fileId}`,
+        });
+        expect(result).toMatchObject({ result: "created" });
+        if (result.result !== "created") throw new Error("Expected customer review creation");
+        reviewIds.push(result.review.id);
+        await expect(database.select().from(internalNotificationOutbox).where(eq(
+          internalNotificationOutbox.sourceEventId,
+          result.review.id,
+        ))).resolves.toEqual([]);
+        await expect(database.select().from(customerNotificationOutbox).where(eq(
+          customerNotificationOutbox.jobId,
+          fixtureJobId,
+        ))).resolves.toEqual([]);
+      }
+    } finally {
+      await database.insert(internalNotificationSubscriptions).values([
+        {
+          recipientId: notificationRecipientId,
+          topic: "proof_approved",
+          createdAt: new Date("2026-08-05T00:00:00.000Z"),
+          updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+        },
+        {
+          recipientId: notificationRecipientId,
+          topic: "proof_changes_requested",
+          createdAt: new Date("2026-08-05T00:00:00.000Z"),
+          updatedAt: new Date("2026-08-05T00:00:00.000Z"),
+        },
+      ]).onConflictDoNothing();
+      if (reviewIds.length > 0) {
+        await database.delete(internalNotificationOutbox).where(inArray(
+          internalNotificationOutbox.sourceEventId,
+          reviewIds,
+        ));
+      }
+      if (fixtureJobIds.length > 0) {
+        await database.delete(adminAuditLogs).where(and(
+          eq(adminAuditLogs.resourceType, "production_job"),
+          inArray(adminAuditLogs.resourceId, fixtureJobIds),
+        ));
+      }
+      if (fixtureOrderIds.length > 0) {
+        await database.delete(orderStatusHistory).where(inArray(
+          orderStatusHistory.orderId,
+          fixtureOrderIds,
+        ));
+      }
+      if (fixtureFileIds.length > 0) {
+        await database.delete(productionProofReviews).where(inArray(
+          productionProofReviews.fileId,
+          fixtureFileIds,
+        ));
+        await database.delete(productionJobFiles).where(inArray(
+          productionJobFiles.id,
+          fixtureFileIds,
+        ));
+      }
+      if (fixtureJobIds.length > 0) {
+        await database.delete(productionJobs).where(inArray(
+          productionJobs.id,
+          fixtureJobIds,
+        ));
+      }
+      if (fixtureOrderIds.length > 0) {
+        await database.delete(orders).where(inArray(orders.id, fixtureOrderIds));
+      }
+      if (fixtureSessionIds.length > 0) {
+        await database.delete(checkoutSessions).where(inArray(
+          checkoutSessions.id,
+          fixtureSessionIds,
+        ));
+      }
+    }
+  });
+
   it("does not accept a design draft for an unpaid web order", async () => {
     const service = createProductionProofService(createDrizzleProductionProofRepository(database));
     const fileId = randomUUID();

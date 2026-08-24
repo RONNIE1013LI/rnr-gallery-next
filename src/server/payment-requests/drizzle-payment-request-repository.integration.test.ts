@@ -39,8 +39,40 @@ const sessionIds: string[] = [];
 const requestIds: string[] = [];
 const webhookEventIds: string[] = [];
 const notificationRecipientIds: string[] = [];
-const notificationRecipientId = randomUUID();
-const notificationRecipientEmail = `payment-request-ops-${suffix}@example.test`;
+
+async function withPaymentRequestPaidRecipient<T>(
+  run: (recipient: Readonly<{ id: string; email: string }>) => Promise<T>,
+) {
+  const id = randomUUID();
+  const email = `payment-request-ops-${id}@example.test`;
+  const createdAt = new Date("2026-08-24T08:30:00.000Z");
+  notificationRecipientIds.push(id);
+  try {
+    await database.insert(internalNotificationRecipients).values({
+      id,
+      email,
+      status: "active",
+      verifiedAt: createdAt,
+      createdByUserId: actorId,
+      createdAt,
+      updatedAt: createdAt,
+    });
+    await database.insert(internalNotificationSubscriptions).values({
+      recipientId: id,
+      topic: "payment_request_paid",
+      createdAt,
+      updatedAt: createdAt,
+    });
+    return await run(Object.freeze({ id, email }));
+  } finally {
+    await database.delete(internalNotificationOutbox)
+      .where(eq(internalNotificationOutbox.recipientId, id));
+    await database.delete(internalNotificationRecipients)
+      .where(eq(internalNotificationRecipients.id, id));
+    const index = notificationRecipientIds.indexOf(id);
+    if (index >= 0) notificationRecipientIds.splice(index, 1);
+  }
+}
 
 async function createOrder(totalCents = 40_000) {
   const [session] = await database.insert(checkoutSessions).values({
@@ -482,23 +514,7 @@ describe("payment request balance transactions", () => {
   });
 
   it("binds and applies one verified online payment ledger entry idempotently", async () => {
-    const createdAt = new Date("2026-08-24T08:30:00.000Z");
-    notificationRecipientIds.push(notificationRecipientId);
-    await database.insert(internalNotificationRecipients).values({
-      id: notificationRecipientId,
-      email: notificationRecipientEmail,
-      status: "active",
-      verifiedAt: createdAt,
-      createdByUserId: actorId,
-      createdAt,
-      updatedAt: createdAt,
-    });
-    await database.insert(internalNotificationSubscriptions).values({
-      recipientId: notificationRecipientId,
-      topic: "payment_request_paid",
-      createdAt,
-      updatedAt: createdAt,
-    });
+    await withPaymentRequestPaidRecipient(async () => {
     const order = await createOrder();
     const request = await remember(repository.createRequest(orderRequest(order.id, 20_000)));
     const claim = await repository.preflightAndClaimAttempt({
@@ -555,9 +571,11 @@ describe("payment request balance transactions", () => {
       internalNotificationOutbox.sourceEventId,
       request.id,
     ))).resolves.toEqual([]);
+    });
   });
 
   it("applies a verified Payment Request webhook atomically and deduplicates it", async () => {
+    await withPaymentRequestPaidRecipient(async (recipient) => {
     const request = await remember(repository.createRequest({
       ...orderRequest(randomUUID(), 20_000),
       kind: "standalone",
@@ -617,14 +635,64 @@ describe("payment request balance transactions", () => {
       request.id,
     ))).resolves.toEqual([
       expect.objectContaining({
-        eventKey: `payment_request_paid:${request.id}:${notificationRecipientId}`,
+        eventKey: `payment_request_paid:${request.id}:${recipient.id}`,
         topic: "payment_request_paid",
         resourceType: "payment_request",
         resourceId: request.id,
         resourceReference: request.requestNumber,
-        recipientEmail: notificationRecipientEmail,
+        recipientEmail: recipient.email,
         payload: { version: 1, adminPath: `/admin/payment-requests/${request.id}` },
       }),
+    ]);
+    });
+  });
+
+  it("pays a standalone Payment Request successfully with zero eligible notification recipients", async () => {
+    const request = await remember(repository.createRequest({
+      ...orderRequest(randomUUID(), 3_500),
+      kind: "standalone",
+      orderId: null,
+    }));
+    const claim = await repository.preflightAndClaimAttempt({
+      publicTokenDigest: request.publicTokenDigest,
+      provider: "stripe",
+      method: "card",
+      payerSnapshot: { fullName: "Payer", email: "payer@example.test", phone: "" },
+    });
+    const providerReference = `pi-zero-recipient-${randomUUID()}`;
+    await repository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+
+    await expect(repository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      result: {
+        providerReference,
+        providerStatus: "succeeded",
+        amountCents: 3_500,
+        currency: "NZD",
+        merchantReference: request.requestNumber,
+        status: "paid",
+      },
+      source: "server_capture",
+    })).resolves.toMatchObject({ request: { id: request.id, status: "paid" } });
+
+    await expect(database.select().from(internalNotificationOutbox).where(eq(
+      internalNotificationOutbox.sourceEventId,
+      request.id,
+    ))).resolves.toEqual([]);
+    await expect(database.select({
+      kind: paymentRequestNotificationOutbox.kind,
+      recipientEmail: paymentRequestNotificationOutbox.recipientEmail,
+    }).from(paymentRequestNotificationOutbox).where(eq(
+      paymentRequestNotificationOutbox.paymentRequestId,
+      request.id,
+    ))).resolves.toEqual([
+      { kind: "payment_request_confirmed", recipientEmail: "payer@example.test" },
     ]);
   });
 
