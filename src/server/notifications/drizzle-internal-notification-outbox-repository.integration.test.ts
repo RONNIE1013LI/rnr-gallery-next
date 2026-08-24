@@ -1,13 +1,15 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray } from "drizzle-orm";
+import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
+  adminAuditLogs,
   internalNotificationOutbox,
   internalNotificationRecipients,
   internalNotificationSubscriptions,
   user,
 } from "@/server/db/schema";
+import { createDrizzleInternalNotificationRecipientRepository } from "./drizzle-internal-notification-recipient-repository";
 import {
   createDrizzleInternalNotificationOutboxRepository,
   enqueueInternalNotifications,
@@ -28,6 +30,7 @@ if (testDatabaseUrl !== approvedDatabaseUrl) {
 
 const database = drizzle(testDatabaseUrl);
 const repository = createDrizzleInternalNotificationOutboxRepository(database);
+const recipientRepository = createDrizzleInternalNotificationRecipientRepository(database);
 const suffix = randomUUID();
 const actorId = `notification-outbox-actor-${suffix}`;
 const actorEmail = `notification-outbox-actor-${suffix}@example.test`;
@@ -102,6 +105,28 @@ async function enqueue(input: InternalNotificationEvent) {
     enqueueInternalNotifications(transaction, input));
 }
 
+function deferred() {
+  let resolve!: () => void;
+  const promise = new Promise<void>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return Object.freeze({ promise, resolve });
+}
+
+async function waitForBlockedRecipientOperation() {
+  await vi.waitFor(async () => {
+    const result = await database.execute(sql`
+      select count(*)::int as count
+      from pg_stat_activity
+      where datname = current_database()
+        and pid <> pg_backend_pid()
+        and wait_event_type = 'Lock'
+        and query ilike '%internal_notification_recipients%'
+    `);
+    expect(Number(result.rows[0]?.count ?? 0)).toBeGreaterThanOrEqual(1);
+  }, { timeout: 5_000, interval: 20 });
+}
+
 describe("internal notification outbox persistence", () => {
   beforeAll(async () => {
     await database.insert(user).values({
@@ -117,6 +142,10 @@ describe("internal notification outbox persistence", () => {
       await database.delete(internalNotificationOutbox).where(
         inArray(internalNotificationOutbox.recipientId, fixtureRecipientIds),
       );
+      await database.delete(adminAuditLogs).where(and(
+        eq(adminAuditLogs.resourceType, "internal_notification_recipient"),
+        inArray(adminAuditLogs.resourceId, fixtureRecipientIds),
+      ));
       await database.delete(internalNotificationRecipients).where(
         inArray(internalNotificationRecipients.id, fixtureRecipientIds),
       );
@@ -229,14 +258,83 @@ describe("internal notification outbox persistence", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("canonicalizes UUIDs so uppercase and lowercase replays share one event key", async () => {
+    const recipient = await insertRecipient({
+      label: "canonical-uuid",
+      status: "active",
+      topics: ["web_order_paid"],
+    });
+    const upperSourceId = "ABCDEFAB-CDEF-4ABC-8DEF-ABCDEFABCDEF";
+    const upperResourceId = "FEDCBAFE-DCBA-4FED-8CBA-FEDCBAFEDCBA";
+    const uppercase = event({
+      sourceEventId: upperSourceId,
+      resourceId: upperResourceId,
+    });
+    const lowercase = event({
+      sourceEventId: upperSourceId.toLowerCase(),
+      resourceId: upperResourceId.toLowerCase(),
+    });
+
+    await expect(enqueue(uppercase)).resolves.toBe(1);
+    await expect(enqueue(lowercase)).resolves.toBe(0);
+
+    const rows = await database.select({
+      eventKey: internalNotificationOutbox.eventKey,
+      sourceEventId: internalNotificationOutbox.sourceEventId,
+      resourceId: internalNotificationOutbox.resourceId,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.recipientId, recipient.id),
+    );
+    expect(rows).toEqual([{
+      eventKey: `web_order_paid:${upperSourceId.toLowerCase()}:${recipient.id}`,
+      sourceEventId: upperSourceId.toLowerCase(),
+      resourceId: upperResourceId.toLowerCase(),
+    }]);
+  });
+
+  it("stores trimmed 255-character references and a canonical 2048-character Admin path", async () => {
+    const recipient = await insertRecipient({
+      label: "valid-boundaries",
+      status: "active",
+      topics: ["manual_order_created"],
+    });
+    const reference = "R".repeat(255);
+    const adminPath = `/admin/${"a".repeat(2041)}`;
+    expect(adminPath).toHaveLength(2048);
+    const notificationEvent = event({
+      topic: "manual_order_created",
+      resourceReference: `  ${reference}  `,
+      payload: { version: 1, adminPath },
+    });
+
+    await expect(enqueue(notificationEvent)).resolves.toBe(1);
+    const [stored] = await database.select({
+      resourceReference: internalNotificationOutbox.resourceReference,
+      payload: internalNotificationOutbox.payload,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.recipientId, recipient.id),
+    );
+    expect(stored).toEqual({
+      resourceReference: reference,
+      payload: { version: 1, adminPath },
+    });
+  });
+
   it.each([
     ["source UUID", { sourceEventId: "not-a-uuid" }],
     ["resource UUID", { resourceId: "not-a-uuid" }],
     ["topic", { topic: "customer_order" }],
     ["resource type", { resourceType: "customer" }],
     ["resource reference", { resourceReference: "   " }],
+    ["oversized resource reference", { resourceReference: "R".repeat(256) }],
+    ["literal dot traversal", { payload: { version: 1, adminPath: "/admin/../public" } }],
+    ["encoded dot traversal", { payload: { version: 1, adminPath: "/admin/%2e%2e/public" } }],
+    ["protocol-relative URL", { payload: { version: 1, adminPath: "//evil.example/admin/orders/1" } }],
     ["absolute Admin URL", { payload: { version: 1, adminPath: "https://evil.example/admin/orders/1" } }],
+    ["literal backslash", { payload: { version: 1, adminPath: "/admin\\orders\\1" } }],
+    ["encoded backslash", { payload: { version: 1, adminPath: "/admin/%5corders/1" } }],
     ["non-Admin path", { payload: { version: 1, adminPath: "/orders/1" } }],
+    ["oversized Admin path", { payload: { version: 1, adminPath: `/admin/${"a".repeat(2042)}` } }],
     ["payload version", { payload: { version: 2, adminPath: "/admin/orders/1" } }],
     ["extra payload data", { payload: { version: 1, adminPath: "/admin/orders/1", notes: "private" } }],
   ])("rejects an invalid %s before enqueue", async (_label, overrides) => {
@@ -251,6 +349,111 @@ describe("internal notification outbox persistence", () => {
       .from(internalNotificationOutbox)
       .where(inArray(internalNotificationOutbox.recipientId, fixtureRecipientIds));
     expect(after).toHaveLength(before.length);
+  });
+
+  it("waits for a disabling transaction and enqueues zero rows after disabled commits", async () => {
+    const recipient = await insertRecipient({
+      label: "disable-first",
+      status: "active",
+      topics: ["web_order_paid"],
+    });
+    const notificationEvent = event();
+    const disabled = deferred();
+    const releaseDisable = deferred();
+    const disableTransaction = database.transaction(async (transaction) => {
+      await transaction.select({ id: internalNotificationRecipients.id })
+        .from(internalNotificationRecipients)
+        .where(eq(internalNotificationRecipients.id, recipient.id))
+        .for("update")
+        .limit(1);
+      await transaction.update(internalNotificationRecipients).set({
+        status: "disabled",
+        disabledAt: now,
+        disabledByUserId: actorId,
+        updatedAt: now,
+      }).where(eq(internalNotificationRecipients.id, recipient.id));
+      disabled.resolve();
+      await releaseDisable.promise;
+    });
+    await disabled.promise;
+
+    const enqueued = enqueue(notificationEvent);
+    let enqueueCount: number | undefined;
+    try {
+      await waitForBlockedRecipientOperation();
+    } finally {
+      releaseDisable.resolve();
+      await disableTransaction;
+      enqueueCount = await enqueued;
+    }
+
+    expect(enqueueCount).toBe(0);
+    const rows = await database.select({ id: internalNotificationOutbox.id })
+      .from(internalNotificationOutbox)
+      .where(eq(internalNotificationOutbox.recipientId, recipient.id));
+    expect(rows).toHaveLength(0);
+  });
+
+  it("lets disable wait for enqueue commit, cancels the row, and keeps it cancelled after re-enable", async () => {
+    const recipient = await insertRecipient({
+      label: "enqueue-first",
+      status: "active",
+      topics: ["proof_approved"],
+    });
+    const notificationEvent = event({ topic: "proof_approved" });
+    const inserted = deferred();
+    const releaseEnqueue = deferred();
+    const enqueueTransaction = database.transaction(async (transaction) => {
+      const count = await enqueueInternalNotifications(transaction, notificationEvent);
+      inserted.resolve();
+      await releaseEnqueue.promise;
+      return count;
+    });
+    await inserted.promise;
+
+    const disable = recipientRepository.disable({
+      actor: { userId: actorId, email: actorEmail },
+      recipientId: recipient.id,
+      idempotencyKey: `disable-enqueue-first-${suffix}`,
+      now,
+    });
+    let enqueueCount: number | undefined;
+    let disabledStatus: string | undefined;
+    try {
+      await waitForBlockedRecipientOperation();
+    } finally {
+      releaseEnqueue.resolve();
+      enqueueCount = await enqueueTransaction;
+      disabledStatus = (await disable).status;
+    }
+
+    expect(enqueueCount).toBe(1);
+    expect(disabledStatus).toBe("disabled");
+    const [cancelled] = await database.select({
+      status: internalNotificationOutbox.status,
+      cancellationReason: internalNotificationOutbox.cancellationReason,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.recipientId, recipient.id),
+    );
+    expect(cancelled).toEqual({
+      status: "cancelled",
+      cancellationReason: "recipient_disabled",
+    });
+
+    await database.update(internalNotificationRecipients).set({
+      status: "active",
+      disabledAt: null,
+      disabledByUserId: null,
+      verifiedAt: now,
+      updatedAt: now,
+    }).where(eq(internalNotificationRecipients.id, recipient.id));
+    await expect(repository.claimNext(now)).resolves.toBeNull();
+    const [afterReenable] = await database.select({
+      status: internalNotificationOutbox.status,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.recipientId, recipient.id),
+    );
+    expect(afterReenable.status).toBe("cancelled");
   });
 
   it("reclaims a sending row only after the ten-minute stale window", async () => {

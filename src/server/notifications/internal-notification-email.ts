@@ -28,10 +28,45 @@ function escapeHtml(value: string) {
   })[character]!);
 }
 
+const validationOrigin = "https://internal-notification.invalid";
+
+export function isCanonicalInternalNotificationAdminPath(value: string) {
+  if (!value || value.length > 2048 || /\\|%5c/i.test(value)) return false;
+
+  let parsed: URL;
+  try {
+    parsed = new URL(value, validationOrigin);
+  } catch {
+    return false;
+  }
+  if (parsed.origin !== validationOrigin) return false;
+  if (parsed.pathname !== "/admin" && !parsed.pathname.startsWith("/admin/")) {
+    return false;
+  }
+  if (`${parsed.pathname}${parsed.search}${parsed.hash}` !== value) return false;
+
+  let decodedPath = parsed.pathname;
+  for (let pass = 0; pass < 3; pass += 1) {
+    try {
+      decodedPath = decodeURIComponent(decodedPath);
+    } catch {
+      return false;
+    }
+    if (decodedPath.includes("\\")) return false;
+    if (decodedPath.split("/").some((segment) => segment === "." || segment === "..")) {
+      return false;
+    }
+  }
+  return true;
+}
+
 export function renderInternalNotificationEmail(
   event: InternalNotificationEmailInput,
   siteUrl: string,
 ): CustomerEmailMessage {
+  if (!isCanonicalInternalNotificationAdminPath(event.payload.adminPath)) {
+    throw new Error("Invalid internal notification Admin path");
+  }
   const subject = subjects[event.topic];
   const adminUrl = new URL(event.payload.adminPath, siteUrl).toString();
   const text = [

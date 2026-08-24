@@ -68,4 +68,23 @@ describe("internal notification email", () => {
       /customerEmail|customerPhone|deliveryAddress|billingAddress|payment|proof file|notes/i,
     );
   });
+
+  it.each([
+    "/admin/../public",
+    "/admin/%2e%2e/public",
+    "//evil.example/admin/orders/1",
+    "https://evil.example/admin/orders/1",
+    "/admin\\orders\\1",
+    "/admin/%5corders/1",
+  ])("refuses an unsafe stored Admin path before rendering: %s", (adminPath) => {
+    expect(() => renderInternalNotificationEmail({
+      topic: "web_order_paid",
+      resourceReference: "ORDER-1042",
+      recipientEmail: "ops@example.test",
+      eventKey: "web_order_paid:event:recipient",
+      payload: { version: 1, adminPath },
+    }, "https://rrgallery.co.nz")).toThrow(
+      "Invalid internal notification Admin path",
+    );
+  });
 });

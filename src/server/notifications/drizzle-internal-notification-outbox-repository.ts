@@ -7,6 +7,7 @@ import {
   internalNotificationSubscriptions,
 } from "@/server/db/schema";
 import type { InternalNotificationOutboxRepository } from "./internal-notification-service";
+import { isCanonicalInternalNotificationAdminPath } from "./internal-notification-email";
 import {
   INTERNAL_NOTIFICATION_TOPICS,
   type InternalNotificationResourceType,
@@ -22,17 +23,15 @@ const INTERNAL_NOTIFICATION_RESOURCE_TYPES = Object.freeze([
 
 const payloadSchema = z.object({
   version: z.literal(1),
-  adminPath: z.string().refine(
-    (value) => value.startsWith("/admin/") && !value.startsWith("//"),
-  ),
+  adminPath: z.string().max(2048).refine(isCanonicalInternalNotificationAdminPath),
 }).strict();
 
 const eventSchema = z.object({
   topic: z.enum(INTERNAL_NOTIFICATION_TOPICS),
-  sourceEventId: z.string().uuid(),
+  sourceEventId: z.string().uuid().transform((value) => value.toLowerCase()),
   resourceType: z.enum(INTERNAL_NOTIFICATION_RESOURCE_TYPES),
-  resourceId: z.string().uuid(),
-  resourceReference: z.string().trim().min(1),
+  resourceId: z.string().uuid().transform((value) => value.toLowerCase()),
+  resourceReference: z.string().trim().min(1).max(255),
   payload: payloadSchema,
   createdAt: z.date(),
 }).strict();
@@ -86,7 +85,8 @@ export async function enqueueInternalNotifications(
         eq(internalNotificationSubscriptions.topic, validEvent.topic),
       ),
     )
-    .where(eq(internalNotificationRecipients.status, "active"));
+    .where(eq(internalNotificationRecipients.status, "active"))
+    .for("update", { of: internalNotificationRecipients });
 
   if (recipients.length === 0) return 0;
 
