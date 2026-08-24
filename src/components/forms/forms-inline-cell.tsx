@@ -105,7 +105,7 @@ export function FormsInlineCell({
             setDraft(original);
             setMessage("");
             setConflict(false);
-            setEditorWidth(event.currentTarget.getBoundingClientRect().width);
+            setEditorWidth(autosaves ? event.currentTarget.getBoundingClientRect().width : null);
             setEditing(true);
           }}
         >
@@ -118,7 +118,11 @@ export function FormsInlineCell({
   }
 
   return (
-    <span className={styles.inlineEditor} style={editorWidth ? { width: `${editorWidth}px` } : undefined}>
+    <span
+      className={styles.inlineEditor}
+      data-placement={autosaves ? undefined : "overlay"}
+      style={editorWidth ? { width: `${editorWidth}px` } : undefined}
+    >
       {kind === "select" || kind === "boolean" ? (
         <select
           aria-label={`${label} for ${reference}`}

@@ -46,20 +46,38 @@ describe("forms inline cell", () => {
     expect(screen.getByLabelText("Printed for 07188").parentElement).toHaveStyle({ width: "58px" });
   });
 
-  it("keeps a manual editor at the original visible field width", () => {
+  it("keeps a 74px manual money editor usable without widening its table cell", async () => {
     vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
       x: 0, y: 0, top: 0, right: 74, bottom: 24, left: 0,
       width: 74, height: 24, toJSON: () => ({}),
     });
-    render(<FormsInlineCell
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      result: "updated",
+      version: "2026-08-05T02:00:00.000Z",
+    }), { status: 200 }));
+    vi.stubGlobal("fetch", request);
+    const saved = vi.fn();
+    render(<table><tbody><tr><td data-testid="amount-paid-cell" style={{ width: "74px" }}><FormsInlineCell
       jobId="job-1" reference="07188" field="amountPaid" label="AmtPaid"
       value={13000} version="2026-08-05T01:00:00.000Z" kind="money"
-      onSaved={vi.fn()}
-    >$130.00</FormsInlineCell>);
+      onSaved={saved}
+    >$130.00</FormsInlineCell></td></tr></tbody></table>);
 
     fireEvent.click(screen.getByRole("button", { name: "Edit AmtPaid for 07188" }));
 
-    expect(screen.getByLabelText("AmtPaid for 07188").parentElement).toHaveStyle({ width: "74px" });
+    const input = screen.getByLabelText("AmtPaid for 07188");
+    const editor = input.parentElement;
+    expect(screen.getByTestId("amount-paid-cell")).toHaveStyle({ width: "74px" });
+    expect(editor).toHaveAttribute("data-placement", "overlay");
+    expect(editor).not.toHaveStyle({ width: "74px" });
+    expect(input).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Save AmtPaid" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "Cancel AmtPaid" })).toBeEnabled();
+
+    fireEvent.change(input, { target: { value: "131.00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save AmtPaid" }));
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    expect(saved).toHaveBeenCalledWith("2026-08-05T02:00:00.000Z");
   });
 
   it("autosaves the selected option value and ignores an unchanged selection", async () => {

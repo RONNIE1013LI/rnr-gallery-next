@@ -2266,6 +2266,10 @@
     border-color: #e6eaee;
   }
 
+  .orderTable td {
+    position: relative;
+  }
+
   .orderTable tbody tr:nth-child(even) td {
     background: #f8fafc;
   }
@@ -2371,6 +2375,16 @@
   .inlineEditor {
     max-width: 100%;
     overflow: hidden;
+  }
+
+  .inlineEditor[data-placement="overlay"] {
+    position: absolute;
+    z-index: 6;
+    top: 1px;
+    left: 4px;
+    width: max-content;
+    max-width: none;
+    overflow: visible;
   }
 
   .inlineEditor button,
