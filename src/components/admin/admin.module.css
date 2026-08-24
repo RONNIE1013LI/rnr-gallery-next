@@ -478,6 +478,10 @@
     width: 100%;
     min-height: 44px;
   }
+
+  .notificationTopicChoices label {
+    min-height: 44px;
+  }
 }
 
 .contentGroups {

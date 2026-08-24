@@ -41,6 +41,18 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe("InternalNotificationSettings", () => {
+  it("renders exactly one warning for each uncovered topic", () => {
+    render(<InternalNotificationSettings recipients={[]} coverage={emptyCoverage} />);
+
+    expect(screen.getAllByRole("status").map((warning) => warning.textContent)).toEqual([
+      "No active recipient for New manual order.",
+      "No active recipient for Website order paid.",
+      "No active recipient for Standalone payment request paid.",
+      "No active recipient for Customer approved proof.",
+      "No active recipient for Customer requested proof changes.",
+    ]);
+  });
+
   it("shows all topics, active-only warnings, recipient state, subscriptions, and dates", () => {
     render(<InternalNotificationSettings
       recipients={[
@@ -109,24 +121,81 @@ describe("InternalNotificationSettings", () => {
     expect(document.body.textContent).not.toContain("token");
   });
 
-  it("edits subscriptions and reports verification delivery failures safely", async () => {
-    const pending = recipient({ status: "pending_verification", verifiedAt: null });
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({
-        recipient: { ...pending, topics: ["web_order_paid", "proof_approved"] },
-      }))
-      .mockResolvedValueOnce(jsonResponse({
-        recipient: pending,
-        verificationDelivery: "failed",
-      }));
+  it("uses a new create idempotency key when the failed input changes", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ error: "Save failed." }, 500));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("crypto", {
       randomUUID: vi.fn()
-        .mockReturnValueOnce("recipient-edit-id")
-        .mockReturnValueOnce("recipient-resend-id"),
+        .mockReturnValueOnce("recipient-create-first")
+        .mockReturnValueOnce("recipient-create-changed"),
     });
+    render(<InternalNotificationSettings recipients={[]} coverage={emptyCoverage} />);
+
+    const email = screen.getByRole("textbox", { name: "Email address" });
+    fireEvent.change(email, { target: { value: "first@example.test" } });
+    fireEvent.click(screen.getByRole("checkbox", { name: "Website order paid" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add email" }));
+    await screen.findByText("Save failed.");
+    fireEvent.change(email, { target: { value: "changed@example.test" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add email" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+
+    expect(fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)).idempotencyKey))
+      .toEqual(["recipient-create-first", "recipient-create-changed"]);
+  });
+
+  it("shows only valid actions for active, pending, and disabled recipients", () => {
     render(<InternalNotificationSettings
-      recipients={[pending]}
+      recipients={[
+        recipient({ email: "active@example.test" }),
+        recipient({
+          id: "10000000-0000-4000-8000-000000000002",
+          email: "pending@example.test",
+          status: "pending_verification",
+          verifiedAt: null,
+        }),
+        recipient({
+          id: "10000000-0000-4000-8000-000000000003",
+          email: "disabled@example.test",
+          status: "disabled",
+          verifiedAt: null,
+          disabledAt: new Date("2026-08-24T02:00:00.000Z"),
+        }),
+      ]}
+      coverage={{ ...emptyCoverage, web_order_paid: 1 }}
+    />);
+
+    const active = screen.getByRole("article", { name: "active@example.test" });
+    expect(within(active).getByRole("button", { name: "Edit subscriptions" })).toBeInTheDocument();
+    expect(within(active).getByRole("button", { name: "Delete active@example.test" })).toBeInTheDocument();
+    expect(within(active).queryByRole("button", { name: /verification/i })).not.toBeInTheDocument();
+
+    const pending = screen.getByRole("article", { name: "pending@example.test" });
+    expect(within(pending).getByRole("button", { name: "Resend verification" })).toBeInTheDocument();
+    expect(within(pending).queryByRole("button", { name: "Edit subscriptions" })).not.toBeInTheDocument();
+    expect(within(pending).queryByRole("button", { name: "Delete pending@example.test" })).not.toBeInTheDocument();
+
+    const disabled = screen.getByRole("article", { name: "disabled@example.test" });
+    expect(within(disabled).queryByRole("button", { name: "Edit subscriptions" })).not.toBeInTheDocument();
+    expect(within(disabled).queryByRole("button", { name: "Resend verification" })).not.toBeInTheDocument();
+    expect(within(disabled).queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
+    expect(within(disabled).getAllByRole("checkbox")).toHaveLength(5);
+    for (const checkbox of within(disabled).getAllByRole("checkbox")) {
+      expect(checkbox).not.toBeChecked();
+    }
+    expect(within(disabled).getByRole("button", { name: "Re-enable and send verification" }))
+      .toBeDisabled();
+  });
+
+  it("edits active subscriptions with an idempotency key", async () => {
+    const active = recipient();
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
+      recipient: { ...active, topics: ["web_order_paid", "proof_approved"] },
+    }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: () => "recipient-edit-id" });
+    render(<InternalNotificationSettings
+      recipients={[active]}
       coverage={emptyCoverage}
     />);
 
@@ -135,11 +204,8 @@ describe("InternalNotificationSettings", () => {
     fireEvent.click(within(card).getByRole("checkbox", { name: "Customer approved proof" }));
     fireEvent.click(within(card).getByRole("button", { name: "Save subscriptions" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
-    fireEvent.click(within(card).getByRole("button", { name: "Resend verification" }));
-    await screen.findByText(/saved, but the verification email could not be sent/i);
 
     const editBody = JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body));
-    const resendBody = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
     expect(fetchMock.mock.calls[0]?.[0]).toBe(
       "/api/admin/notification-recipients/10000000-0000-4000-8000-000000000001",
     );
@@ -148,21 +214,81 @@ describe("InternalNotificationSettings", () => {
       topics: ["web_order_paid", "proof_approved"],
       idempotencyKey: "recipient-edit-id",
     });
-    expect(fetchMock.mock.calls[1]?.[0]).toBe(
-      "/api/admin/notification-recipients/10000000-0000-4000-8000-000000000001/verification",
-    );
-    expect(resendBody).toEqual({ idempotencyKey: "recipient-resend-id" });
+    expect(screen.getByText("Subscriptions updated.")).toBeInTheDocument();
   });
 
-  it("requires confirmation before soft delete and sends an idempotency key", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
-      recipient: recipient({ status: "disabled", disabledAt: new Date("2026-08-24T02:00:00.000Z") }),
-    }));
+  it("reuses a failed edit key but creates a new key when edited topics change", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(jsonResponse({ error: "Subscriptions failed." }, 500));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", {
+      randomUUID: vi.fn()
+        .mockReturnValueOnce("recipient-edit-retry")
+        .mockReturnValueOnce("recipient-edit-changed"),
+    });
+    render(<InternalNotificationSettings recipients={[recipient()]} coverage={emptyCoverage} />);
+
+    const card = screen.getByRole("article", { name: "ops@example.test" });
+    fireEvent.click(within(card).getByRole("button", { name: "Edit subscriptions" }));
+    fireEvent.click(within(card).getByRole("checkbox", { name: "Customer approved proof" }));
+    fireEvent.click(within(card).getByRole("button", { name: "Save subscriptions" }));
+    await screen.findByText("Subscriptions failed.");
+    fireEvent.click(within(card).getByRole("button", { name: "Save subscriptions" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    fireEvent.click(within(card).getByRole("checkbox", { name: "New manual order" }));
+    fireEvent.click(within(card).getByRole("button", { name: "Save subscriptions" }));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+
+    const bodies = fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)));
+    expect(bodies.map((body) => body.idempotencyKey)).toEqual([
+      "recipient-edit-retry",
+      "recipient-edit-retry",
+      "recipient-edit-changed",
+    ]);
+    expect(bodies[2].topics).toEqual([
+      "web_order_paid",
+      "proof_approved",
+      "manual_order_created",
+    ]);
+  });
+
+  it("reuses the same failed resend key on retry", async () => {
+    const pending = recipient({ status: "pending_verification", verifiedAt: null });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "Verification could not be resent." }, 500))
+      .mockResolvedValueOnce(jsonResponse({ recipient: pending, verificationDelivery: "sent" }));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: () => "recipient-resend-retry" });
+    render(<InternalNotificationSettings recipients={[pending]} coverage={emptyCoverage} />);
+
+    const resend = screen.getByRole("button", { name: "Resend verification" });
+    fireEvent.click(resend);
+    await screen.findByText("Verification could not be resent.");
+    fireEvent.click(resend);
+    await screen.findByText("Verification email sent.");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      expect(call[0]).toBe(
+        "/api/admin/notification-recipients/10000000-0000-4000-8000-000000000001/verification",
+      );
+      expect(call[1]).toMatchObject({ method: "POST" });
+      expect(JSON.parse(String(call[1]?.body))).toEqual({
+        idempotencyKey: "recipient-resend-retry",
+      });
+    }
+  });
+
+  it("requires confirmation and reuses the same failed delete key on retry", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "The notification email could not be deleted." }, 500))
+      .mockResolvedValueOnce(jsonResponse({
+        recipient: recipient({ status: "disabled", disabledAt: new Date("2026-08-24T02:00:00.000Z") }),
+      }));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("crypto", { randomUUID: () => "recipient-disable-id" });
     const confirm = vi.spyOn(window, "confirm")
-      .mockReturnValueOnce(false)
-      .mockReturnValueOnce(true);
+      .mockReturnValue(true)
+      .mockReturnValueOnce(false);
     render(<InternalNotificationSettings
       recipients={[recipient()]}
       coverage={{ ...emptyCoverage, web_order_paid: 1 }}
@@ -172,16 +298,64 @@ describe("InternalNotificationSettings", () => {
     fireEvent.click(remove);
     expect(fetchMock).not.toHaveBeenCalled();
     fireEvent.click(remove);
+    await screen.findByText("The notification email could not be deleted.");
+    fireEvent.click(remove);
     await screen.findByText("Notification email deleted.");
 
-    expect(confirm).toHaveBeenCalledTimes(2);
-    expect(fetchMock).toHaveBeenCalledWith(
-      "/api/admin/notification-recipients/10000000-0000-4000-8000-000000000001",
-      expect.objectContaining({ method: "DELETE" }),
-    );
-    expect(JSON.parse(String(fetchMock.mock.calls[0]?.[1]?.body))).toEqual({
-      idempotencyKey: "recipient-disable-id",
+    expect(confirm).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      expect(call[0]).toBe(
+        "/api/admin/notification-recipients/10000000-0000-4000-8000-000000000001",
+      );
+      expect(call[1]).toMatchObject({ method: "DELETE" });
+      expect(JSON.parse(String(call[1]?.body))).toEqual({
+        idempotencyKey: "recipient-disable-id",
+      });
+    }
+  });
+
+  it("requires disabled recipients to choose topics and reuses a failed re-enable key", async () => {
+    const disabled = recipient({
+      status: "disabled",
+      verifiedAt: null,
+      disabledAt: new Date("2026-08-24T02:00:00.000Z"),
     });
+    const pending = {
+      ...disabled,
+      status: "pending_verification" as const,
+      topics: ["proof_approved"] as const,
+      verificationExpiresAt: new Date("2026-08-25T00:00:00.000Z"),
+      disabledAt: null,
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "The notification recipient could not be saved." }, 500))
+      .mockResolvedValueOnce(jsonResponse({ recipient: pending, verificationDelivery: "sent" }, 201));
+    vi.stubGlobal("fetch", fetchMock);
+    vi.stubGlobal("crypto", { randomUUID: () => "recipient-reenable-retry" });
+    render(<InternalNotificationSettings recipients={[disabled]} coverage={emptyCoverage} />);
+
+    const card = screen.getByRole("article", { name: "ops@example.test" });
+    const reenable = within(card).getByRole("button", { name: "Re-enable and send verification" });
+    expect(reenable).toBeDisabled();
+    fireEvent.click(within(card).getByRole("checkbox", { name: "Customer approved proof" }));
+    expect(reenable).toBeEnabled();
+    fireEvent.click(reenable);
+    await screen.findByText("The notification recipient could not be saved.");
+    fireEvent.click(reenable);
+    await screen.findByText("Verification email sent.");
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    for (const call of fetchMock.mock.calls) {
+      expect(call[0]).toBe("/api/admin/notification-recipients");
+      expect(call[1]).toMatchObject({ method: "POST" });
+      expect(JSON.parse(String(call[1]?.body))).toEqual({
+        email: "ops@example.test",
+        topics: ["proof_approved"],
+        idempotencyKey: "recipient-reenable-retry",
+      });
+    }
+    expect(within(card).getByText("Pending verification")).toBeInTheDocument();
   });
 
   it("keeps a pending recipient recoverable when delivery is not configured", async () => {

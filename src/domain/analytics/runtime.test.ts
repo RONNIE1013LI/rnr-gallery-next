@@ -40,6 +40,17 @@ describe("GA4 runtime boundary", () => {
     expect(classifyGa4Location("/pay/private-token", new URLSearchParams())).toBe("private");
   });
 
+  it("treats notification verification tokens as private locations", () => {
+    expect(classifyGa4Location(
+      "/notification-email/verify/private-verification-token",
+      new URLSearchParams(),
+    )).toBe("private");
+    expect(classifyGa4Location(
+      "/notification-email-preferences",
+      new URLSearchParams(),
+    )).toBe("public");
+  });
+
   it("blocks sensitive query keys even on an otherwise public route", () => {
     for (const query of [
       "access=email-order-token",

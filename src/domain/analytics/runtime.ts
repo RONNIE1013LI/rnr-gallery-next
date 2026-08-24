@@ -11,6 +11,7 @@ const PRIVATE_PATH_PREFIXES = [
   "/admin",
   "/checkout",
   "/forms",
+  "/notification-email",
   "/order-system",
   "/pay",
 ] as const;

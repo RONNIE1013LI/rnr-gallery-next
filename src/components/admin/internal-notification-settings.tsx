@@ -118,6 +118,9 @@ export function InternalNotificationSettings({ recipients: initialRecipients, co
   const [selectedTopics, setSelectedTopics] = useState<readonly InternalNotificationTopic[]>([]);
   const [editingRecipientId, setEditingRecipientId] = useState<string | null>(null);
   const [editTopics, setEditTopics] = useState<readonly InternalNotificationTopic[]>([]);
+  const [reenableTopics, setReenableTopics] = useState<Readonly<
+    Record<string, readonly InternalNotificationTopic[]>
+  >>({});
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("");
   const mutationKeys = useRef(new Map<string, string>());
@@ -226,6 +229,43 @@ export function InternalNotificationSettings({ recipients: initialRecipients, co
     }
   }
 
+  async function reenableRecipient(
+    recipient: InternalNotificationRecipientView,
+    topics: readonly InternalNotificationTopic[],
+  ) {
+    if (topics.length === 0 || pendingAction) return;
+    const scope = `reenable:${recipient.id}:${topics.join(",")}`;
+    setPendingAction(scope);
+    setFeedback("");
+    try {
+      const response = await fetch("/api/admin/notification-recipients", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: recipient.email,
+          topics,
+          idempotencyKey: mutationKey(scope),
+        }),
+      });
+      const body = await responseBody(response);
+      if (!response.ok || !body?.recipient || !body.verificationDelivery) {
+        throw new Error(body?.error || "The notification recipient could not be saved.");
+      }
+      replaceRecipient(reviveRecipient(body.recipient));
+      mutationKeys.current.delete(scope);
+      setReenableTopics((current) => {
+        const next = { ...current };
+        delete next[recipient.id];
+        return next;
+      });
+      setFeedback(deliveryFeedback(body.verificationDelivery));
+    } catch (error) {
+      setFeedback(error instanceof Error ? error.message : "The notification recipient could not be saved.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   async function disableRecipient(recipient: InternalNotificationRecipientView) {
     if (pendingAction || !window.confirm(`Delete ${recipient.email} from notification emails?`)) return;
     const scope = `disable:${recipient.id}`;
@@ -307,6 +347,7 @@ export function InternalNotificationSettings({ recipients: initialRecipients, co
           <p className={styles.emptyState}>No notification emails have been added.</p>
         ) : recipients.map((recipient) => {
           const editing = editingRecipientId === recipient.id;
+          const selectedReenableTopics = reenableTopics[recipient.id] ?? [];
           return (
             <article
               className={styles.notificationRecipientCard}
@@ -326,7 +367,19 @@ export function InternalNotificationSettings({ recipients: initialRecipients, co
                 </span>
               </header>
 
-              {editing ? (
+              {recipient.status === "disabled" ? (
+                <fieldset>
+                  <legend>Choose notifications to re-enable</legend>
+                  <TopicChoices
+                    selected={selectedReenableTopics}
+                    disabled={pendingAction !== null}
+                    onToggle={(topic) => setReenableTopics((current) => ({
+                      ...current,
+                      [recipient.id]: toggleTopic(current[recipient.id] ?? [], topic),
+                    }))}
+                  />
+                </fieldset>
+              ) : editing ? (
                 <fieldset>
                   <legend>Edit notifications</legend>
                   <TopicChoices
@@ -355,7 +408,7 @@ export function InternalNotificationSettings({ recipients: initialRecipients, co
                       Cancel
                     </button>
                   </>
-                ) : recipient.status !== "disabled" ? (
+                ) : recipient.status === "active" ? (
                   <button
                     type="button"
                     disabled={pendingAction !== null}
@@ -365,14 +418,21 @@ export function InternalNotificationSettings({ recipients: initialRecipients, co
                     }}
                   >Edit subscriptions</button>
                 ) : null}
-                {recipient.status !== "active" ? (
+                {recipient.status === "pending_verification" ? (
                   <button
                     type="button"
                     disabled={pendingAction !== null}
                     onClick={() => void resendVerification(recipient.id)}
-                  >{recipient.status === "disabled" ? "Re-enable and send verification" : "Resend verification"}</button>
+                  >Resend verification</button>
                 ) : null}
-                {recipient.status !== "disabled" ? (
+                {recipient.status === "disabled" ? (
+                  <button
+                    type="button"
+                    disabled={pendingAction !== null || selectedReenableTopics.length === 0}
+                    onClick={() => void reenableRecipient(recipient, selectedReenableTopics)}
+                  >Re-enable and send verification</button>
+                ) : null}
+                {recipient.status === "active" ? (
                   <button
                     type="button"
                     disabled={pendingAction !== null}

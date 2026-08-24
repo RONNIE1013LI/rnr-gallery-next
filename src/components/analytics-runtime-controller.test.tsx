@@ -89,13 +89,35 @@ describe("AnalyticsRuntimeController", () => {
   it("blocks the direct access-token order URL before official GA initializes", async () => {
     setLocation("/orders/RNR-2026-PRIVATE", "access=private-email-token");
 
-    render(<AnalyticsRuntimeController production />);
+    const view = render(<AnalyticsRuntimeController production />);
 
     await waitFor(() => expect(googleAnalytics.mounts).toBe(1));
+    const script = await view.findByTestId("official-google-analytics");
+    act(() => script.dispatchEvent(new Event("load")));
     expect(googleAnalytics.automaticPageLocations).toEqual([]);
     expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
     expect(document.documentElement.dataset.ga4PrivatePurchase).toBe("true");
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+  });
+
+  it("never sends a directly loaded notification verification token to analytics", async () => {
+    const privateToken = "private-direct-notification-token";
+    setLocation(`/notification-email/verify/${privateToken}`);
+
+    const view = render(<AnalyticsRuntimeController production />);
+
+    await waitFor(() => expect(googleAnalytics.mounts).toBe(1));
+    const script = await view.findByTestId("official-google-analytics");
+    act(() => script.dispatchEvent(new Event("load")));
+    expect(googleAnalytics.automaticPageLocations).toEqual([]);
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+    expect(JSON.stringify({
+      automaticPageLocations: googleAnalytics.automaticPageLocations,
+      props: googleAnalytics.props,
+      calls: vi.mocked(sendGAEvent).mock.calls,
+    })).not.toContain(privateToken);
   });
 
   it("marks checkout for allowlisted commerce while keeping automatic collection disabled", async () => {
@@ -156,6 +178,41 @@ describe("AnalyticsRuntimeController", () => {
     expect(document.documentElement.dataset.ga4Enabled).toBe("true");
     expect(googleAnalytics.mounts).toBe(1);
     window.history.pushState = guardedPushState;
+    view.unmount();
+  });
+
+  it("blocks a notification verification token during SPA navigation then resumes safely", async () => {
+    const privateToken = "private-spa-notification-token";
+    const view = render(<AnalyticsRuntimeController production />);
+    await waitFor(() => expect(googleAnalytics.mounts).toBe(1));
+    const script = await view.findByTestId("official-google-analytics");
+    act(() => script.dispatchEvent(new Event("load")));
+    vi.mocked(sendGAEvent).mockClear();
+
+    await act(async () => {
+      window.history.pushState({}, "", `/notification-email/verify/${privateToken}`);
+      await Promise.resolve();
+    });
+
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+    expect(JSON.stringify({
+      automaticPageLocations: googleAnalytics.automaticPageLocations,
+      props: googleAnalytics.props,
+      calls: vi.mocked(sendGAEvent).mock.calls,
+    })).not.toContain(privateToken);
+
+    await act(async () => {
+      window.history.pushState({}, "", "/shop");
+      await Promise.resolve();
+    });
+    expect(sendGAEvent).toHaveBeenCalledOnce();
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
+      page_location: "http://localhost:3000/shop",
+      page_referrer: "",
+    });
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain(privateToken);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
     view.unmount();
   });
 
