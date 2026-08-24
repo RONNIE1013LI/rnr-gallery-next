@@ -49,6 +49,82 @@ function repository(
 }
 
 describe("internal notification delivery", () => {
+  it("isolates one successful recipient from another recipient's failure and retry", async () => {
+    const successful = Object.freeze({
+      ...aiHumanReviewDelivery,
+      id: "60000000-0000-4000-8000-000000000006",
+      eventKey:
+        "website_ai_human_review_required:40000000-0000-4000-8000-000000000004:60000000-0000-4000-8000-000000000006",
+      recipientId: "60000000-0000-4000-8000-000000000006",
+      recipientEmail: "successful@example.test",
+    });
+    const retrying = Object.freeze({
+      ...aiHumanReviewDelivery,
+      id: "70000000-0000-4000-8000-000000000007",
+      eventKey:
+        "website_ai_human_review_required:40000000-0000-4000-8000-000000000004:70000000-0000-4000-8000-000000000007",
+      recipientId: "70000000-0000-4000-8000-000000000007",
+      recipientEmail: "retrying@example.test",
+    });
+    const retried = Object.freeze({ ...retrying, attempts: 2 });
+    const repo = repository(null);
+    vi.mocked(repo.claimNext).mockReset()
+      .mockResolvedValueOnce(successful)
+      .mockResolvedValueOnce(retrying)
+      .mockResolvedValueOnce(retried)
+      .mockResolvedValue(null);
+    const sendAttempts = new Map<string, number>();
+    const send = vi.fn(async (message: Readonly<{ to: string }>) => {
+      const attemptsForRecipient = (sendAttempts.get(message.to) ?? 0) + 1;
+      sendAttempts.set(message.to, attemptsForRecipient);
+      if (message.to === retrying.recipientEmail && attemptsForRecipient === 1) {
+        throw new EmailDeliveryError("rate_limit_exceeded");
+      }
+      return { providerMessageId: `email-${message.to}-${attemptsForRecipient}` };
+    });
+    let currentTime = now;
+    const service = createInternalNotificationService(repo, {
+      provider: { configured: true, send },
+      siteUrl: "https://rrgallery.co.nz",
+      now: () => currentTime,
+    });
+
+    await expect(service.deliverPending(2)).resolves.toEqual({
+      result: "processed",
+      sent: 1,
+      failed: 1,
+    });
+    expect(repo.markSent).toHaveBeenCalledTimes(1);
+    expect(repo.markSent).toHaveBeenCalledWith(
+      successful.id,
+      "email-successful@example.test-1",
+      now,
+    );
+    expect(repo.markFailed).toHaveBeenCalledTimes(1);
+    expect(repo.markFailed).toHaveBeenCalledWith(
+      retrying.id,
+      "rate_limit_exceeded",
+      new Date(now.getTime() + 5 * 60_000),
+      now,
+    );
+
+    currentTime = new Date(now.getTime() + 5 * 60_000);
+    await expect(service.deliverPending(2)).resolves.toEqual({
+      result: "processed",
+      sent: 1,
+      failed: 0,
+    });
+    expect(send.mock.calls.filter(([message]) =>
+      message.to === successful.recipientEmail)).toHaveLength(1);
+    expect(send.mock.calls.filter(([message]) =>
+      message.to === retrying.recipientEmail)).toHaveLength(2);
+    expect(repo.markSent).toHaveBeenLastCalledWith(
+      retrying.id,
+      "email-retrying@example.test-2",
+      currentTime,
+    );
+  });
+
   it("delivers a privacy-safe Website AI human-review message", async () => {
     const repo = repository(aiHumanReviewDelivery);
     const send = vi.fn().mockResolvedValue({ providerMessageId: "email-review" });

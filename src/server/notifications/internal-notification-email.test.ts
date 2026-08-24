@@ -38,6 +38,27 @@ const aiHumanReviewEvent = {
   payload: { version: 1 as const, adminPath: "/reply-assistant" },
 };
 
+const forbiddenAiHumanReviewValues = [
+  ["customer name", "Ada Sensitive Customer"],
+  ["customer email", "ada.private@example.test"],
+  ["customer phone", "+64 21 987 654"],
+  ["customer address", "17 Private Lane, Auckland"],
+  ["customer message body", "Please refund my surprise gift"],
+  ["payment identifier", "pay_private_987"],
+  ["order identifier", "RNR-PRIVATE-42"],
+  ["conversation identifier", "10000000-0000-4000-8000-000000000010"],
+  ["session identifier", "session-private-123"],
+  ["deep-link token", "review-token-private-456"],
+  ["raw review ID", "20000000-0000-4000-8000-000000000020"],
+] as const;
+
+const aiHumanReviewEventWithPrivateContext = Object.freeze({
+  ...aiHumanReviewEvent,
+  eventKey:
+    "website_ai_human_review_required:20000000-0000-4000-8000-000000000020:recipient-id",
+  privateContext: Object.fromEntries(forbiddenAiHumanReviewValues),
+});
+
 describe("internal notification email", () => {
   it("exposes the Website AI human-review topic label", () => {
     expect(
@@ -119,6 +140,19 @@ describe("internal notification email", () => {
     );
   });
 
+  it.each(forbiddenAiHumanReviewValues)(
+    "keeps the %s out of the displayable Website AI human-review email",
+    (_label, forbiddenValue) => {
+      const message = renderInternalNotificationEmail(
+        aiHumanReviewEventWithPrivateContext,
+        "https://rrgallery.co.nz",
+      );
+      const displayable = [message.subject, message.text, message.html].join("\n");
+
+      expect(displayable).not.toContain(forbiddenValue);
+    },
+  );
+
   it("accepts only the exact Reply Assistant workspace path", () => {
     expect(isCanonicalInternalNotificationAdminPath("/reply-assistant")).toBe(
       true,
@@ -133,6 +167,19 @@ describe("internal notification email", () => {
     "/account",
   ])("rejects unrelated or non-canonical workspace paths: %s", (adminPath) => {
     expect(isCanonicalInternalNotificationAdminPath(adminPath)).toBe(false);
+  });
+
+  it("refuses a Reply Assistant link that exposes a review selector", () => {
+    expect(() => renderInternalNotificationEmail({
+      ...aiHumanReviewEvent,
+      payload: {
+        version: 1,
+        adminPath:
+          "/reply-assistant?review=20000000-0000-4000-8000-000000000020",
+      },
+    }, "https://rrgallery.co.nz")).toThrow(
+      "Invalid internal notification Admin path",
+    );
   });
 
   it.each([

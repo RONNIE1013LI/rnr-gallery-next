@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, eq, inArray, like, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import {
@@ -9,6 +9,7 @@ import {
   internalNotificationSubscriptions,
   user,
 } from "@/server/db/schema";
+import { EmailDeliveryError } from "./customer-notification-service";
 import { createDrizzleInternalNotificationRecipientRepository } from "./drizzle-internal-notification-recipient-repository";
 import {
   createDrizzleInternalNotificationOutboxRepository,
@@ -127,8 +128,36 @@ async function waitForBlockedRecipientOperation() {
   }, { timeout: 5_000, interval: 20 });
 }
 
+async function clearInterruptedFixtures() {
+  const recipients = await database.select({
+    id: internalNotificationRecipients.id,
+  }).from(internalNotificationRecipients).where(
+    like(
+      internalNotificationRecipients.email,
+      "notification-outbox-%@example.test",
+    ),
+  );
+  const recipientIds = recipients.map(({ id }) => id);
+  if (recipientIds.length > 0) {
+    await database.delete(internalNotificationOutbox).where(
+      inArray(internalNotificationOutbox.recipientId, recipientIds),
+    );
+    await database.delete(adminAuditLogs).where(and(
+      eq(adminAuditLogs.resourceType, "internal_notification_recipient"),
+      inArray(adminAuditLogs.resourceId, recipientIds),
+    ));
+    await database.delete(internalNotificationRecipients).where(
+      inArray(internalNotificationRecipients.id, recipientIds),
+    );
+  }
+  await database.delete(user).where(
+    like(user.id, "notification-outbox-actor-%"),
+  );
+}
+
 describe("internal notification outbox persistence", () => {
   beforeAll(async () => {
+    await clearInterruptedFixtures();
     await database.insert(user).values({
       id: actorId,
       name: "Notification Outbox Admin",
@@ -337,6 +366,154 @@ describe("internal notification outbox persistence", () => {
         eq(internalNotificationOutbox.recipientId, recipient.id),
       ));
     expect(rows).toHaveLength(1);
+  });
+
+  it("delivers Website AI review rows independently and retries only the failed recipient", async () => {
+    const successful = await insertRecipient({
+      label: "ai-delivery-success",
+      status: "active",
+      topics: ["website_ai_human_review_required"],
+    });
+    const retrying = await insertRecipient({
+      label: "ai-delivery-retry",
+      status: "active",
+      topics: ["website_ai_human_review_required"],
+    });
+    const otherTopic = await insertRecipient({
+      label: "ai-delivery-other-topic",
+      status: "active",
+      topics: ["web_order_paid"],
+    });
+    const reviewId = randomUUID();
+    const notificationEvent = event({
+      topic: "website_ai_human_review_required",
+      sourceEventId: reviewId,
+      resourceType: "customer_service_review",
+      resourceId: reviewId,
+      resourceReference:
+        "Website chat requires human review (high_risk) at 2026-08-24T06:00:00.000Z",
+      payload: { version: 1, adminPath: "/reply-assistant" },
+    });
+
+    await expect(enqueue(notificationEvent)).resolves.toBe(2);
+    await expect(enqueue(notificationEvent)).resolves.toBe(0);
+    const sentMessages: Array<Readonly<{
+      to: string;
+      idempotencyKey: string;
+    }>> = [];
+    const attemptsByRecipient = new Map<string, number>();
+    const provider = {
+      configured: true,
+      async send(message: Readonly<{ to: string; idempotencyKey: string }>) {
+        sentMessages.push({
+          to: message.to,
+          idempotencyKey: message.idempotencyKey,
+        });
+        const attempts = (attemptsByRecipient.get(message.to) ?? 0) + 1;
+        attemptsByRecipient.set(message.to, attempts);
+        if (message.to === retrying.email && attempts === 1) {
+          throw new EmailDeliveryError("rate_limit_exceeded");
+        }
+        return { providerMessageId: `email-${message.to}-${attempts}` };
+      },
+    };
+    let deliveryTime = now;
+    const service = createInternalNotificationService(repository, {
+      provider,
+      siteUrl: "https://rrgallery.co.nz",
+      now: () => deliveryTime,
+    });
+
+    await expect(service.deliverPending(2)).resolves.toEqual({
+      result: "processed",
+      sent: 1,
+      failed: 1,
+    });
+    const firstPass = await database.select({
+      recipientId: internalNotificationOutbox.recipientId,
+      eventKey: internalNotificationOutbox.eventKey,
+      status: internalNotificationOutbox.status,
+      attempts: internalNotificationOutbox.attempts,
+      availableAt: internalNotificationOutbox.availableAt,
+      providerMessageId: internalNotificationOutbox.providerMessageId,
+      lastErrorCode: internalNotificationOutbox.lastErrorCode,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.sourceEventId, reviewId),
+    );
+    expect(firstPass).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        recipientId: successful.id,
+        eventKey:
+          `website_ai_human_review_required:${reviewId}:${successful.id}`,
+        status: "sent",
+        attempts: 1,
+        providerMessageId: `email-${successful.email}-1`,
+        lastErrorCode: null,
+      }),
+      expect.objectContaining({
+        recipientId: retrying.id,
+        eventKey:
+          `website_ai_human_review_required:${reviewId}:${retrying.id}`,
+        status: "failed",
+        attempts: 1,
+        availableAt: new Date(now.getTime() + 5 * 60_000),
+        providerMessageId: null,
+        lastErrorCode: "rate_limit_exceeded",
+      }),
+    ]));
+    expect(firstPass).toHaveLength(2);
+    expect(firstPass.some(({ recipientId }) => recipientId === otherTopic.id))
+      .toBe(false);
+
+    deliveryTime = new Date(now.getTime() + 5 * 60_000);
+    await expect(service.deliverPending(2)).resolves.toEqual({
+      result: "processed",
+      sent: 1,
+      failed: 0,
+    });
+    const finalRows = await database.select({
+      recipientId: internalNotificationOutbox.recipientId,
+      status: internalNotificationOutbox.status,
+      attempts: internalNotificationOutbox.attempts,
+      providerMessageId: internalNotificationOutbox.providerMessageId,
+      lastErrorCode: internalNotificationOutbox.lastErrorCode,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.sourceEventId, reviewId),
+    );
+    expect(finalRows).toEqual(expect.arrayContaining([
+      {
+        recipientId: successful.id,
+        status: "sent",
+        attempts: 1,
+        providerMessageId: `email-${successful.email}-1`,
+        lastErrorCode: null,
+      },
+      {
+        recipientId: retrying.id,
+        status: "sent",
+        attempts: 2,
+        providerMessageId: `email-${retrying.email}-2`,
+        lastErrorCode: null,
+      },
+    ]));
+    expect(finalRows).toHaveLength(2);
+    expect(sentMessages.filter(({ to }) => to === successful.email)).toEqual([{
+      to: successful.email,
+      idempotencyKey:
+        `website_ai_human_review_required:${reviewId}:${successful.id}`,
+    }]);
+    expect(sentMessages.filter(({ to }) => to === retrying.email)).toEqual([
+      {
+        to: retrying.email,
+        idempotencyKey:
+          `website_ai_human_review_required:${reviewId}:${retrying.id}`,
+      },
+      {
+        to: retrying.email,
+        idempotencyKey:
+          `website_ai_human_review_required:${reviewId}:${retrying.id}`,
+      },
+    ]);
   });
 
   it("allows different-topic enqueues to share recipient locks before either commits", async () => {
@@ -636,6 +813,7 @@ describe("internal notification outbox persistence", () => {
     ["literal backslash", { payload: { version: 1, adminPath: "/admin\\orders\\1" } }],
     ["encoded backslash", { payload: { version: 1, adminPath: "/admin/%5corders/1" } }],
     ["non-Admin path", { payload: { version: 1, adminPath: "/orders/1" } }],
+    ["Reply Assistant query", { payload: { version: 1, adminPath: "/reply-assistant?review=private" } }],
     ["oversized Admin path", { payload: { version: 1, adminPath: `/admin/${"a".repeat(2042)}` } }],
     ["payload version", { payload: { version: 2, adminPath: "/admin/orders/1" } }],
     ["extra payload data", { payload: { version: 1, adminPath: "/admin/orders/1", notes: "private" } }],
