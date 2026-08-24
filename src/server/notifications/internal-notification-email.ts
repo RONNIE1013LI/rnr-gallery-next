@@ -16,6 +16,8 @@ const subjects: Readonly<Record<InternalNotificationTopic, string>> =
     payment_request_paid: "Standalone payment request paid",
     proof_approved: "Customer approved proof",
     proof_changes_requested: "Customer requested proof changes",
+    website_ai_human_review_required:
+      "Website AI assistant needs human review",
   });
 
 function escapeHtml(value: string) {
@@ -40,7 +42,11 @@ export function isCanonicalInternalNotificationAdminPath(value: string) {
     return false;
   }
   if (parsed.origin !== validationOrigin) return false;
-  if (parsed.pathname !== "/admin" && !parsed.pathname.startsWith("/admin/")) {
+  const isAdminPath = parsed.pathname === "/admin" ||
+    parsed.pathname.startsWith("/admin/");
+  const isReplyAssistantPath = parsed.pathname === "/reply-assistant" &&
+    parsed.search === "" && parsed.hash === "";
+  if (!isAdminPath && !isReplyAssistantPath) {
     return false;
   }
   if (`${parsed.pathname}${parsed.search}${parsed.hash}` !== value) return false;

@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { renderInternalNotificationEmail } from "./internal-notification-email";
-import type { InternalNotificationTopic } from "./internal-notification-types";
+import {
+  isCanonicalInternalNotificationAdminPath,
+  renderInternalNotificationEmail,
+} from "./internal-notification-email";
+import {
+  INTERNAL_NOTIFICATION_TOPIC_LABELS,
+  type InternalNotificationTopic,
+} from "./internal-notification-types";
 
 const cases: readonly Readonly<{
   topic: InternalNotificationTopic;
@@ -17,9 +23,28 @@ const cases: readonly Readonly<{
     topic: "proof_changes_requested",
     subject: "Customer requested proof changes",
   },
+  {
+    topic: "website_ai_human_review_required",
+    subject: "Website AI assistant needs human review",
+  },
 ];
 
+const aiHumanReviewEvent = {
+  topic: "website_ai_human_review_required" as const,
+  resourceReference:
+    "Website chat requires human review (high_risk) at 2026-08-24T10:00:00.000Z",
+  recipientEmail: "ops@example.test",
+  eventKey: "website_ai_human_review_required:review-id:recipient-id",
+  payload: { version: 1 as const, adminPath: "/reply-assistant" },
+};
+
 describe("internal notification email", () => {
+  it("exposes the Website AI human-review topic label", () => {
+    expect(
+      INTERNAL_NOTIFICATION_TOPIC_LABELS.website_ai_human_review_required,
+    ).toBe("Website AI assistant needs human review");
+  });
+
   it.each(cases)("uses the fixed subject for $topic", ({ topic, subject }) => {
     const message = renderInternalNotificationEmail({
       topic,
@@ -67,6 +92,47 @@ describe("internal notification email", () => {
     expect(message.text).not.toMatch(
       /customerEmail|customerPhone|deliveryAddress|billingAddress|payment|proof file|notes/i,
     );
+  });
+
+  it("renders a privacy-safe Website AI human-review email for the exact workspace path", () => {
+    const message = renderInternalNotificationEmail(
+      aiHumanReviewEvent,
+      "https://rrgallery.co.nz",
+    );
+
+    expect(message).toEqual({
+      to: "ops@example.test",
+      subject: "Website AI assistant needs human review",
+      text: [
+        "Website AI assistant needs human review",
+        "",
+        "Reference: Website chat requires human review (high_risk) at 2026-08-24T10:00:00.000Z",
+        "",
+        "View in Admin: https://rrgallery.co.nz/reply-assistant",
+      ].join("\n"),
+      html: '<p><strong>Website AI assistant needs human review</strong></p><p>Reference: Website chat requires human review (high_risk) at 2026-08-24T10:00:00.000Z</p><p><a href="https://rrgallery.co.nz/reply-assistant">View in Admin</a></p>',
+      idempotencyKey:
+        "website_ai_human_review_required:review-id:recipient-id",
+    });
+    expect(`${message.text}\n${message.html}`).not.toMatch(
+      /customer-authored message|customer@example\.test|\+64 21 555 0101|delivery address/i,
+    );
+  });
+
+  it("accepts only the exact Reply Assistant workspace path", () => {
+    expect(isCanonicalInternalNotificationAdminPath("/reply-assistant")).toBe(
+      true,
+    );
+  });
+
+  it.each([
+    "/reply-assistant/",
+    "/reply-assistant/reviews",
+    "/reply-assistant?view=queue",
+    "/reply-assistant#review",
+    "/account",
+  ])("rejects unrelated or non-canonical workspace paths: %s", (adminPath) => {
+    expect(isCanonicalInternalNotificationAdminPath(adminPath)).toBe(false);
   });
 
   it.each([

@@ -21,6 +21,21 @@ const delivery: InternalNotificationDelivery = Object.freeze({
   attempts: 1,
 });
 
+const aiHumanReviewDelivery: InternalNotificationDelivery = Object.freeze({
+  id: "40000000-0000-4000-8000-000000000004",
+  eventKey: "website_ai_human_review_required:review-id:recipient-id",
+  topic: "website_ai_human_review_required",
+  resourceReference:
+    "Website chat requires human review (high_risk) at 2026-08-24T10:00:00.000Z",
+  recipientId: "50000000-0000-4000-8000-000000000005",
+  recipientEmail: "ops@example.test",
+  payload: {
+    version: 1 as const,
+    adminPath: "/reply-assistant",
+  },
+  attempts: 1,
+});
+
 function repository(
   event: InternalNotificationDelivery | null = delivery,
 ): InternalNotificationOutboxRepository {
@@ -34,6 +49,40 @@ function repository(
 }
 
 describe("internal notification delivery", () => {
+  it("delivers a privacy-safe Website AI human-review message", async () => {
+    const repo = repository(aiHumanReviewDelivery);
+    const send = vi.fn().mockResolvedValue({ providerMessageId: "email-review" });
+    const service = createInternalNotificationService(repo, {
+      provider: { configured: true, send },
+      siteUrl: "https://rrgallery.co.nz",
+      now: () => now,
+    });
+
+    await expect(service.deliverPending()).resolves.toEqual({
+      result: "processed",
+      sent: 1,
+      failed: 0,
+    });
+    expect(send).toHaveBeenCalledWith({
+      to: "ops@example.test",
+      subject: "Website AI assistant needs human review",
+      text: [
+        "Website AI assistant needs human review",
+        "",
+        "Reference: Website chat requires human review (high_risk) at 2026-08-24T10:00:00.000Z",
+        "",
+        "View in Admin: https://rrgallery.co.nz/reply-assistant",
+      ].join("\n"),
+      html: '<p><strong>Website AI assistant needs human review</strong></p><p>Reference: Website chat requires human review (high_risk) at 2026-08-24T10:00:00.000Z</p><p><a href="https://rrgallery.co.nz/reply-assistant">View in Admin</a></p>',
+      idempotencyKey:
+        "website_ai_human_review_required:review-id:recipient-id",
+    });
+    const renderedMessage = vi.mocked(send).mock.calls[0]?.[0];
+    expect(`${renderedMessage?.text}\n${renderedMessage?.html}`).not.toMatch(
+      /customer-authored message|customer@example\.test|\+64 21 555 0101|delivery address/i,
+    );
+  });
+
   it("sends a fixed internal message and marks it sent", async () => {
     const repo = repository();
     const send = vi.fn().mockResolvedValue({ providerMessageId: "email-1042" });

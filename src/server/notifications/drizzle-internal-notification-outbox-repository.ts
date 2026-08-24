@@ -19,6 +19,7 @@ const INTERNAL_NOTIFICATION_RESOURCE_TYPES = Object.freeze([
   "order",
   "payment_request",
   "proof_review",
+  "customer_service_review",
 ] as const satisfies readonly InternalNotificationResourceType[]);
 
 const payloadSchema = z.object({

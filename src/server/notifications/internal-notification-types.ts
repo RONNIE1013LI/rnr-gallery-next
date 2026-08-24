@@ -4,6 +4,7 @@ export const INTERNAL_NOTIFICATION_TOPICS = Object.freeze([
   "payment_request_paid",
   "proof_approved",
   "proof_changes_requested",
+  "website_ai_human_review_required",
 ] as const);
 
 export type InternalNotificationTopic =
@@ -17,6 +18,8 @@ export const INTERNAL_NOTIFICATION_TOPIC_LABELS: Readonly<
   payment_request_paid: "Standalone payment request paid",
   proof_approved: "Customer approved proof",
   proof_changes_requested: "Customer requested proof changes",
+  website_ai_human_review_required:
+    "Website AI assistant needs human review",
 });
 
 export type InternalNotificationRecipientStatus =
@@ -35,4 +38,5 @@ export type InternalNotificationResourceType =
   | "production_job"
   | "order"
   | "payment_request"
-  | "proof_review";
+  | "proof_review"
+  | "customer_service_review";
