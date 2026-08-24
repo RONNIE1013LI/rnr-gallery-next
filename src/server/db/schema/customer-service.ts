@@ -57,6 +57,13 @@ export const customerServiceConversations = pgTable(
     channel: text("channel").$type<"facebook" | "website">().notNull(),
     externalKeyHash: text("external_key_hash").notNull(),
     anonymizedAt: timestamp("anonymized_at", { withTimezone: true }),
+    customerDisplayName: text("customer_display_name"),
+    profileResolutionStatus: text("profile_resolution_status")
+      .$type<"unresolved" | "resolving" | "resolved" | "temporary_failure" | "unavailable">()
+      .default("unresolved")
+      .notNull(),
+    profileResolvedAt: timestamp("profile_resolved_at", { withTimezone: true }),
+    profileRetryAfter: timestamp("profile_retry_after", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: updatedTimestamp(),
   },
@@ -66,8 +73,18 @@ export const customerServiceConversations = pgTable(
     unique("customer_service_conversations_id_channel_unique").on(table.id, table.channel),
     index("customer_service_conversations_retention_idx")
       .on(table.channel, table.anonymizedAt, table.createdAt),
+    index("customer_service_conversations_profile_resolution_idx")
+      .on(table.profileResolutionStatus, table.profileRetryAfter),
     check("customer_service_conversations_channel_valid", sql`${table.channel} in ('facebook', 'website')`),
     check("customer_service_conversations_external_hash_valid", sql`length(trim(${table.externalKeyHash})) > 0`),
+    check(
+      "customer_service_conversations_profile_status_valid",
+      sql`${table.profileResolutionStatus} in ('unresolved', 'resolving', 'resolved', 'temporary_failure', 'unavailable')`,
+    ),
+    check(
+      "customer_service_conversations_profile_name_valid",
+      sql`${table.customerDisplayName} is null or (length(trim(${table.customerDisplayName})) between 1 and 160)`,
+    ),
   ],
 );
 

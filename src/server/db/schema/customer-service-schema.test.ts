@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { getTableColumns, getTableName } from "drizzle-orm";
-import { getTableConfig } from "drizzle-orm/pg-core";
+import { getTableColumns, getTableName, type SQL } from "drizzle-orm";
+import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import { Client } from "pg";
 import { describe, expect, it } from "vitest";
 import {
@@ -48,6 +48,12 @@ const tables = [
   customerServiceImageAnalysisInputs,
   customerServiceImageJobs,
 ];
+
+const dialect = new PgDialect();
+
+function normalizeSql(value: SQL) {
+  return dialect.sqlToQuery(value).sql.replace(/\s+/g, " ").trim();
+}
 
 describe("customer service schema contract", () => {
   it("creates the final image-attempt schema without legacy-state mutation", () => {
@@ -125,6 +131,10 @@ describe("customer service schema contract", () => {
       "channel",
       "external_key_hash",
       "anonymized_at",
+      "customer_display_name",
+      "profile_resolution_status",
+      "profile_resolved_at",
+      "profile_retry_after",
       "created_at",
       "updated_at",
     ]);
@@ -174,6 +184,77 @@ describe("customer service schema contract", () => {
       "started_at",
       "completed_at",
     ]);
+  });
+
+  it("represents the exact applied Facebook profile metadata", () => {
+    const config = getTableConfig(customerServiceConversations);
+    const columns = getTableColumns(customerServiceConversations);
+    const profileIndex = config.indexes.find((item) => (
+      item.config.name === "customer_service_conversations_profile_resolution_idx"
+    ));
+
+    expect(columns.customerDisplayName).toMatchObject({ notNull: false });
+    expect(columns.profileResolutionStatus).toMatchObject({
+      notNull: true,
+      default: "unresolved",
+    });
+    expect(columns.profileResolvedAt).toMatchObject({ notNull: false });
+    expect(columns.profileRetryAfter).toMatchObject({ notNull: false });
+    expect(Object.fromEntries(config.checks.map((constraint) => [
+      constraint.name,
+      normalizeSql(constraint.value),
+    ]))).toMatchObject({
+      customer_service_conversations_profile_status_valid:
+        `"customer_service_conversations"."profile_resolution_status" in ('unresolved', 'resolving', 'resolved', 'temporary_failure', 'unavailable')`,
+      customer_service_conversations_profile_name_valid:
+        `"customer_service_conversations"."customer_display_name" is null or (length(trim("customer_service_conversations"."customer_display_name")) between 1 and 160)`,
+    });
+    expect(profileIndex?.config.columns.map((column) => (
+      typeof column === "object" && column !== null && "name" in column
+        ? column.name
+        : "<expression>"
+    ))).toEqual(["profile_resolution_status", "profile_retry_after"]);
+  });
+
+  it("keeps corrected canonical snapshots aligned before notification-only additions", () => {
+    type SnapshotTable = Readonly<{
+      columns: Record<string, unknown>;
+      indexes: Record<string, unknown>;
+      checkConstraints: Record<string, unknown>;
+    }>;
+    type Snapshot = Readonly<{
+      tables: Record<string, SnapshotTable>;
+    }>;
+    const previous = JSON.parse(readFileSync(
+      resolve(process.cwd(), "drizzle/meta/0055_snapshot.json"),
+      "utf8",
+    )) as Snapshot;
+    const current = JSON.parse(readFileSync(
+      resolve(process.cwd(), "drizzle/meta/0056_snapshot.json"),
+      "utf8",
+    )) as Snapshot;
+    const countColumns = (snapshot: Snapshot) => Object.values(snapshot.tables)
+      .reduce((count, table) => count + Object.keys(table.columns).length, 0);
+    const conversation = previous.tables["public.customer_service_conversations"];
+
+    expect(Object.keys(previous.tables)).toHaveLength(71);
+    expect(countColumns(previous)).toBe(957);
+    expect(Object.keys(current.tables)).toHaveLength(74);
+    expect(countColumns(current)).toBe(994);
+    expect(Object.keys(conversation.columns)).toEqual(expect.arrayContaining([
+      "customer_display_name",
+      "profile_resolution_status",
+      "profile_resolved_at",
+      "profile_retry_after",
+    ]));
+    expect(conversation.indexes).toHaveProperty(
+      "customer_service_conversations_profile_resolution_idx",
+    );
+    expect(conversation.checkConstraints).toMatchObject({
+      customer_service_conversations_profile_status_valid: expect.anything(),
+      customer_service_conversations_profile_name_valid: expect.anything(),
+    });
+    expect(current.tables["public.customer_service_conversations"]).toEqual(conversation);
   });
 
   it("persists image metadata without raw source URLs", () => {

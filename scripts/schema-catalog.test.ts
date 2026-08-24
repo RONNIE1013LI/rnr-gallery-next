@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const pgClient = vi.hoisted(() => ({
+  construct: vi.fn(),
   connect: vi.fn(),
   query: vi.fn(),
   end: vi.fn(),
@@ -9,6 +10,9 @@ const pgClient = vi.hoisted(() => ({
 vi.mock("pg", () => ({
   default: {
     Client: class {
+      constructor(config: unknown) {
+        pgClient.construct(config);
+      }
       connect = pgClient.connect;
       query = pgClient.query;
       end = pgClient.end;
@@ -88,6 +92,7 @@ describe("schema catalog normalization", () => {
           minimum: "1",
           maximum: "9223372036854775807",
           increment: "1",
+          cache: "1",
           cycle: false,
           owner: "public.zebra.number",
         },
@@ -99,6 +104,7 @@ describe("schema catalog normalization", () => {
           minimum: "1",
           maximum: "9223372036854775807",
           increment: "1",
+          cache: "1",
           cycle: false,
           owner: "audit.events.id",
         },
@@ -220,8 +226,8 @@ describe("schema catalog comparison", () => {
         { schema: "public", name: "removed_state", values: ["old"] },
       ],
       sequences: [
-        { schema: "public", name: "changed_seq", dataType: "bigint", start: "1", minimum: "1", maximum: "999", increment: "1", cycle: false, owner: "public.orders.number" },
-        { schema: "public", name: "removed_seq", dataType: "bigint", start: "1", minimum: "1", maximum: "999", increment: "1", cycle: false, owner: null },
+        { schema: "public", name: "changed_seq", dataType: "bigint", start: "1", minimum: "1", maximum: "999", increment: "1", cache: "1", cycle: false, owner: "public.orders.number" },
+        { schema: "public", name: "removed_seq", dataType: "bigint", start: "1", minimum: "1", maximum: "999", increment: "1", cache: "1", cycle: false, owner: null },
       ],
     };
     const actual: SchemaCatalog = {
@@ -239,8 +245,8 @@ describe("schema catalog comparison", () => {
         { schema: "public", name: "changed_state", values: ["draft", "sent", "failed"] },
       ],
       sequences: [
-        { schema: "public", name: "added_seq", dataType: "bigint", start: "1", minimum: "1", maximum: "999", increment: "1", cycle: false, owner: null },
-        { schema: "public", name: "changed_seq", dataType: "bigint", start: "1", minimum: "1", maximum: "999", increment: "10", cycle: false, owner: "public.orders.number" },
+        { schema: "public", name: "added_seq", dataType: "bigint", start: "1", minimum: "1", maximum: "999", increment: "1", cache: "1", cycle: false, owner: null },
+        { schema: "public", name: "changed_seq", dataType: "bigint", start: "1", minimum: "1", maximum: "999", increment: "1", cache: "20", cycle: false, owner: "public.orders.number" },
       ],
     };
 
@@ -272,9 +278,9 @@ describe("schema catalog comparison", () => {
       { kind: "added", path: "sequences.public.added_seq" },
       {
         kind: "changed",
-        path: "sequences.public.changed_seq.increment",
+        path: "sequences.public.changed_seq.cache",
         expected: "1",
-        actual: "10",
+        actual: "20",
       },
       { kind: "removed", path: "sequences.public.removed_seq" },
     ]);
@@ -283,6 +289,7 @@ describe("schema catalog comparison", () => {
 
 describe("read-only schema catalog", () => {
   beforeEach(() => {
+    pgClient.construct.mockReset();
     pgClient.connect.mockReset().mockResolvedValue(undefined);
     pgClient.query.mockReset()
       .mockResolvedValueOnce({ rows: [] })
@@ -339,8 +346,20 @@ describe("read-only schema catalog", () => {
           minimumValue: "1",
           maximumValue: "9223372036854775807",
           incrementValue: "1",
+          cacheValue: "1",
           cycle: false,
           owner: "public.orders.order_number",
+        }, {
+          schemaName: "drizzle",
+          sequenceName: "__drizzle_migrations_id_seq",
+          dataType: "integer",
+          startValue: "1",
+          minimumValue: "1",
+          maximumValue: "2147483647",
+          incrementValue: "1",
+          cacheValue: "1",
+          cycle: false,
+          owner: "drizzle.__drizzle_migrations.id",
         }],
       })
       .mockResolvedValueOnce({ rows: [] });
@@ -380,13 +399,20 @@ describe("read-only schema catalog", () => {
           minimum: "1",
           maximum: "9223372036854775807",
           increment: "1",
+          cache: "1",
           cycle: false,
           owner: "public.orders.order_number",
         }],
       });
 
     const statements = pgClient.query.mock.calls.map(([statement]) => String(statement));
-    expect(statements[0]).toBe("BEGIN READ ONLY");
+    expect(pgClient.construct).toHaveBeenCalledWith({
+      connectionString: "postgresql://reader:secret@db.example/app",
+      connectionTimeoutMillis: 10000,
+    });
+    expect(statements[0]).toBe(
+      "BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
+    );
     expect(statements[1]).toBe("SET LOCAL statement_timeout = 15000");
     expect(statements.at(-1)).toBe("ROLLBACK");
     expect(statements.slice(2, -1)).toHaveLength(5);
@@ -399,6 +425,9 @@ describe("read-only schema catalog", () => {
     ))) {
       expect(statement).toMatch(/refclassid\s*=\s*'pg_extension'::regclass/i);
     }
+    expect(statements[6]).toMatch(
+      /owner_namespace\.nspname\s*=\s*'drizzle'[\s\S]*owner_relation\.relname\s*=\s*'__drizzle_migrations'/i,
+    );
     expect(pgClient.end).toHaveBeenCalledOnce();
   });
 
@@ -411,5 +440,41 @@ describe("read-only schema catalog", () => {
     expect((error as Error).message).toBe("Schema catalog could not be read");
     expect((error as Error).message).not.toContain(suppliedUrl);
     expect((error as Error).message).not.toContain("top-secret");
+  });
+
+  it("sanitizes constructor, query, rollback, and end failures", async () => {
+    const suppliedUrl = "postgresql://reader:top-secret@db.example/app";
+    const assertSafeFailure = async () => {
+      const error = await readSchemaCatalog(suppliedUrl).catch((failure: unknown) => failure);
+      expect(error).toBeInstanceOf(Error);
+      expect((error as Error).message).toBe("Schema catalog could not be read");
+      expect((error as Error).message).not.toContain(suppliedUrl);
+      expect((error as Error).message).not.toContain("top-secret");
+    };
+
+    pgClient.construct.mockImplementationOnce(() => {
+      throw new Error(`constructor exposed ${suppliedUrl}`);
+    });
+    await assertSafeFailure();
+
+    pgClient.construct.mockReset();
+    pgClient.query.mockReset()
+      .mockResolvedValueOnce({ rows: [] })
+      .mockResolvedValueOnce({ rows: [] })
+      .mockRejectedValueOnce(new Error(`query exposed ${suppliedUrl}`))
+      .mockResolvedValue({ rows: [] });
+    await assertSafeFailure();
+
+    pgClient.query.mockReset().mockImplementation(async (statement: string) => {
+      if (statement === "ROLLBACK") {
+        throw new Error(`rollback exposed ${suppliedUrl}`);
+      }
+      return { rows: [] };
+    });
+    await assertSafeFailure();
+
+    pgClient.query.mockReset().mockResolvedValue({ rows: [] });
+    pgClient.end.mockRejectedValueOnce(new Error(`end exposed ${suppliedUrl}`));
+    await assertSafeFailure();
   });
 });

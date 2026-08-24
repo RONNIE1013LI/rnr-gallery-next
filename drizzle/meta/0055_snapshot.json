@@ -3143,6 +3143,31 @@
           "primaryKey": false,
           "notNull": false
         },
+        "customer_display_name": {
+          "name": "customer_display_name",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "profile_resolution_status": {
+          "name": "profile_resolution_status",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'unresolved'"
+        },
+        "profile_resolved_at": {
+          "name": "profile_resolved_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "profile_retry_after": {
+          "name": "profile_retry_after",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",
@@ -3206,6 +3231,27 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "customer_service_conversations_profile_resolution_idx": {
+          "name": "customer_service_conversations_profile_resolution_idx",
+          "columns": [
+            {
+              "expression": "profile_resolution_status",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "profile_retry_after",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
@@ -3229,6 +3275,14 @@
         "customer_service_conversations_external_hash_valid": {
           "name": "customer_service_conversations_external_hash_valid",
           "value": "length(trim(\"customer_service_conversations\".\"external_key_hash\")) > 0"
+        },
+        "customer_service_conversations_profile_status_valid": {
+          "name": "customer_service_conversations_profile_status_valid",
+          "value": "\"customer_service_conversations\".\"profile_resolution_status\" in ('unresolved', 'resolving', 'resolved', 'temporary_failure', 'unavailable')"
+        },
+        "customer_service_conversations_profile_name_valid": {
+          "name": "customer_service_conversations_profile_name_valid",
+          "value": "\"customer_service_conversations\".\"customer_display_name\" is null or (length(trim(\"customer_service_conversations\".\"customer_display_name\")) between 1 and 160)"
         }
       },
       "isRLSEnabled": false

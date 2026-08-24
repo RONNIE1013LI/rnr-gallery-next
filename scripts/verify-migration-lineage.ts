@@ -73,7 +73,15 @@ export function parseLineageCheckArguments(args: readonly string[]): LineageChec
       migrationArguments.push(argument);
     }
   }
-  const parsed = parseMigrationArguments(migrationArguments);
+  let parsed: MigrationArguments;
+  try {
+    parsed = parseMigrationArguments(migrationArguments);
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith("Unknown migration argument:")) {
+      throw new Error("Unknown migration argument");
+    }
+    throw error;
+  }
   if (parsed.environment !== "production") {
     throw new Error("Lineage catalog checks require the production environment");
   }

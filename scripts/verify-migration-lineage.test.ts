@@ -47,6 +47,7 @@ const catalog: SchemaCatalog = {
     minimum: "1",
     maximum: "9223372036854775807",
     increment: "1",
+    cache: "1",
     cycle: false,
     owner: "public.orders.order_number",
   }],
@@ -110,6 +111,23 @@ describe("lineage check arguments", () => {
       "--confirm-production",
       "--expected-database", "neondb",
     ])).toThrow(/expected host fingerprint/i);
+  });
+
+  it("never reflects an unknown or positional argument", () => {
+    for (const argument of [
+      productionUrl,
+      `--database-url=${productionUrl}`,
+    ]) {
+      let message = "";
+      try {
+        parseLineageCheckArguments([argument]);
+      } catch (error) {
+        message = error instanceof Error ? error.message : String(error);
+      }
+      expect(message).toBe("Unknown migration argument");
+      expect(message).not.toContain(productionUrl);
+      expect(message).not.toContain("production-password");
+    }
   });
 });
 

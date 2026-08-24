@@ -42,6 +42,7 @@ export type SequenceDefinition = Readonly<{
   minimum: string;
   maximum: string;
   increment: string;
+  cache: string;
   cycle: boolean;
   owner: string | null;
 }>;
@@ -100,6 +101,7 @@ type SequenceRow = Readonly<{
   minimumValue: unknown;
   maximumValue: unknown;
   incrementValue: unknown;
+  cacheValue: unknown;
   cycle: unknown;
   owner: unknown;
 }>;
@@ -277,6 +279,7 @@ export function compareSchemaCatalogs(
           "minimum",
           "maximum",
           "increment",
+          "cache",
           "cycle",
           "owner",
         ] as const) {
@@ -409,6 +412,7 @@ const sequenceCatalogQuery = `
          sequence_metadata.seqmin::text AS "minimumValue",
          sequence_metadata.seqmax::text AS "maximumValue",
          sequence_metadata.seqincrement::text AS "incrementValue",
+         sequence_metadata.seqcache::text AS "cacheValue",
          sequence_metadata.seqcycle AS cycle,
          CASE
            WHEN owner_relation.oid IS NULL THEN NULL
@@ -430,6 +434,11 @@ const sequenceCatalogQuery = `
   WHERE sequence_relation.relkind = 'S'
     AND ${userSchemaFilter("namespace")}
     AND ${extensionOwnedClass("sequence_relation")}
+    AND NOT COALESCE(
+      owner_namespace.nspname = 'drizzle'
+      AND owner_relation.relname = '__drizzle_migrations',
+      false
+    )
   ORDER BY namespace.nspname, sequence_relation.relname`;
 
 function catalogFromRows(input: Readonly<{
@@ -484,7 +493,9 @@ function catalogFromRows(input: Readonly<{
       definition: requiredString(row.definition, "Constraint definition"),
     })),
     enums: [...enums.values()],
-    sequences: input.sequences.map((row) => ({
+    sequences: input.sequences.filter((row) => (
+      row.owner !== "drizzle.__drizzle_migrations.id"
+    )).map((row) => ({
       schema: requiredString(row.schemaName, "Sequence schema"),
       name: requiredString(row.sequenceName, "Sequence name"),
       dataType: requiredString(row.dataType, "Sequence type"),
@@ -492,6 +503,7 @@ function catalogFromRows(input: Readonly<{
       minimum: requiredString(row.minimumValue, "Sequence minimum"),
       maximum: requiredString(row.maximumValue, "Sequence maximum"),
       increment: requiredString(row.incrementValue, "Sequence increment"),
+      cache: requiredString(row.cacheValue, "Sequence cache"),
       cycle: requiredBoolean(row.cycle, "Sequence cycle"),
       owner: nullableString(row.owner, "Sequence owner"),
     })),
@@ -499,13 +511,14 @@ function catalogFromRows(input: Readonly<{
 }
 
 export async function readSchemaCatalog(connectionString: string): Promise<SchemaCatalog> {
-  const client = new pg.Client({ connectionString });
+  let client: pg.Client | undefined;
   let transactionOpen = false;
   let failure = false;
   let catalog: SchemaCatalog | undefined;
   try {
+    client = new pg.Client({ connectionString, connectionTimeoutMillis: 10000 });
     await client.connect();
-    await client.query("BEGIN READ ONLY");
+    await client.query("BEGIN TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
     transactionOpen = true;
     await client.query("SET LOCAL statement_timeout = 15000");
     const columns = await client.query<ColumnRow>(columnCatalogQuery);
@@ -525,17 +538,19 @@ export async function readSchemaCatalog(connectionString: string): Promise<Schem
   } catch {
     failure = true;
   } finally {
-    if (transactionOpen) {
+    if (client && transactionOpen) {
       try {
         await client.query("ROLLBACK");
       } catch {
         failure = true;
       }
     }
-    try {
-      await client.end();
-    } catch {
-      failure = true;
+    if (client) {
+      try {
+        await client.end();
+      } catch {
+        failure = true;
+      }
     }
   }
   if (failure || !catalog) throw new Error("Schema catalog could not be read");
