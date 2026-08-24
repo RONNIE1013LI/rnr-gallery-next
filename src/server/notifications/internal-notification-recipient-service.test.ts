@@ -63,7 +63,7 @@ describe("internal notification recipient service", () => {
 
     const result = await subject.add(actor, {
       email: "  Orders@Example.COM ",
-      topics: ["web_order_paid"],
+      topics: ["website_ai_human_review_required"],
       idempotencyKey: "recipient-create-1",
     });
 
@@ -71,7 +71,7 @@ describe("internal notification recipient service", () => {
     expect(repo.createPending).toHaveBeenCalledWith({
       actor: { userId: "admin-1", email: "admin@example.com" },
       email: "orders@example.com",
-      topics: ["web_order_paid"],
+      topics: ["website_ai_human_review_required"],
       verificationTokenDigest: createHash("sha256").update(rawToken).digest("hex"),
       verificationIssuedAt: now,
       verificationExpiresAt: new Date("2026-08-25T02:00:00.000Z"),
@@ -199,20 +199,22 @@ describe("internal notification recipient service", () => {
   });
 
   it("validates and replaces the entire subscription set", async () => {
-    const updated = recipient({ topics: ["manual_order_created", "proof_changes_requested"] });
+    const updated = recipient({
+      topics: ["manual_order_created", "website_ai_human_review_required"],
+    });
     const { service: subject, repo } = service(repository({
       replaceSubscriptions: vi.fn(async () => updated),
     }));
 
     await expect(subject.updateSubscriptions(actor, {
       recipientId: recipient().id,
-      topics: ["manual_order_created", "proof_changes_requested"],
+      topics: ["manual_order_created", "website_ai_human_review_required"],
       idempotencyKey: "subscriptions-1",
     })).resolves.toEqual(updated);
     expect(repo.replaceSubscriptions).toHaveBeenCalledWith({
       actor: { userId: "admin-1", email: "admin@example.com" },
       recipientId: recipient().id,
-      topics: ["manual_order_created", "proof_changes_requested"],
+      topics: ["manual_order_created", "website_ai_human_review_required"],
       idempotencyKey: "subscriptions-1",
       now,
     });

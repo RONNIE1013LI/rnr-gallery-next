@@ -31,6 +31,7 @@ const emptyCoverage = {
   payment_request_paid: 0,
   proof_approved: 0,
   proof_changes_requested: 0,
+  website_ai_human_review_required: 0,
 } as const;
 
 function jsonResponse(body: unknown, status = 200) {
@@ -50,6 +51,7 @@ describe("InternalNotificationSettings", () => {
       "No active recipient for Standalone payment request paid.",
       "No active recipient for Customer approved proof.",
       "No active recipient for Customer requested proof changes.",
+      "No active recipient for Website AI assistant needs human review.",
     ]);
   });
 
@@ -103,7 +105,7 @@ describe("InternalNotificationSettings", () => {
     });
     const add = screen.getByRole("button", { name: "Add email" });
     expect(add).toBeDisabled();
-    fireEvent.click(screen.getByRole("checkbox", { name: "Website order paid" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Website AI assistant needs human review" }));
     expect(add).toBeEnabled();
 
     fireEvent.click(add);
@@ -114,8 +116,16 @@ describe("InternalNotificationSettings", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     const bodies = fetchMock.mock.calls.map((call) => JSON.parse(String(call[1]?.body)));
     expect(bodies).toEqual([
-      { email: "alerts@example.test", topics: ["web_order_paid"], idempotencyKey: "recipient-create-id" },
-      { email: "alerts@example.test", topics: ["web_order_paid"], idempotencyKey: "recipient-create-id" },
+      {
+        email: "alerts@example.test",
+        topics: ["website_ai_human_review_required"],
+        idempotencyKey: "recipient-create-id",
+      },
+      {
+        email: "alerts@example.test",
+        topics: ["website_ai_human_review_required"],
+        idempotencyKey: "recipient-create-id",
+      },
     ]);
     expect(screen.getByText("alerts@example.test")).toBeInTheDocument();
     expect(document.body.textContent).not.toContain("token");
@@ -179,7 +189,7 @@ describe("InternalNotificationSettings", () => {
     expect(within(disabled).queryByRole("button", { name: "Edit subscriptions" })).not.toBeInTheDocument();
     expect(within(disabled).queryByRole("button", { name: "Resend verification" })).not.toBeInTheDocument();
     expect(within(disabled).queryByRole("button", { name: /Delete/ })).not.toBeInTheDocument();
-    expect(within(disabled).getAllByRole("checkbox")).toHaveLength(5);
+    expect(within(disabled).getAllByRole("checkbox")).toHaveLength(6);
     for (const checkbox of within(disabled).getAllByRole("checkbox")) {
       expect(checkbox).not.toBeChecked();
     }
@@ -190,7 +200,7 @@ describe("InternalNotificationSettings", () => {
   it("edits active subscriptions with an idempotency key", async () => {
     const active = recipient();
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
-      recipient: { ...active, topics: ["web_order_paid", "proof_approved"] },
+      recipient: { ...active, topics: ["web_order_paid", "website_ai_human_review_required"] },
     }));
     vi.stubGlobal("fetch", fetchMock);
     vi.stubGlobal("crypto", { randomUUID: () => "recipient-edit-id" });
@@ -201,7 +211,9 @@ describe("InternalNotificationSettings", () => {
 
     const card = screen.getByRole("article", { name: "ops@example.test" });
     fireEvent.click(within(card).getByRole("button", { name: "Edit subscriptions" }));
-    fireEvent.click(within(card).getByRole("checkbox", { name: "Customer approved proof" }));
+    fireEvent.click(within(card).getByRole("checkbox", {
+      name: "Website AI assistant needs human review",
+    }));
     fireEvent.click(within(card).getByRole("button", { name: "Save subscriptions" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
 
@@ -211,7 +223,7 @@ describe("InternalNotificationSettings", () => {
     );
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ method: "PATCH" });
     expect(editBody).toEqual({
-      topics: ["web_order_paid", "proof_approved"],
+      topics: ["web_order_paid", "website_ai_human_review_required"],
       idempotencyKey: "recipient-edit-id",
     });
     expect(screen.getByText("Subscriptions updated.")).toBeInTheDocument();
@@ -332,7 +344,7 @@ describe("InternalNotificationSettings", () => {
     const pending = {
       ...disabled,
       status: "pending_verification" as const,
-      topics: ["proof_approved"] as const,
+      topics: ["website_ai_human_review_required"] as const,
       verificationExpiresAt: new Date("2026-08-25T00:00:00.000Z"),
       disabledAt: null,
     };
@@ -346,7 +358,9 @@ describe("InternalNotificationSettings", () => {
     const card = screen.getByRole("article", { name: "ops@example.test" });
     const reenable = within(card).getByRole("button", { name: "Re-enable and send verification" });
     expect(reenable).toBeDisabled();
-    fireEvent.click(within(card).getByRole("checkbox", { name: "Customer approved proof" }));
+    fireEvent.click(within(card).getByRole("checkbox", {
+      name: "Website AI assistant needs human review",
+    }));
     expect(reenable).toBeEnabled();
     fireEvent.click(reenable);
     await screen.findByText("The notification recipient could not be saved.");
@@ -359,7 +373,7 @@ describe("InternalNotificationSettings", () => {
       expect(call[1]).toMatchObject({ method: "POST" });
       expect(JSON.parse(String(call[1]?.body))).toEqual({
         email: "ops@example.test",
-        topics: ["proof_approved"],
+        topics: ["website_ai_human_review_required"],
         idempotencyKey: "recipient-reenable-retry",
       });
     }

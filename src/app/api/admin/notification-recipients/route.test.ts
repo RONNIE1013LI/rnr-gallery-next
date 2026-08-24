@@ -145,6 +145,7 @@ describe("Admin notification recipient collection route", () => {
         payment_request_paid: 0,
         proof_approved: 0,
         proof_changes_requested: 0,
+        website_ai_human_review_required: 0,
       },
     });
     expect(JSON.stringify(body)).not.toContain("token");
@@ -179,7 +180,7 @@ describe("Admin notification recipient collection route", () => {
     );
     const input = {
       email: " Ops@Example.Test ",
-      topics: ["web_order_paid"],
+      topics: ["website_ai_human_review_required"],
       idempotencyKey: "recipient-create-1",
     };
 

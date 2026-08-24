@@ -105,7 +105,7 @@ describe("Admin notification recipient item route", () => {
 
     const response = await route.PATCH(request("PATCH", {
       recipientId: "20000000-0000-4000-8000-000000000002",
-      topics: ["manual_order_created"],
+      topics: ["website_ai_human_review_required"],
       idempotencyKey: "recipient-update-1",
     }), context);
 
@@ -116,7 +116,7 @@ describe("Admin notification recipient item route", () => {
       { userId: "admin-1", email: "owner@example.test" },
       {
         recipientId,
-        topics: ["manual_order_created"],
+        topics: ["website_ai_human_review_required"],
         idempotencyKey: "recipient-update-1",
       },
     );
