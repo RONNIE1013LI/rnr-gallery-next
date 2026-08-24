@@ -105,9 +105,9 @@ async function enqueue(input: InternalNotificationEvent) {
     enqueueInternalNotifications(transaction, input));
 }
 
-function deferred() {
-  let resolve!: () => void;
-  const promise = new Promise<void>((resolvePromise) => {
+function deferred<T = void>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
     resolve = resolvePromise;
   });
   return Object.freeze({ promise, resolve });
@@ -256,6 +256,82 @@ describe("internal notification outbox persistence", () => {
         eq(internalNotificationOutbox.recipientId, recipient.id),
       ));
     expect(rows).toHaveLength(1);
+  });
+
+  it("allows different-topic enqueues to share recipient locks before either commits", async () => {
+    const recipients = await Promise.all([
+      insertRecipient({
+        label: "shared-lock-first",
+        status: "active",
+        topics: ["web_order_paid", "proof_approved"],
+      }),
+      insertRecipient({
+        label: "shared-lock-second",
+        status: "active",
+        topics: ["web_order_paid", "proof_approved"],
+      }),
+    ]);
+    const firstEvent = event({ topic: "web_order_paid" });
+    const secondEvent = event({ topic: "proof_approved" });
+    const firstInserted = deferred<number>();
+    const secondAttempt = deferred<Readonly<{
+      result: "inserted" | "blocked";
+      count?: number;
+    }>>();
+    const releaseTransactions = deferred();
+
+    const firstTransaction = database.transaction(async (transaction) => {
+      const count = await enqueueInternalNotifications(transaction, firstEvent);
+      firstInserted.resolve(count);
+      await releaseTransactions.promise;
+      return count;
+    });
+    const firstSettlement = firstTransaction.then(
+      (count) => ({ status: "fulfilled" as const, count }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+    expect(await firstInserted.promise).toBe(2);
+
+    const secondTransaction = database.transaction(async (transaction) => {
+      await transaction.execute(sql`set local statement_timeout = '750ms'`);
+      try {
+        const count = await enqueueInternalNotifications(transaction, secondEvent);
+        secondAttempt.resolve({ result: "inserted", count });
+        await releaseTransactions.promise;
+        return count;
+      } catch (error) {
+        secondAttempt.resolve({ result: "blocked" });
+        throw error;
+      }
+    });
+    const secondSettlement = secondTransaction.then(
+      (count) => ({ status: "fulfilled" as const, count }),
+      (error: unknown) => ({ status: "rejected" as const, error }),
+    );
+
+    let firstResult: Awaited<typeof firstSettlement>;
+    let secondResult: Awaited<typeof secondSettlement>;
+    try {
+      expect(await secondAttempt.promise).toEqual({ result: "inserted", count: 2 });
+    } finally {
+      releaseTransactions.resolve();
+      [firstResult, secondResult] = await Promise.all([
+        firstSettlement,
+        secondSettlement,
+      ]);
+    }
+
+    expect(firstResult).toEqual({ status: "fulfilled", count: 2 });
+    expect(secondResult).toEqual({ status: "fulfilled", count: 2 });
+    const rows = await database.select({
+      topic: internalNotificationOutbox.topic,
+      recipientId: internalNotificationOutbox.recipientId,
+    }).from(internalNotificationOutbox).where(inArray(
+      internalNotificationOutbox.recipientId,
+      recipients.map(({ id }) => id),
+    ));
+    expect(rows.filter(({ topic }) => topic === "web_order_paid")).toHaveLength(2);
+    expect(rows.filter(({ topic }) => topic === "proof_approved")).toHaveLength(2);
   });
 
   it("canonicalizes UUIDs so uppercase and lowercase replays share one event key", async () => {

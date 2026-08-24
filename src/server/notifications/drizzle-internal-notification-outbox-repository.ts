@@ -86,7 +86,7 @@ export async function enqueueInternalNotifications(
       ),
     )
     .where(eq(internalNotificationRecipients.status, "active"))
-    .for("update", { of: internalNotificationRecipients });
+    .for("share", { of: internalNotificationRecipients });
 
   if (recipients.length === 0) return 0;
 
