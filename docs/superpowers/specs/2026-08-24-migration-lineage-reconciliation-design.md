@@ -1,6 +1,6 @@
 # Migration Lineage Reconciliation Design
 
-**Status:** Proposed for written approval  
+**Status:** Reconciled in Test; Production migration pending
 **Date:** 2026-08-24  
 **Branch:** `chore/migration-lineage-reconciliation`  
 **Base:** `feat/internal-notifications-market-switch` at `f6f0980f959d460d8ea1f35531624e37000bb78d`
@@ -25,6 +25,16 @@ Read-only Production inspection established:
 - The approved notification SQL hash is not present in Production migration history.
 
 No Production write, migration, deployment, merge, or push occurred during this inspection.
+
+## Test reconciliation evidence
+
+- The immutable Production prefix matches the repository lineage exactly: 54 of 54 entries.
+- A fresh guarded Test replay passed, and the Production/Test baseline catalog comparison reported zero differences.
+- The reconciled baseline contains 71 tables, 957 columns, 266 indexes, 547 constraints, no enums, and one application sequence.
+- The earlier 953-column snapshot count omitted four columns already applied by exact migration `0038_facebook_customer_display_names`; the corrected `0055` snapshot contains 957 columns.
+- Migration position 55 is `0056_internal_notification_center`; it adds only the three approved notification tables, with zero changes to existing baseline objects.
+- The complete Test lineage contains 74 tables and 994 columns. A guarded rerun added zero migration rows and left the catalog unchanged.
+- Production migration remains pending. No Production write or migration occurred during reconciliation.
 
 ## Source of truth
 

@@ -15,4 +15,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 * After deployment, verify `origin/main` SHA equals the READY Vercel Production SHA, `githubCommitRef` is `main`, and both Production domains are assigned. Any mismatch is `PRODUCTION DRIFT DETECTED` and requires an immediate stop and report.
 * Do not deploy from a dirty or cross-workstream worktree. Do not include unrelated changes in a release.
 * Production database writes/migrations, environment changes, DNS/domain changes, and payment/authentication configuration changes require separate explicit approval.
-* The temporary migration freeze remains active until Migration Lineage Reconciliation is explicitly completed and verified. Do not generate or execute a formal migration during the freeze.
+* Before every Production migration, run the exact-prefix lineage and database-identity checks. Any hash, order, timestamp, catalog, or identity mismatch blocks migration; never bypass or rewrite applied history.
