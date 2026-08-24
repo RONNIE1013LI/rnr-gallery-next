@@ -14,6 +14,7 @@
     "test:run": "vitest run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate-database.ts",
+    "db:lineage:check": "tsx scripts/verify-migration-lineage.ts",
     "db:check": "drizzle-kit check",
     "backup:lan": "zsh ops/macos/backup-lan-data.zsh",
     "gallery:import": "tsx scripts/import-wordpress-gallery.ts",
