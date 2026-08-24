@@ -2,7 +2,7 @@ import { createHash, createHmac, randomUUID } from "node:crypto";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { Pool } from "pg";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   customerServiceAiAttempts,
   customerServiceAttachments,
@@ -32,6 +32,9 @@ import {
   customerServiceWebsiteAssistantMessages,
   customerServiceWebsiteBudgetState,
   customerServiceWebsiteMetricEvents,
+  internalNotificationOutbox,
+  internalNotificationRecipients,
+  internalNotificationSubscriptions,
   user,
 } from "@/server/db/schema";
 import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
@@ -115,6 +118,9 @@ const publicationRaceRepository = createDrizzleCustomerServiceRepository(drizzle
 });
 const sourceIdentitySecret = "integration-source-identity-secret";
 const selectorBase64urlAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const notificationFixtureSuffix = randomUUID();
+const notificationActorId = `customer-service-notification-actor-${notificationFixtureSuffix}`;
+const notificationRecipientIds: string[] = [];
 
 function websiteProductContext(category: "canvas" | "banners"): SafeProductContext {
   return Object.freeze({
@@ -219,6 +225,57 @@ async function clearTables() {
   await database.delete(customerServicePilotRuns);
   await database.delete(customerServiceUiChanges);
   await database.update(customerServiceUiRevision).set({ revision: 0, changedAt: new Date("2026-08-20T00:00:00.000Z") });
+}
+
+async function clearNotificationFixtures() {
+  if (notificationRecipientIds.length === 0) return;
+  await database.delete(internalNotificationOutbox).where(
+    inArray(internalNotificationOutbox.recipientId, notificationRecipientIds),
+  );
+  await database.delete(internalNotificationRecipients).where(
+    inArray(internalNotificationRecipients.id, notificationRecipientIds),
+  );
+  notificationRecipientIds.length = 0;
+}
+
+async function insertWebsiteReviewNotificationRecipient(input: Readonly<{
+  label: string;
+  status: "pending_verification" | "active" | "disabled";
+  subscribed: boolean;
+}>) {
+  const id = randomUUID();
+  const email = `customer-service-${input.label}-${notificationFixtureSuffix}@example.test`;
+  const now = new Date("2026-08-24T09:00:00.000Z");
+  notificationRecipientIds.push(id);
+  await database.insert(internalNotificationRecipients).values({
+    id,
+    email,
+    status: input.status,
+    createdByUserId: notificationActorId,
+    createdAt: now,
+    updatedAt: now,
+    ...(input.status === "active"
+      ? { verifiedAt: now }
+      : input.status === "pending_verification"
+        ? {
+            verificationTokenDigest: createHash("sha256").update(id).digest("hex"),
+            verificationIssuedAt: now,
+            verificationExpiresAt: new Date("2026-08-25T09:00:00.000Z"),
+          }
+        : {
+            disabledAt: now,
+            disabledByUserId: notificationActorId,
+          }),
+  });
+  if (input.subscribed) {
+    await database.insert(internalNotificationSubscriptions).values({
+      recipientId: id,
+      topic: "website_ai_human_review_required",
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  return Object.freeze({ id, email });
 }
 
 async function createRetentionConversation(input: Readonly<{
@@ -463,9 +520,22 @@ async function createTask13RunningTurn(input: Readonly<{
 }
 
 describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
-  beforeEach(clearTables);
-  afterAll(async () => {
+  beforeAll(async () => {
+    await database.insert(user).values({
+      id: notificationActorId,
+      name: "Customer Service Notification Admin",
+      email: `customer-service-notification-actor-${notificationFixtureSuffix}@example.test`,
+      role: "admin",
+    });
+  });
+  beforeEach(async () => {
+    await clearNotificationFixtures();
     await clearTables();
+  });
+  afterAll(async () => {
+    await clearNotificationFixtures();
+    await clearTables();
+    await database.delete(user).where(eq(user.id, notificationActorId));
     await competingPool.end();
     await publicationRacePool.end();
   });
@@ -544,7 +614,133 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     );
   });
 
+  it("fans out a new website human review only to active subscribers with bounded display fields", async () => {
+    const first = await insertWebsiteReviewNotificationRecipient({
+      label: "active-first",
+      status: "active",
+      subscribed: true,
+    });
+    const second = await insertWebsiteReviewNotificationRecipient({
+      label: "active-second",
+      status: "active",
+      subscribed: true,
+    });
+    await insertWebsiteReviewNotificationRecipient({
+      label: "pending",
+      status: "pending_verification",
+      subscribed: true,
+    });
+    await insertWebsiteReviewNotificationRecipient({
+      label: "disabled",
+      status: "disabled",
+      subscribed: true,
+    });
+    await insertWebsiteReviewNotificationRecipient({
+      label: "unsubscribed",
+      status: "active",
+      subscribed: false,
+    });
+    const deleted = await insertWebsiteReviewNotificationRecipient({
+      label: "deleted",
+      status: "active",
+      subscribed: true,
+    });
+    await database.delete(internalNotificationRecipients).where(
+      eq(internalNotificationRecipients.id, deleted.id),
+    );
+
+    const sessionHash = "f1".repeat(32);
+    const claimed = await claimWebsiteTurn({
+      sessionHash,
+      networkHash: "f2".repeat(32),
+      messageHash: "f3".repeat(32),
+      text: "Customer Jane, order RNR-PRIVATE-42, conversation secret-conversation, selector secret-selector, token secret-token.",
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    const reviewId = "00000000-0000-4000-8000-000000000421";
+    const now = new Date("2026-08-24T10:00:00.000Z");
+
+    await expect(repository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now,
+      knowledgeVersion: "knowledge-v1",
+      reviewAlert: {
+        reviewId,
+        deepLinkTokenHash: "fe".repeat(32),
+        deepLinkExpiresAt: new Date("2026-08-31T10:00:00.000Z"),
+        idempotencyKey: `review-alert:${reviewId}`,
+      },
+    })).resolves.toMatchObject({ status: "opened", reviewId });
+
+    const rows = await database.select({
+      eventKey: internalNotificationOutbox.eventKey,
+      topic: internalNotificationOutbox.topic,
+      sourceEventId: internalNotificationOutbox.sourceEventId,
+      resourceType: internalNotificationOutbox.resourceType,
+      resourceId: internalNotificationOutbox.resourceId,
+      resourceReference: internalNotificationOutbox.resourceReference,
+      recipientId: internalNotificationOutbox.recipientId,
+      recipientEmail: internalNotificationOutbox.recipientEmail,
+      payload: internalNotificationOutbox.payload,
+      availableAt: internalNotificationOutbox.availableAt,
+    }).from(internalNotificationOutbox)
+      .where(eq(internalNotificationOutbox.sourceEventId, reviewId))
+      .orderBy(asc(internalNotificationOutbox.recipientId));
+    const recipients = [first, second].sort((left, right) => left.id.localeCompare(right.id));
+    const [storedReview] = await database.select({
+      conversationId: customerServiceHumanReviews.conversationId,
+    }).from(customerServiceHumanReviews).where(eq(customerServiceHumanReviews.id, reviewId));
+    if (!storedReview) throw new Error("expected stored website review");
+
+    expect(rows).toEqual(recipients.map((recipient) => ({
+      eventKey: `website_ai_human_review_required:${reviewId}:${recipient.id}`,
+      topic: "website_ai_human_review_required",
+      sourceEventId: reviewId,
+      resourceType: "customer_service_review",
+      resourceId: reviewId,
+      resourceReference: "Website chat requires human review (high_risk) at 2026-08-24T10:00:00.000Z",
+      recipientId: recipient.id,
+      recipientEmail: recipient.email,
+      payload: { version: 1, adminPath: "/reply-assistant" },
+      availableAt: now,
+    })));
+    const displayable = JSON.stringify(rows.map(({ resourceReference, payload }) => ({
+      resourceReference,
+      payload,
+    })));
+    for (const privateValue of [
+      "Customer Jane",
+      "RNR-PRIVATE-42",
+      "secret-conversation",
+      "secret-selector",
+      "secret-token",
+      sessionHash,
+      storedReview.conversationId,
+      claimed.messageId,
+      reviewId,
+    ]) {
+      expect(displayable).not.toContain(privateValue);
+    }
+    await expect(database.select().from(customerServiceReviewAlertOutbox)).resolves.toEqual([]);
+  });
+
   it("opens one website review generation for repeated blocked turns, then creates a new one after resolution", async () => {
+    const firstRecipient = await insertWebsiteReviewNotificationRecipient({
+      label: "review-generations",
+      status: "active",
+      subscribed: true,
+    });
     const first = await claimWebsiteTurn({
       sessionHash: "61".repeat(32),
       networkHash: "62".repeat(32),
@@ -574,6 +770,18 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       },
     });
     expect(firstReview).toMatchObject({ status: "opened", generation: 1 });
+    await expect(database.select({
+      sourceEventId: internalNotificationOutbox.sourceEventId,
+      recipientId: internalNotificationOutbox.recipientId,
+    }).from(internalNotificationOutbox)).resolves.toEqual([{
+      sourceEventId: (firstReview as { reviewId: string }).reviewId,
+      recipientId: firstRecipient.id,
+    }]);
+    const lateRecipient = await insertWebsiteReviewNotificationRecipient({
+      label: "review-generations-late",
+      status: "active",
+      subscribed: true,
+    });
     await repository.completeCustomerTurnProcessing({
       turnId: first.turnId,
       leaseToken: first.leaseToken,
@@ -616,7 +824,8 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     const alertDedupe = await database.execute(sql`
       select deduplicated_count from customer_service_review_alert_outbox
     `);
-    expect(alertDedupe.rows).toEqual([{ deduplicated_count: 1 }]);
+    expect(alertDedupe.rows).toEqual([]);
+    await expect(database.select().from(internalNotificationOutbox)).resolves.toHaveLength(1);
     await repository.completeCustomerTurnProcessing({
       turnId: second.turnId,
       leaseToken: second.leaseToken,
@@ -665,6 +874,21 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
     expect(thirdReview).toMatchObject({ status: "opened", generation: 2 });
 
+    const notificationRows = await database.select({
+      sourceEventId: internalNotificationOutbox.sourceEventId,
+      recipientId: internalNotificationOutbox.recipientId,
+    }).from(internalNotificationOutbox)
+      .orderBy(asc(internalNotificationOutbox.createdAt), asc(internalNotificationOutbox.recipientId));
+    const newGenerationRecipients = [firstRecipient, lateRecipient]
+      .sort((left, right) => left.id.localeCompare(right.id));
+    expect(notificationRows).toEqual([
+      { sourceEventId: (firstReview as { reviewId: string }).reviewId, recipientId: firstRecipient.id },
+      ...newGenerationRecipients.map(({ id }) => ({
+        sourceEventId: (thirdReview as { reviewId: string }).reviewId,
+        recipientId: id,
+      })),
+    ]);
+
     const reviews = await database.select({
       generation: customerServiceHumanReviews.generation,
       status: customerServiceHumanReviews.status,
@@ -683,6 +907,11 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   });
 
   it("uses the review and acknowledgement uniqueness constraints when two workers race", async () => {
+    const recipient = await insertWebsiteReviewNotificationRecipient({
+      label: "concurrent-review",
+      status: "active",
+      subscribed: true,
+    });
     const claimed = await claimWebsiteTurn({
       sessionHash: "71".repeat(32),
       networkHash: "72".repeat(32),
@@ -718,6 +947,13 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(reviews).toHaveLength(1);
     expect(reviews[0]).toMatchObject({ generation: 1, reason: "high_risk", status: "open" });
     expect(acknowledgements).toHaveLength(1);
+    await expect(database.select({
+      sourceEventId: internalNotificationOutbox.sourceEventId,
+      recipientId: internalNotificationOutbox.recipientId,
+    }).from(internalNotificationOutbox)).resolves.toEqual([{
+      sourceEventId: reviews[0].id,
+      recipientId: recipient.id,
+    }]);
   });
 
   it("atomically creates one durable alert outbox row with a new human-review incident", async () => {
@@ -766,6 +1002,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       status: "pending",
       attemptCount: 0,
     });
+    await expect(database.select().from(internalNotificationOutbox)).resolves.toEqual([]);
   });
 
   it("exposes only a queue-scoped website review selector and resolves a valid unexpired deep link", async () => {
@@ -2928,6 +3165,11 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   });
 
   it("keeps a validated Website draft internal until a leased publication commits it once", async () => {
+    await insertWebsiteReviewNotificationRecipient({
+      label: "validated-ai",
+      status: "active",
+      subscribed: true,
+    });
     const claimed = await claimWebsiteTurn({
       sessionHash: "91".repeat(32),
       networkHash: "92".repeat(32),
@@ -2978,6 +3220,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
         knowledgeVersion: "website-knowledge-v2",
       }),
     ]);
+    await expect(database.select().from(internalNotificationOutbox)).resolves.toEqual([]);
   });
 
   it.each([

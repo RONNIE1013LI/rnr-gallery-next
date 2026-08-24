@@ -68,6 +68,7 @@ import type {
   WebsitePublicUpdateCursor,
   WebsitePublicUpdateRecord,
 } from "../website/public-updates";
+import { enqueueInternalNotifications } from "@/server/notifications/drizzle-internal-notification-outbox-repository";
 import {
   createReplyAssistantUpdateReader,
   encodeReplyAssistantCursor,
@@ -2111,7 +2112,16 @@ export function createDrizzleCustomerServiceRepository(
             id: customerServiceHumanReviews.id,
             generation: customerServiceHumanReviews.generation,
           });
-          if (input.reviewAlert) {
+          const notificationCount = await enqueueInternalNotifications(transaction, {
+            topic: "website_ai_human_review_required",
+            sourceEventId: created.id,
+            resourceType: "customer_service_review",
+            resourceId: created.id,
+            resourceReference: `Website chat requires human review (${response.reason}) at ${input.now.toISOString()}`,
+            payload: { version: 1, adminPath: "/reply-assistant" },
+            createdAt: input.now,
+          });
+          if (notificationCount === 0 && input.reviewAlert) {
             await transaction.insert(customerServiceReviewAlertOutbox).values({
               humanReviewId: created.id,
               status: "pending",
