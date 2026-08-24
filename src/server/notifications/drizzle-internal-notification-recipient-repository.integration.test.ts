@@ -6,6 +6,7 @@ import {
   adminAuditLogs,
   internalNotificationOutbox,
   internalNotificationRecipients,
+  internalNotificationSubscriptions,
   user,
 } from "@/server/db/schema";
 import {
@@ -134,6 +135,42 @@ describe("internal notification recipient persistence", () => {
         .where(inArray(internalNotificationRecipients.id, recipientIds));
     }
     await database.delete(user).where(eq(user.id, actorId));
+  });
+
+  it("accepts the AI human-review subscription topic", async () => {
+    const created = await addRecipient("ai-human-review-topic", token(21));
+
+    await database.insert(internalNotificationSubscriptions).values({
+      recipientId: created.recipient.id,
+      topic: "website_ai_human_review_required",
+      createdAt: baseNow,
+      updatedAt: baseNow,
+    });
+    const topics = await database.select({
+      topic: internalNotificationSubscriptions.topic,
+    }).from(internalNotificationSubscriptions).where(
+      eq(internalNotificationSubscriptions.recipientId, created.recipient.id),
+    );
+    expect(topics).toEqual(expect.arrayContaining([
+      { topic: "web_order_paid" },
+      { topic: "website_ai_human_review_required" },
+    ]));
+  });
+
+  it("rejects unknown subscription topics at the database boundary", async () => {
+    const created = await addRecipient("unknown-topic-constraint", token(22));
+
+    await expect(database.execute(sql`
+      insert into internal_notification_subscriptions
+        (recipient_id, topic, created_at, updated_at)
+      values
+        (${created.recipient.id}, 'unknown_topic', ${baseNow}, ${baseNow})
+    `)).rejects.toMatchObject({
+      cause: {
+        code: "23514",
+        constraint: "internal_notification_subscriptions_topic_valid",
+      },
+    });
   });
 
   it("allows exactly one concurrent create for the same normalized email", async () => {

@@ -183,6 +183,7 @@ describe("internal notification schema", () => {
       "payment_request_paid",
       "proof_approved",
       "proof_changes_requested",
+      "website_ai_human_review_required",
     ]);
     expect(INTERNAL_NOTIFICATION_TOPIC_LABELS).toEqual({
       manual_order_created: "New manual order",
@@ -190,6 +191,8 @@ describe("internal notification schema", () => {
       payment_request_paid: "Standalone payment request paid",
       proof_approved: "Customer approved proof",
       proof_changes_requested: "Customer requested proof changes",
+      website_ai_human_review_required:
+        "Website AI assistant needs human review",
     });
   });
 
@@ -373,7 +376,7 @@ describe("internal notification schema", () => {
     }]);
     expect(checkContracts(internalNotificationSubscriptions)).toEqual({
       internal_notification_subscriptions_topic_valid: normalizeSql(
-        `"internal_notification_subscriptions"."topic" in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested')`,
+        `"internal_notification_subscriptions"."topic" in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested', 'website_ai_human_review_required')`,
       ),
     });
   });
@@ -435,10 +438,10 @@ describe("internal notification schema", () => {
     }]);
     expect(checkContracts(internalNotificationOutbox)).toEqual({
       internal_notification_outbox_topic_valid: normalizeSql(
-        `"internal_notification_outbox"."topic" in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested')`,
+        `"internal_notification_outbox"."topic" in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested', 'website_ai_human_review_required')`,
       ),
       internal_notification_outbox_resource_type_valid: normalizeSql(
-        `"internal_notification_outbox"."resource_type" in ('production_job', 'order', 'payment_request', 'proof_review')`,
+        `"internal_notification_outbox"."resource_type" in ('production_job', 'order', 'payment_request', 'proof_review', 'customer_service_review')`,
       ),
       internal_notification_outbox_status_valid: normalizeSql(
         `"internal_notification_outbox"."status" in ('pending', 'sending', 'sent', 'failed', 'cancelled')`,

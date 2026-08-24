@@ -157,6 +157,87 @@ describe("internal notification outbox persistence", () => {
     await database.delete(user).where(eq(user.id, actorId));
   });
 
+  it("accepts an AI human-review outbox topic and resource type", async () => {
+    const recipient = await insertRecipient({
+      label: "ai-human-review-constraints",
+      status: "active",
+      topics: [],
+    });
+    const validEventKey = `ai-human-review-valid-${suffix}`;
+
+    await database.insert(internalNotificationOutbox).values({
+      eventKey: validEventKey,
+      topic: "website_ai_human_review_required",
+      sourceEventId: randomUUID(),
+      resourceType: "customer_service_review",
+      resourceId: randomUUID(),
+      resourceReference: `REVIEW-${suffix.slice(0, 8)}`,
+      recipientId: recipient.id,
+      recipientEmail: recipient.email,
+      payload: { version: 1, adminPath: "/reply-assistant" },
+      availableAt: now,
+      createdAt: now,
+      updatedAt: now,
+    });
+    const [stored] = await database.select({
+      topic: internalNotificationOutbox.topic,
+      resourceType: internalNotificationOutbox.resourceType,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.eventKey, validEventKey),
+    );
+    expect(stored).toEqual({
+      topic: "website_ai_human_review_required",
+      resourceType: "customer_service_review",
+    });
+  });
+
+  it("rejects unknown outbox topics at the database boundary", async () => {
+    const recipient = await insertRecipient({
+      label: "unknown-outbox-topic",
+      status: "active",
+      topics: [],
+    });
+
+    await expect(database.execute(sql`
+      insert into internal_notification_outbox
+        (event_key, topic, source_event_id, resource_type, resource_id,
+          resource_reference, recipient_id, recipient_email, payload)
+      values
+        (${`ai-human-review-unknown-topic-${suffix}`}, 'unknown_topic',
+          ${randomUUID()}, 'order', ${randomUUID()}, 'UNKNOWN-TOPIC',
+          ${recipient.id}, ${recipient.email}, ${JSON.stringify({ version: 1 })}::jsonb)
+    `)).rejects.toMatchObject({
+      cause: {
+        code: "23514",
+        constraint: "internal_notification_outbox_topic_valid",
+      },
+    });
+  });
+
+  it("rejects unknown outbox resource types at the database boundary", async () => {
+    const recipient = await insertRecipient({
+      label: "unknown-outbox-resource",
+      status: "active",
+      topics: [],
+    });
+
+    await expect(database.execute(sql`
+      insert into internal_notification_outbox
+        (event_key, topic, source_event_id, resource_type, resource_id,
+          resource_reference, recipient_id, recipient_email, payload)
+      values
+        (${`ai-human-review-unknown-resource-${suffix}`}, 'web_order_paid',
+          ${randomUUID()}, 'unknown_resource', ${randomUUID()},
+          'UNKNOWN-RESOURCE', ${recipient.id}, ${recipient.email},
+          ${JSON.stringify({ version: 1 })}::jsonb)
+    `)).rejects.toMatchObject({
+      cause: {
+        code: "23514",
+        constraint: "internal_notification_outbox_resource_type_valid",
+      },
+    });
+  });
+
   it("expands an event only to active exact-topic recipients and preserves snapshots", async () => {
     const first = await insertRecipient({
       label: "eligible-first",

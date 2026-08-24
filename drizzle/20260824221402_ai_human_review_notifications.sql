@@ -1,0 +1,6 @@
+ALTER TABLE "internal_notification_outbox" DROP CONSTRAINT "internal_notification_outbox_topic_valid";--> statement-breakpoint
+ALTER TABLE "internal_notification_outbox" DROP CONSTRAINT "internal_notification_outbox_resource_type_valid";--> statement-breakpoint
+ALTER TABLE "internal_notification_subscriptions" DROP CONSTRAINT "internal_notification_subscriptions_topic_valid";--> statement-breakpoint
+ALTER TABLE "internal_notification_outbox" ADD CONSTRAINT "internal_notification_outbox_topic_valid" CHECK ("internal_notification_outbox"."topic" in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested', 'website_ai_human_review_required'));--> statement-breakpoint
+ALTER TABLE "internal_notification_outbox" ADD CONSTRAINT "internal_notification_outbox_resource_type_valid" CHECK ("internal_notification_outbox"."resource_type" in ('production_job', 'order', 'payment_request', 'proof_review', 'customer_service_review'));--> statement-breakpoint
+ALTER TABLE "internal_notification_subscriptions" ADD CONSTRAINT "internal_notification_subscriptions_topic_valid" CHECK ("internal_notification_subscriptions"."topic" in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested', 'website_ai_human_review_required'));

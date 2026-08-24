@@ -122,7 +122,7 @@ export const internalNotificationSubscriptions = pgTable(
     ),
     check(
       "internal_notification_subscriptions_topic_valid",
-      sql`${table.topic} in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested')`,
+      sql`${table.topic} in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested', 'website_ai_human_review_required')`,
     ),
   ],
 );
@@ -179,11 +179,11 @@ export const internalNotificationOutbox = pgTable(
     ),
     check(
       "internal_notification_outbox_topic_valid",
-      sql`${table.topic} in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested')`,
+      sql`${table.topic} in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested', 'website_ai_human_review_required')`,
     ),
     check(
       "internal_notification_outbox_resource_type_valid",
-      sql`${table.resourceType} in ('production_job', 'order', 'payment_request', 'proof_review')`,
+      sql`${table.resourceType} in ('production_job', 'order', 'payment_request', 'proof_review', 'customer_service_review')`,
     ),
     check(
       "internal_notification_outbox_status_valid",

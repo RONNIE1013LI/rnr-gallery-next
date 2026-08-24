@@ -16,7 +16,16 @@ type JournalEntry = Readonly<{
 }>;
 
 type Journal = Readonly<{ entries: JournalEntry[] }>;
-type Snapshot = Readonly<{ tables: Record<string, unknown> }>;
+type SnapshotCheck = Readonly<{ name: string; value: string }>;
+type SnapshotTable = Readonly<{
+  checkConstraints: Record<string, SnapshotCheck>;
+  [key: string]: unknown;
+}>;
+type Snapshot = Readonly<{
+  id: string;
+  prevId: string;
+  tables: Record<string, SnapshotTable>;
+}>;
 
 function loadJson<T>(path: string): T {
   return JSON.parse(readFileSync(resolve(path), "utf8")) as T;
@@ -27,16 +36,16 @@ function sha256(path: string): string {
 }
 
 describe("migration lineage artifacts", () => {
-  it("keeps the immutable Production prefix before the canonical notification migration", () => {
+  it("keeps the immutable Production prefix and appends the canonical notification migrations", () => {
     const manifest = loadJson<AppliedMigration[]>(
       "drizzle/production-lineage-2026-08-24.json",
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(55);
+    expect(journal.entries).toHaveLength(56);
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(55);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(55);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(56);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(56);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -49,6 +58,11 @@ describe("migration lineage artifacts", () => {
       idx: 54,
       when: 1787525686969,
       tag: "0056_internal_notification_center",
+    });
+    expect(journal.entries[55]).toMatchObject({
+      idx: 55,
+      when: 1787609642192,
+      tag: "20260824221402_ai_human_review_notifications",
     });
   });
 
@@ -82,5 +96,45 @@ describe("migration lineage artifacts", () => {
         table,
       );
     }
+  });
+
+  it("changes only the three approved notification check constraints", () => {
+    const previous = loadJson<Snapshot>("drizzle/meta/0056_snapshot.json");
+    const current = loadJson<Snapshot>(
+      "drizzle/meta/20260824221402_snapshot.json",
+    );
+    const normalizedCurrentTables = structuredClone(current.tables);
+    const changes = [
+      {
+        table: "public.internal_notification_outbox",
+        constraint: "internal_notification_outbox_topic_valid",
+        value:
+          `"internal_notification_outbox"."topic" in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested', 'website_ai_human_review_required')`,
+      },
+      {
+        table: "public.internal_notification_outbox",
+        constraint: "internal_notification_outbox_resource_type_valid",
+        value:
+          `"internal_notification_outbox"."resource_type" in ('production_job', 'order', 'payment_request', 'proof_review', 'customer_service_review')`,
+      },
+      {
+        table: "public.internal_notification_subscriptions",
+        constraint: "internal_notification_subscriptions_topic_valid",
+        value:
+          `"internal_notification_subscriptions"."topic" in ('manual_order_created', 'web_order_paid', 'payment_request_paid', 'proof_approved', 'proof_changes_requested', 'website_ai_human_review_required')`,
+      },
+    ] as const;
+
+    expect(current.prevId).toBe(previous.id);
+    expect(Object.keys(current.tables)).toEqual(Object.keys(previous.tables));
+    for (const change of changes) {
+      expect(
+        current.tables[change.table]?.checkConstraints[change.constraint],
+      ).toEqual({ name: change.constraint, value: change.value });
+      normalizedCurrentTables[change.table].checkConstraints[
+        change.constraint
+      ] = previous.tables[change.table].checkConstraints[change.constraint];
+    }
+    expect(normalizedCurrentTables).toEqual(previous.tables);
   });
 });
