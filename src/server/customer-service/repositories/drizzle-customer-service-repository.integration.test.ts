@@ -39,6 +39,7 @@ import {
 } from "@/server/db/schema";
 import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
 import { EmailDeliveryError } from "@/server/notifications/customer-notification-service";
+import { createDrizzleInternalNotificationOutboxRepository } from "@/server/notifications/drizzle-internal-notification-outbox-repository";
 import { createCustomerTurnRecoveryRunner } from "../turn-recovery-runner";
 import type { SafeProductContext } from "../types";
 import {
@@ -1496,6 +1497,147 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       tokenHash: "ab".repeat(32),
       now: new Date("2026-08-22T00:00:00.000Z"),
     })).resolves.toBeNull();
+  });
+
+  it("cancels only undelivered AI notifications for a manually resolved website review", async () => {
+    const deliveredRecipient = await insertWebsiteReviewNotificationRecipient({
+      label: "manual-resolution-delivered",
+      status: "active",
+      subscribed: true,
+    });
+    const pendingRecipient = await insertWebsiteReviewNotificationRecipient({
+      label: "manual-resolution-pending",
+      status: "active",
+      subscribed: true,
+    });
+    const failedRecipient = await insertWebsiteReviewNotificationRecipient({
+      label: "manual-resolution-failed",
+      status: "active",
+      subscribed: true,
+    });
+    const reviewId = "00000000-0000-4000-8000-000000000161";
+    const review = await openTask13Review({
+      sessionHash: "e1".repeat(32),
+      networkHash: "e2".repeat(32),
+      messageHash: "e3".repeat(32),
+      reviewId,
+    });
+    const resolutionTime = new Date("2026-08-21T00:00:04.000Z");
+    const otherReviewId = "00000000-0000-4000-8000-000000000162";
+    const otherResourceId = "00000000-0000-4000-8000-000000000163";
+    const deliveredEventKey = `website_ai_human_review_required:${reviewId}:${deliveredRecipient.id}`;
+    const cancelledEventKey = `website_ai_human_review_required:${reviewId}:${pendingRecipient.id}`;
+    const failedEventKey = `website_ai_human_review_required:${reviewId}:${failedRecipient.id}`;
+    const otherReviewEventKey = `website_ai_human_review_required:${otherReviewId}:${pendingRecipient.id}`;
+    const otherTopicEventKey = `web_order_paid:${reviewId}:${pendingRecipient.id}`;
+
+    await database.update(internalNotificationOutbox).set({
+      status: "sent",
+      attempts: 1,
+      lastAttemptAt: new Date("2026-08-21T00:00:03.000Z"),
+      sentAt: new Date("2026-08-21T00:00:03.000Z"),
+      providerMessageId: "already-sent",
+      updatedAt: new Date("2026-08-21T00:00:03.000Z"),
+    }).where(eq(internalNotificationOutbox.eventKey, deliveredEventKey));
+    await database.update(internalNotificationOutbox).set({
+      status: "failed",
+      attempts: 1,
+      lastAttemptAt: new Date("2026-08-21T00:00:03.000Z"),
+      lastErrorCode: "provider_temporarily_unavailable",
+      updatedAt: new Date("2026-08-21T00:00:03.000Z"),
+    }).where(eq(internalNotificationOutbox.eventKey, failedEventKey));
+    await database.insert(internalNotificationOutbox).values([
+      {
+        eventKey: otherReviewEventKey,
+        topic: "website_ai_human_review_required",
+        sourceEventId: otherReviewId,
+        resourceType: "customer_service_review",
+        resourceId: otherReviewId,
+        resourceReference: "Website chat requires human review (high_risk) at 2026-08-21T00:00:02.000Z",
+        recipientId: pendingRecipient.id,
+        recipientEmail: pendingRecipient.email,
+        payload: { version: 1, adminPath: "/reply-assistant" },
+        availableAt: new Date("2026-08-21T00:00:02.000Z"),
+        createdAt: new Date("2026-08-21T00:00:02.000Z"),
+        updatedAt: new Date("2026-08-21T00:00:02.000Z"),
+      },
+      {
+        eventKey: otherTopicEventKey,
+        topic: "web_order_paid",
+        sourceEventId: reviewId,
+        resourceType: "order",
+        resourceId: otherResourceId,
+        resourceReference: "WEB-OTHER-EVENT",
+        recipientId: pendingRecipient.id,
+        recipientEmail: pendingRecipient.email,
+        payload: { version: 1, adminPath: `/admin/orders/${otherResourceId}` },
+        availableAt: new Date("2026-08-21T00:00:02.000Z"),
+        createdAt: new Date("2026-08-21T00:00:02.000Z"),
+        updatedAt: new Date("2026-08-21T00:00:02.000Z"),
+      },
+    ]);
+    await database.insert(user).values({
+      id: "task-6-manual-resolution-staff",
+      name: "Task 6 Manual Resolution Staff",
+      email: "task-6-manual-resolution-staff@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+
+    await expect(repository.answerWebsiteReview({
+      reviewSelector: review.selector,
+      text: "This Website review has been handled by staff.",
+      actorUserId: "task-6-manual-resolution-staff",
+      now: resolutionTime,
+    })).resolves.toEqual({ status: "sent" });
+
+    const rows = await database.select({
+      eventKey: internalNotificationOutbox.eventKey,
+      status: internalNotificationOutbox.status,
+      cancelledAt: internalNotificationOutbox.cancelledAt,
+      cancellationReason: internalNotificationOutbox.cancellationReason,
+    }).from(internalNotificationOutbox).orderBy(asc(internalNotificationOutbox.eventKey));
+    expect(rows).toEqual(expect.arrayContaining([
+      {
+        eventKey: cancelledEventKey,
+        status: "cancelled",
+        cancelledAt: resolutionTime,
+        cancellationReason: "review_resolved_before_delivery",
+      },
+      {
+        eventKey: deliveredEventKey,
+        status: "sent",
+        cancelledAt: null,
+        cancellationReason: null,
+      },
+      {
+        eventKey: failedEventKey,
+        status: "cancelled",
+        cancelledAt: resolutionTime,
+        cancellationReason: "review_resolved_before_delivery",
+      },
+      {
+        eventKey: otherReviewEventKey,
+        status: "pending",
+        cancelledAt: null,
+        cancellationReason: null,
+      },
+      {
+        eventKey: otherTopicEventKey,
+        status: "pending",
+        cancelledAt: null,
+        cancellationReason: null,
+      },
+    ]));
+
+    const outboxRepository = createDrizzleInternalNotificationOutboxRepository(database);
+    const claimableKeys = new Set<string>();
+    for (let index = 0; index < 2; index += 1) {
+      const claimed = await outboxRepository.claimNext(resolutionTime);
+      if (!claimed) throw new Error("expected unrelated notification to remain claimable");
+      claimableKeys.add(claimed.eventKey);
+    }
+    expect(claimableKeys).toEqual(new Set([otherReviewEventKey, otherTopicEventKey]));
+    await expect(outboxRepository.claimNext(resolutionTime)).resolves.toBeNull();
   });
 
   it("allows only one of two different staff replies to resolve the same review", async () => {

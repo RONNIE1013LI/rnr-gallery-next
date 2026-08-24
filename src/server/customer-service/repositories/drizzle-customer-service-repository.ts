@@ -14,6 +14,7 @@ import {
   customerServiceHumanReplyMatches,
   customerServiceHumanReplyMatchEvents,
   customerServiceHumanReviews,
+  internalNotificationOutbox,
   customerServiceReviewAlertOutbox,
   customerServiceReviewSelectors,
   customerServiceImageAnalysisAttempts,
@@ -1191,6 +1192,18 @@ export function createDrizzleCustomerServiceRepository(
               isNull(customerServiceReviewAlertOutbox.providerSendStartedAt),
             ),
           ),
+        ));
+        await transaction.update(internalNotificationOutbox).set({
+          status: "cancelled",
+          cancelledAt: input.now,
+          cancellationReason: "review_resolved_before_delivery",
+          updatedAt: input.now,
+        }).where(and(
+          eq(internalNotificationOutbox.topic, "website_ai_human_review_required"),
+          eq(internalNotificationOutbox.sourceEventId, review.id),
+          eq(internalNotificationOutbox.resourceType, "customer_service_review"),
+          eq(internalNotificationOutbox.resourceId, review.id),
+          inArray(internalNotificationOutbox.status, ["pending", "failed"]),
         ));
         await transaction.update(customerServiceConversations).set({ updatedAt: input.now })
           .where(and(
