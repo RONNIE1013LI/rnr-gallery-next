@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AdminFilterDisclosure } from "@/components/admin/admin-filter-disclosure";
 import { AdminOrderTable } from "@/components/admin/order-table";
 import styles from "@/components/admin/admin.module.css";
 import { getAdminOrderRuntime } from "@/server/admin/admin-order-runtime";
@@ -44,6 +45,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
         <span className={styles.recordCount}>{result.total} orders</span>
       </header>
 
+      <AdminFilterDisclosure>
       <form className={styles.filterPanel} method="get">
         <label className={styles.searchField}>
           <span>Order, customer or email</span>
@@ -60,6 +62,7 @@ export default async function AdminOrdersPage({ searchParams }: Props) {
         <label><span>Direction</span><select name="direction" defaultValue={filters.direction}><option value="desc">Newest / highest first</option><option value="asc">Oldest / lowest first</option></select></label>
         <div className={styles.filterActions}><button type="submit">Apply filters</button><Link href="/admin/orders">Clear</Link></div>
       </form>
+      </AdminFilterDisclosure>
 
       {filters.validationMessage ? (
         <p className={styles.filterError} role="alert">{filters.validationMessage}</p>

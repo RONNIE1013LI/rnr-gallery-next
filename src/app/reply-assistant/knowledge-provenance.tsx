@@ -22,8 +22,11 @@ export function KnowledgeProvenance(input: Readonly<{
   ] as const;
 
   return (
-    <dl className={styles.knowledgeProvenance} aria-label="Active customer service knowledge">
-      {values.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
-    </dl>
+    <details className={styles.knowledgeDisclosure}>
+      <summary>Knowledge build details</summary>
+      <dl className={styles.knowledgeProvenance} aria-label="Active customer service knowledge">
+        {values.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}
+      </dl>
+    </details>
   );
 }

@@ -455,7 +455,6 @@ describe("SiteChrome", () => {
     "/checkout/start",
     "/orders/RNR-8000",
     "/pay/private-token",
-    "/reply-assistant",
   ])("keeps shared reviews out of private or transactional route %s", (pathname) => {
     state.pathname = pathname;
     render(
@@ -540,6 +539,23 @@ describe("SiteChrome", () => {
       </SiteChrome>,
     );
     expect(screen.getByText("Admin page")).toBeInTheDocument();
+    expect(screen.queryByText("Shared reviews")).not.toBeInTheDocument();
+    expect(screen.queryByText("Public header")).not.toBeInTheDocument();
+    expect(screen.queryByText("Public footer")).not.toBeInTheDocument();
+    expect(screen.queryByText("Protection")).not.toBeInTheDocument();
+  });
+
+  it("keeps Reply Assistant inside the dedicated Admin workspace chrome", () => {
+    state.pathname = "/reply-assistant";
+    render(
+      <SiteChrome
+        footerContent={{ tagline: "x", email: "a@b.test", phone: "+64" }}
+        footerLead={<section aria-label="Customer reviews">Shared reviews</section>}
+      >
+        <main>Reply Assistant workspace</main>
+      </SiteChrome>,
+    );
+    expect(screen.getByText("Reply Assistant workspace")).toBeInTheDocument();
     expect(screen.queryByText("Shared reviews")).not.toBeInTheDocument();
     expect(screen.queryByText("Public header")).not.toBeInTheDocument();
     expect(screen.queryByText("Public footer")).not.toBeInTheDocument();

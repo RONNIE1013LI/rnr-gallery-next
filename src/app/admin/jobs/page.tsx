@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AdminFilterDisclosure } from "@/components/admin/admin-filter-disclosure";
 import { ProductionJobTable } from "@/components/admin/production-job-table";
 import { ProductionSavedViews } from "@/components/admin/production-saved-views";
 import styles from "@/components/admin/admin.module.css";
@@ -60,6 +61,7 @@ export default async function AdminProductionJobsPage({ searchParams }: Props) {
 
       {canManageViews ? <ProductionSavedViews views={savedViews} currentQuery={savable.toString()} /> : null}
 
+      <AdminFilterDisclosure>
       <form className={styles.filterPanel} method="get">
         <label className={styles.searchField}><span>Job or customer</span><input name="q" type="search" defaultValue={filters.query} placeholder="Search production" /></label>
         <label><span>Source</span><select name="source" defaultValue={filters.source ?? ""}><option value="">All sources</option><option value="web">Online</option><option value="manual">Manual</option></select></label>
@@ -73,6 +75,7 @@ export default async function AdminProductionJobsPage({ searchParams }: Props) {
         <label><span>Direction</span><select name="direction" defaultValue={filters.direction}><option value="desc">Latest first</option><option value="asc">Earliest first</option></select></label>
         <div className={styles.filterActions}><button type="submit">Apply filters</button><Link href="/admin/jobs">Clear</Link></div>
       </form>
+      </AdminFilterDisclosure>
 
       <ProductionJobTable jobs={result.items} canViewFinance={canViewFinance} />
       {result.pageCount > 1 ? <nav className={styles.pagination} aria-label="Production job pages">{result.page > 1 ? <Link href={pageHref(raw, result.page - 1)}>Previous</Link> : <span />}<span>Page {result.page} of {result.pageCount}</span>{result.page < result.pageCount ? <Link href={pageHref(raw, result.page + 1)}>Next</Link> : <span />}</nav> : null}

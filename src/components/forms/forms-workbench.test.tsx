@@ -30,6 +30,7 @@ describe("FormsWorkbench", () => {
       canViewFinance
     />);
 
+    expect(screen.getByRole("heading", { name: "Order system data list", level: 1 })).toBeInTheDocument();
     expect(screen.getByRole("searchbox", { name: "Search Ref No. / Cust.Name" })).toHaveValue("07188");
     expect(screen.getByRole("searchbox", { name: "Search Ref No. / Cust.Name" })).toHaveAttribute("placeholder", "Search name / order no.");
     expect(screen.getByRole("button", { name: "Search orders" })).toBeInTheDocument();

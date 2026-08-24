@@ -16,6 +16,8 @@
 - No new dependency or component library.
 - Preserve all current URLs, fields, values, filters, inline editing, saved views, uploads, auto-save, invoice, and guarded delete behavior.
 - Desktop stays dense; mobile controls remain at least 44px.
+- Preserve meaningful option/status/channel/chart colour differences; unify only neutral foundations and same-meaning semantics.
+- Reply Assistant must render inside the Admin workspace without storefront chrome.
 - Production release source must be `origin/main` and must pass the existing Vercel source guard.
 
 ---
@@ -125,4 +127,3 @@
 - [ ] Run the complete non-database suite and a production build using non-production build-only values.
 - [ ] Commit the branch, fetch `origin/main`, and require a fast-forward-safe release from a clean release worktree.
 - [ ] Push to `main`, wait for Vercel READY, and verify Production Branch, Git ref, SHA, aliases, and HTTP responses.
-

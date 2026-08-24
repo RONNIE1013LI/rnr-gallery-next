@@ -67,6 +67,7 @@ export function SiteChrome({
     });
   }
   const isDedicatedWorkspace = pathname === "/admin" || pathname.startsWith("/admin/")
+    || pathname === "/reply-assistant" || pathname.startsWith("/reply-assistant/")
     || pathname === "/forms" || pathname.startsWith("/forms/")
     || pathname === "/order-system" || pathname.startsWith("/order-system/");
   const activeOverride = marketTransition && (

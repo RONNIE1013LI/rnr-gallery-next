@@ -18,5 +18,6 @@ describe("Reply Assistant knowledge provenance", () => {
     expect(screen.getByText("abc123456789")).toBeInTheDocument();
     expect(screen.getByText("20 Aug 2026, 12:00 pm")).toBeInTheDocument();
     expect(screen.getByText("fedcba098765")).toBeInTheDocument();
+    expect(screen.getByText("Knowledge build details").closest("summary")).toBeInTheDocument();
   });
 });

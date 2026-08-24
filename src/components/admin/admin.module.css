@@ -2266,6 +2266,62 @@
   background: var(--admin-surface);
 }
 
+.filterDisclosure {
+  min-width: 0;
+}
+
+.filterDisclosure > summary {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 14px;
+  border: 1px solid var(--admin-border);
+  border-radius: 10px;
+  color: var(--admin-ink);
+  background: var(--admin-surface);
+  font-size: 14px;
+  font-weight: 720;
+  cursor: pointer;
+  list-style: none;
+}
+
+.filterDisclosure > summary::-webkit-details-marker {
+  display: none;
+}
+
+.filterDisclosure > summary span:last-child {
+  color: var(--admin-accent);
+  font-size: 12px;
+}
+
+.filterDisclosure[open] > summary {
+  margin-bottom: 10px;
+}
+
+.filterDisclosure[open] > summary span:last-child::before {
+  content: "Hide controls";
+}
+
+.filterDisclosure[open] > summary span:last-child {
+  font-size: 0;
+}
+
+.filterDisclosure[open] > summary span:last-child::before {
+  font-size: 12px;
+}
+
+@media (min-width: 681px) {
+  .filterDisclosure > summary {
+    display: none;
+  }
+
+  .filterDisclosure:not([open]) > .filterPanel {
+    display: grid;
+  }
+}
+
 .filterError {
   margin: -10px 0 0;
   color: #8a2d1f;

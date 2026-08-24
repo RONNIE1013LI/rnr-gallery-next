@@ -76,6 +76,14 @@
   background: var(--reply-surface);
 }
 
+.knowledgeDisclosure > summary {
+  display: none;
+}
+
+.knowledgeDisclosure:not([open]) > .knowledgeProvenance {
+  display: grid;
+}
+
 .knowledgeProvenance div { min-width: 0; padding: 12px 14px; }
 .knowledgeProvenance div + div { border-left: 1px solid var(--reply-border); }
 .knowledgeProvenance dt { color: var(--reply-muted); font-size: 11px; }
@@ -251,6 +259,26 @@
 @media (max-width: 700px) {
   .page { gap: 14px; }
   .page > header { align-items: flex-start; }
+  .knowledgeDisclosure > summary {
+    display: flex;
+    min-height: 44px;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border: 1px solid var(--reply-border);
+    border-radius: 10px;
+    color: var(--reply-accent);
+    background: var(--reply-surface);
+    font-size: 12px;
+    font-weight: 720;
+    cursor: pointer;
+    list-style: none;
+  }
+  .knowledgeDisclosure > summary::-webkit-details-marker { display: none; }
+  .knowledgeDisclosure > summary::after { content: "Show"; }
+  .knowledgeDisclosure[open] > summary { margin-bottom: 8px; }
+  .knowledgeDisclosure[open] > summary::after { content: "Hide"; }
+  .knowledgeDisclosure:not([open]) > .knowledgeProvenance { display: none; }
   .knowledgeProvenance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .knowledgeProvenance div + div { border-left: 0; }
   .knowledgeProvenance div:nth-child(even) { border-left: 1px solid var(--reply-border); }

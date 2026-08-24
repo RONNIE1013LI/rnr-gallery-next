@@ -119,6 +119,7 @@ export function FormsWorkbench({
 
   return (
     <section className={styles.workbench}>
+      <h1 className={styles.visuallyHidden}>Order system data list</h1>
       <div className={styles.listToolbar}>
         <form className={styles.quickSearch} method="get">
           <label>

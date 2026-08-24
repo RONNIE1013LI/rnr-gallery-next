@@ -27,5 +27,6 @@ describe("Forms statistics visual contract", () => {
     expect(cssRule(formsCss, ".statChartScroller")).toContain("overflow-x: auto;");
     const mobile = formsCss.slice(formsCss.indexOf("@media (max-width: 600px)"));
     expect(cssRule(mobile, ".statsPageToolbar button")).toContain("min-height: 44px;");
+    expect(cssRule(mobile, ".statsReportActions button")).toContain("min-height: 44px;");
   });
 });

@@ -7,7 +7,7 @@ const css = readFileSync(join(process.cwd(), "src/components/forms/forms.module.
 describe("Forms source visual parity", () => {
   it("uses the compact desktop workbench measurements from the running form", () => {
     expect(css).toContain("--forms-header-height: 38px;");
-    expect(css).toContain("font-family: Arial, Helvetica, sans-serif;");
+    expect(css).toContain("font-family: var(--font-body);");
     expect(css).toContain("font-size: 10.5px;");
     expect(css).toContain("padding: 1px 4px;");
   });

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AdminFilterDisclosure } from "@/components/admin/admin-filter-disclosure";
 import styles from "@/components/admin/admin.module.css";
 import { getAdminUserRuntime } from "@/server/admin/admin-user-runtime";
 import { parseAdminUserFilters, type AdminUserListItem } from "@/server/admin/admin-user-service";
@@ -61,11 +62,13 @@ export default async function AdminUsersPage({ searchParams }: Props) {
         <p>Role changes take effect on the next permission check and are recorded in the Audit Log. Your own role is locked here to prevent accidental loss of access.</p>
       </div>
 
+      <AdminFilterDisclosure>
       <form className={styles.filterPanel} method="get">
         <label className={styles.searchField}><span>Email</span><input type="search" name="q" defaultValue={filters.query} placeholder="Search by email" /></label>
         <label><span>Role</span><select name="role" defaultValue={filters.role ?? ""}><option value="">All roles</option><option value="admin">Admin</option><option value="form_staff">Forms staff</option><option value="staff">Staff</option><option value="customer">Customer</option></select></label>
         <div className={styles.filterActions}><button type="submit">Search</button><Link href="/admin/users">Clear</Link></div>
       </form>
+      </AdminFilterDisclosure>
 
       {result.items.length ? (
         <div className={styles.tableScroll} tabIndex={0} aria-label="Users table">

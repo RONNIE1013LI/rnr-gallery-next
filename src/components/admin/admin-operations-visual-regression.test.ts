@@ -2,6 +2,13 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const css = readFileSync("src/components/admin/admin.module.css", "utf8");
+const filterRoutes = [
+  "src/app/admin/orders/page.tsx",
+  "src/app/admin/jobs/page.tsx",
+  "src/app/admin/customers/page.tsx",
+  "src/app/admin/users/page.tsx",
+  "src/app/admin/audit/page.tsx",
+].map((path) => readFileSync(path, "utf8"));
 
 function cssRule(source: string, selector: string) {
   const start = source.indexOf(`${selector} {`);
@@ -67,5 +74,14 @@ describe("Admin operational visual system", () => {
     );
 
     expect(activeLink).toContain("color: #fff;");
+  });
+
+  it("uses one responsive disclosure for every Admin search and filter panel", () => {
+    for (const route of filterRoutes) {
+      expect(route).toContain("<AdminFilterDisclosure>");
+      expect(route).toContain("</AdminFilterDisclosure>");
+    }
+    expect(cssRule(css, ".filterDisclosure > summary")).toContain("min-height: 48px;");
+    expect(css).toMatch(/@media \(min-width: 681px\)[\s\S]*?\.filterDisclosure:not\(\[open\]\) > \.filterPanel[\s\S]*?display:\s*grid;/);
   });
 });
