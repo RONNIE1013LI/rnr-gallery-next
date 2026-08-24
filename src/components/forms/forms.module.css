@@ -1,10 +1,13 @@
 .shell {
   --forms-header-height: 38px;
-  --forms-border: #d7d9de;
-  --forms-canvas: #eef1f5;
+  --forms-canvas: #f5f3ee;
   --forms-surface: #fff;
+  --forms-border: #d8d7d2;
   --forms-ink: #2f3a45;
-  --forms-muted: #66717d;
+  --forms-muted: #67706b;
+  --forms-focus: #9b7a3f;
+  --forms-control-height-desktop: 32px;
+  --forms-control-height-mobile: 48px;
   min-height: 100vh;
   color: var(--forms-ink);
   background: var(--forms-canvas);
@@ -427,7 +430,7 @@
 .statsWidgetEditor select:focus-visible,
 .statsWidgetEditor textarea:focus-visible,
 .statsSettings input:focus-visible {
-  outline: 2px solid var(--gallery-green);
+  outline: 2px solid var(--forms-focus);
   outline-offset: 2px;
 }
 
@@ -653,7 +656,7 @@
 }
 
 .orderEntryResizeHandle:focus-visible {
-  box-shadow: inset 0 0 0 2px #173247;
+  box-shadow: inset 0 0 0 2px var(--forms-focus);
 }
 
 .orderEntryDrawerContent {
@@ -831,7 +834,7 @@
   .drawerHeader button,
   .formsErrorState a,
   .formsErrorState button {
-    min-height: 48px;
+    min-height: var(--forms-control-height-mobile);
   }
 
   .orderEntryDrawer .drawerHeader button {
@@ -1707,6 +1710,12 @@
   background: #fff;
 }
 
+.inlineValue:focus-visible {
+  border-color: var(--forms-focus);
+  outline: 2px solid var(--forms-focus);
+  outline-offset: 2px;
+}
+
 .inlineCell small,
 .inlineEditor small {
   color: var(--forms-muted);
@@ -2023,11 +2032,11 @@
   .inlineEditor select,
   .inlineEditor button,
   .orderCard header button {
-    min-height: 48px;
+    min-height: var(--forms-control-height-mobile);
   }
 
   .filterPanel select {
-    height: 48px;
+    height: var(--forms-control-height-mobile);
   }
 
   .filterHeading button,
@@ -2095,7 +2104,7 @@
 
   .signOutControl button,
   .orderEntry {
-    min-height: 28px;
+    min-height: var(--forms-control-height-desktop);
     padding: 3px 9px;
     border-color: #ccd2d9;
     border-radius: 3px;
@@ -2152,7 +2161,7 @@
   .personalViews input,
   .personalViews button,
   .personalViewList button {
-    min-height: 28px;
+    min-height: var(--forms-control-height-desktop);
     padding: 3px 7px;
     border-radius: 3px;
     font-size: 12px;
@@ -2192,14 +2201,14 @@
   .filterActions button,
   .filterPanel select,
   .filterPanel input {
-    min-height: 28px;
+    min-height: var(--forms-control-height-desktop);
     padding-block: 3px;
     border-radius: 3px;
     font-size: 12px;
   }
 
   .filterPanel select {
-    height: 28px;
+    height: var(--forms-control-height-desktop);
   }
 
   .filterHeading button,
@@ -2387,7 +2396,7 @@
   .statsToolbar button,
   .widgetActions button {
     min-width: 28px;
-    min-height: 28px;
+    min-height: var(--forms-control-height-desktop);
     padding: 3px 6px;
     border-radius: 3px;
     font-size: 12px;
@@ -2442,7 +2451,7 @@
 
   .drawerHeader a,
   .drawerHeader button {
-    min-height: 28px;
+    min-height: var(--forms-control-height-desktop);
     padding: 3px 7px;
     border-radius: 3px;
   }
@@ -2504,7 +2513,7 @@
   .formEntryPage select,
   .formEntryPage textarea,
   .formEntryPage button {
-    min-height: 30px;
+    min-height: var(--forms-control-height-desktop);
     border-radius: 3px;
     font-size: 12px;
   }
@@ -2950,12 +2959,12 @@
   .formEntryPage input,
   .formEntryPage select,
   .formEntryPage textarea {
-    min-height: 44px;
+    min-height: var(--forms-control-height-mobile);
     font-size: 16px;
   }
 
   .formEntryPage button {
-    min-height: 44px;
+    min-height: var(--forms-control-height-mobile);
   }
 }
 
