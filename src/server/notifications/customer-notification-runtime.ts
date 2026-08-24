@@ -6,6 +6,7 @@ import { createDrizzleCustomerNotificationRepository } from "./drizzle-customer-
 import { createResendEmailProvider } from "./resend-email-provider";
 import { getOrderNotificationRuntime } from "./order-notification-runtime";
 import { getPaymentRequestNotificationRuntime } from "./payment-request-notification-runtime";
+import { getInternalNotificationRuntime } from "./internal-notification-runtime";
 
 type NotificationRuntime = Readonly<{
   deliverPending(limit: number): Promise<Readonly<{
@@ -15,29 +16,27 @@ type NotificationRuntime = Readonly<{
   }>>;
 }>;
 
-export function combineCustomerNotificationRuntimes(
+export function combineNotificationRuntimes(
   proofs: NotificationRuntime,
   orders: NotificationRuntime,
   paymentRequests: NotificationRuntime,
+  internal: NotificationRuntime,
 ) {
   return Object.freeze({
     async deliverPending(limit = 10) {
-      const [proofResult, orderResult, paymentRequestResult] = await Promise.all([
+      const results = await Promise.all([
         proofs.deliverPending(limit),
         orders.deliverPending(limit),
         paymentRequests.deliverPending(limit),
+        internal.deliverPending(limit),
       ]);
-      if (
-        proofResult.result === "not_configured" &&
-        orderResult.result === "not_configured" &&
-        paymentRequestResult.result === "not_configured"
-      ) {
+      if (results.every((result) => result.result === "not_configured")) {
         return Object.freeze({ result: "not_configured" as const, sent: 0, failed: 0 });
       }
       return Object.freeze({
         result: "processed" as const,
-        sent: proofResult.sent + orderResult.sent + paymentRequestResult.sent,
-        failed: proofResult.failed + orderResult.failed + paymentRequestResult.failed,
+        sent: results.reduce((total, result) => total + result.sent, 0),
+        failed: results.reduce((total, result) => total + result.failed, 0),
       });
     },
   });
@@ -57,9 +56,10 @@ export function getCustomerNotificationRuntime() {
 }
 
 export function getAllCustomerNotificationRuntime() {
-  return combineCustomerNotificationRuntimes(
+  return combineNotificationRuntimes(
     getCustomerNotificationRuntime(),
     getOrderNotificationRuntime(),
     getPaymentRequestNotificationRuntime(),
+    getInternalNotificationRuntime(),
   );
 }

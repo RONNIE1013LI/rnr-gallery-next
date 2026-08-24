@@ -46,6 +46,7 @@ describe("POST /api/internal/customer-notifications", () => {
       sent: 3,
       failed: 1,
       recipientEmail: "must-not-leak@example.test",
+      providerError: "private provider data",
     });
     const handler = createCustomerNotificationCronRoute({
       secret: "correct-secret",
@@ -57,6 +58,31 @@ describe("POST /api/internal/customer-notifications", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ result: "processed", sent: 3, failed: 1 });
     expect(deliverPending).toHaveBeenCalledWith(20);
+  });
+
+  it("returns a safe unavailable response when every runtime is not configured", async () => {
+    const deliverPending = vi.fn().mockResolvedValue({
+      result: "not_configured",
+      sent: 0,
+      failed: 0,
+      recipientEmail: "must-not-leak@example.test",
+      providerError: "private provider data",
+    });
+    const handler = createCustomerNotificationCronRoute({
+      secret: "correct-secret",
+      deliverPending,
+    });
+
+    const response = await handler(request("Bearer correct-secret"));
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.json()).toEqual({
+      error: {
+        code: "NOTIFICATION_RETRY_UNAVAILABLE",
+        message: "Customer notification retry is unavailable",
+      },
+    });
   });
 
   it("does not expose internal delivery errors", async () => {

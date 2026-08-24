@@ -732,22 +732,40 @@ describe("payment request balance transactions", () => {
     });
     await database.delete(paymentRequestNotificationOutbox)
       .where(eq(paymentRequestNotificationOutbox.paymentRequestId, paidRequest.id));
+    const rowsBeforeRepair = await database.select({
+      kind: paymentRequestNotificationOutbox.kind,
+    }).from(paymentRequestNotificationOutbox);
 
     const repaired = await notificationRepository.repairMissingPaidNotifications(20, new Date());
     const notifications = await database.select().from(paymentRequestNotificationOutbox)
       .where(eq(paymentRequestNotificationOutbox.paymentRequestId, paidRequest.id));
+    const rowsAfterRepair = await database.select({
+      kind: paymentRequestNotificationOutbox.kind,
+    }).from(paymentRequestNotificationOutbox);
     await notificationRepository.repairMissingPaidNotifications(20, new Date());
     const notificationsAfterSecondRepair = await database.select()
       .from(paymentRequestNotificationOutbox)
       .where(eq(paymentRequestNotificationOutbox.paymentRequestId, paidRequest.id));
 
-    expect(repaired).toBeGreaterThanOrEqual(2);
+    const customerRowsAdded = rowsAfterRepair.filter((row) =>
+      row.kind === "payment_request_confirmed"
+    ).length - rowsBeforeRepair.filter((row) =>
+      row.kind === "payment_request_confirmed"
+    ).length;
+    const adminRowsAdded = rowsAfterRepair.filter((row) =>
+      row.kind === "admin_payment_request_received"
+    ).length - rowsBeforeRepair.filter((row) =>
+      row.kind === "admin_payment_request_received"
+    ).length;
+    expect(repaired).toBe(customerRowsAdded);
+    expect(customerRowsAdded).toBeGreaterThanOrEqual(1);
+    expect(adminRowsAdded).toBe(0);
     expect(notifications.filter((item) =>
       item.eventKey === `payment-request-confirmed:${paidRequest.id}`
     )).toHaveLength(1);
     expect(notifications.filter((item) =>
       item.eventKey === `admin-payment-request-received:${paidRequest.id}:${actorId}`
-    )).toHaveLength(1);
+    )).toHaveLength(0);
     expect(notificationsAfterSecondRepair).toHaveLength(notifications.length);
   });
 });
