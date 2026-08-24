@@ -46,6 +46,8 @@ const replyDateTime = new Intl.DateTimeFormat("en-NZ", {
   timeZone: "Pacific/Auckland",
 });
 
+const CONVERSATION_BATCH_SIZE = 12;
+
 export function formatReplyReceivedAt(value: string) {
   return replyDateTime.format(new Date(value));
 }
@@ -77,6 +79,7 @@ export function ReplyAssistantClient({
   const [reviews, setReviews] = useState<Record<string, ReviewState>>({});
   const [websiteReplies, setWebsiteReplies] = useState<Record<string, WebsiteReplyState>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [visibleCount, setVisibleCount] = useState(CONVERSATION_BATCH_SIZE);
   const feedbackSequence = useRef(0);
   const websiteReplyInFlight = useRef(new Set<string>());
   const selectedCardRef = useRef<HTMLElement | null>(null);
@@ -113,6 +116,8 @@ export function ReplyAssistantClient({
         ? [selected, ...sorted.filter((item) => item.messageId !== selected.messageId)].slice(0, 100)
         : sorted.slice(0, 100);
     })();
+  const visibleItems = items.slice(0, visibleCount);
+  const remainingCount = items.length - visibleItems.length;
 
   useEffect(() => {
     selectedCardRef.current?.scrollIntoView?.({ block: "nearest" });
@@ -186,7 +191,7 @@ export function ReplyAssistantClient({
   return (
     <div className={styles.queue}>
       {items.length === 0 ? <p className={styles.empty}>No pilot messages yet.</p> : null}
-      {items.map((item) => {
+      {visibleItems.map((item) => {
         const current = review(item);
         const currentWebsiteReply = websiteReplies[item.messageId] ?? {
           text: "",
@@ -218,31 +223,34 @@ export function ReplyAssistantClient({
                 {item.websiteReview ? <span className={styles.alertBadge} data-alert={item.websiteReview.alertStatus}>Alert {item.websiteReview.alertStatus.replaceAll("_", " ")}</span> : null}
               </div>
             </header>
-            <div className={styles.customerText}><strong>Customer</strong><p>{item.body}</p></div>
-            {item.timeline.length > 0 ? (
-              <section className={styles.timeline} aria-label="Conversation timeline">
-                <div className={styles.timelineHeader}>
-                  <strong>Conversation timeline</strong>
-                  <span className={styles.timelineChannel}>{item.channel === "website" ? "Website" : "Facebook"}</span>
-                </div>
-                <ol>
-                  {item.timeline.map((event, index) => (
-                    <li key={`${event.receivedAt}-${index}`} data-role={event.role}>
-                      <span>{event.role === "staff" ? "R&R" : event.role === "assistant" ? "Assistant" : "Customer"}</span>
-                      <p>{event.text}</p>
-                    </li>
-                  ))}
-                </ol>
-              </section>
-            ) : null}
-            {item.attachmentCount > 0 ? (
-              <section className={styles.imageAssessment}>
-                <strong>Image assessment</strong>
-                <p>{item.imageAssessmentSummary ?? "No safe image assessment is available."}</p>
-              </section>
-            ) : null}
-
-            {item.channel === "website" ? (
+            <div className={styles.messageBody}>
+              <div className={styles.messageContext}>
+                <div className={styles.customerText}><strong>Customer</strong><p>{item.body}</p></div>
+                {item.timeline.length > 0 ? (
+                  <section className={styles.timeline} aria-label="Conversation timeline">
+                    <div className={styles.timelineHeader}>
+                      <strong>Conversation timeline</strong>
+                      <span className={styles.timelineChannel}>{item.channel === "website" ? "Website" : "Facebook"}</span>
+                    </div>
+                    <ol>
+                      {item.timeline.map((event, index) => (
+                        <li key={`${event.receivedAt}-${index}`} data-role={event.role}>
+                          <span>{event.role === "staff" ? "R&R" : event.role === "assistant" ? "Assistant" : "Customer"}</span>
+                          <p>{event.text}</p>
+                        </li>
+                      ))}
+                    </ol>
+                  </section>
+                ) : null}
+                {item.attachmentCount > 0 ? (
+                  <section className={styles.imageAssessment}>
+                    <strong>Image assessment</strong>
+                    <p>{item.imageAssessmentSummary ?? "No safe image assessment is available."}</p>
+                  </section>
+                ) : null}
+              </div>
+              <div className={styles.messageResponse}>
+              {item.channel === "website" ? (
               item.humanReplyReceived ? (
                 <div className={styles.blocked}>Human website reply sent. Review resolved.</div>
               ) : item.websiteReview ? (
@@ -269,6 +277,7 @@ export function ReplyAssistantClient({
                   <div className={styles.actions}>
                     <button
                       type="button"
+                      data-variant="primary"
                       disabled={!currentWebsiteReply.text.trim() || websiteReviewChanged || currentWebsiteReply.status === "sending" || currentWebsiteReply.status === "sent"}
                       onClick={() => void sendWebsiteReply(item, currentWebsiteReply)}
                     >Send website reply</button>
@@ -306,7 +315,7 @@ export function ReplyAssistantClient({
                 ) : null}
                 <div className={styles.actions}>
                   {current.mode === "editing" ? (
-                    <button type="button" disabled={serverChanged} onClick={async () => {
+                    <button type="button" data-variant="primary" disabled={serverChanged} onClick={async () => {
                       await feedback(item, "edited", current.text, "human_edit");
                       update(item, { mode: "edited", text: current.text, sourceAttemptId: item.latestAttemptId });
                     }}>Accept edit</button>
@@ -317,11 +326,11 @@ export function ReplyAssistantClient({
                       sourceAttemptId: item.latestAttemptId,
                     })}>Edit</button>
                   )}
-                  <button type="button" disabled={serverChanged} onClick={async () => {
+                  <button type="button" data-variant="primary" disabled={serverChanged} onClick={async () => {
                     await feedback(item, "accepted_unchanged", item.draftText, null);
                     update(item, { mode: "accepted", text: item.draftText ?? "", sourceAttemptId: item.latestAttemptId });
                   }}>Accept unchanged</button>
-                  <button type="button" disabled={serverChanged} onClick={async () => {
+                  <button type="button" data-variant="danger" disabled={serverChanged} onClick={async () => {
                     await feedback(item, "rejected", null, "human_rejected");
                     update(item, { mode: "rejected", text: current.text, sourceAttemptId: item.latestAttemptId });
                   }}>Reject</button>
@@ -334,11 +343,27 @@ export function ReplyAssistantClient({
                 </div>
               </div>
             ) : (
-              <button className={styles.generate} type="button" disabled={busy === item.messageId || visualReviewRequired} onClick={() => void generate(item)}>Generate AI Reply</button>
+              <button className={styles.generate} data-variant="primary" type="button" disabled={busy === item.messageId || visualReviewRequired} onClick={() => void generate(item)}>Generate AI Reply</button>
             )}
+              </div>
+            </div>
           </article>
         );
       })}
+      {items.length > CONVERSATION_BATCH_SIZE ? (
+        <footer className={styles.queueFooter}>
+          <span>Showing {visibleItems.length} of {items.length} conversations</span>
+          {remainingCount > 0 ? (
+            <button
+              type="button"
+              aria-label={`Show ${Math.min(CONVERSATION_BATCH_SIZE, remainingCount)} more conversations`}
+              onClick={() => setVisibleCount((count) => count + CONVERSATION_BATCH_SIZE)}
+            >
+              Show more
+            </button>
+          ) : null}
+        </footer>
+      ) : null}
     </div>
   );
 }

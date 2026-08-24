@@ -220,6 +220,21 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("keeps detailed metrics collapsed until staff asks to see them", () => {
+    const metricCards = Array.from({ length: 10 }, (_, index) => [`Metric ${index + 1}`, index + 1] as const);
+    vi.stubGlobal("fetch", vi.fn());
+
+    render(<ReplyAssistantLiveDashboard {...props} initialMetricCards={metricCards} />);
+
+    expect(screen.getByText("Metric 8")).toBeInTheDocument();
+    expect(screen.queryByText("Metric 9")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show all 10 metrics" }));
+
+    expect(screen.getByText("Metric 9")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Show core metrics" })).toHaveAttribute("aria-expanded", "true");
+  });
+
   it("renders repeated message and outbound echo updates only once", async () => {
     const outbound = {
       ...baseItem,

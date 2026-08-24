@@ -70,6 +70,7 @@ export function ReplyAssistantLiveDashboard({
   const [metricCards, setMetricCards] = useState(initialMetricCards);
   const [metricCounts, setMetricCounts] = useState<PilotMetricCounts | null>(initialMetrics ?? null);
   const [metricScope, setMetricScope] = useState<"all" | "website" | "facebook">("all");
+  const [showAllMetrics, setShowAllMetrics] = useState(false);
   const [learningCandidates, setLearningCandidates] = useState(initialLearningCandidates);
   const [caseMemories, setCaseMemories] = useState(initialCaseMemories);
   const [connectionState, setConnectionState] = useState<"active" | "reconnecting">("active");
@@ -166,28 +167,46 @@ export function ReplyAssistantLiveDashboard({
     : metricCounts?.channelMetrics
       ? channelMetricCards(metricCounts.channelMetrics[metricScope])
       : metricCards;
+  const displayedMetricCards = showAllMetrics ? visibleMetricCards : visibleMetricCards.slice(0, 8);
 
   return (
     <>
-      <div className={styles.liveStatus} aria-live="polite" data-state={connectionState}>
-        {connectionState === "reconnecting" ? "Live updates reconnecting" : "Live updates active"}
-      </div>
-      {metricCounts?.channelMetrics ? (
-        <div className={styles.metricFilters} aria-label="Metric channel">
-          {(["all", "website", "facebook"] as const).map((scope) => (
-            <button
-              key={scope}
-              type="button"
-              aria-label={`${scope[0].toUpperCase()}${scope.slice(1)} metrics`}
-              aria-pressed={metricScope === scope}
-              onClick={() => setMetricScope(scope)}
-            >
-              {scope[0].toUpperCase()}{scope.slice(1)}
-            </button>
-          ))}
+      <div className={styles.dashboardToolbar}>
+        {metricCounts?.channelMetrics ? (
+          <div className={styles.metricFilters} aria-label="Metric channel">
+            {(["all", "website", "facebook"] as const).map((scope) => (
+              <button
+                key={scope}
+                type="button"
+                aria-label={`${scope[0].toUpperCase()}${scope.slice(1)} metrics`}
+                aria-pressed={metricScope === scope}
+                onClick={() => {
+                  setMetricScope(scope);
+                  setShowAllMetrics(false);
+                }}
+              >
+                {scope[0].toUpperCase()}{scope.slice(1)}
+              </button>
+            ))}
+          </div>
+        ) : null}
+        <div className={styles.liveStatus} aria-live="polite" data-state={connectionState}>
+          {connectionState === "reconnecting" ? "Live updates reconnecting" : "Live updates active"}
         </div>
-      ) : null}
-      <div className={styles.metrics}>{visibleMetricCards.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
+      </div>
+      <section className={styles.metricPanel} aria-label="Reply assistant metrics">
+        <div className={styles.metrics}>{displayedMetricCards.map(([label, value]) => <div key={label}><span>{label}</span><strong>{value}</strong></div>)}</div>
+        {visibleMetricCards.length > 8 ? (
+          <button
+            type="button"
+            className={styles.metricDisclosure}
+            aria-expanded={showAllMetrics}
+            onClick={() => setShowAllMetrics((current) => !current)}
+          >
+            {showAllMetrics ? "Show core metrics" : `Show all ${visibleMetricCards.length} metrics`}
+          </button>
+        ) : null}
+      </section>
       <LearningCandidateReview candidates={learningCandidates} canReview={canReview} />
       <CaseMemoryReview cases={caseMemories} canReview={canReview} />
       <ReplyAssistantClient

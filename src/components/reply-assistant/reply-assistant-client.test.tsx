@@ -153,6 +153,27 @@ describe("ReplyAssistantClient", () => {
     expect(screen.getByLabelText("Website reply")).toBeInTheDocument();
   });
 
+  it("shows a focused first batch and reveals more conversations on demand", () => {
+    const conversations = Array.from({ length: 25 }, (_, index) => ({
+      ...item,
+      messageId: `message-${index}`,
+      body: `Customer question ${index + 1}`,
+      receivedAt: new Date(Date.UTC(2026, 7, 17, 0, 0, index)).toISOString(),
+      humanReplyReceived: true,
+      timeline: [],
+    }));
+
+    render(<ReplyAssistantClient initialItems={conversations} />);
+
+    expect(screen.getAllByRole("article")).toHaveLength(12);
+    expect(screen.getByText("Showing 12 of 25 conversations")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Show 12 more conversations" }));
+
+    expect(screen.getAllByRole("article")).toHaveLength(24);
+    expect(screen.getByText("Showing 24 of 25 conversations")).toBeInTheDocument();
+  });
+
   it("shows a Website review timeline, alert state, and only committed public replies", () => {
     render(<ReplyAssistantClient initialItems={[{
       ...item,
