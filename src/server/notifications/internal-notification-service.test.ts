@@ -42,6 +42,7 @@ function repository(
   return {
     claimNext: vi.fn().mockResolvedValueOnce(event).mockResolvedValue(null),
     isRecipientActive: vi.fn().mockResolvedValue(true),
+    beginProviderSend: vi.fn().mockResolvedValue(true),
     markSent: vi.fn().mockResolvedValue(true),
     markFailed: vi.fn().mockResolvedValue(true),
     cancel: vi.fn().mockResolvedValue(true),
@@ -174,6 +175,7 @@ describe("internal notification delivery", () => {
       failed: 0,
     });
     expect(repo.isRecipientActive).toHaveBeenCalledWith(delivery.recipientId);
+    expect(repo.beginProviderSend).toHaveBeenCalledWith(delivery.id, now);
     expect(send).toHaveBeenCalledWith(expect.objectContaining({
       to: delivery.recipientEmail,
       subject: "Website order paid",
@@ -220,7 +222,28 @@ describe("internal notification delivery", () => {
       "recipient_disabled",
       now,
     );
+    expect(repo.beginProviderSend).not.toHaveBeenCalled();
     expect(send).not.toHaveBeenCalled();
+  });
+
+  it("does not call the provider when delivery loses the provider-start race", async () => {
+    const repo = repository();
+    vi.mocked(repo.beginProviderSend).mockResolvedValue(false);
+    const send = vi.fn();
+    const service = createInternalNotificationService(repo, {
+      provider: { configured: true, send },
+      siteUrl: "https://rrgallery.co.nz",
+      now: () => now,
+    });
+
+    await expect(service.deliverPending()).resolves.toEqual({
+      result: "processed",
+      sent: 0,
+      failed: 0,
+    });
+    expect(send).not.toHaveBeenCalled();
+    expect(repo.markSent).not.toHaveBeenCalled();
+    expect(repo.markFailed).not.toHaveBeenCalled();
   });
 
   it.each([

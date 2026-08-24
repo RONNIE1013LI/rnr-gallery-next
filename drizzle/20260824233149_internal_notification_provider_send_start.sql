@@ -1,0 +1,1 @@
+ALTER TABLE "internal_notification_outbox" ADD COLUMN "provider_send_started_at" timestamp with time zone;

@@ -400,6 +400,7 @@ describe("internal notification schema", () => {
       { name: "attempts", sqlType: "integer", notNull: true, hasDefault: true, primary: false, default: 0 },
       { name: "available_at", ...requiredNowTimestamp },
       { name: "last_attempt_at", ...nullableTimestamp },
+      { name: "provider_send_started_at", ...nullableTimestamp },
       { name: "sent_at", ...nullableTimestamp },
       { name: "provider_message_id", sqlType: "text", notNull: false, hasDefault: false, primary: false, default: null },
       { name: "last_error_code", sqlType: "text", notNull: false, hasDefault: false, primary: false, default: null },

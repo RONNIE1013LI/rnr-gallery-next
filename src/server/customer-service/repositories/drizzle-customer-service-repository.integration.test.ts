@@ -40,6 +40,7 @@ import {
 import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
 import { EmailDeliveryError } from "@/server/notifications/customer-notification-service";
 import { createDrizzleInternalNotificationOutboxRepository } from "@/server/notifications/drizzle-internal-notification-outbox-repository";
+import { createInternalNotificationService } from "@/server/notifications/internal-notification-service";
 import { createCustomerTurnRecoveryRunner } from "../turn-recovery-runner";
 import type { SafeProductContext } from "../types";
 import {
@@ -1638,6 +1639,192 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     }
     expect(claimableKeys).toEqual(new Set([otherReviewEventKey, otherTopicEventKey]));
     await expect(outboxRepository.claimNext(resolutionTime)).resolves.toBeNull();
+  });
+
+  it("does not send a claimed AI notification when manual resolution wins before provider start", async () => {
+    const recipient = await insertWebsiteReviewNotificationRecipient({
+      label: "manual-resolution-before-provider-start",
+      status: "active",
+      subscribed: true,
+    });
+    const reviewId = "00000000-0000-4000-8000-000000000164";
+    const review = await openTask13Review({
+      sessionHash: "e4".repeat(32),
+      networkHash: "e5".repeat(32),
+      messageHash: "e6".repeat(32),
+      reviewId,
+    });
+    const eventKey = `website_ai_human_review_required:${reviewId}:${recipient.id}`;
+    const claimedAt = new Date("2026-08-21T00:00:03.000Z");
+    const resolvedAt = new Date("2026-08-21T00:00:04.000Z");
+    await database.insert(user).values({
+      id: "task-6-pre-provider-start-staff",
+      name: "Task 6 Pre-provider Start Staff",
+      email: "task-6-pre-provider-start-staff@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+
+    const outboxRepository = createDrizzleInternalNotificationOutboxRepository(database);
+    let releaseRecipientCheck!: () => void;
+    let reportClaimed!: () => void;
+    const recipientCheckBlocked = new Promise<void>((resolve) => {
+      reportClaimed = resolve;
+    });
+    const recipientCheckRelease = new Promise<void>((resolve) => {
+      releaseRecipientCheck = resolve;
+    });
+    const deliveryRepository = {
+      ...outboxRepository,
+      async isRecipientActive(targetRecipientId: string) {
+        const active = await outboxRepository.isRecipientActive(targetRecipientId);
+        reportClaimed();
+        await recipientCheckRelease;
+        return active;
+      },
+    };
+    const send = vi.fn().mockResolvedValue({ providerMessageId: "must-not-send" });
+    const service = createInternalNotificationService(deliveryRepository, {
+      provider: { configured: true, send },
+      siteUrl: "https://rrgallery.co.nz",
+      now: () => claimedAt,
+    });
+
+    const delivery = service.deliverPending(1);
+    await recipientCheckBlocked;
+    const [claimed] = await database.select({
+      status: internalNotificationOutbox.status,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.eventKey, eventKey),
+    );
+    expect(claimed).toEqual({ status: "sending" });
+
+    await expect(repository.answerWebsiteReview({
+      reviewSelector: review.selector,
+      text: "Staff handled this before the notification provider started.",
+      actorUserId: "task-6-pre-provider-start-staff",
+      now: resolvedAt,
+    })).resolves.toEqual({ status: "sent" });
+    releaseRecipientCheck();
+
+    await expect(delivery).resolves.toEqual({
+      result: "processed",
+      sent: 0,
+      failed: 0,
+    });
+    expect(send).not.toHaveBeenCalled();
+    const [cancelled] = await database.select({
+      status: internalNotificationOutbox.status,
+      cancelledAt: internalNotificationOutbox.cancelledAt,
+      cancellationReason: internalNotificationOutbox.cancellationReason,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.eventKey, eventKey),
+    );
+    expect(cancelled).toEqual({
+      status: "cancelled",
+      cancelledAt: resolvedAt,
+      cancellationReason: "review_resolved_before_delivery",
+    });
+  });
+
+  it("preserves a claimed AI notification when provider start wins before manual resolution", async () => {
+    const recipient = await insertWebsiteReviewNotificationRecipient({
+      label: "provider-start-before-manual-resolution",
+      status: "active",
+      subscribed: true,
+    });
+    const reviewId = "00000000-0000-4000-8000-000000000165";
+    const review = await openTask13Review({
+      sessionHash: "e7".repeat(32),
+      networkHash: "e8".repeat(32),
+      messageHash: "e9".repeat(32),
+      reviewId,
+    });
+    const eventKey = `website_ai_human_review_required:${reviewId}:${recipient.id}`;
+    const providerStartedAt = new Date("2026-08-21T00:00:03.000Z");
+    const resolvedAt = new Date("2026-08-21T00:00:04.000Z");
+    await database.insert(user).values({
+      id: "task-6-post-provider-start-staff",
+      name: "Task 6 Post-provider Start Staff",
+      email: "task-6-post-provider-start-staff@example.test",
+      role: "staff",
+    }).onConflictDoNothing();
+
+    const outboxRepository = createDrizzleInternalNotificationOutboxRepository(database);
+    let releaseProviderStart!: () => void;
+    let reportProviderStarted!: () => void;
+    const providerStartBlocked = new Promise<void>((resolve) => {
+      reportProviderStarted = resolve;
+    });
+    const providerStartRelease = new Promise<void>((resolve) => {
+      releaseProviderStart = resolve;
+    });
+    const deliveryRepository = {
+      ...outboxRepository,
+      async beginProviderSend(id: string, now: Date) {
+        const started = await outboxRepository.beginProviderSend(id, now);
+        reportProviderStarted();
+        await providerStartRelease;
+        return started;
+      },
+    };
+    const send = vi.fn().mockResolvedValue({ providerMessageId: "provider-start-won" });
+    const service = createInternalNotificationService(deliveryRepository, {
+      provider: { configured: true, send },
+      siteUrl: "https://rrgallery.co.nz",
+      now: () => providerStartedAt,
+    });
+
+    const delivery = service.deliverPending(1);
+    await providerStartBlocked;
+    const [started] = await database.select({
+      status: internalNotificationOutbox.status,
+      providerSendStartedAt: internalNotificationOutbox.providerSendStartedAt,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.eventKey, eventKey),
+    );
+    expect(started).toEqual({
+      status: "sending",
+      providerSendStartedAt: providerStartedAt,
+    });
+
+    await expect(repository.answerWebsiteReview({
+      reviewSelector: review.selector,
+      text: "Staff handled this after provider delivery formally started.",
+      actorUserId: "task-6-post-provider-start-staff",
+      now: resolvedAt,
+    })).resolves.toEqual({ status: "sent" });
+    const [stillSending] = await database.select({
+      status: internalNotificationOutbox.status,
+      providerSendStartedAt: internalNotificationOutbox.providerSendStartedAt,
+      cancelledAt: internalNotificationOutbox.cancelledAt,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.eventKey, eventKey),
+    );
+    expect(stillSending).toEqual({
+      status: "sending",
+      providerSendStartedAt: providerStartedAt,
+      cancelledAt: null,
+    });
+    releaseProviderStart();
+
+    await expect(delivery).resolves.toEqual({
+      result: "processed",
+      sent: 1,
+      failed: 0,
+    });
+    expect(send).toHaveBeenCalledTimes(1);
+    const [sent] = await database.select({
+      status: internalNotificationOutbox.status,
+      providerMessageId: internalNotificationOutbox.providerMessageId,
+      cancelledAt: internalNotificationOutbox.cancelledAt,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.eventKey, eventKey),
+    );
+    expect(sent).toEqual({
+      status: "sent",
+      providerMessageId: "provider-start-won",
+      cancelledAt: null,
+    });
   });
 
   it("allows only one of two different staff replies to resolve the same review", async () => {

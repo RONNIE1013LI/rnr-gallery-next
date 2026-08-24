@@ -19,6 +19,7 @@ export type InternalNotificationDelivery = Readonly<{
 export interface InternalNotificationOutboxRepository {
   claimNext(now: Date): Promise<InternalNotificationDelivery | null>;
   isRecipientActive(recipientId: string): Promise<boolean>;
+  beginProviderSend(id: string, now: Date): Promise<boolean>;
   markSent(id: string, providerMessageId: string, now: Date): Promise<boolean>;
   markFailed(
     id: string,
@@ -70,6 +71,7 @@ export function createInternalNotificationService(
           await repository.cancel(event.id, "recipient_disabled", now);
           continue;
         }
+        if (!(await repository.beginProviderSend(event.id, now))) continue;
 
         try {
           const result = await dependencies.provider.send(

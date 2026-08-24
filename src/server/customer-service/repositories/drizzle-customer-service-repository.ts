@@ -1203,7 +1203,13 @@ export function createDrizzleCustomerServiceRepository(
           eq(internalNotificationOutbox.sourceEventId, review.id),
           eq(internalNotificationOutbox.resourceType, "customer_service_review"),
           eq(internalNotificationOutbox.resourceId, review.id),
-          inArray(internalNotificationOutbox.status, ["pending", "failed"]),
+          or(
+            inArray(internalNotificationOutbox.status, ["pending", "failed"]),
+            and(
+              eq(internalNotificationOutbox.status, "sending"),
+              isNull(internalNotificationOutbox.providerSendStartedAt),
+            ),
+          ),
         ));
         await transaction.update(customerServiceConversations).set({ updatedAt: input.now })
           .where(and(

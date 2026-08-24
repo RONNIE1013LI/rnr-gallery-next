@@ -936,7 +936,7 @@ describe("internal notification outbox persistence", () => {
     expect(afterReenable.status).toBe("cancelled");
   });
 
-  it("reclaims a sending row only after the ten-minute stale window", async () => {
+  it("reclaims a claimed row before provider start only after the ten-minute stale window", async () => {
     const recipient = await insertRecipient({
       label: "stale-claim",
       status: "active",
@@ -956,11 +956,43 @@ describe("internal notification outbox persistence", () => {
 
     await expect(repository.claimNext(new Date(now.getTime() + 9 * 60_000)))
       .resolves.toBeNull();
-    await expect(repository.claimNext(new Date(now.getTime() + 11 * 60_000)))
-      .resolves.toMatchObject({
-        recipientId: recipient.id,
-        attempts: 2,
-      });
+    const reclaimed = await repository.claimNext(new Date(now.getTime() + 11 * 60_000));
+    expect(reclaimed).toMatchObject({ recipientId: recipient.id, attempts: 2 });
+    const [stored] = await database.select({
+      providerSendStartedAt: internalNotificationOutbox.providerSendStartedAt,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.id, reclaimed!.id),
+    );
+    expect(stored.providerSendStartedAt).toBeNull();
+  });
+
+  it("reclaims a provider-started row without carrying its prior start marker", async () => {
+    const recipient = await insertRecipient({
+      label: "stale-provider-start",
+      status: "active",
+      topics: ["manual_order_created"],
+    });
+    await enqueue(event({ topic: "manual_order_created" }));
+    const claimed = await repository.claimNext(now);
+    expect(claimed).toMatchObject({ recipientId: recipient.id, attempts: 1 });
+    await expect(repository.beginProviderSend(claimed!.id, now))
+      .resolves.toBe(true);
+
+    await expect(repository.claimNext(new Date(now.getTime() + 9 * 60_000)))
+      .resolves.toBeNull();
+    const reclaimedAt = new Date(now.getTime() + 11 * 60_000);
+    const reclaimed = await repository.claimNext(reclaimedAt);
+    expect(reclaimed).toMatchObject({ id: claimed!.id, attempts: 2 });
+    const [stored] = await database.select({
+      providerSendStartedAt: internalNotificationOutbox.providerSendStartedAt,
+      lastAttemptAt: internalNotificationOutbox.lastAttemptAt,
+    }).from(internalNotificationOutbox).where(
+      eq(internalNotificationOutbox.id, reclaimed!.id),
+    );
+    expect(stored).toEqual({
+      providerSendStartedAt: null,
+      lastAttemptAt: reclaimedAt,
+    });
   });
 
   it("persists failed retry availability and then the sent transition", async () => {
@@ -975,6 +1007,10 @@ describe("internal notification outbox persistence", () => {
     expect(claimed).toMatchObject({ recipientId: recipient.id, attempts: 1 });
     const retryAt = new Date(now.getTime() + 5 * 60_000);
 
+    await expect(repository.beginProviderSend(claimed!.id, now))
+      .resolves.toBe(true);
+    await expect(repository.beginProviderSend(claimed!.id, now))
+      .resolves.toBe(false);
     await expect(repository.markFailed(
       claimed!.id,
       "rate_limit_exceeded",
@@ -985,6 +1021,8 @@ describe("internal notification outbox persistence", () => {
       .resolves.toBeNull();
     const retried = await repository.claimNext(retryAt);
     expect(retried).toMatchObject({ id: claimed!.id, attempts: 2 });
+    await expect(repository.beginProviderSend(retried!.id, retryAt))
+      .resolves.toBe(true);
     await expect(repository.markSent(retried!.id, "email-transition", retryAt))
       .resolves.toBe(true);
 
@@ -1044,6 +1082,7 @@ describe("internal notification outbox persistence", () => {
       status: internalNotificationOutbox.status,
       cancelledAt: internalNotificationOutbox.cancelledAt,
       cancellationReason: internalNotificationOutbox.cancellationReason,
+      providerSendStartedAt: internalNotificationOutbox.providerSendStartedAt,
     }).from(internalNotificationOutbox).where(
       eq(internalNotificationOutbox.sourceEventId, notificationEvent.sourceEventId),
     );
@@ -1051,6 +1090,7 @@ describe("internal notification outbox persistence", () => {
       status: "cancelled",
       cancelledAt: now,
       cancellationReason: "recipient_disabled",
+      providerSendStartedAt: null,
     });
   });
 });

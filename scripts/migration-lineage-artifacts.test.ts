@@ -18,6 +18,7 @@ type JournalEntry = Readonly<{
 type Journal = Readonly<{ entries: JournalEntry[] }>;
 type SnapshotCheck = Readonly<{ name: string; value: string }>;
 type SnapshotTable = Readonly<{
+  columns: Record<string, unknown>;
   checkConstraints: Record<string, SnapshotCheck>;
   [key: string]: unknown;
 }>;
@@ -52,10 +53,10 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(56);
+    expect(journal.entries).toHaveLength(57);
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(56);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(56);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(57);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(57);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -77,6 +78,14 @@ describe("migration lineage artifacts", () => {
     expect(
       sha256("drizzle/20260824221402_ai_human_review_notifications.sql"),
     ).toBe("28052f2c7f1b075892c10f66589cbde1859386c6b9dd7ac2f79642aa282d9fc1");
+    expect(journal.entries[56]).toMatchObject({
+      idx: 56,
+      when: 1787614309711,
+      tag: "20260824233149_internal_notification_provider_send_start",
+    });
+    expect(
+      sha256("drizzle/20260824233149_internal_notification_provider_send_start.sql"),
+    ).toBe("142b83f2980055ba5c0484b835e830817ea11cb68cf634b5af5a7fcdca16c0bb");
   });
 
   it("keeps the latest applied snapshot at the 71-table pre-notification schema", () => {
@@ -150,6 +159,35 @@ describe("migration lineage artifacts", () => {
         change.constraint
       ] = previous.tables[change.table].checkConstraints[change.constraint];
     }
+    expect(normalizedCurrent).toEqual(normalizedPrevious);
+  });
+
+  it("adds only the provider-send linearization marker to the internal outbox", () => {
+    const previous = loadJson<Snapshot>(
+      "drizzle/meta/20260824221402_snapshot.json",
+    );
+    const current = loadJson<Snapshot>(
+      "drizzle/meta/20260824233149_snapshot.json",
+    );
+    const normalizedPrevious = structuredClone(previous);
+    const normalizedCurrent = structuredClone(current);
+    const table = "public.internal_notification_outbox";
+
+    expect(current.prevId).toBe(previous.id);
+    expect(current.tables[table]?.columns).toMatchObject({
+      provider_send_started_at: {
+        name: "provider_send_started_at",
+        type: "timestamp with time zone",
+        primaryKey: false,
+        notNull: false,
+      },
+    });
+    expect(
+      sha256("drizzle/meta/20260824233149_snapshot.json"),
+    ).toBe("5e41c6e13475673a5814c521e6d7410a0189877dec40923a6338d63f4eac5752");
+    delete normalizedCurrent.tables[table].columns.provider_send_started_at;
+    normalizedCurrent.id = normalizedPrevious.id;
+    normalizedCurrent.prevId = normalizedPrevious.prevId;
     expect(normalizedCurrent).toEqual(normalizedPrevious);
   });
 });

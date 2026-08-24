@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, lt, lte, or, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, isNotNull, isNull, lt, lte, or, sql } from "drizzle-orm";
 import { z } from "zod";
 import type { getDatabase } from "@/server/db/client";
 import {
@@ -165,6 +165,7 @@ export function createDrizzleInternalNotificationOutboxRepository(
             status: "sending",
             attempts,
             lastAttemptAt: now,
+            providerSendStartedAt: null,
             updatedAt: now,
           })
           .where(and(
@@ -197,6 +198,19 @@ export function createDrizzleInternalNotificationOutboxRepository(
       return Boolean(recipient);
     },
 
+    async beginProviderSend(id: string, now: Date) {
+      const [updated] = await database.update(internalNotificationOutbox).set({
+        providerSendStartedAt: now,
+        lastErrorCode: null,
+        updatedAt: now,
+      }).where(and(
+        eq(internalNotificationOutbox.id, id),
+        eq(internalNotificationOutbox.status, "sending"),
+        isNull(internalNotificationOutbox.providerSendStartedAt),
+      )).returning({ id: internalNotificationOutbox.id });
+      return Boolean(updated);
+    },
+
     async markSent(id: string, providerMessageId: string, now: Date) {
       const [updated] = await database.update(internalNotificationOutbox).set({
         status: "sent",
@@ -207,6 +221,7 @@ export function createDrizzleInternalNotificationOutboxRepository(
       }).where(and(
         eq(internalNotificationOutbox.id, id),
         eq(internalNotificationOutbox.status, "sending"),
+        isNotNull(internalNotificationOutbox.providerSendStartedAt),
       )).returning({ id: internalNotificationOutbox.id });
       return Boolean(updated);
     },
@@ -225,6 +240,7 @@ export function createDrizzleInternalNotificationOutboxRepository(
       }).where(and(
         eq(internalNotificationOutbox.id, id),
         eq(internalNotificationOutbox.status, "sending"),
+        isNotNull(internalNotificationOutbox.providerSendStartedAt),
       )).returning({ id: internalNotificationOutbox.id });
       return Boolean(updated);
     },

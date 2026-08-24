@@ -155,6 +155,9 @@ export const internalNotificationOutbox = pgTable(
       .defaultNow()
       .notNull(),
     lastAttemptAt: timestamp("last_attempt_at", { withTimezone: true }),
+    providerSendStartedAt: timestamp("provider_send_started_at", {
+      withTimezone: true,
+    }),
     sentAt: timestamp("sent_at", { withTimezone: true }),
     providerMessageId: text("provider_message_id"),
     lastErrorCode: text("last_error_code"),
