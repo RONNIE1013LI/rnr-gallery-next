@@ -3,6 +3,11 @@ import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import pg from "pg";
 import {
+  assertAppliedMigrationPrefix,
+  readAppliedMigrationLineage,
+  readLocalMigrationLineage,
+} from "./migration-lineage";
+import {
   sanitizedMigrationEnvironment,
   selectMigrationTarget,
   verifyDatabaseIdentity,
@@ -17,6 +22,7 @@ type RunMigrationInput = Readonly<{
   args: MigrationArguments;
   env: MigrationEnvironmentValues;
   identifyDatabase: (url: string, hostname: string) => Promise<DatabaseIdentity>;
+  verifyLineage: (url: string) => Promise<void>;
   runDrizzle: (env: NodeJS.ProcessEnv) => Promise<number>;
   writeSafeIdentity: (identity: SafeDatabaseIdentity) => void;
 }>;
@@ -108,6 +114,15 @@ export function runDrizzle(env: NodeJS.ProcessEnv) {
   });
 }
 
+export async function verifyMigrationLineage(
+  connectionString: string,
+  rootDir = process.cwd(),
+): Promise<void> {
+  const local = readLocalMigrationLineage(rootDir);
+  const applied = await readAppliedMigrationLineage(connectionString);
+  assertAppliedMigrationPrefix(applied, local);
+}
+
 export async function runMigration(input: RunMigrationInput) {
   const target = selectMigrationTarget({ ...input.args, env: input.env });
   const actual = await input.identifyDatabase(target.url, target.hostname);
@@ -116,6 +131,7 @@ export async function runMigration(input: RunMigrationInput) {
     expectedDatabase: target.expectedDatabase,
     expectedHostFingerprint: target.expectedHostFingerprint,
   }, actual);
+  await input.verifyLineage(target.url);
   input.writeSafeIdentity(safeIdentity);
   return input.runDrizzle(sanitizedMigrationEnvironment(input.env, target.url));
 }
@@ -126,6 +142,7 @@ async function main() {
     args,
     env: process.env,
     identifyDatabase,
+    verifyLineage: verifyMigrationLineage,
     runDrizzle,
     writeSafeIdentity(identity) {
       process.stdout.write(`${JSON.stringify(identity)}\n`);

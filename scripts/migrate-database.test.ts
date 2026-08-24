@@ -32,25 +32,45 @@ describe("guarded migration runner", () => {
   });
 
   it("verifies identity before invoking Drizzle with a sanitized environment", async () => {
-    const identifyDatabase = vi.fn().mockResolvedValue({
-      database: "rnr_gallery_test",
-      hostname: "test-db.example",
-      serverVersion: "PostgreSQL 17",
-      inRecovery: false,
+    const events: string[] = [];
+    const identifyDatabase = vi.fn().mockImplementation(async () => {
+      events.push("identify");
+      return {
+        database: "rnr_gallery_test",
+        hostname: "test-db.example",
+        serverVersion: "PostgreSQL 17",
+        inRecovery: false,
+      };
     });
-    const runDrizzle = vi.fn().mockResolvedValue(0);
-    const writeSafeIdentity = vi.fn();
+    const verifyLineage = vi.fn().mockImplementation(async () => {
+      events.push("verify-lineage");
+    });
+    const runDrizzle = vi.fn().mockImplementation(async () => {
+      events.push("run-drizzle");
+      return 0;
+    });
+    const writeSafeIdentity = vi.fn().mockImplementation(() => {
+      events.push("write-identity");
+    });
 
     const exitCode = await runMigration({
       args: { environment: "test", confirmProduction: false },
       env: { DATABASE_URL: "postgresql://wrong/prod", TEST_DATABASE_URL: testUrl },
       identifyDatabase,
+      verifyLineage,
       runDrizzle,
       writeSafeIdentity,
     });
 
     expect(exitCode).toBe(0);
+    expect(events).toEqual([
+      "identify",
+      "verify-lineage",
+      "write-identity",
+      "run-drizzle",
+    ]);
     expect(identifyDatabase).toHaveBeenCalledWith(testUrl, "test-db.example");
+    expect(verifyLineage).toHaveBeenCalledWith(testUrl);
     expect(writeSafeIdentity).toHaveBeenCalledWith(expect.objectContaining({
       environment: "test",
       database: "rnr_gallery_test",
@@ -78,9 +98,36 @@ describe("guarded migration runner", () => {
         serverVersion: "PostgreSQL 17",
         inRecovery: false,
       }),
+      verifyLineage: vi.fn(),
       runDrizzle,
       writeSafeIdentity: vi.fn(),
     })).rejects.toThrow("identity mismatch");
+    expect(runDrizzle).not.toHaveBeenCalled();
+  });
+
+  it("fails closed before identity output and Drizzle when lineage verification rejects", async () => {
+    const runDrizzle = vi.fn();
+    const writeSafeIdentity = vi.fn();
+    const verifyLineage = vi.fn().mockRejectedValue(
+      new Error("Migration hash mismatch at position 1"),
+    );
+
+    await expect(runMigration({
+      args: { environment: "test", confirmProduction: false },
+      env: { TEST_DATABASE_URL: testUrl },
+      identifyDatabase: vi.fn().mockResolvedValue({
+        database: "rnr_gallery_test",
+        hostname: "test-db.example",
+        serverVersion: "PostgreSQL 17",
+        inRecovery: false,
+      }),
+      verifyLineage,
+      runDrizzle,
+      writeSafeIdentity,
+    })).rejects.toThrow(/hash mismatch/i);
+
+    expect(verifyLineage).toHaveBeenCalledWith(testUrl);
+    expect(writeSafeIdentity).not.toHaveBeenCalled();
     expect(runDrizzle).not.toHaveBeenCalled();
   });
 });
