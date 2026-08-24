@@ -6,6 +6,20 @@ import { FormsSavedViews } from "./forms-saved-views";
 afterEach(() => vi.unstubAllGlobals());
 
 describe("forms saved views", () => {
+  it("keeps save controls separate from the full-width saved-view list", () => {
+    render(<FormsSavedViews
+      views={[{ id: "view-1", name: "Urgent", queryString: "filter=urgent%7Eequals%7Etrue" }]}
+      currentQuery="filter=deliveryMethod%7Eequals%7Epickup"
+      onChanged={vi.fn()}
+      onOpen={vi.fn()}
+    />);
+
+    const controls = screen.getByRole("group", { name: "Save a search" });
+    expect(controls).toContainElement(screen.getByLabelText("Saved view name"));
+    expect(controls).toContainElement(screen.getByRole("button", { name: "Save current view" }));
+    expect(controls).not.toContainElement(screen.getByLabelText("Personal saved views"));
+  });
+
   it("saves the current operational filters and opens a personal view", async () => {
     const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: "created" }), { status: 201 }));
     vi.stubGlobal("fetch", request);

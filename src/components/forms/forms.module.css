@@ -1441,12 +1441,45 @@
 }
 
 .savedSearchWorkspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "heading controls"
+    "presets presets"
+    "views views";
+  column-gap: 12px;
   margin-top: 14px;
   padding-top: 2px;
   border-top: 1px solid var(--forms-border);
 }
 
+.savedSearchWorkspace > .filterGroupTitle {
+  grid-area: heading;
+  align-self: center;
+  margin: 8px 0;
+}
+
+.savedSearchWorkspace .personalViews {
+  display: contents;
+}
+
+.savedViewControls {
+  grid-area: controls;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
+}
+
+.savedSearchWorkspace .personalViewList {
+  grid-area: views;
+  width: 100%;
+  max-width: 100%;
+}
+
 .filterPresetButtons {
+  grid-area: presets;
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
@@ -2772,8 +2805,23 @@
     display: none;
   }
 
+  .savedSearchWorkspace {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "heading"
+      "controls"
+      "presets"
+      "views";
+  }
+
   .savedSearchWorkspace .personalViews {
-    display: flex;
+    display: contents;
+  }
+
+  .savedSearchWorkspace .savedViewControls {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    margin-bottom: 8px;
   }
 
   .savedSearchWorkspace .personalViews input {

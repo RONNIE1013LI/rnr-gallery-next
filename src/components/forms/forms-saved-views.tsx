@@ -69,18 +69,20 @@ export function FormsSavedViews({
           <button type="button" aria-label={`Delete ${view.name}`} disabled={pending} onClick={() => void remove(view)}>×</button>
         </span>)}
       </div> : null}
-      <label>
-        <span className={styles.visuallyHidden}>Saved view name</span>
-        <input
-          aria-label="Saved view name"
-          value={name}
-          maxLength={80}
-          placeholder="Saved filter name"
-          onChange={(event) => setName(event.target.value)}
-        />
-      </label>
-      <button type="button" aria-label="Save current view" disabled={pending || !name.trim() || !currentQuery} onClick={() => void save()}>Save search</button>
-      <span className={styles.savedViewMessage} role="status">{message}</span>
+      <div className={styles.savedViewControls} role="group" aria-label="Save a search">
+        <label>
+          <span className={styles.visuallyHidden}>Saved view name</span>
+          <input
+            aria-label="Saved view name"
+            value={name}
+            maxLength={80}
+            placeholder="Saved filter name"
+            onChange={(event) => setName(event.target.value)}
+          />
+        </label>
+        <button type="button" aria-label="Save current view" disabled={pending || !name.trim() || !currentQuery} onClick={() => void save()}>Save search</button>
+        <span className={styles.savedViewMessage} role="status">{message}</span>
+      </div>
     </div>
   );
 }
