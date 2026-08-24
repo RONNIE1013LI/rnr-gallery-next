@@ -44,6 +44,15 @@ describe("Next.js workspace configuration", () => {
     expect(headers["Strict-Transport-Security"]).toContain("max-age=31536000");
   });
 
+  it("prevents token-bearing notification verification pages from being cached", async () => {
+    const configuredHeaders = await nextConfig.headers?.();
+
+    expect(configuredHeaders).toContainEqual({
+      source: "/notification-email/verify/:token",
+      headers: [{ key: "Cache-Control", value: "no-store" }],
+    });
+  });
+
   it("publishes the Forms portal at /order-system while preserving legacy links", async () => {
     const redirects = await nextConfig.redirects?.();
     const rewrites = await nextConfig.rewrites?.();

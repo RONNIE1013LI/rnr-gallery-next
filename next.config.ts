@@ -44,7 +44,13 @@ const nextConfig: NextConfig = {
     root: worktreeRoot,
   },
   async headers() {
-    return [{ source: "/(.*)", headers: buildSecurityHeaders(process.env.NODE_ENV) }];
+    return [
+      { source: "/(.*)", headers: buildSecurityHeaders(process.env.NODE_ENV) },
+      {
+        source: "/notification-email/verify/:token",
+        headers: [{ key: "Cache-Control", value: "no-store" }],
+      },
+    ];
   },
   async redirects() {
     return [{
