@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { getTableName, type SQL } from "drizzle-orm";
 import { getTableConfig, PgDialect } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
@@ -12,6 +14,30 @@ import {
 } from "./index";
 
 const dialect = new PgDialect();
+
+type DrizzleSnapshot = {
+  id: string;
+  prevId: string;
+  version: string;
+  dialect: string;
+  tables: Record<string, unknown>;
+  enums: Record<string, unknown>;
+  schemas: Record<string, unknown>;
+  sequences: Record<string, unknown>;
+  roles: Record<string, unknown>;
+  policies: Record<string, unknown>;
+  views: Record<string, unknown>;
+  _meta: unknown;
+};
+
+function readSnapshot(name: string) {
+  return JSON.parse(
+    readFileSync(
+      resolve(process.cwd(), `drizzle/meta/${name}_snapshot.json`),
+      "utf8",
+    ),
+  ) as DrizzleSnapshot;
+}
 
 type SchemaTable = Parameters<typeof getTableConfig>[0];
 type ConfiguredColumn = ReturnType<typeof getTableConfig>["columns"][number];
@@ -100,6 +126,56 @@ const nullableTimestamp = {
 };
 
 describe("internal notification schema", () => {
+  it("keeps migration 0037 additive over the exact 0036 snapshot lineage", () => {
+    const previous = readSnapshot("0036");
+    const current = readSnapshot("0037");
+    const addedTables = Object.keys(current.tables)
+      .filter((name) => !(name in previous.tables))
+      .sort();
+
+    expect(current.prevId).toBe(previous.id);
+    expect(addedTables).toEqual([
+      "public.internal_notification_outbox",
+      "public.internal_notification_recipients",
+      "public.internal_notification_subscriptions",
+    ]);
+    expect(
+      Object.keys(previous.tables).filter((name) => !(name in current.tables)),
+    ).toEqual([]);
+
+    for (const [name, table] of Object.entries(previous.tables)) {
+      expect(
+        current.tables[name],
+        `${name} changed across additive migration 0037`,
+      ).toEqual(table);
+    }
+    expect(current.tables["public.production_jobs"]).toEqual(
+      previous.tables["public.production_jobs"],
+    );
+
+    expect({
+      version: current.version,
+      dialect: current.dialect,
+      enums: current.enums,
+      schemas: current.schemas,
+      sequences: current.sequences,
+      roles: current.roles,
+      policies: current.policies,
+      views: current.views,
+      _meta: current._meta,
+    }).toEqual({
+      version: previous.version,
+      dialect: previous.dialect,
+      enums: previous.enums,
+      schemas: previous.schemas,
+      sequences: previous.sequences,
+      roles: previous.roles,
+      policies: previous.policies,
+      views: previous.views,
+      _meta: previous._meta,
+    });
+  });
+
   it("defines the exact supported notification topics and labels", () => {
     expect(INTERNAL_NOTIFICATION_TOPICS).toEqual([
       "manual_order_created",
