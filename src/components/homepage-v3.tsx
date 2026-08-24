@@ -133,6 +133,7 @@ function GalleryArtworkCard({
             width={item.width}
             height={item.height}
             sizes={sizes}
+            quality={60}
             loading="lazy"
           />
         </div>
@@ -166,11 +167,11 @@ export function HomepageV3({
     "roll-up-banner": styles.galleryRollup,
   };
   const gallerySizes: Readonly<Record<HomepageGallerySlot, string>> = {
-    "canvas-landscape": "(max-width: 760px) 66vw, 35vw",
-    "canvas-portrait": "(max-width: 760px) 33vw, 18vw",
-    "wall-banner": "(max-width: 760px) 100vw, 53vw",
-    "grave-cover": "(max-width: 760px) 51vw, 27vw",
-    "roll-up-banner": "(max-width: 760px) 45vw, 22vw",
+    "canvas-landscape": "(max-width: 760px) 57vw, 422px",
+    "canvas-portrait": "(max-width: 760px) 28vw, 210px",
+    "wall-banner": "(max-width: 760px) calc(100vw - 3rem), 648px",
+    "grave-cover": "(max-width: 760px) 46vw, 320px",
+    "roll-up-banner": "(max-width: 760px) 38vw, 269px",
   };
   const galleryLabels: Readonly<Record<HomepageGallerySlot, string>> = {
     "canvas-landscape": "Canvas",

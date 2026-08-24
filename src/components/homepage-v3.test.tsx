@@ -844,7 +844,39 @@ describe("HomepageV3", () => {
       .toHaveAttribute("loading", "lazy");
   });
 
-  it("uses the measured mobile grave-cover width for a retina-sized image candidate", () => {
+  it("serves homepage gallery artwork at measured layout widths and thumbnail quality", () => {
+    const items = [
+      galleryItem("ed3f5c8db693d7f93782151c2362789d2bd31b0a39539e022ae5d39eaa1ef790"),
+      galleryItem("88e63ad4c403d5bcdb37f2ee2f142d63100c970b43808f82f5b6ca21a1aea5aa"),
+      galleryItem("a62ca0891fb346b22d7854d9967cedc29c1acdeb56e9a65a003aedac9c55f49d"),
+      galleryItem("7455ae174913c7653dfd5a5dff6219af0e7d9aea293bb6d2fb9178ece780be1b"),
+      galleryItem("24e5c8fc91b9ca15354e1404b3abc79835972ee7d33f99372c6f2cb22cc3106f"),
+    ];
+
+    render(<HomepageV3 registry={defaultProductRegistry} galleryItems={items} />);
+
+    const expectedSizes = [
+      "(max-width: 760px) 57vw, 422px",
+      "(max-width: 760px) 28vw, 210px",
+      "(max-width: 760px) calc(100vw - 3rem), 648px",
+      "(max-width: 760px) 46vw, 320px",
+      "(max-width: 760px) 38vw, 269px",
+    ];
+    const galleryImages = items.map((item) => screen.getByRole("img", {
+      name: item.altText,
+    }));
+
+    galleryImages.forEach((image, index) => {
+      expect(image).toHaveAttribute("sizes", expectedSizes[index]);
+    });
+
+    const source = readFileSync("src/components/homepage-v3.tsx", "utf8");
+    expect(source).toMatch(
+      /src=\{`\/gallery-images\/\$\{item\.id\}[\s\S]*?quality=\{60\}[\s\S]*?loading="lazy"/,
+    );
+  });
+
+  it("uses the measured grave-cover width for a retina-sized image candidate", () => {
     const graveCover = galleryItem(
       "7455ae174913c7653dfd5a5dff6219af0e7d9aea293bb6d2fb9178ece780be1b",
       {
@@ -859,6 +891,6 @@ describe("HomepageV3", () => {
     render(<HomepageV3 registry={defaultProductRegistry} galleryItems={[graveCover]} />);
 
     expect(screen.getByRole("img", { name: graveCover.altText }))
-      .toHaveAttribute("sizes", "(max-width: 760px) 51vw, 27vw");
+      .toHaveAttribute("sizes", "(max-width: 760px) 46vw, 320px");
   });
 });

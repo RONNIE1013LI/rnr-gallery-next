@@ -30,6 +30,13 @@ describe("Next.js workspace configuration", () => {
     expect(nextConfig.images?.localPatterns).toContainEqual({
       pathname: "/gallery-images/**",
     });
+    expect(nextConfig.images?.imageSizes).toEqual([
+      32, 48, 64, 96, 128, 256, 320, 384,
+    ]);
+    expect(nextConfig.images?.deviceSizes).toEqual([
+      480, 640, 672, 704, 750, 828, 1080, 1200, 1920, 2048, 3840,
+    ]);
+    expect(nextConfig.images?.qualities).toEqual([60, 75]);
   });
 
   it("adds non-breaking browser security headers and production HSTS", () => {
