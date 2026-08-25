@@ -65,9 +65,17 @@ describe("Admin form visual refinements", () => {
 
   it("lets mobile Order Entry fill the viewport with a compact visible close control", () => {
     const mobile = formsCss.slice(formsCss.indexOf("@media (max-width: 700px)"));
+    const closeButton = cssRule(mobile, ".orderEntryDrawer .drawerHeader button");
+    const closeButtonFocus = cssRule(mobile, ".orderEntryDrawer .drawerHeader button:focus-visible");
+
     expect(mobile).toMatch(/\.orderEntryDrawer\s*\{[\s\S]*?max-width:\s*100vw;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
     expect(mobile).toMatch(/\.orderEntryResizeHandle\s*\{[\s\S]*?display:\s*none;/);
-    expect(mobile).toMatch(/\.orderEntryDrawer \.drawerHeader button::before\s*\{[\s\S]*?width:\s*32px;[\s\S]*?height:\s*32px;/);
+    expect(closeButton).toContain("border: 1px solid var(--forms-border);");
+    expect(closeButton).toContain("border-radius: 50%;");
+    expect(closeButton).toContain("background: #fff;");
+    expect(closeButtonFocus).toContain("outline: 0;");
+    expect(closeButtonFocus).toContain("box-shadow: inset 0 0 0 2px var(--forms-focus);");
+    expect(mobile).not.toMatch(/\.orderEntryDrawer \.drawerHeader button::before\s*\{/);
   });
 
   it("uses a compact mobile search row and a full-screen filter workspace", () => {

@@ -840,27 +840,21 @@
   .orderEntryDrawer .drawerHeader button {
     display: grid;
     width: 44px;
+    height: 44px;
     min-width: 44px;
     min-height: 44px;
     place-items: center;
-    padding: 6px;
-    border: 0;
-    outline-offset: 1px;
-    background: transparent;
-    font-size: 0;
-  }
-
-  .orderEntryDrawer .drawerHeader button::before {
-    content: "×";
-    display: grid;
-    width: 32px;
-    height: 32px;
-    place-items: center;
+    padding: 0;
     border: 1px solid var(--forms-border);
     border-radius: 50%;
     background: #fff;
     font-size: 18px;
     line-height: 1;
+  }
+
+  .orderEntryDrawer .drawerHeader button:focus-visible {
+    outline: 0;
+    box-shadow: inset 0 0 0 2px var(--forms-focus);
   }
 }
 
