@@ -35,6 +35,12 @@ export function MoneyCentsInput({
     required={required}
     type="text"
     value={displayValue}
+    onFocus={(event) => {
+      if (cents === 0) event.currentTarget.select();
+    }}
+    onClick={(event) => {
+      if (cents === 0) event.currentTarget.select();
+    }}
     onChange={(event) => {
       const value = event.target.value;
       if (!/^\d*(?:\.\d{0,2})?$/.test(value)) return;
