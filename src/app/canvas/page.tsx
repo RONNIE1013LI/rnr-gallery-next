@@ -21,6 +21,10 @@ export default async function CanvasPage() {
       description="Choose photo print, digital oil painting or a custom themed canvas."
       path="/canvas"
       breadcrumbLabel="Canvas"
+      relatedLinks={[{
+        href: "/custom-photo-canvas-nz",
+        label: "Learn more about custom photo canvas",
+      }]}
       products={getRegistryProducts(registry).filter(
         (product) => product.active && product.category === "canvas",
       )}

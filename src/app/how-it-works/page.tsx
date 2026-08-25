@@ -1,5 +1,6 @@
 import Link from "next/link";
 import styles from "@/components/storefront.module.css";
+import { deliveryCopy } from "@/domain/content/delivery-copy";
 import { buildPublicMetadata } from "@/server/seo/metadata";
 
 export const metadata = buildPublicMetadata({
@@ -23,12 +24,14 @@ export default function HowItWorksPage() {
         <h2>3. Review the draft</h2>
         <p>Check every detail before approval. Your order includes up to two free design revisions, so it helps to send requested changes together.</p>
         <h2>4. Production and delivery</h2>
-        <p>Standard production time is 5 business days from the date the order is placed.</p>
+        <p>{deliveryCopy.production}</p>
         <p>Estimated delivery times after production are:</p>
         <ul>
-          <li>New Zealand: 2–3 business days.</li>
-          <li>Australia Standard Delivery: approximately 5 business days.</li>
+          <li>{deliveryCopy.newZealand}</li>
         </ul>
+        <p>{deliveryCopy.australiaDhl}</p>
+        <p>{deliveryCopy.australiaStandard}</p>
+        <p>{deliveryCopy.australiaRemote}</p>
         <h2>Rush orders</h2>
         <p>If your order is urgent, choose the required date and confirm urgent service when that option is offered. Availability and the applicable fee are shown before the item is added to your cart.</p>
         <h2>Secure checkout</h2>

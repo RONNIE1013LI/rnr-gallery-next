@@ -83,10 +83,9 @@ describe("ProductConfigurator", () => {
     expect(within(orderSummary).getByText("NZ$15.75")).toBeInTheDocument();
     expect(within(orderSummary).getByText("NZ$120.75")).toBeInTheDocument();
     expect(within(orderSummary).queryByText(/excl GST/i)).not.toBeInTheDocument();
-    expect(screen.getByText("Australia:").closest("li"))
-      .toHaveTextContent("Australia: approximately 5 business days");
-    expect(screen.queryByText(/Australia \(Standard Delivery\):/))
-      .not.toBeInTheDocument();
+    expect(screen.getByText(/DHL Express.*around 2 days/i)).toBeVisible();
+    expect(screen.getByText(/Standard delivery.*7–10 days/i)).toBeVisible();
+    expect(screen.getByText(/remote areas.*around two weeks/i)).toBeVisible();
   });
 
   it("quotes and stores an Australian configuration only in fixed AUD", () => {

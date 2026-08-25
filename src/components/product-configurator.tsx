@@ -20,6 +20,7 @@ import type {
   Orientation,
   ProductConfigurationSchema,
 } from "@/domain/configuration/types";
+import { deliveryCopy } from "@/domain/content/delivery-copy";
 import { quoteConfiguration } from "@/domain/configuration/quote";
 import { formatConfigurationSizeLabel } from "@/domain/configuration/size-label";
 import { addNzdGst, formatMarketMoney } from "@/domain/money";
@@ -519,12 +520,14 @@ export function ProductConfigurator({
             </div>
           </div>
           <div className={styles.timingPolicy}>
-            <p>Please note that, by default, all orders have a <strong>production time of 5 business days from the date the order is placed</strong>.</p>
+            <p>{deliveryCopy.production}</p>
             <p>Estimated delivery times after production are:</p>
             <ul>
-              <li><strong>New Zealand:</strong> 2–3 business days</li>
-              <li><strong>Australia:</strong> approximately 5 business days</li>
+              <li>{deliveryCopy.newZealand}</li>
             </ul>
+            <p>{deliveryCopy.australiaDhl}</p>
+            <p>{deliveryCopy.australiaStandard}</p>
+            <p>{deliveryCopy.australiaRemote}</p>
             <p>If your order is <strong>urgent</strong>, please make sure to clearly let us know when placing your order so that we can arrange it accordingly and avoid any delays.</p>
           </div>
           <div className={`${styles.fieldGrid} ${styles.timingFields}`}>

@@ -18,6 +18,7 @@ const pages = [
   ["/contact", 0.5, "monthly"],
   ["/help", 0.5, "monthly"],
   ["/shipping-delivery", 0.5, "monthly"],
+  ["/returns-refunds", 0.5, "monthly"],
   ["/custom-roll-up-banners-nz", 0.8, "weekly"],
   ["/custom-wall-banners-nz", 0.8, "weekly"],
   ["/custom-photo-canvas-nz", 0.8, "weekly"],

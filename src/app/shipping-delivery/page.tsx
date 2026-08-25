@@ -1,5 +1,6 @@
 import Link from "next/link";
 import styles from "@/components/storefront.module.css";
+import { deliveryCopy } from "@/domain/content/delivery-copy";
 import { buildPublicMetadata } from "@/server/seo/metadata";
 
 export const metadata = buildPublicMetadata({
@@ -17,13 +18,15 @@ export default function ShippingDeliveryPage() {
         <p className={styles.eyebrow}>Shipping &amp; delivery</p>
         <h1>Production and delivery timing.</h1>
         <h2>Production</h2>
-        <p>Standard production time is 5 business days from the date the order is placed.</p>
+        <p>{deliveryCopy.production}</p>
         <h2>Estimated delivery after production</h2>
         <ul>
-          <li>New Zealand: 2–3 business days.</li>
-          <li>Australia Standard Delivery: approximately 5 business days.</li>
+          <li>{deliveryCopy.newZealand}</li>
         </ul>
-        <p>Checkout shows the available delivery option and price for the address entered.</p>
+        <p>{deliveryCopy.australiaDhl}</p>
+        <p>{deliveryCopy.australiaStandard}</p>
+        <p>{deliveryCopy.australiaRemote}</p>
+        <p>Checkout shows the available delivery options and prices for the address entered.</p>
         <p>Your personalised artwork is sent to production after the proof is approved. Two revision rounds are included.</p>
         <div className={styles.legalActions}>
           <Link className={styles.primaryButton} href="/shop">Start Your Order</Link>

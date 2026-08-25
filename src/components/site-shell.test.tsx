@@ -377,6 +377,8 @@ describe("site shell", () => {
       .toHaveAttribute("href", "/contact");
     expect(within(footer).getByRole("link", { name: "Shipping & Delivery" }))
       .toHaveAttribute("href", "/shipping-delivery");
+    expect(within(footer).getByRole("link", { name: "Cancellations & Refunds" }))
+      .toHaveAttribute("href", "/returns-refunds");
   });
 
   it("shows only the approved payment brands in the requested order", () => {
@@ -426,6 +428,8 @@ describe("site shell", () => {
       .toHaveAttribute("href", "/privacy");
     expect(within(customerColumn).getByRole("link", { name: "Terms" }))
       .toHaveAttribute("href", "/terms");
+    expect(within(customerColumn).getByRole("link", { name: "Cancellations & Refunds" }))
+      .toHaveAttribute("href", "/returns-refunds");
     expect(within(legalRow).queryByRole("navigation", {
       name: "Mobile footer policies",
     })).not.toBeInTheDocument();

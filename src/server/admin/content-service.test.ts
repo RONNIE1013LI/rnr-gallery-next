@@ -80,9 +80,11 @@ describe("admin content service", () => {
     expect(resolvePublishedContent([
       { key: "home.hero.title", publishedValue: "A published headline" },
       { key: "delivery.nz_time", publishedValue: null },
-    ], ["home.hero.title", "delivery.nz_time"])).toEqual({
+      { key: "delivery.au_time", publishedValue: null },
+    ], ["home.hero.title", "delivery.nz_time", "delivery.au_time"])).toEqual({
       "home.hero.title": "A published headline",
       "delivery.nz_time": "New Zealand: 2–3 business days after production.",
+      "delivery.au_time": "Australia: DHL Express is around 2 days to major east-coast cities; Standard is around 7–10 days. Remote areas may take around two weeks. Times exclude production.",
     });
   });
 });

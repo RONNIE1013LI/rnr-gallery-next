@@ -508,7 +508,7 @@ describe("HomepageV3", () => {
       "Every artwork is reviewed and refined by our team before printing.",
     )).toHaveLength(2);
     expect(screen.getAllByText(/Two free design revisions are included/)).toHaveLength(2);
-    expect(screen.getByText(/Production normally takes 5 business days/)).toBeInTheDocument();
+    expect(screen.getByText(/Standard production time is 5 business days/)).toBeInTheDocument();
     expect(screen.getByText(
       "Yes, please send us the original photos 😊 We’ll check the quality and enhance them where possible. Very blurry or low-resolution photos may affect the final result, so if any photo isn’t clear enough, we’ll let you know and ask for a better one.",
     )).toBeInTheDocument();

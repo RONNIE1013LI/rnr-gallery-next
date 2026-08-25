@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type { Product } from "@/domain/catalogue/types";
 import type { Market } from "@/domain/markets/types";
 import { buildBreadcrumbData } from "@/server/seo/metadata";
@@ -14,6 +15,7 @@ type CataloguePageProps = Readonly<{
   products: readonly Product[];
   market?: Market;
   pricesInclTaxCents?: Readonly<Record<string, number>>;
+  relatedLinks?: readonly Readonly<{ href: string; label: string }>[];
 }>;
 
 export function CataloguePage({
@@ -25,6 +27,7 @@ export function CataloguePage({
   products,
   market = "NZ",
   pricesInclTaxCents,
+  relatedLinks = [],
 }: CataloguePageProps) {
   return (
     <main id="main-content" className={styles.pageMain}>
@@ -37,7 +40,14 @@ export function CataloguePage({
       <header className={styles.pageIntro}>
         {eyebrow ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
         <h1>{title}</h1>
-        {description ? <p>{description}</p> : null}
+        {description ? <p className={styles.pageIntroDescription}>{description}</p> : null}
+        {relatedLinks.length > 0 ? (
+          <nav className={styles.pageIntroLinks} aria-label="Product guides">
+            {relatedLinks.map((link) => (
+              <Link href={link.href} key={link.href}>{link.label}</Link>
+            ))}
+          </nav>
+        ) : null}
       </header>
       <section className={styles.productGrid} aria-label={`${title} products`}>
         {products.map((product, index) => (

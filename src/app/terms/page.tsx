@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import styles from "@/components/storefront.module.css";
+import { deliveryCopy } from "@/domain/content/delivery-copy";
 
 export const metadata: Metadata = {
   title: "Terms of service",
@@ -49,23 +50,10 @@ export default function TermsPage() {
           business days from the date the order is placed.
         </p>
         <p>Estimated delivery times after production are:</p>
-        <p>
-          <strong>New Zealand:</strong> 2–3 business days
-        </p>
-        <p>
-          <strong>Australia:</strong> If you live in a major city on the east coast,
-          DHL usually takes around 2 days for delivery, excluding the production
-          time. The shipping cost is higher, but it is much faster.
-        </p>
-        <p>
-          Standard delivery is more affordable and usually takes around 7–10 days.
-        </p>
-        <p>
-          However, if you live in an area far from a major city, there may not be
-          much difference between the two shipping options, as both can take around
-          two weeks to arrive. This is because deliveries to remote areas usually
-          require additional local transit time.
-        </p>
+        <p>{deliveryCopy.newZealand}</p>
+        <p>{deliveryCopy.australiaDhl}</p>
+        <p>{deliveryCopy.australiaStandard}</p>
+        <p>{deliveryCopy.australiaRemote}</p>
         <p>
           If your order is <strong>urgent</strong>, please make sure to clearly let
           us know when placing your order so that we can arrange it accordingly

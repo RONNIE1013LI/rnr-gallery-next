@@ -2,6 +2,7 @@ import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import PrivacyPage from "./privacy/page";
 import TermsPage from "./terms/page";
+import ReturnsRefundsPage from "./returns-refunds/page";
 
 describe("legal pages", () => {
   it("provides a useful privacy contents navigation without a decorative eyebrow", () => {
@@ -38,9 +39,9 @@ describe("legal pages", () => {
     render(<TermsPage />);
 
     expect(screen.getByText("Last updated: 21 August 2026")).toBeVisible();
-    expect(screen.getByText(/DHL usually takes around 2 days for delivery, excluding the production time/)).toBeVisible();
-    expect(screen.getByText(/Standard delivery is more affordable and usually takes around 7–10 days/)).toBeVisible();
-    expect(screen.getByText(/both can take around two weeks to arrive/)).toBeVisible();
+    expect(screen.getByText(/DHL Express.*around 2 days.*after production/)).toBeVisible();
+    expect(screen.getByText(/Standard delivery.*around 7–10 days.*after production/)).toBeVisible();
+    expect(screen.getByText(/remote areas.*around two weeks/i)).toBeVisible();
     expect(screen.queryByText(/Australia \(Standard Delivery\):.*approximately 5 business days/i)).not.toBeInTheDocument();
   });
 
@@ -57,6 +58,23 @@ describe("legal pages", () => {
     );
 
     const main = screen.getByRole("main");
+    expect(main).toHaveTextContent(
+      "Orders can be cancelled for a full refund after successful checkout and before design work begins.",
+    );
+    expect(main).toHaveTextContent(
+      "Once the initial design proof has been delivered, the design fee is non-refundable.",
+    );
+    expect(main).toHaveTextContent(
+      "The remaining amount may be refunded and will generally equal 50% of the total order value.",
+    );
+    expect(main).not.toHaveTextContent(/deposit|remaining balance|final payment/i);
+  });
+
+  it("publishes the approved refund rule on a dedicated customer page", () => {
+    render(<ReturnsRefundsPage />);
+
+    const main = screen.getByRole("main");
+    expect(screen.getByRole("heading", { name: "Cancellations and refunds" })).toBeVisible();
     expect(main).toHaveTextContent(
       "Orders can be cancelled for a full refund after successful checkout and before design work begins.",
     );

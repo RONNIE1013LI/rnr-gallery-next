@@ -56,10 +56,9 @@ describe("BannerBundleConfigurator", () => {
     expect(screen.getByRole("region", { name: "Roll-Up Banner customisation" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Wall Banner customisation" })).toBeVisible();
     expect(document.querySelector("form#customise")).not.toBeNull();
-    expect(screen.getByText("Australia:").closest("li"))
-      .toHaveTextContent("Australia: approximately 5 business days");
-    expect(screen.queryByText(/Australia \(Standard Delivery\):/))
-      .not.toBeInTheDocument();
+    expect(screen.getByText(/DHL Express.*around 2 days/i)).toBeVisible();
+    expect(screen.getByText(/Standard delivery.*7–10 days/i)).toBeVisible();
+    expect(screen.getByText(/remote areas.*around two weeks/i)).toBeVisible();
   });
 
   it("makes clear that an urgent date is for production, not delivery", () => {
