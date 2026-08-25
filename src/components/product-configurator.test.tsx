@@ -84,9 +84,10 @@ describe("ProductConfigurator", () => {
     expect(within(orderSummary).getByText("NZ$15.75")).toBeInTheDocument();
     expect(within(orderSummary).getByText("NZ$120.75")).toBeInTheDocument();
     expect(within(orderSummary).queryByText(/excl GST/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/DHL Express.*around 2 days/i)).toBeVisible();
-    expect(screen.getByText(/Standard delivery.*7–10 days/i)).toBeVisible();
-    expect(screen.getByText(/remote areas.*around two weeks/i)).toBeVisible();
+    expect(screen.getByText(/New Zealand: 2–3 business days/i)).toBeVisible();
+    expect(screen.queryByText(/DHL Express.*around 2 days/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Standard delivery.*7–10 days/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/remote areas.*around two weeks/i)).not.toBeInTheDocument();
   });
 
   it("quotes and stores an Australian configuration only in fixed AUD", () => {
@@ -104,6 +105,10 @@ describe("ProductConfigurator", () => {
     const summary = screen.getByRole("complementary", { name: "Order summary" });
     expect(within(summary).getByText("A$460.00 AUD")).toBeVisible();
     expect(within(summary).queryByText(/NZ\$/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/New Zealand: 2–3 business days/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/DHL Express.*around 2 days/i)).toBeVisible();
+    expect(screen.getByText(/Standard delivery.*7–10 days/i)).toBeVisible();
+    expect(screen.getByText(/remote areas.*around two weeks/i)).toBeVisible();
     fireEvent.click(screen.getByText("Send Photos After Ordering"));
     fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
     expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0].price)

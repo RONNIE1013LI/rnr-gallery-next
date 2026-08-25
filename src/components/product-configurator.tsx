@@ -532,12 +532,17 @@ export function ProductConfigurator({
           <div className={styles.timingPolicy}>
             <p>{deliveryCopy.production}</p>
             <p>Estimated delivery times after production are:</p>
-            <ul>
-              <li>{deliveryCopy.newZealand}</li>
-            </ul>
-            <p>{deliveryCopy.australiaDhl}</p>
-            <p>{deliveryCopy.australiaStandard}</p>
-            <p>{deliveryCopy.australiaRemote}</p>
+            {market === "NZ" ? (
+              <ul>
+                <li>{deliveryCopy.newZealand}</li>
+              </ul>
+            ) : (
+              <>
+                <p>{deliveryCopy.australiaDhl}</p>
+                <p>{deliveryCopy.australiaStandard}</p>
+                <p>{deliveryCopy.australiaRemote}</p>
+              </>
+            )}
             <p>If your order is <strong>urgent</strong>, please make sure to clearly let us know when placing your order so that we can arrange it accordingly and avoid any delays.</p>
           </div>
           <div className={`${styles.fieldGrid} ${styles.timingFields}`}>

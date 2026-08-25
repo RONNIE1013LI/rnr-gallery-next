@@ -57,9 +57,10 @@ describe("BannerBundleConfigurator", () => {
     expect(screen.getByRole("region", { name: "Roll-Up Banner customisation" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Wall Banner customisation" })).toBeVisible();
     expect(document.querySelector("form#customise")).not.toBeNull();
-    expect(screen.getByText(/DHL Express.*around 2 days/i)).toBeVisible();
-    expect(screen.getByText(/Standard delivery.*7–10 days/i)).toBeVisible();
-    expect(screen.getByText(/remote areas.*around two weeks/i)).toBeVisible();
+    expect(screen.getByText(/New Zealand: 2–3 business days/i)).toBeVisible();
+    expect(screen.queryByText(/DHL Express.*around 2 days/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Standard delivery.*7–10 days/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/remote areas.*around two weeks/i)).not.toBeInTheDocument();
   });
 
   it("makes clear that an urgent date is for production, not delivery", () => {
@@ -150,6 +151,10 @@ describe("BannerBundleConfigurator", () => {
 
     expect(screen.queryByRole("radiogroup", { name: "Delivery" })).not.toBeInTheDocument();
     expect(screen.queryByText("Pickup")).not.toBeInTheDocument();
+    expect(screen.queryByText(/New Zealand: 2–3 business days/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/DHL Express.*around 2 days/i)).toBeVisible();
+    expect(screen.getByText(/Standard delivery.*7–10 days/i)).toBeVisible();
+    expect(screen.getByText(/remote areas.*around two weeks/i)).toBeVisible();
 
     fireEvent.click(screen.getAllByText("Send Photos After Ordering")[0]);
     fireEvent.click(screen.getAllByText("Send Photos After Ordering")[1]);
