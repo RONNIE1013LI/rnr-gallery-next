@@ -52,6 +52,64 @@ final result: passed
 
 ---
 
+# Mobile filter control-height visual QA — 2026-08-25
+
+- Source visual truth: `/tmp/codex-remote-attachments/01a026e2-2cec-7122-a8b8-ee1c882d7d60/293AE07D-9BEA-4ED9-9F84-5699478F5467/1-照片-1.jpg`.
+- Implementation screenshot: `/tmp/rnr-mobile-filter-control-qa/implementation-mobile.png`.
+- Combined comparison: `/tmp/rnr-mobile-filter-control-qa/comparison.png`.
+- Viewport: `393 × 852` CSS px, Chrome, device scale factor 1.
+- Source pixels: `589 × 1280`; implementation pixels: `393 × 852`.
+- Density normalization: both comparison columns render at 393 px wide. The source includes Safari browser chrome; the implementation column contains the application viewport only.
+- State: code-rendered filter dialog using the real component structure and exact Production CSS from the isolated worktree. No Production data or database access was used.
+
+## Full-view comparison evidence
+
+- All mobile inputs and selects now render at the same 30 px height as the main list search row.
+- Close, remove-condition, and saved-search delete buttons render at 30 × 30 px.
+- Add condition, saved presets, Search, and Reset filters render at 30 px high.
+- The complete filter remains within a 393 × 852 viewport with no horizontal or vertical overflow in the supplied one-condition state.
+- Desktop rules are unchanged because the new declarations remain inside the final `max-width: 720px` media block.
+
+## Focused region comparison evidence
+
+Focused comparison was required because the requested change is control-level density. Browser-computed measurements confirmed:
+
+- Input: 30 px high.
+- Select: 30 px high.
+- Close button: 30 × 30 px.
+- Remove-condition button: 30 × 30 px.
+- Saved-search delete button: 30 × 30 px.
+- Add condition, preset, Search, and Reset buttons: 30 px high.
+- Viewport width and document scroll width are both 393 px.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing 16 px mobile input/select text is preserved to prevent iOS Safari zoom; labels and buttons keep existing project typography.
+- Spacing and layout rhythm: controls share one 30 px row standard and section spacing is reduced without changing field order.
+- Colors and visual tokens: all existing surface, border, focus, active preset, and primary action colors are preserved.
+- Image quality and asset fidelity: no image assets are part of the filter dialog.
+- Copy and content: all labels, saved-search names, and actions are unchanged.
+
+## Findings
+
+No actionable P0, P1, or P2 mismatch remains within the approved mobile control-height scope.
+
+The supplied source is the pre-fix state, so the implementation is intentionally denser. Safari browser chrome is excluded from the application screenshot and was not treated as a product mismatch.
+
+## Comparison history
+
+- Initial mismatch: filter controls used 48 px mobile heights while the main list search row used 30 px. Fix: introduce a filter-scoped 30 px mobile control height and apply it to inputs, selects, paired square actions, presets, saved searches, and final actions. Post-fix evidence: browser measurements and the combined comparison above.
+
+## Primary interactions tested
+
+- Existing filter component tests cover opening, closing, applying, resetting, presets, and saved-search behavior.
+- Responsive geometry was rendered and measured at 393 × 852.
+- The isolated visual comparison page reported no browser console warnings or errors.
+
+final result: passed
+
+---
+
 ## Payment-proof lightbox visual QA — 2026-08-24
 
 - Source visual truth: `/tmp/codex-remote-attachments/01a026e2-2cec-7122-a8b8-ee1c882d7d60/4EF73D48-5845-49C4-97FC-80099AEC7F79/1-照片-1.jpg` (589 × 1280 px).

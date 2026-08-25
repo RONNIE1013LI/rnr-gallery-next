@@ -34,6 +34,16 @@ describe("Forms source visual parity", () => {
     expect(enclosingTabletRule).toBeGreaterThan(enclosingPhoneRule);
   });
 
+  it("matches mobile filter controls and paired action buttons to the 30px list toolbar row", () => {
+    const mobileRules = css.slice(css.lastIndexOf("@media (max-width: 720px)"));
+
+    expect(mobileRules).toContain("--forms-filter-control-height-mobile: 30px;");
+    expect(mobileRules).toMatch(/\.filterPanel input,\s*\.filterPanel select[\s\S]*?height: var\(--forms-filter-control-height-mobile\);[\s\S]*?min-height: var\(--forms-filter-control-height-mobile\);/);
+    expect(mobileRules).toMatch(/\.filterHeading button,\s*\.filterRow > button[\s\S]*?width: var\(--forms-filter-control-height-mobile\);[\s\S]*?min-width: var\(--forms-filter-control-height-mobile\);/);
+    expect(mobileRules).toMatch(/\.filterActions button,\s*\.filterPresetButtons button[\s\S]*?height: var\(--forms-filter-control-height-mobile\);[\s\S]*?min-height: var\(--forms-filter-control-height-mobile\);/);
+    expect(mobileRules).toMatch(/\.savedSearchWorkspace \.personalViewList span button:last-child[\s\S]*?width: var\(--forms-filter-control-height-mobile\);[\s\S]*?min-width: var\(--forms-filter-control-height-mobile\);/);
+  });
+
   it("preserves the source field-specific option colours", () => {
     expect(css).toContain('.statusValue[data-field="deliveryMethod"][data-status="email"]');
     expect(css).toContain("background: #944fb2;");

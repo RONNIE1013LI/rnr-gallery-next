@@ -2926,11 +2926,17 @@
   .savedSearchWorkspace .savedViewControls {
     justify-content: flex-start;
     flex-wrap: wrap;
-    margin-bottom: 8px;
+    margin-bottom: 6px;
   }
 
   .savedSearchWorkspace .personalViews input {
     width: 100%;
+  }
+
+  .savedSearchWorkspace .personalViewList span button:last-child {
+    width: var(--forms-filter-control-height-mobile);
+    min-width: var(--forms-filter-control-height-mobile);
+    padding: 0;
   }
 
   .filterBackdrop {
@@ -2939,6 +2945,7 @@
   }
 
   .filterPanel {
+    --forms-filter-control-height-mobile: 30px;
     position: fixed;
     z-index: 110;
     inset: 0;
@@ -2956,23 +2963,49 @@
     z-index: 1;
     top: -14px;
     margin: -14px -14px 0;
-    padding: 10px 14px;
+    padding: 6px 14px;
     background: var(--forms-surface);
   }
 
   .filterMatch {
     display: grid;
     grid-template-columns: auto minmax(0, 1fr);
+    margin-block: 8px 5px;
   }
 
   .filterPanel input,
   .filterPanel select {
+    height: var(--forms-filter-control-height-mobile);
+    min-height: var(--forms-filter-control-height-mobile);
+    padding-block: 3px;
     font-size: 16px;
   }
 
+  .filterHeading button,
+  .filterRow > button {
+    width: var(--forms-filter-control-height-mobile);
+    min-width: var(--forms-filter-control-height-mobile);
+    height: var(--forms-filter-control-height-mobile);
+    min-height: var(--forms-filter-control-height-mobile);
+    padding: 0;
+  }
+
+  .addFilterButton,
+  .filterActions button,
+  .filterPresetButtons button,
+  .savedSearchWorkspace .personalViews button {
+    height: var(--forms-filter-control-height-mobile);
+    min-height: var(--forms-filter-control-height-mobile);
+    padding-block: 3px;
+  }
+
+  .filterPanel .filterGroupTitle {
+    margin-block: 10px 5px;
+  }
+
   .filterRow {
-    grid-template-columns: repeat(2, minmax(0, 1fr)) 44px;
-    padding: 10px 0;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) var(--forms-filter-control-height-mobile);
+    padding: 6px 0;
     border-bottom: 1px solid var(--forms-border);
   }
 
@@ -2994,18 +3027,21 @@
   }
 
   .filterRow > button {
-    width: 44px;
     grid-column: 3;
     grid-row: 2;
   }
 
   .addFilterButton {
     width: 100%;
+    margin-top: 6px;
   }
 
   .filterActions {
     display: grid;
     grid-template-columns: 1fr;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 8px;
   }
 
   .filterActions button,

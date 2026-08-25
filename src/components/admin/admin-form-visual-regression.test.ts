@@ -131,9 +131,9 @@ describe("Admin form visual refinements", () => {
 
   it("keeps each mobile filter condition compact with a row-local remove control", () => {
     const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
-    expect(mobile).toMatch(/\.filterRow\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)\s*44px;/);
+    expect(mobile).toMatch(/\.filterRow\s*\{[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)\s*var\(--forms-filter-control-height-mobile\);/);
     expect(mobile).toMatch(/\.filterRow > :nth-child\(3\)\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*3;/);
-    expect(mobile).toMatch(/\.filterRow > button\s*\{[\s\S]*?width:\s*44px;[\s\S]*?grid-column:\s*3;/);
+    expect(mobile).toMatch(/\.filterRow > button\s*\{[\s\S]*?width:\s*var\(--forms-filter-control-height-mobile\);[\s\S]*?grid-column:\s*3;/);
     expect(mobile).toMatch(/\.savedSearchWorkspace \.personalViews input\s*\{[\s\S]*?width:\s*100%;/);
   });
 
