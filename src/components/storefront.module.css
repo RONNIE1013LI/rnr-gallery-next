@@ -4639,6 +4639,10 @@
   .legalToc a {
     min-height: 48px;
   }
+
+  .legalActions {
+    justify-content: center;
+  }
 }
 
 .accountPage {

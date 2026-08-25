@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import AboutPage, { metadata as aboutMetadata } from "./about/page";
@@ -6,6 +7,14 @@ import HelpPage, { metadata as helpMetadata } from "./help/page";
 import ShippingDeliveryPage, { metadata as shippingMetadata } from "./shipping-delivery/page";
 
 describe("public help pages", () => {
+  it("centres shared public-page action groups on mobile", () => {
+    const css = readFileSync("src/components/storefront.module.css", "utf8");
+
+    expect(css).toMatch(
+      /@media \(max-width: 520px\) \{[\s\S]*?\.legalPage:has\(\.authPage\)[\s\S]*?\.legalActions \{\s*justify-content:\s*center;/,
+    );
+  });
+
   it("publishes confirmed business and contact information", () => {
     render(<><AboutPage /><ContactPage /></>);
 
