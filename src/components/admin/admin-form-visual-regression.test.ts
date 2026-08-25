@@ -102,13 +102,17 @@ describe("Admin form visual refinements", () => {
     expect(radio).toContain("min-height: 14px;");
   });
 
-  it("lets mobile Order Entry fill the viewport with a compact visible close control", () => {
+  it("lets mobile Order Entry fill the viewport with compact 30px header actions", () => {
     const mobile = formsCss.slice(formsCss.indexOf("@media (max-width: 700px)"));
+    const openFullEditor = cssRule(mobile, ".orderEntryDrawer .drawerHeader a");
     const closeButton = cssRule(mobile, ".orderEntryDrawer .drawerHeader button");
     const closeButtonFocus = cssRule(mobile, ".orderEntryDrawer .drawerHeader button:focus-visible");
 
     expect(mobile).toMatch(/\.orderEntryDrawer\s*\{[\s\S]*?max-width:\s*100vw;[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\);/);
     expect(mobile).toMatch(/\.orderEntryResizeHandle\s*\{[\s\S]*?display:\s*none;/);
+    expect(openFullEditor).toContain("box-sizing: border-box;");
+    expect(openFullEditor).toContain("height: 30px;");
+    expect(openFullEditor).toContain("min-height: 30px;");
     expect(closeButton).toContain("border: 1px solid var(--forms-border);");
     expect(closeButton).toContain("border-radius: 50%;");
     expect(closeButton).toContain("background: #fff;");
@@ -123,10 +127,33 @@ describe("Admin form visual refinements", () => {
       .toContain("min-height: var(--forms-button-height-mobile);");
   });
 
-  it("uses a compact mobile search row and a full-screen filter workspace", () => {
+  it("uses a compact mobile search row and a downward filter popover", () => {
     const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    const filterPanel = cssRule(mobile, ".filterPanel");
+    const filterBackdrop = cssRule(mobile, ".filterBackdrop");
     expect(mobile).toMatch(/\.listToolbar\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*48px;/);
-    expect(mobile).toMatch(/\.filterPanel\s*\{[\s\S]*?inset:\s*0;[\s\S]*?width:\s*100vw;[\s\S]*?height:\s*100dvh;/);
+    expect(filterPanel).toContain("position: absolute;");
+    expect(filterPanel).toContain("top: calc(100% + 6px);");
+    expect(filterPanel).toContain("right: 0;");
+    expect(filterPanel).toContain("bottom: auto;");
+    expect(filterPanel).toContain("box-sizing: border-box;");
+    expect(filterPanel).toContain("max-height: min(58dvh, 520px);");
+    expect(cssRule(mobile, ".filterPanel input,\n  .filterPanel select")).toContain("box-sizing: border-box;");
+    expect(filterPanel).not.toContain("height: 100dvh;");
+    expect(filterBackdrop).toContain("background: transparent;");
+  });
+
+  it("centres a round mobile back-to-top action without exposing it on desktop", () => {
+    const base = cssRule(formsCss, ".mobileBackToTop");
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    const mobileAction = cssRule(mobile, ".mobileBackToTop");
+
+    expect(base).toContain("display: none;");
+    expect(mobileAction).toContain("display: grid;");
+    expect(mobileAction).toContain("position: fixed;");
+    expect(mobileAction).toContain("top: 50%;");
+    expect(mobileAction).toContain("left: 50%;");
+    expect(mobileAction).toContain("border-radius: 50%;");
   });
 
   it("keeps each mobile filter condition compact with a row-local remove control", () => {

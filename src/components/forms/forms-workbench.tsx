@@ -2,8 +2,8 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { LuChevronRight, LuSearch } from "react-icons/lu";
+import { useEffect, useState } from "react";
+import { LuArrowUp, LuChevronRight, LuSearch } from "react-icons/lu";
 
 import type {
   FormFilterGroup,
@@ -21,6 +21,8 @@ import type { ProductionSavedView } from "@/server/production/production-saved-v
 import type { ProductionFormField } from "@/components/admin/production-job-form";
 import type { InvoiceBusiness } from "@/server/invoices/invoice-business";
 import styles from "./forms.module.css";
+
+const MOBILE_BACK_TO_TOP_THRESHOLD = 600;
 
 export type FormsOrderEntryData = Readonly<{
   assignees: readonly Readonly<{ id: string; name: string; email: string; role: "admin" | "staff" | "form_staff" }>[];
@@ -94,6 +96,7 @@ export function FormsWorkbench({
   const router = useRouter();
   const [showColumnStats, setShowColumnStats] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const visibleStats = {
     urgent: result.items.filter((row) => row.urgent).length,
     completed: result.items.filter((row) => row.milestones.completed).length,
@@ -116,6 +119,16 @@ export function FormsWorkbench({
     const next = queryString(query, result.page);
     router.replace(`/order-system${next ? `?${next}` : ""}`);
   }
+
+  useEffect(() => {
+    function updateBackToTopVisibility() {
+      setShowBackToTop(window.scrollY > MOBILE_BACK_TO_TOP_THRESHOLD);
+    }
+
+    updateBackToTopVisibility();
+    window.addEventListener("scroll", updateBackToTopVisibility, { passive: true });
+    return () => window.removeEventListener("scroll", updateBackToTopVisibility);
+  }, []);
 
   return (
     <section className={styles.workbench}>
@@ -229,6 +242,19 @@ export function FormsWorkbench({
           </label>
         </div>
       </footer>
+      {showBackToTop ? (
+        <button
+          className={styles.mobileBackToTop}
+          type="button"
+          aria-label="Back to top"
+          onClick={() => {
+            window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+            setShowBackToTop(false);
+          }}
+        >
+          <LuArrowUp aria-hidden="true" />
+        </button>
+      ) : null}
       {activeJobId ? <FormsJobDrawer
         jobId={activeJobId}
         onClose={() => setActiveJobId(null)}

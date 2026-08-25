@@ -853,6 +853,15 @@
     line-height: 1;
   }
 
+  .orderEntryDrawer .drawerHeader a {
+    display: inline-flex;
+    box-sizing: border-box;
+    height: 30px;
+    min-height: 30px;
+    align-items: center;
+    padding-block: 3px;
+  }
+
   .orderEntryDrawer .drawerHeader button:focus-visible {
     outline: 0;
     box-shadow: inset 0 0 0 2px var(--forms-focus);
@@ -1586,6 +1595,10 @@
   padding: 5px 8px;
   border-radius: 4px;
   background: #e9ecf0;
+}
+
+.mobileBackToTop {
+  display: none;
 }
 
 .visuallyHidden {
@@ -2941,21 +2954,28 @@
 
   .filterBackdrop {
     z-index: 109;
-    background: rgb(15 23 42 / 42%);
+    background: transparent;
   }
 
   .filterPanel {
     --forms-filter-control-height-mobile: 30px;
-    position: fixed;
+    position: absolute;
     z-index: 110;
-    inset: 0;
-    width: 100vw;
-    height: 100dvh;
+    top: calc(100% + 6px);
+    right: 0;
+    bottom: auto;
+    left: auto;
+    box-sizing: border-box;
+    width: min(520px, calc(100vw - 24px));
+    height: auto;
+    max-height: min(58dvh, 520px);
     padding: 14px;
     overflow: auto;
-    border: 0;
-    border-radius: 0;
-    box-shadow: none;
+    overscroll-behavior: contain;
+    border: 1px solid var(--forms-border);
+    border-radius: 8px;
+    box-shadow: 0 14px 34px rgb(31 35 41 / 18%);
+    transform: none;
   }
 
   .filterHeading {
@@ -2975,6 +2995,7 @@
 
   .filterPanel input,
   .filterPanel select {
+    box-sizing: border-box;
     height: var(--forms-filter-control-height-mobile);
     min-height: var(--forms-filter-control-height-mobile);
     padding-block: 3px;
@@ -3098,6 +3119,32 @@
 
   .formEntryPage button {
     min-height: var(--forms-button-height-mobile);
+  }
+
+  .mobileBackToTop {
+    position: fixed;
+    z-index: 45;
+    top: 50%;
+    left: 50%;
+    display: grid;
+    width: 44px;
+    height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid rgb(255 255 255 / 80%);
+    border-radius: 50%;
+    color: #fff;
+    background: rgb(20 73 58 / 88%);
+    box-shadow: 0 6px 18px rgb(15 23 42 / 24%);
+    transform: translate(-50%, -50%);
+    cursor: pointer;
+  }
+
+  .mobileBackToTop:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 2px;
   }
 }
 

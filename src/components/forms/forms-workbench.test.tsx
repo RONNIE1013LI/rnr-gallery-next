@@ -20,7 +20,10 @@ describe("FormsWorkbench", () => {
     replace.mockReset();
   });
 
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.restoreAllMocks();
+  });
 
   it("renders source-style list controls, table, mobile cards and footer", () => {
     render(<FormsWorkbench
@@ -109,6 +112,31 @@ describe("FormsWorkbench", () => {
     />);
     expect(screen.getByRole("heading", { name: "No orders match these filters." })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Clear filters" })).toHaveAttribute("href", "/order-system");
+  });
+
+  it("shows a mobile back-to-top action after 600px and returns immediately to the page top", async () => {
+    const scrollY = vi.spyOn(window, "scrollY", "get").mockReturnValue(0);
+    const scrollTo = vi.spyOn(window, "scrollTo").mockImplementation(() => undefined);
+
+    render(<FormsWorkbench
+      result={{ items: [formOrderRow], total: 1, page: 1, pageSize: 100, pageCount: 1 }}
+      query={parseFormWorkbenchQuery({})}
+      canExport
+      canViewFinance
+    />);
+
+    expect(screen.queryByRole("button", { name: "Back to top" })).not.toBeInTheDocument();
+
+    scrollY.mockReturnValue(601);
+    fireEvent.scroll(window);
+    const backToTop = await screen.findByRole("button", { name: "Back to top" });
+    fireEvent.click(backToTop);
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 0, left: 0, behavior: "auto" });
+
+    scrollY.mockReturnValue(0);
+    fireEvent.scroll(window);
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Back to top" })).not.toBeInTheDocument());
   });
 
   it("closes manual entry without losing the Data list query or table", () => {
