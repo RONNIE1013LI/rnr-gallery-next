@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  australianCommerceDestination,
   currencyForMarket,
   includedTaxFromGross,
   marketSwitchDestination,
@@ -56,6 +57,26 @@ describe("market primitives", () => {
 
     expect(marketSwitchDestination(pathname, "AU")).toBe(pathname);
     expect(marketSwitchDestination(pathname, "NZ")).toBe(pathname);
+  });
+
+  it.each([
+    "/design-gallery",
+    "/designs/canvas-design-example-wedding-ed3f5c8d",
+    "/cart",
+    "/checkout",
+    "/help",
+  ])("keeps shared route %s in place when changing markets", (pathname) => {
+    expect(marketSwitchDestination(pathname, "AU")).toBe(pathname);
+    expect(marketSwitchDestination(pathname, "NZ")).toBe(pathname);
+  });
+
+  it("maps only stable NZ commerce routes to AU equivalents", () => {
+    expect(australianCommerceDestination("/")).toBe("/au");
+    expect(australianCommerceDestination("/shop")).toBe("/au/shop");
+    expect(australianCommerceDestination("/products/photo-print-canvas"))
+      .toBe("/au/products/photo-print-canvas");
+    expect(australianCommerceDestination("/checkout")).toBeNull();
+    expect(australianCommerceDestination("/help")).toBeNull();
   });
 
   it("extracts included Australian GST without changing the gross price", () => {

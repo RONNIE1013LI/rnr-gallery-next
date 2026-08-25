@@ -11,7 +11,11 @@ const { findByPublicSlug, list, notFound } = vi.hoisted(() => ({
   list: vi.fn(),
   notFound: vi.fn(() => { throw new Error("NOT_FOUND"); }),
 }));
-const state = vi.hoisted(() => ({ registry: undefined as unknown, market: "NZ" }));
+const state = vi.hoisted(() => ({
+  registry: undefined as unknown,
+  market: "NZ",
+  resolvedMarket: null as string | null,
+}));
 
 vi.mock("next/navigation", () => ({ notFound }));
 vi.mock("@/server/gallery/gallery-runtime", () => ({
@@ -22,6 +26,7 @@ vi.mock("@/server/admin/product-registry-runtime", () => ({
 }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => ({ value: state.market }) }),
+  headers: async () => ({ get: () => state.resolvedMarket }),
 }));
 
 function enabledAustraliaRegistry() {
@@ -67,6 +72,7 @@ describe("public design detail page", () => {
     vi.clearAllMocks();
     state.registry = defaultProductRegistry;
     state.market = "NZ";
+    state.resolvedMarket = null;
     findByPublicSlug.mockResolvedValue(design);
     list.mockResolvedValue({ items: [], total: 0, page: 1, pageCount: 1, pageSize: 5 });
   });
@@ -79,6 +85,18 @@ describe("public design detail page", () => {
 
     expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
     expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Start With Your Photos" }))
+      .toHaveAttribute("href", `/au/products/roll-up-banner/configure?design=${designId}`);
+  });
+
+  it("uses the server-resolved request market before a saved cookie on shared design URLs", async () => {
+    state.registry = enabledAustraliaRegistry();
+    state.market = "NZ";
+    state.resolvedMarket = "AU";
+
+    render(await DesignDetailPage(props));
+
+    expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
     expect(screen.getByRole("link", { name: "Start With Your Photos" }))
       .toHaveAttribute("href", `/au/products/roll-up-banner/configure?design=${designId}`);
   });

@@ -18,7 +18,6 @@ export class InvalidMarketValueError extends Error {
 }
 
 export function marketSwitchDestination(pathname: string, market: Market): string {
-  if (pathname.startsWith("/designs/")) return pathname;
   if (market === "NZ") {
     const stripped = pathname.replace(/^\/au(?=\/|$)/, "");
     return stripped || "/";
@@ -28,7 +27,7 @@ export function marketSwitchDestination(pathname: string, market: Market): strin
   if (pathname === "/canvas") return "/au/canvas";
   if (pathname === "/banners") return "/au/banners";
   if (pathname.startsWith("/products/")) return `/au${pathname}`;
-  return "/au";
+  return pathname;
 }
 
 export function australianCommerceDestination(pathname: string): string | null {

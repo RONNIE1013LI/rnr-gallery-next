@@ -8,6 +8,7 @@ import {
   removeCartItem,
   setCartItemQuantity,
   applyAuthoritativeRepricing,
+  cartMatchesMarket,
 } from "./cart";
 import type { CartItem, StorageLike } from "./types";
 
@@ -108,6 +109,30 @@ describe("guest cart", () => {
       deliveryPreference: "post",
       price: { market: "AU", currency: "AUD", totalInclGstCents: 40_000 },
     });
+  });
+
+  it("detects whether every stored item belongs to the active market", () => {
+    const nzCart = addCartItem(emptyCart(), item());
+    const auCart = addCartItem(emptyCart(), item({
+      price: {
+        market: "AU",
+        currency: "AUD",
+        taxJurisdiction: "NONE",
+        taxRateBasisPoints: 1_000,
+        discountCents: 0,
+        designSurchargeCents: 0,
+        lines: [],
+        subtotalExGstCents: 40_000,
+        gstCents: 0,
+        totalInclGstCents: 40_000,
+      },
+    }));
+
+    expect(cartMatchesMarket(nzCart, "NZ")).toBe(true);
+    expect(cartMatchesMarket(nzCart, "AU")).toBe(false);
+    expect(cartMatchesMarket(auCart, "AU")).toBe(true);
+    expect(cartMatchesMarket(auCart, "NZ")).toBe(false);
+    expect(cartMatchesMarket(emptyCart(), "AU")).toBe(true);
   });
 
   it("keeps a valid gallery design ID and drops a malformed one without losing the cart", () => {

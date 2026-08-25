@@ -1,6 +1,6 @@
 "use client";
 
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ImageProtectionLayer } from "./image-protection";
 import { CustomerChat } from "./customer-chat/customer-chat";
@@ -51,11 +51,8 @@ export function SiteChrome({
   customerChatEnabled?: boolean;
 }>) {
   const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
   const [previousPathname, setPreviousPathname] = useState(pathname);
   const [selectedMarket, setSelectedMarket] = useState(initialMarket);
-  const [hasSuccessfulMarketSelection, setHasSuccessfulMarketSelection] = useState(false);
   const [marketTransition, setMarketTransition] = useState<MarketTransition | null>(null);
   if (pathname !== previousPathname) {
     setPreviousPathname(pathname);
@@ -104,7 +101,6 @@ export function SiteChrome({
       const nextMarket = marketFromChangedEvent(event);
       if (nextMarket) {
         const targetPathname = marketSwitchDestination(pathname, nextMarket);
-        setHasSuccessfulMarketSelection(true);
         setSelectedMarket(nextMarket);
         setMarketTransition({
           market: nextMarket,
@@ -118,16 +114,6 @@ export function SiteChrome({
     window.addEventListener("rnr:market-changed", handleMarketChanged);
     return () => window.removeEventListener("rnr:market-changed", handleMarketChanged);
   }, [pathname]);
-  useEffect(() => {
-    if (hasSuccessfulMarketSelection || effectiveOverride !== null || initialMarket !== "AU") {
-      return;
-    }
-    const destination = australianCommerceDestination(pathname);
-    if (destination && destination !== pathname) {
-      const query = searchParams.toString();
-      router.replace(`${destination}${query ? `?${query}` : ""}`);
-    }
-  }, [effectiveOverride, hasSuccessfulMarketSelection, initialMarket, pathname, router, searchParams]);
   if (isDedicatedWorkspace) return children;
   return (
     <CommerceIdentityProvider initialCustomerId={initialCustomerId}>

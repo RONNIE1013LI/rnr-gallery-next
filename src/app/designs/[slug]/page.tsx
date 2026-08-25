@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { notFound } from "next/navigation";
 import { StructuredData } from "@/components/structured-data";
 import styles from "@/components/storefront.module.css";
@@ -98,11 +98,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 }
 
 export default async function DesignDetailPage({ params, searchParams }: Props) {
-  const [{ slug }, query, { registry }, cookieStore] = await Promise.all([
+  const [{ slug }, query, { registry }, cookieStore, requestHeaders] = await Promise.all([
     params,
     searchParams,
     getSafePublicProductRegistry(),
     cookies(),
+    headers(),
   ]);
   const design = await getDesign(slug);
   if (!design) notFound();
@@ -114,7 +115,8 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
   const canonicalSlug = buildPublicDesignSlug(title, design.id);
   const productType = productTypeLabels[design.productTypeSlug];
   const occasion = occasionLabels[design.occasionSlug];
-  const savedMarket = parseMarketCookie(cookieStore.get(MARKET_COOKIE_NAME)?.value);
+  const savedMarket = parseMarketCookie(requestHeaders.get("x-rnr-resolved-market"))
+    ?? parseMarketCookie(cookieStore.get(MARKET_COOKIE_NAME)?.value);
   const market = savedMarket === "AU" && registry.markets.AU.enabled
     && getMarketCompleteness(registry, "AU").ready
     ? "AU"

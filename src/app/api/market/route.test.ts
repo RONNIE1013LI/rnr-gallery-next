@@ -7,7 +7,12 @@ import { createMarketRoute } from "./route-handler";
 
 const origin = "http://localhost:3000";
 
-function request(market: string, cart?: unknown, headers: HeadersInit = {}) {
+function request(
+  market: string,
+  cart?: unknown,
+  headers: HeadersInit = {},
+  persistPreference?: boolean,
+) {
   return new Request(`${origin}/api/market`, {
     method: "POST",
     headers: {
@@ -16,7 +21,11 @@ function request(market: string, cart?: unknown, headers: HeadersInit = {}) {
       "Sec-Fetch-Site": "same-origin",
       ...headers,
     },
-    body: JSON.stringify({ market, ...(cart ? { cart } : {}) }),
+    body: JSON.stringify({
+      market,
+      ...(cart ? { cart } : {}),
+      ...(persistPreference === undefined ? {} : { persistPreference }),
+    }),
   });
 }
 
@@ -59,6 +68,18 @@ describe("market selection route", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("Set-Cookie")).toContain("rnr-market=NZ");
     expect(response.headers.get("Set-Cookie")).not.toContain("user");
+    expect(await response.json()).toEqual({ market: "NZ", currency: "NZD" });
+  });
+
+  it("can authoritatively reprice without turning automatic reconciliation into a saved preference", async () => {
+    const route = createMarketRoute({
+      current: vi.fn().mockResolvedValue({ revision: 1, registry: defaultProductRegistry }),
+      trustedOrigin: origin,
+    });
+    const response = await route.POST(request("NZ", undefined, {}, false));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
     expect(await response.json()).toEqual({ market: "NZ", currency: "NZD" });
   });
 

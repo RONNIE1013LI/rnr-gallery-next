@@ -1,5 +1,5 @@
 import type { DeliveryPreference } from "@/domain/configuration/types";
-import type { MarketCurrency, TaxJurisdiction } from "@/domain/markets/types";
+import type { Market, MarketCurrency, TaxJurisdiction } from "@/domain/markets/types";
 import type { MarketPriceBreakdown } from "@/domain/pricing/types";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { Cart, CartItem, CartTotals } from "./types";
@@ -110,6 +110,15 @@ export function getCartDisplayMarket(cart: Cart): Readonly<{
   return markets.every((entry) =>
     entry.currency === first.currency && entry.taxJurisdiction === first.taxJurisdiction
   ) ? Object.freeze(first) : null;
+}
+
+export function cartMatchesMarket(cart: Cart, market: Market): boolean {
+  return cart.items.every((item) => {
+    const price = item.price as Partial<MarketPriceBreakdown>;
+    const itemMarket = price.market ?? (price.currency === "AUD" ? "AU" : "NZ");
+    const expectedCurrency = market === "AU" ? "AUD" : "NZD";
+    return itemMarket === market && (price.currency ?? "NZD") === expectedCurrency;
+  });
 }
 
 export function applyAuthoritativeRepricing(

@@ -6,7 +6,7 @@ import { isGa4Production } from "@/domain/analytics/runtime";
 import { getSafePublicContent } from "@/server/admin/admin-content-runtime";
 import { getSiteUrl } from "@/server/seo/site-url";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { MARKET_COOKIE_NAME, parseMarketCookie } from "@/server/markets/market-cookie";
 import { getSafePublicCustomerReviewSection } from "@/server/customer-reviews/customer-review-runtime";
@@ -60,7 +60,7 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const ga4Enabled = isGa4Production(process.env.VERCEL_ENV);
-  const [managed, session, registryState, cookieStore, reviewSection] = await Promise.all([
+  const [managed, session, registryState, cookieStore, requestHeaders, reviewSection] = await Promise.all([
     getSafePublicContent([
       "footer.tagline",
       "contact.email",
@@ -69,8 +69,12 @@ export default async function RootLayout({
     getOptionalSession(),
     getSafePublicProductRegistry(),
     cookies(),
+    headers(),
     getSafePublicCustomerReviewSection(),
   ]);
+  const resolvedMarket = parseMarketCookie(requestHeaders.get("x-rnr-resolved-market"))
+    ?? parseMarketCookie(cookieStore.get(MARKET_COOKIE_NAME)?.value)
+    ?? "NZ";
 
   return (
     <html
@@ -81,7 +85,7 @@ export default async function RootLayout({
         <a className="skip-link" href="#main-content">Skip to content</a>
         <SiteChrome
           initialCustomerId={session?.user.id ?? null}
-          initialMarket={parseMarketCookie(cookieStore.get(MARKET_COOKIE_NAME)?.value) ?? "NZ"}
+          initialMarket={resolvedMarket}
           australiaEnabled={registryState.registry.markets.AU.enabled}
           customerChatEnabled={process.env.WEBSITE_CUSTOMER_ASSISTANT_ENABLED?.trim().toLowerCase() === "true"}
           footerContent={{

@@ -3,81 +3,36 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { LuChevronDown } from "react-icons/lu";
-import type { Market, MarketCurrency } from "@/domain/markets/types";
+import type { Market } from "@/domain/markets/types";
 import {
   clearIdentityCheckoutState,
   getActiveCustomerId,
 } from "@/domain/cart/browser-cart-scope";
 import { createBrowserCartRepository } from "@/domain/cart/browser-cart-repository";
-import { cartToCheckoutInput } from "@/domain/cart/checkout-input";
 import { applyAuthoritativeRepricing } from "@/domain/cart/cart";
-import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import { notifyCartChanged } from "@/domain/cart/browser-cart-events";
 import { marketSwitchDestination } from "@/domain/markets/market";
+import { requestMarketSwitch } from "@/domain/markets/browser-market-switch";
 import type { Cart } from "@/domain/cart/types";
-import type { MarketSwitchUrgentIssue } from "@/domain/checkout/market-switch-preflight";
 import {
+  hasStaleUrgentDate,
   MarketSwitchDialog,
   type MarketSwitchDialogState,
 } from "./market-switch-dialog";
 import dialogStyles from "./market-switch-dialog.module.css";
 
-type MarketRoutePayload =
-  | Readonly<{
-      market: Market;
-      currency: MarketCurrency;
-      cart?: RepricedCheckoutCart;
-    }>
-  | Readonly<{
-      error: string;
-      code:
-        | "unsupported_market"
-        | "market_unavailable"
-        | "urgent_confirmation_required"
-        | "invalid_cart"
-        | "market_switch_failed";
-      issues?: readonly MarketSwitchUrgentIssue[];
-    }>;
-
-async function attemptSwitch(next: Market, candidateCart: Cart) {
-  const response = await fetch("/api/market", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      market: next,
-      ...(candidateCart.items.length > 0
-        ? { cart: cartToCheckoutInput(candidateCart) }
-        : {}),
-    }),
-  });
-  const payload = await response.json() as MarketRoutePayload;
-  if (!response.ok) return { ok: false as const, payload };
-  if (candidateCart.items.length > 0 && !("cart" in payload && payload.cart)) {
-    return {
-      ok: false as const,
-      payload: {
-        error: "The repriced cart was missing.",
-        code: "market_switch_failed" as const,
-      },
-    };
-  }
-  return { ok: true as const, payload };
-}
-
-function hasStaleUrgentDate(state: MarketSwitchDialogState): boolean {
-  return state.issues.some((issue) => state.cart.items.find(
-    (item) => item.id === issue.clientItemId,
-  )?.neededDate !== issue.neededDate);
-}
-
 export function MarketSelector({
   market,
   australiaEnabled,
   pathname,
+  ariaLabel = "Country and currency",
+  onMarketChanged,
 }: Readonly<{
   market: Market;
   australiaEnabled: boolean;
   pathname: string;
+  ariaLabel?: string;
+  onMarketChanged?: () => void;
 }>) {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -114,7 +69,11 @@ export function MarketSelector({
     setError(null);
     try {
       const repository = createBrowserCartRepository(window.localStorage);
-      const result = await attemptSwitch(next, candidateCart);
+      const result = await requestMarketSwitch({
+        market: next,
+        candidateCart,
+        persistPreference: true,
+      });
       if (getActiveCustomerId() !== initiatingCustomerId) {
         setDialogState(null);
         return;
@@ -150,8 +109,11 @@ export function MarketSelector({
         initiatingCustomerId,
       );
       window.dispatchEvent(new CustomEvent("rnr:market-changed", { detail: { market: next } }));
+      onMarketChanged?.();
       setDialogState(null);
-      router.push(marketSwitchDestination(pathname, next));
+      const destination = marketSwitchDestination(pathname, next);
+      if (destination === pathname) router.refresh();
+      else router.push(destination);
     } catch {
       setDialogState(null);
       if (getActiveCustomerId() === initiatingCustomerId) {
@@ -205,10 +167,10 @@ export function MarketSelector({
   return (
     <>
       <label className="site-header__market">
-        <span className="sr-only">Country and currency</span>
+        <span className="sr-only">{ariaLabel}</span>
         <select
           ref={selectorRef}
-          aria-label="Country and currency"
+          aria-label={ariaLabel}
           value={market}
           disabled={pending}
           onChange={(event) => select(event.target.value as Market)}

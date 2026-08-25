@@ -30,6 +30,12 @@ export type MarketSwitchDialogState = Readonly<{
   message: string;
 }>;
 
+export function hasStaleUrgentDate(state: MarketSwitchDialogState): boolean {
+  return state.issues.some((issue) => state.cart.items.find(
+    (item) => item.id === issue.clientItemId,
+  )?.neededDate !== issue.neededDate);
+}
+
 export function MarketSwitchDialog({
   state,
   pending,

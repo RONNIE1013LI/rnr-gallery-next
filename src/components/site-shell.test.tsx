@@ -227,6 +227,9 @@ describe("site shell", () => {
     fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
     expect(screen.getByRole("navigation", { name: "Mobile navigation" }))
       .toHaveClass("mobile-menu__drawer");
+    expect(within(screen.getByRole("navigation", { name: "Mobile navigation" }))
+      .getByRole("combobox", { name: "Country and currency in mobile navigation" }))
+      .toHaveValue("NZ");
   });
 
   it("keeps the mobile header compact and only hides its logo before narrow screens become crowded", () => {

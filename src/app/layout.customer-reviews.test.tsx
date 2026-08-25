@@ -27,6 +27,7 @@ vi.mock("@/server/customer-reviews/customer-review-runtime", () => ({
 }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
+  headers: async () => ({ get: () => null }),
 }));
 
 import RootLayout from "./layout";

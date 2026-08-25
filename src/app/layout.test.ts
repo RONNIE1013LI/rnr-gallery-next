@@ -27,6 +27,14 @@ function productionSource(root: string): string {
 }
 
 describe("root layout metadata", () => {
+  it("uses the server-resolved request market before rendering site chrome", () => {
+    const layout = readFileSync(join(process.cwd(), "src/app/layout.tsx"), "utf8");
+
+    expect(layout).toContain("headers()");
+    expect(layout).toContain('requestHeaders.get("x-rnr-resolved-market")');
+    expect(layout).toContain("initialMarket={resolvedMarket}");
+  });
+
   it("installs one production-only official GA4 root tag", () => {
     const layout = readFileSync(join(process.cwd(), "src/app/layout.tsx"), "utf8");
     const controller = readFileSync(

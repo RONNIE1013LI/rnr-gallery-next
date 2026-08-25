@@ -327,12 +327,12 @@ describe("SiteChrome", () => {
   });
 
   it.each([
-    ["/", "/au"],
-    ["/shop", "/au/shop"],
-    ["/canvas", "/au/canvas"],
-    ["/banners", "/au/banners"],
-    ["/products/roll-up-banner/configure", "/au/products/roll-up-banner/configure"],
-  ])("replaces stale NZ commerce route %s when AU is selected", async (pathname, destination) => {
+    "/",
+    "/shop",
+    "/canvas",
+    "/banners",
+    "/products/roll-up-banner/configure",
+  ])("never performs late client geo alignment on %s", (pathname) => {
     state.pathname = pathname;
     state.search = "";
     state.replace.mockClear();
@@ -347,10 +347,10 @@ describe("SiteChrome", () => {
       </SiteChrome>,
     );
 
-    await waitFor(() => expect(state.replace).toHaveBeenCalledWith(destination));
+    expect(state.replace).not.toHaveBeenCalled();
   });
 
-  it("preserves a selected gallery design while aligning an AU configure route", async () => {
+  it("leaves query-preserving market alignment to the request proxy", () => {
     state.pathname = "/products/roll-up-banner/configure";
     state.search = "design=abc123";
     state.replace.mockClear();
@@ -365,9 +365,7 @@ describe("SiteChrome", () => {
       </SiteChrome>,
     );
 
-    await waitFor(() => expect(state.replace).toHaveBeenCalledWith(
-      "/au/products/roll-up-banner/configure?design=abc123",
-    ));
+    expect(state.replace).not.toHaveBeenCalled();
   });
 
   it("does not redirect shared information pages for the selected AU market", () => {

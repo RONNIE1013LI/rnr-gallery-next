@@ -130,6 +130,41 @@ afterEach(() => {
 });
 
 describe("MarketSelector", () => {
+  it("marks explicit selector changes as persistent customer preferences", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      market: "AU",
+      currency: "AUD",
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<MarketSelector market="NZ" australiaEnabled pathname="/help" />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Country and currency" }), {
+      target: { value: "AU" },
+    });
+
+    await waitFor(() => expect(refresh).toHaveBeenCalledTimes(1));
+    expect(push).not.toHaveBeenCalled();
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+      market: "AU",
+      persistPreference: true,
+    });
+  });
+
+  it("supports a context-specific accessible label", () => {
+    render(
+      <MarketSelector
+        market="NZ"
+        australiaEnabled
+        pathname="/"
+        ariaLabel="Country and currency in mobile navigation"
+      />,
+    );
+
+    expect(screen.getByRole("combobox", {
+      name: "Country and currency in mobile navigation",
+    })).toHaveValue("NZ");
+  });
+
   it("uses country-only labels on mobile without changing the selected market", () => {
     vi.stubGlobal("matchMedia", vi.fn().mockReturnValue({
       matches: true,

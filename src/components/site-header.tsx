@@ -301,6 +301,15 @@ export function SiteHeader({
                       pathname={pathname}
                       onNavigate={closeMobileMenuImmediately}
                     />
+                    <div className="mobile-menu__market">
+                      <MarketSelector
+                        market={market}
+                        australiaEnabled={australiaEnabled}
+                        pathname={pathname}
+                        ariaLabel="Country and currency in mobile navigation"
+                        onMarketChanged={closeMobileMenuImmediately}
+                      />
+                    </div>
                     <Link
                       href="/account"
                       aria-current={isCurrentRoute(pathname, "/account") ? "page" : undefined}

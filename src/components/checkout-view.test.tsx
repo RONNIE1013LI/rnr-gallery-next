@@ -85,13 +85,12 @@ describe("CheckoutView", () => {
       .not.toContain(CART_STORAGE_KEY);
   });
 
-  it("locks checkout country to the header market and ignores saved addresses from another market", async () => {
+  it("starts checkout in the resolved market and ignores saved addresses from another market", async () => {
     render(<CheckoutView market="AU" savedAddresses={[address, australianSavedAddress]} />);
     await checkoutReady();
 
-    expect(screen.getByLabelText("Country")).toHaveValue("Australia");
-    expect(screen.getByLabelText("Country")).toHaveAttribute("readonly");
-    expect(screen.queryByRole("combobox", { name: "Country" })).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Country")).toHaveValue("AU");
+    expect(screen.getByRole("combobox", { name: "Country" })).toBeInTheDocument();
     expect(screen.getByLabelText("Full name")).toHaveValue("Mia Chen");
     expect(screen.queryByRole("option", { name: /Aroha Ngata/ })).not.toBeInTheDocument();
   });
@@ -108,7 +107,7 @@ describe("CheckoutView", () => {
     render(<CheckoutView market="AU" savedAddresses={[australianSavedAddress]} />);
     await checkoutReady();
 
-    expect(screen.getByLabelText("Country")).toHaveValue("Australia");
+    expect(screen.getByLabelText("Country")).toHaveValue("AU");
     expect(screen.getByLabelText("Full name")).toHaveValue("Mia Chen");
     expect(screen.queryByText(/checkout details were restored/i)).not.toBeInTheDocument();
   });
@@ -329,18 +328,82 @@ describe("CheckoutView", () => {
     });
   });
 
-  it("locks a separate Australian delivery address to the same checkout market", async () => {
+  it("starts a separate delivery address in the current market while keeping country editable", async () => {
     render(<CheckoutView market="AU" savedAddresses={[australianSavedAddress]} />);
     await checkoutReady();
     fireEvent.click(screen.getByLabelText("Deliver to a different address"));
     const countries = screen.getAllByLabelText("Country");
     expect(countries).toHaveLength(2);
     for (const country of countries) {
-      expect(country).toHaveValue("Australia");
-      expect(country).toHaveAttribute("readonly");
+      expect(country).toHaveValue("AU");
+      expect(country).toHaveRole("combobox");
     }
     expect(screen.getAllByLabelText("State / territory")).toHaveLength(2);
     expect(screen.getAllByLabelText("Full name")).toHaveLength(2);
+  });
+
+  it.each([
+    {
+      initialMarket: "NZ" as const,
+      targetMarket: "AU" as const,
+      savedAddress: address,
+      countryLabel: "Australia",
+      currency: "AUD" as const,
+    },
+    {
+      initialMarket: "AU" as const,
+      targetMarket: "NZ" as const,
+      savedAddress: australianSavedAddress,
+      countryLabel: "New Zealand",
+      currency: "NZD" as const,
+    },
+  ])("reprices the active cart before continuing from $initialMarket to $targetMarket delivery", async ({
+    initialMarket,
+    targetMarket,
+    savedAddress,
+    countryLabel,
+    currency,
+  }) => {
+    const targetSnapshot = {
+      ...repriced,
+      market: targetMarket,
+      currency,
+      taxJurisdiction: targetMarket === "AU" ? "NONE" : "NZ_GST",
+      taxRateBasisPoints: targetMarket === "AU" ? 0 : 1500,
+    };
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ market: targetMarket, currency, cart: targetSnapshot }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const marketChanged = vi.fn();
+    window.addEventListener("rnr:market-changed", marketChanged);
+
+    render(<CheckoutView market={initialMarket} savedAddresses={[savedAddress]} />);
+    await checkoutReady();
+    sessionStorage.setItem(paymentIntentStorageKey, "stale-payment");
+    localStorage.setItem(pendingCheckoutStorageKey, "stale-checkout");
+    fireEvent.change(screen.getByLabelText("Country"), { target: { value: targetMarket } });
+
+    expect(screen.getByText(`Your delivery address is in ${countryLabel}. ${countryLabel} pricing and shipping will apply.`)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: `Apply ${countryLabel} pricing and shipping` })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Review delivery & totals" })).toBeDisabled();
+
+    fireEvent.click(screen.getByRole("button", { name: `Apply ${countryLabel} pricing and shipping` }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toMatchObject({
+      market: targetMarket,
+      persistPreference: true,
+    });
+    await waitFor(() => expect(screen.queryByText(/pricing and shipping will apply/)).not.toBeInTheDocument());
+    expect(JSON.parse(localStorage.getItem(CART_STORAGE_KEY)!)).toMatchObject({
+      items: [{ price: targetSnapshot.items[0].unitPrice }],
+    });
+    expect(localStorage.getItem(pendingCheckoutStorageKey)).toBeNull();
+    expect(sessionStorage.getItem(paymentIntentStorageKey)).toBeNull();
+    expect(marketChanged).toHaveBeenCalledTimes(1);
+    window.removeEventListener("rnr:market-changed", marketChanged);
   });
 
   it("defaults Australian checkout to Standard and lets the customer select DHL Express", async () => {

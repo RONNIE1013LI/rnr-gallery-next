@@ -70,6 +70,67 @@ function seedCart() {
   );
 }
 
+function marketPrice(market: "NZ" | "AU") {
+  return {
+    market,
+    currency: market === "AU" ? "AUD" as const : "NZD" as const,
+    taxJurisdiction: market === "AU" ? "NONE" as const : "NZ_GST" as const,
+    taxRateBasisPoints: market === "AU" ? 1_000 : 1_500,
+    discountCents: 0,
+    designSurchargeCents: 0,
+    lines: [],
+    subtotalExGstCents: market === "AU" ? 8_000 : 6_500,
+    gstCents: market === "AU" ? 0 : 975,
+    totalInclGstCents: market === "AU" ? 8_000 : 7_475,
+  };
+}
+
+function marketResponse(market: "NZ" | "AU") {
+  const unitPrice = marketPrice(market);
+  return new Response(JSON.stringify({
+    market,
+    currency: unitPrice.currency,
+    cart: {
+      version: 1,
+      market,
+      currency: unitPrice.currency,
+      taxJurisdiction: unitPrice.taxJurisdiction,
+      taxRateBasisPoints: unitPrice.taxRateBasisPoints,
+      priceBookRevision: 12,
+      orderDate: "2026-08-26",
+      items: [{
+        clientItemId: cartItem.id,
+        productKey: cartItem.productKey,
+        productSlug: cartItem.productSlug,
+        productTitle: cartItem.productTitle,
+        sizeKey: cartItem.sizeKey,
+        sizeLabel: cartItem.sizeLabel,
+        orientation: cartItem.orientation,
+        peoplePets: cartItem.peoplePets,
+        photoSubmissionMethod: cartItem.photoSubmissionMethod,
+        designText: cartItem.designText,
+        notes: cartItem.notes,
+        neededDate: cartItem.neededDate,
+        urgentServiceConfirmed: false,
+        urgentService: { workingDays: 5, feeInclGstCents: 0 },
+        quantity: cartItem.quantity,
+        uploadReferences: cartItem.uploadReferences,
+        unitPrice,
+        lineSubtotalExGstCents: unitPrice.subtotalExGstCents,
+        lineGstCents: unitPrice.gstCents,
+        lineTotalInclGstCents: unitPrice.totalInclGstCents,
+      }],
+      subtotalExGstCents: unitPrice.subtotalExGstCents,
+      gstCents: unitPrice.gstCents,
+      totalInclGstCents: unitPrice.totalInclGstCents,
+      discountCents: 0,
+      designSurchargeCents: 0,
+      itemCount: 1,
+      cartDigest: "c".repeat(64),
+    },
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+}
+
 describe("CartView", () => {
   beforeEach(() => {
     localStorage.clear();
@@ -77,11 +138,98 @@ describe("CartView", () => {
   });
 
   it("shows a useful empty state", () => {
-    render(<CartView />);
+    render(<CartView market="NZ" />);
     expect(screen.getByRole("heading", { level: 2, name: "Your cart is empty" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Browse Canvas" })).toHaveAttribute("href", "/canvas");
     expect(screen.getByRole("link", { name: "Browse Banners" })).toHaveAttribute("href", "/banners");
     expect(screen.getByRole("link", { name: "Design Gallery" })).toHaveAttribute("href", "/design-gallery");
+  });
+
+  it("uses Australian storefront links for an empty AU cart", () => {
+    render(<CartView market="AU" />);
+
+    expect(screen.getByRole("link", { name: "Browse Canvas" }))
+      .toHaveAttribute("href", "/au/canvas");
+    expect(screen.getByRole("link", { name: "Browse Banners" }))
+      .toHaveAttribute("href", "/au/banners");
+  });
+
+  it("hides stale NZ totals while automatically repricing an AU cart", async () => {
+    seedCart();
+    localStorage.setItem("rnr:commerce:v1:guest:checkout:pending", "pending");
+    sessionStorage.setItem("rnr:commerce:v1:guest:checkout:payment-intent", "payment");
+    const fetchMock = vi.fn().mockResolvedValue(marketResponse("AU"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CartView market="AU" />);
+
+    expect(screen.getByText("Updating cart prices for Australia…")).toBeInTheDocument();
+    expect(screen.queryByText("NZ$74.75")).not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: "Continue to checkout" }))
+      .not.toBeInTheDocument();
+
+    expect(await screen.findAllByText("A$80.00 AUD")).toHaveLength(2);
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
+      market: "AU",
+      persistPreference: false,
+    });
+    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0].price)
+      .toMatchObject({ market: "AU", currency: "AUD" });
+    expect(localStorage.getItem("rnr:commerce:v1:guest:checkout:pending")).toBeNull();
+    expect(sessionStorage.getItem("rnr:commerce:v1:guest:checkout:payment-intent")).toBeNull();
+  });
+
+  it("keeps the original cart and blocks checkout when automatic repricing fails", async () => {
+    seedCart();
+    const original = localStorage.getItem("rnr:commerce:v1:guest:cart");
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: "The cart could not be repriced for this market.",
+      code: "invalid_cart",
+    }), { status: 409, headers: { "Content-Type": "application/json" } })));
+
+    render(<CartView market="AU" />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "The cart could not be repriced for this market.",
+    );
+    expect(localStorage.getItem("rnr:commerce:v1:guest:cart")).toBe(original);
+    expect(screen.queryByRole("link", { name: "Continue to checkout" }))
+      .not.toBeInTheDocument();
+  });
+
+  it("lets an urgent cart confirm the target-market service before automatic repricing", async () => {
+    seedCart();
+    const urgent = new Response(JSON.stringify({
+      error: "Confirm urgent service or choose another completion date.",
+      code: "urgent_confirmation_required",
+      issues: [{
+        clientItemId: cartItem.id,
+        productTitle: cartItem.productTitle,
+        neededDate: cartItem.neededDate,
+        urgentWorkingDays: 5,
+        urgentFeeInclGstCents: 10_000,
+        currency: "AUD",
+      }],
+    }), { status: 409, headers: { "Content-Type": "application/json" } });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(urgent)
+      .mockResolvedValueOnce(marketResponse("AU"));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CartView market="AU" />);
+
+    expect(await screen.findByRole("dialog", { name: "Review urgent service" })).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Confirm urgent service and switch" }));
+
+    expect(await screen.findAllByText("A$80.00 AUD")).toHaveLength(2);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toMatchObject({
+      market: "AU",
+      persistPreference: false,
+      cart: {
+        items: [expect.objectContaining({ urgentServiceConfirmed: true })],
+      },
+    });
   });
 
   it("shows aligned configuration details and totals", async () => {

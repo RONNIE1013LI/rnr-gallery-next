@@ -44,7 +44,11 @@ export function createMarketRoute(dependencies?: Dependencies) {
       try {
         const current = dependencies?.current ?? getProductRegistryRuntime().current;
         assertTrustedMutationRequest(request, dependencies?.trustedOrigin);
-        const body = await parseBoundedJson(request) as { market?: unknown; cart?: unknown };
+        const body = await parseBoundedJson(request) as {
+          market?: unknown;
+          cart?: unknown;
+          persistPreference?: unknown;
+        };
         const market = parseMarketCookie(typeof body.market === "string" ? body.market : null);
         if (!market) {
           return failureResponse({
@@ -74,12 +78,15 @@ export function createMarketRoute(dependencies?: Dependencies) {
           }, 409);
         }
         const cart = preflight?.result === "ready" ? preflight.cart : undefined;
+        const persistPreference = body.persistPreference !== false;
         return Response.json(
           { market, currency: registry.markets[market].currency, ...(cart ? { cart } : {}) },
           {
             headers: {
               "Cache-Control": "no-store",
-              "Set-Cookie": marketCookieHeader(market, new URL(request.url).protocol === "https:"),
+              ...(persistPreference
+                ? { "Set-Cookie": marketCookieHeader(market, new URL(request.url).protocol === "https:") }
+                : {}),
             },
           },
         );
