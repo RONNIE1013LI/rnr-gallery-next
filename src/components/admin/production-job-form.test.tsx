@@ -75,6 +75,24 @@ describe("ProductionJobForm", () => {
     fireEvent.change(screen.getByLabelText("Size"), { target: { value: "A2" } });
   }
 
+  it("marks only a new manual order for persistent submit actions", () => {
+    const { container, rerender } = render(
+      <ProductionJobForm assignees={assignees} canManageFinance={false} manualEntryLayout />,
+    );
+
+    expect(container.querySelector("form")?.className).toContain("manualEntryCreateForm");
+
+    rerender(<ExistingManualEditor
+      assignees={assignees}
+      canManageFinance={false}
+      manualEntryLayout
+      endpoint="/api/forms/jobs"
+      existingManualOrder={existingManualOrder}
+    />);
+
+    expect(container.querySelector("form")?.className).not.toContain("manualEntryCreateForm");
+  });
+
   it("reopens a saved manual order in the same editable Data entry form and persists every field", async () => {
     const onSaved = vi.fn();
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({

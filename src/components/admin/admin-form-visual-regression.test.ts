@@ -16,6 +16,17 @@ describe("Admin form visual refinements", () => {
     expect(cssRule(adminCss, ".reviewFormActions")).toContain("position: static;");
   });
 
+  it("keeps the new manual-order submit action visible on desktop and mobile", () => {
+    const createForm = cssRule(adminCss, ".manualEntryCreateForm");
+    const createActions = cssRule(adminCss, ".manualEntryCreateForm .formSubmitBar");
+
+    expect(createForm).toContain("padding-bottom: 88px;");
+    expect(createActions).toContain("position: fixed;");
+    expect(createActions).toContain("bottom: max(12px, env(safe-area-inset-bottom));");
+    expect(createActions).toContain("inset-inline:");
+    expect(createActions).toContain("z-index: 5;");
+  });
+
   it("uses readable touch-safe invoice controls", () => {
     expect(adminCss).toMatch(/\.invoiceWorkspaceEditor label\s*\{[\s\S]*?font-size:\s*12px;/);
     expect(adminCss).toMatch(/\.invoiceWorkspaceEditor input,\s*\.invoiceWorkspaceEditor textarea\s*\{[\s\S]*?min-height:\s*44px;/);

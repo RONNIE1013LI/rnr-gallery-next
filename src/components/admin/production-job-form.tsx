@@ -941,7 +941,7 @@ export function ProductionJobForm({
     <>
     <form
       ref={formRef}
-      className={`${styles.productionForm} ${manualEntryLayout ? styles.manualEntryForm : ""}`}
+      className={`${styles.productionForm} ${manualEntryLayout ? styles.manualEntryForm : ""} ${manualEntryLayout && !existingManualOrder ? styles.manualEntryCreateForm : ""}`}
       onSubmit={submit}
       onFocusCapture={(event) => {
         if (existingManualOrder) focusedValues.current.set(event.target, fieldValue(event.target));
