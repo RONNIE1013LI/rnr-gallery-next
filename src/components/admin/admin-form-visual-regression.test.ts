@@ -90,6 +90,8 @@ describe("Admin form visual refinements", () => {
     expect(closeButtonFocus).toContain("outline: 0;");
     expect(closeButtonFocus).toContain("box-shadow: inset 0 0 0 2px var(--forms-focus);");
     expect(mobile).not.toMatch(/\.orderEntryDrawer \.drawerHeader button::before\s*\{/);
+    expect(cssRule(mobile, ".orderEntryDrawer .orderEntryDrawerPanel .orderEntryDrawerContent button"))
+      .toContain("min-height: var(--forms-button-height-mobile);");
   });
 
   it("uses a compact mobile search row and a full-screen filter workspace", () => {
