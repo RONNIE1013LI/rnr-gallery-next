@@ -3119,9 +3119,13 @@
     padding: 0 8px;
   }
 
+  .orderCard header button {
+    min-height: 32px;
+  }
+
   .orderCard dl {
-    gap: 3px 5px;
-    padding: 4px 8px 6px;
+    gap: 2px 5px;
+    padding: 3px 8px 5px;
   }
 
   .orderCard dl div {
@@ -3129,9 +3133,9 @@
   }
 
   .orderCard dd {
-    min-height: 44px;
+    min-height: 30px;
     margin-top: 1px;
-    padding: 4px 7px;
+    padding: 3px 7px;
     font-size: 13px;
   }
 

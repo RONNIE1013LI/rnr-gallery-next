@@ -23,6 +23,15 @@ describe("Admin form visual refinements", () => {
     expect(workbenchMobile).toMatch(/\.signOutControl button,[\s\S]*?\.orderCard header button\s*\{[\s\S]*?min-height:\s*var\(--forms-button-height-mobile\);/);
   });
 
+  it("keeps mobile order cards only slightly taller than their text", () => {
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 680px)"));
+
+    expect(cssRule(mobile, ".orderCard header button")).toContain("min-height: 32px;");
+    expect(cssRule(mobile, ".orderCard dl")).toContain("gap: 2px 5px;");
+    expect(cssRule(mobile, ".orderCard dd")).toContain("min-height: 30px;");
+    expect(cssRule(mobile, ".orderCard dd")).toContain("padding: 3px 7px;");
+  });
+
   it("keeps form actions in document flow so they cannot cover fields", () => {
     expect(cssRule(adminCss, ".formSubmitBar")).toContain("position: static;");
     expect(cssRule(adminCss, ".reviewFormActions")).toContain("position: static;");
@@ -57,7 +66,8 @@ describe("Admin form visual refinements", () => {
 
   it("keeps manual entry controls touch friendly on narrow screens", () => {
     const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
-    expect(mobile).toMatch(/\.formEntryPage input,[\s\S]*?min-height:\s*44px;/);
+    expect(cssRule(mobile, ".formEntryPage input,\n  .formEntryPage select,\n  .formEntryPage textarea"))
+      .toContain("min-height: var(--forms-control-height-mobile);");
   });
 
   it("keeps manual choice pills compact on phones", () => {
