@@ -140,4 +140,21 @@ describe("Admin form visual refinements", () => {
   it("styles the native upload surface without replacing the file input", () => {
     expect(adminCss).toMatch(/input\[type="file"\]::file-selector-button[\s\S]*?min-height:\s*32px;/);
   });
+
+  it("keeps manual-order payment proof thumbnails compact on desktop and mobile", () => {
+    const manualProofs = cssRule(adminCss, ".manualEntryForm .paymentProofPreviewGrid");
+    const mobile = adminCss.slice(adminCss.lastIndexOf("@media (max-width: 680px)"));
+    const mobileDelete = cssRule(
+      mobile,
+      ".manualEntryForm .paymentProofPreviewGrid .paymentProofPreviewCard button.paymentProofDeleteButton",
+    );
+
+    expect(manualProofs).toContain("grid-template-columns: repeat(auto-fill, 96px);");
+    expect(manualProofs).toContain("justify-content: start;");
+    expect(mobileDelete).toContain("width: 22px;");
+    expect(mobileDelete).toContain("height: 22px;");
+    expect(mobileDelete).toContain("min-width: 22px;");
+    expect(mobileDelete).toContain("min-height: 22px;");
+    expect(mobileDelete).toContain("border-radius: 50%;");
+  });
 });

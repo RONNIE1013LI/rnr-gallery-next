@@ -646,3 +646,60 @@ The implementation capture uses an empty isolated Test DB and a new-order drawer
 - Browser console checked: no application errors; only expected development/HMR messages.
 
 final result: passed
+
+---
+
+# Manual payment-proof thumbnail visual QA — 2026-08-25
+
+- Source visual truth: `/tmp/codex-remote-attachments/01a026e2-2cec-7122-a8b8-ee1c882d7d60/2299A259-7685-48E9-B82C-AB8250A1DE11/1-照片-1.jpg`.
+- Implementation screenshots:
+  - `/tmp/rnr-payment-proof-qa/implementation-mobile.png`
+  - `/tmp/rnr-payment-proof-qa/implementation-desktop.png`
+- Combined comparison: `/tmp/rnr-payment-proof-qa/comparison-mobile.png`.
+- Viewports: mobile `390 × 844` CSS px; desktop `1280 × 720` CSS px; Chrome.
+- Source pixels: `1212 × 1280`; implementation pixels: `390 × 844` mobile and `1280 × 720` desktop.
+- Density normalization: the combined comparison displays both captures at the same 390 px column width. The source is a high-density phone screenshot; the implementation is a CSS-pixel browser capture.
+- State: code-rendered manual-order payment-proof component using the exact scoped CSS rules and a real supplied image asset. No Production data, upload, deletion, or database action was used.
+
+## Full-view comparison evidence
+
+- The manual-order preview card is fixed at 96 px on both desktop and mobile instead of stretching to fill the row.
+- The image media region measures 82 × 61.5 px inside the card, approximately half the width shown in the supplied mobile screenshot.
+- The mobile delete control measures exactly 22 × 22 px and remains pinned over the preview's upper-right corner.
+
+## Focused region comparison evidence
+
+Focused comparison was required because the requested changes are confined to the thumbnail and delete control. Browser-computed measurements confirmed:
+
+- Mobile card: `96 × 94.5` px.
+- Mobile image region: `82 × 61.5` px.
+- Mobile delete control: `22 × 22` px, `min-width: 22px`, `min-height: 22px`, `border-radius: 50%`.
+- Desktop card: `96 × 94.5` px.
+- Desktop image region: `82 × 61.5` px.
+- Desktop delete control remains the existing `30 × 30` px circle.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing component type rules are unchanged.
+- Spacing and layout rhythm: the card no longer stretches; its grid starts at the left and keeps the existing 10 px multi-file gap.
+- Colors and visual tokens: existing borders, backgrounds, and red destructive-action color are unchanged.
+- Image quality and asset fidelity: the existing `object-fit: cover` behavior is preserved and verified with the supplied image asset.
+- Copy and content: upload, filename, and accessible button labels are unchanged by the implementation.
+
+## Findings
+
+No actionable P0, P1, or P2 mismatch remains within the approved thumbnail-size and mobile-delete-control scope.
+
+The visual capture uses a focused code-rendered component rather than an authenticated full application page. This avoids touching any database or Production surface and does not affect the measured CSS behavior.
+
+## Comparison history
+
+- Initial mismatch: the preview stretched across most of the phone width and the red delete control inherited a larger mobile button height. Fix: scope a fixed 96 px preview track to the manual-entry form and give the mobile delete button an equal 22 px width, height, minimum width, and minimum height with a 50% radius. Post-fix evidence: the combined comparison and browser-computed measurements above.
+
+## Primary interactions tested
+
+- Rendered the component at mobile and desktop breakpoints.
+- Verified responsive geometry and the mobile cascade against the drawer's 40 px generic button minimum.
+- Browser console checked: no warnings or errors.
+
+final result: passed

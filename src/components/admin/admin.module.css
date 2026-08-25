@@ -3252,6 +3252,11 @@
   margin-top: 8px;
 }
 
+.manualEntryForm .paymentProofPreviewGrid {
+  grid-template-columns: repeat(auto-fill, 96px);
+  justify-content: start;
+}
+
 .paymentProofPreviewCard {
   position: relative;
   min-width: 0;
@@ -5262,6 +5267,17 @@ button.paymentProofPreviewMedia {
     margin-top: 2px;
     font-size: 11px;
     line-height: 1.25;
+  }
+
+  .manualEntryForm .paymentProofPreviewGrid .paymentProofPreviewCard button.paymentProofDeleteButton {
+    width: 22px;
+    height: 22px;
+    min-width: 22px;
+    min-height: 22px;
+    top: -6px;
+    right: -6px;
+    border-radius: 50%;
+    font-size: 15px;
   }
 
   .manualRecordSummary > div {
