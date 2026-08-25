@@ -38,6 +38,7 @@ import styles from "./storefront.module.css";
 import { useContainedDialog } from "./forms/use-contained-dialog";
 import type { GalleryDesignSelection } from "@/server/gallery/design-selection-service";
 import { PurchaseTrustStrip } from "./purchase-trust-strip";
+import { AnalyticsEventTracker } from "./analytics-event-tracker";
 import {
   SourcePhotoCustomisation,
   type SourcePhotoCustomisationValue,
@@ -284,6 +285,14 @@ export function ProductConfigurator({
 
   return (
     <>
+      <AnalyticsEventTracker
+        event={designInspiration ? {
+          event: "design_selected",
+          design_id: designInspiration.id,
+          product_id: product.key,
+        } : null}
+        scopeKey={`${product.key}:${designInspiration?.id ?? "none"}`}
+      />
       <div className={styles.configuratorLayout}>
         <div className={styles.configuratorSidebar}>
         <section className={styles.artworkPreview} aria-label="Artwork preview">
@@ -499,6 +508,7 @@ export function ProductConfigurator({
         )}
 
         <SourcePhotoCustomisation
+          analyticsProductId={product.key}
           inputName="photo-submission"
           sourceStepNumber={sourceStepNumber}
           artworkStepNumber={artworkStepNumber}

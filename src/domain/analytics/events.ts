@@ -11,7 +11,10 @@ export type AnalyticsItem = Readonly<{
   item_variant?: string;
   price: number;
   quantity: number;
+  index?: number;
 }>;
+
+type ItemListEventName = "view_item_list" | "select_item";
 
 type CommerceEventName =
   | "view_item"
@@ -31,6 +34,15 @@ export type CommerceEvent = Readonly<{
   payment_type?: "card" | "afterpay";
 }>;
 
+export type ItemListEvent = Readonly<{
+  event: ItemListEventName;
+  item_list_id: string;
+  item_list_name: string;
+  currency: MarketCurrency;
+  value: number;
+  items: readonly AnalyticsItem[];
+}>;
+
 type SimpleEvent =
   | Readonly<{ event: "generate_lead"; method: string }>
   | Readonly<{ event: "messenger_click"; location: string }>
@@ -48,7 +60,20 @@ export type PurchaseEvent = Readonly<{
   items: readonly AnalyticsItem[];
 }>;
 
-export type AnalyticsEvent = CommerceEvent | SimpleEvent | PurchaseEvent;
+export type AnalyticsEvent = CommerceEvent | ItemListEvent | SimpleEvent | PurchaseEvent;
+
+export type ItemListAnalyticsInput = Readonly<{
+  listId: string;
+  listName: string;
+  currency: MarketCurrency;
+  items: readonly Readonly<{
+    productKey: string;
+    productName: string;
+    category?: string;
+    unitPriceCents: number;
+    index: number;
+  }>[];
+}>;
 
 export type ProductViewAnalyticsInput = Readonly<{
   productKey: string;
@@ -94,10 +119,14 @@ function itemPayload(input: Readonly<{
   sizeKey?: string;
   unitSubtotalCents: number;
   quantity: number;
+  index?: number;
 }>): AnalyticsItem {
   assertSafeCents(input.unitSubtotalCents);
   if (!isSafeQuantity(input.quantity)) {
     throw new RangeError("Analytics quantity must be a positive safe integer.");
+  }
+  if (input.index !== undefined && (!Number.isSafeInteger(input.index) || input.index < 0)) {
+    throw new RangeError("Analytics item index must be a non-negative safe integer.");
   }
 
   return Object.freeze({
@@ -107,6 +136,35 @@ function itemPayload(input: Readonly<{
     ...(input.sizeKey ? { item_variant: input.sizeKey } : {}),
     price: dollars(input.unitSubtotalCents),
     quantity: input.quantity,
+    ...(input.index !== undefined ? { index: input.index } : {}),
+  });
+}
+
+export function buildItemListEvent(
+  name: ItemListEventName,
+  input: ItemListAnalyticsInput,
+): ItemListEvent {
+  const items = input.items.map((item) => itemPayload({
+    productKey: item.productKey,
+    productName: item.productName,
+    category: item.category,
+    unitSubtotalCents: item.unitPriceCents,
+    quantity: 1,
+    index: item.index,
+  }));
+  const valueCents = input.items.reduce((total, item) => {
+    assertSafeCents(item.unitPriceCents);
+    const next = total + item.unitPriceCents;
+    assertSafeCents(next);
+    return next;
+  }, 0);
+  return Object.freeze({
+    event: name,
+    item_list_id: input.listId,
+    item_list_name: input.listName,
+    currency: input.currency,
+    value: dollars(valueCents),
+    items: Object.freeze(items),
   });
 }
 

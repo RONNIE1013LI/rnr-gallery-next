@@ -1,11 +1,16 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as analytics from "@/domain/analytics/client";
 import { getConfigurationSchema } from "@/domain/configuration/schemas";
 import {
   SourcePhotoCustomisation,
   type SourcePhotoCustomisationValue,
 } from "./source-photo-customisation";
+
+vi.mock("@/domain/analytics/client", () => ({
+  emitAnalyticsEvent: vi.fn(() => true),
+}));
 
 const schema = getConfigurationSchema("banner-bundle")!;
 
@@ -26,6 +31,7 @@ function TwoGroups() {
   return (
     <form>
       <SourcePhotoCustomisation
+        analyticsProductId="banner-bundle:roll-up"
         groupLabel="Roll-Up Banner customisation"
         inputName="roll-up"
         sourceStepNumber={2}
@@ -38,6 +44,7 @@ function TwoGroups() {
         onChange={setRollUp}
       />
       <SourcePhotoCustomisation
+        analyticsProductId="banner-bundle:wall-banner"
         groupLabel="Wall Banner customisation"
         inputName="wall-banner"
         sourceStepNumber={4}
@@ -54,7 +61,41 @@ function TwoGroups() {
 }
 
 describe("SourcePhotoCustomisation", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.mocked(analytics.emitAnalyticsEvent).mockClear();
+  });
+
+  it("tracks only product ID and count after upload, plus an explicit send-later choice", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        reference: { id: "private-reference", originalName: "private-family-name.jpg" },
+      }),
+    }));
+    render(<TwoGroups />);
+
+    fireEvent.change(screen.getByLabelText("Roll-Up Banner customisation: Choose files"), {
+      target: { files: [new File(["photo"], "private-family-name.jpg", { type: "image/jpeg" })] },
+    });
+
+    expect((await screen.findAllByText("Photo 1"))[0]).toBeVisible();
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
+      event: "photo_upload_completed",
+      product_id: "banner-bundle:roll-up",
+      photo_count: 1,
+    });
+    expect(JSON.stringify(vi.mocked(analytics.emitAnalyticsEvent).mock.calls))
+      .not.toContain("private-family-name.jpg");
+
+    fireEvent.click(within(screen.getByRole("region", {
+      name: "Roll-Up Banner customisation",
+    })).getByText("Send Photos After Ordering"));
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
+      event: "send_photos_later_selected",
+      product_id: "banner-bundle:roll-up",
+    });
+  });
 
   it("labels two groups and all of their controlled inputs independently", () => {
     render(<TwoGroups />);

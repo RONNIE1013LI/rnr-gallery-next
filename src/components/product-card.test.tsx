@@ -1,9 +1,18 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as analytics from "@/domain/analytics/client";
 import { products } from "@/domain/catalogue/products";
 import { ProductCard } from "./product-card";
 import { CataloguePage } from "./catalogue-page";
 import styles from "./storefront.module.css";
+
+vi.mock("@/domain/analytics/client", () => ({
+  emitAnalyticsEvent: vi.fn(() => true),
+}));
+
+beforeEach(() => {
+  vi.mocked(analytics.emitAnalyticsEvent).mockClear();
+});
 
 describe("ProductCard", () => {
   it("presents one clear product destination and starting price", () => {
@@ -52,6 +61,38 @@ describe("ProductCard", () => {
 });
 
 describe("CataloguePage image loading", () => {
+  it("tracks the visible item list and the selected product without delaying navigation", async () => {
+    render(
+      <CataloguePage
+        eyebrow="Products"
+        title="Shop"
+        description="Choose a format"
+        path="/shop"
+        products={products.slice(0, 2)}
+      />,
+    );
+
+    await waitFor(() => expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "view_item_list",
+        item_list_id: "nz:/shop",
+        item_list_name: "Shop",
+      }),
+    ));
+
+    const firstProductLink = screen.getAllByRole("link")
+      .find((link) => link.getAttribute("href")?.includes("/configure"));
+    expect(firstProductLink).toBeDefined();
+    fireEvent.click(firstProductLink!);
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "select_item",
+        item_list_id: "nz:/shop",
+        item_list_name: "Shop",
+      }),
+    );
+  });
+
   it("eager-loads only the first Shop product image", () => {
     render(
       <CataloguePage

@@ -1,6 +1,6 @@
 # Google Ads readiness — code delivery
 
-Updated: 16 August 2026. This document records code readiness only. It does not claim that Google Ads, Analytics, Tag Manager, Merchant Center or Search Console has been configured.
+Updated: 25 August 2026. This document records code readiness only. It does not claim that Google Ads, Tag Manager, Merchant Center, Meta Ads or Search Console has been configured.
 
 ## Completed in code
 
@@ -12,7 +12,9 @@ Updated: 16 August 2026. This document records code readiness only. It does not 
 - The configurator presents `Upload Photos Now` and `Send Photos After Ordering` as separate valid methods. Switching to send later does not delete existing uploaded references. Upload count pricing beyond 20 remains covered by automated pricing tests.
 - Shared product trust strip, independent About, Contact, How It Works, Help and Shipping & Delivery pages, plus Header/Footer routes.
 - Three product-specific landing pages: `/custom-roll-up-banners-nz`, `/custom-wall-banners-nz`, `/custom-photo-canvas-nz`.
-- Typed, PII-free analytics event contracts for `view_item_list`, `select_item`, `view_item`, `add_to_cart`, `view_cart`, `begin_checkout`, `purchase`, `generate_lead`, `messenger_click`, `photo_upload_completed`, `send_photos_later_selected` and `design_selected`.
+- The official Next.js `GoogleAnalytics` component loads GA4 once from the root layout in Vercel Production only, using measurement ID `G-RE5Z5B58TJ`. There is no duplicate GTM or manually installed `gtag.js` implementation.
+- Typed, PII-free analytics event contracts and live storefront wiring cover `view_item_list`, `select_item`, `view_item`, `add_to_cart`, `remove_from_cart`, `view_cart`, `begin_checkout`, `add_shipping_info`, `add_payment_info`, `purchase`, `generate_lead`, `messenger_click`, `photo_upload_completed`, `send_photos_later_selected` and `design_selected`.
+- Direct configuration routes emit `view_item`; catalogue cards emit list-view and selection events; successful source-photo upload emits only product ID and count; Messenger lead events contain only method and page location. Customer names, contact details, addresses, design text, file names, upload references and image URLs remain excluded by a runtime allowlist.
 - Identity-scoped session attribution for UTM fields, `gclid`, `gbraid` and `wbraid`; only allowlisted, bounded values are accepted and the snapshot is bound to the order at order creation.
 - Purchase events are built only from a server-authorized order with `paymentStatus=paid`, use the real order number, exclude customer/design/upload data and are deduplicated by transaction ID in the browser session.
 - Public Gallery, design detail and configuration previews use responsive Next image output rather than downloading print-source images as thumbnails. Gallery remains server-paginated at 24 designs.
@@ -57,7 +59,7 @@ The subsequent real-data Playwright run verified 24 designs on one Gallery page,
 - `/designs/[public-readable-slug]` for active and available designs
 - `/about`, `/contact`, `/how-it-works`, `/help`, `/shipping-delivery`
 - `/custom-roll-up-banners-nz`, `/custom-wall-banners-nz`, `/custom-photo-canvas-nz`
-- `/privacy`, `/terms`
+- `/privacy`, `/terms`, `/returns-refunds`
 
 ### Noindex and excluded URLs
 
@@ -72,7 +74,8 @@ Noindex and robots rules are discovery controls, not access control. Authenticat
 
 ## Ready but disabled
 
-- Typed analytics/dataLayer adapter and purchase payload generation. `NEXT_PUBLIC_GOOGLE_ANALYTICS_ENABLED` defaults to `false`; no Google script is installed and no request is made.
+- Google Ads conversion import can use the existing GA4 commerce events after Ads/GA4 account linking. No Google Ads conversion action has been created in code.
+- Meta Pixel is not installed and makes no network requests. Adding it remains disabled until a real Pixel ID, account access and the analytics-consent policy are confirmed.
 - Order-level attribution JSON storage and database migration `0022_lame_madame_masque.sql`.
 - Dynamic sitemap and Merchant-feed-compatible product facts sourced from the product registry. No Shopping feed is published.
 - AU storefront and AUD Stripe support are code-ready but remain closed. The default AU price book has no invented values and cannot be enabled while incomplete.
@@ -83,7 +86,8 @@ Noindex and robots rules are discovery controls, not access control. Authenticat
 ## Waiting for account access
 
 - Google Ads account and conversion actions.
-- GA4 property, GTM container and production tag publication.
+- GA4 account access for final Realtime/DebugView review, Google Ads linking and conversion import configuration.
+- Meta Business account, Pixel ID and event-source access.
 - Merchant Center account/feed, product diagnostics and Shopping approval.
 - Search Console verification, sitemap submission and Change of Address.
 - Production DNS, old-host redirect access and production Core Web Vitals field data.
@@ -120,7 +124,7 @@ npm run db:check
 BETTER_AUTH_URL=https://rrgallery.co.nz BETTER_AUTH_SECRET='<build-only-secret>' npm run build
 ```
 
-Latest local verification on 16 August 2026: 270 Vitest files and 1,715 tests passed; TypeScript, ESLint, Drizzle migration consistency and the Next.js production build all exited successfully. Migrations were applied only to the dedicated local test database for integration testing, not to production.
+Latest measurement-wiring verification on 25 August 2026: 10 focused files and 107 analytics/storefront tests passed; the non-database regression suite passed 455 files and 3,686 tests with 2 skipped. TypeScript, full ESLint (0 errors), Drizzle migration consistency, `git diff --check` and the 111-route Next.js production build passed. No migration was generated or executed and no Production database was accessed.
 
 Playwright browser acceptance uses only `http://192.168.4.199:3000`; provider settlement and real payment are excluded until Ronnie performs the authorized real-payment check.
 

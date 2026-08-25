@@ -11,6 +11,7 @@ import { MAX_CHECKOUT_TEXT_LENGTH } from "@/domain/checkout/input-schema";
 import { formatMarketMoney } from "@/domain/money";
 import { currencyForMarket } from "@/domain/markets/market";
 import type { Market } from "@/domain/markets/types";
+import { emitAnalyticsEvent } from "@/domain/analytics/client";
 import styles from "./storefront.module.css";
 
 export type UploadedFile = Readonly<{
@@ -29,6 +30,7 @@ export type SourcePhotoCustomisationValue = Readonly<{
 }>;
 
 export type SourcePhotoCustomisationProps = Readonly<{
+  analyticsProductId: string;
   groupLabel?: string;
   inputName: string;
   sourceStepNumber: number;
@@ -43,6 +45,7 @@ export type SourcePhotoCustomisationProps = Readonly<{
 }>;
 
 export function SourcePhotoCustomisation({
+  analyticsProductId,
   groupLabel,
   inputName,
   sourceStepNumber,
@@ -77,8 +80,22 @@ export function SourcePhotoCustomisation({
     onChange(nextValue);
   }
 
+  function track(event: Parameters<typeof emitAnalyticsEvent>[0]) {
+    try {
+      emitAnalyticsEvent(event);
+    } catch {
+      // Analytics must never interrupt photo selection or upload state.
+    }
+  }
+
   function setPhotoSubmissionMethod(photoSubmissionMethod: PhotoSubmissionMethod) {
     changeValue({ ...value, photoSubmissionMethod });
+    if (photoSubmissionMethod === "later" && value.photoSubmissionMethod !== "later") {
+      track({
+        event: "send_photos_later_selected",
+        product_id: analyticsProductId,
+      });
+    }
   }
 
   async function uploadSourceFiles(files: FileList | null) {
@@ -117,6 +134,11 @@ export function SourcePhotoCustomisation({
         ...latestValue,
         uploadedFiles: [...latestValue.uploadedFiles, ...uploaded],
         mainPhotoUploadId: latestValue.mainPhotoUploadId ?? uploaded[0]?.id,
+      });
+      track({
+        event: "photo_upload_completed",
+        product_id: analyticsProductId,
+        photo_count: latestValue.uploadedFiles.length + uploaded.length,
       });
     } catch (error) {
       setUploadError(

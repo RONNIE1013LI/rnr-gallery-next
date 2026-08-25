@@ -1,9 +1,14 @@
-import { render, screen } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import * as analytics from "@/domain/analytics/client";
 import { defaultProductRegistry, getRegistryProductBySlug } from "@/domain/catalogue/product-registry";
 import { adLandingPages } from "@/domain/ads/landing-pages";
 import { formatNzd } from "@/domain/money";
 import { AdLandingPage } from "./ad-landing-page";
+
+vi.mock("@/domain/analytics/client", () => ({
+  emitAnalyticsEvent: vi.fn(() => true),
+}));
 
 describe("AdLandingPage", () => {
   it.each(Object.values(adLandingPages))("renders product-specific content for $path", (content) => {
@@ -47,5 +52,24 @@ describe("AdLandingPage", () => {
     expect(new Set(pages.map((page) => page.heading)).size).toBe(3);
     expect(new Set(pages.map((page) => page.description)).size).toBe(3);
     expect(new Set(pages.map((page) => page.included.join("|"))).size).toBe(3);
+  });
+
+  it("tracks a Messenger lead without adding customer data", () => {
+    const content = Object.values(adLandingPages).find(
+      (page) => page.path === "/custom-photo-canvas-nz",
+    )!;
+    const product = getRegistryProductBySlug(defaultProductRegistry, content.productSlug)!;
+    render(<AdLandingPage content={content} product={product} priceInclGstCents={54_321} />);
+
+    fireEvent.click(screen.getByRole("link", { name: "Message on Messenger" }));
+
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
+      event: "messenger_click",
+      location: content.path,
+    });
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
+      event: "generate_lead",
+      method: "messenger",
+    });
   });
 });

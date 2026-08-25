@@ -7,6 +7,7 @@ import { buildBreadcrumbData } from "@/server/seo/metadata";
 import { getSiteUrl } from "@/server/seo/site-url";
 import { PurchaseTrustStrip } from "./purchase-trust-strip";
 import { StructuredData } from "./structured-data";
+import { AnalyticsLink } from "./analytics-link";
 import styles from "./storefront.module.css";
 
 export function AdLandingPage({ content, product, priceInclGstCents }: Readonly<{
@@ -51,7 +52,15 @@ export function AdLandingPage({ content, product, priceInclGstCents }: Readonly<
           <PurchaseTrustStrip />
           <div className={styles.designDetailActions}>
             <Link className={styles.primaryButton} href={configureHref}>Start Customising</Link>
-            <a className={styles.secondaryButton} href="https://m.me/RandRgallery" rel="noopener noreferrer">Message on Messenger</a>
+            <AnalyticsLink
+              className={styles.secondaryButton}
+              href="https://m.me/RandRgallery"
+              rel="noopener noreferrer"
+              events={[
+                { event: "messenger_click", location: content.path },
+                { event: "generate_lead", method: "messenger" },
+              ]}
+            >Message on Messenger</AnalyticsLink>
           </div>
         </div>
         <div className={styles.adLandingHeroMedia}>

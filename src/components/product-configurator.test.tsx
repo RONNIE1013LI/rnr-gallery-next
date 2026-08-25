@@ -56,7 +56,8 @@ describe("ProductConfigurator", () => {
   });
   beforeEach(() => {
     localStorage.clear();
-    analytics.emitAnalyticsEvent.mockClear();
+    analytics.emitAnalyticsEvent.mockReset();
+    analytics.emitAnalyticsEvent.mockReturnValue(true);
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -515,7 +516,6 @@ describe("ProductConfigurator", () => {
 
     expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items)
       .toHaveLength(1);
-    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledTimes(1);
     expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
       event: "add_to_cart",
       currency: "NZD",
@@ -531,7 +531,7 @@ describe("ProductConfigurator", () => {
   });
 
   it("keeps the persisted cart and success UI when analytics throws", () => {
-    analytics.emitAnalyticsEvent.mockImplementationOnce(() => {
+    analytics.emitAnalyticsEvent.mockImplementation(() => {
       throw new Error("analytics unavailable");
     });
     render(

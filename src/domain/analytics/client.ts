@@ -21,6 +21,7 @@ function allowlistedItem(item: AnalyticsItem): Record<string, unknown> {
       : {}),
     price: item.price,
     quantity: item.quantity,
+    ...(item.index !== undefined ? { index: item.index } : {}),
   };
 }
 
@@ -34,6 +35,13 @@ function commercePayload(event: Extract<AnalyticsEvent, { currency: unknown }>) 
 
 function allowlistedPayload(event: AnalyticsEvent): Record<string, unknown> | null {
   switch (event.event) {
+    case "view_item_list":
+    case "select_item":
+      return {
+        ...commercePayload(event),
+        item_list_id: event.item_list_id,
+        item_list_name: event.item_list_name,
+      };
     case "view_item":
     case "add_to_cart":
     case "remove_from_cart":

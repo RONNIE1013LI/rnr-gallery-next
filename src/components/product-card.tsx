@@ -1,21 +1,24 @@
 import Image from "next/image";
-import Link from "next/link";
 import type { Product } from "@/domain/catalogue/types";
+import type { AnalyticsEvent } from "@/domain/analytics/events";
 import type { Market } from "@/domain/markets/types";
 import { currencyForMarket } from "@/domain/markets/market";
 import { addNzdGst, formatMarketMoney } from "@/domain/money";
 import styles from "./storefront.module.css";
+import { AnalyticsLink } from "./analytics-link";
 
 export function ProductCard({
   product,
   priority = false,
   market = "NZ",
   priceInclTaxCents,
+  selectionEvent,
 }: Readonly<{
   product: Product;
   priority?: boolean;
   market?: Market;
   priceInclTaxCents?: number;
+  selectionEvent?: AnalyticsEvent;
 }>) {
   const destination = market === "AU"
     ? `/au/products/${product.slug}/configure`
@@ -25,7 +28,7 @@ export function ProductCard({
 
   return (
     <article className={styles.productCard}>
-      <Link className={styles.productCardLink} href={destination}>
+      <AnalyticsLink className={styles.productCardLink} href={destination} events={selectionEvent}>
         <div className={styles.productCardMedia}>
           <Image
             src={product.image.src}
@@ -48,7 +51,7 @@ export function ProductCard({
             <span className={styles.primaryButton}>Create Your Artwork</span>
           </div>
         </div>
-      </Link>
+      </AnalyticsLink>
     </article>
   );
 }

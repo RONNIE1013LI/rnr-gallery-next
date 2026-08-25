@@ -36,7 +36,8 @@ function enabledAustraliaRegistry() {
 describe("BannerBundleConfigurator", () => {
   beforeEach(() => {
     localStorage.clear();
-    analytics.emitAnalyticsEvent.mockClear();
+    analytics.emitAnalyticsEvent.mockReset();
+    analytics.emitAnalyticsEvent.mockReturnValue(true);
   });
   afterEach(() => vi.unstubAllGlobals());
 
@@ -261,8 +262,9 @@ describe("BannerBundleConfigurator", () => {
         },
       ],
     });
-    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledTimes(1);
-    const event = analytics.emitAnalyticsEvent.mock.calls[0]?.[0];
+    const event = analytics.emitAnalyticsEvent.mock.calls
+      .map(([candidate]) => candidate)
+      .find((candidate) => (candidate as { event?: string }).event === "add_to_cart");
     expect(event).toMatchObject({
       event: "add_to_cart",
       currency: "NZD",
@@ -279,7 +281,7 @@ describe("BannerBundleConfigurator", () => {
   });
 
   it("keeps the persisted Bundle and success UI when analytics throws", () => {
-    analytics.emitAnalyticsEvent.mockImplementationOnce(() => {
+    analytics.emitAnalyticsEvent.mockImplementation(() => {
       throw new Error("analytics unavailable");
     });
     render(

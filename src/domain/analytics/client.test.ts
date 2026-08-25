@@ -66,6 +66,47 @@ describe("emitAnalyticsEvent", () => {
     expect(sendGAEvent).not.toHaveBeenCalled();
   });
 
+  it("sends only allowlisted item-list fields", () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+    const listEvent = {
+      event: "select_item",
+      item_list_id: "nz:shop",
+      item_list_name: "Shop",
+      currency: "NZD",
+      value: 74.75,
+      customer_email: "private@example.test",
+      items: [{
+        item_id: "photo-print-canvas",
+        item_name: "Photo Print Canvas",
+        item_category: "Canvas",
+        price: 74.75,
+        quantity: 1,
+        index: 0,
+        upload_reference: "private-upload-token",
+      }],
+    } as const;
+
+    expect(emitAnalyticsEvent(listEvent)).toBe(true);
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "select_item", {
+      item_list_id: "nz:shop",
+      item_list_name: "Shop",
+      currency: "NZD",
+      value: 74.75,
+      items: [{
+        item_id: "photo-print-canvas",
+        item_name: "Photo Print Canvas",
+        item_category: "Canvas",
+        price: 74.75,
+        quantity: 1,
+        index: 0,
+      }],
+    });
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
+      .not.toContain("private@example.test");
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
+      .not.toContain("private-upload-token");
+  });
+
   it("returns false until the official dataLayer transport is ready", () => {
     document.documentElement.dataset.ga4Enabled = "true";
     Object.assign(window, { dataLayer: undefined });

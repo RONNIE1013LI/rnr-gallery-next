@@ -37,6 +37,7 @@ import {
 } from "./source-photo-customisation";
 import styles from "./storefront.module.css";
 import { useContainedDialog } from "./forms/use-contained-dialog";
+import { AnalyticsEventTracker } from "./analytics-event-tracker";
 
 export type BannerBundleConfiguratorProps = ProductConfiguratorProps;
 
@@ -301,6 +302,14 @@ export function BannerBundleConfigurator({
 
   return (
     <>
+      <AnalyticsEventTracker
+        event={selectedDesign ? {
+          event: "design_selected",
+          design_id: selectedDesign.id,
+          product_id: product.key,
+        } : null}
+        scopeKey={`${product.key}:${selectedDesign?.id ?? "none"}`}
+      />
       <div className={styles.configuratorLayout}>
         <div className={styles.configuratorSidebar}>
           <section className={styles.artworkPreview} aria-label="Artwork preview">
@@ -460,6 +469,7 @@ export function BannerBundleConfigurator({
           </section>
 
           <SourcePhotoCustomisation
+            analyticsProductId={`${product.key}:roll-up-banner`}
             groupLabel="Roll-Up Banner customisation"
             inputName="roll-up-photo-submission"
             sourceStepNumber={2}
@@ -473,6 +483,7 @@ export function BannerBundleConfigurator({
             onUploadingChange={setRollUpUploading}
           />
           <SourcePhotoCustomisation
+            analyticsProductId={`${product.key}:wall-banner`}
             groupLabel="Wall Banner customisation"
             inputName="wall-banner-photo-submission"
             sourceStepNumber={4}

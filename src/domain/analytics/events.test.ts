@@ -7,6 +7,7 @@ import {
   buildCartEvent,
   buildCartItemEvent,
   buildCheckoutEvent,
+  buildItemListEvent,
   buildProductViewEvent,
   buildPurchaseEvent,
 } from "./events";
@@ -211,6 +212,38 @@ function order(paymentStatus: PublicOrder["paymentStatus"]): PublicOrder {
 }
 
 describe("privacy-safe analytics events", () => {
+  it.each(["view_item_list", "select_item"] as const)(
+    "builds the exact allowlisted %s payload",
+    (name) => {
+      expect(buildItemListEvent(name, {
+        listId: "nz:shop",
+        listName: "Shop",
+        currency: "NZD",
+        items: [{
+          productKey: "photo-print-canvas",
+          productName: "Photo Print Canvas",
+          category: "Canvas",
+          unitPriceCents: 7_475,
+          index: 0,
+        }],
+      })).toEqual({
+        event: name,
+        item_list_id: "nz:shop",
+        item_list_name: "Shop",
+        currency: "NZD",
+        value: 74.75,
+        items: [{
+          item_id: "photo-print-canvas",
+          item_name: "Photo Print Canvas",
+          item_category: "Canvas",
+          price: 74.75,
+          quantity: 1,
+          index: 0,
+        }],
+      });
+    },
+  );
+
   it("builds the exact allowlisted view_item payload", () => {
     expect(buildProductViewEvent({
       productKey: "photo-print-canvas",
