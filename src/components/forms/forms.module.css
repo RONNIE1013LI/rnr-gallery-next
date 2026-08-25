@@ -8,6 +8,7 @@
   --forms-focus: #9b7a3f;
   --forms-control-height-desktop: 32px;
   --forms-control-height-mobile: 48px;
+  --forms-button-height-mobile: 40px;
   min-height: 100vh;
   color: var(--forms-ink);
   background: var(--forms-canvas);
@@ -839,10 +840,10 @@
 
   .orderEntryDrawer .drawerHeader button {
     display: grid;
-    width: 44px;
-    height: 44px;
-    min-width: 44px;
-    min-height: 44px;
+    width: var(--forms-button-height-mobile);
+    height: var(--forms-button-height-mobile);
+    min-width: var(--forms-button-height-mobile);
+    min-height: var(--forms-button-height-mobile);
     place-items: center;
     padding: 0;
     border: 1px solid var(--forms-border);
@@ -1088,13 +1089,13 @@
   }
 
   .statsPageToolbar button {
-    min-height: 44px;
+    min-height: var(--forms-button-height-mobile);
     padding: 5px 8px;
     font-size: 12px;
   }
 
   .statsReportActions button {
-    min-height: 44px;
+    min-height: var(--forms-button-height-mobile);
   }
 
   .statsReportWidgets {
@@ -1127,7 +1128,7 @@
   .statsCanvasActions button,
   .statsPalette button,
   .statsBuilderFooter button {
-    min-height: 44px;
+    min-height: var(--forms-button-height-mobile);
   }
 }
 
@@ -2062,7 +2063,30 @@
   }
 
   .widgetActions button {
-    min-width: 48px;
+    min-width: var(--forms-button-height-mobile);
+  }
+
+  .signOutControl button,
+  .orderEntry,
+  .formsPageHeader nav a,
+  .statsToolbar button,
+  .widgetActions button,
+  .quickSearch button,
+  .filterButton,
+  .listFooter button,
+  .perPageControl button,
+  .exportLink,
+  .personalViews button,
+  .personalViewList button,
+  .filterHeading button,
+  .filterRow > button,
+  .addFilterButton,
+  .filterActions button,
+  .listFooter nav a,
+  .inlineReload,
+  .inlineEditor button,
+  .orderCard header button {
+    min-height: var(--forms-button-height-mobile);
   }
 }
 
@@ -3022,7 +3046,7 @@
   }
 
   .formEntryPage button {
-    min-height: var(--forms-control-height-mobile);
+    min-height: var(--forms-button-height-mobile);
   }
 }
 

@@ -11,6 +11,18 @@ function cssRule(source: string, selector: string) {
 }
 
 describe("Admin form visual refinements", () => {
+  it("keeps mobile Forms buttons compact without shrinking form fields", () => {
+    const shell = cssRule(formsCss, ".shell");
+    const statsMobile = formsCss.slice(formsCss.indexOf("@media (max-width: 600px)"));
+    const workbenchMobile = formsCss.slice(formsCss.indexOf("@media (max-width: 720px)"));
+
+    expect(shell).toContain("--forms-control-height-mobile: 48px;");
+    expect(shell).toContain("--forms-button-height-mobile: 40px;");
+    expect(statsMobile).toMatch(/\.statsPageToolbar button\s*\{[\s\S]*?min-height:\s*var\(--forms-button-height-mobile\);/);
+    expect(statsMobile).toMatch(/\.statsReportActions button\s*\{[\s\S]*?min-height:\s*var\(--forms-button-height-mobile\);/);
+    expect(workbenchMobile).toMatch(/\.signOutControl button,[\s\S]*?\.orderCard header button\s*\{[\s\S]*?min-height:\s*var\(--forms-button-height-mobile\);/);
+  });
+
   it("keeps form actions in document flow so they cannot cover fields", () => {
     expect(cssRule(adminCss, ".formSubmitBar")).toContain("position: static;");
     expect(cssRule(adminCss, ".reviewFormActions")).toContain("position: static;");
@@ -73,6 +85,8 @@ describe("Admin form visual refinements", () => {
     expect(closeButton).toContain("border: 1px solid var(--forms-border);");
     expect(closeButton).toContain("border-radius: 50%;");
     expect(closeButton).toContain("background: #fff;");
+    expect(closeButton).toContain("width: var(--forms-button-height-mobile);");
+    expect(closeButton).toContain("height: var(--forms-button-height-mobile);");
     expect(closeButtonFocus).toContain("outline: 0;");
     expect(closeButtonFocus).toContain("box-shadow: inset 0 0 0 2px var(--forms-focus);");
     expect(mobile).not.toMatch(/\.orderEntryDrawer \.drawerHeader button::before\s*\{/);

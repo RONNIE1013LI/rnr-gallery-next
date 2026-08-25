@@ -22,11 +22,11 @@ describe("Forms statistics visual contract", () => {
 .statWidget[data-type="divider"]`)).toContain("grid-column: 1 / -1;");
   });
 
-  it("keeps chart scrollers bounded and mobile report actions touch safe", () => {
+  it("keeps chart scrollers bounded and mobile report actions consistently compact", () => {
     expect(cssRule(formsCss, ".statChartScroller")).toContain("width: 100%;");
     expect(cssRule(formsCss, ".statChartScroller")).toContain("overflow-x: auto;");
     const mobile = formsCss.slice(formsCss.indexOf("@media (max-width: 600px)"));
-    expect(cssRule(mobile, ".statsPageToolbar button")).toContain("min-height: 44px;");
-    expect(cssRule(mobile, ".statsReportActions button")).toContain("min-height: 44px;");
+    expect(cssRule(mobile, ".statsPageToolbar button")).toContain("min-height: var(--forms-button-height-mobile);");
+    expect(cssRule(mobile, ".statsReportActions button")).toContain("min-height: var(--forms-button-height-mobile);");
   });
 });
