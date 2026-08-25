@@ -2565,6 +2565,19 @@
   line-height: 1.45;
 }
 
+.choiceContactLink {
+  color: var(--gallery-green);
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
+.choiceContactLink:focus-visible {
+  border-radius: 2px;
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
 .uploadPanel {
   margin-top: 1rem;
   padding: 1rem;

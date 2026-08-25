@@ -121,6 +121,37 @@ describe("SourcePhotoCustomisation", () => {
     expect(screen.getByLabelText("Wall Banner customisation: Design notes")).toBeVisible();
   });
 
+  it("links every send-later contact method to the existing public channels", () => {
+    render(<TwoGroups />);
+
+    for (const groupName of [
+      "Roll-Up Banner customisation",
+      "Wall Banner customisation",
+    ]) {
+      const group = within(screen.getByRole("region", { name: groupName }));
+      expect(group.getByRole("link", { name: "Messenger" })).toHaveAttribute(
+        "href",
+        "https://m.me/RandRgallery",
+      );
+      expect(group.getByRole("link", { name: "Email" })).toHaveAttribute(
+        "href",
+        "mailto:customerservice@rnrgallery.com",
+      );
+      expect(group.getByRole("link", { name: "WhatsApp" })).toHaveAttribute(
+        "href",
+        "https://wa.me/642102348948",
+      );
+      expect(group.getByRole("link", { name: "Messenger" })).toHaveAttribute(
+        "rel",
+        "noopener noreferrer",
+      );
+      expect(group.getByRole("link", { name: "WhatsApp" })).toHaveAttribute(
+        "rel",
+        "noopener noreferrer",
+      );
+    }
+  });
+
   it("keeps upload, main-photo, background-removal, removal, and send-later state independent", async () => {
     vi.stubGlobal("fetch", vi.fn().mockImplementation(async (_url, init?: RequestInit) => {
       const file = (init?.body as FormData).get("file") as File;

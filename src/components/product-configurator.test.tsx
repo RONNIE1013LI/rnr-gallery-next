@@ -657,7 +657,10 @@ describe("ProductConfigurator", () => {
     expect(screen.getByText("Upload Photos Now")).toBeVisible();
     expect(screen.getByText("Upload now — recommended for preserving original quality.")).toBeVisible();
     expect(screen.getByText("Send Photos After Ordering")).toBeVisible();
-    expect(screen.getByText("Send later — send by Messenger, Email or WhatsApp after ordering.")).toBeVisible();
+    expect(screen.getByText((_content, element) => (
+      element?.tagName === "SMALL"
+      && element.textContent === "Send later — send by Messenger, Email or WhatsApp after ordering."
+    ))).toBeVisible();
     expect(screen.getByText("Proof before printing")).toBeVisible();
     expect(document.querySelector("form#customise")).not.toBeNull();
   });

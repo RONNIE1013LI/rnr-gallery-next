@@ -224,7 +224,30 @@ export function SourcePhotoCustomisation({
               checked={value.photoSubmissionMethod === "later"}
               onChange={() => setPhotoSubmissionMethod("later")}
             />
-            <span><strong>Send Photos After Ordering</strong><small>Send later — send by Messenger, Email or WhatsApp after ordering.</small></span>
+            <span>
+              <strong>Send Photos After Ordering</strong>
+              <small>
+                Send later — send by{" "}
+                <a
+                  className={styles.choiceContactLink}
+                  href="https://m.me/RandRgallery"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >Messenger</a>,{" "}
+                <a
+                  className={styles.choiceContactLink}
+                  href="mailto:customerservice@rnrgallery.com"
+                >Email</a>{" "}
+                or{" "}
+                <a
+                  className={styles.choiceContactLink}
+                  href="https://wa.me/642102348948"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >WhatsApp</a>{" "}
+                after ordering.
+              </small>
+            </span>
           </label>
         </fieldset>
         {value.photoSubmissionMethod === "upload" && (
