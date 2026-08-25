@@ -32,6 +32,27 @@ describe("Admin form visual refinements", () => {
     expect(cssRule(mobile, ".orderCard dd")).toContain("padding: 3px 7px;");
   });
 
+  it("matches the mobile search controls to the compact order field height", () => {
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    const searchControls = cssRule(mobile, ".quickSearch input,\n  .quickSearch button,\n  .filterButton");
+
+    expect(searchControls).toContain("height: 30px;");
+    expect(searchControls).toContain("min-height: 30px;");
+  });
+
+  it("keeps the manual-order summary in two columns on phones", () => {
+    const mobile = adminCss.slice(adminCss.lastIndexOf("@media (max-width: 680px)"));
+    const summary = cssRule(mobile, ".manualEntryForm .formRecordSummary");
+    const fields = cssRule(mobile, ".manualEntryForm .formRecordSummary > div");
+    const oddFields = cssRule(mobile, ".manualEntryForm .formRecordSummary > div:nth-child(odd)");
+    const lastRow = cssRule(mobile, ".manualEntryForm .formRecordSummary > div:nth-last-child(-n + 2)");
+
+    expect(summary).toContain("grid-template-columns: repeat(2, minmax(0, 1fr));");
+    expect(fields).toContain("padding: 6px 8px;");
+    expect(oddFields).toContain("border-right: 1px solid var(--admin-border);");
+    expect(lastRow).toContain("border-bottom: 0;");
+  });
+
   it("keeps form actions in document flow so they cannot cover fields", () => {
     expect(cssRule(adminCss, ".formSubmitBar")).toContain("position: static;");
     expect(cssRule(adminCss, ".reviewFormActions")).toContain("position: static;");

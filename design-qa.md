@@ -583,3 +583,66 @@ Result: passed
 - Browser console: no new warning or error was produced after the isolated preview environment was configured; the tab retained one earlier `BETTER_AUTH_URL is required` error from the failed first load.
 
 final result: passed
+
+---
+
+# Mobile forms visual QA
+
+- Source visual truth:
+  - `/tmp/codex-remote-attachments/01a026e2-2cec-7122-a8b8-ee1c882d7d60/FF597EE6-1EA8-4F8B-98CB-D254C55ECD67/1-照片-1.jpg`
+  - `/tmp/codex-remote-attachments/01a026e2-2cec-7122-a8b8-ee1c882d7d60/FF597EE6-1EA8-4F8B-98CB-D254C55ECD67/2-照片-2.jpg`
+- Implementation screenshots:
+  - `/tmp/rnr-mobile-search-393x852.png`
+  - `/tmp/rnr-mobile-drawer-summary-393x852.png`
+- Combined comparisons:
+  - `/tmp/rnr-mobile-search-comparison.png`
+  - `/tmp/rnr-mobile-drawer-comparison.png`
+- Viewport: `393 × 852` CSS px, Chrome, device scale factor 1.
+- Source pixels: `1179 × 1280` and `1235 × 1280`.
+- Implementation pixels: `393 × 852` for both captures.
+- Density normalization: each source was proportionally resized to 393 px wide before it was placed beside the 393 px implementation capture.
+- State: authenticated isolated local Test DB; empty order list and new manual-order drawer. No Production data was used or changed.
+
+## Full-view comparison evidence
+
+- The mobile search input, search button and filter button all render at 30 px high. The compact search row now aligns with the order-card field density shown by the source.
+- The manual-order summary renders as two equal columns and two rows at 393 px. All four items remain visible before Product / Size.
+- Desktop rules were not changed.
+
+## Focused region comparison evidence
+
+Focused comparison was required because both requested changes are compact control-level layout changes. Computed browser measurements confirmed:
+
+- Search input: 30 px high.
+- Search button: 30 px high.
+- Filter button: 30 px high.
+- Summary columns: two equal-width tracks.
+- First two summary items share one row; the final two share the next row.
+
+## Required fidelity surfaces
+
+- Fonts and typography: existing project fonts and weights are preserved; summary labels and values use the existing compact mobile scale.
+- Spacing and layout rhythm: search controls are equal height; summary padding is reduced to keep the 2 × 2 block compact.
+- Colors and visual tokens: existing border, background and semantic color tokens are unchanged.
+- Image quality and asset fidelity: no image assets are involved in these controls.
+- Copy and content: all existing labels and values are unchanged.
+
+## Findings
+
+No actionable P0, P1 or P2 mismatch remains within the approved scope.
+
+The implementation capture uses an empty isolated Test DB and a new-order drawer, while the source contains populated Production records and an existing order. Those content differences are expected and do not affect the two requested layout checks.
+
+## Comparison history
+
+- Initial requested mismatch: search controls were visibly taller than compact order-card fields. Fix: set the three mobile search controls to 30 px. Post-fix evidence: browser-computed heights and `/tmp/rnr-mobile-search-393x852.png`.
+- Initial requested mismatch: the four drawer summary items stacked vertically. Fix: use two equal mobile columns with compact padding and borders. Post-fix evidence: browser geometry and `/tmp/rnr-mobile-drawer-summary-393x852.png`.
+
+## Primary interactions tested
+
+- Signed into the isolated local order system.
+- Opened and closed the manual-order drawer.
+- Verified the responsive layout at 393 × 852.
+- Browser console checked: no application errors; only expected development/HMR messages.
+
+final result: passed

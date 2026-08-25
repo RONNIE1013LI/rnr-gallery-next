@@ -5233,9 +5233,35 @@ button.paymentProofPreviewMedia {
     border-bottom: 0;
   }
 
-  .manualEntryForm .formRecordSummary,
+  .manualEntryForm .formRecordSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
   .manualRecordSummary {
     grid-template-columns: 1fr;
+  }
+
+  .manualEntryForm .formRecordSummary > div {
+    padding: 6px 8px;
+    border-bottom: 1px solid var(--admin-border);
+  }
+
+  .manualEntryForm .formRecordSummary > div:nth-child(odd) {
+    border-right: 1px solid var(--admin-border);
+  }
+
+  .manualEntryForm .formRecordSummary > div:nth-last-child(-n + 2) {
+    border-bottom: 0;
+  }
+
+  .manualEntryForm .formRecordSummary dt {
+    font-size: 10px;
+  }
+
+  .manualEntryForm .formRecordSummary dd {
+    margin-top: 2px;
+    font-size: 11px;
+    line-height: 1.25;
   }
 
   .manualRecordSummary > div {

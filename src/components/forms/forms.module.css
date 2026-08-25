@@ -2880,6 +2880,13 @@
     padding: 0;
   }
 
+  .quickSearch input,
+  .quickSearch button,
+  .filterButton {
+    height: 30px;
+    min-height: 30px;
+  }
+
   .filterButtonCount {
     position: absolute;
     top: 3px;
