@@ -19,12 +19,22 @@ describe("Admin form visual refinements", () => {
   it("keeps the new manual-order submit action visible on desktop and mobile", () => {
     const createForm = cssRule(adminCss, ".manualEntryCreateForm");
     const createActions = cssRule(adminCss, ".manualEntryCreateForm .formSubmitBar");
+    const createButton = cssRule(adminCss, ".manualEntryCreateForm .formSubmitBar button");
+    const mobile = adminCss.slice(adminCss.lastIndexOf("@media (max-width: 680px)"));
+    const mobileCreateActions = cssRule(mobile, ".manualEntryCreateForm .formSubmitBar");
+    const mobileCreateButton = cssRule(mobile, ".manualEntryCreateForm .formSubmitBar button");
 
     expect(createForm).toContain("padding-bottom: 88px;");
     expect(createActions).toContain("position: fixed;");
     expect(createActions).toContain("bottom: max(12px, env(safe-area-inset-bottom));");
     expect(createActions).toContain("inset-inline:");
     expect(createActions).toContain("z-index: 5;");
+    expect(createActions).toContain("background: var(--admin-surface, #fff);");
+    expect(createButton).toContain("background: var(--admin-accent, #345c45);");
+    expect(createButton).toContain("color: #fff;");
+    expect(mobileCreateActions).toContain("grid-template-columns: minmax(0, 1fr);");
+    expect(mobileCreateButton).toContain("justify-self: center;");
+    expect(mobileCreateButton).toContain("width: min(100%, 280px);");
   });
 
   it("uses readable touch-safe invoice controls", () => {

@@ -4155,7 +4155,7 @@ button.paymentProofPreviewMedia {
   bottom: max(12px, env(safe-area-inset-bottom));
   z-index: 5;
   margin: 0;
-  background: var(--admin-surface);
+  background: var(--admin-surface, #fff);
   box-shadow: 0 8px 24px rgb(0 0 0 / 12%);
 }
 
@@ -4668,6 +4668,12 @@ button.paymentProofPreviewMedia {
   font-size: 13px;
   font-weight: 750;
   cursor: pointer;
+}
+
+.manualEntryCreateForm .formSubmitBar button {
+  border-color: var(--admin-accent, #345c45);
+  color: #fff;
+  background: var(--admin-accent, #345c45);
 }
 
 .formSubmitBar .dangerButton {
@@ -5311,6 +5317,16 @@ button.paymentProofPreviewMedia {
 
   .formSubmitBar button {
     width: 100%;
+  }
+
+  .manualEntryCreateForm .formSubmitBar {
+    grid-template-columns: minmax(0, 1fr);
+    justify-content: stretch;
+  }
+
+  .manualEntryCreateForm .formSubmitBar button {
+    width: min(100%, 280px);
+    justify-self: center;
   }
 
   .primaryAdminButton,
