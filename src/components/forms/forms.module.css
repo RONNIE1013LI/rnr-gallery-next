@@ -2954,7 +2954,7 @@
 
   .filterBackdrop {
     z-index: 109;
-    background: transparent;
+    background: rgb(15 23 42 / 16%);
   }
 
   .filterPanel {

@@ -140,7 +140,7 @@ describe("Admin form visual refinements", () => {
     expect(filterPanel).toContain("max-height: min(58dvh, 520px);");
     expect(cssRule(mobile, ".filterPanel input,\n  .filterPanel select")).toContain("box-sizing: border-box;");
     expect(filterPanel).not.toContain("height: 100dvh;");
-    expect(filterBackdrop).toContain("background: transparent;");
+    expect(filterBackdrop).toContain("background: rgb(15 23 42 / 16%);");
   });
 
   it("centres a round mobile back-to-top action without exposing it on desktop", () => {
