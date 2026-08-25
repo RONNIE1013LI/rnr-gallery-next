@@ -861,6 +861,10 @@
   .orderEntryDrawer .orderEntryDrawerPanel .orderEntryDrawerContent button {
     min-height: var(--forms-button-height-mobile);
   }
+
+  .orderEntryDrawer .orderEntryDrawerPanel .orderEntryDrawerContent a {
+    min-height: var(--forms-button-height-mobile);
+  }
 }
 
 .statsToolbar,
