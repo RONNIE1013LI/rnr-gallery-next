@@ -13,16 +13,60 @@ const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 const enabled = Boolean(testDatabaseUrl)
   && isDedicatedTestDatabase(testDatabaseUrl, process.env.DATABASE_URL);
 
+describe("migrationEntriesThroughTag", () => {
+  it("stops at the exact 0052 tag even when reconciled journal indexes have drifted", () => {
+    const entries = [
+      { idx: 49, tag: "0051_dusty_annihilus" },
+      { idx: 50, tag: "0052_next_human_robot" },
+      { idx: 51, tag: "0053_ambiguous_otto_octavius" },
+      { idx: 52, tag: "0054_order_system_historical_migration" },
+    ] as const;
+
+    expect(migrationEntriesThroughTag(entries, "0052_next_human_robot").map((entry) => entry.tag))
+      .toEqual(["0051_dusty_annihilus", "0052_next_human_robot"]);
+  });
+
+  it.each([
+    {
+      name: "missing",
+      entries: [{ idx: 49, tag: "0051_dusty_annihilus" }],
+    },
+    {
+      name: "duplicated",
+      entries: [
+        { idx: 50, tag: "0052_next_human_robot" },
+        { idx: 99, tag: "0052_next_human_robot" },
+      ],
+    },
+  ])("fails closed when the target tag is $name", ({ entries }) => {
+    expect(() => migrationEntriesThroughTag(entries, "0052_next_human_robot"))
+      .toThrow(/exactly once/);
+  });
+});
+
+function migrationEntriesThroughTag<T extends Readonly<{ tag: string }>>(
+  entries: ReadonlyArray<T>,
+  targetTag: string,
+) {
+  const targetPositions = entries.flatMap((entry, position) => (
+    entry.tag === targetTag ? [position] : []
+  ));
+  if (targetPositions.length !== 1) {
+    throw new Error(`Expected migration tag ${targetTag} exactly once, found ${targetPositions.length}`);
+  }
+  return entries.slice(0, targetPositions[0] + 1);
+}
+
 function migrationSubsetThrough0052() {
   const source = resolve("drizzle");
-  const target = mkdtempSync(join(tmpdir(), "rnr-task15-upgrade-"));
-  mkdirSync(join(target, "meta"));
   const journal = JSON.parse(readFileSync(join(source, "meta/_journal.json"), "utf8")) as {
     version: string;
     dialect: string;
     entries: ReadonlyArray<Readonly<{ idx: number; tag: string }>>;
   };
-  const entries = journal.entries.filter((entry) => entry.idx <= 52);
+  const entries = migrationEntriesThroughTag(journal.entries, "0052_next_human_robot");
+  const target = mkdtempSync(join(tmpdir(), "rnr-task15-upgrade-"));
+  mkdirSync(join(target, "meta"));
   for (const entry of entries) cpSync(join(source, `${entry.tag}.sql`), join(target, `${entry.tag}.sql`));
   writeFileSync(join(target, "meta/_journal.json"), JSON.stringify({
     version: journal.version,
