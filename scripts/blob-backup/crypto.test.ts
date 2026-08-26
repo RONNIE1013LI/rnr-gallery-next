@@ -63,4 +63,3 @@ describe("encrypted backup payload", () => {
     })).toThrow(/32 bytes/i);
   });
 });
-

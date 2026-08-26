@@ -11,7 +11,6 @@ const FORBIDDEN_FIELDS = /(?:customer|email|address|phone|originalname|filename|
 function isRecord(value: unknown): value is Record<string, unknown> {
   return !!value && typeof value === "object" && !Array.isArray(value);
 }
-
 function assertNoForbiddenFields(value: unknown): void {
   if (Array.isArray(value)) {
     for (const item of value) assertNoForbiddenFields(item);
@@ -102,4 +101,3 @@ export function assertBackupManifest(value: unknown): BackupManifest {
     entries: Object.freeze([...value.entries]),
   });
 }
-

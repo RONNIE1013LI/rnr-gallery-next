@@ -8,7 +8,6 @@ export type BackupPayloadMetadata = Readonly<{
   checksumSha256: string;
   size: number;
 }>;
-
 export type BackupManifestEntry = BackupPayloadMetadata & Readonly<{
   sourceUploadedAt: string;
   backedUpAt: string;
@@ -23,4 +22,3 @@ export type BackupManifest = Readonly<{
   category: BackupCategory;
   entries: readonly BackupManifestEntry[];
 }>;
-

@@ -29,4 +29,3 @@ launchctl bootout "gui/$(id -u)" "$target" >/dev/null 2>&1 || true
 launchctl bootstrap "gui/$(id -u)" "$target"
 launchctl enable "gui/$(id -u)/com.rnr.production-blob-backup"
 print -r -- "Production Blob backup LaunchAgent installed."
-

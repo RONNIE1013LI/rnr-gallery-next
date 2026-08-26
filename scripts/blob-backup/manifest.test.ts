@@ -58,4 +58,3 @@ describe("backup manifest", () => {
     expect(() => classifyBlobPath("unknown/object.bin")).toThrow(/unclassified/i);
   });
 });
-

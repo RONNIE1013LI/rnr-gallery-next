@@ -20,7 +20,6 @@ type EncryptMetadata = Readonly<{
 function assertKey(key: Buffer) {
   if (key.length !== 32) throw new Error("Backup encryption key must be exactly 32 bytes");
 }
-
 export function sha256Hex(bytes: Uint8Array) {
   return createHash("sha256").update(bytes).digest("hex");
 }
@@ -103,4 +102,3 @@ export function decryptBackupPayload(input: Readonly<{
   ]);
   return decodePlaintext(plaintext);
 }
-

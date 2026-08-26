@@ -72,4 +72,3 @@ describe("Vercel Blob backup source", () => {
     await expect(invalid.read("gallery/managed/example.webp")).rejects.toThrow(/unavailable/i);
   });
 });
-
