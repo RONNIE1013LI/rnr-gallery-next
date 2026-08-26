@@ -23,6 +23,12 @@ describe("Admin form visual refinements", () => {
     expect(workbenchMobile).toMatch(/\.signOutControl button,[\s\S]*?\.orderCard header button\s*\{[\s\S]*?min-height:\s*var\(--forms-button-height-mobile\);/);
   });
 
+  it("places the mobile operator actions above the Forms navigation", () => {
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+
+    expect(cssRule(mobile, ".operatorActions")).toContain("order: -1;");
+  });
+
   it("keeps mobile order cards only slightly taller than their text", () => {
     const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 680px)"));
 

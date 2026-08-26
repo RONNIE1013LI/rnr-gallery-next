@@ -3138,6 +3138,7 @@
 
   .operatorActions {
     min-height: 56px;
+    order: -1;
   }
 
   .orderCard {
