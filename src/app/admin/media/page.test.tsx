@@ -1,5 +1,10 @@
 import { render } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  declaredImageWidth,
+  generatedSrcsetDescriptors,
+  productionCandidateFor,
+} from "@/test/image-candidate-assertions";
 import AdminMediaPage from "./page";
 
 const { requireAdminPage, listAdminMedia } = vi.hoisted(() => ({
@@ -32,15 +37,16 @@ describe("admin media page", () => {
     });
   });
 
-  it("uses fixed 180px media thumbnails with density candidates", async () => {
+  it("serves a retina candidate for the measured single-column mobile thumbnail", async () => {
     const { container } = render(await AdminMediaPage());
 
     const images = [...container.querySelectorAll("img")];
     expect(images).toHaveLength(2);
     for (const image of images) {
-      expect(image).toHaveAttribute("width", "180");
-      expect(image).toHaveAttribute("height", "135");
-      expect(image).not.toHaveAttribute("sizes");
+      expect(declaredImageWidth(image, 375)).toBeCloseTo(301, 1);
+      expect(productionCandidateFor(image, 375)).toBe(640);
+      expect(generatedSrcsetDescriptors(image)).toContain("640w");
+      expect(generatedSrcsetDescriptors(image)).not.toContain("2x");
     }
   });
 });

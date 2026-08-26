@@ -3,6 +3,10 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import type { PublicGalleryItem } from "@/server/gallery/public-gallery-service";
+import {
+  declaredImageWidth,
+  productionCandidateFor,
+} from "@/test/image-candidate-assertions";
 import { selectHomepageGalleryItems } from "./homepage-gallery";
 import { HomepageV3 } from "./homepage-v3";
 import { homepageV3ImageSlots } from "./homepage-v3-images";
@@ -603,6 +607,26 @@ describe("HomepageV3", () => {
     );
   });
 
+  it("requests product and signature candidates from their measured responsive slots", () => {
+    render(<HomepageV3 registry={defaultProductRegistry} />);
+
+    const canvas = screen.getByRole("img", { name: homepageV3ImageSlots.canvasProductImage.alt });
+    const rollup = screen.getByRole("img", { name: homepageV3ImageSlots.rollupProductImage.alt });
+    const original = screen.getByRole("img", { name: homepageV3ImageSlots.signatureOriginalPhotos[0].alt });
+    const finished = screen.getByRole("img", { name: homepageV3ImageSlots.signatureFinishedArtwork.alt });
+
+    expect(declaredImageWidth(canvas, 900)).toBeCloseTo(852, 1);
+    expect(productionCandidateFor(canvas, 900)).toBe(1920);
+    expect(declaredImageWidth(canvas, 1440)).toBeCloseTo(605, 1);
+    expect(productionCandidateFor(canvas, 1440)).toBe(1920);
+    expect(declaredImageWidth(rollup, 390)).toBeCloseTo(358, 1);
+    expect(productionCandidateFor(rollup, 390)).toBe(750);
+    expect(declaredImageWidth(original, 390)).toBe(148);
+    expect(productionCandidateFor(original, 390)).toBe(320);
+    expect(declaredImageWidth(finished, 900)).toBe(560);
+    expect(productionCandidateFor(finished, 900)).toBe(1200);
+  });
+
   it("uses the approved three source photos and one 5:4 finished family artwork", () => {
     const { container } = render(<HomepageV3 registry={defaultProductRegistry} />);
     const transformation = container.querySelector("#transformation");
@@ -856,11 +880,11 @@ describe("HomepageV3", () => {
     render(<HomepageV3 registry={defaultProductRegistry} galleryItems={items} />);
 
     const expectedSizes = [
-      "(max-width: 760px) 57vw, 422px",
-      "(max-width: 760px) 28vw, 210px",
-      "(max-width: 760px) calc(100vw - 3rem), 648px",
-      "(max-width: 760px) 46vw, 320px",
-      "(max-width: 760px) 38vw, 269px",
+      "(max-width: 420px) calc(66.92vw - 2.01rem), (max-width: 760px) calc(66.92vw - 2.34rem), (max-width: 900px) calc(34.9vw - 2.414rem), (max-width: 1280px) calc(34.9vw - 2.763rem), (max-width: 1352px) calc(33.325vw - 1.402rem), 429px",
+      "(max-width: 420px) calc(33.08vw - 0.99rem), (max-width: 760px) calc(33.08vw - 1.16rem), (max-width: 900px) calc(17.253vw - 1.194rem), (max-width: 1280px) calc(17.253vw - 1.366rem), (max-width: 1352px) calc(16.474vw - 0.693rem), 212px",
+      "(max-width: 420px) calc(100vw - 2rem), (max-width: 760px) calc(100vw - 2.5rem), (max-width: 900px) calc(52.154vw - 2.608rem), (max-width: 1280px) calc(52.154vw - 3.129rem), (max-width: 1352px) calc(51.049vw - 2.094rem), 657px",
+      "(max-width: 420px) calc(54.289vw - 1.629rem), (max-width: 760px) calc(54.289vw - 1.9rem), (max-width: 900px) calc(25.976vw - 1.299rem), (max-width: 1280px) calc(25.976vw - 1.559rem), (max-width: 1352px) calc(25.219vw - 1.035rem), 325px",
+      "(max-width: 420px) calc(45.711vw - 1.371rem), (max-width: 760px) calc(45.711vw - 1.6rem), (max-width: 900px) calc(21.869vw - 1.094rem), (max-width: 1280px) calc(21.869vw - 1.312rem), (max-width: 1352px) calc(21.232vw - 0.871rem), 274px",
     ];
     const galleryImages = items.map((item) => screen.getByRole("img", {
       name: item.altText,
@@ -869,6 +893,18 @@ describe("HomepageV3", () => {
     galleryImages.forEach((image, index) => {
       expect(image).toHaveAttribute("sizes", expectedSizes[index]);
     });
+
+    const widthsAt900 = galleryImages.map((image) => declaredImageWidth(image, 900));
+    expect(widthsAt900).toEqual([
+      expect.closeTo(275.48, 1),
+      expect.closeTo(136.19, 1),
+      expect.closeTo(427.66, 1),
+      expect.closeTo(213.01, 1),
+      expect.closeTo(179.33, 1),
+    ]);
+    expect(galleryImages.map((image) => productionCandidateFor(image, 900))).toEqual([
+      640, 320, 1080, 480, 384,
+    ]);
 
     const source = readFileSync("src/components/homepage-v3.tsx", "utf8");
     expect(source).toMatch(
@@ -891,6 +927,6 @@ describe("HomepageV3", () => {
     render(<HomepageV3 registry={defaultProductRegistry} galleryItems={[graveCover]} />);
 
     expect(screen.getByRole("img", { name: graveCover.altText }))
-      .toHaveAttribute("sizes", "(max-width: 760px) 46vw, 320px");
+      .toHaveAttribute("sizes", expect.stringContaining("(max-width: 900px)"));
   });
 });

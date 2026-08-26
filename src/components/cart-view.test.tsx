@@ -2,6 +2,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { calculateFixedPackage } from "@/domain/pricing/calculate-fixed-package";
 import type { CartItem } from "@/domain/cart/types";
+import { generatedSrcsetDescriptors } from "@/test/image-candidate-assertions";
 import { CartView } from "./cart-view";
 
 const analytics = vi.hoisted(() => ({
@@ -241,6 +242,7 @@ describe("CartView", () => {
     expect(thumbnail).toHaveAttribute("width", "96");
     expect(thumbnail).toHaveAttribute("height", "96");
     expect(thumbnail).not.toHaveAttribute("sizes");
+    expect(generatedSrcsetDescriptors(thumbnail as HTMLElement)).toEqual(["1x", "2x"]);
     expect(screen.getByText("A4 — 29.7 × 21 cm")).toBeInTheDocument();
     expect(screen.getByText("Send Photos After Ordering")).toBeInTheDocument();
     expect(screen.getByText("Production completion date")).toBeInTheDocument();

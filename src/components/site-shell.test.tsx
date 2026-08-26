@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { generatedSrcsetDescriptors } from "@/test/image-candidate-assertions";
 import { SiteFooter } from "./site-footer";
 import { SiteHeader } from "./site-header";
 
@@ -33,6 +34,7 @@ describe("site shell", () => {
     expect(homeLink.querySelector("img")).toHaveAttribute("width", "96");
     expect(homeLink.querySelector("img")).toHaveAttribute("height", "96");
     expect(homeLink.querySelector("img")).not.toHaveAttribute("sizes");
+    expect(generatedSrcsetDescriptors(homeLink.querySelector("img")!)).toEqual(["1x", "2x"]);
     expect(screen.getByRole("navigation", { name: /primary/i })).toBeVisible();
     expect(screen.getAllByRole("link", { name: "Shop" })[0]).toHaveAttribute(
       "href",

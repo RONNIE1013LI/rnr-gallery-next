@@ -302,7 +302,7 @@ export function ProductConfigurator({
             alt={previewAlt}
             fill
             priority
-            sizes="(max-width: 650px) calc(100vw - 2.5rem), (max-width: 820px) 92vw, (max-width: 1103px) calc(87vw - 20rem), (max-width: 1565px) 58vw, 907px"
+            sizes="(max-width: 340px) calc(100vw - 1.7rem), (max-width: 500px) 92vw, (max-width: 650px) calc(100vw - 2.5rem), (max-width: 820px) 92vw, (max-width: 1103px) calc(87vw - 20rem), (max-width: 1565px) 58vw, 907px"
           />
           <button
             ref={previewZoomTriggerRef}
@@ -629,7 +629,7 @@ export function ProductConfigurator({
                   alt={design.altText}
                   width={design.width}
                   height={design.height}
-                  sizes="(max-width: 650px) calc((100vw - 3.25rem) / 2), (max-width: 767px) calc(46vw - 0.375rem), (max-width: 1020px) 29.74vw, (max-width: 1565px) 21.95vw, 345px"
+                  sizes="(max-width: 340px) calc((100vw - 2.45rem) / 2), (max-width: 500px) calc(46vw - 0.375rem), (max-width: 650px) calc((100vw - 3.25rem) / 2), (max-width: 767px) calc(46vw - 0.375rem), (max-width: 1020px) 29.74vw, (max-width: 1565px) 21.95vw, 345px"
                 />
               </Link>
             ))}
