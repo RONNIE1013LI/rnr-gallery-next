@@ -13,6 +13,10 @@
       "schedule": "17 * * * *"
     },
     {
+      "path": "/api/internal/payment-proofs/cleanup",
+      "schedule": "29 * * * *"
+    },
+    {
       "path": "/api/internal/reply-assistant/turn-recovery",
       "schedule": "* * * * *"
     },
