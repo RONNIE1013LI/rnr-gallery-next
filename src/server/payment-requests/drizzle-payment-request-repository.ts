@@ -16,6 +16,7 @@ import {
   paymentLedgerEntries,
   paymentRequestNotificationOutbox,
   paymentRequests,
+  user,
   webhookEvents,
 } from "@/server/db/schema";
 import { enqueueInternalNotifications } from "@/server/notifications/drizzle-internal-notification-outbox-repository";
@@ -65,7 +66,11 @@ export class PaymentRequestNotFoundError extends Error {
   }
 }
 
-function requestRecord(row: RequestRow, orderNumber: string | null): PaymentRequestRecord {
+function requestRecord(
+  row: RequestRow,
+  orderNumber: string | null,
+  createdByName: string | null = null,
+): PaymentRequestRecord {
   return Object.freeze({
     id: row.id,
     requestNumber: row.requestNumber,
@@ -83,6 +88,7 @@ function requestRecord(row: RequestRow, orderNumber: string | null): PaymentRequ
     statusReason: row.statusReason,
     expiresAt: row.expiresAt,
     internalNote: row.internalNote,
+    createdByName,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   });
@@ -511,10 +517,16 @@ export function createDrizzlePaymentRequestRepository(
         const rows = await transaction.select({
           request: paymentRequests,
           orderNumber: orders.orderNumber,
+          createdByName: user.name,
         }).from(paymentRequests)
           .leftJoin(orders, eq(orders.id, paymentRequests.orderId))
+          .leftJoin(user, eq(user.id, paymentRequests.createdBy))
           .orderBy(desc(paymentRequests.createdAt), desc(paymentRequests.id));
-        return Object.freeze(rows.map((row) => requestRecord(row.request, row.orderNumber)));
+        return Object.freeze(rows.map((row) => requestRecord(
+          row.request,
+          row.orderNumber,
+          row.createdByName,
+        )));
       });
     },
 
@@ -524,11 +536,13 @@ export function createDrizzlePaymentRequestRepository(
         const [row] = await transaction.select({
           request: paymentRequests,
           orderNumber: orders.orderNumber,
+          createdByName: user.name,
         }).from(paymentRequests)
           .leftJoin(orders, eq(orders.id, paymentRequests.orderId))
+          .leftJoin(user, eq(user.id, paymentRequests.createdBy))
           .where(eq(paymentRequests.id, id))
           .limit(1);
-        return row ? requestRecord(row.request, row.orderNumber) : null;
+        return row ? requestRecord(row.request, row.orderNumber, row.createdByName) : null;
       });
     },
 

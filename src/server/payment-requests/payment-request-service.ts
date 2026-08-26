@@ -45,6 +45,7 @@ function adminDto(request: PaymentRequestRecord): AdminPaymentRequestDTO {
     ...(request.customerEmail ? { customerEmail: request.customerEmail } : {}),
     ...(request.internalNote ? { internalNote: request.internalNote } : {}),
     ...(request.statusReason ? { statusReason: request.statusReason } : {}),
+    ...(request.createdByName ? { createdByName: request.createdByName } : {}),
     createdAt: request.createdAt.toISOString(),
     updatedAt: request.updatedAt.toISOString(),
   });

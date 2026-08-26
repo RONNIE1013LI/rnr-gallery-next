@@ -18,6 +18,7 @@ export default async function AdminPaymentRequestPage({ params }: Readonly<{ par
       {request.orderNumber ? <div><dt>Order</dt><dd><Link href={`/admin/orders/${request.orderId}`}>{request.orderNumber}</Link></dd></div> : null}
       <div><dt>Fixed amount</dt><dd>{formatMarketMoney(request.amountCents, request.currency)}</dd></div>
       <div><dt>Payment methods</dt><dd>{request.methods.map((method) => method === "card" ? "Card" : "Afterpay").join(", ")}</dd></div>
+      <div><dt>Created by</dt><dd>{request.createdByName ?? "Unknown staff"}</dd></div>
       {request.expiresAt ? <div><dt>Expires</dt><dd>{new Intl.DateTimeFormat("en-NZ", { dateStyle: "medium", timeStyle: "short" }).format(new Date(request.expiresAt))}</dd></div> : null}
       {request.customerName ? <div><dt>Customer</dt><dd>{request.customerName}</dd></div> : null}
       {request.customerEmail ? <div><dt>Email</dt><dd>{request.customerEmail}</dd></div> : null}

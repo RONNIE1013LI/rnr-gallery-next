@@ -26,6 +26,7 @@ export type AdminPaymentRequestDTO = PublicPaymentRequestDTO & Readonly<{
   customerEmail?: string;
   internalNote?: string;
   statusReason?: string;
+  createdByName?: string;
   createdAt: string;
   updatedAt: string;
 }>;

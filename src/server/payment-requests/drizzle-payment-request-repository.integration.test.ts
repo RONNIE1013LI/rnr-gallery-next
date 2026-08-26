@@ -354,10 +354,14 @@ describe("payment request balance transactions", () => {
       id: created.id,
       orderId: order.id,
       orderNumber: order.orderNumber,
+      createdByName: "Payment Request Admin",
       amountCents: 10_000,
     });
     await expect(repository.listAdminRequests()).resolves.toEqual(
-      expect.arrayContaining([expect.objectContaining({ id: created.id })]),
+      expect.arrayContaining([expect.objectContaining({
+        id: created.id,
+        createdByName: "Payment Request Admin",
+      })]),
     );
   });
 

@@ -22,6 +22,7 @@ const request: PaymentRequestRecord = Object.freeze({
   statusReason: null,
   expiresAt: null,
   internalNote: "Private admin note",
+  createdByName: "Payment Request Admin",
   createdAt: new Date("2026-08-18T00:00:00.000Z"),
   updatedAt: new Date("2026-08-18T00:00:00.000Z"),
 });
@@ -111,6 +112,7 @@ describe("payment request service", () => {
     expect(result).not.toHaveProperty("customerName");
     expect(result).not.toHaveProperty("customerEmail");
     expect(result).not.toHaveProperty("internalNote");
+    expect(result).not.toHaveProperty("createdByName");
     expect(result).not.toHaveProperty("publicTokenDigest");
   });
 
@@ -143,8 +145,16 @@ describe("payment request service", () => {
 
     const [listed] = await service.listAdmin();
     const detail = await service.adminById(request.id);
-    expect(listed).toMatchObject({ id: request.id, customerEmail: request.customerEmail });
-    expect(detail).toMatchObject({ id: request.id, internalNote: request.internalNote });
+    expect(listed).toMatchObject({
+      id: request.id,
+      customerEmail: request.customerEmail,
+      createdByName: "Payment Request Admin",
+    });
+    expect(detail).toMatchObject({
+      id: request.id,
+      internalNote: request.internalNote,
+      createdByName: "Payment Request Admin",
+    });
     expect(listed).not.toHaveProperty("publicTokenDigest");
     expect(detail).not.toHaveProperty("publicTokenDigest");
   });

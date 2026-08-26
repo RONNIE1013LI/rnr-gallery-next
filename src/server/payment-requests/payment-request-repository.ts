@@ -30,6 +30,7 @@ export type PaymentRequestRecord = Readonly<{
   statusReason: string | null;
   expiresAt: Date | null;
   internalNote: string | null;
+  createdByName: string | null;
   createdAt: Date;
   updatedAt: Date;
 }>;
