@@ -9,6 +9,43 @@ import { verifyMetaSignature } from "./signature";
 
 type IngestResult = Awaited<ReturnType<CustomerServiceRepository["ingestConversationEvent"]>>;
 
+const META_WEBHOOK_MAX_BODY_BYTES = 256 * 1024;
+
+async function readWebhookBody(request: Request) {
+  const declaredLength = request.headers.get("content-length");
+  if (declaredLength !== null) {
+    const bytes = Number(declaredLength);
+    if (Number.isFinite(bytes) && bytes > META_WEBHOOK_MAX_BODY_BYTES) return null;
+  }
+
+  if (!request.body) return new Uint8Array();
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let totalBytes = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (totalBytes + value.byteLength > META_WEBHOOK_MAX_BODY_BYTES) {
+        await reader.cancel("Payload too large").catch(() => undefined);
+        return null;
+      }
+      chunks.push(value);
+      totalBytes += value.byteLength;
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  const body = new Uint8Array(totalBytes);
+  let offset = 0;
+  for (const chunk of chunks) {
+    body.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return body;
+}
+
 type WebhookConfig = Readonly<{
   enabled: boolean;
   metaAppSecret: string;
@@ -66,7 +103,8 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
 
     async POST(request: Request) {
       if (!dependencies.config.enabled) return new Response("Disabled", { status: 503 });
-      const rawBody = new Uint8Array(await request.arrayBuffer());
+      const rawBody = await readWebhookBody(request);
+      if (rawBody === null) return new Response("Payload Too Large", { status: 413 });
       if (!verifyMetaSignature({
         rawBody,
         signatureHeader: request.headers.get("x-hub-signature-256"),

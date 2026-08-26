@@ -103,6 +103,47 @@ describe("Meta webhook handler", () => {
     adapterFactory.mockRestore();
   });
 
+  it("rejects a declared oversized body before reading or persisting it", async () => {
+    const current = setup();
+    const response = await current.handlers.POST(new Request(
+      "https://example.test/api/meta/webhook",
+      {
+        method: "POST",
+        body: "{}",
+        headers: {
+          "content-length": "300000",
+          "x-hub-signature-256": "sha256=00",
+        },
+      },
+    ));
+
+    expect(response.status).toBe(413);
+    expect(current.ingest).not.toHaveBeenCalled();
+  });
+
+  it("stops a streaming body that exceeds the limit without Content-Length", async () => {
+    const current = setup();
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new Uint8Array(200_000));
+        controller.enqueue(new Uint8Array(100_000));
+        controller.close();
+      },
+    });
+    const response = await current.handlers.POST(new Request(
+      "https://example.test/api/meta/webhook",
+      {
+        method: "POST",
+        body,
+        headers: { "x-hub-signature-256": "sha256=00" },
+        duplex: "half",
+      } as RequestInit & { duplex: "half" },
+    ));
+
+    expect(response.status).toBe(413);
+    expect(current.ingest).not.toHaveBeenCalled();
+  });
+
   it("persists staff echoes as context without scheduling a draft", async () => {
     const current = setup({ status: "context_only" }, true);
     const echo = messagePayload({ is_echo: true });
