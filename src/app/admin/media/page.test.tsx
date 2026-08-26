@@ -42,9 +42,21 @@ describe("admin media page", () => {
 
     const images = [...container.querySelectorAll("img")];
     expect(images).toHaveLength(2);
+    const viewportCases = [
+      { viewport: 375, width: 301, candidate: 640 },
+      { viewport: 390, width: 151, candidate: 320 },
+      { viewport: 768, width: 159.48, candidate: 320 },
+      { viewport: 900, width: 190.5, candidate: 384 },
+      { viewport: 1180, width: 153.44, candidate: 320 },
+      { viewport: 1440, width: 166.27, candidate: 384 },
+      { viewport: 1920, width: 159, candidate: 320 },
+    ] as const;
+
     for (const image of images) {
-      expect(declaredImageWidth(image, 375)).toBeCloseTo(301, 1);
-      expect(productionCandidateFor(image, 375)).toBe(640);
+      for (const { viewport, width, candidate } of viewportCases) {
+        expect(declaredImageWidth(image, viewport)).toBeCloseTo(width, 1);
+        expect(productionCandidateFor(image, viewport)).toBe(candidate);
+      }
       expect(generatedSrcsetDescriptors(image)).toContain("640w");
       expect(generatedSrcsetDescriptors(image)).not.toContain("2x");
     }
