@@ -41,3 +41,104 @@ export function assessCaseMemoryEligibility(input: Readonly<{
     ? { eligible: false as const, status: "excluded" as const, exclusionCodes: Object.freeze(exclusionCodes) }
     : { eligible: true as const, status: "pending_review" as const, exclusionCodes: Object.freeze([] as string[]) });
 }
+
+type AutoReusableCaseMemory = Readonly<{
+  id: string;
+  conversationKey: string;
+  intent: string;
+  riskClass: "low" | "medium";
+  sourceConfidence: "medium" | "high";
+  editClassification: string;
+  policyReferences: readonly string[];
+  productCategory: string | null;
+  market: "NZ" | "AU" | "other" | "unknown";
+  normalizedSituation: string;
+  humanFinalReply: string;
+  exclusionCodes: readonly string[];
+}>;
+
+const AUTO_REUSABLE_INTENTS = new Set([
+  "tone_adjustment",
+  "product_differences",
+  "quote_information_collection",
+  "design_process",
+]);
+
+const AUTO_REUSABLE_EDIT_CLASSIFICATIONS = new Set([
+  "accepted_unchanged",
+  "edited_light",
+  "edited_significant",
+  "ai_ignored",
+  "independent_reply",
+]);
+
+const SIMILARITY_STOP_WORDS = new Set([
+  "a", "about", "and", "are", "for", "how", "i", "is", "it", "of", "or", "the", "to", "we", "what", "with", "you", "your",
+]);
+
+function reusableTokens(value: string) {
+  return new Set((value.toLowerCase().match(/[a-z0-9]+/g) ?? [])
+    .filter((token) => token.length > 1 && !SIMILARITY_STOP_WORDS.has(token)));
+}
+
+function diceSimilarity(left: string, right: string) {
+  const leftTokens = reusableTokens(left);
+  const rightTokens = reusableTokens(right);
+  if (!leftTokens.size || !rightTokens.size) return 0;
+  const overlap = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  return (2 * overlap) / (leftTokens.size + rightTokens.size);
+}
+
+function isSafeAutoReusableCase(memory: AutoReusableCaseMemory) {
+  return memory.riskClass === "low"
+    && memory.sourceConfidence === "high"
+    && AUTO_REUSABLE_INTENTS.has(memory.intent)
+    && AUTO_REUSABLE_EDIT_CLASSIFICATIONS.has(memory.editClassification)
+    && memory.policyReferences.length > 0
+    && memory.exclusionCodes.length === 0;
+}
+
+function reuseScope(memory: AutoReusableCaseMemory) {
+  return JSON.stringify([
+    memory.intent,
+    memory.productCategory,
+    memory.market,
+    [...memory.policyReferences].sort(),
+  ]);
+}
+
+export function selectAutoReusableCaseMemoryIds(
+  memories: readonly AutoReusableCaseMemory[],
+  minimumDistinctConversations = 3,
+) {
+  if (!Number.isSafeInteger(minimumDistinctConversations) || minimumDistinctConversations < 3) {
+    throw new Error("auto_reusable_case_threshold_invalid");
+  }
+  const selected = new Set<string>();
+  const groups = new Map<string, AutoReusableCaseMemory[]>();
+  for (const memory of memories.filter(isSafeAutoReusableCase)) {
+    const key = reuseScope(memory);
+    groups.set(key, [...(groups.get(key) ?? []), memory]);
+  }
+  for (const group of groups.values()) {
+    const remaining = [...group];
+    while (remaining.length) {
+      const anchor = remaining.shift()!;
+      const cluster = [anchor];
+      for (let index = remaining.length - 1; index >= 0; index -= 1) {
+        const candidate = remaining[index];
+        if (
+          diceSimilarity(anchor.normalizedSituation, candidate.normalizedSituation) >= 0.65
+          && diceSimilarity(anchor.humanFinalReply, candidate.humanFinalReply) >= 0.65
+        ) {
+          cluster.push(candidate);
+          remaining.splice(index, 1);
+        }
+      }
+      if (new Set(cluster.map((memory) => memory.conversationKey)).size >= minimumDistinctConversations) {
+        cluster.forEach((memory) => selected.add(memory.id));
+      }
+    }
+  }
+  return Object.freeze(memories.map((memory) => memory.id).filter((id) => selected.has(id)));
+}

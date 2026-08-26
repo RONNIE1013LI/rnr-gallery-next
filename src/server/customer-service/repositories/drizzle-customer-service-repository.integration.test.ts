@@ -6071,7 +6071,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       .resolves.toEqual({ status: "unmatched" });
   });
 
-  it("creates pending learning candidates and promotes source cases only after admin approval", async () => {
+  it("automatically reuses repeated safe cases while formal learning changes still require admin approval", async () => {
     await activateFacebookPilot("learning-candidate-review");
     for (let index = 0; index < 3; index += 1) {
       const conversationHash = `${70 + index}`.repeat(32);
@@ -6103,28 +6103,22 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       now: new Date("2026-08-18T00:04:00.000Z"), groupWindowMs: 90_000, limit: 10,
       knowledgeVersion: "test",
     });
-    await database.insert(user).values({
-      id: "phase36-reviewer", name: "Phase 36 Reviewer", email: "phase36-reviewer@example.test",
-      emailVerified: true, createdAt: new Date(), updatedAt: new Date(),
-    }).onConflictDoNothing();
-    const pending = await database.select().from(customerServiceCaseMemories);
-    expect(pending.every((memory) => memory.eligibilityStatus === "pending_review")).toBe(true);
-    for (const memory of pending) {
-      await repository.decideCaseMemory({
-        caseMemoryId: memory.id, reviewerUserId: "phase36-reviewer", action: "approve",
-        reason: null, now: new Date("2026-08-18T00:04:30.000Z"),
-      });
-    }
+    const reusable = await database.select().from(customerServiceCaseMemories);
+    expect(reusable).toHaveLength(3);
+    expect(reusable.every((memory) => memory.eligibilityStatus === "approved_reusable")).toBe(true);
+    expect(reusable.every((memory) => memory.approvedByUserId === null && memory.decidedAt !== null)).toBe(true);
+    const firstDecisionTimes = reusable.map((memory) => memory.decidedAt?.toISOString());
+    await expect(repository.recoverDueHumanReplies({
+      now: new Date("2026-08-18T00:06:00.000Z"), groupWindowMs: 90_000, limit: 10,
+      knowledgeVersion: "test",
+    })).resolves.toEqual({ selected: 0, matched: 0, unmatched: 0 });
+    const afterRetry = await database.select().from(customerServiceCaseMemories)
+      .orderBy(asc(customerServiceCaseMemories.createdAt));
+    expect(afterRetry.map((memory) => memory.decidedAt?.toISOString())).toEqual(firstDecisionTimes);
     await expect(repository.refreshLearningCandidates({ minimumMatchedReplies: 3 }))
       .resolves.toMatchObject({ checkpoint: 3, created: 1 });
     const [candidate] = await database.select().from(customerServiceLearningCandidates);
     expect(candidate).toMatchObject({ status: "pending", evidenceCount: 3 });
-    await expect(repository.decideLearningCandidate({
-      candidateId: candidate.id, reviewerUserId: "phase36-reviewer", action: "approve",
-      approvedText: null, reason: null, now: new Date("2026-08-18T00:05:00.000Z"),
-    })).resolves.toEqual({ status: "approved" });
-    const approved = await database.select().from(customerServiceCaseMemories);
-    expect(approved.every((memory) => memory.eligibilityStatus === "approved_reusable")).toBe(true);
   });
 
   it("lists sanitized pending case memories and rejects them independently from learning proposals", async () => {

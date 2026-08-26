@@ -49,7 +49,7 @@ import { classifyAcknowledgement } from "../conversation/acknowledgement";
 import { canAppendHumanReply } from "../conversation/human-reply-grouping";
 import { chooseHumanReplyTurn } from "../learning/human-reply-matcher";
 import { classifyHumanEdit } from "../learning/edit-classifier";
-import { assessCaseMemoryEligibility } from "../learning/case-memory";
+import { assessCaseMemoryEligibility, selectAutoReusableCaseMemoryIds } from "../learning/case-memory";
 import { sanitizeCaseMemoryText } from "../learning/case-memory-sanitizer";
 import { scoreCaseMemory } from "../learning/case-retrieval";
 import { buildLearningSummary } from "../learning/learning-summary";
@@ -628,6 +628,38 @@ export function createDrizzleCustomerServiceRepository(
         sql`${customerServiceConversationEvents.receivedAt} >= ${turn.lastEventAt}`,
       )).limit(1);
     return Boolean(reply);
+  }
+
+  async function promoteSafeRepeatedCaseMemories(decidedAt: Date) {
+    const pending = await database.select({
+      id: customerServiceCaseMemories.id,
+      conversationKey: customerServiceHumanReplyMatches.conversationId,
+      intent: customerServiceCaseMemories.intent,
+      riskClass: customerServiceCaseMemories.riskClass,
+      sourceConfidence: customerServiceCaseMemories.sourceConfidence,
+      editClassification: customerServiceCaseMemories.editClassification,
+      policyReferences: customerServiceCaseMemories.policyReferences,
+      productCategory: customerServiceCaseMemories.productCategory,
+      market: customerServiceCaseMemories.market,
+      normalizedSituation: customerServiceCaseMemories.normalizedSituation,
+      humanFinalReply: customerServiceCaseMemories.humanFinalReply,
+      exclusionCodes: customerServiceCaseMemories.exclusionCodes,
+    }).from(customerServiceCaseMemories).innerJoin(
+      customerServiceHumanReplyMatches,
+      eq(customerServiceHumanReplyMatches.id, customerServiceCaseMemories.humanReplyMatchId),
+    ).where(eq(customerServiceCaseMemories.eligibilityStatus, "pending_review"))
+      .orderBy(asc(customerServiceCaseMemories.createdAt))
+      .limit(1_000);
+    const reusableIds = selectAutoReusableCaseMemoryIds(pending);
+    if (!reusableIds.length) return 0;
+    const promoted = await database.update(customerServiceCaseMemories).set({
+      eligibilityStatus: "approved_reusable",
+      decidedAt,
+    }).where(and(
+      inArray(customerServiceCaseMemories.id, [...reusableIds]),
+      eq(customerServiceCaseMemories.eligibilityStatus, "pending_review"),
+    )).returning({ id: customerServiceCaseMemories.id });
+    return promoted.length;
   }
 
   async function settleImageJobBudget(
@@ -3927,6 +3959,7 @@ export function createDrizzleCustomerServiceRepository(
           }
         }
       }
+      await promoteSafeRepeatedCaseMemories(input.now);
       return { selected: due.length, matched, unmatched };
     },
 
