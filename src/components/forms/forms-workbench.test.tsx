@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { parseFormWorkbenchQuery } from "@/server/forms/forms-workbench-service";
@@ -21,8 +21,92 @@ describe("FormsWorkbench", () => {
   });
 
   afterEach(() => {
+    vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+  });
+
+  it("refreshes only the visible order data on a five-second interval", async () => {
+    vi.useFakeTimers();
+    const updatedRow = {
+      ...formOrderRow,
+      customerName: "Live update customer",
+      reference: "07189",
+    };
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [updatedRow],
+      total: 1,
+      page: 1,
+      pageSize: 100,
+      pageCount: 1,
+    })));
+    vi.stubGlobal("fetch", request);
+
+    render(<FormsWorkbench
+      result={{ items: [formOrderRow], total: 1, page: 1, pageSize: 100, pageCount: 1 }}
+      query={parseFormWorkbenchQuery({ q: "07188" })}
+      canExport
+      canViewFinance
+    />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(4_999);
+    });
+    expect(request).not.toHaveBeenCalled();
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(1);
+    });
+
+    expect(request).toHaveBeenCalledWith(
+      "/api/forms/jobs?q=07188",
+      expect.objectContaining({ cache: "no-store" }),
+    );
+    expect(screen.getAllByText("Live update customer")).not.toHaveLength(0);
+    expect(screen.queryByText("Elena Lasalo")).not.toBeInTheDocument();
+  });
+
+  it("pauses refresh while hidden and refreshes immediately when visible again", async () => {
+    vi.useFakeTimers();
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "hidden",
+    });
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [formOrderRow],
+      total: 1,
+      page: 1,
+      pageSize: 100,
+      pageCount: 1,
+    })));
+    vi.stubGlobal("fetch", request);
+
+    render(<FormsWorkbench
+      result={{ items: [formOrderRow], total: 1, page: 1, pageSize: 100, pageCount: 1 }}
+      query={parseFormWorkbenchQuery({})}
+      canExport
+      canViewFinance
+    />);
+
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10_000);
+    });
+    expect(request).not.toHaveBeenCalled();
+
+    Object.defineProperty(document, "visibilityState", {
+      configurable: true,
+      value: "visible",
+    });
+    await act(async () => {
+      document.dispatchEvent(new Event("visibilitychange"));
+      await Promise.resolve();
+    });
+
+    expect(request).toHaveBeenCalledTimes(1);
   });
 
   it("renders source-style list controls, table, mobile cards and footer", () => {

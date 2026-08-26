@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { LuArrowUp, LuChevronRight, LuSearch } from "react-icons/lu";
 
 import type {
@@ -23,6 +23,7 @@ import type { InvoiceBusiness } from "@/server/invoices/invoice-business";
 import styles from "./forms.module.css";
 
 const MOBILE_BACK_TO_TOP_THRESHOLD = 600;
+const ORDER_REFRESH_INTERVAL_MS = 5_000;
 
 export type FormsOrderEntryData = Readonly<{
   assignees: readonly Readonly<{ id: string; name: string; email: string; role: "admin" | "staff" | "form_staff" }>[];
@@ -97,14 +98,25 @@ export function FormsWorkbench({
   const [showColumnStats, setShowColumnStats] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
+  const refreshQuery = queryString(query, result.page);
+  const refreshEndpoint = `/api/forms/jobs${refreshQuery ? `?${refreshQuery}` : ""}`;
+  const [refreshedResult, setRefreshedResult] = useState<Readonly<{
+    endpoint: string;
+    source: FormWorkbenchResult;
+    result: FormWorkbenchResult;
+  }> | null>(null);
+  const activeRefresh = useRef<AbortController | null>(null);
+  const currentResult = refreshedResult?.endpoint === refreshEndpoint && refreshedResult.source === result
+    ? refreshedResult.result
+    : result;
   const visibleStats = {
-    urgent: result.items.filter((row) => row.urgent).length,
-    completed: result.items.filter((row) => row.milestones.completed).length,
-    post: result.items.filter((row) => row.deliveryMethod === "post").length,
-    pickup: result.items.filter((row) => row.deliveryMethod === "pickup").length,
-    payable: result.items.reduce((sum, row) => sum + (row.finance?.amountPayableCents ?? 0), 0),
-    paid: result.items.reduce((sum, row) => sum + (row.finance?.amountPaidCents ?? 0), 0),
-    owing: result.items.reduce((sum, row) => sum + (row.finance?.amountOwingCents ?? 0), 0),
+    urgent: currentResult.items.filter((row) => row.urgent).length,
+    completed: currentResult.items.filter((row) => row.milestones.completed).length,
+    post: currentResult.items.filter((row) => row.deliveryMethod === "post").length,
+    pickup: currentResult.items.filter((row) => row.deliveryMethod === "pickup").length,
+    payable: currentResult.items.reduce((sum, row) => sum + (row.finance?.amountPayableCents ?? 0), 0),
+    paid: currentResult.items.reduce((sum, row) => sum + (row.finance?.amountPaidCents ?? 0), 0),
+    owing: currentResult.items.reduce((sum, row) => sum + (row.finance?.amountOwingCents ?? 0), 0),
   };
 
   function open(jobId: string) {
@@ -116,9 +128,51 @@ export function FormsWorkbench({
   }
 
   function closeOrderEntry() {
-    const next = queryString(query, result.page);
+    const next = queryString(query, currentResult.page);
     router.replace(`/order-system${next ? `?${next}` : ""}`);
   }
+
+  const refreshOrders = useCallback(async () => {
+    if (document.visibilityState === "hidden") return;
+
+    activeRefresh.current?.abort();
+    const controller = new AbortController();
+    activeRefresh.current = controller;
+
+    try {
+      const response = await fetch(refreshEndpoint, {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
+      if (!response.ok) return;
+
+      const nextResult = await response.json() as FormWorkbenchResult;
+      if (!controller.signal.aborted) {
+        setRefreshedResult({ endpoint: refreshEndpoint, source: result, result: nextResult });
+      }
+    } catch {
+      // Polling is best-effort; the next interval retries without interrupting the form UI.
+    } finally {
+      if (activeRefresh.current === controller) activeRefresh.current = null;
+    }
+  }, [refreshEndpoint, result]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      void refreshOrders();
+    }, ORDER_REFRESH_INTERVAL_MS);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") void refreshOrders();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+      activeRefresh.current?.abort();
+    };
+  }, [refreshOrders]);
 
   useEffect(() => {
     function updateBackToTopVisibility() {
@@ -177,11 +231,11 @@ export function FormsWorkbench({
       </div>
 
       <div className={styles.listBody} role="region" aria-label="Order results">
-        {result.items.length ? (
+        {currentResult.items.length ? (
           <>
             <FormsOrderTable
-              rows={result.items}
-              startIndex={(result.page - 1) * query.pageSize}
+              rows={currentResult.items}
+              startIndex={(currentResult.page - 1) * query.pageSize}
               canViewFinance={canViewFinance}
               canUpdate={canUpdate}
               canUpdateFinance={canUpdateFinance}
@@ -189,9 +243,9 @@ export function FormsWorkbench({
               canUpdateDeliveryStatus={canUpdateDeliveryStatus}
               assignees={assignees}
               onOpen={open}
-              onSaved={() => router.refresh()}
+              onSaved={() => void refreshOrders()}
             />
-            <FormsOrderCards rows={result.items} startIndex={(result.page - 1) * query.pageSize} canViewFinance={canViewFinance} onOpen={open} />
+            <FormsOrderCards rows={currentResult.items} startIndex={(currentResult.page - 1) * query.pageSize} canViewFinance={canViewFinance} onOpen={open} />
           </>
         ) : (
           <div className={styles.formsEmptyState}>
@@ -204,7 +258,7 @@ export function FormsWorkbench({
         {showColumnStats ? <section className={styles.columnStatsPanel} aria-label="Visible column statistics">
           <header><strong>Visible rows</strong><span>Current page only · use Custom stats for all matching orders</span></header>
           <dl>
-            <div><dt>Displayed</dt><dd>{result.items.length}</dd></div>
+            <div><dt>Displayed</dt><dd>{currentResult.items.length}</dd></div>
             <div><dt>Urgent</dt><dd>{visibleStats.urgent}</dd></div>
             <div><dt>Completed</dt><dd>{visibleStats.completed}</dd></div>
             <div><dt>Post</dt><dd>{visibleStats.post}</dd></div>
@@ -215,13 +269,13 @@ export function FormsWorkbench({
       </div>
 
       <footer className={styles.listFooter}>
-        <strong>{result.total} {result.total === 1 ? "order" : "orders"}</strong>
+        <strong>{currentResult.total} {currentResult.total === 1 ? "order" : "orders"}</strong>
         <button type="button" onClick={() => setShowColumnStats((visible) => !visible)}>Column stats</button>
-        {showColumnStats ? <span className={styles.columnStatsSummary}>Showing {result.items.length} of {result.total}</span> : null}
+        {showColumnStats ? <span className={styles.columnStatsSummary}>Showing {currentResult.items.length} of {currentResult.total}</span> : null}
         <nav aria-label="Order pages">
-          {result.page > 1 ? <Link href={`/order-system?${queryString(query, result.page - 1)}`}>Previous</Link> : <span />}
-          <span>{result.pageCount ? `${result.page} / ${result.pageCount}` : "0 / 0"}</span>
-          {result.page < result.pageCount ? <Link href={`/order-system?${queryString(query, result.page + 1)}`}>Next</Link> : <span />}
+          {currentResult.page > 1 ? <Link href={`/order-system?${queryString(query, currentResult.page - 1)}`}>Previous</Link> : <span />}
+          <span>{currentResult.pageCount ? `${currentResult.page} / ${currentResult.pageCount}` : "0 / 0"}</span>
+          {currentResult.page < currentResult.pageCount ? <Link href={`/order-system?${queryString(query, currentResult.page + 1)}`}>Next</Link> : <span />}
         </nav>
         <div className={styles.perPageControl}>
           <label>
@@ -268,7 +322,7 @@ export function FormsWorkbench({
         canUpdateDeliveryStatus={canUpdateDeliveryStatus}
         canDeleteFiles={canDeleteFiles}
         canDeleteJob={canDeleteJobs}
-        onSaved={() => router.refresh()}
+        onSaved={() => void refreshOrders()}
       /> : null}
       {orderEntry ? <FormsOrderEntryDrawer data={orderEntry} onClose={closeOrderEntry} /> : null}
     </section>
