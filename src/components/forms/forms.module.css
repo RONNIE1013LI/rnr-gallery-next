@@ -3149,8 +3149,13 @@
 
   .operatorActions .signOutControl button,
   .operatorActions .orderEntry {
+    display: inline-flex;
     height: 30px;
     min-height: 30px;
+    align-items: center;
+    justify-content: center;
+    padding-block: 0;
+    line-height: 1;
   }
 
   .orderCard {

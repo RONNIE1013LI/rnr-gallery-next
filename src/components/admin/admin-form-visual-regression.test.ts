@@ -41,6 +41,11 @@ describe("Admin form visual refinements", () => {
     expect(navLink).toContain("min-height: 44px;");
     expect(operatorControls).toContain("height: 30px;");
     expect(operatorControls).toContain("min-height: 30px;");
+    expect(operatorControls).toContain("display: inline-flex;");
+    expect(operatorControls).toContain("align-items: center;");
+    expect(operatorControls).toContain("justify-content: center;");
+    expect(operatorControls).toContain("padding-block: 0;");
+    expect(operatorControls).toContain("line-height: 1;");
   });
 
   it("keeps mobile order cards only slightly taller than their text", () => {
