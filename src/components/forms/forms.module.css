@@ -3139,9 +3139,9 @@
   }
 
   .operatorActions {
-    min-height: 48px;
+    min-height: 39px;
     order: -1;
-    padding: 2px 12px;
+    padding: 4px 12px;
     border-top: 0;
     border-bottom: 1px solid var(--forms-border);
     background: var(--forms-canvas);
@@ -3149,7 +3149,8 @@
 
   .operatorActions .signOutControl button,
   .operatorActions .orderEntry {
-    min-height: 44px;
+    height: 30px;
+    min-height: 30px;
   }
 
   .orderCard {

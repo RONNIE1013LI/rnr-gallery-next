@@ -31,15 +31,16 @@ describe("Admin form visual refinements", () => {
     const operatorControls = cssRule(mobile, ".operatorActions .signOutControl button,\n  .operatorActions .orderEntry");
 
     expect(operatorActions).toContain("order: -1;");
-    expect(operatorActions).toContain("min-height: 48px;");
-    expect(operatorActions).toContain("padding: 2px 12px;");
+    expect(operatorActions).toContain("min-height: 39px;");
+    expect(operatorActions).toContain("padding: 4px 12px;");
     expect(operatorActions).toContain("background: var(--forms-canvas);");
     expect(operatorActions).toContain("border-top: 0;");
     expect(operatorActions).toContain("border-bottom: 1px solid var(--forms-border);");
     expect(brandRow).toContain("min-height: 44px;");
     expect(brandRow).toContain("background: var(--forms-surface);");
     expect(navLink).toContain("min-height: 44px;");
-    expect(operatorControls).toContain("min-height: 44px;");
+    expect(operatorControls).toContain("height: 30px;");
+    expect(operatorControls).toContain("min-height: 30px;");
   });
 
   it("keeps mobile order cards only slightly taller than their text", () => {
