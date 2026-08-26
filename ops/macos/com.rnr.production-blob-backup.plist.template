@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.rnr.production-blob-backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>__RNR_PROJECT_DIR__/ops/macos/run-production-blob-backup.zsh</string>
+  </array>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>RNR_PROJECT_DIR</key>
+    <string>__RNR_PROJECT_DIR__</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>5</integer>
+    <key>Minute</key>
+    <integer>20</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__RNR_LOG_DIR__/production-blob-backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>__RNR_LOG_DIR__/production-blob-backup.error.log</string>
+  <key>ProcessType</key>
+  <string>Background</string>
+</dict>
+</plist>
+

@@ -42,3 +42,45 @@ and SHA-256 checksums. It never overwrites an existing recovery point and does
 not print the database URL. Keep the database, gallery, and private uploads as
 one matching recovery set. Test restoration into a new empty database and new
 directories before relying on a backup; never restore over the running database.
+
+## Encrypted Production Blob recovery copy
+
+Production Vercel Blob backups use `/Volumes/Data/RNR Gallery Backups` on the
+authorised Time Capsule. Payloads and manifests are encrypted with AES-256-GCM
+before the first write to the share. The encryption key and Production Blob
+source token are read from macOS Keychain at runtime; never put them in this
+repository or an environment file.
+
+Install the daily 05:20 LaunchAgent after the Keychain entries and mount health
+have been verified:
+
+```bash
+zsh ops/macos/install-production-blob-backup-launch-agent.zsh
+```
+
+The job is incremental and fail-closed. Unknown Blob prefixes stop the run. A
+generation is committed only after both encrypted manifests and the encrypted
+`COMPLETE` marker have been written and verified; only then is the encrypted
+current-generation pointer changed. Gallery history is retained. Private backup
+objects and manifests are removed after the source retention process has removed
+the corresponding Production object, so the backup does not become a permanent
+private-data archive.
+
+All supported Production backup processes use the same macOS `lockf` advisory
+lock under `~/Library/Application Support/RNR Next`. The kernel releases the
+lock when the process exits, crashes, or the Mac restarts, so a stale lock file
+cannot block future runs. The npm command and LaunchAgent both use the same
+wrapper; the TypeScript Production command refuses to run when that lock
+boundary is bypassed by verifying its actual process ancestry rather than
+trusting an environment flag. A network call that stalls keeps the lock instead
+of releasing it while a child might still be writing; terminate the scheduled
+job before retrying. This backup destination is assigned to this Mac only; do
+not run another writer against the same Time Capsule directory from a second
+computer.
+
+A restore must always target a new isolated local file; it never overwrites a
+Production Blob object. Set `RNR_BLOB_RESTORE_RUN_ID` to restore a Gallery object
+from a specific completed historical generation. Historical private-object
+restore is intentionally refused; private restore is limited to the current
+generation. Failed or partial scheduled runs write to the dedicated error log
+and raise a local macOS notification.
