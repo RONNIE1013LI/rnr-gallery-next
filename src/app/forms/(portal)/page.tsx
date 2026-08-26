@@ -11,6 +11,8 @@ import { requireFormsPage } from "@/server/forms/require-forms-page";
 import { getFormsSavedViewRuntime } from "@/server/forms/forms-saved-view-runtime";
 import { listProductionAssignees } from "@/server/production/drizzle-production-job-repository";
 import { getInvoiceBusinessSettings } from "@/server/invoices/invoice-business";
+import { Suspense } from "react";
+import { FormsInitialLoading } from "./initial-loading";
 
 type Props = Readonly<{
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -31,6 +33,16 @@ function queryString(values: Record<string, string | string[] | undefined>) {
 
 export default async function FormsDataListPage({ searchParams }: Props) {
   const raw = await searchParams;
+  return (
+    <Suspense fallback={<FormsInitialLoading />}>
+      <FormsDataListContent raw={raw} />
+    </Suspense>
+  );
+}
+
+export async function FormsDataListContent({ raw }: Readonly<{
+  raw: Record<string, string | string[] | undefined>;
+}>) {
   const currentQuery = queryString(raw);
   const access = await requireFormsPage(
     `/order-system${currentQuery ? `?${currentQuery}` : ""}`,

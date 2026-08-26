@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { formOrderRow } from "@/components/forms/forms-test-data";
 import { normalizeStaffAccessProfile } from "@/server/auth/staff-access-profile";
 import { buildFormAccessProfile } from "@/server/forms/forms-permissions";
-import FormsDataListPage from "./page";
+import { FormsDataListContent } from "./page";
 
 const { requireFormsPage, listFormOrders, getDatabase, listFields, productRegistry, listAssignees, listSavedViews } = vi.hoisted(() => ({
   requireFormsPage: vi.fn(),
@@ -47,7 +47,7 @@ describe("forms data list page", () => {
       items: [formOrderRow], total: 1, page: 1, pageSize: 20, pageCount: 1,
     });
 
-    render(await FormsDataListPage({ searchParams: Promise.resolve({ q: "07188" }) }));
+    render(await FormsDataListContent({ raw: { q: "07188" } }));
 
     expect(requireFormsPage).toHaveBeenCalledWith("/order-system?q=07188", "view_jobs");
     expect(listFormOrders).toHaveBeenCalledWith(
@@ -77,7 +77,7 @@ describe("forms data list page", () => {
     });
     listFormOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
 
-    await FormsDataListPage({ searchParams: Promise.resolve({}) });
+    await FormsDataListContent({ raw: {} });
 
     expect(listFormOrders).toHaveBeenCalledWith(
       { kind: "database" },
@@ -93,11 +93,11 @@ describe("forms data list page", () => {
       formProfile: buildFormAccessProfile("readOnly"),
     });
     listFormOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
-    await FormsDataListPage({
-      searchParams: Promise.resolve({
+    await FormsDataListContent({
+      raw: {
         match: "or",
         filter: ["urgent~equals~true", "status~equals~designing"],
-      }),
+      },
     });
     expect(requireFormsPage).toHaveBeenCalledWith(
       "/order-system?match=or&filter=urgent%7Eequals%7Etrue&filter=status%7Eequals%7Edesigning",
@@ -114,7 +114,7 @@ describe("forms data list page", () => {
     listFormOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
     listFields.mockResolvedValue([{ id: "field-1", label: "Source", fieldType: "text", options: [], required: false, enabled: true, showOnCreate: true, legacyOnly: false, section: "order" }]);
 
-    await FormsDataListPage({ searchParams: Promise.resolve({ q: "07188", entry: "new" }) });
+    await FormsDataListContent({ raw: { q: "07188", entry: "new" } });
 
     expect(requireFormsPage).toHaveBeenCalledWith("/order-system?q=07188&entry=new", "view_jobs");
     expect(productRegistry).toHaveBeenCalledOnce();
@@ -130,7 +130,7 @@ describe("forms data list page", () => {
     });
     listFormOrders.mockResolvedValue({ items: [], total: 0, page: 1, pageSize: 20, pageCount: 0 });
 
-    await FormsDataListPage({ searchParams: Promise.resolve({ entry: "new" }) });
+    await FormsDataListContent({ raw: { entry: "new" } });
 
     expect(productRegistry).not.toHaveBeenCalled();
     expect(listFields).toHaveBeenCalledOnce();

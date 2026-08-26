@@ -1,7 +1,7 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { parseFormWorkbenchQuery } from "@/server/forms/forms-workbench-service";
+import { parseFormWorkbenchQuery, type FormWorkbenchResult } from "@/server/forms/forms-workbench-service";
 import { formOrderRow } from "./forms-test-data";
 import { FormsWorkbench } from "./forms-workbench";
 
@@ -28,6 +28,260 @@ describe("FormsWorkbench", () => {
       configurable: true,
       value: "visible",
     });
+  });
+
+  function deferredResponse() {
+    let resolve!: (response: Response) => void;
+    const promise = new Promise<Response>((complete) => {
+      resolve = complete;
+    });
+    return { promise, resolve };
+  }
+
+  function resultWith(customerName: string, reference: string): FormWorkbenchResult {
+    return {
+      items: [{ ...formOrderRow, customerName, reference }],
+      total: 1,
+      page: 1,
+      pageSize: 100,
+      pageCount: 1,
+    };
+  }
+
+  it("keeps the current orders visible and skips the indicator for updates under 300ms", async () => {
+    vi.useFakeTimers();
+    const pending = deferredResponse();
+    vi.stubGlobal("fetch", vi.fn(() => pending.promise));
+
+    render(<FormsWorkbench
+      result={resultWith("Existing customer", "07188")}
+      query={parseFormWorkbenchQuery({})}
+      canExport
+      canViewFinance
+    />);
+
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search Ref No. / Cust.Name" }), {
+      target: { value: "new customer" },
+    });
+    fireEvent.submit(screen.getByRole("searchbox", { name: "Search Ref No. / Cust.Name" }).closest("form")!);
+
+    expect(screen.getAllByText("Existing customer")).not.toHaveLength(0);
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(299);
+    });
+    expect(screen.queryByText("Updating…")).not.toBeInTheDocument();
+
+    await act(async () => {
+      pending.resolve(new Response(JSON.stringify(resultWith("Updated customer", "07189"))));
+      await Promise.resolve();
+    });
+
+    expect(screen.getAllByText("Updated customer")).not.toHaveLength(0);
+    expect(screen.queryByText("Existing customer")).not.toBeInTheDocument();
+    expect(screen.queryByText("Updating…")).not.toBeInTheDocument();
+  });
+
+  it("shows a lightweight delayed indicator without replacing existing orders", async () => {
+    vi.useFakeTimers();
+    const pending = deferredResponse();
+    vi.stubGlobal("fetch", vi.fn(() => pending.promise));
+
+    render(<FormsWorkbench
+      result={resultWith("Existing customer", "07188")}
+      query={parseFormWorkbenchQuery({})}
+      canExport
+      canViewFinance
+    />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Orders per page" }), {
+      target: { value: "20" },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+
+    expect(screen.getByRole("status", { name: "Order list update status" })).toHaveTextContent("Updating…");
+    expect(screen.getAllByText("Existing customer")).not.toHaveLength(0);
+
+    await act(async () => {
+      pending.resolve(new Response(JSON.stringify({ ...resultWith("Updated customer", "07189"), pageSize: 20 })));
+      await Promise.resolve();
+    });
+
+    expect(screen.queryByRole("status", { name: "Order list update status" })).not.toBeInTheDocument();
+    expect(screen.getAllByText("Updated customer")).not.toHaveLength(0);
+  });
+
+  it("commits only the latest result after rapid query changes", async () => {
+    const first = deferredResponse();
+    const second = deferredResponse();
+    const request = vi.fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise);
+    vi.stubGlobal("fetch", request);
+
+    render(<FormsWorkbench
+      result={resultWith("Existing customer", "07188")}
+      query={parseFormWorkbenchQuery({})}
+      canExport
+      canViewFinance
+    />);
+
+    const search = screen.getByRole("searchbox", { name: "Search Ref No. / Cust.Name" });
+    fireEvent.change(search, { target: { value: "first" } });
+    fireEvent.submit(search.closest("form")!);
+    fireEvent.change(search, { target: { value: "second" } });
+    fireEvent.submit(search.closest("form")!);
+
+    await act(async () => {
+      second.resolve(new Response(JSON.stringify(resultWith("Second result", "07190"))));
+      await Promise.resolve();
+    });
+    expect(screen.getAllByText("Second result")).not.toHaveLength(0);
+
+    await act(async () => {
+      first.resolve(new Response(JSON.stringify(resultWith("Stale first result", "07189"))));
+      await Promise.resolve();
+    });
+    expect(screen.queryByText("Stale first result")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Second result")).not.toHaveLength(0);
+  });
+
+  it("keeps existing orders and shows retry feedback when an update fails", async () => {
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(new Response(
+        JSON.stringify({ error: "Order records are temporarily unavailable." }),
+        { status: 503 },
+      ))
+      .mockResolvedValueOnce(new Response(JSON.stringify(resultWith("Recovered customer", "07189")))));
+
+    render(<FormsWorkbench
+      result={resultWith("Existing customer", "07188")}
+      query={parseFormWorkbenchQuery({})}
+      canExport
+      canViewFinance
+    />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Orders per page" }), {
+      target: { value: "20" },
+    });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Order records are temporarily unavailable.");
+    expect(screen.getAllByText("Existing customer")).not.toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Retry order update" }));
+
+    expect((await screen.findAllByText("Recovered customer")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("re-enters server authorization instead of retaining a stale list after access loss", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ error: "Forbidden" }),
+      { status: 403 },
+    )));
+
+    render(<FormsWorkbench
+      result={resultWith("Existing customer", "07188")}
+      query={parseFormWorkbenchQuery({})}
+      canExport
+      canViewFinance
+    />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Orders per page" }), {
+      target: { value: "20" },
+    });
+
+    await waitFor(() => expect(replace).toHaveBeenCalledWith("/order-system"));
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("loads a saved view through the protected incremental endpoint", async () => {
+    const pending = deferredResponse();
+    const request = vi.fn(() => pending.promise);
+    vi.stubGlobal("fetch", request);
+
+    render(<FormsWorkbench
+      result={resultWith("Existing customer", "07188")}
+      query={parseFormWorkbenchQuery({})}
+      canExport
+      canViewFinance
+      canManageViews
+      savedViews={[{ id: "view-1", name: "Waiting payment", queryString: "filter=paymentStatus%7Eequals%7Eawaiting_payment" }]}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders" }));
+    fireEvent.click(screen.getByRole("button", { name: "Waiting payment" }));
+
+    expect(request).toHaveBeenCalledWith(
+      "/api/forms/jobs?filter=paymentStatus%7Eequals%7Eawaiting_payment",
+      expect.objectContaining({ cache: "no-store" }),
+    );
+    expect(screen.getAllByText("Existing customer")).not.toHaveLength(0);
+
+    await act(async () => {
+      pending.resolve(new Response(JSON.stringify(resultWith("Saved view customer", "07189"))));
+      await Promise.resolve();
+    });
+    expect(screen.getAllByText("Saved view customer")).not.toHaveLength(0);
+  });
+
+  it("loads pagination in place and keeps the current page while waiting", async () => {
+    const pending = deferredResponse();
+    const request = vi.fn(() => pending.promise);
+    vi.stubGlobal("fetch", request);
+
+    render(<FormsWorkbench
+      result={{ ...resultWith("Page one customer", "07188"), total: 2, pageCount: 2 }}
+      query={parseFormWorkbenchQuery({})}
+      canExport
+      canViewFinance
+    />);
+
+    fireEvent.click(screen.getByRole("link", { name: "Next" }));
+    expect(request).toHaveBeenCalledWith(
+      "/api/forms/jobs?page=2",
+      expect.objectContaining({ cache: "no-store" }),
+    );
+    expect(screen.getAllByText("Page one customer")).not.toHaveLength(0);
+
+    await act(async () => {
+      pending.resolve(new Response(JSON.stringify({
+        ...resultWith("Page two customer", "07189"),
+        total: 2,
+        page: 2,
+        pageCount: 2,
+      })));
+      await Promise.resolve();
+    });
+    expect(screen.getAllByText("Page two customer")).not.toHaveLength(0);
+    expect(screen.getByText("2 / 2")).toBeInTheDocument();
+  });
+
+  it("catches up from browser history without clearing the current list", async () => {
+    const pending = deferredResponse();
+    const request = vi.fn(() => pending.promise);
+    vi.stubGlobal("fetch", request);
+    window.history.replaceState(null, "", "/order-system?q=previous");
+
+    render(<FormsWorkbench
+      result={resultWith("Current customer", "07188")}
+      query={parseFormWorkbenchQuery({ q: "current" })}
+      canExport
+      canViewFinance
+    />);
+
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    expect(request).toHaveBeenCalledWith(
+      "/api/forms/jobs?q=previous",
+      expect.objectContaining({ cache: "no-store" }),
+    );
+    expect(screen.getAllByText("Current customer")).not.toHaveLength(0);
+
+    await act(async () => {
+      pending.resolve(new Response(JSON.stringify(resultWith("Previous customer", "07187"))));
+      await Promise.resolve();
+    });
+    expect(screen.getAllByText("Previous customer")).not.toHaveLength(0);
   });
 
   it("refreshes only the visible order data on a ten-minute interval", async () => {

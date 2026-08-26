@@ -10,7 +10,7 @@ import type {
   FormWorkbenchQuery,
   FormWorkbenchResult,
 } from "@/server/forms/forms-workbench-service";
-import { encodeFormFilterCondition } from "@/server/forms/forms-workbench-service";
+import { encodeFormFilterCondition, parseFormWorkbenchQuery } from "@/server/forms/forms-workbench-service";
 import { FormsFilterBuilder, type FormsFilterCustomField } from "./forms-filter-builder";
 import { FormsJobDrawer } from "./forms-job-drawer";
 import { FormsOrderEntryDrawer } from "./forms-order-entry-drawer";
@@ -24,6 +24,7 @@ import styles from "./forms.module.css";
 
 const MOBILE_BACK_TO_TOP_THRESHOLD = 600;
 const ORDER_REFRESH_INTERVAL_MS = 10 * 60 * 1_000;
+const ORDER_UPDATE_INDICATOR_DELAY_MS = 300;
 
 export type FormsOrderEntryData = Readonly<{
   assignees: readonly Readonly<{ id: string; name: string; email: string; role: "admin" | "staff" | "form_staff" }>[];
@@ -48,6 +49,20 @@ function queryString(query: FormWorkbenchQuery, page?: number) {
   }
   if (page && page > 1) params.set("page", String(page));
   return params.toString();
+}
+
+function queryFromSearchParams(params: URLSearchParams) {
+  return parseFormWorkbenchQuery(Object.fromEntries(
+    [...params.keys()].map((key) => {
+      const values = params.getAll(key);
+      return [key, values.length > 1 ? values : values[0]];
+    }),
+  ));
+}
+
+function orderListUrl(query: FormWorkbenchQuery, page?: number) {
+  const search = queryString(query, page);
+  return `/order-system${search ? `?${search}` : ""}`;
 }
 
 export function FormsWorkbench({
@@ -98,17 +113,22 @@ export function FormsWorkbench({
   const [showColumnStats, setShowColumnStats] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [showBackToTop, setShowBackToTop] = useState(false);
-  const refreshQuery = queryString(query, result.page);
-  const refreshEndpoint = `/api/forms/jobs${refreshQuery ? `?${refreshQuery}` : ""}`;
-  const [refreshedResult, setRefreshedResult] = useState<Readonly<{
-    endpoint: string;
+  const [localView, setLocalView] = useState<Readonly<{
     source: FormWorkbenchResult;
+    query: FormWorkbenchQuery;
     result: FormWorkbenchResult;
   }> | null>(null);
-  const activeRefresh = useRef<AbortController | null>(null);
-  const currentResult = refreshedResult?.endpoint === refreshEndpoint && refreshedResult.source === result
-    ? refreshedResult.result
-    : result;
+  const [showUpdating, setShowUpdating] = useState(false);
+  const [updateError, setUpdateError] = useState("");
+  const [retryTarget, setRetryTarget] = useState<Readonly<{ query: FormWorkbenchQuery; page?: number }> | null>(null);
+  const navigationSequence = useRef(0);
+  const activeNavigation = useRef<AbortController | null>(null);
+  const activePolling = useRef<AbortController | null>(null);
+  const indicatorTimer = useRef<number | null>(null);
+  const currentQuery = localView?.source === result ? localView.query : query;
+  const currentResult = localView?.source === result ? localView.result : result;
+  const refreshQuery = queryString(currentQuery, currentResult.page);
+  const refreshEndpoint = `/api/forms/jobs${refreshQuery ? `?${refreshQuery}` : ""}`;
   const visibleStats = {
     urgent: currentResult.items.filter((row) => row.urgent).length,
     completed: currentResult.items.filter((row) => row.milestones.completed).length,
@@ -124,20 +144,71 @@ export function FormsWorkbench({
   }
 
   function applyFilters(group: FormFilterGroup) {
-    router.push(`/order-system${queryString({ ...query, match: group.match, conditions: group.conditions }) ? `?${queryString({ ...query, match: group.match, conditions: group.conditions })}` : ""}`);
+    void updateOrders({ ...currentQuery, match: group.match, conditions: group.conditions }, 1);
   }
 
   function closeOrderEntry() {
-    const next = queryString(query, currentResult.page);
+    const next = queryString(currentQuery, currentResult.page);
     router.replace(`/order-system${next ? `?${next}` : ""}`);
   }
+
+  const updateOrders = useCallback(async (
+    nextQuery: FormWorkbenchQuery,
+    page = 1,
+    historyMode: "push" | "none" = "push",
+  ) => {
+    const sequence = navigationSequence.current + 1;
+    navigationSequence.current = sequence;
+    activeNavigation.current?.abort();
+    const controller = new AbortController();
+    activeNavigation.current = controller;
+    const nextUrl = orderListUrl(nextQuery, page);
+
+    if (indicatorTimer.current !== null) window.clearTimeout(indicatorTimer.current);
+    setShowUpdating(false);
+    indicatorTimer.current = window.setTimeout(
+      () => setShowUpdating(true),
+      ORDER_UPDATE_INDICATOR_DELAY_MS,
+    );
+    setUpdateError("");
+    setRetryTarget(null);
+
+    try {
+      const response = await fetch(nextUrl.replace("/order-system", "/api/forms/jobs"), {
+        cache: "no-store",
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
+      const payload = await response.json().catch(() => ({})) as FormWorkbenchResult & { error?: string };
+      if (response.status === 401 || response.status === 403) {
+        router.replace("/order-system");
+        return;
+      }
+      if (!response.ok) throw new Error(payload.error ?? "The order list could not be updated.");
+      if (controller.signal.aborted || navigationSequence.current !== sequence) return;
+
+      setLocalView({ source: result, query: nextQuery, result: payload });
+      if (historyMode === "push") window.history.pushState(window.history.state, "", nextUrl);
+    } catch (error) {
+      if (controller.signal.aborted || navigationSequence.current !== sequence) return;
+      setUpdateError(error instanceof Error ? error.message : "The order list could not be updated.");
+      setRetryTarget({ query: nextQuery, page });
+    } finally {
+      if (navigationSequence.current === sequence) {
+        if (indicatorTimer.current !== null) window.clearTimeout(indicatorTimer.current);
+        indicatorTimer.current = null;
+        setShowUpdating(false);
+      }
+      if (activeNavigation.current === controller) activeNavigation.current = null;
+    }
+  }, [result, router]);
 
   const refreshOrders = useCallback(async () => {
     if (document.visibilityState === "hidden") return;
 
-    activeRefresh.current?.abort();
+    activePolling.current?.abort();
     const controller = new AbortController();
-    activeRefresh.current = controller;
+    activePolling.current = controller;
 
     try {
       const response = await fetch(refreshEndpoint, {
@@ -149,14 +220,28 @@ export function FormsWorkbench({
 
       const nextResult = await response.json() as FormWorkbenchResult;
       if (!controller.signal.aborted) {
-        setRefreshedResult({ endpoint: refreshEndpoint, source: result, result: nextResult });
+        setLocalView((current) => {
+          const activeQuery = current?.source === result ? current.query : query;
+          const activeResult = current?.source === result ? current.result : result;
+          return queryString(activeQuery, activeResult.page) === refreshQuery
+            ? { source: result, query: activeQuery, result: nextResult }
+            : current;
+        });
       }
     } catch {
       // Polling is best-effort; the next interval retries without interrupting the form UI.
     } finally {
-      if (activeRefresh.current === controller) activeRefresh.current = null;
+      if (activePolling.current === controller) activePolling.current = null;
     }
-  }, [refreshEndpoint, result]);
+  }, [query, refreshEndpoint, refreshQuery, result]);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      void updateOrders(queryFromSearchParams(new URLSearchParams(window.location.search)), undefined, "none");
+    };
+    window.addEventListener("popstate", handlePopState);
+    return () => window.removeEventListener("popstate", handlePopState);
+  }, [updateOrders]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -170,9 +255,14 @@ export function FormsWorkbench({
     return () => {
       window.clearInterval(interval);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
-      activeRefresh.current?.abort();
+      activePolling.current?.abort();
     };
   }, [refreshOrders]);
+
+  useEffect(() => () => {
+    activeNavigation.current?.abort();
+    if (indicatorTimer.current !== null) window.clearTimeout(indicatorTimer.current);
+  }, []);
 
   useEffect(() => {
     function updateBackToTopVisibility() {
@@ -188,13 +278,22 @@ export function FormsWorkbench({
     <section className={styles.workbench}>
       <h1 className={styles.visuallyHidden}>Order system data list</h1>
       <div className={styles.listToolbar}>
-        <form className={styles.quickSearch} method="get">
+        <form
+          className={styles.quickSearch}
+          method="get"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const values = new FormData(event.currentTarget);
+            void updateOrders(parseFormWorkbenchQuery({ q: String(values.get("q") ?? "") }), 1);
+          }}
+        >
           <label>
             <span className={styles.visuallyHidden}>Search Ref No. / Cust.Name</span>
             <LuSearch className={styles.quickSearchIcon} aria-hidden="true" />
             <input
               aria-label="Search Ref No. / Cust.Name"
-              defaultValue={query.query}
+              defaultValue={currentQuery.query}
+              key={currentQuery.query}
               name="q"
               placeholder="Search name / order no."
               type="search"
@@ -203,24 +302,23 @@ export function FormsWorkbench({
           <button type="submit" aria-label="Search orders"><span className={styles.quickSearchButtonText}>Search</span><LuChevronRight className={styles.quickSearchButtonIcon} aria-hidden="true" /></button>
         </form>
         <FormsFilterBuilder
-          conditions={query.conditions}
-          match={query.match}
+          conditions={currentQuery.conditions}
+          match={currentQuery.match}
           canViewFinance={canViewFinance}
           canViewCustomerContact={canViewCustomerContact}
           canViewPaymentProof={canViewPaymentProof}
           people={filterPeople}
           customFields={filterCustomFields}
-          preset={query.preset}
+          preset={currentQuery.preset}
           onPresetChange={(preset) => {
-            const next = queryString({ ...query, preset });
-            router.push(`/order-system${next ? `?${next}` : ""}`);
+            void updateOrders({ ...currentQuery, preset }, 1);
           }}
           renderSavedSearches={canManageViews ? (group, closeFilters, loadSavedSearch) => <FormsSavedViews
             views={savedViews}
-            currentQuery={group ? queryString({ ...query, query: "", pageSize: 100, match: group.match, conditions: group.conditions }) : ""}
+            currentQuery={group ? queryString({ ...currentQuery, query: "", pageSize: 100, match: group.match, conditions: group.conditions }) : ""}
             onOpen={(savedQuery) => {
               closeFilters();
-              router.push(`/order-system?${savedQuery}`);
+              void updateOrders(queryFromSearchParams(new URLSearchParams(savedQuery)), 1);
             }}
             onEdit={loadSavedSearch}
             onChanged={() => router.refresh()}
@@ -228,14 +326,20 @@ export function FormsWorkbench({
           onApply={applyFilters}
         />
         <span className={styles.toolbarSpacer} />
+        {showUpdating ? <span className={styles.listUpdateStatus} role="status" aria-label="Order list update status">Updating…</span> : null}
       </div>
+
+      {updateError ? <div className={styles.listUpdateError} role="alert">
+        <span>{updateError}</span>
+        {retryTarget ? <button type="button" onClick={() => void updateOrders(retryTarget.query, retryTarget.page)}>Retry order update</button> : null}
+      </div> : null}
 
       <div className={styles.listBody} role="region" aria-label="Order results">
         {currentResult.items.length ? (
           <>
             <FormsOrderTable
               rows={currentResult.items}
-              startIndex={(currentResult.page - 1) * query.pageSize}
+              startIndex={(currentResult.page - 1) * currentResult.pageSize}
               canViewFinance={canViewFinance}
               canUpdate={canUpdate}
               canUpdateFinance={canUpdateFinance}
@@ -245,13 +349,16 @@ export function FormsWorkbench({
               onOpen={open}
               onSaved={() => void refreshOrders()}
             />
-            <FormsOrderCards rows={currentResult.items} startIndex={(currentResult.page - 1) * query.pageSize} canViewFinance={canViewFinance} onOpen={open} />
+            <FormsOrderCards rows={currentResult.items} startIndex={(currentResult.page - 1) * currentResult.pageSize} canViewFinance={canViewFinance} onOpen={open} />
           </>
         ) : (
           <div className={styles.formsEmptyState}>
             <h1>No orders match these filters.</h1>
             <p>Clear the current search or filters to return to the full data list.</p>
-            <Link href="/order-system">Clear filters</Link>
+            <Link href="/order-system" onClick={(event) => {
+              event.preventDefault();
+              void updateOrders(parseFormWorkbenchQuery({}), 1);
+            }}>Clear filters</Link>
           </div>
         )}
 
@@ -273,21 +380,26 @@ export function FormsWorkbench({
         <button type="button" onClick={() => setShowColumnStats((visible) => !visible)}>Column stats</button>
         {showColumnStats ? <span className={styles.columnStatsSummary}>Showing {currentResult.items.length} of {currentResult.total}</span> : null}
         <nav aria-label="Order pages">
-          {currentResult.page > 1 ? <Link href={`/order-system?${queryString(query, currentResult.page - 1)}`}>Previous</Link> : <span />}
+          {currentResult.page > 1 ? <Link href={orderListUrl(currentQuery, currentResult.page - 1)} onClick={(event) => {
+            event.preventDefault();
+            void updateOrders(currentQuery, currentResult.page - 1);
+          }}>Previous</Link> : <span />}
           <span>{currentResult.pageCount ? `${currentResult.page} / ${currentResult.pageCount}` : "0 / 0"}</span>
-          {currentResult.page < currentResult.pageCount ? <Link href={`/order-system?${queryString(query, currentResult.page + 1)}`}>Next</Link> : <span />}
+          {currentResult.page < currentResult.pageCount ? <Link href={orderListUrl(currentQuery, currentResult.page + 1)} onClick={(event) => {
+            event.preventDefault();
+            void updateOrders(currentQuery, currentResult.page + 1);
+          }}>Next</Link> : <span />}
         </nav>
         <div className={styles.perPageControl}>
           <label>
             <span className={styles.visuallyHidden}>Orders per page</span>
             <select
               aria-label="Orders per page"
-              value={String(query.pageSize)}
+              value={String(currentQuery.pageSize)}
               name="perPage"
               onChange={(event) => {
                 const pageSize = Number(event.target.value) as FormWorkbenchQuery["pageSize"];
-                const next = queryString({ ...query, pageSize });
-                router.push(`/order-system${next ? `?${next}` : ""}`);
+                void updateOrders({ ...currentQuery, pageSize }, 1);
               }}
             >
               <option value="20">20 / page</option>
