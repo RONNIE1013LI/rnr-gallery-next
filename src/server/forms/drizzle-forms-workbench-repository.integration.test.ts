@@ -352,6 +352,61 @@ describe("forms workbench repository", () => {
     expect(new Set(result.items.map((item) => item.id))).toEqual(new Set([assignedJobId, otherJobId]));
   });
 
+  it("treats unassigned and missing configured values as not in the selected choices", async () => {
+    const access = {
+      actorUserId: operatorId,
+      assignedOnly: false,
+      canViewCustomerContact: false,
+      canViewFinance: false,
+    };
+    const notAssignedToOperator = await listFormOrders(
+      database,
+      parseFormWorkbenchQuery({
+        q: suffix.slice(0, 6),
+        filter: `assignedUserId~isNoneOf~${encodeURIComponent(JSON.stringify([operatorId]))}`,
+      }),
+      access,
+    );
+    const notGoldCampaign = await listFormOrders(
+      database,
+      parseFormWorkbenchQuery({
+        q: suffix.slice(0, 6),
+        filter: `custom%3A${customFieldId}~isNoneOf~${encodeURIComponent(JSON.stringify(["gold campaign"]))}`,
+      }),
+      access,
+    );
+    const notSubmittedByOther = await listFormOrders(
+      database,
+      parseFormWorkbenchQuery({
+        q: suffix.slice(0, 6),
+        filter: `submittedByUserId~isNoneOf~${encodeURIComponent(JSON.stringify([otherUserId]))}`,
+      }),
+      access,
+    );
+
+    expect(notAssignedToOperator.items.map((item) => item.id)).not.toContain(assignedJobId);
+    expect(notAssignedToOperator.items.map((item) => item.id)).toEqual(expect.arrayContaining([
+      otherJobId,
+      refundedJobId,
+      cancelledJobId,
+      legacyJobId,
+    ]));
+    expect(notGoldCampaign.items.map((item) => item.id)).not.toContain(assignedJobId);
+    expect(notGoldCampaign.items.map((item) => item.id)).toEqual(expect.arrayContaining([
+      otherJobId,
+      refundedJobId,
+      cancelledJobId,
+      legacyJobId,
+    ]));
+    expect(notSubmittedByOther.items.map((item) => item.id)).not.toContain(assignedJobId);
+    expect(notSubmittedByOther.items.map((item) => item.id)).toEqual(expect.arrayContaining([
+      otherJobId,
+      refundedJobId,
+      cancelledJobId,
+      legacyJobId,
+    ]));
+  });
+
   it("does not treat a held order as Delivered No", async () => {
     const result = await listFormOrders(
       database,

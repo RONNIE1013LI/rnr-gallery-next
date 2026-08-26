@@ -151,7 +151,16 @@ export function createFormsSavedViewService(repository: ProductionSavedViewRepos
     async list(actorInput: unknown) {
       const actor = actorSchema.safeParse(actorInput);
       if (!actor.success) throw new ProductionSavedViewValidationError();
-      return repository.list(actor.data.userId);
+      const views = await repository.list(actor.data.userId);
+      return views.filter((view) => {
+        try {
+          normalizeFormsSavedViewQuery(view.queryString);
+          return true;
+        } catch (error) {
+          if (error instanceof ProductionSavedViewValidationError) return false;
+          throw error;
+        }
+      });
     },
     async create(actorInput: unknown, input: unknown) {
       const actor = actorSchema.safeParse(actorInput);

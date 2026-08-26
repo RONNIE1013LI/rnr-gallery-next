@@ -108,7 +108,9 @@ function filterCondition(
     if (condition.operator === "contains") return ilike(expression, `%${escaped}%`);
     if (condition.operator === "notEquals") return ne(expression, scalarValue);
     if (condition.operator === "isAnyOf") return inArray(expression, selectedValues);
-    if (condition.operator === "isNoneOf") return notInArray(expression, selectedValues);
+    if (condition.operator === "isNoneOf") {
+      return or(sql`${expression} is null`, notInArray(expression, selectedValues))!;
+    }
     return eq(expression, scalarValue);
   };
   const numberCondition = (expression: SQL<number>) => {
@@ -180,6 +182,14 @@ function filterCondition(
         inner join ${productionFieldDefinitions} on ${productionFieldDefinitions.id} = ${productionFieldValues.fieldId}
         where ${productionFieldValues.jobId} = ${productionJobs.id} and ${accessCondition}
           and coalesce(${productionFieldValues.value}, '') <> ''
+      )`;
+    }
+    if (condition.operator === "isNoneOf") {
+      return sql`not exists (
+        select 1 from ${productionFieldValues}
+        inner join ${productionFieldDefinitions} on ${productionFieldDefinitions.id} = ${productionFieldValues.fieldId}
+        where ${productionFieldValues.jobId} = ${productionJobs.id} and ${accessCondition}
+          and ${inArray(customValue, selectedValues)}
       )`;
     }
     return sql`exists (
@@ -282,7 +292,10 @@ function filterCondition(
     )`;
     if (empty) return sql`not (${hasVisibleSubmitter})`;
     if (notEmpty) return hasVisibleSubmitter;
-    if (condition.operator === "notEquals" || condition.operator === "isNoneOf") {
+    if (condition.operator === "isNoneOf") {
+      return sql`not (${visibleSubmitterMatches})`;
+    }
+    if (condition.operator === "notEquals") {
       return sql`${hasVisibleSubmitter} and not (${visibleSubmitterMatches})`;
     }
     return visibleSubmitterMatches;
@@ -295,7 +308,12 @@ function filterCondition(
     if (empty) return isNull(productionJobs.assignedUserId);
     if (notEmpty) return sql`${productionJobs.assignedUserId} is not null`;
     if (condition.operator === "isAnyOf") return inArray(productionJobs.assignedUserId, selectedValues);
-    if (condition.operator === "isNoneOf") return notInArray(productionJobs.assignedUserId, selectedValues);
+    if (condition.operator === "isNoneOf") {
+      return or(
+        isNull(productionJobs.assignedUserId),
+        notInArray(productionJobs.assignedUserId, selectedValues),
+      )!;
+    }
     return condition.operator === "notEquals"
       ? ne(productionJobs.assignedUserId, scalarValue)
       : eq(productionJobs.assignedUserId, scalarValue);

@@ -34,6 +34,15 @@ describe("production saved views", () => {
     await service.remove(actor, "e23a9f59-bf54-4bb6-a7d0-9239c14cf819");
     expect(repo.remove).toHaveBeenCalledWith("user-1", "staff@example.com", "e23a9f59-bf54-4bb6-a7d0-9239c14cf819");
   });
+
+  it("continues listing Admin Jobs saved views without applying the Forms format", async () => {
+    const views = [{ id: "admin-view", name: "Printing", queryString: "status=printing&urgent=yes" }];
+    const service = createProductionSavedViewService(repository({
+      list: vi.fn().mockResolvedValue(views),
+    }));
+
+    await expect(service.list(actor)).resolves.toEqual(views);
+  });
 });
 
 describe("forms saved views", () => {
@@ -56,6 +65,20 @@ describe("forms saved views", () => {
       name: "Urgent",
       queryString: "filter=urgent%7Eequals%7Etrue",
     }));
+  });
+
+  it("lists only saved views that use the Forms filter format", async () => {
+    const repo = repository({
+      list: vi.fn().mockResolvedValue([
+        { id: "forms-view", name: "Delivery", queryString: "filter=deliveryMethod%7Eequals%7Epost" },
+        { id: "admin-view", name: "Printing", queryString: "status=printing&urgent=yes" },
+      ]),
+    });
+    const service = createFormsSavedViewService(repo);
+
+    await expect(service.list(actor)).resolves.toEqual([
+      { id: "forms-view", name: "Delivery", queryString: "filter=deliveryMethod%7Eequals%7Epost" },
+    ]);
   });
 
   it("updates a saved form view through actor-scoped persistence", async () => {
