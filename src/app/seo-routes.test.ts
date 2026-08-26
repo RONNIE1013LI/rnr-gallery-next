@@ -118,7 +118,26 @@ describe("public SEO routes", () => {
           "/products/*/configure",
         ]),
       }),
+      {
+        userAgent: "meta-externalagent",
+        disallow: "/",
+      },
     ]));
+  });
+
+  it("keeps useful search, sharing and user-triggered crawlers on the public policy", () => {
+    const robots = buildRobots(new URL("https://shop.example.test"));
+    const rules = Array.isArray(robots.rules) ? robots.rules : [robots.rules];
+
+    for (const userAgent of [
+      "facebookexternalhit",
+      "meta-webindexer",
+      "meta-externalfetcher",
+      "Googlebot",
+      "Bingbot",
+    ]) {
+      expect(rules.some((rule) => rule.userAgent === userAgent)).toBe(false);
+    }
   });
 
   it.each([
