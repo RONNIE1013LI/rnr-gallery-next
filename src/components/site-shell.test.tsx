@@ -118,6 +118,19 @@ describe("site shell", () => {
       .toHaveAttribute("href", "/au/banners");
   });
 
+  it("groups Cart with the storefront shopping links", () => {
+    render(<SiteFooter />);
+
+    const footer = screen.getByRole("contentinfo");
+    const shop = footer.querySelector<HTMLElement>(".site-footer__shop")!;
+    const customer = footer.querySelector<HTMLElement>(".site-footer__customer")!;
+
+    expect(within(shop).getByRole("link", { name: "Cart" }))
+      .toHaveAttribute("href", "/cart");
+    expect(within(customer).queryByRole("link", { name: "Cart" }))
+      .not.toBeInTheDocument();
+  });
+
   it("marks the current primary navigation destination", () => {
     usePathname.mockReturnValue("/design-gallery");
     render(<SiteHeader />);

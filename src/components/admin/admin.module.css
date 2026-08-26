@@ -4314,11 +4314,11 @@ button.paymentProofPreviewMedia {
   margin: 0;
   padding: 0;
   border: 0;
-  accent-color: #2e90fa;
+  accent-color: #8a5b14;
 }
 
 .manualChoiceOption:has(input:checked) {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #345c45;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #8a5b14;
 }
 
 .manualChoiceOption:has(input:focus-visible) {
@@ -4368,6 +4368,19 @@ button.paymentProofPreviewMedia {
 .manualChoiceOption[data-field="paymentReconciliationStatus"][data-value="Checked5"] { background: #6271d9; }
 .manualChoiceOption[data-field="paymentReconciliationStatus"][data-value="Checked6"] { background: #c59b3a; }
 .manualChoiceOption[data-field="paymentReconciliationStatus"][data-value="Other"] { background: #55bfd0; }
+
+.manualChoiceOption[data-field="item-0-size"][data-value="A0"] { background: #344054; }
+.manualChoiceOption[data-field="item-0-size"][data-value="A1"] { background: #385d70; }
+.manualChoiceOption[data-field="item-0-size"][data-value="A2"] { background: #3f6b59; }
+.manualChoiceOption[data-field="item-0-size"][data-value="A3"] { background: #655870; }
+.manualChoiceOption[data-field="item-0-size"][data-value="A4"] { background: #80603d; }
+.manualChoiceOption[data-field="item-0-size"][data-value="A5"] { background: #62694e; }
+.manualChoiceOption[data-field="item-0-size"][data-value="Banner 80x160cm"] { background: #854e3e; }
+.manualChoiceOption[data-field="item-0-size"][data-value="Banner 100x200cm"] { background: #815264; }
+.manualChoiceOption[data-field="item-0-size"][data-value="PullUpBanner"] { background: #555a8e; }
+.manualChoiceOption[data-field="item-0-size"][data-value="Banner 150x300cm"] { background: #755a39; }
+.manualChoiceOption[data-field="item-0-size"][data-value="Custom Size"] { background: #4c6a60; }
+.manualChoiceOption[data-field="item-0-size"][data-value="Other"] { background: #5f6673; }
 
 .manualFieldRows textarea {
   resize: vertical;
@@ -5315,13 +5328,13 @@ button.paymentProofPreviewMedia {
   }
 
   .manualChoiceOptions {
-    gap: 4px;
-    padding: 6px;
+    gap: 7px 6px;
+    padding: 9px 8px;
   }
 
   .manualChoiceOption {
-    min-height: 30px;
-    padding: 5px 8px 5px 6px;
+    min-height: 38px;
+    padding: 7px 10px 7px 7px;
     font-size: 12px;
   }
 

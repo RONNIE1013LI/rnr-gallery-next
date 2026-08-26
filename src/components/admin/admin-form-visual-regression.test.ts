@@ -93,13 +93,33 @@ describe("Admin form visual refinements", () => {
     const option = cssRule(mobile, ".manualChoiceOption");
     const radio = cssRule(mobile, ".manualFieldRows .manualChoiceOption input");
 
-    expect(options).toContain("gap: 4px;");
-    expect(options).toContain("padding: 6px;");
-    expect(option).toContain("min-height: 30px;");
-    expect(option).toContain("padding: 5px 8px 5px 6px;");
+    expect(options).toContain("gap: 7px 6px;");
+    expect(options).toContain("padding: 9px 8px;");
+    expect(option).toContain("min-height: 38px;");
+    expect(option).toContain("padding: 7px 10px 7px 7px;");
     expect(option).toContain("font-size: 12px;");
     expect(radio).toContain("width: 14px;");
     expect(radio).toContain("min-height: 14px;");
+  });
+
+  it("distinguishes every manual size option and uses a gold selection marker", () => {
+    const radio = cssRule(adminCss, ".manualFieldRows .manualChoiceOption input");
+    const selected = cssRule(adminCss, ".manualChoiceOption:has(input:checked)");
+    const sizeValues = [
+      "A0", "A1", "A2", "A3", "A4", "A5",
+      "Banner 80x160cm", "Banner 100x200cm", "PullUpBanner",
+      "Banner 150x300cm", "Custom Size", "Other",
+    ];
+    const backgrounds = sizeValues.map((value) => {
+      const selector = `.manualChoiceOption[data-field="item-0-size"][data-value="${value}"]`;
+      const match = cssRule(adminCss, selector).match(/background:\s*([^;]+);/);
+      expect(match, `${value} should have a size colour`).not.toBeNull();
+      return match![1].trim();
+    });
+
+    expect(new Set(backgrounds).size).toBe(sizeValues.length);
+    expect(radio).toContain("accent-color: #8a5b14;");
+    expect(selected).toContain("0 0 0 4px #8a5b14");
   });
 
   it("lets mobile Order Entry fill the viewport with compact 30px header actions", () => {
