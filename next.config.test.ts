@@ -107,7 +107,7 @@ describe("Next.js workspace configuration", () => {
       source: "/:path*",
       destination: "https://rrgallery.co.nz/:path*",
       permanent: true,
-      has: [{ type: "host", value: "www.rrgallery.co.nz" }],
+      has: [{ type: "host", value: "www\\.rrgallery\\.co\\.nz" }],
     });
   });
 
@@ -121,8 +121,22 @@ describe("Next.js workspace configuration", () => {
       source: "/:path*",
       destination: "https://rrgallery.co.nz/:path*",
       permanent: true,
-      has: [{ type: "host", value: "www.rrgallery.co.nz" }],
+      has: [{ type: "host", value: "www\\.rrgallery\\.co\\.nz" }],
     });
     expect(canonicalRedirect?.destination).not.toContain("?");
+  });
+
+  it("matches only the exact www hostname for the canonical redirect", async () => {
+    const redirects = await nextConfig.redirects?.();
+    const canonicalRedirect = redirects?.find(
+      (redirect) => redirect.destination === "https://rrgallery.co.nz/:path*",
+    );
+    const hostCondition = canonicalRedirect?.has?.find(
+      (condition) => condition.type === "host",
+    );
+    const hostMatcher = new RegExp(`^${hostCondition?.value}$`);
+
+    expect(hostMatcher.test("www.rrgallery.co.nz")).toBe(true);
+    expect(hostMatcher.test("wwwXrrgalleryYcoZnz")).toBe(false);
   });
 });

@@ -62,7 +62,7 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         destination: "https://rrgallery.co.nz/:path*",
         permanent: true,
-        has: [{ type: "host", value: "www.rrgallery.co.nz" }],
+        has: [{ type: "host", value: "www\\.rrgallery\\.co\\.nz" }],
       },
       {
         source: "/forms/:path*",
