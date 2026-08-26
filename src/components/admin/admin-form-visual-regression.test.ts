@@ -23,10 +23,23 @@ describe("Admin form visual refinements", () => {
     expect(workbenchMobile).toMatch(/\.signOutControl button,[\s\S]*?\.orderCard header button\s*\{[\s\S]*?min-height:\s*var\(--forms-button-height-mobile\);/);
   });
 
-  it("places the mobile operator actions above the Forms navigation", () => {
+  it("keeps the mobile Forms header compact and visually separates actions from navigation", () => {
     const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    const brandRow = cssRule(mobile, ".brandRow");
+    const navLink = cssRule(mobile, ".primaryNav a");
+    const operatorActions = cssRule(mobile, ".operatorActions");
+    const operatorControls = cssRule(mobile, ".operatorActions .signOutControl button,\n  .operatorActions .orderEntry");
 
-    expect(cssRule(mobile, ".operatorActions")).toContain("order: -1;");
+    expect(operatorActions).toContain("order: -1;");
+    expect(operatorActions).toContain("min-height: 48px;");
+    expect(operatorActions).toContain("padding: 2px 12px;");
+    expect(operatorActions).toContain("background: var(--forms-canvas);");
+    expect(operatorActions).toContain("border-top: 0;");
+    expect(operatorActions).toContain("border-bottom: 1px solid var(--forms-border);");
+    expect(brandRow).toContain("min-height: 44px;");
+    expect(brandRow).toContain("background: var(--forms-surface);");
+    expect(navLink).toContain("min-height: 44px;");
+    expect(operatorControls).toContain("min-height: 44px;");
   });
 
   it("keeps mobile order cards only slightly taller than their text", () => {

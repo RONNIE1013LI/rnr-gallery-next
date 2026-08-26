@@ -3124,7 +3124,8 @@
   }
 
   .brandRow {
-    min-height: 48px;
+    min-height: 44px;
+    background: var(--forms-surface);
   }
 
   .primaryNav {
@@ -3133,12 +3134,22 @@
 
   .primaryNav a {
     flex: 1 1 0;
+    min-height: 44px;
     justify-items: center;
   }
 
   .operatorActions {
-    min-height: 56px;
+    min-height: 48px;
     order: -1;
+    padding: 2px 12px;
+    border-top: 0;
+    border-bottom: 1px solid var(--forms-border);
+    background: var(--forms-canvas);
+  }
+
+  .operatorActions .signOutControl button,
+  .operatorActions .orderEntry {
+    min-height: 44px;
   }
 
   .orderCard {
