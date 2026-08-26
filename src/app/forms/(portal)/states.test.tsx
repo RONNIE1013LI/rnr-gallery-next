@@ -2,14 +2,15 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 
 import FormsPortalError from "./error";
-import FormsPortalLoading from "./loading";
+import { FormsInitialLoading } from "./initial-loading";
 import FormsPortalNotFound from "./not-found";
 
 describe("forms portal route states", () => {
-  it("announces a compact loading state", () => {
-    render(<FormsPortalLoading />);
+  it("announces a lightweight initial loading state", () => {
+    render(<FormsInitialLoading />);
 
-    expect(screen.getByRole("status")).toHaveTextContent("Loading order records");
+    expect(screen.getByRole("status")).toHaveTextContent("Loading orders");
+    expect(screen.getByRole("status").children).toHaveLength(0);
   });
 
   it("explains a read failure without suggesting records were changed", () => {
