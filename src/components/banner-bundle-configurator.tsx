@@ -319,7 +319,7 @@ export function BannerBundleConfigurator({
                 alt={previewAlt}
                 fill
                 priority
-                sizes="(max-width: 820px) 100vw, 38vw"
+                sizes="(max-width: 650px) calc(100vw - 2.5rem), (max-width: 820px) 92vw, (max-width: 1103px) calc(87vw - 20rem), (max-width: 1565px) 58vw, 907px"
               />
               <button
                 ref={previewZoomTriggerRef}

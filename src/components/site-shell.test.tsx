@@ -30,6 +30,9 @@ describe("site shell", () => {
     );
     expect(decodeURIComponent(homeLink.querySelector("img")?.getAttribute("src") ?? ""))
       .toContain("/media/brand/rr-gallery-logo-2026.webp");
+    expect(homeLink.querySelector("img")).toHaveAttribute("width", "96");
+    expect(homeLink.querySelector("img")).toHaveAttribute("height", "96");
+    expect(homeLink.querySelector("img")).not.toHaveAttribute("sizes");
     expect(screen.getByRole("navigation", { name: /primary/i })).toBeVisible();
     expect(screen.getAllByRole("link", { name: "Shop" })[0]).toHaveAttribute(
       "href",

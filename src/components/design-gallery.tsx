@@ -164,8 +164,8 @@ export function DesignGallery({ query, result }: Props) {
                       loading={index < 3 ? "eager" : "lazy"}
                       fetchPriority={index < 3 ? "high" : "auto"}
                       sizes={mobileSpan === "wide"
-                        ? "(max-width: 767px) 100vw, (max-width: 1179px) 50vw, 33vw"
-                        : "(max-width: 767px) 50vw, (max-width: 1179px) 50vw, 33vw"}
+                        ? "(max-width: 767px) calc(100vw - 2rem), (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px"
+                        : "(max-width: 767px) calc((100vw - 2.75rem) / 2), (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px"}
                     />
                     <span className={styles.galleryCardBadge}>
                       {productTypeMobileLabels[item.productTypeSlug]}

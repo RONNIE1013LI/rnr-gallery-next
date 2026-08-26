@@ -52,7 +52,13 @@ describe("BannerBundleConfigurator", () => {
       />,
     );
 
-    expect(screen.getAllByRole("region", { name: "Artwork preview" })).toHaveLength(1);
+    const preview = screen.getByRole("region", { name: "Artwork preview" });
+    expect(preview).toBeVisible();
+    expect(within(preview).getByRole("img", { name: product.image.alt }))
+      .toHaveAttribute(
+        "sizes",
+        "(max-width: 650px) calc(100vw - 2.5rem), (max-width: 820px) 92vw, (max-width: 1103px) calc(87vw - 20rem), (max-width: 1565px) 58vw, 907px",
+      );
     expect(screen.getAllByRole("complementary", { name: "Order summary" })).toHaveLength(1);
     expect(screen.getByRole("region", { name: "Roll-Up Banner customisation" })).toBeVisible();
     expect(screen.getByRole("region", { name: "Wall Banner customisation" })).toBeVisible();

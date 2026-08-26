@@ -162,7 +162,7 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
             width={design.width}
             height={design.height}
             priority
-            sizes="(max-width: 820px) 100vw, 58vw"
+            sizes="(max-width: 560px) calc(100vw - 2.5rem), (max-width: 820px) 92vw, (max-width: 1103px) calc(87vw - 20rem), (max-width: 1565px) 58vw, 907px"
           />
         </div>
         <div className={styles.designDetailCopy}>
@@ -213,7 +213,7 @@ export default async function DesignDetailPage({ params, searchParams }: Props) 
                         width={item.width}
                         height={item.height}
                         loading="lazy"
-                        sizes="(max-width: 767px) 50vw, 25vw"
+                        sizes="(max-width: 560px) calc((100vw - 3.25rem) / 2), (max-width: 767px) calc(46vw - 0.375rem), (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px"
                       />
                     </div>
                     <div className={styles.galleryCardBody}><h3>{relatedTitle}</h3></div>

@@ -42,7 +42,7 @@ export function SiteFooter({
         <div className="site-footer__intro-stack">
           <div className="site-footer__intro">
             <a className="site-footer__brand" href="#top" aria-label="R&R Gallery">
-              <BrandMark imageSizes="(max-width: 560px) 88px, 72px" />
+              <BrandMark />
             </a>
             <p className="site-footer__tagline">{content.tagline}</p>
           </div>

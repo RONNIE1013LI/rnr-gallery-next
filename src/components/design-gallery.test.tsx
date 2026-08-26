@@ -66,6 +66,11 @@ describe("DesignGallery", () => {
     expect(screen.getByRole("img", { name: "Golden 21st birthday canvas" }))
       .toHaveAttribute("width", "1200");
     expect(screen.getByRole("img", { name: "Golden 21st birthday canvas" }))
+      .toHaveAttribute(
+        "sizes",
+        "(max-width: 767px) calc((100vw - 2.75rem) / 2), (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px",
+      );
+    expect(screen.getByRole("img", { name: "Golden 21st birthday canvas" }))
       .toHaveAttribute("fetchpriority", "high");
     expect(screen.getByRole("img", { name: "Golden 21st birthday canvas" }).getAttribute("src"))
       .toContain("/_next/image?url=");
@@ -136,6 +141,14 @@ describe("DesignGallery", () => {
 
     expect(canvasCard).toHaveAttribute("data-gallery-mobile-span", "compact");
     expect(wallBannerCard).toHaveAttribute("data-gallery-mobile-span", "wide");
+    expect(within(canvasCard as HTMLElement).getByRole("img")).toHaveAttribute(
+      "sizes",
+      "(max-width: 767px) calc((100vw - 2.75rem) / 2), (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px",
+    );
+    expect(within(wallBannerCard as HTMLElement).getByRole("img")).toHaveAttribute(
+      "sizes",
+      "(max-width: 767px) calc(100vw - 2rem), (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px",
+    );
     expect(within(canvasCard as HTMLElement).getByText("Canvas", { selector: "span" })).toBeInTheDocument();
     expect(within(wallBannerCard as HTMLElement).getByText("Wall banner", { selector: "span" })).toBeInTheDocument();
   });

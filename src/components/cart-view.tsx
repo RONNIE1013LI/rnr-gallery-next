@@ -232,7 +232,7 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
               onClick={() => removeItemFromCart(item.id)}
             >×</button>
             <div className={styles.cartItemMedia}>
-              <Image src={item.imageSrc} alt="" fill sizes="96px" />
+              <Image src={item.imageSrc} alt="" width={96} height={96} />
             </div>
             <div className={styles.cartItemDetails}>
               <h2>{item.productTitle}</h2>

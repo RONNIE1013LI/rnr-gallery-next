@@ -273,7 +273,11 @@ describe("ProductConfigurator", () => {
     );
 
     const preview = screen.getByRole("region", { name: "Artwork preview" });
-    expect(within(preview).getByRole("img", { name: product.image.alt })).toBeVisible();
+    expect(within(preview).getByRole("img", { name: product.image.alt }))
+      .toHaveAttribute(
+        "sizes",
+        "(max-width: 650px) calc(100vw - 2.5rem), (max-width: 820px) 92vw, (max-width: 1103px) calc(87vw - 20rem), (max-width: 1565px) 58vw, 907px",
+      );
     expect(within(preview).getByText("Example shown")).toBeVisible();
     expect(within(preview).queryByText("Your custom artwork")).not.toBeInTheDocument();
     expect(
@@ -348,6 +352,11 @@ describe("ProductConfigurator", () => {
     );
     expect(screen.queryByRole("heading", { name: "Memorial floral canvas" })).not.toBeInTheDocument();
     expect(screen.queryByText("Configure with this design")).not.toBeInTheDocument();
+    expect(screen.getByRole("img", { name: "Memorial floral canvas" }))
+      .toHaveAttribute(
+        "sizes",
+        "(max-width: 650px) calc((100vw - 3.25rem) / 2), (max-width: 767px) calc(46vw - 0.375rem), (max-width: 1020px) 29.74vw, (max-width: 1565px) 21.95vw, 345px",
+      );
   });
 
   it("updates the displayed size and order summary when orientation changes", () => {

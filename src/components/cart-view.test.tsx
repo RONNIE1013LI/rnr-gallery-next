@@ -234,9 +234,13 @@ describe("CartView", () => {
 
   it("shows aligned configuration details and totals", async () => {
     seedCart();
-    render(<CartView />);
+    const { container } = render(<CartView />);
 
     expect(await screen.findByRole("heading", { name: "Photo Print Canvas" })).toBeInTheDocument();
+    const thumbnail = container.querySelector("article img");
+    expect(thumbnail).toHaveAttribute("width", "96");
+    expect(thumbnail).toHaveAttribute("height", "96");
+    expect(thumbnail).not.toHaveAttribute("sizes");
     expect(screen.getByText("A4 — 29.7 × 21 cm")).toBeInTheDocument();
     expect(screen.getByText("Send Photos After Ordering")).toBeInTheDocument();
     expect(screen.getByText("Production completion date")).toBeInTheDocument();

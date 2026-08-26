@@ -109,7 +109,11 @@ describe("public design detail page", () => {
     const { container } = render(await DesignDetailPage(props));
 
     expect(screen.getByRole("heading", { name: "40th Birthday" })).toBeInTheDocument();
-    expect(screen.getByRole("img", { name: design.altText })).toBeInTheDocument();
+    expect(screen.getByRole("img", { name: design.altText })).toHaveAttribute("width", "1200");
+    expect(screen.getByRole("img", { name: design.altText })).toHaveAttribute(
+      "sizes",
+      "(max-width: 560px) calc(100vw - 2.5rem), (max-width: 820px) 92vw, (max-width: 1103px) calc(87vw - 20rem), (max-width: 1565px) 58vw, 907px",
+    );
     expect(screen.getByText("Roll-up banner")).toBeInTheDocument();
     expect(screen.getByText("Birthday")).toBeInTheDocument();
     expect(screen.getByText("From NZ$264.50 incl GST")).toBeVisible();
@@ -192,5 +196,10 @@ describe("public design detail page", () => {
     expect(within(related).queryByRole("img", { name: design.altText })).not.toBeInTheDocument();
     expect(within(related).getByRole("link", { name: /50th birthday/i }))
       .toHaveAttribute("href", "/designs/50th-birthday-e5f6a7b8");
+    expect(within(related).getByRole("img", { name: "50th birthday roll-up banner" }))
+      .toHaveAttribute(
+        "sizes",
+        "(max-width: 560px) calc((100vw - 3.25rem) / 2), (max-width: 767px) calc(46vw - 0.375rem), (max-width: 1179px) 45vw, (max-width: 1567px) 29.34vw, 459px",
+      );
   });
 });
