@@ -1,8 +1,23 @@
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import nextConfig, { buildSecurityHeaders } from "./next.config";
+
+async function loadNextConfig(vercelEnv: string | undefined) {
+  if (vercelEnv === undefined) {
+    vi.unstubAllEnvs();
+  } else {
+    vi.stubEnv("VERCEL_ENV", vercelEnv);
+  }
+  vi.resetModules();
+  return (await import("./next.config")).default;
+}
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+  vi.resetModules();
+});
 
 describe("Next.js workspace configuration", () => {
   it("keeps Turbopack scoped to this worktree", () => {
@@ -22,7 +37,7 @@ describe("Next.js workspace configuration", () => {
     expect(nextConfig.onDemandEntries?.pagesBufferLength).toBeGreaterThanOrEqual(64);
   });
 
-  it("allows versioned public Gallery images through the responsive image pipeline", () => {
+  it("keeps only the responsive Gallery widths used by production layouts", () => {
     expect(nextConfig.images?.localPatterns).toContainEqual({
       pathname: "/**",
       search: "",
@@ -34,9 +49,19 @@ describe("Next.js workspace configuration", () => {
       32, 48, 64, 96, 128, 256, 320, 384,
     ]);
     expect(nextConfig.images?.deviceSizes).toEqual([
-      480, 640, 672, 704, 750, 828, 1080, 1200, 1920, 2048, 3840,
+      480, 640, 750, 828, 1080, 1200, 1920, 2048,
     ]);
     expect(nextConfig.images?.qualities).toEqual([60, 75]);
+  });
+
+  it.each([
+    ["preview", true],
+    ["production", false],
+    [undefined, false],
+  ])("disables image optimization only for Vercel %s deployments", async (vercelEnv, expected) => {
+    const config = await loadNextConfig(vercelEnv);
+
+    expect(config.images?.unoptimized).toBe(expected);
   });
 
   it("adds non-breaking browser security headers and production HSTS", () => {
@@ -73,5 +98,31 @@ describe("Next.js workspace configuration", () => {
       source: "/order-system/:path*",
       destination: "/forms/:path*",
     });
+  });
+
+  it("permanently redirects the www root and every nested path to the apex host", async () => {
+    const redirects = await nextConfig.redirects?.();
+
+    expect(redirects).toContainEqual({
+      source: "/:path*",
+      destination: "https://rrgallery.co.nz/:path*",
+      permanent: true,
+      has: [{ type: "host", value: "www.rrgallery.co.nz" }],
+    });
+  });
+
+  it("keeps canonical redirect queries intact and excludes Preview hosts", async () => {
+    const redirects = await nextConfig.redirects?.();
+    const canonicalRedirect = redirects?.find(
+      (redirect) => redirect.destination === "https://rrgallery.co.nz/:path*",
+    );
+
+    expect(canonicalRedirect).toMatchObject({
+      source: "/:path*",
+      destination: "https://rrgallery.co.nz/:path*",
+      permanent: true,
+      has: [{ type: "host", value: "www.rrgallery.co.nz" }],
+    });
+    expect(canonicalRedirect?.destination).not.toContain("?");
   });
 });

@@ -30,9 +30,10 @@ export function buildSecurityHeaders(nodeEnv: string | undefined) {
 const nextConfig: NextConfig = {
   allowedDevOrigins: ["192.168.4.199"],
   images: {
-    deviceSizes: [480, 640, 672, 704, 750, 828, 1080, 1200, 1920, 2048, 3840],
+    deviceSizes: [480, 640, 750, 828, 1080, 1200, 1920, 2048],
     imageSizes: [32, 48, 64, 96, 128, 256, 320, 384],
     qualities: [60, 75],
+    unoptimized: process.env.VERCEL_ENV === "preview",
     localPatterns: [
       { pathname: "/**", search: "" },
       { pathname: "/gallery-images/**" },
@@ -56,11 +57,19 @@ const nextConfig: NextConfig = {
     ];
   },
   async redirects() {
-    return [{
-      source: "/forms/:path*",
-      destination: "/order-system/:path*",
-      permanent: false,
-    }];
+    return [
+      {
+        source: "/:path*",
+        destination: "https://rrgallery.co.nz/:path*",
+        permanent: true,
+        has: [{ type: "host", value: "www.rrgallery.co.nz" }],
+      },
+      {
+        source: "/forms/:path*",
+        destination: "/order-system/:path*",
+        permanent: false,
+      },
+    ];
   },
   async rewrites() {
     return [{
