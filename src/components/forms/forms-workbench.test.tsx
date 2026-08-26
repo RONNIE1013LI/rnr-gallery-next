@@ -30,7 +30,7 @@ describe("FormsWorkbench", () => {
     });
   });
 
-  it("refreshes only the visible order data on a five-second interval", async () => {
+  it("refreshes only the visible order data on a ten-minute interval", async () => {
     vi.useFakeTimers();
     const updatedRow = {
       ...formOrderRow,
@@ -54,7 +54,7 @@ describe("FormsWorkbench", () => {
     />);
 
     await act(async () => {
-      await vi.advanceTimersByTimeAsync(4_999);
+      await vi.advanceTimersByTimeAsync(599_999);
     });
     expect(request).not.toHaveBeenCalled();
 

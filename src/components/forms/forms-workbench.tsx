@@ -23,7 +23,7 @@ import type { InvoiceBusiness } from "@/server/invoices/invoice-business";
 import styles from "./forms.module.css";
 
 const MOBILE_BACK_TO_TOP_THRESHOLD = 600;
-const ORDER_REFRESH_INTERVAL_MS = 5_000;
+const ORDER_REFRESH_INTERVAL_MS = 10 * 60 * 1_000;
 
 export type FormsOrderEntryData = Readonly<{
   assignees: readonly Readonly<{ id: string; name: string; email: string; role: "admin" | "staff" | "form_staff" }>[];
