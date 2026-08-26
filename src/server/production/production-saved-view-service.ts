@@ -1,4 +1,4 @@
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, ne } from "drizzle-orm";
 import { z } from "zod";
 import type { getDatabase } from "@/server/db/client";
 import { adminAuditLogs, productionSavedViews } from "@/server/db/schema";
@@ -37,6 +37,7 @@ export type ProductionSavedView = Readonly<{
 export interface ProductionSavedViewRepository {
   list(userId: string): Promise<readonly ProductionSavedView[]>;
   create(input: Readonly<{ userId: string; actorEmail: string; name: string; queryString: string }>): Promise<Readonly<{ result: "created" | "duplicate" | "conflict"; view: ProductionSavedView }>>;
+  update(input: Readonly<{ userId: string; actorEmail: string; viewId: string; name: string; queryString: string }>): Promise<Readonly<{ result: "updated" | "unchanged" | "not_found" | "conflict"; view?: ProductionSavedView }>>;
   remove(userId: string, actorEmail: string, viewId: string): Promise<"deleted" | "not_found">;
 }
 
@@ -165,6 +166,21 @@ export function createFormsSavedViewService(repository: ProductionSavedViewRepos
       if (result.result === "conflict") throw new ProductionSavedViewConflictError();
       return result;
     },
+    async update(actorInput: unknown, viewIdInput: unknown, input: unknown) {
+      const actor = actorSchema.safeParse(actorInput);
+      const viewId = z.string().uuid().safeParse(viewIdInput);
+      const parsed = createSchema.safeParse(input);
+      if (!actor.success || !viewId.success || !parsed.success) throw new ProductionSavedViewValidationError();
+      const result = await repository.update({
+        userId: actor.data.userId,
+        actorEmail: actor.data.email,
+        viewId: viewId.data,
+        name: parsed.data.name,
+        queryString: normalizeFormsSavedViewQuery(parsed.data.queryString),
+      });
+      if (result.result === "conflict") throw new ProductionSavedViewConflictError();
+      return result;
+    },
     async remove(actorInput: unknown, viewIdInput: unknown) {
       const actor = actorSchema.safeParse(actorInput);
       const viewId = z.string().uuid().safeParse(viewIdInput);
@@ -198,6 +214,43 @@ export function createDrizzleProductionSavedViewRepository(database: Database): 
           result: "success", idempotencyKey: `saved-view-create:${view.id}`,
         }));
         return { result: "created" as const, view };
+      });
+    },
+    async update(input) {
+      return database.transaction(async (transaction) => {
+        const [existing] = await transaction.select({
+          id: productionSavedViews.id,
+          name: productionSavedViews.name,
+          queryString: productionSavedViews.queryString,
+          updatedAt: productionSavedViews.updatedAt,
+        }).from(productionSavedViews)
+          .where(and(eq(productionSavedViews.id, input.viewId), eq(productionSavedViews.userId, input.userId)))
+          .limit(1);
+        if (!existing) return { result: "not_found" as const };
+        if (existing.name === input.name && existing.queryString === input.queryString) {
+          return { result: "unchanged" as const, view: { id: existing.id, name: existing.name, queryString: existing.queryString } };
+        }
+        const [nameConflict] = await transaction.select({ id: productionSavedViews.id })
+          .from(productionSavedViews)
+          .where(and(
+            eq(productionSavedViews.userId, input.userId),
+            eq(productionSavedViews.name, input.name),
+            ne(productionSavedViews.id, input.viewId),
+          ))
+          .limit(1);
+        if (nameConflict) return { result: "conflict" as const };
+        const [view] = await transaction.update(productionSavedViews)
+          .set({ name: input.name, queryString: input.queryString })
+          .where(and(eq(productionSavedViews.id, input.viewId), eq(productionSavedViews.userId, input.userId)))
+          .returning({ id: productionSavedViews.id, name: productionSavedViews.name, queryString: productionSavedViews.queryString });
+        await transaction.insert(adminAuditLogs).values(buildAuditRecord({
+          actorUserId: input.userId, actorEmail: input.actorEmail,
+          action: "production_view.updated", resourceType: "production_saved_view", resourceId: view.id,
+          beforeSummary: { name: existing.name, queryString: existing.queryString },
+          afterSummary: { name: view.name, queryString: view.queryString }, requestSource: "admin.jobs.views",
+          result: "success", idempotencyKey: `saved-view-update:${view.id}:${existing.updatedAt.getTime()}`,
+        }));
+        return { result: "updated" as const, view };
       });
     },
     async remove(userId, actorEmail, viewId) {

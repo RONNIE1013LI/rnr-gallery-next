@@ -12,6 +12,7 @@ import {
   lt,
   lte,
   ne,
+  notInArray,
   or,
   sql,
   type SQL,
@@ -97,6 +98,7 @@ function filterCondition(
   access: FormWorkbenchAccess,
 ): SQL {
   const scalarValue = typeof condition.value === "string" ? condition.value : condition.value[0] ?? "";
+  const selectedValues = typeof condition.value === "string" ? [condition.value] : [...condition.value];
   const empty = condition.operator === "isEmpty";
   const notEmpty = condition.operator === "isNotEmpty";
   const escaped = scalarValue.replaceAll("%", "\\%").replaceAll("_", "\\_");
@@ -105,6 +107,8 @@ function filterCondition(
     if (notEmpty) return sql`coalesce(${expression}, '') <> ''`;
     if (condition.operator === "contains") return ilike(expression, `%${escaped}%`);
     if (condition.operator === "notEquals") return ne(expression, scalarValue);
+    if (condition.operator === "isAnyOf") return inArray(expression, selectedValues);
+    if (condition.operator === "isNoneOf") return notInArray(expression, selectedValues);
     return eq(expression, scalarValue);
   };
   const numberCondition = (expression: SQL<number>) => {
@@ -263,13 +267,13 @@ function filterCondition(
       select 1 from ${productionFieldValues}
       inner join ${productionFieldDefinitions}
         on ${productionFieldDefinitions.id} = ${productionFieldValues.fieldId}
-      inner join ${user} on ${user.id} = ${scalarValue}
+      inner join ${user} on ${inArray(user.id, selectedValues)}
       where ${productionFieldValues.jobId} = ${productionJobs.id}
         and ${productionFieldDefinitions.fieldKey} = 'submitted_by_name'
         and lower(btrim(${productionFieldValues.value})) = lower(btrim(${user.name}))
     )`;
     const visibleSubmitterMatches = sql<boolean>`(
-      coalesce(${productionJobs.createdByUserId} = ${scalarValue}, false)
+      coalesce(${inArray(productionJobs.createdByUserId, selectedValues)}, false)
       or (
         ${productionJobs.createdByUserId} is null
         and ${productionJobs.legacySource} = 'rnrgallery-order-system'
@@ -278,7 +282,7 @@ function filterCondition(
     )`;
     if (empty) return sql`not (${hasVisibleSubmitter})`;
     if (notEmpty) return hasVisibleSubmitter;
-    if (condition.operator === "notEquals") {
+    if (condition.operator === "notEquals" || condition.operator === "isNoneOf") {
       return sql`${hasVisibleSubmitter} and not (${visibleSubmitterMatches})`;
     }
     return visibleSubmitterMatches;
@@ -290,6 +294,8 @@ function filterCondition(
   if (condition.field === "assignedUserId") {
     if (empty) return isNull(productionJobs.assignedUserId);
     if (notEmpty) return sql`${productionJobs.assignedUserId} is not null`;
+    if (condition.operator === "isAnyOf") return inArray(productionJobs.assignedUserId, selectedValues);
+    if (condition.operator === "isNoneOf") return notInArray(productionJobs.assignedUserId, selectedValues);
     return condition.operator === "notEquals"
       ? ne(productionJobs.assignedUserId, scalarValue)
       : eq(productionJobs.assignedUserId, scalarValue);

@@ -13,6 +13,7 @@ function repository(overrides: Partial<ProductionSavedViewRepository> = {}): Pro
   return {
     list: vi.fn().mockResolvedValue([]),
     create: vi.fn().mockResolvedValue({ result: "created", view: { id: "view-1", name: "Urgent print", queryString: "status=printing&urgent=yes" } }),
+    update: vi.fn().mockResolvedValue({ result: "updated", view: { id: "view-1", name: "Urgent print", queryString: "status=printing&urgent=yes" } }),
     remove: vi.fn().mockResolvedValue("deleted"),
     ...overrides,
   };
@@ -54,6 +55,22 @@ describe("forms saved views", () => {
       userId: "operator-1",
       name: "Urgent",
       queryString: "filter=urgent%7Eequals%7Etrue",
+    }));
+  });
+
+  it("updates a saved form view through actor-scoped persistence", async () => {
+    const repo = repository();
+    const service = createFormsSavedViewService(repo);
+    await service.update(
+      { userId: "operator-1", email: "operator@example.test" },
+      "550e8400-e29b-41d4-a716-446655440000",
+      { name: "Delivery", queryString: "filter=deliveryMethod~isAnyOf~%5B%22post%22%2C%22australia_shipping%22%5D" },
+    );
+    expect(repo.update).toHaveBeenCalledWith(expect.objectContaining({
+      userId: "operator-1",
+      viewId: "550e8400-e29b-41d4-a716-446655440000",
+      name: "Delivery",
+      queryString: "filter=deliveryMethod%7EisAnyOf%7E%255B%2522post%2522%252C%2522australia_shipping%2522%255D",
     }));
   });
 });

@@ -61,4 +61,35 @@ describe("forms saved views", () => {
     ));
     expect(changed).toHaveBeenCalled();
   });
+
+  it("updates the selected saved view name and current filters", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: "updated" })));
+    vi.stubGlobal("fetch", request);
+    const changed = vi.fn();
+    const edit = vi.fn();
+    render(<FormsSavedViews
+      views={[{ id: "view-1", name: "Post", queryString: "filter=deliveryMethod%7Eequals%7Epost" }]}
+      currentQuery="filter=deliveryMethod%7EisAnyOf%7E%255B%2522post%2522%252C%2522australia_shipping%2522%255D"
+      onChanged={changed}
+      onOpen={vi.fn()}
+      onEdit={edit}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit Post" }));
+    expect(edit).toHaveBeenCalledWith("filter=deliveryMethod%7Eequals%7Epost");
+    fireEvent.change(screen.getByLabelText("Saved view name"), { target: { value: "Delivery orders" } });
+    fireEvent.click(screen.getByRole("button", { name: "Update saved view" }));
+
+    await waitFor(() => expect(request).toHaveBeenCalledWith(
+      "/api/forms/views/view-1",
+      expect.objectContaining({
+        method: "PATCH",
+        body: JSON.stringify({
+          name: "Delivery orders",
+          queryString: "filter=deliveryMethod%7EisAnyOf%7E%255B%2522post%2522%252C%2522australia_shipping%2522%255D",
+        }),
+      }),
+    ));
+    expect(changed).toHaveBeenCalled();
+  });
 });

@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { LuFilter } from "react-icons/lu";
 
-import type {
-  FormFilterCondition,
-  FormFilterField,
-  FormFilterGroup,
-  FormFilterOperator,
+import {
+  parseFormWorkbenchQuery,
+  type FormFilterCondition,
+  type FormFilterField,
+  type FormFilterGroup,
+  type FormFilterOperator,
 } from "@/server/forms/forms-workbench-service";
 import styles from "./forms.module.css";
 import { useContainedDialog } from "./use-contained-dialog";
@@ -96,7 +97,8 @@ const baseFields: readonly FilterDefinition[] = [
 ];
 
 const operatorLabels: Readonly<Record<FormFilterOperator, string>> = {
-  equals: "is", notEquals: "is not", before: "before", after: "after", between: "between",
+  equals: "is", notEquals: "is not", isAnyOf: "is any of", isNoneOf: "is none of",
+  before: "before", after: "after", between: "between",
   contains: "contains", greaterThan: "greater than", lessThan: "less than",
   isEmpty: "is empty", isNotEmpty: "is not empty",
 };
@@ -105,8 +107,8 @@ function operatorsFor(field: FilterDefinition): readonly FormFilterOperator[] {
   if (field.kind === "date") return ["equals", "before", "after", "between", "isEmpty", "isNotEmpty"];
   if (field.kind === "number") return ["equals", "greaterThan", "lessThan", "between", "isEmpty", "isNotEmpty"];
   if (field.kind === "text") return ["contains", "equals", "notEquals", "isEmpty", "isNotEmpty"];
-  if (field.kind === "user") return ["equals", "notEquals", "isEmpty", "isNotEmpty"];
-  if (field.kind === "select") return ["equals", "notEquals", "isEmpty", "isNotEmpty"];
+  if (field.kind === "user") return ["equals", "notEquals", "isAnyOf", "isNoneOf", "isEmpty", "isNotEmpty"];
+  if (field.kind === "select") return ["equals", "notEquals", "isAnyOf", "isNoneOf", "isEmpty", "isNotEmpty"];
   return ["equals"];
 }
 
@@ -192,6 +194,9 @@ function filterDraftError(
   if ((updatedFrom && !updatedTo) || (!updatedFrom && updatedTo) || (updatedFrom && updatedTo && updatedFrom > updatedTo)) {
     return "Choose both dates in chronological order.";
   }
+  if (draft.some((condition) => condition.field && (condition.operator === "isAnyOf" || condition.operator === "isNoneOf") && (!Array.isArray(condition.value) || condition.value.length === 0))) {
+    return "Choose at least one value for each multi-value condition.";
+  }
   const total = (updatedFrom && updatedTo ? 1 : 0) + (artist ? 1 : 0) + draft.filter((condition) => condition.field).length;
   return total > MAX_FILTER_CONDITIONS ? `Use no more than ${MAX_FILTER_CONDITIONS} total conditions.` : null;
 }
@@ -218,7 +223,7 @@ export function FormsFilterBuilder({
   customFields?: readonly FormsFilterCustomField[];
   preset?: "all" | "lastSixMonths" | "lastYear";
   onPresetChange?: (preset: "all" | "lastSixMonths" | "lastYear") => void;
-  renderSavedSearches?: (group: FormFilterGroup | null, close: () => void) => ReactNode;
+  renderSavedSearches?: (group: FormFilterGroup | null, close: () => void, load: (queryString: string) => void) => ReactNode;
   onApply: (group: FormFilterGroup) => void;
 }>) {
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -292,6 +297,20 @@ export function FormsFilterBuilder({
     setDraftArtist("");
     setDraft([newCondition()]);
     onPresetChange?.("all");
+  }
+
+  function loadSavedSearch(queryString: string) {
+    const source = new URLSearchParams(queryString);
+    const parsed = parseFormWorkbenchQuery({
+      match: source.get("match") ?? undefined,
+      filter: source.getAll("filter"),
+    });
+    const next = splitCommonConditions(parsed.conditions);
+    setDraftMatch(parsed.match);
+    setDraftUpdatedFrom(next.updatedFrom);
+    setDraftUpdatedTo(next.updatedTo);
+    setDraftArtist(next.artist);
+    setDraft(next.advanced);
   }
 
   const draftError = filterDraftError(draftUpdatedFrom, draftUpdatedTo, draftArtist, draft);
@@ -370,6 +389,7 @@ export function FormsFilterBuilder({
               const definition = condition.field ? availableFields.find((field) => field.value === condition.field) : undefined;
               const options = definition?.kind === "user" ? peopleOptions : definition?.options;
               const isBetween = condition.operator === "between";
+              const isMultiChoice = condition.operator === "isAnyOf" || condition.operator === "isNoneOf";
               const isNoValue = condition.operator === "isEmpty" || condition.operator === "isNotEmpty";
               const values = typeof condition.value === "string" ? [condition.value] : condition.value;
               return (
@@ -395,13 +415,37 @@ export function FormsFilterBuilder({
                       update(index, {
                         ...condition,
                         operator,
-                        value: operator === "between" ? [values[0] || new Date().toISOString().slice(0, 10), values[1] || values[0] || new Date().toISOString().slice(0, 10)] : values[0] ?? "",
+                        value: operator === "between"
+                          ? [values[0] || new Date().toISOString().slice(0, 10), values[1] || values[0] || new Date().toISOString().slice(0, 10)]
+                          : operator === "isAnyOf" || operator === "isNoneOf"
+                            ? values[0] ? [values[0]] : []
+                            : values[0] ?? "",
                       });
                     }}
                   >
                     {operatorsFor(definition).map((operator) => <option key={operator} value={operator}>{operatorLabels[operator]}</option>)}
                   </select> : <select aria-label={`Filter operator ${index + 1}`} value="" disabled><option value="">Contains</option></select>}
-                  {!definition ? <input aria-label={`Filter value ${index + 1}`} value="" placeholder="Value" disabled readOnly /> : isNoValue ? <span className={styles.filterNoValue}>No value needed</span> : options ? (
+                  {!definition ? <input aria-label={`Filter value ${index + 1}`} value="" placeholder="Value" disabled readOnly /> : isNoValue ? <span className={styles.filterNoValue}>No value needed</span> : options && isMultiChoice ? (
+                    <fieldset className={styles.filterMultiValues} aria-label={`Filter values ${index + 1}`}>
+                      <legend className={styles.visuallyHidden}>Choose filter values</legend>
+                      {options.map((option) => {
+                        const checked = values.includes(option.value);
+                        return <label key={option.value}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => update(index, {
+                              ...condition,
+                              value: checked
+                                ? values.filter((value) => value !== option.value)
+                                : [...values, option.value],
+                            })}
+                          />
+                          <span>{option.label}</span>
+                        </label>;
+                      })}
+                    </fieldset>
+                  ) : options ? (
                     <select
                       aria-label={`Filter value ${index + 1}`}
                       value={values[0] ?? ""}
@@ -461,7 +505,7 @@ export function FormsFilterBuilder({
                 >{label}</button>
               ))}
             </div>
-            {renderSavedSearches?.(compiledDraft, close)}
+            {renderSavedSearches?.(compiledDraft, close, loadSavedSearch)}
           </section>
           <div className={styles.filterActions}>
             <button type="button" onClick={resetDraft}>Reset filters</button>

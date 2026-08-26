@@ -330,6 +330,28 @@ describe("forms workbench repository", () => {
     expect(new Set(orResult.items.map((item) => item.id))).toEqual(new Set([assignedJobId, otherJobId]));
   });
 
+  it("matches several delivery methods inside one condition while preserving AND logic", async () => {
+    const result = await listFormOrders(
+      database,
+      parseFormWorkbenchQuery({
+        q: suffix.slice(0, 6),
+        match: "and",
+        filter: [
+          "deliveryMethod~isAnyOf~%5B%22post%22%2C%22pickup%22%5D",
+          "amountOwing~greaterThan~0.00",
+        ],
+      }),
+      {
+        actorUserId: operatorId,
+        assignedOnly: false,
+        canViewCustomerContact: false,
+        canViewFinance: true,
+      },
+    );
+
+    expect(new Set(result.items.map((item) => item.id))).toEqual(new Set([assignedJobId, otherJobId]));
+  });
+
   it("does not treat a held order as Delivered No", async () => {
     const result = await listFormOrders(
       database,

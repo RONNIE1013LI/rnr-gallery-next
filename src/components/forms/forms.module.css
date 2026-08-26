@@ -1273,10 +1273,14 @@
   border-radius: 5px 0 0 5px;
 }
 
-.personalViewList span button:last-child {
+.personalViewList span button:not(:first-child) {
   width: 44px;
   padding: 0;
   border-left: 0;
+  border-radius: 0;
+}
+
+.personalViewList span button:last-child {
   border-radius: 0 5px 5px 0;
 }
 
@@ -1431,6 +1435,34 @@
 .filterValues {
   min-width: 0;
   gap: 5px;
+}
+
+.filterMultiValues {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  max-height: 132px;
+  margin: 0;
+  padding: 6px;
+  overflow: auto;
+  border: 1px solid var(--forms-border);
+  border-radius: 5px;
+}
+
+.filterMultiValues label {
+  display: flex;
+  min-width: 0;
+  min-height: 30px;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 5px;
+  font-size: 13px;
+}
+
+.filterMultiValues input {
+  width: 18px;
+  height: 18px;
+  min-height: 18px;
+  margin: 0;
 }
 
 .filterValues input {
@@ -3000,6 +3032,13 @@
     min-height: var(--forms-filter-control-height-mobile);
     padding-block: 3px;
     font-size: 16px;
+  }
+
+  .filterPanel .filterMultiValues input {
+    width: 18px;
+    height: 18px;
+    min-height: 18px;
+    padding: 0;
   }
 
   .filterHeading button,

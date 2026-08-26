@@ -85,6 +85,29 @@ describe("forms workbench query", () => {
     })).toThrow(FormFilterValidationError);
   });
 
+  it("keeps multi-choice values together as one condition through URL state", () => {
+    const group = parseFormFilterGroup({
+      match: "and",
+      conditions: [{
+        field: "deliveryMethod",
+        operator: "isAnyOf",
+        value: ["post", "australia_shipping"],
+      }],
+    });
+
+    expect(group).toEqual({
+      match: "and",
+      conditions: [{
+        field: "deliveryMethod",
+        operator: "isAnyOf",
+        value: ["post", "australia_shipping"],
+      }],
+    });
+    expect(parseFormWorkbenchQuery({
+      filter: "deliveryMethod~isAnyOf~%5B%22post%22%2C%22australia_shipping%22%5D",
+    }).conditions).toEqual(group.conditions);
+  });
+
   it("accepts persisted manual-entry field families and configured custom fields", () => {
     const customFieldId = "00000000-0000-4000-8000-000000000091";
     expect(parseFormFilterGroup({

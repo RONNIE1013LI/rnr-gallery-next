@@ -44,6 +44,8 @@ export type FormFilterField =
 export type FormFilterOperator =
   | "equals"
   | "notEquals"
+  | "isAnyOf"
+  | "isNoneOf"
   | "before"
   | "after"
   | "between"
@@ -64,14 +66,15 @@ const booleanFields = new Set<FormFilterField>(["urgent", "paymentProof", "fileS
 const textFields = new Set<FormFilterField>(["reference", "productTitle", "size", "deliveryAddress", "customerName", "customerEmail", "customerPhone", "remark", "designText"]);
 const choiceFields = new Set<FormFilterField>(["deliveryMethod", "customerSource", "status", "paymentStatus", "assignedUserId", "submittedByUserId", "bankRecon"]);
 const customFieldPattern = /^custom:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const customOperators: readonly FormFilterOperator[] = ["contains", "equals", "notEquals", "before", "after", "between", "greaterThan", "lessThan", "isEmpty", "isNotEmpty"];
+const customOperators: readonly FormFilterOperator[] = ["contains", "equals", "notEquals", "isAnyOf", "isNoneOf", "before", "after", "between", "greaterThan", "lessThan", "isEmpty", "isNotEmpty"];
+const multiChoiceOperators = new Set<FormFilterOperator>(["isAnyOf", "isNoneOf"]);
 
 function operatorsFor(field: FormFilterField): readonly FormFilterOperator[] {
   if (dateFields.has(field)) return ["equals", "before", "after", "between", "isEmpty", "isNotEmpty"];
   if (numberFields.has(field)) return ["equals", "greaterThan", "lessThan", "between", "isEmpty", "isNotEmpty"];
   if (booleanFields.has(field)) return ["equals"];
   if (textFields.has(field)) return ["contains", "equals", "notEquals", "isEmpty", "isNotEmpty"];
-  if (choiceFields.has(field)) return ["equals", "notEquals", "isEmpty", "isNotEmpty"];
+  if (choiceFields.has(field)) return ["equals", "notEquals", "isAnyOf", "isNoneOf", "isEmpty", "isNotEmpty"];
   return customOperators;
 }
 
@@ -110,7 +113,7 @@ function conditionFrom(input: unknown): FormFilterCondition {
   if (values.some((value) => typeof value !== "string" || !value.trim() || value.length > 255)) {
     throw new FormFilterValidationError("Order filter value is invalid");
   }
-  const normalized = (values as string[]).map((value) => value.trim());
+  const normalized = [...new Set((values as string[]).map((value) => value.trim()))];
   const customField = field.startsWith("custom:");
   if (booleanFields.has(field) && !["true", "false"].includes(normalized[0])) {
     throw new FormFilterValidationError("Boolean filter must be true or false");
@@ -131,13 +134,17 @@ function conditionFrom(input: unknown): FormFilterCondition {
     if (normalized.length !== 2 || (!normalized.every(validDate) && !normalized.every((value) => /^\d+(?:\.\d{1,2})?$/.test(value)))) {
       throw new FormFilterValidationError("Custom range is invalid");
     }
+  } else if (multiChoiceOperators.has(operator)) {
+    if (!Array.isArray(raw) || normalized.length < 1 || normalized.length > 20) {
+      throw new FormFilterValidationError("Choose between one and twenty values");
+    }
   } else if (normalized.length !== 1) {
     throw new FormFilterValidationError("Order filter has too many values");
   }
   return Object.freeze({
     field,
     operator,
-    value: operator === "between" ? Object.freeze(normalized) : normalized[0],
+    value: operator === "between" || multiChoiceOperators.has(operator) ? Object.freeze(normalized) : normalized[0],
   });
 }
 
@@ -157,7 +164,9 @@ export function parseFormFilterGroup(input: unknown): FormFilterGroup {
 export function encodeFormFilterCondition(condition: FormFilterCondition) {
   const value = typeof condition.value === "string"
     ? condition.value
-    : condition.value.join(",");
+    : multiChoiceOperators.has(condition.operator)
+      ? JSON.stringify(condition.value)
+      : condition.value.join(",");
   return [condition.field, condition.operator, value].map(encodeURIComponent).join("~");
 }
 
@@ -169,10 +178,22 @@ function decodeFormFilterCondition(value: string) {
   const field = decodeURIComponent(rawField);
   const operator = decodeURIComponent(rawOperator);
   const decodedValue = decodeURIComponent(rawValue);
+  let conditionValue: string | readonly string[] = decodedValue;
+  if (multiChoiceOperators.has(operator as FormFilterOperator)) {
+    try {
+      const parsed = JSON.parse(decodedValue) as unknown;
+      if (!Array.isArray(parsed)) throw new FormFilterValidationError();
+      conditionValue = parsed as readonly string[];
+    } catch {
+      throw new FormFilterValidationError();
+    }
+  } else if (operator === "between") {
+    conditionValue = decodedValue.split(",");
+  }
   return conditionFrom({
     field,
     operator,
-    value: operator === "between" ? decodedValue.split(",") : decodedValue,
+    value: conditionValue,
   });
 }
 

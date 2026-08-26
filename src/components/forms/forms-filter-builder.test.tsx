@@ -214,6 +214,27 @@ describe("forms filter builder", () => {
     expect(screen.queryByRole("dialog", { name: "Order filters" })).not.toBeInTheDocument();
   });
 
+  it("loads a saved search into the editable filter draft without closing", () => {
+    render(<FormsFilterBuilder
+      conditions={[]}
+      match="and"
+      canViewFinance
+      renderSavedSearches={(_group, _close, load) => (
+        <button type="button" onClick={() => load("filter=deliveryMethod~isAnyOf~%5B%22post%22%2C%22australia_shipping%22%5D")}>Edit delivery search</button>
+      )}
+      onApply={vi.fn()}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders" }));
+    fireEvent.click(screen.getByRole("button", { name: "Edit delivery search" }));
+
+    expect(screen.getByRole("dialog", { name: "Order filters" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Filter field 1")).toHaveValue("deliveryMethod");
+    expect(screen.getByLabelText("Filter operator 1")).toHaveValue("isAnyOf");
+    expect(screen.getByRole("checkbox", { name: "Post" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Australia Shipping" })).toBeChecked();
+  });
+
   it("hides financial filters and can reset the active draft", () => {
     const apply = vi.fn();
     render(<FormsFilterBuilder
@@ -274,6 +295,27 @@ describe("forms filter builder", () => {
     expect(apply).toHaveBeenCalledWith({
       match: "and",
       conditions: [{ field: "reference", operator: "isNotEmpty", value: "" }],
+    });
+  });
+
+  it("combines several delivery methods inside one AND condition", () => {
+    const apply = vi.fn();
+    render(<FormsFilterBuilder conditions={[]} match="and" canViewFinance onApply={apply} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders" }));
+    fireEvent.change(screen.getByLabelText("Filter field 1"), { target: { value: "deliveryMethod" } });
+    fireEvent.change(screen.getByLabelText("Filter operator 1"), { target: { value: "isAnyOf" } });
+    expect(screen.getByRole("checkbox", { name: "Post" })).toBeChecked();
+    fireEvent.click(screen.getByRole("checkbox", { name: "Australia Shipping" }));
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+
+    expect(apply).toHaveBeenCalledWith({
+      match: "and",
+      conditions: [{
+        field: "deliveryMethod",
+        operator: "isAnyOf",
+        value: ["post", "australia_shipping"],
+      }],
     });
   });
 
