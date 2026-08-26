@@ -4314,11 +4314,11 @@ button.paymentProofPreviewMedia {
   margin: 0;
   padding: 0;
   border: 0;
-  accent-color: #8a5b14;
+  accent-color: #000;
 }
 
 .manualChoiceOption:has(input:checked) {
-  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #8a5b14;
+  box-shadow: 0 0 0 2px #fff, 0 0 0 4px #000;
 }
 
 .manualChoiceOption:has(input:focus-visible) {
@@ -5333,8 +5333,10 @@ button.paymentProofPreviewMedia {
   }
 
   .manualChoiceOption {
-    min-height: 38px;
-    padding: 7px 10px 7px 7px;
+    box-sizing: border-box;
+    height: 30px;
+    min-height: 30px;
+    padding: 4px 8px 4px 6px;
     font-size: 12px;
   }
 
