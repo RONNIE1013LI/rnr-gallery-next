@@ -12,6 +12,40 @@ import {
 
 type Ga4Window = Window & Record<string, unknown>;
 
+const ga4ConsentDefaults = {
+  analytics_storage: "granted",
+  ad_storage: "denied",
+  ad_user_data: "denied",
+  ad_personalization: "denied",
+} as const;
+
+function initializeGa4DataLayer(): () => void {
+  const gaWindow = window as Ga4Window & { dataLayer?: unknown[] };
+  const dataLayer = Array.isArray(gaWindow.dataLayer) ? gaWindow.dataLayer : [];
+  gaWindow.dataLayer = dataLayer;
+  const originalPush = dataLayer.push;
+  const guardedPush: typeof dataLayer.push = (...commands) => originalPush.apply(
+    dataLayer,
+    commands.map((command) => {
+      const values = Array.from(command as ArrayLike<unknown>);
+      if (values[0] !== "config" || values[1] !== GA4_MEASUREMENT_ID) return command;
+      const options = values[2] !== null
+        && typeof values[2] === "object"
+        && !Array.isArray(values[2])
+        ? values[2] as Record<string, unknown>
+        : {};
+      return ["config", GA4_MEASUREMENT_ID, { ...options, send_page_view: false }];
+    }),
+  );
+  dataLayer.push = guardedPush;
+  dataLayer.push(["consent", "default", ga4ConsentDefaults]);
+  dataLayer.push(["config", GA4_MEASUREMENT_ID, { send_page_view: false }]);
+
+  return () => {
+    if (dataLayer.push === guardedPush) dataLayer.push = originalPush;
+  };
+}
+
 function setCollectionDisabled(disabled: boolean) {
   (window as Ga4Window)[GA4_DISABLE_WINDOW_KEY] = disabled;
 }
@@ -158,6 +192,7 @@ export function AnalyticsRuntimeController({
 
     prepareLocation(new URL(window.location.href));
     if (!production) return;
+    const restoreDataLayer = initializeGa4DataLayer();
 
     const handleScriptLoad = (event: Event) => {
       const target = event.target;
@@ -178,6 +213,7 @@ export function AnalyticsRuntimeController({
 
     return () => {
       active = false;
+      restoreDataLayer();
       removeHistoryGuard();
       document.removeEventListener("load", handleScriptLoad, true);
       document.documentElement.removeAttribute("data-ga4-enabled");

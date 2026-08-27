@@ -8,6 +8,11 @@ import { resolveRequestMarket } from "@/server/markets/request-market";
 
 export function proxy(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    const canonicalUrl = new URL(request.url);
+    canonicalUrl.pathname = pathname.slice(0, -1);
+    return NextResponse.redirect(canonicalUrl, 308);
+  }
   const resolved = resolveRequestMarket({
     pathname,
     savedPreference: parseMarketCookie(request.cookies.get(MARKET_COOKIE_NAME)?.value),

@@ -143,7 +143,6 @@ describe("public SEO routes", () => {
           "/forms/",
           "/orders/",
           "/pay/",
-          "/product/",
           "/products/*/configure",
         ]),
       }),
@@ -151,6 +150,12 @@ describe("public SEO routes", () => {
         userAgent: "meta-externalagent",
         disallow: "/",
       },
+    ]));
+    expect(robots.rules).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        userAgent: "*",
+        disallow: expect.not.arrayContaining(["/product/"]),
+      }),
     ]));
   });
 

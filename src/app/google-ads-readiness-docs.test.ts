@@ -33,7 +33,7 @@ describe("Google Ads readiness delivery records", () => {
       "inventory_source",
       "reason",
     ]);
-    expect(activeRedirects).toHaveLength(7);
+    expect(activeRedirects).toHaveLength(41);
 
     for (const [oldUrl, newUrl] of [
       ["https://rnrgallery.com/gallery/", "https://rnrgallery.com/design-gallery"],
@@ -53,20 +53,28 @@ describe("Google Ads readiness delivery records", () => {
       ]);
     }
 
+    expect(byOldUrl.get("https://rnrgallery.com/cookies-policy/")?.slice(0, 5)).toEqual([
+      "https://rnrgallery.com/cookies-policy/",
+      "https://rnrgallery.com/privacy",
+      "exact-301",
+      "301",
+      "high",
+    ]);
     expect(byOldUrl.get("https://rnrgallery.com/elementor-5897/")?.slice(0, 4)).toEqual([
       "https://rnrgallery.com/elementor-5897/",
       "",
-      "retire-candidate",
-      "decision",
+      "intentional-404",
+      "404",
     ]);
     expect(byOldUrl.get("https://rnrgallery.com/product/digital-oil-painting-digital-copy-only/")?.slice(0, 4)).toEqual([
         "https://rnrgallery.com/product/digital-oil-painting-digital-copy-only/",
         "",
-        "retire-candidate",
-        "decision",
+        "intentional-404",
+        "404",
       ]);
-    expect(rows.some((row) => row[6].includes("404 or 410"))).toBe(true);
-    expect(rows.filter((row) => row[3] === "decision").every((row) => row[1] === "")).toBe(true);
+    expect(rows.some((row) => row[2] === "retire-candidate")).toBe(false);
+    expect(rows.filter((row) => row[3] === "404").every((row) => row[1] === "" || row[4] === "low"))
+      .toBe(true);
     expect(activeRedirects.some((row) => row[0] === "https://rnrgallery.com/")).toBe(false);
     expect(activeRedirects.some((row) => row[1] === "https://rnrgallery.com/")).toBe(false);
     expect(activeRedirects.every((row) => !row[0].includes(":path*"))).toBe(true);

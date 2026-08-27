@@ -28,6 +28,7 @@ const knownStaticMigrationTargets = new Set([
   "/banners",
   "/canvas",
   "/design-gallery",
+  "/privacy",
 ]);
 
 async function readLegacyUrlMap() {
@@ -78,6 +79,10 @@ describe("Next.js workspace configuration", () => {
       12 * 60 * 60 * 1_000,
     );
     expect(nextConfig.onDemandEntries?.pagesBufferLength).toBeGreaterThanOrEqual(64);
+  });
+
+  it("delegates trailing-slash canonicalization so approved legacy URLs can redirect in one hop", () => {
+    expect(nextConfig.skipTrailingSlashRedirect).toBe(true);
   });
 
   it("keeps only the responsive Gallery widths used by production layouts", () => {
@@ -244,7 +249,7 @@ describe("Next.js workspace configuration", () => {
       new URL(row.old_url).pathname.replace(/\/$/, "") || "/",
     ));
 
-    expect(activeRows).toHaveLength(expectedLegacyPathRedirects.length);
+    expect(activeRows).toHaveLength(41);
     expect(activeRows.every((row) => row.classification === "exact-301")).toBe(true);
 
     for (const row of activeRows) {
@@ -266,5 +271,55 @@ describe("Next.js workspace configuration", () => {
         has: [{ type: "host", value: legacyHostPattern }],
       });
     }
+  });
+
+  it("redirects every implemented legacy URL form directly to the final canonical URL", async () => {
+    const rows = await readLegacyUrlMap();
+    const activeRows = rows.filter((row) => row.redirect_status === "301");
+
+    expect(activeRows).toHaveLength(41);
+    for (const row of activeRows) {
+      const oldUrl = new URL(row.old_url);
+      const sourceWithoutSlash = oldUrl.pathname.replace(/\/$/, "");
+      const expected = `${row.new_url}?utm_source=google&gclid=legacy-test`;
+
+      for (const source of [sourceWithoutSlash, `${sourceWithoutSlash}/`]) {
+        const response = await unstable_getResponseFromNextConfig({
+          url: `${oldUrl.origin}${source}?utm_source=google&gclid=legacy-test`,
+          nextConfig,
+        });
+
+        expect(response.status, source).toBe(301);
+        expect(getRedirectUrl(response), source).toBe(expected);
+      }
+
+      const destinationResponse = await unstable_getResponseFromNextConfig({
+        url: row.new_url,
+        nextConfig,
+      });
+      expect(getRedirectUrl(destinationResponse), row.new_url).toBeNull();
+    }
+  });
+
+  it("records only the approved mapping decisions in the legacy inventory", async () => {
+    const rows = await readLegacyUrlMap();
+    const cookiesPolicy = rows.find((row) => row.old_url.endsWith("/cookies-policy/"));
+    const unresolvedMediumProducts = rows.filter((row) =>
+      row.classification === "review-required"
+      && row.confidence === "medium"
+      && new URL(row.new_url).pathname.startsWith("/products/"),
+    );
+    const lowConfidenceRows = rows.filter((row) => row.confidence === "low");
+
+    expect(cookiesPolicy).toMatchObject({
+      new_url: "https://rnrgallery.com/privacy",
+      classification: "exact-301",
+      redirect_status: "301",
+      confidence: "high",
+    });
+    expect(unresolvedMediumProducts).toHaveLength(0);
+    expect(lowConfidenceRows.every((row) => row.redirect_status === "404")).toBe(true);
+    expect(rows.filter((row) => row.classification === "retire-candidate"))
+      .toHaveLength(0);
   });
 });

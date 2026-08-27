@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultProductRegistry,
@@ -119,20 +119,13 @@ describe("ProductPageContent", () => {
       .toHaveAttribute("href", `/products/digital-oil-painting-canvas/configure?design=${designId}`);
   });
 
-  it("shows a compact Facebook recommendations section below the product", () => {
+  it("leaves the published footer review summary as the sole product-page authority", () => {
     const product = getProductBySlug("digital-oil-painting-canvas")!;
     const { container } = render(<ProductPageContent product={product} selection={null} />);
 
-    const reviews = screen.getByRole("region", {
-      name: "Facebook recommendations",
-    });
-    expect(within(reviews).getAllByRole("listitem")).toHaveLength(2);
-    expect(
-      within(reviews).getByRole("link", { name: "Next recommendations" }),
-    ).toHaveAttribute(
-      "href",
-      "/products/digital-oil-painting-canvas?reviews=2#facebook-recommendations",
-    );
+    expect(screen.queryByRole("region", { name: "Facebook recommendations" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByText(/284 Facebook reviews/i)).not.toBeInTheDocument();
     const structuredData = container.querySelector("#rnr-product-data");
     const breadcrumbs = container.querySelector("#rnr-product-breadcrumbs");
     expect(structuredData).toHaveAttribute("type", "application/ld+json");
@@ -161,8 +154,6 @@ describe("ProductPageContent", () => {
       ],
     });
 
-    render(<ProductPageContent product={product} reviewPage={2} selection={null} />);
-    expect(screen.getByText("Harris Nanoz")).toBeInTheDocument();
   });
 
   it("keeps Australian product links, prices and structured data in AUD", () => {

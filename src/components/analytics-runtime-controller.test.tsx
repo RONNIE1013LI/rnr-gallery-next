@@ -11,6 +11,7 @@ import { AnalyticsRuntimeController } from "./analytics-runtime-controller";
 
 const googleAnalytics = vi.hoisted(() => ({
   automaticPageLocations: [] as string[],
+  commands: [] as unknown[][],
   mounts: 0,
   props: [] as Array<Record<string, unknown>>,
 }));
@@ -22,9 +23,21 @@ vi.mock("@next/third-parties/google", async () => {
       googleAnalytics.props.push(props);
       React.useEffect(() => {
         googleAnalytics.mounts += 1;
-        const disabled = (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] === true;
-        if (!disabled) googleAnalytics.automaticPageLocations.push(window.location.href);
-      }, []);
+        const gaWindow = window as unknown as { dataLayer?: unknown[] };
+        const dataLayer = gaWindow.dataLayer ??= [];
+        dataLayer.push(["js", "official-component"]);
+        dataLayer.push(["config", props.gaId]);
+        googleAnalytics.commands = dataLayer.map((command) =>
+          Array.from(command as ArrayLike<unknown>),
+        );
+        const config = googleAnalytics.commands.findLast((command) =>
+          command[0] === "config" && command[1] === props.gaId,
+        );
+        const options = config?.[2] as Record<string, unknown> | undefined;
+        if (options?.send_page_view !== false) {
+          googleAnalytics.automaticPageLocations.push(window.location.href);
+        }
+      }, [props.gaId]);
       return <script id="_next-ga" data-testid="official-google-analytics" />;
     },
     sendGAEvent: vi.fn(),
@@ -39,6 +52,7 @@ describe("AnalyticsRuntimeController", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     googleAnalytics.automaticPageLocations.length = 0;
+    googleAnalytics.commands.length = 0;
     googleAnalytics.mounts = 0;
     googleAnalytics.props.length = 0;
     sessionStorage.clear();
@@ -48,6 +62,7 @@ describe("AnalyticsRuntimeController", () => {
     document.documentElement.removeAttribute("data-ga4-private-commerce");
     document.documentElement.removeAttribute("data-ga4-loaded");
     delete (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY];
+    delete (window as unknown as { dataLayer?: unknown[] }).dataLayer;
     setLocation("/");
   });
 
@@ -56,12 +71,30 @@ describe("AnalyticsRuntimeController", () => {
   });
 
   it("suppresses automatic config collection and sends one safe public pageview", async () => {
+    setLocation("/products/photo-print-canvas", [
+      "utm_source=google",
+      "utm_medium=cpc",
+      "gclid=private-click-id",
+      "gbraid=private-gbraid",
+      "wbraid=private-wbraid",
+    ].join("&"));
     const view = render(<AnalyticsRuntimeController production />);
 
     await waitFor(() => expect(googleAnalytics.mounts).toBe(1));
     expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
     expect(googleAnalytics.automaticPageLocations).toEqual([]);
+    expect(googleAnalytics.commands.slice(0, 4)).toEqual([
+      ["consent", "default", {
+        analytics_storage: "granted",
+        ad_storage: "denied",
+        ad_user_data: "denied",
+        ad_personalization: "denied",
+      }],
+      ["config", GA4_MEASUREMENT_ID, { send_page_view: false }],
+      ["js", "official-component"],
+      ["config", GA4_MEASUREMENT_ID, { send_page_view: false }],
+    ]);
 
     const script = await view.findByTestId("official-google-analytics");
     act(() => script.dispatchEvent(new Event("load")));
@@ -70,18 +103,23 @@ describe("AnalyticsRuntimeController", () => {
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
     expect(googleAnalytics.props.at(-1)).toMatchObject({ gaId: GA4_MEASUREMENT_ID });
     expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
-      page_location: "http://localhost:3000/",
-      page_referrer: "",
-    });
-
-    await act(async () => {
-      window.history.pushState({}, "", "/products/photo-print-canvas");
-      await Promise.resolve();
-    });
-    expect(sendGAEvent).toHaveBeenLastCalledWith("event", "page_view", {
       page_location: "http://localhost:3000/products/photo-print-canvas",
       page_referrer: "",
     });
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toMatch(
+      /utm_source|utm_medium|gclid|gbraid|wbraid|private-click-id/,
+    );
+
+    await act(async () => {
+      window.history.pushState({}, "", "/products/roll-up-banner?utm_campaign=next-page");
+      await Promise.resolve();
+    });
+    expect(sendGAEvent).toHaveBeenLastCalledWith("event", "page_view", {
+      page_location: "http://localhost:3000/products/roll-up-banner",
+      page_referrer: "",
+    });
+    expect(sendGAEvent).toHaveBeenCalledTimes(2);
     expect(googleAnalytics.mounts).toBe(1);
     view.unmount();
   });

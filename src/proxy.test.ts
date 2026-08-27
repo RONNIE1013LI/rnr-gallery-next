@@ -21,6 +21,16 @@ describe("protected request proxy", () => {
       .toBe("/order-system");
   });
 
+  it("keeps unrelated customer pages on the existing slashless canonical form", () => {
+    const response = proxy(new NextRequest(
+      "https://rnrgallery.com/how-it-works/?utm_source=customer-link",
+    ));
+
+    expect(response.status).toBe(308);
+    expect(response.headers.get("location"))
+      .toBe("https://rnrgallery.com/how-it-works?utm_source=customer-link");
+  });
+
   it("redirects a first Australian storefront request before rendering and preserves its query", () => {
     const response = proxy(new NextRequest("https://rrgallery.co.nz/shop?utm_source=google", {
       headers: { "x-vercel-ip-country": "AU", "user-agent": "Mozilla/5.0" },

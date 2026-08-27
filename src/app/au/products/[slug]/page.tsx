@@ -48,8 +48,6 @@ export default async function AustraliaProductPage({ params, searchParams }: Pro
   }
   const { selection } = await resolveProductPageSearchSelection(product.slug, searchParams);
   const resolvedSearchParams = await searchParams;
-  const rawReviewPage = resolvedSearchParams.reviews;
-  const reviewPage = Number(Array.isArray(rawReviewPage) ? rawReviewPage[0] : rawReviewPage);
   const selectedSizeKey = resolveRequestedSizeKey(
     registry,
     product.key,
@@ -66,7 +64,6 @@ export default async function AustraliaProductPage({ params, searchParams }: Pro
     <ProductPageContent
       product={product}
       selection={selection}
-      reviewPage={Number.isInteger(reviewPage) ? reviewPage : 1}
       market="AU"
       priceInclTaxCents={quote.totalInclGstCents}
       analyticsSubtotalExGstCents={quote.subtotalExGstCents}

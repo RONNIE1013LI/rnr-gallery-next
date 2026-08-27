@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import Image from "next/image";
 import Link from "next/link";
 import { AnalyticsEventTracker } from "@/components/analytics-event-tracker";
-import { FacebookReviews } from "@/components/facebook-reviews";
 import { StructuredData } from "@/components/structured-data";
 import { notFound } from "next/navigation";
 import styles from "@/components/storefront.module.css";
@@ -30,7 +29,6 @@ export type ProductPageProps = {
   params: Promise<{ slug: string }>;
   searchParams: Promise<{
     design?: string | string[];
-    reviews?: string | string[];
     rnr_design?: string | string[];
     size?: string | string[];
   }>;
@@ -60,7 +58,6 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
 export function ProductPageContent({
   product,
   selection,
-  reviewPage = 1,
   market = "NZ",
   priceInclTaxCents,
   analyticsSubtotalExGstCents,
@@ -70,7 +67,6 @@ export function ProductPageContent({
 }: Readonly<{
   product: Product;
   selection: GalleryDesignSelection | null;
-  reviewPage?: number;
   market?: Market;
   priceInclTaxCents?: number;
   analyticsSubtotalExGstCents?: number;
@@ -164,11 +160,6 @@ export function ProductPageContent({
           </Link>
         </div>
       </div>
-      <FacebookReviews
-        compact
-        page={reviewPage}
-        pagePath={productPath}
-      />
     </main>
   );
 }
@@ -204,8 +195,6 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   if (!product) notFound();
   const { selection } = await resolveProductPageSearchSelection(product.slug, searchParams);
   const resolvedSearchParams = await searchParams;
-  const rawReviewPage = resolvedSearchParams.reviews;
-  const reviewPage = Number(Array.isArray(rawReviewPage) ? rawReviewPage[0] : rawReviewPage);
   const selectedSizeKey = resolveRequestedSizeKey(
     registry,
     product.key,
@@ -221,7 +210,6 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
   return (
     <ProductPageContent
       product={product}
-      reviewPage={Number.isInteger(reviewPage) ? reviewPage : 1}
       selection={selection}
       priceInclTaxCents={quote.totalInclGstCents}
       analyticsSubtotalExGstCents={quote.subtotalExGstCents}

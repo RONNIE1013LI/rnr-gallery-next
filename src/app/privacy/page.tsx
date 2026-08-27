@@ -11,7 +11,7 @@ export default function PrivacyPage() {
     <main id="main-content" className={styles.legalPage}>
       <article>
         <h1>Privacy Policy</h1>
-        <p><strong>Last updated: 22 August 2026</strong></p>
+        <p><strong>Last updated: 28 August 2026</strong></p>
         <p>
           This privacy statement explains how R&amp;R Gallery handles personal
           information when you browse our website, contact us, submit photos or
@@ -142,16 +142,33 @@ export default function PrivacyPage() {
 
         <h2>Cookies and order attribution</h2>
         <p>
-          The website uses essential cookies and browser storage to remember cart
-          contents, keep checkout working and maintain a customer session. It may
-          also record the referring website, campaign information, device type and
-          pages viewed in the current session so we can understand how an order
-          reached us. This information is not intended to track you across separate
-          browsing sessions or create advertising profiles.
+          Essential cart, checkout and customer-session cookies and browser storage
+          are separate from analytics storage. They remember cart contents, keep
+          checkout working and maintain a customer session.
         </p>
         <p>
-          You can restrict cookies in your browser, but blocking essential cookies
-          may prevent the cart or checkout from working correctly.
+          We use Google Analytics, provided by Google, to understand use of public
+          website pages. It can use persistent analytics cookies such as <code>_ga</code>
+          {" "}that may remain across browser sessions until they expire or you delete
+          them. Google Analytics may receive technical usage information including
+          page and device information, referring pages and campaign identifiers.
+          Analytics storage is active by default on public pages.
+        </p>
+        <p>
+          Campaign and order-attribution information may include UTM parameters,
+          <code>gclid</code>, <code>gbraid</code> and <code>wbraid</code>. The website
+          keeps allowlisted campaign values in browser session storage and may attach
+          them to an order so we can understand how that order reached us.
+          Advertising-related Consent Mode signals for ad storage, ad user data and
+          ad personalisation are denied. The website does not currently use Google
+          Analytics for remarketing or personalised advertising, and it does not
+          currently implement a Google Ads tag or Enhanced Conversions.
+        </p>
+        <p>
+          You can use your browser controls to block or delete analytics cookies.
+          Blocking essential cookies may prevent the cart, checkout or customer
+          session from working correctly; blocking analytics cookies affects our
+          website measurement rather than those essential functions.
         </p>
         <p>
           The essential Website session cookie used for customer service lasts seven
