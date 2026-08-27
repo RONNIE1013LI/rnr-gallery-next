@@ -1,7 +1,7 @@
 # Google, Merchant and Meta Advertising Readiness Design
 
-**Date:** 2026-08-28  
-**Status:** Proposed for implementation  
+**Date:** 2026-08-28
+**Status:** Approved for implementation
 **Baseline:** `origin/main` at `7febfe7ddc6d960ca2f44c854b220102ead62e0b`
 
 ## Goal
@@ -49,7 +49,7 @@ The existing NZ and AU product pages remain the public landing pages. The shared
 - a link to `/returns-refunds`;
 - a `Start Your Design` CTA to the matching market configure route.
 
-The page will use the registry and quote engine already used by Cart and Checkout. It will not calculate prices independently. Product JSON-LD will be extended with `shippingDetails` and `hasMerchantReturnPolicy` only where the website can express the same published policy accurately.
+The page will use the registry and quote engine already used by Cart and Checkout. It will not calculate prices independently. Product JSON-LD will add only fields that can be expressed completely and accurately. The current live-carrier NZ shipping amount and the current statutory/custom-product return wording are not sufficient to publish complete `shippingDetails` or product-level `hasMerchantReturnPolicy`, so those optional fields remain omitted until the required rate and policy fields are authoritative.
 
 Configure pages remain transactional and noindex. Feeds and ad destinations use public product routes only.
 
@@ -69,10 +69,11 @@ Each feed item is projected from the existing product registry and market quote 
 - exact market price and currency;
 - availability and condition;
 - R&R Gallery brand;
-- market shipping summary where it can be represented accurately;
-- the public returns-policy URL.
+- stable `item_group_id` plus the visible size/variant selection;
+- `identifier_exists=no` for these made-to-order products where no valid GTIN/MPN exists;
+- a market shipping label that maps to an approved Merchant Center account-level shipping policy.
 
-The feed does not use configure URLs, currency conversion, invented identifiers or a duplicate price table. Bundle exclusion is preserved.
+The feed does not invent unsupported XML fields for a returns-policy URL. Returns are configured through the supported Merchant Center account or policy mechanism and must point customers to the public `/returns-refunds` page. The feed does not use configure URLs, currency conversion, invented identifiers or a duplicate price table. Bundle exclusion is preserved.
 
 ## 3. Configure send-later UX
 
@@ -210,7 +211,9 @@ All code-owned canonicals, feed URLs and Meta source URLs use `https://rnrgaller
 
 Legacy `.co.nz` and old WordPress routes remain single-hop redirects where a verified one-to-one destination exists. Advertising parameters are preserved. Deleted content without a reliable replacement remains 404/410 rather than redirecting to the homepage.
 
-Public product pages and feeds remain accessible to Googlebot, Googlebot-Image, AdsBot, Storebot and `facebookexternalhit`. Configure and private routes retain their current indexing restrictions.
+Public product pages and feeds remain accessible to Googlebot, Googlebot-Image, AdsBot, Storebot and `facebookexternalhit`. Both NZ and AU configure routes retain noindex and crawler restrictions. AU hreflang is emitted only when the AU market is public and ready.
+
+The generic `/product/[current-slug]` redirect preserves `utm_*`, `gclid`, `gbraid`, `wbraid` and `fbclid` in addition to existing validated design/gallery state. Untrusted parameters are not promoted to application state, but advertising attribution parameters must survive the single-hop redirect.
 
 ## 10. External platform work
 

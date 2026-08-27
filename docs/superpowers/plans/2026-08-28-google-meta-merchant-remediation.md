@@ -33,11 +33,11 @@
 
 **Interfaces:**
 - Consumes: `schemaFromRegistry`, `deliveryCopy`, `quoteMarketConfiguration`.
-- Produces: registry-derived size labels, market delivery copy, policy links and policy-consistent JSON-LD.
+- Produces: registry-derived size labels, market delivery copy, policy links and policy-consistent JSON-LD without incomplete optional shipping or return shapes.
 
 - [ ] Write failing tests for all size labels, availability, five-business-day production, market delivery, Proof, Two revisions, `/returns-refunds` and `Start Your Design` preserving market/size/design.
 - [ ] Run `npx vitest run 'src/app/products/[slug]/page.test.tsx' 'src/app/au/products/[slug]/page.test.tsx'`; expect RED on missing content.
-- [ ] Pass registry size labels into `ProductPageContent`, render existing delivery/policy copy and extend JSON-LD only with published statements; do not add another price calculation.
+- [ ] Pass registry size labels into `ProductPageContent` and render existing delivery/policy copy; do not add another price calculation or incomplete `shippingDetails`/`hasMerchantReturnPolicy` JSON-LD.
 - [ ] Rerun focused tests and changed-file ESLint; expect PASS.
 - [ ] Commit as `feat: complete public product landing details`.
 
@@ -64,8 +64,8 @@ export function serializeGoogleMerchantFeed(input: Readonly<{
 }>): string;
 ```
 
-- [ ] Extend failing records tests for `.com` public links, brand, `new` condition, no configure URL, exact price/currency, stable IDs, shipping label and returns URL; preserve Bundle exclusion.
-- [ ] Add failing XML tests for escaping, Google namespace, `g:id`, `g:price`, `g:availability`, `g:condition`, `g:brand`, `g:shipping_label`, public links and images.
+- [ ] Extend failing records tests for `.com` public links, brand, `new` condition, no configure URL, exact price/currency, stable IDs, `item_group_id`, visible size or variant, `identifier_exists=no` and shipping policy label; preserve Bundle exclusion.
+- [ ] Add failing XML tests for escaping, Google namespace, `g:id`, `g:item_group_id`, `g:size`, `g:identifier_exists`, `g:price`, `g:availability`, `g:condition`, `g:brand`, `g:shipping_label`, public links and images. Do not invent unsupported returns URL elements.
 - [ ] Run the three Merchant test files; expect RED.
 - [ ] Implement projection and XML serializer through `quoteMarketConfiguration`; return XML content type and safe cache headers; never expose admin registry data.
 - [ ] Verify focused tests, TypeScript and ESLint; expect PASS.
@@ -207,6 +207,7 @@ export function buildManualConversionCandidate(input: ManualConversionInput): Ma
 - Modify: `src/app/contact/page.tsx`
 - Modify: `src/components/site-footer.tsx`
 - Modify: `src/app/returns-refunds/page.tsx`
+- Modify: `src/app/terms/page.tsx`
 - Modify: `src/app/privacy/page.tsx`
 - Modify: `src/app/legal-pages.test.tsx`
 - Modify: `src/app/privacy/page.test.tsx`
@@ -217,7 +218,7 @@ export function buildManualConversionCandidate(input: ManualConversionInput): Ma
 - [ ] Add failing tests for full physical identity on Contact/Footer and sections for custom/change-of-mind, damage, faulty/wrong item, approved-proof mismatch, evidence, remedies, return shipping, refund processing, NZ CGA and Australian Consumer Law.
 - [ ] Add failing Privacy tests for recorded consent, GA/Meta browser measurement, conditional CAPI matching and explicit sensitive-data exclusions.
 - [ ] Run legal/privacy/footer tests; expect RED.
-- [ ] Implement precise, non-exclusionary copy; preserve the approved design-start cancellation rule; do not invent a returns window or guaranteed bank-processing time.
+- [ ] Implement precise, non-exclusionary copy across Returns and Terms; limit the approved design-start/50% rule to change-of-mind cancellation and state that it does not limit faulty, wrong, damaged or statutory remedies. Do not invent a returns window or guaranteed bank-processing time.
 - [ ] Verify tests and commit as `docs: align contact and consumer policies`.
 
 ### Task 8: Re-verify domain, legacy redirects and crawlers
@@ -225,12 +226,15 @@ export function buildManualConversionCandidate(input: ManualConversionInput): Ma
 **Files:**
 - Modify only if RED evidence proves a defect: `src/app/robots.ts`
 - Modify only if RED evidence proves a defect: `src/server/seo/legacy-redirects.ts`
+- Modify on demonstrated RED evidence: `src/server/seo/legacy-product-url.ts`
+- Modify on demonstrated RED evidence: `src/server/seo/metadata.ts` and product metadata callers
+- Test: `src/server/seo/legacy-product-url.test.ts`
 - Test: existing domain, robots, redirect, canonical, sitemap and analytics tests found with `rg --files`.
 
 **Interfaces:** Current `.com` canonical and redirects remain the base.
 
-- [ ] Run `npm run audit:domains` and existing focused SEO tests before editing.
-- [ ] Add missing assertions for one-hop redirects, `utm_*`, `gclid`, `gbraid`, `wbraid`, `fbclid`, ordinary 404/410, no `/product/` crawler block, configure noindex and public product/feed access.
+- [ ] Run the repository's existing focused SEO and domain tests found through `package.json` and `rg --files`; do not call the nonexistent `npm run audit:domains` script.
+- [ ] Add missing assertions for one-hop redirects, generic legacy-product preservation of `utm_*`, `gclid`, `gbraid`, `wbraid`, `fbclid`, ordinary 404/410, no `/product/` crawler block, NZ and AU configure noindex or robots restrictions, AU-readiness-gated hreflang and public product/feed access.
 - [ ] Apply only a demonstrated minimal fix; never send unmatched old pages to the homepage.
 - [ ] Rerun tests and commit only if code changed.
 
