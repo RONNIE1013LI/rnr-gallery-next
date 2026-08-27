@@ -1,7 +1,8 @@
 "use client";
 
-import { GoogleAnalytics, sendGAEvent } from "@next/third-parties/google";
+import { GoogleAnalytics } from "@next/third-parties/google";
 import { useLayoutEffect, useRef, useState } from "react";
+import { sendControlledGaEvent } from "@/domain/analytics/client";
 import {
   classifyGa4Location,
   GA4_DEBUG_SESSION_KEY,
@@ -87,7 +88,7 @@ export function applyGa4LocationPolicy(
     root.removeAttribute("data-ga4-private-purchase");
     if (collectionReady) {
       root.dataset.ga4Enabled = "true";
-      setCollectionDisabled(false);
+      setCollectionDisabled(true);
     } else {
       root.removeAttribute("data-ga4-enabled");
       setCollectionDisabled(true);
@@ -183,7 +184,7 @@ export function AnalyticsRuntimeController({
       const pageLocation = new URL(url.pathname || "/", url.origin).href;
       if (lastPageView.current === pageLocation) return;
       lastPageView.current = pageLocation;
-      sendGAEvent("event", "page_view", {
+      sendControlledGaEvent("page_view", {
         page_location: pageLocation,
         page_referrer: "",
         ...(state.debugMode ? { debug_mode: true } : {}),

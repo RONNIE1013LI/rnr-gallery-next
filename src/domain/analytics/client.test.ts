@@ -52,7 +52,13 @@ describe("emitAnalyticsEvent", () => {
     expect(sendGAEvent).not.toHaveBeenCalled();
 
     document.documentElement.dataset.ga4Enabled = "true";
+    let disabledDuringSend: unknown;
+    vi.mocked(sendGAEvent).mockImplementationOnce(() => {
+      disabledDuringSend = (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY];
+    });
     expect(emitAnalyticsEvent(event)).toBe(true);
+    expect(disabledDuringSend).toBe(false);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
     expect(sendGAEvent).toHaveBeenCalledWith("event", "view_cart", {
       currency: "NZD",
       value: 65,

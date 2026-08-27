@@ -113,6 +113,19 @@ function isPrivateCheckoutReady(event: AnalyticsEvent): boolean {
     && document.documentElement.dataset.ga4Loaded === "true";
 }
 
+export function sendControlledGaEvent(
+  eventName: string,
+  payload: Record<string, unknown>,
+): void {
+  const ga4Window = window as Window & Record<string, unknown>;
+  ga4Window[GA4_DISABLE_WINDOW_KEY] = false;
+  try {
+    sendGAEvent("event", eventName, payload);
+  } finally {
+    ga4Window[GA4_DISABLE_WINDOW_KEY] = true;
+  }
+}
+
 export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
   try {
     if (!event || typeof document === "undefined" || !hasReadyDataLayer()) {
@@ -139,17 +152,7 @@ export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
       } : {}),
       ...(isDebugSession() ? { debug_mode: true } : {}),
     };
-    if (privatePurchase || privateCheckout) {
-      const ga4Window = window as Window & Record<string, unknown>;
-      ga4Window[GA4_DISABLE_WINDOW_KEY] = false;
-      try {
-        sendGAEvent("event", event.event, eventPayload);
-      } finally {
-        ga4Window[GA4_DISABLE_WINDOW_KEY] = true;
-      }
-    } else {
-      sendGAEvent("event", event.event, eventPayload);
-    }
+    sendControlledGaEvent(event.event, eventPayload);
     return true;
   } catch {
     return false;

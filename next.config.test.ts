@@ -1,27 +1,10 @@
 import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import {
-  getRedirectUrl,
-  unstable_getResponseFromNextConfig,
-} from "next/experimental/testing/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import nextConfig, { buildSecurityHeaders } from "./next.config";
 import { products } from "./src/domain/catalogue/products";
-
-const legacyHostPattern = "(?:www\\.)?rnrgallery\\.com|(?:www\\.)?rrgallery\\.co\\.nz";
-const publicHostRedirectSource = "/:path((?!api(?:/|$)).*)";
-
-const expectedLegacyPathRedirects = [
-  ["/gallery", "https://rnrgallery.com/design-gallery"],
-  ["/about-rr", "https://rnrgallery.com/about"],
-  ["/product-category/canvas", "https://rnrgallery.com/canvas"],
-  ["/product-category/banner", "https://rnrgallery.com/banners"],
-  ["/product-category/banner/roll-up-banner", "https://rnrgallery.com/products/roll-up-banner"],
-  ["/product/digital-oil-painting-with-canvas", "https://rnrgallery.com/products/digital-oil-painting-canvas"],
-  ["/product/banner-bundle", "https://rnrgallery.com/products/banner-bundle"],
-] as const;
 
 const knownStaticMigrationTargets = new Set([
   "/about",
@@ -148,101 +131,17 @@ describe("Next.js workspace configuration", () => {
     });
   });
 
-  it("permanently redirects every legacy production host to the .com apex", async () => {
+  it("leaves request-aware canonical and legacy redirects to proxy", async () => {
     const redirects = await nextConfig.redirects?.();
 
-    for (const host of [
-      "www\\.rnrgallery\\.com",
-      "rrgallery\\.co\\.nz",
-      "www\\.rrgallery\\.co\\.nz",
-    ]) {
-      expect(redirects).toContainEqual({
-        source: publicHostRedirectSource,
-        destination: "https://rnrgallery.com/:path*",
-        statusCode: 301,
-        has: [{ type: "host", value: host }],
-      });
-    }
-  });
-
-  it("keeps canonical redirect queries intact and excludes Preview hosts", async () => {
-    const redirects = await nextConfig.redirects?.();
-    const canonicalRedirects = redirects?.filter(
-      (redirect) => redirect.destination === "https://rnrgallery.com/:path*",
-    );
-
-    expect(canonicalRedirects).toHaveLength(3);
-    expect(canonicalRedirects?.every(
-      (redirect) => redirect.source === publicHostRedirectSource,
-    )).toBe(true);
-    expect(canonicalRedirects?.every((redirect) => !redirect.destination.includes("?"))).toBe(true);
-    expect(canonicalRedirects?.some((redirect) =>
-      redirect.has?.some((condition) => condition.type === "host" && condition.value.includes("vercel")),
-    )).toBe(false);
-  });
-
-  it("matches only exact legacy production hostnames", async () => {
-    const redirects = await nextConfig.redirects?.();
-    const hostMatchers = redirects
-      ?.filter((redirect) => redirect.destination === "https://rnrgallery.com/:path*")
-      .map((redirect) => new RegExp(`^${redirect.has?.find(
-        (condition) => condition.type === "host",
-      )?.value}$`));
-
-    expect(hostMatchers?.some((matcher) => matcher.test("www.rnrgallery.com"))).toBe(true);
-    expect(hostMatchers?.some((matcher) => matcher.test("rrgallery.co.nz"))).toBe(true);
-    expect(hostMatchers?.some((matcher) => matcher.test("www.rrgallery.co.nz"))).toBe(true);
-    expect(hostMatchers?.some((matcher) => matcher.test("preview.vercel.app"))).toBe(false);
-    expect(hostMatchers?.some((matcher) => matcher.test("wwwXrrgalleryYcoZnz"))).toBe(false);
-  });
-
-  it("redirects public legacy-host pages without redirecting provider or auth API callbacks", async () => {
-    for (const host of [
-      "www.rnrgallery.com",
-      "rrgallery.co.nz",
-      "www.rrgallery.co.nz",
-    ]) {
-      const publicResponse = await unstable_getResponseFromNextConfig({
-        url: `https://${host}/shop?campaign=legacy`,
-        nextConfig,
-      });
-
-      expect(publicResponse.status).toBe(301);
-      expect(getRedirectUrl(publicResponse)).toBe(
-        "https://rnrgallery.com/shop?campaign=legacy",
-      );
-
-      for (const apiPath of [
-        "/api/payments/webhooks/stripe",
-        "/api/meta/webhook",
-        "/api/auth/callback/google",
-      ]) {
-        const apiResponse = await unstable_getResponseFromNextConfig({
-          url: `https://${host}${apiPath}`,
-          nextConfig,
-        });
-
-        expect(apiResponse.status).not.toBe(301);
-        expect(getRedirectUrl(apiResponse)).toBeNull();
-      }
-    }
-  });
-
-  it("permanently redirects only defensible WordPress paths directly to their canonical routes", async () => {
-    const redirects = await nextConfig.redirects?.();
-
-    for (const [source, destination] of expectedLegacyPathRedirects) {
-      expect(redirects).toContainEqual({
-        source,
-        destination,
-        statusCode: 301,
-        has: [{ type: "host", value: legacyHostPattern }],
-      });
-    }
+    expect(redirects).toEqual([{
+      source: "/forms/:path*",
+      destination: "/order-system/:path*",
+      permanent: false,
+    }]);
   });
 
   it("keeps the legacy URL migration inventory internally safe", async () => {
-    const redirects = await nextConfig.redirects?.();
     const rows = await readLegacyUrlMap();
     const activeRows = rows.filter((row) => row.redirect_status === "301");
     const activeSources = new Set(activeRows.map((row) =>
@@ -264,40 +163,6 @@ describe("Next.js workspace configuration", () => {
       expect(source).not.toContain("*");
       expect(activeSources.has(destination)).toBe(false);
       expect(isCurrentMigrationTarget(destination)).toBe(true);
-      expect(redirects).toContainEqual({
-        source,
-        destination: row.new_url,
-        statusCode: 301,
-        has: [{ type: "host", value: legacyHostPattern }],
-      });
-    }
-  });
-
-  it("redirects every implemented legacy URL form directly to the final canonical URL", async () => {
-    const rows = await readLegacyUrlMap();
-    const activeRows = rows.filter((row) => row.redirect_status === "301");
-
-    expect(activeRows).toHaveLength(41);
-    for (const row of activeRows) {
-      const oldUrl = new URL(row.old_url);
-      const sourceWithoutSlash = oldUrl.pathname.replace(/\/$/, "");
-      const expected = `${row.new_url}?utm_source=google&gclid=legacy-test`;
-
-      for (const source of [sourceWithoutSlash, `${sourceWithoutSlash}/`]) {
-        const response = await unstable_getResponseFromNextConfig({
-          url: `${oldUrl.origin}${source}?utm_source=google&gclid=legacy-test`,
-          nextConfig,
-        });
-
-        expect(response.status, source).toBe(301);
-        expect(getRedirectUrl(response), source).toBe(expected);
-      }
-
-      const destinationResponse = await unstable_getResponseFromNextConfig({
-        url: row.new_url,
-        nextConfig,
-      });
-      expect(getRedirectUrl(destinationResponse), row.new_url).toBeNull();
     }
   });
 

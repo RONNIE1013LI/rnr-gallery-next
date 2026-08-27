@@ -100,7 +100,7 @@ describe("AnalyticsRuntimeController", () => {
     act(() => script.dispatchEvent(new Event("load")));
 
     expect(document.documentElement.dataset.ga4Enabled).toBe("true");
-    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
     expect(googleAnalytics.props.at(-1)).toMatchObject({ gaId: GA4_MEASUREMENT_ID });
     expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
       page_location: "http://localhost:3000/products/photo-print-canvas",
@@ -122,6 +122,53 @@ describe("AnalyticsRuntimeController", () => {
     expect(sendGAEvent).toHaveBeenCalledTimes(2);
     expect(googleAnalytics.mounts).toBe(1);
     view.unmount();
+  });
+
+  it("suppresses delayed Enhanced Measurement pageviews beyond its history interval", async () => {
+    const view = render(<AnalyticsRuntimeController production />);
+    const script = await view.findByTestId("official-google-analytics");
+    act(() => script.dispatchEvent(new Event("load")));
+    vi.mocked(sendGAEvent).mockClear();
+
+    let observedLocation = window.location.href;
+    const enhancedMeasurement = window.setInterval(() => {
+      if (window.location.href === observedLocation) return;
+      observedLocation = window.location.href;
+      if ((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] !== true) {
+        googleAnalytics.automaticPageLocations.push(window.location.href);
+      }
+    }, 1_000);
+
+    try {
+      await act(async () => {
+        window.history.pushState(
+          {},
+          "",
+          "/products/banner-bundle?utm_source=delayed&gclid=private-delayed-click",
+        );
+        await Promise.resolve();
+      });
+
+      expect(sendGAEvent).toHaveBeenCalledOnce();
+      expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
+        page_location: "http://localhost:3000/products/banner-bundle",
+        page_referrer: "",
+      });
+
+      await act(async () => {
+        await new Promise((resolve) => window.setTimeout(resolve, 1_100));
+      });
+
+      expect(googleAnalytics.automaticPageLocations).toEqual([]);
+      expect(sendGAEvent).toHaveBeenCalledOnce();
+      expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
+        .not.toMatch(/utm_source|gclid|private-delayed-click/);
+      expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY])
+        .toBe(true);
+    } finally {
+      window.clearInterval(enhancedMeasurement);
+      view.unmount();
+    }
   });
 
   it("blocks the direct access-token order URL before official GA initializes", async () => {
@@ -212,7 +259,7 @@ describe("AnalyticsRuntimeController", () => {
       page_referrer: "",
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-spa-token");
-    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
     expect(document.documentElement.dataset.ga4Enabled).toBe("true");
     expect(googleAnalytics.mounts).toBe(1);
     window.history.pushState = guardedPushState;
@@ -250,7 +297,7 @@ describe("AnalyticsRuntimeController", () => {
       page_referrer: "",
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain(privateToken);
-    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
     view.unmount();
   });
 
