@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { defaultProductRegistry } from "./product-registry";
-import { buildMerchantProductData } from "./merchant-product-data";
+import {
+  buildMerchantProductData,
+  MERCHANT_ADVERTISING_SAFE_IMAGE_BY_PRODUCT_KEY,
+} from "./merchant-product-data";
 
 function readyAustralianRegistry() {
   const registry = structuredClone(defaultProductRegistry);
@@ -84,6 +87,38 @@ describe("merchant product data", () => {
     expect(items.some((entry) => entry.productKey === "banner-bundle")).toBe(false);
     expect(items.some((entry) => entry.link.includes("banner-bundle"))).toBe(false);
     expect(items.some((entry) => entry.productKey === "roll-up-banner")).toBe(true);
+  });
+
+  it("emits only advertising-safe product families with their approved neutral image", () => {
+    const items = buildMerchantProductData(
+      defaultProductRegistry,
+      "NZ",
+      new URL("https://rnrgallery.com"),
+    );
+    const approvedProductKeys = [
+      "photo-print-canvas",
+      "digital-oil-painting-canvas",
+      "custom-themed-canvas",
+      "roll-up-banner",
+      "custom-themed-wall-banner",
+      "digital-oil-painting-banner",
+    ];
+    const approvedImage = "https://rnrgallery.com/media/home/homepage-begin-product-formats-v2.webp";
+
+    expect(Object.keys(MERCHANT_ADVERTISING_SAFE_IMAGE_BY_PRODUCT_KEY)).toEqual(approvedProductKeys);
+    expect(new Set(items.map((item) => item.productKey))).toEqual(new Set(approvedProductKeys));
+    expect(items).toEqual(expect.arrayContaining([
+      expect.objectContaining({ imageLink: approvedImage }),
+    ]));
+    expect(items.every((item) => item.imageLink === approvedImage)).toBe(true);
+    expect(items.some((item) => item.productKey === "grave-cover")).toBe(false);
+    expect(items.some((item) => item.productKey === "banner-bundle")).toBe(false);
+    for (const productKey of approvedProductKeys) {
+      const variants = items.filter((item) => item.productKey === productKey);
+      expect(new Set(variants.map((item) => item.itemGroupId))).toEqual(
+        new Set([`nz:${productKey}`]),
+      );
+    }
   });
 
   it("does not generate Australian feed data while the market is closed", () => {
