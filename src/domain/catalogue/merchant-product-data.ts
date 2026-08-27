@@ -9,6 +9,8 @@ export type MerchantProductData = Readonly<{
   id: string;
   productKey: string;
   sizeKey: string;
+  itemGroupId: string;
+  size: string;
   title: string;
   description: string;
   link: string;
@@ -16,6 +18,10 @@ export type MerchantProductData = Readonly<{
   currency: MarketCurrency;
   priceInclTaxCents: number;
   availability: "in_stock";
+  brand: "R&R Gallery";
+  condition: "new";
+  identifierExists: false;
+  shippingLabel: "NZ" | "AU";
 }>;
 
 export function buildMerchantProductData(
@@ -40,6 +46,8 @@ export function buildMerchantProductData(
         id: `${market.toLowerCase()}:${product.key}:${size.key}`,
         productKey: product.key,
         sizeKey: size.key,
+        itemGroupId: `${market.toLowerCase()}:${product.key}`,
+        size: size.label,
         title: `${product.title} — ${size.label}`,
         description: product.summary,
         link: new URL(
@@ -50,6 +58,10 @@ export function buildMerchantProductData(
         currency: book.currency,
         priceInclTaxCents: price,
         availability: "in_stock" as const,
+        brand: "R&R Gallery" as const,
+        condition: "new" as const,
+        identifierExists: false as const,
+        shippingLabel: market,
       });
     });
   }));

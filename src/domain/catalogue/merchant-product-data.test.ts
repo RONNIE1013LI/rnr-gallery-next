@@ -26,7 +26,7 @@ describe("merchant product data", () => {
     const items = buildMerchantProductData(
       registry,
       "AU",
-      new URL("https://shop.example.test"),
+      new URL("https://rnrgallery.com"),
     );
     const item = items.find((entry) =>
       entry.productKey === registry.products[0].key &&
@@ -36,8 +36,17 @@ describe("merchant product data", () => {
     expect(item).toMatchObject({
       currency: "AUD",
       priceInclTaxCents: 20_000,
-      link: `https://shop.example.test/au/products/${registry.products[0].slug}?size=${registry.products[0].configuration.sizes[0].key}`,
+      link: `https://rnrgallery.com/au/products/${registry.products[0].slug}?size=${registry.products[0].configuration.sizes[0].key}`,
+      id: `au:${registry.products[0].key}:${registry.products[0].configuration.sizes[0].key}`,
+      itemGroupId: `au:${registry.products[0].key}`,
+      size: registry.products[0].configuration.sizes[0].label,
+      brand: "R&R Gallery",
+      condition: "new",
+      identifierExists: false,
+      shippingLabel: "AU",
     });
+    expect(item?.link).not.toContain("/configure");
+    expect(item?.imageLink).toMatch(/^https:\/\/rnrgallery\.com\/media\//);
   });
 
   it("includes the required default people or pet charge in variant feed prices", () => {
@@ -49,13 +58,13 @@ describe("merchant product data", () => {
     const item = buildMerchantProductData(
       registry,
       "AU",
-      new URL("https://shop.example.test"),
+      new URL("https://rnrgallery.com"),
     ).find((entry) => entry.productKey === product.key && entry.sizeKey === size.key);
 
     expect(item).toMatchObject({
       currency: "AUD",
       priceInclTaxCents: 21_000,
-      link: `https://shop.example.test/au/products/${product.slug}?size=${size.key}`,
+      link: `https://rnrgallery.com/au/products/${product.slug}?size=${size.key}`,
     });
   });
 
@@ -69,7 +78,7 @@ describe("merchant product data", () => {
     const items = buildMerchantProductData(
       registry,
       market,
-      new URL("https://shop.example.test"),
+      new URL("https://rnrgallery.com"),
     );
 
     expect(items.some((entry) => entry.productKey === "banner-bundle")).toBe(false);
@@ -81,7 +90,7 @@ describe("merchant product data", () => {
     expect(() => buildMerchantProductData(
       defaultProductRegistry,
       "AU",
-      new URL("https://shop.example.test"),
+      new URL("https://rnrgallery.com"),
     )).toThrow("Australia market is disabled");
   });
 });
