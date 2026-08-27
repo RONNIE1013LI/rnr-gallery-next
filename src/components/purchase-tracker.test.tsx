@@ -58,6 +58,8 @@ describe("PurchaseTracker", () => {
         tax: 12.75,
         shipping: 23,
         items: [],
+        page_location: "http://localhost:3000/",
+        page_referrer: "",
       },
     ));
     expect(sessionStorage.getItem(storageKey)).toBe("sent");

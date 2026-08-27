@@ -3,6 +3,7 @@
 import { sendGAEvent } from "@next/third-parties/google";
 import type { AnalyticsEvent, AnalyticsItem } from "./events";
 import {
+  classifyGa4Location,
   GA4_DEBUG_SESSION_KEY,
   GA4_DISABLE_WINDOW_KEY,
   GA4_SAFE_CHECKOUT_PATH,
@@ -11,8 +12,9 @@ import {
 
 const GA4_EVENT_PROCESSING_WINDOW_MS = 250;
 let collectionDisableTimer: number | undefined;
+let pendingGaFlushTimer: number | undefined;
 let gaTransportReady = false;
-let gaHistorySuppressed = false;
+let gaHistorySuppressionDepth = 0;
 const pendingGaEvents: Array<Readonly<{
   eventName: string;
   payload: Record<string, unknown>;
@@ -144,6 +146,31 @@ function sendGaEventNow(
   }, GA4_EVENT_PROCESSING_WINDOW_MS);
 }
 
+function safePageContext(payload: Record<string, unknown>): Record<string, unknown> {
+  let requested: URL;
+  try {
+    requested = new URL(
+      typeof payload.page_location === "string"
+        ? payload.page_location
+        : window.location.href,
+      window.location.origin,
+    );
+  } catch {
+    requested = new URL(window.location.href);
+  }
+  const explicitSafePrivatePath = requested.pathname === GA4_SAFE_CHECKOUT_PATH
+    || requested.pathname === GA4_SAFE_PURCHASE_PATH;
+  const pathname = explicitSafePrivatePath
+    || classifyGa4Location(requested.pathname, new URLSearchParams()) === "public"
+    ? requested.pathname || "/"
+    : GA4_SAFE_PURCHASE_PATH;
+  return {
+    ...payload,
+    page_location: new URL(pathname, window.location.origin).href,
+    page_referrer: "",
+  };
+}
+
 export function suppressGaCollection(): void {
   if (collectionDisableTimer !== undefined) {
     window.clearTimeout(collectionDisableTimer);
@@ -153,7 +180,11 @@ export function suppressGaCollection(): void {
 }
 
 function flushPendingGaEvents(): void {
-  if (!gaTransportReady || gaHistorySuppressed || pendingGaEvents.length === 0) {
+  if (pendingGaFlushTimer !== undefined) {
+    window.clearTimeout(pendingGaFlushTimer);
+    pendingGaFlushTimer = undefined;
+  }
+  if (!gaTransportReady || gaHistorySuppressionDepth > 0 || pendingGaEvents.length === 0) {
     return;
   }
   const events = pendingGaEvents.splice(0);
@@ -169,11 +200,17 @@ export function sendControlledGaEvent(
   eventName: string,
   payload: Record<string, unknown>,
 ): void {
-  if (!gaTransportReady || gaHistorySuppressed) {
-    pendingGaEvents.push({ eventName, payload });
+  const event = { eventName, payload: safePageContext(payload) };
+  if (!gaTransportReady || gaHistorySuppressionDepth > 0 || eventName === "select_item") {
+    pendingGaEvents.push(event);
+    if (gaTransportReady
+      && gaHistorySuppressionDepth === 0
+      && pendingGaFlushTimer === undefined) {
+      pendingGaFlushTimer = window.setTimeout(flushPendingGaEvents, 0);
+    }
     return;
   }
-  sendGaEventNow(eventName, payload);
+  sendGaEventNow(event.eventName, event.payload);
 }
 
 export function markGaTransportReady(): void {
@@ -182,19 +219,23 @@ export function markGaTransportReady(): void {
 }
 
 export function beginGaHistorySuppression(): void {
-  gaHistorySuppressed = true;
+  gaHistorySuppressionDepth += 1;
   suppressGaCollection();
 }
 
 export function endGaHistorySuppression(): void {
-  gaHistorySuppressed = false;
-  flushPendingGaEvents();
+  gaHistorySuppressionDepth = Math.max(0, gaHistorySuppressionDepth - 1);
+  if (gaHistorySuppressionDepth === 0) flushPendingGaEvents();
 }
 
 export function resetGaTransport(): void {
   gaTransportReady = false;
-  gaHistorySuppressed = false;
+  gaHistorySuppressionDepth = 0;
   pendingGaEvents.length = 0;
+  if (pendingGaFlushTimer !== undefined) {
+    window.clearTimeout(pendingGaFlushTimer);
+    pendingGaFlushTimer = undefined;
+  }
   suppressGaCollection();
 }
 

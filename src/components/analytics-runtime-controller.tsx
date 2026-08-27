@@ -77,6 +77,14 @@ function controlledDebugMode(url: URL): boolean {
   }
 }
 
+function storedDebugMode(): boolean {
+  try {
+    return window.sessionStorage.getItem(GA4_DEBUG_SESSION_KEY) === "true";
+  } catch {
+    return false;
+  }
+}
+
 export function applyGa4LocationPolicy(
   url: URL,
   production: boolean,
@@ -135,33 +143,31 @@ export function installGa4HistoryGuard(
 ): () => void {
   const originalPushState = window.history.pushState;
   const originalReplaceState = window.history.replaceState;
-  let pendingLocationTimer: number | undefined;
+  const pendingLocationTimers = new Set<number>();
 
-  const finishLocation = () => {
-    if (pendingLocationTimer !== undefined) {
-      window.clearTimeout(pendingLocationTimer);
-    }
-    pendingLocationTimer = window.setTimeout(() => {
-      pendingLocationTimer = undefined;
-      afterLocation(new URL(window.location.href));
+  const finishLocation = (url: URL) => {
+    const timer = window.setTimeout(() => {
+      pendingLocationTimers.delete(timer);
+      afterLocation(url);
     }, GA4_HISTORY_SUPPRESSION_MS);
+    pendingLocationTimers.add(timer);
   };
 
   const guardedPushState: History["pushState"] = function (data, unused, url) {
     beforeLocation(resolveHistoryUrl(url));
     const result = originalPushState.call(window.history, data, unused, url);
-    finishLocation();
+    finishLocation(new URL(window.location.href));
     return result;
   };
   const guardedReplaceState: History["replaceState"] = function (data, unused, url) {
     beforeLocation(resolveHistoryUrl(url));
     const result = originalReplaceState.call(window.history, data, unused, url);
-    finishLocation();
+    finishLocation(new URL(window.location.href));
     return result;
   };
   const handleBrowserNavigation = () => {
     beforeLocation(new URL(window.location.href));
-    finishLocation();
+    finishLocation(new URL(window.location.href));
   };
 
   window.history.pushState = guardedPushState;
@@ -178,9 +184,8 @@ export function installGa4HistoryGuard(
     }
     window.removeEventListener("popstate", handleBrowserNavigation, true);
     window.removeEventListener("hashchange", handleBrowserNavigation, true);
-    if (pendingLocationTimer !== undefined) {
-      window.clearTimeout(pendingLocationTimer);
-    }
+    for (const timer of pendingLocationTimers) window.clearTimeout(timer);
+    pendingLocationTimers.clear();
   };
 }
 
@@ -200,7 +205,14 @@ export function AnalyticsRuntimeController({
     };
     const settleLocation = (url: URL) => {
       if (!active) return;
-      const state = applyGa4LocationPolicy(url, production, tagLoaded.current);
+      const currentUrl = new URL(window.location.href);
+      const isCurrentLocation = currentUrl.href === url.href;
+      const state = isCurrentLocation
+        ? applyGa4LocationPolicy(url, production, tagLoaded.current)
+        : {
+          debugMode: storedDebugMode(),
+          policy: classifyGa4Location(url.pathname, url.searchParams),
+        };
       if (state.policy !== "public" || !tagLoaded.current) return;
 
       const pageLocation = new URL(url.pathname || "/", url.origin).href;

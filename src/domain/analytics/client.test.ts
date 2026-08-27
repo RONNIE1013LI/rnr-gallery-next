@@ -69,6 +69,8 @@ describe("emitAnalyticsEvent", () => {
       currency: "NZD",
       value: 65,
       items: event.items,
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
     });
   });
 
@@ -78,7 +80,7 @@ describe("emitAnalyticsEvent", () => {
     expect(sendGAEvent).not.toHaveBeenCalled();
   });
 
-  it("sends only allowlisted item-list fields", () => {
+  it("sends only allowlisted item-list fields", async () => {
     document.documentElement.dataset.ga4Enabled = "true";
     const listEvent = {
       event: "select_item",
@@ -99,6 +101,7 @@ describe("emitAnalyticsEvent", () => {
     } as const;
 
     expect(emitAnalyticsEvent(listEvent)).toBe(true);
+    await new Promise((resolve) => window.setTimeout(resolve, 0));
     expect(sendGAEvent).toHaveBeenCalledWith("event", "select_item", {
       item_list_id: "nz:shop",
       item_list_name: "Shop",
@@ -112,6 +115,8 @@ describe("emitAnalyticsEvent", () => {
         quantity: 1,
         index: 0,
       }],
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
       .not.toContain("private@example.test");
@@ -194,6 +199,8 @@ describe("emitAnalyticsEvent", () => {
         price: 65,
         quantity: 1,
       }],
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
     });
   });
 
@@ -210,6 +217,8 @@ describe("emitAnalyticsEvent", () => {
       value: 65,
       items: event.items,
       debug_mode: true,
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
     });
   });
 
@@ -224,6 +233,8 @@ describe("emitAnalyticsEvent", () => {
       currency: "NZD",
       value: 65,
       items: event.items,
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
     });
   });
 

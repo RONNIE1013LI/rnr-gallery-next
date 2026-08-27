@@ -198,6 +198,61 @@ describe("AnalyticsRuntimeController", () => {
     }
   });
 
+  it("keeps a queued public event on its safe source page after navigating to a private URL", async () => {
+    setLocation(
+      "/products/photo-print-canvas",
+      "utm_source=google&gclid=private-public-click",
+    );
+    const view = render(<AnalyticsRuntimeController production />);
+    const script = await view.findByTestId("official-google-analytics");
+    loadGoogleTagScriptOnly(script);
+
+    expect(emitAnalyticsEvent({
+      event: "view_item",
+      currency: "NZD",
+      value: 65,
+      items: [{
+        item_id: "photo-print-canvas",
+        item_name: "Photo Print Canvas",
+        price: 65,
+        quantity: 1,
+      }],
+    })).toBe(true);
+
+    await act(async () => {
+      window.history.pushState(
+        {},
+        "",
+        "/orders/RNR-2026-PRIVATE?access=private-order-token",
+      );
+      await new Promise((resolve) => window.setTimeout(resolve, 350));
+      markGoogleTagReady();
+      await new Promise((resolve) => window.setTimeout(resolve, 900));
+    });
+
+    const viewItemCall = vi.mocked(sendGAEvent).mock.calls.find(
+      (command) => command[1] === "view_item",
+    );
+    expect(viewItemCall).toEqual(["event", "view_item", {
+      currency: "NZD",
+      value: 65,
+      items: [{
+        item_id: "photo-print-canvas",
+        item_name: "Photo Print Canvas",
+        price: 65,
+        quantity: 1,
+      }],
+      page_location: "http://localhost:3000/products/photo-print-canvas",
+      page_referrer: "",
+    }]);
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
+      .not.toMatch(/utm_source|gclid|private-public-click|RNR-2026-PRIVATE|private-order-token/);
+    expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY])
+      .toBe(false);
+    view.unmount();
+  });
+
   it("suppresses delayed Enhanced Measurement before sending one queued SPA pageview", async () => {
     setLocation("/checkout", "client_secret=private-checkout-token");
     const view = render(<AnalyticsRuntimeController production />);
@@ -275,6 +330,136 @@ describe("AnalyticsRuntimeController", () => {
     } finally {
       window.clearInterval(transport);
       window.clearInterval(enhancedMeasurement);
+      view.unmount();
+    }
+  });
+
+  it("records each rapid public history location once without reopening Enhanced Measurement", async () => {
+    setLocation("/checkout", "client_secret=private-start-token");
+    const view = render(<AnalyticsRuntimeController production />);
+    const script = await view.findByTestId("official-google-analytics");
+    loadGoogleTag(script);
+    vi.mocked(sendGAEvent).mockClear();
+
+    let observedLocation = window.location.href;
+    const automaticLocations: string[] = [];
+    const enhancedMeasurement = window.setInterval(() => {
+      if (window.location.href === observedLocation) return;
+      observedLocation = window.location.href;
+      if ((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] !== true) {
+        automaticLocations.push(window.location.href);
+      }
+    }, 1_000);
+
+    try {
+      await act(async () => {
+        window.history.pushState(
+          {},
+          "",
+          "/products/photo-print-canvas?utm_source=first&gclid=private-first-click",
+        );
+        await new Promise((resolve) => window.setTimeout(resolve, 300));
+        window.history.pushState(
+          {},
+          "",
+          "/products/banner-bundle?utm_source=second&gclid=private-second-click",
+        );
+        await new Promise((resolve) => window.setTimeout(resolve, 1_250));
+      });
+
+      expect(automaticLocations).toEqual([]);
+      const pageViews = vi.mocked(sendGAEvent).mock.calls.filter(
+        (command) => command[1] === "page_view",
+      );
+      expect(pageViews).toEqual([
+        ["event", "page_view", {
+          page_location: "http://localhost:3000/products/photo-print-canvas",
+          page_referrer: "",
+        }],
+        ["event", "page_view", {
+          page_location: "http://localhost:3000/products/banner-bundle",
+          page_referrer: "",
+        }],
+      ]);
+      expect(JSON.stringify(pageViews))
+        .not.toMatch(/utm_source|gclid|private-first-click|private-second-click|private-start-token/);
+    } finally {
+      window.clearInterval(enhancedMeasurement);
+      view.unmount();
+    }
+  });
+
+  it("keeps a Link commerce event when private history suppression starts immediately", async () => {
+    setLocation("/shop", "utm_source=catalogue");
+    const view = render(<AnalyticsRuntimeController production />);
+    const script = await view.findByTestId("official-google-analytics");
+    loadGoogleTag(script);
+    vi.mocked(sendGAEvent).mockClear();
+
+    const collected: unknown[][] = [];
+    const gaWindow = window as unknown as { dataLayer?: unknown[] };
+    const dataLayer = gaWindow.dataLayer ??= [];
+    let processedCommands = dataLayer.length;
+    vi.mocked(sendGAEvent).mockImplementation((...command) => {
+      dataLayer.push(command);
+    });
+    const transport = window.setInterval(() => {
+      while (processedCommands < dataLayer.length) {
+        const command = Array.from(
+          dataLayer[processedCommands] as ArrayLike<unknown>,
+        );
+        processedCommands += 1;
+        if (command[0] === "event"
+          && (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] !== true) {
+          collected.push(command);
+        }
+      }
+    }, 20);
+
+    try {
+      await act(async () => {
+        expect(emitAnalyticsEvent({
+          event: "select_item",
+          item_list_id: "nz:shop",
+          item_list_name: "Shop",
+          currency: "NZD",
+          value: 65,
+          items: [{
+            item_id: "photo-print-canvas",
+            item_name: "Photo Print Canvas",
+            price: 65,
+            quantity: 1,
+            index: 0,
+          }],
+        })).toBe(true);
+        window.history.pushState(
+          {},
+          "",
+          "/orders/RNR-2026-PRIVATE?access=private-link-token",
+        );
+        await new Promise((resolve) => window.setTimeout(resolve, 1_250));
+      });
+
+      expect(collected).toEqual([["event", "select_item", {
+        currency: "NZD",
+        value: 65,
+        items: [{
+          item_id: "photo-print-canvas",
+          item_name: "Photo Print Canvas",
+          price: 65,
+          quantity: 1,
+          index: 0,
+        }],
+        item_list_id: "nz:shop",
+        item_list_name: "Shop",
+        page_location: "http://localhost:3000/shop",
+        page_referrer: "",
+      }]]);
+      expect(JSON.stringify(collected))
+        .not.toMatch(/utm_source|RNR-2026-PRIVATE|private-link-token/);
+      expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
+    } finally {
+      window.clearInterval(transport);
       view.unmount();
     }
   });
