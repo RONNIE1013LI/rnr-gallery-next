@@ -7,6 +7,7 @@ export const ATTRIBUTION_FIELDS = [
   "gclid",
   "gbraid",
   "wbraid",
+  "fbclid",
 ] as const;
 
 export type AttributionField = typeof ATTRIBUTION_FIELDS[number];

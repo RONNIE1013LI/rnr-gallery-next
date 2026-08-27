@@ -64,17 +64,21 @@ describe("PrivacyPage", () => {
     expect(policy).toMatch(/rate.+data.+no more than 24 hours/i);
   });
 
-  it("accurately discloses current Google Analytics cookies and advertising boundaries", () => {
+  it("accurately discloses current analytics and advertising measurement boundaries", () => {
     render(<PrivacyPage />);
 
     const policy = document.body.textContent?.replace(/\s+/g, " ") ?? "";
 
     expect(policy).toMatch(/Google Analytics.+Google/i);
     expect(policy).toMatch(/persistent.+_ga.+across browser sessions/i);
-    expect(policy).toMatch(/UTM.+gclid.+gbraid.+wbraid/i);
+    expect(policy).toMatch(/UTM.+gclid.+gbraid.+wbraid.+fbclid/i);
     expect(policy).toMatch(/analytics storage.+active by default/i);
     expect(policy).toMatch(/ad storage.+ad user data.+ad personalisation.+denied/i);
-    expect(policy).toMatch(/does not currently use.+remarketing.+personalised advertising.+Enhanced Conversions/i);
+    expect(policy).toMatch(/Google Ads.+purchase measurement/i);
+    expect(policy).toMatch(/enabled.+Meta Pixel.+public page.+product.+cart.+checkout.+purchase/i);
+    expect(policy).toMatch(/does not send.+photos.+artwork.+design instructions.+name.+email.+phone.+address.+payment proof/i);
+    expect(policy).toMatch(/Meta Conversions API.+Google Enhanced Conversions.+not currently enabled/i);
+    expect(policy).toMatch(/do not currently use.+remarketing.+personalised advertising/i);
     expect(policy).toMatch(/browser.+block or delete.+analytics cookies/i);
     expect(policy).toMatch(/essential.+cart.+checkout.+separate/i);
   });

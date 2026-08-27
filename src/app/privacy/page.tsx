@@ -156,13 +156,23 @@ export default function PrivacyPage() {
         </p>
         <p>
           Campaign and order-attribution information may include UTM parameters,
-          <code>gclid</code>, <code>gbraid</code> and <code>wbraid</code>. The website
+          <code>gclid</code>, <code>gbraid</code>, <code>wbraid</code> and <code>fbclid</code>. The website
           keeps allowlisted campaign values in browser session storage and may attach
           them to an order so we can understand how that order reached us.
           Advertising-related Consent Mode signals for ad storage, ad user data and
-          ad personalisation are denied. The website does not currently use Google
-          Analytics for remarketing or personalised advertising, and it does not
-          currently implement a Google Ads tag or Enhanced Conversions.
+          ad personalisation are denied. Google Ads purchase measurement receives a
+          stable transaction reference, currency and order totals after a confirmed
+          payment so repeat views do not create a different transaction.
+        </p>
+        <p>
+          When enabled by an administrator, the Meta Pixel measures public page,
+          product, cart, checkout and purchase activity for advertising performance.
+          Meta may use first-party identifiers such as <code>_fbp</code> and campaign
+          information such as <code>fbclid</code>. The analytics layer does not send
+          customer photos, artwork, design instructions, name, email, phone, address
+          or payment proof to Google or Meta. Meta Conversions API and Google Enhanced
+          Conversions are not currently enabled. We do not currently use these tools
+          for remarketing or personalised advertising campaigns.
         </p>
         <p>
           You can use your browser controls to block or delete analytics cookies.

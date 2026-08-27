@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import { AnalyticsRuntimeController } from "@/components/analytics-runtime-controller";
+import { MetaPixelController } from "@/components/meta-pixel-controller";
 import { CustomerReviewsSection } from "@/components/customer-reviews/customer-reviews-section";
 import { SiteChrome } from "@/components/site-chrome";
 import { isGa4Production } from "@/domain/analytics/runtime";
@@ -65,6 +67,7 @@ export default async function RootLayout({
       "footer.tagline",
       "contact.email",
       "contact.phone",
+      "advertising.meta.enabled",
     ]),
     getOptionalSession(),
     getSafePublicProductRegistry(),
@@ -83,6 +86,12 @@ export default async function RootLayout({
     >
       <body>
         <a className="skip-link" href="#main-content">Skip to content</a>
+        <Suspense fallback={null}>
+          <MetaPixelController
+            production={ga4Enabled}
+            enabled={managed["advertising.meta.enabled"] === "enabled"}
+          />
+        </Suspense>
         <SiteChrome
           initialCustomerId={session?.user.id ?? null}
           initialMarket={resolvedMarket}

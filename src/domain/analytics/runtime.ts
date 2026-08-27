@@ -1,6 +1,7 @@
 export const GA4_MEASUREMENT_ID = "G-RE5Z5B58TJ";
 export const GOOGLE_ADS_TAG_ID = "AW-592203244";
 export const GOOGLE_ADS_PURCHASE_SEND_TO = "AW-592203244/HtL7CMq6qu0bEOybsZoC";
+export const META_PIXEL_ID = "608163224977716";
 export const GA4_DEBUG_SESSION_KEY = "rnr:analytics:v1:debug";
 export const GA4_DISABLE_WINDOW_KEY = `ga-disable-${GA4_MEASUREMENT_ID}`;
 export const GA4_SAFE_PURCHASE_PATH = "/";

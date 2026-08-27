@@ -10,11 +10,11 @@ import {
 
 describe("identity-scoped advertising attribution", () => {
   it("keeps Guest, User A and User B attribution isolated in one browser", () => {
-    saveAttribution(sessionStorage, null, { utm_source: "google", gclid: "guest-click" });
+    saveAttribution(sessionStorage, null, { utm_source: "facebook", fbclid: "guest-meta-click" });
     saveAttribution(sessionStorage, "user-a", { utm_source: "newsletter", utm_campaign: "winter" });
     saveAttribution(sessionStorage, "user-b", { gbraid: "user-b-click" });
 
-    expect(readAttribution(sessionStorage, null)).toEqual({ utm_source: "google", gclid: "guest-click" });
+    expect(readAttribution(sessionStorage, null)).toEqual({ utm_source: "facebook", fbclid: "guest-meta-click" });
     expect(readAttribution(sessionStorage, "user-a")).toEqual({ utm_source: "newsletter", utm_campaign: "winter" });
     expect(readAttribution(sessionStorage, "user-b")).toEqual({ gbraid: "user-b-click" });
     expect(getAttributionStorageKey("user-a")).not.toBe(getAttributionStorageKey("user-b"));
@@ -22,13 +22,13 @@ describe("identity-scoped advertising attribution", () => {
 
   it("accepts only bounded campaign and click identifiers", () => {
     const params = new URLSearchParams({
-      utm_source: " google ", utm_medium: "cpc", gclid: "click-1",
+      utm_source: " google ", utm_medium: "cpc", gclid: "click-1", fbclid: "meta-click-1",
       email: "customer@example.test", name: "Customer", design: "private-design",
       utm_campaign: "x".repeat(300),
     });
 
     expect(parseAttribution(params)).toEqual({
-      utm_source: "google", utm_medium: "cpc", gclid: "click-1",
+      utm_source: "google", utm_medium: "cpc", gclid: "click-1", fbclid: "meta-click-1",
     });
   });
 

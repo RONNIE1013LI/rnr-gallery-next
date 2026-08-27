@@ -52,6 +52,9 @@ describe("emitAnalyticsEvent", () => {
     document.documentElement.removeAttribute("data-ga4-private-purchase");
     document.documentElement.removeAttribute("data-ga4-private-commerce");
     document.documentElement.removeAttribute("data-ga4-loaded");
+    document.documentElement.removeAttribute("data-meta-enabled");
+    document.documentElement.removeAttribute("data-meta-private-commerce");
+    document.documentElement.removeAttribute("data-meta-private-purchase");
     delete (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY];
     window.history.replaceState({}, "", "/");
     sessionStorage.clear();
@@ -80,6 +83,17 @@ describe("emitAnalyticsEvent", () => {
       page_referrer: "",
       send_to: GA4_MEASUREMENT_ID,
     });
+  });
+
+  it("keeps GA4 independent when Meta is enabled but an event is unsupported", () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+    document.documentElement.dataset.metaEnabled = "true";
+
+    expect(emitAnalyticsEvent(event)).toBe(true);
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "view_cart", expect.objectContaining({
+      currency: "NZD",
+      value: 65,
+    }));
   });
 
   it("pins pageview, view_item, and purchase to the configured destination", () => {

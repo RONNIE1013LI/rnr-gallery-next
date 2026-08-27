@@ -21,6 +21,7 @@ describe("admin content service", () => {
       "policy.revisions",
       "checkout.notice",
       "order.confirmation_notice",
+      "advertising.meta.enabled",
     ]));
     expect(new Set(contentDefinitions.map((entry) => entry.key)).size).toBe(contentDefinitions.length);
   });
@@ -59,6 +60,17 @@ describe("admin content service", () => {
     expect(storefront.some((entry) => entry.key.startsWith("email."))).toBe(false);
     expect(email).toHaveLength(18);
     expect(email.every((entry) => entry.key.startsWith("email."))).toBe(true);
+    expect(contentDefinitions.filter((entry) => entry.surface === "system").map((entry) => entry.key))
+      .toEqual(["advertising.meta.enabled"]);
+  });
+
+  it("uses an enabled sales-first Meta default and accepts only the two switch states", () => {
+    expect(resolvePublishedContent([], ["advertising.meta.enabled"]))
+      .toEqual({ "advertising.meta.enabled": "enabled" });
+    expect(parseContentValue("advertising.meta.enabled", " enabled ")).toBe("enabled");
+    expect(parseContentValue("advertising.meta.enabled", "disabled")).toBe("disabled");
+    expect(() => parseContentValue("advertising.meta.enabled", "true"))
+      .toThrow("Advertising tracking must be enabled or disabled");
   });
 
   it("validates customer email signature contact fields", () => {

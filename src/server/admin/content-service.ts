@@ -32,6 +32,20 @@ const storefrontContentDefinitions = Object.freeze([
   { key: "order.confirmation_notice", group: "Orders", label: "Order confirmation notice", description: "Message shown after an order is created.", maxLength: 800, multiline: true, defaultValue: "We will contact you if we need any additional files or details before preparing your draft." },
 ] as const);
 
+const systemContentDefinitions = Object.freeze([
+  {
+    key: "advertising.meta.enabled",
+    group: "Advertising",
+    label: "Meta advertising measurement",
+    description: "Controls the Production Meta Pixel without changing advertising campaigns.",
+    maxLength: 8,
+    multiline: false,
+    defaultValue: "enabled",
+    surface: "system" as const,
+    allowedVariables: Object.freeze([]) as readonly string[],
+  },
+] as const);
+
 export const contentDefinitions = Object.freeze([
   ...storefrontContentDefinitions.map((definition) => Object.freeze({
     ...definition,
@@ -40,6 +54,7 @@ export const contentDefinitions = Object.freeze([
   })),
   ...orderEmailTemplateDefinitions,
   ...customerEmailSignatureDefinitions,
+  ...systemContentDefinitions,
 ]);
 
 export type ContentKey = typeof contentDefinitions[number]["key"];
@@ -64,6 +79,11 @@ export function parseContentValue(key: string, input: unknown): string {
   if (!value) throw new ContentValidationError(`${definition.label} is required`);
   if (value.length > definition.maxLength) throw new ContentValidationError(`${definition.label} is too long`);
   if (/[<>]/.test(value)) throw new ContentValidationError("Plain text only");
+  if (definition.key === "advertising.meta.enabled"
+    && value !== "enabled"
+    && value !== "disabled") {
+    throw new ContentValidationError("Advertising tracking must be enabled or disabled");
+  }
   if (definition.surface === "email") {
     if (/https?:\/\//i.test(value) || /\bwww\./i.test(value)) {
       throw new ContentValidationError("Email template URLs are managed by the system");
@@ -108,7 +128,13 @@ export async function listAdminContent(
     .from(contentEntries)
     .leftJoin(user, eq(user.id, contentEntries.draftUpdatedBy));
 
-  return Object.freeze(contentDefinitions.filter((definition) => definition.surface === surface).map((definition) => {
+  type AdminSurfaceDefinition = Extract<
+    typeof contentDefinitions[number],
+    { surface: "storefront" | "email" }
+  >;
+  return Object.freeze(contentDefinitions.filter(
+    (definition): definition is AdminSurfaceDefinition => definition.surface === surface,
+  ).map((definition) => {
     const row = rows.find((candidate) => candidate.key === definition.key);
     return Object.freeze({
       ...definition,

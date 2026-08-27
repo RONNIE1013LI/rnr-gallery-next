@@ -14,6 +14,7 @@ Updated: 25 August 2026. This document records code readiness only. It does not 
 - Three product-specific landing pages: `/custom-roll-up-banners-nz`, `/custom-wall-banners-nz`, `/custom-photo-canvas-nz`.
 - The official Next.js `GoogleAnalytics` component loads GA4 once from the root layout in Vercel Production only, using measurement ID `G-RE5Z5B58TJ`. There is no duplicate GTM or manually installed `gtag.js` implementation.
 - Typed, PII-free analytics event contracts and live storefront wiring cover `view_item_list`, `select_item`, `view_item`, `add_to_cart`, `remove_from_cart`, `view_cart`, `begin_checkout`, `add_shipping_info`, `add_payment_info`, `purchase`, `generate_lead`, `messenger_click`, `photo_upload_completed`, `send_photos_later_selected` and `design_selected`.
+- Meta Pixel `608163224977716` is installed for Production and controlled by the audited Admin advertising switch, which defaults to enabled. It maps the existing PII-free commerce events to PageView, ViewContent, AddToCart, InitiateCheckout, AddPaymentInfo, Purchase, Lead and Contact. Customer uploads, artwork, contact details, delivery addresses and payment proofs are excluded.
 - Direct configuration routes emit `view_item`; catalogue cards emit list-view and selection events; successful source-photo upload emits only product ID and count; Messenger lead events contain only method and page location. Customer names, contact details, addresses, design text, file names, upload references and image URLs remain excluded by a runtime allowlist.
 - Identity-scoped session attribution for UTM fields, `gclid`, `gbraid` and `wbraid`; only allowlisted, bounded values are accepted and the snapshot is bound to the order at order creation.
 - Purchase events are built only from a server-authorized order with `paymentStatus=paid`, use the real order number, exclude customer/design/upload data and are deduplicated by transaction ID in the browser session.
@@ -75,7 +76,7 @@ Noindex and robots rules are discovery controls, not access control. Authenticat
 ## Ready but disabled
 
 - Google Ads conversion import can use the existing GA4 commerce events after Ads/GA4 account linking. No Google Ads conversion action has been created in code.
-- Meta Pixel is not installed and makes no network requests. Adding it remains disabled until a real Pixel ID, account access and the analytics-consent policy are confirmed.
+- Meta Conversions API is not enabled. It requires a separate official Events Manager access token and server-confirmed integration; no Page token or browser-supplied purchase is used as a substitute.
 - Order-level attribution JSON storage and database migration `0022_lame_madame_masque.sql`.
 - Dynamic sitemap and Merchant-feed-compatible product facts sourced from the product registry. No Shopping feed is published.
 - AU storefront and AUD Stripe support are code-ready but remain closed. The default AU price book has no invented values and cannot be enabled while incomplete.
@@ -87,7 +88,7 @@ Noindex and robots rules are discovery controls, not access control. Authenticat
 
 - Google Ads account and conversion actions.
 - GA4 account access for final Realtime/DebugView review, Google Ads linking and conversion import configuration.
-- Meta Business account, Pixel ID and event-source access.
+- Meta Events Manager access and an official server token for future Conversions API validation.
 - Merchant Center account/feed, product diagnostics and Shopping approval.
 - Search Console verification, sitemap submission and Change of Address.
 - Production DNS, old-host redirect access and production Core Web Vitals field data.

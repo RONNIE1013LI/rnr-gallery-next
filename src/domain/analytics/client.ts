@@ -2,6 +2,7 @@
 
 import { sendGAEvent } from "@next/third-parties/google";
 import type { AnalyticsEvent, AnalyticsItem } from "./events";
+import { emitMetaAnalyticsEvent, isMetaAnalyticsRequired } from "./meta";
 import {
   classifyGa4Location,
   GA4_DEBUG_SESSION_KEY,
@@ -335,6 +336,8 @@ export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
 
     const payload = allowlistedPayload(event);
     if (!payload) return false;
+
+    if (isMetaAnalyticsRequired(event)) emitMetaAnalyticsEvent(event);
 
     const eventPayload = {
       ...payload,
