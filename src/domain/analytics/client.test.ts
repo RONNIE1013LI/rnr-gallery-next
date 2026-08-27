@@ -100,7 +100,7 @@ describe("emitAnalyticsEvent", () => {
     }));
   });
 
-  it("sends only the Ads conversion when advertising is allowed without analytics", () => {
+  it("queues the Ads-only conversion exactly once before recording its dedupe marker", () => {
     document.documentElement.dataset.ga4PrivatePurchase = "true";
     document.documentElement.dataset.ga4Loaded = "true";
     document.documentElement.dataset.googleAdsEnabled = "true";
@@ -108,14 +108,20 @@ describe("emitAnalyticsEvent", () => {
     window.history.replaceState({}, "", "/orders/private?access=private-token");
 
     expect(emitAnalyticsEvent(purchase)).toBe(true);
-    expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
-      .toEqual(["conversion"]);
-    expect(vi.mocked(sendGAEvent).mock.calls[0]?.[2]).toMatchObject({
-      send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
-      transaction_id: "RNR-2026-PRIVATE",
-      value: 97.75,
-      currency: "NZD",
-    });
+    expect(emitAnalyticsEvent(purchase)).toBe(true);
+
+    const commands = (window as unknown as { dataLayer: unknown[] }).dataLayer
+      .map((command) => Array.from(command as ArrayLike<unknown>));
+    expect(commands.filter((command) => command[0] === "event" && command[1] === "conversion"))
+      .toEqual([["event", "conversion", expect.objectContaining({
+        send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
+        transaction_id: "RNR-2026-PRIVATE",
+        value: 97.75,
+        currency: "NZD",
+      })]]);
+    expect(vi.mocked(sendGAEvent)).not.toHaveBeenCalled();
+    expect(sessionStorage.getItem("rnr:analytics:v1:purchase-destination:ads:RNR-2026-PRIVATE"))
+      .toBe("sent");
   });
 
   it("pins pageview, view_item, and purchase to the configured destination", () => {
@@ -134,16 +140,20 @@ describe("emitAnalyticsEvent", () => {
     expect(emitAnalyticsEvent(purchase)).toBe(true);
 
     expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
-      .toEqual(["page_view", "view_item", "purchase", "conversion"]);
+      .toEqual(["page_view", "view_item", "purchase"]);
     for (const command of vi.mocked(sendGAEvent).mock.calls.slice(0, 3)) {
       expect(command[2]).toMatchObject({ send_to: GA4_MEASUREMENT_ID });
     }
-    expect(vi.mocked(sendGAEvent).mock.calls[3]?.[2]).toMatchObject({
+    expect((window as unknown as { dataLayer: unknown[] }).dataLayer).toContainEqual([
+      "event",
+      "conversion",
+      expect.objectContaining({
       send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
       transaction_id: "RNR-2026-PRIVATE",
       value: 97.75,
       currency: "NZD",
-    });
+      }),
+    ]);
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
       .not.toMatch(/G-MALICIOUS|gclid|private-click|private-token/);
   });
@@ -333,7 +343,7 @@ describe("emitAnalyticsEvent", () => {
     expect(emitAnalyticsEvent(event)).toBe(false);
     expect(emitAnalyticsEvent(purchase)).toBe(true);
     expect(disabledDuringSend).toBe(false);
-    expect(sendGAEvent).toHaveBeenCalledTimes(2);
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
     expect(sendGAEvent).toHaveBeenCalledWith("event", "purchase", {
       transaction_id: "RNR-2026-PRIVATE",
       currency: "NZD",
@@ -345,14 +355,6 @@ describe("emitAnalyticsEvent", () => {
       page_referrer: "",
       send_to: GA4_MEASUREMENT_ID,
     });
-    expect(sendGAEvent).toHaveBeenCalledWith("event", "conversion", {
-      transaction_id: "RNR-2026-PRIVATE",
-      currency: "NZD",
-      value: 97.75,
-      page_location: "http://localhost:3000/",
-      page_referrer: "",
-      send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
-    });
     expect((window as unknown as { dataLayer: unknown[] }).dataLayer).toContainEqual([
       "config",
       GOOGLE_ADS_TAG_ID,
@@ -361,6 +363,14 @@ describe("emitAnalyticsEvent", () => {
         page_location: "http://localhost:3000/",
         page_referrer: "",
       },
+    ]);
+    expect((window as unknown as { dataLayer: unknown[] }).dataLayer).toContainEqual([
+      "event",
+      "conversion",
+      expect.objectContaining({
+        send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
+        transaction_id: "RNR-2026-PRIVATE",
+      }),
     ]);
     expect(JSON.stringify({
       dataLayer: (window as unknown as { dataLayer: unknown[] }).dataLayer,
@@ -453,21 +463,25 @@ describe("emitAnalyticsEvent", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 300));
 
     expect(automaticLocations).toEqual([]);
-    expect(vi.mocked(sendGAEvent).mock.calls.at(-3)?.[2]).toMatchObject({
-      page_location: "http://localhost:3000/",
-      page_referrer: "",
-      send_to: GA4_MEASUREMENT_ID,
-    });
     expect(vi.mocked(sendGAEvent).mock.calls.at(-2)?.[2]).toMatchObject({
       page_location: "http://localhost:3000/",
       page_referrer: "",
-      send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
+      send_to: GA4_MEASUREMENT_ID,
     });
     expect(vi.mocked(sendGAEvent).mock.calls.at(-1)?.[2]).toMatchObject({
       page_location: "http://localhost:3000/checkout",
       page_referrer: "",
       send_to: GA4_MEASUREMENT_ID,
     });
+    expect((window as unknown as { dataLayer: unknown[] }).dataLayer).toContainEqual([
+      "event",
+      "conversion",
+      expect.objectContaining({
+        page_location: "http://localhost:3000/",
+        page_referrer: "",
+        send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
+      }),
+    ]);
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
       .not.toMatch(/private-route-token|private-order-token|private-checkout-token/);
   });
@@ -540,24 +554,36 @@ describe("emitAnalyticsEvent", () => {
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
   });
 
-  it("retries only the failed purchase destination", () => {
+  it("retries only an Ads destination whose owned queue failed", () => {
     document.documentElement.dataset.ga4PrivatePurchase = "true";
     document.documentElement.dataset.ga4Loaded = "true";
     (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] = true;
-    vi.mocked(sendGAEvent)
-      .mockImplementationOnce(() => undefined)
-      .mockImplementationOnce(() => {
+    const dataLayer: unknown[] = [];
+    const originalPush = dataLayer.push;
+    let rejectConversion = true;
+    dataLayer.push = (...commands) => {
+      if (rejectConversion && Array.isArray(commands[0]) && commands[0][0] === "event") {
         throw new Error("ads transport unavailable");
-      });
+      }
+      return originalPush.apply(dataLayer, commands);
+    };
+    Object.assign(window, { dataLayer });
+    vi.mocked(sendGAEvent).mockImplementation(() => undefined);
 
     expect(emitAnalyticsEvent(purchase)).toBe(false);
     expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
-      .toEqual(["purchase", "conversion"]);
+      .toEqual(["purchase"]);
+    expect(sessionStorage.getItem("rnr:analytics:v1:purchase-destination:ga4:RNR-2026-PRIVATE"))
+      .toBe("sent");
+    expect(sessionStorage.getItem("rnr:analytics:v1:purchase-destination:ads:RNR-2026-PRIVATE"))
+      .toBeNull();
 
-    vi.mocked(sendGAEvent).mockImplementation(() => undefined);
+    rejectConversion = false;
     expect(emitAnalyticsEvent(purchase)).toBe(true);
     expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
-      .toEqual(["purchase", "conversion", "conversion"]);
+      .toEqual(["purchase"]);
+    expect(dataLayer.filter((command) => Array.from(command as ArrayLike<unknown>)[1] === "conversion"))
+      .toHaveLength(1);
   });
 
   it("does not queue a purchase while history collection is suppressed", () => {
@@ -573,6 +599,6 @@ describe("emitAnalyticsEvent", () => {
 
     expect(emitAnalyticsEvent(purchase)).toBe(true);
     expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
-      .toEqual(["purchase", "conversion"]);
+      .toEqual(["purchase"]);
   });
 });

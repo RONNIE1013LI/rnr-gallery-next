@@ -291,7 +291,10 @@ function sendPurchaseDestination(
   if (window.sessionStorage.getItem(deliveryKey) === "sent") return;
   if (destination === "ads") {
     const dataLayer = (window as Window & { dataLayer?: unknown[] }).dataLayer;
-    dataLayer?.push([
+    if (!Array.isArray(dataLayer) || typeof dataLayer.push !== "function") {
+      throw new Error("Google Ads transport is unavailable");
+    }
+    dataLayer.push([
       "config",
       GOOGLE_ADS_TAG_ID,
       {
@@ -300,6 +303,9 @@ function sendPurchaseDestination(
         page_referrer: "",
       },
     ]);
+    dataLayer.push(["event", eventName, safePageContext(payload, sendTo)]);
+    window.sessionStorage.setItem(deliveryKey, "sent");
+    return;
   }
   sendGaEventNow(eventName, safePageContext(payload, sendTo));
   window.sessionStorage.setItem(deliveryKey, "sent");
