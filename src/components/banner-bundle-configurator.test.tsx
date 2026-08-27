@@ -175,7 +175,7 @@ describe("BannerBundleConfigurator", () => {
 
     fireEvent.click(screen.getAllByText("Send Photos After Ordering")[0]);
     fireEvent.click(screen.getAllByText("Send Photos After Ordering")[1]);
-    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to Cart — Send Photos Later" }));
 
     const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!);
     expect(stored.items[0].deliveryPreference).toBe("post");
@@ -323,11 +323,67 @@ describe("BannerBundleConfigurator", () => {
     fireEvent.click(within(screen.getByRole("region", {
       name: "Wall Banner customisation",
     })).getByText("Send Photos After Ordering"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to Cart — Send Photos Later" }));
 
     expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items)
       .toEqual([expect.objectContaining({ id: "fail-open-bundle" })]);
     expect(screen.getByRole("link", { name: "View cart" })).toBeVisible();
+  });
+
+  it("labels the cart action for send-later only when both Bundle components use it", () => {
+    render(
+      <BannerBundleConfigurator
+        product={product}
+        schema={schema}
+        registry={defaultProductRegistry}
+        pricing={defaultProductRegistry.pricing}
+        orderDate="2026-08-17"
+        createId={() => "bundle-send-later"}
+      />,
+    );
+
+    expect(screen.getByRole("button", { name: "Upload a source photo to continue" }))
+      .toBeDisabled();
+    fireEvent.click(screen.getAllByText("Send Photos After Ordering")[0]);
+    fireEvent.click(screen.getAllByText("Send Photos After Ordering")[1]);
+
+    const addToCart = screen.getByRole("button", {
+      name: "Add to Cart — Send Photos Later",
+    });
+    expect(addToCart).toBeEnabled();
+    fireEvent.click(addToCart);
+
+    expect(JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0])
+      .toMatchObject({
+        id: "bundle-send-later",
+        photoSubmissionMethod: "later",
+        uploadReferences: [],
+        bundleComponents: [
+          expect.objectContaining({ photoSubmissionMethod: "later", uploadReferences: [] }),
+          expect.objectContaining({ photoSubmissionMethod: "later", uploadReferences: [] }),
+        ],
+      });
+  });
+
+  it("keeps the existing upload-required label for a mixed Bundle submission", () => {
+    render(
+      <BannerBundleConfigurator
+        product={product}
+        schema={schema}
+        registry={defaultProductRegistry}
+        pricing={defaultProductRegistry.pricing}
+        orderDate="2026-08-17"
+      />,
+    );
+
+    const rollUp = screen.getByRole("region", { name: "Roll-Up Banner customisation" });
+    fireEvent.click(within(rollUp).getByText("Send Photos After Ordering"));
+
+    expect(screen.getByRole("button", { name: "Upload a source photo to continue" }))
+      .toBeDisabled();
+    expect(screen.queryByRole("button", {
+      name: "Add to Cart — Send Photos Later",
+    })).not.toBeInTheDocument();
   });
 
   it("omits inactive references without deleting files retained in that group", async () => {
@@ -359,7 +415,7 @@ describe("BannerBundleConfigurator", () => {
     }))
       .toBeVisible();
     fireEvent.click(within(wallBanner).getByText("Send Photos After Ordering"));
-    fireEvent.click(screen.getByRole("button", { name: "Add to cart" }));
+    fireEvent.click(screen.getByRole("button", { name: "Add to Cart — Send Photos Later" }));
 
     const stored = JSON.parse(localStorage.getItem("rnr:commerce:v1:guest:cart")!).items[0];
     expect(stored.uploadReferences).toEqual([]);

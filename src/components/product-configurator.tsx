@@ -397,7 +397,9 @@ export function ProductConfigurator({
               ? "Upload a source photo to continue"
               : urgentConfirmationRequired
                 ? "Confirm urgent service to continue"
-                : "Add to cart"}
+                : photoSubmissionMethod === "later"
+                  ? "Add to Cart — Send Photos Later"
+                  : "Add to cart"}
           </button>
           {added && (
             <p className={styles.addedMessage} role="status">

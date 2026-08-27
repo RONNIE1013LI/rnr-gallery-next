@@ -404,11 +404,14 @@ export function BannerBundleConfigurator({
               disabled={addDisabled}
               onClick={addToCart}
             >
-              {uploadRequired
-                ? "Upload a source photo to continue"
-                : urgentConfirmationRequired
-                  ? "Confirm urgent service to continue"
-                  : "Add to cart"}
+            {uploadRequired
+              ? "Upload a source photo to continue"
+              : urgentConfirmationRequired
+                ? "Confirm urgent service to continue"
+                  : rollUp.photoSubmissionMethod === "later" &&
+                      wallBanner.photoSubmissionMethod === "later"
+                    ? "Add to Cart — Send Photos Later"
+                    : "Add to cart"}
             </button>
             {added && (
               <p className={styles.addedMessage} role="status">
