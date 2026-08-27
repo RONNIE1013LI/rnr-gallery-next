@@ -7,13 +7,8 @@
   <key>ProgramArguments</key>
   <array>
     <string>/bin/zsh</string>
-    <string>__RNR_PROJECT_DIR__/ops/macos/run-production-blob-backup.zsh</string>
+    <string>__RNR_RUNTIME_ROOT__/bin/run-backup.zsh</string>
   </array>
-  <key>EnvironmentVariables</key>
-  <dict>
-    <key>RNR_PROJECT_DIR</key>
-    <string>__RNR_PROJECT_DIR__</string>
-  </dict>
   <key>StartCalendarInterval</key>
   <dict>
     <key>Hour</key>
@@ -22,9 +17,9 @@
     <integer>20</integer>
   </dict>
   <key>StandardOutPath</key>
-  <string>__RNR_LOG_DIR__/production-blob-backup.log</string>
+  <string>__RNR_RUNTIME_ROOT__/logs/production-blob-backup.log</string>
   <key>StandardErrorPath</key>
-  <string>__RNR_LOG_DIR__/production-blob-backup.error.log</string>
+  <string>__RNR_RUNTIME_ROOT__/logs/production-blob-backup.error.log</string>
   <key>ProcessType</key>
   <string>Background</string>
 </dict>

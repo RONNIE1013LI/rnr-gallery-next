@@ -3,6 +3,7 @@ import { pathToFileURL } from "node:url";
 import {
   assertTimeCapsuleDestination,
   parseBackupKey,
+  sanitizeBackupError,
   verifyTimeCapsuleDestination,
 } from "./backup-production-blob";
 import { restoreBackupObject } from "./blob-backup/restore";
@@ -15,6 +16,10 @@ function required(name: string) {
 }
 
 export async function main() {
+  if (process.argv.includes("--self-test")) {
+    process.stdout.write('{"status":"READY","command":"restore"}\n');
+    return;
+  }
   const category = required("RNR_BLOB_RESTORE_CATEGORY");
   if (category !== "gallery" && category !== "private") {
     throw new Error("RNR_BLOB_RESTORE_CATEGORY must be gallery or private");
@@ -33,9 +38,15 @@ export async function main() {
 }
 
 const entrypoint = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : null;
-if (entrypoint === import.meta.url) {
+const moduleUrl = import.meta.url;
+if (
+  entrypoint === moduleUrl ||
+  (!moduleUrl && process.argv[1]?.endsWith("/restore-production-blob-backup.cjs"))
+) {
   void main().catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : "Blob restore failed";
+    const message = sanitizeBackupError(
+      error instanceof Error ? error.message : "Blob restore failed",
+    );
     process.stderr.write(`Production Blob restore failed: ${message}\n`);
     process.exitCode = 1;
   });

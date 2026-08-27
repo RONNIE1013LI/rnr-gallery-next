@@ -11,11 +11,18 @@ import {
   assertBackupLockHeld,
   assertTimeCapsuleDestination,
   parseBackupKey,
+  sanitizeBackupError,
 } from "./backup-production-blob";
 
 const execFile = promisify(execFileCallback);
 
 describe("Production Blob backup command safety", () => {
+  it("redacts URLs, email addresses, and credential-like values from operational errors", () => {
+    expect(sanitizeBackupError(
+      "fetch https://blob.example/private/customer.jpg?token=secret failed for person@example.com BLOB_READ_WRITE_TOKEN=abc123",
+    )).toBe("fetch [REDACTED_URL] failed for [REDACTED_EMAIL] BLOB_READ_WRITE_TOKEN=[REDACTED]");
+  });
+
   it("accepts only one canonical 256-bit backup key", () => {
     const value = randomBytes(32).toString("base64");
     expect(parseBackupKey(value)).toEqual(Buffer.from(value, "base64"));
@@ -84,7 +91,7 @@ describe("Production Blob backup command safety", () => {
       scripts?: Record<string, string>;
     };
     const wrapper = await readFile(
-      join(process.cwd(), "ops/macos/run-production-blob-backup.zsh"),
+      join(process.cwd(), "ops/macos/runtime/run-production-blob-backup.zsh"),
       "utf8",
     );
     const launchAgent = await readFile(
@@ -92,10 +99,64 @@ describe("Production Blob backup command safety", () => {
       "utf8",
     );
     expect(packageJson.scripts?.["backup:blob:production"])
-      .toBe("zsh ops/macos/run-production-blob-backup.zsh");
+      .toContain("Application Support/RNR Gallery/Backup/bin/run-backup.zsh");
     expect(wrapper).toContain("/usr/bin/lockf -s -t 0 -k");
     expect(wrapper).not.toContain("RNR_BLOB_BACKUP_LOCK_HELD");
-    expect(launchAgent).toContain("run-production-blob-backup.zsh");
+    expect(launchAgent).toContain("/bin/run-backup.zsh");
+  });
+
+  it("installs a runnable operational copy with no source worktree dependency", async () => {
+    const root = await mkdtemp(join(tmpdir(), "rnr-backup-runtime-install-"));
+    const runtimeRoot = join(root, "Application Support/RNR Gallery/Backup");
+    const launchAgents = join(root, "LaunchAgents");
+    const installer = join(
+      process.cwd(),
+      "ops/macos/install-production-blob-backup-runtime.zsh",
+    );
+    try {
+      await execFile("/bin/zsh", [installer], {
+        env: {
+          ...process.env,
+          HOME: root,
+          RNR_BACKUP_INSTALL_ONLY: "1",
+          RNR_BACKUP_LAUNCH_AGENTS_DIR: launchAgents,
+          RNR_BACKUP_RUNTIME_ROOT: runtimeRoot,
+          RNR_PROJECT_DIR: process.cwd(),
+        },
+      });
+      const activeRelease = (await readFile(
+        join(runtimeRoot, "config/active-release"),
+        "utf8",
+      )).trim();
+      expect(activeRelease).toMatch(/^[0-9a-f]{40}$/);
+      const release = join(runtimeRoot, "releases", activeRelease);
+      const plist = await readFile(
+        join(launchAgents, "com.rnr.production-blob-backup.plist"),
+        "utf8",
+      );
+      const wrapper = await readFile(join(runtimeRoot, "bin/run-backup.zsh"), "utf8");
+      const restore = await readFile(join(runtimeRoot, "bin/restore-backup.zsh"), "utf8");
+      const status = await readFile(join(runtimeRoot, "bin/status.zsh"), "utf8");
+      const installedText = [plist, wrapper, restore, status].join("\n");
+      expect(installedText).not.toContain(process.cwd());
+      expect(installedText).not.toContain(".worktrees/");
+      expect(plist).toContain(join(runtimeRoot, "bin/run-backup.zsh"));
+      expect(plist).toContain("<integer>5</integer>");
+      expect(plist).toContain("<integer>20</integer>");
+
+      const backupSelfTest = await execFile(process.execPath, [
+        join(release, "backup-production-blob.cjs"),
+        "--self-test",
+      ]);
+      const restoreSelfTest = await execFile(process.execPath, [
+        join(release, "restore-production-blob-backup.cjs"),
+        "--self-test",
+      ]);
+      expect(backupSelfTest.stdout.trim()).toBe('{"status":"READY","command":"backup"}');
+      expect(restoreSelfTest.stdout.trim()).toBe('{"status":"READY","command":"restore"}');
+    } finally {
+      await rm(root, { recursive: true, force: true });
+    }
   });
 
   it("rejects concurrent native locks and releases the lock when the holder terminates", async () => {

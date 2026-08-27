@@ -51,11 +51,29 @@ before the first write to the share. The encryption key and Production Blob
 source token are read from macOS Keychain at runtime; never put them in this
 repository or an environment file.
 
-Install the daily 05:20 LaunchAgent after the Keychain entries and mount health
-have been verified:
+Install or update the independent operational runtime and daily 05:20
+LaunchAgent after the Keychain entries and mount health have been verified:
 
 ```bash
-zsh ops/macos/install-production-blob-backup-launch-agent.zsh
+npm run backup:blob:install
+```
+
+The installer builds a self-contained, versioned runtime under
+`~/Library/Application Support/RNR Gallery/Backup`, verifies it before
+activation, and points LaunchAgent only at that stable location. It does not
+symlink to the repository or a worktree. Re-run the installer from verified
+source whenever backup code changes; never edit the installed runtime by hand.
+
+Operational commands after installation:
+
+```bash
+npm run backup:blob:status
+npm run backup:blob:production
+RNR_BLOB_BACKUP_DESTINATION="/Volumes/Data/RNR Gallery Backups" \
+RNR_BLOB_RESTORE_CATEGORY=gallery \
+RNR_BLOB_RESTORE_SOURCE_KEY="gallery/example.webp" \
+RNR_BLOB_RESTORE_OUTPUT="/absolute/isolated/output.webp" \
+npm run backup:blob:restore
 ```
 
 The job is incremental and fail-closed. Unknown Blob prefixes stop the run. A
@@ -67,11 +85,11 @@ the corresponding Production object, so the backup does not become a permanent
 private-data archive.
 
 All supported Production backup processes use the same macOS `lockf` advisory
-lock under `~/Library/Application Support/RNR Next`. The kernel releases the
+lock under the installed runtime `state` directory. The kernel releases the
 lock when the process exits, crashes, or the Mac restarts, so a stale lock file
 cannot block future runs. The npm command and LaunchAgent both use the same
-wrapper; the TypeScript Production command refuses to run when that lock
-boundary is bypassed by verifying its actual process ancestry rather than
+installed wrapper; the TypeScript Production command refuses to run when that
+lock boundary is bypassed by verifying its actual process ancestry rather than
 trusting an environment flag. A network call that stalls keeps the lock instead
 of releasing it while a child might still be writing; terminate the scheduled
 job before retrying. This backup destination is assigned to this Mac only; do

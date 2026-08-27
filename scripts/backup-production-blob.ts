@@ -21,6 +21,14 @@ function required(name: string) {
   return value;
 }
 
+export function sanitizeBackupError(value: string) {
+  return value
+    .replace(/https?:\/\/\S+/gi, "[REDACTED_URL]")
+    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[REDACTED_EMAIL]")
+    .replace(/\b([A-Z0-9_]*(?:TOKEN|KEY|SECRET|PASSWORD)[A-Z0-9_]*)=\S+/gi, "$1=[REDACTED]")
+    .slice(0, 500);
+}
+
 export function parseBackupKey(value: string) {
   const normalized = value.replace(/\s+/g, "");
   const key = Buffer.from(normalized, "base64");
@@ -117,7 +125,12 @@ export async function verifyTimeCapsuleDestination(
 }
 
 export async function main() {
-  await assertBackupLockHeld();
+  if (process.argv.includes("--self-test")) {
+    process.stdout.write('{"status":"READY","command":"backup"}\n');
+    return;
+  }
+  const lockPath = process.env.RNR_BLOB_BACKUP_LOCK_PATH?.trim() || PRODUCTION_BACKUP_LOCK;
+  await assertBackupLockHeld(lockPath);
   const destination = assertTimeCapsuleDestination(
     process.env.RNR_BLOB_BACKUP_DESTINATION?.trim() || DEFAULT_DESTINATION,
   );
@@ -150,9 +163,15 @@ export async function main() {
 }
 
 const entrypoint = process.argv[1] ? pathToFileURL(resolve(process.argv[1])).href : null;
-if (entrypoint === import.meta.url) {
+const moduleUrl = import.meta.url;
+if (
+  entrypoint === moduleUrl ||
+  (!moduleUrl && process.argv[1]?.endsWith("/backup-production-blob.cjs"))
+) {
   void main().catch((error: unknown) => {
-    const message = error instanceof Error ? error.message : "Blob backup failed";
+    const message = sanitizeBackupError(
+      error instanceof Error ? error.message : "Blob backup failed",
+    );
     process.stderr.write(`Production Blob backup failed: ${message}\n`);
     process.exitCode = 1;
   });
