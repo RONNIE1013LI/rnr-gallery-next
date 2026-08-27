@@ -28,7 +28,7 @@ const signatureEntries = Object.freeze([
   ["email.signature.team_name", "Team name", "Customer Service Team"],
   ["email.signature.company_line", "Company line", "Customer Service | R&R Gallery Ltd. NZ"],
   ["email.signature.email", "Customer-service email", "customerservice@rnrgallery.com"],
-  ["email.signature.website_label", "Website label", "rrgallery.co.nz"],
+  ["email.signature.website_label", "Website label", "rnrgallery.com"],
   ["email.signature.address", "Street address", "11 Para Close, Fairview Heights, Auckland 0632."],
 ].map(([key, label, value]) => ({
   key,
@@ -53,7 +53,7 @@ afterEach(() => {
 
 describe("EmailTemplateForm", () => {
   it("previews templates with fictional sample values and lists available variables", () => {
-    render(<EmailTemplateForm entries={entries} canPublish siteUrl="https://rrgallery.co.nz" />);
+    render(<EmailTemplateForm entries={entries} canPublish siteUrl="https://rnrgallery.com" />);
 
     expect(screen.getByText("Receipt for Sample Customer — RNR-SAMPLE-1001 — NZ$264.50"))
       .toBeInTheDocument();
@@ -67,7 +67,7 @@ describe("EmailTemplateForm", () => {
       <EmailTemplateForm
         entries={signatureEntries}
         canPublish
-        siteUrl="https://rrgallery.co.nz"
+        siteUrl="https://rnrgallery.com"
       />,
     );
 
@@ -76,11 +76,11 @@ describe("EmailTemplateForm", () => {
     expect(previewRegion).toHaveTextContent("Customer Service Team");
     expect(previewRegion).toHaveTextContent("Customer Service | R&R Gallery Ltd. NZ");
     expect(previewRegion).toHaveTextContent("customerservice@rnrgallery.com");
-    expect(previewRegion).toHaveTextContent("rrgallery.co.nz");
+    expect(previewRegion).toHaveTextContent("rnrgallery.com");
     expect(previewRegion).toHaveTextContent("11 Para Close, Fairview Heights, Auckland 0632.");
     expect(previewRegion.querySelector("img")).toHaveAttribute(
       "src",
-      "https://rrgallery.co.nz/media/brand/rr-gallery-email-logo.png",
+      "https://rnrgallery.com/media/brand/rr-gallery-email-logo.png",
     );
     expect(screen.queryByText("Sample preview")).not.toBeInTheDocument();
   });
@@ -90,7 +90,7 @@ describe("EmailTemplateForm", () => {
       <EmailTemplateForm
         entries={signatureEntries}
         canPublish
-        siteUrl="https://rrgallery.co.nz"
+        siteUrl="https://rnrgallery.com"
       />,
     );
 
@@ -109,7 +109,7 @@ describe("EmailTemplateForm", () => {
       headers: { "Content-Type": "application/json" },
     }));
     vi.stubGlobal("fetch", fetch);
-    render(<EmailTemplateForm entries={entries} canPublish siteUrl="https://rrgallery.co.nz" />);
+    render(<EmailTemplateForm entries={entries} canPublish siteUrl="https://rnrgallery.com" />);
 
     fireEvent.change(screen.getByDisplayValue(entries[0].draftValue), {
       target: { value: "Receipt — {{order_number}}" },
@@ -136,7 +136,7 @@ describe("EmailTemplateForm", () => {
     }));
     vi.stubGlobal("confirm", confirm);
     vi.stubGlobal("fetch", fetch);
-    render(<EmailTemplateForm entries={entries} canPublish siteUrl="https://rrgallery.co.nz" />);
+    render(<EmailTemplateForm entries={entries} canPublish siteUrl="https://rnrgallery.com" />);
 
     fireEvent.click(screen.getByRole("button", { name: "Publish" }));
     expect(fetch).not.toHaveBeenCalled();
@@ -169,7 +169,7 @@ describe("EmailTemplateForm", () => {
       publishedValue: "Customer Service Team",
       updatedAt: null,
       updatedByEmail: null,
-    }]} canPublish siteUrl="https://rrgallery.co.nz" />);
+    }]} canPublish siteUrl="https://rnrgallery.com" />);
 
     expect(screen.getByText("No variables are available for this field.")).toBeInTheDocument();
     fireEvent.change(screen.getByDisplayValue("Customer Service Team"), {

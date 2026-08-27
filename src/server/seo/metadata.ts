@@ -10,6 +10,36 @@ type PublicMetadataInput = Readonly<{
   socialTitle?: string;
 }>;
 
+const pairedMarketPaths = new Map<string, string>([
+  ["/", "/au"],
+  ["/shop", "/au/shop"],
+  ["/canvas", "/au/canvas"],
+  ["/banners", "/au/banners"],
+]);
+
+export function buildMarketAlternates(path: string, siteUrl: URL = getSiteUrl()) {
+  let nzPath = path;
+  let auPath = pairedMarketPaths.get(path);
+
+  if (!auPath && path.startsWith("/products/")) {
+    auPath = `/au${path}`;
+  } else if (path === "/au" || path.startsWith("/au/")) {
+    auPath = path;
+    nzPath = path === "/au" ? "/" : path.slice(3);
+    const expectedAuPath = pairedMarketPaths.get(nzPath)
+      ?? (nzPath.startsWith("/products/") ? `/au${nzPath}` : undefined);
+    if (expectedAuPath !== auPath) return undefined;
+  }
+
+  if (!auPath) return undefined;
+  const absolute = (pathname: string) => new URL(pathname, siteUrl).toString();
+  return {
+    "en-NZ": absolute(nzPath),
+    "en-AU": absolute(auPath),
+    "x-default": absolute(nzPath),
+  };
+}
+
 export function absoluteSiteUrl(path: string): string {
   return new URL(path, getSiteUrl()).toString();
 }
@@ -25,10 +55,14 @@ export function buildPublicMetadata({
   const canonical = absoluteSiteUrl(path);
   const socialImage = absoluteSiteUrl(image);
   const shareTitle = socialTitle ?? title;
+  const languages = buildMarketAlternates(path);
   return {
     title,
     description,
-    alternates: { canonical },
+    alternates: {
+      canonical,
+      ...(languages ? { languages } : {}),
+    },
     openGraph: {
       type: "website",
       title: shareTitle,

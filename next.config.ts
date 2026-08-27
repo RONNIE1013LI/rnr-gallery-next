@@ -4,6 +4,18 @@ import { fileURLToPath } from "node:url";
 
 const worktreeRoot = dirname(fileURLToPath(import.meta.url));
 
+const legacyDomainHostPattern = "(?:www\\.)?rnrgallery\\.com|(?:www\\.)?rrgallery\\.co\\.nz";
+
+const legacyPathRedirects = [
+  ["/gallery", "https://rnrgallery.com/design-gallery"],
+  ["/about-rr", "https://rnrgallery.com/about"],
+  ["/product-category/canvas", "https://rnrgallery.com/canvas"],
+  ["/product-category/banner", "https://rnrgallery.com/banners"],
+  ["/product-category/banner/roll-up-banner", "https://rnrgallery.com/products/roll-up-banner"],
+  ["/product/digital-oil-painting-with-canvas", "https://rnrgallery.com/products/digital-oil-painting-canvas"],
+  ["/product/banner-bundle", "https://rnrgallery.com/products/banner-bundle"],
+] as const;
+
 export function buildSecurityHeaders(nodeEnv: string | undefined) {
   const headers = [
     {
@@ -58,10 +70,28 @@ const nextConfig: NextConfig = {
   },
   async redirects() {
     return [
+      ...legacyPathRedirects.map(([source, destination]) => ({
+        source,
+        destination,
+        statusCode: 301,
+        has: [{ type: "host" as const, value: legacyDomainHostPattern }],
+      })),
       {
-        source: "/:path*",
-        destination: "https://rrgallery.co.nz/:path*",
-        permanent: true,
+        source: "/:path((?!api(?:/|$)).*)",
+        destination: "https://rnrgallery.com/:path*",
+        statusCode: 301,
+        has: [{ type: "host", value: "www\\.rnrgallery\\.com" }],
+      },
+      {
+        source: "/:path((?!api(?:/|$)).*)",
+        destination: "https://rnrgallery.com/:path*",
+        statusCode: 301,
+        has: [{ type: "host", value: "rrgallery\\.co\\.nz" }],
+      },
+      {
+        source: "/:path((?!api(?:/|$)).*)",
+        destination: "https://rnrgallery.com/:path*",
+        statusCode: 301,
         has: [{ type: "host", value: "www\\.rrgallery\\.co\\.nz" }],
       },
       {

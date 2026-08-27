@@ -163,7 +163,7 @@ describe("public design detail page", () => {
       title: "40th Birthday Roll-up Banner Design",
       description: expect.stringContaining("40th Birthday"),
       alternates: {
-        canonical: "https://rrgallery.co.nz/designs/40th-birthday-a1b2c3d4",
+        canonical: "https://rnrgallery.com/designs/40th-birthday-a1b2c3d4",
       },
       openGraph: {
         title: "40th Birthday Roll-up Banner Design",

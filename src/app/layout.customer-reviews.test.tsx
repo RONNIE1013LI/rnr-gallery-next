@@ -6,6 +6,7 @@ import { SiteChrome } from "@/components/site-chrome";
 
 const state = vi.hoisted(() => ({
   loadReviews: vi.fn(),
+  market: null as string | null,
 }));
 
 vi.mock("@/domain/analytics/runtime", () => ({ isGa4Production: () => false }));
@@ -27,7 +28,8 @@ vi.mock("@/server/customer-reviews/customer-review-runtime", () => ({
 }));
 vi.mock("next/headers", () => ({
   cookies: async () => ({ get: () => undefined }),
-  headers: async () => ({ get: () => null }),
+  headers: async () => ({ get: (name: string) =>
+    name === "x-rnr-resolved-market" ? state.market : null }),
 }));
 
 import RootLayout from "./layout";
@@ -73,5 +75,15 @@ describe("RootLayout shared customer reviews", () => {
     expect((footerLead as ReactElement).type).toBe(CustomerReviewsSection);
     expect((footerLead as ReactElement<{ background: string; data: unknown }>).props)
       .toEqual({ background: "sand", data: reviewSection });
+  });
+
+  it("marks the server-resolved Australian storefront with its regional language", async () => {
+    state.market = "AU";
+    state.loadReviews.mockResolvedValueOnce(null);
+
+    const html = await RootLayout({ children: <main>Page</main> });
+
+    expect(html.props.lang).toBe("en-AU");
+    state.market = null;
   });
 });

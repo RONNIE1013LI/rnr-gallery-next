@@ -27,6 +27,10 @@ function productionSource(root: string): string {
 }
 
 describe("root layout metadata", () => {
+  it("uses the sole canonical production origin as metadataBase", () => {
+    expect(metadata.metadataBase?.toString()).toBe("https://rnrgallery.com/");
+  });
+
   it("uses the server-resolved request market before rendering site chrome", () => {
     const layout = readFileSync(join(process.cwd(), "src/app/layout.tsx"), "utf8");
 

@@ -3,6 +3,7 @@ import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
 import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
+import { buildMarketAlternates } from "@/server/seo/metadata";
 import { getSiteUrl } from "@/server/seo/site-url";
 
 export const dynamic = "force-dynamic";
@@ -33,18 +34,24 @@ export function buildPublicSitemap(
   siteUrl: URL,
   designs: readonly Readonly<{ slug: string; createdAt: Date }>[] = [],
 ): MetadataRoute.Sitemap {
+  const australiaReady = registry.markets.AU.enabled &&
+    getMarketCompleteness(registry, "AU").ready;
   const entry = (
     pathname: string,
     priority: number,
     changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"],
-  ) => ({
-    url: new URL(pathname, siteUrl).toString(),
-    priority,
-    changeFrequency,
-    lastModified: contentLastModified,
-  });
-  const australiaReady = registry.markets.AU.enabled &&
-    getMarketCompleteness(registry, "AU").ready;
+  ) => {
+    const languages = australiaReady
+      ? buildMarketAlternates(pathname, siteUrl)
+      : undefined;
+    return {
+      url: new URL(pathname, siteUrl).toString(),
+      priority,
+      changeFrequency,
+      lastModified: contentLastModified,
+      ...(languages ? { alternates: { languages } } : {}),
+    };
+  };
   return [
     ...pages.map(([pathname, priority, frequency]) => entry(pathname, priority, frequency)),
     ...registry.products.filter((product) => product.active).map((product) =>

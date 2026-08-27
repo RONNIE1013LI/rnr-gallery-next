@@ -129,8 +129,8 @@ describe("CataloguePage image loading", () => {
       .toMatchObject({
         "@type": "BreadcrumbList",
         itemListElement: [
-          { position: 1, name: "Home", item: "https://rrgallery.co.nz/" },
-          { position: 2, name: "Canvas", item: "https://rrgallery.co.nz/canvas" },
+          { position: 1, name: "Home", item: "https://rnrgallery.com/" },
+          { position: 2, name: "Canvas", item: "https://rnrgallery.com/canvas" },
         ],
       });
   });

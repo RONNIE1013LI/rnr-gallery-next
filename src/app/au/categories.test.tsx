@@ -39,7 +39,7 @@ describe("Australia category pages", () => {
     expect(screen.getByRole("heading", { name: "Photo Print Canvas" }).closest("a"))
       .toHaveAttribute("href", "/au/products/photo-print-canvas/configure");
     expect(await canvasMetadata()).toMatchObject({
-      alternates: { canonical: "https://rrgallery.co.nz/au/canvas" },
+      alternates: { canonical: "https://rnrgallery.com/au/canvas" },
     });
   });
 
@@ -54,7 +54,7 @@ describe("Australia category pages", () => {
     expect(screen.getByRole("heading", { name: "Roll-Up Banner" }).closest("a"))
       .toHaveAttribute("href", "/au/products/roll-up-banner/configure");
     expect(await bannersMetadata()).toMatchObject({
-      alternates: { canonical: "https://rrgallery.co.nz/au/banners" },
+      alternates: { canonical: "https://rnrgallery.com/au/banners" },
     });
   });
 });

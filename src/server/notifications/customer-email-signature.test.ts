@@ -6,23 +6,23 @@ import {
 
 describe("customer email signature", () => {
   it("renders the approved default signature and official logo", () => {
-    const signature = renderCustomerEmailSignature({}, "https://rrgallery.co.nz/path");
+    const signature = renderCustomerEmailSignature({}, "https://rnrgallery.com/path");
 
     expect(signature.text).toContain("Kind regards,\nCustomer Service Team");
     expect(signature.text).toContain("Customer Service | R&R Gallery Ltd. NZ");
     expect(signature.text).toContain("customerservice@rnrgallery.com");
-    expect(signature.text).toContain("rrgallery.co.nz");
+    expect(signature.text).toContain("rnrgallery.com");
     expect(signature.text).toContain("11 Para Close, Fairview Heights, Auckland 0632.");
     expect(signature.html).toContain(
-      'src="https://rrgallery.co.nz/media/brand/rr-gallery-email-logo.png"',
+      'src="https://rnrgallery.com/media/brand/rr-gallery-email-logo.png"',
     );
     expect(signature.html).toContain('alt="R&amp;R Gallery"');
-    expect(signature.html).toContain('href="https://rrgallery.co.nz/"');
+    expect(signature.html).toContain('href="https://rnrgallery.com/"');
     expect(signature.html).toContain('href="mailto:customerservice%40rnrgallery.com"');
   });
 
   it("places a square logo beside a four-line contact block at matching height", () => {
-    const signature = renderCustomerEmailSignature({}, "https://rrgallery.co.nz");
+    const signature = renderCustomerEmailSignature({}, "https://rnrgallery.com");
     const container = document.createElement("div");
     container.innerHTML = signature.html;
 
@@ -39,7 +39,7 @@ describe("customer email signature", () => {
     expect(logo).toHaveStyle({ width: "72px", maxWidth: "72px", height: "72px" });
     expect(cells?.[1]).toHaveTextContent("Customer Service | R&R Gallery Ltd. NZ");
     expect(cells?.[1]).toHaveTextContent("customerservice@rnrgallery.com");
-    expect(cells?.[1]).toHaveTextContent("rrgallery.co.nz");
+    expect(cells?.[1]).toHaveTextContent("rnrgallery.com");
     expect(cells?.[1]).toHaveTextContent("11 Para Close, Fairview Heights, Auckland 0632.");
   });
 
@@ -60,9 +60,18 @@ describe("customer email signature", () => {
       ...defaultCustomerEmailSignatureValues,
       "email.signature.signoff": "Warm regards,",
       "email.signature.address": undefined,
-    }, "https://rrgallery.co.nz");
+    }, "https://rnrgallery.com");
 
     expect(signature.text).toContain("Warm regards,");
     expect(signature.text).toContain("11 Para Close, Fairview Heights, Auckland 0632.");
+  });
+
+  it("replaces the retired default website label without changing custom labels", () => {
+    expect(renderCustomerEmailSignature({
+      "email.signature.website_label": "rrgallery.co.nz",
+    }, "https://rnrgallery.com").text).toContain("🌐 rnrgallery.com");
+    expect(renderCustomerEmailSignature({
+      "email.signature.website_label": "Visit our gallery",
+    }, "https://rnrgallery.com").text).toContain("🌐 Visit our gallery");
   });
 });

@@ -23,11 +23,13 @@ import { metadata as cartMetadata } from "./cart/page";
 import { metadata as checkoutMetadata } from "./checkout/page";
 import { metadata as orderMetadata } from "./orders/[orderNumber]/page";
 import { metadata as proofMetadata } from "./orders/[orderNumber]/proof/page";
+import { buildPublicMetadata } from "@/server/seo/metadata";
+import { getSiteUrl } from "@/server/seo/site-url";
 
 describe("public SEO routes", () => {
   it("uses the approved default social card when the homepage is shared", () => {
     const socialTitle = "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service";
-    const socialImage = "https://rrgallery.co.nz/media/social/rr-gallery-social-share-2026.webp";
+    const socialImage = "https://rnrgallery.com/media/social/rr-gallery-social-share-2026.webp";
 
     expect(homeMetadata.openGraph).toMatchObject({
       title: socialTitle,
@@ -41,6 +43,16 @@ describe("public SEO routes", () => {
 
   it("renders the sitemap from the current market registry instead of a build-time snapshot", () => {
     expect(sitemapDynamic).toBe("force-dynamic");
+  });
+
+  it("publishes only the canonical .com origin in robots and the live sitemap", () => {
+    const siteUrl = getSiteUrl();
+    const sitemap = buildPublicSitemap(defaultProductRegistry, siteUrl);
+
+    expect(buildRobots(siteUrl).sitemap).toBe("https://rnrgallery.com/sitemap.xml");
+    expect(sitemap.every((entry) => entry.url.startsWith("https://rnrgallery.com/")))
+      .toBe(true);
+    expect(sitemap.some((entry) => entry.url.includes("rrgallery.co.nz"))).toBe(false);
   });
 
   it("lists active public products and excludes private commerce surfaces", () => {
@@ -68,6 +80,7 @@ describe("public SEO routes", () => {
     expect(sitemap.every((entry) => entry.lastModified instanceof Date)).toBe(true);
     expect(urls.every((url) => !url.includes("?"))).toBe(true);
     expect(urls.some((url) => url.includes("/au"))).toBe(false);
+    expect(sitemap.some((entry) => entry.alternates)).toBe(false);
   });
 
   it("lists Australian routes only after the fixed AUD price book is complete and enabled", () => {
@@ -84,8 +97,8 @@ describe("public SEO routes", () => {
       if (shipping.source === "fixed") shipping.amountInclTaxCents = 3_000;
     }
 
-    const urls = buildPublicSitemap(registry, new URL("https://shop.example.test"))
-      .map((entry) => entry.url);
+    const sitemap = buildPublicSitemap(registry, new URL("https://shop.example.test"));
+    const urls = sitemap.map((entry) => entry.url);
 
     expect(urls).toContain("https://shop.example.test/au");
     expect(urls).toContain("https://shop.example.test/au/shop");
@@ -96,6 +109,22 @@ describe("public SEO routes", () => {
     }
     expect(urls.some((url) => url.includes("/au/products/") && url.includes("configure")))
       .toBe(false);
+    expect(sitemap.find((entry) => entry.url === "https://shop.example.test/shop")?.alternates)
+      .toEqual({
+        languages: {
+          "en-NZ": "https://shop.example.test/shop",
+          "en-AU": "https://shop.example.test/au/shop",
+          "x-default": "https://shop.example.test/shop",
+        },
+      });
+    expect(sitemap.find((entry) => entry.url === "https://shop.example.test/au/shop")?.alternates)
+      .toEqual({
+        languages: {
+          "en-NZ": "https://shop.example.test/shop",
+          "en-AU": "https://shop.example.test/au/shop",
+          "x-default": "https://shop.example.test/shop",
+        },
+      });
   });
 
   it("keeps private, transactional and duplicate legacy routes out of crawling", () => {
@@ -141,20 +170,20 @@ describe("public SEO routes", () => {
   });
 
   it.each([
-    ["home", homeMetadata, "https://rrgallery.co.nz/"],
-    ["shop", shopMetadata, "https://rrgallery.co.nz/shop"],
-    ["canvas", canvasMetadata, "https://rrgallery.co.nz/canvas"],
-    ["banners", bannersMetadata, "https://rrgallery.co.nz/banners"],
-    ["design gallery", galleryMetadata, "https://rrgallery.co.nz/design-gallery"],
-    ["how it works", howItWorksMetadata, "https://rrgallery.co.nz/how-it-works"],
-    ["about", aboutMetadata, "https://rrgallery.co.nz/about"],
-    ["contact", contactMetadata, "https://rrgallery.co.nz/contact"],
-    ["help", helpMetadata, "https://rrgallery.co.nz/help"],
-    ["shipping", shippingMetadata, "https://rrgallery.co.nz/shipping-delivery"],
-    ["returns and refunds", returnsRefundsMetadata, "https://rrgallery.co.nz/returns-refunds"],
-    ["roll-up landing", rollUpLandingMetadata, "https://rrgallery.co.nz/custom-roll-up-banners-nz"],
-    ["wall banner landing", wallBannerLandingMetadata, "https://rrgallery.co.nz/custom-wall-banners-nz"],
-    ["photo canvas landing", photoCanvasLandingMetadata, "https://rrgallery.co.nz/custom-photo-canvas-nz"],
+    ["home", homeMetadata, "https://rnrgallery.com/"],
+    ["shop", shopMetadata, "https://rnrgallery.com/shop"],
+    ["canvas", canvasMetadata, "https://rnrgallery.com/canvas"],
+    ["banners", bannersMetadata, "https://rnrgallery.com/banners"],
+    ["design gallery", galleryMetadata, "https://rnrgallery.com/design-gallery"],
+    ["how it works", howItWorksMetadata, "https://rnrgallery.com/how-it-works"],
+    ["about", aboutMetadata, "https://rnrgallery.com/about"],
+    ["contact", contactMetadata, "https://rnrgallery.com/contact"],
+    ["help", helpMetadata, "https://rnrgallery.com/help"],
+    ["shipping", shippingMetadata, "https://rnrgallery.com/shipping-delivery"],
+    ["returns and refunds", returnsRefundsMetadata, "https://rnrgallery.com/returns-refunds"],
+    ["roll-up landing", rollUpLandingMetadata, "https://rnrgallery.com/custom-roll-up-banners-nz"],
+    ["wall banner landing", wallBannerLandingMetadata, "https://rnrgallery.com/custom-wall-banners-nz"],
+    ["photo canvas landing", photoCanvasLandingMetadata, "https://rnrgallery.com/custom-photo-canvas-nz"],
   ])("gives %s unique, indexable social metadata and an absolute canonical", (_label, metadata, canonical) => {
     const expectedSocialTitle = _label === "home"
       ? "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service"
@@ -173,6 +202,44 @@ describe("public SEO routes", () => {
       description: metadata.description,
     });
     expect(metadata.robots).toMatchObject({ index: true, follow: true });
+  });
+
+  it("links only true NZ and AU route counterparts with self-referencing hreflang", () => {
+    expect(homeMetadata.alternates).toEqual({
+      canonical: "https://rnrgallery.com/",
+      languages: {
+        "en-NZ": "https://rnrgallery.com/",
+        "en-AU": "https://rnrgallery.com/au",
+        "x-default": "https://rnrgallery.com/",
+      },
+    });
+    expect(shopMetadata.alternates).toEqual({
+      canonical: "https://rnrgallery.com/shop",
+      languages: {
+        "en-NZ": "https://rnrgallery.com/shop",
+        "en-AU": "https://rnrgallery.com/au/shop",
+        "x-default": "https://rnrgallery.com/shop",
+      },
+    });
+    expect(contactMetadata.alternates).toEqual({
+      canonical: "https://rnrgallery.com/contact",
+    });
+
+    const productMetadata = buildPublicMetadata({
+      title: "Product",
+      description: "Product description",
+      path: "/au/products/photo-print-canvas",
+      image: "/media/products/photo-print-canvas.webp",
+      imageAlt: "Photo print canvas",
+    });
+    expect(productMetadata.alternates).toEqual({
+      canonical: "https://rnrgallery.com/au/products/photo-print-canvas",
+      languages: {
+        "en-NZ": "https://rnrgallery.com/products/photo-print-canvas",
+        "en-AU": "https://rnrgallery.com/au/products/photo-print-canvas",
+        "x-default": "https://rnrgallery.com/products/photo-print-canvas",
+      },
+    });
   });
 
   it("does not reuse titles or descriptions across primary public routes", () => {

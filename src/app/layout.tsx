@@ -78,7 +78,7 @@ export default async function RootLayout({
 
   return (
     <html
-      lang="en"
+      lang={resolvedMarket === "AU" ? "en-AU" : "en-NZ"}
       data-scroll-behavior="smooth"
     >
       <body>

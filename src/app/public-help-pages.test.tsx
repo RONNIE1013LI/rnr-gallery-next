@@ -43,10 +43,10 @@ describe("public help pages", () => {
   });
 
   it.each([
-    [aboutMetadata, "https://rrgallery.co.nz/about"],
-    [contactMetadata, "https://rrgallery.co.nz/contact"],
-    [helpMetadata, "https://rrgallery.co.nz/help"],
-    [shippingMetadata, "https://rrgallery.co.nz/shipping-delivery"],
+    [aboutMetadata, "https://rnrgallery.com/about"],
+    [contactMetadata, "https://rnrgallery.com/contact"],
+    [helpMetadata, "https://rnrgallery.com/help"],
+    [shippingMetadata, "https://rnrgallery.com/shipping-delivery"],
   ])("has unique indexable metadata for %s", (metadata, canonical) => {
     expect(metadata.alternates).toMatchObject({ canonical });
     expect(metadata.robots).toMatchObject({ index: true, follow: true });

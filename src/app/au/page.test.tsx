@@ -72,7 +72,14 @@ describe("Australia storefront", () => {
       "/au/products/roll-up-banner/configure",
     );
     expect(await generateMetadata()).toMatchObject({
-      alternates: { canonical: "https://rrgallery.co.nz/au" },
+      alternates: {
+        canonical: "https://rnrgallery.com/au",
+        languages: {
+          "en-NZ": "https://rnrgallery.com/",
+          "en-AU": "https://rnrgallery.com/au",
+          "x-default": "https://rnrgallery.com/",
+        },
+      },
       robots: { index: true, follow: true },
     });
   });

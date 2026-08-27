@@ -23,6 +23,7 @@ import {
   buildBreadcrumbData,
   buildPublicMetadata,
 } from "@/server/seo/metadata";
+import { getSiteUrl } from "@/server/seo/site-url";
 
 export const revalidate = 3600;
 
@@ -65,7 +66,7 @@ function scalar(value: string | string[] | undefined) {
 function safeGalleryReturnPath(value: string | undefined): string | null {
   if (!value) return null;
   try {
-    const base = new URL("https://rrgallery.co.nz");
+    const base = getSiteUrl();
     const parsed = new URL(value, base);
     if (parsed.origin !== base.origin || parsed.pathname !== "/design-gallery") return null;
     return `${parsed.pathname}${parsed.search}`;

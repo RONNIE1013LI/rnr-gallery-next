@@ -1,8 +1,51 @@
+import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  getRedirectUrl,
+  unstable_getResponseFromNextConfig,
+} from "next/experimental/testing/server";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import nextConfig, { buildSecurityHeaders } from "./next.config";
+import { products } from "./src/domain/catalogue/products";
+
+const legacyHostPattern = "(?:www\\.)?rnrgallery\\.com|(?:www\\.)?rrgallery\\.co\\.nz";
+const publicHostRedirectSource = "/:path((?!api(?:/|$)).*)";
+
+const expectedLegacyPathRedirects = [
+  ["/gallery", "https://rnrgallery.com/design-gallery"],
+  ["/about-rr", "https://rnrgallery.com/about"],
+  ["/product-category/canvas", "https://rnrgallery.com/canvas"],
+  ["/product-category/banner", "https://rnrgallery.com/banners"],
+  ["/product-category/banner/roll-up-banner", "https://rnrgallery.com/products/roll-up-banner"],
+  ["/product/digital-oil-painting-with-canvas", "https://rnrgallery.com/products/digital-oil-painting-canvas"],
+  ["/product/banner-bundle", "https://rnrgallery.com/products/banner-bundle"],
+] as const;
+
+const knownStaticMigrationTargets = new Set([
+  "/about",
+  "/banners",
+  "/canvas",
+  "/design-gallery",
+]);
+
+async function readLegacyUrlMap() {
+  const root = dirname(fileURLToPath(import.meta.url));
+  const csv = await readFile(`${root}/docs/seo/legacy-url-map.csv`, "utf8");
+  const [header, ...lines] = csv.trim().split("\n");
+  const columns = header.split(",");
+
+  return lines.map((line) => Object.fromEntries(
+    line.split(",").map((value, index) => [columns[index], value]),
+  ));
+}
+
+function isCurrentMigrationTarget(target: string) {
+  if (knownStaticMigrationTargets.has(target)) return true;
+  const product = target.match(/^\/products\/([^/]+)$/)?.[1];
+  return product !== undefined && products.some(({ slug, active }) => active && slug === product);
+}
 
 async function loadNextConfig(vercelEnv: string | undefined) {
   if (vercelEnv === undefined) {
@@ -100,43 +143,128 @@ describe("Next.js workspace configuration", () => {
     });
   });
 
-  it("permanently redirects the www root and every nested path to the apex host", async () => {
+  it("permanently redirects every legacy production host to the .com apex", async () => {
     const redirects = await nextConfig.redirects?.();
 
-    expect(redirects).toContainEqual({
-      source: "/:path*",
-      destination: "https://rrgallery.co.nz/:path*",
-      permanent: true,
-      has: [{ type: "host", value: "www\\.rrgallery\\.co\\.nz" }],
-    });
+    for (const host of [
+      "www\\.rnrgallery\\.com",
+      "rrgallery\\.co\\.nz",
+      "www\\.rrgallery\\.co\\.nz",
+    ]) {
+      expect(redirects).toContainEqual({
+        source: publicHostRedirectSource,
+        destination: "https://rnrgallery.com/:path*",
+        statusCode: 301,
+        has: [{ type: "host", value: host }],
+      });
+    }
   });
 
   it("keeps canonical redirect queries intact and excludes Preview hosts", async () => {
     const redirects = await nextConfig.redirects?.();
-    const canonicalRedirect = redirects?.find(
-      (redirect) => redirect.destination === "https://rrgallery.co.nz/:path*",
+    const canonicalRedirects = redirects?.filter(
+      (redirect) => redirect.destination === "https://rnrgallery.com/:path*",
     );
 
-    expect(canonicalRedirect).toMatchObject({
-      source: "/:path*",
-      destination: "https://rrgallery.co.nz/:path*",
-      permanent: true,
-      has: [{ type: "host", value: "www\\.rrgallery\\.co\\.nz" }],
-    });
-    expect(canonicalRedirect?.destination).not.toContain("?");
+    expect(canonicalRedirects).toHaveLength(3);
+    expect(canonicalRedirects?.every(
+      (redirect) => redirect.source === publicHostRedirectSource,
+    )).toBe(true);
+    expect(canonicalRedirects?.every((redirect) => !redirect.destination.includes("?"))).toBe(true);
+    expect(canonicalRedirects?.some((redirect) =>
+      redirect.has?.some((condition) => condition.type === "host" && condition.value.includes("vercel")),
+    )).toBe(false);
   });
 
-  it("matches only the exact www hostname for the canonical redirect", async () => {
+  it("matches only exact legacy production hostnames", async () => {
     const redirects = await nextConfig.redirects?.();
-    const canonicalRedirect = redirects?.find(
-      (redirect) => redirect.destination === "https://rrgallery.co.nz/:path*",
-    );
-    const hostCondition = canonicalRedirect?.has?.find(
-      (condition) => condition.type === "host",
-    );
-    const hostMatcher = new RegExp(`^${hostCondition?.value}$`);
+    const hostMatchers = redirects
+      ?.filter((redirect) => redirect.destination === "https://rnrgallery.com/:path*")
+      .map((redirect) => new RegExp(`^${redirect.has?.find(
+        (condition) => condition.type === "host",
+      )?.value}$`));
 
-    expect(hostMatcher.test("www.rrgallery.co.nz")).toBe(true);
-    expect(hostMatcher.test("wwwXrrgalleryYcoZnz")).toBe(false);
+    expect(hostMatchers?.some((matcher) => matcher.test("www.rnrgallery.com"))).toBe(true);
+    expect(hostMatchers?.some((matcher) => matcher.test("rrgallery.co.nz"))).toBe(true);
+    expect(hostMatchers?.some((matcher) => matcher.test("www.rrgallery.co.nz"))).toBe(true);
+    expect(hostMatchers?.some((matcher) => matcher.test("preview.vercel.app"))).toBe(false);
+    expect(hostMatchers?.some((matcher) => matcher.test("wwwXrrgalleryYcoZnz"))).toBe(false);
+  });
+
+  it("redirects public legacy-host pages without redirecting provider or auth API callbacks", async () => {
+    for (const host of [
+      "www.rnrgallery.com",
+      "rrgallery.co.nz",
+      "www.rrgallery.co.nz",
+    ]) {
+      const publicResponse = await unstable_getResponseFromNextConfig({
+        url: `https://${host}/shop?campaign=legacy`,
+        nextConfig,
+      });
+
+      expect(publicResponse.status).toBe(301);
+      expect(getRedirectUrl(publicResponse)).toBe(
+        "https://rnrgallery.com/shop?campaign=legacy",
+      );
+
+      for (const apiPath of [
+        "/api/payments/webhooks/stripe",
+        "/api/meta/webhook",
+        "/api/auth/callback/google",
+      ]) {
+        const apiResponse = await unstable_getResponseFromNextConfig({
+          url: `https://${host}${apiPath}`,
+          nextConfig,
+        });
+
+        expect(apiResponse.status).not.toBe(301);
+        expect(getRedirectUrl(apiResponse)).toBeNull();
+      }
+    }
+  });
+
+  it("permanently redirects only defensible WordPress paths directly to their canonical routes", async () => {
+    const redirects = await nextConfig.redirects?.();
+
+    for (const [source, destination] of expectedLegacyPathRedirects) {
+      expect(redirects).toContainEqual({
+        source,
+        destination,
+        statusCode: 301,
+        has: [{ type: "host", value: legacyHostPattern }],
+      });
+    }
+  });
+
+  it("keeps the legacy URL migration inventory internally safe", async () => {
+    const redirects = await nextConfig.redirects?.();
+    const rows = await readLegacyUrlMap();
+    const activeRows = rows.filter((row) => row.redirect_status === "301");
+    const activeSources = new Set(activeRows.map((row) =>
+      new URL(row.old_url).pathname.replace(/\/$/, "") || "/",
+    ));
+
+    expect(activeRows).toHaveLength(expectedLegacyPathRedirects.length);
+    expect(activeRows.every((row) => row.classification === "exact-301")).toBe(true);
+
+    for (const row of activeRows) {
+      const source = new URL(row.old_url).pathname.replace(/\/$/, "") || "/";
+      const destinationUrl = new URL(row.new_url);
+      const destination = destinationUrl.pathname;
+
+      expect(source).not.toBe("/");
+      expect(destination).not.toBe("/");
+      expect(destinationUrl.search).toBe("");
+      expect(source).not.toContain(":");
+      expect(source).not.toContain("*");
+      expect(activeSources.has(destination)).toBe(false);
+      expect(isCurrentMigrationTarget(destination)).toBe(true);
+      expect(redirects).toContainEqual({
+        source,
+        destination: row.new_url,
+        statusCode: 301,
+        has: [{ type: "host", value: legacyHostPattern }],
+      });
+    }
   });
 });

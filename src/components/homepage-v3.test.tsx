@@ -63,7 +63,7 @@ describe("HomepageV3", () => {
     expect(JSON.parse(website?.textContent ?? "{}")).toMatchObject({
       "@type": "WebSite",
       name: "R&R Gallery",
-      url: "https://rrgallery.co.nz/",
+      url: "https://rnrgallery.com/",
     });
   });
 

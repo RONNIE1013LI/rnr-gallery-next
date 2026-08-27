@@ -15,7 +15,7 @@ export const customerEmailSignatureDefinitions = Object.freeze([
   { key: "email.signature.team_name", surface: "email", group: "Customer email signature", label: "Team name", description: "Customer-facing team name.", maxLength: 120, multiline: false, defaultValue: "Customer Service Team", allowedVariables: [] },
   { key: "email.signature.company_line", surface: "email", group: "Customer email signature", label: "Company line", description: "Company identity shown below the logo.", maxLength: 200, multiline: false, defaultValue: "Customer Service | R&R Gallery Ltd. NZ", allowedVariables: [] },
   { key: "email.signature.email", surface: "email", group: "Customer email signature", label: "Customer-service email", description: "Public reply contact shown in customer emails.", maxLength: 320, multiline: false, defaultValue: "customerservice@rnrgallery.com", allowedVariables: [] },
-  { key: "email.signature.website_label", surface: "email", group: "Customer email signature", label: "Website label", description: "Visible website text. The destination remains the trusted site origin.", maxLength: 160, multiline: false, defaultValue: "rrgallery.co.nz", allowedVariables: [] },
+  { key: "email.signature.website_label", surface: "email", group: "Customer email signature", label: "Website label", description: "Visible website text. The destination remains the trusted site origin.", maxLength: 160, multiline: false, defaultValue: "rnrgallery.com", allowedVariables: [] },
   { key: "email.signature.address", surface: "email", group: "Customer email signature", label: "Street address", description: "Public business address shown in customer emails.", maxLength: 320, multiline: false, defaultValue: "11 Para Close, Fairview Heights, Auckland 0632.", allowedVariables: [] },
 ] as const satisfies readonly CustomerEmailSignatureDefinition[]);
 
@@ -59,7 +59,10 @@ export function renderCustomerEmailSignature(
   const teamName = resolved["email.signature.team_name"];
   const companyLine = resolved["email.signature.company_line"];
   const email = resolved["email.signature.email"];
-  const websiteLabel = resolved["email.signature.website_label"];
+  const configuredWebsiteLabel = resolved["email.signature.website_label"];
+  const websiteLabel = configuredWebsiteLabel === "rrgallery.co.nz"
+    ? defaultCustomerEmailSignatureValues["email.signature.website_label"]
+    : configuredWebsiteLabel;
   const address = resolved["email.signature.address"];
 
   const text = [

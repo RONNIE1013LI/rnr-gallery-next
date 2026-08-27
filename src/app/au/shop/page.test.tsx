@@ -56,7 +56,14 @@ describe("Australia shop", () => {
     expect(screen.getByRole("heading", { name: "Roll-Up Banner" }).closest("a"))
       .toHaveAttribute("href", "/au/products/roll-up-banner/configure");
     expect(await generateMetadata()).toMatchObject({
-      alternates: { canonical: "https://rrgallery.co.nz/au/shop" },
+      alternates: {
+        canonical: "https://rnrgallery.com/au/shop",
+        languages: {
+          "en-NZ": "https://rnrgallery.com/shop",
+          "en-AU": "https://rnrgallery.com/au/shop",
+          "x-default": "https://rnrgallery.com/shop",
+        },
+      },
       robots: { index: true, follow: true },
     });
   });

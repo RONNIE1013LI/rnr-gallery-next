@@ -1,3 +1,75 @@
-old_url,new_url,redirect_type,reason,verified
-https://rnrgallery.com/example-old-product,https://rrgallery.co.nz/products/example-new-product,301,TEMPLATE ONLY - replace with a verified one-to-one product mapping,false
-https://rnrgallery.com/example-obsolete-page,,404-or-410,TEMPLATE ONLY - business decision required when no equivalent content exists,false
+old_url,new_url,classification,redirect_status,confidence,inventory_source,reason
+https://rnrgallery.com/,https://rnrgallery.com/,existing-route,none,high,page-sitemap,Current home path is unchanged
+https://rnrgallery.com/order-system/,https://rnrgallery.com/order-system,protected-route,none,medium,page-sitemap,Portal requires its existing authentication flow
+https://rnrgallery.com/elementor-5897/,,retire-candidate,decision,low,page-sitemap,Confirm obsolete page-builder content before 404 or 410
+https://rnrgallery.com/contact/,https://rnrgallery.com/contact,existing-route,none,high,page-sitemap,Current contact path is unchanged
+https://rnrgallery.com/cookies-policy/,https://rnrgallery.com/privacy,review-required,none,low,page-sitemap,Privacy and cookie policy are not proven equivalent
+https://rnrgallery.com/about-rr/,https://rnrgallery.com/about,exact-301,301,high,page-sitemap,Direct about-page equivalent
+https://rnrgallery.com/how-it-works/,https://rnrgallery.com/how-it-works,existing-route,none,high,page-sitemap,Current how-it-works path is unchanged
+https://rnrgallery.com/cart/,https://rnrgallery.com/cart,protected-route,none,medium,page-sitemap,Do not imply legacy cart continuity
+https://rnrgallery.com/gallery/,https://rnrgallery.com/design-gallery,exact-301,301,high,page-sitemap,Direct gallery equivalent
+https://rnrgallery.com/checkout/,https://rnrgallery.com/checkout,protected-route,none,medium,page-sitemap,Do not imply legacy checkout continuity
+https://rnrgallery.com/my-account/,https://rnrgallery.com/account,review-required,none,medium,page-sitemap,Current account route is protected
+https://rnrgallery.com/product/digital-oil-painting-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,exact-301,301,high,product-sitemap,Direct product-family equivalent
+https://rnrgallery.com/product/free-professional-custom-design/,https://rnrgallery.com/shop,review-required,none,low,product-sitemap,Service intent needs content approval
+https://rnrgallery.com/product/free-professional-custom-design-2/,https://rnrgallery.com/shop,review-required,none,low,product-sitemap,Service intent needs content approval
+https://rnrgallery.com/product/banner-bundle/,https://rnrgallery.com/products/banner-bundle,exact-301,301,high,product-sitemap,Direct product-family equivalent
+https://rnrgallery.com/product/your-loss-of-loved-one/,https://rnrgallery.com/design-gallery,review-required,none,low,product-sitemap,Memorial intent has no one-to-one product target
+https://rnrgallery.com/product/five-faces-customized-digital-oil-painting-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,review-required,none,medium,product-sitemap,Face-count offer needs content comparison
+https://rnrgallery.com/product/four-faces-customized-digital-oil-painting-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,review-required,none,medium,product-sitemap,Face-count offer needs content comparison
+https://rnrgallery.com/product/three-faces-customized-digital-oil-painting-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,review-required,none,medium,product-sitemap,Face-count offer needs content comparison
+https://rnrgallery.com/product/custom-heart-shaped-photo-collage-on-canvas/,https://rnrgallery.com/products/custom-themed-canvas,review-required,none,medium,product-sitemap,Collage offer needs content comparison
+https://rnrgallery.com/product/custom-number-photo-collage-with-canvas/,https://rnrgallery.com/products/custom-themed-canvas,review-required,none,medium,product-sitemap,Collage offer needs content comparison
+https://rnrgallery.com/product/portrait-photo-printing-with-canvas/,https://rnrgallery.com/products/photo-print-canvas,review-required,none,medium,product-sitemap,Product format needs content comparison
+https://rnrgallery.com/product/custom-daddy-photos-collage-with-canvas/,https://rnrgallery.com/products/custom-themed-canvas,review-required,none,medium,product-sitemap,Collage offer needs content comparison
+https://rnrgallery.com/product/two-faces-customized-digital-oil-painting-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,review-required,none,medium,product-sitemap,Face-count offer needs content comparison
+https://rnrgallery.com/product/landscape-photo-printing/,https://rnrgallery.com/products/photo-print-canvas,review-required,none,medium,product-sitemap,Product format needs content comparison
+https://rnrgallery.com/product/wedding-photo-printing/,https://rnrgallery.com/products/photo-print-canvas,review-required,none,medium,product-sitemap,Product format needs content comparison
+https://rnrgallery.com/product/tell-me-your-idea-and-i-will-help-you-realize-it/,https://rnrgallery.com/contact,review-required,none,low,product-sitemap,Service intent needs content approval
+https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-design/,https://rnrgallery.com/products/roll-up-banner,review-required,none,medium,product-sitemap,Occasion content is not preserved
+https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-design-for-loss-of-loved-one/,https://rnrgallery.com/products/roll-up-banner,review-required,none,medium,product-sitemap,Occasion content is not preserved
+https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-design-for-wedding-anniversary/,https://rnrgallery.com/products/roll-up-banner,review-required,none,medium,product-sitemap,Occasion content is not preserved
+https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-design-for-business/,https://rnrgallery.com/products/roll-up-banner,review-required,none,medium,product-sitemap,Occasion content is not preserved
+https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-design-for-21st-birthday/,https://rnrgallery.com/products/roll-up-banner,review-required,none,medium,product-sitemap,Occasion content is not preserved
+https://rnrgallery.com/product/21st-birthday/,https://rnrgallery.com/products/roll-up-banner,review-required,none,medium,product-sitemap,Occasion content is not preserved
+https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-design-for-5th-birthday/,https://rnrgallery.com/products/roll-up-banner,review-required,none,medium,product-sitemap,Occasion content is not preserved
+https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-design-for-1st-birthday/,https://rnrgallery.com/products/roll-up-banner,review-required,none,medium,product-sitemap,Occasion content is not preserved
+https://rnrgallery.com/product/digital-oil-painting-digital-copy-only/,,retire-candidate,decision,low,product-sitemap,No current digital-only offer
+https://rnrgallery.com/product/six-faces-or-more-customized-digital-oil-painting-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,review-required,none,medium,product-sitemap,Face-count offer needs content comparison
+https://rnrgallery.com/product/turn-a-low-quality-image-into-a-refined-artwork-ready-for-display-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,review-required,none,medium,product-sitemap,Image-repair claim needs content comparison
+https://rnrgallery.com/product/multi-photo-artwork-blends-on-canvas-copy/,https://rnrgallery.com/products/custom-themed-canvas,review-required,none,medium,product-sitemap,Collage offer needs content comparison
+https://rnrgallery.com/product/single-face-customized-digital-oil-painting-on-banner/,https://rnrgallery.com/products/digital-oil-painting-banner,review-required,none,medium,product-sitemap,Face-count offer needs content comparison
+https://rnrgallery.com/product/single-face-digital-painting-on-banner-copy/,https://rnrgallery.com/products/digital-oil-painting-banner,review-required,none,medium,product-sitemap,Face-count offer needs content comparison
+https://rnrgallery.com/product/two-face-digital-painting-on-banner/,https://rnrgallery.com/products/digital-oil-painting-banner,review-required,none,medium,product-sitemap,Face-count offer needs content comparison
+https://rnrgallery.com/product/four-face-digital-painting-on-banner/,https://rnrgallery.com/products/digital-oil-painting-banner,review-required,none,medium,product-sitemap,Face-count offer needs content comparison
+https://rnrgallery.com/product/five-face-digital-painting-on-banner/,https://rnrgallery.com/products/digital-oil-painting-banner,review-required,none,medium,product-sitemap,Face-count offer needs content comparison
+https://rnrgallery.com/product/six-faces-digital-painting-on-banner/,https://rnrgallery.com/products/digital-oil-painting-banner,review-required,none,medium,product-sitemap,Face-count offer needs content comparison
+https://rnrgallery.com/product/custom-themed-banner/,https://rnrgallery.com/products/custom-themed-wall-banner,review-required,none,medium,product-sitemap,Verify format and material equivalence
+https://rnrgallery.com/product/poor-photo-to-a-masterpiece/,https://rnrgallery.com/products/digital-oil-painting-canvas,review-required,none,medium,product-sitemap,Image-repair claim needs content comparison
+https://rnrgallery.com/locations.kml,,retire-candidate,decision,low,local-sitemap,No current public location endpoint
+https://rnrgallery.com/product-category/banner/,https://rnrgallery.com/banners,exact-301,301,high,navigation,Direct category equivalent
+https://rnrgallery.com/product-category/banner/landscape-banner/,https://rnrgallery.com/products/custom-themed-wall-banner,review-required,none,medium,navigation,Verify format and material equivalence
+https://rnrgallery.com/product-category/banner/roll-up-banner/,https://rnrgallery.com/products/roll-up-banner,exact-301,301,high,navigation,Direct product-family equivalent
+https://rnrgallery.com/product-category/canvas/,https://rnrgallery.com/canvas,exact-301,301,high,navigation,Direct category equivalent
+https://rnrgallery.com/product-category/canvas/custom-collage-photos-on-canvas/,https://rnrgallery.com/products/custom-themed-canvas,review-required,none,medium,navigation,Collage offer needs content comparison
+https://rnrgallery.com/product-category/canvas/customized-digital-oil-painting-on-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,review-required,none,medium,navigation,Category-to-product collapse needs review
+https://rnrgallery.com/product-category/canvas/normal-canvas/,https://rnrgallery.com/products/photo-print-canvas,review-required,none,medium,navigation,Category-to-product collapse needs review
+https://rnrgallery.com/product-category/canvas/wall-art/,https://rnrgallery.com/canvas,review-required,none,low,navigation,Broad category needs content comparison
+https://rnrgallery.com/product-category/digital-oil-painting-digital-copy-only/,,retire-candidate,decision,low,navigation,No current digital-only offer
+https://rnrgallery.com/product-tag/air-jordan/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/basketball/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/birthday/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/business/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/cook-island-pattern/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/digital-oil-painting/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/funeral/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/heaven/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/loss-of-loved-one/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/loved/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/maori-pattern/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/maritime/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/mermaid/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/mine-craft/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/pipi-ma/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/wedding-anniversary/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route
+https://rnrgallery.com/product-tag/wedding/,,retire-candidate,decision,low,navigation,No equivalent public taxonomy route

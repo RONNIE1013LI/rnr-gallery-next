@@ -151,12 +151,12 @@ describe("ProductPageContent", () => {
     expect(JSON.parse(breadcrumbs?.textContent ?? "{}")).toMatchObject({
       "@type": "BreadcrumbList",
       itemListElement: [
-        { position: 1, name: "Home", item: "https://rrgallery.co.nz/" },
-        { position: 2, name: "Shop", item: "https://rrgallery.co.nz/shop" },
+        { position: 1, name: "Home", item: "https://rnrgallery.com/" },
+        { position: 2, name: "Shop", item: "https://rnrgallery.com/shop" },
         {
           position: 3,
           name: "Digital Oil Painting Canvas",
-          item: "https://rrgallery.co.nz/products/digital-oil-painting-canvas",
+          item: "https://rnrgallery.com/products/digital-oil-painting-canvas",
         },
       ],
     });
@@ -185,7 +185,7 @@ describe("ProductPageContent", () => {
     expect(data.offers).toMatchObject({
       price: "320.00",
       priceCurrency: "AUD",
-      url: "https://rrgallery.co.nz/au/products/roll-up-banner",
+      url: "https://rnrgallery.com/au/products/roll-up-banner",
     });
     expect(screen.queryByText(/NZ\$/)).not.toBeInTheDocument();
   });
@@ -198,7 +198,7 @@ describe("ProductPageContent", () => {
     )).toMatchObject({
       "@type": "Product",
       name: "Banner Bundle",
-      image: ["https://rrgallery.co.nz/media/products/banner-bundle.webp"],
+      image: ["https://rnrgallery.com/media/products/banner-bundle.webp"],
       offers: {
         price: "359.99",
         priceCurrency: "NZD",
@@ -216,7 +216,7 @@ describe("ProductPageContent", () => {
     )).toMatchObject({
       "@type": "Product",
       name: "Banner Bundle",
-      image: ["https://rrgallery.co.nz/media/products/banner-bundle.webp"],
+      image: ["https://rnrgallery.com/media/products/banner-bundle.webp"],
       offers: {
         price: "339.99",
         priceCurrency: "AUD",
@@ -245,7 +245,7 @@ describe("ProductPageContent", () => {
     expect(data.offers).toMatchObject({
       price: "109.99",
       priceCurrency: "AUD",
-      url: "https://rrgallery.co.nz/au/products/photo-print-canvas?size=a2",
+      url: "https://rnrgallery.com/au/products/photo-print-canvas?size=a2",
     });
   });
 });
