@@ -249,7 +249,7 @@ describe("AnalyticsRuntimeController", () => {
       .not.toMatch(/utm_source|gclid|private-public-click|RNR-2026-PRIVATE|private-order-token/);
     expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY])
-      .toBe(false);
+      .toBe(true);
     view.unmount();
   });
 
@@ -402,6 +402,9 @@ describe("AnalyticsRuntimeController", () => {
     let processedCommands = dataLayer.length;
     vi.mocked(sendGAEvent).mockImplementation((...command) => {
       dataLayer.push(command);
+      if ((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] !== true) {
+        collected.push(command);
+      }
     });
     const transport = window.setInterval(() => {
       while (processedCommands < dataLayer.length) {

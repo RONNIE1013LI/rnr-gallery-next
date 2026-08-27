@@ -129,6 +129,11 @@ function sendGaEventNow(
   payload: Record<string, unknown>,
 ): void {
   const ga4Window = window as Window & Record<string, unknown>;
+  const currentLocation = new URL(window.location.href);
+  const isPublicDocument = classifyGa4Location(
+    currentLocation.pathname,
+    currentLocation.searchParams,
+  ) === "public";
   if (collectionDisableTimer !== undefined) {
     window.clearTimeout(collectionDisableTimer);
     collectionDisableTimer = undefined;
@@ -139,7 +144,10 @@ function sendGaEventNow(
   } catch (error) {
     suppressGaCollection();
     throw error;
+  } finally {
+    if (!isPublicDocument) ga4Window[GA4_DISABLE_WINDOW_KEY] = true;
   }
+  if (!isPublicDocument) return;
   collectionDisableTimer = window.setTimeout(() => {
     collectionDisableTimer = undefined;
     ga4Window[GA4_DISABLE_WINDOW_KEY] = true;

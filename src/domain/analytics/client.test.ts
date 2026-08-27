@@ -267,7 +267,7 @@ describe("emitAnalyticsEvent", () => {
       page_referrer: "",
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-email-token");
-    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
   });
 
   it("does not send a private purchase before the disabled tag has loaded", () => {
@@ -314,6 +314,53 @@ describe("emitAnalyticsEvent", () => {
     ]);
     await new Promise((resolve) => window.setTimeout(resolve, 250));
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+  });
+
+  it("never leaves a private URL visible to delayed automatic collection", async () => {
+    const automaticLocations: string[] = [];
+    const attemptAutomaticCollection = () => {
+      if ((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] !== true) {
+        automaticLocations.push(window.location.href);
+      }
+    };
+
+    document.documentElement.dataset.ga4PrivatePurchase = "true";
+    document.documentElement.dataset.ga4Loaded = "true";
+    window.history.replaceState(
+      {},
+      "",
+      "/orders/private-route-token?access=private-order-token",
+    );
+    expect(emitAnalyticsEvent(purchase)).toBe(true);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+    window.setTimeout(attemptAutomaticCollection, 0);
+    window.setTimeout(attemptAutomaticCollection, 260);
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
+
+    document.documentElement.removeAttribute("data-ga4-private-purchase");
+    document.documentElement.dataset.ga4PrivateCommerce = "true";
+    window.history.replaceState(
+      {},
+      "",
+      "/checkout?client_secret=private-checkout-token",
+    );
+    expect(emitAnalyticsEvent({ ...event, event: "begin_checkout" })).toBe(true);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+    window.setTimeout(attemptAutomaticCollection, 0);
+    window.setTimeout(attemptAutomaticCollection, 260);
+    await new Promise((resolve) => window.setTimeout(resolve, 300));
+
+    expect(automaticLocations).toEqual([]);
+    expect(vi.mocked(sendGAEvent).mock.calls.at(-2)?.[2]).toMatchObject({
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
+    });
+    expect(vi.mocked(sendGAEvent).mock.calls.at(-1)?.[2]).toMatchObject({
+      page_location: "http://localhost:3000/checkout",
+      page_referrer: "",
+    });
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
+      .not.toMatch(/private-route-token|private-order-token|private-checkout-token/);
   });
 
   it("sends only allowlisted checkout events with a safe location while automatic collection stays disabled", () => {
@@ -365,7 +412,7 @@ describe("emitAnalyticsEvent", () => {
       page_referrer: "",
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-checkout-secret");
-    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
   });
 
   it("restores private collection disablement when purchase transport throws", () => {
