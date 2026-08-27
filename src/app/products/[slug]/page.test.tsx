@@ -102,7 +102,7 @@ describe("ProductPageContent", () => {
     expect(payload).not.toContain("gallery-images");
   });
 
-  it("publishes registry sizes, NZ delivery details and policy-consistent product data", async () => {
+  it("publishes registry sizes and NZ delivery details without incomplete optional product data", async () => {
     const product = getProductBySlug("digital-oil-painting-canvas")!;
     const sizes = schemaFromRegistry(defaultProductRegistry, product.key)!.sizes;
     const { container } = render(await ProductPage({
@@ -123,24 +123,9 @@ describe("ProductPageContent", () => {
     expect(screen.getByRole("link", { name: "Start Your Design" }))
       .toHaveAttribute("href", "/products/digital-oil-painting-canvas/configure");
 
-    expect(JSON.parse(container.querySelector("#rnr-product-data")?.textContent ?? "{}"))
-      .toMatchObject({
-        offers: {
-          shippingDetails: {
-            "@type": "OfferShippingDetails",
-            shippingDestination: { addressCountry: "NZ" },
-            deliveryTime: {
-              handlingTime: { minValue: 5, maxValue: 5, unitCode: "d" },
-              transitTime: { minValue: 2, maxValue: 3, unitCode: "d" },
-            },
-          },
-          hasMerchantReturnPolicy: {
-            "@type": "MerchantReturnPolicy",
-            applicableCountry: "NZ",
-            merchantReturnLink: "https://rnrgallery.com/returns-refunds",
-          },
-        },
-      });
+    const data = JSON.parse(container.querySelector("#rnr-product-data")?.textContent ?? "{}");
+    expect(data.offers.shippingDetails).toBeUndefined();
+    expect(data.offers.hasMerchantReturnPolicy).toBeUndefined();
   });
 
   it("shows a validated inspiration and preserves it in the create link", () => {

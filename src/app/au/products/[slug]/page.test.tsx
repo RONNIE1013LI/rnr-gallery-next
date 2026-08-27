@@ -101,7 +101,7 @@ describe("AustraliaProductPage analytics", () => {
     expect(payload).not.toContain("gallery-images");
   });
 
-  it("publishes registry sizes and Australian delivery details without a simplified shipping promise", async () => {
+  it("publishes registry sizes and Australian delivery details without incomplete optional product data", async () => {
     const product = getProductBySlug("digital-oil-painting-canvas")!;
     const sizes = schemaFromRegistry(state.registry as typeof defaultProductRegistry, product.key)!.sizes;
     const { container } = render(await AustraliaProductPage({
@@ -128,11 +128,7 @@ describe("AustraliaProductPage analytics", () => {
       );
 
     const data = JSON.parse(container.querySelector("#rnr-product-data")?.textContent ?? "{}");
-    expect(data.offers.hasMerchantReturnPolicy).toMatchObject({
-      "@type": "MerchantReturnPolicy",
-      applicableCountry: "AU",
-      merchantReturnLink: "https://rnrgallery.com/returns-refunds",
-    });
     expect(data.offers.shippingDetails).toBeUndefined();
+    expect(data.offers.hasMerchantReturnPolicy).toBeUndefined();
   });
 });

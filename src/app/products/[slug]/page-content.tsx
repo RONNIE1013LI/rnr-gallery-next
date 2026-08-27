@@ -100,7 +100,6 @@ export function ProductPageContent({
         deliveryCopy.australiaStandard,
         deliveryCopy.australiaRemote,
       ];
-  const returnPolicyUrl = new URL("/returns-refunds", siteUrl).toString();
   return (
     <main id="main-content" className={styles.productDetail}>
       {analyticsSubtotalExGstCents !== undefined && analyticsSizeKey ? (
@@ -130,25 +129,6 @@ export function ProductPageContent({
           price: (displayPrice / 100).toFixed(2),
           availability: "https://schema.org/InStock",
           itemCondition: "https://schema.org/NewCondition",
-          hasMerchantReturnPolicy: {
-            "@type": "MerchantReturnPolicy",
-            applicableCountry: market,
-            merchantReturnLink: returnPolicyUrl,
-          },
-          ...(market === "NZ" ? {
-            shippingDetails: {
-              "@type": "OfferShippingDetails",
-              shippingDestination: {
-                "@type": "DefinedRegion",
-                addressCountry: "NZ",
-              },
-              deliveryTime: {
-                "@type": "ShippingDeliveryTime",
-                handlingTime: { minValue: 5, maxValue: 5, unitCode: "d" },
-                transitTime: { minValue: 2, maxValue: 3, unitCode: "d" },
-              },
-            },
-          } : {}),
         },
       }} />
       <StructuredData id="rnr-product-breadcrumbs" data={buildBreadcrumbData([
