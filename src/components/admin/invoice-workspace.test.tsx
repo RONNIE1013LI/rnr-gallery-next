@@ -107,16 +107,26 @@ describe("InvoiceWorkspace", () => {
   it("downloads a validated transient draft without a saved job id", async () => {
     const anchor = document.createElement("a");
     const click = vi.spyOn(anchor, "click").mockImplementation(() => undefined);
+    const remove = vi.spyOn(anchor, "remove");
+    const append = vi.spyOn(document.body, "appendChild");
     const createElement = document.createElement.bind(document);
     const fetchMock = vi.fn().mockResolvedValue(new Response(new Blob(["pdf"]), { status: 200 }));
     vi.stubGlobal("fetch", fetchMock);
-    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: vi.fn(() => "blob:draft") });
-    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: vi.fn() });
+    const createObjectUrl = vi.fn(() => "blob:draft");
+    const revokeObjectUrl = vi.fn();
+    Object.defineProperty(URL, "createObjectURL", { configurable: true, value: createObjectUrl });
+    Object.defineProperty(URL, "revokeObjectURL", { configurable: true, value: revokeObjectUrl });
     render(<Harness />);
     vi.spyOn(document, "createElement").mockImplementation((tagName, options) =>
       tagName.toLowerCase() === "a" ? anchor : createElement(tagName, options));
     fireEvent.click(screen.getByRole("button", { name: "Download PDF" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith("/api/forms/invoices/draft/pdf", expect.objectContaining({ method: "POST" })));
+    await vi.waitFor(() => expect(createObjectUrl).toHaveBeenCalledOnce());
+    expect(append).toHaveBeenCalledWith(anchor);
     expect(click).toHaveBeenCalledOnce();
+    expect(remove).toHaveBeenCalledOnce();
+    expect(revokeObjectUrl).not.toHaveBeenCalled();
+    await waitFor(() => expect(revokeObjectUrl).toHaveBeenCalledWith("blob:draft"), { timeout: 2_000 });
+    expect(revokeObjectUrl).toHaveBeenCalledWith("blob:draft");
   });
 });

@@ -135,8 +135,11 @@ export function InvoiceWorkspace({
       const anchor = document.createElement("a");
       anchor.href = url;
       anchor.download = `${invoiceNumber}.pdf`;
+      anchor.hidden = true;
+      document.body.appendChild(anchor);
       anchor.click();
-      URL.revokeObjectURL(url);
+      anchor.remove();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
       setFeedback("Draft PDF downloaded.");
     } catch (error) {
       setFeedback(error instanceof Error ? error.message : "The draft PDF could not be created.");
