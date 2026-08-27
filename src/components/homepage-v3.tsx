@@ -235,12 +235,12 @@ export function HomepageV3({
             <p className={styles.eyebrow}>CUSTOM STORY &amp; ARTWORK STUDIO</p>
             <h1>From your photos to the piece you imagined.</h1>
             <div className={styles.heroActions}>
-              <Link className={`${styles.button} ${styles.buttonPrimary}`} href={shopHref}>
-                Start With Your Photos
-              </Link>
               <a className={styles.textLink} href="#transformation">
                 See Transformations <Arrow />
               </a>
+              <Link className={`${styles.button} ${styles.buttonPrimary}`} href={shopHref}>
+                Start With Your Photos
+              </Link>
             </div>
             <p className={styles.microcopy}>
               You don&apos;t need perfect photos. We&apos;ll help you choose the right format.

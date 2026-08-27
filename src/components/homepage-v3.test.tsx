@@ -241,6 +241,24 @@ describe("HomepageV3", () => {
     );
   });
 
+  it("shows transformations before the primary photo action on every screen", () => {
+    render(<HomepageV3 registry={defaultProductRegistry} />);
+
+    const heroHeading = screen.getByRole("heading", {
+      level: 1,
+      name: "From your photos to the piece you imagined.",
+    });
+    const heroLinks = Array.from(
+      heroHeading.closest("section")?.querySelectorAll("a") ?? [],
+      (link) => link.textContent?.trim(),
+    );
+
+    expect(heroLinks).toEqual([
+      "See Transformations →",
+      "Start With Your Photos",
+    ]);
+  });
+
   it("stacks the supporting discovery paths on mobile", () => {
     const stylesheet = readFileSync(
       "src/components/homepage-v3.module.css",
