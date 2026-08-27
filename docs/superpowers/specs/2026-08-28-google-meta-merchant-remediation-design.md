@@ -104,6 +104,8 @@ A compact existing-design-system consent surface offers:
 
 The saved choice is applied before tags load where possible. Google consent signals and Meta loading use the same canonical state. Changing consent updates the current session without a page failure.
 
+Analytics and advertising are independent choices: analytics consent permits GA4 measurement, while advertising consent permits Google Ads and Meta advertising transports. A destination that lacks its required consent is not loaded or called. The consent cookie is written through a bounded same-origin server endpoint with server-generated decision time; it is not writable through client JavaScript.
+
 The solution records the customer's choice, does not infer shipping country from consent and does not store PII.
 
 ## 5. Google measurement

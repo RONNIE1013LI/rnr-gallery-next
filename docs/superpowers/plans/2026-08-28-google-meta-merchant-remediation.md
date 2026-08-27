@@ -81,7 +81,7 @@ export function serializeGoogleMerchantFeed(input: Readonly<{
 
 **Interfaces:** Existing `photoSubmissionMethod` state and Add-to-Cart validation remain authoritative.
 
-- [ ] Add tests that `upload_now` remains disabled without files, `send_later` is enabled with `Add to Cart — Send Photos Later`, and both methods keep existing cart/order metadata.
+- [ ] Add tests that `upload` remains disabled without files, `later` is enabled with `Add to Cart — Send Photos Later`, and both methods keep existing cart/order metadata.
 - [ ] Run the configurator tests; expect RED only on the label.
 - [ ] Implement only the label/state presentation; do not alter storage, file deletion, cart keys or order metadata.
 - [ ] Rerun tests; expect PASS; commit as `fix: clarify send-later cart action`.
@@ -93,9 +93,15 @@ export function serializeGoogleMerchantFeed(input: Readonly<{
 - Create: `src/domain/consent/advertising-consent.test.ts`
 - Create: `src/components/consent-preferences.tsx`
 - Create: `src/components/consent-preferences.test.tsx`
+- Create: `src/app/api/consent/route.ts`
+- Create: `src/app/api/consent/route-handler.ts`
+- Create: `src/app/api/consent/route.test.ts`
 - Modify: `src/app/layout.tsx`
+- Modify: `src/app/layout.test.ts`
 - Modify: `src/components/analytics-runtime-controller.tsx`
 - Modify: `src/components/analytics-runtime-controller.test.tsx`
+- Modify: `src/domain/analytics/client.ts`
+- Modify: `src/domain/analytics/client.test.ts`
 - Modify: `src/components/meta-pixel-controller.tsx`
 - Modify: `src/components/meta-pixel-controller.test.tsx`
 - Modify: `src/app/globals.css`
@@ -114,11 +120,11 @@ export function parseAdvertisingConsent(value: string | undefined): AdvertisingC
 export function serializeAdvertisingConsent(value: AdvertisingConsent): string;
 ```
 
-- [ ] Add parser tests for valid, malformed, oversized and unknown values plus one-year Secure/SameSite Production cookie attributes.
-- [ ] Add UI/controller tests: no choice loads no tags; Essential only keeps denied; Accept all enables eligible public transports; Manage saves independent values; private-route gates remain.
+- [ ] Add parser tests for valid, malformed, oversized and unknown values plus one-year HttpOnly/Secure/SameSite Production cookie attributes. Add same-origin, bounded JSON and no-store API tests; decision time is server-generated.
+- [ ] Add UI/controller tests: no choice loads no tags; Essential only keeps denied; Accept all enables eligible public transports; Manage saves independent values and allows later revocation; private-route gates remain.
 - [ ] Run four consent/controller test files; expect RED.
-- [ ] Implement the pure parser and an accessible compact preference surface using current visual tokens and a trusted same-origin write path.
-- [ ] Feed server-parsed consent into both controllers and replace hard-coded defaults; essential commerce must not depend on consent.
+- [ ] Implement the pure parser and an accessible compact preference surface using current visual tokens and a trusted same-origin HttpOnly-cookie write path.
+- [ ] Feed server-parsed consent into both controllers and replace hard-coded defaults. Gate GA4 on analytics consent and Google Ads plus Meta on advertising consent; preserve the existing per-destination Purchase markers and private-route gates. Essential commerce must not depend on consent.
 - [ ] Verify tests, TypeScript and ESLint; commit as `feat: add recorded advertising consent`.
 
 ### Task 5: Add allowlisted Meta CAPI and shared event IDs
@@ -131,10 +137,22 @@ export function serializeAdvertisingConsent(value: AdvertisingConsent): string;
 - Create: `src/app/api/analytics/meta/route-handler.ts`
 - Create: `src/app/api/analytics/meta/route.test.ts`
 - Create: `src/app/api/analytics/meta/route.ts`
+- Create: `src/server/analytics/meta-purchase.ts`
+- Create: `src/server/analytics/meta-purchase.test.ts`
 - Modify: `src/domain/analytics/meta.ts`
 - Modify: `src/domain/analytics/meta.test.ts`
+- Modify: `src/domain/analytics/attribution.ts`
+- Modify: `src/components/attribution-capture.tsx`
 - Modify: `src/components/analytics-link.tsx`
 - Test: `src/components/analytics-link.test.tsx`
+- Modify: `src/app/api/checkout/order/route-handler.ts`
+- Modify: `src/server/orders/order-repository.ts`
+- Modify: `src/server/orders/order-service.ts`
+- Modify: `src/server/orders/drizzle-order-repository.ts`
+- Modify only if needed for JSONB TypeScript typing with no SQL change: `src/server/db/schema/orders.ts`
+- Modify: `src/server/payments/payment-service.ts`
+- Modify: verified-payment webhook, return, reconciliation and order-payment route handlers that already invoke the payment service
+- Test: corresponding attribution, order and verified-payment route/service tests
 
 **Interfaces:**
 
@@ -156,11 +174,14 @@ export function normalizeMetaSourceUrl(input: URL): string;
 export function buildMetaEventId(event: AnalyticsEvent, interactionId?: string): string;
 ```
 
-- [ ] Add tests rejecting sensitive/unknown keys and stripping query/token data from source URLs; test server-only SHA-256 normalization.
-- [ ] Add route/client tests for missing credentials = no request, valid consent = allowlisted request, untrusted/oversized request = reject, provider failure = no commerce failure, Purchase = stable ID.
+- [ ] Add tests rejecting sensitive or unknown keys and stripping query/token data from source URLs; test server-only SHA-256 normalization and validation of consent-permitted `fbp` or `fbc`.
+- [ ] Add route/client tests for missing credentials = no request, valid consent = allowlisted request, untrusted/oversized request = reject, provider failure = no commerce failure, and browser clients cannot submit Purchase or raw matching data.
+- [ ] Add paid integration tests: pending, failed, cancelled and refunded states produce no CAPI Purchase; verified-paid commit schedules a failure-isolated post-commit observer; webhook, return and reconciliation retries reuse `purchase:<orderNumber>`; amount, currency and items come from the paid order snapshot.
+- [ ] Add attribution tests: consent and `_fbp`/`_fbc` are read server-side at website order creation and stored only in the existing JSON attribution snapshot; advertising denied stores no Meta identifiers; legacy attribution remains readable with no migration.
 - [ ] Run focused Meta tests; expect RED.
-- [ ] Implement server-only credentials, bounded timeout and redacted errors; never expose access tokens to client code/logs.
-- [ ] Generate one event ID before Pixel/CAPI emission and add Contact events to Messenger, WhatsApp and Email without changing navigation.
+- [ ] Implement server-only credentials, bounded timeout and redacted errors; never expose access tokens to client code/logs. Missing approved matching identifiers or consent skips the server copy.
+- [ ] Generate one event ID before Pixel/CAPI emission and add Contact events to Messenger, WhatsApp and Email without changing navigation. Browser non-Purchase requests use strict contracts; Purchase can only be built server-side from a verified paid order.
+- [ ] Invoke Meta reporting only after the authoritative paid transaction commits, through a best-effort `after()` observer whose failure cannot change payment state. Do not place network calls inside the payment transaction or reuse the email/internal notification outbox.
 - [ ] Verify tests, TypeScript and ESLint; commit as `feat: add consent-gated Meta CAPI`.
 
 ### Task 6: Route paid manual orders to Meta first and Google only with evidence
