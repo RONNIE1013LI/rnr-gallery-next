@@ -13,6 +13,7 @@ import {
 import {
   classifyGa4Location,
   GA4_DEBUG_SESSION_KEY,
+  GA4_DISABLE_WINDOW_KEY,
   GA4_MEASUREMENT_ID,
   type Ga4LocationPolicy,
 } from "@/domain/analytics/runtime";
@@ -56,11 +57,26 @@ function initializeGa4DataLayer(): () => void {
   };
 }
 
-function isGa4TagReady(): boolean {
-  const manager = (window as Ga4Window & {
-    google_tag_manager?: Record<string, unknown>;
-  }).google_tag_manager;
-  return !!manager?.[GA4_MEASUREMENT_ID];
+function requestGa4TagReady(onReady: () => void): boolean {
+  const gaWindow = window as Ga4Window & {
+    gtag?: (...args: unknown[]) => void;
+  };
+  const gtag = gaWindow.gtag;
+  if (typeof gtag !== "function") return false;
+  let callbackReceived = false;
+  let callReturned = false;
+  gaWindow[GA4_DISABLE_WINDOW_KEY] = false;
+  try {
+    gtag("get", GA4_MEASUREMENT_ID, "client_id", () => {
+      callbackReceived = true;
+      if (callReturned) onReady();
+    });
+  } finally {
+    gaWindow[GA4_DISABLE_WINDOW_KEY] = true;
+    callReturned = true;
+  }
+  if (callbackReceived) onReady();
+  return true;
 }
 
 function controlledDebugMode(url: URL): boolean {
@@ -250,10 +266,12 @@ export function AnalyticsRuntimeController({
       tagReadyTimeout = undefined;
     };
     const acceptReadyTag = () => {
-      if (!active || !isGa4TagReady()) return false;
+      if (!active || tagReadyTimeout === undefined) return;
       stopTagReadyCheck();
       markGaTransportReady();
-      return true;
+    };
+    const requestReadyProbe = () => {
+      if (active) requestGa4TagReady(acceptReadyTag);
     };
 
     const handleScriptLoad = (event: Event) => {
@@ -262,8 +280,6 @@ export function AnalyticsRuntimeController({
         tagLoaded.current = true;
         document.documentElement.dataset.ga4Loaded = "true";
         settleLocation(new URL(window.location.href));
-        if (acceptReadyTag()) return;
-        tagReadyPoll = window.setInterval(acceptReadyTag, GA4_TAG_READY_POLL_MS);
         tagReadyTimeout = window.setTimeout(() => {
           stopTagReadyCheck();
           tagLoaded.current = false;
@@ -271,6 +287,8 @@ export function AnalyticsRuntimeController({
           applyGa4LocationPolicy(new URL(window.location.href), production, false);
           resetGaTransport();
         }, GA4_TAG_READY_TIMEOUT_MS);
+        tagReadyPoll = window.setInterval(requestReadyProbe, GA4_TAG_READY_POLL_MS);
+        requestReadyProbe();
       }
     };
     document.addEventListener("load", handleScriptLoad, true);

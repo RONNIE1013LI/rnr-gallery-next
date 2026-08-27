@@ -16,6 +16,7 @@ const googleAnalytics = vi.hoisted(() => ({
   mounts: 0,
   props: [] as Array<Record<string, unknown>>,
 }));
+const tagReadyCallbacks: Array<() => void> = [];
 
 vi.mock("@next/third-parties/google", async () => {
   const React = await import("react");
@@ -53,14 +54,31 @@ function markGoogleTagReady() {
   Object.assign(window, {
     google_tag_manager: { [GA4_MEASUREMENT_ID]: {} },
   });
+  for (const callback of tagReadyCallbacks.splice(0)) callback();
+}
+
+function installGoogleTagConsumer() {
+  const gaWindow = window as unknown as {
+    gtag?: (...args: unknown[]) => void;
+  };
+  gaWindow.gtag ??= (...args: unknown[]) => {
+    if (args[0] === "get"
+      && args[1] === GA4_MEASUREMENT_ID
+      && args[2] === "client_id"
+      && typeof args[3] === "function") {
+      tagReadyCallbacks.push(args[3] as () => void);
+    }
+  };
 }
 
 function loadGoogleTag(script: HTMLElement) {
-  markGoogleTagReady();
+  installGoogleTagConsumer();
   act(() => script.dispatchEvent(new Event("load")));
+  markGoogleTagReady();
 }
 
 function loadGoogleTagScriptOnly(script: HTMLElement) {
+  installGoogleTagConsumer();
   act(() => script.dispatchEvent(new Event("load")));
 }
 
@@ -71,6 +89,7 @@ describe("AnalyticsRuntimeController", () => {
     googleAnalytics.commands.length = 0;
     googleAnalytics.mounts = 0;
     googleAnalytics.props.length = 0;
+    tagReadyCallbacks.length = 0;
     sessionStorage.clear();
     localStorage.clear();
     document.documentElement.removeAttribute("data-ga4-enabled");
@@ -80,6 +99,7 @@ describe("AnalyticsRuntimeController", () => {
     delete (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY];
     delete (window as unknown as { dataLayer?: unknown[] }).dataLayer;
     delete (window as unknown as { google_tag_manager?: unknown }).google_tag_manager;
+    delete (window as unknown as { gtag?: unknown }).gtag;
     setLocation("/");
   });
 
@@ -196,6 +216,104 @@ describe("AnalyticsRuntimeController", () => {
       window.clearInterval(transport);
       view.unmount();
     }
+  });
+
+  it("waits for the gtag get callback even when the manager object already exists", async () => {
+    setLocation(
+      "/products/photo-print-canvas",
+      "utm_source=google&gclid=private-handshake-click",
+    );
+    const readyCallbacks: Array<(clientId: string) => void> = [];
+    const gtag = vi.fn((
+      command: string,
+      measurementId: string,
+      fieldName: string,
+      callback: (clientId: string) => void,
+    ) => {
+      if (command === "get"
+        && measurementId === GA4_MEASUREMENT_ID
+        && fieldName === "client_id") {
+        readyCallbacks.push(callback);
+      }
+    });
+    Object.assign(window, {
+      google_tag_manager: { [GA4_MEASUREMENT_ID]: {} },
+      gtag,
+    });
+
+    const view = render(<AnalyticsRuntimeController production />);
+    const script = await view.findByTestId("official-google-analytics");
+    loadGoogleTagScriptOnly(script);
+    expect(emitAnalyticsEvent({
+      event: "view_item",
+      currency: "NZD",
+      value: 65,
+      items: [{
+        item_id: "photo-print-canvas",
+        item_name: "Photo Print Canvas",
+        price: 65,
+        quantity: 1,
+      }],
+    })).toBe(true);
+
+    expect(gtag).toHaveBeenCalledWith(
+      "get",
+      GA4_MEASUREMENT_ID,
+      "client_id",
+      expect.any(Function),
+    );
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY])
+      .toBe(true);
+
+    await act(async () => readyCallbacks[0]?.("private-client-id"));
+
+    expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
+      .toEqual(["page_view", "view_item"]);
+    expect(sendGAEvent).toHaveBeenCalledTimes(2);
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
+      .not.toMatch(/utm_source|gclid|private-handshake-click|private-client-id/);
+    view.unmount();
+  });
+
+  it("restores probe disablement before a synchronous callback opens the event window", async () => {
+    setLocation("/products/photo-print-canvas", "gclid=private-sync-probe-click");
+    const disableStateDuringEvents: unknown[] = [];
+    vi.mocked(sendGAEvent).mockImplementation(() => {
+      disableStateDuringEvents.push(
+        (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY],
+      );
+    });
+    Object.assign(window, {
+      google_tag_manager: { [GA4_MEASUREMENT_ID]: {} },
+      gtag: vi.fn((
+        command: string,
+        measurementId: string,
+        fieldName: string,
+        callback: (clientId: string) => void,
+      ) => {
+        if (command === "get"
+          && measurementId === GA4_MEASUREMENT_ID
+          && fieldName === "client_id") {
+          callback("private-sync-client-id");
+        }
+      }),
+    });
+
+    const view = render(<AnalyticsRuntimeController production />);
+    const script = await view.findByTestId("official-google-analytics");
+    loadGoogleTagScriptOnly(script);
+
+    expect(disableStateDuringEvents).toEqual([false]);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY])
+      .toBe(false);
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
+      page_location: "http://localhost:3000/products/photo-print-canvas",
+      page_referrer: "",
+    });
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
+      .not.toMatch(/gclid|private-sync-probe-click|private-sync-client-id/);
+    view.unmount();
   });
 
   it("keeps a queued public event on its safe source page after navigating to a private URL", async () => {
@@ -474,7 +592,10 @@ describe("AnalyticsRuntimeController", () => {
 
     await waitFor(() => expect(googleAnalytics.mounts).toBe(1));
     const script = await view.findByTestId("official-google-analytics");
-    loadGoogleTag(script);
+    loadGoogleTagScriptOnly(script);
+    expect(tagReadyCallbacks).toHaveLength(1);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+    markGoogleTagReady();
     expect(googleAnalytics.automaticPageLocations).toEqual([]);
     expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
     expect(document.documentElement.dataset.ga4PrivatePurchase).toBe("true");
