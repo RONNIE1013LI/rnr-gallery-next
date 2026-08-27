@@ -897,6 +897,98 @@ a:active {
   text-align: center;
 }
 
+.consent-preferences {
+  inset: auto 1rem 1rem;
+  position: fixed;
+  z-index: 40;
+  display: grid;
+  justify-items: end;
+  pointer-events: none;
+}
+
+.consent-preferences__content {
+  width: min(100%, 38rem);
+  padding: 1.25rem;
+  color: var(--ink);
+  background: var(--paper);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: 0 1rem 2.5rem rgb(23 27 23 / 0.2);
+  pointer-events: auto;
+}
+
+.consent-preferences h2 {
+  font-family: var(--font-display);
+  font-size: 1.125rem;
+}
+
+.consent-preferences p {
+  margin-top: 0.4rem;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+.consent-preferences [role="alert"] {
+  color: #9b2c2c;
+}
+
+.consent-preferences__options {
+  margin-top: 1rem;
+  border: 0;
+}
+
+.consent-preferences__options legend {
+  font-weight: 700;
+}
+
+.consent-preferences__options label {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.consent-preferences__options input {
+  width: 1.1rem;
+  height: 1.1rem;
+}
+
+.consent-preferences__actions {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.consent-preferences__trigger {
+  min-height: 44px;
+  padding: 0.65rem 0.95rem;
+  border: 1px solid var(--gallery-green);
+  border-radius: var(--radius-button);
+  right: 1rem;
+  bottom: 1rem;
+  position: fixed;
+  z-index: 30;
+  color: var(--gallery-green);
+  background: var(--paper);
+  font-size: 0.8125rem;
+}
+
+.consent-preferences button {
+  min-height: 44px;
+  padding: 0.65rem 0.95rem;
+  border: 1px solid var(--gallery-green);
+  border-radius: var(--radius-button);
+  color: var(--paper);
+  background: var(--gallery-green);
+  font-weight: 650;
+}
+
+.consent-preferences button:nth-child(n + 2) {
+  color: var(--gallery-green);
+  background: transparent;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -943,6 +1035,19 @@ a:active {
 @media (max-width: 560px) {
   :root {
     --page-gutter: 1.25rem;
+  }
+
+  .consent-preferences {
+    inset-inline: 0.75rem;
+    bottom: 0.75rem;
+  }
+
+  .consent-preferences__content {
+    width: 100%;
+  }
+
+  .consent-preferences__actions > button {
+    flex: 1 1 calc(50% - 0.6rem);
   }
 
   .site-header__inner {

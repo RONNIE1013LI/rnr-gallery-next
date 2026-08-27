@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AnalyticsRuntimeController } from "@/components/analytics-runtime-controller";
 import { MetaPixelController } from "@/components/meta-pixel-controller";
+import { ConsentPreferences } from "@/components/consent-preferences";
 import { CustomerReviewsSection } from "@/components/customer-reviews/customer-reviews-section";
 import { SiteChrome } from "@/components/site-chrome";
 import { isGa4Production } from "@/domain/analytics/runtime";
@@ -12,6 +13,10 @@ import { cookies, headers } from "next/headers";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { MARKET_COOKIE_NAME, parseMarketCookie } from "@/server/markets/market-cookie";
 import { getSafePublicCustomerReviewSection } from "@/server/customer-reviews/customer-review-runtime";
+import {
+  ADVERTISING_CONSENT_COOKIE,
+  parseAdvertisingConsent,
+} from "@/domain/consent/advertising-consent";
 import "./globals.css";
 
 const socialTitle = "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service";
@@ -78,6 +83,7 @@ export default async function RootLayout({
   const resolvedMarket = parseMarketCookie(requestHeaders.get("x-rnr-resolved-market"))
     ?? parseMarketCookie(cookieStore.get(MARKET_COOKIE_NAME)?.value)
     ?? "NZ";
+  const consent = parseAdvertisingConsent(cookieStore.get(ADVERTISING_CONSENT_COOKIE)?.value);
 
   return (
     <html
@@ -85,31 +91,33 @@ export default async function RootLayout({
       data-scroll-behavior="smooth"
     >
       <body>
-        <a className="skip-link" href="#main-content">Skip to content</a>
-        <Suspense fallback={null}>
-          <MetaPixelController
-            production={ga4Enabled}
-            enabled={managed["advertising.meta.enabled"] === "enabled"}
-          />
-        </Suspense>
-        <SiteChrome
-          initialCustomerId={session?.user.id ?? null}
-          initialMarket={resolvedMarket}
-          australiaEnabled={registryState.registry.markets.AU.enabled}
-          customerChatEnabled={process.env.WEBSITE_CUSTOMER_ASSISTANT_ENABLED?.trim().toLowerCase() === "true"}
-          footerContent={{
-            tagline: managed["footer.tagline"],
-            email: managed["contact.email"],
-            phone: managed["contact.phone"],
-          }}
-          footerLead={reviewSection
-            ? <CustomerReviewsSection data={reviewSection} background="sand" />
-            : null}
-        >
-          {children}
-        </SiteChrome>
+        <ConsentPreferences initialConsent={consent}>
+          <a className="skip-link" href="#main-content">Skip to content</a>
+          <Suspense fallback={null}>
+            <MetaPixelController
+              production={ga4Enabled}
+              enabled={managed["advertising.meta.enabled"] === "enabled"}
+            />
+          </Suspense>
+          <SiteChrome
+            initialCustomerId={session?.user.id ?? null}
+            initialMarket={resolvedMarket}
+            australiaEnabled={registryState.registry.markets.AU.enabled}
+            customerChatEnabled={process.env.WEBSITE_CUSTOMER_ASSISTANT_ENABLED?.trim().toLowerCase() === "true"}
+            footerContent={{
+              tagline: managed["footer.tagline"],
+              email: managed["contact.email"],
+              phone: managed["contact.phone"],
+            }}
+            footerLead={reviewSection
+              ? <CustomerReviewsSection data={reviewSection} background="sand" />
+              : null}
+          >
+            {children}
+          </SiteChrome>
+          <AnalyticsRuntimeController production={ga4Enabled} />
+        </ConsentPreferences>
       </body>
-      <AnalyticsRuntimeController production={ga4Enabled} />
     </html>
   );
 }

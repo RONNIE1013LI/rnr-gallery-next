@@ -39,7 +39,7 @@ describe("root layout metadata", () => {
     expect(layout).toContain("initialMarket={resolvedMarket}");
   });
 
-  it("installs one production-only official GA4 root tag", () => {
+  it("provides server-read consent before mounting the single controlled Google tag", () => {
     const layout = readFileSync(join(process.cwd(), "src/app/layout.tsx"), "utf8");
     const controller = readFileSync(
       join(process.cwd(), "src/components/analytics-runtime-controller.tsx"),
@@ -47,6 +47,8 @@ describe("root layout metadata", () => {
     );
     const source = productionSource("src");
 
+    expect(layout).toContain("parseAdvertisingConsent(cookieStore.get(ADVERTISING_CONSENT_COOKIE)?.value)");
+    expect(layout).toContain("<ConsentPreferences initialConsent={consent}>");
     expect(layout).toContain("<AnalyticsRuntimeController production={ga4Enabled} />");
     expect(controller).toContain("<GoogleAnalytics gaId={GA4_MEASUREMENT_ID}");
     expect(source.match(/<GoogleAnalytics\b/g)).toHaveLength(1);
@@ -93,6 +95,14 @@ describe("root layout metadata", () => {
     const globals = cssFile("src/app/globals.css");
 
     expect(cssRule(globals, "html {")).toContain("scrollbar-gutter: stable;");
+  });
+
+  it("keeps the consent surface compact, reachable, and above the site chrome", () => {
+    const globals = cssFile("src/app/globals.css");
+
+    expect(cssRule(globals, ".consent-preferences {")).toContain("position: fixed;");
+    expect(cssRule(globals, ".consent-preferences {")).toContain("z-index: 40;");
+    expect(cssRule(globals, ".consent-preferences__trigger {")).toContain("position: fixed;");
   });
 
   it("prevents iOS from rewriting server-rendered contact details before hydration", () => {

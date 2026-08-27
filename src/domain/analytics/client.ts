@@ -117,10 +117,19 @@ function isDebugSession(): boolean {
   return window.sessionStorage.getItem(GA4_DEBUG_SESSION_KEY) === "true";
 }
 
-function isPrivatePurchaseReady(event: AnalyticsEvent): event is Extract<AnalyticsEvent, { event: "purchase" }> {
+function isPrivatePurchaseLocation(event: AnalyticsEvent): event is Extract<AnalyticsEvent, { event: "purchase" }> {
   return event.event === "purchase"
     && document.documentElement.dataset.ga4PrivatePurchase === "true"
     && document.documentElement.dataset.ga4Loaded === "true";
+}
+
+function analyticsAllowed() {
+  const root = document.documentElement.dataset;
+  return root.ga4Enabled === "true" || root.ga4AnalyticsEnabled === "true";
+}
+
+function googleAdsAllowed() {
+  return document.documentElement.dataset.googleAdsEnabled === "true";
 }
 
 function isPrivateCheckoutReady(event: AnalyticsEvent): boolean {
@@ -299,26 +308,20 @@ function sendPurchaseDestination(
 function sendPurchaseEvent(
   event: Extract<AnalyticsEvent, { event: "purchase" }>,
   payload: Record<string, unknown>,
+  sendGa4: boolean,
+  sendAds: boolean,
 ): boolean {
   if (!gaTransportReady || gaHistorySuppressionDepth > 0) return false;
-  sendPurchaseDestination(
-    event.transaction_id,
-    "ga4",
-    event.event,
-    payload,
-    GA4_MEASUREMENT_ID,
-  );
-  sendPurchaseDestination(
-    event.transaction_id,
-    "ads",
-    "conversion",
-    {
+  if (sendGa4) {
+    sendPurchaseDestination(event.transaction_id, "ga4", event.event, payload, GA4_MEASUREMENT_ID);
+  }
+  if (sendAds) {
+    sendPurchaseDestination(event.transaction_id, "ads", "conversion", {
       transaction_id: event.transaction_id,
       currency: event.currency,
       value: event.total,
-    },
-    GOOGLE_ADS_PURCHASE_SEND_TO,
-  );
+    }, GOOGLE_ADS_PURCHASE_SEND_TO);
+  }
   return true;
 }
 
@@ -328,9 +331,14 @@ export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
       return false;
     }
 
-    const privatePurchase = isPrivatePurchaseReady(event);
+    const privatePurchase = isPrivatePurchaseLocation(event);
     const privateCheckout = isPrivateCheckoutReady(event);
-    if (!privatePurchase && !privateCheckout && document.documentElement.dataset.ga4Enabled !== "true") {
+    const sendGa4Purchase = privatePurchase && analyticsAllowed();
+    const sendAdsPurchase = privatePurchase && googleAdsAllowed();
+    const allowed = event.event === "purchase"
+      ? sendGa4Purchase || sendAdsPurchase
+      : (privateCheckout && analyticsAllowed()) || document.documentElement.dataset.ga4Enabled === "true";
+    if (!allowed) {
       return false;
     }
 
@@ -351,7 +359,7 @@ export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
       ...(isDebugSession() ? { debug_mode: true } : {}),
     };
     if (event.event === "purchase") {
-      return sendPurchaseEvent(event, eventPayload);
+      return sendPurchaseEvent(event, eventPayload, sendGa4Purchase, sendAdsPurchase);
     }
     sendControlledGaEvent(event.event, eventPayload);
     return true;

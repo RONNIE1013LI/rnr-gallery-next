@@ -17,7 +17,24 @@ const googleAnalytics = vi.hoisted(() => ({
   mounts: 0,
   props: [] as Array<Record<string, unknown>>,
 }));
+const consentState = vi.hoisted(() => ({
+  value: {
+    version: 1 as const,
+    analytics: true,
+    advertising: true,
+    decidedAt: "2026-08-28T01:02:03.000Z",
+  } as {
+    version: 1;
+    analytics: boolean;
+    advertising: boolean;
+    decidedAt: string;
+  } | null,
+}));
 const tagReadyCallbacks: Array<() => void> = [];
+
+vi.mock("./consent-preferences", () => ({
+  useAdvertisingConsent: () => consentState.value,
+}));
 
 vi.mock("@next/third-parties/google", async () => {
   const React = await import("react");
@@ -101,11 +118,44 @@ describe("AnalyticsRuntimeController", () => {
     delete (window as unknown as { dataLayer?: unknown[] }).dataLayer;
     delete (window as unknown as { google_tag_manager?: unknown }).google_tag_manager;
     delete (window as unknown as { gtag?: unknown }).gtag;
+    consentState.value = {
+      version: 1,
+      analytics: true,
+      advertising: true,
+      decidedAt: "2026-08-28T01:02:03.000Z",
+    };
     setLocation("/");
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
+  });
+
+  it("does not load a Google transport before a visitor has made a choice", () => {
+    consentState.value = null;
+
+    render(<AnalyticsRuntimeController production />);
+
+    expect(googleAnalytics.mounts).toBe(0);
+    expect(document.querySelector("#_next-ga")).toBeNull();
+    expect((window as unknown as { dataLayer?: unknown[] }).dataLayer).toBeUndefined();
+  });
+
+  it("loads only the Google Ads destination when advertising is allowed without analytics", async () => {
+    consentState.value = {
+      version: 1,
+      analytics: false,
+      advertising: true,
+      decidedAt: "2026-08-28T01:02:03.000Z",
+    };
+    const view = render(<AnalyticsRuntimeController production />);
+    const script = await view.findByTestId("official-google-analytics");
+
+    loadGoogleTag(script);
+
+    expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
+    expect(document.documentElement.dataset.googleAdsEnabled).toBe("true");
+    expect(sendGAEvent).not.toHaveBeenCalled();
   });
 
   it("suppresses automatic config collection and sends one safe public pageview", async () => {
@@ -125,9 +175,9 @@ describe("AnalyticsRuntimeController", () => {
     expect(googleAnalytics.commands.slice(0, 4)).toEqual([
       ["consent", "default", {
         analytics_storage: "granted",
-        ad_storage: "denied",
-        ad_user_data: "denied",
-        ad_personalization: "denied",
+        ad_storage: "granted",
+        ad_user_data: "granted",
+        ad_personalization: "granted",
       }],
       ["config", GA4_MEASUREMENT_ID, { send_page_view: false }],
       ["js", "official-component"],

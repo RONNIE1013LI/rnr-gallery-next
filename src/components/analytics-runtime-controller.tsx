@@ -18,20 +18,24 @@ import {
   GOOGLE_ADS_TAG_ID,
   type Ga4LocationPolicy,
 } from "@/domain/analytics/runtime";
+import { useAdvertisingConsent } from "./consent-preferences";
 
 type Ga4Window = Window & Record<string, unknown>;
 
-const ga4ConsentDefaults = {
-  analytics_storage: "granted",
-  ad_storage: "denied",
-  ad_user_data: "denied",
-  ad_personalization: "denied",
-} as const;
 const GA4_HISTORY_SUPPRESSION_MS = 1_100;
 const GA4_TAG_READY_POLL_MS = 50;
 const GA4_TAG_READY_TIMEOUT_MS = 5_000;
 
-function initializeGa4DataLayer(): () => void {
+function googleConsentSignals(analytics: boolean, advertising: boolean) {
+  return {
+    analytics_storage: analytics ? "granted" : "denied",
+    ad_storage: advertising ? "granted" : "denied",
+    ad_user_data: advertising ? "granted" : "denied",
+    ad_personalization: advertising ? "granted" : "denied",
+  } as const;
+}
+
+function initializeGa4DataLayer(analytics: boolean, advertising: boolean): () => void {
   const gaWindow = window as Ga4Window & { dataLayer?: unknown[] };
   const dataLayer = Array.isArray(gaWindow.dataLayer) ? gaWindow.dataLayer : [];
   gaWindow.dataLayer = dataLayer;
@@ -53,7 +57,7 @@ function initializeGa4DataLayer(): () => void {
     }),
   );
   dataLayer.push = guardedPush;
-  dataLayer.push(["consent", "default", ga4ConsentDefaults]);
+  dataLayer.push(["consent", "default", googleConsentSignals(analytics, advertising)]);
   dataLayer.push(["config", GA4_MEASUREMENT_ID, { send_page_view: false }]);
 
   return () => {
@@ -108,6 +112,8 @@ function storedDebugMode(): boolean {
 export function applyGa4LocationPolicy(
   url: URL,
   production: boolean,
+  analyticsAllowed: boolean,
+  advertisingAllowed: boolean,
   collectionReady = true,
 ): Readonly<{ debugMode: boolean; policy: Ga4LocationPolicy }> {
   const root = document.documentElement;
@@ -118,15 +124,27 @@ export function applyGa4LocationPolicy(
     root.removeAttribute("data-ga4-private-commerce");
     root.removeAttribute("data-ga4-private-purchase");
     root.removeAttribute("data-ga4-loaded");
+    root.removeAttribute("data-ga4-analytics-enabled");
+    root.removeAttribute("data-google-ads-enabled");
     suppressGaCollection();
     return { debugMode: false, policy };
   }
 
   const debugMode = controlledDebugMode(url);
+  if (analyticsAllowed && collectionReady) {
+    root.dataset.ga4AnalyticsEnabled = "true";
+  } else {
+    root.removeAttribute("data-ga4-analytics-enabled");
+  }
+  if (advertisingAllowed && collectionReady) {
+    root.dataset.googleAdsEnabled = "true";
+  } else {
+    root.removeAttribute("data-google-ads-enabled");
+  }
   if (policy === "public") {
     root.removeAttribute("data-ga4-private-commerce");
     root.removeAttribute("data-ga4-private-purchase");
-    if (collectionReady) {
+    if (analyticsAllowed && collectionReady) {
       root.dataset.ga4Enabled = "true";
       suppressGaCollection();
     } else {
@@ -214,6 +232,10 @@ export function AnalyticsRuntimeController({
 }: Readonly<{
   production: boolean;
 }>) {
+  const consent = useAdvertisingConsent();
+  const analyticsAllowed = consent?.analytics === true;
+  const advertisingAllowed = consent?.advertising === true;
+  const googleAllowed = production && (analyticsAllowed || advertisingAllowed);
   const [ready, setReady] = useState(false);
   const tagLoaded = useRef(false);
   const lastPageView = useRef<string | null>(null);
@@ -221,19 +243,25 @@ export function AnalyticsRuntimeController({
   useLayoutEffect(() => {
     let active = true;
     const prepareLocation = (url: URL) => {
-      applyGa4LocationPolicy(url, production, false);
+      applyGa4LocationPolicy(url, googleAllowed, analyticsAllowed, advertisingAllowed, false);
     };
     const settleLocation = (url: URL) => {
       if (!active) return;
       const currentUrl = new URL(window.location.href);
       const isCurrentLocation = currentUrl.href === url.href;
       const state = isCurrentLocation
-        ? applyGa4LocationPolicy(url, production, tagLoaded.current)
+        ? applyGa4LocationPolicy(
+          url,
+          googleAllowed,
+          analyticsAllowed,
+          advertisingAllowed,
+          tagLoaded.current,
+        )
         : {
           debugMode: storedDebugMode(),
           policy: classifyGa4Location(url.pathname, url.searchParams),
         };
-      if (state.policy !== "public" || !tagLoaded.current) return;
+      if (!analyticsAllowed || state.policy !== "public" || !tagLoaded.current) return;
 
       const pageLocation = new URL(url.pathname || "/", url.origin).href;
       if (lastPageView.current === pageLocation) return;
@@ -257,9 +285,14 @@ export function AnalyticsRuntimeController({
     };
 
     prepareLocation(new URL(window.location.href));
-    if (!production) return;
+    if (!googleAllowed) {
+      queueMicrotask(() => {
+        if (active) setReady(false);
+      });
+      return;
+    }
     resetGaTransport();
-    const restoreDataLayer = initializeGa4DataLayer();
+    const restoreDataLayer = initializeGa4DataLayer(analyticsAllowed, advertisingAllowed);
     let tagReadyPoll: number | undefined;
     let tagReadyTimeout: number | undefined;
 
@@ -288,7 +321,13 @@ export function AnalyticsRuntimeController({
           stopTagReadyCheck();
           tagLoaded.current = false;
           document.documentElement.removeAttribute("data-ga4-loaded");
-          applyGa4LocationPolicy(new URL(window.location.href), production, false);
+          applyGa4LocationPolicy(
+            new URL(window.location.href),
+            googleAllowed,
+            analyticsAllowed,
+            advertisingAllowed,
+            false,
+          );
           resetGaTransport();
         }, GA4_TAG_READY_TIMEOUT_MS);
         tagReadyPoll = window.setInterval(requestReadyProbe, GA4_TAG_READY_POLL_MS);
@@ -308,19 +347,25 @@ export function AnalyticsRuntimeController({
       active = false;
       stopTagReadyCheck();
       restoreDataLayer();
+      const dataLayer = (window as Ga4Window & { dataLayer?: unknown[] }).dataLayer;
+      if (Array.isArray(dataLayer)) {
+        dataLayer.push(["consent", "update", googleConsentSignals(false, false)]);
+      }
       removeHistoryGuard();
       document.removeEventListener("load", handleScriptLoad, true);
       document.documentElement.removeAttribute("data-ga4-enabled");
       document.documentElement.removeAttribute("data-ga4-private-commerce");
       document.documentElement.removeAttribute("data-ga4-private-purchase");
       document.documentElement.removeAttribute("data-ga4-loaded");
+      document.documentElement.removeAttribute("data-ga4-analytics-enabled");
+      document.documentElement.removeAttribute("data-google-ads-enabled");
       tagLoaded.current = false;
       lastPageView.current = null;
       resetGaTransport();
     };
-  }, [production]);
+  }, [advertisingAllowed, analyticsAllowed, googleAllowed]);
 
-  return production && ready
+  return googleAllowed && ready
     ? <GoogleAnalytics gaId={GA4_MEASUREMENT_ID} />
     : null;
 }

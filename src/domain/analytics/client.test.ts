@@ -52,6 +52,8 @@ describe("emitAnalyticsEvent", () => {
     document.documentElement.removeAttribute("data-ga4-private-purchase");
     document.documentElement.removeAttribute("data-ga4-private-commerce");
     document.documentElement.removeAttribute("data-ga4-loaded");
+    document.documentElement.removeAttribute("data-ga4-analytics-enabled");
+    document.documentElement.removeAttribute("data-google-ads-enabled");
     document.documentElement.removeAttribute("data-meta-enabled");
     document.documentElement.removeAttribute("data-meta-private-commerce");
     document.documentElement.removeAttribute("data-meta-private-purchase");
@@ -60,6 +62,8 @@ describe("emitAnalyticsEvent", () => {
     sessionStorage.clear();
     localStorage.clear();
     Object.assign(window, { dataLayer: [] });
+    document.documentElement.dataset.ga4AnalyticsEnabled = "true";
+    document.documentElement.dataset.googleAdsEnabled = "true";
     markGaTransportReady();
   });
 
@@ -94,6 +98,24 @@ describe("emitAnalyticsEvent", () => {
       currency: "NZD",
       value: 65,
     }));
+  });
+
+  it("sends only the Ads conversion when advertising is allowed without analytics", () => {
+    document.documentElement.dataset.ga4PrivatePurchase = "true";
+    document.documentElement.dataset.ga4Loaded = "true";
+    document.documentElement.dataset.googleAdsEnabled = "true";
+    document.documentElement.removeAttribute("data-ga4-analytics-enabled");
+    window.history.replaceState({}, "", "/orders/private?access=private-token");
+
+    expect(emitAnalyticsEvent(purchase)).toBe(true);
+    expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
+      .toEqual(["conversion"]);
+    expect(vi.mocked(sendGAEvent).mock.calls[0]?.[2]).toMatchObject({
+      send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
+      transaction_id: "RNR-2026-PRIVATE",
+      value: 97.75,
+      currency: "NZD",
+    });
   });
 
   it("pins pageview, view_item, and purchase to the configured destination", () => {

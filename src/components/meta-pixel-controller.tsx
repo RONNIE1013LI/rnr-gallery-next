@@ -4,6 +4,7 @@ import Script from "next/script";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { classifyGa4Location, META_PIXEL_ID } from "@/domain/analytics/runtime";
+import { useAdvertisingConsent } from "./consent-preferences";
 
 type MetaPixelQueue = ((...args: unknown[]) => void) & {
   callMethod?: (...args: unknown[]) => void;
@@ -49,16 +50,21 @@ export function MetaPixelController({
   production: boolean;
   enabled: boolean;
 }>) {
+  const consent = useAdvertisingConsent();
   const pathname = usePathname() || "/";
   const searchParams = useSearchParams();
   const search = searchParams.toString();
   const policy = classifyGa4Location(pathname, new URLSearchParams(search));
-  const allowed = production && enabled && policy !== "private";
+  const allowed = production && enabled && consent?.advertising === true && policy !== "private";
   const lastPageView = useRef<string | null>(null);
 
   useEffect(() => {
     clearMetaGates();
-    if (!allowed) return;
+    if (!allowed) {
+      const fbq = (window as MetaWindow).fbq;
+      if (typeof fbq === "function") fbq("consent", "revoke");
+      return;
+    }
 
     const root = document.documentElement;
     if (policy === "public") root.dataset.metaEnabled = "true";

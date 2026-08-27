@@ -4,6 +4,23 @@ import { META_PIXEL_ID } from "@/domain/analytics/runtime";
 import { MetaPixelController } from "./meta-pixel-controller";
 
 const navigation = vi.hoisted(() => ({ pathname: "/", search: "" }));
+const consentState = vi.hoisted(() => ({
+  value: {
+    version: 1 as const,
+    analytics: true,
+    advertising: true,
+    decidedAt: "2026-08-28T01:02:03.000Z",
+  } as {
+    version: 1;
+    analytics: boolean;
+    advertising: boolean;
+    decidedAt: string;
+  } | null,
+}));
+
+vi.mock("./consent-preferences", () => ({
+  useAdvertisingConsent: () => consentState.value,
+}));
 
 vi.mock("next/navigation", () => ({
   usePathname: () => navigation.pathname,
@@ -30,6 +47,21 @@ describe("MetaPixelController", () => {
     document.documentElement.removeAttribute("data-meta-private-purchase");
     document.documentElement.removeAttribute("data-meta-loaded");
     delete (window as Window & { fbq?: unknown }).fbq;
+    consentState.value = {
+      version: 1,
+      analytics: true,
+      advertising: true,
+      decidedAt: "2026-08-28T01:02:03.000Z",
+    };
+  });
+
+  it("does not load Meta until advertising consent is recorded", () => {
+    consentState.value = null;
+
+    render(<MetaPixelController production enabled />);
+
+    expect(screen.queryByTestId("meta-pixel-script")).not.toBeInTheDocument();
+    expect((window as Window & { fbq?: unknown }).fbq).toBeUndefined();
   });
 
   it("initializes the approved pixel and records one public PageView", async () => {
