@@ -2,6 +2,10 @@ import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sendGAEvent } from "@next/third-parties/google";
+import {
+  markGaTransportReady,
+  resetGaTransport,
+} from "@/domain/analytics/client";
 import type { PurchaseEvent } from "@/domain/analytics/events";
 import { PurchaseTracker } from "./purchase-tracker";
 
@@ -22,6 +26,8 @@ const storageKey = "rnr:analytics:v1:purchase:RNR-2026-ONE";
 describe("PurchaseTracker", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetGaTransport();
+    markGaTransportReady();
     sessionStorage.clear();
     document.documentElement.removeAttribute("data-ga4-enabled");
     window.history.replaceState({}, "", "/");
@@ -29,6 +35,7 @@ describe("PurchaseTracker", () => {
   });
 
   afterEach(() => {
+    resetGaTransport();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });

@@ -2,6 +2,10 @@ import { act, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sendGAEvent } from "@next/third-parties/google";
+import {
+  markGaTransportReady,
+  resetGaTransport,
+} from "@/domain/analytics/client";
 import { AnalyticsEventTracker } from "./analytics-event-tracker";
 
 vi.mock("@next/third-parties/google", () => ({ sendGAEvent: vi.fn() }));
@@ -22,6 +26,8 @@ const event = {
 describe("AnalyticsEventTracker", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetGaTransport();
+    markGaTransportReady();
     document.documentElement.dataset.ga4Enabled = "true";
     window.history.replaceState({}, "", "/");
     sessionStorage.clear();
@@ -29,6 +35,7 @@ describe("AnalyticsEventTracker", () => {
   });
 
   afterEach(() => {
+    resetGaTransport();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -74,10 +81,11 @@ describe("AnalyticsEventTracker", () => {
     });
 
     expect(sendGAEvent).toHaveBeenCalledTimes(1);
-    expect(vi.getTimerCount()).toBe(0);
+    expect(vi.getTimerCount()).toBe(1);
     await act(async () => {
       vi.runAllTimers();
     });
+    expect(vi.getTimerCount()).toBe(0);
     expect(sendGAEvent).toHaveBeenCalledTimes(1);
   });
 

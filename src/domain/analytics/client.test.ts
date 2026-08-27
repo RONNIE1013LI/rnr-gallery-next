@@ -1,7 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sendGAEvent } from "@next/third-parties/google";
-import { emitAnalyticsEvent } from "./client";
+import {
+  emitAnalyticsEvent,
+  markGaTransportReady,
+  resetGaTransport,
+} from "./client";
 import type { PurchaseEvent } from "./events";
 import {
   GA4_DEBUG_SESSION_KEY,
@@ -36,6 +40,7 @@ const purchase: PurchaseEvent = {
 describe("emitAnalyticsEvent", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    resetGaTransport();
     document.documentElement.removeAttribute("data-ga4-enabled");
     document.documentElement.removeAttribute("data-ga4-private-purchase");
     document.documentElement.removeAttribute("data-ga4-private-commerce");
@@ -45,6 +50,7 @@ describe("emitAnalyticsEvent", () => {
     sessionStorage.clear();
     localStorage.clear();
     Object.assign(window, { dataLayer: [] });
+    markGaTransportReady();
   });
 
   it("does not emit unless the strict production DOM gate is enabled", () => {
@@ -58,7 +64,7 @@ describe("emitAnalyticsEvent", () => {
     });
     expect(emitAnalyticsEvent(event)).toBe(true);
     expect(disabledDuringSend).toBe(false);
-    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
     expect(sendGAEvent).toHaveBeenCalledWith("event", "view_cart", {
       currency: "NZD",
       value: 65,
@@ -250,7 +256,7 @@ describe("emitAnalyticsEvent", () => {
       page_referrer: "",
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-email-token");
-    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
   });
 
   it("does not send a private purchase before the disabled tag has loaded", () => {
@@ -259,6 +265,43 @@ describe("emitAnalyticsEvent", () => {
 
     expect(emitAnalyticsEvent(purchase)).toBe(false);
     expect(sendGAEvent).not.toHaveBeenCalled();
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+  });
+
+  it("keeps allowlisted commerce events collectable for an asynchronous tag transport", async () => {
+    const dataLayer: unknown[] = [];
+    Object.assign(window, { dataLayer });
+    document.documentElement.dataset.ga4Enabled = "true";
+    document.documentElement.dataset.ga4Loaded = "true";
+    vi.mocked(sendGAEvent).mockImplementation((...command) => {
+      dataLayer.push(command);
+    });
+
+    expect(emitAnalyticsEvent({ ...event, event: "view_item" })).toBe(true);
+    expect(emitAnalyticsEvent({ ...event, event: "add_to_cart" })).toBe(true);
+
+    document.documentElement.removeAttribute("data-ga4-enabled");
+    document.documentElement.dataset.ga4PrivateCommerce = "true";
+    expect(emitAnalyticsEvent({ ...event, event: "begin_checkout" })).toBe(true);
+
+    document.documentElement.removeAttribute("data-ga4-private-commerce");
+    document.documentElement.dataset.ga4PrivatePurchase = "true";
+    expect(emitAnalyticsEvent(purchase)).toBe(true);
+
+    const collected: unknown[][] = [];
+    await new Promise((resolve) => window.setTimeout(resolve, 50));
+    if ((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] !== true) {
+      collected.push(...dataLayer.map((command) =>
+        Array.from(command as ArrayLike<unknown>)));
+    }
+
+    expect(collected.map((command) => command[1])).toEqual([
+      "view_item",
+      "add_to_cart",
+      "begin_checkout",
+      "purchase",
+    ]);
+    await new Promise((resolve) => window.setTimeout(resolve, 250));
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
   });
 
@@ -311,7 +354,7 @@ describe("emitAnalyticsEvent", () => {
       page_referrer: "",
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-checkout-secret");
-    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+    expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
   });
 
   it("restores private collection disablement when purchase transport throws", () => {

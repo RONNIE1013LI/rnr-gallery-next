@@ -2,11 +2,17 @@
 
 import { GoogleAnalytics } from "@next/third-parties/google";
 import { useLayoutEffect, useRef, useState } from "react";
-import { sendControlledGaEvent } from "@/domain/analytics/client";
+import {
+  beginGaHistorySuppression,
+  endGaHistorySuppression,
+  markGaTransportReady,
+  resetGaTransport,
+  sendControlledGaEvent,
+  suppressGaCollection,
+} from "@/domain/analytics/client";
 import {
   classifyGa4Location,
   GA4_DEBUG_SESSION_KEY,
-  GA4_DISABLE_WINDOW_KEY,
   GA4_MEASUREMENT_ID,
   type Ga4LocationPolicy,
 } from "@/domain/analytics/runtime";
@@ -19,6 +25,9 @@ const ga4ConsentDefaults = {
   ad_user_data: "denied",
   ad_personalization: "denied",
 } as const;
+const GA4_HISTORY_SUPPRESSION_MS = 1_100;
+const GA4_TAG_READY_POLL_MS = 50;
+const GA4_TAG_READY_TIMEOUT_MS = 5_000;
 
 function initializeGa4DataLayer(): () => void {
   const gaWindow = window as Ga4Window & { dataLayer?: unknown[] };
@@ -47,8 +56,11 @@ function initializeGa4DataLayer(): () => void {
   };
 }
 
-function setCollectionDisabled(disabled: boolean) {
-  (window as Ga4Window)[GA4_DISABLE_WINDOW_KEY] = disabled;
+function isGa4TagReady(): boolean {
+  const manager = (window as Ga4Window & {
+    google_tag_manager?: Record<string, unknown>;
+  }).google_tag_manager;
+  return !!manager?.[GA4_MEASUREMENT_ID];
 }
 
 function controlledDebugMode(url: URL): boolean {
@@ -78,7 +90,7 @@ export function applyGa4LocationPolicy(
     root.removeAttribute("data-ga4-private-commerce");
     root.removeAttribute("data-ga4-private-purchase");
     root.removeAttribute("data-ga4-loaded");
-    setCollectionDisabled(true);
+    suppressGaCollection();
     return { debugMode: false, policy };
   }
 
@@ -88,10 +100,10 @@ export function applyGa4LocationPolicy(
     root.removeAttribute("data-ga4-private-purchase");
     if (collectionReady) {
       root.dataset.ga4Enabled = "true";
-      setCollectionDisabled(true);
+      suppressGaCollection();
     } else {
       root.removeAttribute("data-ga4-enabled");
-      setCollectionDisabled(true);
+      suppressGaCollection();
     }
   } else {
     root.removeAttribute("data-ga4-enabled");
@@ -105,7 +117,7 @@ export function applyGa4LocationPolicy(
     } else {
       root.removeAttribute("data-ga4-private-purchase");
     }
-    setCollectionDisabled(true);
+    suppressGaCollection();
   }
 
   return { debugMode, policy };
@@ -123,9 +135,16 @@ export function installGa4HistoryGuard(
 ): () => void {
   const originalPushState = window.history.pushState;
   const originalReplaceState = window.history.replaceState;
+  let pendingLocationTimer: number | undefined;
 
   const finishLocation = () => {
-    queueMicrotask(() => afterLocation(new URL(window.location.href)));
+    if (pendingLocationTimer !== undefined) {
+      window.clearTimeout(pendingLocationTimer);
+    }
+    pendingLocationTimer = window.setTimeout(() => {
+      pendingLocationTimer = undefined;
+      afterLocation(new URL(window.location.href));
+    }, GA4_HISTORY_SUPPRESSION_MS);
   };
 
   const guardedPushState: History["pushState"] = function (data, unused, url) {
@@ -159,6 +178,9 @@ export function installGa4HistoryGuard(
     }
     window.removeEventListener("popstate", handleBrowserNavigation, true);
     window.removeEventListener("hashchange", handleBrowserNavigation, true);
+    if (pendingLocationTimer !== undefined) {
+      window.clearTimeout(pendingLocationTimer);
+    }
   };
 }
 
@@ -190,10 +212,37 @@ export function AnalyticsRuntimeController({
         ...(state.debugMode ? { debug_mode: true } : {}),
       });
     };
+    const prepareHistoryLocation = (url: URL) => {
+      beginGaHistorySuppression();
+      prepareLocation(url);
+    };
+    const settleHistoryLocation = (url: URL) => {
+      try {
+        settleLocation(url);
+      } finally {
+        endGaHistorySuppression();
+      }
+    };
 
     prepareLocation(new URL(window.location.href));
     if (!production) return;
+    resetGaTransport();
     const restoreDataLayer = initializeGa4DataLayer();
+    let tagReadyPoll: number | undefined;
+    let tagReadyTimeout: number | undefined;
+
+    const stopTagReadyCheck = () => {
+      if (tagReadyPoll !== undefined) window.clearInterval(tagReadyPoll);
+      if (tagReadyTimeout !== undefined) window.clearTimeout(tagReadyTimeout);
+      tagReadyPoll = undefined;
+      tagReadyTimeout = undefined;
+    };
+    const acceptReadyTag = () => {
+      if (!active || !isGa4TagReady()) return false;
+      stopTagReadyCheck();
+      markGaTransportReady();
+      return true;
+    };
 
     const handleScriptLoad = (event: Event) => {
       const target = event.target;
@@ -201,12 +250,21 @@ export function AnalyticsRuntimeController({
         tagLoaded.current = true;
         document.documentElement.dataset.ga4Loaded = "true";
         settleLocation(new URL(window.location.href));
+        if (acceptReadyTag()) return;
+        tagReadyPoll = window.setInterval(acceptReadyTag, GA4_TAG_READY_POLL_MS);
+        tagReadyTimeout = window.setTimeout(() => {
+          stopTagReadyCheck();
+          tagLoaded.current = false;
+          document.documentElement.removeAttribute("data-ga4-loaded");
+          applyGa4LocationPolicy(new URL(window.location.href), production, false);
+          resetGaTransport();
+        }, GA4_TAG_READY_TIMEOUT_MS);
       }
     };
     document.addEventListener("load", handleScriptLoad, true);
     const removeHistoryGuard = installGa4HistoryGuard(
-      prepareLocation,
-      settleLocation,
+      prepareHistoryLocation,
+      settleHistoryLocation,
     );
     queueMicrotask(() => {
       if (active) setReady(true);
@@ -214,6 +272,7 @@ export function AnalyticsRuntimeController({
 
     return () => {
       active = false;
+      stopTagReadyCheck();
       restoreDataLayer();
       removeHistoryGuard();
       document.removeEventListener("load", handleScriptLoad, true);
@@ -223,7 +282,7 @@ export function AnalyticsRuntimeController({
       document.documentElement.removeAttribute("data-ga4-loaded");
       tagLoaded.current = false;
       lastPageView.current = null;
-      setCollectionDisabled(true);
+      resetGaTransport();
     };
   }, [production]);
 

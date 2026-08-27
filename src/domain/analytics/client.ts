@@ -9,6 +9,15 @@ import {
   GA4_SAFE_PURCHASE_PATH,
 } from "./runtime";
 
+const GA4_EVENT_PROCESSING_WINDOW_MS = 250;
+let collectionDisableTimer: number | undefined;
+let gaTransportReady = false;
+let gaHistorySuppressed = false;
+const pendingGaEvents: Array<Readonly<{
+  eventName: string;
+  payload: Record<string, unknown>;
+}>> = [];
+
 function allowlistedItem(item: AnalyticsItem): Record<string, unknown> {
   return {
     item_id: item.item_id,
@@ -113,17 +122,80 @@ function isPrivateCheckoutReady(event: AnalyticsEvent): boolean {
     && document.documentElement.dataset.ga4Loaded === "true";
 }
 
-export function sendControlledGaEvent(
+function sendGaEventNow(
   eventName: string,
   payload: Record<string, unknown>,
 ): void {
   const ga4Window = window as Window & Record<string, unknown>;
+  if (collectionDisableTimer !== undefined) {
+    window.clearTimeout(collectionDisableTimer);
+    collectionDisableTimer = undefined;
+  }
   ga4Window[GA4_DISABLE_WINDOW_KEY] = false;
   try {
     sendGAEvent("event", eventName, payload);
-  } finally {
-    ga4Window[GA4_DISABLE_WINDOW_KEY] = true;
+  } catch (error) {
+    suppressGaCollection();
+    throw error;
   }
+  collectionDisableTimer = window.setTimeout(() => {
+    collectionDisableTimer = undefined;
+    ga4Window[GA4_DISABLE_WINDOW_KEY] = true;
+  }, GA4_EVENT_PROCESSING_WINDOW_MS);
+}
+
+export function suppressGaCollection(): void {
+  if (collectionDisableTimer !== undefined) {
+    window.clearTimeout(collectionDisableTimer);
+    collectionDisableTimer = undefined;
+  }
+  (window as Window & Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] = true;
+}
+
+function flushPendingGaEvents(): void {
+  if (!gaTransportReady || gaHistorySuppressed || pendingGaEvents.length === 0) {
+    return;
+  }
+  const events = pendingGaEvents.splice(0);
+  try {
+    for (const event of events) sendGaEventNow(event.eventName, event.payload);
+  } catch {
+    pendingGaEvents.length = 0;
+    suppressGaCollection();
+  }
+}
+
+export function sendControlledGaEvent(
+  eventName: string,
+  payload: Record<string, unknown>,
+): void {
+  if (!gaTransportReady || gaHistorySuppressed) {
+    pendingGaEvents.push({ eventName, payload });
+    return;
+  }
+  sendGaEventNow(eventName, payload);
+}
+
+export function markGaTransportReady(): void {
+  gaTransportReady = true;
+  flushPendingGaEvents();
+}
+
+export function beginGaHistorySuppression(): void {
+  gaHistorySuppressed = true;
+  suppressGaCollection();
+}
+
+export function endGaHistorySuppression(): void {
+  gaHistorySuppressed = false;
+  flushPendingGaEvents();
+}
+
+export function resetGaTransport(): void {
+  gaTransportReady = false;
+  gaHistorySuppressed = false;
+  pendingGaEvents.length = 0;
+  suppressGaCollection();
 }
 
 export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
