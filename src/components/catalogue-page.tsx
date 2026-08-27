@@ -1,4 +1,3 @@
-import Link from "next/link";
 import type { Product } from "@/domain/catalogue/types";
 import { buildItemListEvent } from "@/domain/analytics/events";
 import type { Market } from "@/domain/markets/types";
@@ -19,7 +18,6 @@ type CataloguePageProps = Readonly<{
   products: readonly Product[];
   market?: Market;
   pricesInclTaxCents?: Readonly<Record<string, number>>;
-  relatedLinks?: readonly Readonly<{ href: string; label: string }>[];
 }>;
 
 export function CataloguePage({
@@ -31,7 +29,6 @@ export function CataloguePage({
   products,
   market = "NZ",
   pricesInclTaxCents,
-  relatedLinks = [],
 }: CataloguePageProps) {
   const listId = `${market.toLowerCase()}:${path ?? (market === "AU" ? "/au/shop" : "/shop")}`;
   const analyticsItems = products.map((product, index) => ({
@@ -65,13 +62,6 @@ export function CataloguePage({
         {eyebrow ? <p className={styles.eyebrow}>{eyebrow}</p> : null}
         <h1>{title}</h1>
         {description ? <p className={styles.pageIntroDescription}>{description}</p> : null}
-        {relatedLinks.length > 0 ? (
-          <nav className={styles.pageIntroLinks} aria-label="Product guides">
-            {relatedLinks.map((link) => (
-              <Link href={link.href} key={link.href}>{link.label}</Link>
-            ))}
-          </nav>
-        ) : null}
       </header>
       <section className={styles.productGrid} aria-label={`${title} products`}>
         {products.map((product, index) => (

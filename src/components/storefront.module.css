@@ -1653,23 +1653,6 @@
   font-size: 1.05rem;
 }
 
-.pageIntroLinks {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.5rem 1.5rem;
-  margin-top: 1rem;
-}
-
-.pageIntroLinks a {
-  display: inline-flex;
-  min-height: 2.75rem;
-  align-items: center;
-  color: var(--green);
-  font-weight: 650;
-  text-decoration: underline;
-  text-underline-offset: 0.2em;
-}
-
 .productDetailInner {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(20rem, 1fr);

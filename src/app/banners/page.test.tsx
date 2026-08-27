@@ -21,4 +21,13 @@ describe("Banners page", () => {
       .searchParams.get("url")).toBe("/media/products/banner-bundle.webp");
     expect(within(card!).getByText("From NZ$359.99 incl GST")).toBeVisible();
   });
+
+  it("keeps advertising landing pages out of the catalogue introduction", async () => {
+    render(await BannersPage());
+
+    expect(screen.queryByRole("navigation", { name: "Product guides" }))
+      .not.toBeInTheDocument();
+    expect(screen.queryByRole("link", { name: /learn more about custom/i }))
+      .not.toBeInTheDocument();
+  });
 });

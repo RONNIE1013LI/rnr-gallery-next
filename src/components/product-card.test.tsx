@@ -135,22 +135,4 @@ describe("CataloguePage image loading", () => {
       });
   });
 
-  it("offers optional educational landing-page links without changing product destinations", () => {
-    render(
-      <CataloguePage
-        eyebrow="Canvas"
-        title="Custom canvas"
-        description="Choose a format"
-        products={products.slice(0, 2)}
-        relatedLinks={[{
-          href: "/custom-photo-canvas-nz",
-          label: "Learn more about custom photo canvas",
-        }]}
-      />,
-    );
-
-    expect(screen.getByRole("link", { name: "Learn more about custom photo canvas" }))
-      .toHaveAttribute("href", "/custom-photo-canvas-nz");
-    expect(screen.getAllByText("Create Your Artwork")).toHaveLength(2);
-  });
 });

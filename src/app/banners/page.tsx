@@ -32,16 +32,6 @@ export default async function BannersPage() {
       description="Choose a roll-up banner, wall banner or grave cover, then personalise the details."
       path="/banners"
       breadcrumbLabel="Banners"
-      relatedLinks={[
-        {
-          href: "/custom-roll-up-banners-nz",
-          label: "Learn more about custom roll-up banners",
-        },
-        {
-          href: "/custom-wall-banners-nz",
-          label: "Learn more about custom wall banners",
-        },
-      ]}
       products={products}
       pricesInclTaxCents={pricesInclTaxCents}
     />
