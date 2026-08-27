@@ -7,6 +7,7 @@ import {
   resetGaTransport,
 } from "@/domain/analytics/client";
 import type { PurchaseEvent } from "@/domain/analytics/events";
+import { GA4_MEASUREMENT_ID } from "@/domain/analytics/runtime";
 import { PurchaseTracker } from "./purchase-tracker";
 
 vi.mock("@next/third-parties/google", () => ({ sendGAEvent: vi.fn() }));
@@ -60,6 +61,7 @@ describe("PurchaseTracker", () => {
         items: [],
         page_location: "http://localhost:3000/",
         page_referrer: "",
+        send_to: GA4_MEASUREMENT_ID,
       },
     ));
     expect(sessionStorage.getItem(storageKey)).toBe("sent");

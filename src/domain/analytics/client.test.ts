@@ -5,11 +5,13 @@ import {
   emitAnalyticsEvent,
   markGaTransportReady,
   resetGaTransport,
+  sendControlledGaEvent,
 } from "./client";
 import type { PurchaseEvent } from "./events";
 import {
   GA4_DEBUG_SESSION_KEY,
   GA4_DISABLE_WINDOW_KEY,
+  GA4_MEASUREMENT_ID,
 } from "./runtime";
 
 vi.mock("@next/third-parties/google", () => ({ sendGAEvent: vi.fn() }));
@@ -71,7 +73,32 @@ describe("emitAnalyticsEvent", () => {
       items: event.items,
       page_location: "http://localhost:3000/",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
+  });
+
+  it("pins pageview, view_item, and purchase to the configured destination", () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+    sendControlledGaEvent("page_view", {
+      page_location: "http://localhost:3000/products/photo-print-canvas?gclid=private-click",
+      page_referrer: "",
+      send_to: "G-MALICIOUS",
+    });
+    expect(emitAnalyticsEvent({ ...event, event: "view_item" })).toBe(true);
+
+    document.documentElement.removeAttribute("data-ga4-enabled");
+    document.documentElement.dataset.ga4PrivatePurchase = "true";
+    document.documentElement.dataset.ga4Loaded = "true";
+    window.history.replaceState({}, "", "/orders/private?access=private-token");
+    expect(emitAnalyticsEvent(purchase)).toBe(true);
+
+    expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
+      .toEqual(["page_view", "view_item", "purchase"]);
+    for (const command of vi.mocked(sendGAEvent).mock.calls) {
+      expect(command[2]).toMatchObject({ send_to: GA4_MEASUREMENT_ID });
+    }
+    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
+      .not.toMatch(/G-MALICIOUS|gclid|private-click|private-token/);
   });
 
   it("returns false for null events", () => {
@@ -117,6 +144,7 @@ describe("emitAnalyticsEvent", () => {
       }],
       page_location: "http://localhost:3000/",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
       .not.toContain("private@example.test");
@@ -201,6 +229,7 @@ describe("emitAnalyticsEvent", () => {
       }],
       page_location: "http://localhost:3000/",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
   });
 
@@ -219,6 +248,7 @@ describe("emitAnalyticsEvent", () => {
       debug_mode: true,
       page_location: "http://localhost:3000/",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
   });
 
@@ -235,6 +265,7 @@ describe("emitAnalyticsEvent", () => {
       items: event.items,
       page_location: "http://localhost:3000/",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
   });
 
@@ -265,6 +296,7 @@ describe("emitAnalyticsEvent", () => {
       items: purchase.items,
       page_location: "http://localhost:3000/",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-email-token");
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
@@ -354,10 +386,12 @@ describe("emitAnalyticsEvent", () => {
     expect(vi.mocked(sendGAEvent).mock.calls.at(-2)?.[2]).toMatchObject({
       page_location: "http://localhost:3000/",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
     expect(vi.mocked(sendGAEvent).mock.calls.at(-1)?.[2]).toMatchObject({
       page_location: "http://localhost:3000/checkout",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
       .not.toMatch(/private-route-token|private-order-token|private-checkout-token/);
@@ -394,6 +428,7 @@ describe("emitAnalyticsEvent", () => {
       items: beginCheckout.items,
       page_location: "http://localhost:3000/checkout",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
     expect(sendGAEvent).toHaveBeenNthCalledWith(2, "event", "add_shipping_info", {
       currency: "NZD",
@@ -402,6 +437,7 @@ describe("emitAnalyticsEvent", () => {
       shipping_tier: "Standard delivery",
       page_location: "http://localhost:3000/checkout",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
     expect(sendGAEvent).toHaveBeenNthCalledWith(3, "event", "add_payment_info", {
       currency: "NZD",
@@ -410,6 +446,7 @@ describe("emitAnalyticsEvent", () => {
       payment_type: "afterpay",
       page_location: "http://localhost:3000/checkout",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-checkout-secret");
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);

@@ -142,6 +142,7 @@ describe("AnalyticsRuntimeController", () => {
     expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
       page_location: "http://localhost:3000/products/photo-print-canvas",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
     expect(sendGAEvent).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toMatch(
@@ -210,6 +211,7 @@ describe("AnalyticsRuntimeController", () => {
       expect(collected[0]).toEqual(["event", "page_view", {
         page_location: "http://localhost:3000/products/photo-print-canvas",
         page_referrer: "",
+        send_to: GA4_MEASUREMENT_ID,
       }]);
       expect(JSON.stringify(collected)).not.toMatch(/utm_source|gclid|private-initial-click/);
     } finally {
@@ -310,6 +312,7 @@ describe("AnalyticsRuntimeController", () => {
     expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
       page_location: "http://localhost:3000/products/photo-print-canvas",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
       .not.toMatch(/gclid|private-sync-probe-click|private-sync-client-id/);
@@ -362,6 +365,7 @@ describe("AnalyticsRuntimeController", () => {
       }],
       page_location: "http://localhost:3000/products/photo-print-canvas",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     }]);
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
       .not.toMatch(/utm_source|gclid|private-public-click|RNR-2026-PRIVATE|private-order-token/);
@@ -437,6 +441,7 @@ describe("AnalyticsRuntimeController", () => {
       expect(collected).toEqual([["event", "page_view", {
         page_location: "http://localhost:3000/products/banner-bundle",
         page_referrer: "",
+        send_to: GA4_MEASUREMENT_ID,
       }]]);
       expect(JSON.stringify(collected))
         .not.toMatch(/utm_source|gclid|private-delayed-click|private-checkout-token/);
@@ -493,10 +498,12 @@ describe("AnalyticsRuntimeController", () => {
         ["event", "page_view", {
           page_location: "http://localhost:3000/products/photo-print-canvas",
           page_referrer: "",
+          send_to: GA4_MEASUREMENT_ID,
         }],
         ["event", "page_view", {
           page_location: "http://localhost:3000/products/banner-bundle",
           page_referrer: "",
+          send_to: GA4_MEASUREMENT_ID,
         }],
       ]);
       expect(JSON.stringify(pageViews))
@@ -575,6 +582,7 @@ describe("AnalyticsRuntimeController", () => {
         item_list_name: "Shop",
         page_location: "http://localhost:3000/shop",
         page_referrer: "",
+        send_to: GA4_MEASUREMENT_ID,
       }]]);
       expect(JSON.stringify(collected))
         .not.toMatch(/utm_source|RNR-2026-PRIVATE|private-link-token/);
@@ -674,6 +682,7 @@ describe("AnalyticsRuntimeController", () => {
     expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
       page_location: "http://localhost:3000/shop",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-spa-token");
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
@@ -713,6 +722,7 @@ describe("AnalyticsRuntimeController", () => {
     expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
       page_location: "http://localhost:3000/shop",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
     });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain(privateToken);
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(false);
@@ -725,6 +735,7 @@ describe("AnalyticsRuntimeController", () => {
     const view = render(<AnalyticsRuntimeController production />);
 
     await waitFor(() => expect(sessionStorage.getItem(GA4_DEBUG_SESSION_KEY)).toBe("true"));
+    await waitFor(() => expect(googleAnalytics.mounts).toBe(1));
     expect(localStorage.getItem(GA4_DEBUG_SESSION_KEY)).toBeNull();
     expect(googleAnalytics.props.at(-1)).not.toHaveProperty("debugMode");
     const script = await view.findByTestId("official-google-analytics");
@@ -732,6 +743,7 @@ describe("AnalyticsRuntimeController", () => {
     expect(sendGAEvent).toHaveBeenCalledWith("event", "page_view", {
       page_location: "http://localhost:3000/",
       page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
       debug_mode: true,
     });
 

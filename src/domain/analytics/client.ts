@@ -6,6 +6,7 @@ import {
   classifyGa4Location,
   GA4_DEBUG_SESSION_KEY,
   GA4_DISABLE_WINDOW_KEY,
+  GA4_MEASUREMENT_ID,
   GA4_SAFE_CHECKOUT_PATH,
   GA4_SAFE_PURCHASE_PATH,
 } from "./runtime";
@@ -176,6 +177,7 @@ function safePageContext(payload: Record<string, unknown>): Record<string, unkno
     ...payload,
     page_location: new URL(pathname, window.location.origin).href,
     page_referrer: "",
+    send_to: GA4_MEASUREMENT_ID,
   };
 }
 
