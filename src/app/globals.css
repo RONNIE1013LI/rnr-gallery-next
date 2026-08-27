@@ -682,26 +682,6 @@ a:active {
   transition: color 160ms ease, background-color 160ms ease;
 }
 
-.mobile-menu__market {
-  margin: 0.35rem 0.5rem;
-  padding: 0.75rem 0.5rem;
-  border-block: 1px solid var(--border);
-}
-
-.mobile-menu__market .site-header__market select {
-  width: 100%;
-  max-width: none;
-  min-height: 48px;
-  color: var(--ink);
-  background: var(--paper);
-  border-color: var(--border-strong);
-  font-size: 0.875rem;
-}
-
-.mobile-menu__market .site-header__market-icon {
-  color: var(--ink-muted);
-}
-
 .mobile-menu a[aria-current="page"] {
   color: var(--gallery-green);
   background: color-mix(in srgb, var(--gallery-green) 8%, var(--paper));

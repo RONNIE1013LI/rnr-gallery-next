@@ -236,7 +236,7 @@ describe("site shell", () => {
     expect(screen.getByRole("link", { name: "Cart, 2 items" })).toBeInTheDocument();
   });
 
-  it("provides a cart icon and a four-line mobile menu icon", () => {
+  it("provides a cart icon and a four-line mobile menu without duplicating the market selector", () => {
     render(<SiteHeader />);
 
     expect(screen.getByRole("link", { name: "Cart, 0 items" })
@@ -246,7 +246,8 @@ describe("site shell", () => {
     expect(screen.getByRole("navigation", { name: "Mobile navigation" }))
       .toHaveClass("mobile-menu__drawer");
     expect(within(screen.getByRole("navigation", { name: "Mobile navigation" }))
-      .getByRole("combobox", { name: "Country and currency in mobile navigation" }))
+      .queryByRole("combobox")).not.toBeInTheDocument();
+    expect(screen.getByRole("combobox", { name: "Country and currency" }))
       .toHaveValue("NZ");
   });
 
