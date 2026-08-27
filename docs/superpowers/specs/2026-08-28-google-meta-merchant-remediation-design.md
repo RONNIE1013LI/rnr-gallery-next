@@ -155,6 +155,15 @@ Website orders continue to use the existing order attribution JSON. No schema ch
 
 Manual order support will use reserved, allowlisted production-job custom field keys for click identifiers, landing attribution, consent evidence and a source transaction reference. The code can read these fields and construct offline conversion candidates without changing the schema.
 
+Manual attribution is source-routed rather than copied to both platforms:
+
+- `messenger`, `instagram`, `whatsapp` and an explicitly recorded Facebook source are Meta-first;
+- Google receives an offline conversion only when a valid `gclid`, `gbraid` or `wbraid`, or another explicitly verified Google Ads source, is present;
+- an order without Google evidence is never sent to Google merely because customer email or phone is available;
+- when an original advertising click is known, the original click source wins over the later contact channel.
+
+Meta-first manual orders may use consent-permitted, SHA-256-hashed email or phone for matching when no Meta click identifier survives. Matching is best-effort and is never described as guaranteed attribution.
+
 The Production field definitions and any account credentials are operational configuration, not part of this code release. Creating those definitions is a separate explicit production database write and is not authorized here.
 
 Offline dispatch is disabled by default and fails closed unless:
@@ -165,6 +174,8 @@ Offline dispatch is disabled by default and fails closed unless:
 - the required consent evidence exists;
 - the relevant platform credential and conversion identifier are configured;
 - the candidate has not already been acknowledged.
+
+An online website order and its linked manual production record use the same stable order transaction reference. A manual-only job uses its immutable job number. This prevents a Payment Request or website payment from being counted once online and again as a separate manual Purchase.
 
 This release prepares and tests the pure payload builders and validation boundaries. It does not claim that platform-side offline conversion upload is active.
 
