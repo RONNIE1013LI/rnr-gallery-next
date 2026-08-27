@@ -3,7 +3,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultProductRegistry,
   parseProductRegistry,
+  schemaFromRegistry,
 } from "@/domain/catalogue/product-registry";
+import { deliveryCopy } from "@/domain/content/delivery-copy";
+import { getProductBySlug } from "@/domain/catalogue/products";
 import AustraliaProductPage from "./page";
 
 const state = vi.hoisted(() => ({
@@ -96,5 +99,40 @@ describe("AustraliaProductPage analytics", () => {
     const payload = JSON.stringify(state.track.mock.calls);
     expect(payload).not.toContain("Private Australian design title");
     expect(payload).not.toContain("gallery-images");
+  });
+
+  it("publishes registry sizes and Australian delivery details without a simplified shipping promise", async () => {
+    const product = getProductBySlug("digital-oil-painting-canvas")!;
+    const sizes = schemaFromRegistry(state.registry as typeof defaultProductRegistry, product.key)!.sizes;
+    const { container } = render(await AustraliaProductPage({
+      params: Promise.resolve({ slug: product.slug }),
+      searchParams: Promise.resolve({ design: "c".repeat(64), size: "a3" }),
+    }));
+
+    for (const size of sizes) {
+      expect(screen.getByText(size.label)).toBeVisible();
+    }
+    expect(screen.getByText("In stock")).toBeVisible();
+    expect(screen.getByText(deliveryCopy.production)).toBeVisible();
+    expect(screen.getByText(deliveryCopy.australiaDhl)).toBeVisible();
+    expect(screen.getByText(deliveryCopy.australiaStandard)).toBeVisible();
+    expect(screen.getByText(deliveryCopy.australiaRemote)).toBeVisible();
+    expect(screen.getByText("Proof before printing")).toBeVisible();
+    expect(screen.getByText("Two revisions included")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Returns & refunds" }))
+      .toHaveAttribute("href", "/returns-refunds");
+    expect(screen.getByRole("link", { name: "Start Your Design" }))
+      .toHaveAttribute(
+        "href",
+        `/au/products/digital-oil-painting-canvas/configure?design=${"c".repeat(64)}&size=a3`,
+      );
+
+    const data = JSON.parse(container.querySelector("#rnr-product-data")?.textContent ?? "{}");
+    expect(data.offers.hasMerchantReturnPolicy).toMatchObject({
+      "@type": "MerchantReturnPolicy",
+      applicableCountry: "AU",
+      merchantReturnLink: "https://rnrgallery.com/returns-refunds",
+    });
+    expect(data.offers.shippingDetails).toBeUndefined();
   });
 });

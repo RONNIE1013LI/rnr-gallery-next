@@ -70,6 +70,7 @@ export default async function AustraliaProductPage({ params, searchParams }: Pro
       analyticsSizeKey={analyticsSizeKey}
       taxRegistered={registry.markets.AU.tax.registered}
       selectedSizeKey={selectedSizeKey}
+      sizeLabels={schema.sizes.map((size) => size.label)}
     />
   );
 }

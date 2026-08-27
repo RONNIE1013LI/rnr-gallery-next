@@ -14,6 +14,7 @@ import {
 import {
   quoteMarketConfiguration,
 } from "@/domain/pricing/market-quote";
+import { deliveryCopy } from "@/domain/content/delivery-copy";
 import { buildProductViewEvent } from "@/domain/analytics/events";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { addNzdGst, formatMarketMoney } from "@/domain/money";
@@ -64,6 +65,7 @@ export function ProductPageContent({
   analyticsSizeKey,
   taxRegistered,
   selectedSizeKey,
+  sizeLabels = [],
 }: Readonly<{
   product: Product;
   selection: GalleryDesignSelection | null;
@@ -73,6 +75,7 @@ export function ProductPageContent({
   analyticsSizeKey?: string;
   taxRegistered?: boolean;
   selectedSizeKey?: string;
+  sizeLabels?: readonly string[];
 }>) {
   const marketPrefix = market === "AU" ? "/au" : "";
   const configureParams = new URLSearchParams();
@@ -90,6 +93,14 @@ export function ProductPageContent({
   const displayPrice = priceInclTaxCents ?? addNzdGst(product.startingPriceExGstCents);
   const currency = currencyForMarket(market);
   const taxLabel = market === "NZ" || taxRegistered ? " incl GST" : "";
+  const deliverySummary = market === "NZ"
+    ? [deliveryCopy.newZealand]
+    : [
+        deliveryCopy.australiaDhl,
+        deliveryCopy.australiaStandard,
+        deliveryCopy.australiaRemote,
+      ];
+  const returnPolicyUrl = new URL("/returns-refunds", siteUrl).toString();
   return (
     <main id="main-content" className={styles.productDetail}>
       {analyticsSubtotalExGstCents !== undefined && analyticsSizeKey ? (
@@ -119,6 +130,25 @@ export function ProductPageContent({
           price: (displayPrice / 100).toFixed(2),
           availability: "https://schema.org/InStock",
           itemCondition: "https://schema.org/NewCondition",
+          hasMerchantReturnPolicy: {
+            "@type": "MerchantReturnPolicy",
+            applicableCountry: market,
+            merchantReturnLink: returnPolicyUrl,
+          },
+          ...(market === "NZ" ? {
+            shippingDetails: {
+              "@type": "OfferShippingDetails",
+              shippingDestination: {
+                "@type": "DefinedRegion",
+                addressCountry: "NZ",
+              },
+              deliveryTime: {
+                "@type": "ShippingDeliveryTime",
+                handlingTime: { minValue: 5, maxValue: 5, unitCode: "d" },
+                transitTime: { minValue: 2, maxValue: 3, unitCode: "d" },
+              },
+            },
+          } : {}),
         },
       }} />
       <StructuredData id="rnr-product-breadcrumbs" data={buildBreadcrumbData([
@@ -150,13 +180,32 @@ export function ProductPageContent({
           <p className={styles.productDetailPrice}>
             From {formatMarketMoney(displayPrice, currency)}{taxLabel}
           </p>
+          <section className={styles.productPurchaseDetails} aria-label="Product details">
+            <p className={styles.productAvailability}>In stock</p>
+            <h2>Available sizes</h2>
+            <ul className={styles.productSizeList}>
+              {sizeLabels.map((label) => <li key={label}>{label}</li>)}
+            </ul>
+            <h2>Production and delivery</h2>
+            <p>{deliveryCopy.production}</p>
+            <ul className={styles.productDeliveryList}>
+              {deliverySummary.map((delivery) => <li key={delivery}>{delivery}</li>)}
+            </ul>
+            <ul className={styles.productAssurances}>
+              <li>Proof before printing</li>
+              <li>Two revisions included</li>
+            </ul>
+            <Link className={styles.productPolicyLink} href="/returns-refunds">
+              Returns &amp; refunds
+            </Link>
+          </section>
           <ul className={styles.checkList}>
             <li>Choose the finished format and artwork details</li>
             <li>Upload now or provide your source photos after ordering</li>
             <li>Review a draft before production begins</li>
           </ul>
           <Link className={styles.primaryButton} href={configureHref}>
-            Create your artwork
+            Start Your Design
           </Link>
         </div>
       </div>
@@ -216,6 +265,7 @@ export default async function ProductPage({ params, searchParams }: ProductPageP
       analyticsSizeKey={analyticsSizeKey}
       taxRegistered={registry.markets.NZ.tax.registered}
       selectedSizeKey={selectedSizeKey}
+      sizeLabels={schema.sizes.map((size) => size.label)}
     />
   );
 }

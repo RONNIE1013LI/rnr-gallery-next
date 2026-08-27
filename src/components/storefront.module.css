@@ -1693,6 +1693,56 @@
   font-weight: 500;
 }
 
+.productPurchaseDetails {
+  margin-top: 1.5rem;
+  padding: 1.25rem 0;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+}
+
+.productPurchaseDetails h2 {
+  margin-top: 1.25rem;
+  font-size: 0.95rem;
+}
+
+.productPurchaseDetails h2:first-of-type {
+  margin-top: 0.65rem;
+}
+
+.productPurchaseDetails p,
+.productPurchaseDetails ul {
+  margin-top: 0.55rem;
+}
+
+.productAvailability {
+  color: var(--gallery-green);
+  font-weight: 700;
+}
+
+.productSizeList,
+.productDeliveryList,
+.productAssurances {
+  padding-left: 1.2rem;
+  color: var(--muted);
+}
+
+.productPurchaseDetails li + li {
+  margin-top: 0.35rem;
+}
+
+.productAssurances {
+  margin-bottom: 1rem;
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.productPolicyLink {
+  color: var(--gallery-green);
+  font-weight: 650;
+  text-decoration: underline;
+  text-underline-offset: 0.16em;
+}
+
 .productDetail .checkList {
   margin-bottom: 2rem;
 }

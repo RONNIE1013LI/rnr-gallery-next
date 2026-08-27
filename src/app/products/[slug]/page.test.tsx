@@ -3,7 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   defaultProductRegistry,
   parseProductRegistry,
+  schemaFromRegistry,
 } from "@/domain/catalogue/product-registry";
+import { deliveryCopy } from "@/domain/content/delivery-copy";
 import { getProductBySlug } from "@/domain/catalogue/products";
 import AustraliaProductPage from "@/app/au/products/[slug]/page";
 import ProductPage, { ProductPageContent } from "./page-content";
@@ -99,6 +101,48 @@ describe("ProductPageContent", () => {
     expect(payload).not.toContain("Private memorial wording");
     expect(payload).not.toContain("gallery-images");
   });
+
+  it("publishes registry sizes, NZ delivery details and policy-consistent product data", async () => {
+    const product = getProductBySlug("digital-oil-painting-canvas")!;
+    const sizes = schemaFromRegistry(defaultProductRegistry, product.key)!.sizes;
+    const { container } = render(await ProductPage({
+      params: Promise.resolve({ slug: product.slug }),
+      searchParams: Promise.resolve({}),
+    }));
+
+    for (const size of sizes) {
+      expect(screen.getByText(size.label)).toBeVisible();
+    }
+    expect(screen.getByText("In stock")).toBeVisible();
+    expect(screen.getByText(deliveryCopy.production)).toBeVisible();
+    expect(screen.getByText(deliveryCopy.newZealand)).toBeVisible();
+    expect(screen.getByText("Proof before printing")).toBeVisible();
+    expect(screen.getByText("Two revisions included")).toBeVisible();
+    expect(screen.getByRole("link", { name: "Returns & refunds" }))
+      .toHaveAttribute("href", "/returns-refunds");
+    expect(screen.getByRole("link", { name: "Start Your Design" }))
+      .toHaveAttribute("href", "/products/digital-oil-painting-canvas/configure");
+
+    expect(JSON.parse(container.querySelector("#rnr-product-data")?.textContent ?? "{}"))
+      .toMatchObject({
+        offers: {
+          shippingDetails: {
+            "@type": "OfferShippingDetails",
+            shippingDestination: { addressCountry: "NZ" },
+            deliveryTime: {
+              handlingTime: { minValue: 5, maxValue: 5, unitCode: "d" },
+              transitTime: { minValue: 2, maxValue: 3, unitCode: "d" },
+            },
+          },
+          hasMerchantReturnPolicy: {
+            "@type": "MerchantReturnPolicy",
+            applicableCountry: "NZ",
+            merchantReturnLink: "https://rnrgallery.com/returns-refunds",
+          },
+        },
+      });
+  });
+
   it("shows a validated inspiration and preserves it in the create link", () => {
     const product = getProductBySlug("digital-oil-painting-canvas")!;
     const designId = "a".repeat(64);
@@ -115,7 +159,7 @@ describe("ProductPageContent", () => {
 
     expect(screen.getByText("Selected design inspiration")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Memorial floral canvas" })).toBeInTheDocument();
-    expect(screen.getByRole("link", { name: "Create your artwork" }))
+    expect(screen.getByRole("link", { name: "Start Your Design" }))
       .toHaveAttribute("href", `/products/digital-oil-painting-canvas/configure?design=${designId}`);
   });
 
@@ -168,7 +212,7 @@ describe("ProductPageContent", () => {
     );
 
     expect(screen.getByText("From A$320.00 AUD")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Create your artwork" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Start Your Design" })).toHaveAttribute(
       "href",
       "/au/products/roll-up-banner/configure",
     );
@@ -228,7 +272,7 @@ describe("ProductPageContent", () => {
     );
 
     expect(screen.getByText("From A$109.99 AUD")).toBeVisible();
-    expect(screen.getByRole("link", { name: "Create your artwork" })).toHaveAttribute(
+    expect(screen.getByRole("link", { name: "Start Your Design" })).toHaveAttribute(
       "href",
       "/au/products/photo-print-canvas/configure?size=a2",
     );
