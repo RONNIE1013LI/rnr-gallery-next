@@ -301,7 +301,7 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
         <h2>Cart summary</h2>
         {displayMarket ? <dl className={styles.priceLines}>
           <div><dt>{displayMarket.taxJurisdiction === "NONE" ? "Subtotal" : "Subtotal incl GST"}</dt><dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd></div>
-          <div><dt>{displayMarket.taxJurisdiction === "NZ_GST" ? "Includes GST (15%)" : displayMarket.taxJurisdiction === "AU_GST" ? "Includes Australian GST" : "GST not charged"}</dt><dd>{formatMarketMoney(totals.gstCents, displayMarket.currency)}</dd></div>
+          {displayMarket.taxJurisdiction !== "NONE" ? <div><dt>{displayMarket.taxJurisdiction === "NZ_GST" ? "Includes GST (15%)" : "Includes Australian GST"}</dt><dd>{formatMarketMoney(totals.gstCents, displayMarket.currency)}</dd></div> : null}
           <div className={styles.priceTotal}><dt>{displayMarket.taxJurisdiction === "NONE" ? "Total" : "Total incl GST"}</dt><dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd></div>
         </dl> : <p>Prices will be recalculated for the selected delivery country.</p>}
         <Link className={styles.primaryButton} href="/checkout/start">Continue to checkout</Link>

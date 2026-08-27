@@ -163,7 +163,8 @@ describe("CheckoutOrderSummary", () => {
     }} />);
 
     expect(screen.getByText("Products")).toBeVisible();
-    expect(screen.getByText("GST not charged")).toBeVisible();
+    expect(screen.queryByText("GST not charged")).not.toBeInTheDocument();
+    expect(screen.queryByText("A$0.00 AUD")).not.toBeInTheDocument();
     expect(screen.getByText("A$400.00 AUD")).toBeVisible();
     expect(screen.getAllByText("A$445.00 AUD")).toHaveLength(1);
     expect(screen.getByText("Australia standard delivery · Fixed Australian delivery")).toBeVisible();

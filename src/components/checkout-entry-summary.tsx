@@ -89,10 +89,10 @@ export function CheckoutEntrySummary() {
               <dt>{displayMarket.taxJurisdiction === "NONE" ? "Subtotal" : "Subtotal incl GST"}</dt>
               <dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd>
             </div>
-            <div>
-              <dt>{displayMarket.taxJurisdiction === "NZ_GST" ? "Includes GST (15%)" : displayMarket.taxJurisdiction === "AU_GST" ? "Includes Australian GST" : "GST not charged"}</dt>
+            {displayMarket.taxJurisdiction !== "NONE" ? <div>
+              <dt>{displayMarket.taxJurisdiction === "NZ_GST" ? "Includes GST (15%)" : "Includes Australian GST"}</dt>
               <dd>{formatMarketMoney(totals.gstCents, displayMarket.currency)}</dd>
-            </div>
+            </div> : null}
             <div className={styles.checkoutEntryTotal}>
               <dt>{displayMarket.taxJurisdiction === "NONE" ? "Total" : "Total incl GST"}</dt>
               <dd>{formatMarketMoney(totals.totalInclGstCents, displayMarket.currency)}</dd>

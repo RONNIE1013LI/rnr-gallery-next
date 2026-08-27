@@ -170,6 +170,8 @@ describe("CartView", () => {
       .not.toBeInTheDocument();
 
     expect(await screen.findAllByText("A$80.00 AUD")).toHaveLength(2);
+    expect(screen.queryByText("GST not charged")).not.toBeInTheDocument();
+    expect(screen.queryByText("A$0.00 AUD")).not.toBeInTheDocument();
     expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body))).toMatchObject({
       market: "AU",
       persistPreference: false,

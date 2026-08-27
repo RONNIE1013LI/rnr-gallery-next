@@ -377,10 +377,10 @@ export function ProductConfigurator({
                 </dd>
               </div>
             ))}
-            <div>
-              <dt>{market === "NZ" ? "Includes GST (15%)" : taxRegistered ? "Includes Australian GST" : "Australian GST not charged"}</dt>
+            {taxRegistered ? <div>
+              <dt>{market === "NZ" ? "Includes GST (15%)" : "Includes Australian GST"}</dt>
               <dd>{formatMarketMoney(quote.gstCents, currency)}</dd>
-            </div>
+            </div> : null}
             <div className={styles.priceTotal}>
               <dt>{taxRegistered ? "Total incl GST" : "Total"}</dt>
               <dd>{formatMarketMoney(quote.totalInclGstCents, currency)}</dd>

@@ -168,6 +168,10 @@ describe("BannerBundleConfigurator", () => {
     expect(screen.getByText(/DHL Express.*around 2 days/i)).toBeVisible();
     expect(screen.getByText(/Standard delivery.*7–10 days/i)).toBeVisible();
     expect(screen.getByText(/remote areas.*around two weeks/i)).toBeVisible();
+    const summary = screen.getByRole("complementary", { name: "Order summary" });
+    expect(within(summary).queryByText("Australian GST not charged"))
+      .not.toBeInTheDocument();
+    expect(within(summary).queryByText("A$0.00 AUD")).not.toBeInTheDocument();
 
     fireEvent.click(screen.getAllByText("Send Photos After Ordering")[0]);
     fireEvent.click(screen.getAllByText("Send Photos After Ordering")[1]);

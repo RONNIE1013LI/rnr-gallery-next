@@ -108,6 +108,9 @@ describe("ProductConfigurator", () => {
 
     const summary = screen.getByRole("complementary", { name: "Order summary" });
     expect(within(summary).getByText("A$460.00 AUD")).toBeVisible();
+    expect(within(summary).queryByText("Australian GST not charged"))
+      .not.toBeInTheDocument();
+    expect(within(summary).queryByText("A$0.00 AUD")).not.toBeInTheDocument();
     expect(within(summary).queryByText(/NZ\$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/New Zealand: 2–3 business days/i)).not.toBeInTheDocument();
     expect(screen.getByText(/DHL Express.*around 2 days/i)).toBeVisible();

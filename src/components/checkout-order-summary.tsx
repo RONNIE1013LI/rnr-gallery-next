@@ -61,7 +61,7 @@ export function CheckoutOrderSummary({ cart, shipping }: {
       <dl className={styles.priceLines}>
         <div><dt>{hasTax ? "Products incl GST" : "Products"}</dt><dd>{formatMarketMoney(cart.totalInclGstCents, currency)}</dd></div>
         <div><dt>{hasTax ? "Shipping incl GST" : "Shipping"}</dt><dd>{formatMarketMoney(shippingTotal, currency)}</dd></div>
-        <div><dt>{hasTax ? `Includes ${taxName}` : "GST not charged"}</dt><dd>{formatMarketMoney(cart.gstCents + shippingGst, currency)}</dd></div>
+        {hasTax ? <div><dt>{`Includes ${taxName}`}</dt><dd>{formatMarketMoney(cart.gstCents + shippingGst, currency)}</dd></div> : null}
         <div className={styles.priceTotal}><dt>{hasTax ? "Total incl GST" : "Total"}</dt><dd>{formatMarketMoney(cart.totalInclGstCents + shippingTotal, currency)}</dd></div>
       </dl>
       {shipping ? <p className={styles.checkoutProvenance}>{shippingDisclosure(shipping)}</p> : null}

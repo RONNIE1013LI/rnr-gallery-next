@@ -38,6 +38,49 @@ describe("CheckoutEntrySummary", () => {
     expect(screen.queryByText(/excl GST/i)).not.toBeInTheDocument();
   });
 
+  it("hides the zero GST row for an Australian cart", async () => {
+    localStorage.setItem("rnr:commerce:v1:guest:cart", JSON.stringify({
+      version: 1,
+      items: [{
+        id: "item-au",
+        productKey: "photo-print-canvas",
+        productSlug: "photo-print-canvas",
+        productTitle: "Photo Print Canvas",
+        imageSrc: "/media/home/family-canvas.webp",
+        sizeKey: "a4",
+        sizeLabel: "A4 — 29.7 × 21 cm",
+        orientation: "landscape",
+        peoplePets: 0,
+        photoSubmissionMethod: "later",
+        designText: "",
+        notes: "",
+        neededDate: "2026-08-20",
+        deliveryPreference: "post",
+        quantity: 1,
+        price: {
+          market: "AU",
+          currency: "AUD",
+          taxJurisdiction: "NONE",
+          taxRateBasisPoints: 1_000,
+          discountCents: 0,
+          designSurchargeCents: 0,
+          lines: [],
+          subtotalExGstCents: 8_000,
+          gstCents: 0,
+          totalInclGstCents: 8_000,
+        },
+        uploadReferences: [],
+      }],
+    }));
+
+    render(<CheckoutEntrySummary />);
+
+    expect(await screen.findByText("Subtotal")).toBeInTheDocument();
+    expect(screen.queryByText("GST not charged")).not.toBeInTheDocument();
+    expect(screen.queryByText("A$0.00 AUD")).not.toBeInTheDocument();
+    expect(screen.getAllByText("A$80.00 AUD")).toHaveLength(2);
+  });
+
   it("shows privacy-safe Banner Bundle component methods and photo counts", async () => {
     localStorage.setItem("rnr:commerce:v1:guest:cart", JSON.stringify({
       version: 1,
