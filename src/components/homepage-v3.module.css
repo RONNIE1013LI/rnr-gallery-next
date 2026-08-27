@@ -563,6 +563,8 @@
   .page h3 { font-size: 1.5625rem; }
   .eyebrow { font-size: 0.6875rem; }
   .hero { padding: 2.75rem 0; }
+  .heroArt { width: 100vw; margin-inline: calc(50% - 50vw); }
+  .heroImage { border-radius: 0; }
   .lede { font-size: 1rem; }
   .heroActions { display: grid; gap: 0.875rem; }
   .heroActions .button { width: 100%; }

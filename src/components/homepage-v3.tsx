@@ -255,7 +255,7 @@ export function HomepageV3({
                 alt={homepageV3ImageSlots.heroShowcase.alt}
                 width={4608}
                 height={2592}
-                sizes="(max-width: 900px) calc(100vw - 3rem), (max-width: 1352px) 54vw, 704px"
+                sizes="(max-width: 760px) 100vw, (max-width: 900px) calc(100vw - 3rem), (max-width: 1352px) 54vw, 704px"
                 preload
               />
             </figure>

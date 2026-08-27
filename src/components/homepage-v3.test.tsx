@@ -213,6 +213,34 @@ describe("HomepageV3", () => {
     expect(responsiveStyles).toMatch(/\.microcopy\s*\{[^}]*order:\s*5/);
   });
 
+  it("makes the hero image edge-to-edge without rounded corners on mobile", () => {
+    render(<HomepageV3 registry={defaultProductRegistry} />);
+
+    const showcaseImage = screen.getByRole("img", {
+      name: "Wall hanging banner, custom canvas and roll-up banner displayed together",
+    });
+    expect(showcaseImage).toHaveAttribute(
+      "sizes",
+      expect.stringMatching(/^\(max-width: 760px\) 100vw/),
+    );
+
+    const stylesheet = readFileSync(
+      "src/components/homepage-v3.module.css",
+      "utf8",
+    );
+    const mobileStyles = stylesheet.slice(
+      stylesheet.indexOf("@media (max-width: 760px)"),
+      stylesheet.indexOf("@media (max-width: 420px)"),
+    );
+
+    expect(mobileStyles).toMatch(
+      /\.heroArt\s*\{[^}]*width:\s*100vw[^}]*margin-inline:\s*calc\(50%\s*-\s*50vw\)/,
+    );
+    expect(mobileStyles).toMatch(
+      /\.heroImage\s*\{[^}]*border-radius:\s*0/,
+    );
+  });
+
   it("stacks the supporting discovery paths on mobile", () => {
     const stylesheet = readFileSync(
       "src/components/homepage-v3.module.css",
