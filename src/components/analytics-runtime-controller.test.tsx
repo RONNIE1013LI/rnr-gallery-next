@@ -6,6 +6,7 @@ import {
   GA4_DEBUG_SESSION_KEY,
   GA4_DISABLE_WINDOW_KEY,
   GA4_MEASUREMENT_ID,
+  GOOGLE_ADS_TAG_ID,
 } from "@/domain/analytics/runtime";
 import { emitAnalyticsEvent } from "@/domain/analytics/client";
 import { AnalyticsRuntimeController } from "./analytics-runtime-controller";
@@ -132,6 +133,9 @@ describe("AnalyticsRuntimeController", () => {
       ["js", "official-component"],
       ["config", GA4_MEASUREMENT_ID, { send_page_view: false }],
     ]);
+    expect(googleAnalytics.commands.some((command) =>
+      command[0] === "config" && command[1] === GOOGLE_ADS_TAG_ID,
+    )).toBe(false);
 
     const script = await view.findByTestId("official-google-analytics");
     loadGoogleTag(script);

@@ -15,6 +15,7 @@ import {
   GA4_DEBUG_SESSION_KEY,
   GA4_DISABLE_WINDOW_KEY,
   GA4_MEASUREMENT_ID,
+  GOOGLE_ADS_TAG_ID,
   type Ga4LocationPolicy,
 } from "@/domain/analytics/runtime";
 
@@ -39,13 +40,16 @@ function initializeGa4DataLayer(): () => void {
     dataLayer,
     commands.map((command) => {
       const values = Array.from(command as ArrayLike<unknown>);
-      if (values[0] !== "config" || values[1] !== GA4_MEASUREMENT_ID) return command;
+      if (values[0] !== "config"
+        || ![GA4_MEASUREMENT_ID, GOOGLE_ADS_TAG_ID].includes(String(values[1]))) {
+        return command;
+      }
       const options = values[2] !== null
         && typeof values[2] === "object"
         && !Array.isArray(values[2])
         ? values[2] as Record<string, unknown>
         : {};
-      return ["config", GA4_MEASUREMENT_ID, { ...options, send_page_view: false }];
+      return ["config", values[1], { ...options, send_page_view: false }];
     }),
   );
   dataLayer.push = guardedPush;

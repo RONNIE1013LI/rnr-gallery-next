@@ -364,6 +364,7 @@ describe("privacy-safe analytics events", () => {
       transaction_id: "RNR-2026-ABC123",
       currency: "NZD",
       value: 65,
+      total: 97.75,
       tax: 12.75,
       shipping: 23,
       items: [{
@@ -386,6 +387,13 @@ describe("privacy-safe analytics events", () => {
         productSubtotalExGstCents: Number.MAX_VALUE,
       },
     })).toBeNull();
+    expect(buildPurchaseEvent({
+      ...paidOrder,
+      totals: {
+        ...paidOrder.totals,
+        totalInclGstCents: Number.MAX_VALUE,
+      },
+    })).toBeNull();
   });
 
   it("uses the immutable order currency for Australian purchases", () => {
@@ -393,6 +401,7 @@ describe("privacy-safe analytics events", () => {
       transaction_id: "RNR-2026-ABC123",
       currency: "AUD",
       value: 65,
+      total: 97.75,
     });
   });
 });

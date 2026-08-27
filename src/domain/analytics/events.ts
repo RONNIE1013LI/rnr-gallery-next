@@ -55,6 +55,7 @@ export type PurchaseEvent = Readonly<{
   transaction_id: string;
   currency: MarketCurrency;
   value: number;
+  total: number;
   tax: number;
   shipping: number;
   items: readonly AnalyticsItem[];
@@ -280,6 +281,7 @@ export function buildPurchaseEvent(order: PublicOrder): PurchaseEvent | null {
     || !order.orderNumber
     || !isSafeCents(order.totals.productSubtotalExGstCents)
     || !isSafeCents(order.totals.totalGstCents)
+    || !isSafeCents(order.totals.totalInclGstCents)
     || !isSafeCents(order.shipping.amountInclGstCents)
   ) {
     return null;
@@ -311,6 +313,7 @@ export function buildPurchaseEvent(order: PublicOrder): PurchaseEvent | null {
     transaction_id: order.orderNumber,
     currency: order.currency,
     value: dollars(order.totals.productSubtotalExGstCents),
+    total: dollars(order.totals.totalInclGstCents),
     tax: dollars(order.totals.totalGstCents),
     shipping: dollars(order.shipping.amountInclGstCents),
     items: Object.freeze(items),

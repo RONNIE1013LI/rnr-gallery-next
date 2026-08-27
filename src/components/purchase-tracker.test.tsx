@@ -17,6 +17,7 @@ const event: PurchaseEvent = {
   transaction_id: "RNR-2026-ONE",
   currency: "NZD",
   value: 65,
+  total: 100.75,
   tax: 12.75,
   shipping: 23,
   items: [],
@@ -64,18 +65,26 @@ describe("PurchaseTracker", () => {
         send_to: GA4_MEASUREMENT_ID,
       },
     ));
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "conversion", {
+      transaction_id: "RNR-2026-ONE",
+      currency: "NZD",
+      value: 100.75,
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
+      send_to: "AW-592203244/HtL7CMq6qu0bEOybsZoC",
+    });
     expect(sessionStorage.getItem(storageKey)).toBe("sent");
   });
 
   it("emits one stable purchase per real order across repeated mounts", async () => {
     document.documentElement.dataset.ga4Enabled = "true";
     const first = render(<PurchaseTracker event={event} />);
-    await waitFor(() => expect(sendGAEvent).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(sendGAEvent).toHaveBeenCalledTimes(2));
 
     first.unmount();
     render(<PurchaseTracker event={event} />);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(sendGAEvent).toHaveBeenCalledTimes(2);
     expect(sessionStorage.getItem(storageKey)).toBe("sent");
   });
 
@@ -93,13 +102,13 @@ describe("PurchaseTracker", () => {
       vi.advanceTimersByTime(250);
     });
 
-    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(sendGAEvent).toHaveBeenCalledTimes(2);
     expect(sessionStorage.getItem(storageKey)).toBe("sent");
 
     await act(async () => {
       vi.runAllTimers();
     });
-    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(sendGAEvent).toHaveBeenCalledTimes(2);
   });
 
   it("cancels a pending readiness retry on unmount", async () => {

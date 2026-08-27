@@ -4,6 +4,7 @@ import {
   GA4_DISABLE_WINDOW_KEY,
   GA4_MEASUREMENT_ID,
   GA4_SAFE_PURCHASE_PATH,
+  GOOGLE_ADS_PURCHASE_SEND_TO,
   isGa4Production,
 } from "./runtime";
 
@@ -19,6 +20,7 @@ describe("GA4 runtime boundary", () => {
     expect(GA4_MEASUREMENT_ID).toBe("G-RE5Z5B58TJ");
     expect(GA4_DISABLE_WINDOW_KEY).toBe("ga-disable-G-RE5Z5B58TJ");
     expect(GA4_SAFE_PURCHASE_PATH).toBe("/");
+    expect(GOOGLE_ADS_PURCHASE_SEND_TO).toBe("AW-592203244/HtL7CMq6qu0bEOybsZoC");
   });
 
   it("blocks private storefront and staff page locations", () => {

@@ -9,6 +9,8 @@ import {
   GA4_MEASUREMENT_ID,
   GA4_SAFE_CHECKOUT_PATH,
   GA4_SAFE_PURCHASE_PATH,
+  GOOGLE_ADS_PURCHASE_SEND_TO,
+  GOOGLE_ADS_TAG_ID,
 } from "./runtime";
 
 const GA4_EVENT_PROCESSING_WINDOW_MS = 250;
@@ -20,6 +22,7 @@ const pendingGaEvents: Array<Readonly<{
   eventName: string;
   payload: Record<string, unknown>;
 }>> = [];
+const PURCHASE_DELIVERY_KEY_PREFIX = "rnr:analytics:v1:purchase-destination";
 
 function allowlistedItem(item: AnalyticsItem): Record<string, unknown> {
   return {
@@ -155,7 +158,10 @@ function sendGaEventNow(
   }, GA4_EVENT_PROCESSING_WINDOW_MS);
 }
 
-function safePageContext(payload: Record<string, unknown>): Record<string, unknown> {
+function safePageContext(
+  payload: Record<string, unknown>,
+  destination = GA4_MEASUREMENT_ID,
+): Record<string, unknown> {
   let requested: URL;
   try {
     requested = new URL(
@@ -177,7 +183,7 @@ function safePageContext(payload: Record<string, unknown>): Record<string, unkno
     ...payload,
     page_location: new URL(pathname, window.location.origin).href,
     page_referrer: "",
-    send_to: GA4_MEASUREMENT_ID,
+    send_to: destination,
   };
 }
 
@@ -206,11 +212,12 @@ function flushPendingGaEvents(): void {
   }
 }
 
-export function sendControlledGaEvent(
+function sendControlledDestinationEvent(
   eventName: string,
   payload: Record<string, unknown>,
+  destination: string,
 ): void {
-  const event = { eventName, payload: safePageContext(payload) };
+  const event = { eventName, payload: safePageContext(payload, destination) };
   if (!gaTransportReady || gaHistorySuppressionDepth > 0 || eventName === "select_item") {
     pendingGaEvents.push(event);
     if (gaTransportReady
@@ -221,6 +228,13 @@ export function sendControlledGaEvent(
     return;
   }
   sendGaEventNow(event.eventName, event.payload);
+}
+
+export function sendControlledGaEvent(
+  eventName: string,
+  payload: Record<string, unknown>,
+): void {
+  sendControlledDestinationEvent(eventName, payload, GA4_MEASUREMENT_ID);
 }
 
 export function markGaTransportReady(): void {
@@ -249,6 +263,64 @@ export function resetGaTransport(): void {
   suppressGaCollection();
 }
 
+function purchaseDeliveryKey(
+  transactionId: string,
+  destination: "ga4" | "ads",
+): string {
+  return `${PURCHASE_DELIVERY_KEY_PREFIX}:${destination}:${encodeURIComponent(transactionId)}`;
+}
+
+function sendPurchaseDestination(
+  transactionId: string,
+  destination: "ga4" | "ads",
+  eventName: string,
+  payload: Record<string, unknown>,
+  sendTo: string,
+): void {
+  const deliveryKey = purchaseDeliveryKey(transactionId, destination);
+  if (window.sessionStorage.getItem(deliveryKey) === "sent") return;
+  if (destination === "ads") {
+    const dataLayer = (window as Window & { dataLayer?: unknown[] }).dataLayer;
+    dataLayer?.push([
+      "config",
+      GOOGLE_ADS_TAG_ID,
+      {
+        send_page_view: false,
+        page_location: new URL(GA4_SAFE_PURCHASE_PATH, window.location.origin).href,
+        page_referrer: "",
+      },
+    ]);
+  }
+  sendGaEventNow(eventName, safePageContext(payload, sendTo));
+  window.sessionStorage.setItem(deliveryKey, "sent");
+}
+
+function sendPurchaseEvent(
+  event: Extract<AnalyticsEvent, { event: "purchase" }>,
+  payload: Record<string, unknown>,
+): boolean {
+  if (!gaTransportReady || gaHistorySuppressionDepth > 0) return false;
+  sendPurchaseDestination(
+    event.transaction_id,
+    "ga4",
+    event.event,
+    payload,
+    GA4_MEASUREMENT_ID,
+  );
+  sendPurchaseDestination(
+    event.transaction_id,
+    "ads",
+    "conversion",
+    {
+      transaction_id: event.transaction_id,
+      currency: event.currency,
+      value: event.total,
+    },
+    GOOGLE_ADS_PURCHASE_SEND_TO,
+  );
+  return true;
+}
+
 export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
   try {
     if (!event || typeof document === "undefined" || !hasReadyDataLayer()) {
@@ -275,6 +347,9 @@ export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
       } : {}),
       ...(isDebugSession() ? { debug_mode: true } : {}),
     };
+    if (event.event === "purchase") {
+      return sendPurchaseEvent(event, eventPayload);
+    }
     sendControlledGaEvent(event.event, eventPayload);
     return true;
   } catch {

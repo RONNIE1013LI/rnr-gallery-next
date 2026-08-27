@@ -2,7 +2,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { sendGAEvent } from "@next/third-parties/google";
 import {
+  beginGaHistorySuppression,
   emitAnalyticsEvent,
+  endGaHistorySuppression,
   markGaTransportReady,
   resetGaTransport,
   sendControlledGaEvent,
@@ -12,6 +14,8 @@ import {
   GA4_DEBUG_SESSION_KEY,
   GA4_DISABLE_WINDOW_KEY,
   GA4_MEASUREMENT_ID,
+  GOOGLE_ADS_PURCHASE_SEND_TO,
+  GOOGLE_ADS_TAG_ID,
 } from "./runtime";
 
 vi.mock("@next/third-parties/google", () => ({ sendGAEvent: vi.fn() }));
@@ -34,6 +38,7 @@ const purchase: PurchaseEvent = {
   transaction_id: "RNR-2026-PRIVATE",
   currency: "NZD",
   value: 65,
+  total: 97.75,
   tax: 12.75,
   shipping: 23,
   items: event.items,
@@ -93,10 +98,16 @@ describe("emitAnalyticsEvent", () => {
     expect(emitAnalyticsEvent(purchase)).toBe(true);
 
     expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
-      .toEqual(["page_view", "view_item", "purchase"]);
-    for (const command of vi.mocked(sendGAEvent).mock.calls) {
+      .toEqual(["page_view", "view_item", "purchase", "conversion"]);
+    for (const command of vi.mocked(sendGAEvent).mock.calls.slice(0, 3)) {
       expect(command[2]).toMatchObject({ send_to: GA4_MEASUREMENT_ID });
     }
+    expect(vi.mocked(sendGAEvent).mock.calls[3]?.[2]).toMatchObject({
+      send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
+      transaction_id: "RNR-2026-PRIVATE",
+      value: 97.75,
+      currency: "NZD",
+    });
     expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls))
       .not.toMatch(/G-MALICIOUS|gclid|private-click|private-token/);
   });
@@ -286,7 +297,7 @@ describe("emitAnalyticsEvent", () => {
     expect(emitAnalyticsEvent(event)).toBe(false);
     expect(emitAnalyticsEvent(purchase)).toBe(true);
     expect(disabledDuringSend).toBe(false);
-    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(sendGAEvent).toHaveBeenCalledTimes(2);
     expect(sendGAEvent).toHaveBeenCalledWith("event", "purchase", {
       transaction_id: "RNR-2026-PRIVATE",
       currency: "NZD",
@@ -298,7 +309,27 @@ describe("emitAnalyticsEvent", () => {
       page_referrer: "",
       send_to: GA4_MEASUREMENT_ID,
     });
-    expect(JSON.stringify(vi.mocked(sendGAEvent).mock.calls)).not.toContain("private-email-token");
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "conversion", {
+      transaction_id: "RNR-2026-PRIVATE",
+      currency: "NZD",
+      value: 97.75,
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
+      send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
+    });
+    expect((window as unknown as { dataLayer: unknown[] }).dataLayer).toContainEqual([
+      "config",
+      GOOGLE_ADS_TAG_ID,
+      {
+        send_page_view: false,
+        page_location: "http://localhost:3000/",
+        page_referrer: "",
+      },
+    ]);
+    expect(JSON.stringify({
+      dataLayer: (window as unknown as { dataLayer: unknown[] }).dataLayer,
+      events: vi.mocked(sendGAEvent).mock.calls,
+    })).not.toContain("private-email-token");
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
   });
 
@@ -338,11 +369,14 @@ describe("emitAnalyticsEvent", () => {
         Array.from(command as ArrayLike<unknown>)));
     }
 
-    expect(collected.map((command) => command[1])).toEqual([
+    expect(collected
+      .filter((command) => command[0] === "event")
+      .map((command) => command[1])).toEqual([
       "view_item",
       "add_to_cart",
       "begin_checkout",
       "purchase",
+      "conversion",
     ]);
     await new Promise((resolve) => window.setTimeout(resolve, 250));
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
@@ -383,10 +417,15 @@ describe("emitAnalyticsEvent", () => {
     await new Promise((resolve) => window.setTimeout(resolve, 300));
 
     expect(automaticLocations).toEqual([]);
-    expect(vi.mocked(sendGAEvent).mock.calls.at(-2)?.[2]).toMatchObject({
+    expect(vi.mocked(sendGAEvent).mock.calls.at(-3)?.[2]).toMatchObject({
       page_location: "http://localhost:3000/",
       page_referrer: "",
       send_to: GA4_MEASUREMENT_ID,
+    });
+    expect(vi.mocked(sendGAEvent).mock.calls.at(-2)?.[2]).toMatchObject({
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
+      send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
     });
     expect(vi.mocked(sendGAEvent).mock.calls.at(-1)?.[2]).toMatchObject({
       page_location: "http://localhost:3000/checkout",
@@ -463,5 +502,41 @@ describe("emitAnalyticsEvent", () => {
 
     expect(emitAnalyticsEvent(purchase)).toBe(false);
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
+  });
+
+  it("retries only the failed purchase destination", () => {
+    document.documentElement.dataset.ga4PrivatePurchase = "true";
+    document.documentElement.dataset.ga4Loaded = "true";
+    (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] = true;
+    vi.mocked(sendGAEvent)
+      .mockImplementationOnce(() => undefined)
+      .mockImplementationOnce(() => {
+        throw new Error("ads transport unavailable");
+      });
+
+    expect(emitAnalyticsEvent(purchase)).toBe(false);
+    expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
+      .toEqual(["purchase", "conversion"]);
+
+    vi.mocked(sendGAEvent).mockImplementation(() => undefined);
+    expect(emitAnalyticsEvent(purchase)).toBe(true);
+    expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
+      .toEqual(["purchase", "conversion", "conversion"]);
+  });
+
+  it("does not queue a purchase while history collection is suppressed", () => {
+    document.documentElement.dataset.ga4PrivatePurchase = "true";
+    document.documentElement.dataset.ga4Loaded = "true";
+    (window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY] = true;
+
+    beginGaHistorySuppression();
+    expect(emitAnalyticsEvent(purchase)).toBe(false);
+    expect(sendGAEvent).not.toHaveBeenCalled();
+    endGaHistorySuppression();
+    expect(sendGAEvent).not.toHaveBeenCalled();
+
+    expect(emitAnalyticsEvent(purchase)).toBe(true);
+    expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
+      .toEqual(["purchase", "conversion"]);
   });
 });
