@@ -1,6 +1,7 @@
 "use client";
 
 import { GoogleAnalytics } from "@next/third-parties/google";
+import Script from "next/script";
 import { useLayoutEffect, useRef, useState } from "react";
 import {
   beginGaHistorySuppression,
@@ -35,7 +36,7 @@ function googleConsentSignals(analytics: boolean, advertising: boolean) {
   } as const;
 }
 
-function initializeGa4DataLayer(analytics: boolean, advertising: boolean): () => void {
+function initializeGoogleDataLayer(analytics: boolean, advertising: boolean): () => void {
   const gaWindow = window as Ga4Window & { dataLayer?: unknown[] };
   const dataLayer = Array.isArray(gaWindow.dataLayer) ? gaWindow.dataLayer : [];
   gaWindow.dataLayer = dataLayer;
@@ -58,7 +59,8 @@ function initializeGa4DataLayer(analytics: boolean, advertising: boolean): () =>
   );
   dataLayer.push = guardedPush;
   dataLayer.push(["consent", "default", googleConsentSignals(analytics, advertising)]);
-  dataLayer.push(["config", GA4_MEASUREMENT_ID, { send_page_view: false }]);
+  if (analytics) dataLayer.push(["config", GA4_MEASUREMENT_ID, { send_page_view: false }]);
+  if (advertising) dataLayer.push(["config", GOOGLE_ADS_TAG_ID, { send_page_view: false }]);
 
   return () => {
     if (dataLayer.push === guardedPush) dataLayer.push = originalPush;
@@ -292,7 +294,7 @@ export function AnalyticsRuntimeController({
       return;
     }
     resetGaTransport();
-    const restoreDataLayer = initializeGa4DataLayer(analyticsAllowed, advertisingAllowed);
+    const restoreDataLayer = initializeGoogleDataLayer(analyticsAllowed, advertisingAllowed);
     let tagReadyPoll: number | undefined;
     let tagReadyTimeout: number | undefined;
 
@@ -313,10 +315,15 @@ export function AnalyticsRuntimeController({
 
     const handleScriptLoad = (event: Event) => {
       const target = event.target;
-      if (target instanceof HTMLScriptElement && target.id === "_next-ga") {
+      if (target instanceof HTMLScriptElement
+        && (target.id === "_next-ga" || target.id === "rnr-google-ads")) {
         tagLoaded.current = true;
         document.documentElement.dataset.ga4Loaded = "true";
         settleLocation(new URL(window.location.href));
+        if (!analyticsAllowed) {
+          markGaTransportReady();
+          return;
+        }
         tagReadyTimeout = window.setTimeout(() => {
           stopTagReadyCheck();
           tagLoaded.current = false;
@@ -365,7 +372,11 @@ export function AnalyticsRuntimeController({
     };
   }, [advertisingAllowed, analyticsAllowed, googleAllowed]);
 
-  return googleAllowed && ready
-    ? <GoogleAnalytics gaId={GA4_MEASUREMENT_ID} />
-    : null;
+  if (!googleAllowed || !ready) return null;
+  if (analyticsAllowed) return <GoogleAnalytics gaId={GA4_MEASUREMENT_ID} />;
+  return <Script
+    id="rnr-google-ads"
+    src={`https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_TAG_ID}`}
+    strategy="afterInteractive"
+  />;
 }

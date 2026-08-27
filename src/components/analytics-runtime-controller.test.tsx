@@ -64,6 +64,12 @@ vi.mock("@next/third-parties/google", async () => {
   };
 });
 
+vi.mock("next/script", () => ({
+  default: ({ id, src, onLoad }: { id: string; src: string; onLoad?: () => void }) => (
+    <script id={id} data-testid="google-ads-script" data-script-src={src} onLoad={onLoad} />
+  ),
+}));
+
 function setLocation(pathname: string, search = "") {
   window.history.replaceState({}, "", `${pathname}${search ? `?${search}` : ""}`);
 }
@@ -149,10 +155,20 @@ describe("AnalyticsRuntimeController", () => {
       decidedAt: "2026-08-28T01:02:03.000Z",
     };
     const view = render(<AnalyticsRuntimeController production />);
-    const script = await view.findByTestId("official-google-analytics");
+    const script = await view.findByTestId("google-ads-script");
 
-    loadGoogleTag(script);
+    act(() => script.dispatchEvent(new Event("load")));
 
+    expect(googleAnalytics.mounts).toBe(0);
+    expect(document.querySelector("#_next-ga")).toBeNull();
+    expect(script).toHaveAttribute(
+      "data-script-src",
+      `https://www.googletagmanager.com/gtag/js?id=${GOOGLE_ADS_TAG_ID}`,
+    );
+    expect((window as unknown as { dataLayer?: unknown[] }).dataLayer?.some((command) => {
+      const values = Array.from(command as ArrayLike<unknown>);
+      return values[0] === "config" && values[1] === GA4_MEASUREMENT_ID;
+    })).toBe(false);
     expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
     expect(document.documentElement.dataset.googleAdsEnabled).toBe("true");
     expect(sendGAEvent).not.toHaveBeenCalled();
@@ -172,7 +188,7 @@ describe("AnalyticsRuntimeController", () => {
     expect(document.documentElement.dataset.ga4Enabled).toBeUndefined();
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
     expect(googleAnalytics.automaticPageLocations).toEqual([]);
-    expect(googleAnalytics.commands.slice(0, 4)).toEqual([
+    expect(googleAnalytics.commands.slice(0, 5)).toEqual([
       ["consent", "default", {
         analytics_storage: "granted",
         ad_storage: "granted",
@@ -180,12 +196,13 @@ describe("AnalyticsRuntimeController", () => {
         ad_personalization: "granted",
       }],
       ["config", GA4_MEASUREMENT_ID, { send_page_view: false }],
+      ["config", GOOGLE_ADS_TAG_ID, { send_page_view: false }],
       ["js", "official-component"],
       ["config", GA4_MEASUREMENT_ID, { send_page_view: false }],
     ]);
     expect(googleAnalytics.commands.some((command) =>
       command[0] === "config" && command[1] === GOOGLE_ADS_TAG_ID,
-    )).toBe(false);
+    )).toBe(true);
 
     const script = await view.findByTestId("official-google-analytics");
     loadGoogleTag(script);

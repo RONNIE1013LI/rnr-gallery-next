@@ -54,8 +54,6 @@ describe("root layout metadata", () => {
     expect(source.match(/<GoogleAnalytics\b/g)).toHaveLength(1);
     expect(source.match(/G-RE5Z5B58TJ/g)).toHaveLength(1);
     expect(source).not.toContain("GoogleTagManager");
-    expect(source).not.toContain("googletagmanager.com");
-    expect(source).not.toContain("gtag.js");
     expect(layout).toContain("isGa4Production(process.env.VERCEL_ENV)");
   });
 
