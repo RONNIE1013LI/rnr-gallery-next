@@ -61,7 +61,7 @@ describe("Australia storefront", () => {
     render(await AustraliaPage());
 
     expect(screen.getByRole("heading", {
-      name: "From the photos you have to the piece you imagined.",
+      name: "From your photos to the piece you imagined.",
     })).toBeVisible();
     expect(screen.queryByRole("heading", { name: "Custom artwork for Australia." }))
       .not.toBeInTheDocument();

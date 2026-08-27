@@ -13,17 +13,9 @@ const slot = (
  * Null sources intentionally render the approved V3 artwork compositions.
  */
 export const homepageV3ImageSlots = Object.freeze({
-  heroFinishedArtwork: slot(
-    "Finished custom family artwork created by R&R Gallery",
-    "/media/home/homepage-hero-finished-artwork.webp",
-  ),
-  heroRealMoment: slot(
-    "Customer standing beside her personalised family canvas",
-    "/media/home/homepage-hero-real-customer-moment.webp",
-  ),
-  heroPrintedProduct: slot(
-    "Personalised family artwork printed and displayed as a canvas",
-    "/media/home/homepage-hero-printed-canvas.webp",
+  heroShowcase: slot(
+    "Wall hanging banner, custom canvas and roll-up banner displayed together",
+    "/media/home/homepage-hero-showcase-16x9.webp",
   ),
   beginProductFormats: slot(
     "Canvas, wall banner and roll-up banner product formats",

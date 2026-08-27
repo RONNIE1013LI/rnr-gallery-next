@@ -130,20 +130,32 @@
 
 .textLinkLight { color: white; border-color: rgb(255 255 255 / 50%); }
 
-.hero { position: relative; }
+.hero {
+  padding: 4.5rem 0;
+  position: relative;
+}
 
 .heroGrid {
-  min-height: 48.625rem;
   display: grid;
-  grid-template-columns: 0.92fr 1.08fr;
-  align-items: center;
+  grid-template-columns: minmax(0, 43fr) minmax(0, 57fr);
+  align-items: stretch;
   gap: 3.375rem;
 }
 
-.heroCopy { padding: 5.25rem 0 5.625rem; }
+.heroCopy {
+  min-width: 0;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.heroCopy > .eyebrow { margin: 0; }
+
+.heroCopy > h1 { margin: 1.25rem 0 1.5rem; }
 
 .heroActions {
-  margin-top: 2.625rem;
+  margin-top: 2rem;
   display: flex;
   align-items: center;
   gap: 1.75rem;
@@ -151,51 +163,23 @@
 }
 
 .heroArt {
-  min-height: 47rem;
-  position: relative;
+  min-width: 0;
+  display: flex;
+  align-items: center;
 }
 
-.realMomentCard,
-.finalArtCard,
-.printedCard { margin: 0; position: absolute; }
-
-.realMomentCard {
-  width: 14rem;
-  top: 0.5rem;
-  right: 0;
-  z-index: 5;
-  transform: rotate(3deg);
-  filter: drop-shadow(0 1.125rem 1.5rem rgb(18 31 26 / 14%));
-}
-
-.finalArtCard {
-  width: min(35rem, calc(100% - 2.75rem));
-  top: 10.75rem;
-  left: 0.75rem;
-  z-index: 3;
-  transform: rotate(-0.25deg);
-  filter: drop-shadow(0 1.5rem 1.875rem rgb(18 31 26 / 18%));
-}
-
-.printedCard {
-  width: 15.75rem;
-  top: 33.25rem;
-  right: 0;
-  z-index: 4;
-}
-
-.printedCard .artwork {
+.heroFigure {
   width: 100%;
-  transform: rotate(1.5deg);
-  filter: drop-shadow(0 1rem 1.375rem rgb(18 31 26 / 16%));
+  margin: 0;
 }
 
-.printedCard .mediaLabel {
-  top: auto;
-  bottom: 0.75rem;
-  left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
+.heroImage {
+  width: 100%;
+  height: auto;
+  display: block;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--v3-radius-image);
+  object-fit: contain;
 }
 
 .artwork {
@@ -538,9 +522,13 @@
 }
 
 @media (max-width: 1080px) {
-  .heroGrid { grid-template-columns: 1fr; }
-  .heroCopy { max-width: 46rem; padding-bottom: 1.25rem; }
-  .heroArt { width: min(100%, 44rem); min-height: 47rem; margin-inline: auto; }
+  .heroGrid { grid-template-columns: 1fr; gap: 0; }
+  .heroCopy { display: contents; }
+  .heroCopy > .eyebrow { order: 1; }
+  .heroCopy > h1 { order: 2; margin: 1.25rem 0 0; }
+  .heroArt { order: 3; width: 100%; margin-top: 1.75rem; }
+  .heroActions { order: 4; margin-top: 1.125rem; }
+  .microcopy { order: 5; margin: 1.375rem 0 0; }
   .transformationGrid { grid-template-columns: 1fr 0.8fr; }
   .transformationResult { max-width: 35rem; grid-column: 1 / -1; justify-self: center; }
   .workList { margin-top: 12.5rem; }
@@ -550,6 +538,7 @@
 
 @media (max-width: 900px) {
   .shell { width: calc(100% - 3rem); }
+  .hero { padding: 3.5rem 0; }
   .productsSection { --products-backdrop-top: 4.75rem; }
   .beginGrid { grid-template-columns: 1fr; gap: 4.125rem; }
   .beginPath p { min-height: 0; }
@@ -573,26 +562,11 @@
   .page h2 { font-size: clamp(2.25rem, 9vw, 2.5rem); }
   .page h3 { font-size: 1.5625rem; }
   .eyebrow { font-size: 0.6875rem; }
-  .heroGrid { min-height: auto; display: flex; flex-direction: column; align-items: stretch; gap: 0; }
-  .heroCopy { display: contents; }
-  .heroCopy > .eyebrow { order: 1; margin-top: 3.375rem; }
-  .heroCopy > h1 { order: 2; }
+  .hero { padding: 2.75rem 0; }
   .lede { font-size: 1rem; }
-  .heroCopy > .lede { order: 3; }
-  .heroArt { order: 4; min-height: 34rem; margin-top: 2.125rem; }
-  .heroActions { order: 5; margin-top: 2rem; display: grid; gap: 1rem; }
+  .heroActions { display: grid; gap: 0.875rem; }
   .heroActions .button { width: 100%; }
   .heroActions .textLink { width: max-content; }
-  .microcopy { order: 6; margin: 2rem 0 3.375rem; }
-  .realMomentCard { width: 34%; top: 0.75rem; right: 0.75rem; }
-  .realMomentCard .mediaLabel {
-    padding: 0.4375rem 0.5rem;
-    font-size: 0.5625rem;
-    letter-spacing: 0.07em;
-    white-space: nowrap;
-  }
-  .finalArtCard { width: 94%; top: 8.25rem; left: 0; }
-  .printedCard { width: 43%; top: 23.5rem; right: 0; }
   .trustGrid { padding: 1.75rem 0; grid-template-columns: minmax(0, 58%) minmax(0, 42%); gap: 1.75rem 0; }
   .trustItem { padding: 0 0.75rem; justify-content: flex-start; }
   .trustItem:nth-child(odd) { padding-left: 0; border-left: 0; }
@@ -659,9 +633,6 @@
 
 @media (max-width: 420px) {
   .shell { width: calc(100% - 2rem); }
-  .heroArt { min-height: 32.5rem; }
-  .finalArtCard { top: 7.75rem; }
-  .printedCard { top: 22.75rem; }
   .trustGrid { grid-template-columns: 1fr; gap: 0; }
   .trustItem, .trustItem:nth-child(odd) { min-height: 4.75rem; padding: 0.75rem 0; border-left: 0; border-top: 1px solid var(--v3-line); }
   .trustItem:first-child { border-top: 0; }

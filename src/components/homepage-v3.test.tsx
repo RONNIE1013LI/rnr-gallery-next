@@ -77,56 +77,46 @@ describe("HomepageV3", () => {
     expect(question).toHaveAttribute("aria-expanded", "true");
     expect(screen.getByText(/Yes, please send us the original photos/)).toBeVisible();
   });
-  it("presents the hero as one finished artwork, one real moment and one printed canvas", () => {
+  it("presents the approved 16:9 product showcase as the only hero image", () => {
     render(<HomepageV3 registry={defaultProductRegistry} />);
 
     const heroHeading = screen.getByRole("heading", {
       level: 1,
-      name: "From the photos you have to the piece you imagined.",
+      name: "From your photos to the piece you imagined.",
     });
     const heroSection = heroHeading.closest("section");
 
     expect(heroSection).not.toBeNull();
-    expect(heroSection?.querySelectorAll("img")).toHaveLength(3);
-    expect(screen.getByRole("img", {
-      name: "Finished custom family artwork created by R&R Gallery",
-    })).toBeInTheDocument();
-    expect(screen.getByRole("img", {
-      name: "Customer standing beside her personalised family canvas",
-    })).toBeInTheDocument();
-    const printedCanvasImage = screen.getByRole("img", {
-      name: "Personalised family artwork printed and displayed as a canvas",
+    expect(heroSection?.querySelectorAll("img")).toHaveLength(1);
+    const showcaseImage = screen.getByRole("img", {
+      name: "Wall hanging banner, custom canvas and roll-up banner displayed together",
     });
-    expect(printedCanvasImage).toBeInTheDocument();
-    expect(heroSection).toHaveTextContent("FINISHED ARTWORK");
-    expect(heroSection).toHaveTextContent("REAL MOMENT");
-    expect(heroSection).toHaveTextContent("PRINTED CANVAS");
-    expect(printedCanvasImage.parentElement).toHaveTextContent("PRINTED CANVAS");
-    expect(screen.queryByText("PRINTED CANVAS", {
-      selector: "figcaption",
-    })).not.toBeInTheDocument();
-    expect(heroSection).not.toHaveTextContent("ORIGINAL PHOTO");
-    expect(heroSection).not.toHaveTextContent("Created from 3 family photographs");
+    expect(showcaseImage).toHaveAttribute("width", "4608");
+    expect(showcaseImage).toHaveAttribute("height", "2592");
+    expect(heroSection).not.toHaveTextContent(
+      "Custom canvas, banners and memorial artwork, designed from your photos and approved before printing.",
+    );
 
     const stylesheet = readFileSync(
       "src/components/homepage-v3.module.css",
       "utf8",
     );
     expect(stylesheet).toMatch(
-      /@media \(max-width:\s*760px\)[\s\S]*?\.realMomentCard \.mediaLabel\s*\{[^}]*white-space:\s*nowrap/,
+      /\.heroGrid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*43fr\)\s+minmax\(0,\s*57fr\)[^}]*align-items:\s*stretch/,
     );
     expect(stylesheet).toMatch(
-      /\.realMomentCard\s*\{[^}]*z-index:\s*5/,
+      /\.heroImage\s*\{[^}]*width:\s*100%[^}]*height:\s*auto[^}]*aspect-ratio:\s*16\s*\/\s*9/,
     );
+    expect(stylesheet).not.toMatch(/\.heroGrid\s*\{[^}]*min-height:/);
+    expect(stylesheet).not.toMatch(/\.heroArt\s*\{[^}]*min-height:/);
   });
 
   it("prioritises only the actual homepage LCP image", () => {
     const { container } = render(<HomepageV3 registry={defaultProductRegistry} />);
 
     const lcpImage = screen.getByRole("img", {
-      name: "Finished custom family artwork created by R&R Gallery",
+      name: "Wall hanging banner, custom canvas and roll-up banner displayed together",
     });
-    expect(lcpImage).toHaveAttribute("fetchpriority", "high");
     expect(lcpImage).not.toHaveAttribute("loading", "lazy");
 
     const otherImages = Array.from(container.querySelectorAll("img"))
@@ -202,22 +192,25 @@ describe("HomepageV3", () => {
     expect(begin?.className).toContain("sectionPaper");
   });
 
-  it("places the hero artwork before the actions on mobile only", () => {
+  it("keeps the eyebrow and heading above the 16:9 image at every breakpoint", () => {
     const stylesheet = readFileSync(
       "src/components/homepage-v3.module.css",
       "utf8",
     );
-    const mobileStyles = stylesheet.slice(
-      stylesheet.indexOf("@media (max-width: 760px)"),
+    const responsiveStyles = stylesheet.slice(
+      stylesheet.indexOf("@media (max-width: 1080px)"),
+      stylesheet.indexOf("@media (max-width: 900px)"),
     );
 
-    expect(mobileStyles).toContain(
-      ".heroGrid { min-height: auto; display: flex; flex-direction: column; align-items: stretch; gap: 0; }",
+    expect(responsiveStyles).toMatch(
+      /\.heroGrid\s*\{[^}]*grid-template-columns:\s*1fr/,
     );
-    expect(mobileStyles).toContain(".heroCopy { display: contents; }");
-    expect(mobileStyles).toContain(".heroArt { order: 4;");
-    expect(mobileStyles).toContain(".heroActions { order: 5;");
-    expect(mobileStyles).toContain(".microcopy { order: 6;");
+    expect(responsiveStyles).toMatch(/\.heroCopy\s*\{[^}]*display:\s*contents/);
+    expect(responsiveStyles).toMatch(/\.heroCopy\s*>\s*\.eyebrow\s*\{[^}]*order:\s*1/);
+    expect(responsiveStyles).toMatch(/\.heroCopy\s*>\s*h1\s*\{[^}]*order:\s*2/);
+    expect(responsiveStyles).toMatch(/\.heroArt\s*\{[^}]*order:\s*3/);
+    expect(responsiveStyles).toMatch(/\.heroActions\s*\{[^}]*order:\s*4/);
+    expect(responsiveStyles).toMatch(/\.microcopy\s*\{[^}]*order:\s*5/);
   });
 
   it("stacks the supporting discovery paths on mobile", () => {
@@ -504,7 +497,7 @@ describe("HomepageV3", () => {
     expect(container.querySelector("main")).not.toHaveAttribute("data-homepage-palette");
     expect(screen.getByRole("heading", {
       level: 1,
-      name: "From the photos you have to the piece you imagined.",
+      name: "From your photos to the piece you imagined.",
     })).toBeInTheDocument();
     expect(screen.getByText("DESIGNER-LED. APPROVED BY YOU.")).toBeInTheDocument();
     expect(screen.queryByText("DESIGNED BY REAL PEOPLE")).not.toBeInTheDocument();
@@ -676,11 +669,9 @@ describe("HomepageV3", () => {
     );
   });
 
-  it("keeps all temporary imagery in named replacement slots", () => {
+  it("keeps homepage imagery in named replacement slots", () => {
     expect(Object.keys(homepageV3ImageSlots)).toEqual([
-      "heroFinishedArtwork",
-      "heroRealMoment",
-      "heroPrintedProduct",
+      "heroShowcase",
       "beginProductFormats",
       "beginOccasions",
       "beginPhotoHelp",
@@ -695,12 +686,8 @@ describe("HomepageV3", () => {
       "galleryFamily",
       "galleryCultural",
     ]);
-    expect(homepageV3ImageSlots.heroFinishedArtwork.src)
-      .toBe("/media/home/homepage-hero-finished-artwork.webp");
-    expect(homepageV3ImageSlots.heroRealMoment.src)
-      .toBe("/media/home/homepage-hero-real-customer-moment.webp");
-    expect(homepageV3ImageSlots.heroPrintedProduct.src)
-      .toBe("/media/home/homepage-hero-printed-canvas.webp");
+    expect(homepageV3ImageSlots.heroShowcase.src)
+      .toBe("/media/home/homepage-hero-showcase-16x9.webp");
     expect(homepageV3ImageSlots.beginProductFormats.src)
       .toBe("/media/home/homepage-begin-product-formats-v2.webp");
     expect(homepageV3ImageSlots.beginOccasions.src)

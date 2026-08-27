@@ -233,17 +233,13 @@ export function HomepageV3({
         <div className={`${styles.shell} ${styles.heroGrid}`}>
           <div className={styles.heroCopy}>
             <p className={styles.eyebrow}>CUSTOM STORY &amp; ARTWORK STUDIO</p>
-            <h1>From the photos you have<br />{" "}to the piece you imagined.</h1>
-            <p className={styles.lede}>
-              Custom canvas, banners and memorial artwork, thoughtfully designed
-              from your photos and approved by you before printing.
-            </p>
+            <h1>From your photos to the piece you imagined.</h1>
             <div className={styles.heroActions}>
               <Link className={`${styles.button} ${styles.buttonPrimary}`} href={shopHref}>
                 Start With Your Photos
               </Link>
               <a className={styles.textLink} href="#transformation">
-                See Real Transformations <Arrow />
+                See Transformations <Arrow />
               </a>
             </div>
             <p className={styles.microcopy}>
@@ -251,34 +247,16 @@ export function HomepageV3({
             </p>
           </div>
 
-          <div className={styles.heroArt} aria-label="Finished artwork shown in a real customer setting and as a printed canvas">
-            <figure className={styles.realMomentCard}>
-              <Artwork
-                slot={homepageV3ImageSlots.heroRealMoment}
-                tone="sand"
-                ratio="three-four"
-                label="REAL MOMENT"
-                sizes="(max-width: 760px) 34vw, 14rem"
-              />
-            </figure>
-            <figure className={styles.finalArtCard}>
-              <Artwork
-                slot={homepageV3ImageSlots.heroFinishedArtwork}
-                tone="sage"
-                people={4}
-                label="FINISHED ARTWORK"
-                darkLabel
-                sizes="(max-width: 760px) 94vw, 35rem"
+          <div className={styles.heroArt}>
+            <figure className={styles.heroFigure}>
+              <Image
+                className={styles.heroImage}
+                src={homepageV3ImageSlots.heroShowcase.src ?? ""}
+                alt={homepageV3ImageSlots.heroShowcase.alt}
+                width={4608}
+                height={2592}
+                sizes="(max-width: 900px) calc(100vw - 3rem), (max-width: 1352px) 54vw, 704px"
                 preload
-              />
-            </figure>
-            <figure className={styles.printedCard}>
-              <Artwork
-                slot={homepageV3ImageSlots.heroPrintedProduct}
-                tone="rose"
-                people={4}
-                label="PRINTED CANVAS"
-                sizes="(max-width: 760px) 43vw, 16rem"
               />
             </figure>
           </div>
