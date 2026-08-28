@@ -97,6 +97,25 @@ describe("manual conversion candidates", () => {
     }]);
   });
 
+  it("keeps the original Google click attribution when the customer later contacts through Messenger", () => {
+    expect(buildManualConversionCandidates({
+      ...snapshot,
+      customerSource: "messenger",
+      customFields: {
+        advertising_consent: "granted",
+        advertising_consent_recorded_at: "2026-08-28T00:00:00.000Z",
+        gclid: "original-google-click_123",
+      },
+    })).toEqual([{
+      destination: "google",
+      transactionId: "manual:RRM-2026-ATTRIBUTION",
+      paidAt: new Date("2026-08-28T01:02:03.000Z"),
+      currency: "AUD",
+      value: 123.45,
+      google: { clickId: "original-google-click_123", kind: "gclid" },
+    }]);
+  });
+
   it.each([
     ["missing consent", { ...snapshot, customFields: { ...snapshot.customFields, advertising_consent: "" } }],
     ["denied consent", { ...snapshot, customFields: { ...snapshot.customFields, advertising_consent: "denied" } }],

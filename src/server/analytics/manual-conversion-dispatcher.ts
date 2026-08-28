@@ -26,6 +26,12 @@ export interface ManualConversionSuccessStore {
   ): Promise<DispatchResult>;
 }
 
+export function manualOfflineConversionsEnabled(
+  env: NodeJS.ProcessEnv | Readonly<Record<string, string | undefined>> = process.env,
+) {
+  return env.MANUAL_OFFLINE_CONVERSIONS_ENABLED === "true";
+}
+
 function metaEvent(candidate: ManualConversionCandidate): SafeMetaEvent | null {
   if (candidate.destination !== "meta" || !candidate.meta) return null;
   const { actionSource, ...matching } = candidate.meta;

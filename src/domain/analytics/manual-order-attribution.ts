@@ -162,7 +162,7 @@ export function buildManualConversionCandidates(
   const hasGoogleEvidence = source === "google" || google !== null;
   if (!meta) return Object.freeze([]);
   if ((fields.gclid || fields.gbraid || fields.wbraid) && !google) return Object.freeze([]);
-  if (hasMetaEvidence && hasGoogleEvidence && source === null) return Object.freeze([]);
+  if (meta.hasSourceEvidence && hasGoogleEvidence && source === null) return Object.freeze([]);
 
   if (source === "meta" || (hasMetaEvidence && !hasGoogleEvidence)) {
     if (Object.keys(meta.values).length === 0) return Object.freeze([]);
@@ -176,7 +176,7 @@ export function buildManualConversionCandidates(
       meta: Object.freeze({ actionSource, ...meta.values }),
     })]);
   }
-  if (source === "google" || (hasGoogleEvidence && !hasMetaEvidence)) {
+  if (source === "google" || (hasGoogleEvidence && !meta.hasSourceEvidence)) {
     if (!google) return Object.freeze([]);
     return Object.freeze([Object.freeze({ ...base, destination: "google" as const, google })]);
   }

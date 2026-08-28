@@ -171,7 +171,7 @@ export function createMetaCapiClient({
         )) return "failed";
         const parsed: unknown = await response.json();
         return parsed !== null && typeof parsed === "object"
-          && Number.isInteger((parsed as { events_received?: unknown }).events_received)
+          && (parsed as { events_received?: unknown }).events_received === 1
           ? "sent"
           : "failed";
       } catch {

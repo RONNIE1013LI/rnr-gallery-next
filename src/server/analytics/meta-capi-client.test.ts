@@ -119,4 +119,13 @@ describe("Meta CAPI client", () => {
     const client = createMetaCapiClient({ accessToken: "server-secret", fetchImpl, timeoutMs: 5 });
     await expect(client.send(event)).resolves.toBe("failed");
   });
+
+  it("does not acknowledge a single-event request when Meta receives zero events", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ events_received: 0 }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    ));
+    await expect(createMetaCapiClient({ accessToken: "server-secret", fetchImpl }).send(event))
+      .resolves.toBe("failed");
+  });
 });

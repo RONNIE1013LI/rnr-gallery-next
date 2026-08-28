@@ -8,6 +8,7 @@ import {
   createDrizzleManualConversionSuccessStore,
   createManualConversionDispatcher,
   createManualConversionObserver,
+  manualOfflineConversionsEnabled,
 } from "@/server/analytics/manual-conversion-dispatcher";
 import {
   createGoogleAdsOfflineConversionClient,
@@ -50,7 +51,7 @@ export function getAdminProductionRuntime(options: Readonly<{
     repository,
     {
       createJobNumber: () => allocateOrderNumber(database),
-      ...(options.scheduleAfter ? {
+      ...(options.scheduleAfter && manualOfflineConversionsEnabled() ? {
         onManualPaid: createManualConversionObserver(
           options.scheduleAfter,
           conversions.dispatch,

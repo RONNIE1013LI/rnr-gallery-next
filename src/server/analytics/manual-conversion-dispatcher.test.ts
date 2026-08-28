@@ -4,6 +4,7 @@ import {
   createDrizzleManualConversionSuccessStore,
   createManualConversionDispatcher,
   createManualConversionObserver,
+  manualOfflineConversionsEnabled,
   type ManualConversionSuccessStore,
 } from "./manual-conversion-dispatcher";
 
@@ -43,6 +44,13 @@ function memorySuccessStore(): ManualConversionSuccessStore {
 }
 
 describe("manual conversion dispatcher", () => {
+  it("requires a dedicated explicit enablement flag", () => {
+    expect(manualOfflineConversionsEnabled({})).toBe(false);
+    expect(manualOfflineConversionsEnabled({ MANUAL_OFFLINE_CONVERSIONS_ENABLED: "false" })).toBe(false);
+    expect(manualOfflineConversionsEnabled({ MANUAL_OFFLINE_CONVERSIONS_ENABLED: "TRUE" })).toBe(false);
+    expect(manualOfflineConversionsEnabled({ MANUAL_OFFLINE_CONVERSIONS_ENABLED: "true" })).toBe(true);
+  });
+
   it("persists only a privacy-safe per-destination success audit", async () => {
     const values = vi.fn().mockResolvedValue(undefined);
     const transaction = {
