@@ -3753,21 +3753,25 @@
 }
 
 .paymentAfterpayBrand {
-  width: 2.9rem;
-  height: 1.5rem;
+  position: relative;
+  width: 3.4rem;
+  aspect-ratio: 147 / 92;
   margin-inline-start: auto;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
+  display: block;
   flex: 0 0 auto;
-  border-radius: 0.25rem;
-  background: #b2fce4;
-  color: #111820;
+  overflow: hidden;
+  border-radius: 13% / 20%;
 }
 
-.paymentAfterpayBrand svg {
-  width: 1.9rem;
-  height: 1.05rem;
+.paymentAfterpaySprite {
+  position: absolute;
+  top: -4.3478%;
+  left: -234.0136%;
+  width: 796.5986%;
+  max-width: none;
+  height: 108.6957%;
+  object-fit: fill;
+  user-select: none;
 }
 
 .paymentCardBrands > span {

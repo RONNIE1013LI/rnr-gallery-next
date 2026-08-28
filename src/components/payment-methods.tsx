@@ -1,5 +1,5 @@
+import Image from "next/image";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
-import { SiAfterpay } from "react-icons/si";
 import styles from "./storefront.module.css";
 
 export type PaymentMethodOption = Readonly<{
@@ -79,10 +79,21 @@ export function PaymentMethods({
           <span className={styles.paymentBrandAmex}>AMEX</span>
         </span> : null}
         {option.method === "afterpay" ? <span
-          aria-hidden="true"
+          aria-label="Afterpay"
           className={styles.paymentAfterpayBrand}
           data-payment-brand="afterpay"
-        ><SiAfterpay /></span> : null}
+          role="img"
+        >
+          <Image
+            alt=""
+            aria-hidden="true"
+            className={styles.paymentAfterpaySprite}
+            height={100}
+            src="/media/payments/footer-payment-methods.jpg"
+            unoptimized
+            width={1171}
+          />
+        </span> : null}
       </label>)}
     </div>
     {value === "card" ? <>
