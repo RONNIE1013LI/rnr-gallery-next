@@ -101,8 +101,14 @@ describe("HomepageV3", () => {
       "src/components/homepage-v3.module.css",
       "utf8",
     );
+    expect(stylesheet).toContain("--v3-backdrop-width: 90rem;");
     expect(stylesheet).toMatch(
-      /\.heroGrid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*calc\(43%\s*-\s*1\.45125rem\)\)\s+minmax\(0,\s*1fr\)[^}]*align-items:\s*stretch[^}]*gap:\s*0/,
+      /\.heroGrid\s*\{[^}]*width:\s*100%[^}]*margin-inline:\s*0[^}]*grid-template-columns:\s*max\(2rem,\s*calc\(\(100%\s*-\s*var\(--v3-content-width\)\)\s*\/\s*2\)\)\s+minmax\(0,\s*min\(33\.16375rem,\s*calc\(43%\s*-\s*3\.17125rem\)\)\)\s+minmax\(0,\s*1fr\)\s+max\(0rem,\s*calc\(\(100%\s*-\s*var\(--v3-backdrop-width\)\)\s*\/\s*2\)\)[^}]*align-items:\s*stretch[^}]*gap:\s*0/,
+    );
+    expect(stylesheet).toMatch(/\.heroCopy\s*\{[^}]*grid-column:\s*2/);
+    expect(stylesheet).toMatch(/\.heroArt\s*\{[^}]*grid-column:\s*3/);
+    expect(stylesheet).toMatch(
+      /\.productsBackdrop\s*\{[^}]*width:\s*min\(100%,\s*var\(--v3-backdrop-width\)\)/,
     );
     expect(stylesheet).toMatch(
       /\.heroImage\s*\{[^}]*width:\s*100%[^}]*height:\s*auto[^}]*aspect-ratio:\s*16\s*\/\s*9[^}]*border-radius:\s*0/,
@@ -473,7 +479,7 @@ describe("HomepageV3", () => {
     );
     expect(stylesheet).not.toContain("homepage-products-ink-landscape.webp");
     expect(stylesheet).toMatch(
-      /\.productsBackdrop\s*\{[^}]*width:\s*min\(100%,\s*90rem\)[^}]*margin-inline:\s*auto/,
+      /\.productsBackdrop\s*\{[^}]*width:\s*min\(100%,\s*var\(--v3-backdrop-width\)\)[^}]*margin-inline:\s*auto/,
     );
     expect(stylesheet).toMatch(
       /\.productsSection\s*\{[^}]*overflow:\s*clip/,

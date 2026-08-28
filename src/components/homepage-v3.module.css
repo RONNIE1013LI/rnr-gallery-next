@@ -10,6 +10,7 @@
   --v3-pale-gold: #dbc17c;
   --v3-line: #d8d0c2;
   --v3-content-width: 80.5rem;
+  --v3-backdrop-width: 90rem;
   --v3-section-standard: 6rem;
   --v3-section-emphasis: 7rem;
   --v3-section-compact: 4rem;
@@ -136,13 +137,20 @@
 }
 
 .heroGrid {
+  width: 100%;
+  margin-inline: 0;
   display: grid;
-  grid-template-columns: minmax(0, calc(43% - 1.45125rem)) minmax(0, 1fr);
+  grid-template-columns:
+    max(2rem, calc((100% - var(--v3-content-width)) / 2))
+    minmax(0, min(33.16375rem, calc(43% - 3.17125rem)))
+    minmax(0, 1fr)
+    max(0rem, calc((100% - var(--v3-backdrop-width)) / 2));
   align-items: stretch;
   gap: 0;
 }
 
 .heroCopy {
+  grid-column: 2;
   min-width: 0;
   height: 100%;
   display: flex;
@@ -163,6 +171,7 @@
 }
 
 .heroArt {
+  grid-column: 3;
   min-width: 0;
   display: flex;
   align-items: center;
@@ -384,7 +393,7 @@
 }
 .productsSection > .shell { position: relative; z-index: 1; }
 .productsBackdrop {
-  width: min(100%, 90rem);
+  width: min(100%, var(--v3-backdrop-width));
   margin-inline: auto;
   position: absolute;
   top: 0;
@@ -522,11 +531,11 @@
 }
 
 @media (max-width: 1080px) {
-  .heroGrid { grid-template-columns: 1fr; gap: 0; }
-  .heroCopy { display: contents; }
+  .heroGrid { width: min(var(--v3-content-width), calc(100% - 4rem)); margin-inline: auto; grid-template-columns: 1fr; gap: 0; }
+  .heroCopy { grid-column: auto; display: contents; }
   .heroCopy > .eyebrow { order: 1; }
   .heroCopy > h1 { order: 2; margin: 1.25rem 0 0; }
-  .heroArt { order: 3; width: 100%; margin-top: 1.75rem; }
+  .heroArt { grid-column: auto; order: 3; width: 100%; margin-top: 1.75rem; }
   .heroActions { order: 4; margin-top: 1.125rem; }
   .microcopy { order: 5; margin: 1.375rem 0 0; }
   .transformationGrid { grid-template-columns: 1fr 0.8fr; }
