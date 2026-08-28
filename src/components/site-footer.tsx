@@ -1,6 +1,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { BrandMark } from "./brand-mark";
+import { CookiePreferencesTrigger } from "./consent-preferences";
 import type { Market } from "@/domain/markets/types";
 
 export type SiteFooterContent = Readonly<{
@@ -86,6 +87,7 @@ export function SiteFooter({
             <li><Link href={canvasHref}>Canvas</Link></li>
             <li><Link href={bannersHref}>Banners</Link></li>
             <li><Link href="/cart">Cart</Link></li>
+            <li><CookiePreferencesTrigger /></li>
           </ul>
         </div>
 
@@ -124,11 +126,6 @@ export function SiteFooter({
               </li>
             </ul>
             <address className="site-footer__contact">
-              <span>R&amp;R Gallery Ltd</span>
-              <span>11 Para Close</span>
-              <span>Fairview Heights</span>
-              <span>Auckland 0632</span>
-              <span>New Zealand</span>
               <a href={phoneHref(content.phone)}>{content.phone}</a>
               <a
                 className="site-footer__email"
@@ -144,6 +141,10 @@ export function SiteFooter({
       </div>
 
       <div className="site-footer__legal">
+        <address className="site-footer__business-line">
+          <strong>R&amp;R Gallery Ltd</strong>{" "}
+          11 Para Close, Fairview Heights, Auckland 0632, New Zealand
+        </address>
         <span
           className="site-footer__copyright"
           style={{ width: "100%", display: "block", margin: "0 auto", textAlign: "center" }}

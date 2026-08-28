@@ -6,10 +6,28 @@ import {
   type AdvertisingConsent,
 } from "@/domain/consent/advertising-consent";
 
-const AdvertisingConsentContext = createContext<AdvertisingConsent | null>(null);
+type AdvertisingConsentContextValue = Readonly<{
+  consent: AdvertisingConsent | null;
+  openPreferences: () => void;
+}>;
+
+const AdvertisingConsentContext = createContext<AdvertisingConsentContextValue | null>(null);
 
 export function useAdvertisingConsent(): AdvertisingConsent | null {
-  return useContext(AdvertisingConsentContext);
+  return useContext(AdvertisingConsentContext)?.consent ?? null;
+}
+
+export function CookiePreferencesTrigger() {
+  const context = useContext(AdvertisingConsentContext);
+  if (!context?.consent) return null;
+
+  return <button
+    className="site-footer__cookie-trigger"
+    type="button"
+    onClick={context.openPreferences}
+  >
+    Cookie preferences
+  </button>;
 }
 
 type Choice = Readonly<{ analytics: boolean; advertising: boolean }>;
@@ -70,15 +88,8 @@ export function ConsentPreferences({
   }
 
   return (
-    <AdvertisingConsentContext value={consent}>
+    <AdvertisingConsentContext value={{ consent, openPreferences }}>
       {children}
-      {consent ? <button
-        className="consent-preferences__trigger"
-        type="button"
-        onClick={openPreferences}
-      >
-        Cookie preferences
-      </button> : null}
       {open ? <section className="consent-preferences" aria-label="Cookie preferences">
         <div className="consent-preferences__content">
           <h2>Cookie preferences</h2>

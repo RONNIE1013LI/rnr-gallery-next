@@ -385,11 +385,12 @@ describe("site shell", () => {
     expect(email).toBeVisible();
     expect(email).toHaveAttribute("href", "mailto:customerservice@rnrgallery.com");
     expect(contact).toContainElement(email);
-    expect(contact).toHaveTextContent("R&R Gallery Ltd");
-    expect(contact).toHaveTextContent("11 Para Close");
-    expect(contact).toHaveTextContent("Fairview Heights");
-    expect(contact).toHaveTextContent("Auckland 0632");
-    expect(contact).toHaveTextContent("New Zealand");
+    expect(contact).not.toHaveTextContent("R&R Gallery Ltd");
+    expect(contact).not.toHaveTextContent("11 Para Close");
+    const businessLine = footer.querySelector<HTMLElement>(".site-footer__business-line");
+    expect(businessLine).toHaveTextContent(
+      "R&R Gallery Ltd 11 Para Close, Fairview Heights, Auckland 0632, New Zealand",
+    );
     expect(within(footer).getAllByRole("link", { name: /privacy/i }))
       .toHaveLength(1);
     expect(within(footer).getByRole("link", { name: "Designs by Product" }))
@@ -461,6 +462,9 @@ describe("site shell", () => {
       name: "Mobile footer policies",
     })).not.toBeInTheDocument();
     const copyright = within(legalRow).getByText("© 2026 R&R Gallery");
+    const businessLine = legalRow.querySelector<HTMLElement>(".site-footer__business-line")!;
+    expect(businessLine).toHaveClass("site-footer__business-line");
+    expect(businessLine.nextElementSibling).toBe(copyright);
     expect(copyright).toHaveClass("site-footer__copyright");
     expect(copyright).toHaveStyle({
       width: "100%",

@@ -100,7 +100,9 @@ describe("root layout metadata", () => {
 
     expect(cssRule(globals, ".consent-preferences {")).toContain("position: fixed;");
     expect(cssRule(globals, ".consent-preferences {")).toContain("z-index: 40;");
-    expect(cssRule(globals, ".consent-preferences__trigger {")).toContain("position: fixed;");
+    const trigger = cssRule(globals, ".site-footer__cookie-trigger {");
+    expect(trigger).toContain("min-height: 44px;");
+    expect(trigger).not.toContain("position: fixed;");
   });
 
   it("prevents iOS from rewriting server-rendered contact details before hydration", () => {
@@ -203,6 +205,16 @@ describe("root layout metadata", () => {
     expect(sprite).toContain("width: 796.5986%;");
     expect(sprite).toContain("height: 108.6957%;");
     expect(globals).toContain("width: 1.875rem;\n    min-width: 1.875rem;");
+  });
+
+  it("keeps the footer business line at one shared desktop and mobile font size", () => {
+    const globals = cssFile("src/app/globals.css");
+    const businessRules = globals.match(/\.site-footer__business-line\s*\{/g) ?? [];
+
+    expect(businessRules).toHaveLength(1);
+    expect(cssRule(globals, ".site-footer__business-line {")).toContain(
+      "font-size: 0.8125rem;",
+    );
   });
 
   it("stacks admin page-header actions at the tablet breakpoint", () => {

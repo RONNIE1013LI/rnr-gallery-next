@@ -1,12 +1,20 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { useAdvertisingConsent } from "./consent-preferences";
-import { ConsentPreferences } from "./consent-preferences";
+import {
+  ConsentPreferences,
+  CookiePreferencesTrigger,
+  useAdvertisingConsent,
+} from "./consent-preferences";
+import { SiteFooter } from "./site-footer";
 
 function State() {
   const consent = useAdvertisingConsent();
   return <output>{consent ? `${consent.analytics}:${consent.advertising}` : "none"}</output>;
+}
+
+function StateWithTrigger() {
+  return <><State /><CookiePreferencesTrigger /></>;
 }
 
 function savedResponse(analytics: boolean, advertising: boolean) {
@@ -26,7 +34,7 @@ describe("ConsentPreferences", () => {
   it("keeps both transports denied until Accept all is saved", async () => {
     const fetch = vi.fn().mockResolvedValue(savedResponse(true, true));
     vi.stubGlobal("fetch", fetch);
-    render(<ConsentPreferences initialConsent={null}><State /></ConsentPreferences>);
+    render(<ConsentPreferences initialConsent={null}><StateWithTrigger /></ConsentPreferences>);
 
     expect(screen.getByText("none")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Accept all" }));
@@ -40,12 +48,26 @@ describe("ConsentPreferences", () => {
     expect(screen.getByRole("button", { name: "Cookie preferences" })).toBeInTheDocument();
   });
 
+  it("places the saved-preferences trigger directly below Cart in the footer", () => {
+    render(<ConsentPreferences initialConsent={{
+      version: 1,
+      analytics: false,
+      advertising: false,
+      decidedAt: "2026-08-28T01:02:03.000Z",
+    }}><SiteFooter /></ConsentPreferences>);
+
+    const footer = screen.getByRole("contentinfo");
+    const cart = within(footer).getByRole("link", { name: "Cart" });
+    const preferences = within(footer).getByRole("button", { name: "Cookie preferences" });
+    expect(preferences.parentElement?.previousElementSibling).toBe(cart.parentElement);
+  });
+
   it("saves independent managed preferences and permits later revocation", async () => {
     const fetch = vi.fn()
       .mockResolvedValueOnce(savedResponse(true, false))
       .mockResolvedValueOnce(savedResponse(false, false));
     vi.stubGlobal("fetch", fetch);
-    render(<ConsentPreferences initialConsent={null}><State /></ConsentPreferences>);
+    render(<ConsentPreferences initialConsent={null}><StateWithTrigger /></ConsentPreferences>);
 
     fireEvent.click(screen.getByRole("button", { name: "Manage preferences" }));
     const analytics = screen.getByRole("checkbox", { name: "Analytics measurement" });
@@ -70,7 +92,7 @@ describe("ConsentPreferences", () => {
       analytics: true,
       advertising: false,
       decidedAt: "2026-08-28T01:02:03.000Z",
-    }}><State /></ConsentPreferences>);
+    }}><StateWithTrigger /></ConsentPreferences>);
 
     fireEvent.click(screen.getByRole("button", { name: "Cookie preferences" }));
     fireEvent.click(screen.getByRole("button", { name: "Accept all" }));
