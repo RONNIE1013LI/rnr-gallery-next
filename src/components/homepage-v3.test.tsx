@@ -102,10 +102,10 @@ describe("HomepageV3", () => {
       "utf8",
     );
     expect(stylesheet).toMatch(
-      /\.heroGrid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*43fr\)\s+minmax\(0,\s*57fr\)[^}]*align-items:\s*stretch/,
+      /\.heroGrid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*calc\(43%\s*-\s*1\.45125rem\)\)\s+minmax\(0,\s*1fr\)[^}]*align-items:\s*stretch[^}]*gap:\s*0/,
     );
     expect(stylesheet).toMatch(
-      /\.heroImage\s*\{[^}]*width:\s*100%[^}]*height:\s*auto[^}]*aspect-ratio:\s*16\s*\/\s*9/,
+      /\.heroImage\s*\{[^}]*width:\s*100%[^}]*height:\s*auto[^}]*aspect-ratio:\s*16\s*\/\s*9[^}]*border-radius:\s*0/,
     );
     expect(stylesheet).not.toMatch(/\.heroGrid\s*\{[^}]*min-height:/);
     expect(stylesheet).not.toMatch(/\.heroArt\s*\{[^}]*min-height:/);

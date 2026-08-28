@@ -137,9 +137,9 @@
 
 .heroGrid {
   display: grid;
-  grid-template-columns: minmax(0, 43fr) minmax(0, 57fr);
+  grid-template-columns: minmax(0, calc(43% - 1.45125rem)) minmax(0, 1fr);
   align-items: stretch;
-  gap: 3.375rem;
+  gap: 0;
 }
 
 .heroCopy {
@@ -178,7 +178,7 @@
   height: auto;
   display: block;
   aspect-ratio: 16 / 9;
-  border-radius: var(--v3-radius-image);
+  border-radius: 0;
   object-fit: contain;
 }
 
