@@ -1,4 +1,19 @@
 import { getDatabase } from "@/server/db/client";
+import { getSafePublicContent } from "@/server/admin/admin-content-runtime";
+import {
+  createDrizzleManualConversionCandidateReader,
+  createManualConversionCandidateService,
+} from "@/server/analytics/manual-order-candidate-service";
+import {
+  createDrizzleManualConversionSuccessStore,
+  createManualConversionDispatcher,
+  createManualConversionObserver,
+} from "@/server/analytics/manual-conversion-dispatcher";
+import {
+  createGoogleAdsOfflineConversionClient,
+  parseGoogleAdsOfflineConversionConfig,
+} from "@/server/analytics/google-ads-offline-client";
+import { createMetaCapiClient } from "@/server/analytics/meta-capi-client";
 import {
   createDrizzleProductionJobRepository,
   getProductionJobDetail,
@@ -8,12 +23,40 @@ import {
 import { createProductionJobService } from "@/server/production/production-job-service";
 import { allocateOrderNumber } from "@/server/orders/order-number";
 
-export function getAdminProductionRuntime() {
+export function getAdminProductionRuntime(options: Readonly<{
+  scheduleAfter?: (task: () => Promise<void>) => void;
+}> = {}) {
   const database = getDatabase();
   const repository = createDrizzleProductionJobRepository(database);
+  const candidates = createManualConversionCandidateService(
+    createDrizzleManualConversionCandidateReader(database),
+  );
+  const metaAccessToken = process.env.META_CAPI_ACCESS_TOKEN?.trim();
+  const meta = createMetaCapiClient({ accessToken: metaAccessToken });
+  const google = createGoogleAdsOfflineConversionClient({
+    config: parseGoogleAdsOfflineConversionConfig(),
+  });
+  const conversions = createManualConversionDispatcher({
+    listCandidates: candidates.list,
+    successStore: createDrizzleManualConversionSuccessStore(database),
+    metaSend: async (event) => Boolean(metaAccessToken)
+      && (await getSafePublicContent(["advertising.meta.enabled"]))
+        ["advertising.meta.enabled"] === "enabled"
+      ? meta.send(event)
+      : "disabled",
+    googleSend: google.send,
+  });
   const service = createProductionJobService(
     repository,
-    { createJobNumber: () => allocateOrderNumber(database) },
+    {
+      createJobNumber: () => allocateOrderNumber(database),
+      ...(options.scheduleAfter ? {
+        onManualPaid: createManualConversionObserver(
+          options.scheduleAfter,
+          conversions.dispatch,
+        ),
+      } : {}),
+    },
   );
   return Object.freeze({
     list: (

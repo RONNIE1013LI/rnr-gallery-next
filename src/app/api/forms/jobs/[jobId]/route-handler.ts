@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { after } from "next/server";
 
 import { getAdminProductionRuntime } from "@/server/admin/admin-production-runtime";
 import { getAdminProductionProofRuntime } from "@/server/admin/admin-production-proof-runtime";
@@ -175,7 +176,7 @@ async function updateFields(
 
 export function createFormsJobRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => {
-    const production = getAdminProductionRuntime();
+    const production = getAdminProductionRuntime({ scheduleAfter: (task) => after(task) });
     const proof = getAdminProductionProofRuntime();
     return {
       requirePermission: requireFormPermission,

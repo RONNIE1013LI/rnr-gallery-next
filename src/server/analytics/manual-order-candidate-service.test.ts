@@ -94,6 +94,7 @@ describe("manual conversion candidate service", () => {
       currency: "NZD",
       value: 50,
       meta: {
+        actionSource: "business_messaging",
         hashedEmail: "e233d4a29013e9d87150c6237c6777bedf379ebf1acdc5d6126fec7e8bb74fb5",
       },
     }]);

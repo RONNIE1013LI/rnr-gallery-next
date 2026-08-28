@@ -408,6 +408,10 @@ export function createProductionJobService(
   dependencies: Readonly<{
     createJobNumber?: () => string | Promise<string>;
     now?: () => Date;
+    onManualPaid?: (
+      jobId: string,
+      actor: Readonly<{ userId: string; email: string }>,
+    ) => void;
   }> = {},
 ) {
   return Object.freeze({
@@ -559,6 +563,13 @@ export function createProductionJobService(
       if (result === "conflict") throw new ProductionJobConflictError("The job changed before this update was saved");
       if (result === "not_found") throw new ProductionJobNotFoundError();
       if (result === "invalid_source") throw new ProductionJobValidationError("Linked web order status must be updated from the order workflow");
+      if (result === "updated" && update.finance?.manualPaymentStatus === "paid") {
+        try {
+          dependencies.onManualPaid?.(update.jobId, actorResult.data);
+        } catch {
+          // Measurement scheduling cannot roll back or obscure a committed update.
+        }
+      }
       return result;
     },
   });

@@ -40,6 +40,7 @@ export type ManualConversionCandidate = Readonly<{
   currency: "NZD" | "AUD";
   value: number;
   meta?: Readonly<{
+    actionSource: "website" | "business_messaging";
     fbp?: string;
     fbc?: string;
     hashedEmail?: string;
@@ -165,7 +166,15 @@ export function buildManualConversionCandidates(
 
   if (source === "meta" || (hasMetaEvidence && !hasGoogleEvidence)) {
     if (Object.keys(meta.values).length === 0) return Object.freeze([]);
-    return Object.freeze([Object.freeze({ ...base, destination: "meta" as const, meta: meta.values })]);
+    const actionSource = isMetaCustomerSource(snapshot.customerSource)
+      || ["messenger", "instagram", "whatsapp"].includes(fields.advertising_source)
+      ? "business_messaging" as const
+      : "website" as const;
+    return Object.freeze([Object.freeze({
+      ...base,
+      destination: "meta" as const,
+      meta: Object.freeze({ actionSource, ...meta.values }),
+    })]);
   }
   if (source === "google" || (hasGoogleEvidence && !hasMetaEvidence)) {
     if (!google) return Object.freeze([]);

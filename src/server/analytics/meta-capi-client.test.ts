@@ -55,6 +55,33 @@ describe("Meta CAPI client", () => {
     expect(JSON.stringify(body)).not.toMatch(/Customer@|\+61|server-secret|address|postcode|notes/i);
   });
 
+  it("sends a consent-approved manual Purchase without inventing catalogue items", async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(new Response(
+      JSON.stringify({ events_received: 1 }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    ));
+    const client = createMetaCapiClient({ accessToken: "server-secret", fetchImpl });
+
+    await expect(client.send({
+      name: "Purchase",
+      eventId: "purchase:manual:08000",
+      eventTime: 1_787_900_000,
+      actionSource: "business_messaging",
+      currency: "NZD",
+      value: 200,
+      hashedEmail: hashMetaEmail("customer@example.test"),
+    })).resolves.toBe("sent");
+
+    const body = JSON.parse(String(fetchImpl.mock.calls[0][1].body));
+    expect(body.data[0]).toMatchObject({
+      action_source: "business_messaging",
+      event_id: "purchase:manual:08000",
+    });
+    expect(body.data[0]).not.toHaveProperty("event_source_url");
+    expect(body.data[0].custom_data).toEqual({ currency: "NZD", value: 200 });
+    expect(JSON.stringify(body)).not.toMatch(/content_ids|content_type|contents|customer@example/i);
+  });
+
   it("makes no request without credentials, consent-approved matching, or a valid contract", async () => {
     const fetchImpl = vi.fn();
     await expect(createMetaCapiClient({ accessToken: "", fetchImpl }).send(event))

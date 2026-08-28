@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { getAdminProductionRuntime } from "@/server/admin/admin-production-runtime";
 import { recordAdminFailure } from "@/server/admin/admin-failure-audit";
 import { hasAdminPermission, type AdminPermission } from "@/server/auth/admin-permissions";
@@ -54,7 +55,7 @@ function requestSource(request: Request) {
 
 export function createAdminJobRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => {
-    const production = getAdminProductionRuntime();
+    const production = getAdminProductionRuntime({ scheduleAfter: (task) => after(task) });
     return {
       requirePermission: requireAdminPermission,
       update: production.update,

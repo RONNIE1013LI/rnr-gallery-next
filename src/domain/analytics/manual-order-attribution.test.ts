@@ -51,6 +51,7 @@ describe("manual conversion candidates", () => {
       currency: "AUD",
       value: 123.45,
       meta: {
+        actionSource: "business_messaging",
         fbp: "fb.1.1787900000000.123456789",
         fbc: "fb.1.1787900000000.click_ABC-123",
         hashedEmail: "e233d4a29013e9d87150c6237c6777bedf379ebf1acdc5d6126fec7e8bb74fb5",

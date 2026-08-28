@@ -2,11 +2,10 @@ import { createHash } from "node:crypto";
 import { META_EVENT_NAMES, type MetaCommerce, type MetaEventName } from "@/domain/analytics/meta-event";
 import { META_PIXEL_ID } from "@/domain/analytics/runtime";
 
-export type SafeMetaEvent = Readonly<{
+type SafeMetaEventBase = Readonly<{
   name: MetaEventName;
   eventId: string;
   eventTime: number;
-  sourceUrl: string;
   currency?: "NZD" | "AUD";
   value?: number;
   contentIds?: readonly string[];
@@ -17,12 +16,17 @@ export type SafeMetaEvent = Readonly<{
   hashedPhone?: string;
 }>;
 
+export type SafeMetaEvent = SafeMetaEventBase & Readonly<
+  | { actionSource?: "website"; sourceUrl: string }
+  | { actionSource: "business_messaging"; sourceUrl?: never }
+>;
+
 const SAFE_KEYS = new Set([
-  "name", "eventId", "eventTime", "sourceUrl", "currency", "value",
+  "name", "eventId", "eventTime", "actionSource", "sourceUrl", "currency", "value",
   "contentIds", "contents", "fbp", "fbc", "hashedEmail", "hashedPhone",
 ]);
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-const PURCHASE_ID_PATTERN = /^purchase:[A-Za-z0-9-]{3,80}$/;
+const PURCHASE_ID_PATTERN = /^purchase:(?:manual:)?[A-Za-z0-9-]{3,80}$/;
 const HASH_PATTERN = /^[a-f0-9]{64}$/;
 const META_COOKIE_PATTERN = /^fb\.1\.\d{10,13}\.[A-Za-z0-9._-]{1,200}$/;
 
@@ -53,13 +57,17 @@ function validEvent(event: SafeMetaEvent) {
     ? !PURCHASE_ID_PATTERN.test(event.eventId)
     : !UUID_PATTERN.test(event.eventId)) return false;
   if (!Number.isSafeInteger(event.eventTime) || event.eventTime <= 0) return false;
-  let source: URL;
-  try {
-    source = new URL(event.sourceUrl);
-  } catch {
-    return false;
-  }
-  if (source.origin !== "https://rnrgallery.com" || source.search || source.hash) return false;
+  const actionSource = event.actionSource ?? "website";
+  if (actionSource === "website") {
+    if (typeof event.sourceUrl !== "string") return false;
+    let source: URL;
+    try {
+      source = new URL(event.sourceUrl);
+    } catch {
+      return false;
+    }
+    if (source.origin !== "https://rnrgallery.com" || source.search || source.hash) return false;
+  } else if (actionSource !== "business_messaging" || event.sourceUrl !== undefined) return false;
   if (event.fbp !== undefined && !isValidMetaCookie(event.fbp)) return false;
   if (event.fbc !== undefined && !isValidMetaCookie(event.fbc)) return false;
   if (event.hashedEmail !== undefined && !HASH_PATTERN.test(event.hashedEmail)) return false;
@@ -72,8 +80,12 @@ function validEvent(event: SafeMetaEvent) {
   if (hasCommerce !== requiresCommerce) return false;
   if (!hasCommerce) return true;
   if ((event.currency !== "NZD" && event.currency !== "AUD")
-    || !isSafeNumber(event.value)
-    || !Array.isArray(event.contentIds)
+    || !isSafeNumber(event.value)) return false;
+  const hasContentIds = event.contentIds !== undefined;
+  const hasContents = event.contents !== undefined;
+  if (hasContentIds !== hasContents) return false;
+  if (!hasContentIds && !hasContents) return event.name === "Purchase";
+  if (!Array.isArray(event.contentIds)
     || !Array.isArray(event.contents)
     || event.contentIds.length === 0
     || event.contentIds.length !== event.contents.length
@@ -92,23 +104,26 @@ function metaPayload(event: SafeMetaEvent) {
     ...(event.fbc ? { fbc: event.fbc } : {}),
   };
   const hasCommerce = event.currency !== undefined;
+  const hasCatalogueItems = Boolean(event.contentIds && event.contents);
   return {
     data: [{
       event_name: event.name,
       event_id: event.eventId,
       event_time: event.eventTime,
-      action_source: "website",
-      event_source_url: event.sourceUrl,
+      action_source: event.actionSource ?? "website",
+      ...(event.sourceUrl ? { event_source_url: event.sourceUrl } : {}),
       user_data: userData,
       ...(hasCommerce ? {
         custom_data: {
-          content_ids: event.contentIds,
-          content_type: "product",
-          contents: event.contents?.map((item) => ({
-            id: item.id,
-            quantity: item.quantity,
-            item_price: item.itemPrice,
-          })),
+          ...(hasCatalogueItems ? {
+            content_ids: event.contentIds,
+            content_type: "product",
+            contents: event.contents?.map((item) => ({
+              id: item.id,
+              quantity: item.quantity,
+              item_price: item.itemPrice,
+            })),
+          } : {}),
           currency: event.currency,
           value: event.value,
         },

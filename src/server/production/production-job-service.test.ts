@@ -342,6 +342,76 @@ describe("manual production job service", () => {
     }));
   });
 
+  it("notifies measurement only after a committed manual payment becomes paid", async () => {
+    const repo = repository();
+    const onManualPaid = vi.fn();
+    const service = createProductionJobService(repo, { onManualPaid });
+
+    await expect(service.update(actor, {
+      jobId: "00000000-0000-4000-8000-000000000001",
+      idempotencyKey: "update-paid-conversion",
+      expectedUpdatedAt: "2026-08-04T10:00:00.000Z",
+      finance: {
+        manualPaymentStatus: "paid",
+        amountPayableCents: 20_000,
+        amountPaidCents: 20_000,
+        artistFeeCents: 4_000,
+        materialCostCents: 2_000,
+      },
+    }, { canUpdateFinance: true })).resolves.toBe("updated");
+
+    expect(repo.update).toHaveBeenCalledBefore(onManualPaid);
+    expect(onManualPaid).toHaveBeenCalledWith(
+      "00000000-0000-4000-8000-000000000001",
+      { userId: "staff-1", email: "staff@example.com" },
+    );
+  });
+
+  it("does not notify measurement for failed, duplicate, or non-paid updates", async () => {
+    const onManualPaid = vi.fn();
+    const duplicate = createProductionJobService(repository({
+      update: vi.fn().mockResolvedValue("duplicate"),
+    }), { onManualPaid });
+    await duplicate.update(actor, {
+      jobId: "00000000-0000-4000-8000-000000000001",
+      idempotencyKey: "duplicate-paid-conversion",
+      expectedUpdatedAt: "2026-08-04T10:00:00.000Z",
+      finance: {
+        manualPaymentStatus: "paid",
+        amountPayableCents: 20_000,
+        amountPaidCents: 20_000,
+        artistFeeCents: 0,
+        materialCostCents: 0,
+      },
+    }, { canUpdateFinance: true });
+    const ordinary = createProductionJobService(repository(), { onManualPaid });
+    await ordinary.update(actor, {
+      jobId: "00000000-0000-4000-8000-000000000001",
+      idempotencyKey: "ordinary-job-update",
+      expectedUpdatedAt: "2026-08-04T10:00:00.000Z",
+      urgent: true,
+    }, { canUpdateFinance: false });
+    expect(onManualPaid).not.toHaveBeenCalled();
+  });
+
+  it("does not turn a committed paid update into an error when measurement scheduling throws", async () => {
+    const service = createProductionJobService(repository(), {
+      onManualPaid: () => { throw new Error("scheduler unavailable"); },
+    });
+    await expect(service.update(actor, {
+      jobId: "00000000-0000-4000-8000-000000000001",
+      idempotencyKey: "paid-scheduler-failure",
+      expectedUpdatedAt: "2026-08-04T10:00:00.000Z",
+      finance: {
+        manualPaymentStatus: "paid",
+        amountPayableCents: 20_000,
+        amountPaidCents: 20_000,
+        artistFeeCents: 0,
+        materialCostCents: 0,
+      },
+    }, { canUpdateFinance: true })).resolves.toBe("updated");
+  });
+
   it("updates the source-parity customer source field", async () => {
     const repo = repository();
     const service = createProductionJobService(repo);
