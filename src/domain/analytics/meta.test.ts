@@ -37,6 +37,7 @@ const purchase: PurchaseEvent = {
 
 describe("Meta commerce transport", () => {
   const fbq = vi.fn();
+  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -45,10 +46,11 @@ describe("Meta commerce transport", () => {
     document.documentElement.removeAttribute("data-meta-private-commerce");
     document.documentElement.removeAttribute("data-meta-private-purchase");
     Object.assign(window, { fbq });
+    vi.stubGlobal("fetch", fetchMock);
     resetMetaPixelForTests();
   });
 
-  it("maps allowlisted product data to the standard AddToCart event without private fields", () => {
+  it("pairs Pixel and CAPI AddToCart with one shared event ID and no private fields", async () => {
     document.documentElement.dataset.metaEnabled = "true";
 
     expect(emitMetaAnalyticsEvent(cartEvent)).toBe(true);
@@ -58,7 +60,27 @@ describe("Meta commerce transport", () => {
       contents: [{ id: "photo-print-canvas", quantity: 1, item_price: 65 }],
       currency: "NZD",
       value: 65,
+    }, { eventID: expect.any(String) });
+    const pixelEventId = fbq.mock.calls[0][4].eventID;
+    const request = fetchMock.mock.calls[0][1] as RequestInit;
+    expect(JSON.parse(String(request.body))).toEqual({
+      version: 1,
+      eventId: pixelEventId,
+      name: "AddToCart",
+      sourcePath: "/",
+      commerce: {
+        contentIds: ["photo-print-canvas"],
+        contents: [{ id: "photo-print-canvas", quantity: 1, itemPrice: 65 }],
+        currency: "NZD",
+        value: 65,
+      },
     });
+    expect(fetchMock).toHaveBeenCalledWith("/api/analytics/meta", expect.objectContaining({
+      method: "POST",
+      credentials: "same-origin",
+      keepalive: true,
+      redirect: "error",
+    }));
     expect(JSON.stringify(fbq.mock.calls)).not.toMatch(/private@example|private-image|item_name/);
   });
 
@@ -73,6 +95,7 @@ describe("Meta commerce transport", () => {
       META_PIXEL_ID,
       "InitiateCheckout",
       expect.objectContaining({ currency: "NZD", value: 65 }),
+      { eventID: expect.any(String) },
     );
 
     expect(emitMetaAnalyticsEvent({
@@ -102,6 +125,7 @@ describe("Meta commerce transport", () => {
       expect.objectContaining({ currency: "AUD", value: 224.99 }),
       { eventID: "purchase:RNR-2026-META" },
     );
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("does not emit unsupported or disabled events", () => {

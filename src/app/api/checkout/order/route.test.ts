@@ -7,6 +7,7 @@ import {
 import { getCheckoutSessionCookieName, hashCheckoutSessionToken } from "@/server/checkout/session-cookie";
 import { ShippingUnavailableError } from "@/server/shipping/shipping-service";
 import { createCheckoutOrderRoute } from "./route-handler";
+import { serializeAdvertisingConsent } from "@/domain/consent/advertising-consent";
 
 const origin = "https://shop.example.test";
 const token = "a".repeat(43);
@@ -42,6 +43,45 @@ function repository(customerId: string | null = null): OrderRepository {
 }
 
 describe("POST /api/checkout/order", () => {
+  it("adds server-read Meta consent and cookies and rejects client forgery", async () => {
+    const service = { createOrder: vi.fn().mockResolvedValue({
+      orderId: "40000000-0000-4000-8000-000000000001", orderNumber: "RNR-2026-META",
+      currency: "NZD", totalInclGstCents: 9_775, paymentStatus: "awaiting_payment",
+    }) };
+    const handler = createCheckoutOrderRoute({ repository: repository(), orderService: service, getOptionalSession: async () => null, trustedOrigin: origin });
+    const consent = encodeURIComponent(serializeAdvertisingConsent({
+      version: 1, analytics: false, advertising: true,
+      decidedAt: "2026-08-28T00:00:00.000Z",
+    }));
+    const cookieHeader = `${getCheckoutSessionCookieName(null)}=${token}; rnr-consent-v1=${consent}; _fbp=fb.1.1787900000000.123456789; _fbc=fb.1.1787900000000.click_ABC-123`;
+    const metaRequest = new Request(`${origin}/api/checkout/order`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json", Origin: origin,
+        "Sec-Fetch-Site": "same-origin", Cookie: cookieHeader,
+      },
+      body: JSON.stringify({ ...validBody, attribution: { utm_source: "facebook", fbclid: "click_ABC-123" } }),
+    });
+
+    expect((await handler(metaRequest)).status).toBe(200);
+    expect(service.createOrder).toHaveBeenCalledWith(sessionId, key, expect.objectContaining({
+      attribution: {
+        utm_source: "facebook",
+        fbclid: "click_ABC-123",
+        measurement: {
+          version: 1,
+          advertisingConsent: true,
+          decidedAt: "2026-08-28T00:00:00.000Z",
+          fbp: "fb.1.1787900000000.123456789",
+          fbc: "fb.1.1787900000000.click_ABC-123",
+        },
+      },
+    }));
+    expect((await handler(request({
+      ...validBody,
+      attribution: { utm_source: "facebook", measurement: { advertisingConsent: true } },
+    }))).status).toBe(400);
+  });
   it("binds only allowlisted attribution to the new order", async () => {
     const service = { createOrder: vi.fn().mockResolvedValue({
       orderId: "40000000-0000-4000-8000-000000000001", orderNumber: "RNR-2026-ATTR",

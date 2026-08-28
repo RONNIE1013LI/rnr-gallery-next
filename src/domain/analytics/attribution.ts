@@ -1,3 +1,5 @@
+import type { AdvertisingConsent } from "@/domain/consent/advertising-consent";
+
 export const ATTRIBUTION_FIELDS = [
   "utm_source",
   "utm_medium",
@@ -12,9 +14,42 @@ export const ATTRIBUTION_FIELDS = [
 
 export type AttributionField = typeof ATTRIBUTION_FIELDS[number];
 export type OrderAttribution = Readonly<Partial<Record<AttributionField, string>>>;
+export type StoredOrderAttribution = OrderAttribution & Readonly<{
+  measurement?: Readonly<{
+    version: 1;
+    advertisingConsent: boolean;
+    decidedAt: string;
+    fbp?: string;
+    fbc?: string;
+  }>;
+}>;
 
 const PREFIX = "rnr:analytics:v1";
 const MAX_VALUE_LENGTH = 200;
+const META_COOKIE_PATTERN = /^fb\.1\.\d{10,13}\.[A-Za-z0-9._-]{1,200}$/;
+
+export function buildStoredOrderAttribution(
+  attribution: OrderAttribution | null,
+  consent: AdvertisingConsent | null,
+  identifiers: Readonly<{ fbp?: string; fbc?: string }>,
+): StoredOrderAttribution | null {
+  const campaign = attribution ? { ...attribution } : {};
+  if (!consent) {
+    return Object.keys(campaign).length ? Object.freeze(campaign) : null;
+  }
+  const measurement = {
+    version: 1 as const,
+    advertisingConsent: consent.advertising,
+    decidedAt: consent.decidedAt,
+    ...(consent.advertising && identifiers.fbp && META_COOKIE_PATTERN.test(identifiers.fbp)
+      ? { fbp: identifiers.fbp }
+      : {}),
+    ...(consent.advertising && identifiers.fbc && META_COOKIE_PATTERN.test(identifiers.fbc)
+      ? { fbc: identifiers.fbc }
+      : {}),
+  };
+  return Object.freeze({ ...campaign, measurement: Object.freeze(measurement) });
+}
 
 function namespace(customerId: string | null) {
   return customerId === null ? "guest" : `user:${encodeURIComponent(customerId)}`;

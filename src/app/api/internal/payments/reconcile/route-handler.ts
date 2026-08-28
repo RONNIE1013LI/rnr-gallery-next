@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { after } from "next/server";
 import { parseAuthConfig } from "@/server/auth/config";
 import { createDrizzleCheckoutRepository } from "@/server/checkout/drizzle-checkout-repository";
 import { getDatabase } from "@/server/db/client";
@@ -10,6 +11,7 @@ import {
   type PaymentReconciliationSummary,
 } from "@/server/payments/payment-service";
 import { selectPaymentProviders } from "@/server/payments/provider-registry";
+import { createMetaPaidOrderObserver } from "@/server/analytics/meta-purchase";
 
 export const runtime = "nodejs";
 
@@ -86,6 +88,7 @@ function defaults(): Dependencies {
       checkoutAuthority: createDrizzleCheckoutRepository(database),
       providers,
       returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,
+      onVerifiedPaidOrder: createMetaPaidOrderObserver((task) => after(task)),
     }),
   });
 }

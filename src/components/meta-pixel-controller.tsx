@@ -4,6 +4,7 @@ import Script from "next/script";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { classifyGa4Location, META_PIXEL_ID } from "@/domain/analytics/runtime";
+import { emitMetaAnalyticsEvent, emitMetaPageView } from "@/domain/analytics/meta";
 import { useAdvertisingConsent } from "./consent-preferences";
 
 type MetaPixelQueue = ((...args: unknown[]) => void) & {
@@ -43,6 +44,23 @@ function clearMetaGates() {
   root.removeAttribute("data-meta-loaded");
 }
 
+function contactMethod(link: HTMLAnchorElement): "messenger" | "whatsapp" | "email" | null {
+  const href = link.getAttribute("href")?.trim() ?? "";
+  if (href.toLowerCase().startsWith("mailto:")) return "email";
+  try {
+    const hostname = new URL(href, window.location.origin).hostname.toLowerCase();
+    if (hostname === "m.me" || hostname === "messenger.com" || hostname.endsWith(".messenger.com")) {
+      return "messenger";
+    }
+    if (hostname === "wa.me" || hostname === "whatsapp.com" || hostname.endsWith(".whatsapp.com")) {
+      return "whatsapp";
+    }
+  } catch {
+    // Invalid links are not analytics events.
+  }
+  return null;
+}
+
 export function MetaPixelController({
   production,
   enabled,
@@ -71,13 +89,25 @@ export function MetaPixelController({
     if (policy === "private-checkout") root.dataset.metaPrivateCommerce = "true";
     if (policy === "private-order") root.dataset.metaPrivatePurchase = "true";
 
-    const fbq = ensureMetaPixelQueue();
+    ensureMetaPixelQueue();
+    const handleContactClick = (event: MouseEvent) => {
+      if (!(event.target instanceof Element)) return;
+      const link = event.target.closest<HTMLAnchorElement>("a[href]");
+      if (!link || link.dataset.rnrMetaContactTracked === "true") return;
+      const method = contactMethod(link);
+      if (!method) return;
+      emitMetaAnalyticsEvent({ event: "messenger_click", location: `contact:${method}` });
+    };
+    document.addEventListener("click", handleContactClick);
     if (policy === "public" && lastPageView.current !== pathname) {
       lastPageView.current = pathname;
-      fbq("trackSingle", META_PIXEL_ID, "PageView");
+      emitMetaPageView(pathname);
     }
 
-    return () => clearMetaGates();
+    return () => {
+      document.removeEventListener("click", handleContactClick);
+      clearMetaGates();
+    };
   }, [allowed, pathname, policy, search]);
 
   if (!allowed) return null;

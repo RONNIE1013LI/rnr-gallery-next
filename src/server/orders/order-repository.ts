@@ -1,5 +1,5 @@
 import type { NormalizedAddress } from "@/domain/address/types";
-import type { OrderAttribution } from "@/domain/analytics/attribution";
+import type { StoredOrderAttribution } from "@/domain/analytics/attribution";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { DeliveryPreference } from "@/domain/configuration/types";
 import type { CheckoutSessionRecord, CheckoutStateRecord } from "@/server/checkout/checkout-repository";
@@ -36,7 +36,7 @@ export type AtomicOrderInput = Readonly<{
   deliveryAddress: NormalizedAddress;
   deliveryMethod: DeliveryPreference;
   shipping: AtomicOrderShipping;
-  attribution?: OrderAttribution | null;
+  attribution?: StoredOrderAttribution | null;
   idempotencyKey: string;
   orderNumber: string;
   now: Date;

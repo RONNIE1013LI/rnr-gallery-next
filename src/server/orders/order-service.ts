@@ -3,7 +3,7 @@ import {
   defaultProductRegistry,
   type ProductRegistryDocument,
 } from "@/domain/catalogue/product-registry";
-import type { OrderAttribution } from "@/domain/analytics/attribution";
+import type { StoredOrderAttribution } from "@/domain/analytics/attribution";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
 import type { MarketCurrency } from "@/domain/markets/types";
 import { repriceCart } from "@/domain/checkout/reprice-cart";
@@ -32,7 +32,7 @@ export type ReviewedOrderExpectation = Readonly<{
   checkoutVersion: number;
   cartDigest: string;
   shipping: Readonly<{ method: "post" | "pickup"; serviceCode: string; amountExGstCents: number; gstCents: number; amountInclGstCents: number; isTest: boolean }>;
-  attribution?: OrderAttribution;
+  attribution?: StoredOrderAttribution;
 }>;
 
 export class OrderConflictError extends Error {

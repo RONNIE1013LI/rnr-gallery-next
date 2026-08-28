@@ -300,6 +300,7 @@ export function createPaymentService({
   returnBaseUrl,
   deriveReturnState = defaultReturnState,
   nodeEnv = process.env.NODE_ENV,
+  onVerifiedPaidOrder,
 }: {
   repository: PaymentRepository;
   paymentRequestRepository?: PaymentRequestRepository;
@@ -308,6 +309,7 @@ export function createPaymentService({
   returnBaseUrl: string;
   deriveReturnState?: (input: ReturnStateSeed) => string;
   nodeEnv?: string;
+  onVerifiedPaidOrder?: (orderNumber: string) => void;
 }) {
   const trustedOrigin = parsePaymentReturnOrigin(returnBaseUrl, nodeEnv);
   if (!trustedOrigin) {
@@ -318,6 +320,15 @@ export function createPaymentService({
   const webhookProviders = new Set(providers
     .filter((entry) => typeof entry.provider.verifyWebhook === "function")
     .map((entry) => entry.provider.key));
+
+  function reportVerifiedPaidOrder(orderNumber: string, paid: boolean) {
+    if (!paid || !onVerifiedPaidOrder) return;
+    try {
+      onVerifiedPaidOrder(orderNumber);
+    } catch {
+      // Measurement must never change a committed payment result.
+    }
+  }
 
   async function methodsForContext(context: PaymentEligibilityContext) {
     const providerContext = eligibilityContext(context);
@@ -524,6 +535,10 @@ export function createPaymentService({
         result,
         source: "reconciliation",
       });
+      reportVerifiedPaidOrder(
+        applied.order.orderNumber,
+        applied.order.paymentStatus === "paid",
+      );
       return Object.freeze({
         payment: publicPayment(
           applied.attempt.method,
@@ -565,6 +580,10 @@ export function createPaymentService({
         result: authority.result,
         source: "reconciliation",
       });
+      reportVerifiedPaidOrder(
+        applied.order.orderNumber,
+        applied.order.paymentStatus === "paid",
+      );
       return Object.freeze({
         payment: publicPayment(
           applied.attempt.method,
@@ -638,11 +657,15 @@ export function createPaymentService({
           if (!matchesReconciliationAuthority(candidate, result)) {
             throw new PaymentProviderVerificationError();
           }
-          await repository.applyReconciliationResult({
+          const applied = await repository.applyReconciliationResult({
             attemptId: candidate.attempt.id,
             claimId: candidate.claimId,
             result,
           });
+          reportVerifiedPaidOrder(
+            applied.order.orderNumber,
+            applied.order.paymentStatus === "paid",
+          );
           summary.applied += 1;
           if (result.status === "processing") summary.pending += 1;
         } catch (error) {
@@ -758,12 +781,19 @@ export function createPaymentService({
           payloadSha256,
         });
       }
-      return repository.applyVerifiedWebhookEventAtomically({
+      const outcome = await repository.applyVerifiedWebhookEventAtomically({
         provider: event.provider,
         providerEventId: event.providerEventId,
         result: event.result,
         payloadSha256,
       });
+      reportVerifiedPaidOrder(
+        event.result.orderNumber ?? "",
+        outcome !== "hash_mismatch"
+          && event.result.status === "paid"
+          && Boolean(event.result.orderNumber),
+      );
+      return outcome;
     },
 
     async availableMethods(
@@ -935,11 +965,15 @@ export function createPaymentService({
         return Object.freeze({ orderNumber: storedOrder.orderNumber });
       }
 
-      await repository.applyVerifiedResult({
+      const applied = await repository.applyVerifiedResult({
         attemptId: storedAttempt.id,
         result,
         source: "server_capture",
       });
+      reportVerifiedPaidOrder(
+        applied.order.orderNumber,
+        applied.order.paymentStatus === "paid",
+      );
       return Object.freeze({ orderNumber: storedOrder.orderNumber });
     },
 

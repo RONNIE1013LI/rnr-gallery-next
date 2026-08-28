@@ -13,10 +13,15 @@ type AnalyticsLinkProps = LinkProps
   }>;
 
 export function AnalyticsLink({ events = [], onClick, ...props }: AnalyticsLinkProps) {
+  const analyticsEvents = Array.isArray(events) ? events : [events];
+  const tracksMetaContact = analyticsEvents.some(
+    (analyticsEvent) => analyticsEvent.event === "messenger_click",
+  );
+
   function handleClick(event: MouseEvent<HTMLAnchorElement>) {
     onClick?.(event);
     if (event.defaultPrevented) return;
-    for (const analyticsEvent of Array.isArray(events) ? events : [events]) {
+    for (const analyticsEvent of analyticsEvents) {
       try {
         emitAnalyticsEvent(analyticsEvent);
       } catch {
@@ -25,5 +30,11 @@ export function AnalyticsLink({ events = [], onClick, ...props }: AnalyticsLinkP
     }
   }
 
-  return <Link {...props} onClick={handleClick} />;
+  return (
+    <Link
+      {...props}
+      data-rnr-meta-contact-tracked={tracksMetaContact ? "true" : undefined}
+      onClick={handleClick}
+    />
+  );
 }

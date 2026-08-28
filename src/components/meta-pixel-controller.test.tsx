@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { META_PIXEL_ID } from "@/domain/analytics/runtime";
 import { MetaPixelController } from "./meta-pixel-controller";
@@ -39,6 +39,8 @@ vi.mock("next/script", () => ({
 }));
 
 describe("MetaPixelController", () => {
+  const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
+
   beforeEach(() => {
     navigation.pathname = "/";
     navigation.search = "";
@@ -47,6 +49,7 @@ describe("MetaPixelController", () => {
     document.documentElement.removeAttribute("data-meta-private-purchase");
     document.documentElement.removeAttribute("data-meta-loaded");
     delete (window as Window & { fbq?: unknown }).fbq;
+    vi.stubGlobal("fetch", fetchMock);
     consentState.value = {
       version: 1,
       analytics: true,
@@ -64,17 +67,24 @@ describe("MetaPixelController", () => {
     expect((window as Window & { fbq?: unknown }).fbq).toBeUndefined();
   });
 
-  it("initializes the approved pixel and records one public PageView", async () => {
+  it("initializes the approved pixel and pairs one public PageView with CAPI", async () => {
     render(<MetaPixelController production enabled />);
 
     const script = await screen.findByTestId("meta-pixel-script");
     expect(script).toHaveAttribute("data-script-src", "https://connect.facebook.net/en_US/fbevents.js");
     await waitFor(() => expect(document.documentElement.dataset.metaEnabled).toBe("true"));
     const fbq = (window as unknown as Window & { fbq: { queue: unknown[][] } }).fbq;
-    expect(fbq.queue).toEqual([
-      ["init", META_PIXEL_ID],
-      ["trackSingle", META_PIXEL_ID, "PageView"],
+    expect(fbq.queue[0]).toEqual(["init", META_PIXEL_ID]);
+    expect(fbq.queue[1]).toEqual([
+      "trackSingle", META_PIXEL_ID, "PageView", {}, { eventID: expect.any(String) },
     ]);
+    const eventId = fbq.queue[1][4] as { eventID: string };
+    expect(JSON.parse(String((fetchMock.mock.calls[0][1] as RequestInit).body))).toEqual({
+      version: 1,
+      eventId: eventId.eventID,
+      name: "PageView",
+      sourcePath: "/",
+    });
 
     expect(script).toHaveAttribute("id", "rnr-meta-pixel");
   });
@@ -113,5 +123,39 @@ describe("MetaPixelController", () => {
     await waitFor(() => expect(document.documentElement.dataset.metaPrivatePurchase).toBe("true"));
     fbq = (window as unknown as Window & { fbq: { queue: unknown[][] } }).fbq;
     expect(fbq.queue).toEqual([["init", META_PIXEL_ID]]);
+  });
+
+  it.each([
+    ["Messenger", "https://m.me/RandRgallery"],
+    ["WhatsApp", "https://wa.me/642102348948"],
+    ["Email", "mailto:customerservice@rnrgallery.com"],
+  ])("pairs a %s contact click without changing the link", async (label, href) => {
+    render(
+      <>
+        <MetaPixelController production enabled />
+        <a href={href}>{label}</a>
+      </>,
+    );
+    await screen.findByTestId("meta-pixel-script");
+
+    const link = screen.getByRole("link", { name: label });
+    expect(link).toHaveAttribute("href", href);
+    fireEvent.click(link);
+
+    const fbq = (window as unknown as Window & { fbq: { queue: unknown[][] } }).fbq;
+    const pixelContact = fbq.queue.find((command) => command[2] === "Contact");
+    expect(pixelContact).toEqual([
+      "trackSingle", META_PIXEL_ID, "Contact", {}, { eventID: expect.any(String) },
+    ]);
+    const pixelEventId = (pixelContact?.[4] as { eventID: string }).eventID;
+    const serverContact = fetchMock.mock.calls
+      .map((call) => JSON.parse(String((call[1] as RequestInit).body)))
+      .find((body) => body.name === "Contact" && body.eventId === pixelEventId);
+    expect(serverContact).toEqual({
+      version: 1,
+      eventId: pixelEventId,
+      name: "Contact",
+      sourcePath: "/",
+    });
   });
 });

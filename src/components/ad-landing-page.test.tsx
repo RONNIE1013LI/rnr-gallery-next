@@ -34,6 +34,8 @@ describe("AdLandingPage", () => {
     }
     expect(screen.getByRole("link", { name: "Message on Messenger" }))
       .toHaveAttribute("href", "https://m.me/RandRgallery");
+    expect(screen.getByRole("link", { name: "Message on Messenger" }))
+      .toHaveAttribute("data-rnr-meta-contact-tracked", "true");
     expect(screen.getAllByText("Proof before printing").length).toBeGreaterThan(0);
     expect(screen.getByText("Two revisions included")).toBeVisible();
 

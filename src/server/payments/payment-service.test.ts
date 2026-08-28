@@ -184,6 +184,7 @@ function service(input: {
     method: string;
   }) => string;
   returnBaseUrl?: string;
+  onVerifiedPaidOrder?: (orderNumber: string) => void;
 } = {}) {
   return createPaymentService({
     repository: input.repository ?? repository(),
@@ -200,6 +201,7 @@ function service(input: {
     paymentRequestRepository: input.paymentRequestRepository,
     returnBaseUrl: input.returnBaseUrl ?? "https://trusted.example.test",
     deriveReturnState: input.deriveReturnState ?? (() => "a".repeat(64)),
+    onVerifiedPaidOrder: input.onVerifiedPaidOrder,
   });
 }
 
@@ -296,9 +298,11 @@ describe("payment service", () => {
       key: "stripe",
       verifyWebhook: vi.fn(),
     };
+    const onVerifiedPaidOrder = vi.fn();
     const paymentService = service({
       repository: repo,
       providers: [{ method: "card", label: "Card", isTest: false, provider: stripe }],
+      onVerifiedPaidOrder,
     });
     const rawBody = new Uint8Array([0, 255, 13, 10, 123, 125]);
     const event: VerifiedProviderEvent = {
@@ -319,6 +323,9 @@ describe("payment service", () => {
       ...event,
       payloadSha256: createHash("sha256").update(rawBody).digest("hex"),
     });
+    expect(onVerifiedPaidOrder).toHaveBeenCalledWith(order.orderNumber);
+    expect(applyVerifiedWebhookEventAtomically.mock.invocationCallOrder[0])
+      .toBeLessThan(onVerifiedPaidOrder.mock.invocationCallOrder[0]);
   });
 
   it("rejects webhook events from providers without a registered verifier", async () => {
@@ -1016,9 +1023,11 @@ describe("payment service", () => {
       method: "card",
       retrieve: vi.fn().mockResolvedValue({ kind: "verified", result: paidResult }),
     };
+    const onVerifiedPaidOrder = vi.fn(() => { throw new Error("Meta unavailable"); });
     const paymentService = service({
       repository: repo,
       providers: [{ method: "card", label: "Card", isTest: false, provider: stripe }],
+      onVerifiedPaidOrder,
     });
     const confirmPayment = (paymentService as unknown as {
       confirmPayment?: (ownedAccess: typeof access) => Promise<unknown>;
@@ -1040,6 +1049,7 @@ describe("payment service", () => {
       result: paidResult,
       source: "reconciliation",
     });
+    expect(onVerifiedPaidOrder).toHaveBeenCalledWith(order.orderNumber);
   });
 
   it("abandons an unresolved Afterpay attempt only after authoritative absence", async () => {
@@ -1258,11 +1268,13 @@ describe("payment service", () => {
       order: { ...order, paymentStatus: "paid" },
     });
     const repo = repository({ consumeReturnState, applyVerifiedResult });
+    const onVerifiedPaidOrder = vi.fn();
     const paymentService = service({
       repository: repo,
       providers: [{
         method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay,
       }],
+      onVerifiedPaidOrder,
     });
     const returnUrl = new URL(
       `https://trusted.example.test/api/payments/returns/afterpay?flow=return&orderNumber=${order.orderNumber}&method=afterpay&state=${state}&status=SUCCESS&orderToken=${reference}`,
@@ -1298,6 +1310,8 @@ describe("payment service", () => {
       result,
       source: "server_capture",
     });
+    expect(onVerifiedPaidOrder).toHaveBeenCalledOnce();
+    expect(onVerifiedPaidOrder).toHaveBeenCalledWith(order.orderNumber);
   });
 
   it("lets only the first local-test return mark the order paid", async () => {
@@ -1511,9 +1525,11 @@ describe("payment service", () => {
       applyReconciliationResult,
     });
 
+    const onVerifiedPaidOrder = vi.fn();
     await expect(service({
       repository: repo,
       providers: [{ method: "afterpay", label: "Afterpay", isTest: false, provider: afterpay }],
+      onVerifiedPaidOrder,
     }).reconcilePendingPayments()).resolves.toEqual({
       processed: 1,
       applied: 1,
@@ -1530,6 +1546,7 @@ describe("payment service", () => {
       claimId: candidate.claimId,
       result,
     });
+    expect(onVerifiedPaidOrder).toHaveBeenCalledWith(order.orderNumber);
   });
 
   it("retries only authoritative absence with the persisted key and creation time", async () => {

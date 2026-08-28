@@ -1,4 +1,5 @@
 import { z, ZodError } from "zod";
+import { after } from "next/server";
 import { parseAuthConfig } from "@/server/auth/config";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
 import { createDrizzleCheckoutRepository } from "@/server/checkout/drizzle-checkout-repository";
@@ -23,6 +24,7 @@ import {
 } from "@/server/payments/payment-service";
 import { selectPaymentProviders } from "@/server/payments/provider-registry";
 import type { PaymentActionDTO, PublicPaymentDTO } from "@/server/payments/public-dto";
+import { createMetaPaidOrderObserver } from "@/server/analytics/meta-purchase";
 
 export const runtime = "nodejs";
 const noStoreHeaders = { "Cache-Control": "no-store" };
@@ -80,6 +82,7 @@ function defaultPaymentService() {
     checkoutAuthority: checkoutRepository,
     providers: selectPaymentProviders(config),
     returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,
+    onVerifiedPaidOrder: createMetaPaidOrderObserver((task) => after(task)),
   });
 }
 

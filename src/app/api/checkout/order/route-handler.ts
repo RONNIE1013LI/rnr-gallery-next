@@ -1,5 +1,13 @@
 import { z, ZodError } from "zod";
-import { ATTRIBUTION_FIELDS } from "@/domain/analytics/attribution";
+import {
+  ATTRIBUTION_FIELDS,
+  buildStoredOrderAttribution,
+  type StoredOrderAttribution,
+} from "@/domain/analytics/attribution";
+import {
+  ADVERTISING_CONSENT_COOKIE,
+  parseAdvertisingConsent,
+} from "@/domain/consent/advertising-consent";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
 import {
   hashCheckoutSessionToken,
@@ -44,7 +52,7 @@ const inputSchema = z.object({
 }).strict();
 
 type OrderCreator = {
-  createOrder(sessionId: string, idempotencyKey: string, reviewed: Omit<z.infer<typeof inputSchema>, "idempotencyKey">): Promise<PaymentOrderCreationResult>;
+  createOrder(sessionId: string, idempotencyKey: string, reviewed: Omit<z.infer<typeof inputSchema>, "idempotencyKey" | "attribution"> & Readonly<{ attribution?: StoredOrderAttribution }>): Promise<PaymentOrderCreationResult>;
 };
 type Dependencies = Readonly<{
   repository: OrderRepository;
@@ -86,6 +94,15 @@ function publicOrder(order: PaymentOrderCreationResult): PaymentStartDTO {
     totalInclGstCents: order.totalInclGstCents,
     paymentStatus: order.paymentStatus,
   });
+}
+
+function requestCookie(request: Request, name: string) {
+  for (const part of (request.headers.get("cookie") ?? "").split(";")) {
+    const separator = part.indexOf("=");
+    if (separator >= 0 && part.slice(0, separator).trim() === name) {
+      return part.slice(separator + 1).trim();
+    }
+  }
 }
 
 function errorResponse(error: unknown) {
@@ -138,7 +155,22 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
       const order = await deps.orderService.createOrder(
         session.id,
         input.idempotencyKey,
-        { checkoutVersion: input.checkoutVersion, cartDigest: input.cartDigest, shipping: input.shipping, ...(input.attribution ? { attribution: input.attribution } : {}) },
+        {
+          checkoutVersion: input.checkoutVersion,
+          cartDigest: input.cartDigest,
+          shipping: input.shipping,
+          ...(() => {
+            const attribution = buildStoredOrderAttribution(
+              input.attribution ?? null,
+              parseAdvertisingConsent(requestCookie(request, ADVERTISING_CONSENT_COOKIE)),
+              {
+                fbp: requestCookie(request, "_fbp"),
+                fbc: requestCookie(request, "_fbc"),
+              },
+            );
+            return attribution ? { attribution } : {};
+          })(),
+        },
       );
       return json({ order: publicOrder(order) });
     } catch (error) {

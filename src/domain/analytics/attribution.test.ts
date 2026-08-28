@@ -1,14 +1,59 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  buildStoredOrderAttribution,
   clearAttribution,
   getAttributionStorageKey,
+  isOrderAttribution,
   parseAttribution,
   readAttribution,
   saveAttribution,
 } from "./attribution";
 
 describe("identity-scoped advertising attribution", () => {
+  it("adds only server-owned consent and valid Meta cookies while legacy values remain flat", () => {
+    const campaign = { utm_source: "facebook", fbclid: "click-1" } as const;
+    expect(buildStoredOrderAttribution(campaign, null, {
+      fbp: "fb.1.1787900000000.123456789",
+    })).toEqual(campaign);
+    expect(buildStoredOrderAttribution(campaign, {
+      version: 1,
+      analytics: false,
+      advertising: true,
+      decidedAt: "2026-08-28T00:00:00.000Z",
+    }, {
+      fbp: "fb.1.1787900000000.123456789",
+      fbc: "fb.1.1787900000000.click_ABC-123",
+    })).toEqual({
+      ...campaign,
+      measurement: {
+        version: 1,
+        advertisingConsent: true,
+        decidedAt: "2026-08-28T00:00:00.000Z",
+        fbp: "fb.1.1787900000000.123456789",
+        fbc: "fb.1.1787900000000.click_ABC-123",
+      },
+    });
+    expect(isOrderAttribution(campaign)).toBe(true);
+  });
+
+  it("records denial without retaining Meta identifiers", () => {
+    expect(buildStoredOrderAttribution(null, {
+      version: 1,
+      analytics: true,
+      advertising: false,
+      decidedAt: "2026-08-28T00:00:00.000Z",
+    }, {
+      fbp: "fb.1.1787900000000.123456789",
+      fbc: "fb.1.1787900000000.click_ABC-123",
+    })).toEqual({
+      measurement: {
+        version: 1,
+        advertisingConsent: false,
+        decidedAt: "2026-08-28T00:00:00.000Z",
+      },
+    });
+  });
   it("keeps Guest, User A and User B attribution isolated in one browser", () => {
     saveAttribution(sessionStorage, null, { utm_source: "facebook", fbclid: "guest-meta-click" });
     saveAttribution(sessionStorage, "user-a", { utm_source: "newsletter", utm_campaign: "winter" });

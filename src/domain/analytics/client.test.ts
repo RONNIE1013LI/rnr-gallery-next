@@ -16,6 +16,7 @@ import {
   GA4_MEASUREMENT_ID,
   GOOGLE_ADS_PURCHASE_SEND_TO,
   GOOGLE_ADS_TAG_ID,
+  META_PIXEL_ID,
 } from "./runtime";
 
 vi.mock("@next/third-parties/google", () => ({ sendGAEvent: vi.fn() }));
@@ -98,6 +99,27 @@ describe("emitAnalyticsEvent", () => {
       currency: "NZD",
       value: 65,
     }));
+  });
+
+  it("keeps Meta commerce independent when analytics transport is unavailable", () => {
+    const fbq = vi.fn();
+    const fetchMock = vi.fn().mockResolvedValue(new Response(null, { status: 202 }));
+    Object.assign(window, { fbq });
+    vi.stubGlobal("fetch", fetchMock);
+    document.documentElement.dataset.metaEnabled = "true";
+    document.documentElement.removeAttribute("data-ga4-enabled");
+    Object.assign(window, { dataLayer: undefined });
+
+    expect(emitAnalyticsEvent({ ...event, event: "view_item" })).toBe(true);
+    expect(fbq).toHaveBeenCalledWith(
+      "trackSingle",
+      META_PIXEL_ID,
+      "ViewContent",
+      expect.objectContaining({ currency: "NZD", value: 65 }),
+      { eventID: expect.any(String) },
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(sendGAEvent).not.toHaveBeenCalled();
   });
 
   it("queues the Ads-only conversion exactly once before recording its dedupe marker", () => {
