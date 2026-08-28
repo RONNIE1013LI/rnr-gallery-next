@@ -246,8 +246,8 @@ describe("forms job inline update route", () => {
     expect(update).not.toHaveBeenCalled();
   });
 
-  it("records conversion evidence only with Forms finance permission", async () => {
-    const recordConversionEvidence = vi.fn().mockResolvedValue("recorded");
+  it("requires Forms finance permission but rejects evidence after finalization", async () => {
+    const recordConversionEvidence = vi.fn().mockResolvedValue("already_finalized");
     const requirePermission = vi.fn().mockResolvedValue(adminAccess);
     const route = createFormsJobRoute({
       requirePermission,
@@ -262,7 +262,7 @@ describe("forms job inline update route", () => {
       source: "meta",
     }), context);
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(409);
     expect(requirePermission).toHaveBeenCalledWith("update_finance");
     expect(recordConversionEvidence).toHaveBeenCalledWith({
       jobId: "550e8400-e29b-41d4-a716-446655440000",

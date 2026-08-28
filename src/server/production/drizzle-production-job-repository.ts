@@ -170,99 +170,62 @@ async function writeManualConversionEvidence(
 export async function recordManualConversionEvidence(
   database: Database,
   input: ManualConversionEvidenceInput,
-): Promise<"recorded" | "not_found" | "invalid_source" | "already_paid"> {
+): Promise<"not_found" | "invalid_source" | "already_finalized"> {
   manualConversionEvidenceValues(input);
   return database.transaction(async (transaction) => {
     const [job] = await transaction.select({
       id: productionJobs.id,
       source: productionJobs.source,
-      manualPaymentConfirmedAt: productionJobs.manualPaymentConfirmedAt,
     }).from(productionJobs)
       .where(eq(productionJobs.id, input.jobId))
       .for("update")
       .limit(1);
     if (!job) return "not_found" as const;
     if (job.source !== "manual") return "invalid_source" as const;
-    if (job.manualPaymentConfirmedAt) return "already_paid" as const;
-
-    await writeManualConversionEvidence(transaction, input);
-    return "recorded" as const;
+    return "already_finalized" as const;
   });
 }
 
-async function enqueueAuthoritativePaidTransition(
+async function enqueueAuthoritativeManualOrderFinalization(
   transaction: ConversionDeliveryTransaction,
-  jobId: string,
+  input: Readonly<{
+    jobId: string;
+    finalizedAt: Date;
+    customerSource: string;
+    customerEmail: string;
+    customerPhone: string;
+    webOrderNumber: string;
+    valueMinor: number;
+    currency: string;
+    conversionEvidence: ManualConversionEvidenceInput;
+  }>,
   policy: ConversionActivationPolicy,
   enqueue: typeof enqueueConversionDeliveries,
-  options: Readonly<{ acceptSameTransactionDraft?: boolean }> = {},
 ) {
-  const [job] = await transaction.select({
-    id: productionJobs.id,
-    source: productionJobs.source,
-    createdAt: productionJobs.createdAt,
-    manualPaymentConfirmedAt: productionJobs.manualPaymentConfirmedAt,
-    customerSource: productionJobs.customerSource,
-    customerEmail: productionJobs.customerEmail,
-    customerPhone: productionJobs.customerPhone,
-    manualPaymentStatus: productionJobs.manualPaymentStatus,
-    amountPaidCents: productionJobs.amountPaidCents,
-    webOrderNumber: productionJobs.webOrderNumber,
-  }).from(productionJobs).where(eq(productionJobs.id, jobId)).limit(1);
-  if (!job?.manualPaymentConfirmedAt) return 0;
-
-  const [invoice] = await transaction.select({
-    status: invoices.status,
-    currency: invoices.currency,
-    totalInclGstCents: invoices.totalInclGstCents,
-  }).from(invoices).where(eq(invoices.jobId, jobId)).limit(1);
-  const fields = await transaction.select({
-    fieldKey: productionFieldDefinitions.fieldKey,
-    value: productionFieldValues.value,
-  }).from(productionFieldValues)
-    .innerJoin(
-      productionFieldDefinitions,
-      eq(productionFieldDefinitions.id, productionFieldValues.fieldId),
-    )
-    .where(and(
-      eq(productionFieldValues.jobId, jobId),
-      inArray(productionFieldDefinitions.fieldKey, MANUAL_ATTRIBUTION_FIELD_KEYS),
-    ));
   let linkedOnlineOrder = false;
-  if (job.webOrderNumber) {
-    const [linked] = await transaction.select({
-      orderId: orders.id,
-      paymentRequestId: paymentRequests.id,
-    }).from(productionJobs)
-      .leftJoin(orders, eq(orders.orderNumber, job.webOrderNumber))
-      .leftJoin(
-        paymentRequests,
-        eq(paymentRequests.requestNumber, job.webOrderNumber),
-      )
-      .where(eq(productionJobs.id, jobId))
+  if (input.webOrderNumber) {
+    const [linkedOrder] = await transaction.select({ id: orders.id })
+      .from(orders)
+      .where(eq(orders.orderNumber, input.webOrderNumber))
       .limit(1);
-    linkedOnlineOrder = Boolean(linked?.orderId || linked?.paymentRequestId);
+    const [linkedPaymentRequest] = await transaction.select({ id: paymentRequests.id })
+      .from(paymentRequests)
+      .where(eq(paymentRequests.requestNumber, input.webOrderNumber))
+      .limit(1);
+    linkedOnlineOrder = Boolean(linkedOrder || linkedPaymentRequest);
   }
+  const fields = manualConversionEvidenceValues(input.conversionEvidence);
   const candidates = buildConversionDeliveryCandidates({
-    jobId: job.id,
-    source: job.source,
-    createdAt: job.createdAt,
-    confirmedAt: job.manualPaymentConfirmedAt,
-    customerSource: job.customerSource,
-    customerEmail: job.customerEmail,
-    customerPhone: job.customerPhone,
-    manualPaymentStatus: job.manualPaymentStatus,
-    amountPaidCents: job.amountPaidCents,
+    jobId: input.jobId,
+    source: "manual",
+    finalizedAt: input.finalizedAt,
+    customerSource: input.customerSource,
+    customerEmail: input.customerEmail,
+    customerPhone: input.customerPhone,
+    valueMinor: input.valueMinor,
+    currency: input.currency,
     linkedOnlineOrder,
-    invoice: invoice ? {
-      ...invoice,
-      authoritative: invoice.status === "issued"
-        || (options.acceptSameTransactionDraft === true && invoice.status === "draft"),
-    } : null,
-    customFields: Object.freeze(Object.fromEntries(fields.map((field) => [
-      field.fieldKey,
-      field.value,
-    ]))),
+    customFields: fields,
   }, policy);
   return enqueue(transaction, candidates);
 }
@@ -770,13 +733,26 @@ export function createDrizzleProductionJobRepository(
             idempotencyKey: `invoice-created:${job.id}`,
           }));
         }
-        if (input.manualPaymentStatus === "paid" && input.conversionEvidence && input.invoice) {
-          await enqueueAuthoritativePaidTransition(
+        if (input.conversionEvidence) {
+          await enqueueAuthoritativeManualOrderFinalization(
             transaction,
-            job.id,
+            {
+              jobId: job.id,
+              finalizedAt: input.createdAt,
+              customerSource: input.customerSource,
+              customerEmail: input.customerEmail,
+              customerPhone: input.customerPhone,
+              webOrderNumber: input.webOrderNumber,
+              valueMinor: input.amountPayableCents,
+              currency: input.invoice?.currency ?? "NZD",
+              conversionEvidence: {
+                jobId: job.id,
+                actor: input.actor,
+                ...input.conversionEvidence,
+              },
+            },
             conversionPolicy,
             enqueueDeliveries,
-            { acceptSameTransactionDraft: true },
           );
         }
         await transaction.insert(adminAuditLogs).values(buildAuditRecord({
@@ -957,18 +933,6 @@ export function createDrizzleProductionJobRepository(
             manualPaymentConfirmedAt: productionJobs.manualPaymentConfirmedAt,
           });
         if (!updated) return "conflict" as const;
-
-        if (current.source === "manual"
-          && current.manualPaymentStatus !== "paid"
-          && input.finance?.manualPaymentStatus === "paid"
-          && current.manualPaymentConfirmedAt === null) {
-          await enqueueAuthoritativePaidTransition(
-            transaction,
-            input.jobId,
-            conversionPolicy,
-            enqueueDeliveries,
-          );
-        }
 
         if (input.items) {
           await transaction.delete(productionJobItems).where(eq(productionJobItems.jobId, input.jobId));

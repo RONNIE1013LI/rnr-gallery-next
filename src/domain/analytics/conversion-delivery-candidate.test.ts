@@ -9,15 +9,13 @@ const activation = new Date("2026-08-01T00:00:00.000Z");
 const base = {
   jobId,
   source: "manual" as const,
-  createdAt: new Date("2026-08-02T00:00:00.000Z"),
-  confirmedAt: new Date("2026-08-03T00:00:00.000Z"),
+  finalizedAt: new Date("2026-08-03T00:00:00.000Z"),
   customerSource: "messenger",
   customerEmail: "Test@example.test",
   customerPhone: "+64 21 123 4567",
-  manualPaymentStatus: "paid",
-  amountPaidCents: 20_000,
+  valueMinor: 20_000,
+  currency: "NZD",
   linkedOnlineOrder: false,
-  invoice: { authoritative: true, status: "issued", currency: "NZD", totalInclGstCents: 20_000 },
   customFields: {
     advertising_consent: "granted",
     advertising_consent_recorded_at: "2026-08-02T03:00:00.000Z",
@@ -67,7 +65,7 @@ describe("conversion delivery candidates", () => {
       platform: "meta",
       transactionId: `manual-order:${jobId}`,
       jobId,
-      eventOccurredAt: base.confirmedAt,
+      eventOccurredAt: base.finalizedAt,
       currency: "NZD",
       valueMinor: 20_000,
       consentSnapshot: expect.objectContaining({ decision: "granted" }),
@@ -80,11 +78,11 @@ describe("conversion delivery candidates", () => {
     expect(JSON.stringify(rows)).not.toMatch(/Test@example|123 4567|address|photo|artwork/i);
   });
 
-  it("supports Google click attribution and NZD/AUD without conversion", () => {
+  it("supports Google click attribution and immutable NZD/AUD order currency", () => {
     const rows = buildConversionDeliveryCandidates({
       ...base,
       customerSource: "web",
-      invoice: { authoritative: true, status: "issued", currency: "AUD", totalInclGstCents: 20_000 },
+      currency: "AUD",
       customFields: {
         advertising_consent: "granted",
         advertising_consent_recorded_at: "2026-08-02T03:00:00.000Z",
@@ -103,13 +101,31 @@ describe("conversion delivery candidates", () => {
     })]);
   });
 
+  it("creates one independent delivery for each eligible platform", () => {
+    const rows = buildConversionDeliveryCandidates({
+      ...base,
+      customerSource: "messenger",
+      customFields: {
+        advertising_consent: "granted",
+        advertising_consent_recorded_at: "2026-08-02T03:00:00.000Z",
+        advertising_source: "google",
+        gclid: "test-click-id_123",
+      },
+    }, {
+      google: { enabled: true, activatedAt: activation },
+      meta: { enabled: true, activatedAt: activation },
+    });
+    expect(rows.map((row) => row.platform)).toEqual(["google", "meta"]);
+    expect(new Set(rows.map((row) => row.transactionId))).toEqual(
+      new Set([`manual-order:${jobId}`]),
+    );
+  });
+
   it.each([
-    ["historical order", { createdAt: new Date("2026-07-31T23:59:59.000Z") }],
-    ["historical payment", { confirmedAt: new Date("2026-07-31T23:59:59.000Z") }],
-    ["non-paid", { manualPaymentStatus: "processing" }],
+    ["historical finalization", { finalizedAt: new Date("2026-07-31T23:59:59.000Z") }],
     ["online-linked", { linkedOnlineOrder: true }],
-    ["amount mismatch", { amountPaidCents: 19_999 }],
-    ["non-authoritative amount snapshot", { invoice: { ...base.invoice, authoritative: false } }],
+    ["zero order value", { valueMinor: 0 }],
+    ["unsupported currency", { currency: "USD" }],
   ])("rejects %s", (_label, override) => {
     expect(buildConversionDeliveryCandidates({ ...base, ...override }, {
       google: { enabled: false, activatedAt: null },

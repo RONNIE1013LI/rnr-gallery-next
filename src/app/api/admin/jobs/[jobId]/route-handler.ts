@@ -102,8 +102,8 @@ export function createAdminJobRoute(dependencies?: Dependencies) {
         if (result === "invalid_source") {
           throw new ProductionJobValidationError("Conversion evidence is only available for manual orders");
         }
-        if (result === "already_paid") {
-          throw new ProductionJobConflictError("Conversion evidence cannot change after payment confirmation");
+        if (result === "already_finalized") {
+          throw new ProductionJobConflictError("Conversion evidence cannot change after order finalization");
         }
         return Response.json({ result }, { headers: noStore });
       } catch (error) {

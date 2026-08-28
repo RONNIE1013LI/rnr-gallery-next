@@ -20,20 +20,13 @@ export type ConversionActivationPolicy = Readonly<Record<
 export type ConversionDeliveryCandidateInput = Readonly<{
   jobId: string;
   source: "manual" | "web";
-  createdAt: Date;
-  confirmedAt: Date;
+  finalizedAt: Date;
   customerSource: string;
   customerEmail: string;
   customerPhone: string;
-  manualPaymentStatus: string | null;
-  amountPaidCents: number | null;
+  valueMinor: number;
+  currency: string;
   linkedOnlineOrder: boolean;
-  invoice: Readonly<{
-    authoritative: boolean;
-    status: string;
-    currency: string;
-    totalInclGstCents: number;
-  }> | null;
   customFields: Readonly<Record<string, string | undefined>>;
 }>;
 
@@ -107,6 +100,10 @@ function eventSource(source: string): ConversionEventSource {
   return "OTHER";
 }
 
+function isMetaMessageSource(source: string) {
+  return ["messenger", "instagram", "whatsapp"].includes(source);
+}
+
 function hash(value: string): string | undefined {
   return value ? createHash("sha256").update(value).digest("hex") : undefined;
 }
@@ -154,33 +151,37 @@ export function buildConversionDeliveryCandidates(
   const fields = normalizedFields(input.customFields);
   const consentAt = fields.advertising_consent_recorded_at;
   const consentDate = activation(consentAt);
-  const invoice = input.invoice;
   if (!UUID_PATTERN.test(input.jobId)
     || input.source !== "manual"
-    || input.manualPaymentStatus !== "paid"
-    || !Number.isSafeInteger(input.amountPaidCents)
-    || (input.amountPaidCents ?? 0) <= 0
+    || !(input.finalizedAt instanceof Date)
+    || Number.isNaN(input.finalizedAt.getTime())
+    || !Number.isSafeInteger(input.valueMinor)
+    || input.valueMinor <= 0
     || input.linkedOnlineOrder
-    || !invoice?.authoritative
-    || invoice.totalInclGstCents !== input.amountPaidCents
-    || (invoice.currency !== "NZD" && invoice.currency !== "AUD")
+    || (input.currency !== "NZD" && input.currency !== "AUD")
     || fields.advertising_consent !== "granted"
     || !consentDate
-    || consentDate > input.confirmedAt) return Object.freeze([]);
+    || consentDate > input.finalizedAt) return Object.freeze([]);
+  const currency = input.currency as "NZD" | "AUD";
 
-  const platform = declaredPlatform(fields.advertising_source);
-  if (!platform) return Object.freeze([]);
-  const activationPolicy = policy[platform];
-  if (!activationPolicy.enabled || !activationPolicy.activatedAt
-    || input.createdAt < activationPolicy.activatedAt
-    || input.confirmedAt < activationPolicy.activatedAt) return Object.freeze([]);
-
-  const attributionSnapshot = attribution(platform, fields);
+  const declared = declaredPlatform(fields.advertising_source);
+  if (!declared) return Object.freeze([]);
   const userDataSnapshot = userData(input.customerEmail, input.customerPhone);
-  if (!attributionSnapshot) return Object.freeze([]);
-  const hasAttribution = Object.keys(attributionSnapshot).some((key) => !["version", "source"].includes(key));
   const hasUserData = Boolean(userDataSnapshot.hashedEmail || userDataSnapshot.hashedPhone);
-  if (!hasAttribution && !hasUserData) return Object.freeze([]);
+  const googleAttribution = attribution("google", fields);
+  const metaAttribution = attribution("meta", fields);
+  const hasGoogleFields = Boolean(fields.gclid || fields.gbraid || fields.wbraid);
+  const hasMetaFields = Boolean(fields.fbclid || fields.fbp || fields.fbc);
+  if ((hasGoogleFields && !googleAttribution) || (hasMetaFields && !metaAttribution)) {
+    return Object.freeze([]);
+  }
+  const platforms = (["google", "meta"] as const).filter((platform) => {
+    const activationPolicy = policy[platform];
+    if (!activationPolicy.enabled || !activationPolicy.activatedAt
+      || input.finalizedAt < activationPolicy.activatedAt) return false;
+    if (platform === "google") return declared === "google" || hasGoogleFields;
+    return declared === "meta" || hasMetaFields || isMetaMessageSource(input.customerSource);
+  });
 
   const consentSnapshot: ConversionConsentSnapshot = Object.freeze({
     version: 1,
@@ -190,18 +191,25 @@ export function buildConversionDeliveryCandidates(
     adUserData: "CONSENT_GRANTED",
     adPersonalization: "CONSENT_DENIED",
   });
-  return Object.freeze([Object.freeze({
-    platform,
-    transactionId: `manual-order:${input.jobId.toLowerCase()}`,
-    jobId: input.jobId.toLowerCase(),
-    eventType: "purchase" as const,
-    eventOccurredAt: new Date(input.confirmedAt.getTime()),
-    eventSource: eventSource(input.customerSource),
-    currency: invoice.currency,
-    valueMinor: invoice.totalInclGstCents,
-    consentSnapshot,
-    attributionSnapshot,
-    userDataSnapshot,
-    nextAttemptAt: new Date(input.confirmedAt.getTime()),
-  })]);
+  return Object.freeze(platforms.flatMap((platform) => {
+    const attributionSnapshot = platform === "google" ? googleAttribution : metaAttribution;
+    if (!attributionSnapshot) return [];
+    const hasAttribution = Object.keys(attributionSnapshot)
+      .some((key) => !["version", "source"].includes(key));
+    if (!hasAttribution && !hasUserData) return [];
+    return [Object.freeze({
+      platform,
+      transactionId: `manual-order:${input.jobId.toLowerCase()}`,
+      jobId: input.jobId.toLowerCase(),
+      eventType: "purchase" as const,
+      eventOccurredAt: new Date(input.finalizedAt.getTime()),
+      eventSource: eventSource(input.customerSource),
+      currency,
+      valueMinor: input.valueMinor,
+      consentSnapshot,
+      attributionSnapshot,
+      userDataSnapshot,
+      nextAttemptAt: new Date(input.finalizedAt.getTime()),
+    })];
+  }));
 }

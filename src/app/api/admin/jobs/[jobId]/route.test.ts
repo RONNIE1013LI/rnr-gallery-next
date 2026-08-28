@@ -90,8 +90,8 @@ describe("admin production job update route", () => {
     expect(response.status).toBe(409);
   });
 
-  it("records conversion evidence only for an authenticated finance administrator", async () => {
-    const recordConversionEvidence = vi.fn().mockResolvedValue("recorded");
+  it("requires finance administration but rejects evidence after finalization", async () => {
+    const recordConversionEvidence = vi.fn().mockResolvedValue("already_finalized");
     const requirePermission = vi.fn().mockResolvedValue({
       user: { id: "admin-1", email: "owner@example.test" },
       adminRole: "admin",
@@ -110,7 +110,7 @@ describe("admin production job update route", () => {
       attribution: { fbp: "fb.1.1720000000000.123456789" },
     }), { params: Promise.resolve({ jobId }) });
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(409);
     expect(requirePermission).toHaveBeenCalledWith("update_production_finance");
     expect(recordConversionEvidence).toHaveBeenCalledWith({
       jobId,
@@ -123,7 +123,7 @@ describe("admin production job update route", () => {
   });
 
   it("rejects untrusted or late conversion evidence without persisting it", async () => {
-    const recordConversionEvidence = vi.fn().mockResolvedValue("already_paid");
+    const recordConversionEvidence = vi.fn().mockResolvedValue("already_finalized");
     const route = createAdminJobRoute({
       requirePermission: vi.fn().mockResolvedValue({
         user: { id: "admin-1", email: "owner@example.test" },
