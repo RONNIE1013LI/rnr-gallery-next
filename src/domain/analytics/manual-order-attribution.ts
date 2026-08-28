@@ -133,7 +133,7 @@ function metaEvidence(
     || (values.fbp && !metaCookiePattern.test(values.fbp))
     || (values.fbc && !metaCookiePattern.test(values.fbc))) return null;
   return Object.freeze({
-    hasSourceEvidence: Boolean(fields.fbclid || fields.fbp || fields.fbc),
+    hasSourceEvidence: Boolean(fields.fbclid || fields.fbc),
     values,
   });
 }

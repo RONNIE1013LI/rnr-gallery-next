@@ -105,6 +105,7 @@ describe("manual conversion candidates", () => {
         advertising_consent: "granted",
         advertising_consent_recorded_at: "2026-08-28T00:00:00.000Z",
         gclid: "original-google-click_123",
+        fbp: "fb.1.1787900000000.123456789",
       },
     })).toEqual([{
       destination: "google",
