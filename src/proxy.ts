@@ -1,10 +1,12 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { products } from "@/domain/catalogue/products";
 import { australianCommerceDestination } from "@/domain/markets/market";
 import {
   MARKET_COOKIE_NAME,
   parseMarketCookie,
 } from "@/server/markets/market-cookie";
 import { resolveRequestMarket } from "@/server/markets/request-market";
+import { buildLegacyProductUrl } from "@/server/seo/legacy-product-url";
 import { getLegacyRedirectDestination } from "@/server/seo/legacy-redirects";
 
 const canonicalRedirectHosts = new Set([
@@ -12,6 +14,24 @@ const canonicalRedirectHosts = new Set([
   "rrgallery.co.nz",
   "www.rrgallery.co.nz",
 ]);
+const currentProductSlugs = new Set(products.map((product) => product.slug));
+
+function getCurrentGenericLegacyProductSlug(pathname: string) {
+  const match = pathname.match(/^\/product\/([^/]+)\/?$/);
+  const slug = match?.[1];
+  return slug && currentProductSlugs.has(slug) ? slug : undefined;
+}
+
+function getSearchParameterValues(searchParams: URLSearchParams) {
+  const values: Record<string, string | string[]> = {};
+  for (const [key, value] of searchParams) {
+    const current = values[key];
+    values[key] = current === undefined
+      ? value
+      : Array.isArray(current) ? [...current, value] : [current, value];
+  }
+  return values;
+}
 
 function isApiPath(pathname: string) {
   return pathname === "/api" || pathname.startsWith("/api/");
@@ -47,6 +67,21 @@ export function proxy(request: NextRequest) {
       : legacyDestination;
     const redirectUrl = new URL(destination, "https://rnrgallery.com");
     redirectUrl.search = request.nextUrl.search;
+    return NextResponse.redirect(redirectUrl, 301);
+  }
+
+  const genericLegacyProductSlug = getCurrentGenericLegacyProductSlug(pathname);
+  if (
+    genericLegacyProductSlug
+    && canonicalRedirectHosts.has(request.nextUrl.hostname)
+  ) {
+    const redirectUrl = new URL(
+      buildLegacyProductUrl(
+        genericLegacyProductSlug,
+        getSearchParameterValues(request.nextUrl.searchParams),
+      ),
+      "https://rnrgallery.com",
+    );
     return NextResponse.redirect(redirectUrl, 301);
   }
 

@@ -175,6 +175,39 @@ describe("protected request proxy", () => {
     );
   });
 
+  it("redirects a current generic legacy product from the old host directly to its canonical product URL", () => {
+    const response = proxy(new NextRequest(
+      "https://rrgallery.co.nz/product/photo-print-canvas?utm_source=google&utm_campaign=winter&gclid=google-click&gbraid=google-braid&wbraid=google-web-braid&fbclid=meta-click",
+    ));
+
+    expect(response.status).toBe(301);
+    expect(response.headers.get("location")).toBe(
+      "https://rnrgallery.com/products/photo-print-canvas?utm_source=google&utm_campaign=winter&gclid=google-click&gbraid=google-braid&wbraid=google-web-braid&fbclid=meta-click",
+    );
+  });
+
+  it("does not add a slash-normalisation hop for a current generic legacy product", () => {
+    const response = proxy(new NextRequest(
+      "https://rrgallery.co.nz/product/photo-print-canvas/?utm_source=google&gclid=google-click",
+    ));
+
+    expect(response.status).toBe(301);
+    expect(response.headers.get("location")).toBe(
+      "https://rnrgallery.com/products/photo-print-canvas?utm_source=google&gclid=google-click",
+    );
+  });
+
+  it("does not treat an unmatched generic legacy product as a current product", () => {
+    const response = proxy(new NextRequest(
+      "https://rrgallery.co.nz/product/deleted-product?utm_source=legacy",
+    ));
+
+    expect(response.status).toBe(301);
+    expect(response.headers.get("location")).toBe(
+      "https://rnrgallery.com/product/deleted-product?utm_source=legacy",
+    );
+  });
+
   it("preserves canonical host redirects for unrelated public pages only", () => {
     const response = proxy(new NextRequest(
       "https://www.rrgallery.co.nz/shop?campaign=legacy",
