@@ -33,4 +33,22 @@ describe("legacy product route", () => {
     expect(route.notFound).toHaveBeenCalledOnce();
     expect(route.permanentRedirect).not.toHaveBeenCalled();
   });
+
+  it("preserves every query parameter when redirecting a local legacy product route", async () => {
+    await expect(LegacyProductPage({
+      params: Promise.resolve({ slug: "roll-up-banner" }),
+      searchParams: Promise.resolve({
+        utm_source: "test",
+        utm_campaign: "test",
+        gclid: "test",
+        x: "1",
+      }),
+    })).rejects.toThrow(
+      "REDIRECT:/products/roll-up-banner?utm_source=test&utm_campaign=test&gclid=test&x=1",
+    );
+
+    expect(route.permanentRedirect).toHaveBeenCalledWith(
+      "/products/roll-up-banner?utm_source=test&utm_campaign=test&gclid=test&x=1",
+    );
+  });
 });

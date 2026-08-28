@@ -30,6 +30,7 @@ import { buildBreadcrumbData, buildPublicMetadata } from "@/server/seo/metadata"
 export type ProductPageProps = {
   params: Promise<{ slug: string }>;
   searchParams: Promise<{
+    [key: string]: string | string[] | undefined;
     design?: string | string[];
     rnr_design?: string | string[];
     size?: string | string[];
