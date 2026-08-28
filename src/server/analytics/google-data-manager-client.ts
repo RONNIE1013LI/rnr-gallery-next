@@ -52,18 +52,19 @@ export type GoogleDataManagerDeliveryRepository = Readonly<{
     recordedAt: string;
     requestId?: string;
     requestStatus?: GoogleDataManagerRequestStatus;
+    destinations?: readonly GoogleDataManagerDestinationStatus[];
     httpStatus?: number;
   }>): Promise<void>;
 }>;
 
 export type GoogleDataManagerTokenProvider = Readonly<{
   getAccessToken(scope: typeof GOOGLE_DATA_MANAGER_OAUTH_SCOPE): Promise<string>;
+  refreshAccessToken(scope: typeof GOOGLE_DATA_MANAGER_OAUTH_SCOPE): Promise<string>;
 }>;
 
 export type GoogleDataManagerSafeLogEntry = Readonly<{
   platform: "google_data_manager";
   statusClass: "blocked" | "configuration_error" | "transport_error" | "http_error" | "accepted" | "status";
-  destinationAccountSuffix?: string;
   transactionId?: string;
   requestId?: string;
   requestStatus?: GoogleDataManagerRequestStatus;
@@ -426,8 +427,6 @@ export function createGoogleDataManagerClient({
   now?: () => Date;
   logger?: GoogleDataManagerSafeLogger;
 }>) {
-  const destinationAccountSuffix = config?.destination.operatingAccount.accountId.slice(-4);
-
   function log(
     statusClass: GoogleDataManagerSafeLogEntry["statusClass"],
     details: Readonly<{
@@ -440,7 +439,6 @@ export function createGoogleDataManagerClient({
     logger.log(Object.freeze({
       platform: "google_data_manager",
       statusClass,
-      ...(destinationAccountSuffix ? { destinationAccountSuffix } : {}),
       ...(details.transactionId ? { transactionId: masked(details.transactionId, 6) } : {}),
       ...(details.requestId ? { requestId: masked(details.requestId, 8) } : {}),
       ...(details.requestStatus ? { requestStatus: details.requestStatus } : {}),
@@ -451,6 +449,15 @@ export function createGoogleDataManagerClient({
   async function accessToken(): Promise<string | null> {
     try {
       const token = (await tokenProvider.getAccessToken(GOOGLE_DATA_MANAGER_OAUTH_SCOPE)).trim();
+      return token || null;
+    } catch {
+      return null;
+    }
+  }
+
+  async function refreshedAccessToken(): Promise<string | null> {
+    try {
+      const token = (await tokenProvider.refreshAccessToken(GOOGLE_DATA_MANAGER_OAUTH_SCOPE)).trim();
       return token || null;
     } catch {
       return null;
@@ -468,6 +475,21 @@ export function createGoogleDataManagerClient({
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
       redirect: "error",
     };
+  }
+
+  async function authenticatedFetch(
+    url: string,
+    token: string,
+    method: "POST" | "GET",
+    body?: unknown,
+  ): Promise<Readonly<{ response: Response; token: string }>> {
+    let response = await fetchImpl(url, request(token, method, body));
+    if (response.status !== 401) return Object.freeze({ response, token });
+
+    const refreshedToken = await refreshedAccessToken();
+    if (!refreshedToken) throw new Error("google_data_manager_token_refresh_failed");
+    response = await fetchImpl(url, request(refreshedToken, method, body));
+    return Object.freeze({ response, token: refreshedToken });
   }
 
   async function markOutcome(
@@ -489,12 +511,13 @@ export function createGoogleDataManagerClient({
         return Object.freeze({ outcome: "permanent_error" });
       }
       try {
-        const response = await fetchImpl(GOOGLE_DATA_MANAGER_INGEST_URL, request(token, "POST", {
+        const result = await authenticatedFetch(GOOGLE_DATA_MANAGER_INGEST_URL, token, "POST", {
           destinations: [config.destination],
           events: [syntheticEvent(now())],
           encoding: "HEX",
           validateOnly: true,
-        }));
+        });
+        const response = result.response;
         if (!response.ok) {
           log("http_error", { httpStatus: response.status });
           return Object.freeze({ outcome: classifyHttpStatus(response.status), status: response.status });
@@ -549,7 +572,7 @@ export function createGoogleDataManagerClient({
         return Object.freeze({ outcome: "permanent_error" });
       }
 
-      const token = await accessToken();
+      let token = await accessToken();
       if (!token) {
         const result = Object.freeze({
           outcome: "permanent_error" as const,
@@ -575,12 +598,14 @@ export function createGoogleDataManagerClient({
       let requestId = resumableRequestId ?? undefined;
       try {
         if (!requestId) {
-          const ingestResponse = await fetchImpl(GOOGLE_DATA_MANAGER_INGEST_URL, request(token, "POST", {
+          const ingestResult = await authenticatedFetch(GOOGLE_DATA_MANAGER_INGEST_URL, token, "POST", {
             destinations: [config.destination],
             events: [safeEventPayload(event)],
             encoding: "HEX",
             validateOnly: false,
-          }));
+          });
+          const ingestResponse = ingestResult.response;
+          token = ingestResult.token;
           if (!ingestResponse.ok) {
             const outcome = classifyHttpStatus(ingestResponse.status);
             await markOutcome(repository, {
@@ -608,10 +633,12 @@ export function createGoogleDataManagerClient({
           log("accepted", { transactionId: event.transactionId, requestId });
         }
 
-        const statusResponse = await fetchImpl(
+        const statusResult = await authenticatedFetch(
           `${GOOGLE_DATA_MANAGER_STATUS_URL}?requestId=${encodeURIComponent(requestId)}`,
-          request(token, "GET"),
+          token,
+          "GET",
         );
+        const statusResponse = statusResult.response;
         if (!statusResponse.ok) {
           const outcome = classifyHttpStatus(statusResponse.status);
           await markOutcome(repository, {
@@ -643,6 +670,7 @@ export function createGoogleDataManagerClient({
           requestId,
           outcome,
           requestStatus: currentStatus,
+          destinations,
         });
         log("status", {
           transactionId: event.transactionId,

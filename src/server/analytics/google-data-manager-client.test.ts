@@ -35,6 +35,13 @@ function jsonResponse(body: unknown, status = 200) {
   });
 }
 
+function testTokenProvider(
+  getAccessToken = vi.fn().mockResolvedValue("access"),
+  refreshAccessToken = vi.fn().mockResolvedValue("refreshed-access"),
+) {
+  return { getAccessToken, refreshAccessToken };
+}
+
 function deliveryRepository(
   claimResult: Awaited<ReturnType<GoogleDataManagerDeliveryRepository["claim"]>> = {
     outcome: "claimed",
@@ -118,7 +125,9 @@ describe("Google Data Manager destination config", () => {
 
 describe("Google Data Manager diagnostic", () => {
   it("uses the exact scope and endpoint with a forced synthetic validate-only request", async () => {
-    const tokenProvider = { getAccessToken: vi.fn().mockResolvedValue("synthetic-access-token") };
+    const tokenProvider = testTokenProvider(
+      vi.fn().mockResolvedValue("synthetic-access-token"),
+    );
     const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({
       fieldWarnings: [{
         reason: "WARNING_REASON_GENERIC",
@@ -179,7 +188,7 @@ describe("Google Data Manager diagnostic", () => {
 
 describe("Google Data Manager execution", () => {
   it("blocks before token acquisition or HTTP without a complete durable repository capability", async () => {
-    const tokenProvider = { getAccessToken: vi.fn() };
+    const tokenProvider = testTokenProvider(vi.fn());
     const fetchImpl = vi.fn();
     const client = createGoogleDataManagerClient({ config, tokenProvider, fetchImpl });
     const incompleteRepository = { claim: vi.fn() } as never;
@@ -194,7 +203,9 @@ describe("Google Data Manager execution", () => {
 
   it("sends validateOnly false, persists acceptance, and succeeds only after destination SUCCESS", async () => {
     const repository = deliveryRepository();
-    const tokenProvider = { getAccessToken: vi.fn().mockResolvedValue("short-lived-access") };
+    const tokenProvider = testTokenProvider(
+      vi.fn().mockResolvedValue("short-lived-access"),
+    );
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(jsonResponse({ requestId: "request/safe-001" }))
       .mockResolvedValueOnce(jsonResponse({
@@ -246,17 +257,119 @@ describe("Google Data Manager execution", () => {
       requestId: "request/safe-001",
       acceptedAt: "2026-09-03T02:00:00.000Z",
     });
-    expect(repository.markOutcome).toHaveBeenCalledWith(expect.objectContaining({
+    expect(repository.markOutcome).toHaveBeenCalledWith({
       transactionId: event.transactionId,
       requestId: "request/safe-001",
       outcome: "succeeded",
       requestStatus: "SUCCESS",
+      recordedAt: "2026-09-03T02:00:00.000Z",
+      destinations: [{
+        requestStatus: "SUCCESS",
+        recordCount: "1",
+        errors: [],
+        warnings: [{ recordCount: "1", reason: "PROCESSING_WARNING_REASON_INTERNAL_ERROR" }],
+      }],
+    });
+  });
+
+  it("retries an ingest HTTP 401 exactly once with an explicitly refreshed token", async () => {
+    const repository = deliveryRepository();
+    const tokenProvider = {
+      getAccessToken: vi.fn().mockResolvedValue("expired-access"),
+      refreshAccessToken: vi.fn().mockResolvedValue("refreshed-access"),
+    };
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "expired" }, 401))
+      .mockResolvedValueOnce(jsonResponse({ requestId: "request-refresh-ingest" }))
+      .mockResolvedValueOnce(jsonResponse({
+        requestStatusPerDestination: [{ requestStatus: "SUCCESS" }],
+      }));
+
+    await expect(createGoogleDataManagerClient({ config, tokenProvider, fetchImpl })
+      .execute(event, repository)).resolves.toMatchObject({
+      outcome: "succeeded",
+      requestId: "request-refresh-ingest",
+    });
+
+    expect(tokenProvider.getAccessToken).toHaveBeenCalledOnce();
+    expect(tokenProvider.refreshAccessToken).toHaveBeenCalledOnce();
+    expect(tokenProvider.refreshAccessToken).toHaveBeenCalledWith(
+      GOOGLE_DATA_MANAGER_OAUTH_SCOPE,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(3);
+    expect(fetchImpl.mock.calls.slice(0, 2).map(([url, init]) => [
+      url,
+      init.method,
+      init.headers.Authorization,
+      init.body,
+    ])).toEqual([
+      [GOOGLE_DATA_MANAGER_INGEST_URL, "POST", "Bearer expired-access", expect.any(String)],
+      [GOOGLE_DATA_MANAGER_INGEST_URL, "POST", "Bearer refreshed-access", expect.any(String)],
+    ]);
+    expect(fetchImpl.mock.calls[0][1].body).toBe(fetchImpl.mock.calls[1][1].body);
+  });
+
+  it("retries a status HTTP 401 exactly once and persists 401 only after refresh retry fails", async () => {
+    const repository = deliveryRepository({
+      outcome: "accepted",
+      requestId: "request-refresh-status",
+    });
+    const tokenProvider = {
+      getAccessToken: vi.fn().mockResolvedValue("expired-access"),
+      refreshAccessToken: vi.fn().mockResolvedValue("refreshed-access"),
+    };
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ error: "expired" }, 401))
+      .mockResolvedValueOnce(jsonResponse({ error: "still unauthorized" }, 401));
+
+    await expect(createGoogleDataManagerClient({ config, tokenProvider, fetchImpl })
+      .execute(event, repository)).resolves.toEqual({
+      outcome: "permanent_error",
+      status: 401,
+      requestId: "request-refresh-status",
+    });
+
+    expect(tokenProvider.refreshAccessToken).toHaveBeenCalledOnce();
+    expect(tokenProvider.refreshAccessToken).toHaveBeenCalledWith(
+      GOOGLE_DATA_MANAGER_OAUTH_SCOPE,
+    );
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls.map(([url, init]) => [url, init.method, init.headers.Authorization])).toEqual([
+      [`${GOOGLE_DATA_MANAGER_STATUS_URL}?requestId=request-refresh-status`, "GET", "Bearer expired-access"],
+      [`${GOOGLE_DATA_MANAGER_STATUS_URL}?requestId=request-refresh-status`, "GET", "Bearer refreshed-access"],
+    ]);
+    expect(repository.markOutcome).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "permanent_error",
+      httpStatus: 401,
+      requestId: "request-refresh-status",
+    }));
+  });
+
+  it("keeps HTTP 401 retryable when a refreshed token cannot be acquired", async () => {
+    const repository = deliveryRepository();
+    const tokenProvider = {
+      getAccessToken: vi.fn().mockResolvedValue("expired-access"),
+      refreshAccessToken: vi.fn().mockRejectedValue(new Error("temporary OAuth outage")),
+    };
+    const fetchImpl = vi.fn().mockResolvedValue(jsonResponse({ error: "expired" }, 401));
+
+    await expect(createGoogleDataManagerClient({ config, tokenProvider, fetchImpl })
+      .execute(event, repository)).resolves.toEqual({ outcome: "retryable_error" });
+
+    expect(tokenProvider.refreshAccessToken).toHaveBeenCalledOnce();
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(repository.markOutcome).toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "retryable_error",
+    }));
+    expect(repository.markOutcome).not.toHaveBeenCalledWith(expect.objectContaining({
+      outcome: "permanent_error",
+      httpStatus: 401,
     }));
   });
 
   it("does not acquire a token or send HTTP for a transaction already durably succeeded", async () => {
     const repository = deliveryRepository({ outcome: "already_succeeded" });
-    const tokenProvider = { getAccessToken: vi.fn() };
+    const tokenProvider = testTokenProvider(vi.fn());
     const fetchImpl = vi.fn();
 
     await expect(createGoogleDataManagerClient({ config, tokenProvider, fetchImpl })
@@ -285,7 +398,7 @@ describe("Google Data Manager execution", () => {
       }));
     const client = createGoogleDataManagerClient({
       config,
-      tokenProvider: { getAccessToken: vi.fn().mockResolvedValue("access") },
+      tokenProvider: testTokenProvider(),
       fetchImpl,
     });
 
@@ -321,7 +434,7 @@ describe("Google Data Manager execution", () => {
 
     await expect(createGoogleDataManagerClient({
       config,
-      tokenProvider: { getAccessToken: vi.fn().mockResolvedValue("access") },
+      tokenProvider: testTokenProvider(),
       fetchImpl,
     }).execute(event, repository)).resolves.toMatchObject({
       outcome: "processing",
@@ -344,7 +457,7 @@ describe("Google Data Manager execution", () => {
 
     await expect(createGoogleDataManagerClient({
       config,
-      tokenProvider: { getAccessToken: vi.fn().mockResolvedValue("access") },
+      tokenProvider: testTokenProvider(),
       fetchImpl,
     }).execute(event, repository)).resolves.toEqual({
       outcome: "retryable_error",
@@ -369,7 +482,7 @@ describe("Google Data Manager execution", () => {
 
     await expect(createGoogleDataManagerClient({
       config,
-      tokenProvider: { getAccessToken: vi.fn().mockResolvedValue("access") },
+      tokenProvider: testTokenProvider(),
       fetchImpl,
     }).execute(event, repository)).resolves.toEqual({
       outcome: "accepted",
@@ -433,7 +546,7 @@ describe("Google Data Manager execution", () => {
       },
     ];
     const repository = deliveryRepository();
-    const tokenProvider = { getAccessToken: vi.fn() };
+    const tokenProvider = testTokenProvider(vi.fn());
     const fetchImpl = vi.fn();
     const client = createGoogleDataManagerClient({ config, tokenProvider, fetchImpl });
 
@@ -470,7 +583,7 @@ describe("Google Data Manager execution", () => {
 
     await expect(createGoogleDataManagerClient({
       config,
-      tokenProvider: { getAccessToken: vi.fn().mockResolvedValue("access") },
+      tokenProvider: testTokenProvider(),
       fetchImpl,
     }).execute(hashedEvent, repository)).resolves.toMatchObject({
       outcome: "processing",
@@ -509,11 +622,12 @@ describe("Google Data Manager execution", () => {
         }],
       }));
 
-    await expect(createGoogleDataManagerClient({
+    const result = await createGoogleDataManagerClient({
       config,
-      tokenProvider: { getAccessToken: vi.fn().mockResolvedValue("access") },
+      tokenProvider: testTokenProvider(),
       fetchImpl,
-    }).execute(event, repository)).resolves.toMatchObject({
+    }).execute(event, repository);
+    expect(result).toMatchObject({
       outcome,
       requestId: `request-${requestStatus}`,
       requestStatus,
@@ -524,6 +638,18 @@ describe("Google Data Manager execution", () => {
         warnings: [{ recordCount: "1", reason: "PROCESSING_WARNING_REASON_INTERNAL_ERROR" }],
       }],
     });
+    expect(repository.markOutcome).toHaveBeenCalledWith(expect.objectContaining({
+      transactionId: event.transactionId,
+      requestId: `request-${requestStatus}`,
+      outcome,
+      requestStatus,
+      destinations: [{
+        requestStatus,
+        recordCount: "3",
+        errors: [{ recordCount: "2", reason: "PROCESSING_ERROR_REASON_INVALID_GCLID" }],
+        warnings: [{ recordCount: "1", reason: "PROCESSING_WARNING_REASON_INTERNAL_ERROR" }],
+      }],
+    }));
   });
 
   it("treats an accepted response without a request ID as permanent failure", async () => {
@@ -532,7 +658,7 @@ describe("Google Data Manager execution", () => {
 
     await expect(createGoogleDataManagerClient({
       config,
-      tokenProvider: { getAccessToken: vi.fn().mockResolvedValue("access") },
+      tokenProvider: testTokenProvider(),
       fetchImpl,
     }).execute(event, repository)).resolves.toEqual({ outcome: "permanent_error" });
     expect(fetchImpl).toHaveBeenCalledOnce();
@@ -556,7 +682,7 @@ describe("Google Data Manager execution", () => {
 
     await expect(createGoogleDataManagerClient({
       config,
-      tokenProvider: { getAccessToken: vi.fn().mockResolvedValue("access") },
+      tokenProvider: testTokenProvider(),
       fetchImpl,
     }).execute(event, repository)).resolves.toEqual({ outcome, status });
     expect(repository.markOutcome).toHaveBeenCalledWith(expect.objectContaining({
@@ -575,7 +701,9 @@ describe("Google Data Manager execution", () => {
 
     await expect(createGoogleDataManagerClient({
       config,
-      tokenProvider: { getAccessToken: vi.fn().mockResolvedValue("short-lived-access") },
+      tokenProvider: testTokenProvider(
+        vi.fn().mockResolvedValue("short-lived-access"),
+      ),
       fetchImpl,
       logger: { log: (entry) => logs.push(entry) },
     }).execute(event, repository)).resolves.toEqual({ outcome: "retryable_error" });
@@ -588,10 +716,10 @@ describe("Google Data Manager execution", () => {
       expect.objectContaining({
         platform: "google_data_manager",
         statusClass: "transport_error",
-        destinationAccountSuffix: "7890",
         transactionId: "***26-002",
       }),
     ]));
+    expect(JSON.stringify(logs)).not.toContain("7890");
   });
 
   it("returns retryable when token failure cannot be durably recorded and sanitizes the failure", async () => {
@@ -605,7 +733,9 @@ describe("Google Data Manager execution", () => {
 
     await expect(createGoogleDataManagerClient({
       config,
-      tokenProvider: { getAccessToken: vi.fn().mockRejectedValue(new Error("refresh-secret")) },
+      tokenProvider: testTokenProvider(
+        vi.fn().mockRejectedValue(new Error("refresh-secret")),
+      ),
       fetchImpl,
       logger: { log: (entry) => logs.push(entry) },
     }).execute(event, repository)).resolves.toEqual({ outcome: "retryable_error" });
@@ -626,7 +756,7 @@ describe("Google Data Manager execution", () => {
 
     await expect(createGoogleDataManagerClient({
       config,
-      tokenProvider: { getAccessToken: vi.fn().mockResolvedValue("access") },
+      tokenProvider: testTokenProvider(),
       fetchImpl: acceptedFetch,
     }).execute(event, markAcceptedRepository)).resolves.toEqual({
       outcome: "retryable_error",
@@ -643,7 +773,7 @@ describe("Google Data Manager execution", () => {
     }));
     await expect(createGoogleDataManagerClient({
       config,
-      tokenProvider: { getAccessToken: vi.fn().mockResolvedValue("access") },
+      tokenProvider: testTokenProvider(),
       fetchImpl: statusFetch,
     }).execute(event, finalRepository)).resolves.toEqual({
       outcome: "retryable_error",
