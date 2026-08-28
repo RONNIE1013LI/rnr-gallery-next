@@ -124,6 +124,11 @@ export function SiteFooter({
               </li>
             </ul>
             <address className="site-footer__contact">
+              <span>R&amp;R Gallery Ltd</span>
+              <span>11 Para Close</span>
+              <span>Fairview Heights</span>
+              <span>Auckland 0632</span>
+              <span>New Zealand</span>
               <a href={phoneHref(content.phone)}>{content.phone}</a>
               <a
                 className="site-footer__email"

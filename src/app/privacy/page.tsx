@@ -147,32 +147,41 @@ export default function PrivacyPage() {
           checkout working and maintain a customer session.
         </p>
         <p>
-          We use Google Analytics, provided by Google, to understand use of public
-          website pages. It can use persistent analytics cookies such as <code>_ga</code>
+          Cookie Preferences records your choice. Analytics and advertising remain
+          disabled until you make a choice; essential cart, checkout and customer-session
+          storage remains separate and continues to support those functions.
+        </p>
+        <p>
+          An analytics choice permits Google Analytics, provided by Google, to measure
+          public website use. It can use persistent analytics cookies such as <code>_ga</code>
           {" "}that may remain across browser sessions until they expire or you delete
-          them. Google Analytics may receive technical usage information including
-          page and device information, referring pages and campaign identifiers.
-          Analytics storage is active by default on public pages.
+          them. Google Analytics may receive technical usage information including page
+          and device information, referring pages and campaign identifiers.
         </p>
         <p>
-          Campaign and order-attribution information may include UTM parameters,
-          <code>gclid</code>, <code>gbraid</code>, <code>wbraid</code> and <code>fbclid</code>. The website
-          keeps allowlisted campaign values in browser session storage and may attach
-          them to an order so we can understand how that order reached us.
-          Advertising-related Consent Mode signals for ad storage, ad user data and
-          ad personalisation are denied. Google Ads purchase measurement receives a
-          stable transaction reference, currency and order totals after a confirmed
-          payment so repeat views do not create a different transaction.
-        </p>
-        <p>
-          When enabled by an administrator, the Meta Pixel measures public page,
-          product, cart, checkout and purchase activity for advertising performance.
+          An advertising choice permits Google Ads purchase measurement and the Meta
+          Pixel to measure public page, product, cart, checkout and purchase activity
+          for advertising performance. Campaign and order-attribution information may
+          include UTM parameters, <code>gclid</code>, <code>gbraid</code>, <code>wbraid</code>
+          {" "}and <code>fbclid</code>. Google Ads purchase measurement receives a stable
+          transaction reference, currency and order totals after a confirmed payment.
           Meta may use first-party identifiers such as <code>_fbp</code> and campaign
-          information such as <code>fbclid</code>. The analytics layer does not send
-          customer photos, artwork, design instructions, name, email, phone, address
-          or payment proof to Google or Meta. Meta Conversions API and Google Enhanced
-          Conversions are not currently enabled. We do not currently use these tools
-          for remarketing or personalised advertising campaigns.
+          information such as <code>fbclid</code>.
+        </p>
+        <p>
+          Meta Conversions API is used only if advertising consent and the required
+          configuration are present. Where it is configured, matching may use approved
+          first-party identifiers and a hashed email or phone only when the required
+          consent permits it. No CAPI request is made without the required configuration,
+          consent and an approved matching identifier. Google Enhanced Conversions are
+          not currently enabled.
+        </p>
+        <p>
+          Browser measurement and any conditional server measurement does not send raw
+          customer photos, artwork, design instructions, name, email, phone, address,
+          payment proof, file names, media URLs, notes or memorial wording to Google or
+          Meta. We do not currently use these tools for remarketing or personalised
+          advertising campaigns.
         </p>
         <p>
           You can use your browser controls to block or delete analytics cookies.

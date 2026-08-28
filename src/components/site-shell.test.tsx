@@ -385,6 +385,11 @@ describe("site shell", () => {
     expect(email).toBeVisible();
     expect(email).toHaveAttribute("href", "mailto:customerservice@rnrgallery.com");
     expect(contact).toContainElement(email);
+    expect(contact).toHaveTextContent("R&R Gallery Ltd");
+    expect(contact).toHaveTextContent("11 Para Close");
+    expect(contact).toHaveTextContent("Fairview Heights");
+    expect(contact).toHaveTextContent("Auckland 0632");
+    expect(contact).toHaveTextContent("New Zealand");
     expect(within(footer).getAllByRole("link", { name: /privacy/i }))
       .toHaveLength(1);
     expect(within(footer).getByRole("link", { name: "Designs by Product" }))

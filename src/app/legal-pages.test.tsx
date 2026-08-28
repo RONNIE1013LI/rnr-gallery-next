@@ -1,6 +1,7 @@
 import { render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import PrivacyPage from "./privacy/page";
+import ContactPage from "./contact/page";
 import TermsPage from "./terms/page";
 import ReturnsRefundsPage from "./returns-refunds/page";
 
@@ -85,5 +86,44 @@ describe("legal pages", () => {
       "The remaining amount may be refunded and will generally equal 50% of the total order value.",
     );
     expect(main).not.toHaveTextContent(/deposit|remaining balance|final payment/i);
+  });
+
+  it("publishes the full business identity on Contact", () => {
+    render(<ContactPage />);
+
+    const contact = screen.getByRole("main");
+    expect(contact).toHaveTextContent("R&R Gallery Ltd");
+    expect(contact).toHaveTextContent("11 Para Close");
+    expect(contact).toHaveTextContent("Fairview Heights");
+    expect(contact).toHaveTextContent("Auckland 0632");
+    expect(contact).toHaveTextContent("New Zealand");
+    expect(screen.getByRole("link", { name: "+64 21 023 48948" }))
+      .toHaveAttribute("href", "tel:+642102348948");
+    expect(screen.getByRole("link", { name: "customerservice@rnrgallery.com" }))
+      .toHaveAttribute("href", "mailto:customerservice@rnrgallery.com");
+  });
+
+  it.each([
+    ["Terms", TermsPage],
+    ["Returns", ReturnsRefundsPage],
+  ])("keeps %s consumer remedies separate from change-of-mind cancellation", (_name, Page) => {
+    render(<Page />);
+
+    const policy = screen.getByRole("main").textContent?.replace(/\s+/g, " ") ?? "";
+    expect(policy).toMatch(/change-of-mind cancellation/i);
+    expect(policy).toMatch(/before design work begins/i);
+    expect(policy).toMatch(/initial design proof.*design fee.*non-refundable/i);
+    expect(policy).toMatch(/50%.*total order value/i);
+    expect(policy).toMatch(/damaged delivery/i);
+    expect(policy).toMatch(/faulty print.*wrong item/i);
+    expect(policy).toMatch(/approved proof/i);
+    expect(policy).toMatch(/reasonable evidence/i);
+    expect(policy).toMatch(/repair.*reprint.*replacement.*refund/i);
+    expect(policy).toMatch(/return shipping/i);
+    expect(policy).toMatch(/payment provider.*bank/i);
+    expect(policy).toMatch(/New Zealand Consumer Guarantees Act/i);
+    expect(policy).toMatch(/Australian Consumer Law/i);
+    expect(policy).toMatch(/(?:does not|nothing.*) limit.*faulty.*damaged.*wrong.*approved[- ]proof.*statutory/i);
+    expect(policy).not.toMatch(/return within \d+ days|refund within \d+ (?:business )?days/i);
   });
 });

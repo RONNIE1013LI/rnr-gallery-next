@@ -15,9 +15,13 @@ export default function ContactPage() {
       <article>
         <p className={styles.eyebrow}>Contact</p>
         <h1>Talk to R&amp;R Gallery.</h1>
-        <p>R&amp;R Gallery Ltd is based in Auckland, New Zealand.</p>
         <h2>Customer support</h2>
         <address>
+          R&amp;R Gallery Ltd<br />
+          11 Para Close<br />
+          Fairview Heights<br />
+          Auckland 0632<br />
+          New Zealand<br />
           <a href="tel:+642102348948">+64 21 023 48948</a><br />
           <a href="mailto:customerservice@rnrgallery.com">customerservice@rnrgallery.com</a>
         </address>

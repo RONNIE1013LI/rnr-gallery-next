@@ -64,20 +64,25 @@ describe("PrivacyPage", () => {
     expect(policy).toMatch(/rate.+data.+no more than 24 hours/i);
   });
 
-  it("accurately discloses current analytics and advertising measurement boundaries", () => {
+  it("accurately discloses recorded-consent and conditional advertising measurement boundaries", () => {
     render(<PrivacyPage />);
 
     const policy = document.body.textContent?.replace(/\s+/g, " ") ?? "";
 
+    expect(policy).toMatch(/Cookie Preferences.*record.*choice/i);
+    expect(policy).toMatch(/analytics and advertising.*disabled until.*choice/i);
+    expect(policy).toMatch(/analytics choice.*Google Analytics/i);
+    expect(policy).toMatch(/advertising choice.*Google Ads.*Meta Pixel/i);
     expect(policy).toMatch(/Google Analytics.+Google/i);
     expect(policy).toMatch(/persistent.+_ga.+across browser sessions/i);
     expect(policy).toMatch(/UTM.+gclid.+gbraid.+wbraid.+fbclid/i);
-    expect(policy).toMatch(/analytics storage.+active by default/i);
-    expect(policy).toMatch(/ad storage.+ad user data.+ad personalisation.+denied/i);
     expect(policy).toMatch(/Google Ads.+purchase measurement/i);
-    expect(policy).toMatch(/enabled.+Meta Pixel.+public page.+product.+cart.+checkout.+purchase/i);
-    expect(policy).toMatch(/does not send.+photos.+artwork.+design instructions.+name.+email.+phone.+address.+payment proof/i);
-    expect(policy).toMatch(/Meta Conversions API.+Google Enhanced Conversions.+not currently enabled/i);
+    expect(policy).toMatch(/Meta Pixel.+public page.+product.+cart.+checkout.+purchase/i);
+    expect(policy).toMatch(/Meta Conversions API.+only if.+advertising consent.+required configuration/i);
+    expect(policy).toMatch(/hashed email or phone.+only when.*consent/i);
+    expect(policy).toMatch(/no CAPI request.*configuration.*consent.*approved matching identifier/i);
+    expect(policy).toMatch(/does not send raw.+photos.+artwork.+design instructions.+name.+email.+phone.+address.+payment proof.+file names.+media URLs.+notes.+memorial wording/i);
+    expect(policy).toMatch(/Google Enhanced Conversions.+not currently enabled/i);
     expect(policy).toMatch(/do not currently use.+remarketing.+personalised advertising/i);
     expect(policy).toMatch(/browser.+block or delete.+analytics cookies/i);
     expect(policy).toMatch(/essential.+cart.+checkout.+separate/i);

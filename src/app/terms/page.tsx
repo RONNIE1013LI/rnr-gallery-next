@@ -19,6 +19,7 @@ export default function TermsPage() {
             <li><a href="#custom-orders">Custom orders</a></li>
             <li><a href="#drafts-and-revisions">Drafts and revisions</a></li>
             <li><a href="#cancellations-and-refunds">Cancellations and refunds</a></li>
+            <li><a href="#consumer-remedies">Consumer remedies</a></li>
             <li><a href="#timing-and-urgent-service">Timing and urgent service</a></li>
             <li><a href="#printing-and-files">Printing, colour and supplied files</a></li>
             <li><a href="#contact">Contact</a></li>
@@ -39,10 +40,31 @@ export default function TermsPage() {
         </p>
         <h2 id="cancellations-and-refunds">Cancellations and refunds</h2>
         <p>
+          This change-of-mind cancellation rule applies only to custom products.
           Orders can be cancelled for a full refund after successful checkout and
           before design work begins. Once the initial design proof has been delivered,
           the design fee is non-refundable. The remaining amount may be refunded and
           will generally equal 50% of the total order value.
+        </p>
+        <h2 id="consumer-remedies">Consumer remedies: damaged delivery, faulty print, wrong item and approved-proof mismatch</h2>
+        <p>
+          If an item is damaged in delivery, faulty, the wrong item, or materially
+          different from the approved proof, please contact us with your order details
+          and reasonable evidence, such as photographs of the item, packaging or
+          approved proof where relevant. We may ask reasonable follow-up questions.
+        </p>
+        <p>
+          Depending on the circumstances, an appropriate remedy may be a repair,
+          reprint, replacement or refund. If an item is faulty or incorrect and a
+          return is reasonably required, R&amp;R Gallery will meet reasonable return
+          shipping costs. We will process an approved refund using the appropriate
+          payment method; the time it takes to appear depends on the payment provider
+          and bank.
+        </p>
+        <p>
+          Nothing in these terms limits your rights for a faulty, damaged, wrong item
+          or approved-proof mismatch, or any statutory remedy under the New Zealand
+          Consumer Guarantees Act or Australian Consumer Law.
         </p>
         <h2 id="timing-and-urgent-service">Timing and urgent service</h2>
         <p>
