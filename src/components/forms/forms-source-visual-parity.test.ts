@@ -41,7 +41,12 @@ describe("Forms source visual parity", () => {
     expect(mobileRules).toMatch(/\.filterPanel input,\s*\.filterPanel select[\s\S]*?height: var\(--forms-filter-control-height-mobile\);[\s\S]*?min-height: var\(--forms-filter-control-height-mobile\);/);
     expect(mobileRules).toMatch(/\.filterHeading button,\s*\.filterRow > button[\s\S]*?width: var\(--forms-filter-control-height-mobile\);[\s\S]*?min-width: var\(--forms-filter-control-height-mobile\);/);
     expect(mobileRules).toMatch(/\.filterActions button,\s*\.filterPresetButtons button[\s\S]*?height: var\(--forms-filter-control-height-mobile\);[\s\S]*?min-height: var\(--forms-filter-control-height-mobile\);/);
-    expect(mobileRules).toMatch(/\.savedSearchWorkspace \.personalViewList span button:last-child[\s\S]*?width: var\(--forms-filter-control-height-mobile\);[\s\S]*?min-width: var\(--forms-filter-control-height-mobile\);/);
+  });
+
+  it("keeps saved-search delete controls visually tiny and pinned to the top-right corner", () => {
+    expect(css).not.toContain(".personalViewList span button:not(:first-child)");
+    expect(css).toMatch(/\.personalViewList span \.savedViewDeleteButton\s*{[\s\S]*?position: absolute;[\s\S]*?top: -10px;[\s\S]*?right: -10px;[\s\S]*?width: 24px;[\s\S]*?height: 24px;/);
+    expect(css).toMatch(/\.personalViewList span \.savedViewDeleteButton\s*{[\s\S]*?font-size: 12px;/);
   });
 
   it("preserves the source field-specific option colours", () => {

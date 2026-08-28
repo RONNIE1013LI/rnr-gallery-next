@@ -52,6 +52,19 @@ describe("forms filter builder", () => {
     expect(apply).toHaveBeenCalledWith({ match: "and", conditions: [] });
   });
 
+  it("defaults a newly opened filter panel to all conditions", () => {
+    render(<FormsFilterBuilder
+      conditions={[{ field: "status", operator: "equals", value: "new" }]}
+      match="or"
+      canViewFinance
+      onApply={vi.fn()}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Filter orders (1 active)" }));
+
+    expect(screen.getByLabelText("Match")).toHaveValue("and");
+  });
+
   it("keeps each remove control inside its own condition row", () => {
     render(<FormsFilterBuilder
       conditions={[
@@ -220,7 +233,7 @@ describe("forms filter builder", () => {
       match="and"
       canViewFinance
       renderSavedSearches={(_group, _close, load) => (
-        <button type="button" onClick={() => load("filter=deliveryMethod~isAnyOf~%5B%22post%22%2C%22australia_shipping%22%5D")}>Edit delivery search</button>
+        <button type="button" onClick={() => load("match=or&filter=deliveryMethod~isAnyOf~%5B%22post%22%2C%22australia_shipping%22%5D")}>Edit delivery search</button>
       )}
       onApply={vi.fn()}
     />);
@@ -229,6 +242,7 @@ describe("forms filter builder", () => {
     fireEvent.click(screen.getByRole("button", { name: "Edit delivery search" }));
 
     expect(screen.getByRole("dialog", { name: "Order filters" })).toBeInTheDocument();
+    expect(screen.getByLabelText("Match")).toHaveValue("or");
     expect(screen.getByLabelText("Filter field 1")).toHaveValue("deliveryMethod");
     expect(screen.getByLabelText("Filter operator 1")).toHaveValue("isAnyOf");
     expect(screen.getByRole("checkbox", { name: "Post" })).toBeChecked();

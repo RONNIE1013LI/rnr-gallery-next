@@ -20,6 +20,17 @@ describe("forms saved views", () => {
     expect(controls).not.toContainElement(screen.getByLabelText("Personal saved views"));
   });
 
+  it("marks each delete control for compact corner positioning", () => {
+    render(<FormsSavedViews
+      views={[{ id: "view-1", name: "Urgent", queryString: "filter=urgent%7Eequals%7Etrue" }]}
+      currentQuery="filter=urgent%7Eequals%7Etrue"
+      onChanged={vi.fn()}
+      onOpen={vi.fn()}
+    />);
+
+    expect(screen.getByRole("button", { name: "Delete Urgent" }).className).toContain("savedViewDeleteButton");
+  });
+
   it("saves the current operational filters and opens a personal view", async () => {
     const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({ result: "created" }), { status: 201 }));
     vi.stubGlobal("fetch", request);

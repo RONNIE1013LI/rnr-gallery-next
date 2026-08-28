@@ -246,7 +246,7 @@ export function FormsFilterBuilder({
 
   function show() {
     const next = splitCommonConditions(conditions);
-    setDraftMatch(match);
+    setDraftMatch("and");
     setDraftUpdatedFrom(next.updatedFrom);
     setDraftUpdatedTo(next.updatedTo);
     setDraftArtist(next.artist);

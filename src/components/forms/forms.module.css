@@ -1251,27 +1251,56 @@
 
 .personalViewList {
   max-width: 300px;
+  padding: 10px 10px 2px 0;
   overflow: auto;
 }
 
 .personalViewList span {
+  position: relative;
   flex: 0 0 auto;
   gap: 0;
+  margin-right: 6px;
 }
 
 .personalViewList span button:first-child {
   border-radius: 5px 0 0 5px;
 }
 
-.personalViewList span button:not(:first-child) {
+.personalViewList span button:nth-child(2) {
   width: 44px;
   padding: 0;
   border-left: 0;
-  border-radius: 0;
+  border-radius: 0 5px 5px 0;
 }
 
-.personalViewList span button:last-child {
-  border-radius: 0 5px 5px 0;
+.personalViewList span .savedViewDeleteButton {
+  position: absolute;
+  z-index: 1;
+  top: -10px;
+  right: -10px;
+  display: grid;
+  width: 24px;
+  min-width: 24px;
+  height: 24px;
+  min-height: 24px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #b42318;
+  background: transparent;
+  font-size: 12px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.personalViewList span .savedViewDeleteButton:hover {
+  background: #fff1f0;
+}
+
+.personalViewList span .savedViewDeleteButton:focus-visible {
+  outline: 2px solid var(--forms-focus);
+  outline-offset: 0;
 }
 
 .savedViewMessage {
@@ -2150,7 +2179,6 @@
 
   .filterHeading button,
   .filterRow > button,
-  .personalViewList span button:last-child,
   .inlineEditor button {
     width: 48px;
   }
@@ -2314,10 +2342,6 @@
 
   .personalViews input {
     width: 96px;
-  }
-
-  .personalViewList span button:last-child {
-    width: 28px;
   }
 
   .filterPanel {
@@ -3018,12 +3042,6 @@
     width: 100%;
   }
 
-  .savedSearchWorkspace .personalViewList span button:last-child {
-    width: var(--forms-filter-control-height-mobile);
-    min-width: var(--forms-filter-control-height-mobile);
-    padding: 0;
-  }
-
   .filterBackdrop {
     z-index: 109;
     background: rgb(15 23 42 / 16%);
@@ -3097,6 +3115,14 @@
     height: var(--forms-filter-control-height-mobile);
     min-height: var(--forms-filter-control-height-mobile);
     padding-block: 3px;
+  }
+
+  .savedSearchWorkspace .personalViewList span .savedViewDeleteButton {
+    width: 24px;
+    min-width: 24px;
+    height: 24px;
+    min-height: 24px;
+    padding: 0;
   }
 
   .filterPanel .filterGroupTitle {

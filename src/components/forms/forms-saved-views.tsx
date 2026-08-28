@@ -118,7 +118,7 @@ export function FormsSavedViews({
         {views.map((view) => <span key={view.id}>
           <button type="button" onClick={() => onOpen(view.queryString)}>{view.name}</button>
           <button type="button" aria-label={`Edit ${view.name}`} disabled={pending} onClick={() => beginEdit(view)}>✎</button>
-          <button type="button" aria-label={`Delete ${view.name}`} disabled={pending} onClick={() => void remove(view)}>×</button>
+          <button className={styles.savedViewDeleteButton} type="button" aria-label={`Delete ${view.name}`} disabled={pending} onClick={() => void remove(view)}>×</button>
         </span>)}
       </div> : null}
       <div className={styles.savedViewControls} role="group" aria-label="Save a search">
