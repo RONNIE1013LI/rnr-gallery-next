@@ -56,39 +56,18 @@ function australiaShippingXml(product: MerchantProductData): readonly string[] {
   ];
 }
 
-const NEW_ZEALAND_MERCHANT_SHIPPING_BY_REGION = Object.freeze([
-  ["AUK", 2_500],
-  ["NTL", 3_000],
-  ["BOP", 2_500],
-  ["GIS", 2_500],
-  ["HKB", 2_500],
-  ["MWT", 2_500],
-  ["TKI", 2_500],
-  ["WGN", 2_500],
-  ["WKO", 2_500],
-  ["CIT", 2_500],
-  ["CAN", 5_000],
-  ["MBH", 5_000],
-  ["NSN", 5_000],
-  ["OTA", 5_000],
-  ["STL", 5_000],
-  ["TAS", 5_000],
-  ["WTC", 5_000],
-] as const);
-
 function newZealandShippingXml(): readonly string[] {
-  return NEW_ZEALAND_MERCHANT_SHIPPING_BY_REGION.flatMap(([region, price]) => [
+  return [
     "      <g:shipping>",
     "        <g:country>NZ</g:country>",
-    `        <g:region>${region}</g:region>`,
-    "        <g:service>GoSweetSpot delivery</g:service>",
-    `        <g:price>${formatPrice(price, "NZD")}</g:price>`,
+    "        <g:service>GoSweetSpot delivery estimate</g:service>",
+    "        <g:price>50.00 NZD</g:price>",
     "        <g:min_handling_time>5</g:min_handling_time>",
     "        <g:max_handling_time>5</g:max_handling_time>",
     "        <g:min_transit_time>2</g:min_transit_time>",
     "        <g:max_transit_time>3</g:max_transit_time>",
     "      </g:shipping>",
-  ]);
+  ];
 }
 
 function shippingXml(product: MerchantProductData, market: Market): readonly string[] {

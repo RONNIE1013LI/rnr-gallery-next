@@ -79,7 +79,7 @@ describe("serializeGoogleMerchantFeed", () => {
     expect(blocks.every((block) => block.includes("<g:max_handling_time>5</g:max_handling_time>"))).toBe(true);
   });
 
-  it("uses conservative region-level New Zealand rates audited against live checkout", () => {
+  it("uses one conservative nationwide New Zealand rate without region codes", () => {
     const xml = serializeGoogleMerchantFeed({
       market: "NZ",
       products: [item],
@@ -87,32 +87,12 @@ describe("serializeGoogleMerchantFeed", () => {
     });
 
     const blocks = shippingBlocks(xml);
-    expect(blocks).toHaveLength(17);
-    const expectedRates = {
-      AUK: "25.00 NZD",
-      NTL: "30.00 NZD",
-      BOP: "25.00 NZD",
-      GIS: "25.00 NZD",
-      HKB: "25.00 NZD",
-      MWT: "25.00 NZD",
-      TKI: "25.00 NZD",
-      WGN: "25.00 NZD",
-      WKO: "25.00 NZD",
-      CAN: "50.00 NZD",
-      CIT: "25.00 NZD",
-      MBH: "50.00 NZD",
-      NSN: "50.00 NZD",
-      OTA: "50.00 NZD",
-      STL: "50.00 NZD",
-      TAS: "50.00 NZD",
-      WTC: "50.00 NZD",
-    } as const;
-    for (const [region, price] of Object.entries(expectedRates)) {
-      const block = blocks.find((candidate) => candidate.includes(`<g:region>${region}</g:region>`));
-      expect(block).toContain(`<g:price>${price}</g:price>`);
-      expect(block).toContain("<g:service>GoSweetSpot delivery</g:service>");
-      expect(block).toContain("<g:min_transit_time>2</g:min_transit_time>");
-      expect(block).toContain("<g:max_transit_time>3</g:max_transit_time>");
-    }
+    expect(blocks).toHaveLength(1);
+    expect(blocks[0]).toContain("<g:country>NZ</g:country>");
+    expect(blocks[0]).not.toContain("<g:region>");
+    expect(blocks[0]).toContain("<g:price>50.00 NZD</g:price>");
+    expect(blocks[0]).toContain("<g:service>GoSweetSpot delivery estimate</g:service>");
+    expect(blocks[0]).toContain("<g:min_transit_time>2</g:min_transit_time>");
+    expect(blocks[0]).toContain("<g:max_transit_time>3</g:max_transit_time>");
   });
 });
