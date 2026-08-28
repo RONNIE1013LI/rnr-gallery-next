@@ -142,7 +142,6 @@ export function SiteFooter({
 
       <div className="site-footer__legal">
         <address className="site-footer__business-line">
-          <strong>R&amp;R Gallery Ltd</strong>{" "}
           11 Para Close, Fairview Heights, Auckland 0632, New Zealand
         </address>
         <span

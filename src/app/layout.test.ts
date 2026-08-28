@@ -207,14 +207,15 @@ describe("root layout metadata", () => {
     expect(globals).toContain("width: 1.875rem;\n    min-width: 1.875rem;");
   });
 
-  it("keeps the footer business line at one shared desktop and mobile font size", () => {
+  it("keeps the footer address on one line at one shared desktop and mobile font size", () => {
     const globals = cssFile("src/app/globals.css");
     const businessRules = globals.match(/\.site-footer__business-line\s*\{/g) ?? [];
 
     expect(businessRules).toHaveLength(1);
-    expect(cssRule(globals, ".site-footer__business-line {")).toContain(
-      "font-size: 0.8125rem;",
-    );
+    const businessLine = cssRule(globals, ".site-footer__business-line {");
+    expect(businessLine).toContain("font-size: 0.8125rem;");
+    expect(businessLine).toContain("white-space: nowrap;");
+    expect(businessLine).toContain("width: calc(100% + 2.5rem);");
   });
 
   it("stacks admin page-header actions at the tablet breakpoint", () => {

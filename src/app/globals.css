@@ -892,16 +892,14 @@ a:active {
 }
 
 .site-footer__business-line {
-  margin: 0;
+  width: calc(100% + 2.5rem);
+  margin: 0 -1.25rem;
   color: var(--text-on-dark-muted);
   font-size: 0.8125rem;
   font-style: normal;
   line-height: 1.5;
   text-align: center;
-}
-
-.site-footer__business-line strong::after {
-  content: " ·";
+  white-space: nowrap;
 }
 
 .site-footer__copyright {

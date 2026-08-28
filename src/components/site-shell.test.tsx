@@ -389,8 +389,10 @@ describe("site shell", () => {
     expect(contact).not.toHaveTextContent("11 Para Close");
     const businessLine = footer.querySelector<HTMLElement>(".site-footer__business-line");
     expect(businessLine).toHaveTextContent(
-      "R&R Gallery Ltd 11 Para Close, Fairview Heights, Auckland 0632, New Zealand",
+      "11 Para Close, Fairview Heights, Auckland 0632, New Zealand",
     );
+    expect(businessLine).not.toHaveTextContent("R&R Gallery Ltd");
+    expect(businessLine?.querySelector("strong")).toBeNull();
     expect(within(footer).getAllByRole("link", { name: /privacy/i }))
       .toHaveLength(1);
     expect(within(footer).getByRole("link", { name: "Designs by Product" }))
