@@ -15,6 +15,7 @@ const enabledEnvironment = Object.freeze({
   GOOGLE_DATA_MANAGER_OAUTH_REFRESH_TOKEN: "refresh-token",
   META_MANUAL_CONVERSIONS_ENABLED: "true",
   META_MANUAL_CONVERSIONS_ACTIVATED_AT: "2026-08-28T00:00:00.000Z",
+  META_CAPI_EXECUTION_ENABLED: "true",
   META_CAPI_ACCESS_TOKEN: "meta-token",
 });
 
@@ -55,6 +56,9 @@ describe("conversion delivery worker", () => {
       }).googleEnabled, `${key}=${String(value)}`).toBe(false);
     }
     for (const [key, value] of [
+      ["META_CAPI_EXECUTION_ENABLED", undefined],
+      ["META_CAPI_EXECUTION_ENABLED", "false"],
+      ["META_CAPI_EXECUTION_ENABLED", "TRUE"],
       ["META_MANUAL_CONVERSIONS_ENABLED", "1"],
       ["META_MANUAL_CONVERSIONS_ACTIVATED_AT", ""],
       ["META_CAPI_ACCESS_TOKEN", ""],

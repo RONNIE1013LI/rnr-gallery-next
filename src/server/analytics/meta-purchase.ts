@@ -137,11 +137,13 @@ async function loadPaidOrder(orderNumber: string): Promise<MetaPaidOrderSnapshot
 
 export async function reportMetaPaidOrder(orderNumber: string): Promise<MetaSendResult> {
   const accessToken = process.env.META_CAPI_ACCESS_TOKEN?.trim();
-  const client = createMetaCapiClient({ accessToken });
+  const executionFlag = process.env.META_CAPI_EXECUTION_ENABLED;
+  const client = createMetaCapiClient({ accessToken, executionFlag });
   return createMetaPurchaseReporter({
     loadPaidOrder,
     send: client.send,
-    enabled: async () => Boolean(accessToken)
+    enabled: async () => executionFlag === "true"
+      && Boolean(accessToken)
       && (await getSafePublicContent(["advertising.meta.enabled"]))
         ["advertising.meta.enabled"] === "enabled",
   })(orderNumber);

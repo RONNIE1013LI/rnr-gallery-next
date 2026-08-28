@@ -134,17 +134,19 @@ function metaPayload(event: SafeMetaEvent) {
 
 export function createMetaCapiClient({
   accessToken,
+  executionFlag,
   fetchImpl = fetch,
   timeoutMs = 1_500,
 }: Readonly<{
   accessToken: string | undefined;
+  executionFlag: string | undefined;
   fetchImpl?: typeof fetch;
   timeoutMs?: number;
 }>) {
   const token = accessToken?.trim() ?? "";
   return Object.freeze({
     async send(event: SafeMetaEvent): Promise<"disabled" | "sent" | "failed"> {
-      if (!token) return "disabled";
+      if (executionFlag !== "true" || !token) return "disabled";
       if (!event.fbp && !event.fbc && !event.hashedEmail && !event.hashedPhone) {
         return "disabled";
       }

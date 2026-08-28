@@ -21,12 +21,33 @@ const event: SafeMetaEvent = {
 };
 
 describe("Meta CAPI client", () => {
+  it("makes no request unless the execution flag is exactly true", async () => {
+    for (const executionFlag of [undefined, "", "false", "TRUE", "yes"]) {
+      const fetchImpl = vi.fn().mockResolvedValue(new Response(
+        JSON.stringify({ events_received: 1 }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      ));
+      const client = createMetaCapiClient({
+        accessToken: "server-secret",
+        executionFlag,
+        fetchImpl,
+      });
+
+      await expect(client.send(event), String(executionFlag)).resolves.toBe("disabled");
+      expect(fetchImpl, String(executionFlag)).not.toHaveBeenCalled();
+    }
+  });
+
   it("sends only the allowlisted CAPI payload with server-only authorization", async () => {
     const fetchImpl = vi.fn().mockResolvedValue(new Response(
       JSON.stringify({ events_received: 1 }),
       { status: 200, headers: { "content-type": "application/json" } },
     ));
-    const client = createMetaCapiClient({ accessToken: "server-secret", fetchImpl });
+    const client = createMetaCapiClient({
+      accessToken: "server-secret",
+      executionFlag: "true",
+      fetchImpl,
+    });
 
     await expect(client.send(event)).resolves.toBe("sent");
     const [url, request] = fetchImpl.mock.calls[0];
@@ -60,7 +81,11 @@ describe("Meta CAPI client", () => {
       JSON.stringify({ events_received: 1 }),
       { status: 200, headers: { "content-type": "application/json" } },
     ));
-    const client = createMetaCapiClient({ accessToken: "server-secret", fetchImpl });
+    const client = createMetaCapiClient({
+      accessToken: "server-secret",
+      executionFlag: "true",
+      fetchImpl,
+    });
 
     await expect(client.send({
       name: "Purchase",
@@ -84,26 +109,26 @@ describe("Meta CAPI client", () => {
 
   it("makes no request without credentials, consent-approved matching, or a valid contract", async () => {
     const fetchImpl = vi.fn();
-    await expect(createMetaCapiClient({ accessToken: "", fetchImpl }).send(event))
+    await expect(createMetaCapiClient({ accessToken: "", executionFlag: "true", fetchImpl }).send(event))
       .resolves.toBe("disabled");
-    await expect(createMetaCapiClient({ accessToken: "secret", fetchImpl }).send({
+    await expect(createMetaCapiClient({ accessToken: "secret", executionFlag: "true", fetchImpl }).send({
       ...event,
       fbp: undefined,
       hashedEmail: undefined,
       hashedPhone: undefined,
     })).resolves.toBe("disabled");
-    await expect(createMetaCapiClient({ accessToken: "secret", fetchImpl }).send({
+    await expect(createMetaCapiClient({ accessToken: "secret", executionFlag: "true", fetchImpl }).send({
       ...event,
       rawEmail: "private@example.test",
     } as SafeMetaEvent)).resolves.toBe("failed");
-    await expect(createMetaCapiClient({ accessToken: "secret", fetchImpl }).send({
+    await expect(createMetaCapiClient({ accessToken: "secret", executionFlag: "true", fetchImpl }).send({
       ...event,
       currency: undefined,
       value: undefined,
       contentIds: undefined,
       contents: undefined,
     })).resolves.toBe("failed");
-    await expect(createMetaCapiClient({ accessToken: "secret", fetchImpl }).send({
+    await expect(createMetaCapiClient({ accessToken: "secret", executionFlag: "true", fetchImpl }).send({
       ...event,
       name: "PageView",
       eventId: "00000000-0000-4000-8000-000000000001",
@@ -116,7 +141,12 @@ describe("Meta CAPI client", () => {
       new Promise<Response>((_resolve, reject) => {
         request?.signal?.addEventListener("abort", () => reject(new Error("server-secret")));
       }));
-    const client = createMetaCapiClient({ accessToken: "server-secret", fetchImpl, timeoutMs: 5 });
+    const client = createMetaCapiClient({
+      accessToken: "server-secret",
+      executionFlag: "true",
+      fetchImpl,
+      timeoutMs: 5,
+    });
     await expect(client.send(event)).resolves.toBe("failed");
   });
 
@@ -125,7 +155,11 @@ describe("Meta CAPI client", () => {
       JSON.stringify({ events_received: 0 }),
       { status: 200, headers: { "content-type": "application/json" } },
     ));
-    await expect(createMetaCapiClient({ accessToken: "server-secret", fetchImpl }).send(event))
+    await expect(createMetaCapiClient({
+      accessToken: "server-secret",
+      executionFlag: "true",
+      fetchImpl,
+    }).send(event))
       .resolves.toBe("failed");
   });
 });

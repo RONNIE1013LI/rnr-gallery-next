@@ -44,6 +44,7 @@ export function resolveConversionDeliveryWorkerConfig(env: Environment) {
     && parseGoogleDataManagerDestinationConfig(env) !== null
     && parseGoogleDataManagerOAuthCredentials(env) !== null;
   const metaEnabled = globalEnabled
+    && env.META_CAPI_EXECUTION_ENABLED === "true"
     && env.META_MANUAL_CONVERSIONS_ENABLED === "true"
     && validActivation(env.META_MANUAL_CONVERSIONS_ACTIVATED_AT)
     && Boolean(env.META_CAPI_ACCESS_TOKEN?.trim());
@@ -118,7 +119,10 @@ export function createProductionConversionDeliveryWorker(
       }))
     : null;
   const metaToken = env.META_CAPI_ACCESS_TOKEN?.trim() ?? "";
-  const metaClient = metaToken ? createMetaCapiClient({ accessToken: metaToken }) : null;
+  const metaClient = metaToken ? createMetaCapiClient({
+    accessToken: metaToken,
+    executionFlag: env.META_CAPI_EXECUTION_ENABLED,
+  }) : null;
   return createConversionDeliveryWorker({
     env,
     createRepository: () => createDrizzleConversionDeliveryRepository(getDatabase()),

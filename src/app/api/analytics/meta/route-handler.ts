@@ -99,10 +99,15 @@ export function createMetaAnalyticsRoute(dependencies: Dependencies) {
 }
 
 export async function POST(request: Request) {
-  const client = createMetaCapiClient({ accessToken: process.env.META_CAPI_ACCESS_TOKEN });
+  const executionFlag = process.env.META_CAPI_EXECUTION_ENABLED;
+  const client = createMetaCapiClient({
+    accessToken: process.env.META_CAPI_ACCESS_TOKEN,
+    executionFlag,
+  });
   return createMetaAnalyticsRoute({
     send: client.send,
-    enabled: async () => (await getSafePublicContent(["advertising.meta.enabled"]))
-      ["advertising.meta.enabled"] === "enabled",
+    enabled: async () => executionFlag === "true"
+      && (await getSafePublicContent(["advertising.meta.enabled"]))
+        ["advertising.meta.enabled"] === "enabled",
   })(request);
 }
