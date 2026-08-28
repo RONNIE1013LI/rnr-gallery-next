@@ -35,7 +35,10 @@ const WALL_BANNER_PRODUCTS = new Set([
   "digital-oil-painting-banner",
 ]);
 
-function rateFor(productKey: string, sizeKey: string): RatePair {
+export function getAustraliaFixedShippingRates(
+  productKey: string,
+  sizeKey: string,
+): RatePair {
   if (CANVAS_PRODUCTS.has(productKey)) {
     const rate = AUSTRALIA_FIXED_SHIPPING_RATES.canvas[
       sizeKey as keyof typeof AUSTRALIA_FIXED_SHIPPING_RATES.canvas
@@ -80,7 +83,7 @@ function amountFor(
   serviceCode: AustraliaShippingServiceCode,
 ): number {
   return cart.items.reduce((total, item) => {
-    const rate = rateFor(item.productKey, item.sizeKey);
+    const rate = getAustraliaFixedShippingRates(item.productKey, item.sizeKey);
     const unitAmount = serviceCode === "au-standard" ? rate.standard : rate.dhlExpress;
     return total + unitAmount * item.quantity;
   }, 0);

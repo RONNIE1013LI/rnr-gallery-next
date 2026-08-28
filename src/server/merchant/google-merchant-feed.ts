@@ -1,6 +1,7 @@
 import { buildMerchantProductData, type MerchantProductData } from "@/domain/catalogue/merchant-product-data";
 import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
 import type { Market } from "@/domain/markets/types";
+import { getAustraliaFixedShippingRates } from "@/server/shipping/australia-fixed-shipping";
 
 const xmlHeaders = {
   "Content-Type": "application/rss+xml; charset=utf-8",
@@ -31,7 +32,70 @@ function formatPrice(cents: number, currency: MerchantProductData["currency"]): 
   return `${(cents / 100).toFixed(2)} ${currency}`;
 }
 
-function itemXml(product: MerchantProductData): string {
+function australiaShippingXml(product: MerchantProductData): readonly string[] {
+  const rates = getAustraliaFixedShippingRates(product.productKey, product.sizeKey);
+  return [
+    "      <g:shipping>",
+    "        <g:country>AU</g:country>",
+    "        <g:service>Standard Shipping</g:service>",
+    `        <g:price>${formatPrice(rates.standard, "AUD")}</g:price>`,
+    "        <g:min_handling_time>5</g:min_handling_time>",
+    "        <g:max_handling_time>5</g:max_handling_time>",
+    "        <g:min_transit_time>7</g:min_transit_time>",
+    "        <g:max_transit_time>14</g:max_transit_time>",
+    "      </g:shipping>",
+    "      <g:shipping>",
+    "        <g:country>AU</g:country>",
+    "        <g:service>DHL Express</g:service>",
+    `        <g:price>${formatPrice(rates.dhlExpress, "AUD")}</g:price>`,
+    "        <g:min_handling_time>5</g:min_handling_time>",
+    "        <g:max_handling_time>5</g:max_handling_time>",
+    "        <g:min_transit_time>2</g:min_transit_time>",
+    "        <g:max_transit_time>14</g:max_transit_time>",
+    "      </g:shipping>",
+  ];
+}
+
+const NEW_ZEALAND_MERCHANT_SHIPPING_BY_REGION = Object.freeze([
+  ["AUK", 2_500],
+  ["NTL", 3_000],
+  ["BOP", 2_500],
+  ["GIS", 2_500],
+  ["HKB", 2_500],
+  ["MWT", 2_500],
+  ["TKI", 2_500],
+  ["WGN", 2_500],
+  ["WKO", 2_500],
+  ["CIT", 2_500],
+  ["CAN", 5_000],
+  ["MBH", 5_000],
+  ["NSN", 5_000],
+  ["OTA", 5_000],
+  ["STL", 5_000],
+  ["TAS", 5_000],
+  ["WTC", 5_000],
+] as const);
+
+function newZealandShippingXml(): readonly string[] {
+  return NEW_ZEALAND_MERCHANT_SHIPPING_BY_REGION.flatMap(([region, price]) => [
+    "      <g:shipping>",
+    "        <g:country>NZ</g:country>",
+    `        <g:region>${region}</g:region>`,
+    "        <g:service>GoSweetSpot delivery</g:service>",
+    `        <g:price>${formatPrice(price, "NZD")}</g:price>`,
+    "        <g:min_handling_time>5</g:min_handling_time>",
+    "        <g:max_handling_time>5</g:max_handling_time>",
+    "        <g:min_transit_time>2</g:min_transit_time>",
+    "        <g:max_transit_time>3</g:max_transit_time>",
+    "      </g:shipping>",
+  ]);
+}
+
+function shippingXml(product: MerchantProductData, market: Market): readonly string[] {
+  return market === "AU" ? australiaShippingXml(product) : newZealandShippingXml();
+}
+
+function itemXml(product: MerchantProductData, market: Market): string {
   return [
     "    <item>",
     `      <g:id>${escapeXml(product.id)}</g:id>`,
@@ -47,6 +111,7 @@ function itemXml(product: MerchantProductData): string {
     `      <g:size>${escapeXml(product.size)}</g:size>`,
     `      <g:identifier_exists>${product.identifierExists ? "yes" : "no"}</g:identifier_exists>`,
     `      <g:shipping_label>${product.shippingLabel}</g:shipping_label>`,
+    ...shippingXml(product, market),
     "    </item>",
   ].join("\n");
 }
@@ -65,7 +130,7 @@ export function serializeGoogleMerchantFeed(input: Readonly<{
     "    <link>https://rnrgallery.com/</link>",
     "    <description>R&amp;R Gallery made-to-order products</description>",
     `    <lastBuildDate>${input.generatedAt.toUTCString()}</lastBuildDate>`,
-    ...input.products.map(itemXml),
+    ...input.products.map((product) => itemXml(product, input.market)),
     "  </channel>",
     "</rss>",
     "",
