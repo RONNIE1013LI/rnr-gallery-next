@@ -7,7 +7,11 @@ import {
   resetGaTransport,
 } from "@/domain/analytics/client";
 import type { PurchaseEvent } from "@/domain/analytics/events";
-import { GA4_MEASUREMENT_ID } from "@/domain/analytics/runtime";
+import {
+  GA4_MEASUREMENT_ID,
+  GOOGLE_ADS_PURCHASE_SEND_TO,
+  GOOGLE_ADS_TAG_ID,
+} from "@/domain/analytics/runtime";
 import { PurchaseTracker } from "./purchase-tracker";
 
 vi.mock("@next/third-parties/google", () => ({ sendGAEvent: vi.fn() }));
@@ -25,6 +29,25 @@ const event: PurchaseEvent = {
 
 const storageKey = "rnr:analytics:v1:purchase:RNR-2026-ONE";
 
+function setPrivateOrderLocation() {
+  window.history.replaceState(
+    {},
+    "",
+    "/orders/RNR-2026-ONE?access=private-token",
+  );
+  document.documentElement.dataset.ga4PrivatePurchase = "true";
+}
+
+function enablePrivatePurchaseDestinations() {
+  document.documentElement.dataset.ga4Loaded = "true";
+  document.documentElement.dataset.ga4AnalyticsEnabled = "true";
+  document.documentElement.dataset.googleAdsEnabled = "true";
+}
+
+function googleAdsCommands() {
+  return (window as unknown as { dataLayer: unknown[] }).dataLayer;
+}
+
 describe("PurchaseTracker", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -32,6 +55,10 @@ describe("PurchaseTracker", () => {
     markGaTransportReady();
     sessionStorage.clear();
     document.documentElement.removeAttribute("data-ga4-enabled");
+    document.documentElement.removeAttribute("data-ga4-private-purchase");
+    document.documentElement.removeAttribute("data-ga4-loaded");
+    document.documentElement.removeAttribute("data-ga4-analytics-enabled");
+    document.documentElement.removeAttribute("data-google-ads-enabled");
     window.history.replaceState({}, "", "/");
     Object.assign(window, { dataLayer: [] });
   });
@@ -43,12 +70,14 @@ describe("PurchaseTracker", () => {
   });
 
   it("records a purchase only after the official production transport emits", async () => {
+    setPrivateOrderLocation();
     const view = render(<PurchaseTracker event={event} />);
     await new Promise((resolve) => setTimeout(resolve, 0));
     expect(sendGAEvent).not.toHaveBeenCalled();
+    expect(googleAdsCommands()).toEqual([]);
     expect(sessionStorage.getItem(storageKey)).toBeNull();
 
-    document.documentElement.dataset.ga4Enabled = "true";
+    enablePrivatePurchaseDestinations();
     view.rerender(<PurchaseTracker event={{ ...event }} />);
     await waitFor(() => expect(sendGAEvent).toHaveBeenCalledWith(
       "event",
@@ -65,32 +94,59 @@ describe("PurchaseTracker", () => {
         send_to: GA4_MEASUREMENT_ID,
       },
     ));
-    expect(sendGAEvent).toHaveBeenCalledWith("event", "conversion", {
-      transaction_id: "RNR-2026-ONE",
-      currency: "NZD",
-      value: 100.75,
-      page_location: "http://localhost:3000/",
-      page_referrer: "",
-      send_to: "AW-592203244/HtL7CMq6qu0bEOybsZoC",
-    });
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(googleAdsCommands()).toContainEqual([
+      "config",
+      GOOGLE_ADS_TAG_ID,
+      {
+        send_page_view: false,
+        page_location: "http://localhost:3000/",
+        page_referrer: "",
+      },
+    ]);
+    expect(googleAdsCommands()).toContainEqual([
+      "event",
+      "conversion",
+      {
+        transaction_id: "RNR-2026-ONE",
+        currency: "NZD",
+        value: 100.75,
+        page_location: "http://localhost:3000/",
+        page_referrer: "",
+        send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
+      },
+    ]);
+    expect(JSON.stringify(googleAdsCommands())).not.toContain("private-token");
     expect(sessionStorage.getItem(storageKey)).toBe("sent");
   });
 
   it("emits one stable purchase per real order across repeated mounts", async () => {
-    document.documentElement.dataset.ga4Enabled = "true";
+    setPrivateOrderLocation();
+    enablePrivatePurchaseDestinations();
     const first = render(<PurchaseTracker event={event} />);
-    await waitFor(() => expect(sendGAEvent).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(sendGAEvent).toHaveBeenCalledTimes(1));
+    expect(googleAdsCommands().filter(
+      (command) => Array.isArray(command)
+        && command[0] === "event"
+        && command[1] === "conversion",
+    )).toHaveLength(1);
 
     first.unmount();
     render(<PurchaseTracker event={event} />);
     await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(sendGAEvent).toHaveBeenCalledTimes(2);
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(googleAdsCommands().filter(
+      (command) => Array.isArray(command)
+        && command[0] === "event"
+        && command[1] === "conversion",
+    )).toHaveLength(1);
     expect(sessionStorage.getItem(storageKey)).toBe("sent");
   });
 
   it("automatically retries readiness without a prop rerender", async () => {
     vi.useFakeTimers();
-    document.documentElement.dataset.ga4Enabled = "true";
+    setPrivateOrderLocation();
+    enablePrivatePurchaseDestinations();
     Object.assign(window, { dataLayer: undefined });
     render(<PurchaseTracker event={event} />);
 
@@ -102,13 +158,26 @@ describe("PurchaseTracker", () => {
       vi.advanceTimersByTime(250);
     });
 
-    expect(sendGAEvent).toHaveBeenCalledTimes(2);
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(googleAdsCommands()).toContainEqual([
+      "event",
+      "conversion",
+      expect.objectContaining({
+        transaction_id: "RNR-2026-ONE",
+        send_to: GOOGLE_ADS_PURCHASE_SEND_TO,
+      }),
+    ]);
     expect(sessionStorage.getItem(storageKey)).toBe("sent");
 
     await act(async () => {
       vi.runAllTimers();
     });
-    expect(sendGAEvent).toHaveBeenCalledTimes(2);
+    expect(sendGAEvent).toHaveBeenCalledTimes(1);
+    expect(googleAdsCommands().filter(
+      (command) => Array.isArray(command)
+        && command[0] === "event"
+        && command[1] === "conversion",
+    )).toHaveLength(1);
   });
 
   it("cancels a pending readiness retry on unmount", async () => {
