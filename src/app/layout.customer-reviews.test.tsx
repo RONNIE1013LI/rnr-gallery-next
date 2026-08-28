@@ -2,6 +2,7 @@ import { Children, isValidElement, type ReactElement, type ReactNode } from "rea
 import { describe, expect, it, vi } from "vitest";
 
 import { CustomerReviewsSection } from "@/components/customer-reviews/customer-reviews-section";
+import { ConsentPreferences } from "@/components/consent-preferences";
 import { SiteChrome } from "@/components/site-chrome";
 
 const state = vi.hoisted(() => ({
@@ -66,11 +67,13 @@ describe("RootLayout shared customer reviews", () => {
 
     const html = await RootLayout({ children: <main>Page</main> });
     const body = childByType(html, "body");
-    const chrome = body ? childByType(body, SiteChrome) : undefined;
+    const preferences = body ? childByType(body, ConsentPreferences) : undefined;
+    const chrome = preferences ? childByType(preferences, SiteChrome) : undefined;
     const footerLead = (chrome as ReactElement<{ footerLead?: ReactNode }> | undefined)
       ?.props.footerLead;
 
     expect(state.loadReviews).toHaveBeenCalledTimes(1);
+    expect(isValidElement(preferences)).toBe(true);
     expect(isValidElement(footerLead)).toBe(true);
     expect((footerLead as ReactElement).type).toBe(CustomerReviewsSection);
     expect((footerLead as ReactElement<{ background: string; data: unknown }>).props)
