@@ -1,7 +1,11 @@
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { CustomerChat } from "./customer-chat";
+
+const analytics = vi.hoisted(() => ({ emitAnalyticsEvent: vi.fn() }));
+
+vi.mock("@/domain/analytics/client", () => analytics);
 
 function updates(events: readonly unknown[] = [], cursor: string | null = "cursor-1") {
   return new Response(JSON.stringify({ cursor, hasMore: false, events, state: "pending" }), {
@@ -25,6 +29,8 @@ function openChat() {
 
 describe("CustomerChat", () => {
   beforeEach(() => {
+    analytics.emitAnalyticsEvent.mockReset();
+    analytics.emitAnalyticsEvent.mockReturnValue(true);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue(updates()));
   });
 
@@ -55,6 +61,148 @@ describe("CustomerChat", () => {
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
     expect(launcher).toHaveFocus();
+  });
+
+  it("shows the compact welcome and four quick actions only after an empty conversation loads", async () => {
+    render(<CustomerChat />);
+    openChat();
+
+    expect(screen.queryByRole("heading", { name: "Hi 👋 How can we help?" })).not.toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: "Hi 👋 How can we help?" })).toBeInTheDocument();
+    expect(screen.getByText("Choose an option below or simply type your message.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Get a Quote" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Product & Pricing" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Design Help" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Order Help" })).toBeInTheDocument();
+  });
+
+  it("opens an existing conversation without showing the welcome", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(updates([{
+      eventKey: "existing-customer-message",
+      role: "customer",
+      text: "I need a banner.",
+      createdAt: "2026-08-28T00:00:00.000Z",
+      state: "pending",
+    }])));
+    render(<CustomerChat />);
+    openChat();
+
+    expect(await screen.findByText("I need a banner.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Hi 👋 How can we help?" })).not.toBeInTheDocument();
+  });
+
+  it.each([
+    ["Get a Quote", "quote", "I'd like to get a quote."],
+    ["Product & Pricing", "product_pricing", "I'd like to know about your products and pricing."],
+    ["Design Help", "design_help", "I need help with a design."],
+    ["Order Help", "order_help", "I need help with an existing order."],
+  ] as const)("sends %s through the normal message pipeline", async (label, intent, message) => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValue(updates());
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat pathname="/products" />);
+    openChat();
+    const quickAction = await screen.findByRole("button", { name: label });
+
+    quickAction.focus();
+    expect(quickAction).toHaveFocus();
+    fireEvent.click(quickAction);
+
+    expect(within(screen.getByLabelText("Chat messages")).getByText(message)).toBeInTheDocument();
+    expect(screen.getByLabelText("Message R&R Gallery")).toHaveValue("");
+    expect(screen.queryByRole("heading", { name: "Hi 👋 How can we help?" })).not.toBeInTheDocument();
+    expect(screen.getByText("R&R Gallery is typing…")).toBeInTheDocument();
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/customer-chat/messages");
+    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+      clientMessageKey: expect.stringMatching(/^[A-Za-z0-9_-]{22,64}$/),
+      message,
+      pageContext: { pathname: "/products" },
+    });
+    expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
+      event: "chat_quick_action_clicked",
+      intent,
+      source: "chat_welcome",
+    });
+  });
+
+  it("prevents rapid repeat clicks from posting the same quick action twice", async () => {
+    let acceptMessage: ((response: Response) => void) | undefined;
+    const pendingResponse = new Promise<Response>((resolve) => { acceptMessage = resolve; });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockReturnValueOnce(pendingResponse);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    const quickAction = await screen.findByRole("button", { name: "Get a Quote" });
+
+    fireEvent.click(quickAction);
+    fireEvent.click(quickAction);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/customer-chat/messages")).toHaveLength(1);
+
+    acceptMessage?.(accepted());
+    await act(async () => { await pendingResponse; });
+  });
+
+  it("reconciles the optimistic quick-action message with the persisted event without duplication", async () => {
+    const persisted = {
+      eventKey: "persisted-quote",
+      role: "customer",
+      text: "I'd like to get a quote.",
+      createdAt: new Date(Date.now() + 1_000).toISOString(),
+      state: "pending",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(updates([persisted], "cursor-2"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Get a Quote" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    expect(screen.getAllByText("I'd like to get a quote.")).toHaveLength(1);
+  });
+
+  it("keeps a failed quick-action message and existing retry flow without restoring the welcome", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(accepted());
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Design Help" }));
+
+    expect(await screen.findByText("Message not sent. Try again.")).toBeInTheDocument();
+    expect(within(screen.getByLabelText("Chat messages")).getByText("I need help with a design.")).toBeInTheDocument();
+    expect(screen.getByLabelText("Message R&R Gallery")).toHaveValue("I need help with a design.");
+    expect(screen.queryByRole("heading", { name: "Hi 👋 How can we help?" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Retry message" })).toBeInTheDocument();
+  });
+
+  it("does not restore the welcome when a conversation is closed and reopened", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValue(updates());
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    fireEvent.click(await screen.findByRole("button", { name: "Order Help" }));
+    await screen.findByText("I need help with an existing order.");
+
+    fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
+    fireEvent.click(screen.getByRole("button", { name: "Chat with R&R Gallery" }));
+
+    expect(screen.getByText("I need help with an existing order.")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "Hi 👋 How can we help?" })).not.toBeInTheDocument();
   });
 
   it("sends on Enter and lets Shift+Enter add a newline without preventing the textarea default", async () => {

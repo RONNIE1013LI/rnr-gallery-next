@@ -3,6 +3,7 @@
 import { FaArrowUp, FaRegCommentDots } from "react-icons/fa";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { emitAnalyticsEvent } from "@/domain/analytics/client";
 import styles from "./customer-chat.module.css";
 
 type PublicEvent = Readonly<{
@@ -16,12 +17,26 @@ type PublicEvent = Readonly<{
 type PendingMessage = Readonly<{
   clientMessageKey: string;
   message: string;
+  restoreDraftOnFailure?: boolean;
+}>;
+
+type OutgoingMessage = PendingMessage & Readonly<{
+  createdAt: string;
+  status: "sending" | "accepted" | "failed";
 }>;
 
 type UpdatesResponse = Readonly<{
   cursor: string | null;
   events: readonly PublicEvent[];
+  state: string;
 }>;
+
+const QUICK_ACTIONS = Object.freeze([
+  { id: "quote", label: "Get a Quote", message: "I'd like to get a quote." },
+  { id: "product_pricing", label: "Product & Pricing", message: "I'd like to know about your products and pricing." },
+  { id: "design_help", label: "Design Help", message: "I need help with a design." },
+  { id: "order_help", label: "Order Help", message: "I need help with an existing order." },
+] as const);
 
 const updatesEndpoint = "/api/customer-chat/updates";
 const messagesEndpoint = "/api/customer-chat/messages";
@@ -36,9 +51,10 @@ function clientMessageKey() {
 
 function publicUpdates(value: unknown): UpdatesResponse | null {
   if (!value || typeof value !== "object") return null;
-  const response = value as { cursor?: unknown; events?: unknown };
+  const response = value as { cursor?: unknown; events?: unknown; state?: unknown };
   if (response.cursor !== null && typeof response.cursor !== "string") return null;
   if (!Array.isArray(response.events)) return null;
+  if (typeof response.state !== "string") return null;
   const events = response.events.filter((event): event is PublicEvent => {
     if (!event || typeof event !== "object") return false;
     const candidate = event as Record<string, unknown>;
@@ -48,7 +64,22 @@ function publicUpdates(value: unknown): UpdatesResponse | null {
       && typeof candidate.createdAt === "string"
       && typeof candidate.state === "string";
   });
-  return { cursor: response.cursor ?? null, events };
+  return { cursor: response.cursor ?? null, events, state: response.state };
+}
+
+function reconcileOutgoing(
+  outgoing: readonly OutgoingMessage[],
+  incoming: readonly PublicEvent[],
+) {
+  const remaining = [...outgoing];
+  for (const event of incoming) {
+    if (event.role !== "customer") continue;
+    const eventTime = Date.parse(event.createdAt);
+    const match = remaining.findIndex((message) => message.message === event.text
+      && eventTime >= Date.parse(message.createdAt) - 5_000);
+    if (match >= 0) remaining.splice(match, 1);
+  }
+  return remaining.length === outgoing.length ? outgoing : remaining;
 }
 
 function messageLabel(role: PublicEvent["role"]) {
@@ -61,12 +92,15 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [events, setEvents] = useState<readonly PublicEvent[]>([]);
+  const [outgoingMessages, setOutgoingMessages] = useState<readonly OutgoingMessage[]>([]);
   const [pendingMessage, setPendingMessage] = useState<PendingMessage | null>(null);
   const [sending, setSending] = useState(false);
+  const [historyReady, setHistoryReady] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [announcement, setAnnouncement] = useState("");
   const cursorRef = useRef<string | null>(null);
   const pollingRef = useRef(false);
+  const sendingRef = useRef(false);
   const initialPollRef = useRef(true);
   const restoreLauncherFocusRef = useRef(false);
   const launcherRef = useRef<HTMLButtonElement>(null);
@@ -82,6 +116,8 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
       const updates = publicUpdates(await response.json().catch(() => null));
       if (!updates) return;
       cursorRef.current = updates.cursor;
+      setHistoryReady(true);
+      setOutgoingMessages((current) => reconcileOutgoing(current, updates.events));
       setEvents((current) => {
         const known = new Set(current.map((event) => event.eventKey));
         const added = updates.events.filter((event) => {
@@ -105,8 +141,8 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   useEffect(() => {
     if (!open) return;
     inputRef.current?.focus();
-    void poll();
     const catchUp = () => void poll();
+    queueMicrotask(catchUp);
     const interval = window.setInterval(catchUp, 2_500);
     window.addEventListener("focus", catchUp);
     window.addEventListener("online", catchUp);
@@ -141,9 +177,19 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   }
 
   async function sendMessage(current: PendingMessage) {
-    if (sending) return;
+    if (sendingRef.current) return;
+    sendingRef.current = true;
     setSending(true);
     setFeedback("");
+    setOutgoingMessages((messages) => {
+      const existing = messages.findIndex((message) => message.clientMessageKey === current.clientMessageKey);
+      if (existing < 0) {
+        return [...messages, { ...current, createdAt: new Date().toISOString(), status: "sending" }];
+      }
+      return messages.map((message, index) => index === existing
+        ? { ...message, status: "sending" }
+        : message);
+    });
     try {
       const response = await fetch(messagesEndpoint, {
         method: "POST",
@@ -157,21 +203,45 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
       if (response.ok) {
         setDraft("");
         setPendingMessage(null);
+        setOutgoingMessages((messages) => messages.map((message) => (
+          message.clientMessageKey === current.clientMessageKey
+            ? { ...message, status: "accepted" }
+            : message
+        )));
         setFeedback("Message sent.");
         void poll();
         return;
       }
       if (response.status === 429) {
         setPendingMessage(null);
+        if (current.restoreDraftOnFailure) setDraft(current.message);
+        setOutgoingMessages((messages) => messages.map((message) => (
+          message.clientMessageKey === current.clientMessageKey
+            ? { ...message, status: "failed" }
+            : message
+        )));
         setFeedback("Please wait a moment before sending another message.");
         return;
       }
       setPendingMessage(current);
+      if (current.restoreDraftOnFailure) setDraft(current.message);
+      setOutgoingMessages((messages) => messages.map((message) => (
+        message.clientMessageKey === current.clientMessageKey
+          ? { ...message, status: "failed" }
+          : message
+      )));
       setFeedback("Message not sent. Try again.");
     } catch {
       setPendingMessage(current);
+      if (current.restoreDraftOnFailure) setDraft(current.message);
+      setOutgoingMessages((messages) => messages.map((message) => (
+        message.clientMessageKey === current.clientMessageKey
+          ? { ...message, status: "failed" }
+          : message
+      )));
       setFeedback("Message not sent. Try again.");
     } finally {
+      sendingRef.current = false;
       setSending(false);
     }
   }
@@ -186,9 +256,32 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     void sendMessage({ clientMessageKey: clientMessageKey(), message });
   }
 
+  function startQuickAction(action: (typeof QUICK_ACTIONS)[number]) {
+    if (sendingRef.current) return;
+    try {
+      emitAnalyticsEvent({
+        event: "chat_quick_action_clicked",
+        intent: action.id,
+        source: "chat_welcome",
+      });
+    } catch {
+      // Analytics must never interrupt the customer message pipeline.
+    }
+    void sendMessage({
+      clientMessageKey: clientMessageKey(),
+      message: action.message,
+      restoreDraftOnFailure: true,
+    });
+  }
+
   const retryMessage = pendingMessage && pendingMessage.message === draft.trim()
     ? pendingMessage
     : null;
+  const hasMessages = events.length > 0 || outgoingMessages.length > 0;
+  const showWelcome = historyReady && !hasMessages;
+  const latestEvent = events.at(-1);
+  const assistantPending = outgoingMessages.some((message) => message.status !== "failed")
+    || (latestEvent?.role === "customer" && (latestEvent.state === "pending" || latestEvent.state === "recovery"));
 
   return (
     <div className={styles.root}>
@@ -208,9 +301,29 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
             <button type="button" className={styles.closeButton} aria-label="Close chat" title="Close chat" onClick={close}>×</button>
           </header>
           <div className={styles.transcript} aria-label="Chat messages">
+            {showWelcome ? <section className={styles.welcome} aria-labelledby="customer-chat-welcome-title">
+              <h2 id="customer-chat-welcome-title">Hi 👋 How can we help?</h2>
+              <p>Choose an option below or simply type your message.</p>
+              <div className={styles.quickActions} aria-label="Quick chat options">
+                {QUICK_ACTIONS.map((action) => <button
+                  key={action.id}
+                  type="button"
+                  className={styles.quickAction}
+                  disabled={sending}
+                  onClick={() => startQuickAction(action)}
+                >{action.label}</button>)}
+              </div>
+            </section> : null}
             {events.map((event) => <div className={styles.message} data-role={event.role} key={event.eventKey}>
               <span>{messageLabel(event.role)}</span><p>{event.text}</p>
             </div>)}
+            {outgoingMessages.map((message) => <div
+              className={styles.message}
+              data-role="customer"
+              data-state={message.status}
+              key={message.clientMessageKey}
+            ><span>You</span><p>{message.message}</p></div>)}
+            {assistantPending ? <div className={styles.typing} role="status">R&amp;R Gallery is typing…</div> : null}
           </div>
           <p id="customer-chat-status" className={styles.status} aria-live="polite">{feedback}</p>
           <form className={styles.composer} onSubmit={(event) => {
@@ -224,6 +337,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
                 value={draft}
                 rows={3}
                 maxLength={2_000}
+                placeholder="Type your message..."
                 disabled={sending}
                 onChange={(event) => setDraft(event.target.value)}
                 onKeyDown={(event) => {

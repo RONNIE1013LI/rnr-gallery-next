@@ -91,6 +91,8 @@ function allowlistedPayload(event: AnalyticsEvent): Record<string, unknown> | nu
       return { method: event.method };
     case "messenger_click":
       return { location: event.location };
+    case "chat_quick_action_clicked":
+      return { intent: event.intent, source: event.source };
     case "photo_upload_completed":
       return {
         product_id: event.product_id,

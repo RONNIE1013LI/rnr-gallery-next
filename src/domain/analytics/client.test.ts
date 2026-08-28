@@ -90,6 +90,23 @@ describe("emitAnalyticsEvent", () => {
     });
   });
 
+  it("emits only the allowlisted quick-action intent and source", () => {
+    document.documentElement.dataset.ga4Enabled = "true";
+
+    expect(emitAnalyticsEvent({
+      event: "chat_quick_action_clicked",
+      intent: "quote",
+      source: "chat_welcome",
+    } as never)).toBe(true);
+    expect(sendGAEvent).toHaveBeenCalledWith("event", "chat_quick_action_clicked", {
+      intent: "quote",
+      source: "chat_welcome",
+      page_location: "http://localhost:3000/",
+      page_referrer: "",
+      send_to: GA4_MEASUREMENT_ID,
+    });
+  });
+
   it("keeps GA4 independent when Meta is enabled but an event is unsupported", () => {
     document.documentElement.dataset.ga4Enabled = "true";
     document.documentElement.dataset.metaEnabled = "true";

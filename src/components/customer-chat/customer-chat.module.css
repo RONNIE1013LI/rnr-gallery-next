@@ -38,7 +38,7 @@
   width: min(380px, calc(100vw - 24px));
   max-height: min(620px, calc(100dvh - 96px));
   display: grid;
-  grid-template-rows: auto minmax(5rem, 1fr) auto auto auto;
+  grid-template-rows: auto minmax(0, 1fr) auto auto auto;
   overflow: hidden;
   color: var(--ink);
   background: var(--paper);
@@ -76,8 +76,8 @@
 }
 
 .closeButton {
-  width: 2rem;
-  height: 2rem;
+  width: 2.75rem;
+  height: 2.75rem;
   flex: 0 0 auto;
   color: inherit;
   background: transparent;
@@ -92,6 +92,74 @@
   align-content: start;
   gap: 0.8rem;
   overflow-y: auto;
+}
+
+.welcome {
+  display: grid;
+  gap: 0;
+  padding: 0.35rem 0 0.25rem;
+}
+
+.welcome h2 {
+  color: var(--gallery-green);
+  font-family: var(--font-display);
+  font-size: 1.2rem;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.welcome > p {
+  margin-top: 0.4rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  line-height: 1.45;
+}
+
+.quickActions {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.quickAction {
+  min-width: 0;
+  min-height: 2.75rem;
+  padding: 0.55rem 0.65rem;
+  color: var(--gallery-green);
+  background: color-mix(in srgb, var(--paper) 80%, #fff);
+  border: 1px solid color-mix(in srgb, var(--brand-gold) 34%, var(--border));
+  border-radius: 0.45rem;
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: left;
+  transition: background-color 140ms ease, border-color 140ms ease;
+}
+
+.quickAction:hover {
+  background: color-mix(in srgb, var(--gallery-green) 7%, var(--paper));
+  border-color: color-mix(in srgb, var(--gallery-green) 32%, var(--border));
+}
+
+.quickAction:active {
+  background: color-mix(in srgb, var(--gallery-green) 12%, var(--paper));
+}
+
+.quickAction:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.quickAction:focus-visible,
+.closeButton:focus-visible,
+.sendButton:focus-visible,
+.retryButton:focus-visible,
+.launcher:focus-visible,
+.composer textarea:focus-visible {
+  outline: 2px solid var(--brand-gold);
+  outline-offset: 2px;
 }
 
 .message {
@@ -128,6 +196,17 @@
   border-left: 0;
 }
 
+.message[data-state="failed"] p {
+  opacity: 0.72;
+}
+
+.typing {
+  justify-self: start;
+  color: var(--muted);
+  font-size: 0.76rem;
+  line-height: 1.4;
+}
+
 .status {
   min-height: 1.35rem;
   padding: 0 0.9rem;
@@ -139,7 +218,7 @@
 .composer {
   padding: 0.7rem 0.9rem;
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 2.5rem;
+  grid-template-columns: minmax(0, 1fr) 2.75rem;
   align-items: end;
   gap: 0.55rem;
   border-top: 1px solid var(--border);
@@ -168,8 +247,8 @@
 }
 
 .sendButton {
-  width: 2.5rem;
-  height: 2.5rem;
+  width: 2.75rem;
+  height: 2.75rem;
   display: grid;
   place-items: center;
   color: var(--text-on-dark);
@@ -203,4 +282,10 @@
   overflow: hidden;
   clip: rect(0 0 0 0);
   white-space: nowrap;
+}
+
+@media (max-width: 340px) {
+  .quickActions {
+    grid-template-columns: 1fr;
+  }
 }

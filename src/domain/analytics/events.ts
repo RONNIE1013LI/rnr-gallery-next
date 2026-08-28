@@ -46,6 +46,11 @@ export type ItemListEvent = Readonly<{
 type SimpleEvent =
   | Readonly<{ event: "generate_lead"; method: string }>
   | Readonly<{ event: "messenger_click"; location: string }>
+  | Readonly<{
+      event: "chat_quick_action_clicked";
+      intent: "quote" | "product_pricing" | "design_help" | "order_help";
+      source: "chat_welcome";
+    }>
   | Readonly<{ event: "photo_upload_completed"; product_id: string; photo_count: number }>
   | Readonly<{ event: "send_photos_later_selected"; product_id: string }>
   | Readonly<{ event: "design_selected"; design_id: string; product_id: string }>;
