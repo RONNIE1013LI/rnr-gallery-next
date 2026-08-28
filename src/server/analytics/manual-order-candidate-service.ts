@@ -8,6 +8,7 @@ import type { getDatabase } from "@/server/db/client";
 import {
   invoices,
   orders,
+  paymentRequests,
   productionFieldDefinitions,
   productionFieldValues,
   productionJobs,
@@ -42,8 +43,13 @@ export function createDrizzleManualConversionCandidateReader(
         manualPaymentStatus: productionJobs.manualPaymentStatus,
         amountPaidCents: productionJobs.amountPaidCents,
         linkedOnlineOrderNumber: orders.orderNumber,
+        linkedPaymentRequestNumber: paymentRequests.requestNumber,
       }).from(productionJobs)
         .leftJoin(orders, eq(orders.orderNumber, productionJobs.webOrderNumber))
+        .leftJoin(
+          paymentRequests,
+          eq(paymentRequests.requestNumber, productionJobs.webOrderNumber),
+        )
         .where(eq(productionJobs.id, jobId))
         .limit(1);
       if (!job) return null;
@@ -73,7 +79,8 @@ export function createDrizzleManualConversionCandidateReader(
         jobNumber: job.jobNumber,
         manualPaymentStatus: job.manualPaymentStatus,
         amountPaidCents: job.amountPaidCents,
-        linkedOnlineOrder: job.linkedOnlineOrderNumber !== null,
+        linkedOnlineOrder: job.linkedOnlineOrderNumber !== null
+          || job.linkedPaymentRequestNumber !== null,
         invoice: invoice[0] ?? null,
         customFields: Object.freeze(Object.fromEntries(fields.map((field) => [
           field.fieldKey,
