@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { emitMetaAnalyticsEvent } from "@/domain/analytics/meta";
 import { META_PIXEL_ID } from "@/domain/analytics/runtime";
 import { MetaPixelController } from "./meta-pixel-controller";
 
@@ -49,6 +50,7 @@ describe("MetaPixelController", () => {
     document.documentElement.removeAttribute("data-meta-private-purchase");
     document.documentElement.removeAttribute("data-meta-loaded");
     delete (window as Window & { fbq?: unknown }).fbq;
+    window.history.replaceState({}, "", "/");
     vi.stubGlobal("fetch", fetchMock);
     consentState.value = {
       version: 1,
@@ -110,19 +112,62 @@ describe("MetaPixelController", () => {
     expect(document.documentElement.dataset.metaEnabled).toBeUndefined();
   });
 
-  it("loads checkout and order measurement without sending private PageViews", async () => {
-    navigation.pathname = "/checkout";
-    const view = render(<MetaPixelController production enabled />);
+  it.each([
+    ["checkout", "/checkout", "client_secret=private-checkout-token"],
+    ["private order", "/orders/RNR-2026-ONE", "access=private-order-token"],
+  ])("does not load Meta on a %s URL", (_label, pathname, search) => {
+    navigation.pathname = pathname;
+    navigation.search = search;
+    window.history.replaceState({}, "", `${pathname}?${search}`);
+
+    render(<MetaPixelController production enabled />);
+
+    expect(screen.queryByTestId("meta-pixel-script")).not.toBeInTheDocument();
+    expect((window as Window & { fbq?: unknown }).fbq).toBeUndefined();
+  });
+
+  it("sends no PageView, Purchase, or Contact after navigation to a private order", async () => {
+    const view = render(
+      <>
+        <MetaPixelController production enabled />
+        <a href="https://m.me/RandRgallery" onClick={(event) => event.preventDefault()}>Messenger</a>
+      </>,
+    );
     await screen.findByTestId("meta-pixel-script");
-    await waitFor(() => expect(document.documentElement.dataset.metaPrivateCommerce).toBe("true"));
-    let fbq = (window as unknown as Window & { fbq: { queue: unknown[][] } }).fbq;
-    expect(fbq.queue).toEqual([["init", META_PIXEL_ID]]);
+    const fbq = (window as unknown as Window & { fbq: { queue: unknown[][] } }).fbq;
 
     navigation.pathname = "/orders/RNR-2026-ONE";
-    view.rerender(<MetaPixelController production enabled />);
-    await waitFor(() => expect(document.documentElement.dataset.metaPrivatePurchase).toBe("true"));
-    fbq = (window as unknown as Window & { fbq: { queue: unknown[][] } }).fbq;
-    expect(fbq.queue).toEqual([["init", META_PIXEL_ID]]);
+    navigation.search = "access=private-order-token";
+    window.history.replaceState(
+      {},
+      "",
+      "/orders/RNR-2026-ONE?access=private-order-token",
+    );
+    view.rerender(
+      <>
+        <MetaPixelController production enabled />
+        <a href="https://m.me/RandRgallery" onClick={(event) => event.preventDefault()}>Messenger</a>
+      </>,
+    );
+
+    await waitFor(() => expect(screen.queryByTestId("meta-pixel-script")).not.toBeInTheDocument());
+    expect(emitMetaAnalyticsEvent({
+      event: "purchase",
+      transaction_id: "RNR-2026-ONE",
+      currency: "NZD",
+      value: 65,
+      total: 97.75,
+      tax: 12.75,
+      shipping: 20,
+      items: [],
+    })).toBe(false);
+    fireEvent.click(screen.getByRole("link", { name: "Messenger" }));
+
+    expect(fbq.queue.filter((command) => ["PageView", "Purchase", "Contact"].includes(
+      String(command[2]),
+    )).map((command) => command[2])).toEqual(["PageView"]);
+    expect(JSON.stringify({ pixel: fbq.queue, server: fetchMock.mock.calls }))
+      .not.toContain("private-order-token");
   });
 
   it.each([
@@ -133,7 +178,7 @@ describe("MetaPixelController", () => {
     render(
       <>
         <MetaPixelController production enabled />
-        <a href={href}>{label}</a>
+        <a href={href} onClick={(event) => event.preventDefault()}>{label}</a>
       </>,
     );
     await screen.findByTestId("meta-pixel-script");

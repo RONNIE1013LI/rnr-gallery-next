@@ -46,6 +46,7 @@ describe("Meta commerce transport", () => {
     document.documentElement.removeAttribute("data-meta-private-commerce");
     document.documentElement.removeAttribute("data-meta-private-purchase");
     Object.assign(window, { fbq });
+    window.history.replaceState({}, "", "/");
     vi.stubGlobal("fetch", fetchMock);
     resetMetaPixelForTests();
   });
@@ -84,11 +85,11 @@ describe("Meta commerce transport", () => {
     expect(JSON.stringify(fbq.mock.calls)).not.toMatch(/private@example|private-image|item_name/);
   });
 
-  it("permits checkout events only behind the private commerce gate", () => {
+  it("permits checkout events only behind the public Meta gate", () => {
     const checkout = { ...cartEvent, event: "begin_checkout" } as const;
 
     expect(emitMetaAnalyticsEvent(checkout)).toBe(false);
-    document.documentElement.dataset.metaPrivateCommerce = "true";
+    document.documentElement.dataset.metaEnabled = "true";
     expect(emitMetaAnalyticsEvent(checkout)).toBe(true);
     expect(fbq).toHaveBeenLastCalledWith(
       "trackSingle",
@@ -113,7 +114,7 @@ describe("Meta commerce transport", () => {
   });
 
   it("sends one stable Purchase event per transaction and uses the final charged total", () => {
-    document.documentElement.dataset.metaPrivatePurchase = "true";
+    document.documentElement.dataset.metaEnabled = "true";
 
     expect(emitMetaAnalyticsEvent(purchase)).toBe(true);
     expect(emitMetaAnalyticsEvent(purchase)).toBe(true);
@@ -125,6 +126,23 @@ describe("Meta commerce transport", () => {
       expect.objectContaining({ currency: "AUD", value: 224.99 }),
       { eventID: "purchase:RNR-2026-META" },
     );
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "/orders/RNR-2026-META",
+    "/products/photo-print-canvas?access=private-order-token",
+  ])("ignores stale Meta gates on %s", (location) => {
+    document.documentElement.dataset.metaEnabled = "true";
+    document.documentElement.dataset.metaPrivatePurchase = "true";
+    window.history.replaceState({}, "", location);
+
+    expect(emitMetaAnalyticsEvent(purchase)).toBe(false);
+    expect(emitMetaAnalyticsEvent({
+      event: "messenger_click",
+      location: "contact:messenger",
+    })).toBe(false);
+    expect(fbq).not.toHaveBeenCalled();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 

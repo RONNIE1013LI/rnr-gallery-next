@@ -6,7 +6,7 @@ import {
   type MetaBrowserEvent,
   toMetaBrowserEvent,
 } from "./meta-event";
-import { META_PIXEL_ID } from "./runtime";
+import { classifyGa4Location, META_PIXEL_ID } from "./runtime";
 
 type MetaPixelCommand = (...args: unknown[]) => void;
 type MetaWindow = Window & { fbq?: MetaPixelCommand };
@@ -41,15 +41,11 @@ function commercePayload(
 }
 
 function isPublicMetaReady() {
-  return document.documentElement.dataset.metaEnabled === "true";
-}
-
-function isPrivateCommerceReady() {
-  return document.documentElement.dataset.metaPrivateCommerce === "true";
-}
-
-function isPrivatePurchaseReady() {
-  return document.documentElement.dataset.metaPrivatePurchase === "true";
+  return document.documentElement.dataset.metaEnabled === "true"
+    && classifyGa4Location(
+      window.location.pathname,
+      new URLSearchParams(window.location.search),
+    ) === "public";
 }
 
 function sendServerCopy(event: MetaBrowserEvent) {
@@ -94,17 +90,17 @@ export function emitMetaPageView(sourcePath: string): boolean {
   }
 }
 
-export function isMetaAnalyticsRequired(event: AnalyticsEvent): boolean {
-  if (event.event === "purchase") return isPrivatePurchaseReady() || isPublicMetaReady();
-  if (["begin_checkout", "add_shipping_info", "add_payment_info"].includes(event.event)) {
-    return isPrivateCommerceReady() || isPublicMetaReady();
-  }
+export function isMetaAnalyticsRequired(): boolean {
   return isPublicMetaReady();
 }
 
 export function emitMetaAnalyticsEvent(event: AnalyticsEvent): boolean {
   try {
-    if (typeof window === "undefined" || !isMetaAnalyticsRequired(event)) return false;
+    if (typeof window === "undefined" || !isMetaAnalyticsRequired()) return false;
+    const purchaseKey = event.event === "purchase"
+      ? `${PURCHASE_DELIVERY_KEY_PREFIX}:${encodeURIComponent(event.transaction_id)}`
+      : null;
+    if (purchaseKey && window.sessionStorage.getItem(purchaseKey) === "sent") return true;
     const fbq = metaPixel();
     if (!fbq) return false;
 
@@ -131,8 +127,7 @@ export function emitMetaAnalyticsEvent(event: AnalyticsEvent): boolean {
         fbq("trackSingle", META_PIXEL_ID, "AddPaymentInfo", commercePayload(event));
         return true;
       case "purchase": {
-        const key = `${PURCHASE_DELIVERY_KEY_PREFIX}:${encodeURIComponent(event.transaction_id)}`;
-        if (window.sessionStorage.getItem(key) === "sent") return true;
+        if (!purchaseKey) return false;
         fbq(
           "trackSingle",
           META_PIXEL_ID,
@@ -140,7 +135,7 @@ export function emitMetaAnalyticsEvent(event: AnalyticsEvent): boolean {
           commercePayload(event, event.total),
           { eventID: `purchase:${event.transaction_id}` },
         );
-        window.sessionStorage.setItem(key, "sent");
+        window.sessionStorage.setItem(purchaseKey, "sent");
         return true;
       }
       case "generate_lead": {

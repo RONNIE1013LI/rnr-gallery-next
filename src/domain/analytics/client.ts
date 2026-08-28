@@ -119,8 +119,7 @@ function isDebugSession(): boolean {
 
 function isPrivatePurchaseLocation(event: AnalyticsEvent): event is Extract<AnalyticsEvent, { event: "purchase" }> {
   return event.event === "purchase"
-    && document.documentElement.dataset.ga4PrivatePurchase === "true"
-    && document.documentElement.dataset.ga4Loaded === "true";
+    && document.documentElement.dataset.ga4PrivatePurchase === "true";
 }
 
 function analyticsAllowed() {
@@ -280,6 +279,13 @@ function purchaseDeliveryKey(
   return `${PURCHASE_DELIVERY_KEY_PREFIX}:${destination}:${encodeURIComponent(transactionId)}`;
 }
 
+function purchaseDestinationSent(
+  transactionId: string,
+  destination: "ga4" | "ads",
+): boolean {
+  return window.sessionStorage.getItem(purchaseDeliveryKey(transactionId, destination)) === "sent";
+}
+
 function sendPurchaseDestination(
   transactionId: string,
   destination: "ga4" | "ads",
@@ -288,7 +294,7 @@ function sendPurchaseDestination(
   sendTo: string,
 ): void {
   const deliveryKey = purchaseDeliveryKey(transactionId, destination);
-  if (window.sessionStorage.getItem(deliveryKey) === "sent") return;
+  if (purchaseDestinationSent(transactionId, destination)) return;
   if (destination === "ads") {
     const dataLayer = (window as Window & { dataLayer?: unknown[] }).dataLayer;
     if (!Array.isArray(dataLayer) || typeof dataLayer.push !== "function") {
@@ -317,18 +323,34 @@ function sendPurchaseEvent(
   sendGa4: boolean,
   sendAds: boolean,
 ): boolean {
-  if (!gaTransportReady || gaHistorySuppressionDepth > 0) return false;
-  if (sendGa4) {
-    sendPurchaseDestination(event.transaction_id, "ga4", event.event, payload, GA4_MEASUREMENT_ID);
+  const ga4Pending = sendGa4 && !purchaseDestinationSent(event.transaction_id, "ga4");
+  const adsPending = sendAds && !purchaseDestinationSent(event.transaction_id, "ads");
+  if (!ga4Pending && !adsPending) return true;
+  if (document.documentElement.dataset.ga4Loaded !== "true"
+    || !hasReadyDataLayer()
+    || !gaTransportReady
+    || gaHistorySuppressionDepth > 0) return false;
+
+  if (ga4Pending) {
+    try {
+      sendPurchaseDestination(event.transaction_id, "ga4", event.event, payload, GA4_MEASUREMENT_ID);
+    } catch {
+      // Leave this destination unmarked so the purchase tracker retries it.
+    }
   }
-  if (sendAds) {
-    sendPurchaseDestination(event.transaction_id, "ads", "conversion", {
-      transaction_id: event.transaction_id,
-      currency: event.currency,
-      value: event.total,
-    }, GOOGLE_ADS_PURCHASE_SEND_TO);
+  if (adsPending) {
+    try {
+      sendPurchaseDestination(event.transaction_id, "ads", "conversion", {
+        transaction_id: event.transaction_id,
+        currency: event.currency,
+        value: event.total,
+      }, GOOGLE_ADS_PURCHASE_SEND_TO);
+    } catch {
+      // Leave this destination unmarked so the purchase tracker retries it.
+    }
   }
-  return true;
+  return (!sendGa4 || purchaseDestinationSent(event.transaction_id, "ga4"))
+    && (!sendAds || purchaseDestinationSent(event.transaction_id, "ads"));
 }
 
 export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
@@ -338,21 +360,23 @@ export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
       return false;
     }
 
-    if (isMetaAnalyticsRequired(event)) {
+    const metaRequired = isMetaAnalyticsRequired();
+    if (metaRequired) {
       metaSent = emitMetaAnalyticsEvent(event);
     }
-    if (!hasReadyDataLayer()) return metaSent;
 
     const privatePurchase = isPrivatePurchaseLocation(event);
     const privateCheckout = isPrivateCheckoutReady(event);
     const sendGa4Purchase = privatePurchase && analyticsAllowed();
     const sendAdsPurchase = privatePurchase && googleAdsAllowed();
     const allowed = event.event === "purchase"
-      ? sendGa4Purchase || sendAdsPurchase
+      ? metaRequired || sendGa4Purchase || sendAdsPurchase
       : (privateCheckout && analyticsAllowed()) || document.documentElement.dataset.ga4Enabled === "true";
     if (!allowed) {
-      return metaSent;
+      return event.event === "purchase" ? false : metaSent;
     }
+
+    if (event.event !== "purchase" && !hasReadyDataLayer()) return metaSent;
 
     const payload = allowlistedPayload(event);
     if (!payload) return metaSent;
@@ -369,11 +393,12 @@ export function emitAnalyticsEvent(event: AnalyticsEvent | null): boolean {
       ...(isDebugSession() ? { debug_mode: true } : {}),
     };
     if (event.event === "purchase") {
-      return sendPurchaseEvent(event, eventPayload, sendGa4Purchase, sendAdsPurchase) || metaSent;
+      return (!metaRequired || metaSent)
+        && sendPurchaseEvent(event, eventPayload, sendGa4Purchase, sendAdsPurchase);
     }
     sendControlledGaEvent(event.event, eventPayload);
     return true;
   } catch {
-    return metaSent;
+    return event?.event === "purchase" ? false : metaSent;
   }
 }

@@ -73,7 +73,7 @@ export function MetaPixelController({
   const searchParams = useSearchParams();
   const search = searchParams.toString();
   const policy = classifyGa4Location(pathname, new URLSearchParams(search));
-  const allowed = production && enabled && consent?.advertising === true && policy !== "private";
+  const allowed = production && enabled && consent?.advertising === true && policy === "public";
   const lastPageView = useRef<string | null>(null);
 
   useEffect(() => {
@@ -85,9 +85,7 @@ export function MetaPixelController({
     }
 
     const root = document.documentElement;
-    if (policy === "public") root.dataset.metaEnabled = "true";
-    if (policy === "private-checkout") root.dataset.metaPrivateCommerce = "true";
-    if (policy === "private-order") root.dataset.metaPrivatePurchase = "true";
+    root.dataset.metaEnabled = "true";
 
     ensureMetaPixelQueue();
     const handleContactClick = (event: MouseEvent) => {
@@ -99,7 +97,7 @@ export function MetaPixelController({
       emitMetaAnalyticsEvent({ event: "messenger_click", location: `contact:${method}` });
     };
     document.addEventListener("click", handleContactClick);
-    if (policy === "public" && lastPageView.current !== pathname) {
+    if (lastPageView.current !== pathname) {
       lastPageView.current = pathname;
       emitMetaPageView(pathname);
     }

@@ -576,6 +576,35 @@ describe("emitAnalyticsEvent", () => {
     expect((window as unknown as Record<string, unknown>)[GA4_DISABLE_WINDOW_KEY]).toBe(true);
   });
 
+  it("keeps a Meta-first purchase incomplete until every enabled Google destination succeeds", () => {
+    const fbq = vi.fn();
+    Object.assign(window, { fbq, dataLayer: undefined });
+    document.documentElement.dataset.metaEnabled = "true";
+    document.documentElement.dataset.ga4PrivatePurchase = "true";
+    document.documentElement.dataset.ga4Loaded = "true";
+    document.documentElement.dataset.ga4AnalyticsEnabled = "true";
+    document.documentElement.dataset.googleAdsEnabled = "true";
+
+    expect(emitAnalyticsEvent(purchase)).toBe(false);
+    expect(fbq).toHaveBeenCalledTimes(1);
+    expect(sessionStorage.getItem("rnr:analytics:v1:purchase-destination:meta:RNR-2026-PRIVATE"))
+      .toBe("sent");
+    expect(sessionStorage.getItem("rnr:analytics:v1:purchase-destination:ga4:RNR-2026-PRIVATE"))
+      .toBeNull();
+    expect(sessionStorage.getItem("rnr:analytics:v1:purchase-destination:ads:RNR-2026-PRIVATE"))
+      .toBeNull();
+
+    delete (window as Window & { fbq?: unknown }).fbq;
+    Object.assign(window, { dataLayer: [] });
+    expect(emitAnalyticsEvent(purchase)).toBe(true);
+    expect(fbq).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(sendGAEvent).mock.calls.map((command) => command[1]))
+      .toEqual(["purchase"]);
+    expect((window as unknown as { dataLayer: unknown[] }).dataLayer.filter(
+      (command) => Array.from(command as ArrayLike<unknown>)[1] === "conversion",
+    )).toHaveLength(1);
+  });
+
   it("retries only an Ads destination whose owned queue failed", () => {
     document.documentElement.dataset.ga4PrivatePurchase = "true";
     document.documentElement.dataset.ga4Loaded = "true";
