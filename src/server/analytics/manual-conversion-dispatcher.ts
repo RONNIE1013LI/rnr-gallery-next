@@ -1,7 +1,6 @@
 import { and, eq, sql } from "drizzle-orm";
 import type { ManualConversionCandidate } from "@/domain/analytics/manual-order-attribution";
 import { buildAuditRecord } from "@/server/admin/audit-service";
-import type { GoogleAdsOfflineConversion } from "@/server/analytics/google-ads-offline-client";
 import type { SafeMetaEvent } from "@/server/analytics/meta-capi-client";
 import type { getDatabase } from "@/server/db/client";
 import { adminAuditLogs } from "@/server/db/schema";
@@ -48,31 +47,21 @@ function metaEvent(candidate: ManualConversionCandidate): SafeMetaEvent | null {
     : Object.freeze({ ...base, sourceUrl: "https://rnrgallery.com/contact" });
 }
 
-function googleEvent(candidate: ManualConversionCandidate): GoogleAdsOfflineConversion | null {
-  if (candidate.destination !== "google" || !candidate.google) return null;
-  return Object.freeze({
-    transactionId: candidate.transactionId,
-    paidAt: candidate.paidAt,
-    currency: candidate.currency,
-    value: candidate.value,
-    click: Object.freeze({
-      kind: candidate.google.kind,
-      id: candidate.google.clickId,
-    }),
-  });
-}
-
 export function createManualConversionDispatcher(dependencies: Readonly<{
   listCandidates: (jobId: string) => Promise<readonly ManualConversionCandidate[]>;
   successStore: ManualConversionSuccessStore;
   metaSend: (event: SafeMetaEvent) => Promise<SendResult>;
-  googleSend: (conversion: GoogleAdsOfflineConversion) => Promise<SendResult>;
 }>) {
   return Object.freeze({
     async dispatch(jobId: string, actor: Actor) {
       const candidates = await dependencies.listCandidates(jobId);
       const results: Partial<Record<"meta" | "google", DispatchResult>> = {};
       for (const candidate of candidates) {
+        if (candidate.destination === "google") {
+          // Phase 0C deliberately has no durable Google delivery outbox.
+          results.google = "disabled";
+          continue;
+        }
         const audit = Object.freeze({
           actor,
           jobId,
@@ -86,12 +75,8 @@ export function createManualConversionDispatcher(dependencies: Readonly<{
           results[candidate.destination] = await dependencies.successStore.runOnce(
             audit,
             async () => {
-              if (candidate.destination === "meta") {
-                const event = metaEvent(candidate);
-                return event ? dependencies.metaSend(event) : "failed";
-              }
-              const event = googleEvent(candidate);
-              return event ? dependencies.googleSend(event) : "failed";
+              const event = metaEvent(candidate);
+              return event ? dependencies.metaSend(event) : "failed";
             },
           );
         } catch {

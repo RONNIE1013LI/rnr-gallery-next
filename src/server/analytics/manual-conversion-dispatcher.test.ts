@@ -120,20 +120,17 @@ describe("manual conversion dispatcher", () => {
     expect(transaction.insert).not.toHaveBeenCalled();
   });
 
-  it("records success per destination and never repeats a successful destination", async () => {
+  it("keeps Meta delivery behavior while explicitly disabling Google manual dispatch", async () => {
     const metaSend = vi.fn().mockResolvedValue("sent");
-    const googleSend = vi.fn().mockResolvedValue("sent");
     const dispatcher = createManualConversionDispatcher({
       listCandidates: vi.fn().mockResolvedValue([metaCandidate, googleCandidate]),
       successStore: memorySuccessStore(),
       metaSend,
-      googleSend,
     });
 
-    await expect(dispatcher.dispatch(jobId, actor)).resolves.toEqual({ meta: "sent", google: "sent" });
-    await expect(dispatcher.dispatch(jobId, actor)).resolves.toEqual({ meta: "already_sent", google: "already_sent" });
+    await expect(dispatcher.dispatch(jobId, actor)).resolves.toEqual({ meta: "sent", google: "disabled" });
+    await expect(dispatcher.dispatch(jobId, actor)).resolves.toEqual({ meta: "already_sent", google: "disabled" });
     expect(metaSend).toHaveBeenCalledTimes(1);
-    expect(googleSend).toHaveBeenCalledTimes(1);
     expect(metaSend).toHaveBeenCalledWith(expect.objectContaining({
       name: "Purchase",
       eventId: "purchase:manual:08000",
@@ -143,26 +140,33 @@ describe("manual conversion dispatcher", () => {
       actionSource: "business_messaging",
       hashedEmail: metaCandidate.meta?.hashedEmail,
     }));
-    expect(googleSend).toHaveBeenCalledWith(expect.objectContaining({
-      transactionId: "manual:08000",
-      click: { id: "google-click_123", kind: "gclid" },
-    }));
+  });
+
+  it("does not enter the success store for a disabled Google candidate", async () => {
+    const successStore: ManualConversionSuccessStore = {
+      runOnce: vi.fn().mockResolvedValue("already_sent"),
+    };
+    const dispatcher = createManualConversionDispatcher({
+      listCandidates: vi.fn().mockResolvedValue([googleCandidate]),
+      successStore,
+      metaSend: vi.fn(),
+    });
+
+    await expect(dispatcher.dispatch(jobId, actor)).resolves.toEqual({ google: "disabled" });
+    expect(successStore.runOnce).not.toHaveBeenCalled();
   });
 
   it("isolates failures and retries only the destination that has not succeeded", async () => {
     const metaSend = vi.fn().mockResolvedValueOnce("failed").mockResolvedValueOnce("sent");
-    const googleSend = vi.fn().mockResolvedValue("sent");
     const dispatcher = createManualConversionDispatcher({
       listCandidates: vi.fn().mockResolvedValue([metaCandidate, googleCandidate]),
       successStore: memorySuccessStore(),
       metaSend,
-      googleSend,
     });
 
-    await expect(dispatcher.dispatch(jobId, actor)).resolves.toEqual({ meta: "failed", google: "sent" });
-    await expect(dispatcher.dispatch(jobId, actor)).resolves.toEqual({ meta: "sent", google: "already_sent" });
+    await expect(dispatcher.dispatch(jobId, actor)).resolves.toEqual({ meta: "failed", google: "disabled" });
+    await expect(dispatcher.dispatch(jobId, actor)).resolves.toEqual({ meta: "sent", google: "disabled" });
     expect(metaSend).toHaveBeenCalledTimes(2);
-    expect(googleSend).toHaveBeenCalledTimes(1);
   });
 
   it("keeps the committed job update authoritative when scheduled dispatch fails", async () => {

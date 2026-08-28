@@ -10,10 +10,6 @@ import {
   createManualConversionObserver,
   manualOfflineConversionsEnabled,
 } from "@/server/analytics/manual-conversion-dispatcher";
-import {
-  createGoogleAdsOfflineConversionClient,
-  parseGoogleAdsOfflineConversionConfig,
-} from "@/server/analytics/google-ads-offline-client";
 import { createMetaCapiClient } from "@/server/analytics/meta-capi-client";
 import {
   createDrizzleProductionJobRepository,
@@ -34,9 +30,6 @@ export function getAdminProductionRuntime(options: Readonly<{
   );
   const metaAccessToken = process.env.META_CAPI_ACCESS_TOKEN?.trim();
   const meta = createMetaCapiClient({ accessToken: metaAccessToken });
-  const google = createGoogleAdsOfflineConversionClient({
-    config: parseGoogleAdsOfflineConversionConfig(),
-  });
   const conversions = createManualConversionDispatcher({
     listCandidates: candidates.list,
     successStore: createDrizzleManualConversionSuccessStore(database),
@@ -45,7 +38,6 @@ export function getAdminProductionRuntime(options: Readonly<{
         ["advertising.meta.enabled"] === "enabled"
       ? meta.send(event)
       : "disabled",
-    googleSend: google.send,
   });
   const service = createProductionJobService(
     repository,
