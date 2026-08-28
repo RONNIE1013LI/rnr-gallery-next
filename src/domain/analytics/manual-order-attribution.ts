@@ -18,6 +18,7 @@ export type ManualConversionSnapshot = Readonly<{
   customerSource: string;
   jobNumber: string;
   manualPaymentStatus: string | null;
+  paidAt: Date | null;
   amountPaidCents: number | null;
   linkedOnlineOrder: boolean;
   invoice: Readonly<{
@@ -25,21 +26,32 @@ export type ManualConversionSnapshot = Readonly<{
     currency: string;
     totalInclGstCents: number;
   }> | null;
+  metaMatching: Readonly<{
+    hashedEmail?: string;
+    hashedPhone?: string;
+  }>;
   customFields: ManualCustomFields;
 }>;
 
 export type ManualConversionCandidate = Readonly<{
   destination: "meta" | "google";
   transactionId: string;
+  paidAt: Date;
   currency: "NZD" | "AUD";
   value: number;
-  meta?: Readonly<{ fbclid?: string; fbp?: string; fbc?: string }>;
+  meta?: Readonly<{
+    fbp?: string;
+    fbc?: string;
+    hashedEmail?: string;
+    hashedPhone?: string;
+  }>;
   google?: Readonly<{ clickId: string; kind: "gclid" | "gbraid" | "wbraid" }>;
 }>;
 
 const clickIdPattern = /^[A-Za-z0-9._~-]{1,200}$/;
 const metaCookiePattern = /^fb\.1\.\d{10,13}\.[A-Za-z0-9._-]{1,200}$/;
 const jobNumberPattern = /^[A-Za-z0-9-]{3,80}$/;
+const hashPattern = /^[a-f0-9]{64}$/;
 const recordedAtPattern = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/;
 
 function fieldValues(fields: ManualCustomFields) {
@@ -53,6 +65,10 @@ function hasRecordedGrantedConsent(fields: ReturnType<typeof fieldValues>) {
   if (fields.advertising_consent !== "granted"
     || !recordedAtPattern.test(fields.advertising_consent_recorded_at)) return false;
   return !Number.isNaN(Date.parse(fields.advertising_consent_recorded_at));
+}
+
+export function hasRecordedManualAdvertisingConsent(fields: ManualCustomFields) {
+  return hasRecordedGrantedConsent(fieldValues(fields));
 }
 
 function declaredSource(value: string): "meta" | "google" | null {
@@ -84,6 +100,9 @@ function baseCandidate(snapshot: ManualConversionSnapshot): Omit<ManualConversio
   if (snapshot.source !== "manual"
     || !jobNumberPattern.test(snapshot.jobNumber)
     || snapshot.manualPaymentStatus !== "paid"
+    || !(snapshot.paidAt instanceof Date)
+    || Number.isNaN(snapshot.paidAt.getTime())
+    || snapshot.paidAt.getTime() <= 0
     || !isValidMoney(snapshot.amountPaidCents)
     || snapshot.linkedOnlineOrder
     || snapshot.invoice?.status !== "issued"
@@ -91,21 +110,31 @@ function baseCandidate(snapshot: ManualConversionSnapshot): Omit<ManualConversio
     || (snapshot.invoice.currency !== "NZD" && snapshot.invoice.currency !== "AUD")) return null;
   return Object.freeze({
     transactionId: `manual:${snapshot.jobNumber}`,
+    paidAt: new Date(snapshot.paidAt.getTime()),
     currency: snapshot.invoice.currency,
     value: snapshot.invoice.totalInclGstCents / 100,
   });
 }
 
-function metaEvidence(fields: ReturnType<typeof fieldValues>) {
-  const values = {
-    ...(fields.fbclid ? { fbclid: fields.fbclid } : {}),
+function metaEvidence(
+  fields: ReturnType<typeof fieldValues>,
+  matching: ManualConversionSnapshot["metaMatching"],
+) {
+  if ((matching.hashedEmail && !hashPattern.test(matching.hashedEmail))
+    || (matching.hashedPhone && !hashPattern.test(matching.hashedPhone))) return null;
+  const values = Object.freeze({
     ...(fields.fbp ? { fbp: fields.fbp } : {}),
     ...(fields.fbc ? { fbc: fields.fbc } : {}),
-  };
-  if ((values.fbclid && !clickIdPattern.test(values.fbclid))
+    ...(matching.hashedEmail ? { hashedEmail: matching.hashedEmail } : {}),
+    ...(matching.hashedPhone ? { hashedPhone: matching.hashedPhone } : {}),
+  });
+  if ((fields.fbclid && !clickIdPattern.test(fields.fbclid))
     || (values.fbp && !metaCookiePattern.test(values.fbp))
     || (values.fbc && !metaCookiePattern.test(values.fbc))) return null;
-  return Object.freeze(values);
+  return Object.freeze({
+    hasSourceEvidence: Boolean(fields.fbclid || fields.fbp || fields.fbc),
+    values,
+  });
 }
 
 function googleEvidence(fields: ReturnType<typeof fieldValues>) {
@@ -123,19 +152,20 @@ export function buildManualConversionCandidates(
   const fields = fieldValues(snapshot.customFields);
   if (!base || !hasRecordedGrantedConsent(fields)) return Object.freeze([]);
 
-  const meta = metaEvidence(fields);
+  const meta = metaEvidence(fields, snapshot.metaMatching);
   const google = googleEvidence(fields);
   const source = declaredSource(fields.advertising_source);
   const hasMetaEvidence = source === "meta"
     || isMetaCustomerSource(snapshot.customerSource)
-    || Boolean(meta && Object.keys(meta).length);
+    || Boolean(meta?.hasSourceEvidence);
   const hasGoogleEvidence = source === "google" || google !== null;
-  if ((fields.fbclid || fields.fbp || fields.fbc) && !meta) return Object.freeze([]);
+  if (!meta) return Object.freeze([]);
   if ((fields.gclid || fields.gbraid || fields.wbraid) && !google) return Object.freeze([]);
   if (hasMetaEvidence && hasGoogleEvidence && source === null) return Object.freeze([]);
 
   if (source === "meta" || (hasMetaEvidence && !hasGoogleEvidence)) {
-    return Object.freeze([Object.freeze({ ...base, destination: "meta" as const, meta: meta ?? {} })]);
+    if (Object.keys(meta.values).length === 0) return Object.freeze([]);
+    return Object.freeze([Object.freeze({ ...base, destination: "meta" as const, meta: meta.values })]);
   }
   if (source === "google" || (hasGoogleEvidence && !hasMetaEvidence)) {
     if (!google) return Object.freeze([]);
