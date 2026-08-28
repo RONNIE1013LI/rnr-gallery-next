@@ -20,6 +20,7 @@ export async function generateMetadata(): Promise<Metadata> {
     path: "/au/canvas",
     image: "/media/products/photo-print-canvas-shop.webp",
     imageAlt: "Personalised photo print canvas",
+    includeMarketAlternates: true,
   });
 }
 

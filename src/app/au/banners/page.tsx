@@ -20,6 +20,7 @@ export async function generateMetadata(): Promise<Metadata> {
     path: "/au/banners",
     image: "/media/products/roll-up-banner-shop.webp",
     imageAlt: "Personalised R&R Gallery roll-up banner",
+    includeMarketAlternates: true,
   });
 }
 

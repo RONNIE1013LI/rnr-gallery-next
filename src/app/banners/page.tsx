@@ -1,17 +1,23 @@
 import { CataloguePage } from "@/components/catalogue-page";
+import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
 import { getRegistryProducts } from "@/domain/catalogue/product-registry";
 import { getMarketStartingPriceInclTaxCents } from "@/domain/pricing/market-quote";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { buildPublicMetadata } from "@/server/seo/metadata";
 
-export const metadata = buildPublicMetadata({
-  title: "Custom banners",
-  description: "Personalised roll-up banners, wall banners and grave covers for meaningful occasions.",
-  path: "/banners",
-  image: "/media/products/roll-up-banner-shop.webp",
-  imageAlt: "Personalised R&R Gallery roll-up banner",
-});
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata() {
+  const { registry } = await getSafePublicProductRegistry();
+  return buildPublicMetadata({
+    title: "Custom banners",
+    description: "Personalised roll-up banners, wall banners and grave covers for meaningful occasions.",
+    path: "/banners",
+    image: "/media/products/roll-up-banner-shop.webp",
+    imageAlt: "Personalised R&R Gallery roll-up banner",
+    includeMarketAlternates: registry.markets.AU.enabled && getMarketCompleteness(registry, "AU").ready,
+  });
+}
 
 export default async function BannersPage() {
   const { registry } = await getSafePublicProductRegistry();

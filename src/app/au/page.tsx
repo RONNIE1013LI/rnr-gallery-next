@@ -26,6 +26,7 @@ export async function generateMetadata(): Promise<Metadata> {
     path: "/au",
     image: "/media/home/homepage-products-ink-sailboat.webp",
     imageAlt: "Selection of personalised R&R Gallery artwork products",
+    includeMarketAlternates: true,
   });
 }
 

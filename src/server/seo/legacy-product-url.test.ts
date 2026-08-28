@@ -17,4 +17,19 @@ describe("buildLegacyProductUrl", () => {
       coupon: "not-forwarded",
     })).toBe("/products/roll-up-banner");
   });
+
+  it("preserves paid-click and UTM attribution while filtering unrelated parameters", () => {
+    expect(buildLegacyProductUrl("roll-up-banner", {
+      utm_source: "google",
+      utm_campaign: ["winter-canvas", "ignored"],
+      utm_content: "ad-1",
+      gclid: "google-click",
+      gbraid: "google-braid",
+      wbraid: "google-web-braid",
+      fbclid: "meta-click",
+      coupon: "not-forwarded",
+    })).toBe(
+      "/products/roll-up-banner?utm_source=google&utm_campaign=winter-canvas&utm_content=ad-1&gclid=google-click&gbraid=google-braid&wbraid=google-web-braid&fbclid=meta-click",
+    );
+  });
 });

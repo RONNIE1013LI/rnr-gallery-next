@@ -2,10 +2,10 @@ import { describe, expect, it } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import { buildRobots } from "./robots";
 import { buildPublicSitemap, dynamic as sitemapDynamic } from "./sitemap";
-import { metadata as homeMetadata } from "./page";
-import { metadata as shopMetadata } from "./shop/page";
-import { metadata as canvasMetadata } from "./canvas/page";
-import { metadata as bannersMetadata } from "./banners/page";
+import { generateMetadata as generateHomeMetadata } from "./page";
+import { generateMetadata as generateShopMetadata } from "./shop/page";
+import { generateMetadata as generateCanvasMetadata } from "./canvas/page";
+import { generateMetadata as generateBannersMetadata } from "./banners/page";
 import { metadata as galleryMetadata } from "./design-gallery/page";
 import { metadata as howItWorksMetadata } from "./how-it-works/page";
 import { metadata as aboutMetadata } from "./about/page";
@@ -27,9 +27,10 @@ import { buildPublicMetadata } from "@/server/seo/metadata";
 import { getSiteUrl } from "@/server/seo/site-url";
 
 describe("public SEO routes", () => {
-  it("uses the approved default social card when the homepage is shared", () => {
+  it("uses the approved default social card when the homepage is shared", async () => {
     const socialTitle = "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service";
     const socialImage = "https://rnrgallery.com/media/social/rr-gallery-social-share-2026.webp";
+    const homeMetadata = await generateHomeMetadata();
 
     expect(homeMetadata.openGraph).toMatchObject({
       title: socialTitle,
@@ -175,21 +176,22 @@ describe("public SEO routes", () => {
   });
 
   it.each([
-    ["home", homeMetadata, "https://rnrgallery.com/"],
-    ["shop", shopMetadata, "https://rnrgallery.com/shop"],
-    ["canvas", canvasMetadata, "https://rnrgallery.com/canvas"],
-    ["banners", bannersMetadata, "https://rnrgallery.com/banners"],
-    ["design gallery", galleryMetadata, "https://rnrgallery.com/design-gallery"],
-    ["how it works", howItWorksMetadata, "https://rnrgallery.com/how-it-works"],
-    ["about", aboutMetadata, "https://rnrgallery.com/about"],
-    ["contact", contactMetadata, "https://rnrgallery.com/contact"],
-    ["help", helpMetadata, "https://rnrgallery.com/help"],
-    ["shipping", shippingMetadata, "https://rnrgallery.com/shipping-delivery"],
-    ["returns and refunds", returnsRefundsMetadata, "https://rnrgallery.com/returns-refunds"],
-    ["roll-up landing", rollUpLandingMetadata, "https://rnrgallery.com/custom-roll-up-banners-nz"],
-    ["wall banner landing", wallBannerLandingMetadata, "https://rnrgallery.com/custom-wall-banners-nz"],
-    ["photo canvas landing", photoCanvasLandingMetadata, "https://rnrgallery.com/custom-photo-canvas-nz"],
-  ])("gives %s unique, indexable social metadata and an absolute canonical", (_label, metadata, canonical) => {
+    ["home", generateHomeMetadata, "https://rnrgallery.com/"],
+    ["shop", generateShopMetadata, "https://rnrgallery.com/shop"],
+    ["canvas", generateCanvasMetadata, "https://rnrgallery.com/canvas"],
+    ["banners", generateBannersMetadata, "https://rnrgallery.com/banners"],
+    ["design gallery", () => galleryMetadata, "https://rnrgallery.com/design-gallery"],
+    ["how it works", () => howItWorksMetadata, "https://rnrgallery.com/how-it-works"],
+    ["about", () => aboutMetadata, "https://rnrgallery.com/about"],
+    ["contact", () => contactMetadata, "https://rnrgallery.com/contact"],
+    ["help", () => helpMetadata, "https://rnrgallery.com/help"],
+    ["shipping", () => shippingMetadata, "https://rnrgallery.com/shipping-delivery"],
+    ["returns and refunds", () => returnsRefundsMetadata, "https://rnrgallery.com/returns-refunds"],
+    ["roll-up landing", () => rollUpLandingMetadata, "https://rnrgallery.com/custom-roll-up-banners-nz"],
+    ["wall banner landing", () => wallBannerLandingMetadata, "https://rnrgallery.com/custom-wall-banners-nz"],
+    ["photo canvas landing", () => photoCanvasLandingMetadata, "https://rnrgallery.com/custom-photo-canvas-nz"],
+  ])("gives %s unique, indexable social metadata and an absolute canonical", async (_label, loadMetadata, canonical) => {
+    const metadata = await loadMetadata();
     const expectedSocialTitle = _label === "home"
       ? "R&R Gallery | Custom Canvas | Banners & Digital Oil Paintings NZ | Free Design Service"
       : metadata.title;
@@ -209,22 +211,16 @@ describe("public SEO routes", () => {
     expect(metadata.robots).toMatchObject({ index: true, follow: true });
   });
 
-  it("links only true NZ and AU route counterparts with self-referencing hreflang", () => {
+  it("links only true NZ and AU route counterparts with self-referencing hreflang", async () => {
+    const [homeMetadata, shopMetadata] = await Promise.all([
+      generateHomeMetadata(),
+      generateShopMetadata(),
+    ]);
     expect(homeMetadata.alternates).toEqual({
       canonical: "https://rnrgallery.com/",
-      languages: {
-        "en-NZ": "https://rnrgallery.com/",
-        "en-AU": "https://rnrgallery.com/au",
-        "x-default": "https://rnrgallery.com/",
-      },
     });
     expect(shopMetadata.alternates).toEqual({
       canonical: "https://rnrgallery.com/shop",
-      languages: {
-        "en-NZ": "https://rnrgallery.com/shop",
-        "en-AU": "https://rnrgallery.com/au/shop",
-        "x-default": "https://rnrgallery.com/shop",
-      },
     });
     expect(contactMetadata.alternates).toEqual({
       canonical: "https://rnrgallery.com/contact",
@@ -236,6 +232,7 @@ describe("public SEO routes", () => {
       path: "/au/products/photo-print-canvas",
       image: "/media/products/photo-print-canvas.webp",
       imageAlt: "Photo print canvas",
+      includeMarketAlternates: true,
     });
     expect(productMetadata.alternates).toEqual({
       canonical: "https://rnrgallery.com/au/products/photo-print-canvas",
@@ -247,7 +244,36 @@ describe("public SEO routes", () => {
     });
   });
 
-  it("does not reuse titles or descriptions across primary public routes", () => {
+  it("emits Australian hreflang only when the caller has confirmed public AU readiness", () => {
+    const input = {
+      title: "Product",
+      description: "Product description",
+      path: "/shop",
+      image: "/media/products/photo-print-canvas.webp",
+      imageAlt: "Photo print canvas",
+    };
+
+    expect(buildPublicMetadata(input).alternates).toEqual({
+      canonical: "https://rnrgallery.com/shop",
+    });
+    expect(buildPublicMetadata({ ...input, includeMarketAlternates: true }).alternates)
+      .toEqual({
+        canonical: "https://rnrgallery.com/shop",
+        languages: {
+          "en-NZ": "https://rnrgallery.com/shop",
+          "en-AU": "https://rnrgallery.com/au/shop",
+          "x-default": "https://rnrgallery.com/shop",
+        },
+      });
+  });
+
+  it("does not reuse titles or descriptions across primary public routes", async () => {
+    const [homeMetadata, shopMetadata, canvasMetadata, bannersMetadata] = await Promise.all([
+      generateHomeMetadata(),
+      generateShopMetadata(),
+      generateCanvasMetadata(),
+      generateBannersMetadata(),
+    ]);
     const metadata = [homeMetadata, shopMetadata, canvasMetadata, bannersMetadata, galleryMetadata, howItWorksMetadata, aboutMetadata, contactMetadata, helpMetadata, shippingMetadata, returnsRefundsMetadata, rollUpLandingMetadata, wallBannerLandingMetadata, photoCanvasLandingMetadata];
     expect(new Set(metadata.map((entry) => entry.title)).size).toBe(metadata.length);
     expect(new Set(metadata.map((entry) => entry.description)).size).toBe(metadata.length);

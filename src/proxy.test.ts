@@ -164,6 +164,17 @@ describe("protected request proxy", () => {
       .toBe("https://rnrgallery.com/products/banner-bundle?utm_source=saved");
   });
 
+  it("preserves all paid-click and UTM parameters on an explicit one-hop legacy redirect", () => {
+    const response = proxy(new NextRequest(
+      "https://rrgallery.co.nz/product/banner-bundle?utm_source=google&utm_campaign=winter&gclid=google-click&gbraid=google-braid&wbraid=google-web-braid&fbclid=meta-click",
+    ));
+
+    expect(response.status).toBe(301);
+    expect(response.headers.get("location")).toBe(
+      "https://rnrgallery.com/products/banner-bundle?utm_source=google&utm_campaign=winter&gclid=google-click&gbraid=google-braid&wbraid=google-web-braid&fbclid=meta-click",
+    );
+  });
+
   it("preserves canonical host redirects for unrelated public pages only", () => {
     const response = proxy(new NextRequest(
       "https://www.rrgallery.co.nz/shop?campaign=legacy",

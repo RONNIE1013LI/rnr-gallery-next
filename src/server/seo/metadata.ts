@@ -8,6 +8,7 @@ type PublicMetadataInput = Readonly<{
   image: string;
   imageAlt: string;
   socialTitle?: string;
+  includeMarketAlternates?: boolean;
 }>;
 
 const pairedMarketPaths = new Map<string, string>([
@@ -51,11 +52,12 @@ export function buildPublicMetadata({
   image,
   imageAlt,
   socialTitle,
+  includeMarketAlternates = false,
 }: PublicMetadataInput): Metadata {
   const canonical = absoluteSiteUrl(path);
   const socialImage = absoluteSiteUrl(image);
   const shareTitle = socialTitle ?? title;
-  const languages = buildMarketAlternates(path);
+  const languages = includeMarketAlternates ? buildMarketAlternates(path) : undefined;
   return {
     title,
     description,

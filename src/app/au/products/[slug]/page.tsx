@@ -36,6 +36,7 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
     path: `/au/products/${product.slug}`,
     image: product.image.src,
     imageAlt: product.image.alt,
+    includeMarketAlternates: true,
   });
 }
 

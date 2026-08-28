@@ -15,6 +15,7 @@ import {
   quoteMarketConfiguration,
 } from "@/domain/pricing/market-quote";
 import { deliveryCopy } from "@/domain/content/delivery-copy";
+import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
 import { buildProductViewEvent } from "@/domain/analytics/events";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { addNzdGst, formatMarketMoney } from "@/domain/money";
@@ -52,6 +53,7 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
         path: `/products/${product.slug}`,
         image: product.image.src,
         imageAlt: product.image.alt,
+        includeMarketAlternates: registry.markets.AU.enabled && getMarketCompleteness(registry, "AU").ready,
       })
     : { title: "Product not found" };
 }
