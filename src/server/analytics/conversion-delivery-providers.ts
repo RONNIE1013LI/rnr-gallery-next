@@ -66,12 +66,17 @@ function googleResult(result: GoogleDataManagerOutboxTransportResult): Conversio
     requestStatus: result.requestStatus,
     destinations: result.destinations,
   });
+  const hasRetryableFailure = result.destinations.some((destination) =>
+    destination.errors.some(({ reason }) => /(?:INTERNAL_ERROR|UNAVAILABLE|DEADLINE_EXCEEDED|RESOURCE_EXHAUSTED|RATE_LIMIT|TEMPORAR)/.test(reason)),
+  );
   switch (result.requestStatus) {
     case "SUCCESS": return Object.freeze({ outcome: "succeeded", diagnostics });
     case "PROCESSING":
     case "REQUEST_STATUS_UNKNOWN": return Object.freeze({ outcome: "processing", diagnostics });
     case "PARTIAL_SUCCESS": return Object.freeze({ outcome: "permanent_failed", errorCode: "partial_success", errorCategory: "partial_success", diagnostics });
-    case "FAILED": return Object.freeze({ outcome: "permanent_failed", errorCode: "provider_failed", errorCategory: "invalid_event", diagnostics });
+    case "FAILURE": return hasRetryableFailure
+      ? Object.freeze({ outcome: "retryable_failed", errorCode: "google_failure_retryable", errorCategory: "provider_server", diagnostics })
+      : Object.freeze({ outcome: "permanent_failed", errorCode: "google_failure", errorCategory: "invalid_event", diagnostics });
   }
 }
 

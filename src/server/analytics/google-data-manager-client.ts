@@ -79,7 +79,7 @@ export type GoogleDataManagerRequestStatus =
   | "REQUEST_STATUS_UNKNOWN"
   | "SUCCESS"
   | "PROCESSING"
-  | "FAILED"
+  | "FAILURE"
   | "PARTIAL_SUCCESS";
 
 export type GoogleDataManagerStatusCount = Readonly<{
@@ -315,7 +315,7 @@ function parseCounts(value: unknown, key: "errorCounts" | "warningCounts"): read
 }
 
 function requestStatus(value: unknown): GoogleDataManagerRequestStatus {
-  return value === "SUCCESS" || value === "PROCESSING" || value === "FAILED"
+  return value === "SUCCESS" || value === "PROCESSING" || value === "FAILURE"
     || value === "PARTIAL_SUCCESS" || value === "REQUEST_STATUS_UNKNOWN"
     ? value
     : "REQUEST_STATUS_UNKNOWN";
@@ -342,7 +342,7 @@ function overallStatus(
 ): GoogleDataManagerRequestStatus {
   if (destinations.length === 0) return "REQUEST_STATUS_UNKNOWN";
   if (destinations.every((destination) => destination.requestStatus === "SUCCESS")) return "SUCCESS";
-  if (destinations.some((destination) => destination.requestStatus === "FAILED")) return "FAILED";
+  if (destinations.some((destination) => destination.requestStatus === "FAILURE")) return "FAILURE";
   if (destinations.some((destination) => destination.requestStatus === "PARTIAL_SUCCESS")) {
     return "PARTIAL_SUCCESS";
   }

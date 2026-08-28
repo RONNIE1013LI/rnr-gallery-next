@@ -690,7 +690,7 @@ describe("Google Data Manager execution", () => {
   it.each([
     ["PROCESSING", "processing"],
     ["PARTIAL_SUCCESS", "permanent_error"],
-    ["FAILED", "permanent_error"],
+    ["FAILURE", "permanent_error"],
   ] as const)("preserves destination %s as non-success outcome %s", async (requestStatus, outcome) => {
     const repository = deliveryRepository();
     const fetchImpl = vi.fn()

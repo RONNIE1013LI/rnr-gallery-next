@@ -37,7 +37,7 @@ export type ConversionProviderRequestStatus =
   | "REQUEST_STATUS_UNKNOWN"
   | "SUCCESS"
   | "PROCESSING"
-  | "FAILED"
+  | "FAILURE"
   | "PARTIAL_SUCCESS";
 
 export type ConversionProviderDiagnostics = Readonly<{

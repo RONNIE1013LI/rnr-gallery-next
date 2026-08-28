@@ -21,7 +21,7 @@ export type ConversionDeliveryProvider = Readonly<{
   deliver(delivery: ClaimedConversionDelivery): Promise<ConversionProviderResult>;
 }>;
 
-type Repository = Readonly<{
+export type ConversionDeliveryRepository = Readonly<{
   recoverStaleClaims(now: Date): Promise<number>;
   claimNext(input: Readonly<{
     platform: ConversionPlatform;
@@ -61,7 +61,7 @@ export function conversionDeliveryRuntimeEnabled(input: Readonly<{
 }
 
 export function createConversionDeliveryDispatcher(dependencies: Readonly<{
-  repository: Repository;
+  repository: ConversionDeliveryRepository;
   provider: ConversionDeliveryProvider;
   enabled: boolean;
   now?: () => Date;
