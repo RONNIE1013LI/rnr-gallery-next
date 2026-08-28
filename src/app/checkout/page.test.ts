@@ -9,6 +9,6 @@ describe("checkout request market", () => {
     expect(source).toContain('requestHeaders.get("x-rnr-resolved-market")');
     expect(source.indexOf('requestHeaders.get("x-rnr-resolved-market")'))
       .toBeLessThan(source.indexOf("cookieStore.get(MARKET_COOKIE_NAME)"));
-    expect(source).toContain("<CheckoutView market={market}");
+    expect(source).toContain("<CheckoutView key={market} market={market}");
   });
 });

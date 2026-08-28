@@ -16,6 +16,15 @@ import {
 type EnabledAfterpayConfig = Extract<AfterpayPaymentConfig, { enabled: true }>;
 type ProviderFetch = typeof fetch;
 
+export type AfterpayDiagnosticStatus = "PASS" | "FAIL" | "NOT_CHECKED";
+export type AfterpayConfigurationDiagnostic = Readonly<{
+  connection: AfterpayDiagnosticStatus;
+  crossBorderTrade: AfterpayDiagnosticStatus;
+  australiaCountry: AfterpayDiagnosticStatus;
+  audLimits: AfterpayDiagnosticStatus;
+  audEligibility: AfterpayDiagnosticStatus;
+}>;
+
 type Money = Readonly<{
   amount: string;
   currency: "NZD" | "AUD";
@@ -212,6 +221,83 @@ function moneyLimits(
     minimumAmountCents,
     maximumAmountCents,
     consumerCountries: Object.freeze([...consumerCountries]),
+  });
+}
+
+function unavailableDiagnostic(): AfterpayConfigurationDiagnostic {
+  return Object.freeze({
+    connection: "FAIL",
+    crossBorderTrade: "NOT_CHECKED",
+    australiaCountry: "NOT_CHECKED",
+    audLimits: "NOT_CHECKED",
+    audEligibility: "NOT_CHECKED",
+  });
+}
+
+export async function diagnoseAfterpayConfiguration({
+  config,
+  fetchImpl,
+}: {
+  config: EnabledAfterpayConfig;
+  fetchImpl?: ProviderFetch;
+}): Promise<AfterpayConfigurationDiagnostic> {
+  const http = createProviderHttp({
+    baseUrl: API_BASE[config.environment],
+    username: config.merchantId,
+    password: config.secretKey,
+    userAgent: config.merchantId,
+    fetchImpl,
+  });
+
+  let response: ConfigurationResponse;
+  try {
+    response = await http.json({
+      method: "GET",
+      path: "/v2/configuration?include=activeCountries&include=cbt&include=merchantCountry",
+      validate: isConfiguration,
+    });
+  } catch {
+    return unavailableDiagnostic();
+  }
+
+  const cbt = isRecord(response.CBT) ? response.CBT : null;
+  const crossBorderTrade = cbt?.enabled === true;
+  const countries = Array.isArray(cbt?.countries) &&
+    cbt.countries.every((country) => country === "NZ" || country === "AU")
+    ? cbt.countries
+    : null;
+  const australiaCountry = countries?.includes("AU") ?? false;
+  const cbtLimits = isRecord(cbt?.limits) ? cbt.limits : null;
+  const aud = isRecord(cbtLimits?.AUD) ? cbtLimits.AUD : null;
+  let audLimits = false;
+  if (
+    aud &&
+    (aud.minimumAmount === undefined || aud.minimumAmount === null || isMoney(aud.minimumAmount)) &&
+    isMoney(aud.maximumAmount)
+  ) {
+    try {
+      moneyLimits(
+        aud.minimumAmount as Money | null | undefined,
+        aud.maximumAmount,
+        "AUD",
+        ["AU"],
+      );
+      audLimits = true;
+    } catch {
+      audLimits = false;
+    }
+  }
+  const merchantCountryMatches = response.merchantCountry === undefined ||
+    response.merchantCountry === config.merchantCountry;
+
+  return Object.freeze({
+    connection: "PASS",
+    crossBorderTrade: crossBorderTrade ? "PASS" : "FAIL",
+    australiaCountry: australiaCountry ? "PASS" : "FAIL",
+    audLimits: audLimits ? "PASS" : "FAIL",
+    audEligibility: crossBorderTrade && australiaCountry && audLimits && merchantCountryMatches
+      ? "PASS"
+      : "FAIL",
   });
 }
 

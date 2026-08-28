@@ -23,5 +23,5 @@ export default async function CheckoutPage() {
     ?? "NZ";
   const addresses = session ? await createDrizzleAddressRepository(getDatabase()).listByOwner(session.user.id) : [];
   const savedAddresses = addresses.map(({ id, country, fullName, building, street, suburb, region, postcode, phone, email }) => ({ id, country, fullName, building, street, suburb, region, postcode, phone, email }));
-  return <main id="main-content" className={styles.checkoutPage}><header className={styles.cartHeader}><p className={styles.eyebrow}>Secure checkout</p><h1>Checkout</h1></header><CheckoutView market={market} savedAddresses={savedAddresses} /></main>;
+  return <main id="main-content" className={styles.checkoutPage}><header className={styles.cartHeader}><p className={styles.eyebrow}>Secure checkout</p><h1>Checkout</h1></header><CheckoutView key={market} market={market} savedAddresses={savedAddresses} /></main>;
 }

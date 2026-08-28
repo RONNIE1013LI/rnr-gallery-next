@@ -3,6 +3,7 @@ import type { NormalizedAddress } from "@/domain/address/types";
 import type { AfterpayPaymentConfig } from "./config";
 import {
   createAfterpayProvider,
+  diagnoseAfterpayConfiguration,
   formatAfterpayAmount,
 } from "./afterpay-provider";
 import type {
@@ -157,6 +158,57 @@ function completeInput(
 }
 
 describe("Afterpay provider", () => {
+  describe("read-only configuration diagnostic", () => {
+    it("checks Australian cross-border eligibility with one GET and returns only safe statuses", async () => {
+      const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(cbtConfiguration()));
+
+      const result = await diagnoseAfterpayConfiguration({ config: config(), fetchImpl });
+
+      expect(fetchImpl).toHaveBeenCalledTimes(1);
+      expect(fetchImpl.mock.calls[0]?.[0]).toBe(
+        "https://global-api-sandbox.afterpay.com/v2/configuration?include=activeCountries&include=cbt&include=merchantCountry",
+      );
+      expect(fetchImpl.mock.calls[0]?.[1]).toMatchObject({ method: "GET" });
+      expect(fetchImpl.mock.calls[0]?.[1]).not.toHaveProperty("body");
+      expect(result).toEqual({
+        connection: "PASS",
+        crossBorderTrade: "PASS",
+        australiaCountry: "PASS",
+        audLimits: "PASS",
+        audEligibility: "PASS",
+      });
+      expect(JSON.stringify(result)).not.toMatch(/merchant|secret|exchange|amount|raw|token/i);
+    });
+
+    it("reports independent safe failures without exposing provider response data", async () => {
+      const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse(cbtConfiguration({
+        enabled: false,
+        countries: ["NZ"],
+        includeAudLimits: false,
+      })));
+
+      await expect(diagnoseAfterpayConfiguration({ config: config(), fetchImpl })).resolves.toEqual({
+        connection: "PASS",
+        crossBorderTrade: "FAIL",
+        australiaCountry: "FAIL",
+        audLimits: "FAIL",
+        audEligibility: "FAIL",
+      });
+    });
+
+    it("fails closed when the provider cannot be reached or verified", async () => {
+      const fetchImpl = vi.fn().mockResolvedValueOnce(jsonResponse({ error: "private provider detail" }, 401));
+
+      await expect(diagnoseAfterpayConfiguration({ config: config(), fetchImpl })).resolves.toEqual({
+        connection: "FAIL",
+        crossBorderTrade: "NOT_CHECKED",
+        australiaCountry: "NOT_CHECKED",
+        audLimits: "NOT_CHECKED",
+        audEligibility: "NOT_CHECKED",
+      });
+    });
+  });
+
   it("uses the fixed Payment Request reference and amount", async () => {
     const payerAddress = address();
     const target: PaymentTargetSnapshot = {

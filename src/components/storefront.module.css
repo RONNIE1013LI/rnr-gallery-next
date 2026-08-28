@@ -3752,6 +3752,24 @@
   flex: 0 0 auto;
 }
 
+.paymentAfterpayBrand {
+  width: 2.9rem;
+  height: 1.5rem;
+  margin-inline-start: auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: 0.25rem;
+  background: #b2fce4;
+  color: #111820;
+}
+
+.paymentAfterpayBrand svg {
+  width: 1.9rem;
+  height: 1.05rem;
+}
+
 .paymentCardBrands > span {
   width: 2.4rem;
   height: 1.5rem;

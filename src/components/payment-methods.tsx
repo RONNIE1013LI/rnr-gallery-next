@@ -1,4 +1,5 @@
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
+import { SiAfterpay } from "react-icons/si";
 import styles from "./storefront.module.css";
 
 export type PaymentMethodOption = Readonly<{
@@ -77,6 +78,11 @@ export function PaymentMethods({
           <span className={styles.paymentBrandMastercard} aria-hidden="true"><i /><i /></span>
           <span className={styles.paymentBrandAmex}>AMEX</span>
         </span> : null}
+        {option.method === "afterpay" ? <span
+          aria-hidden="true"
+          className={styles.paymentAfterpayBrand}
+          data-payment-brand="afterpay"
+        ><SiAfterpay /></span> : null}
       </label>)}
     </div>
     {value === "card" ? <>

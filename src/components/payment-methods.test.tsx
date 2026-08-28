@@ -28,6 +28,7 @@ describe("PaymentMethods", () => {
     expect(screen.getByRole("radiogroup", { name: "Payment method" })).toBeInTheDocument();
     expect(screen.getByRole("radio", { name: "Test card — no real payment" })).toBeChecked();
     expect(screen.getByText("Test Afterpay — no real payment")).toBeInTheDocument();
+    expect(document.querySelector('[data-payment-brand="afterpay"]')).toBeInTheDocument();
     expect(screen.queryByRole("radio", { name: /zip/i })).not.toBeInTheDocument();
     expect(screen.getByText("No real payment will be taken.")).toBeInTheDocument();
     expect(screen.getByRole("img", { name: "Accepted cards: Visa, Mastercard and American Express" })).toBeInTheDocument();

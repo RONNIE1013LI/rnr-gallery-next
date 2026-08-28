@@ -12,7 +12,6 @@ import { buildCartEvent, buildCheckoutEvent, type CheckoutAnalyticsDetails } fro
 import { createBrowserCartRepository, parseStoredCart } from "@/domain/cart/browser-cart-repository";
 import { EMPTY_CART_JSON, getCartSnapshot, notifyCartChanged, subscribeToCart } from "@/domain/cart/browser-cart-events";
 import {
-  clearIdentityCheckoutState,
   getActiveCartStorageKey,
   getActiveCheckoutDraftStorageKey,
   getActiveCheckoutIntentCartBackupKey,
@@ -20,10 +19,8 @@ import {
   getActivePaymentIntentStorageKey,
 } from "@/domain/cart/browser-cart-scope";
 import { type Cart } from "@/domain/cart/types";
-import { applyAuthoritativeRepricing } from "@/domain/cart/cart";
 import { cartToCheckoutInput } from "@/domain/cart/checkout-input";
 import type { RepricedCheckoutCart } from "@/domain/checkout/types";
-import { requestMarketSwitch } from "@/domain/markets/browser-market-switch";
 import { formatMarketMoney } from "@/domain/money";
 import type { PublicShippingDTO } from "@/server/checkout/public-dto";
 import type { PaymentMethodKey } from "@/server/db/schema/payments";
@@ -34,11 +31,6 @@ import { AnalyticsEventTracker } from "./analytics-event-tracker";
 import { CheckoutOrderSummary } from "./checkout-order-summary";
 import { followPaymentAction, PaymentStartError, startOrderPayment } from "./order-payment-panel";
 import { PaymentMethods, type PaymentMethodOption } from "./payment-methods";
-import {
-  hasStaleUrgentDate,
-  MarketSwitchDialog,
-  type MarketSwitchDialogState,
-} from "./market-switch-dialog";
 import { StripePaymentForm } from "./stripe-payment-form";
 import {
   readPaymentRecoveryIntent,
@@ -222,8 +214,7 @@ export function CheckoutView({
   const { push } = useRouter();
   const snapshot = useSyncExternalStore(subscribeToCart, getCartSnapshot, () => EMPTY_CART_JSON);
   const cart = parseStoredCart(snapshot);
-  const [activeMarket, setActiveMarket] = useState<Market>(market);
-  const marketAddresses = savedAddresses.filter((address) => address.country === activeMarket);
+  const marketAddresses = savedAddresses.filter((address) => address.country === market);
   const first = marketAddresses[0];
   const initialAddress = first ? addressInput(first) : { ...emptyAddress, country: market };
   const [billing, setBilling] = useState<AddressInput>(initialAddress);
@@ -243,8 +234,7 @@ export function CheckoutView({
   const [paymentAction, setPaymentAction] = useState<PaymentActionDTO | null>(null);
   const [recoveryChecked, setRecoveryChecked] = useState(false);
   const [draftChecked, setDraftChecked] = useState(false);
-  const [pending, setPending] = useState<"market" | "review" | "shipping" | "order" | null>(null);
-  const [marketDialog, setMarketDialog] = useState<MarketSwitchDialogState | null>(null);
+  const [pending, setPending] = useState<"review" | "shipping" | "order" | null>(null);
   const [billingErrors, setBillingErrors] = useState<AddressFieldErrors>({});
   const [deliveryErrors, setDeliveryErrors] = useState<AddressFieldErrors>({});
   const [billingSavedId, setBillingSavedId] = useState(first?.id ?? "");
@@ -252,9 +242,7 @@ export function CheckoutView({
   const [isReturningToOrder, setIsReturningToOrder] = useState(false);
   const reviewing = useRef(false);
   const placing = useRef(false);
-  const deliveryCountry = different ? delivery.country : billing.country;
-  const marketMismatch = deliveryCountry !== activeMarket;
-  const currentKey = JSON.stringify({ snapshot, market: activeMarket, billing, delivery: different ? delivery : billing, different, method });
+  const currentKey = JSON.stringify({ snapshot, market, billing, delivery: different ? delivery : billing, different, method });
   const isReviewed = Boolean(reviewKey === currentKey && reviewedCart && reviewedVersion !== null && shipping);
   const hasPaymentAuthority = Boolean(isReviewed && paymentReviewKey === currentKey);
   const checkoutLocked = Boolean(!recoveryChecked || !draftChecked || pending || paymentIntent);
@@ -324,108 +312,6 @@ export function CheckoutView({
     setPaymentReviewKey("");
     setMessage("Checkout changed. Review delivery and totals again.");
   }, [setSelectedPaymentMethod]);
-
-  function resetReviewedCheckout() {
-    setReviewedCart(null);
-    setReviewedVersion(null);
-    setShipping(null);
-    setShippingOptions([]);
-    setReviewKey("");
-    setPaymentMethods([]);
-    setSelectedPaymentMethod(null);
-    setPaymentReviewKey("");
-  }
-
-  async function switchCheckoutMarket(targetMarket: Market, candidateCart: Cart) {
-    if (pending || paymentIntent) return;
-    const initiatingCustomerId = getActiveCustomerId();
-    setPending("market");
-    setMessage("");
-    try {
-      const result = await requestMarketSwitch({
-        market: targetMarket,
-        candidateCart,
-        persistPreference: true,
-      });
-      if (getActiveCustomerId() !== initiatingCustomerId) {
-        setMarketDialog(null);
-        return;
-      }
-      if (!result.ok) {
-        const payload = result.payload;
-        if (
-          "code" in payload &&
-          payload.code === "urgent_confirmation_required" &&
-          payload.issues?.length
-        ) {
-          setMarketDialog({
-            targetMarket,
-            cart: candidateCart,
-            issues: payload.issues,
-            message: payload.error,
-          });
-        } else {
-          setMarketDialog(null);
-          setMessage("error" in payload ? payload.error : "Pricing could not be updated.");
-        }
-        return;
-      }
-
-      const payload = result.payload;
-      if (!("cart" in payload) || !payload.cart) {
-        setMessage("Pricing could not be updated.");
-        return;
-      }
-      const repository = createBrowserCartRepository(window.localStorage);
-      repository.save(applyAuthoritativeRepricing(candidateCart, payload.cart));
-      clearIdentityCheckoutState(
-        window.localStorage,
-        window.sessionStorage,
-        initiatingCustomerId,
-      );
-      resetReviewedCheckout();
-      setActiveMarket(targetMarket);
-      setBillingSavedId("");
-      setDeliverySavedId("");
-      setMarketDialog(null);
-      setMessage(`${targetMarket === "AU" ? "Australian" : "New Zealand"} pricing and shipping are ready. Review delivery and totals.`);
-      notifyCartChanged();
-      window.dispatchEvent(new CustomEvent("rnr:market-changed", {
-        detail: { market: targetMarket },
-      }));
-    } catch {
-      if (getActiveCustomerId() === initiatingCustomerId) {
-        setMarketDialog(null);
-        setMessage("Pricing could not be updated. Check your connection and try again.");
-      }
-    } finally {
-      setPending(null);
-    }
-  }
-
-  function changeMarketDialogDate(clientItemId: string, neededDate: string) {
-    setMarketDialog((current) => current ? {
-      ...current,
-      cart: {
-        version: 1,
-        items: current.cart.items.map((item) => item.id === clientItemId
-          ? { ...item, neededDate, urgentServiceConfirmed: false }
-          : item),
-      },
-    } : null);
-  }
-
-  function confirmMarketDialogUrgent() {
-    if (!marketDialog || pending || hasStaleUrgentDate(marketDialog)) return;
-    const urgentIds = new Set(marketDialog.issues.map((issue) => issue.clientItemId));
-    const confirmedCart: Cart = {
-      version: 1,
-      items: marketDialog.cart.items.map((item) => urgentIds.has(item.id)
-        ? { ...item, urgentServiceConfirmed: true }
-        : item),
-    };
-    void switchCheckoutMarket(marketDialog.targetMarket, confirmedCart);
-  }
 
   const handlePlacementFailure = useCallback((error: unknown, intent: CheckoutPaymentIntent | null) => {
     if (intent && error instanceof PaymentStartError) {
@@ -530,7 +416,7 @@ export function CheckoutView({
         setDraftChecked(true);
         return;
       }
-      const draft = readCheckoutDraft(window.sessionStorage, snapshot, activeMarket);
+      const draft = readCheckoutDraft(window.sessionStorage, snapshot, market);
       if (draft) {
         setBilling(draft.billing);
         setDelivery(draft.delivery);
@@ -544,13 +430,13 @@ export function CheckoutView({
       setDraftChecked(true);
     });
     return () => { active = false; };
-  }, [activeMarket, cart.items.length, draftChecked, snapshot]);
+  }, [cart.items.length, draftChecked, market, snapshot]);
 
   useEffect(() => {
     if (!draftChecked || cart.items.length === 0 || paymentIntent) return;
     const draft: CheckoutDraft = { schemaVersion: 1, cartSnapshot: snapshot, billing, delivery, different };
     window.sessionStorage.setItem(getActiveCheckoutDraftStorageKey(), JSON.stringify(draft));
-  }, [activeMarket, billing, cart.items.length, delivery, different, draftChecked, paymentIntent, snapshot]);
+  }, [billing, cart.items.length, delivery, different, draftChecked, market, paymentIntent, snapshot]);
 
   if (paymentIntent?.phase === "starting_payment" && paymentAction?.kind === "elements") {
     return <section className={styles.orderPaymentPanel} id="payment">
@@ -607,8 +493,8 @@ export function CheckoutView({
       <h2>Your cart is empty</h2>
       <p>Add a custom product before starting checkout.</p>
       <div className={styles.emptyStateActions}>
-        <Link className={styles.primaryButton} href={activeMarket === "AU" ? "/au/canvas" : "/canvas"}>Browse Canvas</Link>
-        <Link className={styles.secondaryButton} href={activeMarket === "AU" ? "/au/banners" : "/banners"}>Browse Banners</Link>
+        <Link className={styles.primaryButton} href={market === "AU" ? "/au/canvas" : "/canvas"}>Browse Canvas</Link>
+        <Link className={styles.secondaryButton} href={market === "AU" ? "/au/banners" : "/banners"}>Browse Banners</Link>
         <Link className={styles.secondaryButton} href="/design-gallery">Design Gallery</Link>
       </div>
     </section>;
@@ -616,10 +502,6 @@ export function CheckoutView({
 
   async function review() {
     if (reviewing.current || checkoutLocked) return;
-    if (marketMismatch) {
-      setMessage("Update pricing and shipping for the delivery country before reviewing checkout.");
-      return;
-    }
     if (document.activeElement instanceof HTMLElement) {
       document.activeElement.blur();
     }
@@ -761,15 +643,13 @@ export function CheckoutView({
     <div className={styles.checkoutLayout}>
     <form aria-label="Checkout details" className={styles.checkoutForm} noValidate onSubmit={(event) => { event.preventDefault(); void review(); }}>
       {marketAddresses.length ? <label className={styles.savedAddressSelect}>Saved billing address<select disabled={checkoutLocked} value={billingSavedId} onChange={(event) => { setBillingSavedId(event.target.value); const selected = marketAddresses.find((address) => address.id === event.target.value); if (selected) setBilling(addressInput(selected)); }}><option value="">Enter manually</option>{marketAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}
-      <fieldset><legend>Billing address</legend><AddressForm value={billing} onChange={(value) => { setBilling(value); setBillingSavedId(""); }} errors={billingErrors} disabled={checkoutLocked} /></fieldset>
+      <fieldset><legend>Billing address</legend><AddressForm value={billing} onChange={(value) => { setBilling({ ...value, country: market }); setBillingSavedId(""); }} errors={billingErrors} disabled={checkoutLocked} lockedCountry={market} /></fieldset>
       <label className={styles.checkoutToggle}><input disabled={checkoutLocked} type="checkbox" checked={different} onChange={(event) => setDifferent(event.target.checked)} /> Deliver to a different address</label>
-      {different ? <fieldset><legend>Delivery address</legend>{marketAddresses.length ? <label className={styles.savedAddressSelect}>Saved delivery address<select disabled={checkoutLocked} value={deliverySavedId} onChange={(event) => { setDeliverySavedId(event.target.value); const selected = marketAddresses.find((address) => address.id === event.target.value); if (selected) setDelivery(addressInput(selected)); }}><option value="">Enter manually</option>{marketAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}<AddressForm value={delivery} onChange={(value) => { setDelivery(value); setDeliverySavedId(""); }} errors={deliveryErrors} disabled={checkoutLocked} /></fieldset> : null}
-      {marketMismatch ? <section className={styles.checkoutMarketMismatch} aria-live="polite"><p>Your delivery address is in {deliveryCountry === "AU" ? "Australia" : "New Zealand"}. {deliveryCountry === "AU" ? "Australia" : "New Zealand"} pricing and shipping will apply.</p><button type="button" disabled={checkoutLocked} onClick={() => void switchCheckoutMarket(deliveryCountry, cart)}>Apply {deliveryCountry === "AU" ? "Australia" : "New Zealand"} pricing and shipping</button></section> : null}
-      <button className={`${styles.secondaryButton} ${styles.checkoutReviewButton}`} type="submit" disabled={checkoutLocked || marketMismatch}>{!recoveryChecked ? "Checking order status…" : pending === "review" ? "Reviewing…" : "Review delivery & totals"}</button>
+      {different ? <fieldset><legend>Delivery address</legend>{marketAddresses.length ? <label className={styles.savedAddressSelect}>Saved delivery address<select disabled={checkoutLocked} value={deliverySavedId} onChange={(event) => { setDeliverySavedId(event.target.value); const selected = marketAddresses.find((address) => address.id === event.target.value); if (selected) setDelivery(addressInput(selected)); }}><option value="">Enter manually</option>{marketAddresses.map((address) => <option key={address.id} value={address.id}>{address.fullName} · {address.street}</option>)}</select></label> : null}<AddressForm value={delivery} onChange={(value) => { setDelivery({ ...value, country: market }); setDeliverySavedId(""); }} errors={deliveryErrors} disabled={checkoutLocked} lockedCountry={market} /></fieldset> : null}
+      <button className={`${styles.secondaryButton} ${styles.checkoutReviewButton}`} type="submit" disabled={checkoutLocked}>{!recoveryChecked ? "Checking order status…" : pending === "review" ? "Reviewing…" : "Review delivery & totals"}</button>
       <p aria-live="polite" className={styles.checkoutMessage}>{message}</p>
     </form>
     <aside className={styles.checkoutSummary}><p className={styles.eyebrow}>Your order</p><h2>Order summary</h2>{reviewedCart && !isReviewed ? <p className={styles.checkoutMessage}>Changes need review.</p> : null}{isReviewed && shippingOptions.length > 1 ? <fieldset className={styles.shippingMethodSelector}><legend>Shipping method</legend><div>{shippingOptions.map((option) => <label key={option.serviceCode}><input type="radio" name="shippingService" value={option.serviceCode} checked={shipping?.serviceCode === option.serviceCode} disabled={checkoutLocked} onChange={() => void selectShippingService(option.serviceCode)} /><span>{option.serviceName}</span><strong>{formatMarketMoney(option.amountInclGstCents, option.currency)}</strong></label>)}</div></fieldset> : null}<CheckoutOrderSummary cart={isReviewed ? reviewedCart : null} shipping={isReviewed ? shipping : null} />{hasPaymentAuthority ? <PaymentMethods methods={paymentMethods} value={selectedPaymentMethod} onChange={setSelectedPaymentMethod} disabled={checkoutLocked} /> : null}<button className={styles.primaryButton} type="button" disabled={paymentIntent ? Boolean(pending) : !hasPaymentAuthority || !selectedPaymentMethod || paymentMethods.length === 0 || Boolean(pending)} onClick={placeOrder}>{pending === "order" ? "Preparing payment…" : pending === "shipping" ? "Updating shipping…" : paymentIntent?.phase === "starting_payment" ? "Retry payment recovery" : paymentIntent ? "Retry order recovery" : selectedPaymentMethod === "card" ? "Continue to secure card payment" : selectedPaymentMethod === "afterpay" ? "Continue to Afterpay" : "Continue to payment"}</button></aside>
     </div>
-    {marketDialog ? <MarketSwitchDialog state={marketDialog} pending={pending === "market"} confirmDisabled={hasStaleUrgentDate(marketDialog)} onDateChange={changeMarketDialogDate} onConfirmUrgent={confirmMarketDialogUrgent} onTryDates={() => void switchCheckoutMarket(marketDialog.targetMarket, marketDialog.cart)} onCancel={() => { if (!pending) setMarketDialog(null); }} /> : null}
   </>;
 }
