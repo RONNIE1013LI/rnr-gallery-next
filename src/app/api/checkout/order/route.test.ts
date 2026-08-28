@@ -43,6 +43,57 @@ function repository(customerId: string | null = null): OrderRepository {
 }
 
 describe("POST /api/checkout/order", () => {
+  it("does not store a supplied fbclid without granted advertising consent", async () => {
+    const service = { createOrder: vi.fn().mockResolvedValue({
+      orderId: "40000000-0000-4000-8000-000000000001", orderNumber: "RNR-2026-NO-META",
+      currency: "NZD", totalInclGstCents: 9_775, paymentStatus: "awaiting_payment",
+    }) };
+    const handler = createCheckoutOrderRoute({ repository: repository(), orderService: service, getOptionalSession: async () => null, trustedOrigin: origin });
+    const attribution = {
+      utm_source: "facebook",
+      gclid: "google-click-1",
+      fbclid: "meta-click-1",
+    };
+
+    expect((await handler(request({ ...validBody, attribution }))).status).toBe(200);
+    expect(service.createOrder).toHaveBeenLastCalledWith(sessionId, key, expect.objectContaining({
+      attribution: {
+        utm_source: "facebook",
+        gclid: "google-click-1",
+      },
+    }));
+
+    const denied = encodeURIComponent(serializeAdvertisingConsent({
+      version: 1,
+      analytics: true,
+      advertising: false,
+      decidedAt: "2026-08-28T00:00:00.000Z",
+    }));
+    const deniedRequest = new Request(`${origin}/api/checkout/order`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: origin,
+        "Sec-Fetch-Site": "same-origin",
+        Cookie: `${getCheckoutSessionCookieName(null)}=${token}; rnr-consent-v1=${denied}; _fbp=fb.1.1787900000000.123456789`,
+      },
+      body: JSON.stringify({ ...validBody, attribution }),
+    });
+    expect((await handler(deniedRequest)).status).toBe(200);
+    expect(service.createOrder).toHaveBeenLastCalledWith(sessionId, key, expect.objectContaining({
+      attribution: {
+        utm_source: "facebook",
+        gclid: "google-click-1",
+        measurement: {
+          version: 1,
+          advertisingConsent: false,
+          decidedAt: "2026-08-28T00:00:00.000Z",
+        },
+      },
+    }));
+    expect(JSON.stringify(service.createOrder.mock.calls)).not.toContain("meta-click-1");
+  });
+
   it("adds server-read Meta consent and cookies and rejects client forgery", async () => {
     const service = { createOrder: vi.fn().mockResolvedValue({
       orderId: "40000000-0000-4000-8000-000000000001", orderNumber: "RNR-2026-META",

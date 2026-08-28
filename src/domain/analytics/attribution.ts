@@ -33,7 +33,10 @@ export function buildStoredOrderAttribution(
   consent: AdvertisingConsent | null,
   identifiers: Readonly<{ fbp?: string; fbc?: string }>,
 ): StoredOrderAttribution | null {
-  const campaign = attribution ? { ...attribution } : {};
+  const { fbclid, ...nonMetaCampaign } = attribution ?? {};
+  const campaign = consent?.advertising && fbclid
+    ? { ...nonMetaCampaign, fbclid }
+    : nonMetaCampaign;
   if (!consent) {
     return Object.keys(campaign).length ? Object.freeze(campaign) : null;
   }

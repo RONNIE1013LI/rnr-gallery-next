@@ -11,11 +11,26 @@ import {
 } from "./attribution";
 
 describe("identity-scoped advertising attribution", () => {
-  it("adds only server-owned consent and valid Meta cookies while legacy values remain flat", () => {
-    const campaign = { utm_source: "facebook", fbclid: "click-1" } as const;
+  it("excludes fbclid without consent while preserving UTM and Google click attribution", () => {
+    const campaign = {
+      utm_source: "facebook",
+      gclid: "google-click-1",
+      gbraid: "google-braid-1",
+      wbraid: "google-web-braid-1",
+      fbclid: "meta-click-1",
+    } as const;
     expect(buildStoredOrderAttribution(campaign, null, {
       fbp: "fb.1.1787900000000.123456789",
-    })).toEqual(campaign);
+    })).toEqual({
+      utm_source: "facebook",
+      gclid: "google-click-1",
+      gbraid: "google-braid-1",
+      wbraid: "google-web-braid-1",
+    });
+  });
+
+  it("stores fbclid and valid Meta cookies only with granted advertising consent", () => {
+    const campaign = { utm_source: "facebook", fbclid: "meta-click-1" } as const;
     expect(buildStoredOrderAttribution(campaign, {
       version: 1,
       analytics: false,
@@ -37,8 +52,12 @@ describe("identity-scoped advertising attribution", () => {
     expect(isOrderAttribution(campaign)).toBe(true);
   });
 
-  it("records denial without retaining Meta identifiers", () => {
-    expect(buildStoredOrderAttribution(null, {
+  it("records denial without retaining fbclid or Meta cookies", () => {
+    expect(buildStoredOrderAttribution({
+      utm_source: "facebook",
+      gclid: "google-click-1",
+      fbclid: "meta-click-1",
+    }, {
       version: 1,
       analytics: true,
       advertising: false,
@@ -47,6 +66,8 @@ describe("identity-scoped advertising attribution", () => {
       fbp: "fb.1.1787900000000.123456789",
       fbc: "fb.1.1787900000000.click_ABC-123",
     })).toEqual({
+      utm_source: "facebook",
+      gclid: "google-click-1",
       measurement: {
         version: 1,
         advertisingConsent: false,
