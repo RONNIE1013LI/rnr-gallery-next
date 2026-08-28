@@ -59,11 +59,39 @@ export function databaseHostFingerprint(hostname: string) {
 
 function sameDatabaseUrl(left: string | undefined, right: string) {
   if (!left?.trim()) return false;
-  try {
-    return new URL(left).href === new URL(right).href;
-  } catch {
-    return false;
+  const leftUrl = new URL(requiredPostgresUrl(left, "database comparison URL").url);
+  const rightUrl = new URL(requiredPostgresUrl(right, "TEST_DATABASE_URL").url);
+  return leftUrl.hostname.toLowerCase() === rightUrl.hostname.toLowerCase()
+    && (leftUrl.port || "5432") === (rightUrl.port || "5432")
+    && decodeURIComponent(leftUrl.pathname.replace(/^\//, ""))
+      === decodeURIComponent(rightUrl.pathname.replace(/^\//, ""));
+}
+
+export function assertIsolatedTestDatabaseUrl(
+  testDatabaseUrl: string | undefined,
+  env: MigrationEnvironmentValues,
+) {
+  const selected = requiredPostgresUrl(testDatabaseUrl, "TEST_DATABASE_URL");
+  if (!/(?:^|[_-])test(?:$|[_-])/i.test(selected.database)) {
+    throw new Error("TEST_DATABASE_URL must name a dedicated test database");
   }
+  const expectedProductionDatabase = env.EXPECTED_PRODUCTION_DATABASE?.trim();
+  const expectedProductionHostFingerprint = env.EXPECTED_PRODUCTION_HOST_FINGERPRINT
+    ?.trim().toLowerCase();
+  if (!expectedProductionDatabase
+    || !expectedProductionHostFingerprint
+    || !/^[0-9a-f]{64}$/.test(expectedProductionHostFingerprint)) {
+    throw new Error("Safe Production database identity metadata is required for Test DB isolation");
+  }
+  if (
+    sameDatabaseUrl(env.DATABASE_URL, selected.url) ||
+    sameDatabaseUrl(env.PRODUCTION_DATABASE_URL, selected.url) ||
+    (selected.database === expectedProductionDatabase
+      && databaseHostFingerprint(selected.hostname) === expectedProductionHostFingerprint)
+  ) {
+    throw new Error("The test database must differ from application and production databases");
+  }
+  return Object.freeze(selected);
 }
 
 export function selectMigrationTarget(input: Omit<MigrationArguments, "confirmProduction"> & {
@@ -71,19 +99,10 @@ export function selectMigrationTarget(input: Omit<MigrationArguments, "confirmPr
   env: MigrationEnvironmentValues;
 }): SelectedMigrationTarget {
   if (input.environment === "test") {
-    const selected = requiredPostgresUrl(
+    const selected = assertIsolatedTestDatabaseUrl(
       input.env.TEST_DATABASE_URL,
-      "TEST_DATABASE_URL",
+      input.env,
     );
-    if (!/(?:^|[_-])test(?:$|[_-])/i.test(selected.database)) {
-      throw new Error("TEST_DATABASE_URL must name a dedicated test database");
-    }
-    if (
-      sameDatabaseUrl(input.env.DATABASE_URL, selected.url) ||
-      sameDatabaseUrl(input.env.PRODUCTION_DATABASE_URL, selected.url)
-    ) {
-      throw new Error("The test database must differ from application and production databases");
-    }
     return Object.freeze({
       environment: "test",
       ...selected,

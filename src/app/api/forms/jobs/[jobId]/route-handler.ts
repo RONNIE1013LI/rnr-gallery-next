@@ -1,5 +1,4 @@
 import { z } from "zod";
-import { after } from "next/server";
 
 import { getAdminProductionRuntime } from "@/server/admin/admin-production-runtime";
 import { getAdminProductionProofRuntime } from "@/server/admin/admin-production-proof-runtime";
@@ -26,6 +25,7 @@ type ProductionRuntime = ReturnType<typeof getAdminProductionRuntime>;
 type Dependencies = Readonly<{
   requirePermission: (permission: FormPermission) => Promise<Access>;
   update: ProductionRuntime["update"];
+  recordConversionEvidence?: ProductionRuntime["recordConversionEvidence"];
   detail: ProductionRuntime["detail"];
   removeManual?: ProductionRuntime["deleteManual"];
   remove?: ReturnType<typeof getAdminProductionProofRuntime>["remove"];
@@ -50,6 +50,19 @@ const detailEnvelopeSchema = z.object({
 const deleteEnvelopeSchema = z.object({
   expectedJobNumber: z.string().trim().min(1).max(190),
   idempotencyKey: z.string().trim().min(8).max(255),
+}).strict();
+const evidenceSchema = z.object({
+  consentDecision: z.enum(["granted", "denied"]),
+  consentRecordedAt: z.string().datetime(),
+  source: z.enum(["google", "meta"]),
+  attribution: z.object({
+    gclid: z.string().trim().min(1).max(200).optional(),
+    gbraid: z.string().trim().min(1).max(200).optional(),
+    wbraid: z.string().trim().min(1).max(200).optional(),
+    fbclid: z.string().trim().min(1).max(200).optional(),
+    fbp: z.string().trim().min(1).max(220).optional(),
+    fbc: z.string().trim().min(1).max(220).optional(),
+  }).strict().optional(),
 }).strict();
 
 const booleanFields = new Set<FormInlineFieldKey>([
@@ -176,11 +189,12 @@ async function updateFields(
 
 export function createFormsJobRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => {
-    const production = getAdminProductionRuntime({ scheduleAfter: (task) => after(task) });
+    const production = getAdminProductionRuntime();
     const proof = getAdminProductionProofRuntime();
     return {
       requirePermission: requireFormPermission,
       update: production.update,
+      recordConversionEvidence: production.recordConversionEvidence,
       detail: production.detail,
       removeManual: production.deleteManual,
       remove: proof.remove,
@@ -190,6 +204,43 @@ export function createFormsJobRoute(dependencies?: Dependencies) {
     };
   };
   return {
+    async POST(request: Request, context: Context) {
+      try {
+        const deps = dependencies ?? defaults();
+        const access = await deps.requirePermission("update_finance");
+        assertTrustedMutationRequest(request, deps.trustedOrigin);
+        const parsed = evidenceSchema.safeParse(await parseBoundedJson(request));
+        if (!parsed.success || !deps.recordConversionEvidence) {
+          throw new ProductionJobValidationError("Conversion evidence is invalid");
+        }
+        const { jobId } = await context.params;
+        if (access.formProfile?.assignedOnly) {
+          const detail = await deps.detail(jobId, { canViewFinance: false });
+          if (!detail || isOutsideAssignedScope(access, detail.job.assignedUserId)) {
+            throw new ProductionJobNotFoundError();
+          }
+        }
+        const result = await deps.recordConversionEvidence({
+          jobId,
+          actor: {
+            userId: access.user.id,
+            email: access.user.email ?? "unknown@invalid.local",
+          },
+          ...parsed.data,
+          consentRecordedAt: new Date(parsed.data.consentRecordedAt),
+        });
+        if (result === "not_found") throw new ProductionJobNotFoundError();
+        if (result === "invalid_source") {
+          throw new ProductionJobValidationError("Conversion evidence is only available for manual orders");
+        }
+        if (result === "already_paid") {
+          throw new ProductionJobConflictError("Conversion evidence cannot change after payment confirmation");
+        }
+        return Response.json({ result }, { headers: noStore });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    },
     async GET(_request: Request, context: Context) {
       try {
         const deps = dependencies ?? defaults();
@@ -323,6 +374,7 @@ export function createFormsJobRoute(dependencies?: Dependencies) {
 }
 
 const route = createFormsJobRoute();
+export const POST = route.POST;
 export const GET = route.GET;
 export const PATCH = route.PATCH;
 export const DELETE = route.DELETE;

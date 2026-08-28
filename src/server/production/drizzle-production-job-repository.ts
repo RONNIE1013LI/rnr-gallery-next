@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import {
   and,
   asc,
@@ -13,10 +14,23 @@ import {
 } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import {
+  MANUAL_ATTRIBUTION_FIELD_KEYS,
+} from "@/domain/analytics/manual-order-attribution";
+import {
+  buildConversionDeliveryCandidates,
+  parseConversionActivationPolicy,
+  type ConversionActivationPolicy,
+} from "@/domain/analytics/conversion-delivery-candidate";
+import {
+  enqueueConversionDeliveries,
+  type ConversionDeliveryTransaction,
+} from "@/server/analytics/drizzle-conversion-delivery-repository";
+import {
   adminAuditLogs,
   invoiceItems,
   invoices,
   orders,
+  paymentRequests,
   productionJobItems,
   productionJobFiles,
   productionJobs,
@@ -40,6 +54,218 @@ import { projectWebOrderFinance } from "./production-job-finance";
 import { productionJobAuditChanges, type ProductionJobAuditChange } from "./production-job-audit";
 
 type Database = ReturnType<typeof getDatabase>;
+
+export type ManualConversionEvidenceInput = Readonly<{
+  jobId: string;
+  actor: Readonly<{ userId: string; email: string }>;
+  consentDecision: "granted" | "denied";
+  consentRecordedAt: Date;
+  source: "google" | "meta";
+  attribution?: Readonly<Partial<Record<
+    "gclid" | "gbraid" | "wbraid" | "fbclid" | "fbp" | "fbc",
+    string
+  >>>;
+}>;
+
+const conversionClickIdPattern = /^[A-Za-z0-9._~-]{1,200}$/;
+const conversionMetaCookiePattern = /^fb\.1\.\d{10,13}\.[A-Za-z0-9._-]{1,200}$/;
+
+function manualConversionEvidenceValues(input: ManualConversionEvidenceInput) {
+  if (!(input.consentRecordedAt instanceof Date)
+    || Number.isNaN(input.consentRecordedAt.getTime())) {
+    throw new ProductionJobValidationError("Advertising consent timestamp is invalid");
+  }
+  const attribution = Object.fromEntries(Object.entries(input.attribution ?? {}).map(
+    ([key, value]) => [key, value.trim()],
+  )) as Record<string, string>;
+  if (input.consentDecision === "denied" && Object.values(attribution).some(Boolean)) {
+    throw new ProductionJobValidationError("Denied consent cannot store advertising identifiers");
+  }
+  const googleIds = [attribution.gclid, attribution.gbraid, attribution.wbraid].filter(Boolean);
+  if (googleIds.length > 1
+    || googleIds.some((value) => !conversionClickIdPattern.test(value))) {
+    throw new ProductionJobValidationError("Google attribution is invalid");
+  }
+  if (attribution.fbclid && !conversionClickIdPattern.test(attribution.fbclid)) {
+    throw new ProductionJobValidationError("Meta attribution is invalid");
+  }
+  if ([attribution.fbp, attribution.fbc].some(
+    (value) => value && !conversionMetaCookiePattern.test(value),
+  )) {
+    throw new ProductionJobValidationError("Meta attribution is invalid");
+  }
+  if (input.source === "google"
+    && [attribution.fbclid, attribution.fbp, attribution.fbc].some(Boolean)) {
+    throw new ProductionJobValidationError("Attribution source is inconsistent");
+  }
+  if (input.source === "meta" && googleIds.length) {
+    throw new ProductionJobValidationError("Attribution source is inconsistent");
+  }
+  return Object.freeze({
+    advertising_consent: input.consentDecision,
+    advertising_consent_recorded_at: input.consentRecordedAt.toISOString(),
+    advertising_source: input.source,
+    gclid: attribution.gclid ?? "",
+    gbraid: attribution.gbraid ?? "",
+    wbraid: attribution.wbraid ?? "",
+    fbclid: attribution.fbclid ?? "",
+    fbp: attribution.fbp ?? "",
+    fbc: attribution.fbc ?? "",
+  });
+}
+
+async function writeManualConversionEvidence(
+  transaction: ConversionDeliveryTransaction,
+  input: ManualConversionEvidenceInput,
+) {
+  const values = manualConversionEvidenceValues(input);
+  const definitions = await transaction.select({
+    id: productionFieldDefinitions.id,
+    fieldKey: productionFieldDefinitions.fieldKey,
+  }).from(productionFieldDefinitions).where(inArray(
+    productionFieldDefinitions.fieldKey,
+    MANUAL_ATTRIBUTION_FIELD_KEYS,
+  ));
+  if (definitions.length !== MANUAL_ATTRIBUTION_FIELD_KEYS.length) {
+    throw new Error("Manual conversion evidence schema is incomplete");
+  }
+  await transaction.insert(productionFieldValues).values(definitions.map((definition) => ({
+    jobId: input.jobId,
+    fieldId: definition.id,
+    value: values[definition.fieldKey as keyof typeof values],
+    updatedByUserId: input.actor.userId,
+    createdAt: input.consentRecordedAt,
+    updatedAt: input.consentRecordedAt,
+  }))).onConflictDoUpdate({
+    target: [productionFieldValues.jobId, productionFieldValues.fieldId],
+    set: {
+      value: sql`excluded.value`,
+      updatedByUserId: input.actor.userId,
+      updatedAt: input.consentRecordedAt,
+    },
+  });
+  const evidenceDigest = createHash("sha256")
+    .update(JSON.stringify(values))
+    .digest("hex");
+  await transaction.insert(adminAuditLogs).values(buildAuditRecord({
+    actorUserId: input.actor.userId,
+    actorEmail: input.actor.email,
+    action: "production_job.conversion_evidence_recorded",
+    resourceType: "production_job",
+    resourceId: input.jobId,
+    afterSummary: {
+      consentDecision: input.consentDecision,
+      consentRecordedAt: input.consentRecordedAt.toISOString(),
+      source: input.source,
+      identifierKinds: Object.keys(input.attribution ?? {}).filter(
+        (key) => Boolean(input.attribution?.[key as keyof NonNullable<typeof input.attribution>]),
+      ),
+    },
+    requestSource: "admin.jobs.conversion_evidence",
+    result: "success",
+    idempotencyKey: `conversion-evidence:${input.jobId}:${evidenceDigest}`,
+  })).onConflictDoNothing();
+}
+
+export async function recordManualConversionEvidence(
+  database: Database,
+  input: ManualConversionEvidenceInput,
+): Promise<"recorded" | "not_found" | "invalid_source" | "already_paid"> {
+  manualConversionEvidenceValues(input);
+  return database.transaction(async (transaction) => {
+    const [job] = await transaction.select({
+      id: productionJobs.id,
+      source: productionJobs.source,
+      manualPaymentConfirmedAt: productionJobs.manualPaymentConfirmedAt,
+    }).from(productionJobs)
+      .where(eq(productionJobs.id, input.jobId))
+      .for("update")
+      .limit(1);
+    if (!job) return "not_found" as const;
+    if (job.source !== "manual") return "invalid_source" as const;
+    if (job.manualPaymentConfirmedAt) return "already_paid" as const;
+
+    await writeManualConversionEvidence(transaction, input);
+    return "recorded" as const;
+  });
+}
+
+async function enqueueAuthoritativePaidTransition(
+  transaction: ConversionDeliveryTransaction,
+  jobId: string,
+  policy: ConversionActivationPolicy,
+  enqueue: typeof enqueueConversionDeliveries,
+  options: Readonly<{ acceptSameTransactionDraft?: boolean }> = {},
+) {
+  const [job] = await transaction.select({
+    id: productionJobs.id,
+    source: productionJobs.source,
+    createdAt: productionJobs.createdAt,
+    manualPaymentConfirmedAt: productionJobs.manualPaymentConfirmedAt,
+    customerSource: productionJobs.customerSource,
+    customerEmail: productionJobs.customerEmail,
+    customerPhone: productionJobs.customerPhone,
+    manualPaymentStatus: productionJobs.manualPaymentStatus,
+    amountPaidCents: productionJobs.amountPaidCents,
+    webOrderNumber: productionJobs.webOrderNumber,
+  }).from(productionJobs).where(eq(productionJobs.id, jobId)).limit(1);
+  if (!job?.manualPaymentConfirmedAt) return 0;
+
+  const [invoice] = await transaction.select({
+    status: invoices.status,
+    currency: invoices.currency,
+    totalInclGstCents: invoices.totalInclGstCents,
+  }).from(invoices).where(eq(invoices.jobId, jobId)).limit(1);
+  const fields = await transaction.select({
+    fieldKey: productionFieldDefinitions.fieldKey,
+    value: productionFieldValues.value,
+  }).from(productionFieldValues)
+    .innerJoin(
+      productionFieldDefinitions,
+      eq(productionFieldDefinitions.id, productionFieldValues.fieldId),
+    )
+    .where(and(
+      eq(productionFieldValues.jobId, jobId),
+      inArray(productionFieldDefinitions.fieldKey, MANUAL_ATTRIBUTION_FIELD_KEYS),
+    ));
+  let linkedOnlineOrder = false;
+  if (job.webOrderNumber) {
+    const [linked] = await transaction.select({
+      orderId: orders.id,
+      paymentRequestId: paymentRequests.id,
+    }).from(productionJobs)
+      .leftJoin(orders, eq(orders.orderNumber, job.webOrderNumber))
+      .leftJoin(
+        paymentRequests,
+        eq(paymentRequests.requestNumber, job.webOrderNumber),
+      )
+      .where(eq(productionJobs.id, jobId))
+      .limit(1);
+    linkedOnlineOrder = Boolean(linked?.orderId || linked?.paymentRequestId);
+  }
+  const candidates = buildConversionDeliveryCandidates({
+    jobId: job.id,
+    source: job.source,
+    createdAt: job.createdAt,
+    confirmedAt: job.manualPaymentConfirmedAt,
+    customerSource: job.customerSource,
+    customerEmail: job.customerEmail,
+    customerPhone: job.customerPhone,
+    manualPaymentStatus: job.manualPaymentStatus,
+    amountPaidCents: job.amountPaidCents,
+    linkedOnlineOrder,
+    invoice: invoice ? {
+      ...invoice,
+      authoritative: invoice.status === "issued"
+        || (options.acceptSameTransactionDraft === true && invoice.status === "draft"),
+    } : null,
+    customFields: Object.freeze(Object.fromEntries(fields.map((field) => [
+      field.fieldKey,
+      field.value,
+    ]))),
+  }, policy);
+  return enqueue(transaction, candidates);
+}
 
 export type ProductionAssignee = Readonly<{
   id: string;
@@ -366,7 +592,15 @@ export async function getProductionJobDetail(
 
 export function createDrizzleProductionJobRepository(
   database: Database,
+  options: Readonly<{
+    conversionPolicy?: ConversionActivationPolicy;
+    enqueueDeliveries?: typeof enqueueConversionDeliveries;
+  }> = {},
 ): ProductionJobRepository {
+  const conversionPolicy = options.conversionPolicy
+    ?? parseConversionActivationPolicy(process.env);
+  const enqueueDeliveries = options.enqueueDeliveries
+    ?? enqueueConversionDeliveries;
   return {
     async findManualByIdempotencyKey(idempotencyKey) {
       const [record] = await database.select({
@@ -429,6 +663,9 @@ export function createDrizzleProductionJobRepository(
           webOrderNumber: input.webOrderNumber,
           manualStatus: input.manualStatus,
           manualPaymentStatus: input.manualPaymentStatus,
+          ...(input.manualPaymentStatus === "paid"
+            ? { manualPaymentConfirmedAt: sql`statement_timestamp()` }
+            : {}),
           urgent: input.urgent,
           neededDate: input.neededDate,
           deliveryMethod: input.deliveryMethod,
@@ -469,6 +706,13 @@ export function createDrizzleProductionJobRepository(
             createdAt: input.createdAt,
             updatedAt: input.createdAt,
           })));
+        }
+        if (input.conversionEvidence) {
+          await writeManualConversionEvidence(transaction, {
+            jobId: job.id,
+            actor: input.actor,
+            ...input.conversionEvidence,
+          });
         }
         if (input.invoice) {
           const [invoice] = await transaction.insert(invoices).values({
@@ -525,6 +769,15 @@ export function createDrizzleProductionJobRepository(
             result: "success",
             idempotencyKey: `invoice-created:${job.id}`,
           }));
+        }
+        if (input.manualPaymentStatus === "paid" && input.conversionEvidence && input.invoice) {
+          await enqueueAuthoritativePaidTransition(
+            transaction,
+            job.id,
+            conversionPolicy,
+            enqueueDeliveries,
+            { acceptSameTransactionDraft: true },
+          );
         }
         await transaction.insert(adminAuditLogs).values(buildAuditRecord({
           actorUserId: input.actor.userId,
@@ -646,12 +899,19 @@ export function createDrizzleProductionJobRepository(
           }
         }
         if (input.finance) {
+          const firstPaidTransition = current.source === "manual"
+            && current.manualPaymentStatus !== "paid"
+            && input.finance.manualPaymentStatus === "paid"
+            && current.manualPaymentConfirmedAt === null;
           Object.assign(values, {
             manualPaymentStatus: input.finance.manualPaymentStatus,
             amountPayableCents: input.finance.amountPayableCents,
             amountPaidCents: input.finance.amountPaidCents,
             artistFeeCents: input.finance.artistFeeCents,
             materialCostCents: input.finance.materialCostCents,
+            ...(firstPaidTransition
+              ? { manualPaymentConfirmedAt: sql`statement_timestamp()` }
+              : {}),
           });
         }
         if (input.customFields) {
@@ -692,8 +952,23 @@ export function createDrizzleProductionJobRepository(
           .where(and(
             eq(productionJobs.id, input.jobId),
             eq(productionJobs.updatedAt, input.expectedUpdatedAt),
-          )).returning({ id: productionJobs.id });
+          )).returning({
+            id: productionJobs.id,
+            manualPaymentConfirmedAt: productionJobs.manualPaymentConfirmedAt,
+          });
         if (!updated) return "conflict" as const;
+
+        if (current.source === "manual"
+          && current.manualPaymentStatus !== "paid"
+          && input.finance?.manualPaymentStatus === "paid"
+          && current.manualPaymentConfirmedAt === null) {
+          await enqueueAuthoritativePaidTransition(
+            transaction,
+            input.jobId,
+            conversionPolicy,
+            enqueueDeliveries,
+          );
+        }
 
         if (input.items) {
           await transaction.delete(productionJobItems).where(eq(productionJobItems.jobId, input.jobId));

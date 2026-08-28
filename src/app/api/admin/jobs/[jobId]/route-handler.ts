@@ -1,4 +1,4 @@
-import { after } from "next/server";
+import { z } from "zod";
 import { getAdminProductionRuntime } from "@/server/admin/admin-production-runtime";
 import { recordAdminFailure } from "@/server/admin/admin-failure-audit";
 import { hasAdminPermission, type AdminPermission } from "@/server/auth/admin-permissions";
@@ -23,10 +23,25 @@ type ProductionRuntime = ReturnType<typeof getAdminProductionRuntime>;
 type Dependencies = Readonly<{
   requirePermission: (permission: AdminPermission) => Promise<Access>;
   update: ProductionRuntime["update"];
+  recordConversionEvidence?: ProductionRuntime["recordConversionEvidence"];
   trustedOrigin?: string;
   recordFailure?: typeof recordAdminFailure;
 }>;
 type Context = Readonly<{ params: Promise<{ jobId: string }> }>;
+
+const evidenceSchema = z.object({
+  consentDecision: z.enum(["granted", "denied"]),
+  consentRecordedAt: z.string().datetime(),
+  source: z.enum(["google", "meta"]),
+  attribution: z.object({
+    gclid: z.string().trim().min(1).max(200).optional(),
+    gbraid: z.string().trim().min(1).max(200).optional(),
+    wbraid: z.string().trim().min(1).max(200).optional(),
+    fbclid: z.string().trim().min(1).max(200).optional(),
+    fbp: z.string().trim().min(1).max(220).optional(),
+    fbc: z.string().trim().min(1).max(220).optional(),
+  }).strict().optional(),
+}).strict();
 
 function errorResponse(error: unknown) {
   if (error instanceof HttpError || error instanceof MutationRequestError) {
@@ -55,14 +70,46 @@ function requestSource(request: Request) {
 
 export function createAdminJobRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => {
-    const production = getAdminProductionRuntime({ scheduleAfter: (task) => after(task) });
+    const production = getAdminProductionRuntime();
     return {
       requirePermission: requireAdminPermission,
       update: production.update,
+      recordConversionEvidence: production.recordConversionEvidence,
       recordFailure: recordAdminFailure,
     };
   };
   return {
+    async POST(request: Request, context: Context) {
+      try {
+        const deps = dependencies ?? defaults();
+        const access = await deps.requirePermission("update_production_finance");
+        assertTrustedMutationRequest(request, deps.trustedOrigin);
+        const parsed = evidenceSchema.safeParse(await parseBoundedJson(request));
+        if (!parsed.success || !deps.recordConversionEvidence) {
+          throw new ProductionJobValidationError("Conversion evidence is invalid");
+        }
+        const { jobId } = await context.params;
+        const result = await deps.recordConversionEvidence({
+          jobId,
+          actor: {
+            userId: access.user.id,
+            email: access.user.email ?? "unknown@invalid.local",
+          },
+          ...parsed.data,
+          consentRecordedAt: new Date(parsed.data.consentRecordedAt),
+        });
+        if (result === "not_found") throw new ProductionJobNotFoundError();
+        if (result === "invalid_source") {
+          throw new ProductionJobValidationError("Conversion evidence is only available for manual orders");
+        }
+        if (result === "already_paid") {
+          throw new ProductionJobConflictError("Conversion evidence cannot change after payment confirmation");
+        }
+        return Response.json({ result }, { headers: noStore });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    },
     async PATCH(request: Request, context: Context) {
       const deps = dependencies ?? defaults();
       let actor: Readonly<{ userId: string; email: string }> | null = null;
@@ -107,4 +154,5 @@ export function createAdminJobRoute(dependencies?: Dependencies) {
 }
 
 const route = createAdminJobRoute();
+export const POST = route.POST;
 export const PATCH = route.PATCH;

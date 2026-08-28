@@ -6,6 +6,10 @@ import {
 import { databaseHostFingerprint } from "./migration-safety";
 
 const testUrl = "postgresql://tester:secret@test-db.example/rnr_gallery_test";
+const expectedProductionIdentity = {
+  EXPECTED_PRODUCTION_DATABASE: "neondb",
+  EXPECTED_PRODUCTION_HOST_FINGERPRINT: databaseHostFingerprint("prod.example"),
+};
 
 describe("guarded migration runner", () => {
   it("parses an explicit test environment and rejects unknown flags", () => {
@@ -55,7 +59,11 @@ describe("guarded migration runner", () => {
 
     const exitCode = await runMigration({
       args: { environment: "test", confirmProduction: false },
-      env: { DATABASE_URL: "postgresql://wrong/prod", TEST_DATABASE_URL: testUrl },
+      env: {
+        DATABASE_URL: "postgresql://wrong/prod",
+        TEST_DATABASE_URL: testUrl,
+        ...expectedProductionIdentity,
+      },
       identifyDatabase,
       verifyLineage,
       runDrizzle,
@@ -114,7 +122,7 @@ describe("guarded migration runner", () => {
 
     await expect(runMigration({
       args: { environment: "test", confirmProduction: false },
-      env: { TEST_DATABASE_URL: testUrl },
+      env: { TEST_DATABASE_URL: testUrl, ...expectedProductionIdentity },
       identifyDatabase: vi.fn().mockResolvedValue({
         database: "rnr_gallery_test",
         hostname: "test-db.example",

@@ -47,16 +47,16 @@ function sha256(path: string): string {
 }
 
 describe("migration lineage artifacts", () => {
-  it("keeps the immutable Production prefix and appends the canonical notification migrations", () => {
+  it("keeps the immutable Production prefix and appends the approved migrations", () => {
     const manifest = loadJson<AppliedMigration[]>(
       "drizzle/production-lineage-2026-08-24.json",
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(57);
+    expect(journal.entries).toHaveLength(58);
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(57);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(57);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(58);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(58);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -86,6 +86,14 @@ describe("migration lineage artifacts", () => {
     expect(
       sha256("drizzle/20260824233149_internal_notification_provider_send_start.sql"),
     ).toBe("142b83f2980055ba5c0484b835e830817ea11cb68cf634b5af5a7fcdca16c0bb");
+    expect(journal.entries[57]).toMatchObject({
+      idx: 57,
+      when: 1787892120059,
+      tag: "0057_late_swordsman",
+    });
+    expect(sha256("drizzle/0057_late_swordsman.sql")).toBe(
+      "b73b9fba0f7d3332dec71eef59f5606aa2907447b75921e8735b0ae930b74e34",
+    );
   });
 
   it("keeps the latest applied snapshot at the 71-table pre-notification schema", () => {

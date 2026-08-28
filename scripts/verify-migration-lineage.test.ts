@@ -66,7 +66,12 @@ function productionArguments() {
 function dependencies(overrides: Partial<Parameters<typeof runLineageCheck>[0]> = {}) {
   return {
     args: productionArguments(),
-    env: { PRODUCTION_DATABASE_URL: productionUrl, TEST_DATABASE_URL: testUrl },
+    env: {
+      PRODUCTION_DATABASE_URL: productionUrl,
+      TEST_DATABASE_URL: testUrl,
+      EXPECTED_PRODUCTION_DATABASE: "neondb",
+      EXPECTED_PRODUCTION_HOST_FINGERPRINT: expectedHostFingerprint,
+    },
     rootDir: "/repo",
     identifyDatabase: vi.fn(async (_url: string, hostname: string) => ({
       database: hostname === "prod.example" ? "neondb" : "rnr_migration_lineage_test",

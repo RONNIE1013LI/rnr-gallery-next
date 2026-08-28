@@ -73,7 +73,10 @@ async function identifyDatabase(url: string): Promise<DatabaseIdentity & { serve
 }
 
 async function verifyFixtureDatabase() {
-  const target = selectMigrationTarget({ environment: "test", env: { TEST_DATABASE_URL: approvedDatabaseUrl } });
+  const target = selectMigrationTarget({
+    environment: "test",
+    env: { ...process.env, TEST_DATABASE_URL: approvedDatabaseUrl },
+  });
   const identity = await identifyDatabase(approvedDatabaseUrl);
   if (identity.database !== target.expectedDatabase || identity.inRecovery || identity.serverPort !== 5432) {
     throw new Error("Database identity mismatch; test fixture refused");

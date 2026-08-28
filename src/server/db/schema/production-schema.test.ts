@@ -38,6 +38,7 @@ describe("production job schema", () => {
       "web_order_number",
       "manual_status",
       "manual_payment_status",
+      "manual_payment_confirmed_at",
       "urgent",
       "needed_date",
       "delivery_method",

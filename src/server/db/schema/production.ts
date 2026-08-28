@@ -142,6 +142,9 @@ export const productionJobs = pgTable(
     webOrderNumber: text("web_order_number").default("").notNull(),
     manualStatus: text("manual_status").$type<OrderFulfilmentStatus>(),
     manualPaymentStatus: text("manual_payment_status").$type<OrderPaymentStatus>(),
+    manualPaymentConfirmedAt: timestamp("manual_payment_confirmed_at", {
+      withTimezone: true,
+    }),
     urgent: boolean("urgent").default(false).notNull(),
     neededDate: text("needed_date").notNull(),
     deliveryMethod: text("delivery_method").$type<ProductionDeliveryMethod>().notNull(),
@@ -205,6 +208,7 @@ export const productionJobs = pgTable(
         and ${table.requestDigest} is null
         and ${table.manualStatus} is null
         and ${table.manualPaymentStatus} is null
+        and ${table.manualPaymentConfirmedAt} is null
         and ${table.amountPayableCents} is null
         and ${table.amountPaidCents} is null
         and ${table.artistFeeCents} is null

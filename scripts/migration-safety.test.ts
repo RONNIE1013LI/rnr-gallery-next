@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  assertIsolatedTestDatabaseUrl,
   databaseHostFingerprint,
   sanitizedMigrationEnvironment,
   selectMigrationTarget,
@@ -8,6 +9,10 @@ import {
 
 const testUrl = "postgresql://tester:secret@test-db.example/rnr_gallery_test";
 const productionUrl = "postgresql://app:secret@production-db.example/neondb";
+const productionIdentity = {
+  EXPECTED_PRODUCTION_DATABASE: "neondb",
+  EXPECTED_PRODUCTION_HOST_FINGERPRINT: databaseHostFingerprint("production-db.example"),
+};
 
 describe("migration target safety", () => {
   it("uses only TEST_DATABASE_URL for an explicit test migration", () => {
@@ -16,6 +21,7 @@ describe("migration target safety", () => {
       env: {
         DATABASE_URL: productionUrl,
         TEST_DATABASE_URL: testUrl,
+        ...productionIdentity,
       },
     });
 
@@ -27,18 +33,51 @@ describe("migration target safety", () => {
   it("rejects a test target without an explicit test database name", () => {
     expect(() => selectMigrationTarget({
       environment: "test",
-      env: { TEST_DATABASE_URL: productionUrl },
+      env: { TEST_DATABASE_URL: productionUrl, ...productionIdentity },
     })).toThrow("dedicated test database");
   });
 
   it("rejects a test URL that equals an application or production URL", () => {
     for (const env of [
-      { TEST_DATABASE_URL: testUrl, DATABASE_URL: testUrl },
-      { TEST_DATABASE_URL: testUrl, PRODUCTION_DATABASE_URL: testUrl },
+      { TEST_DATABASE_URL: testUrl, DATABASE_URL: testUrl, ...productionIdentity },
+      { TEST_DATABASE_URL: testUrl, PRODUCTION_DATABASE_URL: testUrl, ...productionIdentity },
     ]) {
       expect(() => selectMigrationTarget({ environment: "test", env }))
         .toThrow("must differ");
     }
+  });
+
+  it("rejects the same host, port and database even when credentials differ", () => {
+    expect(() => selectMigrationTarget({
+      environment: "test",
+      env: {
+        TEST_DATABASE_URL: "postgresql://test_role:test@test-db.example:5432/rnr_gallery_test",
+        PRODUCTION_DATABASE_URL: "postgresql://runtime_role:production@test-db.example:5432/rnr_gallery_test",
+        ...productionIdentity,
+      },
+    })).toThrow("must differ");
+  });
+
+  it("provides the same fail-closed isolation guard to database integration tests", () => {
+    expect(() => assertIsolatedTestDatabaseUrl(testUrl, {
+      DATABASE_URL: "postgresql://app:secret@test-db.example/rnr_gallery_test",
+      ...productionIdentity,
+    })).toThrow("must differ");
+    expect(() => assertIsolatedTestDatabaseUrl(productionUrl, productionIdentity))
+      .toThrow("dedicated test database");
+    expect(assertIsolatedTestDatabaseUrl(testUrl, {
+      DATABASE_URL: productionUrl,
+      PRODUCTION_DATABASE_URL: productionUrl,
+      ...productionIdentity,
+    })).toMatchObject({ database: "rnr_gallery_test" });
+  });
+
+  it("fails closed without safe Production identity metadata or with a malformed comparison URL", () => {
+    expect(() => assertIsolatedTestDatabaseUrl(testUrl, {})).toThrow("identity metadata");
+    expect(() => assertIsolatedTestDatabaseUrl(testUrl, {
+      ...productionIdentity,
+      PRODUCTION_DATABASE_URL: "not-a-postgres-url",
+    })).toThrow("PostgreSQL URL");
   });
 
   it("uses only PRODUCTION_DATABASE_URL and requires explicit confirmation", () => {

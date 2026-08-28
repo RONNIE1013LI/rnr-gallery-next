@@ -40,7 +40,7 @@ Add `analytics_conversion_deliveries` with:
   `user_data_snapshot`, `created_at`;
 - delivery state: `status`, `request_id`, `attempt_count`, `next_attempt_at`,
   `last_attempt_at`, `lease_token`, `lease_expires_at`, `last_error_code`,
-  `last_error_category`, `last_error_at`, `accepted_at`, `completed_at`,
+  `last_error_category`, `last_error_at`, `provider_diagnostics`, `accepted_at`, `completed_at`,
   `dead_lettered_at`, `updated_at`.
 
 The database enforces one row per `(platform, transaction_id)`, valid platform,
@@ -53,7 +53,8 @@ existing manual-order deletion contract.
 
 The same migration creates the reserved manual fields for consent, source and
 click identifiers using deterministic keys and conflict-safe inserts. These
-fields record explicit staff-entered evidence; their absence, denial, malformed
+fields are written only through the trusted server repository path and record
+explicit evidence; their absence, denial, malformed
 timestamp or malformed identifier is ineligible. Nothing infers consent from a
 customer source or from a previously displayed banner.
 
@@ -144,8 +145,10 @@ table, indexes/checks/immutability trigger and conflict-safe field-definition
 rows. It is validated on a fresh dedicated Test DB and on a clone of the
 pre-Phase-0D schema. Production is not migrated in this phase.
 
-Rollback before any provider activation: stop workers, drop the immutability
-trigger/function and delivery table, remove only the deterministic field
-definitions if unused, then drop `manual_payment_confirmed_at`. After provider
+Rollback before any provider activation: stop workers, remove only the
+deterministic field definitions if unused, drop the immutability trigger and
+function, drop the delivery table, drop `production_jobs_source_link_valid`,
+drop `manual_payment_confirmed_at`, then recreate the pre-Phase-0D
+`production_jobs_source_link_valid` constraint from the 0056 snapshot. After provider
 activation, preserve delivery audit rows and use a forward fix rather than
 discarding sent identities.

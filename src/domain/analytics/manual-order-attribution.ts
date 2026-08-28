@@ -151,7 +151,10 @@ export function buildManualConversionCandidates(
 ): readonly ManualConversionCandidate[] {
   const base = baseCandidate(snapshot);
   const fields = fieldValues(snapshot.customFields);
-  if (!base || !hasRecordedGrantedConsent(fields)) return Object.freeze([]);
+  const consentRecordedAt = new Date(fields.advertising_consent_recorded_at);
+  if (!base
+    || !hasRecordedGrantedConsent(fields)
+    || consentRecordedAt > base.paidAt) return Object.freeze([]);
 
   const meta = metaEvidence(fields, snapshot.metaMatching);
   const google = googleEvidence(fields);

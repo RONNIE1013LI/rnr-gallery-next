@@ -14,8 +14,9 @@ const runtimeSources = () => readdirSync(resolve(process.cwd(), "src"), {
   });
 
 describe("Google Data Manager Phase 0C runtime cleanup", () => {
-  it("keeps every non-test runtime module except the standalone client free from Data Manager wiring", () => {
+  it("limits Data Manager wiring to the standalone client and durable provider adapter", () => {
     const standaloneClient = "src/server/analytics/google-data-manager-client.ts";
+    const durableAdapter = "src/server/analytics/conversion-delivery-providers.ts";
     const sources = runtimeSources();
     const adminRuntime = sources.find(({ path }) => path === "src/server/admin/admin-production-runtime.ts");
 
@@ -32,7 +33,9 @@ describe("Google Data Manager Phase 0C runtime cleanup", () => {
         expect(source, path).toMatch(/validateOnly\s*:\s*false/);
         continue;
       }
-      expect(source, path).not.toMatch(/google-data-manager-client/);
+      if (path !== durableAdapter) {
+        expect(source, path).not.toMatch(/google-data-manager-client/);
+      }
       expect(source, path).not.toMatch(/\b(?:createGoogleDataManagerClient|validateSynthetic)\b/);
       expect(source, path).not.toMatch(/validateOnly\s*:\s*false/);
     }
@@ -41,6 +44,12 @@ describe("Google Data Manager Phase 0C runtime cleanup", () => {
     expect(adminRuntime?.source).not.toMatch(
       /google-data-manager-client|\b(?:createGoogleDataManagerClient|validateSynthetic|fetch|getAccessToken)\b|GOOGLE_(?:DATA_MANAGER|ADS_OAUTH)_/,
     );
+  });
+
+  it("removes the post-commit observer and legacy success-audit dispatcher", () => {
+    expect(existsSync(resolve(process.cwd(), "src/server/analytics/manual-conversion-dispatcher.ts"))).toBe(false);
+    expect(existsSync(resolve(process.cwd(), "src/server/analytics/manual-order-candidate-service.ts"))).toBe(false);
+    expect(projectFile("src/server/admin/admin-production-runtime.ts")).not.toMatch(/scheduleAfter|onManualPaid/);
   });
 
   it("exposes no public Data Manager diagnostic route and documents disabled non-secret configuration", () => {

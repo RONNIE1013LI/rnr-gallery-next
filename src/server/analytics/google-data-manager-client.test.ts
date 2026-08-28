@@ -187,6 +187,99 @@ describe("Google Data Manager diagnostic", () => {
 });
 
 describe("Google Data Manager execution", () => {
+  it("exposes separate one-event ingest and delayed status-poll transport operations", async () => {
+    const tokenProvider = testTokenProvider(
+      vi.fn().mockResolvedValue("short-lived-access"),
+    );
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(jsonResponse({ requestId: "request/safe-outbox-001" }))
+      .mockResolvedValueOnce(jsonResponse({
+        requestStatusPerDestination: [{
+          destination: config?.destination,
+          requestStatus: "PROCESSING",
+          eventsIngestionStatus: { recordCount: "1" },
+        }],
+      }));
+    const client = createGoogleDataManagerClient({ config, tokenProvider, fetchImpl });
+
+    await expect(client.ingest(event)).resolves.toEqual({
+      outcome: "accepted",
+      requestId: "request/safe-outbox-001",
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+    expect(fetchImpl.mock.calls[0][0]).toBe(GOOGLE_DATA_MANAGER_INGEST_URL);
+    expect(JSON.parse(String(fetchImpl.mock.calls[0][1].body))).toMatchObject({
+      events: [event],
+      validateOnly: false,
+    });
+
+    await expect(client.poll("request/safe-outbox-001")).resolves.toEqual({
+      outcome: "status",
+      requestStatus: "PROCESSING",
+      destinations: [{
+        requestStatus: "PROCESSING",
+        recordCount: "1",
+        errors: [],
+        warnings: [],
+      }],
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(fetchImpl.mock.calls[1][0]).toBe(
+      `${GOOGLE_DATA_MANAGER_STATUS_URL}?requestId=request%2Fsafe-outbox-001`,
+    );
+  });
+
+  it("aborts an outbox transport request before its delivery lease can expire", async () => {
+    const tokenProvider = testTokenProvider(vi.fn().mockResolvedValue("short-lived-access"));
+    const fetchImpl = vi.fn((_url: URL | RequestInfo, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")));
+    }));
+    const client = createGoogleDataManagerClient({
+      config,
+      tokenProvider,
+      fetchImpl: fetchImpl as typeof fetch,
+      requestTimeoutMs: 10,
+    });
+
+    await expect(client.ingest(event)).resolves.toEqual({ outcome: "transport_error" });
+    expect(fetchImpl).toHaveBeenCalledOnce();
+    expect(fetchImpl.mock.calls[0][1]?.signal?.aborted).toBe(true);
+  });
+
+  it("times out token acquisition before any provider request can outlive the lease", async () => {
+    const fetchImpl = vi.fn();
+    const tokenProvider = testTokenProvider(vi.fn(() => new Promise<string>(() => undefined)));
+    const client = createGoogleDataManagerClient({
+      config,
+      tokenProvider,
+      fetchImpl,
+      requestTimeoutMs: 10,
+    });
+
+    await expect(client.ingest(event)).resolves.toEqual({ outcome: "transport_error" });
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it("fails closed without destination or credentials before an outbox transport request", async () => {
+    const missingConfigFetch = vi.fn();
+    const missingConfig = createGoogleDataManagerClient({
+      config: null,
+      tokenProvider: testTokenProvider(),
+      fetchImpl: missingConfigFetch,
+    });
+    await expect(missingConfig.ingest(event)).resolves.toEqual({ outcome: "configuration_error" });
+    expect(missingConfigFetch).not.toHaveBeenCalled();
+
+    const missingTokenFetch = vi.fn();
+    const missingToken = createGoogleDataManagerClient({
+      config,
+      tokenProvider: testTokenProvider(vi.fn().mockResolvedValue("")),
+      fetchImpl: missingTokenFetch,
+    });
+    await expect(missingToken.poll("request/safe-outbox-001")).resolves.toEqual({ outcome: "configuration_error" });
+    expect(missingTokenFetch).not.toHaveBeenCalled();
+  });
+
   it("blocks before token acquisition or HTTP without a complete durable repository capability", async () => {
     const tokenProvider = testTokenProvider(vi.fn());
     const fetchImpl = vi.fn();

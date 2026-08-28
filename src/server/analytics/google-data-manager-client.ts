@@ -120,6 +120,17 @@ export type GoogleDataManagerClientResult =
       destinations?: readonly GoogleDataManagerDestinationStatus[];
     }>;
 
+export type GoogleDataManagerOutboxTransportResult =
+  | Readonly<{ outcome: "accepted"; requestId: string }>
+  | Readonly<{
+      outcome: "status";
+      requestStatus: GoogleDataManagerRequestStatus;
+      destinations: readonly GoogleDataManagerDestinationStatus[];
+    }>
+  | Readonly<{ outcome: "transport_error" }>
+  | Readonly<{ outcome: "http_error"; status: number }>
+  | Readonly<{ outcome: "configuration_error" }>;
+
 type Environment = Readonly<Record<string, string | undefined>>;
 
 const ACCOUNT_ID_PATTERN = /^\d{6,20}$/;
@@ -420,13 +431,34 @@ export function createGoogleDataManagerClient({
   fetchImpl,
   now = () => new Date(),
   logger = silentLogger,
+  requestTimeoutMs = 30_000,
 }: Readonly<{
   config: GoogleDataManagerDestinationConfig | null;
   tokenProvider: GoogleDataManagerTokenProvider;
   fetchImpl: typeof fetch;
   now?: () => Date;
   logger?: GoogleDataManagerSafeLogger;
+  requestTimeoutMs?: number;
 }>) {
+  if (!Number.isSafeInteger(requestTimeoutMs) || requestTimeoutMs < 1 || requestTimeoutMs >= 60_000) {
+    throw new Error("Google Data Manager operation timeout must be below the minimum delivery lease");
+  }
+  async function withOperationDeadline<T>(operation: (signal: AbortSignal) => Promise<T>) {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), requestTimeoutMs);
+    try {
+      return await Promise.race([
+        operation(controller.signal),
+        new Promise<never>((_resolve, reject) => controller.signal.addEventListener(
+          "abort",
+          () => reject(new Error("google_data_manager_timeout")),
+          { once: true },
+        )),
+      ]);
+    } finally {
+      clearTimeout(timeout);
+    }
+  }
   function log(
     statusClass: GoogleDataManagerSafeLogEntry["statusClass"],
     details: Readonly<{
@@ -482,14 +514,27 @@ export function createGoogleDataManagerClient({
     token: string,
     method: "POST" | "GET",
     body?: unknown,
+    operationSignal?: AbortSignal,
   ): Promise<Readonly<{ response: Response; token: string }>> {
-    let response = await fetchImpl(url, request(token, method, body));
-    if (response.status !== 401) return Object.freeze({ response, token });
+    const controller = operationSignal ? null : new AbortController();
+    const signal = operationSignal ?? controller!.signal;
+    const timeout = controller ? setTimeout(() => controller.abort(), requestTimeoutMs) : null;
+    const requestWithSignal = (accessTokenValue: string) => ({
+      ...request(accessTokenValue, method, body),
+      signal,
+    });
+    try {
+      let response = await fetchImpl(url, requestWithSignal(token));
+      if (response.status !== 401) return Object.freeze({ response, token });
 
-    const refreshedToken = await refreshedAccessToken();
-    if (!refreshedToken) throw new Error("google_data_manager_token_refresh_failed");
-    response = await fetchImpl(url, request(refreshedToken, method, body));
-    return Object.freeze({ response, token: refreshedToken });
+      const refreshedToken = await refreshedAccessToken();
+      if (!refreshedToken) throw new Error("google_data_manager_token_refresh_failed");
+      signal.throwIfAborted();
+      response = await fetchImpl(url, requestWithSignal(refreshedToken));
+      return Object.freeze({ response, token: refreshedToken });
+    } finally {
+      if (timeout) clearTimeout(timeout);
+    }
   }
 
   async function markOutcome(
@@ -500,6 +545,85 @@ export function createGoogleDataManagerClient({
   }
 
   return Object.freeze({
+    maximumAttemptDurationMs: requestTimeoutMs,
+    async ingest(event: GoogleDataManagerEvent): Promise<GoogleDataManagerOutboxTransportResult> {
+      if (!config || !isValidRuntimeEvent(event)) {
+        log("configuration_error", { transactionId: event.transactionId });
+        return Object.freeze({ outcome: "configuration_error" });
+      }
+      try {
+        return await withOperationDeadline(async (signal) => {
+          const token = await accessToken();
+          if (!token) {
+            log("configuration_error", { transactionId: event.transactionId });
+            return Object.freeze({ outcome: "configuration_error" as const });
+          }
+          signal.throwIfAborted();
+          const result = await authenticatedFetch(GOOGLE_DATA_MANAGER_INGEST_URL, token, "POST", {
+            destinations: [config.destination],
+            events: [safeEventPayload(event)],
+            encoding: "HEX",
+            validateOnly: false,
+          }, signal);
+          if (!result.response.ok) {
+            log("http_error", {
+              transactionId: event.transactionId,
+              httpStatus: result.response.status,
+            });
+            return Object.freeze({ outcome: "http_error" as const, status: result.response.status });
+          }
+          const body = await responseJson(result.response);
+          const requestId = safeRequestId(body?.requestId);
+          if (!requestId) {
+            log("configuration_error", { transactionId: event.transactionId });
+            return Object.freeze({ outcome: "configuration_error" as const });
+          }
+          log("accepted", { transactionId: event.transactionId, requestId });
+          return Object.freeze({ outcome: "accepted" as const, requestId });
+        });
+      } catch {
+        log("transport_error", { transactionId: event.transactionId });
+        return Object.freeze({ outcome: "transport_error" });
+      }
+    },
+
+    async poll(requestIdInput: string): Promise<GoogleDataManagerOutboxTransportResult> {
+      const requestId = safeRequestId(requestIdInput);
+      if (!config || !requestId) {
+        log("configuration_error");
+        return Object.freeze({ outcome: "configuration_error" });
+      }
+      try {
+        return await withOperationDeadline(async (signal) => {
+          const token = await accessToken();
+          if (!token) {
+            log("configuration_error", { requestId });
+            return Object.freeze({ outcome: "configuration_error" as const });
+          }
+          signal.throwIfAborted();
+          const result = await authenticatedFetch(
+            `${GOOGLE_DATA_MANAGER_STATUS_URL}?requestId=${encodeURIComponent(requestId)}`,
+            token,
+            "GET",
+            undefined,
+            signal,
+          );
+          if (!result.response.ok) {
+            log("http_error", { requestId, httpStatus: result.response.status });
+            return Object.freeze({ outcome: "http_error" as const, status: result.response.status });
+          }
+          const body = await responseJson(result.response);
+          const destinations = parseDestinationStatuses(body?.requestStatusPerDestination);
+          const requestStatus = overallStatus(destinations);
+          log("status", { requestId, requestStatus });
+          return Object.freeze({ outcome: "status" as const, requestStatus, destinations });
+        });
+      } catch {
+        log("transport_error", { requestId });
+        return Object.freeze({ outcome: "transport_error" });
+      }
+    },
+
     async validateSynthetic(): Promise<GoogleDataManagerClientResult> {
       if (!config) {
         log("configuration_error");

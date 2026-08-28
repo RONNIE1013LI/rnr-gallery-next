@@ -268,6 +268,45 @@ describe("manual production job service", () => {
     }));
   });
 
+  it("passes explicit pre-payment conversion evidence into an initially paid create transaction", async () => {
+    const repo = repository();
+    const service = createProductionJobService(repo, {
+      createJobNumber: () => "08000",
+      now: () => new Date("2026-08-20T01:00:00.000Z"),
+    });
+    await service.createManual(actor, {
+      ...validInput,
+      webOrderNumber: "",
+      manualPaymentStatus: "paid",
+      amountPayableCents: 23_000,
+      amountPaidCents: 23_000,
+      conversionEvidence: {
+        consentDecision: "granted",
+        consentRecordedAt: "2026-08-20T00:30:00.000Z",
+        source: "meta",
+        attribution: { fbp: "fb.1.1720000000000.123456789" },
+      },
+      invoiceDraft: {
+        invoiceDate: "2026-08-20", dueDate: "2026-08-27", reference: "DRAFT",
+        businessName: "R&R Gallery", businessAddress: "11 Para Close", businessEmail: "customerservice@rnrgallery.com",
+        businessPhone: "+64 21 023 48948", businessWebsite: "https://rnrgallery.com/", gstNumber: "125-796-389", bankAccount: "04-2021-0317735-07",
+        customerName: "Ana Example", customerEmail: "ana@example.com", customerAddress: "11 Example Street", deliveryAddress: "11 Example Street",
+        discountCents: 0, notes: "Thanks", terms: "Seven days", items: [{ code: "PRD", description: "Canvas", quantityMilli: 1_000, rateInclGstCents: 23_000 }],
+      },
+    }, { canUpdateFinance: true });
+
+    expect(repo.createManual).toHaveBeenCalledWith(expect.objectContaining({
+      manualPaymentStatus: "paid",
+      conversionEvidence: {
+        consentDecision: "granted",
+        consentRecordedAt: new Date("2026-08-20T00:30:00.000Z"),
+        source: "meta",
+        attribution: { fbp: "fb.1.1720000000000.123456789" },
+      },
+      invoice: expect.objectContaining({ totalInclGstCents: 23_000, currency: "NZD" }),
+    }));
+  });
+
   it("requires finance permission for a pre-save invoice draft", async () => {
     const service = createProductionJobService(repository());
     await expect(service.createManual(actor, {
@@ -275,6 +314,25 @@ describe("manual production job service", () => {
       manualPaymentStatus: "awaiting_payment", amountPayableCents: 0, amountPaidCents: 0,
       artistFeeCents: 0, materialCostCents: 0, paymentReconciliationStatus: "Not checked", artistPaid: false,
       invoiceDraft: {},
+    }, { canUpdateFinance: false })).rejects.toThrow("Finance permission is required");
+  });
+
+  it("requires finance permission for pre-payment conversion evidence", async () => {
+    const service = createProductionJobService(repository());
+    await expect(service.createManual(actor, {
+      ...validInput,
+      manualPaymentStatus: "awaiting_payment",
+      amountPayableCents: 0,
+      amountPaidCents: 0,
+      artistFeeCents: 0,
+      materialCostCents: 0,
+      paymentReconciliationStatus: "Not checked",
+      artistPaid: false,
+      conversionEvidence: {
+        consentDecision: "denied",
+        consentRecordedAt: "2026-08-20T00:30:00.000Z",
+        source: "meta",
+      },
     }, { canUpdateFinance: false })).rejects.toThrow("Finance permission is required");
   });
 
@@ -342,10 +400,9 @@ describe("manual production job service", () => {
     }));
   });
 
-  it("notifies measurement only after a committed manual payment becomes paid", async () => {
+  it("delegates paid updates to the authoritative repository transaction", async () => {
     const repo = repository();
-    const onManualPaid = vi.fn();
-    const service = createProductionJobService(repo, { onManualPaid });
+    const service = createProductionJobService(repo);
 
     await expect(service.update(actor, {
       jobId: "00000000-0000-4000-8000-000000000001",
@@ -360,19 +417,18 @@ describe("manual production job service", () => {
       },
     }, { canUpdateFinance: true })).resolves.toBe("updated");
 
-    expect(repo.update).toHaveBeenCalledBefore(onManualPaid);
-    expect(onManualPaid).toHaveBeenCalledWith(
-      "00000000-0000-4000-8000-000000000001",
-      { userId: "staff-1", email: "staff@example.com" },
-    );
+    expect(repo.update).toHaveBeenCalledOnce();
+    expect(repo.update).toHaveBeenCalledWith(expect.objectContaining({
+      jobId: "00000000-0000-4000-8000-000000000001",
+      finance: expect.objectContaining({ manualPaymentStatus: "paid" }),
+    }));
   });
 
-  it("does not notify measurement for failed, duplicate, or non-paid updates", async () => {
-    const onManualPaid = vi.fn();
+  it("returns duplicate and ordinary repository outcomes without side effects", async () => {
     const duplicate = createProductionJobService(repository({
       update: vi.fn().mockResolvedValue("duplicate"),
-    }), { onManualPaid });
-    await duplicate.update(actor, {
+    }));
+    await expect(duplicate.update(actor, {
       jobId: "00000000-0000-4000-8000-000000000001",
       idempotencyKey: "duplicate-paid-conversion",
       expectedUpdatedAt: "2026-08-04T10:00:00.000Z",
@@ -383,33 +439,14 @@ describe("manual production job service", () => {
         artistFeeCents: 0,
         materialCostCents: 0,
       },
-    }, { canUpdateFinance: true });
-    const ordinary = createProductionJobService(repository(), { onManualPaid });
-    await ordinary.update(actor, {
+    }, { canUpdateFinance: true })).resolves.toBe("duplicate");
+    const ordinary = createProductionJobService(repository());
+    await expect(ordinary.update(actor, {
       jobId: "00000000-0000-4000-8000-000000000001",
       idempotencyKey: "ordinary-job-update",
       expectedUpdatedAt: "2026-08-04T10:00:00.000Z",
       urgent: true,
-    }, { canUpdateFinance: false });
-    expect(onManualPaid).not.toHaveBeenCalled();
-  });
-
-  it("does not turn a committed paid update into an error when measurement scheduling throws", async () => {
-    const service = createProductionJobService(repository(), {
-      onManualPaid: () => { throw new Error("scheduler unavailable"); },
-    });
-    await expect(service.update(actor, {
-      jobId: "00000000-0000-4000-8000-000000000001",
-      idempotencyKey: "paid-scheduler-failure",
-      expectedUpdatedAt: "2026-08-04T10:00:00.000Z",
-      finance: {
-        manualPaymentStatus: "paid",
-        amountPayableCents: 20_000,
-        amountPaidCents: 20_000,
-        artistFeeCents: 0,
-        materialCostCents: 0,
-      },
-    }, { canUpdateFinance: true })).resolves.toBe("updated");
+    }, { canUpdateFinance: false })).resolves.toBe("updated");
   });
 
   it("updates the source-parity customer source field", async () => {

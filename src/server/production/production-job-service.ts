@@ -173,6 +173,20 @@ const customFieldValueSchema = z.object({
   value: z.string().trim().max(10_000),
 }).strict();
 
+const conversionEvidenceSchema = z.object({
+  consentDecision: z.enum(["granted", "denied"]),
+  consentRecordedAt: z.string().datetime(),
+  source: z.enum(["google", "meta"]),
+  attribution: z.object({
+    gclid: z.string().trim().min(1).max(200).optional(),
+    gbraid: z.string().trim().min(1).max(200).optional(),
+    wbraid: z.string().trim().min(1).max(200).optional(),
+    fbclid: z.string().trim().min(1).max(200).optional(),
+    fbp: z.string().trim().min(1).max(220).optional(),
+    fbc: z.string().trim().min(1).max(220).optional(),
+  }).strict().optional(),
+}).strict();
+
 const manualJobSchema = z.object({
   idempotencyKey: z.string().trim().min(8).max(255),
   customerName: z.string().trim().min(1).max(190),
@@ -204,6 +218,7 @@ const manualJobSchema = z.object({
   delivered: z.boolean().default(false),
   completed: z.boolean().default(false),
   invoiceDraft: z.unknown().optional(),
+  conversionEvidence: conversionEvidenceSchema.optional(),
   customFields: z.array(customFieldValueSchema).max(100).default([]).superRefine((values, context) => {
     if (new Set(values.map((value) => value.fieldId)).size !== values.length) {
       context.addIssue({ code: "custom", message: "Custom fields must be unique" });
@@ -307,7 +322,7 @@ const jobUpdateSchema = z.object({
 
 type JobUpdate = z.output<typeof jobUpdateSchema>;
 
-export type CreateManualProductionJob = Readonly<Omit<ManualJob, "items" | "artistPaid" | "fileSent" | "downloaded" | "printed" | "customerNotified" | "delivered" | "completed" | "invoiceDraft"> & {
+export type CreateManualProductionJob = Readonly<Omit<ManualJob, "items" | "artistPaid" | "fileSent" | "downloaded" | "printed" | "customerNotified" | "delivered" | "completed" | "invoiceDraft" | "conversionEvidence"> & {
   requestDigest: string;
   jobNumber: string;
   actor: AdminActor;
@@ -326,6 +341,9 @@ export type CreateManualProductionJob = Readonly<Omit<ManualJob, "items" | "arti
     currency: MarketCurrency;
     gstRateBasisPoints: number;
   }> | null;
+  conversionEvidence?: Readonly<Omit<z.output<typeof conversionEvidenceSchema>, "consentRecordedAt"> & {
+    consentRecordedAt: Date;
+  }>;
 }>;
 
 export type UpdateProductionJob = Readonly<
@@ -408,10 +426,6 @@ export function createProductionJobService(
   dependencies: Readonly<{
     createJobNumber?: () => string | Promise<string>;
     now?: () => Date;
-    onManualPaid?: (
-      jobId: string,
-      actor: Readonly<{ userId: string; email: string }>,
-    ) => void;
   }> = {},
 ) {
   return Object.freeze({
@@ -438,7 +452,10 @@ export function createProductionJobService(
       )) {
         throw new ProductionJobValidationError("Finance permission is required");
       }
-      if (job.invoiceDraft !== undefined && !permissions.canUpdateFinance) {
+      if (
+        (job.invoiceDraft !== undefined || job.conversionEvidence !== undefined)
+        && !permissions.canUpdateFinance
+      ) {
         throw new ProductionJobValidationError("Finance permission is required");
       }
       const requestDigest = digestManualJob(job);
@@ -479,6 +496,7 @@ export function createProductionJobService(
         delivered,
         completed,
         invoiceDraft,
+        conversionEvidence,
         ...persistedJob
       } = job;
       void invoiceDraft;
@@ -498,6 +516,12 @@ export function createProductionJobService(
         completedAt: completed ? createdAt : null,
         items: job.items.map((item, position) => Object.freeze({ ...item, position })),
         invoice,
+        ...(conversionEvidence ? {
+          conversionEvidence: Object.freeze({
+            ...conversionEvidence,
+            consentRecordedAt: new Date(conversionEvidence.consentRecordedAt),
+          }),
+        } : {}),
       });
       return Object.freeze({ result: "created" as const, job: created });
     },
@@ -563,13 +587,6 @@ export function createProductionJobService(
       if (result === "conflict") throw new ProductionJobConflictError("The job changed before this update was saved");
       if (result === "not_found") throw new ProductionJobNotFoundError();
       if (result === "invalid_source") throw new ProductionJobValidationError("Linked web order status must be updated from the order workflow");
-      if (result === "updated" && update.finance?.manualPaymentStatus === "paid") {
-        try {
-          dependencies.onManualPaid?.(update.jobId, actorResult.data);
-        } catch {
-          // Measurement scheduling cannot roll back or obscure a committed update.
-        }
-      }
       return result;
     },
   });

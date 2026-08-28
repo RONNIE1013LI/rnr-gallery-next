@@ -18,6 +18,18 @@ function request(body: unknown, requestOrigin = origin) {
   });
 }
 
+function evidenceRequest(body: unknown, requestOrigin = origin) {
+  return new Request(`${origin}/api/admin/jobs/${jobId}`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Origin: requestOrigin,
+      "Sec-Fetch-Site": requestOrigin === origin ? "same-origin" : "cross-site",
+    },
+    body: JSON.stringify(body),
+  });
+}
+
 describe("admin production job update route", () => {
   it("requires production update permission before reading the body", async () => {
     const update = vi.fn();
@@ -76,5 +88,66 @@ describe("admin production job update route", () => {
       urgent: true,
     }), { params: Promise.resolve({ jobId }) });
     expect(response.status).toBe(409);
+  });
+
+  it("records conversion evidence only for an authenticated finance administrator", async () => {
+    const recordConversionEvidence = vi.fn().mockResolvedValue("recorded");
+    const requirePermission = vi.fn().mockResolvedValue({
+      user: { id: "admin-1", email: "owner@example.test" },
+      adminRole: "admin",
+      adminPermissions: [],
+    });
+    const route = createAdminJobRoute({
+      requirePermission,
+      update: vi.fn(),
+      recordConversionEvidence,
+      trustedOrigin: origin,
+    });
+    const response = await route.POST(evidenceRequest({
+      consentDecision: "granted",
+      consentRecordedAt: "2026-08-28T04:30:00.000Z",
+      source: "meta",
+      attribution: { fbp: "fb.1.1720000000000.123456789" },
+    }), { params: Promise.resolve({ jobId }) });
+
+    expect(response.status).toBe(200);
+    expect(requirePermission).toHaveBeenCalledWith("update_production_finance");
+    expect(recordConversionEvidence).toHaveBeenCalledWith({
+      jobId,
+      actor: { userId: "admin-1", email: "owner@example.test" },
+      consentDecision: "granted",
+      consentRecordedAt: new Date("2026-08-28T04:30:00.000Z"),
+      source: "meta",
+      attribution: { fbp: "fb.1.1720000000000.123456789" },
+    });
+  });
+
+  it("rejects untrusted or late conversion evidence without persisting it", async () => {
+    const recordConversionEvidence = vi.fn().mockResolvedValue("already_paid");
+    const route = createAdminJobRoute({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: { id: "admin-1", email: "owner@example.test" },
+        adminRole: "admin",
+        adminPermissions: [],
+      }),
+      update: vi.fn(),
+      recordConversionEvidence,
+      trustedOrigin: origin,
+    });
+    const body = {
+      consentDecision: "granted",
+      consentRecordedAt: "2026-08-28T04:30:00.000Z",
+      source: "google",
+      attribution: { gclid: "synthetic-gclid" },
+    };
+
+    expect((await route.POST(evidenceRequest(body, "https://evil.example.test"), {
+      params: Promise.resolve({ jobId }),
+    })).status).toBe(403);
+    expect(recordConversionEvidence).not.toHaveBeenCalled();
+
+    expect((await route.POST(evidenceRequest(body), {
+      params: Promise.resolve({ jobId }),
+    })).status).toBe(409);
   });
 });

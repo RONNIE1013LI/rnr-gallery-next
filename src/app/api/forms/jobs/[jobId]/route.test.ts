@@ -30,6 +30,14 @@ function deleteRequest(body: object, origin = "https://shop.example.test") {
   });
 }
 
+function evidenceRequest(body: object, origin = "https://shop.example.test") {
+  return new Request("https://shop.example.test/api/forms/jobs/550e8400-e29b-41d4-a716-446655440000", {
+    method: "POST",
+    headers: { "content-type": "application/json", origin },
+    body: JSON.stringify(body),
+  });
+}
+
 describe("forms job inline update route", () => {
   it("exports an order delete handler through the Next.js route", () => {
     expect(publicRoute.DELETE).toBeTypeOf("function");
@@ -236,6 +244,88 @@ describe("forms job inline update route", () => {
     }), context);
     expect(response.status).toBe(404);
     expect(update).not.toHaveBeenCalled();
+  });
+
+  it("records conversion evidence only with Forms finance permission", async () => {
+    const recordConversionEvidence = vi.fn().mockResolvedValue("recorded");
+    const requirePermission = vi.fn().mockResolvedValue(adminAccess);
+    const route = createFormsJobRoute({
+      requirePermission,
+      update: vi.fn(),
+      detail: vi.fn(),
+      recordConversionEvidence,
+      trustedOrigin: "https://shop.example.test",
+    });
+    const response = await route.POST(evidenceRequest({
+      consentDecision: "denied",
+      consentRecordedAt: "2026-08-28T04:30:00.000Z",
+      source: "meta",
+    }), context);
+
+    expect(response.status).toBe(200);
+    expect(requirePermission).toHaveBeenCalledWith("update_finance");
+    expect(recordConversionEvidence).toHaveBeenCalledWith({
+      jobId: "550e8400-e29b-41d4-a716-446655440000",
+      actor: { userId: "admin-1", email: "admin@example.test" },
+      consentDecision: "denied",
+      consentRecordedAt: new Date("2026-08-28T04:30:00.000Z"),
+      source: "meta",
+      attribution: undefined,
+    });
+  });
+
+  it("does not let ordinary Forms update permission write advertising evidence", async () => {
+    const recordConversionEvidence = vi.fn();
+    const route = createFormsJobRoute({
+      requirePermission: vi.fn().mockRejectedValue(new HttpError("Forbidden", 403)),
+      update: vi.fn(),
+      detail: vi.fn(),
+      recordConversionEvidence,
+      trustedOrigin: "https://shop.example.test",
+    });
+    const response = await route.POST(evidenceRequest({
+      consentDecision: "granted",
+      consentRecordedAt: "2026-08-28T04:30:00.000Z",
+      source: "google",
+      attribution: { gclid: "synthetic-gclid" },
+    }), context);
+
+    expect(response.status).toBe(403);
+    expect(recordConversionEvidence).not.toHaveBeenCalled();
+  });
+
+  it("prevents assigned-only finance staff from recording evidence on another artist's job", async () => {
+    const recordConversionEvidence = vi.fn();
+    const detail = vi.fn().mockResolvedValue({ job: { assignedUserId: "artist-2" } });
+    const route = createFormsJobRoute({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: { id: "artist-1", email: "artist@example.test" },
+        formRole: "staff",
+        formProfile: normalizeStaffAccessProfile({
+          adminPermissions: [],
+          formPermissions: { access_forms: true, view_jobs: true, update_finance: true },
+          assignedOnly: true,
+        }),
+      }),
+      update: vi.fn(),
+      detail,
+      recordConversionEvidence,
+      trustedOrigin: "https://shop.example.test",
+    });
+
+    const response = await route.POST(evidenceRequest({
+      consentDecision: "granted",
+      consentRecordedAt: "2026-08-28T04:30:00.000Z",
+      source: "meta",
+      attribution: { fbp: "fb.1.1720000000000.123456789" },
+    }), context);
+
+    expect(response.status).toBe(404);
+    expect(detail).toHaveBeenCalledWith(
+      "550e8400-e29b-41d4-a716-446655440000",
+      { canViewFinance: false },
+    );
+    expect(recordConversionEvidence).not.toHaveBeenCalled();
   });
 });
 
