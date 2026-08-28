@@ -343,8 +343,9 @@ describe("forms filter builder", () => {
     const trigger = screen.getByRole("button", { name: "Filter orders" });
     fireEvent.click(trigger);
     const dialog = screen.getByRole("dialog", { name: "Order filters" });
-    const match = screen.getByLabelText("Match");
-    await waitFor(() => expect(match).toHaveFocus());
+    const closeButton = screen.getByRole("button", { name: "Close filters" });
+    await waitFor(() => expect(closeButton).toHaveFocus());
+    expect(screen.getByLabelText("Match")).not.toHaveFocus();
     const backgroundAction = screen.getByText("Background action").closest("button");
     expect(backgroundAction).toHaveProperty("inert", true);
     expect(document.body.style.overflow).toBe("hidden");

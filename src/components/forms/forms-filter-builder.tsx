@@ -229,7 +229,7 @@ export function FormsFilterBuilder({
   const triggerRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
-  const matchRef = useRef<HTMLSelectElement>(null);
+  const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [open, setOpen] = useState(false);
   const initial = splitCommonConditions(conditions);
   const [draftMatch, setDraftMatch] = useState<"and" | "or">(match);
@@ -261,7 +261,7 @@ export function FormsFilterBuilder({
   useContainedDialog({
     active: open,
     dialogRef,
-    initialFocusRef: matchRef,
+    initialFocusRef: closeButtonRef,
     additionalActiveRef: backdropRef,
     returnFocusRef: triggerRef,
     onClose: close,
@@ -349,11 +349,11 @@ export function FormsFilterBuilder({
         >
           <div className={styles.filterHeading}>
             <strong>Filter orders</strong>
-            <button type="button" aria-label="Close filters" onClick={close}>×</button>
+            <button ref={closeButtonRef} type="button" aria-label="Close filters" onClick={close}>×</button>
           </div>
           <label className={styles.filterMatch}>
             <span>Match</span>
-            <select ref={matchRef} value={draftMatch} onChange={(event) => setDraftMatch(event.target.value === "or" ? "or" : "and")}>
+            <select value={draftMatch} onChange={(event) => setDraftMatch(event.target.value === "or" ? "or" : "and")}>
               <option value="and">all conditions</option>
               <option value="or">any condition</option>
             </select>
