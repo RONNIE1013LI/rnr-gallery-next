@@ -31,7 +31,7 @@ function assertPublishable(input: ReturnType<typeof parseCustomerReviewMutation>
     throw new CustomerReviewPolicyError("Permission must be granted before publishing");
   }
   if (input.recommendationStatus !== "RECOMMENDS") {
-    throw new CustomerReviewPolicyError("Only Facebook recommendations can be published");
+    throw new CustomerReviewPolicyError("Only positive customer reviews can be published");
   }
 }
 

@@ -5,9 +5,10 @@ import { createAdminCustomerReviewsRoute, reviewMediaFiles } from "./route-handl
 const origin = "https://shop.example.test";
 const access = { user: { id: "admin-1", email: "admin@example.test" } };
 
-function reviewForm(action: "save_draft" | "publish") {
+function reviewForm(action: "save_draft" | "publish", sourcePlatform = "FACEBOOK") {
   const form = new FormData();
   form.set("action", action);
+  form.set("sourcePlatform", sourcePlatform);
   form.set("reviewerName", "R&R customer");
   form.set("originalReviewText", "A beautiful canvas.");
   form.set("sourceReviewUrl", "https://www.facebook.com/RandRgallery/reviews/");
@@ -62,14 +63,34 @@ describe("Admin customer reviews collection route", () => {
       revalidate,
     });
 
-    expect((await route.POST(request(reviewForm("publish")))).status).toBe(201);
+    expect((await route.POST(request(reviewForm("publish", "GOOGLE")))).status).toBe(201);
     expect(requirePermission).toHaveBeenNthCalledWith(1, "manage_reviews");
     expect(requirePermission).toHaveBeenNthCalledWith(2, "publish_reviews");
-    expect(create).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      sourcePlatform: "GOOGLE",
+    }), expect.objectContaining({
       userId: "admin-1",
       email: "admin@example.test",
     }), { publish: true, media: [] });
     expect(revalidate).toHaveBeenCalledTimes(1);
+  });
+
+  it("defaults legacy form submissions without a source to Facebook", async () => {
+    const create = vi.fn().mockResolvedValue({ id: "review-1" });
+    const route = createAdminCustomerReviewsRoute({
+      requirePermission: vi.fn().mockResolvedValue(access),
+      list: vi.fn(),
+      create,
+      origin,
+      revalidate: vi.fn(),
+    });
+    const form = reviewForm("save_draft");
+    form.delete("sourcePlatform");
+
+    expect((await route.POST(request(form))).status).toBe(201);
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      sourcePlatform: "FACEBOOK",
+    }), expect.anything(), expect.anything());
   });
 
   it("maps uploaded media into the combined mutation input", () => {

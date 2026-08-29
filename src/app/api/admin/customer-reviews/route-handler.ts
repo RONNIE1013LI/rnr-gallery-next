@@ -63,6 +63,7 @@ export function parseCustomerReviewForm(form: FormData) {
   return Object.freeze({
     action: action as "save_draft" | "publish",
     input: {
+      sourcePlatform: String(form.get("sourcePlatform") ?? "FACEBOOK"),
       reviewerName: String(form.get("reviewerName") ?? ""),
       originalReviewText: String(form.get("originalReviewText") ?? ""),
       sourceReviewUrl: String(form.get("sourceReviewUrl") ?? ""),

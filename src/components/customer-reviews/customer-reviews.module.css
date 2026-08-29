@@ -194,9 +194,12 @@
   font-size: .75rem;
 }
 
+.sourceIcon {
+  font-size: 1.2rem;
+}
+
 .facebookIcon {
   color: var(--review-facebook);
-  font-size: 1.2rem;
 }
 
 .recommendationLine {

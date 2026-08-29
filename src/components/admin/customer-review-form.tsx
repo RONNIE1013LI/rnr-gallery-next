@@ -5,7 +5,10 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type ChangeEvent } from "react";
 
-import type { AdminCustomerReview } from "@/domain/customer-reviews/types";
+import type {
+  AdminCustomerReview,
+  CustomerReviewSourcePlatform,
+} from "@/domain/customer-reviews/types";
 import styles from "./admin.module.css";
 
 export type CustomerReviewProductOption = Readonly<{ key: string; title: string }>;
@@ -43,6 +46,7 @@ export function CustomerReviewForm({ review, products, canPublish }: Readonly<{
   const router = useRouter();
   const [permissionStatus, setPermissionStatus] = useState(review?.permissionStatus ?? "PENDING");
   const [recommendationStatus, setRecommendationStatus] = useState(review?.recommendationStatus ?? "RECOMMENDS");
+  const [sourcePlatform, setSourcePlatform] = useState<CustomerReviewSourcePlatform>(review?.sourcePlatform ?? "FACEBOOK");
   const [pending, setPending] = useState(false);
   const [message, setMessage] = useState("");
   const [reviewerName, setReviewerName] = useState(review?.reviewerName ?? "");
@@ -98,15 +102,16 @@ export function CustomerReviewForm({ review, products, canPublish }: Readonly<{
 
   return <form className={styles.reviewEditor} onSubmit={(event) => { event.preventDefault(); void submit(event.currentTarget, published ? "publish" : "save_draft"); }}>
     {!canPublish ? <p className={styles.safetyBanner}>You can save drafts. Publishing requires the independent Publish reviews permission.</p> : null}
-    {review ? <dl className={styles.formRecordSummary}><div><dt>Status</dt><dd>{review.status}</dd></div><div><dt>Created</dt><dd>{review.createdAt.toLocaleDateString("en-NZ")}</dd></div><div><dt>Updated</dt><dd>{review.updatedAt.toLocaleDateString("en-NZ")}</dd></div><div><dt>Source</dt><dd>Facebook</dd></div></dl> : null}
+    {review ? <dl className={styles.formRecordSummary}><div><dt>Status</dt><dd>{review.status}</dd></div><div><dt>Created</dt><dd>{review.createdAt.toLocaleDateString("en-NZ")}</dd></div><div><dt>Updated</dt><dd>{review.updatedAt.toLocaleDateString("en-NZ")}</dd></div><div><dt>Source</dt><dd>{sourcePlatform === "GOOGLE" ? "Google" : "Facebook"}</dd></div></dl> : null}
 
     <section className={styles.formPanel}>
       <div className={styles.formSectionHeading}><div><span>1</span><h2>Original review</h2></div><p>Keep the customer’s wording exactly as posted. Editorial context is stored separately.</p></div>
       <div className={styles.formGrid}>
+        <label><span>Source</span><select aria-label="Source" name="sourcePlatform" value={sourcePlatform} onChange={(event) => setSourcePlatform(event.target.value as CustomerReviewSourcePlatform)}><option value="FACEBOOK">Facebook</option><option value="GOOGLE">Google</option></select></label>
         <label><span>Reviewer name</span><input aria-label="Reviewer name" name="reviewerName" value={reviewerName} onChange={(event) => setReviewerName(event.target.value)} maxLength={120} required /></label>
         <label><span>Review date</span><input aria-label="Review date" name="reviewDate" defaultValue={review?.reviewDate ?? ""} type="date" required /></label>
-        <label className={styles.fullField}><span>Original Facebook review</span><textarea aria-label="Original Facebook review" name="originalReviewText" value={reviewText} onChange={(event) => setReviewText(event.target.value)} rows={8} maxLength={10_000} required /></label>
-        <label className={styles.fullField}><span>Source review URL (optional)</span><input name="sourceReviewUrl" defaultValue={review?.sourceReviewUrl ?? ""} type="url" placeholder="https://www.facebook.com/..." /></label>
+        <label className={styles.fullField}><span>Original review</span><textarea aria-label="Original review" name="originalReviewText" value={reviewText} onChange={(event) => setReviewText(event.target.value)} rows={8} maxLength={10_000} required /></label>
+        <label className={styles.fullField}><span>Source review URL (optional)</span><input name="sourceReviewUrl" defaultValue={review?.sourceReviewUrl ?? ""} type="url" placeholder={sourcePlatform === "GOOGLE" ? "https://g.page/..." : "https://www.facebook.com/..."} /></label>
         <label><span>Recommendation status</span><select aria-label="Recommendation status" name="recommendationStatus" value={recommendationStatus} onChange={(event) => setRecommendationStatus(event.target.value as typeof recommendationStatus)}><option value="RECOMMENDS">Recommends</option><option value="DOES_NOT_RECOMMEND">Does not recommend</option><option value="LEGACY_STAR_REVIEW">Legacy star review</option></select></label>
         <label><span>Last verified (optional)</span><input name="lastVerifiedAt" defaultValue={toLocalDateTime(review?.lastVerifiedAt ?? null)} type="datetime-local" /></label>
       </div>
@@ -123,7 +128,7 @@ export function CustomerReviewForm({ review, products, canPublish }: Readonly<{
       </div>
     </section>
 
-    <section className={styles.reviewPublicPreview} aria-label="Public review card preview"><p>PUBLIC CARD PREVIEW</p>{editorialHeadline ? <><small>R&amp;R Gallery editorial heading</small><h2>{editorialHeadline}</h2></> : null}<strong>{reviewerName || "Reviewer name"}</strong><blockquote>{reviewText || "The original Facebook review will appear here exactly as entered."}</blockquote><span>recommends R&amp;R Gallery</span></section>
+    <section className={styles.reviewPublicPreview} aria-label="Public review card preview"><p>PUBLIC CARD PREVIEW</p>{editorialHeadline ? <><small>R&amp;R Gallery editorial heading</small><h2>{editorialHeadline}</h2></> : null}<strong>{reviewerName || "Reviewer name"}</strong><blockquote>{reviewText || "The original review will appear here exactly as entered."}</blockquote><span>recommends R&amp;R Gallery</span></section>
 
     <section className={styles.formPanel}>
       <div className={styles.formSectionHeading}><div><span>3</span><h2>Images</h2></div><p>Review images are permanent business media and are excluded from the five-day checkout upload cleanup.</p></div>
@@ -150,6 +155,6 @@ export function CustomerReviewForm({ review, products, canPublish }: Readonly<{
       {review && review.status !== "ARCHIVED" ? <button className={styles.reviewArchiveButton} type="button" disabled={pending} onClick={() => void archive()}>Archive review</button> : null}
       <span role="status">{message}</span>
     </div>
-    {canPublish && !canPublishThisReview ? <p className={styles.reviewPublishRequirement}>{permissionStatus !== "GRANTED" ? "Permission must be granted before publishing." : "Only a Facebook recommendation can be published."}</p> : null}
+    {canPublish && !canPublishThisReview ? <p className={styles.reviewPublishRequirement}>{permissionStatus !== "GRANTED" ? "Permission must be granted before publishing." : "Only a positive customer review can be published."}</p> : null}
   </form>;
 }

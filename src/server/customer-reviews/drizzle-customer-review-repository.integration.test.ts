@@ -36,6 +36,7 @@ const actor = (suffix: string) => ({
 });
 
 const input = (displayOrder: number, featured = false) => ({
+  sourcePlatform: "FACEBOOK" as const,
   reviewerName: `Integration customer ${displayOrder}`,
   originalReviewText: `Public review ${displayOrder}`,
   sourceReviewUrl: "https://www.facebook.com/RandRgallery/reviews/",
@@ -101,6 +102,20 @@ describe.runIf(enabled)("Drizzle customer review repository", () => {
     expect(JSON.stringify(reviews.slice(0, 2))).not.toMatch(
       /private evidence|private note|permission|storageKey/i,
     );
+  });
+
+  it("persists and publicly projects a Google review source", async () => {
+    const google = await repository.create({
+      ...input(5),
+      sourcePlatform: "GOOGLE",
+      sourceReviewUrl: "https://maps.app.goo.gl/example",
+    }, actor("create-google"));
+    createdReviewIds.push(google.id);
+
+    expect(google.sourcePlatform).toBe("GOOGLE");
+    await expect(repository.listPublic()).resolves.toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: google.id, sourcePlatform: "GOOGLE" }),
+    ]));
   });
 
   it("atomically saves a draft and then publishes the same verified summary", async () => {

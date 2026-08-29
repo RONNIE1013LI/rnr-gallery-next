@@ -7,6 +7,7 @@ import {
 } from "./validation";
 
 const validReview = {
+  sourcePlatform: "FACEBOOK",
   reviewerName: "Litea M.",
   originalReviewText: "Amazing service.\nThe canvas was beautiful.",
   sourceReviewUrl: "https://www.facebook.com/RandRgallery/reviews/",
@@ -43,6 +44,30 @@ describe("customer review validation", () => {
       ...validReview,
       originalReviewText: "  First line\n\nSecond line  ",
     }).originalReviewText).toBe("First line\n\nSecond line");
+  });
+
+  it("defaults legacy reviews to Facebook and accepts Google reviews", () => {
+    const legacyReview = structuredClone(validReview);
+    Reflect.deleteProperty(legacyReview, "sourcePlatform");
+    expect(parseCustomerReviewMutation(legacyReview).sourcePlatform).toBe("FACEBOOK");
+    expect(parseCustomerReviewMutation({
+      ...validReview,
+      sourcePlatform: "GOOGLE",
+      sourceReviewUrl: "https://maps.app.goo.gl/example",
+    }).sourcePlatform).toBe("GOOGLE");
+  });
+
+  it("validates the source URL against the selected platform", () => {
+    expect(() => parseCustomerReviewMutation({
+      ...validReview,
+      sourcePlatform: "GOOGLE",
+      sourceReviewUrl: "https://www.facebook.com/RandRgallery/reviews/",
+    })).toThrow("Enter a valid Google URL");
+    expect(() => parseCustomerReviewMutation({
+      ...validReview,
+      sourcePlatform: "FACEBOOK",
+      sourceReviewUrl: "https://google.com/maps/place/example",
+    })).toThrow("Enter a valid Facebook URL");
   });
 
   it("rejects missing names, invalid product pairs, and Featured without consent", () => {

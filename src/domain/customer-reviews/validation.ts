@@ -3,6 +3,7 @@ import { z } from "zod";
 import {
   CUSTOMER_RECOMMENDATION_STATUSES,
   CUSTOMER_REVIEW_PERMISSION_STATUSES,
+  CUSTOMER_REVIEW_SOURCE_PLATFORMS,
   type CustomerReviewMutationInput,
   type FacebookReviewSummaryInput,
 } from "./types";
@@ -53,10 +54,31 @@ const facebookUrl = z.string()
     }
   });
 
-const optionalFacebookUrl = z.preprocess(
+const optionalSourceUrl = z.preprocess(
   (value) => typeof value === "string" && value.trim() === "" ? null : value,
-  facebookUrl.nullable().optional(),
-).transform((value) => value ?? null);
+  z.string().trim().max(2_048).nullable().optional(),
+).transform((value, context) => {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password) throw new Error("invalid");
+    return url.toString();
+  } catch {
+    context.addIssue({ code: "custom", message: "Enter a valid source URL" });
+    return z.NEVER;
+  }
+});
+
+function isFacebookHost(host: string) {
+  return host === "facebook.com" || host.endsWith(".facebook.com");
+}
+
+function isGoogleReviewHost(host: string) {
+  return host === "google.com" || host.endsWith(".google.com") ||
+    host === "google.co.nz" || host.endsWith(".google.co.nz") ||
+    host === "google.com.au" || host.endsWith(".google.com.au") ||
+    host === "g.page" || host.endsWith(".g.page") || host === "maps.app.goo.gl";
+}
 
 const optionalTimestamp = z.preprocess(
   (value) => typeof value === "string" && value.trim() === "" ? null : value,
@@ -64,9 +86,10 @@ const optionalTimestamp = z.preprocess(
 ).transform((value) => value ?? null);
 
 export const customerReviewMutationSchema = z.object({
+  sourcePlatform: z.enum(CUSTOMER_REVIEW_SOURCE_PLATFORMS).default("FACEBOOK"),
   reviewerName: z.string().trim().min(1, "Reviewer name is required").max(120),
   originalReviewText: z.string().trim().min(1, "Review text is required").max(10_000),
-  sourceReviewUrl: optionalFacebookUrl,
+  sourceReviewUrl: optionalSourceUrl,
   reviewDate: calendarDate,
   recommendationStatus: z.enum(CUSTOMER_RECOMMENDATION_STATUSES),
   editorialHeadline: trimmedOptional(240),
@@ -80,6 +103,19 @@ export const customerReviewMutationSchema = z.object({
   permissionNotes: trimmedOptional(2_000),
   lastVerifiedAt: optionalTimestamp,
 }).strict().superRefine((value, context) => {
+  if (value.sourceReviewUrl) {
+    const host = new URL(value.sourceReviewUrl).hostname.toLowerCase();
+    const valid = value.sourcePlatform === "GOOGLE"
+      ? isGoogleReviewHost(host)
+      : isFacebookHost(host);
+    if (!valid) {
+      context.addIssue({
+        code: "custom",
+        path: ["sourceReviewUrl"],
+        message: `Enter a valid ${value.sourcePlatform === "GOOGLE" ? "Google" : "Facebook"} URL`,
+      });
+    }
+  }
   if ((value.productKey === null) !== (value.productDisplayLabel === null)) {
     context.addIssue({
       code: "custom",
@@ -98,7 +134,7 @@ export const customerReviewMutationSchema = z.object({
     context.addIssue({
       code: "custom",
       path: ["isHomepageFeatured"],
-      message: "Only a Facebook recommendation can be featured",
+      message: "Only a positive customer review can be featured",
     });
   }
 });

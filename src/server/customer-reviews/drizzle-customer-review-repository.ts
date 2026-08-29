@@ -14,6 +14,7 @@ import type {
   AdminCustomerReviewMedia,
   AdminFacebookReviewSettings,
   CustomerReviewMediaKind,
+  CustomerReviewSourcePlatform,
   FacebookReviewSummaryInput,
   PublicCustomerReview,
 } from "@/domain/customer-reviews/types";
@@ -53,6 +54,7 @@ export const CUSTOMER_REVIEW_SETTING_KEYS = Object.freeze(
 
 type PublicReviewRow = Readonly<{
   id: string;
+  sourcePlatform?: unknown;
   reviewerName: string;
   originalReviewText: string;
   sourceReviewUrl: string | null;
@@ -63,6 +65,12 @@ type PublicReviewRow = Readonly<{
   orderContext: string | null;
   isHomepageFeatured: boolean;
 }>;
+
+export function normalizeCustomerReviewSourcePlatform(
+  value: unknown,
+): CustomerReviewSourcePlatform {
+  return value === "GOOGLE" ? "GOOGLE" : "FACEBOOK";
+}
 
 type PublicMediaRow = Readonly<{
   kind: CustomerReviewMediaKind;
@@ -117,6 +125,7 @@ export function mapPublicCustomerReview(
 
   return Object.freeze({
     id: row.id,
+    sourcePlatform: normalizeCustomerReviewSourcePlatform(row.sourcePlatform),
     reviewerName: row.reviewerName,
     originalReviewText: row.originalReviewText,
     sourceReviewUrl: row.sourceReviewUrl,
@@ -147,7 +156,7 @@ function toAdminMedia(row: MediaRow): AdminCustomerReviewMedia {
 function toAdminReview(row: ReviewRow, media: readonly MediaRow[]): AdminCustomerReview {
   return Object.freeze({
     id: row.id,
-    sourcePlatform: row.sourcePlatform,
+    sourcePlatform: normalizeCustomerReviewSourcePlatform(row.sourcePlatform),
     reviewerName: row.reviewerName,
     originalReviewText: row.originalReviewText,
     sourceReviewUrl: row.sourceReviewUrl,
@@ -174,6 +183,7 @@ function toAdminReview(row: ReviewRow, media: readonly MediaRow[]): AdminCustome
 
 function databaseValues(input: PersistedCustomerReviewInput, actor: ReviewActor) {
   return {
+    sourcePlatform: input.sourcePlatform,
     reviewerName: input.reviewerName,
     originalReviewText: input.originalReviewText,
     sourceReviewUrl: input.sourceReviewUrl,
@@ -199,6 +209,7 @@ function databaseValues(input: PersistedCustomerReviewInput, actor: ReviewActor)
 
 function auditSummary(input: PersistedCustomerReviewInput) {
   return Object.freeze({
+    sourcePlatform: input.sourcePlatform,
     status: input.status,
     permissionStatus: input.permissionStatus,
     recommendationStatus: input.recommendationStatus,
@@ -401,6 +412,7 @@ export function createDrizzleCustomerReviewRepository(
       const limit = Math.min(Math.max(input.limit ?? 30, 1), 100);
       const rows = await database.select({
         id: customerReviews.id,
+        sourcePlatform: customerReviews.sourcePlatform,
         reviewerName: customerReviews.reviewerName,
         originalReviewText: customerReviews.originalReviewText,
         sourceReviewUrl: customerReviews.sourceReviewUrl,

@@ -53,10 +53,10 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(59);
+    expect(journal.entries).toHaveLength(60);
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(59);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(59);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(60);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(60);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -102,6 +102,34 @@ describe("migration lineage artifacts", () => {
     expect(sha256("drizzle/0058_website_analytics_v1.sql")).toBe(
       "341b697c0397feb588e62436f3234d25bd8ec4043df0bba0e80bad3f52320499",
     );
+    expect(journal.entries[59]).toMatchObject({
+      idx: 59,
+      when: 1787996906191,
+      tag: "0059_customer_review_sources",
+    });
+    expect(sha256("drizzle/0059_customer_review_sources.sql")).toBe(
+      "1b3631508005319ab310eba0f22de44d429abc18f964890b9e55e9de6810bd5a",
+    );
+  });
+
+  it("changes only the customer review source constraint", () => {
+    const previous = loadJson<Snapshot>("drizzle/meta/0058_snapshot.json");
+    const current = loadJson<Snapshot>("drizzle/meta/0059_snapshot.json");
+    const normalizedPrevious = structuredClone(previous);
+    const normalizedCurrent = structuredClone(current);
+    const table = "public.customer_reviews";
+    const constraint = "customer_reviews_source_platform_valid";
+
+    expect(current.prevId).toBe(previous.id);
+    expect(current.tables[table]?.checkConstraints[constraint]).toEqual({
+      name: constraint,
+      value: `"customer_reviews"."source_platform" in ('FACEBOOK', 'GOOGLE')`,
+    });
+    normalizedCurrent.tables[table].checkConstraints[constraint] =
+      previous.tables[table].checkConstraints[constraint];
+    normalizedCurrent.id = normalizedPrevious.id;
+    normalizedCurrent.prevId = normalizedPrevious.prevId;
+    expect(normalizedCurrent).toEqual(normalizedPrevious);
   });
 
   it("keeps the latest applied snapshot at the 71-table pre-notification schema", () => {

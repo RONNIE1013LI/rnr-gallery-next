@@ -53,7 +53,7 @@ export function CustomerReviewList({ reviews }: Readonly<{
   if (reviews.length === 0) {
     return <div className={styles.emptyState}>
       <h2>No customer reviews yet</h2>
-      <p>Add an approved Facebook recommendation when you are ready.</p>
+      <p>Add an approved Facebook or Google review when you are ready.</p>
       <Link href="/admin/customer-reviews/new">Add the first review</Link>
     </div>;
   }
@@ -70,7 +70,7 @@ export function CustomerReviewList({ reviews }: Readonly<{
         <thead><tr><th>Reviewer</th><th>Source</th><th>Recommendation</th><th>Review date</th><th>Status</th><th>Permission</th><th>Featured / order</th><th>Product</th><th>Last verified</th><th>Actions</th></tr></thead>
         <tbody>{visible.map((review) => <tr key={review.id}>
           <td><div className={styles.reviewListIdentity}>{review.media.find((media) => media.kind === "AVATAR") ? <Image src={review.media.find((media) => media.kind === "AVATAR")!.adminUrl} alt="" width={36} height={36} unoptimized /> : <span aria-hidden="true">{initials(review.reviewerName)}</span>}<div><strong>{review.reviewerName}</strong><small className={styles.reviewExcerpt}>{review.originalReviewText}</small></div></div></td>
-          <td>Facebook</td>
+          <td>{titleCase(review.sourcePlatform)}</td>
           <td>{titleCase(review.recommendationStatus)}</td>
           <td>{review.reviewDate}</td>
           <td><span className={styles.statusBadge}>{titleCase(review.status)}</span></td>

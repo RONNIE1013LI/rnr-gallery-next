@@ -17,6 +17,7 @@ import type {
   CustomerRecommendationStatus,
   CustomerReviewMediaKind,
   CustomerReviewPermissionStatus,
+  CustomerReviewSourcePlatform,
   CustomerReviewStatus,
 } from "@/domain/customer-reviews/types";
 import { user } from "./auth";
@@ -25,7 +26,7 @@ export const customerReviews = pgTable(
   "customer_reviews",
   {
     id: uuid("id").defaultRandom().primaryKey(),
-    sourcePlatform: text("source_platform").$type<"FACEBOOK">().default("FACEBOOK").notNull(),
+    sourcePlatform: text("source_platform").$type<CustomerReviewSourcePlatform>().default("FACEBOOK").notNull(),
     reviewerName: text("reviewer_name").notNull(),
     originalReviewText: text("original_review_text").notNull(),
     sourceReviewUrl: text("source_review_url"),
@@ -71,7 +72,7 @@ export const customerReviews = pgTable(
     uniqueIndex("customer_reviews_one_public_featured_unique")
       .on(table.isHomepageFeatured)
       .where(sql`${table.isHomepageFeatured} = true and ${table.status} = 'PUBLISHED' and ${table.permissionStatus} = 'GRANTED' and ${table.recommendationStatus} = 'RECOMMENDS'`),
-    check("customer_reviews_source_platform_valid", sql`${table.sourcePlatform} = 'FACEBOOK'`),
+    check("customer_reviews_source_platform_valid", sql`${table.sourcePlatform} in ('FACEBOOK', 'GOOGLE')`),
     check(
       "customer_reviews_recommendation_status_valid",
       sql`${table.recommendationStatus} in ('RECOMMENDS', 'DOES_NOT_RECOMMEND', 'LEGACY_STAR_REVIEW')`,

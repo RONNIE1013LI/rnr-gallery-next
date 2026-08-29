@@ -1,4 +1,5 @@
 export const CUSTOMER_REVIEW_STATUSES = ["DRAFT", "PUBLISHED", "ARCHIVED"] as const;
+export const CUSTOMER_REVIEW_SOURCE_PLATFORMS = ["FACEBOOK", "GOOGLE"] as const;
 export const CUSTOMER_REVIEW_PERMISSION_STATUSES = ["PENDING", "GRANTED", "REVOKED"] as const;
 export const CUSTOMER_RECOMMENDATION_STATUSES = [
   "RECOMMENDS",
@@ -12,11 +13,13 @@ export const CUSTOMER_REVIEW_MEDIA_KINDS = [
 ] as const;
 
 export type CustomerReviewStatus = (typeof CUSTOMER_REVIEW_STATUSES)[number];
+export type CustomerReviewSourcePlatform = (typeof CUSTOMER_REVIEW_SOURCE_PLATFORMS)[number];
 export type CustomerReviewPermissionStatus = (typeof CUSTOMER_REVIEW_PERMISSION_STATUSES)[number];
 export type CustomerRecommendationStatus = (typeof CUSTOMER_RECOMMENDATION_STATUSES)[number];
 export type CustomerReviewMediaKind = (typeof CUSTOMER_REVIEW_MEDIA_KINDS)[number];
 
 export type CustomerReviewMutationInput = Readonly<{
+  sourcePlatform: CustomerReviewSourcePlatform;
   reviewerName: string;
   originalReviewText: string;
   sourceReviewUrl: string | null;
@@ -51,6 +54,7 @@ export type PublicCustomerReviewMedia = Readonly<{
 
 export type PublicCustomerReview = Readonly<{
   id: string;
+  sourcePlatform: CustomerReviewSourcePlatform;
   reviewerName: string;
   originalReviewText: string;
   sourceReviewUrl: string | null;
@@ -91,7 +95,6 @@ export type AdminCustomerReviewMedia = Readonly<{
 
 export type AdminCustomerReview = CustomerReviewMutationInput & Readonly<{
   id: string;
-  sourcePlatform: "FACEBOOK";
   status: CustomerReviewStatus;
   publishedAt: Date | null;
   archivedAt: Date | null;

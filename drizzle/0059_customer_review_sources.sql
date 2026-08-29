@@ -1,0 +1,2 @@
+ALTER TABLE "customer_reviews" DROP CONSTRAINT "customer_reviews_source_platform_valid";--> statement-breakpoint
+ALTER TABLE "customer_reviews" ADD CONSTRAINT "customer_reviews_source_platform_valid" CHECK ("customer_reviews"."source_platform" in ('FACEBOOK', 'GOOGLE'));

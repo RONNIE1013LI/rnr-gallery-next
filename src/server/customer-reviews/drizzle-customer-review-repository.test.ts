@@ -9,6 +9,7 @@ describe("customer review public database projection", () => {
   it("rebuilds an allowlisted public DTO without private permission or storage data", () => {
     const review = mapPublicCustomerReview({
       id: "00000000-0000-4000-8000-000000000001",
+      sourcePlatform: "GOOGLE",
       reviewerName: "R&R customer",
       originalReviewText: "A beautiful canvas.",
       sourceReviewUrl: "https://www.facebook.com/RandRgallery/reviews/",
@@ -33,6 +34,7 @@ describe("customer review public database projection", () => {
       height: 100,
     });
     expect(review.featuredImage).toBeNull();
+    expect(review.sourcePlatform).toBe("GOOGLE");
     expect(JSON.stringify(review)).not.toMatch(
       /storageKey|permission|evidence|createdBy|updatedBy/i,
     );
@@ -60,6 +62,7 @@ describe("customer review public database projection", () => {
 
     expect(review.avatar).toBeNull();
     expect(review.featuredImage).toBeNull();
+    expect(review.sourcePlatform).toBe("FACEBOOK");
   });
 
   it("builds a redacted media replacement audit record", () => {

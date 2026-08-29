@@ -2,6 +2,7 @@ import type { PublicCustomerReview } from "@/domain/customer-reviews/types";
 
 export const featuredReview: PublicCustomerReview = {
   id: "11111111-1111-4111-8111-111111111111",
+  sourcePlatform: "FACEBOOK",
   reviewerName: "Aroha Te Rangi",
   originalReviewText: "The canvas brought our family photographs together.\n\nWe recommend R&R Gallery.",
   sourceReviewUrl: "https://www.facebook.com/example/reviews/1",
@@ -19,6 +20,7 @@ export const featuredReview: PublicCustomerReview = {
 export const secondReview: PublicCustomerReview = {
   ...featuredReview,
   id: "22222222-2222-4222-8222-222222222222",
+  sourcePlatform: "GOOGLE",
   reviewerName: "Mereana K.",
   originalReviewText: "Amazing service and a beautiful result.",
   sourceReviewUrl: null,

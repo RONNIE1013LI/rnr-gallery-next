@@ -46,6 +46,12 @@ describe("CustomerReviewList", () => {
     expect(screen.queryByText("private permission note")).not.toBeInTheDocument();
   });
 
+  it("shows the selected review source", () => {
+    render(<CustomerReviewList reviews={[{ ...review, sourcePlatform: "GOOGLE" }]} />);
+
+    expect(screen.getByText("Google")).toBeInTheDocument();
+  });
+
   it("renders an empty state with a creation action", () => {
     render(<CustomerReviewList reviews={[]} />);
 

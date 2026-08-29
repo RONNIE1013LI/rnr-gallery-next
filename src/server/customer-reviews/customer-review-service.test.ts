@@ -10,6 +10,7 @@ const actor = {
 };
 
 const mutation = {
+  sourcePlatform: "FACEBOOK" as const,
   reviewerName: "R&R customer",
   originalReviewText: "Wonderful service and a beautiful result.",
   sourceReviewUrl: "https://www.facebook.com/RandRgallery/reviews/",
@@ -29,6 +30,7 @@ const mutation = {
 
 const publicReview = (id: string, featured = false): PublicCustomerReview => ({
   id,
+  sourcePlatform: "FACEBOOK",
   reviewerName: `Customer ${id}`,
   originalReviewText: `Review ${id}`,
   sourceReviewUrl: "https://www.facebook.com/RandRgallery/reviews/",

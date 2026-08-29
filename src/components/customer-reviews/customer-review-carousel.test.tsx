@@ -18,6 +18,8 @@ describe("CustomerReviewCarousel", () => {
     expect(previous).toBeDisabled();
     expect(next).toBeEnabled();
     expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(screen.getByLabelText("Facebook")).toBeInTheDocument();
+    expect(screen.getByLabelText("Google")).toBeInTheDocument();
 
     fireEvent.click(next);
     expect(scrollTo).toHaveBeenCalled();
