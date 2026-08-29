@@ -487,7 +487,7 @@
 
 .gallerySection { padding: var(--v3-section-standard) 0; position: relative; z-index: 1; background: var(--v3-warm); }
 .galleryHeading { max-width: 50rem; }
-.galleryHeading > p { max-width: none; }
+.galleryHeading > p:last-child { max-width: none; }
 .filterRow { margin: 2.75rem 0 3rem; display: flex; gap: 0.625rem; flex-wrap: wrap; }
 .filter { min-height: 2.75rem; padding-inline: 1rem; display: inline-flex; align-items: center; border: 1px solid var(--v3-line); border-radius: var(--radius-button); color: var(--v3-forest); background: var(--v3-paper); font-size: 0.75rem; font-weight: 700; text-decoration: none; }
 .filterActive { color: white; background: var(--v3-forest); border-color: var(--v3-forest); }

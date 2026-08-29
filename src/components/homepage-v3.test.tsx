@@ -827,7 +827,7 @@ describe("HomepageV3", () => {
     );
 
     expect(stylesheet).toMatch(/\.galleryHeading\s*\{[^}]*max-width:\s*50rem;/);
-    expect(stylesheet).toMatch(/\.galleryHeading\s*>\s*p\s*\{[^}]*max-width:\s*none;/);
+    expect(stylesheet).toMatch(/\.galleryHeading\s*>\s*p:last-child\s*\{[^}]*max-width:\s*none;/);
   });
 
   it("renders Design Gallery images and opens their public detail pages", () => {
