@@ -368,6 +368,45 @@ describe("internal notification outbox persistence", () => {
     expect(rows).toHaveLength(1);
   });
 
+  it("lets immediate delivery and recovery race without a duplicate provider send", async () => {
+    const recipient = await insertRecipient({
+      label: "immediate-recovery-race",
+      status: "active",
+      topics: ["web_order_paid"],
+    });
+    const notificationEvent = event();
+    await enqueue(notificationEvent);
+    const send = vi.fn().mockResolvedValue({ providerMessageId: "email-race-safe" });
+    const immediate = createInternalNotificationService(repository, {
+      provider: { configured: true, send },
+      siteUrl: "https://rrgallery.co.nz",
+      now: () => now,
+    });
+    const recovery = createInternalNotificationService(repository, {
+      provider: { configured: true, send },
+      siteUrl: "https://rrgallery.co.nz",
+      now: () => now,
+    });
+
+    await Promise.all([
+      immediate.deliverPending(1),
+      recovery.deliverPending(1),
+    ]);
+
+    expect(send).toHaveBeenCalledOnce();
+    const [stored] = await database.select({
+      status: internalNotificationOutbox.status,
+      providerMessageId: internalNotificationOutbox.providerMessageId,
+    }).from(internalNotificationOutbox).where(and(
+      eq(internalNotificationOutbox.sourceEventId, notificationEvent.sourceEventId),
+      eq(internalNotificationOutbox.recipientId, recipient.id),
+    ));
+    expect(stored).toEqual({
+      status: "sent",
+      providerMessageId: "email-race-safe",
+    });
+  });
+
   it("delivers Website AI review rows independently and retries only the failed recipient", async () => {
     const successful = await insertRecipient({
       label: "ai-delivery-success",

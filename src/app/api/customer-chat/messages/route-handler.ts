@@ -37,6 +37,7 @@ type Dependencies = Readonly<{
   resolveProductContext: (pathname: string) => Promise<SafeProductContext | null>;
   processTurn: (turnId: string) => Promise<unknown>;
   processReviewAlert?: () => Promise<unknown>;
+  processCustomerNotifications?: () => Promise<unknown>;
   scheduleAfter: (task: () => Promise<void>) => void;
   waitUntil?: (deadline: Date) => Promise<void>;
   now?: () => Date;
@@ -139,9 +140,19 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
             try {
               await (dependencies.waitUntil ?? waitUntil)(result.debounceUntil);
               await dependencies.processTurn(result.turnId);
-              await dependencies.processReviewAlert?.();
             } catch {
               // The committed turn remains recoverable by the durable worker.
+              return;
+            }
+            try {
+              await dependencies.processReviewAlert?.();
+            } catch {
+              // The durable review alert remains available to recovery.
+            }
+            try {
+              await dependencies.processCustomerNotifications?.();
+            } catch {
+              // The durable notification outbox remains available to recovery.
             }
           });
         }

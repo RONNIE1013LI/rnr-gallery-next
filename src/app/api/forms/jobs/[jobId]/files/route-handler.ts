@@ -1,4 +1,6 @@
 import { getAdminProductionProofRuntime } from "@/server/admin/admin-production-proof-runtime";
+import { after } from "next/server";
+import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
 import { hasFormPermission, type FormPermission } from "@/server/forms/forms-permissions";
 import { assertFormsJobScope } from "@/server/forms/forms-job-scope";
 import { requireFormPermission, type FormAccess } from "@/server/forms/require-forms";
@@ -44,7 +46,11 @@ function errorResponse(error: unknown) {
 
 export function createFormsJobFilesRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => {
-    const proof = getAdminProductionProofRuntime();
+    const proof = getAdminProductionProofRuntime(
+      createImmediateNotificationDeliveryObserver({
+        scheduleAfter: (task) => after(task),
+      }),
+    );
     return {
       requirePermission: requireFormPermission,
       assertScope: assertFormsJobScope,

@@ -268,3 +268,45 @@ describe("production proof service", () => {
     });
   });
 });
+
+describe("proof notification delivery trigger", () => {
+  it("triggers proof-ready delivery only after a design draft is created", async () => {
+    const repo = repository();
+    const onNotificationOutboxAvailable = vi.fn();
+    const service = createProductionProofService(repo, {
+      onNotificationOutboxAvailable,
+    });
+
+    await service.registerFile(actor, jobId, {
+      kind: "design_draft",
+      idempotencyKey: "proof-ready-trigger-1",
+      reference,
+    }, { canManageFinance: false });
+
+    expect(onNotificationOutboxAvailable).toHaveBeenCalledOnce();
+    expect(vi.mocked(repo.createFile).mock.invocationCallOrder[0])
+      .toBeLessThan(onNotificationOutboxAvailable.mock.invocationCallOrder[0]);
+  });
+
+  it("triggers internal proof-review delivery after a customer decision", async () => {
+    const repo = repository();
+    const onNotificationOutboxAvailable = vi.fn();
+    const service = createProductionProofService(repo, {
+      onNotificationOutboxAvailable,
+    });
+
+    await service.recordCustomerReview("RNR-2026-ABC123", {
+      kind: "customer",
+      userId: "customer-1",
+    }, {
+      fileId: reference.id,
+      decision: "approved",
+      notes: "",
+      idempotencyKey: "customer-review-trigger-1",
+    });
+
+    expect(onNotificationOutboxAvailable).toHaveBeenCalledOnce();
+    expect(vi.mocked(repo.recordCustomerReview).mock.invocationCallOrder[0])
+      .toBeLessThan(onNotificationOutboxAvailable.mock.invocationCallOrder[0]);
+  });
+});

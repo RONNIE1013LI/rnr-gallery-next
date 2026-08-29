@@ -7,6 +7,7 @@ import type {
   ProductionProofReviewerType,
 } from "@/server/db/schema";
 import type { PrivateUploadReference } from "@/server/uploads/local-private-upload-store";
+import type { NotificationDeliveryTrigger } from "@/server/notifications/immediate-notification-delivery";
 
 const actorSchema = z.object({
   userId: z.string().trim().min(1).max(255),
@@ -223,7 +224,10 @@ export function deriveRevisionSummary(
 
 export function createProductionProofService(
   repository: ProductionProofRepository,
-  dependencies: Readonly<{ now?: () => Date }> = {},
+  dependencies: Readonly<{
+    now?: () => Date;
+    onNotificationOutboxAvailable?: NotificationDeliveryTrigger;
+  }> = {},
 ) {
   return Object.freeze({
     async registerFile(
@@ -262,6 +266,13 @@ export function createProductionProofService(
       }
       if (result.result === "conflict") throw new ProductionProofConflictError();
       if (!result.file) throw new Error("Production file repository returned no file");
+      if (result.result === "created" && file.data.kind === "design_draft") {
+        try {
+          dependencies.onNotificationOutboxAvailable?.();
+        } catch {
+          // The committed outbox remains available to recovery.
+        }
+      }
       return Object.freeze({ result: result.result, file: result.file });
     },
 
@@ -393,6 +404,13 @@ export function createProductionProofService(
         throw new ProductionProofConflictError("This design draft already has a decision");
       }
       if (!result.review) throw new Error("Production review repository returned no review");
+      if (result.result === "created") {
+        try {
+          dependencies.onNotificationOutboxAvailable?.();
+        } catch {
+          // The committed outbox remains available to recovery.
+        }
+      }
       return Object.freeze({ result: result.result, review: result.review });
     },
 

@@ -12,6 +12,7 @@ import {
 } from "@/server/payments/payment-service";
 import { selectPaymentProviders } from "@/server/payments/provider-registry";
 import { createMetaPaidOrderObserver } from "@/server/analytics/meta-purchase";
+import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
 
 export const runtime = "nodejs";
 
@@ -89,6 +90,9 @@ function defaults(): Dependencies {
       providers,
       returnBaseUrl: config.operations.returnBaseUrl ?? parseAuthConfig().origin,
       onVerifiedPaidOrder: createMetaPaidOrderObserver((task) => after(task)),
+      onNotificationOutboxAvailable: createImmediateNotificationDeliveryObserver({
+        scheduleAfter: (task) => after(task),
+      }),
     }),
   });
 }

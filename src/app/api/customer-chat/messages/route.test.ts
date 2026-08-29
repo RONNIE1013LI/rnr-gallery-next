@@ -54,6 +54,7 @@ function setup(input: Readonly<{
   const tasks: (() => Promise<void>)[] = [];
   const processTurn = vi.fn(async () => undefined);
   const processReviewAlert = vi.fn(async () => undefined);
+  const processCustomerNotifications = vi.fn(async () => undefined);
   const resolveProductContext = vi.fn(async (pathname: string) => (
     resolveSafeProductContext(pathname, registry)
   ));
@@ -67,6 +68,7 @@ function setup(input: Readonly<{
     resolveProductContext,
     processTurn,
     processReviewAlert,
+    processCustomerNotifications,
     scheduleAfter: (task) => tasks.push(task),
     waitUntil: vi.fn(async () => undefined),
     now: () => now,
@@ -74,7 +76,15 @@ function setup(input: Readonly<{
     createSessionToken: () => sessionToken,
     resolveTrustedIp: () => "203.0.113.42",
   });
-  return { handler, repository, tasks, processTurn, processReviewAlert, resolveProductContext };
+  return {
+    handler,
+    repository,
+    tasks,
+    processTurn,
+    processReviewAlert,
+    processCustomerNotifications,
+    resolveProductContext,
+  };
 }
 
 const validBody = {
@@ -104,6 +114,10 @@ describe("POST /api/customer-chat/messages", () => {
     expect(current.tasks).toHaveLength(1);
     await current.tasks[0]();
     expect(current.processTurn).toHaveBeenCalledWith("turn-private");
+    expect(current.processReviewAlert).toHaveBeenCalledOnce();
+    expect(current.processCustomerNotifications).toHaveBeenCalledOnce();
+    expect(current.processReviewAlert.mock.invocationCallOrder[0])
+      .toBeLessThan(current.processCustomerNotifications.mock.invocationCallOrder[0]);
     expect(JSON.stringify(responseBody))
       .not.toMatch(/message-private|turn-private|conversation-private|policy|hash|secret/i);
   });
@@ -121,6 +135,7 @@ describe("POST /api/customer-chat/messages", () => {
     await expect(current.tasks[0]()).resolves.toBeUndefined();
     expect(current.processTurn).toHaveBeenCalledWith("turn-private");
     expect(current.processReviewAlert).toHaveBeenCalledOnce();
+    expect(current.processCustomerNotifications).toHaveBeenCalledOnce();
   });
 
   it("accepts a duplicate retry without scheduling duplicate processing", async () => {

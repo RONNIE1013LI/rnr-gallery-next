@@ -7,6 +7,7 @@ import type { PaymentPayerSnapshot } from "@/server/db/schema/payments";
 import type { PaymentRequestRepository } from "@/server/payment-requests/payment-request-repository";
 import type { PaymentAttemptRecord, PaymentRepository } from "./payment-repository";
 import { createPaymentService, PaymentServiceError } from "./payment-service";
+import { PAYMENT_FAILED_DELIVERY_DELAY_MS } from "./payment-notification-timing";
 import type { PaymentProviderRegistration } from "./provider-registry";
 import type {
   PaymentOrder,
@@ -185,6 +186,7 @@ function service(input: {
   }) => string;
   returnBaseUrl?: string;
   onVerifiedPaidOrder?: (orderNumber: string) => void;
+  onNotificationOutboxAvailable?: (input?: Readonly<{ delayMs?: number }>) => void;
 } = {}) {
   return createPaymentService({
     repository: input.repository ?? repository(),
@@ -202,10 +204,112 @@ function service(input: {
     returnBaseUrl: input.returnBaseUrl ?? "https://trusted.example.test",
     deriveReturnState: input.deriveReturnState ?? (() => "a".repeat(64)),
     onVerifiedPaidOrder: input.onVerifiedPaidOrder,
+    onNotificationOutboxAvailable: input.onNotificationOutboxAvailable,
   });
 }
 
 describe("payment service", () => {
+  it("triggers immediate customer and internal delivery after an applied paid webhook", async () => {
+    const onNotificationOutboxAvailable = vi.fn();
+    const stripe: PaymentProvider = {
+      ...provider(),
+      key: "stripe",
+      verifyWebhook: vi.fn(),
+    };
+    const paymentService = service({
+      repository: repository({
+        applyVerifiedWebhookEventAtomically: vi.fn().mockResolvedValue("applied"),
+      }),
+      providers: [{ method: "card", label: "Card", isTest: false, provider: stripe }],
+      onNotificationOutboxAvailable,
+    });
+
+    await paymentService.applyVerifiedWebhook({
+      provider: "stripe",
+      providerEventId: "evt_paid_notification",
+      result: {
+        providerReference: "pi_paid_notification",
+        providerStatus: "succeeded",
+        amountCents: order.amountCents,
+        currency: order.currency,
+        orderNumber: order.orderNumber,
+        status: "paid",
+      },
+    }, new Uint8Array([1]));
+
+    expect(onNotificationOutboxAvailable).toHaveBeenCalledWith();
+  });
+
+  it("preserves the delayed payment-failure delivery trigger", async () => {
+    const onNotificationOutboxAvailable = vi.fn();
+    const stripe: PaymentProvider = {
+      ...provider(),
+      key: "stripe",
+      verifyWebhook: vi.fn(),
+    };
+    const paymentService = service({
+      repository: repository({
+        applyVerifiedWebhookEventAtomically: vi.fn().mockResolvedValue("applied"),
+      }),
+      providers: [{ method: "card", label: "Card", isTest: false, provider: stripe }],
+      onNotificationOutboxAvailable,
+    });
+
+    await paymentService.applyVerifiedWebhook({
+      provider: "stripe",
+      providerEventId: "evt_failed_notification",
+      result: {
+        providerReference: "pi_failed_notification",
+        providerStatus: "requires_payment_method",
+        amountCents: order.amountCents,
+        currency: order.currency,
+        orderNumber: order.orderNumber,
+        status: "failed",
+      },
+    }, new Uint8Array([2]));
+
+    expect(onNotificationOutboxAvailable).toHaveBeenCalledWith({
+      delayMs: PAYMENT_FAILED_DELIVERY_DELAY_MS,
+    });
+  });
+
+  it("triggers delivery for an applied standalone Payment Request webhook but not its duplicate", async () => {
+    const onNotificationOutboxAvailable = vi.fn();
+    const applyRequestWebhook = vi.fn()
+      .mockResolvedValueOnce("applied")
+      .mockResolvedValueOnce("duplicate");
+    const requests = paymentRequestRepository({
+      ownsProviderReference: vi.fn().mockResolvedValue(true),
+      applyVerifiedWebhookEventAtomically: applyRequestWebhook,
+    });
+    const stripe: PaymentProvider = {
+      ...provider(),
+      key: "stripe",
+      verifyWebhook: vi.fn(),
+    };
+    const paymentService = service({
+      paymentRequestRepository: requests,
+      providers: [{ method: "card", label: "Card", isTest: false, provider: stripe }],
+      onNotificationOutboxAvailable,
+    });
+    const event: VerifiedProviderEvent = {
+      provider: "stripe",
+      providerEventId: "evt_payment_request_notification",
+      result: {
+        providerReference: "pi_payment_request_notification",
+        providerStatus: "succeeded",
+        amountCents: paymentRequest.amountCents,
+        currency: paymentRequest.currency,
+        merchantReference: paymentRequest.requestNumber,
+        status: "paid",
+      },
+    };
+
+    await paymentService.applyVerifiedWebhook(event, new Uint8Array([3]));
+    await paymentService.applyVerifiedWebhook(event, new Uint8Array([3]));
+
+    expect(onNotificationOutboxAvailable).toHaveBeenCalledOnce();
+  });
   it("dispatches a verified Payment Request webhook by the stored attempt target", async () => {
     const orderRepo = repository();
     const applyRequestWebhook = vi.fn().mockResolvedValue("applied");

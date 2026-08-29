@@ -1,4 +1,6 @@
 import { getAdminProductionProofRuntime } from "@/server/admin/admin-production-proof-runtime";
+import { after } from "next/server";
+import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
 import { hasAdminPermission, type AdminPermission } from "@/server/auth/admin-permissions";
 import { requireAdminPermission, type AdminAccess } from "@/server/auth/require-admin";
 import { HttpError } from "@/server/auth/require-session";
@@ -45,7 +47,11 @@ function errorResponse(error: unknown) {
 
 export function createProductionJobFilesRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => {
-    const proof = getAdminProductionProofRuntime();
+    const proof = getAdminProductionProofRuntime(
+      createImmediateNotificationDeliveryObserver({
+        scheduleAfter: (task) => after(task),
+      }),
+    );
     return {
       requirePermission: requireAdminPermission,
       save: proof.save,

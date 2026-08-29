@@ -3,6 +3,7 @@ import type {
   OrderPaymentStatus,
 } from "@/server/db/schema/orders";
 import { z } from "zod";
+import type { NotificationDeliveryTrigger } from "@/server/notifications/immediate-notification-delivery";
 
 export type AdminOrderSort = "created" | "updated" | "total";
 export type AdminOrderSortDirection = "asc" | "desc";
@@ -234,6 +235,9 @@ function resolveMutationResult(result: MutationResult) {
 
 export function createAdminOrderMutationService(
   repository: AdminOrderMutationRepository,
+  dependencies: Readonly<{
+    onNotificationOutboxAvailable?: NotificationDeliveryTrigger;
+  }> = {},
 ) {
   return Object.freeze({
     async changeStatus(actorInput: unknown, input: unknown) {
@@ -264,11 +268,19 @@ export function createAdminOrderMutationService(
           );
         }
       }
-      return resolveMutationResult(await repository.applyStatusChange({
+      const result = resolveMutationResult(await repository.applyStatusChange({
         ...parsed,
         fromStatus,
         actor,
       }));
+      if (result === "updated" && parsed.toStatus === "shipped") {
+        try {
+          dependencies.onNotificationOutboxAvailable?.();
+        } catch {
+          // The committed outbox remains available to recovery.
+        }
+      }
+      return result;
     },
 
     async addNote(actorInput: unknown, input: unknown) {

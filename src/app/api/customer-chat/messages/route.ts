@@ -3,6 +3,7 @@ import { parseAuthConfig } from "@/server/auth/config";
 import { parseCustomerServiceConfig } from "@/server/customer-service/config";
 import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
 import { resolveCurrentSafeProductContext } from "@/server/customer-service/website/product-context";
+import { getAllCustomerNotificationRuntime } from "@/server/notifications/customer-notification-runtime";
 import { createCustomerChatMessagesHandler } from "./route-handler";
 
 export const runtime = "nodejs";
@@ -27,6 +28,7 @@ export async function POST(request: Request) {
       resolveProductContext: resolveCurrentSafeProductContext,
       processTurn: (turnId) => customerService.turnRecoveryRunner.runOnce({ turnId }),
       processReviewAlert: () => customerService.reviewAlertService?.deliverNext() ?? Promise.resolve({ result: "not_configured" }),
+      processCustomerNotifications: () => getAllCustomerNotificationRuntime().deliverPending(20),
       scheduleAfter: (task) => after(task),
     }).POST(request);
   } catch {

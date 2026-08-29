@@ -1,4 +1,6 @@
 import { assertTrustedMutationRequest, MutationRequestError, parseBoundedJson } from "@/server/http/mutation-request";
+import { after } from "next/server";
+import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
 import { resolveCustomerProofRequestAccess } from "@/server/production/customer-proof-request-access";
 import { getCustomerProofRuntime } from "@/server/production/customer-proof-runtime";
 import {
@@ -36,7 +38,11 @@ function errorResponse(error: unknown) {
 export function createCustomerProofReviewRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => ({
     resolveAccess: resolveCustomerProofRequestAccess,
-    recordReview: getCustomerProofRuntime().recordCustomerReview,
+    recordReview: getCustomerProofRuntime(
+      createImmediateNotificationDeliveryObserver({
+        scheduleAfter: (task) => after(task),
+      }),
+    ).recordCustomerReview,
   });
   return Object.freeze({
     async POST(request: Request, context: Context) {

@@ -545,3 +545,25 @@ describe("manual production job service", () => {
     );
   });
 });
+
+describe("manual-order notification delivery trigger", () => {
+  it("triggers the existing notification worker only after manual order creation", async () => {
+    const repo = repository();
+    const onNotificationOutboxAvailable = vi.fn();
+    const service = createProductionJobService(repo, {
+      createJobNumber: () => "RRM-2026-TEST000001",
+      onNotificationOutboxAvailable,
+    });
+
+    await expect(service.createManual(
+      actor,
+      validInput,
+      { canUpdateFinance: true },
+    )).resolves.toMatchObject({ result: "created" });
+
+    expect(repo.createManual).toHaveBeenCalledOnce();
+    expect(onNotificationOutboxAvailable).toHaveBeenCalledOnce();
+    expect(vi.mocked(repo.createManual).mock.invocationCallOrder[0])
+      .toBeLessThan(onNotificationOutboxAvailable.mock.invocationCallOrder[0]);
+  });
+});

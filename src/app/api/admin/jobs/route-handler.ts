@@ -1,4 +1,6 @@
 import { getAdminProductionRuntime } from "@/server/admin/admin-production-runtime";
+import { after } from "next/server";
+import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
 import { recordAdminFailure } from "@/server/admin/admin-failure-audit";
 import { hasAdminPermission, type AdminPermission } from "@/server/auth/admin-permissions";
 import { requireAdminPermission, type AdminAccess } from "@/server/auth/require-admin";
@@ -62,7 +64,11 @@ function requestSource(request: Request) {
 
 export function createAdminJobsRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => {
-    const production = getAdminProductionRuntime();
+    const production = getAdminProductionRuntime(
+      createImmediateNotificationDeliveryObserver({
+        scheduleAfter: (task) => after(task),
+      }),
+    );
     return {
       requirePermission: requireAdminPermission,
       list: production.list,

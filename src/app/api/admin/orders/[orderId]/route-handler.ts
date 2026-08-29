@@ -1,4 +1,6 @@
 import { getAdminOrderRuntime } from "@/server/admin/admin-order-runtime";
+import { after } from "next/server";
+import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
 import { recordAdminFailure } from "@/server/admin/admin-failure-audit";
 import {
   AdminOrderConflictError,
@@ -60,7 +62,11 @@ function requestSource(request: Request) {
 export function createAdminOrderRoute(dependencies?: Dependencies) {
   const defaults = (): Dependencies => ({
     requirePermission: requireAdminPermission,
-    mutations: getAdminOrderRuntime().mutations,
+    mutations: getAdminOrderRuntime(
+      createImmediateNotificationDeliveryObserver({
+        scheduleAfter: (task) => after(task),
+      }),
+    ).mutations,
     recordFailure: recordAdminFailure,
   });
 

@@ -1,0 +1,1 @@
+export const PAYMENT_FAILED_DELIVERY_DELAY_MS = 5 * 60_000;

@@ -14,6 +14,8 @@ import type {
   PaymentRepository,
 } from "./payment-repository";
 import type { PaymentProviderRegistration } from "./provider-registry";
+import type { NotificationDeliveryTrigger } from "@/server/notifications/immediate-notification-delivery";
+import { PAYMENT_FAILED_DELIVERY_DELAY_MS } from "./payment-notification-timing";
 import {
   toImmediatePaymentActionDTO,
   toPublicPaymentDTO,
@@ -301,6 +303,7 @@ export function createPaymentService({
   deriveReturnState = defaultReturnState,
   nodeEnv = process.env.NODE_ENV,
   onVerifiedPaidOrder,
+  onNotificationOutboxAvailable,
 }: {
   repository: PaymentRepository;
   paymentRequestRepository?: PaymentRequestRepository;
@@ -310,6 +313,7 @@ export function createPaymentService({
   deriveReturnState?: (input: ReturnStateSeed) => string;
   nodeEnv?: string;
   onVerifiedPaidOrder?: (orderNumber: string) => void;
+  onNotificationOutboxAvailable?: NotificationDeliveryTrigger;
 }) {
   const trustedOrigin = parsePaymentReturnOrigin(returnBaseUrl, nodeEnv);
   if (!trustedOrigin) {
@@ -327,6 +331,20 @@ export function createPaymentService({
       onVerifiedPaidOrder(orderNumber);
     } catch {
       // Measurement must never change a committed payment result.
+    }
+  }
+
+  function reportNotificationOutbox(status: string) {
+    if (!onNotificationOutboxAvailable) return;
+    try {
+      if (status === "paid") onNotificationOutboxAvailable();
+      if (status === "failed") {
+        onNotificationOutboxAvailable({
+          delayMs: PAYMENT_FAILED_DELIVERY_DELAY_MS,
+        });
+      }
+    } catch {
+      // The committed outbox remains available to recovery.
     }
   }
 
@@ -539,6 +557,7 @@ export function createPaymentService({
         applied.order.orderNumber,
         applied.order.paymentStatus === "paid",
       );
+      reportNotificationOutbox(applied.order.paymentStatus);
       return Object.freeze({
         payment: publicPayment(
           applied.attempt.method,
@@ -584,6 +603,7 @@ export function createPaymentService({
         applied.order.orderNumber,
         applied.order.paymentStatus === "paid",
       );
+      reportNotificationOutbox(applied.order.paymentStatus);
       return Object.freeze({
         payment: publicPayment(
           applied.attempt.method,
@@ -666,6 +686,7 @@ export function createPaymentService({
             applied.order.orderNumber,
             applied.order.paymentStatus === "paid",
           );
+          reportNotificationOutbox(applied.order.paymentStatus);
           summary.applied += 1;
           if (result.status === "processing") summary.pending += 1;
         } catch (error) {
@@ -742,6 +763,7 @@ export function createPaymentService({
               claimId: candidate.claimId,
               result,
             });
+            reportNotificationOutbox(result.status);
             summary.applied += 1;
             if (result.status === "processing") summary.pending += 1;
           } catch (error) {
@@ -774,12 +796,14 @@ export function createPaymentService({
           event.result.providerReference,
         )
       ) {
-        return paymentRequestRepository.applyVerifiedWebhookEventAtomically({
+        const outcome = await paymentRequestRepository.applyVerifiedWebhookEventAtomically({
           provider: event.provider,
           providerEventId: event.providerEventId,
           result: event.result,
           payloadSha256,
         });
+        if (outcome === "applied") reportNotificationOutbox(event.result.status);
+        return outcome;
       }
       const outcome = await repository.applyVerifiedWebhookEventAtomically({
         provider: event.provider,
@@ -793,6 +817,7 @@ export function createPaymentService({
           && event.result.status === "paid"
           && Boolean(event.result.orderNumber),
       );
+      if (outcome === "applied") reportNotificationOutbox(event.result.status);
       return outcome;
     },
 
@@ -896,6 +921,7 @@ export function createPaymentService({
           result,
           source: "server_capture",
         });
+        reportNotificationOutbox(result.status);
         return Object.freeze({ paymentToken: input.paymentToken });
       }
 
@@ -974,6 +1000,7 @@ export function createPaymentService({
         applied.order.orderNumber,
         applied.order.paymentStatus === "paid",
       );
+      reportNotificationOutbox(applied.order.paymentStatus);
       return Object.freeze({ orderNumber: storedOrder.orderNumber });
     },
 

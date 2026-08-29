@@ -45,6 +45,7 @@ import type {
   VerifiedEventInput,
 } from "./payment-repository";
 import type { PaymentOrder, VerifiedPaymentResult } from "./types";
+import { PAYMENT_FAILED_DELIVERY_DELAY_MS } from "./payment-notification-timing";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -60,7 +61,6 @@ const NONTERMINAL_ATTEMPTS: PaymentAttemptStatus[] = [
 const RETURN_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const TERMINAL_ORDERS: OrderPaymentStatus[] = ["paid", "refunded"];
 const RECONCILIATION_STALE_MS = 60_000;
-const PAYMENT_FAILURE_NOTIFICATION_DELAY_MS = 5 * 60_000;
 
 export class PaymentRepositoryConflictError extends Error {
   constructor(message = "Payment attempt conflicts with the current state") {
@@ -329,7 +329,7 @@ async function applyLockedVerifiedResult(
       kind: "payment_failed",
       orderId: order.id,
       recipientEmail: order.customerEmail,
-      availableAt: new Date(now.getTime() + PAYMENT_FAILURE_NOTIFICATION_DELAY_MS),
+      availableAt: new Date(now.getTime() + PAYMENT_FAILED_DELIVERY_DELAY_MS),
       createdAt: now,
       updatedAt: now,
     }).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });

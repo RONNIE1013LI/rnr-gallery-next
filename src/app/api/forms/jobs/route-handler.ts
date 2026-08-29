@@ -1,4 +1,5 @@
 import { HttpError } from "@/server/auth/require-session";
+import { after } from "next/server";
 import { listFormOrders } from "@/server/forms/drizzle-forms-workbench-repository";
 import { hasFormPermission } from "@/server/forms/forms-permissions";
 import { requireFormPermission, type FormAccess } from "@/server/forms/require-forms";
@@ -17,6 +18,7 @@ import {
   ProductionJobValidationError,
 } from "@/server/production/production-job-service";
 import type { FormPermission } from "@/server/forms/forms-permissions";
+import { createImmediateNotificationDeliveryObserver } from "@/server/notifications/immediate-notification-delivery";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
@@ -53,7 +55,11 @@ export function createFormsJobsRoute(dependencies?: Dependencies) {
     async GET(request: Request) {
       try {
         const deps: Dependencies = dependencies ?? (() => {
-          const production = getAdminProductionRuntime();
+          const production = getAdminProductionRuntime(
+            createImmediateNotificationDeliveryObserver({
+              scheduleAfter: (task) => after(task),
+            }),
+          );
           return {
             requirePermission: requireFormPermission,
             list: async (query: FormWorkbenchQuery, access: FormWorkbenchAccess) => {
@@ -98,7 +104,11 @@ export function createFormsJobsRoute(dependencies?: Dependencies) {
     async POST(request: Request) {
       try {
         const deps: Dependencies = dependencies ?? (() => {
-          const production = getAdminProductionRuntime();
+          const production = getAdminProductionRuntime(
+            createImmediateNotificationDeliveryObserver({
+              scheduleAfter: (task) => after(task),
+            }),
+          );
           return {
             requirePermission: requireFormPermission,
             list: async (query: FormWorkbenchQuery, access: FormWorkbenchAccess) => {

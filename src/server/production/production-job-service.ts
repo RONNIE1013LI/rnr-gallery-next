@@ -7,6 +7,7 @@ import type {
   ProductionJobSource,
 } from "@/server/db/schema";
 import { z } from "zod";
+import type { NotificationDeliveryTrigger } from "@/server/notifications/immediate-notification-delivery";
 
 export type ProductionJobSort = "created" | "updated" | "needed";
 export type ProductionJobFilters = Readonly<{
@@ -426,6 +427,7 @@ export function createProductionJobService(
   dependencies: Readonly<{
     createJobNumber?: () => string | Promise<string>;
     now?: () => Date;
+    onNotificationOutboxAvailable?: NotificationDeliveryTrigger;
   }> = {},
 ) {
   return Object.freeze({
@@ -523,6 +525,11 @@ export function createProductionJobService(
           }),
         } : {}),
       });
+      try {
+        dependencies.onNotificationOutboxAvailable?.();
+      } catch {
+        // The committed outbox remains available to recovery.
+      }
       return Object.freeze({ result: "created" as const, job: created });
     },
 

@@ -237,3 +237,59 @@ describe("admin order operations", () => {
     }));
   });
 });
+
+describe("order notification delivery trigger", () => {
+  it("triggers delivery only after a shipped status is durably updated", async () => {
+    const repository = {
+      findStatusChange: vi.fn().mockResolvedValue(null),
+      getStatus: vi.fn().mockResolvedValue("printing"),
+      getPaymentStatus: vi.fn().mockResolvedValue("paid"),
+      applyStatusChange: vi.fn().mockResolvedValue("updated"),
+      addNote: vi.fn(),
+      setTracking: vi.fn(),
+    };
+    const onNotificationOutboxAvailable = vi.fn();
+    const service = createAdminOrderMutationService(repository, {
+      onNotificationOutboxAvailable,
+    });
+
+    await expect(service.changeStatus(
+      { userId: "admin-1", email: "owner@example.test" },
+      {
+        orderId: "63f77c27-fd7b-4c65-a834-886c128b6cc1",
+        toStatus: "shipped",
+        idempotencyKey: "ship-order-0001",
+      },
+    )).resolves.toBe("updated");
+
+    expect(repository.applyStatusChange).toHaveBeenCalledOnce();
+    expect(onNotificationOutboxAvailable).toHaveBeenCalledOnce();
+    expect(repository.applyStatusChange.mock.invocationCallOrder[0])
+      .toBeLessThan(onNotificationOutboxAvailable.mock.invocationCallOrder[0]);
+  });
+
+  it("does not trigger another delivery for an idempotent shipped retry", async () => {
+    const repository = {
+      findStatusChange: vi.fn().mockResolvedValue("shipped"),
+      getStatus: vi.fn(),
+      getPaymentStatus: vi.fn(),
+      applyStatusChange: vi.fn(),
+      addNote: vi.fn(),
+      setTracking: vi.fn(),
+    };
+    const onNotificationOutboxAvailable = vi.fn();
+    const service = createAdminOrderMutationService(repository, {
+      onNotificationOutboxAvailable,
+    });
+
+    await expect(service.changeStatus(
+      { userId: "admin-1", email: "owner@example.test" },
+      {
+        orderId: "63f77c27-fd7b-4c65-a834-886c128b6cc1",
+        toStatus: "shipped",
+        idempotencyKey: "ship-order-0001",
+      },
+    )).resolves.toBe("duplicate");
+    expect(onNotificationOutboxAvailable).not.toHaveBeenCalled();
+  });
+});

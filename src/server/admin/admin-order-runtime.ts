@@ -5,8 +5,11 @@ import {
   listAdminOrders,
 } from "./drizzle-admin-order-repository";
 import { createAdminOrderMutationService } from "./order-admin-service";
+import type { NotificationDeliveryTrigger } from "@/server/notifications/immediate-notification-delivery";
 
-export function getAdminOrderRuntime() {
+export function getAdminOrderRuntime(
+  onNotificationOutboxAvailable?: NotificationDeliveryTrigger,
+) {
   const database = getDatabase();
   return Object.freeze({
     list: (filters: Parameters<typeof listAdminOrders>[1]) =>
@@ -14,6 +17,7 @@ export function getAdminOrderRuntime() {
     detail: (orderId: string) => getAdminOrderDetail(database, orderId),
     mutations: createAdminOrderMutationService(
       createDrizzleAdminOrderMutationRepository(database),
+      { onNotificationOutboxAvailable },
     ),
   });
 }
