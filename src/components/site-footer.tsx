@@ -87,7 +87,7 @@ export function SiteFooter({
             <li><Link href={canvasHref}>Canvas</Link></li>
             <li><Link href={bannersHref}>Banners</Link></li>
             <li><Link href="/cart">Cart</Link></li>
-            <li><CookiePreferencesTrigger /></li>
+            <li><Link href="/account">My account</Link></li>
           </ul>
         </div>
 
@@ -105,7 +105,7 @@ export function SiteFooter({
         <div className="site-footer__column site-footer__customer">
           <p className="site-footer__title">Customer</p>
           <ul>
-            <li><Link href="/account">My account</Link></li>
+            <li><CookiePreferencesTrigger /></li>
             <li><Link href="/privacy">Privacy</Link></li>
             <li><Link href="/terms">Terms</Link></li>
             <li><Link href="/shipping-delivery">Shipping &amp; Delivery</Link></li>

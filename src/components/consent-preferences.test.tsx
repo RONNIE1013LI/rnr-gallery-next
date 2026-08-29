@@ -48,7 +48,7 @@ describe("ConsentPreferences", () => {
     expect(screen.getByRole("button", { name: "Cookie preferences" })).toBeInTheDocument();
   });
 
-  it("places the saved-preferences trigger directly below Cart in the footer", () => {
+  it("places My account below Cart and Cookie preferences first under Customer", () => {
     render(<ConsentPreferences initialConsent={{
       version: 1,
       analytics: false,
@@ -58,8 +58,17 @@ describe("ConsentPreferences", () => {
 
     const footer = screen.getByRole("contentinfo");
     const cart = within(footer).getByRole("link", { name: "Cart" });
+    const account = within(footer).getByRole("link", { name: "My account" });
     const preferences = within(footer).getByRole("button", { name: "Cookie preferences" });
-    expect(preferences.parentElement?.previousElementSibling).toBe(cart.parentElement);
+    const shop = footer.querySelector(".site-footer__shop");
+    const customer = footer.querySelector(".site-footer__customer");
+
+    expect(account.parentElement?.previousElementSibling).toBe(cart.parentElement);
+    expect(shop).toContainElement(account);
+    expect(shop).not.toContainElement(preferences);
+    expect(customer?.querySelector("li:first-child")).toBe(preferences.parentElement);
+    expect(customer).toContainElement(preferences);
+    expect(customer).not.toContainElement(account);
   });
 
   it("saves independent managed preferences and permits later revocation", async () => {
