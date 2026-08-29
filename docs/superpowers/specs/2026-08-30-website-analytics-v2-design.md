@@ -1,8 +1,10 @@
 # Website Analytics V2 Design
 
-**Status:** Approved implementation boundary  
-**Date:** 2026-08-30  
-**Branch:** `feat/website-analytics-v2`  
+**Status:** Approved implementation boundary
+
+**Date:** 2026-08-30
+
+**Branch:** `feat/website-analytics-v2`
 **Base:** `origin/main` at `fdb81b9f29ee2e0438af939524d2260f5ac5293b`
 
 ## Goal
