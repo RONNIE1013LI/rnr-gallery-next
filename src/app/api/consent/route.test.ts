@@ -83,4 +83,16 @@ describe("consent route", () => {
       expect(response.headers.get("Set-Cookie")).toBeNull();
     }
   });
+
+  it("expires first-party analytics identity when analytics consent is denied", async () => {
+    const route = createConsentRoute({ trustedOrigin: origin, now: () => now });
+
+    const response = await route.POST(consentRequest({ analytics: false, advertising: false }));
+    const cookie = response.headers.get("Set-Cookie") ?? "";
+
+    expect(response.status).toBe(200);
+    expect(cookie).toContain("ra_vid_v1=");
+    expect(cookie).toContain("ra_sid_v1=");
+    expect(cookie.match(/Max-Age=0/g)).toHaveLength(2);
+  });
 });

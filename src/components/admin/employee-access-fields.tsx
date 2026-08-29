@@ -35,7 +35,7 @@ const adminGroups = [
     { key: "publish_reviews", label: "Publish customer reviews" },
   ] },
   { label: "Commerce", permissions: [{ key: "manage_payment", label: "Manage payment" }, { key: "update_payment_status", label: "Update payment status" }, { key: "record_refund", label: "Record refunds" }, { key: "manage_shipping", label: "Manage shipping" }] },
-  { label: "Oversight and support", permissions: [{ key: "view_audit", label: "View audit log" }, { key: "use_reply_assistant", label: "Use reply assistant" }] },
+  { label: "Oversight and support", permissions: [{ key: "view_audit", label: "View audit log" }, { key: "use_reply_assistant", label: "Use reply assistant" }, { key: "view_analytics", label: "View website analytics" }] },
 ] as const satisfies readonly PermissionGroup<Exclude<AdminPermission, "manage_roles">>[];
 
 const formGroups = [

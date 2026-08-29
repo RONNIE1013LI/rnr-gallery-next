@@ -7,6 +7,7 @@ import {
   MutationRequestError,
   parseBoundedJson,
 } from "@/server/http/mutation-request";
+import { clearWebsiteAnalyticsCookieHeaders } from "@/server/analytics/website-analytics-cookies";
 
 const MAX_CONSENT_REQUEST_BYTES = 1_024;
 
@@ -46,17 +47,19 @@ export function createConsentRoute(dependencies: Dependencies = {}) {
           advertising: choice.advertising,
           decidedAt: (dependencies.now?.() ?? new Date()).toISOString(),
         };
+        const headers = new Headers({ "Cache-Control": "no-store" });
+        headers.append("Set-Cookie", advertisingConsentCookieHeader(
+          consent,
+          dependencies.environment ?? process.env.VERCEL_ENV,
+        ));
+        if (!choice.analytics) {
+          for (const cookie of clearWebsiteAnalyticsCookieHeaders(
+            dependencies.environment ?? process.env.VERCEL_ENV,
+          )) headers.append("Set-Cookie", cookie);
+        }
         return Response.json(
           { consent },
-          {
-            headers: {
-              "Cache-Control": "no-store",
-              "Set-Cookie": advertisingConsentCookieHeader(
-                consent,
-                dependencies.environment ?? process.env.VERCEL_ENV,
-              ),
-            },
-          },
+          { headers },
         );
       } catch (error) {
         if (error instanceof MutationRequestError) return failure(error.status);

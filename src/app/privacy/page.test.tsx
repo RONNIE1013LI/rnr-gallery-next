@@ -23,7 +23,7 @@ describe("PrivacyPage", () => {
 
     const policy = document.body.textContent?.replace(/\s+/g, " ") ?? "";
 
-    expect(policy).toContain("Last updated: 28 August 2026");
+    expect(policy).toContain("Last updated: 29 August 2026");
     expect(policy).toMatch(/AI-assisted customer service on (?:our )?Website/i);
     expect(policy).toMatch(/response preparation/i);
     expect(policy).toMatch(/policy controls/i);
@@ -86,6 +86,10 @@ describe("PrivacyPage", () => {
     expect(policy).toMatch(/do not currently use.+remarketing.+personalised advertising/i);
     expect(policy).toMatch(/browser.+block or delete.+analytics cookies/i);
     expect(policy).toMatch(/essential.+cart.+checkout.+separate/i);
+    expect(policy).toMatch(/first-party.+website analytics.+anonymous visitor.+session.+page view/i);
+    expect(policy).toMatch(/country code.+when available.+Unknown/i);
+    expect(policy).toMatch(/first-party analytics.+up to 90 days/i);
+    expect(policy).toMatch(/does not store.+full IP.+fingerprint/i);
   });
 
   it("preserves the existing privacy contents navigation", () => {

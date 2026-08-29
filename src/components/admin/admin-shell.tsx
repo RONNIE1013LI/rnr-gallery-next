@@ -55,6 +55,7 @@ const navigationGroups = [
       { label: "Email templates", href: "/admin/settings/email-templates", permission: "manage_content" },
       { label: "Notification emails", href: "/admin/settings/notifications", permission: "manage_roles" },
       { label: "Advertising tracking", href: "/admin/settings/advertising", permission: "publish_content" },
+      { label: "Website Analytics", href: "/admin/analytics", permission: "view_analytics" },
       { label: "Audit Log", href: "/admin/audit", permission: "view_audit" },
       { label: "Reply Assistant", href: "/reply-assistant", permission: "use_reply_assistant" },
     ],

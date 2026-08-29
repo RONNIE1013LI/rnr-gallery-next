@@ -53,10 +53,10 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(58);
+    expect(journal.entries).toHaveLength(59);
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(58);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(58);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(59);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(59);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -93,6 +93,14 @@ describe("migration lineage artifacts", () => {
     });
     expect(sha256("drizzle/0057_late_swordsman.sql")).toBe(
       "b73b9fba0f7d3332dec71eef59f5606aa2907447b75921e8735b0ae930b74e34",
+    );
+    expect(journal.entries[58]).toMatchObject({
+      idx: 58,
+      when: 1787989656813,
+      tag: "0058_website_analytics_v1",
+    });
+    expect(sha256("drizzle/0058_website_analytics_v1.sql")).toBe(
+      "341b697c0397feb588e62436f3234d25bd8ec4043df0bba0e80bad3f52320499",
     );
   });
 

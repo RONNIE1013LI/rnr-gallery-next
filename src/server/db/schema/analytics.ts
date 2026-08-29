@@ -2,6 +2,7 @@ import { sql } from "drizzle-orm";
 import {
   bigint,
   check,
+  date,
   index,
   jsonb,
   pgTable,
@@ -9,7 +10,77 @@ import {
   timestamp,
   uniqueIndex,
   uuid,
+  varchar,
 } from "drizzle-orm/pg-core";
+
+export type WebsiteAnalyticsChannel =
+  | "google_ads"
+  | "meta_ads"
+  | "google_organic"
+  | "direct"
+  | "other";
+
+export const websiteAnalyticsSessions = pgTable(
+  "website_analytics_sessions",
+  {
+    id: uuid("id").primaryKey(),
+    visitorDigest: varchar("visitor_digest", { length: 64 }).notNull(),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    localDate: date("local_date", { mode: "string" }).notNull(),
+    channel: varchar("channel", { length: 32 }).$type<WebsiteAnalyticsChannel>().notNull(),
+    source: varchar("source", { length: 255 }),
+    medium: varchar("medium", { length: 100 }),
+    utmCampaign: varchar("utm_campaign", { length: 100 }),
+    clickIdType: varchar("click_id_type", { length: 16 }),
+    countryCode: varchar("country_code", { length: 2 }),
+  },
+  (table) => [
+    index("website_analytics_sessions_local_date_visitor_idx")
+      .on(table.localDate, table.visitorDigest),
+    index("website_analytics_sessions_local_date_channel_idx")
+      .on(table.localDate, table.channel),
+    index("website_analytics_sessions_started_id_idx")
+      .on(table.startedAt, table.id),
+    check(
+      "website_analytics_sessions_visitor_digest_valid",
+      sql`${table.visitorDigest} ~ '^[a-f0-9]{64}$'`,
+    ),
+    check(
+      "website_analytics_sessions_channel_valid",
+      sql`${table.channel} in ('google_ads', 'meta_ads', 'google_organic', 'direct', 'other')`,
+    ),
+    check(
+      "website_analytics_sessions_click_id_type_valid",
+      sql`${table.clickIdType} is null or ${table.clickIdType} in ('gclid', 'gbraid', 'wbraid', 'fbclid')`,
+    ),
+    check(
+      "website_analytics_sessions_country_code_valid",
+      sql`${table.countryCode} is null or ${table.countryCode} ~ '^[A-Z]{2}$'`,
+    ),
+  ],
+);
+
+export const websiteAnalyticsPageviews = pgTable(
+  "website_analytics_pageviews",
+  {
+    id: uuid("id").primaryKey(),
+    sessionId: uuid("session_id")
+      .notNull()
+      .references(() => websiteAnalyticsSessions.id, { onDelete: "cascade" }),
+    occurredAt: timestamp("occurred_at", { withTimezone: true }).notNull(),
+    localDate: date("local_date", { mode: "string" }).notNull(),
+    pathname: varchar("pathname", { length: 512 }).notNull(),
+  },
+  (table) => [
+    index("website_analytics_pageviews_session_idx").on(table.sessionId),
+    index("website_analytics_pageviews_local_path_session_idx")
+      .on(table.localDate, table.pathname, table.sessionId),
+    check(
+      "website_analytics_pageviews_pathname_valid",
+      sql`${table.pathname} ~ '^/' and ${table.pathname} !~ '[?#]'`,
+    ),
+  ],
+);
 
 export type ConversionPlatform = "google" | "meta";
 export type ConversionDeliveryStatus =

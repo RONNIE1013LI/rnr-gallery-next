@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Suspense } from "react";
 import { AnalyticsRuntimeController } from "@/components/analytics-runtime-controller";
+import { WebsiteAnalyticsTracker } from "@/components/website-analytics-tracker";
 import { MetaPixelController } from "@/components/meta-pixel-controller";
 import { ConsentPreferences } from "@/components/consent-preferences";
 import { CustomerReviewsSection } from "@/components/customer-reviews/customer-reviews-section";
@@ -67,6 +68,8 @@ export default async function RootLayout({
   children: React.ReactNode;
 }>) {
   const ga4Enabled = isGa4Production(process.env.VERCEL_ENV);
+  const firstPartyAnalyticsEnabled = process.env.FIRST_PARTY_ANALYTICS_ENABLED
+    ?.trim().toLowerCase() === "true";
   const [managed, session, registryState, cookieStore, requestHeaders, reviewSection] = await Promise.all([
     getSafePublicContent([
       "footer.tagline",
@@ -98,6 +101,9 @@ export default async function RootLayout({
               production={ga4Enabled}
               enabled={managed["advertising.meta.enabled"] === "enabled"}
             />
+          </Suspense>
+          <Suspense fallback={null}>
+            <WebsiteAnalyticsTracker enabled={firstPartyAnalyticsEnabled} />
           </Suspense>
           <SiteChrome
             initialCustomerId={session?.user.id ?? null}

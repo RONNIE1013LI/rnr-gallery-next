@@ -32,6 +32,7 @@ describe("AdminShell", () => {
       ["Audit Log", "/admin/audit"],
       ["Reply Assistant", "/reply-assistant"],
       ["Advertising tracking", "/admin/settings/advertising"],
+      ["Website Analytics", "/admin/analytics"],
     ]) {
       expect(screen.getByRole("link", { name })).toHaveAttribute("href", href);
     }

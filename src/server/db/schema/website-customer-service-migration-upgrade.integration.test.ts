@@ -104,7 +104,7 @@ describe.runIf(enabled)("Task 15 migration upgrade", () => {
         [legacyConversationHash],
       ).then((result) => result.rows);
       await pool.query(
-        "insert into customer_service_web_sessions (conversation_id, session_token_hash, expires_at, last_seen_at) values ($1, $2, $3, $4)",
+        "insert into customer_service_web_sessions (conversation_id, session_token_hash, expires_at, last_seen_at, created_at) values ($1, $2, $3, $4, $4)",
         [legacyConversation.id, legacySessionHash, new Date(now.getTime() + 7 * 86_400_000), now],
       );
       await pool.query(

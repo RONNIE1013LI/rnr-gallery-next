@@ -11,7 +11,7 @@ export default function PrivacyPage() {
     <main id="main-content" className={styles.legalPage}>
       <article>
         <h1>Privacy Policy</h1>
-        <p><strong>Last updated: 28 August 2026</strong></p>
+        <p><strong>Last updated: 29 August 2026</strong></p>
         <p>
           This privacy statement explains how R&amp;R Gallery handles personal
           information when you browse our website, contact us, submit photos or
@@ -159,6 +159,15 @@ export default function PrivacyPage() {
           and device information, referring pages and campaign identifiers.
         </p>
         <p>
+          The same analytics choice permits our first-party Website Analytics to record
+          an anonymous visitor digest, a 30-minute inactivity session, public page-view
+          pathnames, traffic source and campaign information. A two-letter country code
+          is recorded when available; when it is unavailable, the report shows Unknown.
+          The first-party analytics system does not store a full IP address, use browser
+          fingerprinting, or attach names, contact details or customer account IDs.
+          Its signed anonymous visitor cookie may last up to one year.
+        </p>
+        <p>
           An advertising choice permits Google Ads purchase measurement and the Meta
           Pixel to measure public page, product, cart, checkout and purchase activity
           for advertising performance. Campaign and order-attribution information may
@@ -246,6 +255,10 @@ export default function PrivacyPage() {
           conversation is linked to a business record, protected by an active human
           review or approved hold, or required to be kept longer for an order, payment,
           legal, audit, security, fraud-prevention or dispute reason.
+        </p>
+        <p>
+          Raw first-party analytics sessions and page views are retained for up to
+          90 days, then deleted through a bounded automated cleanup process.
         </p>
 
         <h2 id="your-privacy-rights">Access, correction and deletion</h2>

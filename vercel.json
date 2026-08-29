@@ -17,6 +17,10 @@
       "schedule": "47 4 * * *"
     },
     {
+      "path": "/api/internal/analytics/website-retention",
+      "schedule": "13 4 * * *"
+    },
+    {
       "path": "/api/internal/uploads/cleanup",
       "schedule": "17 * * * *"
     },
