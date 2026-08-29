@@ -15,6 +15,11 @@ const canonicalRedirectHosts = new Set([
   "www.rrgallery.co.nz",
 ]);
 const currentProductSlugs = new Set(products.map((product) => product.slug));
+const retiredLegacyPaths = new Set([
+  "/elementor-5897",
+  "/locations.kml",
+  "/my-account",
+]);
 
 function getCurrentGenericLegacyProductSlug(pathname: string) {
   const match = pathname.match(/^\/product\/([^/]+)\/?$/);
@@ -35,6 +40,44 @@ function getSearchParameterValues(searchParams: URLSearchParams) {
 
 function isApiPath(pathname: string) {
   return pathname === "/api" || pathname.startsWith("/api/");
+}
+
+function normalizedPathname(pathname: string) {
+  return pathname.length > 1 ? pathname.replace(/\/$/, "") : pathname;
+}
+
+function isRetiredLegacyPath(pathname: string) {
+  const normalized = normalizedPathname(pathname);
+  return retiredLegacyPaths.has(normalized.toLowerCase())
+    || /^\/(?:product|product-category|product-tag)(?:\/|$)/i.test(normalized);
+}
+
+function isStaleWordPressPath(pathname: string) {
+  const normalized = normalizedPathname(pathname);
+  return /^\/(?:author|attachment|search)(?:\/|$)/i.test(normalized)
+    || /^\/\d{4}(?:\/\d{2})?(?:\/\d{2})?$/i.test(normalized)
+    || /^\/wp-[^/]+(?:\/|$)/i.test(normalized)
+    || /(?:^|\/)feed$/i.test(normalized)
+    || /\/page\/\d+$/i.test(normalized);
+}
+
+function isStaleWordPressQuery(request: NextRequest) {
+  if (request.nextUrl.pathname !== "/") return false;
+  const keys = new Set(
+    [...request.nextUrl.searchParams.keys()].map((key) => key.toLowerCase()),
+  );
+  return ["p", "product", "s"].some((key) => keys.has(key));
+}
+
+function gone() {
+  return new NextResponse("Gone", {
+    status: 410,
+    headers: {
+      "Cache-Control": "public, max-age=0, must-revalidate",
+      "Content-Type": "text/plain; charset=utf-8",
+      "X-Robots-Tag": "noindex, nofollow",
+    },
+  });
 }
 
 function skipsStorefrontMarketLogic(pathname: string) {
@@ -71,10 +114,7 @@ export function proxy(request: NextRequest) {
   }
 
   const genericLegacyProductSlug = getCurrentGenericLegacyProductSlug(pathname);
-  if (
-    genericLegacyProductSlug
-    && canonicalRedirectHosts.has(request.nextUrl.hostname)
-  ) {
+  if (genericLegacyProductSlug) {
     const redirectUrl = new URL(
       buildLegacyProductUrl(
         genericLegacyProductSlug,
@@ -82,13 +122,12 @@ export function proxy(request: NextRequest) {
       ),
       "https://rnrgallery.com",
     );
+    const resolved = resolveMarket(request);
+    if (resolved.market === "AU") {
+      redirectUrl.pathname = australianCommerceDestination(redirectUrl.pathname)
+        ?? redirectUrl.pathname;
+    }
     return NextResponse.redirect(redirectUrl, 301);
-  }
-
-  if (pathname.length > 1 && pathname.endsWith("/")) {
-    const canonicalUrl = new URL(request.url);
-    canonicalUrl.pathname = pathname.slice(0, -1);
-    return NextResponse.redirect(canonicalUrl, 308);
   }
 
   if (!isApiPath(pathname) && canonicalRedirectHosts.has(request.nextUrl.hostname)) {
@@ -97,6 +136,18 @@ export function proxy(request: NextRequest) {
     canonicalUrl.hostname = "rnrgallery.com";
     canonicalUrl.port = "";
     return NextResponse.redirect(canonicalUrl, 301);
+  }
+
+  if (
+    isRetiredLegacyPath(pathname)
+    || isStaleWordPressPath(pathname)
+    || isStaleWordPressQuery(request)
+  ) return gone();
+
+  if (pathname.length > 1 && pathname.endsWith("/")) {
+    const canonicalUrl = new URL(request.url);
+    canonicalUrl.pathname = pathname.slice(0, -1);
+    return NextResponse.redirect(canonicalUrl, 308);
   }
 
   if (skipsStorefrontMarketLogic(pathname)) return NextResponse.next();

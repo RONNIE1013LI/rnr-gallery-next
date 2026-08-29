@@ -169,6 +169,7 @@ describe("Next.js workspace configuration", () => {
   it("records only the approved mapping decisions in the legacy inventory", async () => {
     const rows = await readLegacyUrlMap();
     const cookiesPolicy = rows.find((row) => row.old_url.endsWith("/cookies-policy/"));
+    const retiredRows = rows.filter((row) => row.classification === "retired-410");
     const unresolvedMediumProducts = rows.filter((row) =>
       row.classification === "review-required"
       && row.confidence === "medium"
@@ -183,7 +184,9 @@ describe("Next.js workspace configuration", () => {
       confidence: "high",
     });
     expect(unresolvedMediumProducts).toHaveLength(0);
-    expect(lowConfidenceRows.every((row) => row.redirect_status === "404")).toBe(true);
+    expect(retiredRows).toHaveLength(27);
+    expect(retiredRows.every((row) => row.redirect_status === "410")).toBe(true);
+    expect(lowConfidenceRows.every((row) => row.redirect_status === "410")).toBe(true);
     expect(rows.filter((row) => row.classification === "retire-candidate"))
       .toHaveLength(0);
   });

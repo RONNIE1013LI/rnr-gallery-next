@@ -1,7 +1,7 @@
 old_url,new_url,classification,redirect_status,confidence,inventory_source,reason
 https://rnrgallery.com/,https://rnrgallery.com/,existing-route,none,high,page-sitemap,Current home path is unchanged
 https://rnrgallery.com/order-system/,https://rnrgallery.com/order-system,protected-route,none,medium,page-sitemap,Portal requires its existing authentication flow
-https://rnrgallery.com/elementor-5897/,,intentional-404,404,low,page-sitemap,No current equivalent; intentionally remains 404
+https://rnrgallery.com/elementor-5897/,,retired-410,410,low,page-sitemap,No current equivalent; retired with 410
 https://rnrgallery.com/contact/,https://rnrgallery.com/contact,existing-route,none,high,page-sitemap,Current contact path is unchanged
 https://rnrgallery.com/cookies-policy/,https://rnrgallery.com/privacy,exact-301,301,high,page-sitemap,Current privacy-policy equivalent after Analytics disclosure correction
 https://rnrgallery.com/about-rr/,https://rnrgallery.com/about,exact-301,301,high,page-sitemap,Direct about-page equivalent
@@ -9,12 +9,12 @@ https://rnrgallery.com/how-it-works/,https://rnrgallery.com/how-it-works,existin
 https://rnrgallery.com/cart/,https://rnrgallery.com/cart,protected-route,none,medium,page-sitemap,Do not imply legacy cart continuity
 https://rnrgallery.com/gallery/,https://rnrgallery.com/design-gallery,exact-301,301,high,page-sitemap,Direct gallery equivalent
 https://rnrgallery.com/checkout/,https://rnrgallery.com/checkout,protected-route,none,medium,page-sitemap,Do not imply legacy checkout continuity
-https://rnrgallery.com/my-account/,,intentional-404,404,medium,page-sitemap,Protected account route is not an equivalent legacy destination; intentionally remains 404
+https://rnrgallery.com/my-account/,,retired-410,410,medium,page-sitemap,Protected account route is not an equivalent legacy destination; retired with 410
 https://rnrgallery.com/product/digital-oil-painting-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,exact-301,301,high,product-sitemap,Direct product-family equivalent
-https://rnrgallery.com/product/free-professional-custom-design/,,intentional-404,404,low,product-sitemap,No approved one-to-one current equivalent; intentionally remains 404
-https://rnrgallery.com/product/free-professional-custom-design-2/,,intentional-404,404,low,product-sitemap,No approved one-to-one current equivalent; intentionally remains 404
+https://rnrgallery.com/product/free-professional-custom-design/,,retired-410,410,low,product-sitemap,No approved one-to-one current equivalent; retired with 410
+https://rnrgallery.com/product/free-professional-custom-design-2/,,retired-410,410,low,product-sitemap,No approved one-to-one current equivalent; retired with 410
 https://rnrgallery.com/product/banner-bundle/,https://rnrgallery.com/products/banner-bundle,exact-301,301,high,product-sitemap,Direct product-family equivalent
-https://rnrgallery.com/product/your-loss-of-loved-one/,,intentional-404,404,low,product-sitemap,No approved one-to-one current equivalent; intentionally remains 404
+https://rnrgallery.com/product/your-loss-of-loved-one/,,retired-410,410,low,product-sitemap,No approved one-to-one current equivalent; retired with 410
 https://rnrgallery.com/product/five-faces-customized-digital-oil-painting-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product/four-faces-customized-digital-oil-painting-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product/three-faces-customized-digital-oil-painting-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
@@ -25,7 +25,7 @@ https://rnrgallery.com/product/custom-daddy-photos-collage-with-canvas/,https://
 https://rnrgallery.com/product/two-faces-customized-digital-oil-painting-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product/landscape-photo-printing/,https://rnrgallery.com/products/photo-print-canvas,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product/wedding-photo-printing/,https://rnrgallery.com/products/photo-print-canvas,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
-https://rnrgallery.com/product/tell-me-your-idea-and-i-will-help-you-realize-it/,,intentional-404,404,low,product-sitemap,No approved one-to-one current equivalent; intentionally remains 404
+https://rnrgallery.com/product/tell-me-your-idea-and-i-will-help-you-realize-it/,,retired-410,410,low,product-sitemap,No approved one-to-one current equivalent; retired with 410
 https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-design/,https://rnrgallery.com/products/roll-up-banner,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-design-for-loss-of-loved-one/,https://rnrgallery.com/products/roll-up-banner,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-design-for-wedding-anniversary/,https://rnrgallery.com/products/roll-up-banner,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
@@ -34,7 +34,7 @@ https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-desi
 https://rnrgallery.com/product/21st-birthday/,https://rnrgallery.com/products/roll-up-banner,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-design-for-5th-birthday/,https://rnrgallery.com/products/roll-up-banner,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product/roll-up-banner-with-free-professional-custom-design-for-1st-birthday/,https://rnrgallery.com/products/roll-up-banner,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
-https://rnrgallery.com/product/digital-oil-painting-digital-copy-only/,,intentional-404,404,low,product-sitemap,No current equivalent; intentionally remains 404
+https://rnrgallery.com/product/digital-oil-painting-digital-copy-only/,,retired-410,410,low,product-sitemap,No current equivalent; retired with 410
 https://rnrgallery.com/product/six-faces-or-more-customized-digital-oil-painting-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product/turn-a-low-quality-image-into-a-refined-artwork-ready-for-display-with-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product/multi-photo-artwork-blends-on-canvas-copy/,https://rnrgallery.com/products/custom-themed-canvas,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
@@ -46,7 +46,7 @@ https://rnrgallery.com/product/five-face-digital-painting-on-banner/,https://rnr
 https://rnrgallery.com/product/six-faces-digital-painting-on-banner/,https://rnrgallery.com/products/digital-oil-painting-banner,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product/custom-themed-banner/,https://rnrgallery.com/products/custom-themed-wall-banner,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product/poor-photo-to-a-masterpiece/,https://rnrgallery.com/products/digital-oil-painting-canvas,exact-301,301,medium,product-sitemap,Approved current product equivalent for the legacy offer
-https://rnrgallery.com/locations.kml,,intentional-404,404,low,local-sitemap,No current equivalent; intentionally remains 404
+https://rnrgallery.com/locations.kml,,retired-410,410,low,local-sitemap,No current equivalent; retired with 410
 https://rnrgallery.com/product-category/banner/,https://rnrgallery.com/banners,exact-301,301,high,navigation,Direct category equivalent
 https://rnrgallery.com/product-category/banner/landscape-banner/,https://rnrgallery.com/products/custom-themed-wall-banner,exact-301,301,medium,navigation,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product-category/banner/roll-up-banner/,https://rnrgallery.com/products/roll-up-banner,exact-301,301,high,navigation,Direct product-family equivalent
@@ -54,22 +54,22 @@ https://rnrgallery.com/product-category/canvas/,https://rnrgallery.com/canvas,ex
 https://rnrgallery.com/product-category/canvas/custom-collage-photos-on-canvas/,https://rnrgallery.com/products/custom-themed-canvas,exact-301,301,medium,navigation,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product-category/canvas/customized-digital-oil-painting-on-canvas/,https://rnrgallery.com/products/digital-oil-painting-canvas,exact-301,301,medium,navigation,Approved current product equivalent for the legacy offer
 https://rnrgallery.com/product-category/canvas/normal-canvas/,https://rnrgallery.com/products/photo-print-canvas,exact-301,301,medium,navigation,Approved current product equivalent for the legacy offer
-https://rnrgallery.com/product-category/canvas/wall-art/,,intentional-404,404,low,navigation,No approved one-to-one current equivalent; intentionally remains 404
-https://rnrgallery.com/product-category/digital-oil-painting-digital-copy-only/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/air-jordan/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/basketball/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/birthday/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/business/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/cook-island-pattern/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/digital-oil-painting/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/funeral/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/heaven/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/loss-of-loved-one/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/loved/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/maori-pattern/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/maritime/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/mermaid/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/mine-craft/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/pipi-ma/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/wedding-anniversary/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
-https://rnrgallery.com/product-tag/wedding/,,intentional-404,404,low,navigation,No current equivalent; intentionally remains 404
+https://rnrgallery.com/product-category/canvas/wall-art/,,retired-410,410,low,navigation,No approved one-to-one current equivalent; retired with 410
+https://rnrgallery.com/product-category/digital-oil-painting-digital-copy-only/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/air-jordan/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/basketball/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/birthday/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/business/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/cook-island-pattern/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/digital-oil-painting/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/funeral/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/heaven/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/loss-of-loved-one/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/loved/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/maori-pattern/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/maritime/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/mermaid/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/mine-craft/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/pipi-ma/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/wedding-anniversary/,,retired-410,410,low,navigation,No current equivalent; retired with 410
+https://rnrgallery.com/product-tag/wedding/,,retired-410,410,low,navigation,No current equivalent; retired with 410

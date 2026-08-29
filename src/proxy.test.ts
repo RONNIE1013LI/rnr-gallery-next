@@ -197,6 +197,65 @@ describe("protected request proxy", () => {
     );
   });
 
+  it("redirects a current generic legacy product on the canonical host in one hop", () => {
+    const response = proxy(new NextRequest(
+      "https://rnrgallery.com/product/photo-print-canvas/?utm_source=google&gclid=google-click",
+    ));
+
+    expect(response.status).toBe(301);
+    expect(response.headers.get("location")).toBe(
+      "https://rnrgallery.com/products/photo-print-canvas?utm_source=google&gclid=google-click",
+    );
+  });
+
+  it.each([
+    "/product/free-professional-custom-design/",
+    "/product-category/canvas/wall-art/",
+    "/product-tag/birthday/",
+    "/elementor-5897/",
+    "/my-account/",
+    "/locations.kml/",
+  ])("returns 410 directly for a retired legacy inventory URL %s", (pathname) => {
+    const response = proxy(new NextRequest(
+      `https://rnrgallery.com${pathname}?utm_source=legacy`,
+    ));
+
+    expect(response.status).toBe(410);
+    expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("x-robots-tag")).toBe("noindex, nofollow");
+  });
+
+  it.each([
+    "/feed/",
+    "/comments/feed/",
+    "/author/admin/",
+    "/2024/01/",
+    "/attachment/sample/",
+    "/search/banner/",
+    "/shop/page/2/",
+    "/product-category/banner/feed/",
+    "/wp-admin/",
+    "/wp-content/uploads/legacy.jpg",
+    "/wp-includes/js/legacy.js",
+    "/wp-login.php",
+    "/wp-json/",
+  ])("returns 410 directly for a stale WordPress archive or system URL %s", (pathname) => {
+    const response = proxy(new NextRequest(`https://rnrgallery.com${pathname}`));
+
+    expect(response.status).toBe(410);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it.each(["?p=123", "?product=banner-bundle", "?s=banner"])(
+    "returns 410 for a query-only WordPress URL %s instead of rendering the homepage",
+    (search) => {
+      const response = proxy(new NextRequest(`https://rnrgallery.com/${search}`));
+
+      expect(response.status).toBe(410);
+      expect(response.headers.get("location")).toBeNull();
+    },
+  );
+
   it("does not treat an unmatched generic legacy product as a current product", () => {
     const response = proxy(new NextRequest(
       "https://rrgallery.co.nz/product/deleted-product?utm_source=legacy",
@@ -206,6 +265,10 @@ describe("protected request proxy", () => {
     expect(response.headers.get("location")).toBe(
       "https://rnrgallery.com/product/deleted-product?utm_source=legacy",
     );
+
+    const finalResponse = proxy(new NextRequest(response.headers.get("location")!));
+    expect(finalResponse.status).toBe(410);
+    expect(finalResponse.headers.get("location")).toBeNull();
   });
 
   it("preserves canonical host redirects for unrelated public pages only", () => {

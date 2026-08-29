@@ -63,17 +63,18 @@ describe("Google Ads readiness delivery records", () => {
     expect(byOldUrl.get("https://rnrgallery.com/elementor-5897/")?.slice(0, 4)).toEqual([
       "https://rnrgallery.com/elementor-5897/",
       "",
-      "intentional-404",
-      "404",
+      "retired-410",
+      "410",
     ]);
     expect(byOldUrl.get("https://rnrgallery.com/product/digital-oil-painting-digital-copy-only/")?.slice(0, 4)).toEqual([
         "https://rnrgallery.com/product/digital-oil-painting-digital-copy-only/",
         "",
-        "intentional-404",
-        "404",
+        "retired-410",
+        "410",
       ]);
     expect(rows.some((row) => row[2] === "retire-candidate")).toBe(false);
-    expect(rows.filter((row) => row[3] === "404").every((row) => row[1] === "" || row[4] === "low"))
+    expect(rows.filter((row) => row[3] === "410")).toHaveLength(27);
+    expect(rows.filter((row) => row[3] === "410").every((row) => row[1] === ""))
       .toBe(true);
     expect(activeRedirects.some((row) => row[0] === "https://rnrgallery.com/")).toBe(false);
     expect(activeRedirects.some((row) => row[1] === "https://rnrgallery.com/")).toBe(false);
