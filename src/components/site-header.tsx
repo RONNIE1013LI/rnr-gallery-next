@@ -160,6 +160,7 @@ export function SiteHeader({
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileMenuClosing, setIsMobileMenuClosing] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
+  const [isHeaderHidden, setIsHeaderHidden] = useState(false);
 
   const closeMobileMenuImmediately = useCallback(() => {
     if (mobileMenuCloseTimerRef.current) {
@@ -204,21 +205,38 @@ export function SiteHeader({
   }, [closeMobileMenu, isMobileMenuOpen]);
 
   useEffect(() => {
+    let lastScrollY = Math.max(window.scrollY, 0);
+
     function syncScrolledState() {
-      setHasScrolled(window.scrollY > 8);
+      const currentScrollY = Math.max(window.scrollY, 0);
+      const scrollDelta = currentScrollY - lastScrollY;
+
+      setHasScrolled(currentScrollY > 8);
+
+      if (isMobileMenuOpen || currentScrollY <= 8) {
+        setIsHeaderHidden(false);
+      } else if (scrollDelta > 2) {
+        setIsHeaderHidden(true);
+      } else if (scrollDelta < -2) {
+        setIsHeaderHidden(false);
+      }
+
+      if (Math.abs(scrollDelta) > 2) {
+        lastScrollY = currentScrollY;
+      }
     }
 
     syncScrolledState();
     window.addEventListener("scroll", syncScrolledState, { passive: true });
 
     return () => window.removeEventListener("scroll", syncScrolledState);
-  }, []);
+  }, [isMobileMenuOpen]);
 
   return (
     <>
       <span id="top" className="page-top-anchor" aria-hidden="true" />
       <header
-        className={`site-header site-header--sticky${hasScrolled ? " site-header--scrolled" : ""}${isMobileMenuOpen ? " site-header--menu-open" : ""}`}
+        className={`site-header site-header--sticky${hasScrolled ? " site-header--scrolled" : ""}${isHeaderHidden ? " site-header--hidden" : ""}${isMobileMenuOpen ? " site-header--menu-open" : ""}`}
       >
         <div className="site-header__inner">
           <Link

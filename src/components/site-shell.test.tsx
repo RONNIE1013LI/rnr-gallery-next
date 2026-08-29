@@ -192,19 +192,44 @@ describe("site shell", () => {
       .toHaveAttribute("aria-current", "page");
   });
 
-  it("applies the sticky header scroll state only after the page is scrolled", () => {
+  it("hides while scrolling down and returns while scrolling toward the page top", () => {
     render(<SiteHeader />);
     const header = screen.getByRole("banner");
 
     expect(header).not.toHaveClass("site-header--scrolled");
+    expect(header).not.toHaveClass("site-header--hidden");
 
     Object.defineProperty(window, "scrollY", { configurable: true, value: 24 });
     fireEvent.scroll(window);
     expect(header).toHaveClass("site-header--scrolled");
+    expect(header).toHaveClass("site-header--hidden");
+
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 12 });
+    fireEvent.scroll(window);
+    expect(header).toHaveClass("site-header--scrolled");
+    expect(header).not.toHaveClass("site-header--hidden");
 
     Object.defineProperty(window, "scrollY", { configurable: true, value: 0 });
     fireEvent.scroll(window);
     expect(header).not.toHaveClass("site-header--scrolled");
+    expect(header).not.toHaveClass("site-header--hidden");
+  });
+
+  it("keeps the header visible while the mobile navigation menu is open", () => {
+    render(<SiteHeader />);
+    const header = screen.getByRole("banner");
+
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 24 });
+    fireEvent.scroll(window);
+    expect(header).toHaveClass("site-header--hidden");
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
+    expect(header).toHaveClass("site-header--menu-open");
+    expect(header).not.toHaveClass("site-header--hidden");
+
+    Object.defineProperty(window, "scrollY", { configurable: true, value: 48 });
+    fireEvent.scroll(window);
+    expect(header).not.toHaveClass("site-header--hidden");
   });
 
   it("shows the persisted cart quantity", () => {

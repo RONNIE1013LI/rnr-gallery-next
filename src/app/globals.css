@@ -170,10 +170,16 @@ a:active {
   background: var(--brand-green);
   border-bottom: 1px solid color-mix(in srgb, var(--text-on-dark) 14%, transparent);
   transition:
+    transform 160ms ease-out,
     background-color var(--motion-standard),
     border-color var(--motion-standard),
     box-shadow var(--motion-standard),
     backdrop-filter var(--motion-standard);
+  will-change: transform;
+}
+
+.site-header--hidden {
+  transform: translateY(calc(-100% - 1px));
 }
 
 .site-header--scrolled {
