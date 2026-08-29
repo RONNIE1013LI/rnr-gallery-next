@@ -53,10 +53,10 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(60);
+    expect(journal.entries).toHaveLength(61);
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(60);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(60);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(61);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(61);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -110,6 +110,60 @@ describe("migration lineage artifacts", () => {
     expect(sha256("drizzle/0059_customer_review_sources.sql")).toBe(
       "1b3631508005319ab310eba0f22de44d429abc18f964890b9e55e9de6810bd5a",
     );
+    expect(journal.entries[60]).toMatchObject({
+      idx: 60,
+      when: 1788046789104,
+      tag: "0060_website_analytics_v2",
+    });
+    expect(sha256("drizzle/0060_website_analytics_v2.sql")).toBe(
+      "4b335b588e3c623113d38a3ae4b9b9481d9ffe507b11d6d2c9545c56f7436355",
+    );
+  });
+
+  it("adds only the five Website Analytics V2 tables after 0059", () => {
+    const previous = loadJson<Snapshot>("drizzle/meta/0059_snapshot.json");
+    const current = loadJson<Snapshot>("drizzle/meta/0060_snapshot.json");
+    const addedTables = Object.keys(current.tables)
+      .filter((table) => !(table in previous.tables))
+      .sort();
+
+    expect(current.prevId).toBe(previous.id);
+    expect(addedTables).toEqual([
+      "public.website_analytics_attribution_snapshots",
+      "public.website_analytics_conversions",
+      "public.website_analytics_daily_aggregates",
+      "public.website_analytics_financial_events",
+      "public.website_analytics_reconciliation_state",
+    ]);
+    expect(
+      Object.keys(previous.tables).filter((table) => !(table in current.tables)),
+    ).toEqual([]);
+    for (const [name, table] of Object.entries(previous.tables)) {
+      expect(current.tables[name], `${name} changed in Analytics V2 migration`).toEqual(
+        table,
+      );
+    }
+    expect({
+      version: current.version,
+      dialect: current.dialect,
+      enums: current.enums,
+      schemas: current.schemas,
+      sequences: current.sequences,
+      roles: current.roles,
+      policies: current.policies,
+      views: current.views,
+      _meta: current._meta,
+    }).toEqual({
+      version: previous.version,
+      dialect: previous.dialect,
+      enums: previous.enums,
+      schemas: previous.schemas,
+      sequences: previous.sequences,
+      roles: previous.roles,
+      policies: previous.policies,
+      views: previous.views,
+      _meta: previous._meta,
+    });
   });
 
   it("changes only the customer review source constraint", () => {

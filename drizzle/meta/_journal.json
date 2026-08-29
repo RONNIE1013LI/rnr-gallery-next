@@ -421,6 +421,13 @@
       "when": 1787996906191,
       "tag": "0059_customer_review_sources",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1788046789104,
+      "tag": "0060_website_analytics_v2",
+      "breakpoints": true
     }
   ]
 }
