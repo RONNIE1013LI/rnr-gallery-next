@@ -6,7 +6,7 @@
   "crons": [
     {
       "path": "/api/internal/customer-notifications",
-      "schedule": "*/5 * * * *"
+      "schedule": "*/10 * * * *"
     },
     {
       "path": "/api/internal/analytics/conversion-deliveries",
@@ -26,11 +26,11 @@
     },
     {
       "path": "/api/internal/reply-assistant/turn-recovery",
-      "schedule": "* * * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/internal/customer-chat/review-alerts",
-      "schedule": "* * * * *"
+      "schedule": "*/15 * * * *"
     },
     {
       "path": "/api/internal/customer-chat/retention",
