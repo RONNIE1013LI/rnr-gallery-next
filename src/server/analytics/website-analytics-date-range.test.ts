@@ -23,16 +23,16 @@ describe("website analytics v2 Auckland date ranges", () => {
   });
 
   it.each([
-    ["this_month", "2026-02-01", "2026-02-28"],
+    ["this_month", "2026-02-01", "2026-02-16"],
     ["last_month", "2026-01-01", "2026-01-31"],
-    ["this_year", "2026-01-01", "2026-12-31"],
+    ["this_year", "2026-01-01", "2026-02-16"],
   ] as const)("resolves %s at month and year boundaries", (preset, from, to) => {
     expect(analyticsDateRange({ preset, now: new Date("2026-02-15T12:00:00.000Z") })).toMatchObject({ from, to });
   });
 
   it.each([
     ["last_month", new Date("2026-01-15T12:00:00.000Z"), "2025-12-01", "2025-12-31"],
-    ["this_month", new Date("2026-12-15T12:00:00.000Z"), "2026-12-01", "2026-12-31"],
+    ["this_month", new Date("2026-12-15T12:00:00.000Z"), "2026-12-01", "2026-12-16"],
   ] as const)("handles %s across a calendar year boundary", (preset, now, from, to) => {
     expect(analyticsDateRange({ preset, now })).toMatchObject({ from, to });
   });
@@ -52,5 +52,21 @@ describe("website analytics v2 Auckland date ranges", () => {
 
   it.each([[45, "day"], [46, "week"], [180, "week"], [181, "month"]] as const)("uses %s-day auto granularity as %s", (days, expected) => {
     expect(analyticsGranularity("auto", days)).toBe(expected);
+  });
+
+  it.each([
+    ["last_7_days", "2026-08-24", "2026-08-30"],
+    ["last_30_days", "2026-08-01", "2026-08-30"],
+  ] as const)("resolves the %s preset", (preset, from, to) => {
+    expect(analyticsDateRange({ preset, now: new Date("2026-08-29T12:30:00.000Z") })).toMatchObject({ from, to });
+  });
+
+  it("allows a bounded multi-year All Time range and rejects a range past its 100-year default cap", () => {
+    expect(analyticsDateRange({
+      preset: "all_time", allTimeFrom: "2024-01-01", now: new Date("2026-08-29T12:30:00.000Z"),
+    })).toMatchObject({ from: "2024-01-01", to: "2026-08-30" });
+    expect(() => analyticsDateRange({
+      preset: "all_time", allTimeFrom: "1900-01-01", now: new Date("2026-08-29T12:30:00.000Z"),
+    })).toThrow("analytics_date_range_invalid");
   });
 });

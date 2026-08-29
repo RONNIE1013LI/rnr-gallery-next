@@ -7,6 +7,8 @@ export type WebsiteAnalyticsDatePreset = (typeof WEBSITE_ANALYTICS_DATE_PRESETS)
 
 export const WEBSITE_ANALYTICS_GRANULARITIES = ["auto", "day", "week", "month"] as const;
 export type WebsiteAnalyticsGranularity = (typeof WEBSITE_ANALYTICS_GRANULARITIES)[number];
+export const WEBSITE_ANALYTICS_CUSTOM_MAXIMUM_DAYS = 366;
+export const WEBSITE_ANALYTICS_ALL_TIME_MAXIMUM_DAYS = 36_600;
 
 export type WebsiteAnalyticsDateRange = Readonly<{
   from: string;
@@ -15,7 +17,7 @@ export type WebsiteAnalyticsDateRange = Readonly<{
   end: Date;
 }>;
 
-type DateRangeInput = Readonly<{
+export type WebsiteAnalyticsDateRangeInput = Readonly<{
   preset: WebsiteAnalyticsDatePreset;
   now?: Date;
   from?: string;
@@ -94,7 +96,7 @@ function validateRange(from: string, to: string, maximumDays: number): WebsiteAn
   return Object.freeze({ from, to, start: aucklandMidnight(from), end: aucklandMidnight(shiftDate(to, 1)) });
 }
 
-export function analyticsDateRange(input: DateRangeInput): WebsiteAnalyticsDateRange {
+export function analyticsDateRange(input: WebsiteAnalyticsDateRangeInput): WebsiteAnalyticsDateRange {
   const now = input.now ?? new Date();
   const today = websiteAnalyticsLocalDate(now);
   const [year, month] = parseDate(today);
@@ -105,14 +107,20 @@ export function analyticsDateRange(input: DateRangeInput): WebsiteAnalyticsDateR
     case "yesterday": from = shiftDate(today, -1); to = from; break;
     case "last_7_days": from = shiftDate(today, -6); to = today; break;
     case "last_30_days": from = shiftDate(today, -29); to = today; break;
-    case "this_month": from = monthStart(year, month); to = shiftDate(monthStart(year, month, 1), -1); break;
+    case "this_month": from = monthStart(year, month); to = today; break;
     case "last_month": from = monthStart(year, month, -1); to = shiftDate(monthStart(year, month), -1); break;
-    case "this_year": from = dateString(year, 1, 1); to = dateString(year, 12, 31); break;
+    case "this_year": from = dateString(year, 1, 1); to = today; break;
     case "all_time": from = input.allTimeFrom ?? invalidRange(); to = today; break;
     case "custom": from = input.from ?? invalidRange(); to = input.to ?? invalidRange(); break;
     default: return invalidRange();
   }
-  return validateRange(from, to, input.maximumDays ?? 366);
+  return validateRange(
+    from,
+    to,
+    input.maximumDays ?? (input.preset === "all_time"
+      ? WEBSITE_ANALYTICS_ALL_TIME_MAXIMUM_DAYS
+      : WEBSITE_ANALYTICS_CUSTOM_MAXIMUM_DAYS),
+  );
 }
 
 export function previousAnalyticsDateRange(range: WebsiteAnalyticsDateRange): WebsiteAnalyticsDateRange {

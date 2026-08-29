@@ -1,6 +1,11 @@
 import type { WebsiteAnalyticsCurrency, WebsiteAnalyticsScope } from "@/domain/analytics/website-analytics-v2";
+import type { OrderFulfilmentStatus } from "@/server/db/schema/orders";
 
 type OrderSource = "website" | "manual";
+
+export const ANALYTICS_MANUAL_INITIAL_STATUSES = [
+  "new", "designing", "awaiting_customer", "ready_to_print", "printing", "on_hold", "shipped", "completed",
+] as const satisfies readonly Exclude<OrderFulfilmentStatus, "cancelled">[];
 
 export type AnalyticsOrderCandidate = Readonly<{
   source: OrderSource;
@@ -8,7 +13,7 @@ export type AnalyticsOrderCandidate = Readonly<{
   totalInclGstCents?: number;
   manualFinalizationCommitted?: boolean;
   amountPayableCents?: number;
-  initialStatus?: string;
+  initialStatus?: OrderFulfilmentStatus;
 }>;
 
 export type AnalyticsInquiryCandidate = Readonly<{
@@ -17,17 +22,26 @@ export type AnalyticsInquiryCandidate = Readonly<{
   isFirstConversationMessage: boolean;
   isStaffCreated: boolean;
   isKnownSpam: boolean;
+  isKnownTest?: boolean;
 }>;
 
 export type AnalyticsFinancialEventType = "receipt" | "refund" | "reversal";
 
+function isPositiveCents(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
+}
+
+function isNonNegativeCents(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
 export function eligibleOrder(order: AnalyticsOrderCandidate): boolean {
   if (order.source === "website") {
-    return order.checkoutCommitted === true && (order.totalInclGstCents ?? 0) > 0;
+    return order.checkoutCommitted === true && isPositiveCents(order.totalInclGstCents);
   }
   return order.manualFinalizationCommitted === true
-    && (order.amountPayableCents ?? 0) > 0
-    && order.initialStatus !== "cancelled";
+    && isPositiveCents(order.amountPayableCents)
+    && (ANALYTICS_MANUAL_INITIAL_STATUSES as readonly string[]).includes(order.initialStatus ?? "");
 }
 
 export function eligibleWebsiteInquiry(inquiry: AnalyticsInquiryCandidate): boolean {
@@ -35,12 +49,13 @@ export function eligibleWebsiteInquiry(inquiry: AnalyticsInquiryCandidate): bool
     && inquiry.firstInboundMessageCommitted
     && inquiry.isFirstConversationMessage
     && !inquiry.isStaffCreated
-    && !inquiry.isKnownSpam;
+    && !inquiry.isKnownSpam
+    && inquiry.isKnownTest !== true;
 }
 
 export function orderedAmountCents(order: Pick<AnalyticsOrderCandidate, "source" | "totalInclGstCents" | "amountPayableCents">): number | null {
   const amount = order.source === "website" ? order.totalInclGstCents : order.amountPayableCents;
-  return typeof amount === "number" && Number.isSafeInteger(amount) && amount > 0 ? amount : null;
+  return isPositiveCents(amount) ? amount : null;
 }
 
 export function analyticsPaymentDirection(eventType: AnalyticsFinancialEventType): 1 | -1 {
@@ -52,7 +67,9 @@ export function isPaidOrder(input: Readonly<{
   collectedCents: number;
   refundedCents: number;
 }>): boolean {
-  return input.orderedAmountCents > 0
+  return isPositiveCents(input.orderedAmountCents)
+    && isNonNegativeCents(input.collectedCents)
+    && isNonNegativeCents(input.refundedCents)
     && input.collectedCents - input.refundedCents >= input.orderedAmountCents;
 }
 
