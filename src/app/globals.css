@@ -738,10 +738,15 @@ a:active {
   gap: clamp(1.75rem, 3.5vw, 3.5rem);
 }
 
+.site-footer__column {
+  font-size: calc(1rem - 2px);
+  line-height: 1.45;
+}
+
 .site-footer__title {
   margin-bottom: 1rem;
   color: var(--text-on-dark);
-  font-size: 0.9rem;
+  font-size: calc(0.9rem - 2px);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -781,21 +786,21 @@ a:active {
 }
 
 .site-footer li + li {
-  margin-top: 0.75rem;
+  margin-top: 0.375rem;
 }
 
 .site-footer__contact {
-  margin-top: 0.75rem;
+  margin-top: 0.375rem;
   display: grid;
   font-style: normal;
 }
 
 .site-footer__contact a + a {
-  margin-top: 0.75rem;
+  margin-top: 0.375rem;
 }
 
 .site-footer a {
-  min-height: 44px;
+  min-height: 36px;
   display: inline-flex;
   align-items: center;
   color: var(--text-on-dark);
@@ -972,7 +977,7 @@ a:active {
 }
 
 .site-footer__cookie-trigger {
-  min-height: 44px;
+  min-height: 36px;
   padding: 0;
   color: var(--text-on-dark);
   background: transparent;
@@ -1139,7 +1144,8 @@ a:active {
 
   .mobile-menu > button,
   .site-header__cart,
-  .site-footer a {
+  .site-footer a,
+  .site-footer__cookie-trigger {
     min-height: 48px;
   }
 

@@ -411,6 +411,27 @@ describe("site shell", () => {
       .toHaveAttribute("href", "/returns-refunds");
   });
 
+  it("keeps the footer navigation compact without shrinking mobile touch targets", () => {
+    const stylesheet = readFileSync("src/app/globals.css", "utf8");
+    const mobileRules = stylesheet.match(/@media \(max-width: 560px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
+
+    expect(stylesheet).toMatch(
+      /\.site-footer__column\s*\{[^}]*font-size:\s*calc\(1rem - 2px\)[^}]*line-height:\s*1\.45/,
+    );
+    expect(stylesheet).toMatch(
+      /\.site-footer__title\s*\{[^}]*font-size:\s*calc\(0\.9rem - 2px\)/,
+    );
+    expect(stylesheet).toMatch(
+      /\.site-footer li \+ li\s*\{[^}]*margin-top:\s*0\.375rem/,
+    );
+    expect(stylesheet).toMatch(
+      /\.site-footer a\s*\{[^}]*min-height:\s*36px/,
+    );
+    expect(mobileRules).toMatch(
+      /\.site-footer a,[\s\S]*?\.site-footer__cookie-trigger[\s\S]*?min-height:\s*48px/,
+    );
+  });
+
   it("shows only the approved payment brands in the requested order", () => {
     render(<SiteFooter />);
     const footer = screen.getByRole("contentinfo");
