@@ -260,7 +260,7 @@ describe("site shell", () => {
     expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
     expect(stylesheet).toMatch(/\.site-header__market select\s*\{[^}]*appearance:\s*none/);
     expect(mobileRules).toMatch(/\.mobile-menu\s*\{[^}]*margin-left:\s*-0\.25rem/);
-    expect(mobileRules).toMatch(/\.mobile-menu > button,[\s\S]*?\.site-header__cart,[\s\S]*?min-height:\s*48px/);
+    expect(mobileRules).toMatch(/\.mobile-menu > button,[\s\S]*?\.site-header__cart\s*\{[^}]*min-height:\s*48px/);
   });
 
   it("closes the mobile menu after a navigation link is selected", () => {
@@ -419,16 +419,16 @@ describe("site shell", () => {
       /\.site-footer__column\s*\{[^}]*font-size:\s*calc\(1rem - 2px\)[^}]*line-height:\s*1\.45/,
     );
     expect(stylesheet).toMatch(
-      /\.site-footer__title\s*\{[^}]*font-size:\s*calc\(0\.9rem - 2px\)/,
+      /\.site-footer__title\s*\{[^}]*margin-bottom:\s*0\.5rem[^}]*font-size:\s*calc\(0\.9rem - 2px\)/,
     );
     expect(stylesheet).toMatch(
-      /\.site-footer li \+ li\s*\{[^}]*margin-top:\s*0\.375rem/,
+      /\.site-footer li \+ li\s*\{[^}]*margin-top:\s*0\.25rem/,
     );
     expect(stylesheet).toMatch(
-      /\.site-footer a\s*\{[^}]*min-height:\s*36px/,
+      /\.site-footer a\s*\{[^}]*min-height:\s*30px/,
     );
     expect(mobileRules).toMatch(
-      /\.site-footer a,[\s\S]*?\.site-footer__cookie-trigger[\s\S]*?min-height:\s*48px/,
+      /\.site-footer a,[\s\S]*?\.site-footer__cookie-trigger[\s\S]*?min-height:\s*44px/,
     );
   });
 
