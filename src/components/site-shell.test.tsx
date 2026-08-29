@@ -411,9 +411,10 @@ describe("site shell", () => {
       .toHaveAttribute("href", "/returns-refunds");
   });
 
-  it("keeps the footer navigation compact without shrinking mobile touch targets", () => {
+  it("keeps the footer navigation compact and only abbreviates email on narrow screens", () => {
     const stylesheet = readFileSync("src/app/globals.css", "utf8");
     const mobileRules = stylesheet.match(/@media \(max-width: 560px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
+    const narrowEmailRules = stylesheet.match(/@media \(max-width: 519px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
 
     expect(stylesheet).toMatch(
       /\.site-footer__column\s*\{[^}]*font-size:\s*calc\(1rem - 2px\)[^}]*line-height:\s*1\.45/,
@@ -428,8 +429,11 @@ describe("site shell", () => {
       /\.site-footer a\s*\{[^}]*min-height:\s*30px/,
     );
     expect(mobileRules).toMatch(
-      /\.site-footer a,[\s\S]*?\.site-footer__cookie-trigger[\s\S]*?min-height:\s*44px/,
+      /\.site-footer a,[\s\S]*?\.site-footer__cookie-trigger[\s\S]*?min-height:\s*36px/,
     );
+    expect(mobileRules).not.toMatch(/\.site-footer__email-desktop\s*\{[^}]*display:\s*none/);
+    expect(narrowEmailRules).toMatch(/\.site-footer__email-desktop\s*\{[^}]*display:\s*none/);
+    expect(narrowEmailRules).toMatch(/\.site-footer__email-mobile\s*\{[^}]*display:\s*inline/);
   });
 
   it("shows only the approved payment brands in the requested order", () => {
