@@ -820,6 +820,16 @@ describe("HomepageV3", () => {
     expect(productLinks).not.toHaveTextContent("Birthday");
   });
 
+  it("gives the desktop gallery description enough width to keep the full sentence together", () => {
+    const stylesheet = readFileSync(
+      "src/components/homepage-v3.module.css",
+      "utf8",
+    );
+
+    expect(stylesheet).toMatch(/\.galleryHeading\s*\{[^}]*max-width:\s*50rem;/);
+    expect(stylesheet).toMatch(/\.galleryHeading\s*>\s*p\s*\{[^}]*max-width:\s*none;/);
+  });
+
   it("renders Design Gallery images and opens their public detail pages", () => {
     const birthday = galleryItem(
       "a62ca0891fb346b22d7854d9967cedc29c1acdeb56e9a65a003aedac9c55f49d",
