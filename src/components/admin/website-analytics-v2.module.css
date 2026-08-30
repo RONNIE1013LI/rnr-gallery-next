@@ -295,7 +295,10 @@
 }
 
 .chartTableScroller {
+  max-height: min(28rem, 55vh);
   margin-top: 12px;
+  overflow-y: auto;
+  overscroll-behavior-block: contain;
   border: 1px solid var(--admin-border);
   border-radius: 10px;
 }
@@ -327,6 +330,12 @@
   color: var(--admin-muted);
   background: var(--admin-response);
   font-weight: 700;
+}
+
+.dataTable thead th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
 }
 
 .dataTable th:first-child,

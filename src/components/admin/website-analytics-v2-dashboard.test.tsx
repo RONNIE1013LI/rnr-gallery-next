@@ -203,6 +203,74 @@ describe("WebsiteAnalyticsV2Dashboard", () => {
     ));
   });
 
+  it("distinguishes unavailable retained page traffic from a covered empty result", () => {
+    const unavailable = dashboardData({
+      pages: {
+        items: [],
+        available: false,
+        coverageFrom: "2026-08-15",
+        unavailableMetrics: ["entrances", "exits", "assists"],
+      },
+      metadata: {
+        ...dashboardData().metadata,
+        trafficBreakdownsAvailable: false,
+        trafficCoverageFrom: "2026-08-15",
+      },
+    });
+    const view = render(<WebsiteAnalyticsV2Dashboard
+      initialData={unavailable}
+      initialOrders={orderData({ items: [], total: 0, pageCount: 0 })}
+      initialQueryString="scope=all_business"
+    />);
+
+    expect(screen.getByText(
+      "Top Pages are unavailable because this range begins before retained traffic coverage from 2026-08-15.",
+    )).toBeInTheDocument();
+    expect(screen.queryByText("No page traffic matches these filters.")).not.toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "Top pages data" })).not.toBeInTheDocument();
+
+    view.unmount();
+    render(<WebsiteAnalyticsV2Dashboard
+      initialData={dashboardData({
+        pages: {
+          items: [],
+          available: true,
+          coverageFrom: "2026-08-15",
+          unavailableMetrics: ["entrances", "exits", "assists"],
+        },
+      })}
+      initialOrders={orderData({ items: [], total: 0, pageCount: 0 })}
+      initialQueryString="scope=all_business"
+    />);
+
+    expect(screen.getByText("No page traffic matches these filters.")).toBeInTheDocument();
+    expect(screen.queryByText(/Top Pages are unavailable/)).not.toBeInTheDocument();
+  });
+
+  it("explains when Top Pages have no retained traffic coverage", () => {
+    render(<WebsiteAnalyticsV2Dashboard
+      initialData={dashboardData({
+        pages: {
+          items: [],
+          available: false,
+          coverageFrom: null,
+          unavailableMetrics: ["entrances", "exits", "assists"],
+        },
+        metadata: {
+          ...dashboardData().metadata,
+          trafficBreakdownsAvailable: false,
+          trafficCoverageFrom: null,
+        },
+      })}
+      initialOrders={orderData({ items: [], total: 0, pageCount: 0 })}
+      initialQueryString="scope=all_business"
+    />);
+
+    expect(screen.getByText(
+      "Top Pages are unavailable because no retained raw traffic coverage exists.",
+    )).toBeInTheDocument();
+  });
+
   it("uses router.replace plus abortable API reads and shows loading then fresh data", async () => {
     const dashboardRequest = deferred<Response>();
     const ordersRequest = deferred<Response>();

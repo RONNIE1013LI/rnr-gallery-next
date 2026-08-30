@@ -58,8 +58,9 @@ export function formatAnalyticsMoney(currency: "NZD" | "AUD", cents: number) {
   const amount = new Intl.NumberFormat("en-NZ", {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(cents / 100);
-  return `${currency === "NZD" ? "NZ$" : "A$"}${amount}`;
+  }).format(Math.abs(cents) / 100);
+  const sign = cents < 0 ? "-" : "";
+  return `${sign}${currency === "NZD" ? "NZ$" : "A$"}${amount}`;
 }
 
 function CountTooltip({
@@ -132,7 +133,8 @@ function ChartPanel({
         </ResponsiveContainer>
       </div>
     </div>
-    <div className={styles.chartTableScroller} tabIndex={0}>{table}</div>
+    <div aria-label={`${title} equivalent data table`} className={styles.chartTableScroller}
+      role="region" tabIndex={0}>{table}</div>
   </section>;
 }
 
@@ -269,9 +271,45 @@ function FunnelChart({ data }: Readonly<{ data: WebsiteAnalyticsV2DashboardData 
 }
 
 function breakdownLabel(row: WebsiteAnalyticsV2Breakdown, kind: "channel" | "campaign" | "market") {
-  if (kind === "campaign") return row.campaign ?? "(not set)";
+  if (kind === "campaign") {
+    const identity = campaignIdentity(row);
+    return `${identity.channel} · ${identity.source} / ${identity.medium} · ${identity.campaign}`;
+  }
   if (kind === "market") return row.market ?? "Unknown";
   return row.channel ?? "Unknown";
+}
+
+function campaignIdentity(row: WebsiteAnalyticsV2Breakdown) {
+  const campaign = row.campaign?.trim();
+  return {
+    channel: row.channel?.trim() || "Unknown",
+    source: row.source?.trim() || "Unattributed",
+    medium: row.medium?.trim() || "(not set)",
+    campaign: !campaign || campaign === "(not set)" ? "No campaign" : campaign,
+  };
+}
+
+function breakdownDimensions(
+  row: WebsiteAnalyticsV2Breakdown,
+  kind: "channel" | "campaign" | "market",
+) {
+  if (kind === "campaign") {
+    const identity = campaignIdentity(row);
+    return {
+      values: [identity.channel, identity.source, identity.medium, identity.campaign],
+      key: `${identity.channel}\u0000${identity.source}\u0000${identity.medium}\u0000${identity.campaign}`,
+    };
+  }
+  const label = breakdownLabel(row, kind);
+  return {
+    values: [label],
+    key: label,
+  };
+}
+
+function breakdownDimensionHeadings(kind: "channel" | "campaign" | "market") {
+  if (kind === "campaign") return ["Channel", "Source", "Medium", "Campaign"];
+  return [kind === "market" ? "Market" : "Channel"];
 }
 
 function breakdownMoneyValues(row: WebsiteAnalyticsV2Breakdown, currency: "NZD" | "AUD") {
@@ -301,16 +339,20 @@ function BreakdownChart({ title, chartLabel, tableLabel, rows, kind }: Readonly<
       <Bar dataKey="orders" fill="#345c45" isAnimationActive={false} name="Orders" />
     </BarChart>}
     table={<AnalyticsTable label={tableLabel}
-      headings={[kind === "market" ? "Market" : kind === "campaign" ? "Campaign" : "Channel",
+      headings={[...breakdownDimensionHeadings(kind),
         "Visitors", "Sessions", "Page Views", "Inquiries", "Orders", "Paid Orders",
         ...(["NZD", "AUD"] as const).flatMap((currency) => breakdownMoneyMetrics
           .map(([label]) => `${currency} ${label}`))]}
-      rows={rows.map((row, index) => ({
-        key: `${breakdownLabel(row, kind)}-${index}`,
-        values: [breakdownLabel(row, kind), row.visitors ?? "—", row.sessions ?? "—", row.pageViews,
+      rows={rows.map((row) => {
+        const dimensions = breakdownDimensions(row, kind);
+        return {
+          key: dimensions.key,
+          values: [...dimensions.values,
+          row.visitors ?? "—", row.sessions ?? "—", row.pageViews ?? "—",
           row.inquiries, row.orders, row.paidOrders, ...breakdownMoneyValues(row, "NZD"),
           ...breakdownMoneyValues(row, "AUD")],
-      }))} />}
+        };
+      })} />}
   />;
 }
 
@@ -339,7 +381,21 @@ function SimpleCountBreakdown({ title, chartLabel, tableLabel, metricLabel, rows
 
 function CountryTrafficBreakdown({
   rows,
-}: Readonly<{ rows: WebsiteAnalyticsV2DashboardData["countries"] }>) {
+  available,
+  coverageFrom,
+}: Readonly<{
+  rows: WebsiteAnalyticsV2DashboardData["countries"];
+  available: boolean;
+  coverageFrom: string | null;
+}>) {
+  if (!available) return <section className={`${adminStyles.panel} ${styles.chartPanel}`}>
+    <h2>Country Traffic</h2>
+    <p className={styles.muted}>{trafficUnavailableMessage("Country Traffic", coverageFrom)}</p>
+  </section>;
+  if (rows.length === 0) return <section className={`${adminStyles.panel} ${styles.chartPanel}`}>
+    <h2>Country Traffic</h2>
+    <p className={styles.muted}>No country traffic matches these filters.</p>
+  </section>;
   return <ChartPanel title="Country Traffic" chartLabel="Country traffic chart" count={rows.length}
     minWidth={Math.max(560, rows.length * 100)}
     chart={(summaryId) => <BarChart accessibilityLayer aria-describedby={summaryId}
@@ -358,6 +414,13 @@ function CountryTrafficBreakdown({
         values: [row.countryCode, row.visitors, row.sessions, row.pageViews],
       }))} />}
   />;
+}
+
+function trafficUnavailableMessage(subject: string, coverageFrom: string | null) {
+  const verb = subject === "Country Traffic" ? "is" : "are";
+  return coverageFrom
+    ? `${subject} ${verb} unavailable because this range begins before retained traffic coverage from ${coverageFrom}.`
+    : `${subject} ${verb} unavailable because no retained raw traffic coverage exists.`;
 }
 
 function titleCase(value: string) {
@@ -384,6 +447,7 @@ export function WebsiteAnalyticsV2Charts({ data }: Readonly<{
       tableLabel="Payment status data" title="Payment Status" />
     <BreakdownChart chartLabel="Market performance chart" kind="market" rows={data.markets}
       tableLabel="Market performance data" title="Market Performance" />
-    <CountryTrafficBreakdown rows={data.countries} />
+    <CountryTrafficBreakdown available={data.metadata.trafficBreakdownsAvailable}
+      coverageFrom={data.metadata.trafficCoverageFrom} rows={data.countries} />
   </div>;
 }

@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WebsiteAnalyticsV2DashboardData } from "./website-analytics-v2-dashboard";
-import { WebsiteAnalyticsV2Charts } from "./website-analytics-v2-charts";
+import { formatAnalyticsMoney, WebsiteAnalyticsV2Charts } from "./website-analytics-v2-charts";
 
 class SizedResizeObserver {
   constructor(private readonly callback: ResizeObserverCallback) {}
@@ -191,6 +191,15 @@ describe("WebsiteAnalyticsV2Charts", () => {
     expect(screen.queryByText(/combined revenue/i)).not.toBeInTheDocument();
   });
 
+  it("keeps equivalent data tables in labelled keyboard-scrollable regions", () => {
+    render(<WebsiteAnalyticsV2Charts data={data} />);
+
+    const region = screen.getByRole("region", { name: "Traffic Trend equivalent data table" });
+    expect(region).toHaveAttribute("tabindex", "0");
+    expect(region.className).toContain("chartTableScroller");
+    expect(within(region).getByRole("table", { name: "Traffic trend data" })).toBeInTheDocument();
+  });
+
   it("keeps unavailable funnel sessions null in the chart and table", () => {
     render(<WebsiteAnalyticsV2Charts data={{
       ...data,
@@ -204,26 +213,112 @@ describe("WebsiteAnalyticsV2Charts", () => {
     expect(within(sessions).queryByText("0")).not.toBeInTheDocument();
   });
 
-  it("shows channel, campaign and market money in separate NZD and AUD columns", () => {
-    render(<WebsiteAnalyticsV2Charts data={data} />);
+  it("shows every channel, campaign and market money field with missing currencies as dashes", () => {
+    render(<WebsiteAnalyticsV2Charts data={{
+      ...data,
+      markets: [{
+        ...data.markets[0]!,
+        visitors: null,
+        sessions: null,
+        pageViews: null,
+      }],
+    }} />);
 
     const channel = screen.getByRole("table", { name: "Channel performance data" });
     expect(within(channel).getByRole("columnheader", { name: "NZD Ordered" })).toBeInTheDocument();
     expect(within(channel).getByRole("columnheader", { name: "AUD Ordered" })).toBeInTheDocument();
     const channelRow = within(channel).getByRole("row", { name: /Google Ads/ });
-    expect(within(channelRow).getByText("NZ$200.00")).toBeInTheDocument();
-    expect(within(channelRow).getByText("A$300.00")).toBeInTheDocument();
+    expect(within(channelRow).getAllByRole("cell").slice(-10).map((cell) => cell.textContent))
+      .toEqual([
+        "NZ$200.00", "NZ$190.00", "NZ$10.00", "NZ$180.00", "NZ$100.00",
+        "A$300.00", "A$290.00", "A$10.00", "A$280.00", "A$150.00",
+      ]);
 
     const campaign = screen.getByRole("table", { name: "Campaign performance data" });
     const campaignRow = within(campaign).getByRole("row", { name: /spring/ });
-    expect(within(campaignRow).getByText("NZ$200.00")).toBeInTheDocument();
-    expect(within(campaignRow).getByText("A$400.00")).toBeInTheDocument();
+    expect(within(campaignRow).getAllByRole("cell").slice(-10).map((cell) => cell.textContent))
+      .toEqual([
+        "NZ$200.00", "NZ$190.00", "NZ$10.00", "NZ$180.00", "NZ$100.00",
+        "A$400.00", "A$390.00", "A$10.00", "A$380.00", "A$200.00",
+      ]);
 
     const market = screen.getByRole("table", { name: "Market performance data" });
-    expect(within(within(market).getByRole("row", { name: /^NZ / })).getByText("NZ$240.00"))
+    const marketRow = within(market).getByRole("row", { name: /^NZ / });
+    const marketCells = within(marketRow).getAllByRole("cell").map((cell) => cell.textContent);
+    expect(marketCells).toEqual([
+      "—", "—", "—", "3", "2", "1",
+      "NZ$240.00", "NZ$230.00", "NZ$10.00", "NZ$220.00", "NZ$120.00",
+      "—", "—", "—", "—", "—",
+    ]);
+  });
+
+  it("shows complete campaign identity and normalizes missing campaign names", () => {
+    render(<WebsiteAnalyticsV2Charts data={{
+      ...data,
+      campaigns: [
+        data.campaigns[0]!,
+        {
+          ...data.campaigns[0]!,
+          channel: "Meta Ads",
+          source: "meta",
+          medium: "paid_social",
+        },
+        {
+          ...data.campaigns[0]!,
+          channel: "Email",
+          source: "newsletter",
+          medium: "email",
+          campaign: "(not set)",
+        },
+      ],
+    }} />);
+
+    const table = screen.getByRole("table", { name: "Campaign performance data" });
+    for (const heading of ["Channel", "Source", "Medium", "Campaign"]) {
+      expect(within(table).getByRole("columnheader", { name: heading })).toBeInTheDocument();
+    }
+    expect(within(table).getByRole("row", { name: /Google Ads google cpc spring/ }))
       .toBeInTheDocument();
-    expect(within(within(market).getByRole("row", { name: /^AU / })).getByText("A$180.00"))
+    expect(within(table).getByRole("row", { name: /Meta Ads meta paid_social spring/ }))
       .toBeInTheDocument();
+    expect(within(table).getByRole("row", { name: /Email newsletter email No campaign/ }))
+      .toBeInTheDocument();
+
+    const panel = screen.getByRole("heading", { name: "Campaign Performance" }).closest("section")!;
+    expect(panel).toHaveTextContent("Google Ads · google / cpc · spring");
+    expect(panel).toHaveTextContent("Meta Ads · meta / paid_social · spring");
+  });
+
+  it("distinguishes unavailable Country Traffic from a covered empty result", () => {
+    const view = render(<WebsiteAnalyticsV2Charts data={{
+      ...data,
+      countries: [],
+      metadata: {
+        ...data.metadata,
+        trafficBreakdownsAvailable: false,
+        trafficCoverageFrom: "2026-08-15",
+      },
+    }} />);
+
+    expect(screen.getByText(
+      "Country Traffic is unavailable because this range begins before retained traffic coverage from 2026-08-15.",
+    )).toBeInTheDocument();
+    expect(screen.queryByRole("table", { name: "Country traffic data" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("application", { name: "Country traffic chart" })).not.toBeInTheDocument();
+
+    view.rerender(<WebsiteAnalyticsV2Charts data={{
+      ...data,
+      countries: [],
+      metadata: { ...data.metadata, trafficBreakdownsAvailable: true },
+    }} />);
+    expect(screen.getByText("No country traffic matches these filters.")).toBeInTheDocument();
+    expect(screen.queryByText(/Country Traffic is unavailable/)).not.toBeInTheDocument();
+  });
+
+  it("places the sign before the currency prefix for negative money", () => {
+    expect(formatAnalyticsMoney("NZD", -12_345)).toBe("-NZ$123.45");
+    expect(formatAnalyticsMoney("AUD", -12_345)).toBe("-A$123.45");
+    expect(formatAnalyticsMoney("NZD", 0)).toBe("NZ$0.00");
   });
 
   it("labels payment status values as orders", () => {

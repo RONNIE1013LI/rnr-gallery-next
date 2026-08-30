@@ -208,6 +208,12 @@ function titleCase(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
 
+function pagesUnavailableMessage(coverageFrom: string | null) {
+  return coverageFrom
+    ? `Top Pages are unavailable because this range begins before retained traffic coverage from ${coverageFrom}.`
+    : "Top Pages are unavailable because no retained raw traffic coverage exists.";
+}
+
 function hasNoData(data: WebsiteAnalyticsV2DashboardData) {
   const counts = [data.kpis.visitors, data.kpis.sessions, data.kpis.pageViews,
     data.kpis.inquiries, data.kpis.orders, data.kpis.paidOrders];
@@ -382,9 +388,12 @@ export function WebsiteAnalyticsV2Dashboard({
           {titleCase(metric)}: unavailable
         </span>)}
       </div>
-      {data.pages.items.length === 0
+      {!data.pages.available
+        ? <p className={styles.muted}>{pagesUnavailableMessage(data.pages.coverageFrom)}</p>
+        : data.pages.items.length === 0
         ? <p className={styles.muted}>No page traffic matches these filters.</p>
-        : <div className={styles.chartTableScroller} tabIndex={0}>
+        : <div aria-label="Top Pages data table" className={styles.chartTableScroller}
+          role="region" tabIndex={0}>
           <table className={styles.dataTable} aria-label="Top pages data">
             <thead><tr><th scope="col">Path</th><th scope="col">Visitors</th>
               <th scope="col">Page Views</th></tr></thead>
