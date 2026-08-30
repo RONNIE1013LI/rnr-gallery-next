@@ -76,6 +76,19 @@ export function isPaidOrder(input: Readonly<{
     && input.collectedCents - input.refundedCents >= input.orderedAmountCents;
 }
 
+export function isPaidOrderSql(input: Readonly<{
+  orderedAmountCents: SQL;
+  collectedCents: SQL;
+  refundedCents: SQL;
+}>): SQL<boolean> {
+  return sql<boolean>`(
+    ${input.orderedAmountCents} > 0
+    and ${input.collectedCents} >= 0
+    and ${input.refundedCents} >= 0
+    and ${input.collectedCents} - ${input.refundedCents} >= ${input.orderedAmountCents}
+  )`;
+}
+
 export function analyticsPaymentStatus(input: Readonly<{
   orderedAmountCents: number;
   collectedCents: number;

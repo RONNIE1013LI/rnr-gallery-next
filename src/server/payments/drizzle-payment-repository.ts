@@ -24,6 +24,7 @@ import {
   orderAddresses,
   orderNotificationOutbox,
   orders,
+  paymentLedgerEntries,
   paymentAttemptCoreColumns,
   paymentAttempts,
   webhookEvents,
@@ -62,9 +63,15 @@ type AttemptRow = Pick<
 >;
 type OrderRow = typeof orders.$inferSelect;
 type AddressRow = typeof orderAddresses.$inferSelect;
+type PaymentLedgerEntryRow = typeof paymentLedgerEntries.$inferSelect;
 type AppliedVerifiedResult = Readonly<{
   value: PaymentAttemptWithOrder;
   analyticsTransition: WebsiteAnalyticsDirectPaymentTransition | null;
+  analyticsLedgerEntryId: string | null;
+}>;
+type DirectPaymentEvidence = Readonly<{
+  ledgerEntryId: string | null;
+  transition: WebsiteAnalyticsDirectPaymentTransition;
 }>;
 
 const NONTERMINAL_ATTEMPTS: PaymentAttemptStatus[] = [
@@ -75,6 +82,55 @@ const NONTERMINAL_ATTEMPTS: PaymentAttemptStatus[] = [
 const RETURN_STATE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const TERMINAL_ORDERS: OrderPaymentStatus[] = ["paid", "refunded"];
 const RECONCILIATION_STALE_MS = 60_000;
+
+function directPaymentReceiptKey(attemptId: string): string {
+  return `direct-payment-receipt:${attemptId}`;
+}
+
+function directPaymentRefundKey(attemptId: string): string {
+  return `direct-payment-refund:${attemptId}`;
+}
+
+function isExactDirectPaymentReceipt(
+  entry: PaymentLedgerEntryRow | undefined,
+  attempt: Readonly<{
+    attemptId: string;
+    orderId: string;
+    amountCents: number;
+    currency: "NZD" | "AUD";
+  }>,
+): entry is PaymentLedgerEntryRow {
+  return entry?.orderId === attempt.orderId
+    && entry.paymentRequestId === null
+    && entry.paymentAttemptId === attempt.attemptId
+    && entry.entryType === "online_payment"
+    && entry.direction === "credit"
+    && entry.amountCents === attempt.amountCents
+    && entry.currency === attempt.currency
+    && entry.idempotencyKey === directPaymentReceiptKey(attempt.attemptId);
+}
+
+function isExactDirectPaymentRefund(
+  entry: PaymentLedgerEntryRow | undefined,
+  attempt: Readonly<{
+    attemptId: string;
+    orderId: string;
+    amountCents: number;
+    currency: "NZD" | "AUD";
+  }>,
+  reversesEntryId: string | null,
+): entry is PaymentLedgerEntryRow {
+  return entry?.orderId === attempt.orderId
+    && entry.paymentRequestId === null
+    && entry.paymentAttemptId === null
+    && entry.entryType === (reversesEntryId ? "reversal" : "refund")
+    && entry.direction === "debit"
+    && entry.amountCents === attempt.amountCents
+    && entry.currency === attempt.currency
+    && entry.reversesEntryId === reversesEntryId
+    && (reversesEntryId !== null
+      || entry.idempotencyKey === directPaymentRefundKey(attempt.attemptId));
+}
 
 export class PaymentRepositoryConflictError extends Error {
   constructor(message = "Payment attempt conflicts with the current state") {
@@ -210,13 +266,13 @@ async function loadAddresses(
     .where(eq(orderAddresses.orderId, orderId));
 }
 
-async function loadDirectPaymentTransitions(
+async function loadDirectPaymentEvidence(
   database: Database | Transaction,
   attemptId: string,
   websiteAnalyticsV2Enabled: boolean,
-): Promise<readonly WebsiteAnalyticsDirectPaymentTransition[]> {
+): Promise<readonly DirectPaymentEvidence[]> {
   if (!websiteAnalyticsV2Enabled) return Object.freeze([]);
-  const [row] = await database.select({
+  const [attempt] = await database.select({
     attemptId: paymentAttempts.id,
     orderId: paymentAttempts.orderId,
     paymentRequestId: paymentAttempts.paymentRequestId,
@@ -225,32 +281,82 @@ async function loadDirectPaymentTransitions(
     paidAt: paymentAttempts.websiteAnalyticsPaidAt,
     refundedAt: paymentAttempts.websiteAnalyticsRefundedAt,
   }).from(paymentAttempts).where(eq(paymentAttempts.id, attemptId)).limit(1);
-  if (!row?.orderId || row.paymentRequestId !== null) return Object.freeze([]);
+  if (!attempt?.orderId || attempt.paymentRequestId !== null) return Object.freeze([]);
+  const attemptEvidence = {
+    attemptId: attempt.attemptId,
+    orderId: attempt.orderId,
+    amountCents: attempt.amountCents,
+    currency: attempt.currency,
+  };
 
-  const transitions: WebsiteAnalyticsDirectPaymentTransition[] = [];
-  if (row.paidAt) {
-    transitions.push(Object.freeze({
-      attemptId: row.attemptId,
-      orderId: row.orderId,
+  const [receipt] = await database.select().from(paymentLedgerEntries)
+    .where(eq(paymentLedgerEntries.paymentAttemptId, attemptId))
+    .limit(1);
+  const exactReceipt = isExactDirectPaymentReceipt(receipt, attemptEvidence)
+    ? receipt
+    : undefined;
+  const [linkedRefund] = receipt
+    ? await database.select().from(paymentLedgerEntries)
+      .where(eq(paymentLedgerEntries.reversesEntryId, receipt.id))
+      .limit(1)
+    : [];
+  const refundKey = directPaymentRefundKey(attempt.attemptId);
+  const [standaloneRefund] = await database.select().from(paymentLedgerEntries)
+    .where(and(
+      eq(paymentLedgerEntries.orderId, attempt.orderId),
+      eq(paymentLedgerEntries.idempotencyKey, refundKey),
+    ))
+    .limit(1);
+  const exactRefund = isExactDirectPaymentRefund(
+    linkedRefund,
+    attemptEvidence,
+    receipt?.id ?? null,
+  )
+    ? linkedRefund
+    : isExactDirectPaymentRefund(standaloneRefund, attemptEvidence, null)
+      ? standaloneRefund
+      : undefined;
+
+  const evidence: DirectPaymentEvidence[] = [];
+  if (exactReceipt || attempt.paidAt) evidence.push(Object.freeze({
+    ledgerEntryId: exactReceipt?.id ?? null,
+    transition: Object.freeze({
+      attemptId: attempt.attemptId,
+      orderId: attempt.orderId,
       paymentRequestId: null,
       eventType: "receipt",
-      amountCents: row.amountCents,
-      currency: row.currency,
-      occurredAt: row.paidAt,
+      amountCents: attempt.amountCents,
+      currency: attempt.currency,
+      occurredAt: exactReceipt?.receivedAt ?? attempt.paidAt!,
+    }),
+  }));
+  if (exactRefund || attempt.refundedAt) {
+    evidence.push(Object.freeze({
+      ledgerEntryId: exactRefund?.id ?? null,
+      transition: Object.freeze({
+        attemptId: attempt.attemptId,
+        orderId: attempt.orderId,
+        paymentRequestId: null,
+        eventType: "refund",
+        amountCents: attempt.amountCents,
+        currency: attempt.currency,
+        occurredAt: exactRefund?.receivedAt ?? attempt.refundedAt!,
+      }),
     }));
   }
-  if (row.refundedAt) {
-    transitions.push(Object.freeze({
-      attemptId: row.attemptId,
-      orderId: row.orderId,
-      paymentRequestId: null,
-      eventType: "refund",
-      amountCents: row.amountCents,
-      currency: row.currency,
-      occurredAt: row.refundedAt,
-    }));
-  }
-  return Object.freeze(transitions);
+  return Object.freeze(evidence);
+}
+
+async function loadDirectPaymentTransitions(
+  database: Database | Transaction,
+  attemptId: string,
+  websiteAnalyticsV2Enabled: boolean,
+): Promise<readonly WebsiteAnalyticsDirectPaymentTransition[]> {
+  return Object.freeze((await loadDirectPaymentEvidence(
+    database,
+    attemptId,
+    websiteAnalyticsV2Enabled,
+  )).map((item) => item.transition));
 }
 
 function transitionForResult(
@@ -265,6 +371,156 @@ function transitionForResult(
   return eventType
     ? transitions.find((transition) => transition.eventType === eventType) ?? null
     : null;
+}
+
+function evidenceForResult(
+  evidence: readonly DirectPaymentEvidence[],
+  result: VerifiedPaymentResult,
+): DirectPaymentEvidence | null {
+  const transition = transitionForResult(
+    evidence.map((item) => item.transition),
+    result,
+  );
+  return transition
+    ? evidence.find((item) => item.transition === transition) ?? null
+    : null;
+}
+
+async function insertDirectPaymentEvidence(
+  transaction: Transaction,
+  input: Readonly<{
+    eventType: "receipt" | "refund";
+    order: OrderRow;
+    attempt: AttemptRow;
+    occurredAt: Date;
+  }>,
+): Promise<DirectPaymentEvidence> {
+  if (!input.attempt.orderId || input.attempt.paymentRequestId !== null) {
+    throw new PaymentRepositoryConflictError("Invalid direct payment evidence target");
+  }
+  if (input.eventType === "receipt") {
+    const [created] = await transaction.insert(paymentLedgerEntries).values({
+      orderId: input.order.id,
+      paymentAttemptId: input.attempt.id,
+      entryType: "online_payment",
+      direction: "credit",
+      amountCents: input.attempt.expectedAmountCents,
+      currency: input.attempt.currency,
+      receivedAt: input.occurredAt,
+      idempotencyKey: directPaymentReceiptKey(input.attempt.id),
+    }).returning({
+      id: paymentLedgerEntries.id,
+      receivedAt: paymentLedgerEntries.receivedAt,
+    });
+    return Object.freeze({
+      ledgerEntryId: created.id,
+      transition: Object.freeze({
+        attemptId: input.attempt.id,
+        orderId: input.order.id,
+        paymentRequestId: null,
+        eventType: "receipt",
+        amountCents: input.attempt.expectedAmountCents,
+        currency: input.attempt.currency,
+        occurredAt: created.receivedAt,
+      }),
+    });
+  }
+
+  const [receipt] = await transaction.select().from(paymentLedgerEntries)
+    .where(eq(paymentLedgerEntries.paymentAttemptId, input.attempt.id))
+    .for("update")
+    .limit(1);
+  const attemptEvidence = {
+    attemptId: input.attempt.id,
+    orderId: input.order.id,
+    amountCents: input.attempt.expectedAmountCents,
+    currency: input.attempt.currency,
+  };
+  const [linkedRefund] = receipt
+    ? await transaction.select().from(paymentLedgerEntries)
+      .where(eq(paymentLedgerEntries.reversesEntryId, receipt.id))
+      .for("update")
+      .limit(1)
+    : [];
+  if (linkedRefund) {
+    if (!isExactDirectPaymentRefund(linkedRefund, attemptEvidence, receipt!.id)) {
+      throw new PaymentRepositoryConflictError("Invalid direct payment reversal evidence");
+    }
+    return Object.freeze({
+      ledgerEntryId: linkedRefund.id,
+      transition: Object.freeze({
+        attemptId: input.attempt.id,
+        orderId: input.order.id,
+        paymentRequestId: null,
+        eventType: "refund",
+        amountCents: input.attempt.expectedAmountCents,
+        currency: input.attempt.currency,
+        occurredAt: linkedRefund.receivedAt,
+      }),
+    });
+  }
+  const exactReceipt = isExactDirectPaymentReceipt(receipt, attemptEvidence)
+    ? receipt
+    : undefined;
+  const refundKey = directPaymentRefundKey(input.attempt.id);
+  const [standaloneRefund] = await transaction.select().from(paymentLedgerEntries)
+    .where(and(
+      eq(paymentLedgerEntries.orderId, input.order.id),
+      eq(paymentLedgerEntries.idempotencyKey, refundKey),
+    ))
+    .for("update")
+    .limit(1);
+  if (standaloneRefund) {
+    if (!isExactDirectPaymentRefund(standaloneRefund, attemptEvidence, null)) {
+      throw new PaymentRepositoryConflictError("Invalid direct payment refund evidence");
+    }
+    return Object.freeze({
+      ledgerEntryId: standaloneRefund.id,
+      transition: Object.freeze({
+        attemptId: input.attempt.id,
+        orderId: input.order.id,
+        paymentRequestId: null,
+        eventType: "refund",
+        amountCents: input.attempt.expectedAmountCents,
+        currency: input.attempt.currency,
+        occurredAt: standaloneRefund.receivedAt,
+      }),
+    });
+  }
+  const [created] = await transaction.insert(paymentLedgerEntries).values(exactReceipt
+    ? {
+        orderId: input.order.id,
+        entryType: "reversal" as const,
+        direction: "debit" as const,
+        amountCents: input.attempt.expectedAmountCents,
+        currency: input.attempt.currency,
+        receivedAt: input.occurredAt,
+        reversesEntryId: exactReceipt.id,
+      }
+    : {
+        orderId: input.order.id,
+        entryType: "refund" as const,
+        direction: "debit" as const,
+        amountCents: input.attempt.expectedAmountCents,
+        currency: input.attempt.currency,
+        receivedAt: input.occurredAt,
+        idempotencyKey: refundKey,
+      }).returning({
+    id: paymentLedgerEntries.id,
+    receivedAt: paymentLedgerEntries.receivedAt,
+  });
+  return Object.freeze({
+    ledgerEntryId: created.id,
+    transition: Object.freeze({
+      attemptId: input.attempt.id,
+      orderId: input.order.id,
+      paymentRequestId: null,
+      eventType: "refund",
+      amountCents: input.attempt.expectedAmountCents,
+      currency: input.attempt.currency,
+      occurredAt: created.receivedAt,
+    }),
+  });
 }
 
 async function lockOrderThenAttempt(
@@ -332,12 +588,8 @@ async function applyLockedVerifiedResult(
 
   if (order.paymentStatus === "refunded") {
     const addresses = await loadAddresses(transaction, order.id);
-    const transition = transitionForResult(
-      await loadDirectPaymentTransitions(
-        transaction,
-        attempt.id,
-        websiteAnalyticsV2Enabled,
-      ),
+    const evidence = evidenceForResult(
+      await loadDirectPaymentEvidence(transaction, attempt.id, websiteAnalyticsV2Enabled),
       input.result,
     );
     return Object.freeze({
@@ -345,7 +597,8 @@ async function applyLockedVerifiedResult(
         attempt: attemptRecord(attempt),
         order: paymentOrder(order, addresses),
       }),
-      analyticsTransition: transition,
+      analyticsTransition: evidence?.transition ?? null,
+      analyticsLedgerEntryId: evidence?.ledgerEntryId ?? null,
     });
   }
 
@@ -355,12 +608,8 @@ async function applyLockedVerifiedResult(
   );
   if (order.paymentStatus === "paid" && incoming !== "refunded") {
     const addresses = await loadAddresses(transaction, order.id);
-    const transition = transitionForResult(
-      await loadDirectPaymentTransitions(
-        transaction,
-        attempt.id,
-        websiteAnalyticsV2Enabled,
-      ),
+    const evidence = evidenceForResult(
+      await loadDirectPaymentEvidence(transaction, attempt.id, websiteAnalyticsV2Enabled),
       input.result,
     );
     return Object.freeze({
@@ -368,7 +617,8 @@ async function applyLockedVerifiedResult(
         attempt: attemptRecord(attempt),
         order: paymentOrder(order, addresses),
       }),
-      analyticsTransition: transition,
+      analyticsTransition: evidence?.transition ?? null,
+      analyticsLedgerEntryId: evidence?.ledgerEntryId ?? null,
     });
   }
   const orderStatus = nextOrderPaymentStatus(order.paymentStatus, incoming);
@@ -390,46 +640,19 @@ async function applyLockedVerifiedResult(
     providerSessionLeaseExpiresAt: null,
     updatedAt: now,
   };
-  let updatedAttempt: AttemptRow;
-  let analyticsOccurredAt = now;
-  if (websiteAnalyticsV2Enabled && eventType === "receipt") {
-    const [updated] = await transaction
-      .update(paymentAttempts)
-      .set({
-        ...attemptUpdates,
-        websiteAnalyticsPaidAt:
-          sql`coalesce(${paymentAttempts.websiteAnalyticsPaidAt}, ${now})`,
+  const analyticsEvidence = eventType
+    ? await insertDirectPaymentEvidence(transaction, {
+        eventType,
+        order,
+        attempt,
+        occurredAt: now,
       })
-      .where(eq(paymentAttempts.id, attempt.id))
-      .returning({
-        ...paymentAttemptCoreColumns,
-        analyticsOccurredAt: paymentAttempts.websiteAnalyticsPaidAt,
-      });
-    updatedAttempt = updated;
-    analyticsOccurredAt = updated.analyticsOccurredAt ?? now;
-  } else if (websiteAnalyticsV2Enabled && eventType === "refund") {
-    const [updated] = await transaction
-      .update(paymentAttempts)
-      .set({
-        ...attemptUpdates,
-        websiteAnalyticsRefundedAt:
-          sql`coalesce(${paymentAttempts.websiteAnalyticsRefundedAt}, ${now})`,
-      })
-      .where(eq(paymentAttempts.id, attempt.id))
-      .returning({
-        ...paymentAttemptCoreColumns,
-        analyticsOccurredAt: paymentAttempts.websiteAnalyticsRefundedAt,
-      });
-    updatedAttempt = updated;
-    analyticsOccurredAt = updated.analyticsOccurredAt ?? now;
-  } else {
-    const [updated] = await transaction
-      .update(paymentAttempts)
-      .set(attemptUpdates)
-      .where(eq(paymentAttempts.id, attempt.id))
-      .returning(paymentAttemptCoreColumns);
-    updatedAttempt = updated;
-  }
+    : null;
+  const [updatedAttempt] = await transaction
+    .update(paymentAttempts)
+    .set(attemptUpdates)
+    .where(eq(paymentAttempts.id, attempt.id))
+    .returning(paymentAttemptCoreColumns);
   const [updatedOrder] = await transaction
     .update(orders)
     .set({ paymentStatus: orderStatus, updatedAt: now })
@@ -476,17 +699,8 @@ async function applyLockedVerifiedResult(
       attempt: attemptRecord(updatedAttempt),
       order: paymentOrder(updatedOrder, addresses),
     }),
-    analyticsTransition: eventType
-      ? Object.freeze({
-          attemptId: attempt.id,
-          orderId: order.id,
-          paymentRequestId: attempt.paymentRequestId,
-          eventType,
-          amountCents: attempt.expectedAmountCents,
-          currency: attempt.currency,
-          occurredAt: analyticsOccurredAt,
-        })
-      : null,
+    analyticsTransition: analyticsEvidence?.transition ?? null,
+    analyticsLedgerEntryId: analyticsEvidence?.ledgerEntryId ?? null,
   });
 }
 
@@ -499,7 +713,8 @@ export function createDrizzlePaymentRepository(
   database: Database,
   options: Readonly<{
     leaseDurationMs?: number;
-    analyticsRecorder?: Pick<WebsiteAnalyticsV2BusinessRecorder, "recordDirectPaymentTransition">;
+    analyticsRecorder?: Pick<WebsiteAnalyticsV2BusinessRecorder, "recordDirectPaymentTransition">
+      & Partial<Pick<WebsiteAnalyticsV2BusinessRecorder, "recordLedgerEntry">>;
     websiteAnalyticsV2Enabled?: boolean;
   }> = {},
 ): PaymentRepository {
@@ -513,12 +728,19 @@ export function createDrizzlePaymentRepository(
   const analyticsRecorder = options.analyticsRecorder
     ?? createWebsiteAnalyticsV2BusinessRecorder(database, { config: analyticsConfig });
 
-  async function recordDirectPaymentTransition(
-    transition: WebsiteAnalyticsDirectPaymentTransition | null,
+  async function recordDirectPaymentEvidence(
+    evidence: Readonly<{
+      analyticsTransition: WebsiteAnalyticsDirectPaymentTransition | null;
+      analyticsLedgerEntryId: string | null;
+    }>,
   ): Promise<void> {
-    if (!transition) return;
+    if (!websiteAnalyticsV2Enabled || !evidence.analyticsTransition) return;
     try {
-      await analyticsRecorder.recordDirectPaymentTransition(transition);
+      if (evidence.analyticsLedgerEntryId && analyticsRecorder.recordLedgerEntry) {
+        await analyticsRecorder.recordLedgerEntry({ entryId: evidence.analyticsLedgerEntryId });
+      } else {
+        await analyticsRecorder.recordDirectPaymentTransition(evidence.analyticsTransition);
+      }
     } catch {
       // The committed payment remains authoritative; reconciliation repairs analytics.
     }
@@ -822,7 +1044,7 @@ export function createDrizzlePaymentRepository(
       const applied = await database.transaction((transaction) =>
         applyLockedVerifiedResult(transaction, input, websiteAnalyticsV2Enabled),
       );
-      await recordDirectPaymentTransition(applied.analyticsTransition);
+      await recordDirectPaymentEvidence(applied);
       return applied.value;
     },
 
@@ -853,17 +1075,18 @@ export function createDrizzlePaymentRepository(
           return { status: "hash_mismatch" as const, attemptId: null };
         }
         if (event.processingResult) {
-          const transitions = event.paymentAttemptId
-            ? await loadDirectPaymentTransitions(
+          const evidence = event.paymentAttemptId
+            ? evidenceForResult(await loadDirectPaymentEvidence(
                 transaction,
                 event.paymentAttemptId,
                 websiteAnalyticsV2Enabled,
-              )
-            : Object.freeze([]);
+              ), input.result)
+            : null;
           return {
             status: "duplicate" as const,
             attemptId: event.paymentAttemptId,
-            analyticsTransition: transitionForResult(transitions, input.result),
+            analyticsTransition: evidence?.transition ?? null,
+            analyticsLedgerEntryId: evidence?.ledgerEntryId ?? null,
           };
         }
         if (input.faultAt === "after_event_insert") {
@@ -917,11 +1140,15 @@ export function createDrizzlePaymentRepository(
           status: "applied" as const,
           attemptId: candidate.id,
           analyticsTransition: applied.analyticsTransition,
+          analyticsLedgerEntryId: applied.analyticsLedgerEntryId,
         };
       });
-      await recordDirectPaymentTransition(
-        "analyticsTransition" in outcome ? outcome.analyticsTransition ?? null : null,
-      );
+      await recordDirectPaymentEvidence("analyticsTransition" in outcome
+        ? {
+            analyticsTransition: outcome.analyticsTransition ?? null,
+            analyticsLedgerEntryId: outcome.analyticsLedgerEntryId ?? null,
+          }
+        : { analyticsTransition: null, analyticsLedgerEntryId: null });
       return outcome.status;
     },
 
@@ -1014,7 +1241,7 @@ export function createDrizzlePaymentRepository(
           ));
         return applied;
       });
-      await recordDirectPaymentTransition(applied.analyticsTransition);
+      await recordDirectPaymentEvidence(applied);
       return applied.value;
     },
 

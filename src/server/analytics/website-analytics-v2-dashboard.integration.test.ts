@@ -18,6 +18,7 @@ import { createWebsiteAnalyticsV2Repository } from "./website-analytics-v2-repos
 import { createWebsiteAnalyticsV2Dashboard } from "./website-analytics-v2-dashboard";
 import { parseWebsiteAnalyticsV2Query } from "./website-analytics-v2-query";
 import { analyticsPaymentStatusSql } from "./website-analytics-business-rules";
+import { createWebsiteAnalyticsV2Reconciliation } from "./website-analytics-v2-reconciliation";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is required");
@@ -429,6 +430,105 @@ describe("website analytics V2 dashboard", () => {
     ]);
   });
 
+  it("keeps Paid Orders inside the order-creation cohort at the report cutoff", async () => {
+    const repository = createWebsiteAnalyticsV2Repository(database);
+    const reconciliation = createWebsiteAnalyticsV2Reconciliation(database);
+    const cohortPrefix = `${prefix}paid-cohort:`;
+    const cohortDates = ["2398-03-01", "2398-03-02", "2398-03-03", "2398-03-04"];
+    const cohortNow = new Date("2398-03-05T00:00:00.000Z");
+    const cohortQuery = (from: string, to: string) => parseWebsiteAnalyticsV2Query(
+      new URLSearchParams(`preset=custom&from=${from}&to=${to}&scope=website`),
+      { now: cohortNow },
+    );
+
+    const order = await repository.recordOrder({
+      source: "website",
+      sourceId: `${cohortPrefix}order`,
+      occurredAt: new Date("2398-02-28T11:00:00.000Z"),
+      market: "NZ",
+      currency: "NZD",
+      orderedAmountInclGstCents: 10_000,
+      historical: true,
+      consentLinked: false,
+    });
+    await repository.recordFinancialEvent({
+      conversionId: order.factId,
+      sourceType: "payment_provider_event",
+      sourceId: `${cohortPrefix}receipt-1`,
+      eventType: "receipt",
+      amountCents: 4_000,
+      currency: "NZD",
+      occurredAt: new Date("2398-03-01T11:00:00.000Z"),
+      historical: true,
+    });
+    await repository.recordFinancialEvent({
+      conversionId: order.factId,
+      sourceType: "payment_provider_event",
+      sourceId: `${cohortPrefix}receipt-2`,
+      eventType: "receipt",
+      amountCents: 6_000,
+      currency: "NZD",
+      occurredAt: new Date("2398-03-02T11:00:00.000Z"),
+      historical: true,
+    });
+
+    try {
+      for (const localDate of cohortDates.slice(0, 3)) {
+        await reconciliation.rebuildDirtyDate(localDate);
+      }
+
+      const beforeFullPayment = await dashboard.load(
+        cohortQuery("2398-03-01", "2398-03-02"),
+        cohortNow,
+      );
+      expect(beforeFullPayment.kpis).toMatchObject({ orders: 1, paidOrders: 0 });
+
+      const throughFullPayment = await dashboard.load(
+        cohortQuery("2398-03-01", "2398-03-03"),
+        cohortNow,
+      );
+      expect(throughFullPayment.kpis).toMatchObject({ orders: 1, paidOrders: 1 });
+      expect(throughFullPayment.timeseries).toEqual(expect.arrayContaining([
+        expect.objectContaining({ bucket: "2398-03-01", orders: 1, paidOrders: 1 }),
+        expect.objectContaining({ bucket: "2398-03-03", orders: 0, paidOrders: 0 }),
+      ]));
+
+      const paymentDateOnly = await dashboard.load(
+        cohortQuery("2398-03-03", "2398-03-03"),
+        cohortNow,
+      );
+      expect(paymentDateOnly.kpis).toMatchObject({ orders: 0, paidOrders: 0 });
+
+      await repository.recordFinancialEvent({
+        conversionId: order.factId,
+        sourceType: "payment_provider_event",
+        sourceId: `${cohortPrefix}late-refund`,
+        eventType: "refund",
+        amountCents: 1,
+        currency: "NZD",
+        occurredAt: new Date("2398-03-03T11:00:00.000Z"),
+        historical: true,
+      });
+      const afterLateRefund = await dashboard.load(
+        cohortQuery("2398-03-01", "2398-03-04"),
+        cohortNow,
+      );
+      expect(afterLateRefund.kpis).toMatchObject({ orders: 1, paidOrders: 0 });
+      expect(afterLateRefund.kpis.paidOrders).toBeLessThanOrEqual(afterLateRefund.kpis.orders);
+    } finally {
+      await database.delete(websiteAnalyticsDailyAggregates)
+        .where(inArray(websiteAnalyticsDailyAggregates.localDate, cohortDates));
+      await database.delete(websiteAnalyticsReconciliationState).where(and(
+        eq(websiteAnalyticsReconciliationState.stateType, "dirty_date"),
+        inArray(websiteAnalyticsReconciliationState.stateKey, cohortDates),
+      ));
+      await database.delete(websiteAnalyticsFinancialEvents)
+        .where(sql`${websiteAnalyticsFinancialEvents.sourceId} like ${`${cohortPrefix}%`}`);
+      await database.delete(websiteAnalyticsConversions)
+        .where(eq(websiteAnalyticsConversions.sourceId, `${cohortPrefix}order`));
+    }
+  });
+
   it("combines prior aggregates with current raw facts exactly once for Website scope", async () => {
     const result = await dashboard.load(query(
       `preset=custom&from=${priorDate}&to=${currentDate}&scope=website`,
@@ -439,10 +539,10 @@ describe("website analytics V2 dashboard", () => {
       pageViews: 8,
       inquiries: 2,
       orders: 2,
-      paidOrders: 2,
+      paidOrders: 0,
       inquiryConversionRate: 0.4,
       orderConversionRate: 0.4,
-      paidOrderConversionRate: 0.4,
+      paidOrderConversionRate: 0,
     });
     expect(money(result, "NZD")).toEqual({
       currency: "NZD",
@@ -459,7 +559,7 @@ describe("website analytics V2 dashboard", () => {
       sessions: 5,
       inquiries: 2,
       orders: 2,
-      paidOrders: 2,
+      paidOrders: 0,
     });
     expect(result.metadata).toMatchObject({
       timezone: "Pacific/Auckland",
@@ -479,10 +579,10 @@ describe("website analytics V2 dashboard", () => {
       pageViews: 8,
       inquiries: 2,
       orders: 4,
-      paidOrders: 2,
+      paidOrders: 0,
       inquiryConversionRate: 0.4,
       orderConversionRate: 0.4,
-      paidOrderConversionRate: 0.4,
+      paidOrderConversionRate: 0,
     });
     expect(money(result, "NZD")).toMatchObject({ orderedRevenueCents: 22_000 });
     expect(money(result, "AUD")).toEqual({
@@ -498,7 +598,7 @@ describe("website analytics V2 dashboard", () => {
       sessions: 5,
       inquiries: 2,
       orders: 2,
-      paidOrders: 2,
+      paidOrders: 0,
     });
     expect(result.channels.some((row) => row.channel
       === ANALYTICS_DIMENSION_SENTINELS.manualOffline)).toBe(true);
@@ -532,6 +632,8 @@ describe("website analytics V2 dashboard", () => {
     });
     expect(result.pages).toEqual({
       items: [],
+      available: true,
+      coverageFrom: priorDate,
       unavailableMetrics: ["entrances", "exits", "assists"],
     });
   });
@@ -586,7 +688,11 @@ describe("website analytics V2 dashboard", () => {
     });
     expect(result.notices).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "traffic_retention_limited" }),
+      expect.objectContaining({ code: "traffic_breakdowns_unavailable" }),
     ]));
+    expect(result.pages).toMatchObject({ items: [], available: false, coverageFrom: priorDate });
+    expect(result.countries).toEqual([]);
+    expect(result.metadata).toMatchObject({ trafficBreakdownsAvailable: false });
   });
 
   it("marks traffic unavailable when the V1 traffic store is empty", async () => {
@@ -629,7 +735,10 @@ describe("website analytics V2 dashboard", () => {
       earliestTrafficDate: null,
       trafficCoverageFrom: null,
       trafficMetricsAvailable: false,
+      trafficBreakdownsAvailable: false,
     });
+    expect(result.pages).toMatchObject({ items: [], available: false, coverageFrom: null });
+    expect(result.countries).toEqual([]);
   });
 
   it("returns retained Visitor and Session metrics as unavailable for an all-time range", async () => {
@@ -663,6 +772,8 @@ describe("website analytics V2 dashboard", () => {
         orders: 1,
       }),
     ]));
+    expect(result.pages).toMatchObject({ items: [], available: false, coverageFrom: priorDate });
+    expect(result.countries).toEqual([]);
   });
 
   it("applies commercial filters without changing Website traffic and returns previous-period KPIs", async () => {
@@ -694,7 +805,7 @@ describe("website analytics V2 dashboard", () => {
     ), now);
     expect(compared.comparison).toMatchObject({
       range: { from: priorDate, to: priorDate },
-      kpis: { sessions: 3, inquiries: 1, orders: 1, paidOrders: 1 },
+      kpis: { sessions: 3, inquiries: 1, orders: 1, paidOrders: 0 },
     });
 
     const comparedAllBusiness = await dashboard.load(query(
@@ -706,7 +817,7 @@ describe("website analytics V2 dashboard", () => {
         sessions: 3,
         orders: 2,
         orderConversionRate: 1 / 3,
-        paidOrderConversionRate: 1 / 3,
+        paidOrderConversionRate: 0,
       },
     });
   });
@@ -727,13 +838,18 @@ describe("website analytics V2 dashboard", () => {
       { pathname: "/shop", visitors: 1, pageViews: 1 },
       { pathname: "/products/task-6", visitors: 1, pageViews: 1 },
     ]));
+    expect(result.pages).toMatchObject({ available: true, coverageFrom: priorDate });
     expect(result.countries).toEqual(expect.arrayContaining([
       expect.objectContaining({ countryCode: "NZ" }),
       expect.objectContaining({ countryCode: "AU" }),
     ]));
     expect(result.markets).toEqual(expect.arrayContaining([
-      expect.objectContaining({ market: "NZ", orders: 2 }),
-      expect.objectContaining({ market: "AU", orders: 2 }),
+      expect.objectContaining({
+        market: "NZ", visitors: null, sessions: null, pageViews: null, orders: 2,
+      }),
+      expect.objectContaining({
+        market: "AU", visitors: null, sessions: null, pageViews: null, orders: 2,
+      }),
     ]));
   });
 

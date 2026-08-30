@@ -185,9 +185,9 @@ async function manualOrder(occurredAt: Date) {
 
 afterAll(async () => {
   const roundTwoLocalDates = [
-    "2395-04-02",
-    "2396-01-02",
-    "2396-02-02",
+    "2595-04-02",
+    "2596-01-02",
+    "2596-02-02",
   ];
   await database.delete(websiteAnalyticsDailyAggregates)
     .where(inArray(websiteAnalyticsDailyAggregates.localDate, roundTwoLocalDates));
@@ -251,11 +251,11 @@ describe("website analytics V2 backfill", () => {
       stateKeyPrefix,
       fromOccurredAt: new Date("2288-01-01T00:00:00.000Z"),
     });
-    expect(dryRun.totals).toMatchObject({ scanned: 1, created: 0, wouldCreate: 1, failed: 0 });
+    expect(dryRun.totals).toMatchObject({ scanned: 2, created: 0, wouldCreate: 2, failed: 0 });
     expect(dryRun.sources[0]).toMatchObject({
       source: "website_orders",
-      cursor: { occurredAt: "2288-01-01T00:00:00.000Z", id: firstId },
-      complete: false,
+      cursor: { occurredAt: "2299-01-01T00:00:00.000Z", id: secondId },
+      complete: true,
     });
     expect(await database.select().from(websiteAnalyticsConversions)
       .where(inArray(websiteAnalyticsConversions.sourceId, [firstId, secondId]))).toEqual([]);
@@ -315,9 +315,48 @@ describe("website analytics V2 backfill", () => {
     ]);
   });
 
+  it("fully previews same-timestamp rows in stable ID order without persisting a cursor", async () => {
+    const occurredAt = new Date("2499-07-01T00:00:00.000Z");
+    const ids = [randomUUID(), randomUUID()].sort();
+    for (const id of ids) await websiteOrder({ id, occurredAt });
+    sourceIds.push(...ids);
+    const stateKeyPrefix = `${prefix}same-timestamp-preview`;
+    const input = {
+      dryRun: true,
+      batchSize: 1,
+      sources: ["website_orders" as const],
+      stateKeyPrefix,
+      fromOccurredAt: occurredAt,
+    };
+    const backfill = createWebsiteAnalyticsV2Backfill(database);
+
+    const first = await backfill.run(input);
+    const repeated = await backfill.run(input);
+
+    expect(first).toEqual(repeated);
+    expect(first.totals).toMatchObject({
+      scanned: 2,
+      created: 0,
+      wouldCreate: 2,
+      unchanged: 0,
+      skipped: 0,
+      failed: 0,
+    });
+    expect(first.sources).toEqual([expect.objectContaining({
+      cursor: { occurredAt: occurredAt.toISOString(), id: ids[1] },
+      complete: true,
+      busy: false,
+    })]);
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(inArray(websiteAnalyticsConversions.sourceId, ids))).toEqual([]);
+    expect(await database.select().from(websiteAnalyticsReconciliationState)
+      .where(sql`${websiteAnalyticsReconciliationState.stateKey} like ${`${stateKeyPrefix}%`}`))
+      .toEqual([]);
+  });
+
   it("previews a zero-value website order with the same skip decision as the next write", async () => {
     const orderId = await websiteOrder({
-      occurredAt: new Date("2395-04-02T00:00:00.000Z"),
+      occurredAt: new Date("2595-04-02T00:00:00.000Z"),
       amountCents: 0,
     });
     sourceIds.push(orderId);
@@ -326,7 +365,7 @@ describe("website analytics V2 backfill", () => {
       batchSize: 10,
       sources: ["website_orders"] as const,
       stateKeyPrefix,
-      fromOccurredAt: new Date("2395-04-01T00:00:00.000Z"),
+      fromOccurredAt: new Date("2595-04-01T00:00:00.000Z"),
     };
     const backfill = createWebsiteAnalyticsV2Backfill(database);
 
@@ -338,7 +377,7 @@ describe("website analytics V2 backfill", () => {
       unchanged: 0,
       skipped: 1,
       failed: 0,
-      cursor: { occurredAt: "2395-04-02T00:00:00.000Z", id: orderId },
+      cursor: { occurredAt: "2595-04-02T00:00:00.000Z", id: orderId },
       complete: true,
       busy: false,
     })]);
@@ -357,7 +396,7 @@ describe("website analytics V2 backfill", () => {
       unchanged: 0,
       skipped: 1,
       failed: 0,
-      cursor: { occurredAt: "2395-04-02T00:00:00.000Z", id: orderId },
+      cursor: { occurredAt: "2595-04-02T00:00:00.000Z", id: orderId },
       complete: true,
       busy: false,
     })]);
@@ -366,9 +405,9 @@ describe("website analytics V2 backfill", () => {
   });
 
   it("previews from a pending persisted cursor and leaves every preview surface unchanged", async () => {
-    const priorId = await websiteOrder({ occurredAt: new Date("2396-01-01T00:00:00.000Z") });
-    const resumedId = await websiteOrder({ occurredAt: new Date("2396-01-02T00:00:00.000Z") });
-    const followingId = await websiteOrder({ occurredAt: new Date("2396-01-03T00:00:00.000Z") });
+    const priorId = await websiteOrder({ occurredAt: new Date("2596-01-01T00:00:00.000Z") });
+    const resumedId = await websiteOrder({ occurredAt: new Date("2596-01-02T00:00:00.000Z") });
+    const followingId = await websiteOrder({ occurredAt: new Date("2596-01-03T00:00:00.000Z") });
     sourceIds.push(priorId, resumedId, followingId);
     const stateKeyPrefix = `${prefix}pending-preview`;
     const stateKey = `${stateKeyPrefix}:website_orders`;
@@ -376,7 +415,7 @@ describe("website analytics V2 backfill", () => {
       stateType: "backfill",
       stateKey,
       status: "pending",
-      cursorOccurredAt: new Date("2396-01-01T00:00:00.000Z"),
+      cursorOccurredAt: new Date("2596-01-01T00:00:00.000Z"),
       cursorId: priorId,
       scannedCount: 4,
       createdCount: 3,
@@ -391,28 +430,28 @@ describe("website analytics V2 backfill", () => {
       .where(and(
         eq(websiteAnalyticsReconciliationState.stateType, "dirty_date"),
         inArray(websiteAnalyticsReconciliationState.stateKey,
-          ["2396-01-01", "2396-01-02", "2396-01-03"]),
+          ["2596-01-01", "2596-01-02", "2596-01-03"]),
       ));
     const aggregatesBefore = await database.select().from(websiteAnalyticsDailyAggregates)
       .where(inArray(websiteAnalyticsDailyAggregates.localDate,
-        ["2396-01-01", "2396-01-02", "2396-01-03"]));
+        ["2596-01-01", "2596-01-02", "2596-01-03"]));
     const input = {
       batchSize: 1,
       sources: ["website_orders"] as const,
       stateKeyPrefix,
-      fromOccurredAt: new Date("2396-01-10T00:00:00.000Z"),
+      fromOccurredAt: new Date("2596-01-10T00:00:00.000Z"),
     };
     const backfill = createWebsiteAnalyticsV2Backfill(database);
 
     const preview = await backfill.run({ ...input, dryRun: true });
     expect(preview.sources).toEqual([expect.objectContaining({
-      scanned: 1,
-      wouldCreate: 1,
+      scanned: 2,
+      wouldCreate: 2,
       unchanged: 0,
       skipped: 0,
       failed: 0,
-      cursor: { occurredAt: "2396-01-02T00:00:00.000Z", id: resumedId },
-      complete: false,
+      cursor: { occurredAt: "2596-01-03T00:00:00.000Z", id: followingId },
+      complete: true,
       busy: false,
     })]);
     expect(await database.select().from(websiteAnalyticsReconciliationState).where(and(
@@ -424,11 +463,11 @@ describe("website analytics V2 backfill", () => {
       .toEqual([]);
     expect(await database.select().from(websiteAnalyticsReconciliationState).where(and(
       eq(websiteAnalyticsReconciliationState.stateType, "dirty_date"),
-      inArray(websiteAnalyticsReconciliationState.stateKey, ["2396-01-01", "2396-01-02", "2396-01-03"]),
+      inArray(websiteAnalyticsReconciliationState.stateKey, ["2596-01-01", "2596-01-02", "2596-01-03"]),
     ))).toEqual(dirtyDatesBefore);
     expect(await database.select().from(websiteAnalyticsDailyAggregates)
       .where(inArray(websiteAnalyticsDailyAggregates.localDate,
-        ["2396-01-01", "2396-01-02", "2396-01-03"]))).toEqual(aggregatesBefore);
+        ["2596-01-01", "2596-01-02", "2596-01-03"]))).toEqual(aggregatesBefore);
 
     const write = await backfill.run({ ...input, dryRun: false });
     expect(write.sources).toEqual([expect.objectContaining({
@@ -437,7 +476,7 @@ describe("website analytics V2 backfill", () => {
       unchanged: 0,
       skipped: 0,
       failed: 0,
-      cursor: { occurredAt: "2396-01-02T00:00:00.000Z", id: resumedId },
+      cursor: { occurredAt: "2596-01-02T00:00:00.000Z", id: resumedId },
       complete: false,
       busy: false,
     })]);
@@ -448,8 +487,8 @@ describe("website analytics V2 backfill", () => {
   });
 
   it("previews from a failed persisted cursor without changing failure evidence", async () => {
-    const priorId = await websiteOrder({ occurredAt: new Date("2396-02-01T00:00:00.000Z") });
-    const resumedId = await websiteOrder({ occurredAt: new Date("2396-02-02T00:00:00.000Z") });
+    const priorId = await websiteOrder({ occurredAt: new Date("2596-02-01T00:00:00.000Z") });
+    const resumedId = await websiteOrder({ occurredAt: new Date("2596-02-02T00:00:00.000Z") });
     sourceIds.push(priorId, resumedId);
     const stateKeyPrefix = `${prefix}failed-preview`;
     const stateKey = `${stateKeyPrefix}:website_orders`;
@@ -457,12 +496,12 @@ describe("website analytics V2 backfill", () => {
       stateType: "backfill",
       stateKey,
       status: "failed",
-      cursorOccurredAt: new Date("2396-02-01T00:00:00.000Z"),
+      cursorOccurredAt: new Date("2596-02-01T00:00:00.000Z"),
       cursorId: priorId,
       failedCount: 2,
-      startedAt: new Date("2396-02-03T00:00:00.000Z"),
+      startedAt: new Date("2596-02-03T00:00:00.000Z"),
       lastErrorCode: "SOURCE_ROW_FAILED",
-      updatedAt: new Date("2396-02-03T00:00:00.000Z"),
+      updatedAt: new Date("2596-02-03T00:00:00.000Z"),
     });
     const [stateBefore] = await database.select().from(websiteAnalyticsReconciliationState)
       .where(and(
@@ -473,7 +512,7 @@ describe("website analytics V2 backfill", () => {
       batchSize: 10,
       sources: ["website_orders"] as const,
       stateKeyPrefix,
-      fromOccurredAt: new Date("2396-02-10T00:00:00.000Z"),
+      fromOccurredAt: new Date("2596-02-10T00:00:00.000Z"),
     };
     const backfill = createWebsiteAnalyticsV2Backfill(database);
 
@@ -484,7 +523,7 @@ describe("website analytics V2 backfill", () => {
       unchanged: 0,
       skipped: 0,
       failed: 0,
-      cursor: { occurredAt: "2396-02-02T00:00:00.000Z", id: resumedId },
+      cursor: { occurredAt: "2596-02-02T00:00:00.000Z", id: resumedId },
       complete: true,
       busy: false,
     })]);
@@ -502,7 +541,7 @@ describe("website analytics V2 backfill", () => {
       unchanged: 0,
       skipped: 0,
       failed: 0,
-      cursor: { occurredAt: "2396-02-02T00:00:00.000Z", id: resumedId },
+      cursor: { occurredAt: "2596-02-02T00:00:00.000Z", id: resumedId },
       complete: true,
       busy: false,
     })]);
@@ -668,7 +707,8 @@ describe("website analytics V2 backfill", () => {
       .where(eq(paymentLedgerEntries.idempotencyKey, ledgerId));
     ledgerIds.push(ledger!.id);
     const attemptId = randomUUID();
-    attemptIds.push(attemptId);
+    const legacyAttemptId = randomUUID();
+    attemptIds.push(attemptId, legacyAttemptId);
     await database.insert(paymentAttempts).values({
       id: attemptId,
       orderId: exactOrder,
@@ -682,12 +722,32 @@ describe("website analytics V2 backfill", () => {
       websiteAnalyticsPaidAt: new Date("2298-06-04T00:00:00.000Z"),
       websiteAnalyticsRefundedAt: new Date("2298-06-05T00:00:00.000Z"),
     });
-    const legacyDirectLedgerId = randomUUID();
+    await database.insert(paymentAttempts).values({
+      id: legacyAttemptId,
+      orderId: exactOrder,
+      provider: "local-test",
+      method: "card",
+      idempotencyKey: `${prefix}legacy-attempt`,
+      expectedAmountCents: 12_000,
+      currency: "NZD",
+      country: "NZ",
+      status: "paid",
+      websiteAnalyticsPaidAt: new Date("2298-06-04T01:00:00.000Z"),
+      websiteAnalyticsRefundedAt: new Date("2298-06-05T01:00:00.000Z"),
+    });
+    const directReceiptLedgerId = randomUUID();
+    const directReversalLedgerId = randomUUID();
+    const legacyDirectReceiptLedgerId = randomUUID();
     const legacyBackfillLedgerId = randomUUID();
-    ledgerIds.push(legacyDirectLedgerId, legacyBackfillLedgerId);
+    ledgerIds.push(
+      directReceiptLedgerId,
+      directReversalLedgerId,
+      legacyDirectReceiptLedgerId,
+      legacyBackfillLedgerId,
+    );
     await database.insert(paymentLedgerEntries).values([
       {
-        id: legacyDirectLedgerId,
+        id: directReceiptLedgerId,
         orderId: exactOrder,
         paymentAttemptId: attemptId,
         entryType: "online_payment",
@@ -695,6 +755,28 @@ describe("website analytics V2 backfill", () => {
         amountCents: 12_000,
         currency: "NZD",
         receivedAt: new Date("2298-06-02T12:00:00.000Z"),
+        reference: "verified direct payment attempt",
+        idempotencyKey: `direct-payment-receipt:${attemptId}`,
+      },
+      {
+        id: directReversalLedgerId,
+        orderId: exactOrder,
+        entryType: "reversal",
+        direction: "debit",
+        amountCents: 12_000,
+        currency: "NZD",
+        receivedAt: new Date("2298-06-05T00:00:00.000Z"),
+        reversesEntryId: directReceiptLedgerId,
+      },
+      {
+        id: legacyDirectReceiptLedgerId,
+        orderId: exactOrder,
+        paymentAttemptId: legacyAttemptId,
+        entryType: "online_payment",
+        direction: "credit",
+        amountCents: 12_000,
+        currency: "NZD",
+        receivedAt: new Date("2298-06-02T14:00:00.000Z"),
         reference: "legacy verified payment attempt",
       },
       {
@@ -724,8 +806,8 @@ describe("website analytics V2 backfill", () => {
       fromOccurredAt: new Date("2298-06-01T00:00:00.000Z"),
     });
     expect(preview.totals).toMatchObject({
-      scanned: 3,
-      wouldCreate: 1,
+      scanned: 5,
+      wouldCreate: 3,
       unchanged: 0,
       skipped: 2,
       failed: 0,
@@ -742,7 +824,7 @@ describe("website analytics V2 backfill", () => {
       stateKeyPrefix: `${prefix}finance`,
       fromOccurredAt: new Date("2298-06-01T00:00:00.000Z"),
     });
-    expect(result.totals).toMatchObject({ created: 3, failed: 0 });
+    expect(result.totals).toMatchObject({ created: 5, failed: 0 });
     expect(result.limitations).toEqual(expect.arrayContaining([
       expect.stringMatching(/mutable.*payment.*status/i),
       expect.stringMatching(/mutable.*refund.*status/i),
@@ -755,20 +837,47 @@ describe("website analytics V2 backfill", () => {
       amountCents: websiteAnalyticsFinancialEvents.amountCents,
       occurredAt: websiteAnalyticsFinancialEvents.occurredAt,
     }).from(websiteAnalyticsFinancialEvents).where(and(
-      inArray(websiteAnalyticsFinancialEvents.sourceType, ["payment_ledger_entry", "payment_attempt"]),
-      inArray(websiteAnalyticsFinancialEvents.sourceId, [ledger!.id, attemptId]),
+      eq(websiteAnalyticsFinancialEvents.sourceType, "payment_ledger_entry"),
+      inArray(websiteAnalyticsFinancialEvents.sourceId, [
+        ledger!.id,
+        directReceiptLedgerId,
+        directReversalLedgerId,
+      ]),
     ))).toEqual(expect.arrayContaining([
       expect.objectContaining({ sourceType: "payment_ledger_entry", sourceId: ledger!.id, eventType: "receipt", amountCents: 4_000, occurredAt: new Date("2298-06-03T01:02:03.000Z") }),
-      expect.objectContaining({ sourceType: "payment_attempt", sourceId: attemptId, eventType: "receipt", amountCents: 12_000, occurredAt: new Date("2298-06-04T00:00:00.000Z") }),
-      expect.objectContaining({ sourceType: "payment_attempt", sourceId: attemptId, eventType: "refund", amountCents: 12_000, occurredAt: new Date("2298-06-05T00:00:00.000Z") }),
+      expect.objectContaining({ sourceType: "payment_ledger_entry", sourceId: directReceiptLedgerId, eventType: "receipt", amountCents: 12_000, occurredAt: new Date("2298-06-02T12:00:00.000Z") }),
+      expect.objectContaining({ sourceType: "payment_ledger_entry", sourceId: directReversalLedgerId, eventType: "reversal", amountCents: 12_000, occurredAt: new Date("2298-06-05T00:00:00.000Z") }),
     ]));
     expect(await database.select().from(websiteAnalyticsFinancialEvents)
       .where(eq(websiteAnalyticsFinancialEvents.orderId, mutableOnly))).toEqual([]);
     expect(await database.select().from(websiteAnalyticsFinancialEvents)
       .where(inArray(websiteAnalyticsFinancialEvents.sourceId, [
-        legacyDirectLedgerId,
         legacyBackfillLedgerId,
+        attemptId,
       ]))).toEqual([]);
+    expect(await database.select({
+      sourceType: websiteAnalyticsFinancialEvents.sourceType,
+      sourceId: websiteAnalyticsFinancialEvents.sourceId,
+      eventType: websiteAnalyticsFinancialEvents.eventType,
+      occurredAt: websiteAnalyticsFinancialEvents.occurredAt,
+    }).from(websiteAnalyticsFinancialEvents).where(and(
+      eq(websiteAnalyticsFinancialEvents.sourceType, "payment_attempt"),
+      eq(websiteAnalyticsFinancialEvents.sourceId, legacyAttemptId),
+    ))).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        eventType: "receipt",
+        occurredAt: new Date("2298-06-04T01:00:00.000Z"),
+      }),
+      expect.objectContaining({
+        eventType: "refund",
+        occurredAt: new Date("2298-06-05T01:00:00.000Z"),
+      }),
+    ]));
+    expect(await database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(
+        websiteAnalyticsFinancialEvents.sourceId,
+        legacyDirectReceiptLedgerId,
+      ))).toEqual([]);
   });
 
   it("repairs a recent durable refund without replaying an older paid transition", async () => {

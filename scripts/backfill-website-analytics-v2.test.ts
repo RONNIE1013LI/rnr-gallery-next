@@ -75,7 +75,7 @@ describe("Website Analytics V2 backfill command", () => {
     expect(execute).not.toHaveBeenCalled();
   });
 
-  it("uses the isolated Test target and emits only safe aggregate counts and cursors", async () => {
+  it("uses the isolated Test target and emits aggregate-only output without source cursors", async () => {
     const writeSafeOutput = vi.fn();
     const execute = vi.fn().mockResolvedValue({
       dryRun: true,
@@ -128,13 +128,13 @@ describe("Website Analytics V2 backfill command", () => {
         unchanged: 0,
         skipped: 0,
         failed: 0,
-        cursor: { occurredAt: "2025-01-02T03:04:05.000Z", id: "safe-source-id" },
         complete: false,
         busy: false,
       }],
       limitations: ["Historical attribution is limited."],
     });
     expect(JSON.stringify(writeSafeOutput.mock.calls)).not.toContain("must-not-leak");
+    expect(JSON.stringify(writeSafeOutput.mock.calls)).not.toContain("safe-source-id");
   });
 
   it("fails before database access for missing or invalid configuration", async () => {

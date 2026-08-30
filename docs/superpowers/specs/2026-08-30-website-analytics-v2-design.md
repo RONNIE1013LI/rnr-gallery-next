@@ -46,8 +46,16 @@ system and never rewrites business money.
   state and autosave do not call this authoritative finalisation path.
 - Exact payment-request and bank-transfer receipts live in
   `payment_ledger_entries`.
-- Verified direct website payment transitions are written by
-  `drizzle-payment-repository`; they currently do not create ledger entries.
+- Verified direct website payments append an `online_payment` credit carrying
+  `direct-payment-receipt:<attempt-id>` and any later full refund appends one
+  linked `reversal` debit in `payment_ledger_entries` inside the verified
+  payment transaction. This pre-0060 ledger is the immutable source while V2
+  is disabled as well as after enablement.
+- Migration 0031's `legacy verified payment attempt` rows used mutable
+  `payment_attempts.updated_at`; their missing exact receipt key is therefore
+  an explicit non-authoritative discriminator. If such a pre-existing paid
+  order is later refunded, the transaction appends only an exact standalone
+  `refund` debit keyed by attempt. It never invents a historical receipt time.
 - Existing manual finance is cumulative editable state. V2 can preserve exact
   future deltas at the authoritative update, but historical partial-payment or
   refund timing cannot be invented.
@@ -141,7 +149,9 @@ A Paid Order is an eligible order whose cumulative collected amount, less
 refunds/reversals, reaches its ordered amount within the reporting cutoff. A
 partial payment is not fully paid. It counts once even if it has multiple
 receipt facts. Refunded orders retain their earlier payment facts and show the
-separate refund.
+separate refund. The report selects the cohort by immutable order creation date,
+evaluates all confirmed money before the requested cutoff, and groups the result
+back into the order's reporting bucket. Daily rows do not persist Paid status.
 
 ### Scope
 
@@ -231,24 +241,31 @@ window. A failed run remains resumable and cannot be marked complete.
 ## Authoritative writes and reliability
 
 Order and inquiry creation call a small analytics recorder only after the
-business transaction succeeds. Writes are idempotent and fail soft so an
-analytics outage never rejects checkout, payment, or a customer inquiry. The
-daily reconciliation reads business source-of-truth rows and repairs any missed
-fact. Manual order finalisation, direct verified payment, payment-ledger writes,
-manual paid-amount deltas, and verified refunds each have a source-specific
-adapter. Browser conversion events are not authoritative.
+business transaction succeeds. V2 fact writes are idempotent and fail soft so
+an analytics outage never rejects checkout, payment, or a customer inquiry.
+Direct verified receipt/reversal ledger evidence is different: it is an
+authoritative finance write in the same payment transaction, so an evidence
+failure rolls back the verified transition and its retry-safe ledger keys allow
+the provider event to replay. The daily reconciliation reads business
+source-of-truth rows and repairs any missed V2 fact. Browser conversion events
+are not authoritative.
 
-`WEBSITE_ANALYTICS_V2_ENABLED` gates every new read and write. Missing/invalid
-config is false. With the flag false, the existing V1 page and collection work
-without referencing V2 tables. This permits code-first deployment, migration,
-backfill, and later enablement with instant UI rollback.
+`WEBSITE_ANALYTICS_V2_ENABLED` gates every V2-table read and write, but does not
+gate the pre-existing authoritative payment ledger. Missing/invalid config is
+false. With the flag false, direct payment evidence continues while the existing
+V1 page and collection work without referencing 0060 columns or V2 tables. This
+permits code-first deployment, migration, backfill, and later enablement with
+instant UI rollback.
 
 ## Backfill and reconciliation
 
 The server-only CLI supports `--dry-run`, bounded `--batch-size`, and resumable
-cursors. It scans business tables in stable `(created_at,id)` order, creates
+cursors. One dry-run invocation consumes every bounded page without persisting
+state or facts. It scans business tables in stable `(occurred_at,id)` order, creates
 idempotent order/inquiry facts, imports exact ledger financial events, and uses
-only trustworthy paid/refund timestamps. Rows predating the first V1 session or
+legacy 0060 direct-transition timestamps only when no qualifying authoritative
+ledger evidence exists. Migration 0031's mutable-time direct receipt rows are
+explicitly skipped. Rows predating the first V1 session or
 without consent/session evidence are `Historical / Unattributed`; no session or
 campaign is fabricated.
 
@@ -337,7 +354,8 @@ change.
 
 ## Rollout and rollback
 
-1. Deploy code from verified `origin/main` with V2 flag false; V1 stays live.
+1. Deploy code from verified `origin/main` with V2 flag false; V1 stays live and
+   direct receipt/refund ledger evidence begins immediately without 0060 access.
 2. Run exact-prefix and database-identity read-only checks.
 3. Apply additive `0060` to Production and verify objects/journal/catalog.
 4. Run Production backfill dry-run, reconcile counts without PII, then execute
@@ -345,8 +363,9 @@ change.
 5. Set `WEBSITE_ANALYTICS_V2_ENABLED=true`, allow Git-main redeployment, and
    verify dashboard, V1 collection, orders, payments, notifications, and cron.
 
-Rollback sets the flag false and redeploys to the V1 UI. New tables and valid
-facts remain; no destructive down migration is used.
+Rollback sets the flag false and redeploys to the V1 UI. Direct ledger evidence
+continues, while new tables and valid facts remain; no destructive down migration
+is used.
 
 ## Explicit limitations
 

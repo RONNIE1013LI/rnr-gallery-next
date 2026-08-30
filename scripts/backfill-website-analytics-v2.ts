@@ -146,9 +146,6 @@ function safeOutput(
       unchanged: source.unchanged,
       skipped: source.skipped,
       failed: source.failed,
-      cursor: source.cursor
-        ? { occurredAt: source.cursor.occurredAt, id: source.cursor.id }
-        : null,
       complete: source.complete,
       busy: source.busy,
     })),

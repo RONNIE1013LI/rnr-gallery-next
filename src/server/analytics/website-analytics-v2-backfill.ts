@@ -200,7 +200,9 @@ function ledgerEventType(input: Readonly<{
   reversesEntryId: string | null;
 }>): "receipt" | "refund" | "reversal" | null {
   if (input.entryType === "online_payment" && input.direction === "credit"
-    && input.paymentRequestId && input.paymentAttemptId) {
+    && input.paymentAttemptId
+    && (input.paymentRequestId !== null
+      || input.idempotencyKey === `direct-payment-receipt:${input.paymentAttemptId}`)) {
     return "receipt";
   }
   if (input.entryType === "bank_transfer" && input.direction === "credit"
@@ -208,7 +210,7 @@ function ledgerEventType(input: Readonly<{
   if (input.entryType === "refund" && input.direction === "debit"
     && input.idempotencyKey) return "refund";
   if (input.entryType === "reversal" && input.direction === "debit"
-    && input.idempotencyKey && input.reversesEntryId) return "reversal";
+    && input.reversesEntryId) return "reversal";
   return null;
 }
 
@@ -424,6 +426,18 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
       }).from(paymentAttempts).where(and(
         isNull(paymentAttempts.paymentRequestId),
         isNotNull(occurredAt),
+        sql`not exists (
+          select 1 from ${paymentLedgerEntries} as direct_ledger
+          where direct_ledger.payment_attempt_id = ${paymentAttempts.id}
+            and direct_ledger.payment_request_id is null
+            and direct_ledger.order_id = ${paymentAttempts.orderId}
+            and direct_ledger.entry_type = 'online_payment'
+            and direct_ledger.direction = 'credit'
+            and direct_ledger.amount_cents = ${paymentAttempts.expectedAmountCents}
+            and direct_ledger.currency = ${paymentAttempts.currency}
+            and direct_ledger.idempotency_key
+              = 'direct-payment-receipt:' || ${paymentAttempts.id}::text
+        )`,
         fromOccurredAt ? gte(occurredAt, fromOccurredAt) : undefined,
         cursor ? or(
           gt(occurredAt, cursor.occurredAt),
@@ -660,35 +674,45 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
       complete: true,
       busy: false,
     });
-    const rows = await loadRows(
-      database,
-      source,
-      lifecycle.cursor,
-      lifecycle.fromOccurredAt,
-      batchSize + 1,
-    );
-    const batch = rows.slice(0, batchSize);
+    let cursor = lifecycle.cursor;
+    let fromOccurredAt = lifecycle.fromOccurredAt;
+    let last: SourceRow | undefined;
     let counts = emptyCounts();
-    for (const row of batch) {
-      const actions = await planRow(source, row, input.historical !== false);
-      const existing = await existingCount(database, actions);
-      const possible = actions.length;
-      counts = addCounts(counts, {
-        scanned: 1,
-        created: 0,
-        wouldCreate: Math.max(0, possible - existing),
-        unchanged: Math.min(possible, existing),
-        skipped: possible === 0 ? 1 : 0,
-        failed: 0,
-      });
+    for (;;) {
+      const rows = await loadRows(
+        database,
+        source,
+        cursor,
+        fromOccurredAt,
+        batchSize + 1,
+      );
+      const batch = rows.slice(0, batchSize);
+      for (const row of batch) {
+        const actions = await planRow(source, row, input.historical !== false);
+        const existing = await existingCount(database, actions);
+        const possible = actions.length;
+        counts = addCounts(counts, {
+          scanned: 1,
+          created: 0,
+          wouldCreate: Math.max(0, possible - existing),
+          unchanged: Math.min(possible, existing),
+          skipped: possible === 0 ? 1 : 0,
+          failed: 0,
+        });
+      }
+      last = batch.at(-1) ?? last;
+      if (rows.length <= batchSize) break;
+      if (!last) throw new Error("Analytics dry-run cursor did not advance");
+      cursor = { occurredAt: last.occurredAt, id: last.id };
+      fromOccurredAt = undefined;
     }
     return Object.freeze({
       source,
       ...counts,
-      cursor: asCursor(batch.at(-1)) ?? (lifecycle.cursor
+      cursor: asCursor(last) ?? (lifecycle.cursor
         ? { occurredAt: lifecycle.cursor.occurredAt.toISOString(), id: lifecycle.cursor.id }
         : null),
-      complete: rows.length <= batchSize,
+      complete: true,
       busy: false,
     });
   }

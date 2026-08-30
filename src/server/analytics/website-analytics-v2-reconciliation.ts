@@ -253,62 +253,10 @@ async function readRawDailyRowsFrom(
       where financial.local_date = ${localDate}::date
       group by 1, 2, 3, 4, 5, 6, 7, 8, 9
     ),
-    event_balances as (
-      select financial.linked_conversion_id,
-        financial.local_date,
-        financial.occurred_at,
-        financial.id,
-        financial.ordered_amount_incl_gst_cents,
-        sum(case when financial.event_type = 'receipt'
-          then financial.amount_cents else -financial.amount_cents end)
-          over (partition by financial.linked_conversion_id
-            order by financial.occurred_at, financial.id rows unbounded preceding) as balance
-      from linked_financial financial
-      where financial.ordered_amount_incl_gst_cents is not null
-    ),
-    first_paid as (
-      select linked_conversion_id, min(local_date) as paid_date
-      from event_balances
-      where balance >= ordered_amount_incl_gst_cents
-      group by linked_conversion_id
-    ),
-    paid_metrics as (
-      select
-        first_paid.paid_date as "localDate",
-        scopes.scope,
-        conversions.market::text as market,
-        conversions.currency::text as currency,
-        snapshots.channel::text as channel,
-        coalesce(nullif(trim(snapshots.source), ''), 'Unattributed')::text as source,
-        coalesce(nullif(trim(snapshots.medium), ''), '(not set)')::text as medium,
-        coalesce(nullif(trim(snapshots.campaign), ''), '(not set)')::text as campaign,
-        snapshots.attribution_model::text as "attributionModel",
-        0::bigint as visitors,
-        0::bigint as sessions,
-        0::bigint as "pageViews",
-        0::bigint as inquiries,
-        0::bigint as orders,
-        count(distinct conversions.id)::bigint as "paidOrders",
-        0::bigint as "orderedRevenueCents",
-        0::bigint as "collectedRevenueCents",
-        0::bigint as "refundedRevenueCents"
-      from first_paid
-      inner join website_analytics_conversions conversions
-        on conversions.id = first_paid.linked_conversion_id
-      inner join website_analytics_attribution_snapshots snapshots
-        on snapshots.conversion_id = conversions.id
-      cross join lateral (
-        select 'website'::text as scope where conversions.scope = 'website'
-        union all select 'all_business'::text
-      ) scopes
-      where first_paid.paid_date = ${localDate}::date
-      group by 1, 2, 3, 4, 5, 6, 7, 8, 9
-    ),
     combined as (
       select * from traffic
       union all select * from conversion_metrics
       union all select * from financial_metrics
-      union all select * from paid_metrics
     )
     select
       "localDate", scope, market, currency, channel, source, medium, campaign,

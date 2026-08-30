@@ -9,6 +9,7 @@ import {
   internalNotificationSubscriptions,
   orderNotificationOutbox,
   orders,
+  paymentLedgerEntries,
   paymentAttempts,
   webhookEvents,
   websiteAnalyticsFinancialEvents,
@@ -40,6 +41,7 @@ const analyticsRecorder = createWebsiteAnalyticsV2BusinessRecorder(database, {
 const repository = createDrizzlePaymentRepository(database, {
   leaseDurationMs: 30_000,
   analyticsRecorder,
+  websiteAnalyticsV2Enabled: true,
 });
 const suffix = randomUUID();
 const orderIds: string[] = [];
@@ -262,21 +264,99 @@ describe("Drizzle payment repository", () => {
     },
   );
 
-  it("keeps the V2-disabled repository compatible before evidence columns exist", async () => {
-    const disabledRepository = createDrizzlePaymentRepository(database, {
+  it("keeps immutable direct-payment evidence when V2 is disabled", async () => {
+    const order = await createOrder();
+    const preMigrationPool = new Pool({ connectionString: databaseUrl, max: 1 });
+    await preMigrationPool.query(`
+      create temporary view payment_attempts as
+      select
+        id, order_id, payment_request_id, provider, method, idempotency_key,
+        provider_reference, provider_session_lease_id, provider_session_lease_expires_at,
+        return_state_digest, return_state_consumed_at, expected_amount_cents, currency,
+        country, payer_snapshot, status, sanitized_failure_code, created_at, updated_at
+      from public.payment_attempts
+    `);
+    const preMigrationDatabase = drizzle(preMigrationPool);
+    const disabledRepository = createDrizzlePaymentRepository(preMigrationDatabase, {
       websiteAnalyticsV2Enabled: false,
     });
-    const order = await createOrder();
 
-    await expect(disabledRepository.createOrClaimNonterminalAttempt(
-      claimInput(order.orderId),
-    )).resolves.toMatchObject({
-      outcome: "claimed",
-      attempt: {
+    try {
+
+      const claim = await disabledRepository.createOrClaimNonterminalAttempt(
+        claimInput(order.orderId),
+      );
+      expect(claim).toMatchObject({
+        outcome: "claimed",
+        attempt: {
+          orderId: order.orderId,
+          status: "created",
+        },
+      });
+      const providerReference = `flag-off-ledger-${randomUUID()}`;
+      await disabledRepository.bindProviderSession({
+        attemptId: claim.attempt.id,
+        claimId: claim.claimId!,
+        providerReference,
+        returnStateDigest: null,
+        status: "processing",
+      });
+      const paidResult = {
+        providerReference,
+        providerStatus: "CAPTURED",
+        amountCents: 7_475,
+        currency: "NZD" as const,
+        orderNumber: order.orderNumber,
+        status: "paid" as const,
+      };
+
+      await disabledRepository.applyVerifiedResult({
+        attemptId: claim.attempt.id,
+        result: paidResult,
+        source: "server_capture",
+      });
+      await disabledRepository.applyVerifiedResult({
+        attemptId: claim.attempt.id,
+        result: { ...paidResult, providerStatus: "refunded", status: "refunded" },
+        source: "reconciliation",
+      });
+      await disabledRepository.applyVerifiedResult({
+        attemptId: claim.attempt.id,
+        result: { ...paidResult, providerStatus: "refunded", status: "refunded" },
+        source: "reconciliation",
+      });
+
+      const ledger = await database.select().from(paymentLedgerEntries)
+        .where(eq(paymentLedgerEntries.orderId, order.orderId))
+        .orderBy(paymentLedgerEntries.receivedAt, paymentLedgerEntries.id);
+      expect(ledger).toHaveLength(2);
+      expect(ledger[0]).toMatchObject({
         orderId: order.orderId,
-        status: "created",
-      },
-    });
+        paymentRequestId: null,
+        paymentAttemptId: claim.attempt.id,
+        entryType: "online_payment",
+        direction: "credit",
+        amountCents: 7_475,
+        currency: "NZD",
+        reversesEntryId: null,
+        idempotencyKey: `direct-payment-receipt:${claim.attempt.id}`,
+      });
+      expect(ledger[1]).toMatchObject({
+        orderId: order.orderId,
+        paymentRequestId: null,
+        paymentAttemptId: null,
+        entryType: "reversal",
+        direction: "debit",
+        amountCents: 7_475,
+        currency: "NZD",
+        reversesEntryId: ledger[0].id,
+      });
+      expect(ledger[0].receivedAt.getTime()).toBeLessThan(
+        ledger[1].receivedAt.getTime(),
+      );
+    } finally {
+      await preMigrationPool.end();
+    }
   });
 
   it("does not query direct transition evidence when V2 is disabled", async () => {
@@ -294,9 +374,92 @@ describe("Drizzle payment repository", () => {
     expect(select).not.toHaveBeenCalled();
   });
 
+  it("records an exact standalone refund when 0031 left only mutable receipt evidence", async () => {
+    const disabledRepository = createDrizzlePaymentRepository(database, {
+      websiteAnalyticsV2Enabled: false,
+    });
+    const order = await createOrder();
+    const claim = await disabledRepository.createOrClaimNonterminalAttempt(
+      claimInput(order.orderId),
+    );
+    const providerReference = `legacy-direct-refund-${randomUUID()}`;
+    await disabledRepository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+    await database.update(paymentAttempts).set({ status: "paid" })
+      .where(eq(paymentAttempts.id, claim.attempt.id));
+    await database.update(orders).set({ paymentStatus: "paid" })
+      .where(eq(orders.id, order.orderId));
+    const [legacyAttempt] = await database.select({
+      updatedAt: paymentAttempts.updatedAt,
+    }).from(paymentAttempts).where(eq(paymentAttempts.id, claim.attempt.id));
+    const legacyReceiptId = randomUUID();
+    await database.insert(paymentLedgerEntries).values({
+      id: legacyReceiptId,
+      orderId: order.orderId,
+      paymentAttemptId: claim.attempt.id,
+      entryType: "online_payment",
+      direction: "credit",
+      amountCents: 7_475,
+      currency: "NZD",
+      receivedAt: legacyAttempt.updatedAt,
+      reference: "legacy verified payment attempt",
+    });
+    const refundResult = {
+      providerReference,
+      providerStatus: "refunded",
+      amountCents: 7_475,
+      currency: "NZD" as const,
+      orderNumber: order.orderNumber,
+      status: "refunded" as const,
+    };
+
+    const refunded = await disabledRepository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      result: refundResult,
+      source: "reconciliation",
+    });
+    await disabledRepository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      result: refundResult,
+      source: "reconciliation",
+    });
+
+    const ledger = await database.select().from(paymentLedgerEntries)
+      .where(eq(paymentLedgerEntries.orderId, order.orderId))
+      .orderBy(paymentLedgerEntries.receivedAt, paymentLedgerEntries.id);
+    expect(ledger).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: legacyReceiptId,
+        paymentAttemptId: claim.attempt.id,
+        entryType: "online_payment",
+        idempotencyKey: null,
+        reference: "legacy verified payment attempt",
+      }),
+      expect.objectContaining({
+        paymentRequestId: null,
+        paymentAttemptId: null,
+        entryType: "refund",
+        direction: "debit",
+        amountCents: 7_475,
+        currency: "NZD",
+        receivedAt: refunded.attempt.updatedAt,
+        reversesEntryId: null,
+        idempotencyKey: `direct-payment-refund:${claim.attempt.id}`,
+      }),
+    ]));
+    expect(ledger).toHaveLength(2);
+  });
+
   afterAll(async () => {
     await database.delete(websiteAnalyticsFinancialEvents)
       .where(inArray(websiteAnalyticsFinancialEvents.orderId, orderIds));
+    await database.delete(paymentLedgerEntries)
+      .where(inArray(paymentLedgerEntries.orderId, orderIds));
     await pool.query(
       "delete from webhook_events where payment_attempt_id in (select id from payment_attempts where order_id = any($1::uuid[]))",
       [orderIds],
@@ -917,6 +1080,7 @@ describe("Drizzle payment repository", () => {
     };
     const transitionRepository = createDrizzlePaymentRepository(database, {
       analyticsRecorder: transitionRecorder,
+      websiteAnalyticsV2Enabled: true,
     });
     const claim = await transitionRepository.createOrClaimNonterminalAttempt(
       claimInput(order.orderId, { provider: "afterpay", method: "afterpay" }),
@@ -1054,11 +1218,21 @@ describe("Drizzle payment repository", () => {
       .resolves.toBe("applied");
     expect(await database.select().from(websiteAnalyticsFinancialEvents)
       .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId))).toEqual([]);
-    const [paidEvidence] = await database.select({
+    const [attemptEvidence] = await database.select({
       paidAt: paymentAttempts.websiteAnalyticsPaidAt,
       refundedAt: paymentAttempts.websiteAnalyticsRefundedAt,
     }).from(paymentAttempts).where(eq(paymentAttempts.id, claim.attempt.id));
-    expect(paidEvidence).toEqual({ paidAt: expect.any(Date), refundedAt: null });
+    expect(attemptEvidence).toEqual({ paidAt: null, refundedAt: null });
+    const [paidEvidence] = await database.select().from(paymentLedgerEntries)
+      .where(eq(paymentLedgerEntries.paymentAttemptId, claim.attempt.id));
+    expect(paidEvidence).toMatchObject({
+      orderId: order.orderId,
+      paymentRequestId: null,
+      entryType: "online_payment",
+      direction: "credit",
+      amountCents: 7_475,
+      currency: "NZD",
+    });
     await expect(durableRepository.loadWebsiteAnalyticsDirectPaymentTransitions(
       claim.attempt.id,
     )).resolves.toEqual([{
@@ -1068,7 +1242,7 @@ describe("Drizzle payment repository", () => {
       eventType: "receipt",
       amountCents: 7_475,
       currency: "NZD",
-      occurredAt: paidEvidence.paidAt,
+      occurredAt: paidEvidence.receivedAt,
     }]);
 
     await expect(durableRepository.consumeReturnState({
@@ -1084,11 +1258,11 @@ describe("Drizzle payment repository", () => {
       .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId));
     expect(receipt).toMatchObject({
       eventType: "receipt",
-      sourceType: "payment_attempt",
-      sourceId: claim.attempt.id,
+      sourceType: "payment_ledger_entry",
+      sourceId: paidEvidence.id,
       amountCents: 7_475,
       currency: "NZD",
-      occurredAt: paidEvidence.paidAt,
+      occurredAt: paidEvidence.receivedAt,
     });
 
     rejectNextFinancialWrite = true;
@@ -1104,14 +1278,20 @@ describe("Drizzle payment repository", () => {
     };
     await expect(durableRepository.applyVerifiedWebhookEventAtomically(refundWebhook))
       .resolves.toBe("applied");
-    const [refundEvidence] = await database.select({
-      paidAt: paymentAttempts.websiteAnalyticsPaidAt,
-      refundedAt: paymentAttempts.websiteAnalyticsRefundedAt,
-    }).from(paymentAttempts).where(eq(paymentAttempts.id, claim.attempt.id));
-    expect(refundEvidence.paidAt).toEqual(paidEvidence.paidAt);
-    expect(refundEvidence.refundedAt).toEqual(expect.any(Date));
-    expect(refundEvidence.refundedAt!.getTime()).toBeGreaterThan(
-      paidEvidence.paidAt!.getTime(),
+    const [refundEvidence] = await database.select().from(paymentLedgerEntries)
+      .where(eq(paymentLedgerEntries.reversesEntryId, paidEvidence.id));
+    expect(refundEvidence).toMatchObject({
+      orderId: order.orderId,
+      paymentRequestId: null,
+      paymentAttemptId: null,
+      entryType: "reversal",
+      direction: "debit",
+      amountCents: 7_475,
+      currency: "NZD",
+      reversesEntryId: paidEvidence.id,
+    });
+    expect(refundEvidence.receivedAt.getTime()).toBeGreaterThan(
+      paidEvidence.receivedAt.getTime(),
     );
     expect(await database.select().from(websiteAnalyticsFinancialEvents)
       .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId))).toHaveLength(1);
@@ -1123,22 +1303,23 @@ describe("Drizzle payment repository", () => {
       .resolves.toEqual(expect.arrayContaining([
         expect.objectContaining({
           eventType: "receipt",
-          sourceId: claim.attempt.id,
-          occurredAt: paidEvidence.paidAt,
+          sourceType: "payment_ledger_entry",
+          sourceId: paidEvidence.id,
+          occurredAt: paidEvidence.receivedAt,
         }),
         expect.objectContaining({
-          eventType: "refund",
-          sourceId: claim.attempt.id,
+          eventType: "reversal",
+          sourceType: "payment_ledger_entry",
+          sourceId: refundEvidence.id,
           amountCents: 7_475,
           currency: "NZD",
-          occurredAt: refundEvidence.refundedAt,
+          occurredAt: refundEvidence.receivedAt,
         }),
       ]));
-    const [afterDuplicate] = await database.select({
-      paidAt: paymentAttempts.websiteAnalyticsPaidAt,
-      refundedAt: paymentAttempts.websiteAnalyticsRefundedAt,
-    }).from(paymentAttempts).where(eq(paymentAttempts.id, claim.attempt.id));
-    expect(afterDuplicate).toEqual(refundEvidence);
+    const afterDuplicate = await database.select().from(paymentLedgerEntries)
+      .where(eq(paymentLedgerEntries.orderId, order.orderId))
+      .orderBy(paymentLedgerEntries.receivedAt, paymentLedgerEntries.id);
+    expect(afterDuplicate).toEqual([paidEvidence, refundEvidence]);
   });
 
   it("applies verified money with zero eligible recipients and preserves terminal state exactly", async () => {
@@ -1179,14 +1360,16 @@ describe("Drizzle payment repository", () => {
       order.orderId,
     ))).resolves.toEqual([]);
     const paidBefore = await paymentRows(order.orderId, claim.attempt.id);
+    const [paidLedger] = await database.select().from(paymentLedgerEntries)
+      .where(eq(paymentLedgerEntries.paymentAttemptId, claim.attempt.id));
     expect(await database.select().from(websiteAnalyticsFinancialEvents)
       .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId)))
       .toEqual([expect.objectContaining({
         eventType: "receipt",
-        sourceType: "payment_attempt",
-        sourceId: claim.attempt.id,
+        sourceType: "payment_ledger_entry",
+        sourceId: paidLedger.id,
         amountCents: 7_475,
-        occurredAt: paidBefore.attempt.updatedAt,
+        occurredAt: paidLedger.receivedAt,
       })]);
     await repository.applyVerifiedResult({
       attemptId: claim.attempt.id,
@@ -1205,20 +1388,25 @@ describe("Drizzle payment repository", () => {
       attempt: { status: "paid" },
     });
     const refunded = await paymentRows(order.orderId, claim.attempt.id);
+    const [refundLedger] = await database.select().from(paymentLedgerEntries)
+      .where(eq(paymentLedgerEntries.reversesEntryId, paidLedger.id));
     expect(await database.select().from(websiteAnalyticsFinancialEvents)
       .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId)))
       .toEqual(expect.arrayContaining([
         expect.objectContaining({
           eventType: "receipt",
-          sourceId: claim.attempt.id,
-          occurredAt: paidBefore.attempt.updatedAt,
+          sourceType: "payment_ledger_entry",
+          sourceId: paidLedger.id,
+          occurredAt: paidLedger.receivedAt,
         }),
         expect.objectContaining({
-          eventType: "refund",
-          sourceId: claim.attempt.id,
-          occurredAt: refunded.attempt.updatedAt,
+          eventType: "reversal",
+          sourceType: "payment_ledger_entry",
+          sourceId: refundLedger.id,
+          occurredAt: refundLedger.receivedAt,
         }),
       ]));
+    expect(refundLedger.receivedAt).toEqual(refunded.attempt.updatedAt);
 
     const freshOrder = await createOrder();
     const freshClaim = await repository.createOrClaimNonterminalAttempt(
@@ -1483,6 +1671,10 @@ describe("Drizzle payment repository", () => {
       expect(await database.select().from(webhookEvents)
         .where(eq(webhookEvents.providerEventId, input.providerEventId))).toHaveLength(0);
       await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toEqual(beforeFault);
+      await expect(database.select().from(paymentLedgerEntries).where(eq(
+        paymentLedgerEntries.orderId,
+        order.orderId,
+      ))).resolves.toEqual([]);
       await expect(database.select().from(internalNotificationOutbox).where(eq(
         internalNotificationOutbox.sourceEventId,
         order.orderId,
@@ -1500,6 +1692,16 @@ describe("Drizzle payment repository", () => {
         order: { paymentStatus: "paid" },
         attempt: { status: "paid" },
       });
+      await expect(database.select().from(paymentLedgerEntries).where(eq(
+        paymentLedgerEntries.orderId,
+        order.orderId,
+      ))).resolves.toEqual([
+        expect.objectContaining({
+          paymentAttemptId: claim.attempt.id,
+          entryType: "online_payment",
+          direction: "credit",
+        }),
+      ]);
       await expect(database.select().from(webhookEvents)
         .where(eq(webhookEvents.providerEventId, input.providerEventId))).resolves.toHaveLength(1);
       await expect(database.select().from(internalNotificationOutbox).where(eq(

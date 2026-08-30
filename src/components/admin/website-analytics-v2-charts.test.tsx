@@ -105,7 +105,7 @@ const data: WebsiteAnalyticsV2DashboardData = {
     paidOrders: 1,
     money: [money("NZD", 20_000), money("AUD", 40_000)],
   }],
-  pages: { items: [{ pathname: "/shop", visitors: 5, pageViews: 12 }], unavailableMetrics: ["entrances", "exits", "assists"] },
+  pages: { items: [{ pathname: "/shop", visitors: 5, pageViews: 12 }], available: true, coverageFrom: "2026-08-01", unavailableMetrics: ["entrances", "exits", "assists"] },
   payments: [{ status: "paid", orders: 2 }, { status: "partial", orders: 1 }],
   markets: [{
     market: "NZ",
@@ -136,6 +136,7 @@ const data: WebsiteAnalyticsV2DashboardData = {
     earliestTrafficDate: "2026-08-01",
     trafficCoverageFrom: "2026-08-01",
     trafficMetricsAvailable: true,
+    trafficBreakdownsAvailable: true,
     generatedAt: "2026-08-30T00:00:00.000Z",
   },
 };

@@ -33,7 +33,13 @@ safety and instant V1 UI rollback.
    fresh isolated Test replay and exact-prefix checks. Production mutation uses
    the guarded runner and the separately approved identity values.
 7. The feature flag defaults false. When false, Production code must not query
-   any V2 table and V1 remains fully functional.
+   0060 columns or any V2 table and V1 remains fully functional. Verified direct
+   receipt/refund evidence still appends to the pre-0060 authoritative payment
+   ledger so code-first and rollback windows remain recoverable. A direct
+   receipt is authoritative only with its deterministic attempt key; migration
+   0031's mutable-time legacy receipt is excluded. A later refund of such a
+   legacy payment appends exact standalone refund evidence without inventing a
+   receipt time.
 8. Read the relevant installed Next.js App Router/Route Handler documents in
    `node_modules/next/dist/docs/` before implementing Next-specific behavior.
 
@@ -173,8 +179,14 @@ safety and instant V1 UI rollback.
 5. Pass signed V1 session/consent context server-side at website conversion
    points. No-consent writes business facts without session attribution.
 6. Implement the smallest adapters around existing authoritative transactions.
-   V2-disabled code performs zero V2 queries. Analytics failure must not expose
-   an error to checkout/payment/chat; reconciliation repairs missed facts.
+   Direct payments write an idempotent receipt/linking reversal in the existing
+   ledger inside the payment transaction, independent of the V2 flag. V2-disabled
+   code performs zero 0060/V2 queries. Downstream V2 fact failure remains
+   fail-soft and reconciliation repairs it; authoritative ledger failure rolls
+   back the verified transition for safe provider retry. Qualify direct receipts
+   by their deterministic attempt key so migration 0031's mutable-time rows do
+   not suppress 0060 fallback; when a legacy payment is newly refunded, append
+   only a deterministic standalone refund fact.
 7. Re-run every affected business repository/service/route suite.
 
 ## Task 5 - Backfill, reconciliation, aggregates, retention, and cron
@@ -202,8 +214,9 @@ safety and instant V1 UI rollback.
 2. Write RED reconciliation tests comparing raw source/facts, rebuilding dirty
    dates, recent-window repair, late payment/refund date, same-date idempotency,
    NZD/AUD separation, and raw/current-day versus daily aggregate equality.
-3. Implement the CLI with `--dry-run`, bounded batch size and safe aggregate
-   output only. It must refuse Production unless the repository's existing
+3. Implement the CLI with `--dry-run`, bounded `(occurred_at,id)` pages consumed
+   to completion in one invocation, zero writes, and safe aggregate output only.
+   It must refuse Production unless the repository's existing
    explicit Production identity/confirmation pattern is satisfied.
 4. Implement the daily route with the existing constant-time `CRON_SECRET`
    pattern, no-store response, bounded work, and fail-closed V2 flag.
@@ -287,7 +300,8 @@ component documents under `node_modules/next/dist/docs/`.
    `git diff --check`. Do not delete or weaken tests to pass.
 4. Run local authenticated browser checks at 390, 768, 1280 and 1440 for every
    filter, chart, empty/error state, drill-down, URL history and V1 fallback.
-5. Reconcile synthetic known orders: order count, ordered value, collected
+5. Reconcile synthetic known orders: order-creation cohort count, report-cutoff
+   Paid status, ordered value, collected
    value, refunds, net, multiple payments, duplicates, Website/manual
    separation, historical unattributed, currencies, NZ date boundaries, and
    raw/daily aggregate equality.

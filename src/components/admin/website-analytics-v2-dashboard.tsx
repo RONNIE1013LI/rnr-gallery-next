@@ -33,7 +33,8 @@ export type WebsiteAnalyticsV2Metrics = WebsiteAnalyticsV2CountMetrics & Readonl
   paidOrderConversionRate: number | null;
 }>;
 
-export type WebsiteAnalyticsV2Breakdown = WebsiteAnalyticsV2CountMetrics & Readonly<{
+export type WebsiteAnalyticsV2Breakdown = Omit<WebsiteAnalyticsV2CountMetrics, "pageViews"> & Readonly<{
+  pageViews: number | null;
   channel?: string;
   source?: string;
   medium?: string;
@@ -72,6 +73,8 @@ export type WebsiteAnalyticsV2DashboardData = Readonly<{
   campaigns: readonly WebsiteAnalyticsV2Breakdown[];
   pages: Readonly<{
     items: readonly Readonly<{ pathname: string; visitors: number; pageViews: number }>[];
+    available: boolean;
+    coverageFrom: string | null;
     unavailableMetrics: readonly ("entrances" | "exits" | "assists")[];
   }>;
   payments: readonly Readonly<{
@@ -94,6 +97,7 @@ export type WebsiteAnalyticsV2DashboardData = Readonly<{
     earliestTrafficDate: string | null;
     trafficCoverageFrom: string | null;
     trafficMetricsAvailable: boolean;
+    trafficBreakdownsAvailable: boolean;
     generatedAt: string;
   }>;
 }>;

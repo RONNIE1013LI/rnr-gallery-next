@@ -106,6 +106,44 @@ describe("Website Analytics V2 reconciliation cron route", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    { repairFailed: 1, aggregateFailed: 0 },
+    { repairFailed: 0, aggregateFailed: 1 },
+  ])("returns 503 when bounded reconciliation work reports a failure: %j", async ({
+    repairFailed,
+    aggregateFailed,
+  }) => {
+    const response = await createWebsiteAnalyticsV2ReconciliationRoute({
+      v2Enabled: true,
+      secret: "correct-secret",
+      run: vi.fn().mockResolvedValue({
+        repair: {
+          totals: {
+            scanned: 2,
+            created: 0,
+            unchanged: 1,
+            skipped: 0,
+            failed: repairFailed,
+          },
+          privateSourceId: "must-not-leak",
+        },
+        aggregates: { rebuilt: 1, busy: 0, failed: aggregateFailed },
+        recentWindow: { from: "2026-08-28", to: "2026-08-30" },
+      }),
+    })(request("Bearer correct-secret"));
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    const body = await response.json();
+    expect(body).toEqual({
+      error: { code: "WEBSITE_ANALYTICS_V2_RECONCILIATION_INCOMPLETE" },
+      repair: { scanned: 2, created: 0, unchanged: 1, skipped: 0, failed: repairFailed },
+      aggregates: { rebuilt: 1, busy: 0, failed: aggregateFailed },
+      recentWindow: { from: "2026-08-28", to: "2026-08-30" },
+    });
+    expect(JSON.stringify(body)).not.toContain("must-not-leak");
+  });
+
   it("isolates internal errors behind a safe no-store response", async () => {
     const response = await createWebsiteAnalyticsV2ReconciliationRoute({
       v2Enabled: true,

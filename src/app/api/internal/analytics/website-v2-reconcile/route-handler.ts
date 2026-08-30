@@ -90,7 +90,7 @@ export function createWebsiteAnalyticsV2ReconciliationRoute(dependencies?: Depen
     }
     try {
       const result = await input.run();
-      return Response.json({
+      const body = {
         repair: {
           scanned: result.repair.totals.scanned,
           created: result.repair.totals.created,
@@ -107,7 +107,12 @@ export function createWebsiteAnalyticsV2ReconciliationRoute(dependencies?: Depen
           from: result.recentWindow.from,
           to: result.recentWindow.to,
         },
-      }, { headers: noStore });
+      };
+      const incomplete = result.repair.totals.failed > 0 || result.aggregates.failed > 0;
+      return Response.json(incomplete ? {
+        error: { code: "WEBSITE_ANALYTICS_V2_RECONCILIATION_INCOMPLETE" },
+        ...body,
+      } : body, { status: incomplete ? 503 : 200, headers: noStore });
     } catch {
       return Response.json({
         error: { code: "WEBSITE_ANALYTICS_V2_RECONCILIATION_FAILED" },

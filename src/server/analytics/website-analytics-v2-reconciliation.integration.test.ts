@@ -232,6 +232,7 @@ describe("website analytics V2 reconciliation", () => {
     const raw = await reconciliation.readRawDailyRows("2297-09-30");
     const aggregate = await reconciliation.readAggregateDailyRows("2297-09-30");
     expect(aggregate).toEqual(raw);
+    expect(raw.reduce((sum, row) => sum + row.paidOrders, 0)).toBe(0);
     const nzd = aggregate.filter((row) => row.currency === "NZD"
       && row.scope === "website" && row.attributionModel === "last_touch");
     const aud = aggregate.filter((row) => row.currency === "AUD"
