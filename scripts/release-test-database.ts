@@ -63,7 +63,11 @@ export function releaseDatabaseNames(gitSha: string, runId: string): ReleaseData
   if (!/^[0-9A-Za-z_]{6,24}$/.test(runId)) {
     throw new Error("A safe release run identifier is required");
   }
-  const prefix = `rnr_gallery_test_release_gate_${gitSha.slice(0, 8).toLowerCase()}_${runId.toLowerCase()}`;
+  const normalizedRunId = runId.toLowerCase();
+  const databaseRunId = normalizedRunId.length <= 12
+    ? normalizedRunId
+    : createHash("sha256").update(normalizedRunId).digest("hex").slice(0, 12);
+  const prefix = `rnr_gallery_test_release_gate_${gitSha.slice(0, 8).toLowerCase()}_${databaseRunId}`;
   return Object.freeze({
     application: `${prefix}_app`,
     integration: `${prefix}_integration`,

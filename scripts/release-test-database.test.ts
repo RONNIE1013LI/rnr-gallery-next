@@ -35,6 +35,14 @@ describe("disposable release database naming", () => {
     expect(() => releaseDatabaseNames("not-a-sha", "run12345")).toThrow(/Git SHA/i);
     expect(() => releaseDatabaseNames("a".repeat(40), "../unsafe")).toThrow(/run identifier/i);
   });
+
+  it("keeps long run identifiers within PostgreSQL's 63-byte name limit", () => {
+    const names = releaseDatabaseNames("26e7d786".repeat(5), "local_1788128029018");
+
+    expect(names.application.length).toBeLessThanOrEqual(63);
+    expect(names.integration.length).toBeLessThanOrEqual(63);
+    expect(names.application).not.toBe(names.integration);
+  });
 });
 
 describe("disposable release test gate", () => {
