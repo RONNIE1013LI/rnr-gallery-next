@@ -17,6 +17,7 @@
     "db:lineage:check": "tsx scripts/verify-migration-lineage.ts",
     "db:check": "drizzle-kit check",
     "db:runtime-role": "tsx scripts/database-runtime-role-security.ts",
+    "analytics:v2:backfill": "tsx scripts/backfill-website-analytics-v2.ts",
     "backup:lan": "zsh ops/macos/backup-lan-data.zsh",
     "backup:blob:install": "zsh ops/macos/install-production-blob-backup-runtime.zsh",
     "backup:blob:production": "\"$HOME/Library/Application Support/RNR Gallery/Backup/bin/run-backup.zsh\"",

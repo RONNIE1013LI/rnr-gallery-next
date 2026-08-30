@@ -21,6 +21,10 @@
       "schedule": "13 4 * * *"
     },
     {
+      "path": "/api/internal/analytics/website-v2-reconcile",
+      "schedule": "31 4 * * *"
+    },
+    {
       "path": "/api/internal/uploads/cleanup",
       "schedule": "17 * * * *"
     },
