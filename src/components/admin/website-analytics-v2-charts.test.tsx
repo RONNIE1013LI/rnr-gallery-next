@@ -148,6 +148,7 @@ describe("WebsiteAnalyticsV2Charts", () => {
 
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
   });
 
   it("renders static keyboard-accessible trend, currency, funnel and breakdown charts", async () => {
@@ -287,6 +288,39 @@ describe("WebsiteAnalyticsV2Charts", () => {
     const panel = screen.getByRole("heading", { name: "Campaign Performance" }).closest("section")!;
     expect(panel).toHaveTextContent("Google Ads · google / cpc · spring");
     expect(panel).toHaveTextContent("Meta Ads · meta / paid_social · spring");
+  });
+
+  it("keeps the missing campaign sentinel distinct from a literal No campaign tuple", () => {
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const missingCampaign = {
+      ...data.campaigns[0]!,
+      channel: "Email",
+      source: "newsletter",
+      medium: "email",
+      campaign: "(not set)",
+    };
+    render(<WebsiteAnalyticsV2Charts data={{
+      ...data,
+      campaigns: [missingCampaign, { ...missingCampaign, campaign: "No campaign" }],
+    }} />);
+
+    const table = screen.getByRole("table", { name: "Campaign performance data" });
+    const identities = [...table.querySelectorAll("tbody tr")].map((row) =>
+      [...row.querySelectorAll("th, td")].slice(0, 4).map((cell) => cell.textContent));
+    expect(identities).toEqual([
+      ["Email", "newsletter", "email", "No campaign (not set)"],
+      ["Email", "newsletter", "email", "No campaign"],
+    ]);
+
+    const chart = screen.getByRole("application", { name: "Campaign performance chart" });
+    expect(within(chart).getByText("Email · newsletter / email · No campaign (not set)", {
+      exact: true,
+    })).toBeInTheDocument();
+    expect(within(chart).getByText("Email · newsletter / email · No campaign", { exact: true }))
+      .toBeInTheDocument();
+
+    const consoleMessages = consoleError.mock.calls.flat().map(String).join(" ");
+    expect(consoleMessages).not.toMatch(/same key|Encountered two children with the same key/i);
   });
 
   it("distinguishes unavailable Country Traffic from a covered empty result", () => {

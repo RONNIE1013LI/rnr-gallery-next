@@ -285,7 +285,7 @@ function campaignIdentity(row: WebsiteAnalyticsV2Breakdown) {
     channel: row.channel?.trim() || "Unknown",
     source: row.source?.trim() || "Unattributed",
     medium: row.medium?.trim() || "(not set)",
-    campaign: !campaign || campaign === "(not set)" ? "No campaign" : campaign,
+    campaign: !campaign || campaign === "(not set)" ? "No campaign (not set)" : campaign,
   };
 }
 
@@ -297,7 +297,7 @@ function breakdownDimensions(
     const identity = campaignIdentity(row);
     return {
       values: [identity.channel, identity.source, identity.medium, identity.campaign],
-      key: `${identity.channel}\u0000${identity.source}\u0000${identity.medium}\u0000${identity.campaign}`,
+      key: JSON.stringify([row.channel, row.source, row.medium, row.campaign]),
     };
   }
   const label = breakdownLabel(row, kind);
