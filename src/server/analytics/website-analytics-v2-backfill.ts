@@ -2,9 +2,9 @@ import { and, asc, eq, gt, gte, isNotNull, isNull, or, sql } from "drizzle-orm";
 import type { WebsiteAnalyticsCurrency } from "@/domain/analytics/website-analytics-v2";
 import type { getDatabase } from "@/server/db/client";
 import {
+  adminAuditLogs,
   customerServiceConversations,
   customerServiceMessages,
-  invoices,
   orders,
   paymentAttempts,
   paymentLedgerEntries,
@@ -17,6 +17,7 @@ import type {
   PaymentLedgerDirection,
   PaymentLedgerEntryType,
 } from "@/server/db/schema/payments";
+import type { OrderFulfilmentStatus } from "@/server/db/schema/orders";
 import { createDrizzlePaymentRepository } from "@/server/payments/drizzle-payment-repository";
 import type { WebsiteAnalyticsDirectPaymentTransition } from "./website-analytics-v2-business-recorder";
 import { eligibleOrder } from "./website-analytics-business-rules";
@@ -32,9 +33,11 @@ type Repository = Pick<
 export const WEBSITE_ANALYTICS_V2_BACKFILL_SOURCES = [
   "website_orders",
   "manual_orders",
+  "manual_payment_updates",
   "website_inquiries",
   "ledger_events",
-  "direct_payment_transitions",
+  "direct_payment_paid_transitions",
+  "direct_payment_refund_transitions",
 ] as const;
 
 export type WebsiteAnalyticsV2BackfillSource =
@@ -76,6 +79,7 @@ type BackfillInput = Readonly<{
   stateType?: "backfill" | "reconciliation";
   fromOccurredAt?: Date;
   historical?: boolean;
+  restartCompleted?: boolean;
 }>;
 
 type Options = Readonly<{
@@ -95,7 +99,10 @@ const LIMITATIONS = Object.freeze([
   "Historical direct payment timing is not inferred from mutable payment status or updatedAt.",
   "Historical refund timing or amount is not inferred from mutable refund status or updatedAt.",
   "Historical manual partial-payment timing is unavailable and is not reconstructed.",
+  "Manual rows without exact Website Analytics V2 audit evidence are skipped.",
+  "Legacy ledger receipts derived from mutable timestamps are skipped.",
 ]);
+const MINIMUM_UUID = "00000000-0000-0000-0000-000000000000";
 
 function emptyCounts(): Counts {
   return { scanned: 0, created: 0, wouldCreate: 0, unchanged: 0, skipped: 0, failed: 0 };
@@ -148,14 +155,99 @@ function asCursor(row: SourceRow | undefined): WebsiteAnalyticsV2BackfillCursor 
 function ledgerEventType(input: Readonly<{
   entryType: PaymentLedgerEntryType;
   direction: PaymentLedgerDirection;
+  paymentRequestId: string | null;
+  paymentAttemptId: string | null;
+  idempotencyKey: string | null;
+  reversesEntryId: string | null;
 }>): "receipt" | "refund" | "reversal" | null {
-  if ((input.entryType === "online_payment" || input.entryType === "bank_transfer"
-      || input.entryType === "legacy_backfill") && input.direction === "credit") {
+  if (input.entryType === "online_payment" && input.direction === "credit"
+    && input.paymentRequestId && input.paymentAttemptId) {
     return "receipt";
   }
-  if (input.entryType === "refund" && input.direction === "debit") return "refund";
-  if (input.entryType === "reversal" && input.direction === "debit") return "reversal";
+  if (input.entryType === "bank_transfer" && input.direction === "credit"
+    && input.idempotencyKey) return "receipt";
+  if (input.entryType === "refund" && input.direction === "debit"
+    && input.idempotencyKey) return "refund";
+  if (input.entryType === "reversal" && input.direction === "debit"
+    && input.idempotencyKey && input.reversesEntryId) return "reversal";
   return null;
+}
+
+type ManualOrderEvidence = Readonly<{
+  jobId: string;
+  occurredAt: Date;
+  amountPayableCents: number;
+  amountPaidCents: number;
+  initialStatus: OrderFulfilmentStatus;
+  currency: WebsiteAnalyticsCurrency;
+}>;
+
+type ManualPaymentEvidence = Readonly<{
+  jobId: string;
+  idempotencyKey: string;
+  occurredAt: Date;
+  deltaCents: number;
+  currency: WebsiteAnalyticsCurrency;
+}>;
+
+function auditObject(value: unknown): Record<string, unknown> | null {
+  return value && typeof value === "object" && !Array.isArray(value)
+    ? value as Record<string, unknown>
+    : null;
+}
+
+function exactAuditDate(value: unknown): Date | null {
+  if (typeof value !== "string") return null;
+  const parsed = new Date(value);
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString() === value ? parsed : null;
+}
+
+function auditCurrency(value: unknown): WebsiteAnalyticsCurrency | null {
+  return value === "NZD" || value === "AUD" ? value : null;
+}
+
+function manualOrderEvidence(value: unknown): ManualOrderEvidence | null {
+  const row = auditObject(value);
+  const evidence = auditObject(auditObject(row?.afterSummary)?.websiteAnalyticsV2);
+  const occurredAt = exactAuditDate(evidence?.occurredAt);
+  const currency = auditCurrency(evidence?.currency);
+  if (typeof row?.jobId !== "string" || evidence?.version !== 1
+    || evidence.event !== "manual_order_created" || !occurredAt || !currency
+    || !Number.isSafeInteger(evidence.amountPayableCents)
+    || !Number.isSafeInteger(evidence.amountPaidBeforeCents)
+    || !Number.isSafeInteger(evidence.amountPaidAfterCents)
+    || evidence.amountPaidBeforeCents !== 0
+    || typeof evidence.initialStatus !== "string") return null;
+  return Object.freeze({
+    jobId: row.jobId,
+    occurredAt,
+    amountPayableCents: evidence.amountPayableCents as number,
+    amountPaidCents: evidence.amountPaidAfterCents as number,
+    initialStatus: evidence.initialStatus as OrderFulfilmentStatus,
+    currency,
+  });
+}
+
+function manualPaymentEvidence(value: unknown): ManualPaymentEvidence | null {
+  const row = auditObject(value);
+  const evidence = auditObject(auditObject(row?.afterSummary)?.websiteAnalyticsV2);
+  const occurredAt = exactAuditDate(evidence?.occurredAt);
+  const currency = auditCurrency(evidence?.currency);
+  if (typeof row?.jobId !== "string" || typeof row.idempotencyKey !== "string"
+    || evidence?.version !== 1 || evidence.event !== "manual_payment_increased"
+    || !occurredAt || !currency || !Number.isSafeInteger(evidence.amountPaidBeforeCents)
+    || !Number.isSafeInteger(evidence.amountPaidAfterCents)
+    || !Number.isSafeInteger(evidence.deltaCents)
+    || (evidence.amountPaidAfterCents as number) - (evidence.amountPaidBeforeCents as number)
+      !== evidence.deltaCents
+    || (evidence.deltaCents as number) <= 0) return null;
+  return Object.freeze({
+    jobId: row.jobId,
+    idempotencyKey: row.idempotencyKey,
+    occurredAt,
+    deltaCents: evidence.deltaCents as number,
+    currency,
+  });
 }
 
 export function createWebsiteAnalyticsV2Backfill(database: Database, options: Options = {}) {
@@ -220,14 +312,18 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
       const rows = await executor.select({
         id: productionJobs.id,
         occurredAt: productionJobs.createdAt,
-        initialStatus: productionJobs.manualStatus,
-        amountPayableCents: productionJobs.amountPayableCents,
-        amountPaidCents: productionJobs.amountPaidCents,
-        paymentStatus: productionJobs.manualPaymentStatus,
-        currency: invoices.currency,
+        jobId: productionJobs.id,
+        afterSummary: adminAuditLogs.afterSummary,
       }).from(productionJobs).leftJoin(
-        invoices,
-        eq(invoices.jobId, productionJobs.id),
+        adminAuditLogs,
+        and(
+          eq(adminAuditLogs.resourceType, "production_job"),
+          eq(adminAuditLogs.resourceId, sql`${productionJobs.id}::text`),
+          eq(adminAuditLogs.action, "production_job.created"),
+          eq(adminAuditLogs.result, "success"),
+          sql`${adminAuditLogs.afterSummary} #>> '{websiteAnalyticsV2,event}'
+            = 'manual_order_created'`,
+        ),
       ).where(and(
         eq(productionJobs.source, "manual"),
         fromOccurredAt ? gte(productionJobs.createdAt, fromOccurredAt) : undefined,
@@ -235,42 +331,67 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
       )).orderBy(asc(productionJobs.createdAt), asc(productionJobs.id)).limit(limit);
       return rows.map((row) => ({ id: row.id, occurredAt: row.occurredAt, value: row }));
     }
+    if (source === "manual_payment_updates") {
+      const occurredAt = sql<Date>`(${adminAuditLogs.afterSummary}
+        #>> '{websiteAnalyticsV2,occurredAt}')::timestamptz`
+        .mapWith(adminAuditLogs.createdAt);
+      const rows = await executor.select({
+        id: adminAuditLogs.id,
+        occurredAt,
+        jobId: productionJobs.id,
+        idempotencyKey: adminAuditLogs.idempotencyKey,
+        afterSummary: adminAuditLogs.afterSummary,
+      }).from(adminAuditLogs).innerJoin(
+        productionJobs,
+        eq(adminAuditLogs.resourceId, sql`${productionJobs.id}::text`),
+      ).where(and(
+        eq(adminAuditLogs.resourceType, "production_job"),
+        eq(adminAuditLogs.action, "production_job.updated"),
+        eq(adminAuditLogs.result, "success"),
+        sql`${adminAuditLogs.afterSummary} #>> '{websiteAnalyticsV2,event}'
+          = 'manual_payment_increased'`,
+        fromOccurredAt ? gte(occurredAt, fromOccurredAt) : undefined,
+        cursorCondition(occurredAt, adminAuditLogs.id, cursor),
+      )).orderBy(asc(occurredAt), asc(adminAuditLogs.id)).limit(limit);
+      return rows.map((row) => ({ id: row.id, occurredAt: row.occurredAt, value: row }));
+    }
     if (source === "ledger_events") {
       const rows = await executor.select({
         id: paymentLedgerEntries.id,
         occurredAt: paymentLedgerEntries.receivedAt,
         orderId: paymentLedgerEntries.orderId,
+        paymentRequestId: paymentLedgerEntries.paymentRequestId,
+        paymentAttemptId: paymentLedgerEntries.paymentAttemptId,
         entryType: paymentLedgerEntries.entryType,
         direction: paymentLedgerEntries.direction,
         amountCents: paymentLedgerEntries.amountCents,
         currency: paymentLedgerEntries.currency,
+        idempotencyKey: paymentLedgerEntries.idempotencyKey,
+        reversesEntryId: paymentLedgerEntries.reversesEntryId,
       }).from(paymentLedgerEntries).where(and(
         fromOccurredAt ? gte(paymentLedgerEntries.receivedAt, fromOccurredAt) : undefined,
         cursorCondition(paymentLedgerEntries.receivedAt, paymentLedgerEntries.id, cursor),
       )).orderBy(asc(paymentLedgerEntries.receivedAt), asc(paymentLedgerEntries.id)).limit(limit);
       return rows.map((row) => ({ id: row.id, occurredAt: row.occurredAt, value: row }));
     }
-    if (source === "direct_payment_transitions") {
-      const occurredAt = sql<Date>`least(
-        coalesce(${paymentAttempts.websiteAnalyticsPaidAt}, 'infinity'::timestamptz),
-        coalesce(${paymentAttempts.websiteAnalyticsRefundedAt}, 'infinity'::timestamptz)
-      )`.mapWith(paymentAttempts.websiteAnalyticsPaidAt);
+    if (source === "direct_payment_paid_transitions"
+      || source === "direct_payment_refund_transitions") {
+      const occurredAt = source === "direct_payment_paid_transitions"
+        ? paymentAttempts.websiteAnalyticsPaidAt
+        : paymentAttempts.websiteAnalyticsRefundedAt;
       const rows = await executor.select({
         id: paymentAttempts.id,
         occurredAt,
       }).from(paymentAttempts).where(and(
         isNull(paymentAttempts.paymentRequestId),
-        or(
-          isNotNull(paymentAttempts.websiteAnalyticsPaidAt),
-          isNotNull(paymentAttempts.websiteAnalyticsRefundedAt),
-        ),
+        isNotNull(occurredAt),
         fromOccurredAt ? gte(occurredAt, fromOccurredAt) : undefined,
         cursor ? or(
           gt(occurredAt, cursor.occurredAt),
           and(eq(occurredAt, cursor.occurredAt), gt(paymentAttempts.id, cursor.id)),
         ) : undefined,
       )).orderBy(asc(occurredAt), asc(paymentAttempts.id)).limit(limit);
-      return rows.map((row) => ({ id: row.id, occurredAt: row.occurredAt, value: row }));
+      return rows.map((row) => ({ id: row.id, occurredAt: row.occurredAt!, value: row }));
     }
     throw new Error("Unknown analytics backfill source");
   }
@@ -280,11 +401,50 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
     source: WebsiteAnalyticsV2BackfillSource,
     row: SourceRow,
   ): Promise<number> {
-    if (source === "website_orders" || source === "manual_orders"
-      || source === "website_inquiries") {
+    if (source === "website_orders" || source === "website_inquiries") {
       const existing = await executor.select({ id: websiteAnalyticsConversions.id })
         .from(websiteAnalyticsConversions)
         .where(eq(websiteAnalyticsConversions.sourceId, row.id)).limit(1);
+      return existing.length;
+    }
+    if (source === "manual_orders") {
+      const evidence = manualOrderEvidence(row.value);
+      if (!evidence || !eligibleOrder({
+        source: "manual",
+        manualFinalizationCommitted: true,
+        amountPayableCents: evidence.amountPayableCents,
+        initialStatus: evidence.initialStatus,
+      })) return 0;
+      const [conversion, initialPayment] = await Promise.all([
+        executor.select({ id: websiteAnalyticsConversions.id })
+          .from(websiteAnalyticsConversions)
+          .where(and(
+            eq(websiteAnalyticsConversions.conversionType, "order"),
+            eq(websiteAnalyticsConversions.sourceType, "production_job"),
+            eq(websiteAnalyticsConversions.sourceId, evidence.jobId),
+          )).limit(1),
+        evidence.amountPaidCents > 0
+          ? executor.select({ id: websiteAnalyticsFinancialEvents.id })
+              .from(websiteAnalyticsFinancialEvents)
+              .where(and(
+                eq(websiteAnalyticsFinancialEvents.sourceType, "manual_payment_update"),
+                eq(websiteAnalyticsFinancialEvents.sourceId, `manual-create:${evidence.jobId}`),
+                eq(websiteAnalyticsFinancialEvents.eventType, "receipt"),
+              )).limit(1)
+          : Promise.resolve([]),
+      ]);
+      return conversion.length + initialPayment.length;
+    }
+    if (source === "manual_payment_updates") {
+      const evidence = manualPaymentEvidence(row.value);
+      if (!evidence) return 0;
+      const existing = await executor.select({ id: websiteAnalyticsFinancialEvents.id })
+        .from(websiteAnalyticsFinancialEvents).where(and(
+          eq(websiteAnalyticsFinancialEvents.sourceType, "manual_payment_update"),
+          eq(websiteAnalyticsFinancialEvents.sourceId,
+            `manual-update:${evidence.jobId}:${evidence.idempotencyKey}`),
+          eq(websiteAnalyticsFinancialEvents.eventType, "receipt"),
+        )).limit(1);
       return existing.length;
     }
     if (source === "ledger_events") {
@@ -299,6 +459,10 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
       .from(websiteAnalyticsFinancialEvents).where(and(
         eq(websiteAnalyticsFinancialEvents.sourceType, "payment_attempt"),
         eq(websiteAnalyticsFinancialEvents.sourceId, row.id),
+        eq(
+          websiteAnalyticsFinancialEvents.eventType,
+          source === "direct_payment_paid_transitions" ? "receipt" : "refund",
+        ),
       ));
     return existing.length;
   }
@@ -350,48 +514,72 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
         : { created: 0, unchanged: 1, skipped: 0 };
     }
     if (source === "manual_orders") {
-      const value = row.value as Readonly<{
-        id: string;
-        occurredAt: Date;
-        initialStatus: Parameters<typeof eligibleOrder>[0]["initialStatus"];
-        amountPayableCents: number | null;
-        amountPaidCents: number | null;
-        paymentStatus: string | null;
-        currency: WebsiteAnalyticsCurrency | null;
-      }>;
+      const value = manualOrderEvidence(row.value);
+      if (!value) return { created: 0, unchanged: 0, skipped: 1 };
       if (!eligibleOrder({
         source: "manual",
         manualFinalizationCommitted: true,
-        amountPayableCents: value.amountPayableCents ?? undefined,
+        amountPayableCents: value.amountPayableCents,
         initialStatus: value.initialStatus,
       })) return { created: 0, unchanged: 0, skipped: 1 };
-      const currency = value.currency ?? "NZD";
-      const result = await repository.recordOrder({
+      const order = await repository.recordOrder({
         source: "manual",
-        sourceId: value.id,
-        productionJobId: value.id,
+        sourceId: value.jobId,
+        productionJobId: value.jobId,
         occurredAt: value.occurredAt,
-        market: currency === "AUD" ? "AU" : "NZ",
-        currency,
-        orderedAmountInclGstCents: value.amountPayableCents!,
+        market: value.currency === "AUD" ? "AU" : "NZ",
+        currency: value.currency,
+        orderedAmountInclGstCents: value.amountPayableCents,
         historical,
       }, transaction);
-      const unsupportedHistoricFinance = (value.amountPaidCents ?? 0) > 0
-        || value.paymentStatus === "paid"
-        || value.paymentStatus === "refunded";
+      let created = order.created ? 1 : 0;
+      let unchanged = order.created ? 0 : 1;
+      if (value.amountPaidCents > 0) {
+        const payment = await repository.recordFinancialEvent({
+          productionJobId: value.jobId,
+          eventType: "receipt",
+          sourceType: "manual_payment_update",
+          sourceId: `manual-create:${value.jobId}`,
+          amountCents: value.amountPaidCents,
+          currency: value.currency,
+          occurredAt: value.occurredAt,
+          historical,
+        }, transaction);
+        created += payment.created ? 1 : 0;
+        unchanged += payment.created ? 0 : 1;
+      }
+      return { created, unchanged, skipped: 0 };
+    }
+    if (source === "manual_payment_updates") {
+      const value = manualPaymentEvidence(row.value);
+      if (!value) return { created: 0, unchanged: 0, skipped: 1 };
+      const result = await repository.recordFinancialEvent({
+        productionJobId: value.jobId,
+        eventType: "receipt",
+        sourceType: "manual_payment_update",
+        sourceId: `manual-update:${value.jobId}:${value.idempotencyKey}`,
+        amountCents: value.deltaCents,
+        currency: value.currency,
+        occurredAt: value.occurredAt,
+        historical,
+      }, transaction);
       return result.created
-        ? { created: 1, unchanged: 0, skipped: unsupportedHistoricFinance ? 1 : 0 }
-        : { created: 0, unchanged: 1, skipped: unsupportedHistoricFinance ? 1 : 0 };
+        ? { created: 1, unchanged: 0, skipped: 0 }
+        : { created: 0, unchanged: 1, skipped: 0 };
     }
     if (source === "ledger_events") {
       const value = row.value as Readonly<{
         id: string;
         occurredAt: Date;
         orderId: string | null;
+        paymentRequestId: string | null;
+        paymentAttemptId: string | null;
         entryType: PaymentLedgerEntryType;
         direction: PaymentLedgerDirection;
         amountCents: number;
         currency: WebsiteAnalyticsCurrency;
+        idempotencyKey: string | null;
+        reversesEntryId: string | null;
       }>;
       const eventType = ledgerEventType(value);
       if (!value.orderId || !eventType) return { created: 0, unchanged: 0, skipped: 1 };
@@ -409,8 +597,11 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
         ? { created: 1, unchanged: 0, skipped: 0 }
         : { created: 0, unchanged: 1, skipped: 0 };
     }
-    if (source === "direct_payment_transitions") {
-      const transitions = await loadDirectTransitions(row.id);
+    if (source === "direct_payment_paid_transitions"
+      || source === "direct_payment_refund_transitions") {
+      const eventType = source === "direct_payment_paid_transitions" ? "receipt" : "refund";
+      const transitions = (await loadDirectTransitions(row.id))
+        .filter((transition) => transition.eventType === eventType);
       let created = 0;
       let unchanged = 0;
       for (const transition of transitions) {
@@ -444,8 +635,25 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
     let counts = emptyCounts();
     for (const row of batch) {
       const existing = await existingCount(database, source, row);
-      const possible = source === "direct_payment_transitions"
-        ? (await loadDirectTransitions(row.id)).length
+      const possible = source === "direct_payment_paid_transitions"
+          || source === "direct_payment_refund_transitions"
+        ? (await loadDirectTransitions(row.id)).filter((transition) => transition.eventType
+          === (source === "direct_payment_paid_transitions" ? "receipt" : "refund")).length
+        : source === "ledger_events"
+          ? ((row.value as { orderId: string | null }).orderId
+              && ledgerEventType(row.value as Parameters<typeof ledgerEventType>[0]) ? 1 : 0)
+        : source === "manual_orders"
+          ? (() => {
+              const evidence = manualOrderEvidence(row.value);
+              return evidence && eligibleOrder({
+                source: "manual",
+                manualFinalizationCommitted: true,
+                amountPayableCents: evidence.amountPayableCents,
+                initialStatus: evidence.initialStatus,
+              }) ? 1 + (evidence.amountPaidCents > 0 ? 1 : 0) : 0;
+            })()
+        : source === "manual_payment_updates"
+          ? (manualPaymentEvidence(row.value) ? 1 : 0)
         : 1;
       counts = addCounts(counts, {
         scanned: 1,
@@ -473,7 +681,14 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
   ): Promise<WebsiteAnalyticsV2BackfillSourceResult> {
     const stateType = input.stateType ?? "backfill";
     const stateKey = `${stateKeyPrefix}:${source}`;
-    return database.transaction(async (transaction) => {
+    const initialCursor = input.restartCompleted && input.fromOccurredAt
+      ? { occurredAt: input.fromOccurredAt, id: MINIMUM_UUID }
+      : null;
+    const failureInitialCursor = input.fromOccurredAt
+      ? { occurredAt: input.fromOccurredAt, id: MINIMUM_UUID }
+      : null;
+    try {
+      return await database.transaction(async (transaction) => {
       const lock = await transaction.execute<{ locked: boolean }>(sql`
         select pg_try_advisory_xact_lock(hashtextextended(${`${stateType}:${stateKey}`}, 0))
           as locked
@@ -495,7 +710,7 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
         eq(websiteAnalyticsReconciliationState.stateType, stateType),
         eq(websiteAnalyticsReconciliationState.stateKey, stateKey),
       )).for("update").limit(1);
-      if (state?.status === "completed") {
+      if (state?.status === "completed" && !input.restartCompleted) {
         return Object.freeze({
           source,
           ...emptyCounts(),
@@ -506,15 +721,20 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
           busy: false,
         });
       }
-      const cursor = state?.cursorOccurredAt && state.cursorId
-        ? { occurredAt: state.cursorOccurredAt, id: state.cursorId }
-        : null;
+      const restarting = state?.status === "completed" && input.restartCompleted === true;
+      const cursor = restarting
+        ? initialCursor
+        : state?.cursorOccurredAt && state.cursorId !== null
+          ? { occurredAt: state.cursorOccurredAt, id: state.cursorId }
+          : initialCursor;
       const startedAt = new Date();
       await transaction.insert(websiteAnalyticsReconciliationState).values({
         stateType,
         stateKey,
         status: "running",
         startedAt,
+        cursorOccurredAt: cursor?.occurredAt ?? null,
+        cursorId: cursor?.id ?? null,
       }).onConflictDoUpdate({
         target: [
           websiteAnalyticsReconciliationState.stateType,
@@ -526,13 +746,24 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
           completedAt: null,
           lastErrorCode: null,
           updatedAt: startedAt,
+          ...(restarting
+            ? {
+                cursorOccurredAt: cursor?.occurredAt ?? null,
+                cursorId: cursor?.id ?? null,
+                scannedCount: 0,
+                createdCount: 0,
+                unchangedCount: 0,
+                skippedCount: 0,
+                failedCount: 0,
+              }
+            : {}),
         },
       });
       const rows = await loadRows(
         transaction,
         source,
         cursor,
-        input.fromOccurredAt,
+        state && !restarting ? undefined : input.fromOccurredAt,
         batchSize + 1,
       );
       const batch = rows.slice(0, batchSize);
@@ -577,7 +808,76 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
         complete,
         busy: false,
       });
-    });
+      });
+    } catch {
+      return database.transaction(async (transaction) => {
+        await transaction.execute(sql`
+          select pg_advisory_xact_lock(hashtextextended(${`${stateType}:${stateKey}`}, 0))
+        `);
+        const [state] = await transaction.select({
+          cursorOccurredAt: websiteAnalyticsReconciliationState.cursorOccurredAt,
+          cursorId: websiteAnalyticsReconciliationState.cursorId,
+          status: websiteAnalyticsReconciliationState.status,
+        }).from(websiteAnalyticsReconciliationState).where(and(
+          eq(websiteAnalyticsReconciliationState.stateType, stateType),
+          eq(websiteAnalyticsReconciliationState.stateKey, stateKey),
+        )).for("update").limit(1);
+        const restarting = state?.status === "completed" && input.restartCompleted === true;
+        const cursor = restarting
+          ? initialCursor
+          : state?.cursorOccurredAt && state.cursorId !== null
+            ? { occurredAt: state.cursorOccurredAt, id: state.cursorId }
+            : failureInitialCursor;
+        if (state?.status !== "completed" || restarting) {
+          const failedAt = new Date();
+          await transaction.insert(websiteAnalyticsReconciliationState).values({
+            stateType,
+            stateKey,
+            status: "failed",
+            cursorOccurredAt: cursor?.occurredAt ?? null,
+            cursorId: cursor?.id ?? null,
+            failedCount: 1,
+            startedAt: failedAt,
+            lastErrorCode: "SOURCE_ROW_FAILED",
+          }).onConflictDoUpdate({
+            target: [
+              websiteAnalyticsReconciliationState.stateType,
+              websiteAnalyticsReconciliationState.stateKey,
+            ],
+            set: {
+              status: "failed",
+              startedAt: failedAt,
+              completedAt: null,
+              lastErrorCode: "SOURCE_ROW_FAILED",
+              updatedAt: failedAt,
+              ...(restarting
+                ? {
+                    cursorOccurredAt: cursor?.occurredAt ?? null,
+                    cursorId: cursor?.id ?? null,
+                    scannedCount: 0,
+                    createdCount: 0,
+                    unchangedCount: 0,
+                    skippedCount: 0,
+                    failedCount: 1,
+                  }
+                : {
+                    failedCount: sql`${websiteAnalyticsReconciliationState.failedCount} + 1`,
+                  }),
+            },
+          });
+        }
+        return Object.freeze({
+          source,
+          ...emptyCounts(),
+          failed: 1,
+          cursor: cursor
+            ? { occurredAt: cursor.occurredAt.toISOString(), id: cursor.id }
+            : null,
+          complete: state?.status === "completed" && !restarting,
+          busy: false,
+        });
+      });
+    }
   }
 
   async function run(input: BackfillInput): Promise<WebsiteAnalyticsV2BackfillResult> {

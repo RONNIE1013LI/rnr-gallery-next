@@ -16,6 +16,7 @@ describe("website analytics v2 contract", () => {
     expect(normalizeAnalyticsDimension("", "campaign")).toBe(ANALYTICS_DIMENSION_SENTINELS.notSet);
     expect(normalizeAnalyticsDimension("manual", "channel")).toBe(ANALYTICS_DIMENSION_SENTINELS.manualOffline);
     expect(normalizeAnalyticsDimension(null, "channel")).toBe(ANALYTICS_DIMENSION_SENTINELS.unattributed);
+    expect(ANALYTICS_DIMENSION_SENTINELS.total).toBe("(total)");
     expect(isWebsiteAnalyticsScope("website")).toBe(true);
     expect(isWebsiteAnalyticsScope("other")).toBe(false);
     expect(isWebsiteAnalyticsCurrency("NZD")).toBe(true);

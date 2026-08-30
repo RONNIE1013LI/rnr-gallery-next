@@ -4,6 +4,7 @@ import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
 import {
+  adminAuditLogs,
   checkoutSessions,
   customerServiceConversations,
   customerServiceMessages,
@@ -18,6 +19,7 @@ import {
 } from "@/server/db/schema";
 import { createDrizzlePaymentRepository } from "@/server/payments/drizzle-payment-repository";
 import { createWebsiteAnalyticsV2Backfill } from "./website-analytics-v2-backfill";
+import { createWebsiteAnalyticsV2Reconciliation } from "./website-analytics-v2-reconciliation";
 import { createWebsiteAnalyticsV2Repository } from "./website-analytics-v2-repository";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
@@ -189,6 +191,12 @@ afterAll(async () => {
   }
   await database.delete(websiteAnalyticsReconciliationState)
     .where(sql`${websiteAnalyticsReconciliationState.stateKey} like ${`${prefix}%`}`);
+  if (jobIds.length > 0) {
+    await database.delete(adminAuditLogs).where(and(
+      eq(adminAuditLogs.resourceType, "production_job"),
+      inArray(adminAuditLogs.resourceId, jobIds),
+    ));
+  }
   if (ledgerIds.length > 0) {
     await database.delete(paymentLedgerEntries).where(inArray(paymentLedgerEntries.id, ledgerIds));
   }
@@ -313,15 +321,34 @@ describe("website analytics V2 backfill", () => {
     const stateKeyPrefix = `${prefix}crash`;
     const backfill = createWebsiteAnalyticsV2Backfill(database, { repository });
 
-    await expect(backfill.run({
+    const failed = await backfill.run({
       dryRun: false,
       batchSize: 1,
       sources: ["website_orders"],
       stateKeyPrefix,
       fromOccurredAt: new Date("2298-05-01T00:00:00.000Z"),
-    })).rejects.toThrow("controlled crash");
+    });
+    expect(failed.totals).toMatchObject({ scanned: 0, created: 0, failed: 1 });
     expect(await database.select().from(websiteAnalyticsConversions)
       .where(eq(websiteAnalyticsConversions.sourceId, orderId))).toEqual([]);
+    const [failedState] = await database.select({
+      status: websiteAnalyticsReconciliationState.status,
+      cursorOccurredAt: websiteAnalyticsReconciliationState.cursorOccurredAt,
+      cursorId: websiteAnalyticsReconciliationState.cursorId,
+      failedCount: websiteAnalyticsReconciliationState.failedCount,
+      lastErrorCode: websiteAnalyticsReconciliationState.lastErrorCode,
+    }).from(websiteAnalyticsReconciliationState).where(and(
+      eq(websiteAnalyticsReconciliationState.stateType, "backfill"),
+      eq(websiteAnalyticsReconciliationState.stateKey, `${stateKeyPrefix}:website_orders`),
+    ));
+    expect(failedState).toEqual({
+      status: "failed",
+      cursorOccurredAt: new Date("2298-05-01T00:00:00.000Z"),
+      cursorId: "00000000-0000-0000-0000-000000000000",
+      failedCount: 1,
+      lastErrorCode: "SOURCE_ROW_FAILED",
+    });
+    expect(JSON.stringify(failedState)).not.toContain("controlled crash");
 
     const results = await Promise.all([
       backfill.run({
@@ -384,6 +411,32 @@ describe("website analytics V2 backfill", () => {
       websiteAnalyticsPaidAt: new Date("2298-06-04T00:00:00.000Z"),
       websiteAnalyticsRefundedAt: new Date("2298-06-05T00:00:00.000Z"),
     });
+    const legacyDirectLedgerId = randomUUID();
+    const legacyBackfillLedgerId = randomUUID();
+    ledgerIds.push(legacyDirectLedgerId, legacyBackfillLedgerId);
+    await database.insert(paymentLedgerEntries).values([
+      {
+        id: legacyDirectLedgerId,
+        orderId: exactOrder,
+        paymentAttemptId: attemptId,
+        entryType: "online_payment",
+        direction: "credit",
+        amountCents: 12_000,
+        currency: "NZD",
+        receivedAt: new Date("2298-06-02T12:00:00.000Z"),
+        reference: "legacy verified payment attempt",
+      },
+      {
+        id: legacyBackfillLedgerId,
+        orderId: exactOrder,
+        entryType: "legacy_backfill",
+        direction: "credit",
+        amountCents: 12_000,
+        currency: "NZD",
+        receivedAt: new Date("2298-06-02T13:00:00.000Z"),
+        reference: "legacy paid order backfill",
+      },
+    ]);
     const paymentRepository = createDrizzlePaymentRepository(database, {
       websiteAnalyticsV2Enabled: true,
     });
@@ -392,10 +445,29 @@ describe("website analytics V2 backfill", () => {
         .loadWebsiteAnalyticsDirectPaymentTransitions(id),
     });
 
+    const preview = await backfill.run({
+      dryRun: true,
+      batchSize: 20,
+      sources: ["ledger_events"],
+      stateKeyPrefix: `${prefix}finance-preview`,
+      fromOccurredAt: new Date("2298-06-01T00:00:00.000Z"),
+    });
+    expect(preview.totals).toMatchObject({
+      scanned: 3,
+      wouldCreate: 1,
+      unchanged: 0,
+      skipped: 2,
+      failed: 0,
+    });
+
     const result = await backfill.run({
       dryRun: false,
       batchSize: 20,
-      sources: ["ledger_events", "direct_payment_transitions"],
+      sources: [
+        "ledger_events",
+        "direct_payment_paid_transitions",
+        "direct_payment_refund_transitions",
+      ],
       stateKeyPrefix: `${prefix}finance`,
       fromOccurredAt: new Date("2298-06-01T00:00:00.000Z"),
     });
@@ -403,6 +475,7 @@ describe("website analytics V2 backfill", () => {
     expect(result.limitations).toEqual(expect.arrayContaining([
       expect.stringMatching(/mutable.*payment.*status/i),
       expect.stringMatching(/mutable.*refund.*status/i),
+      expect.stringMatching(/legacy.*ledger.*skipped/i),
     ]));
     expect(await database.select({
       sourceType: websiteAnalyticsFinancialEvents.sourceType,
@@ -420,6 +493,85 @@ describe("website analytics V2 backfill", () => {
     ]));
     expect(await database.select().from(websiteAnalyticsFinancialEvents)
       .where(eq(websiteAnalyticsFinancialEvents.orderId, mutableOnly))).toEqual([]);
+    expect(await database.select().from(websiteAnalyticsFinancialEvents)
+      .where(inArray(websiteAnalyticsFinancialEvents.sourceId, [
+        legacyDirectLedgerId,
+        legacyBackfillLedgerId,
+      ]))).toEqual([]);
+  });
+
+  it("repairs a recent durable refund without replaying an older paid transition", async () => {
+    const orderId = await websiteOrder({
+      occurredAt: new Date("2298-09-01T00:00:00.000Z"),
+      amountCents: 9_000,
+    });
+    sourceIds.push(orderId);
+    const repository = createWebsiteAnalyticsV2Repository(database);
+    await repository.recordOrder({
+      source: "website",
+      sourceId: orderId,
+      orderId,
+      occurredAt: new Date("2298-09-01T00:00:00.000Z"),
+      market: "NZ",
+      currency: "NZD",
+      orderedAmountInclGstCents: 9_000,
+      historical: false,
+      consentLinked: false,
+    });
+    const attemptId = randomUUID();
+    attemptIds.push(attemptId);
+    const paidAt = new Date("2298-09-01T01:00:00.000Z");
+    const refundedAt = new Date("2298-10-10T01:00:00.000Z");
+    await database.insert(paymentAttempts).values({
+      id: attemptId,
+      orderId,
+      provider: "local-test",
+      method: "card",
+      idempotencyKey: `${prefix}late-refund-attempt`,
+      expectedAmountCents: 9_000,
+      currency: "NZD",
+      country: "NZ",
+      status: "paid",
+      websiteAnalyticsPaidAt: paidAt,
+      websiteAnalyticsRefundedAt: refundedAt,
+    });
+    await repository.recordFinancialEvent({
+      orderId,
+      eventType: "receipt",
+      sourceType: "payment_attempt",
+      sourceId: attemptId,
+      amountCents: 9_000,
+      currency: "NZD",
+      occurredAt: paidAt,
+      historical: false,
+    });
+
+    const result = await createWebsiteAnalyticsV2Reconciliation(database).run({
+      now: new Date("2298-10-10T02:00:00.000Z"),
+      recentDays: 3,
+      repairBatchSize: 10,
+      maxDirtyDates: 3,
+      sources: ["direct_payment_refund_transitions"],
+      stateKeyPrefix: `${prefix}late-refund-repair`,
+    });
+
+    expect(result.repair.totals).toMatchObject({
+      scanned: 1,
+      created: 1,
+      unchanged: 0,
+      skipped: 0,
+      failed: 0,
+    });
+    expect(await database.select({
+      eventType: websiteAnalyticsFinancialEvents.eventType,
+      occurredAt: websiteAnalyticsFinancialEvents.occurredAt,
+    }).from(websiteAnalyticsFinancialEvents).where(and(
+      eq(websiteAnalyticsFinancialEvents.sourceType, "payment_attempt"),
+      eq(websiteAnalyticsFinancialEvents.sourceId, attemptId),
+    ))).toEqual(expect.arrayContaining([
+      { eventType: "receipt", occurredAt: paidAt },
+      { eventType: "refund", occurredAt: refundedAt },
+    ]));
   });
 
   it("handles empty data and a single exact inquiry without copying message content", async () => {
@@ -453,17 +605,115 @@ describe("website analytics V2 backfill", () => {
       .not.toContain("Task 5 test inquiry");
   });
 
-  it("repairs an eligible manual order but does not invent its mutable historic payment", async () => {
-    const jobId = await manualOrder(new Date("2298-08-01T00:00:00.000Z"));
-    sourceIds.push(jobId);
-    const result = await createWebsiteAnalyticsV2Backfill(database).run({
-      dryRun: false,
-      batchSize: 5,
-      sources: ["manual_orders"],
-      stateKeyPrefix: `${prefix}manual`,
+  it("repairs exact manual creation and payment audits after mutable job edits", async () => {
+    const legacyJobId = await manualOrder(new Date("2298-08-01T00:00:00.000Z"));
+    const jobId = await manualOrder(new Date("2298-08-02T00:00:00.000Z"));
+    sourceIds.push(legacyJobId, jobId);
+    const createAuditId = randomUUID();
+    const updateAuditId = randomUUID();
+    const updateIdempotencyKey = `${prefix}manual-payment-update`;
+    await database.insert(adminAuditLogs).values([
+      {
+        id: createAuditId,
+        actorUserId: "task-5-fixture",
+        actorEmail: "task-5-fixture@example.test",
+        action: "production_job.created",
+        resourceType: "production_job",
+        resourceId: jobId,
+        afterSummary: {
+          source: "manual",
+          websiteAnalyticsV2: {
+            version: 1,
+            event: "manual_order_created",
+            occurredAt: "2298-08-02T00:00:00.000Z",
+            amountPayableCents: 15_000,
+            amountPaidBeforeCents: 0,
+            amountPaidAfterCents: 3_000,
+            initialStatus: "new",
+            currency: "NZD",
+          },
+        },
+        requestSource: "admin.jobs.manual",
+        result: "success",
+        idempotencyKey: `${prefix}manual-create-audit`,
+        createdAt: new Date("2298-08-02T00:00:01.000Z"),
+      },
+      {
+        id: updateAuditId,
+        actorUserId: "task-5-fixture",
+        actorEmail: "task-5-fixture@example.test",
+        action: "production_job.updated",
+        resourceType: "production_job",
+        resourceId: jobId,
+        afterSummary: {
+          websiteAnalyticsV2: {
+            version: 1,
+            event: "manual_payment_increased",
+            occurredAt: "2298-08-03T00:00:00.000Z",
+            amountPaidBeforeCents: 3_000,
+            amountPaidAfterCents: 8_000,
+            deltaCents: 5_000,
+            currency: "NZD",
+          },
+        },
+        requestSource: "admin.jobs.detail",
+        result: "success",
+        idempotencyKey: updateIdempotencyKey,
+        createdAt: new Date("2298-08-03T00:00:01.000Z"),
+      },
+    ]);
+    await database.update(productionJobs).set({
+      manualStatus: "cancelled",
+      manualPaymentStatus: "paid",
+      amountPayableCents: 99_000,
+      amountPaidCents: 99_000,
+      updatedAt: new Date("2298-08-04T00:00:00.000Z"),
+    }).where(eq(productionJobs.id, jobId));
+
+    const backfill = createWebsiteAnalyticsV2Backfill(database);
+    const sources = ["manual_orders", "manual_payment_updates"] as const;
+    const stateKeyPrefix = `${prefix}manual`;
+    const preview = await backfill.run({
+      dryRun: true,
+      batchSize: 10,
+      sources,
+      stateKeyPrefix,
       fromOccurredAt: new Date("2298-08-01T00:00:00.000Z"),
     });
-    expect(result.totals).toMatchObject({ scanned: 1, created: 1, skipped: 1, failed: 0 });
+    expect(preview.totals).toMatchObject({
+      scanned: 3,
+      wouldCreate: 3,
+      unchanged: 0,
+      skipped: 1,
+      failed: 0,
+    });
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(inArray(websiteAnalyticsConversions.sourceId, [legacyJobId, jobId]))).toEqual([]);
+    expect(await database.select().from(websiteAnalyticsReconciliationState)
+      .where(sql`${websiteAnalyticsReconciliationState.stateKey} like ${`${stateKeyPrefix}%`}`))
+      .toEqual([]);
+
+    const result = await backfill.run({
+      dryRun: false,
+      batchSize: 10,
+      sources,
+      stateKeyPrefix,
+      fromOccurredAt: new Date("2298-08-01T00:00:00.000Z"),
+    });
+    expect(result.totals).toMatchObject({ scanned: 3, created: 3, skipped: 1, failed: 0 });
+    expect(result.sources.map((sourceResult) => ({
+      source: sourceResult.source,
+      scanned: sourceResult.scanned,
+      created: sourceResult.created,
+      skipped: sourceResult.skipped,
+      cursor: sourceResult.cursor,
+    }))).toEqual(preview.sources.map((sourceResult) => ({
+      source: sourceResult.source,
+      scanned: sourceResult.scanned,
+      created: sourceResult.wouldCreate,
+      skipped: sourceResult.skipped,
+      cursor: sourceResult.cursor,
+    })));
     expect(await database.select({
       sourceId: websiteAnalyticsConversions.sourceId,
       scope: websiteAnalyticsConversions.scope,
@@ -478,7 +728,31 @@ describe("website analytics V2 backfill", () => {
       amount: 15_000,
       historical: true,
     }]);
-    expect(await database.select().from(websiteAnalyticsFinancialEvents)
-      .where(eq(websiteAnalyticsFinancialEvents.productionJobId, jobId))).toEqual([]);
+    expect(await database.select({
+      sourceId: websiteAnalyticsFinancialEvents.sourceId,
+      amountCents: websiteAnalyticsFinancialEvents.amountCents,
+      currency: websiteAnalyticsFinancialEvents.currency,
+      occurredAt: websiteAnalyticsFinancialEvents.occurredAt,
+    }).from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.productionJobId, jobId)))
+      .toEqual(expect.arrayContaining([
+        {
+          sourceId: `manual-create:${jobId}`,
+          amountCents: 3_000,
+          currency: "NZD",
+          occurredAt: new Date("2298-08-02T00:00:00.000Z"),
+        },
+        {
+          sourceId: `manual-update:${jobId}:${updateIdempotencyKey}`,
+          amountCents: 5_000,
+          currency: "NZD",
+          occurredAt: new Date("2298-08-03T00:00:00.000Z"),
+        },
+      ]));
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(eq(websiteAnalyticsConversions.sourceId, legacyJobId))).toEqual([]);
+    expect(result.limitations).toEqual(expect.arrayContaining([
+      expect.stringMatching(/manual.*audit.*skipped/i),
+    ]));
   });
 });

@@ -778,6 +778,16 @@ export function createDrizzleProductionJobRepository(
             urgent: input.urgent,
             itemCount: input.items.length,
             customFieldCount: input.customFields.length,
+            websiteAnalyticsV2: {
+              version: 1,
+              event: "manual_order_created",
+              occurredAt: input.createdAt.toISOString(),
+              amountPayableCents: input.amountPayableCents,
+              amountPaidBeforeCents: 0,
+              amountPaidAfterCents: input.amountPaidCents,
+              initialStatus: input.manualStatus,
+              currency: input.invoice?.currency ?? "NZD",
+            },
           },
           requestSource: "admin.jobs.manual",
           result: "success",
@@ -1006,6 +1016,19 @@ export function createDrizzleProductionJobRepository(
             updatedAt: input.updatedAt.toISOString(),
             changedFields,
             changes,
+            ...(paidDeltaCents > 0 && input.finance
+              ? {
+                  websiteAnalyticsV2: {
+                    version: 1,
+                    event: "manual_payment_increased",
+                    occurredAt: input.updatedAt.toISOString(),
+                    amountPaidBeforeCents: current.amountPaidCents ?? 0,
+                    amountPaidAfterCents: input.finance.amountPaidCents,
+                    deltaCents: paidDeltaCents,
+                    currency: paidDeltaCurrency,
+                  },
+                }
+              : {}),
           },
           requestSource: "admin.jobs.detail",
           result: "success",

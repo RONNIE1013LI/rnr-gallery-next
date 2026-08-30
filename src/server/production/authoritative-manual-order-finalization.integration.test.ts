@@ -188,6 +188,27 @@ describe("authoritative manual order finalization", () => {
         amountCents: 4_500,
         occurredAt: finalizedAt,
       })]);
+    expect(await database.select({
+      afterSummary: adminAuditLogs.afterSummary,
+      idempotencyKey: adminAuditLogs.idempotencyKey,
+    }).from(adminAuditLogs).where(and(
+      eq(adminAuditLogs.action, "production_job.created"),
+      eq(adminAuditLogs.resourceId, job.id),
+    ))).toEqual([{
+      afterSummary: expect.objectContaining({
+        websiteAnalyticsV2: {
+          version: 1,
+          event: "manual_order_created",
+          occurredAt: "2026-08-20T01:00:00.000Z",
+          amountPayableCents: 20_000,
+          amountPaidBeforeCents: 0,
+          amountPaidAfterCents: 4_500,
+          initialStatus: "new",
+          currency: "NZD",
+        },
+      }),
+      idempotencyKey: expect.stringMatching(/^manual-finalization-/),
+    }]);
   });
 
   it("does not create a manual order fact for cancelled or zero-value finalisation", async () => {
@@ -272,9 +293,10 @@ describe("authoritative manual order finalization", () => {
       conversionPolicy: policy,
       analyticsRecorder: failingAnalytics,
     });
+    const updateIdempotencyKey = `analytics-failure-update-${created.job.id}`;
     await expect(repository.update({
       jobId: created.job.id,
-      idempotencyKey: `analytics-failure-update-${created.job.id}`,
+      idempotencyKey: updateIdempotencyKey,
       expectedUpdatedAt: created.job.updatedAt,
       actor: { userId: actorId, email: `manual-finalization-${suffix}@example.test` },
       updatedAt: new Date("2026-08-20T03:30:00.000Z"),
@@ -288,6 +310,27 @@ describe("authoritative manual order finalization", () => {
       },
     })).resolves.toBe("updated");
     expect(failingAnalytics.recordManualPaymentUpdate).toHaveBeenCalledOnce();
+    expect(await database.select({
+      afterSummary: adminAuditLogs.afterSummary,
+      idempotencyKey: adminAuditLogs.idempotencyKey,
+    }).from(adminAuditLogs).where(and(
+      eq(adminAuditLogs.action, "production_job.updated"),
+      eq(adminAuditLogs.resourceId, created.job.id),
+      eq(adminAuditLogs.idempotencyKey, updateIdempotencyKey),
+    ))).toEqual([{
+      afterSummary: expect.objectContaining({
+        websiteAnalyticsV2: {
+          version: 1,
+          event: "manual_payment_increased",
+          occurredAt: "2026-08-20T03:30:00.000Z",
+          amountPaidBeforeCents: 0,
+          amountPaidAfterCents: 5_000,
+          deltaCents: 5_000,
+          currency: "NZD",
+        },
+      }),
+      idempotencyKey: updateIdempotencyKey,
+    }]);
   });
 
   it("records a positive manual payment delta in the authoritative AUD invoice currency", async () => {

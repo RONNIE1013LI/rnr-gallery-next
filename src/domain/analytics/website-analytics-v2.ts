@@ -19,6 +19,7 @@ export const ANALYTICS_DIMENSION_SENTINELS = Object.freeze({
   unattributed: "Unattributed",
   notSet: "(not set)",
   manualOffline: "Manual / Offline / Unattributed",
+  total: "(total)",
 });
 
 export type AnalyticsDimension = "channel" | "source" | "medium" | "campaign" | "market" | "country";

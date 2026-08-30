@@ -3,6 +3,7 @@ import { and, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, describe, expect, it } from "vitest";
+import { ANALYTICS_DIMENSION_SENTINELS } from "@/domain/analytics/website-analytics-v2";
 import {
   customerServiceConversations,
   customerServiceMessages,
@@ -28,7 +29,11 @@ const pool = new Pool({ connectionString: testDatabaseUrl, max: 6 });
 const database = drizzle(pool);
 const runId = randomUUID();
 const prefix = `analytics-v2-task5-reconcile:${runId}:`;
-const localDates = ["2297-09-30", "2297-10-01", "2297-10-02", "2297-10-03"];
+const localDates = [
+  "2297-09-30", "2297-10-01", "2297-10-02", "2297-10-03",
+  "2297-11-10", "2297-11-11", "2297-11-12", "2297-11-13",
+  "2297-11-30", "2297-12-01",
+];
 const sessionIds: string[] = [];
 const conversationIds: string[] = [];
 const messageIds: string[] = [];
@@ -103,6 +108,36 @@ async function websiteSession() {
       pathname: "/cart",
     },
   ]);
+}
+
+async function trafficSession(input: Readonly<{
+  visitorKey: string;
+  startedAt: Date;
+  sessionLocalDate: string;
+  pageviewLocalDate: string;
+  channel: "google_ads" | "meta_ads" | "direct";
+  source: string;
+  medium: string | null;
+}>) {
+  const id = randomUUID();
+  sessionIds.push(id);
+  await database.insert(websiteAnalyticsSessions).values({
+    id,
+    visitorDigest: digest(`${prefix}visitor:${input.visitorKey}`),
+    startedAt: input.startedAt,
+    localDate: input.sessionLocalDate,
+    channel: input.channel,
+    source: input.source,
+    medium: input.medium,
+    utmCampaign: `${prefix}multi-channel`,
+  });
+  await database.insert(websiteAnalyticsPageviews).values({
+    id: randomUUID(),
+    sessionId: id,
+    occurredAt: new Date(input.startedAt.getTime() + 60_000),
+    localDate: input.pageviewLocalDate,
+    pathname: "/analytics-task-5",
+  });
 }
 
 async function sourceInquiry(occurredAt: Date) {
@@ -205,8 +240,19 @@ describe("website analytics V2 reconciliation", () => {
     expect(nzd.reduce((sum, row) => sum + row.collectedRevenueCents, 0)).toBe(10_000);
     expect(aud.reduce((sum, row) => sum + row.orderedRevenueCents, 0)).toBe(20_000);
     expect(aud.reduce((sum, row) => sum + row.collectedRevenueCents, 0)).toBe(20_000);
-    expect(aggregate.reduce((sum, row) => sum + row.sessions, 0)).toBe(2);
-    expect(aggregate.reduce((sum, row) => sum + row.pageViews, 0)).toBe(4);
+    const trafficTotals = aggregate.filter((row) => row.channel
+      === ANALYTICS_DIMENSION_SENTINELS.total);
+    expect(trafficTotals).toHaveLength(2);
+    expect(trafficTotals).toEqual(expect.arrayContaining([
+      expect.objectContaining({ attributionModel: "first_touch", visitors: 1, sessions: 1, pageViews: 2 }),
+      expect.objectContaining({ attributionModel: "last_touch", visitors: 1, sessions: 1, pageViews: 2 }),
+    ]));
+    const channelTraffic = aggregate.filter((row) => row.channel === "google_ads");
+    expect(channelTraffic).toHaveLength(2);
+    expect(channelTraffic).toEqual(expect.arrayContaining([
+      expect.objectContaining({ attributionModel: "first_touch", visitors: 1, sessions: 1, pageViews: 2 }),
+      expect.objectContaining({ attributionModel: "last_touch", visitors: 1, sessions: 1, pageViews: 2 }),
+    ]));
 
     await createWebsiteAnalyticsV2Repository(database).markDirtyDate("2297-09-30");
     await reconciliation.rebuildDirtyDate("2297-09-30");
@@ -214,6 +260,64 @@ describe("website analytics V2 reconciliation", () => {
     expect(await database.select().from(websiteAnalyticsDailyAggregates)
       .where(eq(websiteAnalyticsDailyAggregates.localDate, "2297-09-30")))
       .toHaveLength(raw.length);
+  });
+
+  it("anchors traffic to pageview date and exposes an exact visitor total across channels", async () => {
+    await trafficSession({
+      visitorKey: "cross-midnight",
+      startedAt: new Date("2297-11-30T23:59:00.000Z"),
+      sessionLocalDate: "2297-11-30",
+      pageviewLocalDate: "2297-12-01",
+      channel: "direct",
+      source: "direct",
+      medium: null,
+    });
+    await trafficSession({
+      visitorKey: "multi-channel",
+      startedAt: new Date("2297-12-01T01:00:00.000Z"),
+      sessionLocalDate: "2297-12-01",
+      pageviewLocalDate: "2297-12-01",
+      channel: "google_ads",
+      source: "google",
+      medium: "cpc",
+    });
+    await trafficSession({
+      visitorKey: "multi-channel",
+      startedAt: new Date("2297-12-01T02:00:00.000Z"),
+      sessionLocalDate: "2297-12-01",
+      pageviewLocalDate: "2297-12-01",
+      channel: "meta_ads",
+      source: "facebook",
+      medium: "paid_social",
+    });
+
+    const rows = await createWebsiteAnalyticsV2Reconciliation(database)
+      .readRawDailyRows("2297-12-01");
+    for (const attributionModel of ["first_touch", "last_touch"] as const) {
+      const [total] = rows.filter((row) => row.attributionModel === attributionModel
+        && row.channel === ANALYTICS_DIMENSION_SENTINELS.total);
+      expect(total).toMatchObject({
+        source: ANALYTICS_DIMENSION_SENTINELS.total,
+        medium: ANALYTICS_DIMENSION_SENTINELS.total,
+        campaign: ANALYTICS_DIMENSION_SENTINELS.total,
+        visitors: 2,
+        sessions: 3,
+        pageViews: 3,
+      });
+      const channelRows = rows.filter((row) => row.attributionModel === attributionModel
+        && row.channel !== ANALYTICS_DIMENSION_SENTINELS.total);
+      expect(channelRows.map((row) => ({
+        channel: row.channel,
+        visitors: row.visitors,
+        sessions: row.sessions,
+        pageViews: row.pageViews,
+      }))).toEqual([
+        { channel: "direct", visitors: 1, sessions: 1, pageViews: 1 },
+        { channel: "google_ads", visitors: 1, sessions: 1, pageViews: 1 },
+        { channel: "meta_ads", visitors: 1, sessions: 1, pageViews: 1 },
+      ]);
+      expect(channelRows.reduce((sum, row) => sum + row.visitors, 0)).toBe(3);
+    }
   });
 
   it("dirties and rebuilds the exact late refund occurrence date", async () => {
@@ -274,6 +378,61 @@ describe("website analytics V2 reconciliation", () => {
       .where(eq(websiteAnalyticsConversions.sourceId, conversationId))).toHaveLength(1);
     expect(await reconciliation.readAggregateDailyRows("2297-10-03"))
       .toEqual(await reconciliation.readRawDailyRows("2297-10-03"));
+  });
+
+  it("resumes an unfinished bounded source after date rollover and starts a new cycle", async () => {
+    await sourceInquiry(new Date("2297-11-10T00:00:00.000Z"));
+    await sourceInquiry(new Date("2297-11-10T01:00:00.000Z"));
+    await sourceInquiry(new Date("2297-11-10T02:00:00.000Z"));
+    const reconciliation = createWebsiteAnalyticsV2Reconciliation(database);
+    const stateKeyPrefix = `${prefix}rollover`;
+
+    const first = await reconciliation.run({
+      now: new Date("2297-11-11T01:00:00.000Z"),
+      recentDays: 2,
+      repairBatchSize: 2,
+      maxDirtyDates: 2,
+      sources: ["website_inquiries"],
+      stateKeyPrefix,
+    });
+    expect(first.repair.totals).toMatchObject({ scanned: 2, created: 2, failed: 0 });
+    expect(first.repair.sources[0]?.complete).toBe(false);
+
+    const second = await reconciliation.run({
+      now: new Date("2297-11-12T01:00:00.000Z"),
+      recentDays: 2,
+      repairBatchSize: 2,
+      maxDirtyDates: 2,
+      sources: ["website_inquiries"],
+      stateKeyPrefix,
+    });
+    expect(second.repair.totals).toMatchObject({ scanned: 1, created: 1, failed: 0 });
+    expect(second.repair.sources[0]?.complete).toBe(true);
+
+    const lateConversationId = await sourceInquiry(new Date("2297-11-12T02:00:00.000Z"));
+    const third = await reconciliation.run({
+      now: new Date("2297-11-13T01:00:00.000Z"),
+      recentDays: 2,
+      repairBatchSize: 10,
+      maxDirtyDates: 2,
+      sources: ["website_inquiries"],
+      stateKeyPrefix,
+    });
+    expect(third.repair.totals).toMatchObject({ scanned: 1, created: 1, failed: 0 });
+    expect(await database.select({ id: websiteAnalyticsConversions.id })
+      .from(websiteAnalyticsConversions)
+      .where(eq(websiteAnalyticsConversions.sourceId, lateConversationId))).toHaveLength(1);
+
+    expect(await database.select({
+      stateKey: websiteAnalyticsReconciliationState.stateKey,
+      status: websiteAnalyticsReconciliationState.status,
+    }).from(websiteAnalyticsReconciliationState).where(and(
+      eq(websiteAnalyticsReconciliationState.stateType, "reconciliation"),
+      sql`${websiteAnalyticsReconciliationState.stateKey} like ${`${stateKeyPrefix}%`}`,
+    ))).toEqual([{
+      stateKey: `${stateKeyPrefix}:website_inquiries`,
+      status: "completed",
+    }]);
   });
 
   it("does not lose a concurrent dirty mark while completing a rebuild", async () => {

@@ -1,7 +1,8 @@
 import { and, asc, eq, inArray, sql } from "drizzle-orm";
-import type {
-  WebsiteAnalyticsAttributionModel,
-  WebsiteAnalyticsScope,
+import {
+  ANALYTICS_DIMENSION_SENTINELS,
+  type WebsiteAnalyticsAttributionModel,
+  type WebsiteAnalyticsScope,
 } from "@/domain/analytics/website-analytics-v2";
 import type { getDatabase } from "@/server/db/client";
 import {
@@ -117,9 +118,9 @@ async function readRawDailyRowsFrom(
     with models(attribution_model) as (
       values ('first_touch'::text), ('last_touch'::text)
     ),
-    traffic as (
+    traffic_dimensions as (
       select
-        ${localDate}::date as "localDate",
+        pageviews.local_date as "localDate",
         'website'::text as scope,
         'Unattributed'::text as market,
         '(not set)'::text as currency,
@@ -138,11 +139,40 @@ async function readRawDailyRowsFrom(
         0::bigint as "collectedRevenueCents",
         0::bigint as "refundedRevenueCents"
       from website_analytics_sessions sessions
+      inner join website_analytics_pageviews pageviews on pageviews.session_id = sessions.id
       cross join models
-      left join website_analytics_pageviews pageviews
-        on pageviews.session_id = sessions.id and pageviews.local_date = ${localDate}::date
-      where sessions.local_date = ${localDate}::date
+      where pageviews.local_date = ${localDate}::date
       group by 1, 2, 3, 4, 5, 6, 7, 8, 9
+    ),
+    traffic_totals as (
+      select
+        pageviews.local_date as "localDate",
+        'website'::text as scope,
+        'Unattributed'::text as market,
+        '(not set)'::text as currency,
+        ${ANALYTICS_DIMENSION_SENTINELS.total}::text as channel,
+        ${ANALYTICS_DIMENSION_SENTINELS.total}::text as source,
+        ${ANALYTICS_DIMENSION_SENTINELS.total}::text as medium,
+        ${ANALYTICS_DIMENSION_SENTINELS.total}::text as campaign,
+        models.attribution_model as "attributionModel",
+        count(distinct sessions.visitor_digest)::bigint as visitors,
+        count(distinct sessions.id)::bigint as sessions,
+        count(pageviews.id)::bigint as "pageViews",
+        0::bigint as inquiries,
+        0::bigint as orders,
+        0::bigint as "paidOrders",
+        0::bigint as "orderedRevenueCents",
+        0::bigint as "collectedRevenueCents",
+        0::bigint as "refundedRevenueCents"
+      from website_analytics_sessions sessions
+      inner join website_analytics_pageviews pageviews on pageviews.session_id = sessions.id
+      cross join models
+      where pageviews.local_date = ${localDate}::date
+      group by 1, 2, 3, 4, 5, 6, 7, 8, 9
+    ),
+    traffic as (
+      select * from traffic_dimensions
+      union all select * from traffic_totals
     ),
     conversion_metrics as (
       select
@@ -456,9 +486,10 @@ export function createWebsiteAnalyticsV2Reconciliation(database: Database) {
       batchSize: repairBatchSize,
       sources: input.sources,
       stateType: "reconciliation",
-      stateKeyPrefix: `${input.stateKeyPrefix ?? "website-analytics-v2-daily"}:${today}`,
+      stateKeyPrefix: input.stateKeyPrefix ?? "website-analytics-v2-daily",
       fromOccurredAt: range.start,
       historical: false,
+      restartCompleted: true,
     });
     for (let offset = 0; offset < recentDays; offset += 1) {
       await repository.markDirtyDate(shiftLocalDate(from, offset));
