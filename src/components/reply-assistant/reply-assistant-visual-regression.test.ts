@@ -21,4 +21,12 @@ describe("Reply Assistant visual hierarchy", () => {
     const mobile = queueCss.slice(queueCss.lastIndexOf("@media (max-width: 900px)"));
     expect(mobile).toMatch(/\.messageBody\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/);
   });
+
+  it("places conversations before KPI cards on mobile without changing desktop order", () => {
+    expect(pageCss).toMatch(/\.liveDashboard\s*\{\s*display:\s*contents;/);
+    const mobile = pageCss.slice(pageCss.indexOf("@media (max-width: 700px)"));
+    expect(mobile).toMatch(/\.liveDashboard\s*\{[\s\S]*?display:\s*flex;[\s\S]*?flex-direction:\s*column;/);
+    expect(mobile).toMatch(/\.conversationPanel\s*\{[\s\S]*?order:\s*1;/);
+    expect(mobile).toMatch(/\.metricPanel\s*\{[\s\S]*?order:\s*2;/);
+  });
 });

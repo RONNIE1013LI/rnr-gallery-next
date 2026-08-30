@@ -89,6 +89,13 @@
 .knowledgeProvenance dt { color: var(--reply-muted); font-size: 11px; }
 .knowledgeProvenance dd { overflow-wrap: anywhere; margin: 4px 0 0; font-size: 13px; font-weight: 720; }
 
+.liveDashboard { display: contents; }
+.conversationPanel { display: contents; }
+
+.conversationHeading {
+  display: none;
+}
+
 .dashboardToolbar {
   display: flex;
   min-height: 38px;
@@ -259,6 +266,29 @@
 @media (max-width: 700px) {
   .page { gap: 14px; }
   .page > header { align-items: flex-start; }
+  .liveDashboard {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 14px;
+  }
+  .conversationPanel {
+    display: grid;
+    min-width: 0;
+    order: 1;
+    gap: 10px;
+  }
+  .conversationHeading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .conversationHeading h2 { margin: 0; font-size: 18px; }
+  .conversationHeading span { color: var(--reply-muted); font-size: 12px; }
+  .dashboardToolbar { order: 0; }
+  .metricPanel { order: 2; }
+  .learning { order: 3; }
   .knowledgeDisclosure > summary {
     display: flex;
     min-height: 44px;

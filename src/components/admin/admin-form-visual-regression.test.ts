@@ -224,6 +224,13 @@ describe("Admin form visual refinements", () => {
     expect(mobile).toMatch(/\.savedSearchWorkspace \.personalViews input\s*\{[\s\S]*?width:\s*100%;/);
   });
 
+  it("gives the 320px filter field enough width to show its full label", () => {
+    const narrow = formsCss.slice(formsCss.indexOf("@media (max-width: 360px)"));
+
+    expect(narrow).toMatch(/\.filterRow\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0,\s*1fr\)\s*var\(--forms-filter-control-height-mobile\);/);
+    expect(narrow).toMatch(/\.filterRow > :first-child\s*\{[\s\S]*?grid-column:\s*1\s*\/\s*-1;/);
+  });
+
   it("styles the native upload surface without replacing the file input", () => {
     expect(adminCss).toMatch(/input\[type="file"\]::file-selector-button[\s\S]*?min-height:\s*32px;/);
   });

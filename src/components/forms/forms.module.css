@@ -3354,3 +3354,28 @@
   }
 
 }
+
+@media (max-width: 360px) {
+  .filterRow {
+    grid-template-columns: minmax(0, 1fr) var(--forms-filter-control-height-mobile);
+  }
+
+  .filterRow > :first-child {
+    grid-column: 1 / -1;
+  }
+
+  .filterRow > :nth-child(2) {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .filterRow > :nth-child(3) {
+    grid-column: 1 / -1;
+    grid-row: 3;
+  }
+
+  .filterRow > button {
+    grid-column: 2;
+    grid-row: 2;
+  }
+}

@@ -279,7 +279,12 @@ export function ProductRegistryForm({
 
   return (
     <div className={styles.registryEditor}>
-      <section className={styles.formPanel}>
+      <nav className={styles.registryJumpNav} aria-label="Product pricing sections">
+        <a href="#registry-fees">Store-wide fees</a>
+        <a href="#registry-australia">Australia</a>
+        {products.map((product) => <a key={product.key} href={`#registry-product-${product.key}`}>{product.title}</a>)}
+      </nav>
+      <section className={styles.formPanel} id="registry-fees">
         <div className={styles.formSectionHeading}>
           <div><span>$</span><h2>Store-wide fees</h2></div>
           <p>People and pet prices exclude GST. Urgent-service fees include GST.</p>
@@ -310,7 +315,7 @@ export function ProductRegistryForm({
         </form>
       </section>
 
-      <section className={styles.formPanel}>
+      <section className={styles.formPanel} id="registry-australia">
         <div className={styles.formSectionHeading}>
           <div><span>A$</span><h2>Australia — AUD</h2></div>
           <p>Fixed final AUD prices. No NZD conversion is performed. Australia remains unavailable until every required value is present.</p>
@@ -404,6 +409,7 @@ export function ProductRegistryForm({
         {products.map((product) => (
           <form
             className={styles.productAdminCard}
+            id={`registry-product-${product.key}`}
             key={product.key}
             onSubmit={(event) => void publishProduct(event, product)}
           >

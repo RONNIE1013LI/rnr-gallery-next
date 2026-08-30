@@ -42,6 +42,8 @@ describe("CustomerReviewList", () => {
       "href",
       `/admin/customer-reviews/${review.id}`,
     );
+    expect(screen.getByText("Facebook").closest("td")).toHaveAttribute("data-label", "Source");
+    expect(screen.getByRole("link", { name: "Edit Aroha T." }).closest("td")).toHaveAttribute("data-label", "Actions");
     expect(screen.queryByText("private evidence reference")).not.toBeInTheDocument();
     expect(screen.queryByText("private permission note")).not.toBeInTheDocument();
   });

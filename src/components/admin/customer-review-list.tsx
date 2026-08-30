@@ -69,16 +69,16 @@ export function CustomerReviewList({ reviews }: Readonly<{
       <table className={`${styles.dataTable} ${styles.reviewTable}`}>
         <thead><tr><th>Reviewer</th><th>Source</th><th>Recommendation</th><th>Review date</th><th>Status</th><th>Permission</th><th>Featured / order</th><th>Product</th><th>Last verified</th><th>Actions</th></tr></thead>
         <tbody>{visible.map((review) => <tr key={review.id}>
-          <td><div className={styles.reviewListIdentity}>{review.media.find((media) => media.kind === "AVATAR") ? <Image src={review.media.find((media) => media.kind === "AVATAR")!.adminUrl} alt="" width={36} height={36} unoptimized /> : <span aria-hidden="true">{initials(review.reviewerName)}</span>}<div><strong>{review.reviewerName}</strong><small className={styles.reviewExcerpt}>{review.originalReviewText}</small></div></div></td>
-          <td>{titleCase(review.sourcePlatform)}</td>
-          <td>{titleCase(review.recommendationStatus)}</td>
-          <td>{review.reviewDate}</td>
-          <td><span className={styles.statusBadge}>{titleCase(review.status)}</span></td>
-          <td><span className={styles.statusBadge}>{titleCase(review.permissionStatus)}</span></td>
-          <td>{review.isHomepageFeatured ? "Homepage featured" : `Order ${review.displayOrder}`}</td>
-          <td>{review.productDisplayLabel ?? "General"}</td>
-          <td>{review.lastVerifiedAt ? new Date(review.lastVerifiedAt).toLocaleDateString("en-NZ") : "—"}</td>
-          <td><div className={styles.reviewListActions}><Link className={styles.tableAction} href={`/admin/customer-reviews/${review.id}`} aria-label={`Edit ${review.reviewerName}`}>Edit</Link>{review.status !== "ARCHIVED" ? <button type="button" onClick={() => void archive(review)} aria-label={`Archive ${review.reviewerName}`}>Archive</button> : null}</div></td>
+          <td data-label="Reviewer"><div className={styles.reviewListIdentity}>{review.media.find((media) => media.kind === "AVATAR") ? <Image src={review.media.find((media) => media.kind === "AVATAR")!.adminUrl} alt="" width={36} height={36} unoptimized /> : <span aria-hidden="true">{initials(review.reviewerName)}</span>}<div><strong>{review.reviewerName}</strong><small className={styles.reviewExcerpt}>{review.originalReviewText}</small></div></div></td>
+          <td data-label="Source">{titleCase(review.sourcePlatform)}</td>
+          <td data-label="Recommendation">{titleCase(review.recommendationStatus)}</td>
+          <td data-label="Review date">{review.reviewDate}</td>
+          <td data-label="Status"><span className={styles.statusBadge}>{titleCase(review.status)}</span></td>
+          <td data-label="Permission"><span className={styles.statusBadge}>{titleCase(review.permissionStatus)}</span></td>
+          <td data-label="Featured / order">{review.isHomepageFeatured ? "Homepage featured" : `Order ${review.displayOrder}`}</td>
+          <td data-label="Product">{review.productDisplayLabel ?? "General"}</td>
+          <td data-label="Last verified">{review.lastVerifiedAt ? new Date(review.lastVerifiedAt).toLocaleDateString("en-NZ") : "—"}</td>
+          <td data-label="Actions"><div className={styles.reviewListActions}><Link className={styles.tableAction} href={`/admin/customer-reviews/${review.id}`} aria-label={`Edit ${review.reviewerName}`}>Edit</Link>{review.status !== "ARCHIVED" ? <button type="button" onClick={() => void archive(review)} aria-label={`Archive ${review.reviewerName}`}>Archive</button> : null}</div></td>
         </tr>)}</tbody>
       </table>
     </div> : <p className={styles.mutedText}>No reviews match these filters.</p>}

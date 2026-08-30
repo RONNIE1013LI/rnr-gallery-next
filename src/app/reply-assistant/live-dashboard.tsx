@@ -170,7 +170,7 @@ export function ReplyAssistantLiveDashboard({
   const displayedMetricCards = showAllMetrics ? visibleMetricCards : visibleMetricCards.slice(0, 8);
 
   return (
-    <>
+    <div className={styles.liveDashboard}>
       <div className={styles.dashboardToolbar}>
         {metricCounts?.channelMetrics ? (
           <div className={styles.metricFilters} aria-label="Metric channel">
@@ -209,13 +209,19 @@ export function ReplyAssistantLiveDashboard({
       </section>
       <LearningCandidateReview candidates={learningCandidates} canReview={canReview} />
       <CaseMemoryReview cases={caseMemories} canReview={canReview} />
-      <ReplyAssistantClient
-        initialItems={initialItems}
-        liveItems={items}
-        newMessageIds={newMessageIds}
-        onRefresh={() => refreshRef.current()}
-        selectedReviewSelector={selectedReviewSelector}
-      />
-    </>
+      <section className={styles.conversationPanel} aria-label="Needs attention conversations">
+        <div className={styles.conversationHeading}>
+          <h2>Needs attention</h2>
+          <span>{items.length} {items.length === 1 ? "conversation" : "conversations"}</span>
+        </div>
+        <ReplyAssistantClient
+          initialItems={initialItems}
+          liveItems={items}
+          newMessageIds={newMessageIds}
+          onRefresh={() => refreshRef.current()}
+          selectedReviewSelector={selectedReviewSelector}
+        />
+      </section>
+    </div>
   );
 }

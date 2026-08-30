@@ -84,4 +84,11 @@ describe("Admin operational visual system", () => {
     expect(cssRule(css, ".filterDisclosure > summary")).toContain("min-height: 48px;");
     expect(css).toMatch(/@media \(min-width: 681px\)[\s\S]*?\.filterDisclosure:not\(\[open\]\) > \.filterPanel[\s\S]*?display:\s*grid;/);
   });
+
+  it("turns the wide review table into labelled records on mobile", () => {
+    const mobile = css.slice(css.lastIndexOf("@media (max-width: 680px)"));
+
+    expect(mobile).toMatch(/\.reviewTable,[\s\S]*?\.reviewTable tbody,[\s\S]*?\.reviewTable tr,[\s\S]*?\.reviewTable td[\s\S]*?display:\s*block;/);
+    expect(mobile).toMatch(/\.reviewTable td::before\s*\{[\s\S]*?content:\s*attr\(data-label\);/);
+  });
 });

@@ -130,6 +130,15 @@ describe("ReplyAssistantLiveDashboard", () => {
     vi.restoreAllMocks();
   });
 
+  it("labels the conversation queue as the primary needs-attention region", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<ReplyAssistantLiveDashboard {...props} />);
+
+    expect(screen.getByRole("region", { name: "Needs attention conversations" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Needs attention" })).toBeInTheDocument();
+    expect(screen.getByText("1 conversation")).toBeInTheDocument();
+  });
+
   it("keeps the selected deep-link review pinned while merging a full live queue", () => {
     const selector = `wrs1.m8k6x0.${"A".repeat(43)}`;
     const selected = {

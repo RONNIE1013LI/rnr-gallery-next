@@ -14,6 +14,21 @@ afterEach(() => {
 });
 
 describe("product registry editor", () => {
+  it("provides sticky jump links to long pricing sections", () => {
+    render(<ProductRegistryForm
+      products={listAdminProducts(defaultProductRegistry).filter((product) => product.key === "roll-up-banner")}
+      pricing={defaultProductRegistry.pricing}
+      markets={defaultProductRegistry.markets}
+      australiaCompleteness={getMarketCompleteness(defaultProductRegistry, "AU")}
+      revision={2}
+    />);
+
+    const navigation = screen.getByRole("navigation", { name: "Product pricing sections" });
+    expect(within(navigation).getByRole("link", { name: "Store-wide fees" })).toHaveAttribute("href", "#registry-fees");
+    expect(within(navigation).getByRole("link", { name: "Australia" })).toHaveAttribute("href", "#registry-australia");
+    expect(within(navigation).getByRole("link", { name: "Roll-Up Banner" })).toHaveAttribute("href", "#registry-product-roll-up-banner");
+  });
+
   it("confirms and publishes NZD product prices with the viewed revision", async () => {
     const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       result: "published",
