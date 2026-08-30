@@ -84,6 +84,34 @@ function manualInput(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function invoiceDraft() {
+  return {
+    invoiceDate: "2026-08-20",
+    dueDate: "2026-08-27",
+    reference: "DRAFT",
+    businessName: "R&R Gallery",
+    businessAddress: "Synthetic business address",
+    businessEmail: "synthetic-business@example.test",
+    businessPhone: "+64 21 000 0001",
+    businessWebsite: "https://example.test",
+    gstNumber: "000-000-000",
+    bankAccount: "00-0000-0000000-00",
+    customerName: "Synthetic Customer",
+    customerEmail: "synthetic@example.test",
+    customerAddress: "Synthetic customer address",
+    deliveryAddress: "Synthetic delivery address",
+    discountCents: 0,
+    notes: "Synthetic invoice",
+    terms: "Seven days",
+    items: [{
+      code: "SYN",
+      description: "Synthetic Canvas",
+      quantityMilli: 1_000,
+      rateInclGstCents: 20_000,
+    }],
+  };
+}
+
 function service(options: Parameters<typeof createDrizzleProductionJobRepository>[1] = {}) {
   return createProductionJobService(
     createDrizzleProductionJobRepository(database, {
@@ -260,6 +288,112 @@ describe("authoritative manual order finalization", () => {
       },
     })).resolves.toBe("updated");
     expect(failingAnalytics.recordManualPaymentUpdate).toHaveBeenCalledOnce();
+  });
+
+  it("records a positive manual payment delta in the authoritative AUD invoice currency", async () => {
+    const job = await create({
+      conversionEvidence: undefined,
+      invoiceDraft: invoiceDraft(),
+    });
+    await database.update(invoices).set({ currency: "AUD" })
+      .where(eq(invoices.jobId, job.id));
+    const repository = createDrizzleProductionJobRepository(database, {
+      conversionPolicy: policy,
+      analyticsRecorder,
+    });
+
+    await expect(repository.update({
+      jobId: job.id,
+      idempotencyKey: `aud-payment-${job.id}`,
+      expectedUpdatedAt: job.updatedAt,
+      actor: { userId: actorId, email: `manual-finalization-${suffix}@example.test` },
+      updatedAt: new Date("2026-08-20T04:30:00.000Z"),
+      canUpdateFinance: true,
+      finance: {
+        manualPaymentStatus: "processing",
+        amountPayableCents: 20_000,
+        amountPaidCents: 5_000,
+        artistFeeCents: 0,
+        materialCostCents: 0,
+      },
+    })).resolves.toBe("updated");
+
+    await expect(database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.productionJobId, job.id)))
+      .resolves.toEqual([expect.objectContaining({
+        eventType: "receipt",
+        amountCents: 5_000,
+        currency: "AUD",
+      })]);
+  });
+
+  it("replays a missed manual-order fact at immutable createdAt after a later edit", async () => {
+    const realAnalytics = createWebsiteAnalyticsV2BusinessRecorder(database, {
+      config: {
+        enabled: false,
+        cookieSecret: null,
+        v2Enabled: true,
+        attributionLookbackDays: 90,
+      },
+    });
+    const replayAnalytics = {
+      recordManualOrder: vi.fn()
+        .mockRejectedValueOnce(new Error("synthetic first analytics miss"))
+        .mockImplementation(realAnalytics.recordManualOrder),
+      recordManualPaymentUpdate: realAnalytics.recordManualPaymentUpdate,
+    };
+    const baseRepository = createDrizzleProductionJobRepository(database, {
+      conversionPolicy: policy,
+      analyticsRecorder: replayAnalytics,
+    });
+    let committedInput: Parameters<typeof baseRepository.createManual>[0] | undefined;
+    const capturingRepository = {
+      ...baseRepository,
+      createManual: vi.fn(async (input: Parameters<typeof baseRepository.createManual>[0]) => {
+        committedInput = input;
+        return baseRepository.createManual(input);
+      }),
+    };
+    const runtime = createProductionJobService(capturingRepository, {
+      createJobNumber: () => `MANUAL-${randomUUID()}`,
+      now: () => finalizedAt,
+    });
+    const actor = {
+      userId: actorId,
+      email: `manual-finalization-${suffix}@example.test`,
+    };
+    const created = await runtime.createManual(
+      actor,
+      manualInput({ conversionEvidence: undefined }),
+      { canUpdateFinance: true },
+    );
+    jobIds.push(created.job.id);
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(eq(websiteAnalyticsConversions.productionJobId, created.job.id)))
+      .toEqual([]);
+
+    const editedAt = new Date("2026-08-20T06:00:00.000Z");
+    await expect(baseRepository.update({
+      jobId: created.job.id,
+      idempotencyKey: `replay-edit-${created.job.id}`,
+      expectedUpdatedAt: created.job.updatedAt,
+      actor,
+      updatedAt: editedAt,
+      canUpdateFinance: true,
+      internalNotes: "Synthetic later edit",
+    })).resolves.toBe("updated");
+    expect(committedInput).toBeDefined();
+    await baseRepository.createManual(committedInput!);
+
+    await expect(database.select().from(websiteAnalyticsConversions)
+      .where(eq(websiteAnalyticsConversions.productionJobId, created.job.id)))
+      .resolves.toEqual([expect.objectContaining({
+        sourceId: created.job.id,
+        occurredAt: finalizedAt,
+      })]);
+    expect(replayAnalytics.recordManualOrder).toHaveBeenLastCalledWith(
+      expect.objectContaining({ occurredAt: finalizedAt }),
+    );
   });
 
   it("never creates another Purchase when payment, amount or customer data changes", async () => {

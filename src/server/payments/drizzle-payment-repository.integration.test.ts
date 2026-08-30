@@ -247,6 +247,20 @@ describe("Drizzle payment repository", () => {
     await pool.query("select 1");
   });
 
+  it.each(["false", "true"])(
+    "keeps default repository construction fail-soft with invalid V1 config and V2=%s",
+    (v2Enabled) => {
+      vi.stubEnv("FIRST_PARTY_ANALYTICS_ENABLED", "true");
+      vi.stubEnv("FIRST_PARTY_ANALYTICS_COOKIE_SECRET", "short");
+      vi.stubEnv("WEBSITE_ANALYTICS_V2_ENABLED", v2Enabled);
+      try {
+        expect(() => createDrizzlePaymentRepository(database)).not.toThrow();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
+
   afterAll(async () => {
     await database.delete(websiteAnalyticsFinancialEvents)
       .where(inArray(websiteAnalyticsFinancialEvents.orderId, orderIds));
@@ -831,6 +845,121 @@ describe("Drizzle payment repository", () => {
       .from(paymentAttempts)
       .where(eq(paymentAttempts.id, claim.attempt.id));
     expect(returnStateConsumedAt).toBeNull();
+  });
+
+  it("preserves paid/refund transition evidence across later return-state writes", async () => {
+    const order = await createOrder();
+    const facts = {
+      recordOrder: vi.fn(),
+      recordInquiry: vi.fn(),
+      recordFinancialEvent: vi.fn().mockResolvedValue({ created: true, eventId: randomUUID() }),
+    };
+    const immutableRecorder = createWebsiteAnalyticsV2BusinessRecorder(database, {
+      config: {
+        enabled: false,
+        cookieSecret: null,
+        v2Enabled: true,
+        attributionLookbackDays: 90,
+      },
+      repository: facts,
+    });
+    let markReceiptEntered!: () => void;
+    let releaseReceipt!: () => void;
+    const receiptEntered = new Promise<void>((resolve) => {
+      markReceiptEntered = resolve;
+    });
+    const receiptReleased = new Promise<void>((resolve) => {
+      releaseReceipt = resolve;
+    });
+    const transitionRecorder = {
+      recordDirectPaymentTransition: vi.fn(async (
+        transition: Parameters<typeof immutableRecorder.recordDirectPaymentTransition>[0],
+      ) => {
+        await immutableRecorder.recordDirectPaymentTransition(transition);
+        if (transition.eventType === "receipt") {
+          markReceiptEntered();
+          await receiptReleased;
+        }
+      }),
+    };
+    const transitionRepository = createDrizzlePaymentRepository(database, {
+      analyticsRecorder: transitionRecorder,
+    });
+    const claim = await transitionRepository.createOrClaimNonterminalAttempt(
+      claimInput(order.orderId, { provider: "afterpay", method: "afterpay" }),
+    );
+    const providerReference = `transition-${randomUUID()}`;
+    const returnStateDigest = "8".repeat(64);
+    await transitionRepository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference,
+      returnStateDigest,
+      status: "processing",
+    });
+
+    const paid = transitionRepository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      source: "server_capture",
+      result: {
+        providerReference,
+        providerStatus: "CAPTURED",
+        amountCents: 7_475,
+        currency: "NZD",
+        orderNumber: order.orderNumber,
+        status: "paid",
+      },
+    });
+    await receiptEntered;
+
+    await expect(transitionRepository.consumeReturnState({
+      provider: "afterpay",
+      method: "afterpay",
+      digest: returnStateDigest,
+      orderNumber: order.orderNumber,
+      providerReference,
+    })).resolves.toMatchObject({ outcome: "consumed" });
+    await expect(transitionRepository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      source: "reconciliation",
+      result: {
+        providerReference,
+        providerStatus: "refunded",
+        amountCents: 7_475,
+        currency: "NZD",
+        orderNumber: order.orderNumber,
+        status: "refunded",
+      },
+    })).resolves.toMatchObject({ order: { paymentStatus: "refunded" } });
+    releaseReceipt();
+    await expect(paid).resolves.toMatchObject({ order: { paymentStatus: "paid" } });
+
+    expect(transitionRecorder.recordDirectPaymentTransition).toHaveBeenNthCalledWith(1, {
+      attemptId: claim.attempt.id,
+      orderId: order.orderId,
+      paymentRequestId: null,
+      eventType: "receipt",
+      amountCents: 7_475,
+      currency: "NZD",
+      occurredAt: expect.any(Date),
+    });
+    expect(transitionRecorder.recordDirectPaymentTransition).toHaveBeenNthCalledWith(2, {
+      attemptId: claim.attempt.id,
+      orderId: order.orderId,
+      paymentRequestId: null,
+      eventType: "refund",
+      amountCents: 7_475,
+      currency: "NZD",
+      occurredAt: expect.any(Date),
+    });
+    const receiptTransition = transitionRecorder.recordDirectPaymentTransition.mock.calls[0][0];
+    const refundTransition = transitionRecorder.recordDirectPaymentTransition.mock.calls[1][0];
+    const latest = await paymentRows(order.orderId, claim.attempt.id);
+    expect(receiptTransition.occurredAt.getTime()).toBeLessThan(
+      refundTransition.occurredAt.getTime(),
+    );
+    expect(receiptTransition.occurredAt).not.toEqual(latest.attempt.updatedAt);
+    expect(facts.recordFinancialEvent).toHaveBeenCalledTimes(2);
   });
 
   it("applies verified money with zero eligible recipients and preserves terminal state exactly", async () => {

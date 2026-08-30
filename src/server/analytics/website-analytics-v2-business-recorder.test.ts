@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { serializeAdvertisingConsent } from "@/domain/consent/advertising-consent";
 import {
   createWebsiteAnalyticsIdentity,
@@ -29,6 +29,28 @@ function repository() {
 }
 
 describe("website analytics v2 business recorder", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each(["false", "true"])(
+    "constructs a disabled no-op recorder when V2=%s and default V1 config is invalid",
+    async (v2Enabled) => {
+      vi.stubEnv("FIRST_PARTY_ANALYTICS_ENABLED", "true");
+      vi.stubEnv("FIRST_PARTY_ANALYTICS_COOKIE_SECRET", "short");
+      vi.stubEnv("WEBSITE_ANALYTICS_V2_ENABLED", v2Enabled);
+      const facts = repository();
+
+      const recorder = createWebsiteAnalyticsV2BusinessRecorder({} as never, {
+        repository: facts,
+      });
+      await expect(recorder.recordInquiry({
+        conversationId: randomUUID(),
+        occurredAt: new Date("2026-08-30T00:00:00.000Z"),
+        behavioralContext: { consentLinked: false },
+      })).resolves.toBeUndefined();
+      expect(facts.recordInquiry).not.toHaveBeenCalled();
+    },
+  );
+
   it("accepts only a persisted analytics grant with a valid signed V1 visitor/session pair", () => {
     const now = new Date("2026-08-30T01:02:03.000Z");
     const identity = createWebsiteAnalyticsIdentity(cookieSecret, now);
@@ -70,19 +92,28 @@ describe("website analytics v2 business recorder", () => {
   it("performs zero loaders or V2 repository calls when the V2 flag is false", async () => {
     const facts = repository();
     const loadWebsiteOrder = vi.fn();
-    const loadDirectPaymentAttempt = vi.fn();
     const loadLedgerEntry = vi.fn();
+    const loadLedgerEntryForAttempt = vi.fn();
     const recorder = createWebsiteAnalyticsV2BusinessRecorder({} as never, {
       config: { ...enabledConfig, v2Enabled: false },
       repository: facts,
       loadWebsiteOrder,
-      loadDirectPaymentAttempt,
       loadLedgerEntry,
+      loadLedgerEntryForAttempt,
     });
 
     await recorder.recordWebsiteOrder({ orderId: randomUUID(), behavioralContext: { consentLinked: false } });
-    await recorder.recordDirectPaymentAttempt({ attemptId: randomUUID(), verifiedStatus: "paid" });
+    await recorder.recordDirectPaymentTransition({
+      attemptId: randomUUID(),
+      orderId: randomUUID(),
+      paymentRequestId: null,
+      eventType: "receipt",
+      amountCents: 8_500,
+      currency: "NZD",
+      occurredAt: new Date("2026-08-30T01:00:00.000Z"),
+    });
     await recorder.recordLedgerEntry({ entryId: randomUUID() });
+    await recorder.recordPaymentRequestAttemptLedger({ attemptId: randomUUID() });
     await recorder.recordManualOrder({
       jobId: randomUUID(),
       occurredAt: new Date("2026-08-30T01:00:00.000Z"),
@@ -98,8 +129,8 @@ describe("website analytics v2 business recorder", () => {
     });
 
     expect(loadWebsiteOrder).not.toHaveBeenCalled();
-    expect(loadDirectPaymentAttempt).not.toHaveBeenCalled();
     expect(loadLedgerEntry).not.toHaveBeenCalled();
+    expect(loadLedgerEntryForAttempt).not.toHaveBeenCalled();
     expect(facts.recordOrder).not.toHaveBeenCalled();
     expect(facts.recordInquiry).not.toHaveBeenCalled();
     expect(facts.recordFinancialEvent).not.toHaveBeenCalled();
@@ -143,22 +174,53 @@ describe("website analytics v2 business recorder", () => {
     });
   });
 
-  it("maps exact direct-payment and ledger evidence and ignores mutable unsupported states", async () => {
+  it("records direct financial facts from the immutable committed transition", async () => {
     const facts = repository();
+    const recorder = createWebsiteAnalyticsV2BusinessRecorder({} as never, {
+      config: enabledConfig,
+      repository: facts,
+    });
     const orderId = randomUUID();
     const attemptId = randomUUID();
-    const ledgerId = randomUUID();
-    const paidAt = new Date("2026-08-30T04:00:00.000Z");
-    const refundedAt = new Date("2026-09-02T04:00:00.000Z");
-    const loadDirectPaymentAttempt = vi.fn().mockResolvedValue({
+    const occurredAt = new Date("2026-08-30T03:30:00.000Z");
+
+    await recorder.recordDirectPaymentTransition({
       attemptId,
       orderId,
       paymentRequestId: null,
+      eventType: "receipt",
       amountCents: 8_500,
       currency: "AUD",
-      occurredAt: paidAt,
-      orderPaymentStatus: "paid",
+      occurredAt,
     });
+
+    expect(facts.recordFinancialEvent).toHaveBeenCalledWith({
+      orderId,
+      eventType: "receipt",
+      sourceType: "payment_attempt",
+      sourceId: attemptId,
+      amountCents: 8_500,
+      currency: "AUD",
+      occurredAt,
+    });
+
+    await recorder.recordDirectPaymentTransition({
+      attemptId: randomUUID(),
+      orderId,
+      paymentRequestId: randomUUID(),
+      eventType: "receipt",
+      amountCents: 8_500,
+      currency: "AUD",
+      occurredAt,
+    });
+    expect(facts.recordFinancialEvent).toHaveBeenCalledTimes(1);
+  });
+
+  it("maps exact ledger evidence", async () => {
+    const facts = repository();
+    const orderId = randomUUID();
+    const ledgerId = randomUUID();
+    const refundedAt = new Date("2026-09-02T04:00:00.000Z");
     const loadLedgerEntry = vi.fn().mockResolvedValue({
       entryId: ledgerId,
       orderId,
@@ -171,27 +233,12 @@ describe("website analytics v2 business recorder", () => {
     const recorder = createWebsiteAnalyticsV2BusinessRecorder({} as never, {
       config: enabledConfig,
       repository: facts,
-      loadDirectPaymentAttempt,
       loadLedgerEntry,
     });
 
-    await recorder.recordDirectPaymentAttempt({ attemptId, verifiedStatus: "processing" });
-    await recorder.recordDirectPaymentAttempt({ attemptId, verifiedStatus: "failed" });
-    await recorder.recordDirectPaymentAttempt({ attemptId, verifiedStatus: "cancelled" });
-    expect(loadDirectPaymentAttempt).not.toHaveBeenCalled();
-    await recorder.recordDirectPaymentAttempt({ attemptId, verifiedStatus: "paid" });
     await recorder.recordLedgerEntry({ entryId: ledgerId });
 
-    expect(facts.recordFinancialEvent).toHaveBeenNthCalledWith(1, {
-      orderId,
-      eventType: "receipt",
-      sourceType: "payment_attempt",
-      sourceId: attemptId,
-      amountCents: 8_500,
-      currency: "AUD",
-      occurredAt: paidAt,
-    });
-    expect(facts.recordFinancialEvent).toHaveBeenNthCalledWith(2, {
+    expect(facts.recordFinancialEvent).toHaveBeenCalledWith({
       orderId,
       eventType: "refund",
       sourceType: "payment_ledger_entry",
@@ -199,6 +246,41 @@ describe("website analytics v2 business recorder", () => {
       amountCents: 2_500,
       currency: "AUD",
       occurredAt: refundedAt,
+    });
+  });
+
+  it("loads a payment-request ledger entry only after entering the V2 recorder gate", async () => {
+    const facts = repository();
+    const attemptId = randomUUID();
+    const entryId = randomUUID();
+    const orderId = randomUUID();
+    const occurredAt = new Date("2026-09-02T05:00:00.000Z");
+    const loadLedgerEntryForAttempt = vi.fn().mockResolvedValue({
+      entryId,
+      orderId,
+      entryType: "online_payment",
+      direction: "credit",
+      amountCents: 4_500,
+      currency: "NZD",
+      occurredAt,
+    });
+    const recorder = createWebsiteAnalyticsV2BusinessRecorder({} as never, {
+      config: enabledConfig,
+      repository: facts,
+      loadLedgerEntryForAttempt,
+    });
+
+    await recorder.recordPaymentRequestAttemptLedger({ attemptId });
+
+    expect(loadLedgerEntryForAttempt).toHaveBeenCalledWith(attemptId);
+    expect(facts.recordFinancialEvent).toHaveBeenCalledWith({
+      orderId,
+      eventType: "receipt",
+      sourceType: "payment_ledger_entry",
+      sourceId: entryId,
+      amountCents: 4_500,
+      currency: "NZD",
+      occurredAt,
     });
   });
 

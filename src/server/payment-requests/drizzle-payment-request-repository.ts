@@ -416,7 +416,10 @@ export function createDrizzlePaymentRequestRepository(
   database: Database,
   options: Readonly<{
     leaseDurationMs?: number;
-    analyticsRecorder?: Pick<WebsiteAnalyticsV2BusinessRecorder, "recordLedgerEntry">;
+    analyticsRecorder?: Pick<
+      WebsiteAnalyticsV2BusinessRecorder,
+      "recordLedgerEntry" | "recordPaymentRequestAttemptLedger"
+    >;
   }> = {},
 ): PaymentRequestRepository {
   const leaseDurationMs = options.leaseDurationMs ?? 60_000;
@@ -436,11 +439,7 @@ export function createDrizzlePaymentRequestRepository(
 
   async function recordAttemptLedgerEntry(attemptId: string): Promise<void> {
     try {
-      const [entry] = await database.select({ id: paymentLedgerEntries.id })
-        .from(paymentLedgerEntries)
-        .where(eq(paymentLedgerEntries.paymentAttemptId, attemptId))
-        .limit(1);
-      if (entry) await recordLedgerEntry(entry.id);
+      await analyticsRecorder.recordPaymentRequestAttemptLedger({ attemptId });
     } catch {
       // The committed payment remains authoritative; reconciliation repairs analytics.
     }

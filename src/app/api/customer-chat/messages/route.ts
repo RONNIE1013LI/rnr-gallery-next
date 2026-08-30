@@ -5,7 +5,7 @@ import { createCustomerServiceRuntime } from "@/server/customer-service/runtime"
 import { resolveCurrentSafeProductContext } from "@/server/customer-service/website/product-context";
 import { getAllCustomerNotificationRuntime } from "@/server/notifications/customer-notification-runtime";
 import { createCustomerChatMessagesHandler } from "./route-handler";
-import { readWebsiteAnalyticsConfig } from "@/server/analytics/website-analytics-config";
+import { readWebsiteAnalyticsBusinessConfig } from "@/server/analytics/website-analytics-config";
 
 export const runtime = "nodejs";
 
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
       processReviewAlert: () => customerService.reviewAlertService?.deliverNext() ?? Promise.resolve({ result: "not_configured" }),
       processCustomerNotifications: () => getAllCustomerNotificationRuntime().deliverPending(20),
       scheduleAfter: (task) => after(task),
-      analyticsConfig: readWebsiteAnalyticsConfig(),
+      analyticsConfig: readWebsiteAnalyticsBusinessConfig(),
     }).POST(request);
   } catch {
     return Response.json(

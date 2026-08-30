@@ -24,6 +24,7 @@ import {
 import { enqueueInternalNotifications } from "@/server/notifications/drizzle-internal-notification-outbox-repository";
 import {
   createWebsiteAnalyticsV2BusinessRecorder,
+  type WebsiteAnalyticsDirectPaymentTransition,
   type WebsiteAnalyticsV2BusinessRecorder,
 } from "@/server/analytics/website-analytics-v2-business-recorder";
 import type {
@@ -56,6 +57,10 @@ type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type AttemptRow = typeof paymentAttempts.$inferSelect;
 type OrderRow = typeof orders.$inferSelect;
 type AddressRow = typeof orderAddresses.$inferSelect;
+type AppliedVerifiedResult = Readonly<{
+  value: PaymentAttemptWithOrder;
+  analyticsTransition: WebsiteAnalyticsDirectPaymentTransition | null;
+}>;
 
 const NONTERMINAL_ATTEMPTS: PaymentAttemptStatus[] = [
   "created",
@@ -255,7 +260,7 @@ async function applyLockedVerifiedResult(
     result: VerifiedPaymentResult;
     source: PaymentVerificationSource;
   }>,
-): Promise<PaymentAttemptWithOrder> {
+): Promise<AppliedVerifiedResult> {
   const { order, attempt } = await lockOrderThenAttempt(
     transaction,
     input.attemptId,
@@ -265,8 +270,11 @@ async function applyLockedVerifiedResult(
   if (order.paymentStatus === "refunded") {
     const addresses = await loadAddresses(transaction, order.id);
     return Object.freeze({
-      attempt: attemptRecord(attempt),
-      order: paymentOrder(order, addresses),
+      value: Object.freeze({
+        attempt: attemptRecord(attempt),
+        order: paymentOrder(order, addresses),
+      }),
+      analyticsTransition: null,
     });
   }
 
@@ -277,8 +285,11 @@ async function applyLockedVerifiedResult(
   if (order.paymentStatus === "paid" && incoming !== "refunded") {
     const addresses = await loadAddresses(transaction, order.id);
     return Object.freeze({
-      attempt: attemptRecord(attempt),
-      order: paymentOrder(order, addresses),
+      value: Object.freeze({
+        attempt: attemptRecord(attempt),
+        order: paymentOrder(order, addresses),
+      }),
+      analyticsTransition: null,
     });
   }
   const orderStatus = nextOrderPaymentStatus(order.paymentStatus, incoming);
@@ -339,9 +350,27 @@ async function applyLockedVerifiedResult(
     }).onConflictDoNothing({ target: orderNotificationOutbox.eventKey });
   }
   const addresses = await loadAddresses(transaction, order.id);
+  const eventType = order.paymentStatus !== "paid" && orderStatus === "paid"
+    ? "receipt" as const
+    : order.paymentStatus === "paid" && orderStatus === "refunded"
+      ? "refund" as const
+      : null;
   return Object.freeze({
-    attempt: attemptRecord(updatedAttempt),
-    order: paymentOrder(updatedOrder, addresses),
+    value: Object.freeze({
+      attempt: attemptRecord(updatedAttempt),
+      order: paymentOrder(updatedOrder, addresses),
+    }),
+    analyticsTransition: eventType
+      ? Object.freeze({
+          attemptId: attempt.id,
+          orderId: order.id,
+          paymentRequestId: attempt.paymentRequestId,
+          eventType,
+          amountCents: attempt.expectedAmountCents,
+          currency: attempt.currency,
+          occurredAt: now,
+        })
+      : null,
   });
 }
 
@@ -354,7 +383,7 @@ export function createDrizzlePaymentRepository(
   database: Database,
   options: Readonly<{
     leaseDurationMs?: number;
-    analyticsRecorder?: Pick<WebsiteAnalyticsV2BusinessRecorder, "recordDirectPaymentAttempt">;
+    analyticsRecorder?: Pick<WebsiteAnalyticsV2BusinessRecorder, "recordDirectPaymentTransition">;
   }> = {},
 ): PaymentRepository {
   const leaseDurationMs = options.leaseDurationMs ?? 60_000;
@@ -364,12 +393,12 @@ export function createDrizzlePaymentRepository(
   const analyticsRecorder = options.analyticsRecorder
     ?? createWebsiteAnalyticsV2BusinessRecorder(database);
 
-  async function recordDirectPaymentAttempt(
-    attemptId: string,
-    verifiedStatus: VerifiedPaymentResult["status"],
+  async function recordDirectPaymentTransition(
+    transition: WebsiteAnalyticsDirectPaymentTransition | null,
   ): Promise<void> {
+    if (!transition) return;
     try {
-      await analyticsRecorder.recordDirectPaymentAttempt({ attemptId, verifiedStatus });
+      await analyticsRecorder.recordDirectPaymentTransition(transition);
     } catch {
       // The committed payment remains authoritative; reconciliation repairs analytics.
     }
@@ -673,8 +702,8 @@ export function createDrizzlePaymentRepository(
       const applied = await database.transaction((transaction) =>
         applyLockedVerifiedResult(transaction, input),
       );
-      await recordDirectPaymentAttempt(applied.attempt.id, input.result.status);
-      return applied;
+      await recordDirectPaymentTransition(applied.analyticsTransition);
+      return applied.value;
     },
 
     async applyVerifiedWebhookEventAtomically(input: VerifiedEventInput) {
@@ -729,7 +758,7 @@ export function createDrizzlePaymentRepository(
         }
         assertVerifiedResult(locked.order, locked.attempt, input.result);
 
-        await applyLockedVerifiedResult(
+        const applied = await applyLockedVerifiedResult(
           transaction,
           {
             attemptId: candidate.id,
@@ -743,7 +772,7 @@ export function createDrizzlePaymentRepository(
         if (input.faultAt === "before_processed_result") {
           throw new PaymentRepositoryFaultError();
         }
-        const now = await databaseNow(transaction);
+        const now = applied.analyticsTransition?.occurredAt ?? await databaseNow(transaction);
         await transaction
           .update(webhookEvents)
           .set({
@@ -752,11 +781,15 @@ export function createDrizzlePaymentRepository(
             processedAt: now,
           })
           .where(eq(webhookEvents.id, event.id));
-        return { status: "applied" as const, attemptId: candidate.id };
+        return {
+          status: "applied" as const,
+          attemptId: candidate.id,
+          analyticsTransition: applied.analyticsTransition,
+        };
       });
-      if (outcome.attemptId) {
-        await recordDirectPaymentAttempt(outcome.attemptId, input.result.status);
-      }
+      await recordDirectPaymentTransition(
+        "analyticsTransition" in outcome ? outcome.analyticsTransition ?? null : null,
+      );
       return outcome.status;
     },
 
@@ -849,8 +882,8 @@ export function createDrizzlePaymentRepository(
           ));
         return applied;
       });
-      await recordDirectPaymentAttempt(applied.attempt.id, input.result.status);
-      return applied;
+      await recordDirectPaymentTransition(applied.analyticsTransition);
+      return applied.value;
     },
 
     async recordReconciliationOutcome(input) {

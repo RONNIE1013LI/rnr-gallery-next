@@ -530,6 +530,19 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       role: "admin",
     });
   });
+  it.each(["false", "true"])(
+    "keeps default repository construction fail-soft with invalid V1 config and V2=%s",
+    (v2Enabled) => {
+      vi.stubEnv("FIRST_PARTY_ANALYTICS_ENABLED", "true");
+      vi.stubEnv("FIRST_PARTY_ANALYTICS_COOKIE_SECRET", "short");
+      vi.stubEnv("WEBSITE_ANALYTICS_V2_ENABLED", v2Enabled);
+      try {
+        expect(() => createDrizzleCustomerServiceRepository(database)).not.toThrow();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
   beforeEach(async () => {
     await clearNotificationFixtures();
     await clearTables();

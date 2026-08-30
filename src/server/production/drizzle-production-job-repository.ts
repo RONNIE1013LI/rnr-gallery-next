@@ -665,6 +665,7 @@ export function createDrizzleProductionJobRepository(
           id: productionJobs.id,
           jobNumber: productionJobs.jobNumber,
           requestDigest: productionJobs.requestDigest,
+          createdAt: productionJobs.createdAt,
           updatedAt: productionJobs.updatedAt,
         });
         await transaction.insert(productionJobItems).values(
@@ -795,20 +796,29 @@ export function createDrizzleProductionJobRepository(
           id: job.id,
           jobNumber: job.jobNumber,
           requestDigest: job.requestDigest!,
+          createdAt: job.createdAt,
           updatedAt: job.updatedAt,
         };
       }).catch(async (error) => {
-        const existing = await this.findManualByIdempotencyKey(input.idempotencyKey);
-        if (!existing) throw error;
+        const [existing] = await database.select({
+          id: productionJobs.id,
+          jobNumber: productionJobs.jobNumber,
+          requestDigest: productionJobs.requestDigest,
+          createdAt: productionJobs.createdAt,
+          updatedAt: productionJobs.updatedAt,
+        }).from(productionJobs)
+          .where(eq(productionJobs.idempotencyKey, input.idempotencyKey))
+          .limit(1);
+        if (!existing?.requestDigest) throw error;
         if (existing.requestDigest !== input.requestDigest) {
           throw new ProductionJobConflictError();
         }
-        return existing;
+        return { ...existing, requestDigest: existing.requestDigest };
       });
       try {
         await analyticsRecorder.recordManualOrder({
           jobId: created.id,
-          occurredAt: created.updatedAt,
+          occurredAt: created.createdAt,
           amountPayableCents: input.amountPayableCents,
           amountPaidCents: input.amountPaidCents,
           initialStatus: input.manualStatus,
@@ -817,7 +827,12 @@ export function createDrizzleProductionJobRepository(
       } catch {
         // The committed manual order remains authoritative; reconciliation repairs analytics.
       }
-      return created;
+      return {
+        id: created.id,
+        jobNumber: created.jobNumber,
+        requestDigest: created.requestDigest,
+        updatedAt: created.updatedAt,
+      };
     },
 
     async update(input) {
@@ -831,6 +846,7 @@ export function createDrizzleProductionJobRepository(
       if (priorAudit) return "duplicate" as const;
 
       let paidDeltaCents = 0;
+      let paidDeltaCurrency: "NZD" | "AUD" = "NZD";
       const result = await database.transaction(async (transaction) => {
         const [current] = await transaction.select().from(productionJobs)
           .where(eq(productionJobs.id, input.jobId)).for("update").limit(1);
@@ -901,6 +917,13 @@ export function createDrizzleProductionJobRepository(
         if (input.finance) {
           if (current.source === "manual") {
             paidDeltaCents = Math.max(0, input.finance.amountPaidCents - (current.amountPaidCents ?? 0));
+            if (paidDeltaCents > 0) {
+              const [invoice] = await transaction.select({ currency: invoices.currency })
+                .from(invoices)
+                .where(eq(invoices.jobId, current.id))
+                .limit(1);
+              paidDeltaCurrency = invoice?.currency ?? "NZD";
+            }
           }
           const firstPaidTransition = current.source === "manual"
             && current.manualPaymentStatus !== "paid"
@@ -996,7 +1019,7 @@ export function createDrizzleProductionJobRepository(
             jobId: input.jobId,
             idempotencyKey: input.idempotencyKey,
             deltaCents: paidDeltaCents,
-            currency: "NZD",
+            currency: paidDeltaCurrency,
             occurredAt: input.updatedAt,
           });
         } catch {

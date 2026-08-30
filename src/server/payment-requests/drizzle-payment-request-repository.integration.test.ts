@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   checkoutSessions,
   internalNotificationOutbox,
@@ -209,6 +209,20 @@ describe("payment request balance transactions", () => {
       role: "admin",
     });
   });
+
+  it.each(["false", "true"])(
+    "keeps default repository construction fail-soft with invalid V1 config and V2=%s",
+    (v2Enabled) => {
+      vi.stubEnv("FIRST_PARTY_ANALYTICS_ENABLED", "true");
+      vi.stubEnv("FIRST_PARTY_ANALYTICS_COOKIE_SECRET", "short");
+      vi.stubEnv("WEBSITE_ANALYTICS_V2_ENABLED", v2Enabled);
+      try {
+        expect(() => createDrizzlePaymentRequestRepository(database)).not.toThrow();
+      } finally {
+        vi.unstubAllEnvs();
+      }
+    },
+  );
 
   afterAll(async () => {
     if (webhookEventIds.length) {
@@ -556,6 +570,61 @@ describe("payment request balance transactions", () => {
       publicTokenDigest: "e".repeat(64),
       actorId,
     })).rejects.toBeInstanceOf(PaymentRequestConflictError);
+  });
+
+  it("enters the recorder gate before any payment-request analytics loader", async () => {
+    const loadLedgerEntryForAttempt = vi.fn();
+    const disabledRecorder = createWebsiteAnalyticsV2BusinessRecorder(database, {
+      config: {
+        enabled: false,
+        v2Enabled: false,
+        cookieSecret: null,
+        attributionLookbackDays: 90,
+      },
+      loadLedgerEntryForAttempt,
+    });
+    const gatedAttemptRecorder = vi.fn(
+      disabledRecorder.recordPaymentRequestAttemptLedger,
+    );
+    const disabledRepository = createDrizzlePaymentRequestRepository(database, {
+      analyticsRecorder: {
+        recordPaymentRequestAttemptLedger: gatedAttemptRecorder,
+      } as never,
+    });
+    const order = await createOrder();
+    const request = await remember(disabledRepository.createRequest(
+      orderRequest(order.id, 20_000),
+    ));
+    const claim = await disabledRepository.preflightAndClaimAttempt({
+      publicTokenDigest: request.publicTokenDigest,
+      provider: "stripe",
+      method: "card",
+      payerSnapshot: null,
+    });
+    const providerReference = `disabled-analytics-${randomUUID()}`;
+    await disabledRepository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference,
+      returnStateDigest: null,
+      status: "processing",
+    });
+
+    await disabledRepository.applyVerifiedResult({
+      attemptId: claim.attempt.id,
+      source: "verified_webhook",
+      result: {
+        providerReference,
+        providerStatus: "succeeded",
+        amountCents: 20_000,
+        currency: "NZD",
+        merchantReference: request.requestNumber,
+        status: "paid",
+      },
+    });
+
+    expect(gatedAttemptRecorder).toHaveBeenCalledWith({ attemptId: claim.attempt.id });
+    expect(loadLedgerEntryForAttempt).not.toHaveBeenCalled();
   });
 
   it("binds and applies one verified online payment ledger entry idempotently", async () => {

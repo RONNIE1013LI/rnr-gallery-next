@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { readWebsiteAnalyticsConfig } from "./website-analytics-config";
+import {
+  readWebsiteAnalyticsBusinessConfig,
+  readWebsiteAnalyticsConfig,
+} from "./website-analytics-config";
 
 describe("website analytics config", () => {
   it("is disabled unless the feature flag is explicitly true", () => {
@@ -64,4 +67,20 @@ describe("website analytics config", () => {
       attributionLookbackDays: 90,
     });
   });
+
+  it.each(["false", "true"])(
+    "provides a disabled business-path config when V2=%s and V1 secret validation fails",
+    (v2Enabled) => {
+      expect(readWebsiteAnalyticsBusinessConfig({
+        FIRST_PARTY_ANALYTICS_ENABLED: "true",
+        FIRST_PARTY_ANALYTICS_COOKIE_SECRET: "short",
+        WEBSITE_ANALYTICS_V2_ENABLED: v2Enabled,
+      })).toEqual({
+        enabled: false,
+        cookieSecret: null,
+        v2Enabled: false,
+        attributionLookbackDays: 90,
+      });
+    },
+  );
 });

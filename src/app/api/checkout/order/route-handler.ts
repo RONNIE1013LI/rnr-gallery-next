@@ -15,7 +15,7 @@ import {
   type WebsiteAnalyticsV2BusinessRecorder,
 } from "@/server/analytics/website-analytics-v2-business-recorder";
 import {
-  readWebsiteAnalyticsConfig,
+  readWebsiteAnalyticsBusinessConfig,
   type WebsiteAnalyticsRuntimeConfig,
 } from "@/server/analytics/website-analytics-config";
 import {
@@ -82,7 +82,7 @@ class CheckoutAccessError extends Error {
 function defaults(): Dependencies {
   const database = getDatabase();
   const repository = createDrizzleOrderRepository(database);
-  const analyticsConfig = readWebsiteAnalyticsConfig();
+  const analyticsConfig = readWebsiteAnalyticsBusinessConfig();
   return {
     repository,
     orderService: createOrderService({
@@ -195,7 +195,7 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
             orderId: order.orderId,
             behavioralContext: resolveWebsiteAnalyticsBehavioralContext(
               request.headers.get("Cookie"),
-              deps.analyticsConfig ?? readWebsiteAnalyticsConfig(),
+              deps.analyticsConfig ?? readWebsiteAnalyticsBusinessConfig(),
               requestNow,
             ),
           });

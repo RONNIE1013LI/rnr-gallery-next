@@ -2,10 +2,9 @@ import { eq } from "drizzle-orm";
 import { ADVERTISING_CONSENT_COOKIE, parseAdvertisingConsent } from "@/domain/consent/advertising-consent";
 import type { WebsiteAnalyticsCurrency } from "@/domain/analytics/website-analytics-v2";
 import type { getDatabase } from "@/server/db/client";
-import { orders, paymentAttempts, paymentLedgerEntries } from "@/server/db/schema";
-import type { OrderFulfilmentStatus, OrderPaymentStatus } from "@/server/db/schema/orders";
+import { orders, paymentLedgerEntries } from "@/server/db/schema";
+import type { OrderFulfilmentStatus } from "@/server/db/schema/orders";
 import type { PaymentLedgerDirection, PaymentLedgerEntryType } from "@/server/db/schema/payments";
-import type { VerifiedPaymentStatus } from "@/server/payments/types";
 import { eligibleOrder } from "./website-analytics-business-rules";
 import {
   parseWebsiteAnalyticsSession,
@@ -15,7 +14,7 @@ import {
   websiteAnalyticsVisitorDigest,
 } from "./website-analytics-cookies";
 import {
-  readWebsiteAnalyticsConfig,
+  readWebsiteAnalyticsBusinessConfig,
   type WebsiteAnalyticsRuntimeConfig,
 } from "./website-analytics-config";
 import { createWebsiteAnalyticsV2Repository } from "./website-analytics-v2-repository";
@@ -34,14 +33,14 @@ type WebsiteOrderEvidence = Readonly<{
   occurredAt: Date;
 }>;
 
-type DirectPaymentEvidence = Readonly<{
+export type WebsiteAnalyticsDirectPaymentTransition = Readonly<{
   attemptId: string;
   orderId: string;
   paymentRequestId: string | null;
+  eventType: "receipt" | "refund";
   amountCents: number;
   currency: WebsiteAnalyticsCurrency;
   occurredAt: Date;
-  orderPaymentStatus: OrderPaymentStatus;
 }>;
 
 type LedgerEvidence = Readonly<{
@@ -58,8 +57,8 @@ type RecorderOptions = Readonly<{
   config?: WebsiteAnalyticsRuntimeConfig;
   repository?: FactRepository;
   loadWebsiteOrder?: (orderId: string) => Promise<WebsiteOrderEvidence | null>;
-  loadDirectPaymentAttempt?: (attemptId: string) => Promise<DirectPaymentEvidence | null>;
   loadLedgerEntry?: (entryId: string) => Promise<LedgerEvidence | null>;
+  loadLedgerEntryForAttempt?: (attemptId: string) => Promise<LedgerEvidence | null>;
 }>;
 
 export type WebsiteAnalyticsBehavioralContext = Readonly<{
@@ -109,7 +108,7 @@ export function createWebsiteAnalyticsV2BusinessRecorder(
   database: Database,
   options: RecorderOptions = {},
 ) {
-  const config = options.config ?? readWebsiteAnalyticsConfig();
+  const config = options.config ?? readWebsiteAnalyticsBusinessConfig();
   const repository = options.repository ?? createWebsiteAnalyticsV2Repository(database, {
     attributionLookbackDays: config.attributionLookbackDays,
   });
@@ -123,23 +122,6 @@ export function createWebsiteAnalyticsV2BusinessRecorder(
     }).from(orders).where(eq(orders.id, orderId)).limit(1);
     return row ?? null;
   });
-  const loadDirectPaymentAttempt = options.loadDirectPaymentAttempt ?? (async (attemptId: string) => {
-    const [row] = await database.select({
-      attemptId: paymentAttempts.id,
-      orderId: paymentAttempts.orderId,
-      paymentRequestId: paymentAttempts.paymentRequestId,
-      amountCents: paymentAttempts.expectedAmountCents,
-      currency: paymentAttempts.currency,
-      occurredAt: paymentAttempts.updatedAt,
-      orderPaymentStatus: orders.paymentStatus,
-    }).from(paymentAttempts)
-      .innerJoin(orders, eq(orders.id, paymentAttempts.orderId))
-      .where(eq(paymentAttempts.id, attemptId))
-      .limit(1);
-    return row?.orderId && (row.currency === "NZD" || row.currency === "AUD")
-      ? { ...row, orderId: row.orderId, currency: row.currency }
-      : null;
-  });
   const loadLedgerEntry = options.loadLedgerEntry ?? (async (entryId: string) => {
     const [row] = await database.select({
       entryId: paymentLedgerEntries.id,
@@ -150,6 +132,22 @@ export function createWebsiteAnalyticsV2BusinessRecorder(
       currency: paymentLedgerEntries.currency,
       occurredAt: paymentLedgerEntries.receivedAt,
     }).from(paymentLedgerEntries).where(eq(paymentLedgerEntries.id, entryId)).limit(1);
+    return row ?? null;
+  });
+  const loadLedgerEntryForAttempt = options.loadLedgerEntryForAttempt ?? (async (
+    attemptId: string,
+  ) => {
+    const [row] = await database.select({
+      entryId: paymentLedgerEntries.id,
+      orderId: paymentLedgerEntries.orderId,
+      entryType: paymentLedgerEntries.entryType,
+      direction: paymentLedgerEntries.direction,
+      amountCents: paymentLedgerEntries.amountCents,
+      currency: paymentLedgerEntries.currency,
+      occurredAt: paymentLedgerEntries.receivedAt,
+    }).from(paymentLedgerEntries)
+      .where(eq(paymentLedgerEntries.paymentAttemptId, attemptId))
+      .limit(1);
     return row ?? null;
   });
 
@@ -242,52 +240,53 @@ export function createWebsiteAnalyticsV2BusinessRecorder(
     }));
   }
 
-  async function recordDirectPaymentAttempt(input: Readonly<{
-    attemptId: string;
-    verifiedStatus: VerifiedPaymentStatus;
-  }>): Promise<void> {
-    if (input.verifiedStatus !== "paid" && input.verifiedStatus !== "refunded") return;
-    await failSoft(async () => {
-      const evidence = await loadDirectPaymentAttempt(input.attemptId);
-      if (!evidence || evidence.paymentRequestId !== null) return;
-      const eventType = input.verifiedStatus === "paid" ? "receipt" as const : "refund" as const;
-      const expectedOrderStatus = input.verifiedStatus === "paid" ? "paid" : "refunded";
-      if (evidence.orderPaymentStatus !== expectedOrderStatus) return;
-      await repository.recordFinancialEvent({
-        orderId: evidence.orderId,
-        eventType,
-        sourceType: "payment_attempt",
-        sourceId: evidence.attemptId,
-        amountCents: evidence.amountCents,
-        currency: evidence.currency,
-        occurredAt: evidence.occurredAt,
-      });
+  async function recordDirectPaymentTransition(
+    transition: WebsiteAnalyticsDirectPaymentTransition,
+  ): Promise<void> {
+    if (transition.paymentRequestId !== null) return;
+    await failSoft(() => repository.recordFinancialEvent({
+      orderId: transition.orderId,
+      eventType: transition.eventType,
+      sourceType: "payment_attempt",
+      sourceId: transition.attemptId,
+      amountCents: transition.amountCents,
+      currency: transition.currency,
+      occurredAt: transition.occurredAt,
+    }));
+  }
+
+  async function recordLedgerEvidence(evidence: LedgerEvidence | null): Promise<void> {
+    if (!evidence?.orderId) return;
+    const eventType = evidence.entryType === "refund" && evidence.direction === "debit"
+      ? "refund" as const
+      : evidence.entryType === "reversal" && evidence.direction === "debit"
+        ? "reversal" as const
+        : (evidence.entryType === "online_payment" || evidence.entryType === "bank_transfer")
+            && evidence.direction === "credit"
+          ? "receipt" as const
+          : null;
+    if (!eventType) return;
+    await repository.recordFinancialEvent({
+      orderId: evidence.orderId,
+      eventType,
+      sourceType: "payment_ledger_entry",
+      sourceId: evidence.entryId,
+      amountCents: evidence.amountCents,
+      currency: evidence.currency,
+      occurredAt: evidence.occurredAt,
     });
   }
 
   async function recordLedgerEntry(input: Readonly<{ entryId: string }>): Promise<void> {
-    await failSoft(async () => {
-      const evidence = await loadLedgerEntry(input.entryId);
-      if (!evidence?.orderId) return;
-      const eventType = evidence.entryType === "refund" && evidence.direction === "debit"
-        ? "refund" as const
-        : evidence.entryType === "reversal" && evidence.direction === "debit"
-          ? "reversal" as const
-          : (evidence.entryType === "online_payment" || evidence.entryType === "bank_transfer")
-              && evidence.direction === "credit"
-            ? "receipt" as const
-            : null;
-      if (!eventType) return;
-      await repository.recordFinancialEvent({
-        orderId: evidence.orderId,
-        eventType,
-        sourceType: "payment_ledger_entry",
-        sourceId: evidence.entryId,
-        amountCents: evidence.amountCents,
-        currency: evidence.currency,
-        occurredAt: evidence.occurredAt,
-      });
-    });
+    await failSoft(async () => recordLedgerEvidence(await loadLedgerEntry(input.entryId)));
+  }
+
+  async function recordPaymentRequestAttemptLedger(
+    input: Readonly<{ attemptId: string }>,
+  ): Promise<void> {
+    await failSoft(async () => recordLedgerEvidence(
+      await loadLedgerEntryForAttempt(input.attemptId),
+    ));
   }
 
   async function recordInquiry(input: Readonly<{
@@ -307,8 +306,9 @@ export function createWebsiteAnalyticsV2BusinessRecorder(
     recordWebsiteOrder,
     recordManualOrder,
     recordManualPaymentUpdate,
-    recordDirectPaymentAttempt,
+    recordDirectPaymentTransition,
     recordLedgerEntry,
+    recordPaymentRequestAttemptLedger,
     recordInquiry,
   });
 }

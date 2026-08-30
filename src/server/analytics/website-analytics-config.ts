@@ -9,6 +9,12 @@ export type WebsiteAnalyticsRuntimeConfig = WebsiteAnalyticsConfig & Readonly<{
 }>;
 
 const DEFAULT_ATTRIBUTION_LOOKBACK_DAYS = 90;
+const DISABLED_BUSINESS_CONFIG: WebsiteAnalyticsRuntimeConfig = Object.freeze({
+  enabled: false,
+  cookieSecret: null,
+  v2Enabled: false,
+  attributionLookbackDays: DEFAULT_ATTRIBUTION_LOOKBACK_DAYS,
+});
 
 function attributionLookbackDays(value: string | undefined): number {
   const parsed = Number(value);
@@ -33,4 +39,14 @@ export function readWebsiteAnalyticsConfig(
     throw new Error("Website analytics cookie secret must contain at least 32 characters.");
   }
   return { enabled: true, cookieSecret, ...shared };
+}
+
+export function readWebsiteAnalyticsBusinessConfig(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): WebsiteAnalyticsRuntimeConfig {
+  try {
+    return readWebsiteAnalyticsConfig(env);
+  } catch {
+    return DISABLED_BUSINESS_CONFIG;
+  }
 }
