@@ -168,7 +168,6 @@ export function ProductPageContent({
       <p className={styles.productDetailPrice}>
         From {formatMarketMoney(displayPrice, currency)}{taxLabel}
       </p>
-      {presentation.prioritizeMobileAction ? callToAction : null}
     </div>
   );
   const details = (
@@ -203,7 +202,7 @@ export function ProductPageContent({
     <div className={styles.productDetailCopy}>
       {summary}
       {details}
-      {presentation.prioritizeMobileAction ? null : callToAction}
+      {callToAction}
     </div>
   );
   return (

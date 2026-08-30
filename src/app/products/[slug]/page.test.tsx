@@ -323,9 +323,9 @@ describe("ProductPageContent", () => {
     expect(summary).toBeTruthy();
     expect(media).toBeTruthy();
     expect(details).toBeTruthy();
-    expect(summary).toContainElement(callToAction);
     expect(summary?.compareDocumentPosition(media!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
     expect(summary?.parentElement?.contains(details)).toBe(true);
+    expect(details?.compareDocumentPosition(callToAction)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("preserves the original media-first sticky-copy structure for unrelated products", () => {
@@ -344,32 +344,50 @@ describe("ProductPageContent", () => {
     expect(details?.compareDocumentPosition(callToAction)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
-  it("publishes intent-specific NZ and AU metadata with canonical market alternates", async () => {
+  it.each([
+    {
+      slug: "custom-themed-wall-banner",
+      nzTitle: "Custom Birthday & Event Wall Banner",
+      auTitle: "Custom Birthday & Event Wall Banner Australia",
+      description: /personalised birthday banner.*photos/i,
+    },
+    {
+      slug: "digital-oil-painting-banner",
+      nzTitle: "Custom Memorial & Tribute Banner",
+      auTitle: "Custom Memorial & Tribute Banner Australia",
+      description: /memorial or funeral banner/i,
+    },
+  ])("publishes intent-specific NZ and AU metadata for $slug", async ({
+    slug,
+    nzTitle,
+    auTitle,
+    description,
+  }) => {
     state.registry = enabledAustraliaRegistry();
     const props = {
-      params: Promise.resolve({ slug: "digital-oil-painting-banner" }),
+      params: Promise.resolve({ slug }),
       searchParams: Promise.resolve({}),
     };
 
     await expect(generateNewZealandProductMetadata(props)).resolves.toMatchObject({
-      title: "Custom Memorial & Tribute Banner",
-      description: expect.stringMatching(/memorial or funeral banner/i),
+      title: nzTitle,
+      description: expect.stringMatching(description),
       alternates: {
-        canonical: "https://rnrgallery.com/products/digital-oil-painting-banner",
+        canonical: `https://rnrgallery.com/products/${slug}`,
         languages: {
-          "en-NZ": "https://rnrgallery.com/products/digital-oil-painting-banner",
-          "en-AU": "https://rnrgallery.com/au/products/digital-oil-painting-banner",
+          "en-NZ": `https://rnrgallery.com/products/${slug}`,
+          "en-AU": `https://rnrgallery.com/au/products/${slug}`,
         },
       },
     });
     await expect(generateAustraliaProductMetadata(props)).resolves.toMatchObject({
-      title: "Custom Memorial & Tribute Banner Australia",
-      description: expect.stringMatching(/memorial or funeral banner.*AUD/i),
+      title: auTitle,
+      description: expect.stringMatching(new RegExp(`${description.source}.*AUD`, description.flags)),
       alternates: {
-        canonical: "https://rnrgallery.com/au/products/digital-oil-painting-banner",
+        canonical: `https://rnrgallery.com/au/products/${slug}`,
         languages: {
-          "en-NZ": "https://rnrgallery.com/products/digital-oil-painting-banner",
-          "en-AU": "https://rnrgallery.com/au/products/digital-oil-painting-banner",
+          "en-NZ": `https://rnrgallery.com/products/${slug}`,
+          "en-AU": `https://rnrgallery.com/au/products/${slug}`,
         },
       },
     });
