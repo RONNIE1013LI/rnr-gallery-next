@@ -34,6 +34,7 @@ const runId = randomUUID();
 const prefix = `analytics-v2-task6:${runId}:`;
 const priorDate = "2398-01-14";
 const currentDate = "2398-01-15";
+const preTrackingDate = "2397-12-01";
 const emptyDate = "2398-02-01";
 const dates = [priorDate, currentDate, emptyDate];
 const now = new Date("2398-01-15T01:00:00.000Z");
@@ -548,6 +549,89 @@ describe("website analytics V2 dashboard", () => {
     }
   });
 
+  it("deduplicates retained visitors and cross-midnight sessions within channel and campaign groups", async () => {
+    const result = await dashboard.load(query(
+      `preset=custom&from=${priorDate}&to=${currentDate}&scope=website`,
+    ), now);
+    expect(result.channels).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        channel: "google_ads",
+        visitors: 2,
+        sessions: 3,
+        pageViews: 6,
+      }),
+    ]));
+    expect(result.campaigns).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        channel: "google_ads",
+        source: "google",
+        medium: "cpc",
+        campaign: `${prefix}prior-campaign`,
+        visitors: 2,
+        sessions: 3,
+        pageViews: 6,
+      }),
+    ]));
+  });
+
+  it("marks a retained-range request before actual V1 tracking began as unavailable", async () => {
+    const result = await dashboard.load(query(
+      `preset=custom&from=${preTrackingDate}&to=${preTrackingDate}&scope=website`,
+    ), now);
+    expect(result.kpis).toMatchObject({ visitors: null, sessions: null });
+    expect(result.metadata).toMatchObject({
+      earliestTrafficDate: priorDate,
+      trafficCoverageFrom: priorDate,
+      trafficMetricsAvailable: false,
+    });
+    expect(result.notices).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "traffic_retention_limited" }),
+    ]));
+  });
+
+  it("marks traffic unavailable when the V1 traffic store is empty", async () => {
+    const rollback = new Error("rollback empty V1 traffic probe");
+    let captured: unknown;
+    const emptyTrafficDatabase = {
+      transaction: async (callback: (transaction: unknown) => Promise<unknown>) => {
+        try {
+          await database.transaction(async (transaction) => {
+            await transaction.delete(websiteAnalyticsSessions);
+            captured = await callback(transaction);
+            throw rollback;
+          });
+        } catch (error) {
+          if (error !== rollback) throw error;
+        }
+        return captured;
+      },
+    } as never;
+    const emptyTrafficDashboard = createWebsiteAnalyticsV2Dashboard(emptyTrafficDatabase);
+    const result = await emptyTrafficDashboard.load(query(
+      `preset=custom&from=${priorDate}&to=${priorDate}&scope=website`,
+    ), now);
+    expect(result.kpis).toMatchObject({
+      visitors: null,
+      sessions: null,
+      pageViews: 5,
+      orders: 1,
+    });
+    expect(result.channels).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        channel: "google_ads",
+        visitors: null,
+        sessions: null,
+        pageViews: 5,
+        orders: 1,
+      }),
+    ]));
+    expect(result.metadata).toMatchObject({
+      earliestTrafficDate: null,
+      trafficCoverageFrom: null,
+      trafficMetricsAvailable: false,
+    });
+  });
+
   it("returns retained Visitor and Session metrics as unavailable for an all-time range", async () => {
     const result = await dashboard.load(query("preset=all_time&scope=website"), now);
     expect(result.kpis).toMatchObject({
@@ -562,6 +646,22 @@ describe("website analytics V2 dashboard", () => {
     expect(result.metadata).toMatchObject({ trafficMetricsAvailable: false });
     expect(result.notices).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "traffic_retention_limited" }),
+    ]));
+    expect(result.channels).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        channel: "google_ads",
+        visitors: null,
+        sessions: null,
+        orders: 1,
+      }),
+    ]));
+    expect(result.campaigns).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        campaign: `${prefix}prior-campaign`,
+        visitors: null,
+        sessions: null,
+        orders: 1,
+      }),
     ]));
   });
 

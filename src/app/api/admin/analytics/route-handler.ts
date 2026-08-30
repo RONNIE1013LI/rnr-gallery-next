@@ -54,16 +54,12 @@ const forbiddenResponseKeys = new Set([
   "cookie",
 ]);
 const forbiddenClickIdKeys = new Set(["gclid", "gbraid", "wbraid", "fbclid", "fbp", "fbc"]);
-const forbiddenIdentityKeyFragments = [
-  "visitorid",
-  "visitorreference",
-  "visitordigest",
-  "visitoridentifier",
-  "sessionid",
-  "sessionreference",
-  "sessiondigest",
-  "sessionidentifier",
-] as const;
+const allowedAggregateIdentityKeys = new Set([
+  "visitors",
+  "sessions",
+  "visitortrend",
+  "sessionconversionrate",
+]);
 
 function canonicalResponseKey(key: string) {
   return key.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -73,12 +69,15 @@ function responseKeyIsForbidden(key: string, path: readonly string[]) {
   const canonical = canonicalResponseKey(key);
   if (canonical === "message" && path.at(-1) === "notices") return false;
   if (forbiddenResponseKeys.has(canonical)) return true;
+  if (!allowedAggregateIdentityKeys.has(canonical)
+    && (canonical.includes("visitor") || canonical.includes("session"))) {
+    return true;
+  }
   if (canonical.includes("email") || canonical.includes("phone")
     || canonical.includes("address") || canonical.startsWith("customer")
     || canonical.startsWith("message") || canonical.includes("clickid")) {
     return true;
   }
-  if (forbiddenIdentityKeyFragments.some((fragment) => canonical.includes(fragment))) return true;
   return forbiddenClickIdKeys.has(canonical);
 }
 
