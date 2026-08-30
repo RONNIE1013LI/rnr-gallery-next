@@ -12,6 +12,7 @@ import {
 import type { getDatabase } from "@/server/db/client";
 import {
   orders,
+  paymentAttemptCoreColumns,
   paymentAttempts,
   paymentLedgerEntries,
   paymentRequestNotificationOutbox,
@@ -47,7 +48,10 @@ type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type OrderRow = typeof orders.$inferSelect;
 type RequestRow = typeof paymentRequests.$inferSelect;
 type LedgerRow = typeof paymentLedgerEntries.$inferSelect;
-type AttemptRow = typeof paymentAttempts.$inferSelect;
+type AttemptRow = Pick<
+  typeof paymentAttempts.$inferSelect,
+  keyof typeof paymentAttemptCoreColumns
+>;
 
 const nonterminalAttempts: PaymentAttemptStatus[] = [
   "created",
@@ -321,7 +325,7 @@ async function applyRequestVerifiedResult(
   if (requestCandidate.orderId) order = await lockOrder(transaction, requestCandidate.orderId);
   const [request] = await transaction.select().from(paymentRequests)
     .where(eq(paymentRequests.id, requestCandidate.id)).for("update").limit(1);
-  const [attempt] = await transaction.select().from(paymentAttempts)
+  const [attempt] = await transaction.select(paymentAttemptCoreColumns).from(paymentAttempts)
     .where(eq(paymentAttempts.id, input.attemptId)).for("update").limit(1);
   if (
     !request ||
@@ -347,7 +351,7 @@ async function applyRequestVerifiedResult(
     providerSessionLeaseId: null,
     providerSessionLeaseExpiresAt: null,
     updatedAt: now,
-  }).where(eq(paymentAttempts.id, attempt.id)).returning();
+  }).where(eq(paymentAttempts.id, attempt.id)).returning(paymentAttemptCoreColumns);
 
   let updatedRequest = request;
   if (nextStatus === "paid") {
@@ -820,7 +824,7 @@ export function createDrizzlePaymentRequestRepository(
             return null;
           }
         }
-        const [existing] = await transaction.select().from(paymentAttempts)
+        const [existing] = await transaction.select(paymentAttemptCoreColumns).from(paymentAttempts)
           .where(and(
             eq(paymentAttempts.paymentRequestId, current.id),
             inArray(paymentAttempts.status, nonterminalAttempts),
@@ -842,7 +846,7 @@ export function createDrizzlePaymentRequestRepository(
             providerSessionLeaseExpiresAt: new Date(now.getTime() + leaseDurationMs),
             payerSnapshot: input.payerSnapshot,
             updatedAt: now,
-          }).where(eq(paymentAttempts.id, existing.id)).returning();
+          }).where(eq(paymentAttempts.id, existing.id)).returning(paymentAttemptCoreColumns);
           return attemptClaimRecord("claimed", record, reclaimed, claimId);
         }
         const attemptId = randomUUID();
@@ -851,27 +855,28 @@ export function createDrizzlePaymentRequestRepository(
         if (input.payerSnapshot?.address?.country && input.payerSnapshot.address.country !== country) {
           throw new PaymentRequestConflictError("Payer country does not match currency");
         }
-        const [created] = await transaction.insert(paymentAttempts).values({
-          id: attemptId,
-          orderId: null,
-          paymentRequestId: current.id,
-          provider: input.provider,
-          method: input.method,
-          idempotencyKey: deriveProviderIdempotencyKey({
-            attemptId,
-            provider: input.provider,
-            operation: "create-session",
-          }),
-          providerSessionLeaseId: claimId,
-          providerSessionLeaseExpiresAt: new Date(now.getTime() + leaseDurationMs),
-          expectedAmountCents: current.amountCents,
-          currency: current.currency,
-          country,
-          payerSnapshot: input.payerSnapshot,
-          status: "created",
-          createdAt: now,
-          updatedAt: now,
-        }).returning();
+        await transaction.execute(sql`
+          insert into ${paymentAttempts} (
+            id, payment_request_id, provider, method, idempotency_key,
+            provider_session_lease_id, provider_session_lease_expires_at,
+            expected_amount_cents, currency, country, payer_snapshot,
+            status, created_at, updated_at
+          ) values (
+            ${attemptId}, ${current.id}, ${input.provider}, ${input.method},
+            ${deriveProviderIdempotencyKey({
+              attemptId,
+              provider: input.provider,
+              operation: "create-session",
+            })}, ${claimId}, ${new Date(now.getTime() + leaseDurationMs)},
+            ${current.amountCents}, ${current.currency}, ${country},
+            ${JSON.stringify(input.payerSnapshot ?? null)}::jsonb, 'created', ${now}, ${now}
+          )
+        `);
+        const [created] = await transaction.select(paymentAttemptCoreColumns)
+          .from(paymentAttempts)
+          .where(eq(paymentAttempts.id, attemptId))
+          .limit(1);
+        if (!created) throw new PaymentRequestConflictError();
         return attemptClaimRecord("claimed", record, created, claimId);
       });
       if (!result) throw new PaymentRequestConflictError("Payment request is not payable");
@@ -886,7 +891,7 @@ export function createDrizzlePaymentRequestRepository(
         if (!candidate?.requestId) throw new PaymentRequestNotFoundError();
         const [request] = await transaction.select().from(paymentRequests)
           .where(eq(paymentRequests.id, candidate.requestId)).for("update").limit(1);
-        const [attempt] = await transaction.select().from(paymentAttempts)
+        const [attempt] = await transaction.select(paymentAttemptCoreColumns).from(paymentAttempts)
           .where(eq(paymentAttempts.id, input.attemptId)).for("update").limit(1);
         if (!request || !attempt || attempt.paymentRequestId !== request.id || attempt.orderId) {
           throw new PaymentRequestConflictError();
@@ -911,7 +916,7 @@ export function createDrizzlePaymentRequestRepository(
           providerSessionLeaseId: null,
           providerSessionLeaseExpiresAt: null,
           updatedAt: now,
-        }).where(eq(paymentAttempts.id, attempt.id)).returning();
+        }).where(eq(paymentAttempts.id, attempt.id)).returning(paymentAttemptCoreColumns);
         return attemptClaimRecord("existing", requestRecord(request, null), updated, null).attempt;
       });
     },
@@ -933,7 +938,7 @@ export function createDrizzlePaymentRequestRepository(
         if (requestCandidate.orderId) order = await lockOrder(transaction, requestCandidate.orderId);
         const [request] = await transaction.select().from(paymentRequests)
           .where(eq(paymentRequests.id, requestCandidate.id)).for("update").limit(1);
-        const [attempt] = await transaction.select().from(paymentAttempts)
+        const [attempt] = await transaction.select(paymentAttemptCoreColumns).from(paymentAttempts)
           .where(eq(paymentAttempts.id, candidate.id)).for("update").limit(1);
         if (
           !request ||
@@ -961,7 +966,7 @@ export function createDrizzlePaymentRequestRepository(
         }).where(and(
           eq(paymentAttempts.id, attempt.id),
           isNull(paymentAttempts.returnStateConsumedAt),
-        )).returning();
+        )).returning(paymentAttemptCoreColumns);
         if (!updated) return null;
         const record = requestRecord(request, order?.orderNumber ?? null);
         return Object.freeze({
@@ -1068,7 +1073,7 @@ export function createDrizzlePaymentRequestRepository(
             providerSessionLeaseId: claimId,
             providerSessionLeaseExpiresAt: new Date(now.getTime() + leaseDurationMs),
             updatedAt: now,
-          }).where(eq(paymentAttempts.id, row.id)).returning();
+          }).where(eq(paymentAttempts.id, row.id)).returning(paymentAttemptCoreColumns);
           if (!attempt?.paymentRequestId) continue;
           const [request] = await transaction.select().from(paymentRequests)
             .where(eq(paymentRequests.id, attempt.paymentRequestId)).limit(1);
@@ -1085,7 +1090,7 @@ export function createDrizzlePaymentRequestRepository(
 
     async applyReconciliationResult(input) {
       const result = await database.transaction(async (transaction) => {
-        const [attempt] = await transaction.select().from(paymentAttempts)
+        const [attempt] = await transaction.select(paymentAttemptCoreColumns).from(paymentAttempts)
           .where(eq(paymentAttempts.id, input.attemptId)).for("update").limit(1);
         const now = await databaseNow(transaction);
         if (

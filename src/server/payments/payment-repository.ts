@@ -1,5 +1,6 @@
 import type { SupportedCountry } from "@/domain/address/types";
 import type { MarketCurrency } from "@/domain/markets/types";
+import type { WebsiteAnalyticsDirectPaymentTransition } from "@/server/analytics/website-analytics-v2-business-recorder";
 import type {
   OrderPaymentStatus,
   PaymentAttemptStatus,
@@ -132,6 +133,9 @@ export interface PaymentRepository {
   applyVerifiedResult(
     input: ApplyVerifiedResultInput,
   ): Promise<PaymentAttemptWithOrder>;
+  loadWebsiteAnalyticsDirectPaymentTransitions(
+    attemptId: string,
+  ): Promise<readonly WebsiteAnalyticsDirectPaymentTransition[]>;
   claimReconciliationCandidates(
     limit: number,
   ): Promise<readonly ReconciliationCandidate[]>;

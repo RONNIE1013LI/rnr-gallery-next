@@ -21,6 +21,7 @@ import {
   orderNotes,
   orders,
   orderStatusHistory,
+  paymentAttemptCoreColumns,
   paymentAttempts,
   user,
   type OrderFulfilmentStatus,
@@ -192,7 +193,9 @@ export async function getAdminOrderDetail(database: Database, orderId: string) {
   const [addresses, items, payments, notes, history] = await Promise.all([
     database.select().from(orderAddresses).where(eq(orderAddresses.orderId, orderId)),
     database.select().from(orderItems).where(eq(orderItems.orderId, orderId)).orderBy(orderItems.position),
-    database.select().from(paymentAttempts).where(eq(paymentAttempts.orderId, orderId)).orderBy(desc(paymentAttempts.createdAt)),
+    database.select(paymentAttemptCoreColumns).from(paymentAttempts)
+      .where(eq(paymentAttempts.orderId, orderId))
+      .orderBy(desc(paymentAttempts.createdAt)),
     database
       .select({
         id: orderNotes.id,

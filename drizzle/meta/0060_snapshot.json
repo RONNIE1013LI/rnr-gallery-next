@@ -12315,6 +12315,18 @@
           "primaryKey": false,
           "notNull": false
         },
+        "website_analytics_paid_at": {
+          "name": "website_analytics_paid_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "website_analytics_refunded_at": {
+          "name": "website_analytics_refunded_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
+        },
         "created_at": {
           "name": "created_at",
           "type": "timestamp with time zone",

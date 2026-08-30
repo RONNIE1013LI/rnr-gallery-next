@@ -55,6 +55,17 @@ describe("payment schema contract", () => {
     );
   });
 
+  it("defines nullable immutable analytics transition evidence without defaults", () => {
+    const columns = getTableConfig(paymentAttempts).columns;
+    const paidAt = columns.find((column) => column.name === "website_analytics_paid_at");
+    const refundedAt = columns.find(
+      (column) => column.name === "website_analytics_refunded_at",
+    );
+
+    expect(paidAt).toMatchObject({ notNull: false, hasDefault: false });
+    expect(refundedAt).toMatchObject({ notNull: false, hasDefault: false });
+  });
+
   it("defines fixed payment requests without a partially-paid state", () => {
     const paymentRequests = Reflect.get(schema, "paymentRequests");
     expect(paymentRequests).toBeDefined();

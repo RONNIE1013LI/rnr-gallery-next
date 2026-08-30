@@ -14,6 +14,7 @@ import {
   websiteAnalyticsFinancialEvents,
 } from "@/server/db/schema";
 import { createWebsiteAnalyticsV2BusinessRecorder } from "@/server/analytics/website-analytics-v2-business-recorder";
+import { createWebsiteAnalyticsV2Repository } from "@/server/analytics/website-analytics-v2-repository";
 import {
   PaymentRepositoryConflictError,
   PaymentVerificationMismatchError,
@@ -260,6 +261,38 @@ describe("Drizzle payment repository", () => {
       }
     },
   );
+
+  it("keeps the V2-disabled repository compatible before evidence columns exist", async () => {
+    const disabledRepository = createDrizzlePaymentRepository(database, {
+      websiteAnalyticsV2Enabled: false,
+    });
+    const order = await createOrder();
+
+    await expect(disabledRepository.createOrClaimNonterminalAttempt(
+      claimInput(order.orderId),
+    )).resolves.toMatchObject({
+      outcome: "claimed",
+      attempt: {
+        orderId: order.orderId,
+        status: "created",
+      },
+    });
+  });
+
+  it("does not query direct transition evidence when V2 is disabled", async () => {
+    const select = vi.fn(() => {
+      throw new Error("disabled evidence access");
+    });
+    const disabledRepository = createDrizzlePaymentRepository({ select } as never, {
+      websiteAnalyticsV2Enabled: false,
+      analyticsRecorder: { recordDirectPaymentTransition: vi.fn() },
+    });
+
+    await expect(disabledRepository.loadWebsiteAnalyticsDirectPaymentTransitions(
+      randomUUID(),
+    )).resolves.toEqual([]);
+    expect(select).not.toHaveBeenCalled();
+  });
 
   afterAll(async () => {
     await database.delete(websiteAnalyticsFinancialEvents)
@@ -960,6 +993,152 @@ describe("Drizzle payment repository", () => {
     );
     expect(receiptTransition.occurredAt).not.toEqual(latest.attempt.updatedAt);
     expect(facts.recordFinancialEvent).toHaveBeenCalledTimes(2);
+  });
+
+  it("repairs failed direct paid and refund analytics from durable exact evidence", async () => {
+    const facts = createWebsiteAnalyticsV2Repository(database);
+    let rejectNextFinancialWrite = true;
+    const failFirstFacts = {
+      ...facts,
+      recordFinancialEvent: async (
+        input: Parameters<typeof facts.recordFinancialEvent>[0],
+      ) => {
+        if (rejectNextFinancialWrite) {
+          rejectNextFinancialWrite = false;
+          throw new Error("synthetic analytics write failure");
+        }
+        return facts.recordFinancialEvent(input);
+      },
+    };
+    const durableRecorder = createWebsiteAnalyticsV2BusinessRecorder(database, {
+      config: {
+        enabled: false,
+        cookieSecret: null,
+        v2Enabled: true,
+        attributionLookbackDays: 90,
+      },
+      repository: failFirstFacts,
+    });
+    const durableRepository = createDrizzlePaymentRepository(database, {
+      analyticsRecorder: durableRecorder,
+      websiteAnalyticsV2Enabled: true,
+    });
+    const order = await createOrder();
+    const claim = await durableRepository.createOrClaimNonterminalAttempt(
+      claimInput(order.orderId, { provider: "afterpay", method: "afterpay" }),
+    );
+    const providerReference = `durable-${randomUUID()}`;
+    const returnStateDigest = "6".repeat(64);
+    await durableRepository.bindProviderSession({
+      attemptId: claim.attempt.id,
+      claimId: claim.claimId!,
+      providerReference,
+      returnStateDigest,
+      status: "processing",
+    });
+    const paidWebhook = {
+      provider: "afterpay" as const,
+      providerEventId: `durable-paid-${randomUUID()}`,
+      payloadSha256: "6".repeat(64),
+      result: {
+        providerReference,
+        providerStatus: "CAPTURED",
+        amountCents: 7_475,
+        currency: "NZD" as const,
+        orderNumber: order.orderNumber,
+        status: "paid" as const,
+      },
+    };
+
+    await expect(durableRepository.applyVerifiedWebhookEventAtomically(paidWebhook))
+      .resolves.toBe("applied");
+    expect(await database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId))).toEqual([]);
+    const [paidEvidence] = await database.select({
+      paidAt: paymentAttempts.websiteAnalyticsPaidAt,
+      refundedAt: paymentAttempts.websiteAnalyticsRefundedAt,
+    }).from(paymentAttempts).where(eq(paymentAttempts.id, claim.attempt.id));
+    expect(paidEvidence).toEqual({ paidAt: expect.any(Date), refundedAt: null });
+    await expect(durableRepository.loadWebsiteAnalyticsDirectPaymentTransitions(
+      claim.attempt.id,
+    )).resolves.toEqual([{
+      attemptId: claim.attempt.id,
+      orderId: order.orderId,
+      paymentRequestId: null,
+      eventType: "receipt",
+      amountCents: 7_475,
+      currency: "NZD",
+      occurredAt: paidEvidence.paidAt,
+    }]);
+
+    await expect(durableRepository.consumeReturnState({
+      provider: "afterpay",
+      method: "afterpay",
+      digest: returnStateDigest,
+      orderNumber: order.orderNumber,
+      providerReference,
+    })).resolves.toMatchObject({ outcome: "consumed" });
+    await expect(durableRepository.applyVerifiedWebhookEventAtomically(paidWebhook))
+      .resolves.toBe("duplicate");
+    const [receipt] = await database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId));
+    expect(receipt).toMatchObject({
+      eventType: "receipt",
+      sourceType: "payment_attempt",
+      sourceId: claim.attempt.id,
+      amountCents: 7_475,
+      currency: "NZD",
+      occurredAt: paidEvidence.paidAt,
+    });
+
+    rejectNextFinancialWrite = true;
+    const refundWebhook = {
+      ...paidWebhook,
+      providerEventId: `durable-refund-${randomUUID()}`,
+      payloadSha256: "7".repeat(64),
+      result: {
+        ...paidWebhook.result,
+        providerStatus: "refunded",
+        status: "refunded" as const,
+      },
+    };
+    await expect(durableRepository.applyVerifiedWebhookEventAtomically(refundWebhook))
+      .resolves.toBe("applied");
+    const [refundEvidence] = await database.select({
+      paidAt: paymentAttempts.websiteAnalyticsPaidAt,
+      refundedAt: paymentAttempts.websiteAnalyticsRefundedAt,
+    }).from(paymentAttempts).where(eq(paymentAttempts.id, claim.attempt.id));
+    expect(refundEvidence.paidAt).toEqual(paidEvidence.paidAt);
+    expect(refundEvidence.refundedAt).toEqual(expect.any(Date));
+    expect(refundEvidence.refundedAt!.getTime()).toBeGreaterThan(
+      paidEvidence.paidAt!.getTime(),
+    );
+    expect(await database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId))).toHaveLength(1);
+
+    await expect(durableRepository.applyVerifiedWebhookEventAtomically(refundWebhook))
+      .resolves.toBe("duplicate");
+    await expect(database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId)))
+      .resolves.toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "receipt",
+          sourceId: claim.attempt.id,
+          occurredAt: paidEvidence.paidAt,
+        }),
+        expect.objectContaining({
+          eventType: "refund",
+          sourceId: claim.attempt.id,
+          amountCents: 7_475,
+          currency: "NZD",
+          occurredAt: refundEvidence.refundedAt,
+        }),
+      ]));
+    const [afterDuplicate] = await database.select({
+      paidAt: paymentAttempts.websiteAnalyticsPaidAt,
+      refundedAt: paymentAttempts.websiteAnalyticsRefundedAt,
+    }).from(paymentAttempts).where(eq(paymentAttempts.id, claim.attempt.id));
+    expect(afterDuplicate).toEqual(refundEvidence);
   });
 
   it("applies verified money with zero eligible recipients and preserves terminal state exactly", async () => {

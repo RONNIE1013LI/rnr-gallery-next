@@ -117,11 +117,11 @@ describe("migration lineage artifacts", () => {
       tag: "0060_website_analytics_v2",
     });
     expect(sha256("drizzle/0060_website_analytics_v2.sql")).toBe(
-      "6be5df37e4cc81939a1e582d07b8489cf8df6b4978a088bc7c466ef69fd51e5b",
+      "d43b20af5fe5471843c90f5df3ab13134b3e4d13059e39e261e2dffac1aead4e",
     );
   });
 
-  it("adds only the five V2 tables and the visitor-first V1 query index after 0059", () => {
+  it("adds only the V2 tables, visitor index, and direct-payment evidence after 0059", () => {
     const previous = loadJson<Snapshot>("drizzle/meta/0059_snapshot.json");
     const current = loadJson<Snapshot>("drizzle/meta/0060_snapshot.json");
     const addedTables = Object.keys(current.tables)
@@ -140,8 +140,9 @@ describe("migration lineage artifacts", () => {
       Object.keys(previous.tables).filter((table) => !(table in current.tables)),
     ).toEqual([]);
     const sessionTable = "public.website_analytics_sessions";
+    const paymentAttemptTable = "public.payment_attempts";
     for (const [name, table] of Object.entries(previous.tables)) {
-      if (name === sessionTable) continue;
+      if (name === sessionTable || name === paymentAttemptTable) continue;
       expect(current.tables[name], `${name} changed in Analytics V2 migration`).toEqual(
         table,
       );
@@ -160,6 +161,20 @@ describe("migration lineage artifacts", () => {
       });
     delete normalizedSession.indexes.website_analytics_sessions_visitor_started_id_idx;
     expect(normalizedSession).toEqual(previous.tables[sessionTable]);
+    const normalizedPaymentAttempts = structuredClone(current.tables[paymentAttemptTable]);
+    for (const column of [
+      "website_analytics_paid_at",
+      "website_analytics_refunded_at",
+    ]) {
+      expect(normalizedPaymentAttempts.columns[column]).toEqual({
+        name: column,
+        type: "timestamp with time zone",
+        primaryKey: false,
+        notNull: false,
+      });
+      delete normalizedPaymentAttempts.columns[column];
+    }
+    expect(normalizedPaymentAttempts).toEqual(previous.tables[paymentAttemptTable]);
     expect({
       version: current.version,
       dialect: current.dialect,

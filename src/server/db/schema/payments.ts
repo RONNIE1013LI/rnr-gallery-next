@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { getTableColumns, sql } from "drizzle-orm";
 import {
   bigint,
   check,
@@ -232,6 +232,12 @@ export const paymentAttempts = pgTable(
     payerSnapshot: jsonb("payer_snapshot").$type<PaymentPayerSnapshot>(),
     status: text("status").$type<PaymentAttemptStatus>().notNull(),
     sanitizedFailureCode: text("sanitized_failure_code"),
+    websiteAnalyticsPaidAt: timestamp("website_analytics_paid_at", {
+      withTimezone: true,
+    }),
+    websiteAnalyticsRefundedAt: timestamp("website_analytics_refunded_at", {
+      withTimezone: true,
+    }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -333,6 +339,16 @@ export const paymentAttempts = pgTable(
     ),
   ],
 );
+
+const {
+  websiteAnalyticsPaidAt: paymentAttemptPaidEvidenceColumn,
+  websiteAnalyticsRefundedAt: paymentAttemptRefundedEvidenceColumn,
+  ...paymentAttemptCoreColumns
+} = getTableColumns(paymentAttempts);
+void paymentAttemptPaidEvidenceColumn;
+void paymentAttemptRefundedEvidenceColumn;
+
+export { paymentAttemptCoreColumns };
 
 export const paymentLedgerEntries = pgTable(
   "payment_ledger_entries",

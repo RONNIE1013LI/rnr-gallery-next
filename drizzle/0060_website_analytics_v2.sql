@@ -254,4 +254,6 @@ CREATE INDEX "website_analytics_financial_order_idx" ON "website_analytics_finan
 CREATE INDEX "website_analytics_financial_job_idx" ON "website_analytics_financial_events" USING btree ("production_job_id") WHERE "website_analytics_financial_events"."production_job_id" is not null;--> statement-breakpoint
 CREATE UNIQUE INDEX "website_analytics_reconciliation_state_key_unique" ON "website_analytics_reconciliation_state" USING btree ("state_type","state_key");--> statement-breakpoint
 CREATE INDEX "website_analytics_reconciliation_status_date_idx" ON "website_analytics_reconciliation_state" USING btree ("status","local_date");--> statement-breakpoint
-CREATE INDEX "website_analytics_sessions_visitor_started_id_idx" ON "website_analytics_sessions" USING btree ("visitor_digest","started_at","id");
+CREATE INDEX "website_analytics_sessions_visitor_started_id_idx" ON "website_analytics_sessions" USING btree ("visitor_digest","started_at","id");--> statement-breakpoint
+ALTER TABLE "payment_attempts" ADD COLUMN "website_analytics_paid_at" timestamp with time zone;--> statement-breakpoint
+ALTER TABLE "payment_attempts" ADD COLUMN "website_analytics_refunded_at" timestamp with time zone;

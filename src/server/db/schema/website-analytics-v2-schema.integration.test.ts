@@ -32,6 +32,40 @@ function digest(value: string) {
 }
 
 describe("Website Analytics V2 database behavior", () => {
+  it("keeps direct payment transition evidence nullable and default-free", async () => {
+    const result = await pool.query<{
+      column_name: string;
+      data_type: string;
+      is_nullable: string;
+      column_default: string | null;
+    }>(`
+      select column_name, data_type, is_nullable, column_default
+      from information_schema.columns
+      where table_schema = 'public'
+        and table_name = 'payment_attempts'
+        and column_name in (
+          'website_analytics_paid_at',
+          'website_analytics_refunded_at'
+        )
+      order by column_name
+    `);
+
+    expect(result.rows).toEqual([
+      {
+        column_name: "website_analytics_paid_at",
+        data_type: "timestamp with time zone",
+        is_nullable: "YES",
+        column_default: null,
+      },
+      {
+        column_name: "website_analytics_refunded_at",
+        data_type: "timestamp with time zone",
+        is_nullable: "YES",
+        column_default: null,
+      },
+    ]);
+  });
+
   it("retains conversion and attribution facts after V1 session retention", async () => {
     const sessionId = randomUUID();
     const conversionId = randomUUID();

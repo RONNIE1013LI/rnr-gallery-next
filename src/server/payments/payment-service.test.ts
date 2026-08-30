@@ -106,6 +106,7 @@ function repository(overrides: Partial<PaymentRepository> = {}): PaymentReposito
     })),
     consumeReturnState: vi.fn(),
     applyVerifiedWebhookEventAtomically: vi.fn(),
+    loadWebsiteAnalyticsDirectPaymentTransitions: vi.fn().mockResolvedValue([]),
     claimReconciliationCandidates: vi.fn().mockResolvedValue([]),
     applyReconciliationResult: vi.fn(),
     recordReconciliationOutcome: vi.fn(),
