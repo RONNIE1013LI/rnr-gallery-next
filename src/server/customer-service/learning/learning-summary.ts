@@ -1,22 +1,91 @@
-import { buildLearningCandidateProposal } from "./learning-candidate";
+import {
+  buildLearningCandidateProposal,
+  getLearningPatternDefinition,
+  MAX_LEARNING_CANDIDATE_EVIDENCE,
+  type LearningPatternCode,
+} from "./learning-candidate";
 
-type SummaryMatch = Readonly<{
+export type LearningSummaryMatch = Readonly<{
   caseId: string;
   conversationKeyHash: string;
   intent: string;
   editReasonCodes: readonly string[];
   approvedLowRisk: boolean;
+  normalizedSituation?: string;
+  aiDraft?: string | null;
+  humanFinalReply?: string;
+  editClassification?: string;
 }>;
 
-const safeProposal: Record<string, string> = {
-  missing_next_step: "Include one useful next step when the confirmed rules support it.",
-  too_long: "Use the shortest reply that still includes the required information.",
-  too_generic: "Add the confirmed product or process details relevant to the question.",
-  tone_too_formal: "Use Ronnie's short, warm and practical customer-service tone.",
-};
+type DetectedLearningPattern = Readonly<{
+  code: LearningPatternCode;
+  intent: string;
+}>;
+
+const normalized = (value: string | null | undefined) => (value ?? "")
+  .toLowerCase()
+  .replace(/[^\p{L}\p{N}\s?-]/gu, " ")
+  .replace(/\s+/g, " ")
+  .trim();
+
+const wordCount = (value: string) => normalized(value).split(" ").filter(Boolean).length;
+
+function asksForQuoteDetail(value: string) {
+  const text = normalized(value);
+  return [
+    /\bsize\b/, /\bpeople\b/, /\bperson\b/, /\bphotos?\b/, /\bdate\b/, /\bwording\b/,
+    /\bthemes?\b/, /\bproducts?\b/, /\bcanvas\b/, /\bbanners?\b/, /\bquantity\b/,
+    /\bpostcodes?\b/, /\bsuburbs?\b/, /\blocations?\b/,
+  ].some((pattern) => pattern.test(text));
+}
+
+function quoteDetailCount(value: string) {
+  const text = normalized(value);
+  return [
+    /\bsize\b/, /\b(?:people|person)\b/, /\bphotos?\b/, /\bdate\b/, /\bwording\b/,
+    /\bthemes?\b/, /\b(?:product|canvas|banner)s?\b/, /\bquantity\b/,
+    /\b(?:postcode|suburb|location)s?\b/,
+  ].filter((pattern) => pattern.test(text)).length;
+}
+
+export function detectLearningPattern(match: LearningSummaryMatch): DetectedLearningPattern | null {
+  const specificReason = match.editReasonCodes.find((reason) => reason !== "independent_human_reply"
+    && getLearningPatternDefinition(reason));
+  if (specificReason) return { code: specificReason as LearningPatternCode, intent: match.intent };
+  if (!match.editReasonCodes.includes("independent_human_reply")) return null;
+
+  const human = normalized(match.humanFinalReply);
+  const ai = normalized(match.aiDraft);
+  if (!human) return null;
+
+  if (match.intent === "design_process"
+    && /\bphotos?\b/.test(human) && /\bwording\b/.test(human) && /\bthemes?\b/.test(human)) {
+    return { code: "design_collect_photos_wording_theme", intent: "design_process" };
+  }
+
+  if (match.intent === "quote_information_collection") {
+    const hasMarket = /\b(?:nz|new zealand|au|australia)\b/.test(human);
+    const hasBannerFormat = /\broll[ -]?up\b/.test(human)
+      && /\bwall[ -]?(?:hanging|hung|banner)\b/.test(human);
+    if (hasMarket && hasBannerFormat) {
+      return { code: "quote_confirm_market_and_banner_format", intent: "quote_information_collection" };
+    }
+    if (human.includes("?") && wordCount(human) <= 30 && asksForQuoteDetail(human)
+      && (quoteDetailCount(ai) >= 3 || normalized(match.normalizedSituation).includes("already"))) {
+      return { code: "quote_ask_next_missing_detail", intent: "quote_information_collection" };
+    }
+  }
+
+  const acknowledgement = /^(?:thanks?|thank you|you(?: re| are) welcome|no worries|all good|perfect|great|okay|ok)\b/.test(human);
+  if (acknowledgement && !human.includes("?") && wordCount(human) <= 12
+    && (ai.includes("?") || wordCount(ai) >= wordCount(human) + 8)) {
+    return { code: "tone_concise_acknowledgement", intent: "tone_adjustment" };
+  }
+  return null;
+}
 
 export function buildLearningSummary(
-  matches: readonly SummaryMatch[],
+  matches: readonly LearningSummaryMatch[],
   minimumMatchedReplies = 50,
   matchedReplyCount = matches.length,
 ) {
@@ -28,28 +97,38 @@ export function buildLearningSummary(
   }
   if (matchedReplyCount < minimumMatchedReplies) return null;
   const counts = new Map<string, number>();
-  const groups = new Map<string, SummaryMatch[]>();
+  const groups = new Map<string, { pattern: DetectedLearningPattern; evidence: LearningSummaryMatch[] }>();
   for (const match of matches) {
-    for (const reason of match.editReasonCodes) {
-      counts.set(reason, (counts.get(reason) ?? 0) + 1);
-      const key = `${match.intent}\n${reason}`;
-      groups.set(key, [...(groups.get(key) ?? []), match]);
-    }
+    for (const reason of match.editReasonCodes) counts.set(reason, (counts.get(reason) ?? 0) + 1);
+    const pattern = detectLearningPattern(match);
+    if (!pattern) continue;
+    const key = `${pattern.intent}\n${pattern.code}`;
+    const existing = groups.get(key);
+    groups.set(key, { pattern, evidence: [...(existing?.evidence ?? []), match] });
   }
   const commonEditReasons = [...counts.entries()]
     .map(([code, count]) => ({ code, count }))
     .sort((left, right) => right.count - left.count || left.code.localeCompare(right.code));
-  const candidates = [...groups.entries()].flatMap(([key, evidence]) => {
+  const candidates = [...groups.values()].flatMap(({ pattern, evidence }) => {
     const approved = evidence.filter((item) => item.approvedLowRisk);
-    const [intent, reasonCode] = key.split("\n");
-    const proposal = buildLearningCandidateProposal({
-      intent,
-      reasonCode,
-      proposedChange: safeProposal[reasonCode] ?? "Review this repeated edit pattern before changing the approved guidance.",
-      caseIds: approved.map((item) => item.caseId),
-      conversationCount: new Set(approved.map((item) => item.conversationKeyHash)).size,
+    const sortedApproved = [...approved].sort((left, right) => left.caseId.localeCompare(right.caseId));
+    const firstPerConversation = new Map<string, LearningSummaryMatch>();
+    for (const item of sortedApproved) {
+      if (!firstPerConversation.has(item.conversationKeyHash)) firstPerConversation.set(item.conversationKeyHash, item);
+    }
+    const diverseEvidence = [...firstPerConversation.values()];
+    const diverseIds = new Set(diverseEvidence.map((item) => item.caseId));
+    const selectedApproved = [...diverseEvidence, ...sortedApproved.filter((item) => !diverseIds.has(item.caseId))]
+      .slice(0, MAX_LEARNING_CANDIDATE_EVIDENCE);
+    const definition = getLearningPatternDefinition(pattern.code);
+    const proposal = definition ? buildLearningCandidateProposal({
+      intent: pattern.intent,
+      reasonCode: pattern.code,
+      proposedChange: definition.proposedGuidance,
+      caseIds: selectedApproved.map((item) => item.caseId),
+      conversationCount: new Set(selectedApproved.map((item) => item.conversationKeyHash)).size,
       allApprovedLowRisk: approved.length === evidence.length,
-    });
+    }) : null;
     return proposal ? [{ ...proposal, requiresAdminApproval: true as const }] : [];
   });
   return Object.freeze({

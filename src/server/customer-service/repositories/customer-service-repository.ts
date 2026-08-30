@@ -218,9 +218,16 @@ export type SafeQueuePage = Readonly<{
 export type ReplyAssistantLearningCandidatePage = Readonly<{ items: readonly Readonly<{
   id: string;
   intent: string;
+  observedPattern: string;
   proposedChange: string;
   reasonCodes: readonly string[];
   evidenceCount: number;
+  supportingCases: readonly Readonly<{
+    customer: string;
+    aiDraft: string | null;
+    humanFinal: string;
+    detectedChange: string;
+  }>[];
   status: "pending" | "approved" | "rejected" | "superseded";
 }>[] }>;
 

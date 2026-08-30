@@ -182,9 +182,16 @@ describe("ReplyAssistantLiveDashboard", () => {
       learningCandidates: { items: [{
         id: "44444444-4444-4444-8444-444444444444",
         intent: "photo_guidance",
+        observedPattern: "Human replies add the next supported photo step.",
         proposedChange: "Ask for the original photo.",
         reasonCodes: ["missing_next_step"],
         evidenceCount: 3,
+        supportingCases: [{
+          customer: "Customer asks for the next photo step.",
+          aiDraft: "Yes, we can combine photos.",
+          humanFinal: "Please send the original photos.",
+          detectedChange: "Human reply added the next supported step.",
+        }],
         status: "pending",
       }] },
       caseMemories: { items: [{

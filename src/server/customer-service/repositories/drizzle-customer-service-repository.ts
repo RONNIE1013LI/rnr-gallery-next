@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lte, max, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, max, or, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
 import {
   customerServiceAiAttempts,
@@ -41,6 +41,7 @@ import type {
   HashedConversationEvent,
   ProviderAttemptCompletion,
   ProviderAttemptReservation,
+  ReplyAssistantLearningCandidatePage,
   SafeQueuePage,
 } from "./customer-service-repository";
 import { parseImageAnalysisResult } from "../image-analysis-schema";
@@ -52,7 +53,15 @@ import { classifyHumanEdit } from "../learning/edit-classifier";
 import { assessCaseMemoryEligibility, selectAutoReusableCaseMemoryIds } from "../learning/case-memory";
 import { sanitizeCaseMemoryText } from "../learning/case-memory-sanitizer";
 import { scoreCaseMemory } from "../learning/case-retrieval";
-import { buildLearningSummary } from "../learning/learning-summary";
+import {
+  LEARNING_PATTERN_DEFINITIONS,
+  LEARNING_PATTERN_VERSION,
+  MAX_LEARNING_CANDIDATE_SUPPORTING_CASES,
+  getLearningPatternDefinition,
+  isActionableLearningCandidate,
+  isApprovedLearningGuidance,
+} from "../learning/learning-candidate";
+import { buildLearningSummary, detectLearningPattern } from "../learning/learning-summary";
 import { localDateScopeKey } from "../usage-cost";
 import {
   websiteHumanReviewResponse,
@@ -82,6 +91,19 @@ import {
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
+type LearningCandidateRecord = typeof customerServiceLearningCandidates.$inferSelect;
+type LearningEvidenceRecord = Readonly<{
+  caseId: string;
+  conversationKeyHash: string;
+  intent: string;
+  normalizedSituation: string;
+  aiDraft: string | null;
+  humanFinalReply: string;
+  editClassification: string;
+  editReasonCodes: readonly string[];
+  riskClass: "low" | "medium";
+  eligibilityStatus: "pending_review" | "approved_reusable" | "excluded" | "revoked";
+}>;
 
 const WEBSITE_RATE_LIMITS = Object.freeze({
   sessionMinute: 5,
@@ -93,6 +115,140 @@ const WEBSITE_RATE_LIMITS = Object.freeze({
 const WEBSITE_CHAT_RETENTION_MS = 90 * 24 * 60 * 60 * 1_000;
 const WEBSITE_RATE_BUCKET_MAX_MS = 24 * 60 * 60 * 1_000;
 const RETENTION_REDACTION = "[expired website chat]";
+const RECOGNIZED_LEARNING_REASON_CODES_SQL = sql.join(
+  Object.keys(LEARNING_PATTERN_DEFINITIONS).map((code) => sql`${code}`),
+  sql`, `,
+);
+
+function semanticLearningEvidenceSql(code: string) {
+  const human = sql`trim(regexp_replace(
+    regexp_replace(lower(coalesce(memories.human_final_reply, '')), '[^-[:alnum:][:space:]?]+', ' ', 'g'),
+    '[[:space:]]+', ' ', 'g'
+  ))`;
+  const ai = sql`trim(regexp_replace(
+    regexp_replace(lower(coalesce(memories.ai_draft, '')), '[^-[:alnum:][:space:]?]+', ' ', 'g'),
+    '[[:space:]]+', ' ', 'g'
+  ))`;
+  const situation = sql`trim(regexp_replace(
+    regexp_replace(lower(coalesce(memories.normalized_situation, '')), '[^-[:alnum:][:space:]?]+', ' ', 'g'),
+    '[[:space:]]+', ' ', 'g'
+  ))`;
+  if (code === "design_collect_photos_wording_theme") return sql`
+    memories.intent = 'design_process'
+    and ${human} ~ '\\mphotos?\\M'
+    and ${human} ~ '\\mwording\\M'
+    and ${human} ~ '\\mthemes?\\M'`;
+  if (code === "quote_confirm_market_and_banner_format") return sql`
+    memories.intent = 'quote_information_collection'
+    and ${human} ~ '\\m(nz|new zealand|au|australia)\\M'
+    and ${human} ~ '\\mroll[ -]?up\\M'
+    and ${human} ~ '\\mwall[ -]?(hanging|hung|banner)\\M'`;
+  if (code === "quote_ask_next_missing_detail") return sql`
+    memories.intent = 'quote_information_collection'
+    and position('?' in ${human}) > 0
+    and cardinality(regexp_split_to_array(${human}, ' ')) <= 30
+    and ${human} ~ '\\m(size|people|person|photos?|date|wording|themes?|products?|canvas|banners?|quantity|postcodes?|suburbs?|locations?)\\M'
+    and (
+      ((${ai} ~ '\\msize\\M')::int
+        + (${ai} ~ '\\m(people|person)\\M')::int
+        + (${ai} ~ '\\mphotos?\\M')::int
+        + (${ai} ~ '\\mdate\\M')::int
+        + (${ai} ~ '\\mwording\\M')::int
+        + (${ai} ~ '\\mthemes?\\M')::int
+        + (${ai} ~ '\\m(product|canvas|banner)s?\\M')::int
+        + (${ai} ~ '\\mquantity\\M')::int
+        + (${ai} ~ '\\m(postcode|suburb|location)s?\\M')::int) >= 3
+      or ${situation} like '%already%'
+    )`;
+  if (code === "tone_concise_acknowledgement") return sql`
+    ${human} ~ '^(thanks?|thank you|you( re| are) welcome|no worries|all good|perfect|great|okay|ok)\\M'
+    and position('?' in ${human}) = 0
+    and cardinality(regexp_split_to_array(${human}, ' ')) <= 12
+    and (
+      position('?' in ${ai}) > 0
+      or cardinality(regexp_split_to_array(${ai}, ' '))
+        >= cardinality(regexp_split_to_array(${human}, ' ')) + 8
+    )`;
+  return sql`false`;
+}
+
+function learningPatternEvidenceSql(code: string) {
+  const firstRecognizedReason = sql`(
+    select reason.value
+    from jsonb_array_elements_text(memories.edit_reason_codes) with ordinality reason(value, ordinal)
+    where reason.value <> 'independent_human_reply'
+      and reason.value in (${RECOGNIZED_LEARNING_REASON_CODES_SQL})
+    order by reason.ordinal
+    limit 1
+  )`;
+  return sql`(
+    ${firstRecognizedReason} = ${code}
+    or (
+      ${firstRecognizedReason} is null
+      and memories.edit_reason_codes ? 'independent_human_reply'
+      and (${semanticLearningEvidenceSql(code)})
+    )
+  )`;
+}
+
+const ACTIONABLE_LEARNING_PATTERN_SQL = sql.join(
+  Object.entries(LEARNING_PATTERN_DEFINITIONS).map(([code, definition]) => sql`(
+    candidates.reason_codes->>0 = ${code}
+    and candidates.proposed_change = ${definition.proposedGuidance}
+    and candidates.evidence_signature = md5(concat_ws(E'\\n',
+      ${LEARNING_PATTERN_VERSION}::text, candidates.candidate_kind, candidates.intent,
+      ${code}::text, ${definition.proposedGuidance}::text
+    ))
+    ${definition.intent ? sql`and candidates.intent = ${definition.intent}` : sql``}
+    and not exists (
+      select 1
+      from jsonb_array_elements_text(candidates.source_case_memory_ids) source(case_id)
+      left join customer_service_case_memories memories on memories.id::text = source.case_id
+      left join customer_service_human_reply_matches matches on matches.id = memories.human_reply_match_id
+      where memories.id is null
+        or matches.id is null
+        or memories.eligibility_status <> 'approved_reusable'
+        or memories.risk_class <> 'low'
+        or memories.intent <> candidates.intent
+        or not (${learningPatternEvidenceSql(code)})
+    )
+    and (
+      select count(distinct matches.conversation_id)
+      from jsonb_array_elements_text(candidates.source_case_memory_ids) source(case_id)
+      join customer_service_case_memories memories on memories.id::text = source.case_id
+      join customer_service_human_reply_matches matches on matches.id = memories.human_reply_match_id
+    ) = candidates.distinct_case_count
+    and (
+      select count(distinct source.case_id)
+      from jsonb_array_elements_text(candidates.source_case_memory_ids) source(case_id)
+    ) = candidates.evidence_count
+  )`),
+  sql` or `,
+);
+
+function learningCandidateEvidenceIsValid(
+  candidate: LearningCandidateRecord,
+  evidence: readonly LearningEvidenceRecord[],
+) {
+  if (!isActionableLearningCandidate(candidate)) return false;
+  const expectedIds = new Set(candidate.sourceCaseMemoryIds);
+  if (evidence.length !== expectedIds.size || evidence.some((item) => !expectedIds.has(item.caseId)
+    || item.eligibilityStatus !== "approved_reusable" || item.riskClass !== "low")) return false;
+  const reasonCode = candidate.reasonCodes[0];
+  const matchingEvidence = evidence.filter((item) => {
+    const pattern = detectLearningPattern({
+      ...item,
+      approvedLowRisk: item.eligibilityStatus === "approved_reusable" && item.riskClass === "low",
+    });
+    return pattern?.code === reasonCode && pattern.intent === candidate.intent;
+  });
+  return matchingEvidence.length === evidence.length
+    && new Set(evidence.map((item) => item.conversationKeyHash)).size === candidate.distinctCaseCount;
+}
+
+function learningGuidanceContainsSensitiveData(value: string) {
+  return sanitizeCaseMemoryText(value).codes.length > 0;
+}
 
 function channelMetricCountsSql(channel: "facebook" | "website") {
   return sql`jsonb_build_object(
@@ -4206,17 +4362,78 @@ export function createDrizzleCustomerServiceRepository(
     },
 
     async listLearningCandidates(limit) {
-      const rows = await database.select({
-        id: customerServiceLearningCandidates.id,
-        intent: customerServiceLearningCandidates.intent,
-        proposedChange: customerServiceLearningCandidates.proposedChange,
-        reasonCodes: customerServiceLearningCandidates.reasonCodes,
-        evidenceCount: customerServiceLearningCandidates.evidenceCount,
-        status: customerServiceLearningCandidates.status,
-      }).from(customerServiceLearningCandidates)
-        .orderBy(desc(customerServiceLearningCandidates.createdAt))
-        .limit(Math.max(1, Math.min(100, limit)));
-      return Object.freeze({ items: Object.freeze(rows.map((row) => Object.freeze(row))) });
+      const boundedLimit = Math.max(1, Math.min(100, limit));
+      const items: ReplyAssistantLearningCandidatePage["items"][number][] = [];
+      let cursor: { createdAt: Date; id: string } | null = null;
+      const pageSize = 100;
+      while (items.length < boundedLimit) {
+        const rows: LearningCandidateRecord[] = await database.select().from(customerServiceLearningCandidates)
+          .where(cursor ? and(
+            eq(customerServiceLearningCandidates.status, "pending"),
+            or(
+              lt(customerServiceLearningCandidates.createdAt, cursor.createdAt),
+              and(
+                eq(customerServiceLearningCandidates.createdAt, cursor.createdAt),
+                lt(customerServiceLearningCandidates.id, cursor.id),
+              ),
+            ),
+          ) : eq(customerServiceLearningCandidates.status, "pending"))
+          .orderBy(desc(customerServiceLearningCandidates.createdAt), desc(customerServiceLearningCandidates.id))
+          .limit(pageSize);
+        if (rows.length === 0) break;
+        const structurallyValid = rows.filter(isActionableLearningCandidate);
+        const sourceIds = [...new Set(structurallyValid.flatMap((row) => row.sourceCaseMemoryIds))];
+        if (sourceIds.length > 0) {
+          const evidence = await database.select({
+            caseId: customerServiceCaseMemories.id,
+            conversationKeyHash: customerServiceHumanReplyMatches.conversationId,
+            intent: customerServiceCaseMemories.intent,
+            normalizedSituation: customerServiceCaseMemories.normalizedSituation,
+            aiDraft: customerServiceCaseMemories.aiDraft,
+            humanFinalReply: customerServiceCaseMemories.humanFinalReply,
+            editClassification: customerServiceCaseMemories.editClassification,
+            editReasonCodes: customerServiceCaseMemories.editReasonCodes,
+            riskClass: customerServiceCaseMemories.riskClass,
+            eligibilityStatus: customerServiceCaseMemories.eligibilityStatus,
+          }).from(customerServiceCaseMemories)
+            .innerJoin(customerServiceHumanReplyMatches, eq(
+              customerServiceHumanReplyMatches.id,
+              customerServiceCaseMemories.humanReplyMatchId,
+            ))
+            .where(inArray(customerServiceCaseMemories.id, sourceIds));
+          const evidenceById = new Map(evidence.map((item) => [item.caseId, item]));
+          for (const candidate of structurallyValid) {
+            const candidateEvidence = candidate.sourceCaseMemoryIds.flatMap((id) => {
+              const item = evidenceById.get(id);
+              return item ? [item] : [];
+            });
+            const definition = getLearningPatternDefinition(candidate.reasonCodes[0]);
+            if (!definition || !learningCandidateEvidenceIsValid(candidate, candidateEvidence)) continue;
+            items.push(Object.freeze({
+              id: candidate.id,
+              intent: candidate.intent,
+              observedPattern: definition.observedPattern,
+              proposedChange: candidate.proposedChange,
+              reasonCodes: Object.freeze([...candidate.reasonCodes]),
+              evidenceCount: candidate.evidenceCount,
+              supportingCases: Object.freeze(candidateEvidence
+                .slice(0, MAX_LEARNING_CANDIDATE_SUPPORTING_CASES)
+                .map((item) => Object.freeze({
+                  customer: sanitizeCaseMemoryText(item.normalizedSituation).text,
+                  aiDraft: item.aiDraft ? sanitizeCaseMemoryText(item.aiDraft).text : null,
+                  humanFinal: sanitizeCaseMemoryText(item.humanFinalReply).text,
+                  detectedChange: definition.detectedChange,
+                }))),
+              status: candidate.status,
+            }));
+            if (items.length >= boundedLimit) break;
+          }
+        }
+        const last = rows.at(-1)!;
+        cursor = { createdAt: last.createdAt, id: last.id };
+        if (rows.length < pageSize) break;
+      }
+      return Object.freeze({ items: Object.freeze(items) });
     },
 
     async refreshLearningCandidates(input = {}) {
@@ -4233,34 +4450,66 @@ export function createDrizzleCustomerServiceRepository(
         caseId: customerServiceCaseMemories.id,
         conversationKeyHash: customerServiceHumanReplyMatches.conversationId,
         intent: customerServiceCaseMemories.intent,
+        normalizedSituation: customerServiceCaseMemories.normalizedSituation,
+        aiDraft: customerServiceCaseMemories.aiDraft,
+        humanFinalReply: customerServiceCaseMemories.humanFinalReply,
+        editClassification: customerServiceCaseMemories.editClassification,
         editReasonCodes: customerServiceCaseMemories.editReasonCodes,
+        riskClass: customerServiceCaseMemories.riskClass,
       }).from(customerServiceCaseMemories)
         .innerJoin(customerServiceHumanReplyMatches, eq(
           customerServiceHumanReplyMatches.id,
           customerServiceCaseMemories.humanReplyMatchId,
         ))
-        .where(eq(customerServiceCaseMemories.eligibilityStatus, "approved_reusable"))
+        .where(and(
+          eq(customerServiceCaseMemories.eligibilityStatus, "approved_reusable"),
+          eq(customerServiceCaseMemories.riskClass, "low"),
+        ))
         .orderBy(asc(customerServiceCaseMemories.createdAt))
         .limit(checkpoint);
       const summary = buildLearningSummary(cases.map((item) => ({
         ...item,
-        approvedLowRisk: true,
+        approvedLowRisk: item.riskClass === "low",
       })), minimumMatchedReplies, checkpoint);
       if (!summary?.candidates.length) return { checkpoint, created: 0 };
-      const created = await database.insert(customerServiceLearningCandidates).values(
-        summary.candidates.map((candidate) => ({
-          candidateKind: candidate.candidateKind,
-          intent: candidate.intent,
-          proposedChange: candidate.proposedChange,
-          evidenceCount: candidate.evidenceCount,
-          distinctCaseCount: candidate.distinctCaseCount,
-          reasonCodes: candidate.reasonCodes,
-          sourceCaseMemoryIds: candidate.sourceCaseMemoryIds,
-          evidenceSignature: candidate.evidenceSignature,
-          status: "pending" as const,
-        })),
-      ).onConflictDoNothing().returning({ id: customerServiceLearningCandidates.id });
-      return { checkpoint, created: created.length };
+      const created = await database.transaction(async (transaction) => {
+        let createdCount = 0;
+        for (const candidate of summary.candidates) {
+          const [existing] = await transaction.select().from(customerServiceLearningCandidates)
+            .where(eq(customerServiceLearningCandidates.evidenceSignature, candidate.evidenceSignature))
+            .limit(1).for("update");
+          if (existing) {
+            if (existing.status === "pending") {
+              await transaction.update(customerServiceLearningCandidates).set({
+                intent: candidate.intent,
+                proposedChange: candidate.proposedChange,
+                evidenceCount: candidate.evidenceCount,
+                distinctCaseCount: candidate.distinctCaseCount,
+                reasonCodes: candidate.reasonCodes,
+                sourceCaseMemoryIds: candidate.sourceCaseMemoryIds,
+              }).where(and(
+                eq(customerServiceLearningCandidates.id, existing.id),
+                eq(customerServiceLearningCandidates.status, "pending"),
+              ));
+            }
+            continue;
+          }
+          const inserted = await transaction.insert(customerServiceLearningCandidates).values({
+            candidateKind: candidate.candidateKind,
+            intent: candidate.intent,
+            proposedChange: candidate.proposedChange,
+            evidenceCount: candidate.evidenceCount,
+            distinctCaseCount: candidate.distinctCaseCount,
+            reasonCodes: candidate.reasonCodes,
+            sourceCaseMemoryIds: candidate.sourceCaseMemoryIds,
+            evidenceSignature: candidate.evidenceSignature,
+            status: "pending" as const,
+          }).onConflictDoNothing().returning({ id: customerServiceLearningCandidates.id });
+          createdCount += inserted.length;
+        }
+        return createdCount;
+      });
+      return { checkpoint, created };
     },
 
     async decideLearningCandidate(input) {
@@ -4271,9 +4520,41 @@ export function createDrizzleCustomerServiceRepository(
         if (!candidate || candidate.status !== "pending") {
           throw new Error("customer_service_learning_candidate_transition_invalid");
         }
+        const evidence = await transaction.select({
+          caseId: customerServiceCaseMemories.id,
+          conversationKeyHash: customerServiceHumanReplyMatches.conversationId,
+          intent: customerServiceCaseMemories.intent,
+          normalizedSituation: customerServiceCaseMemories.normalizedSituation,
+          aiDraft: customerServiceCaseMemories.aiDraft,
+          humanFinalReply: customerServiceCaseMemories.humanFinalReply,
+          editClassification: customerServiceCaseMemories.editClassification,
+          editReasonCodes: customerServiceCaseMemories.editReasonCodes,
+          riskClass: customerServiceCaseMemories.riskClass,
+          eligibilityStatus: customerServiceCaseMemories.eligibilityStatus,
+        }).from(customerServiceCaseMemories)
+          .innerJoin(customerServiceHumanReplyMatches, eq(
+            customerServiceHumanReplyMatches.id,
+            customerServiceCaseMemories.humanReplyMatchId,
+          ))
+          .where(inArray(customerServiceCaseMemories.id, candidate.sourceCaseMemoryIds));
+        if (input.action !== "reject" && !learningCandidateEvidenceIsValid(candidate, evidence)) {
+          throw new Error("customer_service_learning_candidate_invalid");
+        }
+        const approvedText = input.action === "approve"
+          ? candidate.proposedChange
+          : input.action === "edit_and_approve"
+            ? input.approvedText?.trim() ?? null
+            : null;
+        if (input.action !== "reject") {
+          if (!isApprovedLearningGuidance(approvedText)
+            || !approvedText
+            || learningGuidanceContainsSensitiveData(approvedText)) {
+            throw new Error("customer_service_learning_candidate_invalid");
+          }
+        }
         await transaction.update(customerServiceLearningCandidates).set({
           status: nextStatus,
-          approvedText: input.action === "edit_and_approve" ? input.approvedText : null,
+          approvedText,
           reviewerUserId: input.reviewerUserId,
           decisionReason: input.reason,
           decidedAt: input.now,
@@ -4768,7 +5049,16 @@ export function createDrizzleCustomerServiceRepository(
           (select count(*) from customer_service_case_memories
             where eligibility_status = 'excluded' and exclusion_codes <> '[]'::jsonb) as excluded_high_risk_cases,
           (select count(*) from customer_service_case_retrievals where injected) as cases_retrieved_in_drafts,
-          (select count(*) from customer_service_learning_candidates where status = 'pending') as learning_candidates_pending,
+          (select count(*) from customer_service_learning_candidates candidates
+            where candidates.status = 'pending'
+              and candidates.candidate_kind = 'answer_quality_rule'
+              and jsonb_array_length(candidates.reason_codes) = 1
+              and jsonb_array_length(candidates.source_case_memory_ids) = candidates.evidence_count
+              and candidates.evidence_count >= 3
+              and candidates.evidence_count <= 25
+              and candidates.distinct_case_count >= 3
+              and candidates.distinct_case_count <= candidates.evidence_count
+              and (${ACTIONABLE_LEARNING_PATTERN_SQL})) as learning_candidates_pending,
           (select count(*) from customer_service_learning_candidates where status = 'approved') as learning_candidates_approved,
           (select count(*) from customer_service_learning_candidates where status = 'rejected') as learning_candidates_rejected,
           jsonb_build_object(

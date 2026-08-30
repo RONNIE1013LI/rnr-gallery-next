@@ -232,6 +232,15 @@
 .learningMeta { justify-content: flex-start; }
 .learningMeta strong { text-transform: capitalize; }
 .reasons { text-transform: lowercase; }
+.learningGuidance { display: grid; gap: 8px; }
+.learningGuidance > div { display: grid; gap: 3px; }
+.learningGuidance strong,
+.learningEvidence strong { font-size: 12px; }
+.learningEvidence { min-width: 0; }
+.learningEvidence summary { color: var(--reply-accent); font-size: 12px; font-weight: 700; cursor: pointer; }
+.learningEvidence > div { display: grid; gap: 8px; margin-top: 8px; }
+.learningEvidence article { display: grid; gap: 6px; padding: 10px; border: 1px solid var(--reply-border); border-radius: 8px; background: #fafaf7; }
+.learningEvidence article p { display: grid; gap: 2px; overflow-wrap: anywhere; }
 .learningControls { display: grid; min-width: 0; gap: 8px; }
 
 .learningControls textarea {
@@ -249,6 +258,12 @@
 }
 
 .learningControls > div { justify-content: flex-start; }
+
+.learningError {
+  margin: 0;
+  color: #9b1c1c;
+  font-size: 12px;
+}
 
 .learningControls button {
   min-height: 44px;

@@ -207,7 +207,11 @@ export function ReplyAssistantLiveDashboard({
           </button>
         ) : null}
       </section>
-      <LearningCandidateReview candidates={learningCandidates} canReview={canReview} />
+      <LearningCandidateReview
+        candidates={learningCandidates}
+        pendingCount={metricCounts?.learningCandidatesPending}
+        canReview={canReview}
+      />
       <CaseMemoryReview cases={caseMemories} canReview={canReview} />
       <section className={styles.conversationPanel} aria-label="Needs attention conversations">
         <div className={styles.conversationHeading}>

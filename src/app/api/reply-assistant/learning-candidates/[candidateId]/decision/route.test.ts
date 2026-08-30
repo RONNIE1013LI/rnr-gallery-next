@@ -26,4 +26,19 @@ describe("learning candidate decision API", () => {
     const response = await handler.POST(request({ action: "reject", approvedText: null, reason: "Not reusable" }), { params: Promise.resolve({ candidateId: "11111111-1111-4111-8111-111111111111" }) });
     expect(response.status).toBe(403);
   });
+
+  it("fails closed with a specific response when persisted evidence is not actionable", async () => {
+    const handler = createLearningCandidateDecisionHandler({
+      enabled: true,
+      trustedOrigin: "https://admin.test",
+      requirePermission: vi.fn(async () => ({ user: { id: "admin-1" } })),
+      decide: vi.fn(async () => { throw new Error("customer_service_learning_candidate_invalid"); }),
+    });
+    const response = await handler.POST(
+      request({ action: "approve", approvedText: null, reason: null }),
+      { params: Promise.resolve({ candidateId: "11111111-1111-4111-8111-111111111111" }) },
+    );
+    expect(response.status).toBe(422);
+    await expect(response.json()).resolves.toEqual({ error: { code: "INVALID_LEARNING_CANDIDATE" } });
+  });
 });
