@@ -568,12 +568,22 @@
     --v3-section-compact: 3.5rem;
   }
   .shell { width: calc(100% - 2.5rem); }
-  .page h1 { font-size: clamp(2.75rem, 12vw, 3.2rem); line-height: 1.04; }
+  .heroCopy > h1 {
+    max-width: 23.5rem;
+    margin: clamp(0.875rem, 4.5vw, 1.25rem) 0 0;
+    font-size: clamp(2.5rem, calc(16vw - 1.1rem), 3.2rem);
+    line-height: 1.02;
+    letter-spacing: -0.035em;
+  }
   .page h2 { font-size: clamp(2.25rem, 9vw, 2.5rem); }
   .page h3 { font-size: 1.5625rem; }
   .eyebrow { font-size: 0.6875rem; }
-  .hero { padding: 2.75rem 0; }
-  .heroArt { width: 100vw; margin-inline: calc(50% - 50vw); }
+  .hero { padding: clamp(2.25rem, 10vw, 2.75rem) 0; }
+  .heroArt {
+    width: 100vw;
+    margin-top: clamp(1.25rem, 6.5vw, 1.75rem);
+    margin-inline: calc(50% - 50vw);
+  }
   .heroImage { border-radius: 0; }
   .lede { font-size: 1rem; }
   .heroActions { display: grid; gap: 0.875rem; }

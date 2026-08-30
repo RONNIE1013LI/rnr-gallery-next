@@ -247,6 +247,39 @@ describe("HomepageV3", () => {
     );
   });
 
+  it("scales the mobile hero headline and spacing without shrinking the wide-phone ceiling", () => {
+    const stylesheet = readFileSync(
+      "src/components/homepage-v3.module.css",
+      "utf8",
+    );
+    const mobileStyles = stylesheet.slice(
+      stylesheet.indexOf("@media (max-width: 760px)"),
+      stylesheet.indexOf("@media (max-width: 420px)"),
+    );
+    const headlineRules = mobileStyles.match(
+      /\.heroCopy\s*>\s*h1\s*\{[^}]*\}/,
+    )?.[0] ?? "";
+
+    expect(headlineRules).toMatch(
+      /font-size:\s*clamp\(2\.5rem,\s*calc\(16vw\s*-\s*1\.1rem\),\s*3\.2rem\)/,
+    );
+    expect(headlineRules).toMatch(/line-height:\s*1\.02/);
+    expect(headlineRules).toMatch(/letter-spacing:\s*-0\.035em/);
+    expect(headlineRules).toMatch(/max-width:\s*23\.5rem/);
+    expect(mobileStyles).toMatch(
+      /\.hero\s*\{[^}]*padding:\s*clamp\(2\.25rem,\s*10vw,\s*2\.75rem\)\s+0/,
+    );
+    expect(mobileStyles).toMatch(
+      /\.heroCopy\s*>\s*h1\s*\{[^}]*margin:\s*clamp\(0\.875rem,\s*4\.5vw,\s*1\.25rem\)\s+0\s+0/,
+    );
+    expect(mobileStyles).toMatch(
+      /\.heroArt\s*\{[^}]*margin-top:\s*clamp\(1\.25rem,\s*6\.5vw,\s*1\.75rem\)/,
+    );
+    expect(mobileStyles).not.toMatch(
+      /\.page\s+h1\s*\{[^}]*clamp\(2\.75rem,\s*12vw,\s*3\.2rem\)/,
+    );
+  });
+
   it("shows transformations before the primary photo action on every screen", () => {
     render(<HomepageV3 registry={defaultProductRegistry} />);
 

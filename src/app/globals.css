@@ -1267,7 +1267,7 @@ a:active {
   }
 }
 
-@media (max-width: 420px) {
+@media (max-width: 374px) {
   .site-header__brand .brand-mark__logo {
     display: none;
   }

@@ -276,13 +276,14 @@ describe("site shell", () => {
       .toHaveValue("NZ");
   });
 
-  it("keeps the mobile header compact and only hides its logo before narrow screens become crowded", () => {
+  it("keeps the mobile header logo visible from 375px upward", () => {
     const stylesheet = readFileSync("src/app/globals.css", "utf8");
     const mobileRules = stylesheet.match(/@media \(max-width: 560px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
-    const narrowRules = stylesheet.match(/@media \(max-width: 420px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
+    const narrowRules = stylesheet.match(/@media \(max-width: 374px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
 
     expect(mobileRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*2\.625rem/);
     expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
+    expect(stylesheet).not.toMatch(/@media \(max-width: 420px\) \{[\s\S]*?\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
     expect(stylesheet).toMatch(/\.site-header__market select\s*\{[^}]*appearance:\s*none/);
     expect(mobileRules).toMatch(/\.mobile-menu\s*\{[^}]*margin-left:\s*-0\.25rem/);
     expect(mobileRules).toMatch(/\.mobile-menu > button,[\s\S]*?\.site-header__cart\s*\{[^}]*min-height:\s*48px/);
