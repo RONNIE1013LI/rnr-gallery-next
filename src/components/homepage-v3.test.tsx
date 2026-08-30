@@ -247,6 +247,18 @@ describe("HomepageV3", () => {
     );
   });
 
+  it("refines the 320-375px hero without changing the wider mobile baseline", () => {
+    const stylesheet = readFileSync("src/components/homepage-v3.module.css", "utf8");
+    const mobile = stylesheet.match(/@media \(max-width: 760px\)\s*\{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
+    const narrow = stylesheet.match(/@media \(max-width: 375px\)\s*\{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
+
+    expect(mobile).toMatch(/\.heroCopy > h1\s*\{[\s\S]*?font-size:\s*clamp\(2\.5rem, calc\(16vw - 1\.1rem\), 3\.2rem\);/);
+    expect(narrow).toMatch(/\.heroCopy > h1\s*\{[\s\S]*?max-width:\s*20\.5rem;/);
+    expect(narrow).toMatch(/font-size:\s*clamp\(2\.2rem, 10vw, 2\.35rem\);/);
+    expect(narrow).toMatch(/line-height:\s*1\.04;/);
+    expect(narrow).toMatch(/margin-top:\s*0\.75rem;/);
+  });
+
   it("scales the mobile hero headline and spacing without shrinking the wide-phone ceiling", () => {
     const stylesheet = readFileSync(
       "src/components/homepage-v3.module.css",

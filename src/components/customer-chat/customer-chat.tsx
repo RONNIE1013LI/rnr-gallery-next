@@ -96,12 +96,14 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const [pendingMessage, setPendingMessage] = useState<PendingMessage | null>(null);
   const [sending, setSending] = useState(false);
   const [historyReady, setHistoryReady] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [announcement, setAnnouncement] = useState("");
   const cursorRef = useRef<string | null>(null);
   const pollingRef = useRef(false);
   const sendingRef = useRef(false);
   const initialPollRef = useRef(true);
+  const historyReadyRef = useRef(false);
   const restoreLauncherFocusRef = useRef(false);
   const isComposingRef = useRef(false);
   const launcherRef = useRef<HTMLButtonElement>(null);
@@ -113,11 +115,27 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     try {
       const query = cursorRef.current ? `?cursor=${encodeURIComponent(cursorRef.current)}` : "";
       const response = await fetch(`${updatesEndpoint}${query}`, { headers: { Accept: "application/json" } });
-      if (!response.ok) return;
+      if (!response.ok) {
+        if (!historyReadyRef.current) {
+          historyReadyRef.current = true;
+          setHistoryReady(true);
+          setHistoryError(true);
+        }
+        return;
+      }
       const updates = publicUpdates(await response.json().catch(() => null));
-      if (!updates) return;
+      if (!updates) {
+        if (!historyReadyRef.current) {
+          historyReadyRef.current = true;
+          setHistoryReady(true);
+          setHistoryError(true);
+        }
+        return;
+      }
       cursorRef.current = updates.cursor;
+      historyReadyRef.current = true;
       setHistoryReady(true);
+      setHistoryError(false);
       setOutgoingMessages((current) => reconcileOutgoing(current, updates.events));
       setEvents((current) => {
         const known = new Set(current.map((event) => event.eventKey));
@@ -133,7 +151,11 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
       });
       initialPollRef.current = false;
     } catch {
-      // The current draft and cursor remain in the browser for the next catch-up poll.
+      if (!historyReadyRef.current) {
+        historyReadyRef.current = true;
+        setHistoryReady(true);
+        setHistoryError(true);
+      }
     } finally {
       pollingRef.current = false;
     }
@@ -285,7 +307,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     || (latestEvent?.role === "customer" && (latestEvent.state === "pending" || latestEvent.state === "recovery"));
 
   return (
-    <div className={styles.root}>
+    <div className={`${styles.root} customer-chat-root`} data-open={open}>
       {open ? (
         <section
           className={styles.panel}
@@ -302,6 +324,10 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
             <button type="button" className={styles.closeButton} aria-label="Close chat" title="Close chat" onClick={close}>×</button>
           </header>
           <div className={styles.transcript} aria-label="Chat messages">
+            {historyError ? <div className={styles.historyError} role="status">
+              <p>We couldn’t load your earlier messages. You can still start a new chat.</p>
+              <button type="button" onClick={() => void poll()}>Retry conversation history</button>
+            </div> : null}
             {showWelcome ? <section className={styles.welcome} aria-labelledby="customer-chat-welcome-title">
               <h2 id="customer-chat-welcome-title">Hi 👋 How can we help?</h2>
               <p>Choose an option below or simply type your message.</p>
@@ -362,12 +388,12 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
           <div className={styles.liveRegion} data-testid="customer-chat-live-region" aria-live="polite" aria-atomic="true">{announcement}</div>
         </section>
       ) : null}
-      <button ref={launcherRef} type="button" className={styles.launcher} aria-label="Chat with R&R Gallery" title="Chat with R&R Gallery" onClick={() => {
+      {!open ? <button ref={launcherRef} type="button" className={styles.launcher} aria-label="Chat with R&R Gallery" title="Chat with R&R Gallery" onClick={() => {
         initialPollRef.current = events.length === 0;
         setOpen(true);
       }}>
         <FaRegCommentDots aria-hidden="true" />
-      </button>
+      </button> : null}
     </div>
   );
 }

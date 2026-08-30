@@ -276,13 +276,17 @@ describe("site shell", () => {
       .toHaveValue("NZ");
   });
 
-  it("keeps the mobile header logo visible from 375px upward", () => {
+  it("keeps the mobile header logo visible from 340px upward with a readable market selector", () => {
     const stylesheet = readFileSync("src/app/globals.css", "utf8");
     const mobileRules = stylesheet.match(/@media \(max-width: 560px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
     const narrowRules = stylesheet.match(/@media \(max-width: 374px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
+    const extremeRules = stylesheet.match(/@media \(max-width: 339px\) \{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
 
     expect(mobileRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*2\.625rem/);
-    expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
+    expect(mobileRules).toMatch(/\.site-header__market select\s*\{[^}]*height:\s*2\.75rem[^}]*font-size:\s*0\.72rem/);
+    expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*2\.25rem/);
+    expect(narrowRules).not.toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
+    expect(extremeRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
     expect(stylesheet).not.toMatch(/@media \(max-width: 420px\) \{[\s\S]*?\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
     expect(stylesheet).toMatch(/\.site-header__market select\s*\{[^}]*appearance:\s*none/);
     expect(mobileRules).toMatch(/\.mobile-menu\s*\{[^}]*margin-left:\s*-0\.25rem/);

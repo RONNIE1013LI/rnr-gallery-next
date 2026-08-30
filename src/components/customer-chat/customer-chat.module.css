@@ -1,12 +1,16 @@
 .root {
   position: fixed;
   right: max(12px, env(safe-area-inset-right));
-  bottom: max(12px, env(safe-area-inset-bottom));
-  z-index: 40;
+  bottom: var(--customer-chat-bottom-offset, max(12px, env(safe-area-inset-bottom)));
+  z-index: var(--layer-chat-launcher, 40);
   display: flex;
   flex-direction: column;
   align-items: flex-end;
   gap: 0.75rem;
+}
+
+.root[data-open="true"] {
+  z-index: var(--layer-chat-panel, 50);
 }
 
 .launcher,
@@ -98,6 +102,30 @@
   display: grid;
   gap: 0;
   padding: 0.35rem 0 0.25rem;
+}
+
+.historyError {
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+  color: var(--muted);
+  background: color-mix(in srgb, var(--aged-gold) 8%, var(--paper));
+  border: 1px solid color-mix(in srgb, var(--aged-gold) 30%, var(--border));
+  border-radius: 0.45rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.historyError button {
+  width: max-content;
+  min-height: 2.75rem;
+  padding: 0;
+  color: var(--aged-gold-text);
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid currentColor;
+  cursor: pointer;
+  font-weight: 700;
 }
 
 .welcome h2 {

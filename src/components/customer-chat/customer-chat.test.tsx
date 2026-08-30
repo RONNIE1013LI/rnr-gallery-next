@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -50,7 +51,7 @@ describe("CustomerChat", () => {
 
   it("moves focus into the dialog and restores the launcher when closed with Escape", async () => {
     render(<CustomerChat />);
-    const launcher = openChat();
+    openChat();
 
     expect(await screen.findByRole("dialog", { name: "Chat with R&R Gallery" })).toHaveStyle({
       "--customer-chat-panel-width": "min(380px, calc(100vw - 24px))",
@@ -60,7 +61,34 @@ describe("CustomerChat", () => {
     fireEvent.keyDown(document, { key: "Escape" });
 
     await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
-    expect(launcher).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Chat with R&R Gallery" })).toHaveFocus();
+  });
+
+  it("shows only the chat panel while open and uses the shared floating-layer contract", async () => {
+    render(<CustomerChat />);
+    openChat();
+
+    expect(await screen.findByRole("dialog", { name: "Chat with R&R Gallery" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Chat with R&R Gallery" })).not.toBeInTheDocument();
+    const css = readFileSync("src/components/customer-chat/customer-chat.module.css", "utf8");
+    expect(css).toContain("bottom: var(--customer-chat-bottom-offset");
+    expect(css).toContain("z-index: var(--layer-chat-launcher");
+  });
+
+  it("shows a retryable initial-history error without blocking a new conversation", async () => {
+    const fetchMock = vi.fn()
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(updates());
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+
+    expect(await screen.findByText("We couldn’t load your earlier messages. You can still start a new chat.")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Hi 👋 How can we help?" })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry conversation history" }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByText("We couldn’t load your earlier messages. You can still start a new chat.")).not.toBeInTheDocument());
   });
 
   it("shows the compact welcome and four quick actions only after an empty conversation loads", async () => {

@@ -99,7 +99,12 @@ describe("root layout metadata", () => {
     const globals = cssFile("src/app/globals.css");
 
     expect(cssRule(globals, ".consent-preferences {")).toContain("position: fixed;");
-    expect(cssRule(globals, ".consent-preferences {")).toContain("z-index: 40;");
+    expect(globals).toContain("--layer-sticky-cta: 30;");
+    expect(globals).toContain("--layer-chat-launcher: 40;");
+    expect(globals).toContain("--layer-chat-panel: 50;");
+    expect(globals).toContain("--layer-consent: 60;");
+    expect(cssRule(globals, ".consent-preferences {")).toContain("z-index: var(--layer-consent);");
+    expect(globals).toMatch(/body:has\(\.consent-preferences\) \.customer-chat-root\s*\{[^}]*--customer-chat-bottom-offset:/);
     const trigger = cssRule(globals, ".site-footer__cookie-trigger {");
     expect(trigger).toContain("min-height: 44px;");
     expect(trigger).not.toContain("position: fixed;");

@@ -661,6 +661,20 @@
   .rawPhoto { width: 9.25rem; }
 }
 
+@media (max-width: 375px) {
+  .heroCopy > h1 {
+    max-width: 20.5rem;
+    margin-top: 0.75rem;
+    font-size: clamp(2.2rem, 10vw, 2.35rem);
+    line-height: 1.04;
+    letter-spacing: -0.03em;
+  }
+
+  .heroArt {
+    margin-top: 1.125rem;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .page *, .page *::before, .page *::after {
     scroll-behavior: auto !important;
