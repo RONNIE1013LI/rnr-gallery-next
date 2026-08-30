@@ -18,7 +18,11 @@ export function WebsiteAnalyticsInternalDevice({
     try {
       const response = await fetch("/api/admin/analytics/internal-device", {
         method: next ? "POST" : "DELETE",
-        headers: { Accept: "application/json" },
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: "{}",
       });
       if (!response.ok) throw new Error("Internal device request failed");
       setInternal(next);

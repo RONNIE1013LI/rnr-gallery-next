@@ -20,7 +20,14 @@ describe("WebsiteAnalyticsInternalDevice", () => {
     fireEvent.click(screen.getByRole("button", { name: "Mark this device as internal" }));
     await waitFor(() => expect(fetch).toHaveBeenCalledWith(
       "/api/admin/analytics/internal-device",
-      expect.objectContaining({ method: "POST" }),
+      expect.objectContaining({
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: "{}",
+      }),
     ));
     expect(await screen.findByText("This device is marked internal.")).toBeInTheDocument();
     expect(refresh).toHaveBeenCalledTimes(1);
