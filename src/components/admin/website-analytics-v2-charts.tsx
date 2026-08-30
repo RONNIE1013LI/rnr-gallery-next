@@ -45,6 +45,13 @@ const revenueColors: Readonly<Record<RevenueMetric, string>> = {
   refundedRevenueCents: "#a85d43",
   netCollectedRevenueCents: "#6a4f82",
 };
+const breakdownMoneyMetrics = [
+  ["Ordered", "orderedRevenueCents"],
+  ["Collected", "collectedRevenueCents"],
+  ["Refunded", "refundedRevenueCents"],
+  ["Net collected", "netCollectedRevenueCents"],
+  ["Ordered AOV", "orderedAovCents"],
+] as const;
 const integer = new Intl.NumberFormat("en-NZ", { maximumFractionDigits: 0 });
 
 export function formatAnalyticsMoney(currency: "NZD" | "AUD", cents: number) {
@@ -95,6 +102,7 @@ function ChartPanel({
   count,
   minWidth = 560,
   controls,
+  notice,
   chart,
   table,
 }: Readonly<{
@@ -103,6 +111,7 @@ function ChartPanel({
   count: number;
   minWidth?: number;
   controls?: ReactNode;
+  notice?: ReactNode;
   chart: (summaryId: string) => ReactElement;
   table: ReactNode;
 }>) {
@@ -115,6 +124,7 @@ function ChartPanel({
     <p className={styles.srOnly} id={summaryId}>
       {count} data points. An equivalent data table follows.
     </p>
+    {notice}
     <div className={styles.chartScroller} tabIndex={0} aria-label={`${title} visualisation`}>
       <div className={styles.chartCanvas} style={{ minWidth }}>
         <ResponsiveContainer width="100%" height={280} minWidth={minWidth}>
@@ -232,7 +242,7 @@ function RevenueTrend({ data, currency }: Readonly<{
 
 function FunnelChart({ data }: Readonly<{ data: WebsiteAnalyticsV2DashboardData }>) {
   const rows = [
-    { label: "Sessions", value: data.funnel.sessions ?? 0, display: data.funnel.sessions ?? "—" },
+    { label: "Sessions", value: data.funnel.sessions, display: data.funnel.sessions ?? "—" },
     { label: "Inquiries", value: data.funnel.inquiries, display: data.funnel.inquiries },
     { label: "Orders", value: data.funnel.orders, display: data.funnel.orders },
     { label: "Paid Orders", value: data.funnel.paidOrders, display: data.funnel.paidOrders },
@@ -241,6 +251,9 @@ function FunnelChart({ data }: Readonly<{ data: WebsiteAnalyticsV2DashboardData 
     title="Website Funnel"
     chartLabel="Website funnel chart"
     count={rows.length}
+    notice={data.funnel.sessions === null
+      ? <p className={styles.muted}>Sessions are unavailable for this range.</p>
+      : null}
     chart={(summaryId) => <BarChart accessibilityLayer aria-describedby={summaryId}
       aria-label="Website funnel chart" data={rows} layout="vertical">
       <CartesianGrid stroke="#d8d7d2" strokeDasharray="3 3" />
@@ -259,6 +272,13 @@ function breakdownLabel(row: WebsiteAnalyticsV2Breakdown, kind: "channel" | "cam
   if (kind === "campaign") return row.campaign ?? "(not set)";
   if (kind === "market") return row.market ?? "Unknown";
   return row.channel ?? "Unknown";
+}
+
+function breakdownMoneyValues(row: WebsiteAnalyticsV2Breakdown, currency: "NZD" | "AUD") {
+  const money = row.money.find((entry) => entry.currency === currency);
+  return breakdownMoneyMetrics.map(([, metric]) => money?.[metric] === null || money?.[metric] === undefined
+    ? "—"
+    : formatAnalyticsMoney(currency, money[metric]));
 }
 
 function BreakdownChart({ title, chartLabel, tableLabel, rows, kind }: Readonly<{
@@ -282,19 +302,23 @@ function BreakdownChart({ title, chartLabel, tableLabel, rows, kind }: Readonly<
     </BarChart>}
     table={<AnalyticsTable label={tableLabel}
       headings={[kind === "market" ? "Market" : kind === "campaign" ? "Campaign" : "Channel",
-        "Visitors", "Sessions", "Page Views", "Inquiries", "Orders", "Paid Orders"]}
+        "Visitors", "Sessions", "Page Views", "Inquiries", "Orders", "Paid Orders",
+        ...(["NZD", "AUD"] as const).flatMap((currency) => breakdownMoneyMetrics
+          .map(([label]) => `${currency} ${label}`))]}
       rows={rows.map((row, index) => ({
         key: `${breakdownLabel(row, kind)}-${index}`,
         values: [breakdownLabel(row, kind), row.visitors ?? "—", row.sessions ?? "—", row.pageViews,
-          row.inquiries, row.orders, row.paidOrders],
+          row.inquiries, row.orders, row.paidOrders, ...breakdownMoneyValues(row, "NZD"),
+          ...breakdownMoneyValues(row, "AUD")],
       }))} />}
   />;
 }
 
-function SimpleCountBreakdown({ title, chartLabel, tableLabel, rows }: Readonly<{
+function SimpleCountBreakdown({ title, chartLabel, tableLabel, metricLabel, rows }: Readonly<{
   title: string;
   chartLabel: string;
   tableLabel: string;
+  metricLabel: string;
   rows: readonly Readonly<{ label: string; value: number }>[];
 }>) {
   return <ChartPanel title={title} chartLabel={chartLabel} count={rows.length}
@@ -306,10 +330,33 @@ function SimpleCountBreakdown({ title, chartLabel, tableLabel, rows }: Readonly<
       <YAxis allowDecimals={false} width={56} />
       <Tooltip content={<CountTooltip />} />
       <Legend />
-      <Bar dataKey="value" fill="#345c45" isAnimationActive={false} name="Count" />
+      <Bar dataKey="value" fill="#345c45" isAnimationActive={false} name={metricLabel} />
     </BarChart>}
-    table={<AnalyticsTable label={tableLabel} headings={["Category", "Count"]}
+    table={<AnalyticsTable label={tableLabel} headings={["Category", metricLabel]}
       rows={rows.map((row) => ({ key: row.label, values: [row.label, row.value] }))} />}
+  />;
+}
+
+function CountryTrafficBreakdown({
+  rows,
+}: Readonly<{ rows: WebsiteAnalyticsV2DashboardData["countries"] }>) {
+  return <ChartPanel title="Country Traffic" chartLabel="Country traffic chart" count={rows.length}
+    minWidth={Math.max(560, rows.length * 100)}
+    chart={(summaryId) => <BarChart accessibilityLayer aria-describedby={summaryId}
+      aria-label="Country traffic chart" data={rows}>
+      <CartesianGrid stroke="#d8d7d2" strokeDasharray="3 3" />
+      <XAxis dataKey="countryCode" />
+      <YAxis allowDecimals={false} width={56} />
+      <Tooltip content={<CountTooltip />} />
+      <Legend />
+      <Bar dataKey="pageViews" fill="#345c45" isAnimationActive={false} name="Page Views" />
+    </BarChart>}
+    table={<AnalyticsTable label="Country traffic data"
+      headings={["Country", "Visitors", "Sessions", "Page Views"]}
+      rows={rows.map((row) => ({
+        key: row.countryCode,
+        values: [row.countryCode, row.visitors, row.sessions, row.pageViews],
+      }))} />}
   />;
 }
 
@@ -332,12 +379,11 @@ export function WebsiteAnalyticsV2Charts({ data }: Readonly<{
     <BreakdownChart chartLabel="Campaign performance chart" kind="campaign" rows={data.campaigns}
       tableLabel="Campaign performance data" title="Campaign Performance" />
     <SimpleCountBreakdown chartLabel="Payment status chart"
+      metricLabel="Orders"
       rows={data.payments.map((row) => ({ label: titleCase(row.status), value: row.orders }))}
       tableLabel="Payment status data" title="Payment Status" />
     <BreakdownChart chartLabel="Market performance chart" kind="market" rows={data.markets}
       tableLabel="Market performance data" title="Market Performance" />
-    <SimpleCountBreakdown chartLabel="Country traffic chart"
-      rows={data.countries.map((row) => ({ label: row.countryCode, value: row.pageViews }))}
-      tableLabel="Country traffic data" title="Country Traffic" />
+    <CountryTrafficBreakdown rows={data.countries} />
   </div>;
 }

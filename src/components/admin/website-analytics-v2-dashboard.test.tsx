@@ -264,7 +264,7 @@ describe("WebsiteAnalyticsV2Dashboard", () => {
     />);
 
     expect(firstSignal.aborted).toBe(true);
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     const activeDashboard = dashboardData({ kpis: { ...dashboardData().kpis, sessions: 77 } });
     const staleDashboard = dashboardData({ kpis: { ...dashboardData().kpis, sessions: 13 } });
     requests[2]!.resolve(await response(activeDashboard));
@@ -276,6 +276,54 @@ describe("WebsiteAnalyticsV2Dashboard", () => {
     await Promise.resolve();
     expect(screen.getByText("77", { selector: "strong" })).toBeInTheDocument();
     expect(screen.queryByText("13", { selector: "strong" })).not.toBeInTheDocument();
+  });
+
+  it("cancels a pending replacement when history returns to the displayed query", async () => {
+    const dashboardRequest = deferred<Response>();
+    const ordersRequest = deferred<Response>();
+    const fetchMock = vi.fn()
+      .mockReturnValueOnce(dashboardRequest.promise)
+      .mockReturnValueOnce(ordersRequest.promise);
+    vi.stubGlobal("fetch", fetchMock);
+    navigation.search = canonicalQuery;
+    const view = render(<WebsiteAnalyticsV2Dashboard
+      initialData={dashboardData()}
+      initialOrders={orderData()}
+      initialQueryString={canonicalQuery}
+    />);
+
+    fireEvent.change(screen.getByRole("combobox", { name: "Business scope" }), {
+      target: { value: "website" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
+    const pendingSignal = (fetchMock.mock.calls[0]![1] as RequestInit).signal as AbortSignal;
+    const replacementQuery = canonicalQuery.replace("scope=all_business", "scope=website");
+    navigation.search = replacementQuery;
+    view.rerender(<WebsiteAnalyticsV2Dashboard
+      initialData={dashboardData()}
+      initialOrders={orderData()}
+      initialQueryString={canonicalQuery}
+    />);
+
+    navigation.search = canonicalQuery;
+    view.rerender(<WebsiteAnalyticsV2Dashboard
+      initialData={dashboardData()}
+      initialOrders={orderData()}
+      initialQueryString={canonicalQuery}
+    />);
+
+    expect(pendingSignal.aborted).toBe(true);
+    await waitFor(() => expect(screen.queryByRole("status", { name: "Loading analytics" }))
+      .not.toBeInTheDocument());
+
+    dashboardRequest.resolve(await response(dashboardData({
+      filters: { ...dashboardData().filters, scope: "website", canonicalQuery: replacementQuery },
+      kpis: { ...dashboardData().kpis, sessions: 91 },
+    })));
+    ordersRequest.resolve(await response(orderData()));
+    await Promise.resolve();
+    expect(screen.getByText("12", { selector: "strong" })).toBeInTheDocument();
+    expect(screen.queryByText("91", { selector: "strong" })).not.toBeInTheDocument();
   });
 
   it("shows a no-data state and recovers from an API error through Retry", async () => {

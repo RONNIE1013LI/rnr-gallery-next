@@ -233,9 +233,10 @@ export function WebsiteAnalyticsV2Dashboard({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const abortRef = useRef<AbortController | null>(null);
+  const activeQueryRef = useRef<string | null>(null);
   const requestIdRef = useRef(0);
   const observedUrlRef = useRef<string | null>(null);
-  const lastRoutedQueryRef = useRef(initialData.filters.canonicalQuery);
+  const lastRoutedQueryRef = useRef<string | null>(initialData.filters.canonicalQuery);
   const retryQueryRef = useRef(initialData.filters.canonicalQuery);
 
   const loadQuery = useCallback(async (query: string, updateUrl: boolean) => {
@@ -243,6 +244,7 @@ export function WebsiteAnalyticsV2Dashboard({
     const controller = new AbortController();
     const requestId = ++requestIdRef.current;
     abortRef.current = controller;
+    activeQueryRef.current = query;
     retryQueryRef.current = query;
     setLoading(true);
     setError(null);
@@ -279,9 +281,21 @@ export function WebsiteAnalyticsV2Dashboard({
       if (controller.signal.aborted || requestId !== requestIdRef.current || isAbortError(caught)) return;
       setError("Analytics could not be loaded. Check the filters and try again.");
     } finally {
-      if (requestId === requestIdRef.current) setLoading(false);
+      if (requestId === requestIdRef.current) {
+        abortRef.current = null;
+        activeQueryRef.current = null;
+        setLoading(false);
+      }
     }
   }, [pathname, router]);
+
+  const cancelActiveRequest = useCallback(() => {
+    abortRef.current?.abort();
+    abortRef.current = null;
+    activeQueryRef.current = null;
+    requestIdRef.current += 1;
+    queueMicrotask(() => setLoading(false));
+  }, []);
 
   useEffect(() => {
     if (observedUrlRef.current === null) {
@@ -295,10 +309,15 @@ export function WebsiteAnalyticsV2Dashboard({
     }
     if (observedUrlRef.current === urlQuery) return;
     observedUrlRef.current = urlQuery;
-    if (urlQuery === lastRoutedQueryRef.current || urlQuery === data.filters.canonicalQuery) return;
-    void loadQuery(urlQuery, false);
+    if (activeQueryRef.current && activeQueryRef.current !== urlQuery) cancelActiveRequest();
+    if (urlQuery === lastRoutedQueryRef.current) {
+      lastRoutedQueryRef.current = null;
+      return;
+    }
+    if (urlQuery === data.filters.canonicalQuery) return;
+    queueMicrotask(() => { void loadQuery(urlQuery, false); });
   }, [data.filters.canonicalQuery, initialData.filters.canonicalQuery, initialQueryString,
-    loadQuery, pathname, router, urlQuery]);
+    cancelActiveRequest, loadQuery, pathname, router, urlQuery]);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 

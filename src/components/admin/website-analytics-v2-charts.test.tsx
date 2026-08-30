@@ -90,7 +90,7 @@ const data: WebsiteAnalyticsV2DashboardData = {
     inquiries: 2,
     orders: 2,
     paidOrders: 1,
-    money: [money("NZD", 20_000)],
+    money: [money("NZD", 20_000), money("AUD", 30_000)],
   }],
   campaigns: [{
     channel: "Google Ads",
@@ -103,7 +103,7 @@ const data: WebsiteAnalyticsV2DashboardData = {
     inquiries: 2,
     orders: 2,
     paidOrders: 1,
-    money: [money("NZD", 20_000)],
+    money: [money("NZD", 20_000), money("AUD", 40_000)],
   }],
   pages: { items: [{ pathname: "/shop", visitors: 5, pageViews: 12 }], unavailableMetrics: ["entrances", "exits", "assists"] },
   payments: [{ status: "paid", orders: 2 }, { status: "partial", orders: 1 }],
@@ -116,6 +116,15 @@ const data: WebsiteAnalyticsV2DashboardData = {
     orders: 2,
     paidOrders: 1,
     money: [money("NZD", 24_000)],
+  }, {
+    market: "AU",
+    visitors: 2,
+    sessions: 3,
+    pageViews: 8,
+    inquiries: 1,
+    orders: 1,
+    paidOrders: 1,
+    money: [money("AUD", 18_000)],
   }],
   countries: [{ countryCode: "NZ", visitors: 7, sessions: 9, pageViews: 22 }],
   notices: [],
@@ -179,6 +188,64 @@ describe("WebsiteAnalyticsV2Charts", () => {
     expect(screen.getByRole("table", { name: "Market performance data" })).toHaveTextContent("NZ");
     expect(screen.getByRole("table", { name: "Country traffic data" })).toHaveTextContent("NZ");
     expect(screen.queryByText(/combined revenue/i)).not.toBeInTheDocument();
+  });
+
+  it("keeps unavailable funnel sessions null in the chart and table", () => {
+    render(<WebsiteAnalyticsV2Charts data={{
+      ...data,
+      funnel: { ...data.funnel, sessions: null },
+    }} />);
+
+    expect(screen.getByText("Sessions are unavailable for this range.")).toBeInTheDocument();
+    const table = screen.getByRole("table", { name: "Website funnel data" });
+    const sessions = within(table).getByRole("row", { name: "Sessions —" });
+    expect(sessions).toBeInTheDocument();
+    expect(within(sessions).queryByText("0")).not.toBeInTheDocument();
+  });
+
+  it("shows channel, campaign and market money in separate NZD and AUD columns", () => {
+    render(<WebsiteAnalyticsV2Charts data={data} />);
+
+    const channel = screen.getByRole("table", { name: "Channel performance data" });
+    expect(within(channel).getByRole("columnheader", { name: "NZD Ordered" })).toBeInTheDocument();
+    expect(within(channel).getByRole("columnheader", { name: "AUD Ordered" })).toBeInTheDocument();
+    const channelRow = within(channel).getByRole("row", { name: /Google Ads/ });
+    expect(within(channelRow).getByText("NZ$200.00")).toBeInTheDocument();
+    expect(within(channelRow).getByText("A$300.00")).toBeInTheDocument();
+
+    const campaign = screen.getByRole("table", { name: "Campaign performance data" });
+    const campaignRow = within(campaign).getByRole("row", { name: /spring/ });
+    expect(within(campaignRow).getByText("NZ$200.00")).toBeInTheDocument();
+    expect(within(campaignRow).getByText("A$400.00")).toBeInTheDocument();
+
+    const market = screen.getByRole("table", { name: "Market performance data" });
+    expect(within(within(market).getByRole("row", { name: /^NZ / })).getByText("NZ$240.00"))
+      .toBeInTheDocument();
+    expect(within(within(market).getByRole("row", { name: /^AU / })).getByText("A$180.00"))
+      .toBeInTheDocument();
+  });
+
+  it("labels payment status values as orders", () => {
+    render(<WebsiteAnalyticsV2Charts data={data} />);
+
+    const table = screen.getByRole("table", { name: "Payment status data" });
+    expect(within(table).getByRole("columnheader", { name: "Orders" })).toBeInTheDocument();
+    expect(within(table).queryByRole("columnheader", { name: "Count" })).not.toBeInTheDocument();
+    expect(within(table).getByRole("row", { name: "Paid 2" })).toBeInTheDocument();
+    const panel = screen.getByRole("heading", { name: "Payment Status" }).closest("section")!;
+    expect(panel.querySelector(".recharts-legend-wrapper")).toHaveTextContent("Orders");
+  });
+
+  it("shows visitors, sessions and page views for each country", () => {
+    render(<WebsiteAnalyticsV2Charts data={data} />);
+
+    const table = screen.getByRole("table", { name: "Country traffic data" });
+    expect(within(table).getByRole("columnheader", { name: "Visitors" })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Sessions" })).toBeInTheDocument();
+    expect(within(table).getByRole("columnheader", { name: "Page Views" })).toBeInTheDocument();
+    expect(within(table).getByRole("row", { name: "NZ 7 9 22" })).toBeInTheDocument();
+    const panel = screen.getByRole("heading", { name: "Country Traffic" }).closest("section")!;
+    expect(panel.querySelector(".recharts-legend-wrapper")).toHaveTextContent("Page Views");
   });
 
   it("switches the single-axis traffic series without changing the server values", async () => {
