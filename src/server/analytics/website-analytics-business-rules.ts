@@ -1,5 +1,6 @@
 import type { WebsiteAnalyticsCurrency, WebsiteAnalyticsScope } from "@/domain/analytics/website-analytics-v2";
 import type { OrderFulfilmentStatus } from "@/server/db/schema/orders";
+import { sql, type SQL } from "drizzle-orm";
 
 type OrderSource = "website" | "manual";
 
@@ -26,6 +27,8 @@ export type AnalyticsInquiryCandidate = Readonly<{
 }>;
 
 export type AnalyticsFinancialEventType = "receipt" | "refund" | "reversal";
+export type AnalyticsPaymentStatus = "unpaid" | "partial" | "paid" | "refunded";
+export const ANALYTICS_PAYMENT_STATUS_RULE_VERSION = "v2" as const;
 
 function isPositiveCents(value: unknown): value is number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0;
@@ -71,6 +74,30 @@ export function isPaidOrder(input: Readonly<{
     && isNonNegativeCents(input.collectedCents)
     && isNonNegativeCents(input.refundedCents)
     && input.collectedCents - input.refundedCents >= input.orderedAmountCents;
+}
+
+export function analyticsPaymentStatus(input: Readonly<{
+  orderedAmountCents: number;
+  collectedCents: number;
+  refundedCents: number;
+}>): AnalyticsPaymentStatus {
+  if (isPositiveCents(input.refundedCents)) return "refunded";
+  if (isPaidOrder(input)) return "paid";
+  return isPositiveCents(input.collectedCents) ? "partial" : "unpaid";
+}
+
+export function analyticsPaymentStatusSql(input: Readonly<{
+  orderedAmountCents: SQL;
+  collectedCents: SQL;
+  refundedCents: SQL;
+}>): SQL<AnalyticsPaymentStatus> {
+  return sql<AnalyticsPaymentStatus>`case
+    when ${input.refundedCents} > 0 then 'refunded'
+    when ${input.collectedCents} - ${input.refundedCents} >= ${input.orderedAmountCents}
+      then 'paid'
+    when ${input.collectedCents} > 0 then 'partial'
+    else 'unpaid'
+  end`;
 }
 
 export function orderIsInScope(order: Pick<AnalyticsOrderCandidate, "source">, scope: WebsiteAnalyticsScope): boolean {

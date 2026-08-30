@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  analyticsPaymentStatus,
   analyticsPaymentDirection,
   canAggregateAnalyticsCurrency,
   eligibleOrder,
@@ -11,6 +12,18 @@ import {
 } from "./website-analytics-business-rules";
 
 describe("website analytics v2 business rules", () => {
+  it.each([
+    [{ orderedAmountCents: 10_000, collectedCents: 0, refundedCents: 0 }, "unpaid"],
+    [{ orderedAmountCents: 10_000, collectedCents: 5_000, refundedCents: 0 }, "partial"],
+    [{ orderedAmountCents: 10_000, collectedCents: 10_000, refundedCents: 0 }, "paid"],
+    [{ orderedAmountCents: 10_000, collectedCents: 12_000, refundedCents: 0 }, "paid"],
+    [{ orderedAmountCents: 10_000, collectedCents: 10_000, refundedCents: 1_000 }, "refunded"],
+    [{ orderedAmountCents: 10_000, collectedCents: 10_000, refundedCents: 10_000 }, "refunded"],
+    [{ orderedAmountCents: 10_000, collectedCents: 20_000, refundedCents: 10_000 }, "refunded"],
+  ] as const)("derives the versioned UI payment status for %j", (input, expected) => {
+    expect(analyticsPaymentStatus(input)).toBe(expected);
+  });
+
   it.each([
     [{ source: "website", checkoutCommitted: true, totalInclGstCents: 12500 }, true],
     [{ source: "website", checkoutCommitted: false, totalInclGstCents: 12500 }, false],

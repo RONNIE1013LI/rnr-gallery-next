@@ -11,6 +11,7 @@ import { createWebsiteAnalyticsV2Reconciliation } from "./website-analytics-v2-r
 import type { WebsiteAnalyticsV2Query } from "./website-analytics-v2-query";
 import { previousAnalyticsDateRange } from "./website-analytics-date-range";
 import { websiteAnalyticsLocalDate } from "./website-local-date";
+import { analyticsPaymentStatusSql } from "./website-analytics-business-rules";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -42,6 +43,11 @@ type MutableMoney = {
   netCollectedRevenueCents: number;
   orders: number;
 };
+
+type ExactTraffic = Readonly<{
+  visitors: number;
+  sessions: number;
+}>;
 
 type Breakdown = MutableMetrics & {
   channel?: string;
@@ -150,17 +156,23 @@ function rate(numerator: number, denominator: number): number | null {
   return denominator === 0 ? null : numerator / denominator;
 }
 
-function freezeMetrics(metrics: MutableMetrics) {
+function freezeMetrics(
+  metrics: MutableMetrics,
+  websiteRateMetrics = metrics,
+  exactTraffic: ExactTraffic | null | undefined = undefined,
+) {
+  const visitors = exactTraffic === undefined ? metrics.visitors : exactTraffic?.visitors ?? null;
+  const sessions = exactTraffic === undefined ? metrics.sessions : exactTraffic?.sessions ?? null;
   return Object.freeze({
-    visitors: metrics.visitors,
-    sessions: metrics.sessions,
+    visitors,
+    sessions,
     pageViews: metrics.pageViews,
     inquiries: metrics.inquiries,
     orders: metrics.orders,
     paidOrders: metrics.paidOrders,
-    inquiryConversionRate: rate(metrics.inquiries, metrics.sessions),
-    orderConversionRate: rate(metrics.orders, metrics.sessions),
-    paidOrderConversionRate: rate(metrics.paidOrders, metrics.sessions),
+    inquiryConversionRate: sessions === null ? null : rate(websiteRateMetrics.inquiries, sessions),
+    orderConversionRate: sessions === null ? null : rate(websiteRateMetrics.orders, sessions),
+    paidOrderConversionRate: sessions === null ? null : rate(websiteRateMetrics.paidOrders, sessions),
     money: Object.freeze(frozenMoney(metrics)),
   });
 }
@@ -246,6 +258,15 @@ function shiftDate(value: string, days: number): string {
   return new Date(Date.UTC(year!, month! - 1, day! + days)).toISOString().slice(0, 10);
 }
 
+const TRAFFIC_RETENTION_MS = 90 * 24 * 60 * 60_000;
+
+function trafficCoverageFrom(now: Date) {
+  const partialCutoffDate = websiteAnalyticsLocalDate(
+    new Date(now.getTime() - TRAFFIC_RETENTION_MS),
+  );
+  return shiftDate(partialCutoffDate, 1);
+}
+
 function bucketFor(localDate: string, granularity: WebsiteAnalyticsV2Query["resolvedGranularity"]): string {
   if (granularity === "day") return localDate;
   if (granularity === "month") return localDate.slice(0, 7);
@@ -254,7 +275,17 @@ function bucketFor(localDate: string, granularity: WebsiteAnalyticsV2Query["reso
   return shiftDate(localDate, -mondayOffset);
 }
 
-function timeSeries(rows: readonly AggregateRow[], query: WebsiteAnalyticsV2Query) {
+function bucketSelectionStart(bucket: string, query: WebsiteAnalyticsV2Query) {
+  const bucketStart = query.resolvedGranularity === "month" ? `${bucket}-01` : bucket;
+  return bucketStart < query.from ? query.from : bucketStart;
+}
+
+function timeSeries(
+  rows: readonly AggregateRow[],
+  query: WebsiteAnalyticsV2Query,
+  trafficByBucket: ReadonlyMap<string, ExactTraffic>,
+  trafficCoverageFrom: string,
+) {
   const grouped = new Map<string, AggregateRow[]>();
   for (const row of rows) {
     const bucket = bucketFor(row.localDate, query.resolvedGranularity);
@@ -264,8 +295,11 @@ function timeSeries(rows: readonly AggregateRow[], query: WebsiteAnalyticsV2Quer
   }
   return [...grouped.entries()].sort(([left], [right]) => left.localeCompare(right))
     .map(([bucket, bucketRows]) => {
-      const { selected } = metricsForRows(bucketRows, query);
-      return Object.freeze({ bucket, ...freezeMetrics(selected) });
+      const { selected, website } = metricsForRows(bucketRows, query);
+      const exactTraffic = bucketSelectionStart(bucket, query) < trafficCoverageFrom
+        ? null
+        : trafficByBucket.get(bucket) ?? { visitors: 0, sessions: 0 };
+      return Object.freeze({ bucket, ...freezeMetrics(selected, website, exactTraffic) });
     });
 }
 
@@ -323,11 +357,54 @@ type SupportRow = Readonly<{
   pages: unknown;
   countries: unknown;
   earliestTrafficDate: unknown;
+  traffic: unknown;
+  trafficBuckets: unknown;
 }>;
+
+function rawTrafficBucketSql(query: WebsiteAnalyticsV2Query) {
+  if (query.resolvedGranularity === "day") return sql`pageviews.local_date::text`;
+  if (query.resolvedGranularity === "month") {
+    return sql`to_char(pageviews.local_date, 'YYYY-MM')`;
+  }
+  return sql`(
+    pageviews.local_date - (extract(isodow from pageviews.local_date)::int - 1)
+  )::text`;
+}
+
+function exactTraffic(value: unknown): ExactTraffic {
+  const row = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  return Object.freeze({
+    visitors: safeNumber(row.visitors ?? 0),
+    sessions: safeNumber(row.sessions ?? 0),
+  });
+}
+
+function exactTrafficBuckets(value: unknown): ReadonlyMap<string, ExactTraffic> {
+  if (!Array.isArray(value)) return new Map();
+  return new Map(value.map((item) => {
+    const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    return [String(row.bucket), exactTraffic(row)] as const;
+  }));
+}
 
 async function supportingTraffic(transaction: Transaction, query: WebsiteAnalyticsV2Query) {
   const result = await transaction.execute<SupportRow>(sql`
-    with page_rows as (
+    with range_traffic as (
+      select count(distinct sessions.visitor_digest)::int as visitors,
+        count(distinct sessions.id)::int as sessions
+      from website_analytics_pageviews pageviews
+      inner join website_analytics_sessions sessions on sessions.id = pageviews.session_id
+      where pageviews.local_date between ${query.from}::date and ${query.to}::date
+    ), traffic_bucket_rows as (
+      select ${rawTrafficBucketSql(query)} as bucket,
+        count(distinct sessions.visitor_digest)::int as visitors,
+        count(distinct sessions.id)::int as sessions
+      from website_analytics_pageviews pageviews
+      inner join website_analytics_sessions sessions on sessions.id = pageviews.session_id
+      where pageviews.local_date between ${query.from}::date and ${query.to}::date
+      group by ${rawTrafficBucketSql(query)}
+      order by ${rawTrafficBucketSql(query)}
+    ), page_rows as (
       select pageviews.pathname,
         count(distinct sessions.visitor_digest)::int as visitors,
         count(pageviews.id)::int as "pageViews"
@@ -356,16 +433,34 @@ async function supportingTraffic(transaction: Transaction, query: WebsiteAnalyti
         'countryCode', "countryCode", 'visitors', visitors, 'sessions', sessions,
         'pageViews', "pageViews"
       ) order by "pageViews" desc, "countryCode") from country_rows), '[]'::jsonb) as countries,
+      (select jsonb_build_object('visitors', visitors, 'sessions', sessions)
+        from range_traffic) as traffic,
+      coalesce((select jsonb_agg(jsonb_build_object(
+        'bucket', bucket, 'visitors', visitors, 'sessions', sessions
+      ) order by bucket) from traffic_bucket_rows), '[]'::jsonb) as "trafficBuckets",
       (select min(local_date)::text from website_analytics_sessions) as "earliestTrafficDate"
   `);
   const row = result.rows[0];
   return {
     pages: Array.isArray(row?.pages) ? row.pages : [],
     countries: Array.isArray(row?.countries) ? row.countries : [],
+    traffic: exactTraffic(row?.traffic),
+    trafficByBucket: exactTrafficBuckets(row?.trafficBuckets),
     earliestTrafficDate: typeof row?.earliestTrafficDate === "string"
       ? row.earliestTrafficDate
       : null,
   };
+}
+
+async function comparisonTraffic(transaction: Transaction, query: WebsiteAnalyticsV2Query) {
+  const result = await transaction.execute<{ visitors: unknown; sessions: unknown }>(sql`
+    select count(distinct sessions.visitor_digest)::int as visitors,
+      count(distinct sessions.id)::int as sessions
+    from website_analytics_pageviews pageviews
+    inner join website_analytics_sessions sessions on sessions.id = pageviews.session_id
+    where pageviews.local_date between ${query.from}::date and ${query.to}::date
+  `);
+  return exactTraffic(result.rows[0]);
 }
 
 type PaymentRow = Readonly<{ status: unknown; orders: unknown }>;
@@ -394,12 +489,11 @@ async function paymentBreakdown(transaction: Transaction, query: WebsiteAnalytic
         and (${query.currency}::text is null or conversions.currency = ${query.currency}::text)
       group by conversions.id, conversions.ordered_amount_incl_gst_cents
     ), statuses as (
-      select case
-        when refunded > 0 then 'refunded'
-        when collected - refunded >= ordered then 'paid'
-        when collected > 0 then 'partial'
-        else 'unpaid'
-      end as status
+      select ${analyticsPaymentStatusSql({
+        orderedAmountCents: sql`ordered`,
+        collectedCents: sql`collected`,
+        refundedCents: sql`refunded`,
+      })} as status
       from balances
     )
     select status, count(*)::int as orders
@@ -436,6 +530,7 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
     async load(query: WebsiteAnalyticsV2Query, now = new Date()) {
       if (Number.isNaN(now.getTime())) throw new Error("Analytics dashboard time is invalid");
       const today = websiteAnalyticsLocalDate(now);
+      const retainedTrafficFrom = trafficCoverageFrom(now);
       return database.transaction(async (transaction) => {
         const rows = await aggregateRows(transaction, query, today);
         const comparisonRange = query.compare ? previousAnalyticsDateRange({
@@ -450,11 +545,12 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
         const comparisonRows = comparisonQuery
           ? await aggregateRows(transaction, comparisonQuery, today)
           : null;
-        const [{ selected, website }, support, payments] = await Promise.all([
-          Promise.resolve(metricsForRows(rows, query)),
-          supportingTraffic(transaction, query),
-          paymentBreakdown(transaction, query),
-        ]);
+        const { selected, website } = metricsForRows(rows, query);
+        const support = await supportingTraffic(transaction, query);
+        const payments = await paymentBreakdown(transaction, query);
+        const previousTraffic = comparisonQuery
+          ? await comparisonTraffic(transaction, comparisonQuery)
+          : null;
         const channels = addBreakdownRows(rows, query, (row) => {
           const channel = displayChannel(row.channel);
           return [channel, { channel }];
@@ -476,8 +572,10 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
           market: row.market,
         }]).filter((row) => row.market === "NZ" || row.market === "AU")
           .sort((left, right) => String(left.market).localeCompare(String(right.market)));
-        const kpis = freezeMetrics(selected);
-        const websiteMetrics = freezeMetrics(website);
+        const trafficMetricsAvailable = query.from >= retainedTrafficFrom;
+        const retainedTraffic = trafficMetricsAvailable ? support.traffic : null;
+        const kpis = freezeMetrics(selected, website, retainedTraffic);
+        const websiteMetrics = freezeMetrics(website, website, retainedTraffic);
         const hasCurrentDay = query.from <= today && query.to >= today;
         const notices = [
           Object.freeze({
@@ -488,10 +586,10 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
             code: "all_business_traffic_website_only",
             message: "Traffic and funnel metrics remain Website-only in All Business scope.",
           })] : []),
-          ...(support.earliestTrafficDate && query.from < support.earliestTrafficDate
+          ...(!trafficMetricsAvailable
             ? [Object.freeze({
                 code: "traffic_retention_limited",
-                message: `Raw traffic detail begins ${support.earliestTrafficDate}; older attribution detail is unavailable.`,
+                message: `Exact Visitor and Session metrics are unavailable before ${retainedTrafficFrom} because raw traffic is retained for 90 days.`,
               })]
             : []),
         ];
@@ -516,10 +614,23 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
                   from: comparisonQuery.from,
                   to: comparisonQuery.to,
                 }),
-                kpis: freezeMetrics(metricsForRows(comparisonRows, comparisonQuery).selected),
+                kpis: (() => {
+                  const comparisonMetrics = metricsForRows(comparisonRows, comparisonQuery);
+                  const comparisonTrafficAvailable = comparisonQuery.from >= retainedTrafficFrom;
+                  return freezeMetrics(
+                    comparisonMetrics.selected,
+                    comparisonMetrics.website,
+                    comparisonTrafficAvailable ? previousTraffic : null,
+                  );
+                })(),
               })
             : null,
-          timeseries: Object.freeze(timeSeries(rows, query)),
+          timeseries: Object.freeze(timeSeries(
+            rows,
+            query,
+            support.trafficByBucket,
+            retainedTrafficFrom,
+          )),
           funnel: Object.freeze({
             scope: "website" as const,
             sessions: websiteMetrics.sessions,
@@ -543,6 +654,8 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
             aggregateThrough: aggregateThrough(query, today),
             rawDates: Object.freeze(hasCurrentDay ? [today] : []),
             earliestTrafficDate: support.earliestTrafficDate,
+            trafficCoverageFrom: retainedTrafficFrom,
+            trafficMetricsAvailable,
             generatedAt: now.toISOString(),
           }),
         });
@@ -569,13 +682,11 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
               coalesce(financial.refunded, 0)::bigint as "refundedAmountCents",
               (coalesce(financial.collected, 0) - coalesce(financial.refunded, 0))::bigint
                 as "netCollectedAmountCents",
-              case
-                when coalesce(financial.refunded, 0) > 0 then 'refunded'
-                when coalesce(financial.collected, 0) - coalesce(financial.refunded, 0)
-                  >= conversions.ordered_amount_incl_gst_cents then 'paid'
-                when coalesce(financial.collected, 0) > 0 then 'partial'
-                else 'unpaid'
-              end as "paymentStatus",
+              ${analyticsPaymentStatusSql({
+                orderedAmountCents: sql`conversions.ordered_amount_incl_gst_cents`,
+                collectedCents: sql`coalesce(financial.collected, 0)`,
+                refundedCents: sql`coalesce(financial.refunded, 0)`,
+              })} as "paymentStatus",
               snapshots.channel::text as channel,
               snapshots.source::text as "attributionSource",
               coalesce(nullif(trim(snapshots.medium), ''), ${ANALYTICS_DIMENSION_SENTINELS.notSet})::text

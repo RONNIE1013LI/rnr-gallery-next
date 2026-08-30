@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { HttpError } from "@/server/auth/require-session";
-import { createAdminAnalyticsRoute } from "./route-handler";
+import { assertAnalyticsResponsePrivacy, createAdminAnalyticsRoute } from "./route-handler";
 
 const origin = "https://admin.example.test";
 
@@ -18,6 +18,20 @@ const safeResult = Object.freeze({
   notices: [{ code: "page_metrics_unavailable", message: "Not available." }],
 });
 
+const privacyLeakCases = [
+  ["generic email", { email: "private-email" }],
+  ["snake-case customer email", { customer_email: "private-customer-email" }],
+  ["generic phone", { phone: "private-phone" }],
+  ["generic address", { address: "private-address" }],
+  ["generic message", { message: "private-message" }],
+  ["click ID container", { clickIds: ["private-click"] }],
+  ["snake-case visitor digest", { visitor_digest: "private-visitor" }],
+  ["session identifier", { session_id: "private-session" }],
+  ["nested array", { rows: [{ profile: { customer_email: "private-nested" } }] }],
+  ["Google click identifiers", { gclid: "private-gclid", gbraid: "private-gbraid", wbraid: "private-wbraid" }],
+  ["Meta click identifiers", { fbclid: "private-fbclid", fbp: "private-fbp", fbc: "private-fbc" }],
+] as const;
+
 function dependencies(overrides: Record<string, unknown> = {}) {
   return {
     requirePermission: vi.fn().mockResolvedValue({
@@ -33,6 +47,15 @@ function dependencies(overrides: Record<string, unknown> = {}) {
 }
 
 describe("Admin Website Analytics V2 route", () => {
+  it("allows legitimate aggregate keys containing visitor or session words", () => {
+    expect(() => assertAnalyticsResponsePrivacy({
+      visitors: 3,
+      sessions: 4,
+      sessionConversionRate: 0.25,
+      visitorTrend: [{ bucket: "2026-08-30", visitors: 3 }],
+    })).not.toThrow();
+  });
+
   it("requires view_analytics before parsing or loading data", async () => {
     const load = vi.fn();
     const requirePermission = vi.fn().mockRejectedValue(new HttpError("Unauthorized", 401));
@@ -102,6 +125,16 @@ describe("Admin Website Analytics V2 route", () => {
     const body = await response.text();
     expect(body).not.toContain("private@example.test");
     expect(body).not.toContain("server-only");
+  });
+
+  it.each(privacyLeakCases)("fails closed for %s in a nested dashboard payload", async (_name, leak) => {
+    const route = createAdminAnalyticsRoute(dependencies({
+      load: vi.fn().mockResolvedValue({ ...safeResult, leak }),
+    }));
+    const response = await route.GET(request());
+    expect(response.status).toBe(500);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.text()).not.toContain("private-");
   });
 
   it("returns generic no-store errors without leaking internal messages", async () => {

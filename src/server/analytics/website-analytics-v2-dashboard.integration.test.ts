@@ -17,6 +17,7 @@ import {
 import { createWebsiteAnalyticsV2Repository } from "./website-analytics-v2-repository";
 import { createWebsiteAnalyticsV2Dashboard } from "./website-analytics-v2-dashboard";
 import { parseWebsiteAnalyticsV2Query } from "./website-analytics-v2-query";
+import { analyticsPaymentStatusSql } from "./website-analytics-business-rules";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is required");
@@ -230,6 +231,47 @@ async function seedPriorAggregates() {
   ]);
 }
 
+async function seedRetainedPriorTraffic() {
+  const returningVisitor = digest(`${prefix}returning-visitor`);
+  const priorVisitors = [returningVisitor, returningVisitor, digest(`${prefix}prior-visitor`)];
+  for (const [index, visitorDigest] of priorVisitors.entries()) {
+    const sessionId = randomUUID();
+    sessionIds.push(sessionId);
+    await database.insert(websiteAnalyticsSessions).values({
+      id: sessionId,
+      visitorDigest,
+      startedAt: new Date(`2398-01-13T1${index + 1}:00:00.000Z`),
+      localDate: priorDate,
+      channel: "google_ads",
+      source: "google",
+      medium: "cpc",
+      utmCampaign: `${prefix}prior-campaign`,
+      countryCode: "NZ",
+    });
+    const priorPageCount = index === 2 ? 3 : 1;
+    for (let page = 0; page < priorPageCount; page += 1) {
+      await database.execute(sql`
+        insert into website_analytics_pageviews
+          (id, session_id, occurred_at, local_date, pathname)
+        values
+          (${randomUUID()}::uuid, ${sessionId}::uuid,
+            ${new Date(`2398-01-13T1${index + 1}:${page}5:00.000Z`)}, ${priorDate}::date,
+            ${`/retained/${index}/${page}`})
+      `);
+    }
+    if (index === 0) {
+      await database.execute(sql`
+        insert into website_analytics_pageviews
+          (id, session_id, occurred_at, local_date, pathname)
+        values
+          (${randomUUID()}::uuid, ${sessionId}::uuid,
+            ${new Date("2398-01-14T12:01:00.000Z")}, ${currentDate}::date,
+            '/retained/cross-midnight')
+      `);
+    }
+  }
+}
+
 async function seedCurrentRawFacts() {
   const visitorDigest = digest(`${prefix}current-visitor`);
   for (const [index, channel] of (["direct", "meta_ads"] as const).entries()) {
@@ -328,6 +370,7 @@ beforeAll(async () => {
     inArray(websiteAnalyticsReconciliationState.stateKey, dates),
   ));
   await seedPriorAggregates();
+  await seedRetainedPriorTraffic();
   references = await seedCurrentRawFacts();
 });
 
@@ -361,6 +404,30 @@ function money(result: Awaited<ReturnType<typeof dashboard.load>>, currency: "NZ
 }
 
 describe("website analytics V2 dashboard", () => {
+  it("uses the versioned SQL payment-status adapter for every edge sequence", async () => {
+    const expression = analyticsPaymentStatusSql({
+      orderedAmountCents: sql`cases.ordered`,
+      collectedCents: sql`cases.collected`,
+      refundedCents: sql`cases.refunded`,
+    });
+    const result = await database.execute<{ status: string | null }>(sql`
+      select ${expression} as status
+      from (values
+        (1, 10000, 0, 0),
+        (2, 10000, 5000, 0),
+        (3, 10000, 10000, 0),
+        (4, 10000, 12000, 0),
+        (5, 10000, 10000, 1000),
+        (6, 10000, 10000, 10000),
+        (7, 10000, 20000, 10000)
+      ) cases(ordinal, ordered, collected, refunded)
+      order by cases.ordinal
+    `);
+    expect(result.rows.map((row) => row.status)).toEqual([
+      "unpaid", "partial", "paid", "paid", "refunded", "refunded", "refunded",
+    ]);
+  });
+
   it("combines prior aggregates with current raw facts exactly once for Website scope", async () => {
     const result = await dashboard.load(query(
       `preset=custom&from=${priorDate}&to=${currentDate}&scope=website`,
@@ -368,7 +435,7 @@ describe("website analytics V2 dashboard", () => {
     expect(result.kpis).toMatchObject({
       visitors: 3,
       sessions: 5,
-      pageViews: 7,
+      pageViews: 8,
       inquiries: 2,
       orders: 2,
       paidOrders: 2,
@@ -408,10 +475,13 @@ describe("website analytics V2 dashboard", () => {
     expect(result.kpis).toMatchObject({
       visitors: 3,
       sessions: 5,
-      pageViews: 7,
+      pageViews: 8,
       inquiries: 2,
       orders: 4,
       paidOrders: 2,
+      inquiryConversionRate: 0.4,
+      orderConversionRate: 0.4,
+      paidOrderConversionRate: 0.4,
     });
     expect(money(result, "NZD")).toMatchObject({ orderedRevenueCents: 22_000 });
     expect(money(result, "AUD")).toEqual({
@@ -431,6 +501,18 @@ describe("website analytics V2 dashboard", () => {
     });
     expect(result.channels.some((row) => row.channel
       === ANALYTICS_DIMENSION_SENTINELS.manualOffline)).toBe(true);
+    expect(result.timeseries).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        bucket: priorDate,
+        orders: 2,
+        orderConversionRate: 1 / 3,
+      }),
+      expect.objectContaining({
+        bucket: currentDate,
+        orders: 2,
+        orderConversionRate: 1 / 3,
+      }),
+    ]));
   });
 
   it("keeps zero-denominator rates null and marks unprovable page metrics unavailable", async () => {
@@ -453,11 +535,49 @@ describe("website analytics V2 dashboard", () => {
     });
   });
 
+  it("deduplicates retained visitors and cross-midnight sessions for the range and week/month buckets", async () => {
+    for (const granularity of ["week", "month"] as const) {
+      const result = await dashboard.load(query(
+        `preset=custom&from=${priorDate}&to=${currentDate}&scope=website&granularity=${granularity}`,
+      ), now);
+      expect(result.kpis).toMatchObject({ visitors: 3, sessions: 5, pageViews: 8 });
+      expect(result.timeseries).toEqual([
+        expect.objectContaining({ visitors: 3, sessions: 5, pageViews: 8 }),
+      ]);
+      expect(result.metadata).toMatchObject({ trafficMetricsAvailable: true });
+    }
+  });
+
+  it("returns retained Visitor and Session metrics as unavailable for an all-time range", async () => {
+    const result = await dashboard.load(query("preset=all_time&scope=website"), now);
+    expect(result.kpis).toMatchObject({
+      visitors: null,
+      sessions: null,
+      pageViews: 8,
+      orders: 2,
+      inquiryConversionRate: null,
+      orderConversionRate: null,
+      paidOrderConversionRate: null,
+    });
+    expect(result.metadata).toMatchObject({ trafficMetricsAvailable: false });
+    expect(result.notices).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: "traffic_retention_limited" }),
+    ]));
+  });
+
   it("applies commercial filters without changing Website traffic and returns previous-period KPIs", async () => {
     const filtered = await dashboard.load(query(
       `preset=custom&from=${priorDate}&to=${currentDate}&scope=all_business&market=AU&currency=AUD&granularity=week`,
     ), now);
-    expect(filtered.kpis).toMatchObject({ visitors: 3, sessions: 5, inquiries: 2, orders: 2 });
+    expect(filtered.kpis).toMatchObject({
+      visitors: 3,
+      sessions: 5,
+      inquiries: 2,
+      orders: 2,
+      inquiryConversionRate: 0.4,
+      orderConversionRate: 0,
+      paidOrderConversionRate: 0,
+    });
     expect(filtered.kpis.money).toEqual([{
       currency: "AUD",
       orderedRevenueCents: 50_000,
@@ -475,6 +595,19 @@ describe("website analytics V2 dashboard", () => {
     expect(compared.comparison).toMatchObject({
       range: { from: priorDate, to: priorDate },
       kpis: { sessions: 3, inquiries: 1, orders: 1, paidOrders: 1 },
+    });
+
+    const comparedAllBusiness = await dashboard.load(query(
+      `preset=custom&from=${currentDate}&to=${currentDate}&scope=all_business&compare=true`,
+    ), now);
+    expect(comparedAllBusiness.comparison).toMatchObject({
+      range: { from: priorDate, to: priorDate },
+      kpis: {
+        sessions: 3,
+        orders: 2,
+        orderConversionRate: 1 / 3,
+        paidOrderConversionRate: 1 / 3,
+      },
     });
   });
 

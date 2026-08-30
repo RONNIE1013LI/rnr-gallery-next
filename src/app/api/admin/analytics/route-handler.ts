@@ -27,14 +27,6 @@ class AnalyticsDisabledError extends Error {}
 class AnalyticsPrivacyError extends Error {}
 
 const forbiddenResponseKeys = new Set([
-  "customeremail",
-  "customername",
-  "customerphone",
-  "deliveryaddress",
-  "billingaddress",
-  "shippingaddress",
-  "messagebody",
-  "messagetext",
   "artwork",
   "photo",
   "paymentproof",
@@ -45,9 +37,15 @@ const forbiddenResponseKeys = new Set([
   "wbraid",
   "fbclid",
   "consentqualifiedclickids",
+  "visitor",
   "visitorreference",
+  "visitordigest",
+  "visitorid",
+  "session",
   "sessionid",
+  "sessionreference",
   "externalreferrerorigin",
+  "clickids",
   "term",
   "content",
   "password",
@@ -55,6 +53,34 @@ const forbiddenResponseKeys = new Set([
   "token",
   "cookie",
 ]);
+const forbiddenClickIdKeys = new Set(["gclid", "gbraid", "wbraid", "fbclid", "fbp", "fbc"]);
+const forbiddenIdentityKeyFragments = [
+  "visitorid",
+  "visitorreference",
+  "visitordigest",
+  "visitoridentifier",
+  "sessionid",
+  "sessionreference",
+  "sessiondigest",
+  "sessionidentifier",
+] as const;
+
+function canonicalResponseKey(key: string) {
+  return key.normalize("NFKC").toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+function responseKeyIsForbidden(key: string, path: readonly string[]) {
+  const canonical = canonicalResponseKey(key);
+  if (canonical === "message" && path.at(-1) === "notices") return false;
+  if (forbiddenResponseKeys.has(canonical)) return true;
+  if (canonical.includes("email") || canonical.includes("phone")
+    || canonical.includes("address") || canonical.startsWith("customer")
+    || canonical.startsWith("message") || canonical.includes("clickid")) {
+    return true;
+  }
+  if (forbiddenIdentityKeyFragments.some((fragment) => canonical.includes(fragment))) return true;
+  return forbiddenClickIdKeys.has(canonical);
+}
 
 export function assertSameOriginAnalyticsRequest(request: Request) {
   const requestOrigin = new URL(request.url).origin;
@@ -66,15 +92,15 @@ export function assertSameOriginAnalyticsRequest(request: Request) {
   }
 }
 
-export function assertAnalyticsResponsePrivacy(value: unknown): void {
+export function assertAnalyticsResponsePrivacy(value: unknown, path: readonly string[] = []): void {
   if (Array.isArray(value)) {
-    for (const item of value) assertAnalyticsResponsePrivacy(item);
+    for (const item of value) assertAnalyticsResponsePrivacy(item, path);
     return;
   }
   if (!value || typeof value !== "object") return;
   for (const [key, child] of Object.entries(value)) {
-    if (forbiddenResponseKeys.has(key.toLowerCase())) throw new AnalyticsPrivacyError();
-    assertAnalyticsResponsePrivacy(child);
+    if (responseKeyIsForbidden(key, path)) throw new AnalyticsPrivacyError();
+    assertAnalyticsResponsePrivacy(child, [...path, canonicalResponseKey(key)]);
   }
 }
 

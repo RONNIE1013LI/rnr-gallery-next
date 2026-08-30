@@ -42,6 +42,20 @@ const safeResult = Object.freeze({
   pageCount: 1,
 });
 
+const privacyLeakCases = [
+  ["generic email", { email: "private-email" }],
+  ["snake-case customer email", { customer_email: "private-customer-email" }],
+  ["generic phone", { phone: "private-phone" }],
+  ["generic address", { address: "private-address" }],
+  ["generic message", { message: "private-message" }],
+  ["click ID container", { clickIds: ["private-click"] }],
+  ["snake-case visitor digest", { visitor_digest: "private-visitor" }],
+  ["session identifier", { session_id: "private-session" }],
+  ["nested array", { rows: [{ profile: { customer_email: "private-nested" } }] }],
+  ["Google click identifiers", { gclid: "private-gclid", gbraid: "private-gbraid", wbraid: "private-wbraid" }],
+  ["Meta click identifiers", { fbclid: "private-fbclid", fbp: "private-fbp", fbc: "private-fbc" }],
+] as const;
+
 function dependencies(overrides: Record<string, unknown> = {}) {
   return {
     requirePermission: vi.fn().mockResolvedValue({
@@ -120,5 +134,15 @@ describe("Admin Website Analytics V2 order drill-down route", () => {
     const leakingResponse = await leakingRoute.GET(request());
     expect(leakingResponse.status).toBe(500);
     expect(await leakingResponse.text()).not.toContain("private-session");
+  });
+
+  it.each(privacyLeakCases)("fails closed for %s in a nested drill-down payload", async (_name, leak) => {
+    const route = createAdminAnalyticsOrdersRoute(dependencies({
+      listOrders: vi.fn().mockResolvedValue({ ...safeResult, leak }),
+    }));
+    const response = await route.GET(request());
+    expect(response.status).toBe(500);
+    expect(response.headers.get("Cache-Control")).toBe("no-store");
+    expect(await response.text()).not.toContain("private-");
   });
 });
