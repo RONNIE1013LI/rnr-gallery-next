@@ -1076,7 +1076,11 @@ a:active {
   }
 
   body:has(.consent-preferences) .customer-chat-root {
-    --customer-chat-bottom-offset: 15.5rem;
+    --customer-chat-bottom-offset: 17rem;
+  }
+
+  body:has(.consent-preferences__options) .customer-chat-root {
+    --customer-chat-bottom-offset: 28rem;
   }
 
   .consent-preferences__content {

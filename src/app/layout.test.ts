@@ -105,6 +105,8 @@ describe("root layout metadata", () => {
     expect(globals).toContain("--layer-consent: 60;");
     expect(cssRule(globals, ".consent-preferences {")).toContain("z-index: var(--layer-consent);");
     expect(globals).toMatch(/body:has\(\.consent-preferences\) \.customer-chat-root\s*\{[^}]*--customer-chat-bottom-offset:/);
+    expect(globals).toMatch(/body:has\(\.consent-preferences\) \.customer-chat-root\s*\{[^}]*--customer-chat-bottom-offset:\s*17rem;/);
+    expect(globals).toMatch(/body:has\(\.consent-preferences__options\) \.customer-chat-root\s*\{[^}]*--customer-chat-bottom-offset:\s*28rem;/);
     const trigger = cssRule(globals, ".site-footer__cookie-trigger {");
     expect(trigger).toContain("min-height: 44px;");
     expect(trigger).not.toContain("position: fixed;");
