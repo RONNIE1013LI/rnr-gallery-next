@@ -12,6 +12,7 @@ import {
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import { buildPublicMetadata } from "@/server/seo/metadata";
 import {
+  getProductPagePresentation,
   ProductPageContent,
   resolveProductPageSearchSelection,
   resolveRequestedSizeKey,
@@ -30,9 +31,10 @@ export async function generateMetadata({ params }: ProductPageProps): Promise<Me
       robots: { index: false, follow: false },
     };
   }
+  const presentation = getProductPagePresentation(product);
   return buildPublicMetadata({
-    title: `${product.title} Australia`,
-    description: `${product.summary} Fixed Australian pricing in AUD.`,
+    title: `${presentation.title} Australia`,
+    description: `${presentation.summary} Fixed Australian pricing in AUD.`,
     path: `/au/products/${product.slug}`,
     image: product.image.src,
     imageAlt: product.image.alt,

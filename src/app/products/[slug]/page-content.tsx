@@ -40,6 +40,34 @@ export type ProductPageProps = {
 export const dynamicParams = false;
 export const dynamic = "force-dynamic";
 
+type ProductPagePresentation = Readonly<{
+  title: string;
+  summary: string;
+  eyebrow: string;
+}>;
+
+export function getProductPagePresentation(product: Product): ProductPagePresentation {
+  if (product.key === "custom-themed-wall-banner") {
+    return {
+      title: "Custom Birthday & Event Wall Banner",
+      summary: "Create a personalised birthday banner from your photos, names and wording, with custom artwork for parties, milestones and other celebrations.",
+      eyebrow: "Birthday banners",
+    };
+  }
+  if (product.key === "digital-oil-painting-banner") {
+    return {
+      title: "Custom Memorial & Tribute Banner",
+      summary: "A personalised memorial or funeral banner created from your photos and remembrance wording, with custom artwork or a painterly portrait style for a celebration of life.",
+      eyebrow: "Memorial banners",
+    };
+  }
+  return {
+    title: product.title,
+    summary: product.summary,
+    eyebrow: product.category,
+  };
+}
+
 export function generateStaticParams() {
   return products.map((product) => ({ slug: product.slug }));
 }
@@ -47,10 +75,11 @@ export function generateStaticParams() {
 export async function generateMetadata({ params }: ProductPageProps): Promise<Metadata> {
   const { registry } = await getSafePublicProductRegistry();
   const product = getRegistryProductBySlug(registry, (await params).slug);
+  const presentation = product ? getProductPagePresentation(product) : undefined;
   return product
     ? buildPublicMetadata({
-        title: product.title,
-        description: product.summary,
+        title: presentation!.title,
+        description: presentation!.summary,
         path: `/products/${product.slug}`,
         image: product.image.src,
         imageAlt: product.image.alt,
@@ -80,6 +109,7 @@ export function ProductPageContent({
   selectedSizeKey?: string;
   sizeLabels?: readonly string[];
 }>) {
+  const presentation = getProductPagePresentation(product);
   const marketPrefix = market === "AU" ? "/au" : "";
   const configureParams = new URLSearchParams();
   if (selection) configureParams.set("design", selection.id);
@@ -121,8 +151,8 @@ export function ProductPageContent({
       <StructuredData id="rnr-product-data" data={{
         "@context": "https://schema.org",
         "@type": "Product",
-        name: product.title,
-        description: product.summary,
+        name: presentation.title,
+        description: presentation.summary,
         image: [imageUrl],
         brand: { "@type": "Brand", name: "R&R Gallery" },
         offers: {
@@ -137,10 +167,27 @@ export function ProductPageContent({
       <StructuredData id="rnr-product-breadcrumbs" data={buildBreadcrumbData([
         { name: "Home", path: marketPrefix || "/" },
         { name: "Shop", path: market === "AU" ? "/au" : "/shop" },
-        { name: product.title, path: productPath },
+        { name: presentation.title, path: productPath },
       ])} />
       <div className={styles.productDetailInner}>
-        <div className={styles.productDetailMedia}>
+        <div className={styles.productDetailCopy} data-product-summary>
+          <p className={styles.eyebrow}>{presentation.eyebrow}</p>
+          <h1>{presentation.title}</h1>
+          {selection && (
+            <div className={styles.selectedDesignNote}>
+              <strong>Selected design inspiration</strong>
+              <span>{selection.title}</span>
+            </div>
+          )}
+          <p className={styles.productDetailLead}>{presentation.summary}</p>
+          <p className={styles.productDetailPrice}>
+            From {formatMarketMoney(displayPrice, currency)}{taxLabel}
+          </p>
+          <Link className={styles.primaryButton} href={configureHref}>
+            Start Your Design
+          </Link>
+        </div>
+        <div className={styles.productDetailMedia} data-product-media>
           <Image
             src={selection?.imageUrl ?? product.image.src}
             alt={selection?.altText ?? product.image.alt}
@@ -150,19 +197,7 @@ export function ProductPageContent({
             sizes="(max-width: 820px) 100vw, 58vw"
           />
         </div>
-        <div className={styles.productDetailCopy}>
-          <p className={styles.eyebrow}>{product.category}</p>
-          <h1>{product.title}</h1>
-          {selection && (
-            <div className={styles.selectedDesignNote}>
-              <strong>Selected design inspiration</strong>
-              <span>{selection.title}</span>
-            </div>
-          )}
-          <p className={styles.productDetailLead}>{product.summary}</p>
-          <p className={styles.productDetailPrice}>
-            From {formatMarketMoney(displayPrice, currency)}{taxLabel}
-          </p>
+        <div className={styles.productDetailDetails} data-product-details>
           <section className={styles.productPurchaseDetails} aria-label="Product details">
             <p className={styles.productAvailability}>In stock</p>
             <h2>Available sizes</h2>
@@ -187,9 +222,6 @@ export function ProductPageContent({
             <li>Upload now or provide your source photos after ordering</li>
             <li>Review a draft before production begins</li>
           </ul>
-          <Link className={styles.primaryButton} href={configureHref}>
-            Start Your Design
-          </Link>
         </div>
       </div>
     </main>

@@ -7,8 +7,13 @@ import {
 } from "@/domain/catalogue/product-registry";
 import { deliveryCopy } from "@/domain/content/delivery-copy";
 import { getProductBySlug } from "@/domain/catalogue/products";
-import AustraliaProductPage from "@/app/au/products/[slug]/page";
-import ProductPage, { ProductPageContent } from "./page-content";
+import AustraliaProductPage, {
+  generateMetadata as generateAustraliaProductMetadata,
+} from "@/app/au/products/[slug]/page";
+import ProductPage, {
+  generateMetadata as generateNewZealandProductMetadata,
+  ProductPageContent,
+} from "./page-content";
 
 const state = vi.hoisted(() => ({
   registry: undefined as unknown,
@@ -266,6 +271,86 @@ describe("ProductPageContent", () => {
       price: "109.99",
       priceCurrency: "AUD",
       url: "https://rnrgallery.com/au/products/photo-print-canvas?size=a2",
+    });
+  });
+
+  it.each([
+    {
+      slug: "custom-themed-wall-banner",
+      heading: "Custom Birthday & Event Wall Banner",
+      summary: /personalised birthday banner.*photos/i,
+    },
+    {
+      slug: "digital-oil-painting-banner",
+      heading: "Custom Memorial & Tribute Banner",
+      summary: /memorial or funeral banner.*remembrance wording/i,
+    },
+  ])("presents $slug for its commercial search intent without changing the product route", ({
+    slug,
+    heading,
+    summary,
+  }) => {
+    const product = getProductBySlug(slug)!;
+    const { container } = render(
+      <ProductPageContent product={product} selection={null} />,
+    );
+
+    expect(screen.getByRole("heading", { level: 1, name: heading })).toBeVisible();
+    expect(screen.getByText(summary)).toBeVisible();
+    expect(screen.getByRole("link", { name: "Start Your Design" }))
+      .toHaveAttribute("href", `/products/${slug}/configure`);
+    expect(JSON.parse(
+      container.querySelector("#rnr-product-data")?.textContent ?? "{}",
+    )).toMatchObject({
+      name: heading,
+      offers: { url: `https://rnrgallery.com/products/${slug}` },
+    });
+  });
+
+  it("keeps the mobile reading order focused on product identity, action, image and details", () => {
+    const product = getProductBySlug("custom-themed-wall-banner")!;
+    const { container } = render(
+      <ProductPageContent product={product} selection={null} />,
+    );
+
+    const summary = container.querySelector("[data-product-summary]");
+    const media = container.querySelector("[data-product-media]");
+    const details = container.querySelector("[data-product-details]");
+    expect(summary).toBeTruthy();
+    expect(media).toBeTruthy();
+    expect(details).toBeTruthy();
+    expect(summary?.compareDocumentPosition(media!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(media?.compareDocumentPosition(details!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+  });
+
+  it("publishes intent-specific NZ and AU metadata with canonical market alternates", async () => {
+    state.registry = enabledAustraliaRegistry();
+    const props = {
+      params: Promise.resolve({ slug: "digital-oil-painting-banner" }),
+      searchParams: Promise.resolve({}),
+    };
+
+    await expect(generateNewZealandProductMetadata(props)).resolves.toMatchObject({
+      title: "Custom Memorial & Tribute Banner",
+      description: expect.stringMatching(/memorial or funeral banner/i),
+      alternates: {
+        canonical: "https://rnrgallery.com/products/digital-oil-painting-banner",
+        languages: {
+          "en-NZ": "https://rnrgallery.com/products/digital-oil-painting-banner",
+          "en-AU": "https://rnrgallery.com/au/products/digital-oil-painting-banner",
+        },
+      },
+    });
+    await expect(generateAustraliaProductMetadata(props)).resolves.toMatchObject({
+      title: "Custom Memorial & Tribute Banner Australia",
+      description: expect.stringMatching(/memorial or funeral banner.*AUD/i),
+      alternates: {
+        canonical: "https://rnrgallery.com/au/products/digital-oil-painting-banner",
+        languages: {
+          "en-NZ": "https://rnrgallery.com/products/digital-oil-painting-banner",
+          "en-AU": "https://rnrgallery.com/au/products/digital-oil-painting-banner",
+        },
+      },
     });
   });
 });
