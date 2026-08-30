@@ -96,6 +96,10 @@ function assertPositiveCents(value: number): void {
   }
 }
 
+function missingAuthoritativeParent(): never {
+  throw new Error("A non-historical analytics fact requires its authoritative parent");
+}
+
 function behavioralLinks(input: BehavioralLinkInput): Readonly<{
   visitorDigest: string | null;
   convertingSessionId: string | null;
@@ -125,6 +129,10 @@ export function buildWebsiteAnalyticsOrderFact(
     throw new Error("Analytics market and currency must match");
   }
   const isWebsite = input.source === "website";
+  const historical = input.historical === true;
+  if (!historical && ((isWebsite && !input.orderId) || (!isWebsite && !input.productionJobId))) {
+    missingAuthoritativeParent();
+  }
   const links = isWebsite
     ? behavioralLinks({
         consentLinked: input.consentLinked === true,
@@ -146,7 +154,7 @@ export function buildWebsiteAnalyticsOrderFact(
     currency: input.currency,
     orderedAmountInclGstCents: input.orderedAmountInclGstCents,
     ...links,
-    historical: input.historical === true,
+    historical,
   });
 }
 
@@ -155,6 +163,8 @@ export function buildWebsiteAnalyticsInquiryFact(
 ): WebsiteAnalyticsConversionFact {
   assertSourceId(input.sourceId);
   assertOccurredAt(input.occurredAt);
+  const historical = input.historical === true;
+  if (!historical && !input.conversationId) missingAuthoritativeParent();
   return Object.freeze({
     conversionType: "inquiry",
     sourceType: "customer_service_conversation",
@@ -169,7 +179,7 @@ export function buildWebsiteAnalyticsInquiryFact(
     currency: null,
     orderedAmountInclGstCents: null,
     ...behavioralLinks(input),
-    historical: input.historical === true,
+    historical,
   });
 }
 
@@ -179,6 +189,13 @@ export function buildWebsiteAnalyticsFinancialEvent(
   assertSourceId(input.sourceId);
   assertOccurredAt(input.occurredAt);
   assertPositiveCents(input.amountCents);
+  const historical = input.historical === true;
+  const isManualUpdate = input.sourceType === "manual_payment_update";
+  if (!historical && (isManualUpdate
+    ? !input.productionJobId || Boolean(input.orderId)
+    : !input.orderId || Boolean(input.productionJobId))) {
+    missingAuthoritativeParent();
+  }
   return Object.freeze({
     conversionId: input.conversionId ?? null,
     orderId: input.orderId ?? null,
@@ -190,6 +207,6 @@ export function buildWebsiteAnalyticsFinancialEvent(
     currency: input.currency,
     occurredAt: input.occurredAt,
     localDate: websiteAnalyticsLocalDate(input.occurredAt),
-    historical: input.historical === true,
+    historical,
   });
 }

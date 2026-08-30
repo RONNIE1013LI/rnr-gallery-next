@@ -102,7 +102,9 @@ describe("website analytics fact builders", () => {
   });
 
   it("builds immutable positive financial facts without deriving or combining currency", () => {
+    const orderId = randomUUID();
     expect(buildWebsiteAnalyticsFinancialEvent({
+      orderId,
       eventType: "refund",
       sourceType: "payment_ledger_entry",
       sourceId: "ledger-1",
@@ -111,7 +113,7 @@ describe("website analytics fact builders", () => {
       occurredAt: new Date("2026-08-30T12:30:00.000Z"),
     })).toEqual({
       conversionId: null,
-      orderId: null,
+      orderId,
       productionJobId: null,
       eventType: "refund",
       sourceType: "payment_ledger_entry",
@@ -122,6 +124,62 @@ describe("website analytics fact builders", () => {
       localDate: "2026-08-31",
       historical: false,
     });
+  });
+
+  it.each([
+    ["website order", () => buildWebsiteAnalyticsOrderFact({
+      source: "website",
+      sourceId: "current-order",
+      occurredAt: new Date("2026-08-30T00:00:00.000Z"),
+      market: "NZ",
+      currency: "NZD",
+      orderedAmountInclGstCents: 10_000,
+      consentLinked: false,
+    })],
+    ["manual order", () => buildWebsiteAnalyticsOrderFact({
+      source: "manual",
+      sourceId: "current-job",
+      occurredAt: new Date("2026-08-30T00:00:00.000Z"),
+      market: "NZ",
+      currency: "NZD",
+      orderedAmountInclGstCents: 10_000,
+    })],
+    ["inquiry", () => buildWebsiteAnalyticsInquiryFact({
+      sourceId: "current-conversation",
+      occurredAt: new Date("2026-08-30T00:00:00.000Z"),
+      consentLinked: false,
+    })],
+    ["website financial event", () => buildWebsiteAnalyticsFinancialEvent({
+      eventType: "receipt",
+      sourceType: "payment_attempt",
+      sourceId: "current-attempt",
+      amountCents: 10_000,
+      currency: "NZD",
+      occurredAt: new Date("2026-08-30T00:00:00.000Z"),
+    })],
+    ["manual financial event", () => buildWebsiteAnalyticsFinancialEvent({
+      orderId: randomUUID(),
+      eventType: "receipt",
+      sourceType: "manual_payment_update",
+      sourceId: "current-manual-update",
+      amountCents: 1_000,
+      currency: "NZD",
+      occurredAt: new Date("2026-08-30T00:00:00.000Z"),
+    })],
+  ])("rejects a non-historical %s without its authoritative parent", (_label, build) => {
+    expect(build).toThrow(/authoritative parent/i);
+  });
+
+  it("allows null parents only for historical conversion and financial facts", () => {
+    expect(buildWebsiteAnalyticsFinancialEvent({
+      eventType: "refund",
+      sourceType: "payment_provider_event",
+      sourceId: "historical-refund",
+      amountCents: 1_500,
+      currency: "AUD",
+      occurredAt: new Date("2020-01-01T00:00:00.000Z"),
+      historical: true,
+    })).toMatchObject({ orderId: null, productionJobId: null, historical: true });
   });
 
   it("rejects invalid order money and invalid financial amounts before persistence", () => {

@@ -188,14 +188,12 @@ export function createWebsiteAnalyticsV2Repository(
       }
       const [existing] = await executor.select({
         id: websiteAnalyticsConversions.id,
-        localDate: websiteAnalyticsConversions.localDate,
       }).from(websiteAnalyticsConversions).where(and(
         eq(websiteAnalyticsConversions.conversionType, fact.conversionType),
         eq(websiteAnalyticsConversions.sourceType, fact.sourceType),
         eq(websiteAnalyticsConversions.sourceId, fact.sourceId),
       )).limit(1);
       if (!existing) throw new Error("Analytics conversion conflict could not be resolved");
-      await markDirtyDate(existing.localDate, executor);
       return Object.freeze({ created: false, factId: existing.id });
     });
   }
@@ -237,14 +235,12 @@ export function createWebsiteAnalyticsV2Repository(
       }
       const [existing] = await executor.select({
         id: websiteAnalyticsFinancialEvents.id,
-        localDate: websiteAnalyticsFinancialEvents.localDate,
       }).from(websiteAnalyticsFinancialEvents).where(and(
         eq(websiteAnalyticsFinancialEvents.sourceType, fact.sourceType),
         eq(websiteAnalyticsFinancialEvents.sourceId, fact.sourceId),
         eq(websiteAnalyticsFinancialEvents.eventType, fact.eventType),
       )).limit(1);
       if (!existing) throw new Error("Analytics financial event conflict could not be resolved");
-      await markDirtyDate(existing.localDate, executor);
       return Object.freeze({ created: false, eventId: existing.id });
     });
   }
