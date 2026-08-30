@@ -111,6 +111,31 @@ describe("Admin Website Analytics V2 order drill-down route", () => {
     await expect(response.json()).resolves.toEqual(safeResult);
   });
 
+  it("allows only a full Admin to include internal orders", async () => {
+    const staffList = vi.fn();
+    const staff = createAdminAnalyticsOrdersRoute(dependencies({ listOrders: staffList }));
+    expect((await staff.GET(request("includeInternal=true", {
+      origin,
+      fetchSite: "same-origin",
+    }))).status).toBe(403);
+    expect(staffList).not.toHaveBeenCalled();
+
+    const adminList = vi.fn().mockResolvedValue(safeResult);
+    const admin = createAdminAnalyticsOrdersRoute(dependencies({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: { id: "admin-1" },
+        adminRole: "admin",
+        adminPermissions: ["view_analytics"],
+      }),
+      listOrders: adminList,
+    }));
+    expect((await admin.GET(request("includeInternal=true", {
+      origin,
+      fetchSite: "same-origin",
+    }))).status).toBe(200);
+    expect(adminList).toHaveBeenCalledWith(expect.objectContaining({ includeInternal: true }));
+  });
+
   it("rejects cross-origin, invalid and disabled reads without querying", async () => {
     const listOrders = vi.fn();
     const crossOriginRoute = createAdminAnalyticsOrdersRoute(dependencies({ listOrders }));

@@ -38,6 +38,7 @@ const data: WebsiteAnalyticsV2DashboardData = {
     granularity: "day",
     resolvedGranularity: "day",
     compare: false,
+    includeInternal: false,
     canonicalQuery: "preset=custom",
   },
   kpis: {

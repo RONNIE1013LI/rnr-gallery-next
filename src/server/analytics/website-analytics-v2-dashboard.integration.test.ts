@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { and, eq, inArray, sql } from "drizzle-orm";
+import { and, asc, eq, inArray, sql } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -37,7 +37,8 @@ const priorDate = "2398-01-14";
 const currentDate = "2398-01-15";
 const preTrackingDate = "2397-12-01";
 const emptyDate = "2398-02-01";
-const dates = [priorDate, currentDate, emptyDate];
+const internalDate = "2398-02-03";
+const dates = [priorDate, currentDate, emptyDate, internalDate];
 const now = new Date("2398-01-15T01:00:00.000Z");
 const sessionIds: string[] = [];
 const checkoutSessionIds: string[] = [];
@@ -406,6 +407,193 @@ function money(result: Awaited<ReturnType<typeof dashboard.load>>, currency: "NZ
 }
 
 describe("website analytics V2 dashboard", () => {
+  it("excludes internal traffic and conversions by default and restores them for Admin queries", async () => {
+    const repository = createWebsiteAnalyticsV2Repository(database);
+    const reconciliation = createWebsiteAnalyticsV2Reconciliation(database);
+    const externalVisitor = digest(`${prefix}internal-filter:external`);
+    const internalVisitor = digest(`${prefix}internal-filter:internal`);
+    const externalSessionId = randomUUID();
+    const internalSessionId = randomUUID();
+    sessionIds.push(externalSessionId, internalSessionId);
+    await database.insert(websiteAnalyticsSessions).values([
+      {
+        id: externalSessionId,
+        visitorDigest: externalVisitor,
+        startedAt: new Date("2398-02-03T01:00:00.000Z"),
+        localDate: internalDate,
+        channel: "google_ads",
+        source: "google",
+        medium: "cpc",
+        utmCampaign: `${prefix}external-campaign`,
+        isInternal: false,
+      },
+      {
+        id: internalSessionId,
+        visitorDigest: internalVisitor,
+        startedAt: new Date("2398-02-03T02:00:00.000Z"),
+        localDate: internalDate,
+        channel: "meta_ads",
+        source: "facebook",
+        medium: "paid_social",
+        utmCampaign: `${prefix}internal-campaign`,
+        isInternal: true,
+      },
+    ]);
+    await database.execute(sql`
+      insert into website_analytics_pageviews
+        (id, session_id, occurred_at, local_date, pathname)
+      values
+        (${randomUUID()}::uuid, ${externalSessionId}::uuid,
+          ${new Date("2398-02-03T01:01:00.000Z")}, ${internalDate}::date, '/external'),
+        (${randomUUID()}::uuid, ${internalSessionId}::uuid,
+          ${new Date("2398-02-03T02:01:00.000Z")}, ${internalDate}::date, '/internal')
+    `);
+    const externalOrderParent = await createOrderParent(10_000);
+    await repository.recordOrder({
+      source: "website",
+      sourceId: externalOrderParent.id,
+      orderId: externalOrderParent.id,
+      occurredAt: new Date("2398-02-03T04:00:00.000Z"),
+      market: "NZ",
+      currency: "NZD",
+      orderedAmountInclGstCents: 10_000,
+      consentLinked: true,
+      visitorDigest: externalVisitor,
+      convertingSessionId: externalSessionId,
+    });
+    const internalOrderParent = await createOrderParent(20_000);
+    await repository.recordOrder({
+      source: "website",
+      sourceId: internalOrderParent.id,
+      orderId: internalOrderParent.id,
+      occurredAt: new Date("2398-02-03T04:01:00.000Z"),
+      market: "NZ",
+      currency: "NZD",
+      orderedAmountInclGstCents: 20_000,
+      consentLinked: true,
+      visitorDigest: internalVisitor,
+      convertingSessionId: internalSessionId,
+    });
+    await reconciliation.rebuildDirtyDate(internalDate);
+
+    const internalNow = new Date("2398-02-04T01:00:00.000Z");
+    const base = `preset=custom&from=${internalDate}&to=${internalDate}&scope=website`;
+    const externalOnlyQuery = parseWebsiteAnalyticsV2Query(new URLSearchParams(base), {
+      now: internalNow,
+    });
+    const includeInternalQuery = parseWebsiteAnalyticsV2Query(
+      new URLSearchParams(`${base}&includeInternal=true`),
+      { now: internalNow },
+    );
+    const [externalOnly, withInternal, externalOrders, allOrders] = await Promise.all([
+      dashboard.load(externalOnlyQuery, internalNow),
+      dashboard.load(includeInternalQuery, internalNow),
+      dashboard.listOrders(externalOnlyQuery),
+      dashboard.listOrders(includeInternalQuery),
+    ]);
+
+    expect(externalOnly.kpis).toMatchObject({
+      visitors: 1, sessions: 1, pageViews: 1, inquiries: 0, orders: 1,
+    });
+    expect(money(externalOnly, "NZD")?.orderedRevenueCents).toBe(10_000);
+    expect(externalOnly.channels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ channel: "google_ads", sessions: 1, pageViews: 1 }),
+    ]));
+    expect(externalOnly.channels).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ channel: "meta_ads" }),
+    ]));
+    expect(externalOnly.payments).toEqual([{ status: "unpaid", orders: 1 }]);
+    expect(externalOrders.total).toBe(1);
+
+    expect(withInternal.kpis).toMatchObject({
+      visitors: 2, sessions: 2, pageViews: 2, inquiries: 0, orders: 2,
+    });
+    expect(money(withInternal, "NZD")?.orderedRevenueCents).toBe(30_000);
+    expect(withInternal.channels).toEqual(expect.arrayContaining([
+      expect.objectContaining({ channel: "google_ads", sessions: 1, pageViews: 1 }),
+      expect.objectContaining({ channel: "meta_ads", sessions: 1, pageViews: 1 }),
+    ]));
+    expect(withInternal.payments).toEqual([{ status: "unpaid", orders: 2 }]);
+    expect(allOrders.total).toBe(2);
+  });
+
+  it("normalizes every legacy first-party referral in Exact Traffic without folding external referrals", async () => {
+    const localDate = "2398-02-02";
+    const ownedHosts = [
+      "rnrgallery.com",
+      "www.rnrgallery.com",
+      "rrgallery.co.nz",
+      "www.rrgallery.co.nz",
+    ];
+    const insertedSessions: string[] = [];
+    try {
+      for (const [index, source] of [...ownedHosts, "partner.example", "facebook.com"].entries()) {
+        const id = randomUUID();
+        insertedSessions.push(id);
+        await database.insert(websiteAnalyticsSessions).values({
+          id,
+          visitorDigest: digest(`${prefix}self-ref:${source}`),
+          startedAt: new Date(`2398-02-01T0${index}:00:00.000Z`),
+          localDate,
+          channel: "other",
+          source,
+          medium: "referral",
+          utmCampaign: null,
+          clickIdType: null,
+          countryCode: "NZ",
+        });
+        await database.execute(sql`
+          insert into website_analytics_pageviews
+            (id, session_id, occurred_at, local_date, pathname)
+          values (${randomUUID()}::uuid, ${id}::uuid,
+            ${new Date(`2398-02-01T0${index}:01:00.000Z`)}, ${localDate}::date, '/')
+        `);
+      }
+
+      const result = await dashboard.load(query(
+        `preset=custom&from=${localDate}&to=${localDate}&scope=website`,
+      ), new Date("2398-02-02T01:00:00.000Z"));
+      expect(result.channels).toEqual(expect.arrayContaining([
+        expect.objectContaining({ channel: "direct", visitors: 4, sessions: 4, pageViews: 4 }),
+        expect.objectContaining({ channel: "other", visitors: 2, sessions: 2, pageViews: 2 }),
+      ]));
+      expect(result.campaigns).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          channel: "direct", source: "direct", medium: "(not set)",
+          campaign: "(not set)", visitors: 4, sessions: 4, pageViews: 4,
+        }),
+        expect.objectContaining({
+          channel: "other", source: "partner.example", medium: "referral",
+          visitors: 1, sessions: 1, pageViews: 1,
+        }),
+        expect.objectContaining({
+          channel: "other", source: "facebook.com", medium: "referral",
+          visitors: 1, sessions: 1, pageViews: 1,
+        }),
+      ]));
+      expect(result.campaigns).not.toEqual(expect.arrayContaining(ownedHosts.map((source) =>
+        expect.objectContaining({ source }))));
+      const rawOwned = await database.select({
+        source: websiteAnalyticsSessions.source,
+        medium: websiteAnalyticsSessions.medium,
+        channel: websiteAnalyticsSessions.channel,
+      }).from(websiteAnalyticsSessions).where(inArray(
+        websiteAnalyticsSessions.source,
+        ownedHosts,
+      )).orderBy(asc(websiteAnalyticsSessions.source));
+      expect(rawOwned).toEqual([...ownedHosts].sort().map((source) => ({
+        source,
+        medium: "referral",
+        channel: "other",
+      })));
+    } finally {
+      if (insertedSessions.length > 0) {
+        await database.delete(websiteAnalyticsSessions)
+          .where(inArray(websiteAnalyticsSessions.id, insertedSessions));
+      }
+    }
+  });
+
   it("uses the versioned SQL payment-status adapter for every edge sequence", async () => {
     const expression = analyticsPaymentStatusSql({
       orderedAmountCents: sql`cases.ordered`,

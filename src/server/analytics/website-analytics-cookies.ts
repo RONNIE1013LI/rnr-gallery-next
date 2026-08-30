@@ -6,11 +6,14 @@ import {
 
 export const WEBSITE_ANALYTICS_VISITOR_COOKIE = "ra_vid_v1";
 export const WEBSITE_ANALYTICS_SESSION_COOKIE = "ra_sid_v1";
+export const WEBSITE_ANALYTICS_INTERNAL_COOKIE = "ra_internal_v1";
 export const WEBSITE_ANALYTICS_SESSION_MAX_AGE_SECONDS = 30 * 60;
 export const WEBSITE_ANALYTICS_VISITOR_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
+export const WEBSITE_ANALYTICS_INTERNAL_MAX_AGE_SECONDS = 365 * 24 * 60 * 60;
 
 const VERSION = "v1";
 const CLOCK_SKEW_MS = 5 * 60_000;
+type CookiePurpose = "visitor" | "session" | "internal";
 
 type WebsiteAnalyticsIdentity = Readonly<{
   visitorId: string;
@@ -23,8 +26,8 @@ function signature(value: string, secret: string): string {
   return createHmac("sha256", secret).update(value).digest("base64url");
 }
 
-function signedValue(id: string, at: Date, secret: string): string {
-  const payload = Buffer.from(JSON.stringify({ id, at: at.getTime() })).toString("base64url");
+function signedValue(id: string, at: Date, secret: string, purpose: CookiePurpose): string {
+  const payload = Buffer.from(JSON.stringify({ id, at: at.getTime(), purpose })).toString("base64url");
   const unsigned = `${VERSION}.${payload}`;
   return `${unsigned}.${signature(unsigned, secret)}`;
 }
@@ -34,7 +37,12 @@ function isUuid(value: unknown): value is string {
     && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
-function parseSignedValue(value: string | undefined, secret: string): Readonly<{
+function parseSignedValue(
+  value: string | undefined,
+  secret: string,
+  expectedPurpose: CookiePurpose,
+  allowLegacy = false,
+): Readonly<{
   id: string;
   at: Date;
 }> | null {
@@ -50,7 +58,11 @@ function parseSignedValue(value: string | undefined, secret: string): Readonly<{
     const parsed = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8")) as unknown;
     if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
     const record = parsed as Record<string, unknown>;
-    if (Object.keys(record).sort().join(",") !== "at,id"
+    const keys = Object.keys(record).sort().join(",");
+    const legacy = keys === "at,id";
+    if ((!legacy && keys !== "at,id,purpose")
+      || (legacy && !allowLegacy)
+      || (!legacy && record.purpose !== expectedPurpose)
       || !isUuid(record.id)
       || typeof record.at !== "number"
       || !Number.isSafeInteger(record.at)) return null;
@@ -71,8 +83,8 @@ export function createWebsiteAnalyticsIdentity(
   return {
     visitorId,
     sessionId,
-    visitorCookie: signedValue(visitorId, now, secret),
-    sessionCookie: signedValue(sessionId, now, secret),
+    visitorCookie: signedValue(visitorId, now, secret, "visitor"),
+    sessionCookie: signedValue(sessionId, now, secret, "session"),
   };
 }
 
@@ -82,17 +94,32 @@ export function renewWebsiteAnalyticsSession(
   now = new Date(),
 ): string {
   if (!isUuid(sessionId)) throw new Error("Invalid analytics session ID.");
-  return signedValue(sessionId, now, secret);
+  return signedValue(sessionId, now, secret, "session");
 }
 
 export function createWebsiteAnalyticsVisitor(secret: string, now = new Date()) {
   const visitorId = randomUUID();
-  return { visitorId, visitorCookie: signedValue(visitorId, now, secret) };
+  return { visitorId, visitorCookie: signedValue(visitorId, now, secret, "visitor") };
 }
 
 export function createWebsiteAnalyticsSession(secret: string, now = new Date()) {
   const sessionId = randomUUID();
-  return { sessionId, sessionCookie: signedValue(sessionId, now, secret) };
+  return { sessionId, sessionCookie: signedValue(sessionId, now, secret, "session") };
+}
+
+export function createWebsiteAnalyticsInternalDevice(secret: string, now = new Date()): string {
+  return signedValue(randomUUID(), now, secret, "internal");
+}
+
+export function parseWebsiteAnalyticsInternalDevice(
+  value: string | undefined,
+  secret: string,
+  now = new Date(),
+): boolean {
+  const parsed = parseSignedValue(value, secret, "internal");
+  if (!parsed) return false;
+  const age = now.getTime() - parsed.at.getTime();
+  return age >= -CLOCK_SKEW_MS && age <= WEBSITE_ANALYTICS_INTERNAL_MAX_AGE_SECONDS * 1_000;
 }
 
 export function parseWebsiteAnalyticsVisitor(
@@ -100,7 +127,7 @@ export function parseWebsiteAnalyticsVisitor(
   secret: string,
   now = new Date(),
 ): Readonly<{ visitorId: string; issuedAt: Date }> | null {
-  const parsed = parseSignedValue(value, secret);
+  const parsed = parseSignedValue(value, secret, "visitor", true);
   if (!parsed) return null;
   const age = now.getTime() - parsed.at.getTime();
   if (age < -CLOCK_SKEW_MS || age > WEBSITE_ANALYTICS_VISITOR_MAX_AGE_SECONDS * 1_000) return null;
@@ -112,7 +139,7 @@ export function parseWebsiteAnalyticsSession(
   secret: string,
   now = new Date(),
 ): Readonly<{ sessionId: string; lastActivityAt: Date }> | null {
-  const parsed = parseSignedValue(value, secret);
+  const parsed = parseSignedValue(value, secret, "session", true);
   if (!parsed) return null;
   const age = now.getTime() - parsed.at.getTime();
   if (age < -CLOCK_SKEW_MS || age > WEBSITE_ANALYTICS_SESSION_MAX_AGE_SECONDS * 1_000) return null;
@@ -158,6 +185,23 @@ export function websiteAnalyticsCookieHeaders(
 
 export function clearWebsiteAnalyticsCookieHeaders(environment: string | undefined): readonly string[] {
   return [
+    cookieHeader(WEBSITE_ANALYTICS_VISITOR_COOKIE, "", 0, environment),
+    cookieHeader(WEBSITE_ANALYTICS_SESSION_COOKIE, "", 0, environment),
+  ];
+}
+
+export function websiteAnalyticsInternalDeviceCookieHeaders(
+  value: string,
+  enabled: boolean,
+  environment: string | undefined,
+): readonly string[] {
+  return [
+    cookieHeader(
+      WEBSITE_ANALYTICS_INTERNAL_COOKIE,
+      enabled ? value : "",
+      enabled ? WEBSITE_ANALYTICS_INTERNAL_MAX_AGE_SECONDS : 0,
+      environment,
+    ),
     cookieHeader(WEBSITE_ANALYTICS_VISITOR_COOKIE, "", 0, environment),
     cookieHeader(WEBSITE_ANALYTICS_SESSION_COOKIE, "", 0, environment),
   ];

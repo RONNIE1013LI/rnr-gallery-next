@@ -15,6 +15,7 @@ export type WebsiteAnalyticsRecord = Readonly<{
   pathname: string;
   attribution: WebsiteAttribution;
   countryCode: string | null;
+  isInternal?: boolean;
 }>;
 
 type Database = ReturnType<typeof getDatabase>;
@@ -34,6 +35,7 @@ export function createWebsiteAnalyticsRepository(database: Database) {
           utmCampaign: input.attribution.utmCampaign,
           clickIdType: input.attribution.clickIdType,
           countryCode: input.countryCode,
+          isInternal: input.isInternal === true,
         }).onConflictDoNothing({ target: websiteAnalyticsSessions.id })
           .returning({ id: websiteAnalyticsSessions.id });
 

@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { WebsiteAnalyticsV2Charts, formatAnalyticsMoney } from "./website-analytics-v2-charts";
 import { WebsiteAnalyticsV2Filters } from "./website-analytics-v2-filters";
 import { WebsiteAnalyticsV2Orders } from "./website-analytics-v2-orders";
+import { WebsiteAnalyticsInternalDevice } from "./website-analytics-internal-device";
 import adminStyles from "./admin.module.css";
 import styles from "./website-analytics-v2.module.css";
 
@@ -54,6 +55,7 @@ export type WebsiteAnalyticsV2DashboardData = Readonly<{
     granularity: "auto" | "day" | "week" | "month";
     resolvedGranularity: "day" | "week" | "month";
     compare: boolean;
+    includeInternal: boolean;
     canonicalQuery: string;
   }>;
   kpis: WebsiteAnalyticsV2Metrics;
@@ -229,10 +231,14 @@ export function WebsiteAnalyticsV2Dashboard({
   initialData,
   initialOrders,
   initialQueryString,
+  canIncludeInternal = false,
+  initialInternal = false,
 }: Readonly<{
   initialData: WebsiteAnalyticsV2DashboardData;
   initialOrders: WebsiteAnalyticsV2OrdersData;
   initialQueryString: string;
+  canIncludeInternal?: boolean;
+  initialInternal?: boolean;
 }>) {
   const pathname = usePathname();
   const router = useRouter();
@@ -342,7 +348,12 @@ export function WebsiteAnalyticsV2Dashboard({
       </div>
     </header>
 
-    <WebsiteAnalyticsV2Filters filters={data.filters} loading={loading} onApply={(query) => {
+    {canIncludeInternal
+      ? <WebsiteAnalyticsInternalDevice initialInternal={initialInternal} />
+      : null}
+
+    <WebsiteAnalyticsV2Filters canIncludeInternal={canIncludeInternal} filters={data.filters}
+      loading={loading} onApply={(query) => {
       void loadQuery(query, true);
     }} />
 

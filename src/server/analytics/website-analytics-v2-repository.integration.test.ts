@@ -142,6 +142,7 @@ async function insertSession(input: Readonly<{
   source?: string | null;
   medium?: string | null;
   campaign?: string | null;
+  isInternal?: boolean;
 }>) {
   const id = input.id ?? randomUUID();
   sessionIds.push(id);
@@ -154,6 +155,7 @@ async function insertSession(input: Readonly<{
     source: input.source ?? null,
     medium: input.medium ?? null,
     utmCampaign: input.campaign ?? null,
+    isInternal: input.isInternal === true,
   });
   return id;
 }
@@ -189,6 +191,67 @@ afterAll(async () => {
 });
 
 describe("website analytics V2 repository", () => {
+  it("snapshots internal traffic from the trusted converting session", async () => {
+    const repository = createWebsiteAnalyticsV2Repository(database);
+    const externalVisitor = digest(sourceId("external-conversion-visitor"));
+    const internalVisitor = digest(sourceId("internal-conversion-visitor"));
+    const externalSessionId = await insertSession({
+      visitorDigest: externalVisitor,
+      startedAt: new Date("2097-04-02T00:00:00.000Z"),
+      channel: "direct",
+    });
+    const internalSessionId = await insertSession({
+      visitorDigest: internalVisitor,
+      startedAt: new Date("2097-04-02T01:00:00.000Z"),
+      channel: "direct",
+      isInternal: true,
+    });
+
+    const externalConversationId = await createConversation();
+    const internalConversationId = await createConversation();
+    const markerOnlyConversationId = await createConversation();
+    await repository.recordInquiry({
+      sourceId: sourceId("external-conversion"),
+      conversationId: externalConversationId,
+      occurredAt: new Date("2097-04-02T02:00:00.000Z"),
+      consentLinked: true,
+      visitorDigest: externalVisitor,
+      convertingSessionId: externalSessionId,
+    });
+    await repository.recordInquiry({
+      sourceId: sourceId("internal-conversion"),
+      conversationId: internalConversationId,
+      occurredAt: new Date("2097-04-02T02:01:00.000Z"),
+      consentLinked: true,
+      visitorDigest: internalVisitor,
+      convertingSessionId: internalSessionId,
+    });
+    await repository.recordInquiry({
+      sourceId: sourceId("internal-marker-only-conversion"),
+      conversationId: markerOnlyConversationId,
+      occurredAt: new Date("2097-04-02T02:02:00.000Z"),
+      consentLinked: false,
+      isInternal: true,
+    });
+
+    const rows = await database.select({
+      sourceId: websiteAnalyticsConversions.sourceId,
+      isInternal: websiteAnalyticsConversions.isInternal,
+    }).from(websiteAnalyticsConversions).where(inArray(
+      websiteAnalyticsConversions.sourceId,
+      [
+        sourceId("external-conversion"),
+        sourceId("internal-conversion"),
+        sourceId("internal-marker-only-conversion"),
+      ],
+    )).orderBy(asc(websiteAnalyticsConversions.sourceId));
+    expect(rows).toEqual([
+      { sourceId: sourceId("external-conversion"), isInternal: false },
+      { sourceId: sourceId("internal-conversion"), isInternal: true },
+      { sourceId: sourceId("internal-marker-only-conversion"), isInternal: true },
+    ]);
+  });
+
   it("keeps an order and its attribution snapshot immutable on a duplicate source ID", async () => {
     const repository = createWebsiteAnalyticsV2Repository(database, { attributionLookbackDays: 90 });
     const orderId = await createOrder(12_500);

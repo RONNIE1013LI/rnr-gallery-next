@@ -147,16 +147,29 @@ export function parseAdminAnalyticsRequest(request: Request, now: Date): Website
   return parseWebsiteAnalyticsV2Query(new URL(request.url).searchParams, { now });
 }
 
+export function assertInternalTrafficQueryAccess(
+  access: unknown,
+  query: WebsiteAnalyticsV2Query,
+) {
+  if (!query.includeInternal) return;
+  const role = access && typeof access === "object"
+    ? (access as Record<string, unknown>).adminRole
+    : null;
+  if (role !== "admin") throw new HttpError("Forbidden", 403);
+}
+
 export function createAdminAnalyticsRoute(dependencies?: Dependencies) {
   return Object.freeze({
     async GET(request: Request) {
       const deps = dependencies ?? defaults();
       try {
-        await deps.requirePermission("view_analytics");
+        const access = await deps.requirePermission("view_analytics");
         assertSameOriginAnalyticsRequest(request);
         if (!deps.enabled()) throw new AnalyticsDisabledError();
         const now = deps.now();
-        const result = await deps.load(parseAdminAnalyticsRequest(request, now), now);
+        const query = parseAdminAnalyticsRequest(request, now);
+        assertInternalTrafficQueryAccess(access, query);
+        const result = await deps.load(query, now);
         assertAnalyticsResponsePrivacy(result);
         return Response.json(result, { headers: analyticsNoStoreHeaders });
       } catch (error) {

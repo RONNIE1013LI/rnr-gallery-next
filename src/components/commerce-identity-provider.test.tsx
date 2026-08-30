@@ -107,7 +107,7 @@ describe("same-browser identity transitions", () => {
     expect(sessionStorage.getItem(getCheckoutDraftStorageKey("customer-a"))).toBeNull();
     expect(sessionStorage.getItem(getPaymentIntentStorageKey("customer-a"))).toBeNull();
     expect(sessionStorage.getItem(getAttributionStorageKey("customer-a"))).toBeNull();
-    expect(sessionStorage.getItem(getAttributionStorageKey(null))).not.toBeNull();
+    expect(sessionStorage.getItem(getAttributionStorageKey(null))).toBeNull();
   });
 
   it("switches A to B and back to A using only each identity's own cart", () => {
@@ -187,5 +187,57 @@ describe("same-browser identity transitions", () => {
       <CommerceIdentityProvider initialCustomerId="customer-b"><CartCount /></CommerceIdentityProvider>,
     );
     await waitFor(() => expect(screen.getByRole("link", { name: "Cart, 2 items" })).toBeInTheDocument());
+  });
+
+  it("hands Guest click IDs to the first authenticated identity without leaking to another user", async () => {
+    sessionStorage.setItem(getAttributionStorageKey(null), JSON.stringify({
+      gclid: "guest-google",
+      gbraid: "guest-app",
+      wbraid: "guest-web",
+      fbclid: "guest-meta",
+      utm_campaign: "guest-campaign",
+    }));
+    const view = render(
+      <CommerceIdentityProvider initialCustomerId={null}><CartCount /></CommerceIdentityProvider>,
+    );
+
+    view.rerender(
+      <CommerceIdentityProvider initialCustomerId="customer-a"><CartCount /></CommerceIdentityProvider>,
+    );
+    await waitFor(() => expect(sessionStorage.getItem(getAttributionStorageKey("customer-a")))
+      .not.toBeNull());
+    expect(JSON.parse(sessionStorage.getItem(getAttributionStorageKey("customer-a"))!)).toEqual({
+      gclid: "guest-google",
+      gbraid: "guest-app",
+      wbraid: "guest-web",
+      fbclid: "guest-meta",
+      utm_campaign: "guest-campaign",
+    });
+    expect(sessionStorage.getItem(getAttributionStorageKey(null))).toBeNull();
+
+    view.rerender(
+      <CommerceIdentityProvider initialCustomerId="customer-b"><CartCount /></CommerceIdentityProvider>,
+    );
+    await waitFor(() => expect(sessionStorage.getItem(getAttributionStorageKey("customer-a")))
+      .toBeNull());
+    expect(sessionStorage.getItem(getAttributionStorageKey("customer-b"))).toBeNull();
+  });
+
+  it("does not overwrite existing authenticated attribution during Guest login", async () => {
+    sessionStorage.setItem(getAttributionStorageKey(null), JSON.stringify({ fbclid: "stale-meta" }));
+    sessionStorage.setItem(getAttributionStorageKey("customer-a"), JSON.stringify({
+      gclid: "existing-google",
+    }));
+    const view = render(
+      <CommerceIdentityProvider initialCustomerId={null}><CartCount /></CommerceIdentityProvider>,
+    );
+
+    view.rerender(
+      <CommerceIdentityProvider initialCustomerId="customer-a"><CartCount /></CommerceIdentityProvider>,
+    );
+    await waitFor(() => expect(sessionStorage.getItem(getAttributionStorageKey(null))).toBeNull());
+    expect(JSON.parse(sessionStorage.getItem(getAttributionStorageKey("customer-a"))!)).toEqual({
+      gclid: "existing-google",
+    });
   });
 });

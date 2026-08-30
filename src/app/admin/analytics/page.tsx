@@ -1,12 +1,22 @@
 import Link from "next/link";
+import { cookies } from "next/headers";
+import { redirect } from "next/navigation";
 import styles from "@/components/admin/admin.module.css";
 import { WebsiteAnalyticsV2Dashboard } from "@/components/admin/website-analytics-v2-dashboard";
+import { WebsiteAnalyticsInternalDevice } from "@/components/admin/website-analytics-internal-device";
 import {
   getWebsiteAnalyticsDashboard,
   WEBSITE_ANALYTICS_PERIODS,
   type WebsiteAnalyticsPeriod,
 } from "@/server/analytics/website-analytics-dashboard";
-import { readWebsiteAnalyticsBusinessConfig } from "@/server/analytics/website-analytics-config";
+import {
+  readWebsiteAnalyticsBusinessConfig,
+  readWebsiteAnalyticsConfig,
+} from "@/server/analytics/website-analytics-config";
+import {
+  parseWebsiteAnalyticsInternalDevice,
+  WEBSITE_ANALYTICS_INTERNAL_COOKIE,
+} from "@/server/analytics/website-analytics-cookies";
 import { getWebsiteAnalyticsV2Dashboard } from "@/server/analytics/website-analytics-v2-dashboard";
 import { parseWebsiteAnalyticsV2Query } from "@/server/analytics/website-analytics-v2-query";
 import { requireAdminPage } from "@/server/auth/require-admin-page";
@@ -39,14 +49,24 @@ export const metadata = { title: "Website Analytics | R&R Gallery Admin" };
 function WebsiteAnalyticsV1({
   period,
   result,
+  canIncludeInternal,
+  includeInternal,
+  initialInternal,
 }: Readonly<{
   period: WebsiteAnalyticsPeriod;
   result: Awaited<ReturnType<ReturnType<typeof getWebsiteAnalyticsDashboard>["load"]>>;
+  canIncludeInternal: boolean;
+  includeInternal: boolean;
+  initialInternal: boolean;
 }>) {
   return <section className={styles.pageSection}>
     <header className={styles.pageHeader}>
       <div><h1>Website Analytics</h1><p>Privacy-friendly public website traffic, reported in Pacific/Auckland time.</p></div>
     </header>
+
+    {canIncludeInternal
+      ? <WebsiteAnalyticsInternalDevice initialInternal={initialInternal} />
+      : null}
 
     <nav className={styles.filterActions} aria-label="Analytics period">
       {WEBSITE_ANALYTICS_PERIODS.map((value) => <Link
@@ -55,6 +75,11 @@ function WebsiteAnalyticsV1({
         key={value}
       >{periodLabels[value]}</Link>)}
     </nav>
+    {canIncludeInternal ? <nav className={styles.filterActions} aria-label="Internal traffic filter">
+      <Link href={`/admin/analytics?period=${period}&includeInternal=${String(!includeInternal)}`}>
+        {includeInternal ? "Exclude internal traffic" : "Include internal traffic"}
+      </Link>
+    </nav> : null}
 
     <div className={styles.metricGrid}>
       <article><span>Visitors</span><strong>{result.metrics.visitors}</strong></article>
@@ -115,15 +140,29 @@ function queryString(input: Readonly<Record<string, string | string[] | undefine
 export default async function AdminAnalyticsPage({ searchParams }: Props) {
   const rawSearchParams = await searchParams;
   const period = requestedPeriod(rawSearchParams.period);
-  await requireAdminPage("/admin/analytics", "view_analytics");
+  const access = await requireAdminPage("/admin/analytics", "view_analytics");
+  const canIncludeInternal = access.adminRole === "admin";
+  const requestedIncludeInternal = rawSearchParams.includeInternal === "true";
+  if (requestedIncludeInternal && !canIncludeInternal) redirect("/admin/analytics");
+  const analyticsConfig = readWebsiteAnalyticsConfig();
+  const internalCookie = (await cookies()).get(WEBSITE_ANALYTICS_INTERNAL_COOKIE)?.value;
+  const initialInternal = Boolean(analyticsConfig.cookieSecret
+    && parseWebsiteAnalyticsInternalDevice(internalCookie, analyticsConfig.cookieSecret));
 
   if (!readWebsiteAnalyticsBusinessConfig().v2Enabled) {
-    const result = await getWebsiteAnalyticsDashboard().load(period);
-    return <WebsiteAnalyticsV1 period={period} result={result} />;
+    const result = await getWebsiteAnalyticsDashboard().load(
+      period,
+      new Date(),
+      canIncludeInternal && requestedIncludeInternal,
+    );
+    return <WebsiteAnalyticsV1 period={period} result={result}
+      canIncludeInternal={canIncludeInternal} includeInternal={requestedIncludeInternal}
+      initialInternal={initialInternal} />;
   }
 
   const now = new Date();
   const query = parseWebsiteAnalyticsV2Query(rawSearchParams, { now });
+  if (query.includeInternal && !canIncludeInternal) redirect("/admin/analytics");
   const dashboard = getWebsiteAnalyticsV2Dashboard();
   const [initialData, initialOrders] = await Promise.all([
     dashboard.load(query, now),
@@ -134,5 +173,7 @@ export default async function AdminAnalyticsPage({ searchParams }: Props) {
     initialData={initialData}
     initialOrders={initialOrders}
     initialQueryString={queryString(rawSearchParams)}
+    canIncludeInternal={canIncludeInternal}
+    initialInternal={initialInternal}
   />;
 }

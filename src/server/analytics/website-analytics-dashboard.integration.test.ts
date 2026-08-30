@@ -20,6 +20,7 @@ function record(input: Readonly<{
   countryCode: string | null;
   occurredAt: Date;
   localDate: string;
+  isInternal?: boolean;
 }>) {
   sessionIds.push(input.sessionId);
   return createWebsiteAnalyticsRepository(database!).record({
@@ -37,6 +38,7 @@ function record(input: Readonly<{
       clickIdType: input.channel === "google_ads" ? "gclid" : input.channel === "meta_ads" ? "fbclid" : null,
     },
     countryCode: input.countryCode,
+    isInternal: input.isInternal === true,
   });
 }
 
@@ -52,9 +54,11 @@ suite("website analytics dashboard queries", () => {
     const visitorB = randomUUID();
     const googleSession = randomUUID();
     const metaSession = randomUUID();
+    const internalSession = randomUUID();
     await record({ sessionId: googleSession, visitor: visitorA, eventId: randomUUID(), pathname: "/shop", channel: "google_ads", countryCode: "NZ", occurredAt: new Date("2040-08-29T01:00:00Z"), localDate: "2040-08-29" });
     await record({ sessionId: googleSession, visitor: visitorA, eventId: randomUUID(), pathname: "/products/photo-print-canvas", channel: "google_ads", countryCode: "NZ", occurredAt: new Date("2040-08-29T01:01:00Z"), localDate: "2040-08-29" });
     await record({ sessionId: metaSession, visitor: visitorB, eventId: randomUUID(), pathname: "/shop", channel: "meta_ads", countryCode: "AU", occurredAt: new Date("2040-08-29T02:00:00Z"), localDate: "2040-08-29" });
+    await record({ sessionId: internalSession, visitor: randomUUID(), eventId: randomUUID(), pathname: "/admin-test", channel: "direct", countryCode: "NZ", occurredAt: new Date("2040-08-29T03:00:00Z"), localDate: "2040-08-29", isInternal: true });
 
     const result = await createWebsiteAnalyticsDashboard(database!).load("today", new Date("2040-08-29T05:00:00Z"));
 
@@ -68,5 +72,14 @@ suite("website analytics dashboard queries", () => {
       { countryCode: "AU", visitors: 1, pageviews: 1 },
     ]));
     expect(result.topPages[0]).toEqual({ pathname: "/shop", visitors: 2, pageviews: 2 });
+
+    const withInternal = await createWebsiteAnalyticsDashboard(database!).load(
+      "today",
+      new Date("2040-08-29T05:00:00Z"),
+      true,
+    );
+    expect(withInternal.metrics).toEqual({ visitors: 3, sessions: 3, pageviews: 4 });
+    expect(withInternal.channels.find((row) => row.channel === "direct"))
+      .toEqual(expect.objectContaining({ visitors: 1, sessions: 1, pageviews: 1 }));
   });
 });

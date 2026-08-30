@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { serializeAdvertisingConsent } from "@/domain/consent/advertising-consent";
 import {
   createWebsiteAnalyticsIdentity,
+  createWebsiteAnalyticsInternalDevice,
+  WEBSITE_ANALYTICS_INTERNAL_COOKIE,
   WEBSITE_ANALYTICS_SESSION_COOKIE,
   WEBSITE_ANALYTICS_VISITOR_COOKIE,
   websiteAnalyticsVisitorDigest,
@@ -69,6 +71,7 @@ describe("website analytics v2 business recorder", () => {
       consentLinked: true,
       visitorDigest: websiteAnalyticsVisitorDigest(identity.visitorId, cookieSecret),
       convertingSessionId: identity.sessionId,
+      isInternal: false,
     });
 
     const denied = encodeURIComponent(serializeAdvertisingConsent({
@@ -81,12 +84,34 @@ describe("website analytics v2 business recorder", () => {
       `${WEBSITE_ANALYTICS_VISITOR_COOKIE}=${identity.visitorCookie}; ${WEBSITE_ANALYTICS_SESSION_COOKIE}=${identity.sessionCookie}; rnr-consent-v1=${denied}`,
       enabledConfig,
       now,
-    )).toEqual({ consentLinked: false });
+    )).toEqual({ consentLinked: false, isInternal: false });
     expect(resolveWebsiteAnalyticsBehavioralContext(
       `${WEBSITE_ANALYTICS_VISITOR_COOKIE}=forged; ${WEBSITE_ANALYTICS_SESSION_COOKIE}=${identity.sessionCookie}; rnr-consent-v1=${consent}`,
       enabledConfig,
       now,
-    )).toEqual({ consentLinked: false });
+    )).toEqual({ consentLinked: false, isInternal: false });
+  });
+
+  it("keeps the trusted internal-device marker independent of analytics consent and session linkage", () => {
+    const now = new Date("2026-08-30T01:02:03.000Z");
+    const marker = createWebsiteAnalyticsInternalDevice(cookieSecret, now);
+    const denied = encodeURIComponent(serializeAdvertisingConsent({
+      version: 1,
+      analytics: false,
+      advertising: false,
+      decidedAt: "2026-08-30T00:00:00.000Z",
+    }));
+
+    expect(resolveWebsiteAnalyticsBehavioralContext(
+      `${WEBSITE_ANALYTICS_INTERNAL_COOKIE}=${marker}; rnr-consent-v1=${denied}`,
+      enabledConfig,
+      now,
+    )).toEqual({ consentLinked: false, isInternal: true });
+    expect(resolveWebsiteAnalyticsBehavioralContext(
+      `${WEBSITE_ANALYTICS_INTERNAL_COOKIE}=forged; rnr-consent-v1=${denied}`,
+      enabledConfig,
+      now,
+    )).toEqual({ consentLinked: false, isInternal: false });
   });
 
   it("performs zero loaders or V2 repository calls when the V2 flag is false", async () => {

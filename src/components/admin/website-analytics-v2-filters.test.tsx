@@ -12,6 +12,7 @@ const canonicalQuery = [
   "attribution=last_touch",
   "granularity=auto",
   "compare=false",
+  "includeInternal=false",
   "sort=occurred_at_desc",
   "page=4",
   "pageSize=25",
@@ -28,13 +29,15 @@ const filters = {
   granularity: "auto" as const,
   resolvedGranularity: "day" as const,
   compare: false,
+  includeInternal: false,
   canonicalQuery,
 };
 
 describe("WebsiteAnalyticsV2Filters", () => {
   it("builds the complete canonical query for a same-day custom All Business filter", () => {
     const onApply = vi.fn();
-    render(<WebsiteAnalyticsV2Filters filters={filters} loading={false} onApply={onApply} />);
+    render(<WebsiteAnalyticsV2Filters canIncludeInternal filters={filters} loading={false}
+      onApply={onApply} />);
 
     fireEvent.change(screen.getByRole("combobox", { name: "Date range" }), {
       target: { value: "custom" },
@@ -57,6 +60,7 @@ describe("WebsiteAnalyticsV2Filters", () => {
       target: { value: "week" },
     });
     fireEvent.click(screen.getByRole("checkbox", { name: "Compare with previous period" }));
+    fireEvent.click(screen.getByRole("checkbox", { name: "Include internal traffic" }));
     fireEvent.click(screen.getByRole("button", { name: "Apply filters" }));
 
     expect(onApply).toHaveBeenCalledWith([
@@ -69,10 +73,17 @@ describe("WebsiteAnalyticsV2Filters", () => {
       "attribution=first_touch",
       "granularity=week",
       "compare=true",
+      "includeInternal=true",
       "sort=occurred_at_desc",
       "page=1",
       "pageSize=25",
     ].join("&"));
+  });
+
+  it("does not expose the internal-traffic control to non-Admin analytics viewers", () => {
+    render(<WebsiteAnalyticsV2Filters canIncludeInternal={false} filters={filters} loading={false}
+      onApply={vi.fn()} />);
+    expect(screen.queryByRole("checkbox", { name: "Include internal traffic" })).not.toBeInTheDocument();
   });
 
   it("resynchronizes every control when URL-backed server filters change", () => {
@@ -91,11 +102,12 @@ describe("WebsiteAnalyticsV2Filters", () => {
       granularity: "month" as const,
       resolvedGranularity: "month" as const,
       compare: true,
+      includeInternal: true,
       canonicalQuery: canonicalQuery.replace("last_30_days", "custom"),
     };
 
     view.rerender(
-      <WebsiteAnalyticsV2Filters filters={next} loading={false} onApply={vi.fn()} />,
+      <WebsiteAnalyticsV2Filters canIncludeInternal filters={next} loading={false} onApply={vi.fn()} />,
     );
 
     expect(screen.getByRole("combobox", { name: "Date range" })).toHaveValue("custom");
@@ -105,6 +117,7 @@ describe("WebsiteAnalyticsV2Filters", () => {
     expect(screen.getByRole("combobox", { name: "Market" })).toHaveValue("NZ");
     expect(screen.getByRole("combobox", { name: "Currency" })).toHaveValue("NZD");
     expect(screen.getByRole("checkbox", { name: "Compare with previous period" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Include internal traffic" })).toBeChecked();
   });
 
   it("disables submission while a replacement request is loading", () => {

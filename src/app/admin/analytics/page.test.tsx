@@ -5,6 +5,7 @@ import AdminAnalyticsPage from "./page";
 const {
   requireAdminPage,
   readBusinessConfig,
+  readAnalyticsConfig,
   v1Load,
   v2Load,
   listOrders,
@@ -12,6 +13,7 @@ const {
 } = vi.hoisted(() => ({
   requireAdminPage: vi.fn(),
   readBusinessConfig: vi.fn(),
+  readAnalyticsConfig: vi.fn(),
   v1Load: vi.fn(),
   v2Load: vi.fn(),
   listOrders: vi.fn(),
@@ -19,15 +21,20 @@ const {
 }));
 
 vi.mock("next/navigation", () => ({
+  redirect: vi.fn(),
   usePathname: () => "/admin/analytics",
   useRouter: () => ({ replace }),
   useSearchParams: () => new URLSearchParams(
     "preset=custom&from=2026-08-30&to=2026-08-30&scope=all_business",
   ),
 }));
+vi.mock("next/headers", () => ({
+  cookies: vi.fn().mockResolvedValue({ get: vi.fn().mockReturnValue(undefined) }),
+}));
 vi.mock("@/server/auth/require-admin-page", () => ({ requireAdminPage }));
 vi.mock("@/server/analytics/website-analytics-config", () => ({
   readWebsiteAnalyticsBusinessConfig: readBusinessConfig,
+  readWebsiteAnalyticsConfig: readAnalyticsConfig,
 }));
 vi.mock("@/server/analytics/website-analytics-dashboard", () => ({
   WEBSITE_ANALYTICS_PERIODS: ["today", "yesterday", "7d", "30d"],
@@ -56,6 +63,7 @@ const canonicalQuery = [
   "attribution=last_touch",
   "granularity=auto",
   "compare=false",
+  "includeInternal=false",
   "sort=occurred_at_desc",
   "page=1",
   "pageSize=25",
@@ -73,6 +81,7 @@ const v2Result = {
     granularity: "auto" as const,
     resolvedGranularity: "day" as const,
     compare: false,
+    includeInternal: false,
     canonicalQuery,
   },
   kpis: {
@@ -117,7 +126,12 @@ const orderResult = { items: [], total: 0, page: 1, pageSize: 25, pageCount: 0 }
 describe("admin website analytics page", () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    requireAdminPage.mockResolvedValue(undefined);
+    requireAdminPage.mockResolvedValue({
+      user: { id: "staff-1" },
+      adminRole: "staff",
+      adminPermissions: ["view_analytics"],
+    });
+    readAnalyticsConfig.mockReturnValue({ enabled: true, cookieSecret: "test-secret" });
     v1Load.mockResolvedValue(v1Result);
     v2Load.mockResolvedValue(v2Result);
     listOrders.mockResolvedValue(orderResult);
@@ -129,7 +143,7 @@ describe("admin website analytics page", () => {
     render(await AdminAnalyticsPage({ searchParams: Promise.resolve({ period: "30d" }) }));
 
     expect(requireAdminPage).toHaveBeenCalledWith("/admin/analytics", "view_analytics");
-    expect(v1Load).toHaveBeenCalledWith("30d");
+    expect(v1Load).toHaveBeenCalledWith("30d", expect.any(Date), false);
     expect(v2Load).not.toHaveBeenCalled();
     expect(listOrders).not.toHaveBeenCalled();
     expect(screen.getByRole("navigation", { name: "Analytics period" })).toBeInTheDocument();

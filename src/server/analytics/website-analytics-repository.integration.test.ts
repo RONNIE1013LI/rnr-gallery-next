@@ -31,6 +31,7 @@ function input(overrides: Partial<Parameters<ReturnType<typeof createWebsiteAnal
       clickIdType: null,
     },
     countryCode: "NZ",
+    isInternal: false,
     ...overrides,
   };
 }
@@ -71,5 +72,21 @@ suite("website analytics repository", () => {
     }).from(websiteAnalyticsSessions)
       .where(inArray(websiteAnalyticsSessions.id, [first.sessionId, second.sessionId]));
     expect(counts.sessions).toBe(1);
+  });
+
+  it("persists the trusted internal flag on the session without dropping the raw pageview", async () => {
+    const repository = createWebsiteAnalyticsRepository(database!);
+    const value = input({ isInternal: true });
+    expect(await repository.record(value)).toEqual({ sessionCreated: true, pageviewCreated: true });
+
+    const [stored] = await database!.select({
+      isInternal: websiteAnalyticsSessions.isInternal,
+      pageviews: sql<number>`count(${websiteAnalyticsPageviews.id})::int`,
+    }).from(websiteAnalyticsSessions)
+      .innerJoin(websiteAnalyticsPageviews,
+        eq(websiteAnalyticsPageviews.sessionId, websiteAnalyticsSessions.id))
+      .where(eq(websiteAnalyticsSessions.id, value.sessionId))
+      .groupBy(websiteAnalyticsSessions.isInternal);
+    expect(stored).toEqual({ isInternal: true, pageviews: 1 });
   });
 });

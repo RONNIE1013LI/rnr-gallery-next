@@ -97,3 +97,34 @@ export function readAttribution(storage: Pick<Storage, "getItem">, customerId: s
 export function clearAttribution(storage: Pick<Storage, "removeItem">, customerId: string | null) {
   storage.removeItem(getAttributionStorageKey(customerId));
 }
+
+export type AttributionHandoffResult = "empty" | "invalid" | "kept_existing" | "transferred";
+
+export function handoffGuestAttribution(
+  storage: Pick<Storage, "getItem" | "setItem" | "removeItem">,
+  customerId: string,
+): AttributionHandoffResult {
+  const stableCustomerId = customerId.trim();
+  if (!stableCustomerId) throw new Error("Authenticated customer ID is required");
+  const guestKey = getAttributionStorageKey(null);
+  const rawGuest = storage.getItem(guestKey);
+  if (rawGuest === null) return "empty";
+
+  let guest: unknown;
+  try {
+    guest = JSON.parse(rawGuest);
+  } catch {
+    storage.removeItem(guestKey);
+    return "invalid";
+  }
+  if (!isOrderAttribution(guest)) {
+    storage.removeItem(guestKey);
+    return "invalid";
+  }
+
+  const existing = readAttribution(storage, stableCustomerId);
+  storage.removeItem(guestKey);
+  if (existing) return "kept_existing";
+  saveAttribution(storage, stableCustomerId, guest);
+  return "transferred";
+}

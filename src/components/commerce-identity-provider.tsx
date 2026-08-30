@@ -8,7 +8,7 @@ import {
   setActiveCustomerId,
 } from "@/domain/cart/browser-cart-scope";
 import { LEGACY_CART_STORAGE_KEY } from "@/domain/cart/types";
-import { clearAttribution } from "@/domain/analytics/attribution";
+import { clearAttribution, handoffGuestAttribution } from "@/domain/analytics/attribution";
 import { LEGACY_PAYMENT_INTENT_STORAGE_KEY } from "./payment-recovery-intent";
 import { LEGACY_PENDING_CHECKOUT_STORAGE_KEY } from "./pending-checkout";
 import { AttributionCapture } from "./attribution-capture";
@@ -50,6 +50,9 @@ export function CommerceIdentityProvider({
   setActiveCustomerId(customerId);
 
   useEffect(() => {
+    if (customerIdRef.current !== null) {
+      handoffGuestAttribution(window.sessionStorage, customerIdRef.current);
+    }
     window.localStorage.removeItem(LEGACY_CART_STORAGE_KEY);
     window.localStorage.removeItem(LEGACY_PENDING_CHECKOUT_STORAGE_KEY);
     for (const storageKey of LEGACY_SESSION_KEYS) {
@@ -61,6 +64,9 @@ export function CommerceIdentityProvider({
   useEffect(() => {
     const previousCustomerId = customerIdRef.current;
     if (previousCustomerId === initialCustomerId) return;
+    if (previousCustomerId === null && initialCustomerId !== null) {
+      handoffGuestAttribution(window.sessionStorage, initialCustomerId);
+    }
     if (previousCustomerId !== null) {
       clearIdentityCheckoutState(
         window.localStorage,
@@ -76,6 +82,9 @@ export function CommerceIdentityProvider({
   }, [initialCustomerId]);
 
   function switchIdentity(nextCustomerId: string | null) {
+    if (customerIdRef.current === null && nextCustomerId !== null) {
+      handoffGuestAttribution(window.sessionStorage, nextCustomerId);
+    }
     customerIdRef.current = nextCustomerId;
     setActiveCustomerId(nextCustomerId);
     setCustomerId(nextCustomerId);

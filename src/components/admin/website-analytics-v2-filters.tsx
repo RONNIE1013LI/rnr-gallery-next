@@ -26,6 +26,7 @@ type FilterState = Readonly<{
   attribution: string;
   granularity: string;
   compare: boolean;
+  includeInternal: boolean;
 }>;
 
 function filterState(filters: WebsiteAnalyticsV2DashboardData["filters"]): FilterState {
@@ -39,15 +40,18 @@ function filterState(filters: WebsiteAnalyticsV2DashboardData["filters"]): Filte
     attribution: filters.attribution,
     granularity: filters.granularity,
     compare: filters.compare,
+    includeInternal: filters.includeInternal,
   };
 }
 
 export function WebsiteAnalyticsV2Filters({
   filters,
+  canIncludeInternal = false,
   loading,
   onApply,
 }: Readonly<{
   filters: WebsiteAnalyticsV2DashboardData["filters"];
+  canIncludeInternal?: boolean;
   loading: boolean;
   onApply: (query: string) => void;
 }>) {
@@ -74,6 +78,7 @@ export function WebsiteAnalyticsV2Filters({
     query.set("attribution", state.attribution);
     query.set("granularity", state.granularity);
     query.set("compare", String(state.compare));
+    query.set("includeInternal", String(canIncludeInternal && state.includeInternal));
     query.set("page", "1");
     onApply(query.toString());
   }
@@ -162,6 +167,14 @@ export function WebsiteAnalyticsV2Filters({
       />
       Compare with previous period
     </label>
+    {canIncludeInternal ? <label className={adminStyles.checkboxField}>
+      <input
+        checked={state.includeInternal}
+        type="checkbox"
+        onChange={(event) => field("includeInternal", event.target.checked)}
+      />
+      Include internal traffic
+    </label> : null}
     <div className={adminStyles.filterActions}>
       <button disabled={loading} type="submit">Apply filters</button>
     </div>

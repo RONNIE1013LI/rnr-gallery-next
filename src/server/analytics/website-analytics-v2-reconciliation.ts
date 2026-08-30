@@ -40,6 +40,16 @@ export type WebsiteAnalyticsV2DailyAggregateRow = Readonly<{
   collectedRevenueCents: number;
   refundedRevenueCents: number;
   netCollectedRevenueCents: number;
+  internalVisitors: number;
+  internalSessions: number;
+  internalPageViews: number;
+  internalInquiries: number;
+  internalOrders: number;
+  internalPaidOrders: number;
+  internalOrderedRevenueCents: number;
+  internalCollectedRevenueCents: number;
+  internalRefundedRevenueCents: number;
+  internalNetCollectedRevenueCents: number;
 }>;
 
 type RawAggregateResult = Readonly<Record<string, unknown>>;
@@ -64,6 +74,16 @@ const aggregateFields = {
   collectedRevenueCents: websiteAnalyticsDailyAggregates.collectedRevenueCents,
   refundedRevenueCents: websiteAnalyticsDailyAggregates.refundedRevenueCents,
   netCollectedRevenueCents: websiteAnalyticsDailyAggregates.netCollectedRevenueCents,
+  internalVisitors: websiteAnalyticsDailyAggregates.internalVisitors,
+  internalSessions: websiteAnalyticsDailyAggregates.internalSessions,
+  internalPageViews: websiteAnalyticsDailyAggregates.internalPageViews,
+  internalInquiries: websiteAnalyticsDailyAggregates.internalInquiries,
+  internalOrders: websiteAnalyticsDailyAggregates.internalOrders,
+  internalPaidOrders: websiteAnalyticsDailyAggregates.internalPaidOrders,
+  internalOrderedRevenueCents: websiteAnalyticsDailyAggregates.internalOrderedRevenueCents,
+  internalCollectedRevenueCents: websiteAnalyticsDailyAggregates.internalCollectedRevenueCents,
+  internalRefundedRevenueCents: websiteAnalyticsDailyAggregates.internalRefundedRevenueCents,
+  internalNetCollectedRevenueCents: websiteAnalyticsDailyAggregates.internalNetCollectedRevenueCents,
 };
 
 function validLocalDate(value: string): boolean {
@@ -106,6 +126,16 @@ function mapRawRow(row: RawAggregateResult): WebsiteAnalyticsV2DailyAggregateRow
     collectedRevenueCents: numberValue(row.collectedRevenueCents),
     refundedRevenueCents: numberValue(row.refundedRevenueCents),
     netCollectedRevenueCents: numberValue(row.netCollectedRevenueCents),
+    internalVisitors: numberValue(row.internalVisitors),
+    internalSessions: numberValue(row.internalSessions),
+    internalPageViews: numberValue(row.internalPageViews),
+    internalInquiries: numberValue(row.internalInquiries),
+    internalOrders: numberValue(row.internalOrders),
+    internalPaidOrders: numberValue(row.internalPaidOrders),
+    internalOrderedRevenueCents: numberValue(row.internalOrderedRevenueCents),
+    internalCollectedRevenueCents: numberValue(row.internalCollectedRevenueCents),
+    internalRefundedRevenueCents: numberValue(row.internalRefundedRevenueCents),
+    internalNetCollectedRevenueCents: numberValue(row.internalNetCollectedRevenueCents),
   });
 }
 
@@ -167,7 +197,18 @@ async function readRawDailyRowsFrom(
         0::bigint as "paidOrders",
         0::bigint as "orderedRevenueCents",
         0::bigint as "collectedRevenueCents",
-        0::bigint as "refundedRevenueCents"
+        0::bigint as "refundedRevenueCents",
+        count(distinct sessions.visitor_digest)
+          filter (where sessions.is_internal)::bigint as "internalVisitors",
+        count(distinct sessions.id)
+          filter (where sessions.is_internal)::bigint as "internalSessions",
+        count(pageviews.id) filter (where sessions.is_internal)::bigint as "internalPageViews",
+        0::bigint as "internalInquiries",
+        0::bigint as "internalOrders",
+        0::bigint as "internalPaidOrders",
+        0::bigint as "internalOrderedRevenueCents",
+        0::bigint as "internalCollectedRevenueCents",
+        0::bigint as "internalRefundedRevenueCents"
       from website_analytics_sessions sessions
       inner join website_analytics_pageviews pageviews on pageviews.session_id = sessions.id
       cross join models
@@ -193,7 +234,18 @@ async function readRawDailyRowsFrom(
         0::bigint as "paidOrders",
         0::bigint as "orderedRevenueCents",
         0::bigint as "collectedRevenueCents",
-        0::bigint as "refundedRevenueCents"
+        0::bigint as "refundedRevenueCents",
+        count(distinct sessions.visitor_digest)
+          filter (where sessions.is_internal)::bigint as "internalVisitors",
+        count(distinct sessions.id)
+          filter (where sessions.is_internal)::bigint as "internalSessions",
+        count(pageviews.id) filter (where sessions.is_internal)::bigint as "internalPageViews",
+        0::bigint as "internalInquiries",
+        0::bigint as "internalOrders",
+        0::bigint as "internalPaidOrders",
+        0::bigint as "internalOrderedRevenueCents",
+        0::bigint as "internalCollectedRevenueCents",
+        0::bigint as "internalRefundedRevenueCents"
       from website_analytics_sessions sessions
       inner join website_analytics_pageviews pageviews on pageviews.session_id = sessions.id
       cross join models
@@ -225,7 +277,20 @@ async function readRawDailyRowsFrom(
           filter (where conversions.conversion_type = 'order'), 0)::bigint
           as "orderedRevenueCents",
         0::bigint as "collectedRevenueCents",
-        0::bigint as "refundedRevenueCents"
+        0::bigint as "refundedRevenueCents",
+        0::bigint as "internalVisitors",
+        0::bigint as "internalSessions",
+        0::bigint as "internalPageViews",
+        count(*) filter (where conversions.conversion_type = 'inquiry'
+          and conversions.is_internal)::bigint as "internalInquiries",
+        count(*) filter (where conversions.conversion_type = 'order'
+          and conversions.is_internal)::bigint as "internalOrders",
+        0::bigint as "internalPaidOrders",
+        coalesce(sum(conversions.ordered_amount_incl_gst_cents)
+          filter (where conversions.conversion_type = 'order'
+            and conversions.is_internal), 0)::bigint as "internalOrderedRevenueCents",
+        0::bigint as "internalCollectedRevenueCents",
+        0::bigint as "internalRefundedRevenueCents"
       from website_analytics_conversions conversions
       inner join website_analytics_attribution_snapshots snapshots
         on snapshots.conversion_id = conversions.id
@@ -240,7 +305,8 @@ async function readRawDailyRowsFrom(
     linked_financial as (
       select financial.*, conversions.id as linked_conversion_id,
         conversions.scope as conversion_scope,
-        conversions.ordered_amount_incl_gst_cents
+        conversions.ordered_amount_incl_gst_cents,
+        conversions.is_internal
       from website_analytics_financial_events financial
       inner join website_analytics_conversions conversions on
         conversions.id = financial.conversion_id
@@ -272,7 +338,20 @@ async function readRawDailyRowsFrom(
           as "collectedRevenueCents",
         coalesce(sum(financial.amount_cents)
           filter (where financial.event_type in ('refund', 'reversal')), 0)::bigint
-          as "refundedRevenueCents"
+          as "refundedRevenueCents",
+        0::bigint as "internalVisitors",
+        0::bigint as "internalSessions",
+        0::bigint as "internalPageViews",
+        0::bigint as "internalInquiries",
+        0::bigint as "internalOrders",
+        0::bigint as "internalPaidOrders",
+        0::bigint as "internalOrderedRevenueCents",
+        coalesce(sum(financial.amount_cents)
+          filter (where financial.event_type = 'receipt'
+            and financial.is_internal), 0)::bigint as "internalCollectedRevenueCents",
+        coalesce(sum(financial.amount_cents)
+          filter (where financial.event_type in ('refund', 'reversal')
+            and financial.is_internal), 0)::bigint as "internalRefundedRevenueCents"
       from linked_financial financial
       inner join website_analytics_attribution_snapshots snapshots
         on snapshots.conversion_id = financial.linked_conversion_id
@@ -301,7 +380,18 @@ async function readRawDailyRowsFrom(
       sum("collectedRevenueCents")::bigint as "collectedRevenueCents",
       sum("refundedRevenueCents")::bigint as "refundedRevenueCents",
       (sum("collectedRevenueCents") - sum("refundedRevenueCents"))::bigint
-        as "netCollectedRevenueCents"
+        as "netCollectedRevenueCents",
+      sum("internalVisitors")::bigint as "internalVisitors",
+      sum("internalSessions")::bigint as "internalSessions",
+      sum("internalPageViews")::bigint as "internalPageViews",
+      sum("internalInquiries")::bigint as "internalInquiries",
+      sum("internalOrders")::bigint as "internalOrders",
+      sum("internalPaidOrders")::bigint as "internalPaidOrders",
+      sum("internalOrderedRevenueCents")::bigint as "internalOrderedRevenueCents",
+      sum("internalCollectedRevenueCents")::bigint as "internalCollectedRevenueCents",
+      sum("internalRefundedRevenueCents")::bigint as "internalRefundedRevenueCents",
+      (sum("internalCollectedRevenueCents") - sum("internalRefundedRevenueCents"))::bigint
+        as "internalNetCollectedRevenueCents"
     from combined
     group by "localDate", scope, market, currency, channel, source, medium, campaign,
       "attributionModel"

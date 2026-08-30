@@ -15,6 +15,7 @@ type BehavioralLinkInput = Readonly<{
   consentLinked: boolean;
   visitorDigest?: string | null;
   convertingSessionId?: string | null;
+  isInternal?: boolean;
 }>;
 
 export type WebsiteAnalyticsOrderFactInput = Readonly<{
@@ -53,6 +54,7 @@ export type WebsiteAnalyticsConversionFact = Readonly<{
   convertingSessionId: string | null;
   historical: boolean;
   consentLinked: boolean;
+  isInternal: boolean;
 }>;
 
 export type WebsiteAnalyticsFinancialEventInput = Readonly<{
@@ -104,9 +106,15 @@ function behavioralLinks(input: BehavioralLinkInput): Readonly<{
   visitorDigest: string | null;
   convertingSessionId: string | null;
   consentLinked: boolean;
+  isInternal: boolean;
 }> {
   if (!input.consentLinked) {
-    return { visitorDigest: null, convertingSessionId: null, consentLinked: false };
+    return {
+      visitorDigest: null,
+      convertingSessionId: null,
+      consentLinked: false,
+      isInternal: input.isInternal === true,
+    };
   }
   if (!input.visitorDigest?.match(/^[a-f0-9]{64}$/) || !input.convertingSessionId) {
     throw new Error("Consent-linked analytics requires a visitor digest and converting session");
@@ -115,6 +123,7 @@ function behavioralLinks(input: BehavioralLinkInput): Readonly<{
     visitorDigest: input.visitorDigest,
     convertingSessionId: input.convertingSessionId,
     consentLinked: true,
+    isInternal: input.isInternal === true,
   };
 }
 
@@ -138,8 +147,14 @@ export function buildWebsiteAnalyticsOrderFact(
         consentLinked: input.consentLinked === true,
         visitorDigest: input.visitorDigest,
         convertingSessionId: input.convertingSessionId,
+        isInternal: input.isInternal,
       })
-    : { visitorDigest: null, convertingSessionId: null, consentLinked: false } as const;
+    : {
+        visitorDigest: null,
+        convertingSessionId: null,
+        consentLinked: false,
+        isInternal: false,
+      } as const;
   return Object.freeze({
     conversionType: "order",
     sourceType: isWebsite ? "order" : "production_job",

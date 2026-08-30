@@ -54,10 +54,10 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(61);
+    expect(journal.entries).toHaveLength(62);
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(61);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(61);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(62);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(62);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -118,6 +118,14 @@ describe("migration lineage artifacts", () => {
     });
     expect(sha256("drizzle/0060_website_analytics_v2.sql")).toBe(
       "d43b20af5fe5471843c90f5df3ab13134b3e4d13059e39e261e2dffac1aead4e",
+    );
+    expect(journal.entries[61]).toMatchObject({
+      idx: 61,
+      when: 1788087828249,
+      tag: "0061_website_analytics_internal_traffic",
+    });
+    expect(sha256("drizzle/0061_website_analytics_internal_traffic.sql")).toBe(
+      "4c552b344aa93a05567bffd00044e33df162ba4927e3d952f007549f9d8807dc",
     );
   });
 
@@ -196,6 +204,58 @@ describe("migration lineage artifacts", () => {
       views: previous.views,
       _meta: previous._meta,
     });
+  });
+
+  it("adds only the approved internal-traffic fields, indexes, and constraint after 0060", () => {
+    const previous = loadJson<Snapshot>("drizzle/meta/0060_snapshot.json");
+    const current = loadJson<Snapshot>("drizzle/meta/0061_snapshot.json");
+    const normalizedPrevious = structuredClone(previous);
+    const normalizedCurrent = structuredClone(current);
+    const sessions = "public.website_analytics_sessions";
+    const conversions = "public.website_analytics_conversions";
+    const daily = "public.website_analytics_daily_aggregates";
+
+    expect(current.prevId).toBe(previous.id);
+    expect(Object.keys(current.tables)).toEqual(Object.keys(previous.tables));
+    for (const table of [sessions, conversions]) {
+      expect(current.tables[table].columns.is_internal).toMatchObject({
+        name: "is_internal",
+        type: "boolean",
+        primaryKey: false,
+        notNull: true,
+        default: false,
+      });
+      delete normalizedCurrent.tables[table].columns.is_internal;
+    }
+    for (const [table, index] of [
+      [sessions, "website_analytics_sessions_internal_local_date_idx"],
+      [conversions, "website_analytics_conversions_internal_local_date_idx"],
+    ] as const) {
+      expect(current.tables[table].indexes[index]).toBeDefined();
+      delete normalizedCurrent.tables[table].indexes[index];
+    }
+    for (const column of [
+      "internal_visitors",
+      "internal_sessions",
+      "internal_page_views",
+      "internal_inquiries",
+      "internal_orders",
+      "internal_paid_orders",
+      "internal_ordered_revenue_cents",
+      "internal_collected_revenue_cents",
+      "internal_refunded_revenue_cents",
+      "internal_net_collected_revenue_cents",
+    ]) {
+      expect(current.tables[daily].columns[column]).toBeDefined();
+      delete normalizedCurrent.tables[daily].columns[column];
+    }
+    expect(current.tables[daily].checkConstraints.website_analytics_daily_internal_metrics_valid)
+      .toBeDefined();
+    delete normalizedCurrent.tables[daily]
+      .checkConstraints.website_analytics_daily_internal_metrics_valid;
+    normalizedCurrent.id = normalizedPrevious.id;
+    normalizedCurrent.prevId = normalizedPrevious.prevId;
+    expect(normalizedCurrent).toEqual(normalizedPrevious);
   });
 
   it("changes only the customer review source constraint", () => {

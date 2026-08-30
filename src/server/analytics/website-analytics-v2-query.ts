@@ -43,6 +43,7 @@ export type WebsiteAnalyticsV2Query = Readonly<{
   granularity: WebsiteAnalyticsGranularity;
   resolvedGranularity: Exclude<WebsiteAnalyticsGranularity, "auto">;
   compare: boolean;
+  includeInternal: boolean;
   sort: WebsiteAnalyticsOrderSort;
   page: number;
   pageSize: number;
@@ -66,6 +67,7 @@ const querySchema = z.object({
   attribution: z.enum(WEBSITE_ANALYTICS_ATTRIBUTION_MODELS).default("last_touch"),
   granularity: z.enum(WEBSITE_ANALYTICS_GRANULARITIES).default("auto"),
   compare: z.enum(["true", "false"]).default("false"),
+  includeInternal: z.enum(["true", "false"]).default("false"),
   sort: z.enum(WEBSITE_ANALYTICS_ORDER_SORTS).default("occurred_at_desc"),
   page: z.string().regex(/^\d+$/).default("1"),
   pageSize: z.string().regex(/^\d+$/).default("25"),
@@ -125,6 +127,7 @@ function canonicalQuery(input: Omit<WebsiteAnalyticsV2Query, "canonicalQuery">):
     ["attribution", input.attribution],
     ["granularity", input.granularity],
     ["compare", String(input.compare)],
+    ["includeInternal", String(input.includeInternal)],
     ["sort", input.sort],
     ["page", String(input.page)],
     ["pageSize", String(input.pageSize)],
@@ -173,6 +176,7 @@ export function parseWebsiteAnalyticsV2Query(
         inclusiveDays(range.from, range.to),
       ),
       compare: parsed.compare === "true",
+      includeInternal: parsed.includeInternal === "true",
       sort: parsed.sort,
       page,
       pageSize,

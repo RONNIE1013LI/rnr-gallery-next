@@ -26,6 +26,7 @@ describe("website analytics fact builders", () => {
       consentLinked: true,
       visitorDigest,
       convertingSessionId: sessionId,
+      isInternal: false,
     })).toEqual({
       conversionType: "order",
       sourceType: "order",
@@ -43,6 +44,7 @@ describe("website analytics fact builders", () => {
       convertingSessionId: sessionId,
       historical: false,
       consentLinked: true,
+      isInternal: false,
     });
   });
 

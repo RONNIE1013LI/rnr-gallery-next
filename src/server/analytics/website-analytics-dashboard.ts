@@ -1,4 +1,4 @@
-import { between, desc, eq, sql } from "drizzle-orm";
+import { and, between, desc, eq, sql } from "drizzle-orm";
 import { WEBSITE_ANALYTICS_CHANNELS, type WebsiteAnalyticsChannel } from "@/domain/analytics/website-analytics";
 import { getDatabase } from "@/server/db/client";
 import {
@@ -34,13 +34,17 @@ export function websiteAnalyticsDateRange(period: WebsiteAnalyticsPeriod, now = 
 
 export function createWebsiteAnalyticsDashboard(database: Database) {
   return Object.freeze({
-    async load(period: WebsiteAnalyticsPeriod, now = new Date()) {
+    async load(period: WebsiteAnalyticsPeriod, now = new Date(), includeInternal = false) {
       const range = websiteAnalyticsDateRange(period, now);
       return database.transaction(async (transaction) => {
         const dateFilter = between(
           websiteAnalyticsPageviews.localDate,
           range.startDate,
           range.endDate,
+        );
+        const trafficFilter = and(
+          dateFilter,
+          includeInternal ? undefined : eq(websiteAnalyticsSessions.isInternal, false),
         );
         const [metricsRow] = await transaction.select({
           visitors: sql<number>`count(distinct ${websiteAnalyticsSessions.visitorDigest})::int`,
@@ -51,7 +55,7 @@ export function createWebsiteAnalyticsDashboard(database: Database) {
             websiteAnalyticsSessions,
             eq(websiteAnalyticsSessions.id, websiteAnalyticsPageviews.sessionId),
           )
-          .where(dateFilter);
+          .where(trafficFilter);
 
         const channelRows = await transaction.select({
           channel: websiteAnalyticsSessions.channel,
@@ -63,7 +67,7 @@ export function createWebsiteAnalyticsDashboard(database: Database) {
             websiteAnalyticsSessions,
             eq(websiteAnalyticsSessions.id, websiteAnalyticsPageviews.sessionId),
           )
-          .where(dateFilter)
+          .where(trafficFilter)
           .groupBy(websiteAnalyticsSessions.channel);
 
         const countryRows = await transaction.select({
@@ -75,7 +79,7 @@ export function createWebsiteAnalyticsDashboard(database: Database) {
             websiteAnalyticsSessions,
             eq(websiteAnalyticsSessions.id, websiteAnalyticsPageviews.sessionId),
           )
-          .where(dateFilter)
+          .where(trafficFilter)
           .groupBy(websiteAnalyticsSessions.countryCode)
           .orderBy(desc(sql`count(${websiteAnalyticsPageviews.id})`));
 
@@ -88,7 +92,7 @@ export function createWebsiteAnalyticsDashboard(database: Database) {
             websiteAnalyticsSessions,
             eq(websiteAnalyticsSessions.id, websiteAnalyticsPageviews.sessionId),
           )
-          .where(dateFilter)
+          .where(trafficFilter)
           .groupBy(websiteAnalyticsPageviews.pathname)
           .orderBy(desc(sql`count(${websiteAnalyticsPageviews.id})`), websiteAnalyticsPageviews.pathname)
           .limit(20);
@@ -102,7 +106,7 @@ export function createWebsiteAnalyticsDashboard(database: Database) {
             websiteAnalyticsSessions,
             eq(websiteAnalyticsSessions.id, websiteAnalyticsPageviews.sessionId),
           )
-          .where(dateFilter)
+          .where(trafficFilter)
           .groupBy(websiteAnalyticsPageviews.localDate)
           .orderBy(websiteAnalyticsPageviews.localDate);
 

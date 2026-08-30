@@ -61,6 +61,7 @@ function dashboardData(overrides: Partial<WebsiteAnalyticsV2DashboardData> = {})
       granularity: "day",
       resolvedGranularity: "day",
       compare: false,
+      includeInternal: false,
       canonicalQuery,
     },
     kpis: {

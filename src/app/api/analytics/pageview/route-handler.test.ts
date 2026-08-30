@@ -1,6 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import { serializeAdvertisingConsent } from "@/domain/consent/advertising-consent";
-import { createWebsiteAnalyticsIdentity } from "@/server/analytics/website-analytics-cookies";
+import {
+  createWebsiteAnalyticsIdentity,
+  createWebsiteAnalyticsInternalDevice,
+} from "@/server/analytics/website-analytics-cookies";
 import { createWebsitePageviewRoute } from "./route-handler";
 
 const origin = "https://rnrgallery.com";
@@ -87,9 +90,25 @@ describe("website pageview route", () => {
         utmCampaign: "spring_canvas",
         clickIdType: null,
       },
+      isInternal: false,
       sessionId: expect.stringMatching(/^[0-9a-f-]{36}$/),
       visitorDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
     }));
+  });
+
+  it("marks a new session internal only from a valid server-signed device cookie", async () => {
+    const marker = createWebsiteAnalyticsInternalDevice(secret, now);
+    const route = handler();
+    await route.POST(request(body, {
+      cookie: `rnr-consent-v1=${consent(true, false)}; ra_internal_v1=${marker}`,
+    }));
+    expect(route.record).toHaveBeenCalledWith(expect.objectContaining({ isInternal: true }));
+
+    const tampered = handler();
+    await tampered.POST(request(body, {
+      cookie: `rnr-consent-v1=${consent(true, false)}; ra_internal_v1=${marker.slice(0, -1)}x`,
+    }));
+    expect(tampered.record).toHaveBeenCalledWith(expect.objectContaining({ isInternal: false }));
   });
 
   it("reuses valid signed identities and honors advertising click consent", async () => {

@@ -99,6 +99,33 @@ describe("Admin Website Analytics V2 route", () => {
     await expect(response.json()).resolves.toEqual(safeResult);
   });
 
+  it("allows only a full Admin to include internal traffic", async () => {
+    const staffLoad = vi.fn();
+    const staff = createAdminAnalyticsRoute(dependencies({ load: staffLoad }));
+    const denied = await staff.GET(request("includeInternal=true", {
+      origin,
+      fetchSite: "same-origin",
+    }));
+    expect(denied.status).toBe(403);
+    expect(staffLoad).not.toHaveBeenCalled();
+
+    const adminLoad = vi.fn().mockResolvedValue(safeResult);
+    const admin = createAdminAnalyticsRoute(dependencies({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: { id: "admin-1" },
+        adminRole: "admin",
+        adminPermissions: ["view_analytics"],
+      }),
+      load: adminLoad,
+    }));
+    expect((await admin.GET(request("includeInternal=true", {
+      origin,
+      fetchSite: "same-origin",
+    }))).status).toBe(200);
+    expect(adminLoad).toHaveBeenCalledWith(expect.objectContaining({ includeInternal: true }),
+      expect.any(Date));
+  });
+
   it("rejects cross-origin and invalid filters before loading", async () => {
     const load = vi.fn();
     const route = createAdminAnalyticsRoute(dependencies({ load }));

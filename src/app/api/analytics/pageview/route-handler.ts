@@ -5,10 +5,12 @@ import { isTrackableWebsitePath, normalizeWebsitePathname } from "@/domain/analy
 import {
   createWebsiteAnalyticsSession,
   createWebsiteAnalyticsVisitor,
+  parseWebsiteAnalyticsInternalDevice,
   parseWebsiteAnalyticsSession,
   parseWebsiteAnalyticsVisitor,
   renewWebsiteAnalyticsSession,
   WEBSITE_ANALYTICS_SESSION_COOKIE,
+  WEBSITE_ANALYTICS_INTERNAL_COOKIE,
   WEBSITE_ANALYTICS_VISITOR_COOKIE,
   websiteAnalyticsCookieHeaders,
   websiteAnalyticsVisitorDigest,
@@ -129,6 +131,11 @@ export function createWebsitePageviewRoute(dependencies: Dependencies = {}) {
       const sessionCookie = cookieValue(cookieHeader, WEBSITE_ANALYTICS_SESSION_COOKIE);
       const existingVisitor = parseWebsiteAnalyticsVisitor(visitorCookie, config.cookieSecret, now);
       const existingSession = parseWebsiteAnalyticsSession(sessionCookie, config.cookieSecret, now);
+      const isInternal = parseWebsiteAnalyticsInternalDevice(
+        cookieValue(cookieHeader, WEBSITE_ANALYTICS_INTERNAL_COOKIE),
+        config.cookieSecret,
+        now,
+      );
       const createdVisitor = existingVisitor
         ? null
         : createWebsiteAnalyticsVisitor(config.cookieSecret, now);
@@ -158,6 +165,7 @@ export function createWebsitePageviewRoute(dependencies: Dependencies = {}) {
           referrerOrigin: payload.referrerOrigin,
         }),
         countryCode: normalizeCountryCode(request.headers.get("x-vercel-ip-country")),
+        isInternal,
       });
 
       const headers = new Headers();

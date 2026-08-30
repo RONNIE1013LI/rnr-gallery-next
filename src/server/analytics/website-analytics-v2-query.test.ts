@@ -25,10 +25,11 @@ describe("website analytics V2 query", () => {
       granularity: "auto",
       resolvedGranularity: "day",
       compare: false,
+      includeInternal: false,
       sort: "occurred_at_desc",
       page: 1,
       pageSize: 25,
-      canonicalQuery: "preset=last_30_days&from=2026-08-01&to=2026-08-30&scope=website&market=all&currency=all&attribution=last_touch&granularity=auto&compare=false&sort=occurred_at_desc&page=1&pageSize=25",
+      canonicalQuery: "preset=last_30_days&from=2026-08-01&to=2026-08-30&scope=website&market=all&currency=all&attribution=last_touch&granularity=auto&compare=false&includeInternal=false&sort=occurred_at_desc&page=1&pageSize=25",
     });
   });
 
@@ -64,6 +65,7 @@ describe("website analytics V2 query", () => {
       "attribution=first_touch",
       "granularity=week",
       "compare=true",
+      "includeInternal=true",
       "sort=ordered_amount_asc",
       "page=17",
       "pageSize=100",
@@ -76,6 +78,7 @@ describe("website analytics V2 query", () => {
       granularity: "week",
       resolvedGranularity: "week",
       compare: true,
+      includeInternal: true,
       sort: "ordered_amount_asc",
       page: 17,
       pageSize: 100,
@@ -90,6 +93,7 @@ describe("website analytics V2 query", () => {
     ["attribution=linear"],
     ["granularity=quarter"],
     ["compare=1"],
+    ["includeInternal=1"],
     ["sort=customer_email"],
     ["page=0"],
     ["page=10001"],

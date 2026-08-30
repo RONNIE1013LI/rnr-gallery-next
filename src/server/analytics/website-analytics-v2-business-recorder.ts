@@ -8,7 +8,9 @@ import type { PaymentLedgerDirection, PaymentLedgerEntryType } from "@/server/db
 import { eligibleOrder } from "./website-analytics-business-rules";
 import {
   parseWebsiteAnalyticsSession,
+  parseWebsiteAnalyticsInternalDevice,
   parseWebsiteAnalyticsVisitor,
+  WEBSITE_ANALYTICS_INTERNAL_COOKIE,
   WEBSITE_ANALYTICS_SESSION_COOKIE,
   WEBSITE_ANALYTICS_VISITOR_COOKIE,
   websiteAnalyticsVisitorDigest,
@@ -65,6 +67,7 @@ export type WebsiteAnalyticsBehavioralContext = Readonly<{
   consentLinked: boolean;
   visitorDigest?: string;
   convertingSessionId?: string;
+  isInternal?: boolean;
 }>;
 
 function cookieValue(header: string | null, name: string): string | undefined {
@@ -82,10 +85,15 @@ export function resolveWebsiteAnalyticsBehavioralContext(
   now = new Date(),
 ): WebsiteAnalyticsBehavioralContext {
   if (!config.v2Enabled || !config.enabled || !config.cookieSecret) {
-    return Object.freeze({ consentLinked: false });
+    return Object.freeze({ consentLinked: false, isInternal: false });
   }
+  const isInternal = parseWebsiteAnalyticsInternalDevice(
+    cookieValue(cookieHeader, WEBSITE_ANALYTICS_INTERNAL_COOKIE),
+    config.cookieSecret,
+    now,
+  );
   const consent = parseAdvertisingConsent(cookieValue(cookieHeader, ADVERTISING_CONSENT_COOKIE));
-  if (!consent?.analytics) return Object.freeze({ consentLinked: false });
+  if (!consent?.analytics) return Object.freeze({ consentLinked: false, isInternal });
   const visitor = parseWebsiteAnalyticsVisitor(
     cookieValue(cookieHeader, WEBSITE_ANALYTICS_VISITOR_COOKIE),
     config.cookieSecret,
@@ -96,11 +104,12 @@ export function resolveWebsiteAnalyticsBehavioralContext(
     config.cookieSecret,
     now,
   );
-  if (!visitor || !session) return Object.freeze({ consentLinked: false });
+  if (!visitor || !session) return Object.freeze({ consentLinked: false, isInternal });
   return Object.freeze({
     consentLinked: true,
     visitorDigest: websiteAnalyticsVisitorDigest(visitor.visitorId, config.cookieSecret),
     convertingSessionId: session.sessionId,
+    isInternal,
   });
 }
 

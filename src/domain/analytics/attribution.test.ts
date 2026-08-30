@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 
 import {
   buildStoredOrderAttribution,
   clearAttribution,
   getAttributionStorageKey,
+  handoffGuestAttribution,
   isOrderAttribution,
   parseAttribution,
   readAttribution,
@@ -11,6 +12,8 @@ import {
 } from "./attribution";
 
 describe("identity-scoped advertising attribution", () => {
+  beforeEach(() => sessionStorage.clear());
+
   it("excludes fbclid without consent while preserving UTM and Google click attribution", () => {
     const campaign = {
       utm_source: "facebook",
@@ -104,5 +107,44 @@ describe("identity-scoped advertising attribution", () => {
     clearAttribution(sessionStorage, "user-a");
     expect(readAttribution(sessionStorage, "user-a")).toBeNull();
     expect(readAttribution(sessionStorage, null)).toEqual({ utm_source: "guest" });
+  });
+
+  it.each([
+    ["Google Ads", { gclid: "google-click", gbraid: "google-app", wbraid: "google-web" }],
+    ["Meta Ads", { fbclid: "meta-click", utm_source: "facebook", utm_medium: "paid_social" }],
+    ["UTM", { utm_source: "newsletter", utm_medium: "email", utm_campaign: "spring" }],
+  ] as const)("hands validated %s attribution from Guest to the authenticated user", (_label, value) => {
+    saveAttribution(sessionStorage, null, value);
+
+    expect(handoffGuestAttribution(sessionStorage, "user-a")).toBe("transferred");
+    expect(readAttribution(sessionStorage, "user-a")).toEqual(value);
+    expect(readAttribution(sessionStorage, null)).toBeNull();
+  });
+
+  it("does nothing for a Direct Guest login", () => {
+    expect(handoffGuestAttribution(sessionStorage, "user-a")).toBe("empty");
+    expect(readAttribution(sessionStorage, "user-a")).toBeNull();
+  });
+
+  it("keeps stronger existing authenticated attribution and consumes stale Guest state", () => {
+    saveAttribution(sessionStorage, null, { utm_source: "old-newsletter", fbclid: "stale-meta" });
+    saveAttribution(sessionStorage, "user-a", { gclid: "existing-google" });
+
+    expect(handoffGuestAttribution(sessionStorage, "user-a")).toBe("kept_existing");
+    expect(readAttribution(sessionStorage, "user-a")).toEqual({ gclid: "existing-google" });
+    expect(readAttribution(sessionStorage, null)).toBeNull();
+  });
+
+  it("never transfers malformed or unrelated Guest session state", () => {
+    sessionStorage.setItem(getAttributionStorageKey(null), JSON.stringify({
+      gclid: "valid-looking",
+      cart: { private: true },
+    }));
+    sessionStorage.setItem("rnr:guest:cart", "private-cart");
+
+    expect(handoffGuestAttribution(sessionStorage, "user-a")).toBe("invalid");
+    expect(readAttribution(sessionStorage, "user-a")).toBeNull();
+    expect(readAttribution(sessionStorage, null)).toBeNull();
+    expect(sessionStorage.getItem("rnr:guest:cart")).toBe("private-cart");
   });
 });

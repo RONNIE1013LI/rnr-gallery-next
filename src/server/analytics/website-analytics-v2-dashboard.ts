@@ -85,6 +85,16 @@ const aggregateFields = {
   collectedRevenueCents: websiteAnalyticsDailyAggregates.collectedRevenueCents,
   refundedRevenueCents: websiteAnalyticsDailyAggregates.refundedRevenueCents,
   netCollectedRevenueCents: websiteAnalyticsDailyAggregates.netCollectedRevenueCents,
+  internalVisitors: websiteAnalyticsDailyAggregates.internalVisitors,
+  internalSessions: websiteAnalyticsDailyAggregates.internalSessions,
+  internalPageViews: websiteAnalyticsDailyAggregates.internalPageViews,
+  internalInquiries: websiteAnalyticsDailyAggregates.internalInquiries,
+  internalOrders: websiteAnalyticsDailyAggregates.internalOrders,
+  internalPaidOrders: websiteAnalyticsDailyAggregates.internalPaidOrders,
+  internalOrderedRevenueCents: websiteAnalyticsDailyAggregates.internalOrderedRevenueCents,
+  internalCollectedRevenueCents: websiteAnalyticsDailyAggregates.internalCollectedRevenueCents,
+  internalRefundedRevenueCents: websiteAnalyticsDailyAggregates.internalRefundedRevenueCents,
+  internalNetCollectedRevenueCents: websiteAnalyticsDailyAggregates.internalNetCollectedRevenueCents,
 };
 
 function safeNumber(value: unknown): number {
@@ -244,7 +254,12 @@ function addBreakdownRows(
     const group = groups.get(key) ?? { ...emptyMetrics(), ...dimensions };
     if (isTrafficDimension(row)) addTraffic(group, row);
     if (row.scope === "website") addInquiry(group, row);
-    if (row.scope === query.scope && commercialMatches(row, query)) addCommercial(group, row);
+    if (row.scope === query.scope && commercialMatches(row, query)
+      && (row.orders > 0 || row.paidOrders > 0 || row.orderedRevenueCents !== 0
+        || row.collectedRevenueCents !== 0 || row.refundedRevenueCents !== 0
+        || row.netCollectedRevenueCents !== 0)) {
+      addCommercial(group, row);
+    }
     groups.set(key, group);
   }
   if (exactTrafficByGroup && trafficMetricsAvailable) {
@@ -337,8 +352,45 @@ function timeSeries(
     });
 }
 
-function mapAggregateRow(row: typeof websiteAnalyticsDailyAggregates.$inferSelect): AggregateRow {
+function visibleMetric(total: number, internal: number, includeInternal: boolean) {
+  return includeInternal ? total : Math.max(0, total - internal);
+}
+
+function visibleAggregateRow(row: AggregateRow, includeInternal: boolean): AggregateRow {
+  if (includeInternal) return row;
   return Object.freeze({
+    ...row,
+    visitors: visibleMetric(row.visitors, row.internalVisitors, false),
+    sessions: visibleMetric(row.sessions, row.internalSessions, false),
+    pageViews: visibleMetric(row.pageViews, row.internalPageViews, false),
+    inquiries: visibleMetric(row.inquiries, row.internalInquiries, false),
+    orders: visibleMetric(row.orders, row.internalOrders, false),
+    paidOrders: visibleMetric(row.paidOrders, row.internalPaidOrders, false),
+    orderedRevenueCents: visibleMetric(
+      row.orderedRevenueCents,
+      row.internalOrderedRevenueCents,
+      false,
+    ),
+    collectedRevenueCents: visibleMetric(
+      row.collectedRevenueCents,
+      row.internalCollectedRevenueCents,
+      false,
+    ),
+    refundedRevenueCents: visibleMetric(
+      row.refundedRevenueCents,
+      row.internalRefundedRevenueCents,
+      false,
+    ),
+    netCollectedRevenueCents: row.netCollectedRevenueCents
+      - row.internalNetCollectedRevenueCents,
+  });
+}
+
+function mapAggregateRow(
+  row: typeof websiteAnalyticsDailyAggregates.$inferSelect,
+  includeInternal: boolean,
+): AggregateRow {
+  return visibleAggregateRow(Object.freeze({
     localDate: row.localDate,
     scope: row.scope,
     market: row.market,
@@ -358,7 +410,17 @@ function mapAggregateRow(row: typeof websiteAnalyticsDailyAggregates.$inferSelec
     collectedRevenueCents: safeNumber(row.collectedRevenueCents),
     refundedRevenueCents: safeNumber(row.refundedRevenueCents),
     netCollectedRevenueCents: safeNumber(row.netCollectedRevenueCents),
-  });
+    internalVisitors: safeNumber(row.internalVisitors),
+    internalSessions: safeNumber(row.internalSessions),
+    internalPageViews: safeNumber(row.internalPageViews),
+    internalInquiries: safeNumber(row.internalInquiries),
+    internalOrders: safeNumber(row.internalOrders),
+    internalPaidOrders: safeNumber(row.internalPaidOrders),
+    internalOrderedRevenueCents: safeNumber(row.internalOrderedRevenueCents),
+    internalCollectedRevenueCents: safeNumber(row.internalCollectedRevenueCents),
+    internalRefundedRevenueCents: safeNumber(row.internalRefundedRevenueCents),
+    internalNetCollectedRevenueCents: safeNumber(row.internalNetCollectedRevenueCents),
+  }), includeInternal);
 }
 
 async function aggregateRows(
@@ -376,7 +438,10 @@ async function aggregateRows(
       hasCurrentDay ? ne(websiteAnalyticsDailyAggregates.localDate, today) : undefined,
     ))
     .orderBy(asc(websiteAnalyticsDailyAggregates.localDate));
-  const prior = stored.map((row) => mapAggregateRow(row as typeof websiteAnalyticsDailyAggregates.$inferSelect));
+  const prior = stored.map((row) => mapAggregateRow(
+    row as typeof websiteAnalyticsDailyAggregates.$inferSelect,
+    query.includeInternal,
+  ));
   if (!hasCurrentDay) return Object.freeze(prior);
   const raw = await createWebsiteAnalyticsV2Reconciliation(
     transaction as unknown as Database,
@@ -384,7 +449,8 @@ async function aggregateRows(
   return Object.freeze([
     ...prior,
     ...raw.filter((row) => row.attributionModel === query.attribution)
-      .map((row) => Object.freeze({ ...row, paidOrders: 0 })),
+      .map((row) => visibleAggregateRow(Object.freeze({ ...row, paidOrders: 0 }),
+        query.includeInternal)),
   ]);
 }
 
@@ -433,6 +499,7 @@ async function paidOrderRows(
       ) and financial.occurred_at < ${query.end}
       where conversions.conversion_type = 'order'
         and conversions.local_date between ${query.from}::date and ${query.to}::date
+        and (${query.includeInternal}::boolean or not conversions.is_internal)
       group by conversions.id, conversions.local_date, conversions.scope,
         conversions.market, conversions.currency,
         conversions.ordered_amount_incl_gst_cents,
@@ -485,6 +552,16 @@ async function paidOrderRows(
     collectedRevenueCents: 0,
     refundedRevenueCents: 0,
     netCollectedRevenueCents: 0,
+    internalVisitors: 0,
+    internalSessions: 0,
+    internalPageViews: 0,
+    internalInquiries: 0,
+    internalOrders: 0,
+    internalPaidOrders: 0,
+    internalOrderedRevenueCents: 0,
+    internalCollectedRevenueCents: 0,
+    internalRefundedRevenueCents: 0,
+    internalNetCollectedRevenueCents: 0,
   })));
 }
 
@@ -506,6 +583,36 @@ function rawTrafficBucketSql(query: WebsiteAnalyticsV2Query) {
   return sql`(
     pageviews.local_date - (extract(isodow from pageviews.local_date)::int - 1)
   )::text`;
+}
+
+function legacyFirstPartySelfReferralSql() {
+  return sql`sessions.channel = 'other'
+    and lower(trim(sessions.source)) in (
+      'rnrgallery.com', 'www.rnrgallery.com', 'rrgallery.co.nz', 'www.rrgallery.co.nz'
+    )
+    and lower(trim(sessions.medium)) = 'referral'
+    and nullif(trim(sessions.utm_campaign), '') is null
+    and sessions.click_id_type is null`;
+}
+
+function exactTrafficChannelSql() {
+  return sql`case when ${legacyFirstPartySelfReferralSql()}
+    then 'direct' else sessions.channel::text end`;
+}
+
+function exactTrafficSourceSql() {
+  return sql`case when ${legacyFirstPartySelfReferralSql()}
+    then 'direct' else sessions.source::text end`;
+}
+
+function exactTrafficMediumSql() {
+  return sql`case when ${legacyFirstPartySelfReferralSql()}
+    then null else sessions.medium::text end`;
+}
+
+function exactTrafficCampaignSql() {
+  return sql`case when ${legacyFirstPartySelfReferralSql()}
+    then null else sessions.utm_campaign::text end`;
 }
 
 function exactTraffic(value: unknown): ExactTraffic {
@@ -566,6 +673,7 @@ async function supportingTraffic(transaction: Transaction, query: WebsiteAnalyti
       from website_analytics_pageviews pageviews
       inner join website_analytics_sessions sessions on sessions.id = pageviews.session_id
       where pageviews.local_date between ${query.from}::date and ${query.to}::date
+        and (${query.includeInternal}::boolean or not sessions.is_internal)
     ), traffic_bucket_rows as (
       select ${rawTrafficBucketSql(query)} as bucket,
         count(distinct sessions.visitor_digest)::int as visitors,
@@ -573,6 +681,7 @@ async function supportingTraffic(transaction: Transaction, query: WebsiteAnalyti
       from website_analytics_pageviews pageviews
       inner join website_analytics_sessions sessions on sessions.id = pageviews.session_id
       where pageviews.local_date between ${query.from}::date and ${query.to}::date
+        and (${query.includeInternal}::boolean or not sessions.is_internal)
       group by ${rawTrafficBucketSql(query)}
       order by ${rawTrafficBucketSql(query)}
     ), page_rows as (
@@ -582,6 +691,7 @@ async function supportingTraffic(transaction: Transaction, query: WebsiteAnalyti
       from website_analytics_pageviews pageviews
       inner join website_analytics_sessions sessions on sessions.id = pageviews.session_id
       where pageviews.local_date between ${query.from}::date and ${query.to}::date
+        and (${query.includeInternal}::boolean or not sessions.is_internal)
       group by pageviews.pathname
       order by count(pageviews.id) desc, pageviews.pathname
       limit 20
@@ -593,31 +703,36 @@ async function supportingTraffic(transaction: Transaction, query: WebsiteAnalyti
       from website_analytics_pageviews pageviews
       inner join website_analytics_sessions sessions on sessions.id = pageviews.session_id
       where pageviews.local_date between ${query.from}::date and ${query.to}::date
+        and (${query.includeInternal}::boolean or not sessions.is_internal)
       group by coalesce(sessions.country_code, 'Unknown')
       order by count(pageviews.id) desc, coalesce(sessions.country_code, 'Unknown')
     ), channel_rows as (
-      select sessions.channel::text as channel,
+      select ${exactTrafficChannelSql()} as channel,
         count(distinct sessions.visitor_digest)::int as visitors,
         count(distinct sessions.id)::int as sessions,
         count(pageviews.id)::int as "pageViews"
       from website_analytics_pageviews pageviews
       inner join website_analytics_sessions sessions on sessions.id = pageviews.session_id
       where pageviews.local_date between ${query.from}::date and ${query.to}::date
-      group by sessions.channel
-      order by sessions.channel
+        and (${query.includeInternal}::boolean or not sessions.is_internal)
+      group by ${exactTrafficChannelSql()}
+      order by ${exactTrafficChannelSql()}
     ), campaign_rows as (
-      select sessions.channel::text as channel,
-        sessions.source::text as source,
-        sessions.medium::text as medium,
-        sessions.utm_campaign::text as campaign,
+      select ${exactTrafficChannelSql()} as channel,
+        ${exactTrafficSourceSql()} as source,
+        ${exactTrafficMediumSql()} as medium,
+        ${exactTrafficCampaignSql()} as campaign,
         count(distinct sessions.visitor_digest)::int as visitors,
         count(distinct sessions.id)::int as sessions,
         count(pageviews.id)::int as "pageViews"
       from website_analytics_pageviews pageviews
       inner join website_analytics_sessions sessions on sessions.id = pageviews.session_id
       where pageviews.local_date between ${query.from}::date and ${query.to}::date
-      group by sessions.channel, sessions.source, sessions.medium, sessions.utm_campaign
-      order by sessions.channel, sessions.source, sessions.medium, sessions.utm_campaign
+        and (${query.includeInternal}::boolean or not sessions.is_internal)
+      group by ${exactTrafficChannelSql()}, ${exactTrafficSourceSql()},
+        ${exactTrafficMediumSql()}, ${exactTrafficCampaignSql()}
+      order by ${exactTrafficChannelSql()}, ${exactTrafficSourceSql()},
+        ${exactTrafficMediumSql()}, ${exactTrafficCampaignSql()}
     )
     select
       coalesce((select jsonb_agg(jsonb_build_object(
@@ -641,7 +756,8 @@ async function supportingTraffic(transaction: Transaction, query: WebsiteAnalyti
       coalesce((select jsonb_agg(jsonb_build_object(
         'bucket', bucket, 'visitors', visitors, 'sessions', sessions
       ) order by bucket) from traffic_bucket_rows), '[]'::jsonb) as "trafficBuckets",
-      (select min(local_date)::text from website_analytics_sessions) as "earliestTrafficDate"
+      (select min(local_date)::text from website_analytics_sessions
+        where ${query.includeInternal}::boolean or not is_internal) as "earliestTrafficDate"
   `);
   const row = result.rows[0];
   return {
@@ -664,6 +780,7 @@ async function comparisonTraffic(transaction: Transaction, query: WebsiteAnalyti
     from website_analytics_pageviews pageviews
     inner join website_analytics_sessions sessions on sessions.id = pageviews.session_id
     where pageviews.local_date between ${query.from}::date and ${query.to}::date
+      and (${query.includeInternal}::boolean or not sessions.is_internal)
   `);
   return exactTraffic(result.rows[0]);
 }
@@ -692,6 +809,7 @@ async function paymentBreakdown(transaction: Transaction, query: WebsiteAnalytic
         and (${query.scope}::text = 'all_business' or conversions.scope = 'website')
         and (${query.market}::text is null or conversions.market = ${query.market}::text)
         and (${query.currency}::text is null or conversions.currency = ${query.currency}::text)
+        and (${query.includeInternal}::boolean or not conversions.is_internal)
       group by conversions.id, conversions.ordered_amount_incl_gst_cents
     ), statuses as (
       select ${analyticsPaymentStatusSql({
@@ -828,6 +946,7 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
             granularity: query.granularity,
             resolvedGranularity: query.resolvedGranularity,
             compare: query.compare,
+            includeInternal: query.includeInternal,
             canonicalQuery: query.canonicalQuery,
           }),
           kpis,
@@ -947,6 +1066,7 @@ export function createWebsiteAnalyticsV2Dashboard(database: Database) {
               and (${query.scope}::text = 'all_business' or conversions.scope = 'website')
               and (${query.market}::text is null or conversions.market = ${query.market}::text)
               and (${query.currency}::text is null or conversions.currency = ${query.currency}::text)
+              and (${query.includeInternal}::boolean or not conversions.is_internal)
           ), numbered as (
             select base.*, row_number() over (order by ${orderSortSql[query.sort]}) as ordinal
             from base

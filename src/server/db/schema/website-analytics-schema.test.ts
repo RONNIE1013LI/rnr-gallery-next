@@ -69,7 +69,7 @@ describe("website analytics schema contract", () => {
       "market", "currency", "orderedAmountInclGstCents", "visitorDigest",
       "convertingSessionId", "firstSessionId", "lastSessionId",
       "lastNonDirectSessionId", "historical", "consentLinked",
-      "attributionVersion", "createdAt",
+      "attributionVersion", "isInternal", "createdAt",
     ]);
     for (const column of [
       columns.orderId,
@@ -106,6 +106,7 @@ describe("website analytics schema contract", () => {
       { name: "website_analytics_conversions_job_idx", unique: false, columns: ["production_job_id"] },
       { name: "website_analytics_conversions_conversation_idx", unique: false, columns: ["conversation_id"] },
       { name: "website_analytics_conversions_visitor_occurred_idx", unique: false, columns: ["visitor_digest", "occurred_at"] },
+      { name: "website_analytics_conversions_internal_local_date_idx", unique: false, columns: ["is_internal", "local_date"] },
     ]);
     expect(config.checks.map((value) => value.name)).toEqual(expect.arrayContaining([
       "website_analytics_conversions_type_valid",
@@ -203,6 +204,10 @@ describe("website analytics schema contract", () => {
       "medium", "campaign", "attributionModel", "visitors", "sessions",
       "pageViews", "inquiries", "orders", "paidOrders", "orderedRevenueCents",
       "collectedRevenueCents", "refundedRevenueCents", "netCollectedRevenueCents",
+      "internalVisitors", "internalSessions", "internalPageViews", "internalInquiries",
+      "internalOrders", "internalPaidOrders", "internalOrderedRevenueCents",
+      "internalCollectedRevenueCents", "internalRefundedRevenueCents",
+      "internalNetCollectedRevenueCents",
       "rulesVersion", "createdAt", "updatedAt",
     ]);
     for (const name of ["market", "currency", "channel", "source", "medium", "campaign"] as const) {
@@ -222,11 +227,13 @@ describe("website analytics schema contract", () => {
       "website_analytics_daily_dimensions_valid",
       "website_analytics_daily_counts_nonnegative",
       "website_analytics_daily_money_valid",
+      "website_analytics_daily_internal_metrics_valid",
       "website_analytics_daily_rules_version_valid",
     ]));
     expect(checkContracts(websiteAnalyticsDailyAggregates)).toMatchObject({
       website_analytics_daily_counts_nonnegative: expect.stringContaining('"website_analytics_daily_aggregates"."paid_orders" >= 0'),
       website_analytics_daily_money_valid: expect.stringContaining('"website_analytics_daily_aggregates"."net_collected_revenue_cents" = "website_analytics_daily_aggregates"."collected_revenue_cents" - "website_analytics_daily_aggregates"."refunded_revenue_cents"'),
+      website_analytics_daily_internal_metrics_valid: expect.stringContaining('"website_analytics_daily_aggregates"."internal_visitors" between 0 and "website_analytics_daily_aggregates"."visitors"'),
     });
   });
 
@@ -272,6 +279,7 @@ describe("website analytics schema contract", () => {
       utmCampaign: expect.anything(),
       clickIdType: expect.anything(),
       countryCode: expect.anything(),
+      isInternal: expect.anything(),
     }));
     expect(columns.visitorDigest.dataType).toBe("string");
     expect(Object.keys(columns)).not.toEqual(expect.arrayContaining([
@@ -302,6 +310,7 @@ describe("website analytics schema contract", () => {
       "website_analytics_sessions_local_date_channel_idx",
       "website_analytics_sessions_started_id_idx",
       "website_analytics_sessions_visitor_started_id_idx",
+      "website_analytics_sessions_internal_local_date_idx",
     ]);
     expect(pageviewConfig.indexes.map((index) => index.config.name)).toEqual([
       "website_analytics_pageviews_session_idx",
@@ -330,5 +339,18 @@ describe("website analytics schema contract", () => {
     expect(migration).not.toMatch(/^\s*(?:DROP\b|TRUNCATE|DELETE\s+FROM|UPDATE\s+)/im);
     expect(migration).not.toMatch(/ALTER TABLE "(?!website_analytics_pageviews)/);
     expect(migration).not.toMatch(/\b(?:orders|payments|production_jobs|customer_service_)\b/i);
+  });
+
+  it("uses a forward-only 0061 internal-traffic migration", () => {
+    const migration = readFileSync(
+      resolve(process.cwd(), "drizzle/0061_website_analytics_internal_traffic.sql"),
+      "utf8",
+    );
+    expect(migration).toContain('ADD COLUMN "is_internal" boolean DEFAULT false NOT NULL');
+    expect(migration).toContain('ADD COLUMN "internal_visitors" bigint DEFAULT 0 NOT NULL');
+    expect(migration).toContain('website_analytics_daily_internal_metrics_valid');
+    expect(migration).toContain('website_analytics_sessions_internal_local_date_idx');
+    expect(migration).toContain('website_analytics_conversions_internal_local_date_idx');
+    expect(migration).not.toMatch(/^\s*(?:DROP\b|TRUNCATE|DELETE\s+FROM|UPDATE\s+)/im);
   });
 });

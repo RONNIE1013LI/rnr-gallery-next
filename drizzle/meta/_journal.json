@@ -428,6 +428,13 @@
       "when": 1788048058305,
       "tag": "0060_website_analytics_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 61,
+      "version": "7",
+      "when": 1788087828249,
+      "tag": "0061_website_analytics_internal_traffic",
+      "breakpoints": true
     }
   ]
 }

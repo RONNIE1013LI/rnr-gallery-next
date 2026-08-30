@@ -48,6 +48,7 @@ export const websiteAnalyticsSessions = pgTable(
     utmCampaign: varchar("utm_campaign", { length: 100 }),
     clickIdType: varchar("click_id_type", { length: 16 }),
     countryCode: varchar("country_code", { length: 2 }),
+    isInternal: boolean("is_internal").default(false).notNull(),
   },
   (table) => [
     index("website_analytics_sessions_local_date_visitor_idx")
@@ -58,6 +59,8 @@ export const websiteAnalyticsSessions = pgTable(
       .on(table.startedAt, table.id),
     index("website_analytics_sessions_visitor_started_id_idx")
       .on(table.visitorDigest, table.startedAt, table.id),
+    index("website_analytics_sessions_internal_local_date_idx")
+      .on(table.isInternal, table.localDate),
     check(
       "website_analytics_sessions_visitor_digest_valid",
       sql`${table.visitorDigest} ~ '^[a-f0-9]{64}$'`,
@@ -135,6 +138,7 @@ export const websiteAnalyticsConversions = pgTable(
     historical: boolean("historical").default(false).notNull(),
     consentLinked: boolean("consent_linked").default(false).notNull(),
     attributionVersion: text("attribution_version").default("v2").notNull(),
+    isInternal: boolean("is_internal").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => [
@@ -156,6 +160,8 @@ export const websiteAnalyticsConversions = pgTable(
     index("website_analytics_conversions_visitor_occurred_idx")
       .on(table.visitorDigest, table.occurredAt)
       .where(sql`${table.visitorDigest} is not null`),
+    index("website_analytics_conversions_internal_local_date_idx")
+      .on(table.isInternal, table.localDate),
     check(
       "website_analytics_conversions_type_valid",
       sql`${table.conversionType} in ('inquiry', 'order')`,
@@ -392,6 +398,16 @@ export const websiteAnalyticsDailyAggregates = pgTable(
     collectedRevenueCents: bigint("collected_revenue_cents", { mode: "number" }).default(0).notNull(),
     refundedRevenueCents: bigint("refunded_revenue_cents", { mode: "number" }).default(0).notNull(),
     netCollectedRevenueCents: bigint("net_collected_revenue_cents", { mode: "number" }).default(0).notNull(),
+    internalVisitors: bigint("internal_visitors", { mode: "number" }).default(0).notNull(),
+    internalSessions: bigint("internal_sessions", { mode: "number" }).default(0).notNull(),
+    internalPageViews: bigint("internal_page_views", { mode: "number" }).default(0).notNull(),
+    internalInquiries: bigint("internal_inquiries", { mode: "number" }).default(0).notNull(),
+    internalOrders: bigint("internal_orders", { mode: "number" }).default(0).notNull(),
+    internalPaidOrders: bigint("internal_paid_orders", { mode: "number" }).default(0).notNull(),
+    internalOrderedRevenueCents: bigint("internal_ordered_revenue_cents", { mode: "number" }).default(0).notNull(),
+    internalCollectedRevenueCents: bigint("internal_collected_revenue_cents", { mode: "number" }).default(0).notNull(),
+    internalRefundedRevenueCents: bigint("internal_refunded_revenue_cents", { mode: "number" }).default(0).notNull(),
+    internalNetCollectedRevenueCents: bigint("internal_net_collected_revenue_cents", { mode: "number" }).default(0).notNull(),
     rulesVersion: text("rules_version").default("v2").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
@@ -461,6 +477,20 @@ export const websiteAnalyticsDailyAggregates = pgTable(
             and ${table.collectedRevenueCents} = 0
             and ${table.refundedRevenueCents} = 0
             and ${table.netCollectedRevenueCents} = 0))`,
+    ),
+    check(
+      "website_analytics_daily_internal_metrics_valid",
+      sql`${table.internalVisitors} between 0 and ${table.visitors}
+        and ${table.internalSessions} between 0 and ${table.sessions}
+        and ${table.internalPageViews} between 0 and ${table.pageViews}
+        and ${table.internalInquiries} between 0 and ${table.inquiries}
+        and ${table.internalOrders} between 0 and ${table.orders}
+        and ${table.internalPaidOrders} between 0 and ${table.paidOrders}
+        and ${table.internalOrderedRevenueCents} between 0 and ${table.orderedRevenueCents}
+        and ${table.internalCollectedRevenueCents} between 0 and ${table.collectedRevenueCents}
+        and ${table.internalRefundedRevenueCents} between 0 and ${table.refundedRevenueCents}
+        and ${table.internalNetCollectedRevenueCents}
+          = ${table.internalCollectedRevenueCents} - ${table.internalRefundedRevenueCents}`,
     ),
     check(
       "website_analytics_daily_rules_version_valid",

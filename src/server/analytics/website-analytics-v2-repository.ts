@@ -157,12 +157,19 @@ export function createWebsiteAnalyticsV2Repository(
         sourceReference: fact.sourceId,
         historical: fact.historical,
       }, executor);
+      const [convertingSession] = attribution.convertingSessionId
+        ? await executor.select({ isInternal: websiteAnalyticsSessions.isInternal })
+          .from(websiteAnalyticsSessions)
+          .where(eq(websiteAnalyticsSessions.id, attribution.convertingSessionId))
+          .limit(1)
+        : [];
       const [inserted] = await executor.insert(websiteAnalyticsConversions).values({
         ...fact,
         convertingSessionId: attribution.convertingSessionId,
         firstSessionId: attribution.firstSessionId,
         lastSessionId: attribution.lastSessionId,
         lastNonDirectSessionId: attribution.lastNonDirectSessionId,
+        isInternal: fact.isInternal || convertingSession?.isInternal === true,
       }).onConflictDoNothing({
         target: [
           websiteAnalyticsConversions.conversionType,

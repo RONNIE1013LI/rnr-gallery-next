@@ -8,6 +8,7 @@ import {
   assertAnalyticsResponsePrivacy,
   assertSameOriginAnalyticsRequest,
   parseAdminAnalyticsRequest,
+  assertInternalTrafficQueryAccess,
 } from "../route-handler";
 
 export const runtime = "nodejs";
@@ -43,10 +44,12 @@ export function createAdminAnalyticsOrdersRoute(dependencies?: Dependencies) {
     async GET(request: Request) {
       const deps = dependencies ?? defaults();
       try {
-        await deps.requirePermission("view_analytics");
+        const access = await deps.requirePermission("view_analytics");
         assertSameOriginAnalyticsRequest(request);
         if (!deps.enabled()) throw new AnalyticsOrdersDisabledError();
-        const result = await deps.listOrders(parseAdminAnalyticsRequest(request, deps.now()));
+        const query = parseAdminAnalyticsRequest(request, deps.now());
+        assertInternalTrafficQueryAccess(access, query);
+        const result = await deps.listOrders(query);
         assertAnalyticsResponsePrivacy(result);
         return Response.json(result, { headers: analyticsNoStoreHeaders });
       } catch (error) {
