@@ -65,6 +65,11 @@
   color: var(--gallery-green-light);
 }
 
+.galleryQuickFilters a[aria-current="page"] {
+  color: var(--gallery-green);
+  box-shadow: inset 0 -2px var(--aged-gold-text);
+}
+
 .galleryFilters {
   scroll-margin-top: 6rem;
   border-bottom: 1px solid var(--border);
@@ -3196,6 +3201,24 @@
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
+}
+
+@media (max-width: 600px) {
+  .cartEmpty {
+    padding-block: 3rem;
+  }
+
+  .cartEmpty > p:not(.eyebrow) {
+    margin-top: 0.9rem;
+  }
+
+  .cartEmpty .emptyStateActions {
+    margin-top: 1.5rem;
+  }
+
+  .cartEmpty .emptyStateActions > a {
+    width: 100%;
+  }
 }
 
 .checkoutPage {

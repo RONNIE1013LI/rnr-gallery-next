@@ -64,6 +64,10 @@ function quickHref(params: Array<[string, string]>): string {
   return `/design-gallery${search.size ? `?${search.toString()}` : ""}`;
 }
 
+function sameValues(left: readonly string[], right: readonly string[]) {
+  return left.length === right.length && left.every((value) => right.includes(value));
+}
+
 function FilterCheckbox({
   name,
   value,
@@ -80,19 +84,26 @@ function FilterCheckbox({
 
 export function DesignGallery({ query, result }: Props) {
   const advancedOpen = query.showFilters || query.birthdayAges.length > 0 || query.themes.length > 0;
+  const noSecondaryFilters = query.birthdayAges.length === 0 && query.themes.length === 0;
+  const onlyOccasion = (occasion: string) => noSecondaryFilters
+    && query.productTypes.length === 0
+    && sameValues(query.occasions, [occasion]);
+  const onlyProducts = (productTypes: readonly string[]) => noSecondaryFilters
+    && query.occasions.length === 0
+    && sameValues(query.productTypes, productTypes);
   const quickFilters = [
-    ["All Designs", quickHref([])],
-    ["Memorial", quickHref([["occasion", "memorial"]])],
-    ["Birthday", quickHref([["occasion", "birthday"]])],
-    ["Family", quickHref([["occasion", "family-portrait"]])],
-    ["Wedding", quickHref([["occasion", "wedding"]])],
-    ["Religious", quickHref([["occasion", "religious"]])],
-    ["Canvas", quickHref([["design_type", "canvas"]])],
+    ["All Designs", quickHref([]), noSecondaryFilters && query.productTypes.length === 0 && query.occasions.length === 0],
+    ["Memorial", quickHref([["occasion", "memorial"]]), onlyOccasion("memorial")],
+    ["Birthday", quickHref([["occasion", "birthday"]]), onlyOccasion("birthday")],
+    ["Family", quickHref([["occasion", "family-portrait"]]), onlyOccasion("family-portrait")],
+    ["Wedding", quickHref([["occasion", "wedding"]]), onlyOccasion("wedding")],
+    ["Religious", quickHref([["occasion", "religious"]]), onlyOccasion("religious")],
+    ["Canvas", quickHref([["design_type", "canvas"]]), onlyProducts(["canvas"])],
     ["Banners", quickHref([
       ["design_type", "grave-cover"],
       ["design_type", "roll-up-banner"],
       ["design_type", "wall-hanging-banners"],
-    ])],
+    ]), onlyProducts(["grave-cover", "roll-up-banner", "wall-hanging-banners"])],
   ] as const;
 
   return (
@@ -103,7 +114,7 @@ export function DesignGallery({ query, result }: Props) {
       </header>
 
       <nav className={styles.galleryQuickFilters} aria-label="Design gallery filters">
-        {quickFilters.map(([label, href]) => <Link key={label} href={href}>{label}</Link>)}
+        {quickFilters.map(([label, href, active]) => <Link aria-current={active ? "page" : undefined} key={label} href={href}>{label}</Link>)}
       </nav>
 
       <details id="browse-by-occasion" className={styles.galleryFilters} open={advancedOpen}>

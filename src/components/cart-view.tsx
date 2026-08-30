@@ -181,8 +181,8 @@ export function CartView({ market = "NZ" }: Readonly<{ market?: Market }>) {
 
   if (cart.items.length === 0) {
     return (
-      <section className={styles.cartEmpty}>
-        <h2>Your cart is empty</h2>
+      <section className={styles.cartEmpty} aria-labelledby="empty-cart-title">
+        <h2 id="empty-cart-title">Your cart is empty</h2>
         <p>Choose a custom product to begin creating your artwork.</p>
         <div className={styles.emptyStateActions}>
           <Link className={styles.primaryButton} href={marketSwitchDestination("/canvas", market)}>Browse Canvas</Link>

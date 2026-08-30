@@ -12,6 +12,22 @@ const query: GalleryQuery = {
 };
 
 describe("DesignGallery", () => {
+  it("marks the exact quick filter as selected without changing the query", () => {
+    const { rerender } = render(<DesignGallery
+      query={{ ...query, productTypes: [], occasions: ["birthday"], birthdayAges: [], themes: [] }}
+      result={{ items: [], total: 0, page: 1, pageCount: 1, pageSize: 24 }}
+    />);
+
+    expect(screen.getByRole("link", { name: "Birthday" })).toHaveAttribute("aria-current", "page");
+    expect(screen.getByRole("link", { name: "All Designs" })).not.toHaveAttribute("aria-current");
+
+    rerender(<DesignGallery
+      query={{ ...query, productTypes: [], occasions: [], birthdayAges: [], themes: [] }}
+      result={{ items: [], total: 0, page: 1, pageCount: 1, pageSize: 24 }}
+    />);
+    expect(screen.getByRole("link", { name: "All Designs" })).toHaveAttribute("aria-current", "page");
+  });
+
   it("shows birthday ages immediately when Birthday is selected in the open filter form", () => {
     render(<DesignGallery
       query={{ ...query, occasions: [], birthdayAges: [], showFilters: true }}

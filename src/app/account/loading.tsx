@@ -11,7 +11,7 @@ export default function AccountLoading() {
     ? (["google"] as const)
     : ([] as const) as ReadonlyArray<SocialProviderId>;
 
-  return <main id="main-content" className={styles.legalPage}>
+  return <main id="main-content" className={styles.legalPage} aria-busy="true">
     <article className={`${styles.authPage} ${styles.customerAuthPage}`}>
       <AuthGateway
         configuredProviders={customerProviders}

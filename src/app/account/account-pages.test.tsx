@@ -76,8 +76,9 @@ describe("protected account pages", () => {
   });
 
   it("shows the usable sign-in surface while the account session is checked", () => {
-    render(<AccountLoading />);
+    const { container } = render(<AccountLoading />);
 
+    expect(container.querySelector("main")).toHaveAttribute("aria-busy", "true");
     expect(screen.getByRole("heading", { name: "Welcome back." })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Continue with Email" })).toBeEnabled();
   });

@@ -140,7 +140,9 @@ describe("CartView", () => {
 
   it("shows a useful empty state", () => {
     render(<CartView market="NZ" />);
-    expect(screen.getByRole("heading", { level: 2, name: "Your cart is empty" })).toBeInTheDocument();
+    const heading = screen.getByRole("heading", { level: 2, name: "Your cart is empty" });
+    expect(heading).toBeInTheDocument();
+    expect(heading.closest("section")).toHaveAttribute("aria-labelledby", "empty-cart-title");
     expect(screen.getByRole("link", { name: "Browse Canvas" })).toHaveAttribute("href", "/canvas");
     expect(screen.getByRole("link", { name: "Browse Banners" })).toHaveAttribute("href", "/banners");
     expect(screen.getByRole("link", { name: "Design Gallery" })).toHaveAttribute("href", "/design-gallery");
