@@ -124,9 +124,39 @@ async function readRawDailyRowsFrom(
         'website'::text as scope,
         'Unattributed'::text as market,
         '(not set)'::text as currency,
-        sessions.channel::text as channel,
-        coalesce(nullif(trim(sessions.source), ''), 'Unattributed')::text as source,
-        coalesce(nullif(trim(sessions.medium), ''), '(not set)')::text as medium,
+        case
+          when sessions.channel = 'other'
+            and lower(trim(sessions.source)) in (
+            'rnrgallery.com', 'www.rnrgallery.com', 'rrgallery.co.nz', 'www.rrgallery.co.nz'
+            )
+            and lower(trim(sessions.medium)) = 'referral'
+            and nullif(trim(sessions.utm_campaign), '') is null
+            and sessions.click_id_type is null
+          then 'direct'
+          else sessions.channel::text
+        end as channel,
+        case
+          when sessions.channel = 'other'
+            and lower(trim(sessions.source)) in (
+            'rnrgallery.com', 'www.rnrgallery.com', 'rrgallery.co.nz', 'www.rrgallery.co.nz'
+            )
+            and lower(trim(sessions.medium)) = 'referral'
+            and nullif(trim(sessions.utm_campaign), '') is null
+            and sessions.click_id_type is null
+          then 'direct'
+          else coalesce(nullif(trim(sessions.source), ''), 'Unattributed')::text
+        end as source,
+        case
+          when sessions.channel = 'other'
+            and lower(trim(sessions.source)) in (
+            'rnrgallery.com', 'www.rnrgallery.com', 'rrgallery.co.nz', 'www.rrgallery.co.nz'
+            )
+            and lower(trim(sessions.medium)) = 'referral'
+            and nullif(trim(sessions.utm_campaign), '') is null
+            and sessions.click_id_type is null
+          then '(not set)'
+          else coalesce(nullif(trim(sessions.medium), ''), '(not set)')::text
+        end as medium,
         coalesce(nullif(trim(sessions.utm_campaign), ''), '(not set)')::text as campaign,
         models.attribution_model as "attributionModel",
         count(distinct sessions.visitor_digest)::bigint as visitors,

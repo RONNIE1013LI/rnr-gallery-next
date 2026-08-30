@@ -106,6 +106,45 @@ describe("classifyWebsiteAttribution", () => {
     });
   });
 
+  it.each([
+    "https://rnrgallery.com",
+    "https://www.rnrgallery.com",
+    "https://rrgallery.co.nz",
+    "https://www.rrgallery.co.nz",
+  ])("classifies the store's own referrer %s as Direct", (referrerOrigin) => {
+    expect(classifyWebsiteAttribution({
+      ...emptyLanding,
+      referrerOrigin,
+    })).toEqual({
+      channel: "direct",
+      source: "direct",
+      medium: null,
+      utmCampaign: null,
+      clickIdType: null,
+    });
+  });
+
+  it("does not erase explicit campaign evidence just because the referrer is the store", () => {
+    expect(classifyWebsiteAttribution({
+      ...emptyLanding,
+      utmCampaign: "Spring",
+      referrerOrigin: "https://rnrgallery.com",
+    })).toMatchObject({
+      channel: "other",
+      source: "rnrgallery.com",
+      utmCampaign: "Spring",
+    });
+  });
+
+  it("preserves a consented Google click across the legacy-domain redirect", () => {
+    expect(classifyWebsiteAttribution({
+      ...emptyLanding,
+      advertisingConsent: true,
+      clickIdTypes: ["gclid"],
+      referrerOrigin: "https://rrgallery.co.nz",
+    })).toMatchObject({ channel: "google_ads", source: "google", clickIdType: "gclid" });
+  });
+
   it("classifies non-core referrers as Other", () => {
     expect(classifyWebsiteAttribution({
       ...emptyLanding,

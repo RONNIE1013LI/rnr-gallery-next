@@ -58,9 +58,37 @@ describe("website analytics v2 attribution", () => {
     for (const hostname of ["rnrgallery.com", "www.rnrgallery.com", "rrgallery.co.nz", "www.rrgallery.co.nz"]) {
       expect(resolveWebsiteAnalyticsAttribution({
         conversion: { ...conversion, convertingSessionId: hostname },
-        sessions: [{ ...sessions[2], id: hostname, channel: "other", source: hostname, referrerOrigin: `https://${hostname}` }],
+        sessions: [{ ...sessions[2], id: hostname, channel: "other", source: hostname, medium: "referral", referrerOrigin: `https://${hostname}` }],
       }).lastTouch).toMatchObject({ channel: "direct", source: "direct", externalReferrerOrigin: null });
     }
+  });
+
+  it.each([
+    ["google_ads", "google", "cpc", { gclid: "redirect-click" }],
+    ["meta_ads", "meta", "paid_social", { fbclid: "redirect-click" }],
+  ] as const)("preserves %s attribution when an old-domain redirect is the referrer", (
+    channel,
+    source,
+    medium,
+    consentQualifiedClickIds,
+  ) => {
+    const redirected = {
+      ...sessions[2],
+      id: "redirected-paid",
+      channel,
+      source,
+      medium,
+      referrerOrigin: "https://rrgallery.co.nz",
+      consentQualifiedClickIds,
+    };
+    expect(resolveWebsiteAnalyticsAttribution({
+      conversion: { ...conversion, convertingSessionId: redirected.id },
+      sessions: [redirected],
+    }).lastTouch).toMatchObject({
+      channel,
+      source,
+      consentQualifiedClickIds,
+    });
   });
 
   it("uses session IDs as a deterministic tie-breaker when session timestamps match", () => {

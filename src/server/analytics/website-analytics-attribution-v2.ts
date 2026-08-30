@@ -76,17 +76,22 @@ const OWN_HOSTS = new Set([
   "www.rrgallery.co.nz",
 ]);
 
-function isOwnReferrer(value: string | null | undefined): boolean {
-  if (!value) return false;
-  try {
-    return OWN_HOSTS.has(new URL(value).hostname.toLowerCase());
-  } catch {
-    return false;
-  }
+function hasConsentQualifiedClickId(session: WebsiteAnalyticsAttributionSession): boolean {
+  return WEBSITE_CLICK_ID_TYPES.some((key) => {
+    const identifier = session.consentQualifiedClickIds?.[key];
+    return typeof identifier === "string" && identifier.trim().length > 0;
+  });
 }
 
 function normalizeSession(session: WebsiteAnalyticsAttributionSession): NormalizedSession {
-  if (isOwnReferrer(session.referrerOrigin) || OWN_HOSTS.has(session.source.toLowerCase())) {
+  const exactLegacySelfReferral = session.channel === "other"
+    && OWN_HOSTS.has(session.source.trim().toLowerCase())
+    && session.medium?.trim().toLowerCase() === "referral"
+    && !session.campaign?.trim()
+    && !session.term?.trim()
+    && !session.content?.trim()
+    && !hasConsentQualifiedClickId(session);
+  if (exactLegacySelfReferral) {
     return { ...session, channel: "direct", source: "direct", medium: null, referrerOrigin: null };
   }
   return { ...session, referrerOrigin: session.referrerOrigin ?? null };

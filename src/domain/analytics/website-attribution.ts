@@ -24,6 +24,7 @@ type AttributionInput = Readonly<{
 const GOOGLE_CLICK_PRIORITY = ["gclid", "gbraid", "wbraid"] as const;
 const GOOGLE_PAID_MEDIA = new Set(["cpc", "ppc", "paid", "paid_search", "sem"]);
 const META_PAID_MEDIA = new Set(["paid", "paid_social", "cpc", "ppc"]);
+const OWN_REFERRER_HOSTS = new Set(["rnrgallery.com", "rrgallery.co.nz"]);
 
 function bounded(value: string | null, maximum: number, lowercase: boolean) {
   if (typeof value !== "string") return null;
@@ -99,6 +100,9 @@ export function classifyWebsiteAttribution(input: AttributionInput): WebsiteAttr
   }
 
   const host = referrerHost(input.referrerOrigin);
+  if (!source && !medium && !campaign && clickTypes.length === 0 && host && OWN_REFERRER_HOSTS.has(host)) {
+    return result("direct", "direct", null, campaign);
+  }
   if (key === "google" || key === "google_organic" || isGoogleSearchHost(host)) {
     return result("google_organic", source ?? "google", medium ?? "organic", campaign);
   }

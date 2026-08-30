@@ -32,7 +32,7 @@ const prefix = `analytics-v2-task5-reconcile:${runId}:`;
 const localDates = [
   "2297-09-30", "2297-10-01", "2297-10-02", "2297-10-03",
   "2297-11-10", "2297-11-11", "2297-11-12", "2297-11-13",
-  "2297-11-30", "2297-12-01",
+  "2297-11-30", "2297-12-01", "2297-12-02",
 ];
 const sessionIds: string[] = [];
 const conversationIds: string[] = [];
@@ -115,9 +115,10 @@ async function trafficSession(input: Readonly<{
   startedAt: Date;
   sessionLocalDate: string;
   pageviewLocalDate: string;
-  channel: "google_ads" | "meta_ads" | "direct";
+  channel: "google_ads" | "meta_ads" | "direct" | "other";
   source: string;
   medium: string | null;
+  utmCampaign?: string | null;
 }>) {
   const id = randomUUID();
   sessionIds.push(id);
@@ -129,7 +130,7 @@ async function trafficSession(input: Readonly<{
     channel: input.channel,
     source: input.source,
     medium: input.medium,
-    utmCampaign: `${prefix}multi-channel`,
+    utmCampaign: input.utmCampaign === undefined ? `${prefix}multi-channel` : input.utmCampaign,
   });
   await database.insert(websiteAnalyticsPageviews).values({
     id: randomUUID(),
@@ -319,6 +320,46 @@ describe("website analytics V2 reconciliation", () => {
       ]);
       expect(channelRows.reduce((sum, row) => sum + row.visitors, 0)).toBe(3);
     }
+  });
+
+  it("normalizes legacy self-referral traffic into Direct aggregates", async () => {
+    await trafficSession({
+      visitorKey: "legacy-self-referrer",
+      startedAt: new Date("2297-12-02T01:00:00.000Z"),
+      sessionLocalDate: "2297-12-02",
+      pageviewLocalDate: "2297-12-02",
+      channel: "other",
+      source: "rnrgallery.com",
+      medium: "referral",
+      utmCampaign: null,
+    });
+
+    const reconciliation = createWebsiteAnalyticsV2Reconciliation(database);
+    await createWebsiteAnalyticsV2Repository(database).markDirtyDate("2297-12-02");
+    expect(await reconciliation.rebuildDirtyDate("2297-12-02"))
+      .toEqual({ rebuilt: 1, busy: 0, failed: 0 });
+    const rows = await reconciliation.readAggregateDailyRows("2297-12-02");
+    const dimensions = rows.filter((row) => row.channel !== ANALYTICS_DIMENSION_SENTINELS.total);
+
+    expect(dimensions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        attributionModel: "first_touch",
+        channel: "direct",
+        source: "direct",
+        medium: ANALYTICS_DIMENSION_SENTINELS.notSet,
+        sessions: 1,
+        pageViews: 1,
+      }),
+      expect.objectContaining({
+        attributionModel: "last_touch",
+        channel: "direct",
+        source: "direct",
+        medium: ANALYTICS_DIMENSION_SENTINELS.notSet,
+        sessions: 1,
+        pageViews: 1,
+      }),
+    ]));
+    expect(dimensions.some((row) => row.source === "rnrgallery.com")).toBe(false);
   });
 
   it("dirties and rebuilds the exact late refund occurrence date", async () => {
