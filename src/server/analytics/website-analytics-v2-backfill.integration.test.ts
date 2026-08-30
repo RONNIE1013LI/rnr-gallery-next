@@ -14,6 +14,7 @@ import {
   productionJobs,
   websiteAnalyticsAttributionSnapshots,
   websiteAnalyticsConversions,
+  websiteAnalyticsDailyAggregates,
   websiteAnalyticsFinancialEvents,
   websiteAnalyticsReconciliationState,
 } from "@/server/db/schema";
@@ -183,6 +184,17 @@ async function manualOrder(occurredAt: Date) {
 }
 
 afterAll(async () => {
+  const roundTwoLocalDates = [
+    "2395-04-02",
+    "2396-01-02",
+    "2396-02-02",
+  ];
+  await database.delete(websiteAnalyticsDailyAggregates)
+    .where(inArray(websiteAnalyticsDailyAggregates.localDate, roundTwoLocalDates));
+  await database.delete(websiteAnalyticsReconciliationState).where(and(
+    eq(websiteAnalyticsReconciliationState.stateType, "dirty_date"),
+    inArray(websiteAnalyticsReconciliationState.stateKey, roundTwoLocalDates),
+  ));
   await database.delete(websiteAnalyticsFinancialEvents)
     .where(sql`${websiteAnalyticsFinancialEvents.sourceId} like ${`${prefix}%`}`);
   if (sourceIds.length > 0) {
@@ -300,7 +312,266 @@ describe("website analytics V2 backfill", () => {
         { channel: "unattributed", source: "Unattributed" },
         { channel: "unattributed", source: "Unattributed" },
         { channel: "unattributed", source: "Unattributed" },
-      ]);
+    ]);
+  });
+
+  it("previews a zero-value website order with the same skip decision as the next write", async () => {
+    const orderId = await websiteOrder({
+      occurredAt: new Date("2395-04-02T00:00:00.000Z"),
+      amountCents: 0,
+    });
+    sourceIds.push(orderId);
+    const stateKeyPrefix = `${prefix}zero-order`;
+    const input = {
+      batchSize: 10,
+      sources: ["website_orders"] as const,
+      stateKeyPrefix,
+      fromOccurredAt: new Date("2395-04-01T00:00:00.000Z"),
+    };
+    const backfill = createWebsiteAnalyticsV2Backfill(database);
+
+    const preview = await backfill.run({ ...input, dryRun: true });
+    expect(preview.sources).toEqual([expect.objectContaining({
+      source: "website_orders",
+      scanned: 1,
+      wouldCreate: 0,
+      unchanged: 0,
+      skipped: 1,
+      failed: 0,
+      cursor: { occurredAt: "2395-04-02T00:00:00.000Z", id: orderId },
+      complete: true,
+      busy: false,
+    })]);
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(eq(websiteAnalyticsConversions.sourceId, orderId))).toEqual([]);
+    expect(await database.select().from(websiteAnalyticsReconciliationState).where(and(
+      eq(websiteAnalyticsReconciliationState.stateType, "backfill"),
+      eq(websiteAnalyticsReconciliationState.stateKey, `${stateKeyPrefix}:website_orders`),
+    ))).toEqual([]);
+
+    const write = await backfill.run({ ...input, dryRun: false });
+    expect(write.sources).toEqual([expect.objectContaining({
+      source: "website_orders",
+      scanned: 1,
+      created: 0,
+      unchanged: 0,
+      skipped: 1,
+      failed: 0,
+      cursor: { occurredAt: "2395-04-02T00:00:00.000Z", id: orderId },
+      complete: true,
+      busy: false,
+    })]);
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(eq(websiteAnalyticsConversions.sourceId, orderId))).toEqual([]);
+  });
+
+  it("previews from a pending persisted cursor and leaves every preview surface unchanged", async () => {
+    const priorId = await websiteOrder({ occurredAt: new Date("2396-01-01T00:00:00.000Z") });
+    const resumedId = await websiteOrder({ occurredAt: new Date("2396-01-02T00:00:00.000Z") });
+    const followingId = await websiteOrder({ occurredAt: new Date("2396-01-03T00:00:00.000Z") });
+    sourceIds.push(priorId, resumedId, followingId);
+    const stateKeyPrefix = `${prefix}pending-preview`;
+    const stateKey = `${stateKeyPrefix}:website_orders`;
+    await database.insert(websiteAnalyticsReconciliationState).values({
+      stateType: "backfill",
+      stateKey,
+      status: "pending",
+      cursorOccurredAt: new Date("2396-01-01T00:00:00.000Z"),
+      cursorId: priorId,
+      scannedCount: 4,
+      createdCount: 3,
+      skippedCount: 1,
+    });
+    const [stateBefore] = await database.select().from(websiteAnalyticsReconciliationState)
+      .where(and(
+        eq(websiteAnalyticsReconciliationState.stateType, "backfill"),
+        eq(websiteAnalyticsReconciliationState.stateKey, stateKey),
+      ));
+    const dirtyDatesBefore = await database.select().from(websiteAnalyticsReconciliationState)
+      .where(and(
+        eq(websiteAnalyticsReconciliationState.stateType, "dirty_date"),
+        inArray(websiteAnalyticsReconciliationState.stateKey,
+          ["2396-01-01", "2396-01-02", "2396-01-03"]),
+      ));
+    const aggregatesBefore = await database.select().from(websiteAnalyticsDailyAggregates)
+      .where(inArray(websiteAnalyticsDailyAggregates.localDate,
+        ["2396-01-01", "2396-01-02", "2396-01-03"]));
+    const input = {
+      batchSize: 1,
+      sources: ["website_orders"] as const,
+      stateKeyPrefix,
+      fromOccurredAt: new Date("2396-01-10T00:00:00.000Z"),
+    };
+    const backfill = createWebsiteAnalyticsV2Backfill(database);
+
+    const preview = await backfill.run({ ...input, dryRun: true });
+    expect(preview.sources).toEqual([expect.objectContaining({
+      scanned: 1,
+      wouldCreate: 1,
+      unchanged: 0,
+      skipped: 0,
+      failed: 0,
+      cursor: { occurredAt: "2396-01-02T00:00:00.000Z", id: resumedId },
+      complete: false,
+      busy: false,
+    })]);
+    expect(await database.select().from(websiteAnalyticsReconciliationState).where(and(
+      eq(websiteAnalyticsReconciliationState.stateType, "backfill"),
+      eq(websiteAnalyticsReconciliationState.stateKey, stateKey),
+    ))).toEqual([stateBefore]);
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(inArray(websiteAnalyticsConversions.sourceId, [priorId, resumedId, followingId])))
+      .toEqual([]);
+    expect(await database.select().from(websiteAnalyticsReconciliationState).where(and(
+      eq(websiteAnalyticsReconciliationState.stateType, "dirty_date"),
+      inArray(websiteAnalyticsReconciliationState.stateKey, ["2396-01-01", "2396-01-02", "2396-01-03"]),
+    ))).toEqual(dirtyDatesBefore);
+    expect(await database.select().from(websiteAnalyticsDailyAggregates)
+      .where(inArray(websiteAnalyticsDailyAggregates.localDate,
+        ["2396-01-01", "2396-01-02", "2396-01-03"]))).toEqual(aggregatesBefore);
+
+    const write = await backfill.run({ ...input, dryRun: false });
+    expect(write.sources).toEqual([expect.objectContaining({
+      scanned: 1,
+      created: 1,
+      unchanged: 0,
+      skipped: 0,
+      failed: 0,
+      cursor: { occurredAt: "2396-01-02T00:00:00.000Z", id: resumedId },
+      complete: false,
+      busy: false,
+    })]);
+    expect(await database.select({ sourceId: websiteAnalyticsConversions.sourceId })
+      .from(websiteAnalyticsConversions)
+      .where(inArray(websiteAnalyticsConversions.sourceId, [priorId, resumedId, followingId])))
+      .toEqual([{ sourceId: resumedId }]);
+  });
+
+  it("previews from a failed persisted cursor without changing failure evidence", async () => {
+    const priorId = await websiteOrder({ occurredAt: new Date("2396-02-01T00:00:00.000Z") });
+    const resumedId = await websiteOrder({ occurredAt: new Date("2396-02-02T00:00:00.000Z") });
+    sourceIds.push(priorId, resumedId);
+    const stateKeyPrefix = `${prefix}failed-preview`;
+    const stateKey = `${stateKeyPrefix}:website_orders`;
+    await database.insert(websiteAnalyticsReconciliationState).values({
+      stateType: "backfill",
+      stateKey,
+      status: "failed",
+      cursorOccurredAt: new Date("2396-02-01T00:00:00.000Z"),
+      cursorId: priorId,
+      failedCount: 2,
+      startedAt: new Date("2396-02-03T00:00:00.000Z"),
+      lastErrorCode: "SOURCE_ROW_FAILED",
+      updatedAt: new Date("2396-02-03T00:00:00.000Z"),
+    });
+    const [stateBefore] = await database.select().from(websiteAnalyticsReconciliationState)
+      .where(and(
+        eq(websiteAnalyticsReconciliationState.stateType, "backfill"),
+        eq(websiteAnalyticsReconciliationState.stateKey, stateKey),
+      ));
+    const input = {
+      batchSize: 10,
+      sources: ["website_orders"] as const,
+      stateKeyPrefix,
+      fromOccurredAt: new Date("2396-02-10T00:00:00.000Z"),
+    };
+    const backfill = createWebsiteAnalyticsV2Backfill(database);
+
+    const preview = await backfill.run({ ...input, dryRun: true });
+    expect(preview.sources).toEqual([expect.objectContaining({
+      scanned: 1,
+      wouldCreate: 1,
+      unchanged: 0,
+      skipped: 0,
+      failed: 0,
+      cursor: { occurredAt: "2396-02-02T00:00:00.000Z", id: resumedId },
+      complete: true,
+      busy: false,
+    })]);
+    expect(await database.select().from(websiteAnalyticsReconciliationState).where(and(
+      eq(websiteAnalyticsReconciliationState.stateType, "backfill"),
+      eq(websiteAnalyticsReconciliationState.stateKey, stateKey),
+    ))).toEqual([stateBefore]);
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(inArray(websiteAnalyticsConversions.sourceId, [priorId, resumedId]))).toEqual([]);
+
+    const write = await backfill.run({ ...input, dryRun: false });
+    expect(write.sources).toEqual([expect.objectContaining({
+      scanned: 1,
+      created: 1,
+      unchanged: 0,
+      skipped: 0,
+      failed: 0,
+      cursor: { occurredAt: "2396-02-02T00:00:00.000Z", id: resumedId },
+      complete: true,
+      busy: false,
+    })]);
+  });
+
+  it("previews the same completed-state short circuit as the next write", async () => {
+    const completedId = await websiteOrder({ occurredAt: new Date("2396-03-01T00:00:00.000Z") });
+    const laterId = await websiteOrder({ occurredAt: new Date("2396-03-02T00:00:00.000Z") });
+    sourceIds.push(completedId, laterId);
+    const stateKeyPrefix = `${prefix}completed-preview`;
+    const stateKey = `${stateKeyPrefix}:website_orders`;
+    await database.insert(websiteAnalyticsReconciliationState).values({
+      stateType: "backfill",
+      stateKey,
+      status: "completed",
+      cursorOccurredAt: new Date("2396-03-01T00:00:00.000Z"),
+      cursorId: completedId,
+      scannedCount: 1,
+      createdCount: 1,
+      startedAt: new Date("2396-03-03T00:00:00.000Z"),
+      completedAt: new Date("2396-03-03T00:01:00.000Z"),
+      updatedAt: new Date("2396-03-03T00:01:00.000Z"),
+    });
+    const [stateBefore] = await database.select().from(websiteAnalyticsReconciliationState)
+      .where(and(
+        eq(websiteAnalyticsReconciliationState.stateType, "backfill"),
+        eq(websiteAnalyticsReconciliationState.stateKey, stateKey),
+      ));
+    const input = {
+      batchSize: 10,
+      sources: ["website_orders"] as const,
+      stateKeyPrefix,
+      fromOccurredAt: new Date("2396-03-01T00:00:00.000Z"),
+    };
+    const backfill = createWebsiteAnalyticsV2Backfill(database);
+
+    const preview = await backfill.run({ ...input, dryRun: true });
+    expect(preview.sources).toEqual([expect.objectContaining({
+      scanned: 0,
+      wouldCreate: 0,
+      unchanged: 0,
+      skipped: 0,
+      failed: 0,
+      cursor: { occurredAt: "2396-03-01T00:00:00.000Z", id: completedId },
+      complete: true,
+      busy: false,
+    })]);
+    expect(await database.select().from(websiteAnalyticsReconciliationState).where(and(
+      eq(websiteAnalyticsReconciliationState.stateType, "backfill"),
+      eq(websiteAnalyticsReconciliationState.stateKey, stateKey),
+    ))).toEqual([stateBefore]);
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(inArray(websiteAnalyticsConversions.sourceId, [completedId, laterId]))).toEqual([]);
+
+    const write = await backfill.run({ ...input, dryRun: false });
+    expect(write.sources).toEqual([expect.objectContaining({
+      scanned: 0,
+      created: 0,
+      unchanged: 0,
+      skipped: 0,
+      failed: 0,
+      cursor: { occurredAt: "2396-03-01T00:00:00.000Z", id: completedId },
+      complete: true,
+      busy: false,
+    })]);
+    expect(await database.select().from(websiteAnalyticsReconciliationState).where(and(
+      eq(websiteAnalyticsReconciliationState.stateType, "backfill"),
+      eq(websiteAnalyticsReconciliationState.stateKey, stateKey),
+    ))).toEqual([stateBefore]);
   });
 
   it("retries a crashed row without skipping it and lets only one concurrent worker create it", async () => {

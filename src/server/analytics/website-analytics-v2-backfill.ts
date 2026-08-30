@@ -95,6 +95,27 @@ type SourceRow = Readonly<{
   value: unknown;
 }>;
 
+type SourceState = Readonly<{
+  cursorOccurredAt: Date | null;
+  cursorId: string | null;
+  status: "pending" | "running" | "completed" | "failed";
+}>;
+
+type SourceLifecycle = Readonly<{
+  shortCircuit: boolean;
+  restarting: boolean;
+  cursor: Readonly<{ occurredAt: Date; id: string }> | null;
+  fromOccurredAt: Date | undefined;
+}>;
+
+type PlannedAction =
+  | Readonly<{ kind: "order"; input: Parameters<Repository["recordOrder"]>[0] }>
+  | Readonly<{ kind: "inquiry"; input: Parameters<Repository["recordInquiry"]>[0] }>
+  | Readonly<{
+      kind: "financial";
+      input: Parameters<Repository["recordFinancialEvent"]>[0];
+    }>;
+
 const LIMITATIONS = Object.freeze([
   "Historical direct payment timing is not inferred from mutable payment status or updatedAt.",
   "Historical refund timing or amount is not inferred from mutable refund status or updatedAt.",
@@ -150,6 +171,24 @@ function asCursor(row: SourceRow | undefined): WebsiteAnalyticsV2BackfillCursor 
   return row
     ? Object.freeze({ occurredAt: row.occurredAt.toISOString(), id: row.id })
     : null;
+}
+
+function lowerBoundCursor(fromOccurredAt: Date | undefined) {
+  return fromOccurredAt ? { occurredAt: fromOccurredAt, id: MINIMUM_UUID } : null;
+}
+
+function planSourceLifecycle(state: SourceState | undefined, input: BackfillInput): SourceLifecycle {
+  const restarting = state?.status === "completed" && input.restartCompleted === true;
+  const savedCursor = state?.cursorOccurredAt && state.cursorId !== null
+    ? { occurredAt: state.cursorOccurredAt, id: state.cursorId }
+    : null;
+  const restartCursor = input.restartCompleted ? lowerBoundCursor(input.fromOccurredAt) : null;
+  return Object.freeze({
+    shortCircuit: state?.status === "completed" && !input.restartCompleted,
+    restarting,
+    cursor: restarting ? restartCursor : savedCursor ?? restartCursor,
+    fromOccurredAt: state && !restarting ? undefined : input.fromOccurredAt,
+  });
 }
 
 function ledgerEventType(input: Readonly<{
@@ -396,83 +435,11 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
     throw new Error("Unknown analytics backfill source");
   }
 
-  async function existingCount(
-    executor: Database | Transaction,
-    source: WebsiteAnalyticsV2BackfillSource,
-    row: SourceRow,
-  ): Promise<number> {
-    if (source === "website_orders" || source === "website_inquiries") {
-      const existing = await executor.select({ id: websiteAnalyticsConversions.id })
-        .from(websiteAnalyticsConversions)
-        .where(eq(websiteAnalyticsConversions.sourceId, row.id)).limit(1);
-      return existing.length;
-    }
-    if (source === "manual_orders") {
-      const evidence = manualOrderEvidence(row.value);
-      if (!evidence || !eligibleOrder({
-        source: "manual",
-        manualFinalizationCommitted: true,
-        amountPayableCents: evidence.amountPayableCents,
-        initialStatus: evidence.initialStatus,
-      })) return 0;
-      const [conversion, initialPayment] = await Promise.all([
-        executor.select({ id: websiteAnalyticsConversions.id })
-          .from(websiteAnalyticsConversions)
-          .where(and(
-            eq(websiteAnalyticsConversions.conversionType, "order"),
-            eq(websiteAnalyticsConversions.sourceType, "production_job"),
-            eq(websiteAnalyticsConversions.sourceId, evidence.jobId),
-          )).limit(1),
-        evidence.amountPaidCents > 0
-          ? executor.select({ id: websiteAnalyticsFinancialEvents.id })
-              .from(websiteAnalyticsFinancialEvents)
-              .where(and(
-                eq(websiteAnalyticsFinancialEvents.sourceType, "manual_payment_update"),
-                eq(websiteAnalyticsFinancialEvents.sourceId, `manual-create:${evidence.jobId}`),
-                eq(websiteAnalyticsFinancialEvents.eventType, "receipt"),
-              )).limit(1)
-          : Promise.resolve([]),
-      ]);
-      return conversion.length + initialPayment.length;
-    }
-    if (source === "manual_payment_updates") {
-      const evidence = manualPaymentEvidence(row.value);
-      if (!evidence) return 0;
-      const existing = await executor.select({ id: websiteAnalyticsFinancialEvents.id })
-        .from(websiteAnalyticsFinancialEvents).where(and(
-          eq(websiteAnalyticsFinancialEvents.sourceType, "manual_payment_update"),
-          eq(websiteAnalyticsFinancialEvents.sourceId,
-            `manual-update:${evidence.jobId}:${evidence.idempotencyKey}`),
-          eq(websiteAnalyticsFinancialEvents.eventType, "receipt"),
-        )).limit(1);
-      return existing.length;
-    }
-    if (source === "ledger_events") {
-      const existing = await executor.select({ id: websiteAnalyticsFinancialEvents.id })
-        .from(websiteAnalyticsFinancialEvents).where(and(
-          eq(websiteAnalyticsFinancialEvents.sourceType, "payment_ledger_entry"),
-          eq(websiteAnalyticsFinancialEvents.sourceId, row.id),
-        ));
-      return existing.length;
-    }
-    const existing = await executor.select({ id: websiteAnalyticsFinancialEvents.id })
-      .from(websiteAnalyticsFinancialEvents).where(and(
-        eq(websiteAnalyticsFinancialEvents.sourceType, "payment_attempt"),
-        eq(websiteAnalyticsFinancialEvents.sourceId, row.id),
-        eq(
-          websiteAnalyticsFinancialEvents.eventType,
-          source === "direct_payment_paid_transitions" ? "receipt" : "refund",
-        ),
-      ));
-    return existing.length;
-  }
-
-  async function processRow(
+  async function planRow(
     source: WebsiteAnalyticsV2BackfillSource,
     row: SourceRow,
     historical: boolean,
-    transaction: Transaction,
-  ): Promise<Readonly<{ created: number; unchanged: number; skipped: number }>> {
+  ): Promise<readonly PlannedAction[]> {
     if (source === "website_orders") {
       const value = row.value as Readonly<{
         id: string;
@@ -485,87 +452,84 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
         source: "website",
         checkoutCommitted: true,
         totalInclGstCents: value.amountCents,
-      })) return { created: 0, unchanged: 0, skipped: 1 };
-      const result = await repository.recordOrder({
-        source: "website",
-        sourceId: value.id,
-        orderId: value.id,
-        occurredAt: value.occurredAt,
-        market: value.market,
-        currency: value.currency,
-        orderedAmountInclGstCents: value.amountCents,
-        consentLinked: false,
-        historical,
-      }, transaction);
-      return result.created
-        ? { created: 1, unchanged: 0, skipped: 0 }
-        : { created: 0, unchanged: 1, skipped: 0 };
+      })) return [];
+      return [{
+        kind: "order",
+        input: {
+          source: "website",
+          sourceId: value.id,
+          orderId: value.id,
+          occurredAt: value.occurredAt,
+          market: value.market,
+          currency: value.currency,
+          orderedAmountInclGstCents: value.amountCents,
+          consentLinked: false,
+          historical,
+        },
+      }];
     }
-    if (source === "website_inquiries") {
-      const result = await repository.recordInquiry({
+    if (source === "website_inquiries") return [{
+      kind: "inquiry",
+      input: {
         sourceId: row.id,
         conversationId: row.id,
         occurredAt: row.occurredAt,
         consentLinked: false,
         historical,
-      }, transaction);
-      return result.created
-        ? { created: 1, unchanged: 0, skipped: 0 }
-        : { created: 0, unchanged: 1, skipped: 0 };
-    }
+      },
+    }];
     if (source === "manual_orders") {
-      const value = manualOrderEvidence(row.value);
-      if (!value) return { created: 0, unchanged: 0, skipped: 1 };
-      if (!eligibleOrder({
+      const evidence = manualOrderEvidence(row.value);
+      if (!evidence || !eligibleOrder({
         source: "manual",
         manualFinalizationCommitted: true,
-        amountPayableCents: value.amountPayableCents,
-        initialStatus: value.initialStatus,
-      })) return { created: 0, unchanged: 0, skipped: 1 };
-      const order = await repository.recordOrder({
-        source: "manual",
-        sourceId: value.jobId,
-        productionJobId: value.jobId,
-        occurredAt: value.occurredAt,
-        market: value.currency === "AUD" ? "AU" : "NZ",
-        currency: value.currency,
-        orderedAmountInclGstCents: value.amountPayableCents,
-        historical,
-      }, transaction);
-      let created = order.created ? 1 : 0;
-      let unchanged = order.created ? 0 : 1;
-      if (value.amountPaidCents > 0) {
-        const payment = await repository.recordFinancialEvent({
-          productionJobId: value.jobId,
+        amountPayableCents: evidence.amountPayableCents,
+        initialStatus: evidence.initialStatus,
+      })) return [];
+      const actions: PlannedAction[] = [{
+        kind: "order",
+        input: {
+          source: "manual",
+          sourceId: evidence.jobId,
+          productionJobId: evidence.jobId,
+          occurredAt: evidence.occurredAt,
+          market: evidence.currency === "AUD" ? "AU" : "NZ",
+          currency: evidence.currency,
+          orderedAmountInclGstCents: evidence.amountPayableCents,
+          historical,
+        },
+      }];
+      if (evidence.amountPaidCents > 0) actions.push({
+        kind: "financial",
+        input: {
+          productionJobId: evidence.jobId,
           eventType: "receipt",
           sourceType: "manual_payment_update",
-          sourceId: `manual-create:${value.jobId}`,
-          amountCents: value.amountPaidCents,
-          currency: value.currency,
-          occurredAt: value.occurredAt,
+          sourceId: `manual-create:${evidence.jobId}`,
+          amountCents: evidence.amountPaidCents,
+          currency: evidence.currency,
+          occurredAt: evidence.occurredAt,
           historical,
-        }, transaction);
-        created += payment.created ? 1 : 0;
-        unchanged += payment.created ? 0 : 1;
-      }
-      return { created, unchanged, skipped: 0 };
+        },
+      });
+      return actions;
     }
     if (source === "manual_payment_updates") {
-      const value = manualPaymentEvidence(row.value);
-      if (!value) return { created: 0, unchanged: 0, skipped: 1 };
-      const result = await repository.recordFinancialEvent({
-        productionJobId: value.jobId,
-        eventType: "receipt",
-        sourceType: "manual_payment_update",
-        sourceId: `manual-update:${value.jobId}:${value.idempotencyKey}`,
-        amountCents: value.deltaCents,
-        currency: value.currency,
-        occurredAt: value.occurredAt,
-        historical,
-      }, transaction);
-      return result.created
-        ? { created: 1, unchanged: 0, skipped: 0 }
-        : { created: 0, unchanged: 1, skipped: 0 };
+      const evidence = manualPaymentEvidence(row.value);
+      if (!evidence) return [];
+      return [{
+        kind: "financial",
+        input: {
+          productionJobId: evidence.jobId,
+          eventType: "receipt",
+          sourceType: "manual_payment_update",
+          sourceId: `manual-update:${evidence.jobId}:${evidence.idempotencyKey}`,
+          amountCents: evidence.deltaCents,
+          currency: evidence.currency,
+          occurredAt: evidence.occurredAt,
+          historical,
+        },
+      }];
     }
     if (source === "ledger_events") {
       const value = row.value as Readonly<{
@@ -582,79 +546,133 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
         reversesEntryId: string | null;
       }>;
       const eventType = ledgerEventType(value);
-      if (!value.orderId || !eventType) return { created: 0, unchanged: 0, skipped: 1 };
-      const result = await repository.recordFinancialEvent({
-        orderId: value.orderId,
-        eventType,
-        sourceType: "payment_ledger_entry",
-        sourceId: value.id,
-        amountCents: value.amountCents,
-        currency: value.currency,
-        occurredAt: value.occurredAt,
-        historical,
-      }, transaction);
-      return result.created
-        ? { created: 1, unchanged: 0, skipped: 0 }
-        : { created: 0, unchanged: 1, skipped: 0 };
+      if (!value.orderId || !eventType) return [];
+      return [{
+        kind: "financial",
+        input: {
+          orderId: value.orderId,
+          eventType,
+          sourceType: "payment_ledger_entry",
+          sourceId: value.id,
+          amountCents: value.amountCents,
+          currency: value.currency,
+          occurredAt: value.occurredAt,
+          historical,
+        },
+      }];
     }
-    if (source === "direct_payment_paid_transitions"
-      || source === "direct_payment_refund_transitions") {
-      const eventType = source === "direct_payment_paid_transitions" ? "receipt" : "refund";
-      const transitions = (await loadDirectTransitions(row.id))
-        .filter((transition) => transition.eventType === eventType);
-      let created = 0;
-      let unchanged = 0;
-      for (const transition of transitions) {
-        const result = await repository.recordFinancialEvent({
+    const eventType = source === "direct_payment_paid_transitions" ? "receipt" : "refund";
+    return (await loadDirectTransitions(row.id))
+      .filter((transition) => transition.eventType === eventType)
+      .map((transition) => ({
+        kind: "financial" as const,
+        input: {
           orderId: transition.orderId,
           eventType: transition.eventType,
-          sourceType: "payment_attempt",
+          sourceType: "payment_attempt" as const,
           sourceId: transition.attemptId,
           amountCents: transition.amountCents,
           currency: transition.currency,
           occurredAt: transition.occurredAt,
           historical,
-        }, transaction);
-        if (result.created) created += 1;
-        else unchanged += 1;
+        },
+      }));
+  }
+
+  async function existingCount(
+    executor: Database | Transaction,
+    actions: readonly PlannedAction[],
+  ): Promise<number> {
+    let count = 0;
+    for (const action of actions) {
+      if (action.kind === "order") {
+        const existing = await executor.select({ id: websiteAnalyticsConversions.id })
+          .from(websiteAnalyticsConversions).where(and(
+            eq(websiteAnalyticsConversions.conversionType, "order"),
+            eq(websiteAnalyticsConversions.sourceType,
+              action.input.source === "website" ? "order" : "production_job"),
+            eq(websiteAnalyticsConversions.sourceId, action.input.sourceId),
+          )).limit(1);
+        count += existing.length;
+      } else if (action.kind === "inquiry") {
+        const existing = await executor.select({ id: websiteAnalyticsConversions.id })
+          .from(websiteAnalyticsConversions).where(and(
+            eq(websiteAnalyticsConversions.conversionType, "inquiry"),
+            eq(websiteAnalyticsConversions.sourceType, "customer_service_conversation"),
+            eq(websiteAnalyticsConversions.sourceId, action.input.sourceId),
+          )).limit(1);
+        count += existing.length;
+      } else {
+        const existing = await executor.select({ id: websiteAnalyticsFinancialEvents.id })
+          .from(websiteAnalyticsFinancialEvents).where(and(
+            eq(websiteAnalyticsFinancialEvents.sourceType, action.input.sourceType),
+            eq(websiteAnalyticsFinancialEvents.sourceId, action.input.sourceId),
+            eq(websiteAnalyticsFinancialEvents.eventType, action.input.eventType),
+          )).limit(1);
+        count += existing.length;
       }
-      return transitions.length === 0
-        ? { created: 0, unchanged: 0, skipped: 1 }
-        : { created, unchanged, skipped: 0 };
     }
-    throw new Error("Unknown analytics backfill source");
+    return count;
+  }
+
+  async function processRow(
+    actions: readonly PlannedAction[],
+    transaction: Transaction,
+  ): Promise<Readonly<{ created: number; unchanged: number; skipped: number }>> {
+    if (actions.length === 0) return { created: 0, unchanged: 0, skipped: 1 };
+    let created = 0;
+    let unchanged = 0;
+    for (const action of actions) {
+      const result = action.kind === "order"
+        ? await repository.recordOrder(action.input, transaction)
+        : action.kind === "inquiry"
+          ? await repository.recordInquiry(action.input, transaction)
+          : await repository.recordFinancialEvent(action.input, transaction);
+      if (result.created) created += 1;
+      else unchanged += 1;
+    }
+    return { created, unchanged, skipped: 0 };
   }
 
   async function dryRunSource(
     source: WebsiteAnalyticsV2BackfillSource,
     input: BackfillInput,
     batchSize: number,
+    stateKeyPrefix: string,
   ): Promise<WebsiteAnalyticsV2BackfillSourceResult> {
-    const rows = await loadRows(database, source, null, input.fromOccurredAt, batchSize + 1);
+    const stateType = input.stateType ?? "backfill";
+    const stateKey = `${stateKeyPrefix}:${source}`;
+    const [state] = await database.select({
+      cursorOccurredAt: websiteAnalyticsReconciliationState.cursorOccurredAt,
+      cursorId: websiteAnalyticsReconciliationState.cursorId,
+      status: websiteAnalyticsReconciliationState.status,
+    }).from(websiteAnalyticsReconciliationState).where(and(
+      eq(websiteAnalyticsReconciliationState.stateType, stateType),
+      eq(websiteAnalyticsReconciliationState.stateKey, stateKey),
+    )).limit(1);
+    const lifecycle = planSourceLifecycle(state, input);
+    if (lifecycle.shortCircuit) return Object.freeze({
+      source,
+      ...emptyCounts(),
+      cursor: lifecycle.cursor
+        ? { occurredAt: lifecycle.cursor.occurredAt.toISOString(), id: lifecycle.cursor.id }
+        : null,
+      complete: true,
+      busy: false,
+    });
+    const rows = await loadRows(
+      database,
+      source,
+      lifecycle.cursor,
+      lifecycle.fromOccurredAt,
+      batchSize + 1,
+    );
     const batch = rows.slice(0, batchSize);
     let counts = emptyCounts();
     for (const row of batch) {
-      const existing = await existingCount(database, source, row);
-      const possible = source === "direct_payment_paid_transitions"
-          || source === "direct_payment_refund_transitions"
-        ? (await loadDirectTransitions(row.id)).filter((transition) => transition.eventType
-          === (source === "direct_payment_paid_transitions" ? "receipt" : "refund")).length
-        : source === "ledger_events"
-          ? ((row.value as { orderId: string | null }).orderId
-              && ledgerEventType(row.value as Parameters<typeof ledgerEventType>[0]) ? 1 : 0)
-        : source === "manual_orders"
-          ? (() => {
-              const evidence = manualOrderEvidence(row.value);
-              return evidence && eligibleOrder({
-                source: "manual",
-                manualFinalizationCommitted: true,
-                amountPayableCents: evidence.amountPayableCents,
-                initialStatus: evidence.initialStatus,
-              }) ? 1 + (evidence.amountPaidCents > 0 ? 1 : 0) : 0;
-            })()
-        : source === "manual_payment_updates"
-          ? (manualPaymentEvidence(row.value) ? 1 : 0)
-        : 1;
+      const actions = await planRow(source, row, input.historical !== false);
+      const existing = await existingCount(database, actions);
+      const possible = actions.length;
       counts = addCounts(counts, {
         scanned: 1,
         created: 0,
@@ -667,7 +685,9 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
     return Object.freeze({
       source,
       ...counts,
-      cursor: asCursor(batch.at(-1)),
+      cursor: asCursor(batch.at(-1)) ?? (lifecycle.cursor
+        ? { occurredAt: lifecycle.cursor.occurredAt.toISOString(), id: lifecycle.cursor.id }
+        : null),
       complete: rows.length <= batchSize,
       busy: false,
     });
@@ -681,12 +701,7 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
   ): Promise<WebsiteAnalyticsV2BackfillSourceResult> {
     const stateType = input.stateType ?? "backfill";
     const stateKey = `${stateKeyPrefix}:${source}`;
-    const initialCursor = input.restartCompleted && input.fromOccurredAt
-      ? { occurredAt: input.fromOccurredAt, id: MINIMUM_UUID }
-      : null;
-    const failureInitialCursor = input.fromOccurredAt
-      ? { occurredAt: input.fromOccurredAt, id: MINIMUM_UUID }
-      : null;
+    const failureInitialCursor = lowerBoundCursor(input.fromOccurredAt);
     try {
       return await database.transaction(async (transaction) => {
       const lock = await transaction.execute<{ locked: boolean }>(sql`
@@ -710,23 +725,19 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
         eq(websiteAnalyticsReconciliationState.stateType, stateType),
         eq(websiteAnalyticsReconciliationState.stateKey, stateKey),
       )).for("update").limit(1);
-      if (state?.status === "completed" && !input.restartCompleted) {
+      const lifecycle = planSourceLifecycle(state, input);
+      if (lifecycle.shortCircuit) {
         return Object.freeze({
           source,
           ...emptyCounts(),
-          cursor: state.cursorOccurredAt && state.cursorId
-            ? { occurredAt: state.cursorOccurredAt.toISOString(), id: state.cursorId }
+          cursor: lifecycle.cursor
+            ? { occurredAt: lifecycle.cursor.occurredAt.toISOString(), id: lifecycle.cursor.id }
             : null,
           complete: true,
           busy: false,
         });
       }
-      const restarting = state?.status === "completed" && input.restartCompleted === true;
-      const cursor = restarting
-        ? initialCursor
-        : state?.cursorOccurredAt && state.cursorId !== null
-          ? { occurredAt: state.cursorOccurredAt, id: state.cursorId }
-          : initialCursor;
+      const { cursor, restarting } = lifecycle;
       const startedAt = new Date();
       await transaction.insert(websiteAnalyticsReconciliationState).values({
         stateType,
@@ -763,13 +774,14 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
         transaction,
         source,
         cursor,
-        state && !restarting ? undefined : input.fromOccurredAt,
+        lifecycle.fromOccurredAt,
         batchSize + 1,
       );
       const batch = rows.slice(0, batchSize);
       let counts = emptyCounts();
       for (const row of batch) {
-        const outcome = await processRow(source, row, input.historical !== false, transaction);
+        const actions = await planRow(source, row, input.historical !== false);
+        const outcome = await processRow(actions, transaction);
         counts = addCounts(counts, {
           scanned: 1,
           created: outcome.created,
@@ -824,7 +836,7 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
         )).for("update").limit(1);
         const restarting = state?.status === "completed" && input.restartCompleted === true;
         const cursor = restarting
-          ? initialCursor
+          ? lowerBoundCursor(input.fromOccurredAt)
           : state?.cursorOccurredAt && state.cursorId !== null
             ? { occurredAt: state.cursorOccurredAt, id: state.cursorId }
             : failureInitialCursor;
@@ -894,7 +906,7 @@ export function createWebsiteAnalyticsV2Backfill(database: Database, options: Op
     const results: WebsiteAnalyticsV2BackfillSourceResult[] = [];
     for (const source of sources) {
       results.push(input.dryRun
-        ? await dryRunSource(source, input, batchSize)
+        ? await dryRunSource(source, input, batchSize, stateKeyPrefix)
         : await writeSource(source, input, batchSize, stateKeyPrefix));
     }
     return Object.freeze({
