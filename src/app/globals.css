@@ -1287,9 +1287,9 @@ a:active {
   }
 
   .site-header__market select {
-    width: 6.125rem;
-    max-width: 6.125rem;
-    padding-inline: 0.5rem 1.4rem;
+    width: 6.375rem;
+    max-width: 6.375rem;
+    padding-inline: 0.5rem 1.55rem;
     font-size: 0.68rem;
   }
 
