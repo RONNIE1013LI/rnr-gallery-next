@@ -21,7 +21,9 @@ describe("admin products page", () => {
 
     expect(requireAdminPage).toHaveBeenCalledWith("/admin/products", "manage_prices");
     expect(screen.getByRole("heading", { name: "Products & pricing" })).toBeInTheDocument();
-    expect(screen.getAllByText("Digital Oil Painting Canvas")).toHaveLength(2);
+    expect(screen.getByRole("navigation", { name: "Product pricing sections" }))
+      .toContainElement(screen.getByRole("link", { name: "Digital Oil Painting Canvas" }));
+    expect(screen.getByRole("heading", { name: "Digital Oil Painting Canvas" })).toBeInTheDocument();
     expect(within(screen.getByRole("note")).getByText(/revision 2/i)).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Publish Digital Oil Painting Canvas" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Publish store-wide fees" })).toBeInTheDocument();

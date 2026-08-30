@@ -34,10 +34,10 @@ describe("Forms source visual parity", () => {
     expect(enclosingTabletRule).toBeGreaterThan(enclosingPhoneRule);
   });
 
-  it("matches mobile filter controls and paired action buttons to the 30px list toolbar row", () => {
+  it("keeps mobile filter controls and paired actions touch-safe", () => {
     const mobileRules = css.slice(css.lastIndexOf("@media (max-width: 720px)"));
 
-    expect(mobileRules).toContain("--forms-filter-control-height-mobile: 30px;");
+    expect(mobileRules).toContain("--forms-filter-control-height-mobile: 44px;");
     expect(mobileRules).toMatch(/\.filterPanel input,\s*\.filterPanel select[\s\S]*?height: var\(--forms-filter-control-height-mobile\);[\s\S]*?min-height: var\(--forms-filter-control-height-mobile\);/);
     expect(mobileRules).toMatch(/\.filterHeading button,\s*\.filterRow > button[\s\S]*?width: var\(--forms-filter-control-height-mobile\);[\s\S]*?min-width: var\(--forms-filter-control-height-mobile\);/);
     expect(mobileRules).toMatch(/\.filterActions button,\s*\.filterPresetButtons button[\s\S]*?height: var\(--forms-filter-control-height-mobile\);[\s\S]*?min-height: var\(--forms-filter-control-height-mobile\);/);
