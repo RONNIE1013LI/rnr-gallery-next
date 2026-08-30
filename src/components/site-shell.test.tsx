@@ -403,6 +403,20 @@ describe("site shell", () => {
     vi.useRealTimers();
   });
 
+  it("focuses the current page instead of the first mobile menu item", () => {
+    usePathname.mockReturnValue("/shop");
+    render(<SiteHeader />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
+    const mobileNavigation = screen.getByRole("navigation", { name: "Mobile navigation" });
+    const homeLink = within(mobileNavigation).getByRole("link", { name: "Home" });
+    const shopLink = within(mobileNavigation).getByRole("link", { name: "Shop" });
+
+    expect(shopLink).toHaveAttribute("aria-current", "page");
+    expect(shopLink).toHaveFocus();
+    expect(homeLink).not.toHaveFocus();
+  });
+
   it("keeps support and legal links in the footer", () => {
     render(<SiteFooter />);
     const footer = screen.getByRole("contentinfo");

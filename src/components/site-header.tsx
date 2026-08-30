@@ -236,7 +236,9 @@ export function SiteHeader({
 
   useEffect(() => {
     if (isMobileMenuOpen && !isMobileMenuClosing) {
-      mobileMenuDrawerRef.current?.querySelector<HTMLElement>("a[href]")?.focus();
+      const drawer = mobileMenuDrawerRef.current;
+      const currentPageLink = drawer?.querySelector<HTMLElement>('a[aria-current="page"]');
+      (currentPageLink ?? drawer?.querySelector<HTMLElement>("a[href]"))?.focus();
     }
   }, [isMobileMenuClosing, isMobileMenuOpen]);
 
