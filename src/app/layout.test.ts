@@ -99,6 +99,12 @@ describe("root layout metadata", () => {
     const globals = cssFile("src/app/globals.css");
 
     expect(cssRule(globals, ".consent-preferences {")).toContain("position: fixed;");
+    expect(cssRule(globals, ".consent-preferences__content {")).toContain(
+      "padding: 0.875rem 0.875rem 0.875rem 0.25rem;",
+    );
+    expect(cssRule(globals, ".consent-preferences h2 {")).toContain("font-size: 0.95rem;");
+    expect(cssRule(globals, ".consent-preferences p {")).toContain("font-size: 0.75rem;");
+    expect(cssRule(globals, ".consent-preferences button {")).toContain("font-size: 0.75rem;");
     expect(globals).toContain("--layer-sticky-cta: 30;");
     expect(globals).toContain("--layer-chat-launcher: 40;");
     expect(globals).toContain("--layer-chat-panel: 50;");
