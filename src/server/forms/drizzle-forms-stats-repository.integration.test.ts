@@ -9,10 +9,8 @@ import { selectMigrationTarget, type DatabaseIdentity } from "../../../scripts/m
 import { parseFormWorkbenchQuery } from "./forms-workbench-service";
 import { queryFormStatistic } from "./drizzle-forms-stats-repository";
 
-const databaseUrl = process.env.TEST_DATABASE_URL;
+const databaseUrl = process.env.TEST_DATABASE_URL ?? "";
 if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required");
-const approvedDatabaseUrl = "postgresql://postgres@127.0.0.1:55448/rnr_forms_stats_test";
-if (databaseUrl !== approvedDatabaseUrl) throw new Error("The exact approved TEST_DATABASE_URL is required");
 const database = drizzle(databaseUrl);
 const suffix = randomUUID();
 const actorId = `stats-actor-${suffix}`;
@@ -75,9 +73,9 @@ async function identifyDatabase(url: string): Promise<DatabaseIdentity & { serve
 async function verifyFixtureDatabase() {
   const target = selectMigrationTarget({
     environment: "test",
-    env: { ...process.env, TEST_DATABASE_URL: approvedDatabaseUrl },
+    env: { ...process.env, TEST_DATABASE_URL: databaseUrl },
   });
-  const identity = await identifyDatabase(approvedDatabaseUrl);
+  const identity = await identifyDatabase(databaseUrl);
   if (identity.database !== target.expectedDatabase || identity.inRecovery || identity.serverPort !== 5432) {
     throw new Error("Database identity mismatch; test fixture refused");
   }
@@ -337,8 +335,11 @@ describe("forms stats repository", () => {
     await expect(database.select({ id: checkoutSessions.id }).from(checkoutSessions).where(inArray(checkoutSessions.id, sessionIds))).resolves.toEqual([]);
   });
 
-  it("verifies the exact dedicated database identity before fixture writes", () => {
-    expect(verifiedDatabase).toEqual({ database: "rnr_forms_stats_test", serverPort: 5432 });
+  it("verifies the selected disposable database identity before fixture writes", () => {
+    expect(verifiedDatabase).toEqual({
+      database: decodeURIComponent(new URL(databaseUrl).pathname.slice(1)),
+      serverPort: 5432,
+    });
   });
 
   it("applies workbench scope to count, categories and finance totals", async () => {

@@ -1,0 +1,64 @@
+name: Production drift guard
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "23 19 * * 0"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: production-drift-guard
+  cancel-in-progress: false
+
+jobs:
+  read-only-production-guard:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      GITHUB_TOKEN: ${{ secrets.PRODUCTION_GUARD_GITHUB_TOKEN }}
+      VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+      VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+      VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+      PRODUCTION_DATABASE_AUDIT_URL: ${{ secrets.PRODUCTION_DATABASE_AUDIT_URL }}
+      EXPECTED_PRODUCTION_DATABASE: ${{ secrets.EXPECTED_PRODUCTION_DATABASE }}
+      EXPECTED_PRODUCTION_HOST_FINGERPRINT: ${{ secrets.EXPECTED_PRODUCTION_HOST_FINGERPRINT }}
+      PRODUCTION_DATABASE_TARGET_FINGERPRINT: ${{ secrets.PRODUCTION_DATABASE_TARGET_FINGERPRINT }}
+      PREVIEW_DATABASE_TARGET_FINGERPRINT: ${{ secrets.PREVIEW_DATABASE_TARGET_FINGERPRINT }}
+      DEVELOPMENT_DATABASE_TARGET_FINGERPRINT: ${{ secrets.DEVELOPMENT_DATABASE_TARGET_FINGERPRINT }}
+      TEST_DATABASE_TARGET_FINGERPRINT: ${{ secrets.TEST_DATABASE_TARGET_FINGERPRINT }}
+    steps:
+      - name: Check out authoritative main
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Wait for automatic Production deploy and run read-only guard
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          for attempt in {1..45}; do
+            if npm run production:guard; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 45 ]; then
+              exit 1
+            fi
+            sleep 20
+          done
+
+      - name: Run scheduled or manual read-only guard
+        if: github.event_name != 'push'
+        run: npm run production:guard

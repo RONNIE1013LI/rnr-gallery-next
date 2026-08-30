@@ -9,6 +9,7 @@ import {
   internalNotificationSubscriptions,
   user,
 } from "@/server/db/schema";
+import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
 import { EmailDeliveryError } from "./customer-notification-service";
 import { createDrizzleInternalNotificationRecipientRepository } from "./drizzle-internal-notification-recipient-repository";
 import {
@@ -22,11 +23,9 @@ import type {
   InternalNotificationTopic,
 } from "./internal-notification-types";
 
-const approvedDatabaseUrl =
-  "postgresql://postgres@127.0.0.1:55449/rnr_internal_notifications_test";
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
-if (testDatabaseUrl !== approvedDatabaseUrl) {
-  throw new Error("The exact approved TEST_DATABASE_URL is required");
+if (!testDatabaseUrl || !isDedicatedTestDatabase(testDatabaseUrl, process.env.DATABASE_URL)) {
+  throw new Error("A dedicated internal notifications Test database is required");
 }
 
 const database = drizzle(testDatabaseUrl);

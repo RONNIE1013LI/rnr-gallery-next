@@ -44,7 +44,9 @@ describe("production deployment source guard", () => {
         VERCEL_ENV: "production",
         VERCEL_GIT_COMMIT_REF: ref,
         VERCEL_GIT_COMMIT_SHA: "a".repeat(40),
-      })).toThrow("Production deployments must originate from the main branch");
+      })).toThrow(
+        "PRODUCTION SOURCE GUARD FAILED:\nOnly main may create a normal Production build.",
+      );
     },
   );
 

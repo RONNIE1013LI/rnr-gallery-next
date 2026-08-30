@@ -12,6 +12,8 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest",
     "test:run": "vitest run",
+    "production:guard": "tsx scripts/production-guard.ts",
+    "release:test:isolated": "tsx scripts/release-test-database.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate-database.ts",
     "db:lineage:check": "tsx scripts/verify-migration-lineage.ts",

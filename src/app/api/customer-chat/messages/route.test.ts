@@ -144,6 +144,7 @@ describe("POST /api/customer-chat/messages", () => {
           consentLinked: true,
           visitorDigest: websiteAnalyticsVisitorDigest(identity.visitorId, analyticsSecret),
           convertingSessionId: identity.sessionId,
+          isInternal: false,
         },
       }),
     );

@@ -109,6 +109,7 @@ describe("POST /api/checkout/order", () => {
         consentLinked: true,
         visitorDigest: websiteAnalyticsVisitorDigest(identity.visitorId, analyticsSecret),
         convertingSessionId: identity.sessionId,
+        isInternal: false,
       },
     });
   });

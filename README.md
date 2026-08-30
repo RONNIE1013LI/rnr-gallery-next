@@ -143,6 +143,46 @@ DATABASE_URL="$TEST_DATABASE_URL" npm run db:migrate
 npm run test:run
 ```
 
+### Production release guardrails
+
+`origin/main` is the only normal Production source. Always fetch it before a
+release comparison; a local `main` checkout is not authoritative. Normal
+releases move verified feature-worktree changes into `origin/main` and rely on
+the Vercel Git integration. Do not use `vercel --prod` for a normal release.
+
+Run the read-only drift audit after Vercel has finished the automatic deploy:
+
+```bash
+npm run production:guard
+```
+
+The command verifies GitHub `main` protection, the Vercel project and
+Production Branch, current and recent Production sources, SHA equality,
+Production aliases/domains/TLS, critical environment scopes and duplicates,
+database-target fingerprints, and read-only migration lineage. It never repairs
+Production. Required credentials are supplied through secret environment
+variables and are never printed.
+
+The GitHub workflow requires a dedicated read-only fine-grained token in
+`PRODUCTION_GUARD_GITHUB_TOKEN` with repository Administration read access so
+it can inspect `main` protection. It also requires the documented Vercel and
+database identity secrets referenced by the workflow. Missing credentials fail
+closed; the workflow does not create or rotate them.
+
+Release-level database tests must not reuse a long-lived mutable database. With
+an explicit non-Production administration URL and the required Production
+identity fingerprints, run:
+
+```bash
+npm run release:test:isolated
+```
+
+That command creates session-specific application and integration databases,
+applies the existing migrations, runs the complete Vitest suite, and removes
+both databases in a `finally` cleanup path. Each worktree/session gets unique
+names; if a target cannot be proven different from Production, the command
+stops before creating or migrating anything.
+
 ## Dependency advisories
 
 As of 14 August 2026, `npm audit --omit=dev` reports four moderate advisories in

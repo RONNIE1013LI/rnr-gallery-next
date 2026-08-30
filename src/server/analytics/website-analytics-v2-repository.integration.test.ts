@@ -14,14 +14,13 @@ import {
   websiteAnalyticsReconciliationState,
   websiteAnalyticsSessions,
 } from "@/server/db/schema";
+import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
 import { createWebsiteAnalyticsV2Repository } from "./website-analytics-v2-repository";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is required");
-const testDatabaseIdentity = new URL(testDatabaseUrl);
-if (!new Set(["127.0.0.1", "localhost"]).has(testDatabaseIdentity.hostname)
-  || testDatabaseIdentity.pathname !== "/rnr_website_analytics_test") {
-  throw new Error("The local rnr website analytics Test database is required");
+if (!isDedicatedTestDatabase(testDatabaseUrl, process.env.DATABASE_URL)) {
+  throw new Error("A dedicated website analytics Test database is required");
 }
 
 const pool = new Pool({ connectionString: testDatabaseUrl });

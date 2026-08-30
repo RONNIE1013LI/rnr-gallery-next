@@ -5,7 +5,7 @@ export function assertProductionDeploymentSource(
 
   if (env.VERCEL_GIT_COMMIT_REF !== "main") {
     throw new Error(
-      "Production deployments must originate from the main branch. Use GitHub main and Vercel automatic deployment; direct CLI Production deployment is blocked.",
+      "PRODUCTION SOURCE GUARD FAILED:\nOnly main may create a normal Production build.",
     );
   }
 
