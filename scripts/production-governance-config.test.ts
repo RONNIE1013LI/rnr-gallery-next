@@ -29,6 +29,8 @@ describe("Production governance wiring", () => {
     expect(workflow).toMatch(/schedule:[\s\S]*cron:/);
     expect(workflow).toContain("npm run production:guard");
     expect(workflow).toContain("secrets.PRODUCTION_GUARD_GITHUB_TOKEN");
+    expect(workflow).toContain("secrets.DATABASE_ENVIRONMENT_METADATA_FINGERPRINT");
+    expect(workflow).toMatch(/Check out authoritative main[\s\S]*ref:\s*main/);
     expect(workflow).not.toContain("vercel --prod");
     expect(workflow).not.toMatch(/curl[\s\S]*(PATCH|POST|DELETE)/i);
   });

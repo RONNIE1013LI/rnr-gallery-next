@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
 import { pathToFileURL } from "node:url";
@@ -23,6 +24,11 @@ export const EXPECTED_PRODUCTION_DOMAINS = Object.freeze([
   "rrgallery.co.nz",
   "www.rrgallery.co.nz",
 ]);
+const READ_ONLY_GUARD_HOSTS = new Set([
+  "api.github.com",
+  "api.vercel.com",
+  ...EXPECTED_PRODUCTION_DOMAINS,
+]);
 
 type EnvironmentTarget = "production" | "preview" | "development";
 
@@ -31,6 +37,8 @@ export type ProductionGuardEnvironmentVariable = {
   key: string;
   targets: EnvironmentTarget[];
   gitBranch?: string;
+  type?: string;
+  updatedAt?: string;
 };
 
 export type MigrationAuditStatus =
@@ -88,6 +96,10 @@ export type ProductionGuardSnapshot = {
     development: string | undefined;
     test: string | undefined;
   };
+  databaseEnvironmentMetadata: {
+    actual: string | undefined;
+    expected: string | undefined;
+  };
   migration: MigrationAudit;
 };
 
@@ -106,10 +118,18 @@ function finding(code: string, subject: string, message: string): ProductionGuar
   return Object.freeze({ code, subject, message });
 }
 
+function normalizedSha256(value: string | undefined) {
+  const normalized = value?.trim().toLowerCase();
+  return normalized && /^[0-9a-f]{64}$/.test(normalized) ? normalized : undefined;
+}
+
 function isCriticalEnvironmentKey(key: string) {
   return isDatabaseCredentialKey(key)
     || key === "BETTER_AUTH_URL"
     || key === "PAYMENT_RETURN_BASE_URL"
+    || key.endsWith("_SECRET")
+    || key.endsWith("_TOKEN")
+    || key.endsWith("_API_KEY")
     || key.startsWith("STRIPE_")
     || key.startsWith("NEXT_PUBLIC_STRIPE_")
     || key.startsWith("AFTERPAY_")
@@ -136,6 +156,26 @@ function isDatabaseCredentialKey(key: string) {
     || key === "POSTGRES_DATABASE"
     || key === "POSTGRES_USER"
     || key === "POSTGRES_PASSWORD";
+}
+
+export function databaseEnvironmentMetadataFingerprint(
+  variables: readonly ProductionGuardEnvironmentVariable[],
+) {
+  const metadata = variables
+    .filter(({ key }) => isDatabaseCredentialKey(key))
+    .map((variable) => ({
+      id: variable.id,
+      key: variable.key,
+      targets: [...variable.targets].sort(),
+      gitBranch: variable.gitBranch ?? null,
+      type: variable.type ?? null,
+      updatedAt: variable.updatedAt ?? null,
+    }))
+    .sort((left, right) => JSON.stringify(left).localeCompare(JSON.stringify(right)));
+  if (metadata.length === 0) {
+    throw new Error("Vercel database environment metadata is missing");
+  }
+  return createHash("sha256").update(JSON.stringify(metadata)).digest("hex");
 }
 
 export function classifyMigrationLineage(
@@ -286,10 +326,14 @@ export function evaluateProductionGuard(
   }
 
   const databaseFingerprints = snapshot.databaseFingerprints;
-  const isolationEntries = Object.entries(databaseFingerprints) as Array<[
-    keyof typeof databaseFingerprints,
-    string | undefined,
-  ]>;
+  const isolationEntries = (Object.entries(databaseFingerprints) as Array<[
+      keyof typeof databaseFingerprints,
+      string | undefined,
+    ]>)
+    .map(([environment, fingerprint]) => [
+      environment,
+      normalizedSha256(fingerprint),
+    ] as const);
   for (const [environment, fingerprint] of isolationEntries) {
     if (!fingerprint) {
       add(
@@ -313,6 +357,27 @@ export function evaluateProductionGuard(
       }
     }
   }
+  const actualDatabaseEnvironmentMetadata = normalizedSha256(
+    snapshot.databaseEnvironmentMetadata.actual,
+  );
+  const expectedDatabaseEnvironmentMetadata = normalizedSha256(
+    snapshot.databaseEnvironmentMetadata.expected,
+  );
+  if (!actualDatabaseEnvironmentMetadata || !expectedDatabaseEnvironmentMetadata) {
+    add(
+      "DATABASE_ENV_METADATA_UNPROVEN",
+      "Vercel",
+      "Vercel database environment metadata baseline is not configured",
+    );
+  } else if (
+    actualDatabaseEnvironmentMetadata !== expectedDatabaseEnvironmentMetadata
+  ) {
+    add(
+      "DATABASE_ENV_METADATA_CHANGED",
+      "Vercel",
+      "Vercel database environment metadata changed after isolation certification",
+    );
+  }
 
   if (snapshot.migration.status !== "MATCH") {
     add(
@@ -329,6 +394,36 @@ export function evaluateProductionGuard(
 }
 
 type JsonRecord = Record<string, unknown>;
+
+export function assertReadOnlyGuardRequest(
+  url: string,
+  init: Readonly<Pick<RequestInit, "method">> = {},
+) {
+  const method = (init.method ?? "GET").toUpperCase();
+  if (method !== "GET" && method !== "HEAD") {
+    throw new Error("Production guard network requests must use GET or HEAD");
+  }
+  const target = new URL(url);
+  if (target.protocol !== "https:") {
+    throw new Error("Production guard network requests must use HTTPS");
+  }
+  if (!READ_ONLY_GUARD_HOSTS.has(target.hostname.toLowerCase())) {
+    throw new Error("Production guard request is outside the host allowlist");
+  }
+  if (target.username || target.password) {
+    throw new Error("Production guard request URLs must not contain credentials");
+  }
+  return method;
+}
+
+function readOnlyGuardFetch(
+  fetcher: typeof fetch,
+  url: string,
+  init: RequestInit = {},
+) {
+  const method = assertReadOnlyGuardRequest(url, init);
+  return fetcher(url, { ...init, method });
+}
 
 function record(value: unknown, label: string): JsonRecord {
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -362,7 +457,8 @@ async function jsonFetch(
   label: string,
   fetcher: typeof fetch,
 ): Promise<JsonRecord> {
-  const response = await fetcher(url, {
+  const response = await readOnlyGuardFetch(fetcher, url, {
+    method: "GET",
     headers: { Authorization: `Bearer ${token}` },
     redirect: "error",
   });
@@ -375,9 +471,11 @@ async function readGitHubProtection(input: Readonly<{
   token: string;
   fetcher: typeof fetch;
 }>) {
-  const response = await input.fetcher(
+  const response = await readOnlyGuardFetch(
+    input.fetcher,
     `https://api.github.com/repos/${input.repository}/branches/main/protection`,
     {
+      method: "GET",
       headers: {
         Authorization: `Bearer ${input.token}`,
         Accept: "application/vnd.github+json",
@@ -410,19 +508,42 @@ async function readGitHubProtection(input: Readonly<{
 
 async function sslIsValid(domain: string, fetcher: typeof fetch) {
   try {
-    await fetcher(`https://${domain}/`, { method: "HEAD", redirect: "manual" });
+    await readOnlyGuardFetch(fetcher, `https://${domain}/`, {
+      method: "HEAD",
+      redirect: "manual",
+    });
     return true;
   } catch {
     return false;
   }
 }
 
+export function parseDomainState(
+  projectDomainValue: unknown,
+  domainConfigValue: unknown,
+  sslValid: boolean,
+) {
+  const projectDomain = record(projectDomainValue, "Vercel project domain");
+  const domainConfig = record(domainConfigValue, "Vercel domain config");
+  return {
+    name: stringValue(projectDomain.name) ?? "UNKNOWN",
+    verified: booleanValue(projectDomain.verified),
+    misconfigured: domainConfig.misconfigured !== false,
+    sslValid,
+  };
+}
+
 function deploymentRecord(value: unknown) {
   const deployment = record(value, "Vercel deployment");
   const meta = record(deployment.meta ?? {}, "Vercel deployment metadata");
-  const created = typeof deployment.created === "number"
-    ? new Date(deployment.created).toISOString()
-    : stringValue(deployment.createdAt) ?? "UNKNOWN";
+  const createdTimestamp = typeof deployment.created === "number"
+    ? deployment.created
+    : typeof deployment.createdAt === "number"
+      ? deployment.createdAt
+      : undefined;
+  const created = createdTimestamp === undefined
+    ? stringValue(deployment.createdAt) ?? "UNKNOWN"
+    : new Date(createdTimestamp).toISOString();
   return {
     id: stringValue(deployment.uid) ?? stringValue(deployment.id) ?? "UNKNOWN",
     branch: stringValue(meta.githubCommitRef),
@@ -431,6 +552,12 @@ function deploymentRecord(value: unknown) {
     aliases: stringArray(deployment.alias),
     ready: deployment.readyState === "READY" || deployment.state === "READY",
   };
+}
+
+export function parseCurrentProductionDeployment(value: unknown) {
+  const project = record(value, "Vercel project");
+  const targets = record(project.targets ?? {}, "Vercel project targets");
+  return deploymentRecord(targets.production);
 }
 
 export async function auditProductionMigration(input: Readonly<{
@@ -498,6 +625,10 @@ export async function collectProductionGuardSnapshot(input: Readonly<{
     fetcher,
   );
   const projectLink = record(projectResponse.link ?? {}, "Vercel project link");
+  const currentDeployment = parseCurrentProductionDeployment(projectResponse);
+  if (!currentDeployment.ready) {
+    throw new Error("Current Production deployment is not READY");
+  }
   const deploymentsResponse = await jsonFetch(
     `https://api.vercel.com/v6/deployments?projectId=${encodeURIComponent(vercelProjectId)}&target=production&limit=100&${teamQuery}`,
     vercelToken,
@@ -507,10 +638,6 @@ export async function collectProductionGuardSnapshot(input: Readonly<{
   const deployments = Array.isArray(deploymentsResponse.deployments)
     ? deploymentsResponse.deployments.map(deploymentRecord)
     : [];
-  const currentDeployment = deployments.find(
-    (deployment) => deployment.ready && deployment.aliases.includes("rnrgallery.com"),
-  ) ?? deployments.find((deployment) => deployment.ready);
-  if (!currentDeployment) throw new Error("Current READY Production deployment was not found");
 
   const domainsResponse = await jsonFetch(
     `https://api.vercel.com/v9/projects/${encodeURIComponent(vercelProjectId)}/domains?limit=100&${teamQuery}`,
@@ -518,20 +645,25 @@ export async function collectProductionGuardSnapshot(input: Readonly<{
     "Vercel domains",
     fetcher,
   );
-  const rawDomains = Array.isArray(domainsResponse.domains) ? domainsResponse.domains : [];
+  const rawDomains = (Array.isArray(domainsResponse.domains) ? domainsResponse.domains : [])
+    .filter((value) => {
+      const domain = record(value, "Vercel domain");
+      return EXPECTED_PRODUCTION_DOMAINS.includes(stringValue(domain.name) ?? "");
+    });
   const domains = await Promise.all(rawDomains.map(async (value) => {
     const domain = record(value, "Vercel domain");
     const name = stringValue(domain.name) ?? "UNKNOWN";
-    return {
-      name,
-      verified: booleanValue(domain.verified),
-      misconfigured: booleanValue(domain.misconfigured),
-      sslValid: await sslIsValid(name, fetcher),
-    };
+    const config = await jsonFetch(
+      `https://api.vercel.com/v6/domains/${encodeURIComponent(name)}/config?${teamQuery}`,
+      vercelToken,
+      `Vercel domain config (${name})`,
+      fetcher,
+    );
+    return parseDomainState(domain, config, await sslIsValid(name, fetcher));
   }));
 
   const envResponse = await jsonFetch(
-    `https://api.vercel.com/v9/projects/${encodeURIComponent(vercelProjectId)}/env?limit=100&${teamQuery}`,
+    `https://api.vercel.com/v10/projects/${encodeURIComponent(vercelProjectId)}/env?limit=100&${teamQuery}`,
     vercelToken,
     "Vercel environment metadata",
     fetcher,
@@ -544,6 +676,10 @@ export async function collectProductionGuardSnapshot(input: Readonly<{
         key: stringValue(variable.key) ?? "UNKNOWN",
         targets: targetArray(variable.target),
         gitBranch: stringValue(variable.gitBranch),
+        type: stringValue(variable.type),
+        updatedAt: typeof variable.updatedAt === "number"
+          ? String(variable.updatedAt)
+          : stringValue(variable.updatedAt),
       };
     });
 
@@ -583,6 +719,10 @@ export async function collectProductionGuardSnapshot(input: Readonly<{
       preview: input.env.PREVIEW_DATABASE_TARGET_FINGERPRINT?.trim(),
       development: input.env.DEVELOPMENT_DATABASE_TARGET_FINGERPRINT?.trim(),
       test: input.env.TEST_DATABASE_TARGET_FINGERPRINT?.trim(),
+    },
+    databaseEnvironmentMetadata: {
+      actual: databaseEnvironmentMetadataFingerprint(environmentVariables),
+      expected: input.env.DATABASE_ENVIRONMENT_METADATA_FINGERPRINT?.trim(),
     },
     migration,
   };

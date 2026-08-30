@@ -169,6 +169,17 @@ it can inspect `main` protection. It also requires the documented Vercel and
 database identity secrets referenced by the workflow. Missing credentials fail
 closed; the workflow does not create or rotate them.
 
+The dedicated Vercel token is scoped only to the `RRGallery` team and rotated
+on expiry. Because Vercel team tokens are not operation-scoped, the Production
+guard enforces an HTTPS host allowlist and rejects every network method except
+`GET` and `HEAD` before `fetch` is called. The guard never mutates Vercel.
+
+`DATABASE_ENVIRONMENT_METADATA_FINGERPRINT` is a value-free SHA-256 baseline
+of the Vercel database variable IDs, scopes, types, and update timestamps. Any
+later database environment edit fails the guard until isolation is reviewed and
+the baseline is deliberately recertified; database values are never fetched or
+printed for this check.
+
 Release-level database tests must not reuse a long-lived mutable database. With
 an explicit non-Production administration URL and the required Production
 identity fingerprints, run:

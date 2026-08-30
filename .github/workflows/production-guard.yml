@@ -30,10 +30,12 @@ jobs:
       PREVIEW_DATABASE_TARGET_FINGERPRINT: ${{ secrets.PREVIEW_DATABASE_TARGET_FINGERPRINT }}
       DEVELOPMENT_DATABASE_TARGET_FINGERPRINT: ${{ secrets.DEVELOPMENT_DATABASE_TARGET_FINGERPRINT }}
       TEST_DATABASE_TARGET_FINGERPRINT: ${{ secrets.TEST_DATABASE_TARGET_FINGERPRINT }}
+      DATABASE_ENVIRONMENT_METADATA_FINGERPRINT: ${{ secrets.DATABASE_ENVIRONMENT_METADATA_FINGERPRINT }}
     steps:
       - name: Check out authoritative main
         uses: actions/checkout@v4
         with:
+          ref: main
           fetch-depth: 0
 
       - name: Set up Node.js

@@ -266,23 +266,33 @@ describe("Drizzle payment repository", () => {
 
   it("keeps immutable direct-payment evidence when V2 is disabled", async () => {
     const order = await createOrder();
-    const preMigrationPool = new Pool({ connectionString: databaseUrl, max: 1 });
-    await preMigrationPool.query(`
-      create temporary view payment_attempts as
-      select
-        id, order_id, payment_request_id, provider, method, idempotency_key,
-        provider_reference, provider_session_lease_id, provider_session_lease_expires_at,
-        return_state_digest, return_state_consumed_at, expected_amount_cents, currency,
-        country, payer_snapshot, status, sanitized_failure_code, created_at, updated_at
-      from public.payment_attempts
-    `);
-    const preMigrationDatabase = drizzle(preMigrationPool);
-    const disabledRepository = createDrizzlePaymentRepository(preMigrationDatabase, {
-      websiteAnalyticsV2Enabled: false,
-    });
+    const preMigrationSchema = `test_pre_migration_${randomUUID().replaceAll("-", "")}`;
+    let preMigrationPool: Pool | undefined;
 
     try {
-
+      await pool.query(`create schema "${preMigrationSchema}"`);
+      await pool.query(`
+        create view "${preMigrationSchema}".payment_attempts as
+        select
+          id, order_id, payment_request_id, provider, method, idempotency_key,
+          provider_reference, provider_session_lease_id, provider_session_lease_expires_at,
+          return_state_digest, return_state_consumed_at, expected_amount_cents, currency,
+          country, payer_snapshot, status, sanitized_failure_code, created_at, updated_at
+        from public.payment_attempts
+      `);
+      const preMigrationUrl = new URL(databaseUrl);
+      preMigrationUrl.searchParams.set(
+        "options",
+        `-c search_path=${preMigrationSchema},public`,
+      );
+      preMigrationPool = new Pool({
+        connectionString: preMigrationUrl.toString(),
+        max: 1,
+      });
+      const preMigrationDatabase = drizzle(preMigrationPool);
+      const disabledRepository = createDrizzlePaymentRepository(preMigrationDatabase, {
+        websiteAnalyticsV2Enabled: false,
+      });
       const claim = await disabledRepository.createOrClaimNonterminalAttempt(
         claimInput(order.orderId),
       );
@@ -355,7 +365,8 @@ describe("Drizzle payment repository", () => {
         ledger[1].receivedAt.getTime(),
       );
     } finally {
-      await preMigrationPool.end();
+      await preMigrationPool?.end();
+      await pool.query(`drop schema if exists "${preMigrationSchema}" cascade`);
     }
   });
 

@@ -104,6 +104,21 @@ describe("disposable release test gate", () => {
     expect(dropDatabase).toHaveBeenCalledTimes(2);
   });
 
+  it("surfaces cleanup failure even when the release test also fails", async () => {
+    const dropDatabase = vi.fn()
+      .mockRejectedValueOnce(new Error("drop failed"))
+      .mockResolvedValueOnce(undefined);
+    const runCommand = vi.fn().mockResolvedValue(1);
+
+    await expect(runReleaseTestGate(input(), {
+      createDatabase: vi.fn(async () => undefined),
+      dropDatabase,
+      runCommand,
+    })).rejects.toThrow(/cleanup failed/i);
+
+    expect(dropDatabase).toHaveBeenCalledTimes(2);
+  });
+
   it("cleans the application database if integration database creation fails", async () => {
     const createDatabase = vi.fn()
       .mockResolvedValueOnce(undefined)
@@ -130,6 +145,23 @@ describe("disposable release test gate", () => {
 
     await expect(runReleaseTestGate(input({
       productionTargetFingerprints: [databaseTargetFingerprint(target.toString())],
+    }), {
+      createDatabase,
+      dropDatabase: vi.fn(),
+      runCommand: vi.fn(),
+    })).rejects.toThrow(/Production database fingerprint/i);
+
+    expect(createDatabase).not.toHaveBeenCalled();
+  });
+
+  it("rejects a Production target fingerprint even when supplied in uppercase", async () => {
+    const names = releaseDatabaseNames("a".repeat(40), "run12345");
+    const target = new URL(adminUrl);
+    target.pathname = `/${names.application}`;
+    const createDatabase = vi.fn();
+
+    await expect(runReleaseTestGate(input({
+      productionTargetFingerprints: [databaseTargetFingerprint(target.toString()).toUpperCase()],
     }), {
       createDatabase,
       dropDatabase: vi.fn(),

@@ -100,6 +100,9 @@ function assertSafeReleaseTargets(
   if (input.productionTargetFingerprints.length === 0) {
     throw new Error("At least one Production database fingerprint is required");
   }
+  const productionTargetFingerprints = input.productionTargetFingerprints.map(
+    (fingerprint) => fingerprint.toLowerCase(),
+  );
   for (const fingerprint of input.productionTargetFingerprints) {
     if (!/^[0-9a-f]{64}$/i.test(fingerprint)) {
       throw new Error("Production database fingerprints must be SHA-256 hex");
@@ -110,7 +113,7 @@ function assertSafeReleaseTargets(
       throw new Error("Release database name is unsafe");
     }
     const targetFingerprint = databaseTargetFingerprint(databaseUrl(input.adminUrl, database));
-    if (input.productionTargetFingerprints.includes(targetFingerprint)) {
+    if (productionTargetFingerprints.includes(targetFingerprint)) {
       throw new Error("Release target matches a Production database fingerprint");
     }
   }
@@ -198,7 +201,15 @@ export async function runReleaseTestGate(
         cleanupFailure ??= new Error("Disposable release database cleanup failed");
       }
     }
-    if (!primaryFailure && cleanupFailure) throw cleanupFailure;
+    if (cleanupFailure) {
+      if (primaryFailure) {
+        throw new AggregateError(
+          [primaryFailure, cleanupFailure],
+          "Release test failed and disposable database cleanup failed",
+        );
+      }
+      throw cleanupFailure;
+    }
   }
 }
 
