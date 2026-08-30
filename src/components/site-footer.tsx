@@ -42,7 +42,7 @@ export function SiteFooter({
       <div className="site-footer__grid">
         <div className="site-footer__intro-stack">
           <div className="site-footer__intro">
-            <a className="site-footer__brand" href="#top" aria-label="R&R Gallery">
+            <a className="site-footer__brand" href="#top" aria-label="R&R Gallery Custom Prints NZ">
               <BrandMark />
             </a>
             <p className="site-footer__tagline">{content.tagline}</p>
@@ -130,7 +130,7 @@ export function SiteFooter({
               <a
                 className="site-footer__email"
                 href={`mailto:${content.email}`}
-                aria-label={content.email}
+                aria-label={`Email ${content.email}`}
               >
                 <span className="site-footer__email-desktop">{content.email}</span>
                 <span className="site-footer__email-mobile" aria-hidden="true">EMAIL</span>

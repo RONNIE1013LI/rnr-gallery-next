@@ -157,12 +157,16 @@ export function SiteHeader({
           : item)
     : mobileNavigation;
   const mobileMenuCloseTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuDrawerRef = useRef<HTMLElement>(null);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const restoreMobileMenuFocusRef = useRef(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isMobileMenuClosing, setIsMobileMenuClosing] = useState(false);
   const [hasScrolled, setHasScrolled] = useState(false);
   const [isHeaderHidden, setIsHeaderHidden] = useState(false);
 
-  const closeMobileMenuImmediately = useCallback(() => {
+  const finishMobileMenuClose = useCallback(() => {
     if (mobileMenuCloseTimerRef.current) {
       clearTimeout(mobileMenuCloseTimerRef.current);
       mobileMenuCloseTimerRef.current = null;
@@ -171,18 +175,24 @@ export function SiteHeader({
     setIsMobileMenuOpen(false);
   }, []);
 
+  const closeMobileMenuImmediately = useCallback(() => {
+    restoreMobileMenuFocusRef.current = false;
+    finishMobileMenuClose();
+  }, [finishMobileMenuClose]);
+
   const closeMobileMenu = useCallback(() => {
     if (!isMobileMenuOpen || isMobileMenuClosing) return;
+    restoreMobileMenuFocusRef.current = true;
 
     const prefersReducedMotion = typeof window.matchMedia === "function"
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     setIsMobileMenuClosing(true);
     mobileMenuCloseTimerRef.current = setTimeout(
-      closeMobileMenuImmediately,
+      finishMobileMenuClose,
       prefersReducedMotion ? 0 : 180,
     );
-  }, [closeMobileMenuImmediately, isMobileMenuClosing, isMobileMenuOpen]);
+  }, [finishMobileMenuClose, isMobileMenuClosing, isMobileMenuOpen]);
 
   useEffect(() => () => {
     if (mobileMenuCloseTimerRef.current) {
@@ -194,7 +204,27 @@ export function SiteHeader({
     if (!isMobileMenuOpen) return;
 
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeMobileMenu();
+      if (event.key === "Escape") {
+        closeMobileMenu();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(
+        mobileMenuRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not(:disabled):not([tabindex="-1"])',
+        ) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable.at(-1)!;
+      if (event.shiftKey && (document.activeElement === first || !mobileMenuRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
     document.addEventListener("keydown", handleKeyDown);
@@ -203,6 +233,19 @@ export function SiteHeader({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, [closeMobileMenu, isMobileMenuOpen]);
+
+  useEffect(() => {
+    if (isMobileMenuOpen && !isMobileMenuClosing) {
+      mobileMenuDrawerRef.current?.querySelector<HTMLElement>("a[href]")?.focus();
+    }
+  }, [isMobileMenuClosing, isMobileMenuOpen]);
+
+  useEffect(() => {
+    if (!isMobileMenuOpen && restoreMobileMenuFocusRef.current) {
+      mobileMenuTriggerRef.current?.focus();
+      restoreMobileMenuFocusRef.current = false;
+    }
+  }, [isMobileMenuOpen]);
 
   useEffect(() => {
     let lastScrollY = Math.max(window.scrollY, 0);
@@ -242,7 +285,7 @@ export function SiteHeader({
           <Link
             className="site-header__brand"
             href={homeHref}
-            aria-label="R&R Gallery home"
+            aria-label="R&R Gallery Custom Prints NZ home"
             onClick={closeMobileMenuImmediately}
           >
             <BrandMark />
@@ -282,13 +325,21 @@ export function SiteHeader({
             >
               Start a Design
             </Link>
-            <div className={`mobile-menu${isMobileMenuOpen ? " mobile-menu--open" : ""}${isMobileMenuClosing ? " mobile-menu--closing" : ""}`}>
+            <div ref={mobileMenuRef} className={`mobile-menu${isMobileMenuOpen ? " mobile-menu--open" : ""}${isMobileMenuClosing ? " mobile-menu--closing" : ""}`}>
               <button
+                ref={mobileMenuTriggerRef}
                 type="button"
                 aria-label={isMobileMenuOpen ? "Close navigation menu" : "Open navigation menu"}
                 aria-expanded={isMobileMenuOpen}
                 aria-controls="mobile-navigation-drawer"
-                onClick={() => isMobileMenuOpen ? closeMobileMenu() : setIsMobileMenuOpen(true)}
+                onClick={() => {
+                  if (isMobileMenuOpen) {
+                    closeMobileMenu();
+                  } else {
+                    restoreMobileMenuFocusRef.current = false;
+                    setIsMobileMenuOpen(true);
+                  }
+                }}
               >
                 <span className="mobile-menu__icon" aria-hidden="true">
                   <span className="mobile-menu__icon-line" />
@@ -310,6 +361,7 @@ export function SiteHeader({
                     onClick={closeMobileMenu}
                   />
                   <nav
+                    ref={mobileMenuDrawerRef}
                     id="mobile-navigation-drawer"
                     className="mobile-menu__drawer"
                     aria-label="Mobile navigation"

@@ -891,7 +891,7 @@ describe("HomepageV3", () => {
 
     expect(screen.getByRole("img", { name: birthday.altText }).getAttribute("src"))
       .toContain(encodeURIComponent(`/gallery-images/${birthday.id}?v=${birthday.contentHash}`));
-    expect(screen.getByRole("link", { name: `View design details: ${birthday.altText}` }))
+    expect(screen.getByRole("link", { name: new RegExp(`${birthday.altText}.*Wall Banner`, "i") }))
       .toHaveAttribute(
         "href",
         "/designs/21st-birthday-a62ca089",

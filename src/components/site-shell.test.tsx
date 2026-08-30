@@ -88,7 +88,7 @@ describe("site shell", () => {
     usePathname.mockReturnValue("/au");
     render(<><SiteHeader initialMarket="AU" australiaEnabled /><SiteFooter market="AU" /></>);
 
-    expect(screen.getByRole("link", { name: /r&r gallery home/i }))
+    expect(screen.getByRole("link", { name: /r&r gallery.*home/i }))
       .toHaveAttribute("href", "/au");
     expect(screen.getAllByRole("link", { name: "Shop" })[0])
       .toHaveAttribute("href", "/au/shop");
@@ -357,7 +357,7 @@ describe("site shell", () => {
     vi.useRealTimers();
   });
 
-  it("keeps the mobile menu non-modal without changing document scroll state", () => {
+  it("moves focus into the mobile menu, contains Tab, and restores the trigger", () => {
     vi.useFakeTimers();
     render(
       <>
@@ -371,18 +371,21 @@ describe("site shell", () => {
     fireEvent.click(trigger);
     const menu = screen.getByRole("button", { name: "Close navigation menu" })
       .closest<HTMLDivElement>(".mobile-menu")!;
+    const mobileNavigation = screen.getByRole("navigation", { name: "Mobile navigation" });
+    const firstLink = within(mobileNavigation).getByRole("link", { name: "Home" });
+    const lastLink = within(mobileNavigation).getByRole("link", { name: "Start a Design" });
 
     expect(document.body.style.overflow).toBe("");
     expect(document.body.style.paddingRight).toBe("");
+    expect(firstLink).toHaveFocus();
+
+    lastLink.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
     expect(trigger).toHaveFocus();
 
-    const account = within(menu).getByRole("link", { name: "Account" });
-    account.focus();
-    expect(fireEvent.keyDown(document, { key: "Tab" })).toBe(true);
-
-    const backgroundAction = screen.getByRole("button", { name: "Background action" });
-    expect(backgroundAction).not.toHaveProperty("inert", true);
-    backgroundAction.focus();
+    trigger.focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(lastLink).toHaveFocus();
 
     fireEvent.keyDown(document, { key: "Escape" });
 
@@ -393,7 +396,7 @@ describe("site shell", () => {
       .not.toBeInTheDocument();
     expect(document.body.style.overflow).toBe("");
     expect(document.body.style.paddingRight).toBe("");
-    expect(backgroundAction).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Open navigation menu" })).toHaveFocus();
     vi.useRealTimers();
   });
 
@@ -410,7 +413,7 @@ describe("site shell", () => {
     expect(within(footer).getByRole("link", { name: /message r&r/i })).toBeVisible();
     expect(within(contact!).getByRole("link", { name: /\+64 21 023 48948/i })).toBeVisible();
     const email = within(contact!).getByRole("link", {
-      name: "customerservice@rnrgallery.com",
+      name: "Email customerservice@rnrgallery.com",
     });
     expect(email).toBeVisible();
     expect(email).toHaveAttribute("href", "mailto:customerservice@rnrgallery.com");
@@ -503,7 +506,9 @@ describe("site shell", () => {
 
     expect(document.querySelector("#top")).toHaveClass("page-top-anchor");
     expect(screen.getByRole("banner")).not.toHaveAttribute("id");
-    const footerBrand = within(footer).getByRole("link", { name: "R&R Gallery" });
+    expect(screen.getByRole("banner").querySelector(".site-header__brand"))
+      .toHaveAccessibleName("R&R Gallery Custom Prints NZ home");
+    const footerBrand = within(footer).getByRole("link", { name: "R&R Gallery Custom Prints NZ" });
     expect(footerBrand).toHaveAttribute("href", "#top");
     expect(decodeURIComponent(footerBrand.querySelector("img")?.getAttribute("src") ?? ""))
       .toContain("/media/brand/rr-gallery-logo-2026.webp");
@@ -539,7 +544,7 @@ describe("site shell", () => {
     }} />);
     const footer = screen.getByRole("contentinfo");
     expect(within(footer).getByText("Managed canvas and banner services.")).toBeInTheDocument();
-    expect(within(footer).getByRole("link", { name: "studio@example.test" })).toHaveAttribute("href", "mailto:studio@example.test");
+    expect(within(footer).getByRole("link", { name: "Email studio@example.test" })).toHaveAttribute("href", "mailto:studio@example.test");
     expect(within(footer).getByRole("link", { name: "+64 9 555 0100" })).toHaveAttribute("href", "tel:+6495550100");
   });
 });

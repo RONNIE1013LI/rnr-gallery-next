@@ -110,7 +110,7 @@ describe("AdminShell", () => {
       .not.toBeInTheDocument();
   });
 
-  it("keeps mobile navigation non-modal while preserving Escape close and scroll lock", () => {
+  it("moves focus into mobile navigation, contains Tab, and restores the trigger", () => {
     render(
       <AdminShell
         administrator={{ name: "Ronnie", email: "owner@example.test", role: "admin", permissions: [] }}
@@ -123,20 +123,23 @@ describe("AdminShell", () => {
     trigger.focus();
     fireEvent.click(trigger);
     const menu = screen.getByRole("navigation", { name: "Administration menu" });
-    expect(trigger).toHaveFocus();
     expect(document.body.style.overflow).toBe("hidden");
-    const auditLog = within(menu).getByRole("link", { name: "Audit Log" });
-    auditLog.focus();
-    expect(fireEvent.keyDown(document, { key: "Tab" })).toBe(true);
+    const dashboard = within(menu).getByRole("link", { name: "Dashboard" });
+    const lastLink = within(menu).getAllByRole("link").at(-1)!;
+    expect(dashboard).toHaveFocus();
 
-    const backgroundAction = screen.getByRole("button", { name: "Background action" });
-    expect(backgroundAction).not.toHaveProperty("inert", true);
-    backgroundAction.focus();
+    lastLink.focus();
+    fireEvent.keyDown(document, { key: "Tab" });
+    expect(trigger).toHaveFocus();
+
+    trigger.focus();
+    fireEvent.keyDown(document, { key: "Tab", shiftKey: true });
+    expect(lastLink).toHaveFocus();
 
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByRole("navigation", { name: "Administration menu" }))
       .not.toBeInTheDocument();
     expect(document.body.style.overflow).toBe("");
-    expect(backgroundAction).toHaveFocus();
+    expect(screen.getByRole("button", { name: "Open administration menu" })).toHaveFocus();
   });
 });

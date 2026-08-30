@@ -120,7 +120,6 @@ function GalleryArtworkCard({
 }>) {
   return (
     <Link
-      aria-label={`View design details: ${item.altText}`}
       className={`${styles.galleryCard} ${className}`}
       data-homepage-gallery-slot={slot}
       href={`/designs/${buildPublicDesignSlug(publicDesignTitle(item), item.id)}`}

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { hasAdminPermission, type AdminPermission, type AdminRole } from "@/server/auth/admin-permissions";
 import styles from "./admin.module.css";
 
@@ -93,7 +93,18 @@ function Navigation({ ariaLabel = "Administration", role, permissions, onNavigat
 
 export function AdminShell({ administrator, children }: AdminShellProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const closeMobileMenu = useCallback(() => setIsMobileMenuOpen(false), []);
+  const mobileMenuRef = useRef<HTMLDivElement>(null);
+  const mobileMenuPanelRef = useRef<HTMLDivElement>(null);
+  const mobileMenuTriggerRef = useRef<HTMLButtonElement>(null);
+  const restoreMobileMenuFocusRef = useRef(false);
+  const closeMobileMenu = useCallback(() => {
+    restoreMobileMenuFocusRef.current = true;
+    setIsMobileMenuOpen(false);
+  }, []);
+  const closeMobileMenuAfterNavigation = useCallback(() => {
+    restoreMobileMenuFocusRef.current = false;
+    setIsMobileMenuOpen(false);
+  }, []);
 
   useEffect(() => {
     if (!isMobileMenuOpen) return;
@@ -104,7 +115,27 @@ export function AdminShell({ administrator, children }: AdminShellProps) {
       ? window.innerWidth - document.documentElement.clientWidth
       : 0;
     const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") closeMobileMenu();
+      if (event.key === "Escape") {
+        closeMobileMenu();
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = Array.from(
+        mobileMenuRef.current?.querySelectorAll<HTMLElement>(
+          'a[href], button:not(:disabled):not([tabindex="-1"])',
+        ) ?? [],
+      );
+      if (focusable.length === 0) return;
+      const first = focusable[0];
+      const last = focusable.at(-1)!;
+      if (event.shiftKey && (document.activeElement === first || !mobileMenuRef.current?.contains(document.activeElement))) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
     };
 
     document.body.style.overflow = "hidden";
@@ -117,6 +148,15 @@ export function AdminShell({ administrator, children }: AdminShellProps) {
       document.body.style.paddingRight = previousPaddingRight;
     };
   }, [closeMobileMenu, isMobileMenuOpen]);
+
+  useEffect(() => {
+    if (isMobileMenuOpen) {
+      mobileMenuPanelRef.current?.querySelector<HTMLElement>("a[href]")?.focus();
+    } else if (restoreMobileMenuFocusRef.current) {
+      mobileMenuTriggerRef.current?.focus();
+      restoreMobileMenuFocusRef.current = false;
+    }
+  }, [isMobileMenuOpen]);
 
   return (
     <div className={styles.shell}>
@@ -131,23 +171,31 @@ export function AdminShell({ administrator, children }: AdminShellProps) {
 
       <div className={styles.workspace}>
         <header className={styles.topbar}>
-          <div className={styles.mobileMenu}>
+          <div ref={mobileMenuRef} className={styles.mobileMenu}>
             <button
+              ref={mobileMenuTriggerRef}
               type="button"
               aria-label={isMobileMenuOpen ? "Close administration menu" : "Open administration menu"}
               aria-expanded={isMobileMenuOpen}
               aria-controls="admin-mobile-navigation"
-              onClick={() => setIsMobileMenuOpen((open) => !open)}
+              onClick={() => {
+                if (isMobileMenuOpen) {
+                  closeMobileMenu();
+                } else {
+                  restoreMobileMenuFocusRef.current = false;
+                  setIsMobileMenuOpen(true);
+                }
+              }}
             >
               {isMobileMenuOpen ? "Close" : "Menu"}
             </button>
             {isMobileMenuOpen ? (
-              <div id="admin-mobile-navigation" className={styles.mobileMenuPanel}>
+              <div ref={mobileMenuPanelRef} id="admin-mobile-navigation" className={styles.mobileMenuPanel}>
                 <Navigation
                   ariaLabel="Administration menu"
                   role={administrator.role}
                   permissions={administrator.permissions}
-                  onNavigate={closeMobileMenu}
+                  onNavigate={closeMobileMenuAfterNavigation}
                 />
               </div>
             ) : null}

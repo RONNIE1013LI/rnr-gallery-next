@@ -151,7 +151,6 @@ export function DesignGallery({ query, result }: Props) {
                 key={item.id}
               >
                 <Link
-                  aria-label={`View design details: ${item.altText}`}
                   className={styles.galleryCardLink}
                   href={`/designs/${publicSlug}?from=${encodeURIComponent(returnTo)}`}
                 >
