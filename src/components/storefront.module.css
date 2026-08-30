@@ -1661,16 +1661,11 @@
 .productDetailInner {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(20rem, 1fr);
-  grid-template-areas:
-    "media summary"
-    "media details";
-  column-gap: clamp(2rem, 5vw, 5rem);
-  row-gap: 1.5rem;
+  gap: clamp(2rem, 5vw, 5rem);
   align-items: start;
 }
 
 .productDetailMedia {
-  grid-area: media;
   aspect-ratio: 1 / 1;
   position: relative;
   overflow: hidden;
@@ -1678,16 +1673,25 @@
 }
 
 .productDetailCopy {
-  grid-area: summary;
+  position: sticky;
+  top: 2rem;
 }
 
-.productDetailCopy > .primaryButton {
+.productDetailIntentPage {
+  grid-template-areas: "media copy";
+}
+
+.productDetailIntentPage > .productDetailMedia {
+  grid-area: media;
+}
+
+.productDetailIntentPage > .productDetailCopy {
+  grid-area: copy;
+}
+
+.productDetailIntentPage .productDetailSummary > .primaryButton {
   width: 100%;
   margin-top: 1rem;
-}
-
-.productDetailDetails {
-  grid-area: details;
 }
 
 .productDetail h1 {
@@ -5139,15 +5143,35 @@
 
   .productDetailInner {
     grid-template-columns: 1fr;
+  }
+
+  .productDetailCopy {
+    position: static;
+  }
+
+  .productDetailIntentPage {
     grid-template-areas:
       "summary"
       "media"
       "details";
-    row-gap: 1.5rem;
+    gap: 1.5rem;
   }
 
-  .productDetailMedia {
+  .productDetailIntentPage > .productDetailCopy {
+    display: contents;
+  }
+
+  .productDetailIntentPage .productDetailSummary {
+    grid-area: summary;
+  }
+
+  .productDetailIntentPage > .productDetailMedia {
+    grid-area: media;
     aspect-ratio: 4 / 3;
+  }
+
+  .productDetailIntentPage .productDetailDetails {
+    grid-area: details;
   }
 
   .hero {

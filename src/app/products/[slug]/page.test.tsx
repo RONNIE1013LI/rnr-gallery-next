@@ -10,6 +10,7 @@ import { getProductBySlug } from "@/domain/catalogue/products";
 import AustraliaProductPage, {
   generateMetadata as generateAustraliaProductMetadata,
 } from "@/app/au/products/[slug]/page";
+import styles from "@/components/storefront.module.css";
 import ProductPage, {
   generateMetadata as generateNewZealandProductMetadata,
   ProductPageContent,
@@ -307,20 +308,40 @@ describe("ProductPageContent", () => {
     });
   });
 
-  it("keeps the mobile reading order focused on product identity, action, image and details", () => {
+  it("limits the mobile-first ad landing structure to the intended product pages", () => {
     const product = getProductBySlug("custom-themed-wall-banner")!;
     const { container } = render(
       <ProductPageContent product={product} selection={null} />,
     );
 
+    const layout = container.querySelector(`.${styles.productDetailIntentPage}`);
     const summary = container.querySelector("[data-product-summary]");
     const media = container.querySelector("[data-product-media]");
     const details = container.querySelector("[data-product-details]");
+    const callToAction = screen.getByRole("link", { name: "Start Your Design" });
+    expect(layout).toBeTruthy();
     expect(summary).toBeTruthy();
     expect(media).toBeTruthy();
     expect(details).toBeTruthy();
+    expect(summary).toContainElement(callToAction);
     expect(summary?.compareDocumentPosition(media!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
-    expect(media?.compareDocumentPosition(details!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(summary?.parentElement?.contains(details)).toBe(true);
+  });
+
+  it("preserves the original media-first sticky-copy structure for unrelated products", () => {
+    const product = getProductBySlug("photo-print-canvas")!;
+    const { container } = render(
+      <ProductPageContent product={product} selection={null} />,
+    );
+
+    const media = container.querySelector("[data-product-media]");
+    const summary = container.querySelector("[data-product-summary]");
+    const details = container.querySelector("[data-product-details]");
+    const callToAction = screen.getByRole("link", { name: "Start Your Design" });
+    expect(container.querySelector(`.${styles.productDetailIntentPage}`)).toBeNull();
+    expect(media?.compareDocumentPosition(summary!)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    expect(summary?.parentElement?.contains(details)).toBe(true);
+    expect(details?.compareDocumentPosition(callToAction)).toBe(Node.DOCUMENT_POSITION_FOLLOWING);
   });
 
   it("publishes intent-specific NZ and AU metadata with canonical market alternates", async () => {

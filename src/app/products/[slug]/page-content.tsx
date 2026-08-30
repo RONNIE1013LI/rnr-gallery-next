@@ -44,6 +44,7 @@ type ProductPagePresentation = Readonly<{
   title: string;
   summary: string;
   eyebrow: string;
+  prioritizeMobileAction: boolean;
 }>;
 
 export function getProductPagePresentation(product: Product): ProductPagePresentation {
@@ -52,6 +53,7 @@ export function getProductPagePresentation(product: Product): ProductPagePresent
       title: "Custom Birthday & Event Wall Banner",
       summary: "Create a personalised birthday banner from your photos, names and wording, with custom artwork for parties, milestones and other celebrations.",
       eyebrow: "Birthday banners",
+      prioritizeMobileAction: true,
     };
   }
   if (product.key === "digital-oil-painting-banner") {
@@ -59,12 +61,14 @@ export function getProductPagePresentation(product: Product): ProductPagePresent
       title: "Custom Memorial & Tribute Banner",
       summary: "A personalised memorial or funeral banner created from your photos and remembrance wording, with custom artwork or a painterly portrait style for a celebration of life.",
       eyebrow: "Memorial banners",
+      prioritizeMobileAction: true,
     };
   }
   return {
     title: product.title,
     summary: product.summary,
     eyebrow: product.category,
+    prioritizeMobileAction: false,
   };
 }
 
@@ -133,6 +137,75 @@ export function ProductPageContent({
         deliveryCopy.australiaStandard,
         deliveryCopy.australiaRemote,
       ];
+  const media = (
+    <div className={styles.productDetailMedia} data-product-media>
+      <Image
+        src={selection?.imageUrl ?? product.image.src}
+        alt={selection?.altText ?? product.image.alt}
+        fill
+        loading="eager"
+        priority
+        sizes="(max-width: 820px) 100vw, 58vw"
+      />
+    </div>
+  );
+  const callToAction = (
+    <Link className={styles.primaryButton} href={configureHref}>
+      Start Your Design
+    </Link>
+  );
+  const summary = (
+    <div className={styles.productDetailSummary} data-product-summary>
+      <p className={styles.eyebrow}>{presentation.eyebrow}</p>
+      <h1>{presentation.title}</h1>
+      {selection && (
+        <div className={styles.selectedDesignNote}>
+          <strong>Selected design inspiration</strong>
+          <span>{selection.title}</span>
+        </div>
+      )}
+      <p className={styles.productDetailLead}>{presentation.summary}</p>
+      <p className={styles.productDetailPrice}>
+        From {formatMarketMoney(displayPrice, currency)}{taxLabel}
+      </p>
+      {presentation.prioritizeMobileAction ? callToAction : null}
+    </div>
+  );
+  const details = (
+    <div className={styles.productDetailDetails} data-product-details>
+      <section className={styles.productPurchaseDetails} aria-label="Product details">
+        <p className={styles.productAvailability}>In stock</p>
+        <h2>Available sizes</h2>
+        <ul className={styles.productSizeList}>
+          {sizeLabels.map((label) => <li key={label}>{label}</li>)}
+        </ul>
+        <h2>Production and delivery</h2>
+        <p>{deliveryCopy.production}</p>
+        <ul className={styles.productDeliveryList}>
+          {deliverySummary.map((delivery) => <li key={delivery}>{delivery}</li>)}
+        </ul>
+        <ul className={styles.productAssurances}>
+          <li>Proof before printing</li>
+          <li>Two revisions included</li>
+        </ul>
+        <Link className={styles.productPolicyLink} href="/returns-refunds">
+          Returns &amp; refunds
+        </Link>
+      </section>
+      <ul className={styles.checkList}>
+        <li>Choose the finished format and artwork details</li>
+        <li>Upload now or provide your source photos after ordering</li>
+        <li>Review a draft before production begins</li>
+      </ul>
+    </div>
+  );
+  const copy = (
+    <div className={styles.productDetailCopy}>
+      {summary}
+      {details}
+      {presentation.prioritizeMobileAction ? null : callToAction}
+    </div>
+  );
   return (
     <main id="main-content" className={styles.productDetail}>
       {analyticsSubtotalExGstCents !== undefined && analyticsSizeKey ? (
@@ -169,60 +242,11 @@ export function ProductPageContent({
         { name: "Shop", path: market === "AU" ? "/au" : "/shop" },
         { name: presentation.title, path: productPath },
       ])} />
-      <div className={styles.productDetailInner}>
-        <div className={styles.productDetailCopy} data-product-summary>
-          <p className={styles.eyebrow}>{presentation.eyebrow}</p>
-          <h1>{presentation.title}</h1>
-          {selection && (
-            <div className={styles.selectedDesignNote}>
-              <strong>Selected design inspiration</strong>
-              <span>{selection.title}</span>
-            </div>
-          )}
-          <p className={styles.productDetailLead}>{presentation.summary}</p>
-          <p className={styles.productDetailPrice}>
-            From {formatMarketMoney(displayPrice, currency)}{taxLabel}
-          </p>
-          <Link className={styles.primaryButton} href={configureHref}>
-            Start Your Design
-          </Link>
-        </div>
-        <div className={styles.productDetailMedia} data-product-media>
-          <Image
-            src={selection?.imageUrl ?? product.image.src}
-            alt={selection?.altText ?? product.image.alt}
-            fill
-            loading="eager"
-            priority
-            sizes="(max-width: 820px) 100vw, 58vw"
-          />
-        </div>
-        <div className={styles.productDetailDetails} data-product-details>
-          <section className={styles.productPurchaseDetails} aria-label="Product details">
-            <p className={styles.productAvailability}>In stock</p>
-            <h2>Available sizes</h2>
-            <ul className={styles.productSizeList}>
-              {sizeLabels.map((label) => <li key={label}>{label}</li>)}
-            </ul>
-            <h2>Production and delivery</h2>
-            <p>{deliveryCopy.production}</p>
-            <ul className={styles.productDeliveryList}>
-              {deliverySummary.map((delivery) => <li key={delivery}>{delivery}</li>)}
-            </ul>
-            <ul className={styles.productAssurances}>
-              <li>Proof before printing</li>
-              <li>Two revisions included</li>
-            </ul>
-            <Link className={styles.productPolicyLink} href="/returns-refunds">
-              Returns &amp; refunds
-            </Link>
-          </section>
-          <ul className={styles.checkList}>
-            <li>Choose the finished format and artwork details</li>
-            <li>Upload now or provide your source photos after ordering</li>
-            <li>Review a draft before production begins</li>
-          </ul>
-        </div>
+      <div className={`${styles.productDetailInner}${
+        presentation.prioritizeMobileAction ? ` ${styles.productDetailIntentPage}` : ""
+      }`}>
+        {presentation.prioritizeMobileAction ? copy : media}
+        {presentation.prioritizeMobileAction ? media : copy}
       </div>
     </main>
   );
