@@ -5,6 +5,7 @@ import type {
   DraftGenerationResult,
   SafeProductContext,
 } from "../types";
+import type { WebsiteAnalyticsBehavioralContext } from "@/server/analytics/website-analytics-v2-business-recorder";
 import type { ImageAnalysisResult } from "../image-analysis-schema";
 import type { WebsiteDecision } from "../website/structured-decision";
 import type { ProtectedAttachmentSource } from "../attachments/attachment-source-protector";
@@ -76,6 +77,7 @@ export type HashedConversationEvent = HashedIncomingMessage & Readonly<{
     sessionExpiresAt: Date;
     isNewSession?: boolean;
   }>;
+  websiteAnalyticsContext?: WebsiteAnalyticsBehavioralContext;
 }>;
 
 export type ConversationContextItem = Readonly<{

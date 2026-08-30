@@ -22,6 +22,10 @@ import {
   webhookEvents,
 } from "@/server/db/schema";
 import { enqueueInternalNotifications } from "@/server/notifications/drizzle-internal-notification-outbox-repository";
+import {
+  createWebsiteAnalyticsV2BusinessRecorder,
+  type WebsiteAnalyticsV2BusinessRecorder,
+} from "@/server/analytics/website-analytics-v2-business-recorder";
 import type {
   OrderPaymentStatus,
   PaymentAttemptStatus,
@@ -348,11 +352,27 @@ function postgresCode(error: unknown): string | undefined {
 
 export function createDrizzlePaymentRepository(
   database: Database,
-  options: Readonly<{ leaseDurationMs?: number }> = {},
+  options: Readonly<{
+    leaseDurationMs?: number;
+    analyticsRecorder?: Pick<WebsiteAnalyticsV2BusinessRecorder, "recordDirectPaymentAttempt">;
+  }> = {},
 ): PaymentRepository {
   const leaseDurationMs = options.leaseDurationMs ?? 60_000;
   if (!Number.isSafeInteger(leaseDurationMs) || leaseDurationMs < 1) {
     throw new Error("Payment lease duration must be a positive integer");
+  }
+  const analyticsRecorder = options.analyticsRecorder
+    ?? createWebsiteAnalyticsV2BusinessRecorder(database);
+
+  async function recordDirectPaymentAttempt(
+    attemptId: string,
+    verifiedStatus: VerifiedPaymentResult["status"],
+  ): Promise<void> {
+    try {
+      await analyticsRecorder.recordDirectPaymentAttempt({ attemptId, verifiedStatus });
+    } catch {
+      // The committed payment remains authoritative; reconciliation repairs analytics.
+    }
   }
 
   async function findPayableOrder(
@@ -650,13 +670,15 @@ export function createDrizzlePaymentRepository(
       ) {
         throw new PaymentVerificationMismatchError();
       }
-      return database.transaction((transaction) =>
+      const applied = await database.transaction((transaction) =>
         applyLockedVerifiedResult(transaction, input),
       );
+      await recordDirectPaymentAttempt(applied.attempt.id, input.result.status);
+      return applied;
     },
 
     async applyVerifiedWebhookEventAtomically(input: VerifiedEventInput) {
-      return database.transaction(async (transaction) => {
+      const outcome = await database.transaction(async (transaction) => {
         const inserted = await transaction
           .insert(webhookEvents)
           .values({
@@ -678,8 +700,12 @@ export function createDrizzlePaymentRepository(
               .for("update")
               .limit(1);
         if (!event) throw new PaymentRepositoryConflictError();
-        if (event.payloadSha256 !== input.payloadSha256) return "hash_mismatch";
-        if (event.processingResult) return "duplicate";
+        if (event.payloadSha256 !== input.payloadSha256) {
+          return { status: "hash_mismatch" as const, attemptId: null };
+        }
+        if (event.processingResult) {
+          return { status: "duplicate" as const, attemptId: event.paymentAttemptId };
+        }
         if (input.faultAt === "after_event_insert") {
           throw new PaymentRepositoryFaultError();
         }
@@ -726,8 +752,12 @@ export function createDrizzlePaymentRepository(
             processedAt: now,
           })
           .where(eq(webhookEvents.id, event.id));
-        return "applied";
+        return { status: "applied" as const, attemptId: candidate.id };
       });
+      if (outcome.attemptId) {
+        await recordDirectPaymentAttempt(outcome.attemptId, input.result.status);
+      }
+      return outcome.status;
     },
 
     async claimReconciliationCandidates(limit) {
@@ -792,7 +822,7 @@ export function createDrizzlePaymentRepository(
     },
 
     async applyReconciliationResult(input) {
-      return database.transaction(async (transaction) => {
+      const applied = await database.transaction(async (transaction) => {
         const { attempt } = await lockOrderThenAttempt(transaction, input.attemptId);
         const now = await databaseNow(transaction);
         if (
@@ -819,6 +849,8 @@ export function createDrizzlePaymentRepository(
           ));
         return applied;
       });
+      await recordDirectPaymentAttempt(applied.attempt.id, input.result.status);
+      return applied;
     },
 
     async recordReconciliationOutcome(input) {

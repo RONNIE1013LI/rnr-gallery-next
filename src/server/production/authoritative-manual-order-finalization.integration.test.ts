@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   adminAuditLogs,
   analyticsConversionDeliveries,
@@ -10,7 +10,10 @@ import {
   productionFieldValues,
   productionJobs,
   user,
+  websiteAnalyticsConversions,
+  websiteAnalyticsFinancialEvents,
 } from "@/server/db/schema";
+import { createWebsiteAnalyticsV2BusinessRecorder } from "@/server/analytics/website-analytics-v2-business-recorder";
 import { assertIsolatedTestDatabaseUrl } from "../../../scripts/migration-safety";
 import {
   createDrizzleProductionJobRepository,
@@ -31,6 +34,14 @@ const finalizedAt = new Date("2026-08-20T01:00:00.000Z");
 const policy = Object.freeze({
   google: Object.freeze({ enabled: true, activatedAt: new Date("2026-08-01T00:00:00.000Z") }),
   meta: Object.freeze({ enabled: true, activatedAt: new Date("2026-08-01T00:00:00.000Z") }),
+});
+const analyticsRecorder = createWebsiteAnalyticsV2BusinessRecorder(database, {
+  config: {
+    enabled: false,
+    cookieSecret: null,
+    v2Enabled: true,
+    attributionLookbackDays: 90,
+  },
 });
 
 function manualInput(overrides: Record<string, unknown> = {}) {
@@ -77,6 +88,7 @@ function service(options: Parameters<typeof createDrizzleProductionJobRepository
   return createProductionJobService(
     createDrizzleProductionJobRepository(database, {
       conversionPolicy: policy,
+      analyticsRecorder,
       ...options,
     }),
     {
@@ -107,6 +119,10 @@ describe("authoritative manual order finalization", () => {
 
   afterAll(async () => {
     if (jobIds.length) {
+      await database.delete(websiteAnalyticsFinancialEvents)
+        .where(inArray(websiteAnalyticsFinancialEvents.productionJobId, jobIds));
+      await database.delete(websiteAnalyticsConversions)
+        .where(inArray(websiteAnalyticsConversions.productionJobId, jobIds));
       await database.delete(analyticsConversionDeliveries)
         .where(inArray(analyticsConversionDeliveries.jobId, jobIds));
       await database.delete(adminAuditLogs).where(and(
@@ -118,6 +134,40 @@ describe("authoritative manual order finalization", () => {
     }
     await database.delete(user).where(eq(user.id, actorId));
     await pool.end();
+  });
+
+  it("creates one immutable manual order fact and one exact initial receipt only at createManual", async () => {
+    const job = await create({
+      manualPaymentStatus: "processing",
+      amountPaidCents: 4_500,
+    });
+
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(eq(websiteAnalyticsConversions.productionJobId, job.id)))
+      .toEqual([expect.objectContaining({
+        conversionType: "order",
+        sourceType: "production_job",
+        sourceId: job.id,
+        orderedAmountInclGstCents: 20_000,
+        occurredAt: finalizedAt,
+      })]);
+    expect(await database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.productionJobId, job.id)))
+      .toEqual([expect.objectContaining({
+        eventType: "receipt",
+        sourceType: "manual_payment_update",
+        sourceId: `manual-create:${job.id}`,
+        amountCents: 4_500,
+        occurredAt: finalizedAt,
+      })]);
+  });
+
+  it("does not create a manual order fact for cancelled or zero-value finalisation", async () => {
+    const cancelled = await create({ manualStatus: "cancelled" });
+    const zero = await create({ amountPayableCents: 0 });
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(inArray(websiteAnalyticsConversions.productionJobId, [cancelled.id, zero.id])))
+      .toEqual([]);
   });
 
   it.each(["awaiting_payment", "processing", "paid"] as const)(
@@ -177,9 +227,47 @@ describe("authoritative manual order finalization", () => {
       .where(eq(productionJobs.idempotencyKey, idempotencyKey))).toEqual([]);
   });
 
+  it("keeps committed manual creation and payment updates successful when analytics fails", async () => {
+    const failingAnalytics = {
+      recordManualOrder: vi.fn().mockRejectedValue(new Error("analytics unavailable")),
+      recordManualPaymentUpdate: vi.fn().mockRejectedValue(new Error("analytics unavailable")),
+    };
+    const runtime = service({ analyticsRecorder: failingAnalytics });
+    const created = await runtime.createManual({
+      userId: actorId,
+      email: `manual-finalization-${suffix}@example.test`,
+    }, manualInput({ conversionEvidence: undefined }), { canUpdateFinance: true });
+    jobIds.push(created.job.id);
+    expect(failingAnalytics.recordManualOrder).toHaveBeenCalledOnce();
+
+    const repository = createDrizzleProductionJobRepository(database, {
+      conversionPolicy: policy,
+      analyticsRecorder: failingAnalytics,
+    });
+    await expect(repository.update({
+      jobId: created.job.id,
+      idempotencyKey: `analytics-failure-update-${created.job.id}`,
+      expectedUpdatedAt: created.job.updatedAt,
+      actor: { userId: actorId, email: `manual-finalization-${suffix}@example.test` },
+      updatedAt: new Date("2026-08-20T03:30:00.000Z"),
+      canUpdateFinance: true,
+      finance: {
+        manualPaymentStatus: "processing",
+        amountPayableCents: 20_000,
+        amountPaidCents: 5_000,
+        artistFeeCents: 0,
+        materialCostCents: 0,
+      },
+    })).resolves.toBe("updated");
+    expect(failingAnalytics.recordManualPaymentUpdate).toHaveBeenCalledOnce();
+  });
+
   it("never creates another Purchase when payment, amount or customer data changes", async () => {
     const job = await create();
-    const repository = createDrizzleProductionJobRepository(database, { conversionPolicy: policy });
+    const repository = createDrizzleProductionJobRepository(database, {
+      conversionPolicy: policy,
+      analyticsRecorder,
+    });
     expect(await repository.update({
       jobId: job.id,
       idempotencyKey: `later-edit-${job.id}`,
@@ -204,6 +292,15 @@ describe("authoritative manual order finalization", () => {
       eventOccurredAt: finalizedAt,
       valueMinor: 20_000,
     });
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(eq(websiteAnalyticsConversions.productionJobId, job.id))).toHaveLength(1);
+    expect(await database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.productionJobId, job.id)))
+      .toEqual([expect.objectContaining({
+        eventType: "receipt",
+        amountCents: 25_000,
+        occurredAt: new Date("2026-08-20T03:00:00.000Z"),
+      })]);
     const [paid] = await database.select().from(productionJobs)
       .where(eq(productionJobs.id, job.id));
     expect(paid.manualPaymentConfirmedAt).toBeInstanceOf(Date);
@@ -228,6 +325,8 @@ describe("authoritative manual order finalization", () => {
     expect(reversed.manualPaymentConfirmedAt).toEqual(paid.manualPaymentConfirmedAt);
     expect(await database.select().from(analyticsConversionDeliveries)
       .where(eq(analyticsConversionDeliveries.jobId, job.id))).toHaveLength(1);
+    expect(await database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.productionJobId, job.id))).toHaveLength(1);
   });
 
   it("rejects attribution evidence added after the order was finalized", async () => {

@@ -19,6 +19,10 @@ import {
   hashTrustedNetworkBucket,
   resolveTrustedClientIp,
 } from "@/server/customer-service/website/rate-limit";
+import {
+  resolveWebsiteAnalyticsBehavioralContext,
+} from "@/server/analytics/website-analytics-v2-business-recorder";
+import type { WebsiteAnalyticsRuntimeConfig } from "@/server/analytics/website-analytics-config";
 
 type WebsiteMessageRepository = Pick<
   CustomerServiceRepository,
@@ -44,6 +48,7 @@ type Dependencies = Readonly<{
   cookieEnvironment?: CookieEnvironment;
   createSessionToken?: () => string;
   resolveTrustedIp?: (request: Request) => string;
+  analyticsConfig?: WebsiteAnalyticsRuntimeConfig;
 }>;
 
 const noStoreHeaders = { "Cache-Control": "no-store" };
@@ -133,6 +138,16 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
             sessionExpiresAt,
             isNewSession: !existingSession,
           },
+          websiteAnalyticsContext: resolveWebsiteAnalyticsBehavioralContext(
+            request.headers.get("cookie"),
+            dependencies.analyticsConfig ?? {
+              enabled: false,
+              v2Enabled: false,
+              cookieSecret: null,
+              attributionLookbackDays: 90,
+            },
+            receivedAt,
+          ),
         });
         if (result.status === "rate_limited") return json({ error: { code: "RATE_LIMITED" } }, 429);
         if (result.status === "turn_pending") {

@@ -11,7 +11,9 @@ import {
   orders,
   paymentAttempts,
   webhookEvents,
+  websiteAnalyticsFinancialEvents,
 } from "@/server/db/schema";
+import { createWebsiteAnalyticsV2BusinessRecorder } from "@/server/analytics/website-analytics-v2-business-recorder";
 import {
   PaymentRepositoryConflictError,
   PaymentVerificationMismatchError,
@@ -26,8 +28,17 @@ if (!databaseUrl) throw new Error("TEST_DATABASE_URL is required");
 
 const pool = new Pool({ connectionString: databaseUrl });
 const database = drizzle(pool);
+const analyticsRecorder = createWebsiteAnalyticsV2BusinessRecorder(database, {
+  config: {
+    enabled: false,
+    cookieSecret: null,
+    v2Enabled: true,
+    attributionLookbackDays: 90,
+  },
+});
 const repository = createDrizzlePaymentRepository(database, {
   leaseDurationMs: 30_000,
+  analyticsRecorder,
 });
 const suffix = randomUUID();
 const orderIds: string[] = [];
@@ -237,6 +248,8 @@ describe("Drizzle payment repository", () => {
   });
 
   afterAll(async () => {
+    await database.delete(websiteAnalyticsFinancialEvents)
+      .where(inArray(websiteAnalyticsFinancialEvents.orderId, orderIds));
     await pool.query(
       "delete from webhook_events where payment_attempt_id in (select id from payment_attempts where order_id = any($1::uuid[]))",
       [orderIds],
@@ -617,6 +630,8 @@ describe("Drizzle payment repository", () => {
         sanitizedFailureCode: "declined",
       },
     });
+    expect(await database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.orderId, failedOrder.orderId))).toEqual([]);
     await service.start(owner, "card", randomUUID());
     const afterFailure = await database.select().from(paymentAttempts)
       .where(eq(paymentAttempts.orderId, failedOrder.orderId));
@@ -856,12 +871,23 @@ describe("Drizzle payment repository", () => {
       order.orderId,
     ))).resolves.toEqual([]);
     const paidBefore = await paymentRows(order.orderId, claim.attempt.id);
+    expect(await database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId)))
+      .toEqual([expect.objectContaining({
+        eventType: "receipt",
+        sourceType: "payment_attempt",
+        sourceId: claim.attempt.id,
+        amountCents: 7_475,
+        occurredAt: paidBefore.attempt.updatedAt,
+      })]);
     await repository.applyVerifiedResult({
       attemptId: claim.attempt.id,
       result: { ...result, status: "failed", sanitizedFailureCode: "stale" },
       source: "reconciliation",
     });
     await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toEqual(paidBefore);
+    expect(await database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId))).toHaveLength(1);
     await expect(repository.applyVerifiedResult({
       attemptId: claim.attempt.id,
       result: { ...result, providerStatus: "refunded", status: "refunded" },
@@ -870,6 +896,21 @@ describe("Drizzle payment repository", () => {
       order: { paymentStatus: "refunded" },
       attempt: { status: "paid" },
     });
+    const refunded = await paymentRows(order.orderId, claim.attempt.id);
+    expect(await database.select().from(websiteAnalyticsFinancialEvents)
+      .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId)))
+      .toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          eventType: "receipt",
+          sourceId: claim.attempt.id,
+          occurredAt: paidBefore.attempt.updatedAt,
+        }),
+        expect.objectContaining({
+          eventType: "refund",
+          sourceId: claim.attempt.id,
+          occurredAt: refunded.attempt.updatedAt,
+        }),
+      ]));
 
     const freshOrder = await createOrder();
     const freshClaim = await repository.createOrClaimNonterminalAttempt(

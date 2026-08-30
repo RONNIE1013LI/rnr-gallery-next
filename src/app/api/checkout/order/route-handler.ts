@@ -10,6 +10,15 @@ import {
 } from "@/domain/consent/advertising-consent";
 import { getOptionalSession } from "@/server/auth/get-optional-session";
 import {
+  createWebsiteAnalyticsV2BusinessRecorder,
+  resolveWebsiteAnalyticsBehavioralContext,
+  type WebsiteAnalyticsV2BusinessRecorder,
+} from "@/server/analytics/website-analytics-v2-business-recorder";
+import {
+  readWebsiteAnalyticsConfig,
+  type WebsiteAnalyticsRuntimeConfig,
+} from "@/server/analytics/website-analytics-config";
+import {
   hashCheckoutSessionToken,
   readCheckoutSessionToken,
 } from "@/server/checkout/session-cookie";
@@ -60,6 +69,8 @@ type Dependencies = Readonly<{
   getOptionalSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
   trustedOrigin?: string;
   now?: () => Date;
+  analyticsConfig?: WebsiteAnalyticsRuntimeConfig;
+  analyticsRecorder?: Pick<WebsiteAnalyticsV2BusinessRecorder, "recordWebsiteOrder">;
 }>;
 
 class CheckoutAccessError extends Error {
@@ -71,6 +82,7 @@ class CheckoutAccessError extends Error {
 function defaults(): Dependencies {
   const database = getDatabase();
   const repository = createDrizzleOrderRepository(database);
+  const analyticsConfig = readWebsiteAnalyticsConfig();
   return {
     repository,
     orderService: createOrderService({
@@ -80,6 +92,10 @@ function defaults(): Dependencies {
       createOrderNumber: () => allocateOrderNumber(database),
     }),
     getOptionalSession,
+    analyticsConfig,
+    analyticsRecorder: createWebsiteAnalyticsV2BusinessRecorder(database, {
+      config: analyticsConfig,
+    }),
   };
 }
 
@@ -143,9 +159,10 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
       const rawToken = readCheckoutSessionToken(request, customerId);
       if (!rawToken) throw new CheckoutAccessError(401);
 
+      const requestNow = deps.now?.() ?? new Date();
       const session = await deps.repository.findSessionByTokenDigest(
         hashCheckoutSessionToken(rawToken),
-        deps.now?.() ?? new Date(),
+        requestNow,
       );
       if (!session) throw new CheckoutAccessError(401);
       if (session.customerId !== customerId) {
@@ -172,6 +189,20 @@ export function createCheckoutOrderRoute(dependencies?: Dependencies) {
           })(),
         },
       );
+      if (deps.analyticsRecorder) {
+        try {
+          await deps.analyticsRecorder.recordWebsiteOrder({
+            orderId: order.orderId,
+            behavioralContext: resolveWebsiteAnalyticsBehavioralContext(
+              request.headers.get("Cookie"),
+              deps.analyticsConfig ?? readWebsiteAnalyticsConfig(),
+              requestNow,
+            ),
+          });
+        } catch {
+          // The committed order remains authoritative; reconciliation repairs analytics.
+        }
+      }
       return json({ order: publicOrder(order) });
     } catch (error) {
       return errorResponse(error);

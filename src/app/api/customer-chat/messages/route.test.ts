@@ -2,6 +2,11 @@ import { describe, expect, it, vi } from "vitest";
 import { defaultProductRegistry, parseProductRegistry } from "@/domain/catalogue/product-registry";
 import { resolveSafeProductContext } from "@/server/customer-service/website/product-context";
 import { createCustomerChatMessagesHandler } from "./route-handler";
+import { serializeAdvertisingConsent } from "@/domain/consent/advertising-consent";
+import {
+  createWebsiteAnalyticsIdentity,
+  websiteAnalyticsVisitorDigest,
+} from "@/server/analytics/website-analytics-cookies";
 
 const sessionToken = "s".repeat(43);
 const sessionSecret = "website-session-secret-that-is-long-enough";
@@ -29,6 +34,12 @@ function request(body: unknown, input: Readonly<{
 
 function setup(input: Readonly<{
   enabled?: boolean;
+  analyticsConfig?: Readonly<{
+    enabled: boolean;
+    v2Enabled: boolean;
+    cookieSecret: string | null;
+    attributionLookbackDays: number;
+  }>;
   ingestResults?: readonly ({ status: "duplicate" } | { status: "rate_limited" } | {
     status: "turn_pending";
     messageId: string;
@@ -75,6 +86,12 @@ function setup(input: Readonly<{
     cookieEnvironment: "preview",
     createSessionToken: () => sessionToken,
     resolveTrustedIp: () => "203.0.113.42",
+    analyticsConfig: input.analyticsConfig ?? {
+      enabled: false,
+      v2Enabled: false,
+      cookieSecret: null,
+      attributionLookbackDays: 90,
+    },
   });
   return {
     handler,
@@ -94,6 +111,44 @@ const validBody = {
 };
 
 describe("POST /api/customer-chat/messages", () => {
+  it("passes only signed consented V1 identity to the authoritative inquiry write", async () => {
+    const analyticsSecret = "customer-chat-analytics-secret-value-0001";
+    const identity = createWebsiteAnalyticsIdentity(analyticsSecret, now);
+    const consent = encodeURIComponent(serializeAdvertisingConsent({
+      version: 1,
+      analytics: true,
+      advertising: false,
+      decidedAt: "2026-08-20T23:00:00.000Z",
+    }));
+    const current = setup({
+      analyticsConfig: {
+        enabled: true,
+        v2Enabled: true,
+        cookieSecret: analyticsSecret,
+        attributionLookbackDays: 90,
+      },
+    });
+
+    const response = await current.handler.POST(request(validBody, {
+      cookie: [
+        `rnr-consent-v1=${consent}`,
+        `ra_vid_v1=${identity.visitorCookie}`,
+        `ra_sid_v1=${identity.sessionCookie}`,
+      ].join("; "),
+    }));
+
+    expect(response.status).toBe(202);
+    expect(current.repository.ingestConversationEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        websiteAnalyticsContext: {
+          consentLinked: true,
+          visitorDigest: websiteAnalyticsVisitorDigest(identity.visitorId, analyticsSecret),
+          convertingSessionId: identity.sessionId,
+        },
+      }),
+    );
+  });
+
   it("persists first, returns a minimal 202 response, and schedules the durable turn", async () => {
     const current = setup();
     const response = await current.handler.POST(request(validBody));

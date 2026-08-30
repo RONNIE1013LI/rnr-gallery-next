@@ -8,6 +8,12 @@ import { getCheckoutSessionCookieName, hashCheckoutSessionToken } from "@/server
 import { ShippingUnavailableError } from "@/server/shipping/shipping-service";
 import { createCheckoutOrderRoute } from "./route-handler";
 import { serializeAdvertisingConsent } from "@/domain/consent/advertising-consent";
+import {
+  createWebsiteAnalyticsIdentity,
+  WEBSITE_ANALYTICS_SESSION_COOKIE,
+  WEBSITE_ANALYTICS_VISITOR_COOKIE,
+  websiteAnalyticsVisitorDigest,
+} from "@/server/analytics/website-analytics-cookies";
 
 const origin = "https://shop.example.test";
 const token = "a".repeat(43);
@@ -43,6 +49,84 @@ function repository(customerId: string | null = null): OrderRepository {
 }
 
 describe("POST /api/checkout/order", () => {
+  it("records the committed order with signed V1 identity and keeps checkout successful when analytics fails", async () => {
+    const analyticsSecret = "checkout-analytics-cookie-secret-value-123";
+    const at = new Date("2026-08-02T12:00:00.000Z");
+    const identity = createWebsiteAnalyticsIdentity(analyticsSecret, at);
+    const consent = encodeURIComponent(serializeAdvertisingConsent({
+      version: 1,
+      analytics: true,
+      advertising: false,
+      decidedAt: "2026-08-02T11:00:00.000Z",
+    }));
+    const orderId = "40000000-0000-4000-8000-000000000001";
+    const service = { createOrder: vi.fn().mockResolvedValue({
+      orderId,
+      orderNumber: "RNR-2026-ANALYTICS",
+      currency: "NZD",
+      totalInclGstCents: 9_775,
+      paymentStatus: "awaiting_payment",
+    }) };
+    const analyticsRecorder = {
+      recordWebsiteOrder: vi.fn().mockRejectedValue(new Error("analytics unavailable")),
+    };
+    const handler = createCheckoutOrderRoute({
+      repository: repository(),
+      orderService: service,
+      getOptionalSession: async () => null,
+      trustedOrigin: origin,
+      now: () => at,
+      analyticsConfig: {
+        enabled: true,
+        cookieSecret: analyticsSecret,
+        v2Enabled: true,
+        attributionLookbackDays: 90,
+      },
+      analyticsRecorder,
+    });
+    const incoming = new Request(`${origin}/api/checkout/order`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Origin: origin,
+        "Sec-Fetch-Site": "same-origin",
+        Cookie: [
+          `${getCheckoutSessionCookieName(null)}=${token}`,
+          `rnr-consent-v1=${consent}`,
+          `${WEBSITE_ANALYTICS_VISITOR_COOKIE}=${identity.visitorCookie}`,
+          `${WEBSITE_ANALYTICS_SESSION_COOKIE}=${identity.sessionCookie}`,
+        ].join("; "),
+      },
+      body: JSON.stringify(validBody),
+    });
+
+    const response = await handler(incoming);
+
+    expect(response.status).toBe(200);
+    expect(analyticsRecorder.recordWebsiteOrder).toHaveBeenCalledWith({
+      orderId,
+      behavioralContext: {
+        consentLinked: true,
+        visitorDigest: websiteAnalyticsVisitorDigest(identity.visitorId, analyticsSecret),
+        convertingSessionId: identity.sessionId,
+      },
+    });
+  });
+
+  it("does not attempt analytics when authoritative order creation fails", async () => {
+    const analyticsRecorder = { recordWebsiteOrder: vi.fn() };
+    const handler = createCheckoutOrderRoute({
+      repository: repository(),
+      orderService: { createOrder: vi.fn().mockRejectedValue(new OrderStateChangedError()) },
+      getOptionalSession: async () => null,
+      trustedOrigin: origin,
+      analyticsRecorder,
+    });
+
+    expect((await handler(request(validBody))).status).toBe(409);
+    expect(analyticsRecorder.recordWebsiteOrder).not.toHaveBeenCalled();
+  });
+
   it("does not store a supplied fbclid without granted advertising consent", async () => {
     const service = { createOrder: vi.fn().mockResolvedValue({
       orderId: "40000000-0000-4000-8000-000000000001", orderNumber: "RNR-2026-NO-META",

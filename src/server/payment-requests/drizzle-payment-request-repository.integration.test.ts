@@ -16,20 +16,31 @@ import {
   paymentRequests,
   user,
   webhookEvents,
+  websiteAnalyticsFinancialEvents,
 } from "@/server/db/schema";
 import {
   PaymentRequestConflictError,
   createDrizzlePaymentRequestRepository,
 } from "./drizzle-payment-request-repository";
 import { createDrizzlePaymentRequestNotificationRepository } from "@/server/notifications/drizzle-payment-request-notification-repository";
+import { createWebsiteAnalyticsV2BusinessRecorder } from "@/server/analytics/website-analytics-v2-business-recorder";
 
 const testDatabaseUrl = process.env.TEST_DATABASE_URL;
 if (!testDatabaseUrl) throw new Error("TEST_DATABASE_URL is required");
 
 const pool = new Pool({ connectionString: testDatabaseUrl });
 const database = drizzle(pool);
+const analyticsRecorder = createWebsiteAnalyticsV2BusinessRecorder(database, {
+  config: {
+    enabled: true,
+    v2Enabled: true,
+    cookieSecret: "payment-request-analytics-test-secret-0001",
+    attributionLookbackDays: 90,
+  },
+});
 const repository = createDrizzlePaymentRequestRepository(database, {
   leaseDurationMs: 30_000,
+  analyticsRecorder,
 });
 const notificationRepository = createDrizzlePaymentRequestNotificationRepository(database);
 const suffix = randomUUID();
@@ -214,6 +225,9 @@ describe("payment request balance transactions", () => {
       );
     }
     if (orderIds.length) {
+      await database.delete(websiteAnalyticsFinancialEvents).where(
+        inArray(websiteAnalyticsFinancialEvents.orderId, orderIds),
+      );
       await database.delete(paymentLedgerEntries).where(
         inArray(paymentLedgerEntries.orderId, orderIds),
       );
@@ -313,6 +327,33 @@ describe("payment request balance transactions", () => {
     const ledger = await database.select().from(paymentLedgerEntries)
       .where(eq(paymentLedgerEntries.orderId, order.id));
     expect(ledger).toHaveLength(2);
+    const financialEvents = await database.select({
+      eventType: websiteAnalyticsFinancialEvents.eventType,
+      sourceType: websiteAnalyticsFinancialEvents.sourceType,
+      sourceId: websiteAnalyticsFinancialEvents.sourceId,
+      amountCents: websiteAnalyticsFinancialEvents.amountCents,
+      occurredAt: websiteAnalyticsFinancialEvents.occurredAt,
+    }).from(websiteAnalyticsFinancialEvents).where(eq(
+      websiteAnalyticsFinancialEvents.orderId,
+      order.id,
+    ));
+    expect(financialEvents).toHaveLength(2);
+    expect(financialEvents).toEqual(expect.arrayContaining([
+      {
+        eventType: "receipt",
+        sourceType: "payment_ledger_entry",
+        sourceId: credit.id,
+        amountCents: 10_000,
+        occurredAt: bankInput.receivedAt,
+      },
+      {
+        eventType: "reversal",
+        sourceType: "payment_ledger_entry",
+        sourceId: reversal.id,
+        amountCents: 10_000,
+        occurredAt: reversal.receivedAt,
+      },
+    ]));
   });
 
   it("invalidates pending requests deterministically after a bank credit", async () => {
@@ -566,6 +607,22 @@ describe("payment request balance transactions", () => {
       orderId: order.id,
       paymentRequestId: request.id,
     });
+    await expect(database.select({
+      eventType: websiteAnalyticsFinancialEvents.eventType,
+      sourceType: websiteAnalyticsFinancialEvents.sourceType,
+      sourceId: websiteAnalyticsFinancialEvents.sourceId,
+      amountCents: websiteAnalyticsFinancialEvents.amountCents,
+      occurredAt: websiteAnalyticsFinancialEvents.occurredAt,
+    }).from(websiteAnalyticsFinancialEvents).where(eq(
+      websiteAnalyticsFinancialEvents.orderId,
+      order.id,
+    ))).resolves.toEqual([{
+      eventType: "receipt",
+      sourceType: "payment_ledger_entry",
+      sourceId: ledger[0].id,
+      amountCents: 20_000,
+      occurredAt: ledger[0].receivedAt,
+    }]);
     await expect(repository.getOrderSummary(order.id)).resolves.toMatchObject({
       netPaidCents: 20_000,
       outstandingCents: 20_000,

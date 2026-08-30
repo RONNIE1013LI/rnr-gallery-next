@@ -582,6 +582,48 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(eventColumns.rows).toHaveLength(5);
   });
 
+  it("records only the first committed website conversation and keeps chat available when analytics fails", async () => {
+    const analyticsRecorder = {
+      recordInquiry: vi.fn().mockRejectedValue(new Error("analytics unavailable")),
+    };
+    const analyticsRepository = createDrizzleCustomerServiceRepository(database, {
+      reviewSelectorSecret,
+      now: selectorTestNow,
+      analyticsRecorder,
+    });
+    const sessionHash = "f1".repeat(32);
+    const receivedAt = new Date("2026-08-19T00:00:00.000Z");
+    const first = await analyticsRepository.ingestConversationEvent({
+      ...websiteRateEvent({
+        sessionHash,
+        networkHash: "f2".repeat(32),
+        messageHash: "f3".repeat(32),
+        receivedAt,
+      }),
+      websiteAnalyticsContext: { consentLinked: false },
+    });
+    expect(first.status).toBe("turn_pending");
+    const [conversation] = await database.select({ id: customerServiceConversations.id })
+      .from(customerServiceConversations)
+      .where(eq(customerServiceConversations.externalKeyHash, sessionHash));
+    expect(analyticsRecorder.recordInquiry).toHaveBeenCalledWith({
+      conversationId: conversation.id,
+      occurredAt: receivedAt,
+      behavioralContext: { consentLinked: false },
+    });
+
+    await analyticsRepository.ingestConversationEvent({
+      ...websiteRateEvent({
+        sessionHash,
+        networkHash: "f2".repeat(32),
+        messageHash: "f4".repeat(32),
+        receivedAt: new Date("2026-08-19T00:00:01.000Z"),
+      }),
+      websiteAnalyticsContext: { consentLinked: false },
+    });
+    expect(analyticsRecorder.recordInquiry).toHaveBeenCalledOnce();
+  });
+
   it("publishes the intent-specific damaged-order acknowledgement through the repository path", async () => {
     const claimed = await claimWebsiteTurn({
       sessionHash: "d1".repeat(32),

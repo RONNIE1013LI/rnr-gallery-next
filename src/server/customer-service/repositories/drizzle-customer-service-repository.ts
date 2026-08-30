@@ -74,6 +74,11 @@ import {
   createReplyAssistantUpdateReader,
   encodeReplyAssistantCursor,
 } from "../live-updates";
+import {
+  createWebsiteAnalyticsV2BusinessRecorder,
+  type WebsiteAnalyticsV2BusinessRecorder,
+  type WebsiteAnalyticsBehavioralContext,
+} from "@/server/analytics/website-analytics-v2-business-recorder";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -560,10 +565,13 @@ export function createDrizzleCustomerServiceRepository(
   options: Readonly<{
     reviewSelectorSecret?: string;
     now?: () => Date;
+    analyticsRecorder?: Pick<WebsiteAnalyticsV2BusinessRecorder, "recordInquiry">;
   }> = {},
 ): CustomerServiceRepository {
   const reviewSelectorSecret = options.reviewSelectorSecret ?? "";
   const now = options.now ?? (() => new Date());
+  const analyticsRecorder = options.analyticsRecorder
+    ?? createWebsiteAnalyticsV2BusinessRecorder(database);
 
   async function lockConversation(transaction: Transaction, conversationId: string) {
     await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${'turn:' + conversationId}))`);
@@ -1398,7 +1406,12 @@ export function createDrizzleCustomerServiceRepository(
     },
 
     async ingestConversationEvent(input: HashedConversationEvent) {
-      return database.transaction(async (transaction) => {
+      let inquiry: Readonly<{
+        conversationId: string;
+        occurredAt: Date;
+        behavioralContext: WebsiteAnalyticsBehavioralContext;
+      }> | null = null;
+      const result = await database.transaction(async (transaction) => {
         if (input.websiteRateLimit) {
           if (input.channel !== "website" || input.role !== "customer") {
             throw new Error("website_rate_limit_event_invalid");
@@ -1432,6 +1445,19 @@ export function createDrizzleCustomerServiceRepository(
               eq(customerServiceConversations.channel, input.channel),
               eq(customerServiceConversations.externalKeyHash, input.externalConversationKeyHash),
             )).limit(1);
+        if (
+          insertedConversation.length > 0 &&
+          input.channel === "website" &&
+          input.role === "customer" &&
+          input.websiteRateLimit
+        ) {
+          inquiry = Object.freeze({
+            conversationId: conversation.id,
+            occurredAt: input.receivedAt,
+            behavioralContext: input.websiteAnalyticsContext
+              ?? Object.freeze({ consentLinked: false }),
+          });
+        }
 
         if (input.websiteRateLimit) {
           await lockConversation(transaction, conversation.id);
@@ -1794,6 +1820,14 @@ export function createDrizzleCustomerServiceRepository(
           debounceUntil,
         };
       });
+      if (inquiry) {
+        try {
+          await analyticsRecorder.recordInquiry(inquiry);
+        } catch {
+          // The committed inquiry remains authoritative; reconciliation repairs analytics.
+        }
+      }
+      return result;
     },
 
     async sealDueCustomerTurn(input) {

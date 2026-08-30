@@ -11,7 +11,13 @@ import {
   createCheckoutSessionToken,
   hashCheckoutSessionToken,
 } from "@/server/checkout/session-cookie";
-import { checkoutSessions, orders, productionJobs } from "@/server/db/schema";
+import {
+  checkoutSessions,
+  orders,
+  productionJobs,
+  websiteAnalyticsConversions,
+} from "@/server/db/schema";
+import { createWebsiteAnalyticsV2BusinessRecorder } from "@/server/analytics/website-analytics-v2-business-recorder";
 import { createDrizzleOrderRepository } from "@/server/orders/drizzle-order-repository";
 import { createOrderService } from "@/server/orders/order-service";
 import { createShippingService } from "@/server/shipping/shipping-service";
@@ -49,6 +55,8 @@ describe("POST /api/checkout/order recovery", () => {
         .from(orders)
         .where(eq(orders.checkoutSessionId, sessionId));
       for (const order of createdOrders) {
+        await database.delete(websiteAnalyticsConversions)
+          .where(eq(websiteAnalyticsConversions.sourceId, order.id));
         await database.delete(productionJobs).where(eq(productionJobs.orderId, order.id));
       }
       await database.delete(orders).where(eq(orders.checkoutSessionId, sessionId));
@@ -111,6 +119,20 @@ describe("POST /api/checkout/order recovery", () => {
       getOptionalSession: async () => null,
       trustedOrigin: origin,
       now: () => now,
+      analyticsConfig: {
+        enabled: false,
+        cookieSecret: null,
+        v2Enabled: true,
+        attributionLookbackDays: 90,
+      },
+      analyticsRecorder: createWebsiteAnalyticsV2BusinessRecorder(database, {
+        config: {
+          enabled: false,
+          cookieSecret: null,
+          v2Enabled: true,
+          attributionLookbackDays: 90,
+        },
+      }),
     });
     const body = {
       idempotencyKey: randomUUID(),
@@ -126,8 +148,12 @@ describe("POST /api/checkout/order recovery", () => {
       },
     } as const;
 
-    const lostResponse = await handler(request(token, body));
+    const [lostResponse, concurrentResponse] = await Promise.all([
+      handler(request(token, body)),
+      handler(request(token, body)),
+    ]);
     expect(lostResponse.status).toBe(200);
+    expect(concurrentResponse.status).toBe(200);
     const recoveredResponse = await handler(request(token, body));
     expect(recoveredResponse.status).toBe(200);
     expect(await recoveredResponse.json()).toEqual(await lostResponse.json());
@@ -136,6 +162,11 @@ describe("POST /api/checkout/order recovery", () => {
       .where(eq(orders.checkoutSessionId, session.id))).toHaveLength(1);
     expect(await database.select().from(checkoutSessions)
       .where(eq(checkoutSessions.tokenDigest, hashCheckoutSessionToken(token))))
+      .toHaveLength(1);
+    const [createdOrder] = await database.select({ id: orders.id }).from(orders)
+      .where(eq(orders.checkoutSessionId, session.id));
+    expect(await database.select().from(websiteAnalyticsConversions)
+      .where(eq(websiteAnalyticsConversions.sourceId, createdOrder.id)))
       .toHaveLength(1);
   });
 });

@@ -37,6 +37,10 @@ import type {
 } from "./payment-request-repository";
 import type { VerifiedPaymentResult } from "@/server/payments/types";
 import type { PaymentVerificationSource } from "@/server/payments/state-machine";
+import {
+  createWebsiteAnalyticsV2BusinessRecorder,
+  type WebsiteAnalyticsV2BusinessRecorder,
+} from "@/server/analytics/website-analytics-v2-business-recorder";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -410,11 +414,36 @@ async function applyRequestVerifiedResult(
 
 export function createDrizzlePaymentRequestRepository(
   database: Database,
-  options: Readonly<{ leaseDurationMs?: number }> = {},
+  options: Readonly<{
+    leaseDurationMs?: number;
+    analyticsRecorder?: Pick<WebsiteAnalyticsV2BusinessRecorder, "recordLedgerEntry">;
+  }> = {},
 ): PaymentRequestRepository {
   const leaseDurationMs = options.leaseDurationMs ?? 60_000;
   if (!Number.isSafeInteger(leaseDurationMs) || leaseDurationMs < 1) {
     throw new Error("Payment request lease must be positive");
+  }
+  const analyticsRecorder = options.analyticsRecorder
+    ?? createWebsiteAnalyticsV2BusinessRecorder(database);
+
+  async function recordLedgerEntry(entryId: string): Promise<void> {
+    try {
+      await analyticsRecorder.recordLedgerEntry({ entryId });
+    } catch {
+      // Analytics is repaired by reconciliation and must not fail a payment operation.
+    }
+  }
+
+  async function recordAttemptLedgerEntry(attemptId: string): Promise<void> {
+    try {
+      const [entry] = await database.select({ id: paymentLedgerEntries.id })
+        .from(paymentLedgerEntries)
+        .where(eq(paymentLedgerEntries.paymentAttemptId, attemptId))
+        .limit(1);
+      if (entry) await recordLedgerEntry(entry.id);
+    } catch {
+      // The committed payment remains authoritative; reconciliation repairs analytics.
+    }
   }
 
   const repository: PaymentRequestRepository = {
@@ -644,7 +673,7 @@ export function createDrizzlePaymentRequestRepository(
     },
 
     async recordBankTransfer(input) {
-      return database.transaction(async (transaction) => {
+      const result = await database.transaction(async (transaction) => {
         const order = await lockOrder(transaction, input.orderId);
         const [existing] = await transaction.select().from(paymentLedgerEntries).where(and(
           eq(paymentLedgerEntries.createdBy, input.createdBy),
@@ -699,13 +728,15 @@ export function createDrizzlePaymentRequestRepository(
         await reconcileOrderRequests(transaction, order, now);
         return ledgerRecord(created);
       });
+      await recordLedgerEntry(result.id);
+      return result;
     },
 
     async reverseBankTransfer(input) {
       const [candidate] = await database.select({ orderId: paymentLedgerEntries.orderId })
         .from(paymentLedgerEntries).where(eq(paymentLedgerEntries.id, input.entryId)).limit(1);
       if (!candidate?.orderId) throw new PaymentRequestNotFoundError();
-      return database.transaction(async (transaction) => {
+      const result = await database.transaction(async (transaction) => {
         const order = await lockOrder(transaction, candidate.orderId!);
         const [idempotent] = await transaction.select().from(paymentLedgerEntries).where(and(
           eq(paymentLedgerEntries.createdBy, input.createdBy),
@@ -753,6 +784,8 @@ export function createDrizzlePaymentRequestRepository(
         await reconcileOrderRequests(transaction, order, now);
         return ledgerRecord(created);
       });
+      await recordLedgerEntry(result.id);
+      return result;
     },
 
     async preflightAndClaimAttempt(input) {
@@ -941,8 +974,10 @@ export function createDrizzlePaymentRequestRepository(
     },
 
     async applyVerifiedResult(input) {
-      return database.transaction((transaction) =>
+      const result = await database.transaction((transaction) =>
         applyRequestVerifiedResult(transaction, input));
+      await recordAttemptLedgerEntry(input.attemptId);
+      return result;
     },
 
     async ownsProviderReference(provider, providerReference) {
@@ -958,7 +993,7 @@ export function createDrizzlePaymentRequestRepository(
     },
 
     async applyVerifiedWebhookEventAtomically(input) {
-      return database.transaction(async (transaction) => {
+      const outcome = await database.transaction(async (transaction) => {
         const inserted = await transaction.insert(webhookEvents).values({
           provider: input.provider,
           providerEventId: input.providerEventId,
@@ -971,8 +1006,15 @@ export function createDrizzlePaymentRequestRepository(
               eq(webhookEvents.providerEventId, input.providerEventId),
             )).for("update").limit(1);
         if (!event) throw new PaymentRequestConflictError();
-        if (event.payloadSha256 !== input.payloadSha256) return "hash_mismatch" as const;
-        if (event.processingResult) return "duplicate" as const;
+        if (event.payloadSha256 !== input.payloadSha256) {
+          return Object.freeze({ status: "hash_mismatch" as const, attemptId: null });
+        }
+        if (event.processingResult) {
+          return Object.freeze({
+            status: "duplicate" as const,
+            attemptId: event.paymentAttemptId,
+          });
+        }
         const [candidate] = await transaction.select({ id: paymentAttempts.id })
           .from(paymentAttempts).where(and(
             eq(paymentAttempts.provider, input.provider),
@@ -991,8 +1033,10 @@ export function createDrizzlePaymentRequestRepository(
           processingResult: "applied",
           processedAt: now,
         }).where(eq(webhookEvents.id, event.id));
-        return "applied" as const;
+        return Object.freeze({ status: "applied" as const, attemptId: candidate.id });
       });
+      if (outcome.attemptId) await recordAttemptLedgerEntry(outcome.attemptId);
+      return outcome.status;
     },
 
     async claimReconciliationCandidates(limit) {
@@ -1041,7 +1085,7 @@ export function createDrizzlePaymentRequestRepository(
     },
 
     async applyReconciliationResult(input) {
-      return database.transaction(async (transaction) => {
+      const result = await database.transaction(async (transaction) => {
         const [attempt] = await transaction.select().from(paymentAttempts)
           .where(eq(paymentAttempts.id, input.attemptId)).for("update").limit(1);
         const now = await databaseNow(transaction);
@@ -1057,6 +1101,8 @@ export function createDrizzlePaymentRequestRepository(
           source: "reconciliation",
         });
       });
+      await recordAttemptLedgerEntry(input.attemptId);
+      return result;
     },
 
     async recordReconciliationOutcome(input) {

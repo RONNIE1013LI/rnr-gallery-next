@@ -26,6 +26,10 @@ import {
   type ConversionDeliveryTransaction,
 } from "@/server/analytics/drizzle-conversion-delivery-repository";
 import {
+  createWebsiteAnalyticsV2BusinessRecorder,
+  type WebsiteAnalyticsV2BusinessRecorder,
+} from "@/server/analytics/website-analytics-v2-business-recorder";
+import {
   adminAuditLogs,
   invoiceItems,
   invoices,
@@ -558,12 +562,18 @@ export function createDrizzleProductionJobRepository(
   options: Readonly<{
     conversionPolicy?: ConversionActivationPolicy;
     enqueueDeliveries?: typeof enqueueConversionDeliveries;
+    analyticsRecorder?: Pick<
+      WebsiteAnalyticsV2BusinessRecorder,
+      "recordManualOrder" | "recordManualPaymentUpdate"
+    >;
   }> = {},
 ): ProductionJobRepository {
   const conversionPolicy = options.conversionPolicy
     ?? parseConversionActivationPolicy(process.env);
   const enqueueDeliveries = options.enqueueDeliveries
     ?? enqueueConversionDeliveries;
+  const analyticsRecorder = options.analyticsRecorder
+    ?? createWebsiteAnalyticsV2BusinessRecorder(database);
   return {
     async findManualByIdempotencyKey(idempotencyKey) {
       const [record] = await database.select({
@@ -583,7 +593,7 @@ export function createDrizzleProductionJobRepository(
     },
 
     async createManual(input) {
-      return database.transaction(async (transaction) => {
+      const created = await database.transaction(async (transaction) => {
         const availableFields = await transaction.select().from(productionFieldDefinitions)
           .where(and(
             eq(productionFieldDefinitions.enabled, true),
@@ -795,6 +805,19 @@ export function createDrizzleProductionJobRepository(
         }
         return existing;
       });
+      try {
+        await analyticsRecorder.recordManualOrder({
+          jobId: created.id,
+          occurredAt: created.updatedAt,
+          amountPayableCents: input.amountPayableCents,
+          amountPaidCents: input.amountPaidCents,
+          initialStatus: input.manualStatus,
+          currency: input.invoice?.currency ?? "NZD",
+        });
+      } catch {
+        // The committed manual order remains authoritative; reconciliation repairs analytics.
+      }
+      return created;
     },
 
     async update(input) {
@@ -807,7 +830,8 @@ export function createDrizzleProductionJobRepository(
         )).limit(1);
       if (priorAudit) return "duplicate" as const;
 
-      return database.transaction(async (transaction) => {
+      let paidDeltaCents = 0;
+      const result = await database.transaction(async (transaction) => {
         const [current] = await transaction.select().from(productionJobs)
           .where(eq(productionJobs.id, input.jobId)).for("update").limit(1);
         if (!current) return "not_found" as const;
@@ -875,6 +899,9 @@ export function createDrizzleProductionJobRepository(
           }
         }
         if (input.finance) {
+          if (current.source === "manual") {
+            paidDeltaCents = Math.max(0, input.finance.amountPaidCents - (current.amountPaidCents ?? 0));
+          }
           const firstPaidTransition = current.source === "manual"
             && current.manualPaymentStatus !== "paid"
             && input.finance.manualPaymentStatus === "paid"
@@ -963,6 +990,20 @@ export function createDrizzleProductionJobRepository(
         }));
         return "updated" as const;
       });
+      if (result === "updated" && paidDeltaCents > 0) {
+        try {
+          await analyticsRecorder.recordManualPaymentUpdate({
+            jobId: input.jobId,
+            idempotencyKey: input.idempotencyKey,
+            deltaCents: paidDeltaCents,
+            currency: "NZD",
+            occurredAt: input.updatedAt,
+          });
+        } catch {
+          // The committed payment update remains authoritative; reconciliation repairs analytics.
+        }
+      }
+      return result;
     },
 
     async deleteManual(input) {
