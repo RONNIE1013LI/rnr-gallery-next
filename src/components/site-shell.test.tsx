@@ -286,6 +286,8 @@ describe("site shell", () => {
     expect(mobileRules).toMatch(/\.site-header__market select\s*\{[^}]*height:\s*2\.75rem[^}]*font-size:\s*0\.72rem/);
     expect(narrowRules).toMatch(/\.site-header__market select\s*\{[^}]*width:\s*6\.375rem[^}]*padding-inline:\s*0\.5rem 1\.55rem/);
     expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*2\.25rem/);
+    expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__name\s*\{[^}]*font-size:\s*0\.9rem/);
+    expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__line\s*\{[^}]*letter-spacing:\s*0\.11em/);
     expect(narrowRules).not.toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
     expect(extremeRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
     expect(stylesheet).not.toMatch(/@media \(max-width: 420px\) \{[\s\S]*?\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
