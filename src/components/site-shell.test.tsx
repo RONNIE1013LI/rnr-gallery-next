@@ -284,6 +284,7 @@ describe("site shell", () => {
 
     expect(mobileRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*2\.625rem/);
     expect(mobileRules).toMatch(/\.site-header__market select\s*\{[^}]*height:\s*2\.75rem[^}]*font-size:\s*0\.72rem/);
+    expect(narrowRules).toMatch(/\.site-header__market select\s*\{[^}]*width:\s*5\.875rem/);
     expect(narrowRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*width:\s*2\.25rem/);
     expect(narrowRules).not.toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
     expect(extremeRules).toMatch(/\.site-header__brand \.brand-mark__logo\s*\{[^}]*display:\s*none/);
