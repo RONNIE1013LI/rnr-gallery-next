@@ -235,6 +235,39 @@ describe("CustomerChat", () => {
     });
   });
 
+  it.each(["Chinese", "Japanese", "Korean"])(
+    "does not send on Enter while %s IME composition is active",
+    async () => {
+      const fetchMock = vi.mocked(fetch);
+      render(<CustomerChat />);
+      openChat();
+      const input = await screen.findByLabelText("Message R&R Gallery");
+
+      fireEvent.change(input, { target: { value: "正在输入" } });
+      fireEvent.compositionStart(input);
+      fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      expect(input).toHaveValue("正在输入");
+    },
+  );
+
+  it("sends a rapid Enter after composition ends but still respects event.isComposing", async () => {
+    const fetchMock = vi.mocked(fetch);
+    render(<CustomerChat />);
+    openChat();
+    const input = await screen.findByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Quote please" } });
+    fireEvent.compositionStart(input);
+    fireEvent.compositionEnd(input);
+    fireEvent.keyDown(input, { key: "Enter", isComposing: true });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(input, { key: "Enter", isComposing: false });
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
   it("keeps an unchanged network-failed draft retry-only and reuses its idempotency key on explicit retry", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(updates())

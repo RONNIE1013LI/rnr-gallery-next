@@ -398,6 +398,24 @@ describe("CheckoutView", () => {
     expect(await screen.findByText("A$140.75 AUD")).toBeInTheDocument();
   });
 
+  it("moves focus to the reviewed order summary without scrolling after a successful review", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ checkout: { version: 2, cart: repriced } }) })
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ shipping: { option: { method: "pickup", serviceCode: "pickup", serviceName: "Pickup", amountExGstCents: 0, gstCents: 0, amountInclGstCents: 0, currency: "NZD", provenance: "internal", isTest: false } } }) })
+      .mockResolvedValueOnce(methodsResponse);
+    vi.stubGlobal("fetch", fetchMock);
+    const focusSpy = vi.spyOn(HTMLElement.prototype, "focus");
+
+    render(<CheckoutView savedAddresses={[address]} />);
+    await checkoutReady();
+    fireEvent.click(screen.getByRole("button", { name: "Review delivery & totals" }));
+
+    const summaryHeading = await screen.findByRole("heading", { name: "Order summary" });
+    await waitFor(() => expect(summaryHeading).toHaveFocus());
+    expect(summaryHeading).toHaveAttribute("tabindex", "-1");
+    expect(focusSpy).toHaveBeenCalledWith({ preventScroll: true });
+  });
+
   it("shows clear recovery routes for an empty browser cart", () => {
     localStorage.clear();
     render(<CheckoutView />);

@@ -103,6 +103,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const sendingRef = useRef(false);
   const initialPollRef = useRef(true);
   const restoreLauncherFocusRef = useRef(false);
+  const isComposingRef = useRef(false);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
@@ -340,8 +341,15 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
                 placeholder="Type your message..."
                 disabled={sending}
                 onChange={(event) => setDraft(event.target.value)}
+                onCompositionStart={() => { isComposingRef.current = true; }}
+                onCompositionEnd={() => { isComposingRef.current = false; }}
                 onKeyDown={(event) => {
-                  if (event.key === "Enter" && !event.shiftKey) {
+                  if (
+                    event.key === "Enter"
+                    && !event.shiftKey
+                    && !event.nativeEvent.isComposing
+                    && !isComposingRef.current
+                  ) {
                     event.preventDefault();
                     submitDraft();
                   }

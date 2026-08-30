@@ -57,12 +57,26 @@ describe("Admin form visual refinements", () => {
     expect(cssRule(mobile, ".orderCard dd")).toContain("padding: 3px 7px;");
   });
 
-  it("matches the mobile search controls to the compact order field height", () => {
+  it("keeps compact mobile search controls at a touch-safe height", () => {
     const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
     const searchControls = cssRule(mobile, ".quickSearch input,\n  .quickSearch button,\n  .filterButton");
 
-    expect(searchControls).toContain("height: 30px;");
-    expect(searchControls).toContain("min-height: 30px;");
+    expect(searchControls).toContain("height: 44px;");
+    expect(searchControls).toContain("min-height: 44px;");
+  });
+
+  it("keeps small filter and saved-view marks inside 44px mobile hit areas", () => {
+    const mobile = formsCss.slice(formsCss.lastIndexOf("@media (max-width: 720px)"));
+    const filterPanel = cssRule(mobile, ".filterPanel");
+    const filterControls = cssRule(mobile, ".filterHeading button,\n  .filterRow > button");
+    const savedViewDelete = cssRule(mobile, ".savedSearchWorkspace .personalViewList span .savedViewDeleteButton");
+
+    expect(filterPanel).toContain("--forms-filter-control-height-mobile: 44px;");
+    expect(filterControls).toContain("width: var(--forms-filter-control-height-mobile);");
+    expect(filterControls).toContain("height: var(--forms-filter-control-height-mobile);");
+    expect(savedViewDelete).toContain("width: 44px;");
+    expect(savedViewDelete).toContain("height: 44px;");
+    expect(savedViewDelete).toContain("font-size: 12px;");
   });
 
   it("keeps the manual-order summary in two columns on phones", () => {

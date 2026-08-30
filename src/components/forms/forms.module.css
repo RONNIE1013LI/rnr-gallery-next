@@ -2992,8 +2992,8 @@
   .quickSearch input,
   .quickSearch button,
   .filterButton {
-    height: 30px;
-    min-height: 30px;
+    height: 44px;
+    min-height: 44px;
   }
 
   .filterButtonCount {
@@ -3048,7 +3048,7 @@
   }
 
   .filterPanel {
-    --forms-filter-control-height-mobile: 30px;
+    --forms-filter-control-height-mobile: 44px;
     position: absolute;
     z-index: 110;
     top: calc(100% + 6px);
@@ -3118,11 +3118,12 @@
   }
 
   .savedSearchWorkspace .personalViewList span .savedViewDeleteButton {
-    width: 24px;
-    min-width: 24px;
-    height: 24px;
-    min-height: 24px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
     padding: 0;
+    font-size: 12px;
   }
 
   .filterPanel .filterGroupTitle {

@@ -514,4 +514,12 @@ describe("BannerBundleConfigurator", () => {
       /@media \(max-width: 390px\)\s*\{[\s\S]*?\.bundleCustomisationGroup \.uploadPreviewGrid\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/,
     );
   });
+
+  it("lets the Banner Bundle format wrap without horizontal overflow on 320-360px screens", () => {
+    const css = readFileSync("src/components/storefront.module.css", "utf8");
+    const narrow = css.match(/@media \(max-width: 360px\)\s*\{[\s\S]*?(?=\n@media|$)/)?.[0] ?? "";
+
+    expect(narrow).toMatch(/\.previewDetails > div\s*\{[\s\S]*?grid-template-columns:\s*minmax\(0, 1fr\);/);
+    expect(narrow).toMatch(/\.previewDetails dd\s*\{[\s\S]*?min-width:\s*0;[\s\S]*?overflow-wrap:\s*anywhere;/);
+  });
 });

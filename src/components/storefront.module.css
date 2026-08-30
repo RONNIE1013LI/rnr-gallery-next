@@ -2386,6 +2386,19 @@
   }
 }
 
+@media (max-width: 360px) {
+  .previewDetails > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 0.25rem;
+  }
+
+  .previewDetails dd {
+    min-width: 0;
+    overflow-wrap: anywhere;
+    text-align: left;
+  }
+}
+
 .sizeOption:hover .sizeOptionBody {
   border-color: var(--gallery-green);
 }
