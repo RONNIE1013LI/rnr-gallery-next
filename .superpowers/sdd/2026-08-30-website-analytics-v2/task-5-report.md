@@ -10,10 +10,27 @@ Fix round 1 is complete. Fix commit:
 `e9cd63b737e88a7ae4623189ad2ce05ab8c16471`
 (`fix(analytics): make v2 reconciliation durable`).
 
+Fix round 2 is complete. Fix commit:
+`3e5d22ae1fdb9ccc83fc2aaf4d78a36951ec8c0a`
+(`fix(analytics): align backfill previews with writes`).
+
 No Production, Preview, environment, platform, deployment, or external system
 was accessed or changed.
 
 ## Delivered
+
+Fix round 2 additionally:
+
+- Uses one shared row plan for dry-run and write mapping, eligibility and fact
+  identities. A zero-value website order is now skipped by both paths with no
+  database constraint or checkout behavior change.
+- Uses one shared source-lifecycle plan for saved cursors, restart bounds,
+  resume bounds and completed-state short circuits. Dry-run reads pending,
+  failed and completed source state without locking or mutating it, then
+  predicts the immediately following write batch and cursor.
+- Preserves absolute preview write-freedom: source state, counts, cursor,
+  failure evidence, timestamps, facts, dirty dates and aggregates remain
+  value-for-value unchanged until the real write invocation.
 
 Fix round 1 additionally:
 
@@ -72,6 +89,20 @@ Fix round 1 additionally:
 
 ## TDD evidence
 
+Fix round 2 RED→GREEN evidence:
+
+- A real zero-value website order first previewed as `wouldCreate: 1` and
+  `skipped: 0`, while write skipped it. Both now use the same `eligibleOrder`
+  plan and preview/write report zero creates and one skip.
+- Pending and failed state fixtures first ignored their saved cursor and
+  followed the new `fromOccurredAt`; both now resume from the saved cursor and
+  preview the same next row/counts/cursor as the immediate write.
+- A completed state fixture first rescanned source rows; preview now returns the
+  same zero-count completed short circuit and saved cursor as write.
+- The pending-state oracle snapshots the full source row (including counters,
+  cursor, failure fields and timestamps), facts, dirty dates and aggregates
+  before preview and proves they are unchanged afterward.
+
 Fix round 1 RED→GREEN evidence:
 
 - Migration-0031-shaped legacy direct/legacy-backfill ledger fixtures first
@@ -116,7 +147,7 @@ Final focused result:
 
 ```text
 4 files passed
-27 tests passed
+31 tests passed
 ```
 
 ## Verification
@@ -127,8 +158,8 @@ printed. Inert repository-owned identity fixtures satisfied the Test-DB guard;
 no Production URL or identity was read.
 
 ```text
-Task 5 focused:                         4 files / 27 tests passed
-Fix-round directly affected suites:    4 files / 28 tests passed
+Task 5 focused:                         4 files / 31 tests passed
+Fix-round-2 directly affected suite:    1 file  / 10 tests passed
 Affected Task 2–4 regression:         19 files / 497 tests passed
 npm run typecheck:                     passed
 Changed-file ESLint:                   passed
