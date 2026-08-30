@@ -1,5 +1,5 @@
 {
-  "id": "4572d2e9-f7fa-4785-ab07-4e0cc81f8f89",
+  "id": "52352c64-7836-454f-8c0f-eab2cc87518c",
   "prevId": "bf3d1048-a4f9-4300-b5c1-a3786029f04e",
   "version": "7",
   "dialect": "postgresql",
@@ -1561,7 +1561,7 @@
         },
         "website_analytics_conversions_commercial_shape_valid": {
           "name": "website_analytics_conversions_commercial_shape_valid",
-          "value": "(\n        \"website_analytics_conversions\".\"conversion_type\" = 'inquiry'\n        and \"website_analytics_conversions\".\"scope\" = 'website'\n        and \"website_analytics_conversions\".\"market\" is null\n        and \"website_analytics_conversions\".\"currency\" is null\n        and \"website_analytics_conversions\".\"ordered_amount_incl_gst_cents\" is null\n      ) or (\n        \"website_analytics_conversions\".\"conversion_type\" = 'order'\n        and \"website_analytics_conversions\".\"market\" in ('NZ', 'AU')\n        and ((\"website_analytics_conversions\".\"market\" = 'NZ' and \"website_analytics_conversions\".\"currency\" = 'NZD')\n          or (\"website_analytics_conversions\".\"market\" = 'AU' and \"website_analytics_conversions\".\"currency\" = 'AUD'))\n        and \"website_analytics_conversions\".\"ordered_amount_incl_gst_cents\" > 0\n      )"
+          "value": "(\n        \"website_analytics_conversions\".\"conversion_type\" = 'inquiry'\n        and \"website_analytics_conversions\".\"scope\" = 'website'\n        and \"website_analytics_conversions\".\"market\" is null\n        and \"website_analytics_conversions\".\"currency\" is null\n        and \"website_analytics_conversions\".\"ordered_amount_incl_gst_cents\" is null\n      ) or (\n        \"website_analytics_conversions\".\"conversion_type\" = 'order'\n        and \"website_analytics_conversions\".\"market\" is not null\n        and \"website_analytics_conversions\".\"currency\" is not null\n        and \"website_analytics_conversions\".\"ordered_amount_incl_gst_cents\" is not null\n        and \"website_analytics_conversions\".\"market\" in ('NZ', 'AU')\n        and ((\"website_analytics_conversions\".\"market\" = 'NZ' and \"website_analytics_conversions\".\"currency\" = 'NZD')\n          or (\"website_analytics_conversions\".\"market\" = 'AU' and \"website_analytics_conversions\".\"currency\" = 'AUD'))\n        and \"website_analytics_conversions\".\"ordered_amount_incl_gst_cents\" > 0\n      )"
         },
         "website_analytics_conversions_source_reference_valid": {
           "name": "website_analytics_conversions_source_reference_valid",
@@ -1573,7 +1573,7 @@
         },
         "website_analytics_conversions_consent_links_valid": {
           "name": "website_analytics_conversions_consent_links_valid",
-          "value": "(\"website_analytics_conversions\".\"consent_linked\" and \"website_analytics_conversions\".\"visitor_digest\" is not null and \"website_analytics_conversions\".\"converting_session_id\" is not null)\n        or (not \"website_analytics_conversions\".\"consent_linked\"\n          and \"website_analytics_conversions\".\"visitor_digest\" is null\n          and \"website_analytics_conversions\".\"converting_session_id\" is null\n          and \"website_analytics_conversions\".\"first_session_id\" is null\n          and \"website_analytics_conversions\".\"last_session_id\" is null\n          and \"website_analytics_conversions\".\"last_non_direct_session_id\" is null)"
+          "value": "(\"website_analytics_conversions\".\"consent_linked\" and \"website_analytics_conversions\".\"visitor_digest\" is not null)\n        or (not \"website_analytics_conversions\".\"consent_linked\"\n          and \"website_analytics_conversions\".\"visitor_digest\" is null\n          and \"website_analytics_conversions\".\"converting_session_id\" is null\n          and \"website_analytics_conversions\".\"first_session_id\" is null\n          and \"website_analytics_conversions\".\"last_session_id\" is null\n          and \"website_analytics_conversions\".\"last_non_direct_session_id\" is null)"
         },
         "website_analytics_conversions_attribution_version_valid": {
           "name": "website_analytics_conversions_attribution_version_valid",
@@ -2174,10 +2174,6 @@
         "website_analytics_financial_currency_valid": {
           "name": "website_analytics_financial_currency_valid",
           "value": "\"website_analytics_financial_events\".\"currency\" in ('NZD', 'AUD')"
-        },
-        "website_analytics_financial_reference_valid": {
-          "name": "website_analytics_financial_reference_valid",
-          "value": "\"website_analytics_financial_events\".\"conversion_id\" is not null or \"website_analytics_financial_events\".\"order_id\" is not null or \"website_analytics_financial_events\".\"production_job_id\" is not null"
         }
       },
       "isRLSEnabled": false
@@ -2586,6 +2582,33 @@
         "website_analytics_sessions_started_id_idx": {
           "name": "website_analytics_sessions_started_id_idx",
           "columns": [
+            {
+              "expression": "started_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "website_analytics_sessions_visitor_started_id_idx": {
+          "name": "website_analytics_sessions_visitor_started_id_idx",
+          "columns": [
+            {
+              "expression": "visitor_digest",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
             {
               "expression": "started_at",
               "isExpression": false,

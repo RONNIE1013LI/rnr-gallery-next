@@ -187,12 +187,10 @@ describe("website analytics schema contract", () => {
       "website_analytics_financial_source_type_valid",
       "website_analytics_financial_amount_positive",
       "website_analytics_financial_currency_valid",
-      "website_analytics_financial_reference_valid",
     ]));
     expect(checkContracts(websiteAnalyticsFinancialEvents)).toMatchObject({
       website_analytics_financial_amount_positive: '"website_analytics_financial_events"."amount_cents" > 0',
       website_analytics_financial_currency_valid: '"website_analytics_financial_events"."currency" in (\'NZD\', \'AUD\')',
-      website_analytics_financial_reference_valid: expect.stringContaining('"website_analytics_financial_events"."conversion_id" is not null'),
     });
   });
 
@@ -303,6 +301,7 @@ describe("website analytics schema contract", () => {
       "website_analytics_sessions_local_date_visitor_idx",
       "website_analytics_sessions_local_date_channel_idx",
       "website_analytics_sessions_started_id_idx",
+      "website_analytics_sessions_visitor_started_id_idx",
     ]);
     expect(pageviewConfig.indexes.map((index) => index.config.name)).toEqual([
       "website_analytics_pageviews_session_idx",

@@ -20,6 +20,7 @@ type SnapshotCheck = Readonly<{ name: string; value: string }>;
 type SnapshotTable = Readonly<{
   columns: Record<string, unknown>;
   checkConstraints: Record<string, SnapshotCheck>;
+  indexes: Record<string, unknown>;
   [key: string]: unknown;
 }>;
 type Snapshot = {
@@ -112,15 +113,15 @@ describe("migration lineage artifacts", () => {
     );
     expect(journal.entries[60]).toMatchObject({
       idx: 60,
-      when: 1788046789104,
+      when: 1788048058305,
       tag: "0060_website_analytics_v2",
     });
     expect(sha256("drizzle/0060_website_analytics_v2.sql")).toBe(
-      "4b335b588e3c623113d38a3ae4b9b9481d9ffe507b11d6d2c9545c56f7436355",
+      "6be5df37e4cc81939a1e582d07b8489cf8df6b4978a088bc7c466ef69fd51e5b",
     );
   });
 
-  it("adds only the five Website Analytics V2 tables after 0059", () => {
+  it("adds only the five V2 tables and the visitor-first V1 query index after 0059", () => {
     const previous = loadJson<Snapshot>("drizzle/meta/0059_snapshot.json");
     const current = loadJson<Snapshot>("drizzle/meta/0060_snapshot.json");
     const addedTables = Object.keys(current.tables)
@@ -138,11 +139,27 @@ describe("migration lineage artifacts", () => {
     expect(
       Object.keys(previous.tables).filter((table) => !(table in current.tables)),
     ).toEqual([]);
+    const sessionTable = "public.website_analytics_sessions";
     for (const [name, table] of Object.entries(previous.tables)) {
+      if (name === sessionTable) continue;
       expect(current.tables[name], `${name} changed in Analytics V2 migration`).toEqual(
         table,
       );
     }
+    const normalizedSession = structuredClone(current.tables[sessionTable]);
+    expect(normalizedSession.indexes.website_analytics_sessions_visitor_started_id_idx)
+      .toMatchObject({
+        name: "website_analytics_sessions_visitor_started_id_idx",
+        isUnique: false,
+        method: "btree",
+        columns: [
+          { expression: "visitor_digest", isExpression: false },
+          { expression: "started_at", isExpression: false },
+          { expression: "id", isExpression: false },
+        ],
+      });
+    delete normalizedSession.indexes.website_analytics_sessions_visitor_started_id_idx;
+    expect(normalizedSession).toEqual(previous.tables[sessionTable]);
     expect({
       version: current.version,
       dialect: current.dialect,

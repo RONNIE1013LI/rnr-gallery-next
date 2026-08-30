@@ -72,6 +72,9 @@ CREATE TABLE "website_analytics_conversions" (
         and "website_analytics_conversions"."ordered_amount_incl_gst_cents" is null
       ) or (
         "website_analytics_conversions"."conversion_type" = 'order'
+        and "website_analytics_conversions"."market" is not null
+        and "website_analytics_conversions"."currency" is not null
+        and "website_analytics_conversions"."ordered_amount_incl_gst_cents" is not null
         and "website_analytics_conversions"."market" in ('NZ', 'AU')
         and (("website_analytics_conversions"."market" = 'NZ' and "website_analytics_conversions"."currency" = 'NZD')
           or ("website_analytics_conversions"."market" = 'AU' and "website_analytics_conversions"."currency" = 'AUD'))
@@ -96,7 +99,7 @@ CREATE TABLE "website_analytics_conversions" (
         and "website_analytics_conversions"."production_job_id" is null
       )),
 	CONSTRAINT "website_analytics_conversions_visitor_digest_valid" CHECK ("website_analytics_conversions"."visitor_digest" is null or "website_analytics_conversions"."visitor_digest" ~ '^[a-f0-9]{64}$'),
-	CONSTRAINT "website_analytics_conversions_consent_links_valid" CHECK (("website_analytics_conversions"."consent_linked" and "website_analytics_conversions"."visitor_digest" is not null and "website_analytics_conversions"."converting_session_id" is not null)
+	CONSTRAINT "website_analytics_conversions_consent_links_valid" CHECK (("website_analytics_conversions"."consent_linked" and "website_analytics_conversions"."visitor_digest" is not null)
         or (not "website_analytics_conversions"."consent_linked"
           and "website_analytics_conversions"."visitor_digest" is null
           and "website_analytics_conversions"."converting_session_id" is null
@@ -177,8 +180,7 @@ CREATE TABLE "website_analytics_financial_events" (
 	CONSTRAINT "website_analytics_financial_source_type_valid" CHECK ("website_analytics_financial_events"."source_type" in ('payment_attempt', 'payment_ledger_entry', 'manual_payment_update', 'payment_provider_event')
         and length(trim("website_analytics_financial_events"."source_id")) > 0),
 	CONSTRAINT "website_analytics_financial_amount_positive" CHECK ("website_analytics_financial_events"."amount_cents" > 0),
-	CONSTRAINT "website_analytics_financial_currency_valid" CHECK ("website_analytics_financial_events"."currency" in ('NZD', 'AUD')),
-	CONSTRAINT "website_analytics_financial_reference_valid" CHECK ("website_analytics_financial_events"."conversion_id" is not null or "website_analytics_financial_events"."order_id" is not null or "website_analytics_financial_events"."production_job_id" is not null)
+	CONSTRAINT "website_analytics_financial_currency_valid" CHECK ("website_analytics_financial_events"."currency" in ('NZD', 'AUD'))
 );
 --> statement-breakpoint
 CREATE TABLE "website_analytics_reconciliation_state" (
@@ -251,4 +253,5 @@ CREATE INDEX "website_analytics_financial_conversion_occurred_idx" ON "website_a
 CREATE INDEX "website_analytics_financial_order_idx" ON "website_analytics_financial_events" USING btree ("order_id") WHERE "website_analytics_financial_events"."order_id" is not null;--> statement-breakpoint
 CREATE INDEX "website_analytics_financial_job_idx" ON "website_analytics_financial_events" USING btree ("production_job_id") WHERE "website_analytics_financial_events"."production_job_id" is not null;--> statement-breakpoint
 CREATE UNIQUE INDEX "website_analytics_reconciliation_state_key_unique" ON "website_analytics_reconciliation_state" USING btree ("state_type","state_key");--> statement-breakpoint
-CREATE INDEX "website_analytics_reconciliation_status_date_idx" ON "website_analytics_reconciliation_state" USING btree ("status","local_date");
+CREATE INDEX "website_analytics_reconciliation_status_date_idx" ON "website_analytics_reconciliation_state" USING btree ("status","local_date");--> statement-breakpoint
+CREATE INDEX "website_analytics_sessions_visitor_started_id_idx" ON "website_analytics_sessions" USING btree ("visitor_digest","started_at","id");

@@ -56,6 +56,8 @@ export const websiteAnalyticsSessions = pgTable(
       .on(table.localDate, table.channel),
     index("website_analytics_sessions_started_id_idx")
       .on(table.startedAt, table.id),
+    index("website_analytics_sessions_visitor_started_id_idx")
+      .on(table.visitorDigest, table.startedAt, table.id),
     check(
       "website_analytics_sessions_visitor_digest_valid",
       sql`${table.visitorDigest} ~ '^[a-f0-9]{64}$'`,
@@ -177,6 +179,9 @@ export const websiteAnalyticsConversions = pgTable(
         and ${table.orderedAmountInclGstCents} is null
       ) or (
         ${table.conversionType} = 'order'
+        and ${table.market} is not null
+        and ${table.currency} is not null
+        and ${table.orderedAmountInclGstCents} is not null
         and ${table.market} in ('NZ', 'AU')
         and ((${table.market} = 'NZ' and ${table.currency} = 'NZD')
           or (${table.market} = 'AU' and ${table.currency} = 'AUD'))
@@ -210,7 +215,7 @@ export const websiteAnalyticsConversions = pgTable(
     ),
     check(
       "website_analytics_conversions_consent_links_valid",
-      sql`(${table.consentLinked} and ${table.visitorDigest} is not null and ${table.convertingSessionId} is not null)
+      sql`(${table.consentLinked} and ${table.visitorDigest} is not null)
         or (not ${table.consentLinked}
           and ${table.visitorDigest} is null
           and ${table.convertingSessionId} is null
@@ -360,10 +365,6 @@ export const websiteAnalyticsFinancialEvents = pgTable(
     check(
       "website_analytics_financial_currency_valid",
       sql`${table.currency} in ('NZD', 'AUD')`,
-    ),
-    check(
-      "website_analytics_financial_reference_valid",
-      sql`${table.conversionId} is not null or ${table.orderId} is not null or ${table.productionJobId} is not null`,
     ),
   ],
 );
