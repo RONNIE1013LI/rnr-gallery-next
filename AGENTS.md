@@ -21,3 +21,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 * Before every Production migration, run the exact-prefix lineage and database-identity checks. Any hash, order, timestamp, catalog, or identity mismatch blocks migration; never bypass or rewrite applied history.
 * Never edit the Production migration journal manually. Read-only audits must not mutate Production. Every Production-affecting change requires a known rollback point before release.
 * The normal release path is: isolated feature worktree -> implementation -> isolated tests -> merge or fast-forward to `origin/main` -> Vercel automatic Production -> `npm run production:guard` -> smoke tests. A feature branch must never become the normal Production trunk.
+
+## Production browser automation
+
+* Use `npm run production:browser:check -- <official-production-url>` for routine public Production browser smoke checks. It adds the trusted `rnr_automation=1` query mode, enforces a 120-second maximum lifetime, closes the named Playwright session in `finally`, and checks that its daemon and browser process tree are gone.
+* Never leave a Playwright CLI session open after a Production check. Custom browser automation must use a unique session, a bounded timeout, and `try/finally` cleanup for page, context, and browser.
+* Do not use a Headless Chrome user-agent check to disable application behavior. Production automation must opt in explicitly through the approved query mode.

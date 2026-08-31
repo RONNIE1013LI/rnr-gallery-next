@@ -40,6 +40,13 @@ const QUICK_ACTIONS = Object.freeze([
 
 const updatesEndpoint = "/api/customer-chat/updates";
 const messagesEndpoint = "/api/customer-chat/messages";
+const pollingIntervalMs = 5_000;
+const automationQueryParameter = "rnr_automation";
+
+function pollingDisabledForAutomation() {
+  if (typeof window === "undefined") return false;
+  return new URLSearchParams(window.location.search).get(automationQueryParameter) === "1";
+}
 
 function clientMessageKey() {
   const generated = globalThis.crypto?.randomUUID?.().replaceAll("-", "");
@@ -101,6 +108,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const [announcement, setAnnouncement] = useState("");
   const cursorRef = useRef<string | null>(null);
   const pollingRef = useRef(false);
+  const activePollControllerRef = useRef<AbortController | null>(null);
   const sendingRef = useRef(false);
   const initialPollRef = useRef(true);
   const historyReadyRef = useRef(false);
@@ -110,11 +118,19 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const poll = useCallback(async () => {
-    if (document.hidden || pollingRef.current) return;
+    if (pollingDisabledForAutomation()
+      || document.hidden
+      || document.visibilityState !== "visible"
+      || pollingRef.current) return;
     pollingRef.current = true;
+    const controller = new AbortController();
+    activePollControllerRef.current = controller;
     try {
       const query = cursorRef.current ? `?cursor=${encodeURIComponent(cursorRef.current)}` : "";
-      const response = await fetch(`${updatesEndpoint}${query}`, { headers: { Accept: "application/json" } });
+      const response = await fetch(`${updatesEndpoint}${query}`, {
+        headers: { Accept: "application/json" },
+        signal: controller.signal,
+      });
       if (!response.ok) {
         if (!historyReadyRef.current) {
           historyReadyRef.current = true;
@@ -151,22 +167,27 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
       });
       initialPollRef.current = false;
     } catch {
+      if (controller.signal.aborted) return;
       if (!historyReadyRef.current) {
         historyReadyRef.current = true;
         setHistoryReady(true);
         setHistoryError(true);
       }
     } finally {
-      pollingRef.current = false;
+      if (activePollControllerRef.current === controller) {
+        activePollControllerRef.current = null;
+        pollingRef.current = false;
+      }
     }
   }, []);
 
   useEffect(() => {
     if (!open) return;
     inputRef.current?.focus();
+    if (pollingDisabledForAutomation()) return;
     const catchUp = () => void poll();
     queueMicrotask(catchUp);
-    const interval = window.setInterval(catchUp, 2_500);
+    const interval = window.setInterval(catchUp, pollingIntervalMs);
     window.addEventListener("focus", catchUp);
     window.addEventListener("online", catchUp);
     document.addEventListener("visibilitychange", catchUp);
@@ -175,6 +196,10 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
       window.removeEventListener("focus", catchUp);
       window.removeEventListener("online", catchUp);
       document.removeEventListener("visibilitychange", catchUp);
+      const controller = activePollControllerRef.current;
+      activePollControllerRef.current = null;
+      pollingRef.current = false;
+      controller?.abort();
     };
   }, [open, poll]);
 

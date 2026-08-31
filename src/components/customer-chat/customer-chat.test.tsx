@@ -36,6 +36,7 @@ describe("CustomerChat", () => {
   });
 
   afterEach(() => {
+    window.history.replaceState(null, "", "/");
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -373,7 +374,7 @@ describe("CustomerChat", () => {
     expect(input).toHaveValue("A message");
   });
 
-  it("polls visible updates every 2500ms, merges duplicate event keys, and preserves an unsent draft", async () => {
+  it("polls visible updates every 5000ms, merges duplicate event keys, and preserves an unsent draft", async () => {
     vi.useFakeTimers();
     const first = {
       eventKey: "event-1",
@@ -399,13 +400,65 @@ describe("CustomerChat", () => {
     await act(async () => {});
     fireEvent.change(input, { target: { value: "Unsent draft" } });
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(2_500); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
 
     expect(screen.getAllByText("First message")).toHaveLength(1);
     expect(screen.getByText("Thanks for your message.")).toBeInTheDocument();
     expect(input).toHaveValue("Unsent draft");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/customer-chat/updates?cursor=cursor-1");
     expect(screen.getByTestId("customer-chat-live-region")).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("does not start customer-chat polling in explicit Production automation mode", async () => {
+    vi.useFakeTimers();
+    window.history.replaceState(null, "", "/?rnr_automation=1");
+    const fetchMock = vi.fn().mockResolvedValue(updates());
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+
+    expect(screen.getByLabelText("Message R&R Gallery")).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("stops update polling as soon as the chat closes", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn().mockResolvedValue(updates());
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("aborts an in-flight update request when the chat closes", async () => {
+    vi.useFakeTimers();
+    let signal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      signal = init?.signal instanceof AbortSignal ? init.signal : undefined;
+      return new Promise<Response>(() => {});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(signal?.aborted).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
+
+    expect(signal?.aborted).toBe(true);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it("catches up immediately when focus or network returns and pauses interval polling while hidden", async () => {
