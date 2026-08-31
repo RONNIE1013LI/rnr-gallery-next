@@ -1,7 +1,10 @@
 import type { MetadataRoute } from "next";
 import { getMarketCompleteness } from "@/domain/catalogue/market-price-book";
 import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
-import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
+import {
+  getProductRegistryRuntime,
+  getSafePublicProductRegistry,
+} from "@/server/admin/product-registry-runtime";
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 import { buildMarketAlternates } from "@/server/seo/metadata";
 import { getSiteUrl } from "@/server/seo/site-url";
@@ -75,7 +78,7 @@ export function buildPublicSitemap(
 }
 
 async function generatePublicSitemap(): Promise<MetadataRoute.Sitemap> {
-  const { registry } = await getSafePublicProductRegistry();
+  const { registry } = await getProductRegistryRuntime().current();
   const designs = await getGalleryRuntime().publicService.listSitemapDesigns();
   return buildPublicSitemap(registry, getSiteUrl(), designs);
 }
