@@ -1,4 +1,5 @@
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { StrictMode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
@@ -31,13 +32,17 @@ function savedResponse(analytics: boolean, advertising: boolean) {
 describe("ConsentPreferences", () => {
   afterEach(() => vi.unstubAllGlobals());
 
-  it("keeps both transports denied until Accept all is saved", async () => {
+  it("temporarily defaults new visitors to Accept all without showing the prompt", async () => {
     const fetch = vi.fn().mockResolvedValue(savedResponse(true, true));
     vi.stubGlobal("fetch", fetch);
-    render(<ConsentPreferences initialConsent={null}><StateWithTrigger /></ConsentPreferences>);
+    render(
+      <StrictMode>
+        <ConsentPreferences initialConsent={null}><StateWithTrigger /></ConsentPreferences>
+      </StrictMode>,
+    );
 
     expect(screen.getByText("none")).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Accept all" }));
+    expect(screen.queryByRole("region", { name: "Cookie preferences" })).not.toBeInTheDocument();
 
     await waitFor(() => expect(screen.getByText("true:true")).toBeInTheDocument());
     expect(fetch).toHaveBeenCalledWith("/api/consent", expect.objectContaining({
@@ -45,7 +50,34 @@ describe("ConsentPreferences", () => {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ analytics: true, advertising: true }),
     }));
+    expect(fetch).toHaveBeenCalledTimes(1);
     expect(screen.getByRole("button", { name: "Cookie preferences" })).toBeInTheDocument();
+  });
+
+  it("preserves an existing consent choice without replacing it", () => {
+    const fetch = vi.fn();
+    vi.stubGlobal("fetch", fetch);
+    render(<ConsentPreferences initialConsent={{
+      version: 1,
+      analytics: false,
+      advertising: false,
+      decidedAt: "2026-08-28T01:02:03.000Z",
+    }}><StateWithTrigger /></ConsentPreferences>);
+
+    expect(screen.getByText("false:false")).toBeInTheDocument();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the preference prompt when the automatic save fails", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(new Response("", { status: 500 })));
+    render(<ConsentPreferences initialConsent={null}><StateWithTrigger /></ConsentPreferences>);
+
+    expect(screen.queryByRole("region", { name: "Cookie preferences" })).not.toBeInTheDocument();
+    await waitFor(() => expect(
+      screen.getByRole("region", { name: "Cookie preferences" }),
+    ).toBeInTheDocument());
+    expect(screen.getByRole("alert")).toHaveTextContent("could not be saved");
+    expect(screen.getByText("none")).toBeInTheDocument();
   });
 
   it("places My account below Cart and Cookie preferences first under Customer", () => {
@@ -76,8 +108,14 @@ describe("ConsentPreferences", () => {
       .mockResolvedValueOnce(savedResponse(true, false))
       .mockResolvedValueOnce(savedResponse(false, false));
     vi.stubGlobal("fetch", fetch);
-    render(<ConsentPreferences initialConsent={null}><StateWithTrigger /></ConsentPreferences>);
+    render(<ConsentPreferences initialConsent={{
+      version: 1,
+      analytics: false,
+      advertising: false,
+      decidedAt: "2026-08-28T01:02:03.000Z",
+    }}><StateWithTrigger /></ConsentPreferences>);
 
+    fireEvent.click(screen.getByRole("button", { name: "Cookie preferences" }));
     fireEvent.click(screen.getByRole("button", { name: "Manage preferences" }));
     const analytics = screen.getByRole("checkbox", { name: "Analytics measurement" });
     fireEvent.click(analytics);

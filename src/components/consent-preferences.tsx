@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
   parseAdvertisingConsent,
   type AdvertisingConsent,
@@ -47,11 +47,13 @@ export function ConsentPreferences({
   children: React.ReactNode;
 }>) {
   const [consent, setConsent] = useState(initialConsent);
-  const [open, setOpen] = useState(!initialConsent);
+  const [open, setOpen] = useState(false);
   const [managing, setManaging] = useState(false);
   const [choice, setChoice] = useState<Choice>(() => choicesFromConsent(initialConsent));
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
+  const defaultSaved = useRef(false);
 
   function openPreferences() {
     setChoice(choicesFromConsent(consent));
@@ -60,8 +62,9 @@ export function ConsentPreferences({
     setOpen(true);
   }
 
-  async function save(next: Choice) {
-    if (saving) return;
+  const save = useCallback(async (next: Choice) => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     try {
@@ -82,10 +85,18 @@ export function ConsentPreferences({
       setOpen(false);
     } catch {
       setError("Your cookie preferences could not be saved. Please try again.");
+      setOpen(true);
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
-  }
+  }, []);
+
+  useEffect(() => {
+    if (initialConsent || defaultSaved.current) return;
+    defaultSaved.current = true;
+    void save({ analytics: true, advertising: true });
+  }, [initialConsent, save]);
 
   return (
     <AdvertisingConsentContext value={{ consent, openPreferences }}>
