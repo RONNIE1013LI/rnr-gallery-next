@@ -23,7 +23,6 @@ import type { InvoiceBusiness } from "@/server/invoices/invoice-business";
 import styles from "./forms.module.css";
 
 const MOBILE_BACK_TO_TOP_THRESHOLD = 600;
-const ORDER_REFRESH_INTERVAL_MS = 10 * 60 * 1_000;
 const ORDER_UPDATE_INDICATOR_DELAY_MS = 300;
 
 export type FormsOrderEntryData = Readonly<{
@@ -119,11 +118,12 @@ export function FormsWorkbench({
     result: FormWorkbenchResult;
   }> | null>(null);
   const [showUpdating, setShowUpdating] = useState(false);
+  const [showRefreshing, setShowRefreshing] = useState(false);
   const [updateError, setUpdateError] = useState("");
   const [retryTarget, setRetryTarget] = useState<Readonly<{ query: FormWorkbenchQuery; page?: number }> | null>(null);
   const navigationSequence = useRef(0);
   const activeNavigation = useRef<AbortController | null>(null);
-  const activePolling = useRef<AbortController | null>(null);
+  const activeRefresh = useRef<AbortController | null>(null);
   const indicatorTimer = useRef<number | null>(null);
   const currentQuery = localView?.source === result ? localView.query : query;
   const currentResult = localView?.source === result ? localView.result : result;
@@ -204,11 +204,10 @@ export function FormsWorkbench({
   }, [result, router]);
 
   const refreshOrders = useCallback(async () => {
-    if (document.visibilityState === "hidden") return;
-
-    activePolling.current?.abort();
+    activeRefresh.current?.abort();
     const controller = new AbortController();
-    activePolling.current = controller;
+    activeRefresh.current = controller;
+    setShowRefreshing(true);
 
     try {
       const response = await fetch(refreshEndpoint, {
@@ -229,9 +228,12 @@ export function FormsWorkbench({
         });
       }
     } catch {
-      // Polling is best-effort; the next interval retries without interrupting the form UI.
+      // Refresh is best-effort and must not interrupt the form UI.
     } finally {
-      if (activePolling.current === controller) activePolling.current = null;
+      if (activeRefresh.current === controller) {
+        activeRefresh.current = null;
+        setShowRefreshing(false);
+      }
     }
   }, [query, refreshEndpoint, refreshQuery, result]);
 
@@ -243,24 +245,9 @@ export function FormsWorkbench({
     return () => window.removeEventListener("popstate", handlePopState);
   }, [updateOrders]);
 
-  useEffect(() => {
-    const interval = window.setInterval(() => {
-      void refreshOrders();
-    }, ORDER_REFRESH_INTERVAL_MS);
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === "visible") void refreshOrders();
-    };
-
-    document.addEventListener("visibilitychange", handleVisibilityChange);
-    return () => {
-      window.clearInterval(interval);
-      document.removeEventListener("visibilitychange", handleVisibilityChange);
-      activePolling.current?.abort();
-    };
-  }, [refreshOrders]);
-
   useEffect(() => () => {
     activeNavigation.current?.abort();
+    activeRefresh.current?.abort();
     if (indicatorTimer.current !== null) window.clearTimeout(indicatorTimer.current);
   }, []);
 
@@ -326,6 +313,15 @@ export function FormsWorkbench({
           onApply={applyFilters}
         />
         <span className={styles.toolbarSpacer} />
+        <button
+          type="button"
+          className={styles.listRefreshButton}
+          aria-label="Refresh orders"
+          disabled={showRefreshing}
+          onClick={() => void refreshOrders()}
+        >
+          {showRefreshing ? "Refreshing…" : "Refresh"}
+        </button>
         {showUpdating ? <span className={styles.listUpdateStatus} role="status" aria-label="Order list update status">Updating…</span> : null}
       </div>
 

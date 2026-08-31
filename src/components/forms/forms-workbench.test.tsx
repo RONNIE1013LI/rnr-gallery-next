@@ -8,7 +8,7 @@ import { FormsWorkbench } from "./forms-workbench";
 const { push, replace } = vi.hoisted(() => ({ push: vi.fn(), replace: vi.fn() }));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push, replace }) }));
 vi.mock("./forms-job-drawer", () => ({
-  FormsJobDrawer: ({ jobId, onClose }: { jobId: string; onClose: () => void }) => <div role="dialog" aria-label={`Drawer ${jobId}`}><button onClick={onClose}>Close drawer</button></div>,
+  FormsJobDrawer: ({ jobId, onClose, onSaved }: { jobId: string; onClose: () => void; onSaved: () => void }) => <div role="dialog" aria-label={`Drawer ${jobId}`}><button onClick={onSaved}>Save drawer</button><button onClick={onClose}>Close drawer</button></div>,
 }));
 vi.mock("./forms-order-entry-drawer", () => ({
   FormsOrderEntryDrawer: ({ onClose }: { onClose: () => void }) => <div role="dialog" aria-label="Order entry"><button onClick={onClose}>Close order entry</button></div>,
@@ -284,7 +284,7 @@ describe("FormsWorkbench", () => {
     expect(screen.getAllByText("Previous customer")).not.toHaveLength(0);
   });
 
-  it("refreshes only the visible order data on a ten-minute interval", async () => {
+  it("refreshes only the visible order data when staff clicks Refresh", async () => {
     vi.useFakeTimers();
     const updatedRow = {
       ...formOrderRow,
@@ -307,14 +307,11 @@ describe("FormsWorkbench", () => {
       canViewFinance
     />);
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(599_999);
-    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1_200_000); });
     expect(request).not.toHaveBeenCalled();
 
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(1);
-    });
+    fireEvent.click(screen.getByRole("button", { name: "Refresh orders" }));
+    await act(async () => {});
 
     expect(request).toHaveBeenCalledWith(
       "/api/forms/jobs?q=07188",
@@ -324,7 +321,7 @@ describe("FormsWorkbench", () => {
     expect(screen.queryByText("Elena Lasalo")).not.toBeInTheDocument();
   });
 
-  it("pauses refresh while hidden and refreshes immediately when visible again", async () => {
+  it("does not refresh on visibility changes", async () => {
     vi.useFakeTimers();
     Object.defineProperty(document, "visibilityState", {
       configurable: true,
@@ -351,16 +348,36 @@ describe("FormsWorkbench", () => {
     });
     expect(request).not.toHaveBeenCalled();
 
-    Object.defineProperty(document, "visibilityState", {
-      configurable: true,
-      value: "visible",
-    });
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
       await Promise.resolve();
     });
 
-    expect(request).toHaveBeenCalledTimes(1);
+    expect(request).not.toHaveBeenCalled();
+  });
+
+  it("refreshes the active order list after a drawer save", async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      items: [{ ...formOrderRow, customerName: "Saved customer" }],
+      total: 1,
+      page: 1,
+      pageSize: 100,
+      pageCount: 1,
+    })));
+    vi.stubGlobal("fetch", request);
+    render(<FormsWorkbench
+      result={{ items: [formOrderRow], total: 1, page: 1, pageSize: 100, pageCount: 1 }}
+      query={parseFormWorkbenchQuery({})}
+      canExport
+      canViewFinance
+    />);
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Open order 07188" })[0]);
+    fireEvent.click(screen.getByRole("button", { name: "Save drawer" }));
+    await act(async () => {});
+
+    expect(request).toHaveBeenCalledWith("/api/forms/jobs", expect.objectContaining({ cache: "no-store" }));
+    expect(screen.getAllByText("Saved customer")).not.toHaveLength(0);
   });
 
   it("renders source-style list controls, table, mobile cards and footer", () => {
