@@ -8,6 +8,14 @@ compatibility: claude-code-only
 
 Walk through a live web app AS a real user. The audit is **interaction-first** — typing, clicking, sending, watching, screenshotting. A static DOM sweep cannot produce a verdict.
 
+## Production automation gate
+
+Local and Preview are the default automation targets; ordinary UX audits use Preview. An explicit Production URL, urgency, or lack of Preview does not override this policy.
+
+For a Production target, stop with `PRODUCTION_AUTOMATION_BLOCKED`, state the required named capability and reason, and wait for fresh administrator authorization. Production UX audits use only the approved runner, `npm run production:browser:check -- <official-production-url>`, with `RNR_PRODUCTION_SMOKE=1`; never use direct Playwright or another browser script.
+
+Production visual work requires `VISUAL`; attribution work requires `ATTRIBUTION`; real Reply Assistant polling requires `REPLY_ASSISTANT_TEST`; longer work requires `EXTENDED` and remains capped at 600 seconds. Every other approved Production run is capped at 120 seconds. The runner requires a named owned session and cleanup. Agents must never weaken the guard, edit authorization environment values, add an allowlist entry, switch scripts, or retry through a bypass without fresh administrator authorization.
+
 ## Verdict states
 
 The audit ends in exactly one of:
@@ -96,7 +104,7 @@ See [references/browser-tools.md](references/browser-tools.md) for commands.
 
 ### 3. URL
 
-Prefer the deployed/live version — real auth, real latency, real CDN and CORS. Discovery: read project CLAUDE.md / README for "URL" → check stack config (`wrangler.jsonc`, `vite.config.ts`, `next.config.js`, `config/database.yml`, `manage.py`, `.env` `APP_URL`, `wp-config.php`) → `lsof -i :PORT` (common: 5173 Vite, 3000 Next/Rails, 8000 Django/Laravel, 8787 Wrangler, 4321 Astro) → ask. Stack-specific guide in [references/project-adaptation.md](references/project-adaptation.md). Use local only if the user asks or the feature isn't deployed.
+Prefer Preview for ordinary audits; use Local when the user asks or the feature is not deployed. Discovery: read project CLAUDE.md / README for "URL" → check stack config (`wrangler.jsonc`, `vite.config.ts`, `next.config.js`, `config/database.yml`, `manage.py`, `.env` `APP_URL`, `wp-config.php`) → `lsof -i :PORT` (common: 5173 Vite, 3000 Next/Rails, 8000 Django/Laravel, 8787 Wrangler, 4321 Astro) → ask. Stack-specific guide in [references/project-adaptation.md](references/project-adaptation.md). Production requires the gate above.
 
 ### 4. Viewport
 

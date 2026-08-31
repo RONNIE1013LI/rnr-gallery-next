@@ -24,6 +24,8 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## Production browser automation
 
-* Use `npm run production:browser:check -- <official-production-url>` for routine public Production browser smoke checks. It adds the trusted `rnr_automation=1` query mode, enforces a 120-second maximum lifetime, closes the named Playwright session in `finally`, and checks that its daemon and browser process tree are gone.
-* Never leave a Playwright CLI session open after a Production check. Custom browser automation must use a unique session, a bounded timeout, and `try/finally` cleanup for page, context, and browser.
-* Do not use a Headless Chrome user-agent check to disable application behavior. Production automation must opt in explicitly through the approved query mode.
+* Local and Preview are the default automation targets. Ordinary UX audits use Preview.
+* A Production block is final until a human explicitly grants a named capability, temporary bypass, or extended TTL. Production UX audits use only `npm run production:browser:check -- <official-production-url>` with `RNR_PRODUCTION_SMOKE=1`; do not substitute a direct browser tool or another script.
+* Production visual work requires `VISUAL`; attribution work requires `ATTRIBUTION`; real Reply Assistant polling requires `REPLY_ASSISTANT_TEST`; longer work requires `EXTENDED`, remains capped at 600 seconds, and otherwise all Production work is capped at 120 seconds.
+* Never weaken the guard, edit authorization environment values, add an allowlist entry, or retry through a bypass without fresh administrator authorization. There is no permanent disable.
+* The approved runner uses a unique named Playwright session, bounded lifetime, and `finally` cleanup; it verifies only processes it owns and must not disturb unrelated sessions.
