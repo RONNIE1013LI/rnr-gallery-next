@@ -33,6 +33,20 @@ describe("automation mode", () => {
     expect(readAutomationSession()).toEqual({ active: false, capability: null });
   });
 
+  it("does not restore a stale allowed capability after a malformed marker navigates away", () => {
+    window.sessionStorage.setItem("rnr_automation", "1");
+    window.sessionStorage.setItem("rnr_automation_capability", "REPLY_ASSISTANT_TEST");
+    window.history.replaceState(null, "", "/?rnr_automation=1&rnr_automation_capability=NOT_APPROVED");
+
+    expect(readAutomationSession()).toEqual({ active: true, capability: null });
+    expect(pollingAllowedForAutomation("reply-assistant")).toBe(false);
+
+    window.history.replaceState(null, "", "/shop");
+
+    expect(readAutomationSession()).toEqual({ active: true, capability: null });
+    expect(pollingAllowedForAutomation("reply-assistant")).toBe(false);
+  });
+
   it("keeps query-driven automation readable when session storage rejects writes", () => {
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new DOMException("blocked", "SecurityError");

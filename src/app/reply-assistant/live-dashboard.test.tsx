@@ -325,6 +325,24 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps a 5-second cadence when an update reports more pages", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(response({ ...emptyUpdate(), hasMore: true }))
+      .mockImplementation(() => new Promise<Response>(() => {}));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReplyAssistantLiveDashboard {...props} />);
+    await advance(4_999);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await advance(1);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    await advance(4_999);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await advance(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it.each(["hidden", "offline"] as const)("performs zero polling while %s", async (state) => {
     if (state === "hidden") {
       Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });

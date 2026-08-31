@@ -148,7 +148,6 @@ export function ReplyAssistantLiveDashboard({
         if (update.caseMemories) setCaseMemories(update.caseMemories.items);
         cursorRef.current = update.cursor;
         setConnectionState("active");
-        nextDelay = update.hasMore ? 0 : ACTIVE_POLL_MS;
       } catch {
         if (!cancelled && !controller.signal.aborted) setConnectionState("reconnecting");
         nextDelay = RETRY_POLL_MS;

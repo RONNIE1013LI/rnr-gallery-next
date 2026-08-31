@@ -37,8 +37,13 @@ export function readAutomationSession(): {
   try {
     if (queryActive) {
       window.sessionStorage.setItem(AUTOMATION_SESSION_STORAGE_KEY, "1");
-      if (productionCapability(queryCapabilityValue)) {
-        window.sessionStorage.setItem(AUTOMATION_CAPABILITY_STORAGE_KEY, queryCapabilityValue!);
+      if (queryCapabilityValue !== null) {
+        const queryCapability = productionCapability(queryCapabilityValue);
+        if (queryCapability) {
+          window.sessionStorage.setItem(AUTOMATION_CAPABILITY_STORAGE_KEY, queryCapability);
+        } else {
+          window.sessionStorage.removeItem(AUTOMATION_CAPABILITY_STORAGE_KEY);
+        }
       }
     }
     storedActive = window.sessionStorage.getItem(AUTOMATION_SESSION_STORAGE_KEY) === "1";
