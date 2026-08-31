@@ -42,6 +42,9 @@ const QUICK_ACTIONS = Object.freeze([
 const updatesEndpoint = "/api/customer-chat/updates";
 const messagesEndpoint = "/api/customer-chat/messages";
 const pollingIntervalMs = 5_000;
+const maximumPendingPolls = 24;
+
+type PollResult = "pending" | "terminal" | "error" | "blocked";
 
 function clientMessageKey() {
   const generated = globalThis.crypto?.randomUUID?.().replaceAll("-", "");
@@ -104,6 +107,8 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const cursorRef = useRef<string | null>(null);
   const pollingRef = useRef(false);
   const activePollControllerRef = useRef<AbortController | null>(null);
+  const pendingPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingPollCycleRef = useRef(0);
   const sendingRef = useRef(false);
   const initialPollRef = useRef(true);
   const historyReadyRef = useRef(false);
@@ -112,11 +117,9 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const launcherRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
-  const poll = useCallback(async () => {
-    if (!pollingAllowedForAutomation("customer-chat")
-      || document.hidden
-      || document.visibilityState !== "visible"
-      || pollingRef.current) return;
+  const poll = useCallback(async (): Promise<PollResult> => {
+    if (!pollingAllowedForAutomation("customer-chat")) return "blocked";
+    if (pollingRef.current) return "pending";
     pollingRef.current = true;
     const controller = new AbortController();
     activePollControllerRef.current = controller;
@@ -132,7 +135,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
           setHistoryReady(true);
           setHistoryError(true);
         }
-        return;
+        return "error";
       }
       const updates = publicUpdates(await response.json().catch(() => null));
       if (!updates) {
@@ -141,7 +144,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
           setHistoryReady(true);
           setHistoryError(true);
         }
-        return;
+        return "error";
       }
       cursorRef.current = updates.cursor;
       historyReadyRef.current = true;
@@ -161,13 +164,17 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
         return added.length ? [...current, ...added] : current;
       });
       initialPollRef.current = false;
+      return updates.state === "pending" || updates.state === "recovery"
+        ? "pending"
+        : "terminal";
     } catch {
-      if (controller.signal.aborted) return;
+      if (controller.signal.aborted) return "blocked";
       if (!historyReadyRef.current) {
         historyReadyRef.current = true;
         setHistoryReady(true);
         setHistoryError(true);
       }
+      return "error";
     } finally {
       if (activePollControllerRef.current === controller) {
         activePollControllerRef.current = null;
@@ -176,28 +183,54 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     }
   }, []);
 
+  const stopPendingPolling = useCallback(() => {
+    pendingPollCycleRef.current += 1;
+    if (pendingPollTimerRef.current !== null) {
+      clearTimeout(pendingPollTimerRef.current);
+      pendingPollTimerRef.current = null;
+    }
+  }, []);
+
+  const startPendingPolling = useCallback(() => {
+    stopPendingPolling();
+    const cycle = pendingPollCycleRef.current;
+    let checks = 0;
+    const check = async () => {
+      if (cycle !== pendingPollCycleRef.current) return;
+      checks += 1;
+      const result = await poll();
+      if (cycle !== pendingPollCycleRef.current) return;
+      if (result === "terminal" || result === "blocked") return;
+      if (result === "error") {
+        setFeedback("We couldn’t check for a reply. Please reopen chat later to try again.");
+        return;
+      }
+      if (checks >= maximumPendingPolls) {
+        setFeedback("Reply is taking longer than expected. Please reopen chat later to check for an update.");
+        return;
+      }
+      pendingPollTimerRef.current = setTimeout(() => {
+        pendingPollTimerRef.current = null;
+        void check();
+      }, pollingIntervalMs);
+    };
+    void check();
+  }, [poll, stopPendingPolling]);
+
   useEffect(() => {
     const pollingAllowed = pollingAllowedForAutomation("customer-chat");
     if (!open) return;
     inputRef.current?.focus();
     if (!pollingAllowed) return;
-    const catchUp = () => void poll();
-    queueMicrotask(catchUp);
-    const interval = window.setInterval(catchUp, pollingIntervalMs);
-    window.addEventListener("focus", catchUp);
-    window.addEventListener("online", catchUp);
-    document.addEventListener("visibilitychange", catchUp);
+    if (!historyReadyRef.current) queueMicrotask(() => void poll());
     return () => {
-      window.clearInterval(interval);
-      window.removeEventListener("focus", catchUp);
-      window.removeEventListener("online", catchUp);
-      document.removeEventListener("visibilitychange", catchUp);
+      stopPendingPolling();
       const controller = activePollControllerRef.current;
       activePollControllerRef.current = null;
       pollingRef.current = false;
       controller?.abort();
     };
-  }, [open, poll]);
+  }, [open, poll, stopPendingPolling]);
 
   useEffect(() => {
     if (!open) return;
@@ -253,7 +286,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
             : message
         )));
         setFeedback("Message sent.");
-        void poll();
+        startPendingPolling();
         return;
       }
       if (response.status === 429) {

@@ -8,8 +8,12 @@ const analytics = vi.hoisted(() => ({ emitAnalyticsEvent: vi.fn() }));
 
 vi.mock("@/domain/analytics/client", () => analytics);
 
-function updates(events: readonly unknown[] = [], cursor: string | null = "cursor-1") {
-  return new Response(JSON.stringify({ cursor, hasMore: false, events, state: "pending" }), {
+function updates(
+  events: readonly unknown[] = [],
+  cursor: string | null = "cursor-1",
+  state = "pending",
+) {
+  return new Response(JSON.stringify({ cursor, hasMore: false, events, state }), {
     headers: { "Content-Type": "application/json" },
   });
 }
@@ -375,7 +379,7 @@ describe("CustomerChat", () => {
     expect(input).toHaveValue("A message");
   });
 
-  it("polls visible updates every 5000ms, merges duplicate event keys, and preserves an unsent draft", async () => {
+  it("loads history once and does not poll while idle or on lifecycle events", async () => {
     vi.useFakeTimers();
     const first = {
       eventKey: "event-1",
@@ -384,16 +388,7 @@ describe("CustomerChat", () => {
       createdAt: "2026-08-22T00:00:00.000Z",
       state: "pending",
     };
-    const second = {
-      eventKey: "event-2",
-      role: "assistant",
-      text: "Thanks for your message.",
-      createdAt: "2026-08-22T00:00:01.000Z",
-      state: "committed_assistant",
-    };
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(updates([first, first], "cursor-1"))
-      .mockResolvedValueOnce(updates([first, second], "cursor-2"));
+    const fetchMock = vi.fn().mockResolvedValue(updates([first, first], "cursor-1"));
     vi.stubGlobal("fetch", fetchMock);
     render(<CustomerChat />);
     openChat();
@@ -401,14 +396,102 @@ describe("CustomerChat", () => {
     await act(async () => {});
     fireEvent.change(input, { target: { value: "Unsent draft" } });
 
-    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    fireEvent.focus(window);
+    fireEvent(window, new Event("online"));
+    fireEvent(document, new Event("visibilitychange"));
+    await act(async () => {});
 
     expect(screen.getAllByText("First message")).toHaveLength(1);
-    expect(screen.getByText("Thanks for your message.")).toBeInTheDocument();
     expect(input).toHaveValue("Unsent draft");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/customer-chat/updates?cursor=cursor-1");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(screen.getByTestId("customer-chat-live-region")).toHaveAttribute("aria-live", "polite");
+  });
+
+  it("polls only after an accepted send and stops on a terminal assistant response", async () => {
+    vi.useFakeTimers();
+    const assistant = {
+      eventKey: "assistant-response",
+      role: "assistant",
+      text: "Thanks for your message.",
+      createdAt: "2026-08-22T00:00:01.000Z",
+      state: "committed_assistant",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([], "cursor-1"))
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(updates([], "cursor-2", "pending"))
+      .mockResolvedValueOnce(updates([assistant], "cursor-3", "committed_assistant"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+    const input = screen.getByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Can you help?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_999); });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(screen.getByText("Thanks for your message.")).toBeInTheDocument();
+
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+
+  it("stops a pending cycle after 24 checks instead of polling forever", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([], "cursor-1"))
+      .mockResolvedValueOnce(accepted())
+      .mockImplementation(() => Promise.resolve(updates([], "cursor-pending", "pending")));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+    const input = screen.getByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Can you help?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+    for (let index = 0; index < 23; index += 1) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    }
+
+    expect(fetchMock).toHaveBeenCalledTimes(26);
+    expect(screen.getByText("Reply is taking longer than expected. Please reopen chat later to check for an update.")).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(26);
+  });
+
+  it("starts a fresh bounded cycle for a second accepted send without keeping the old timer", async () => {
+    vi.useFakeTimers();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([], "cursor-1"))
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(updates([], "cursor-2", "pending"))
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(updates([], "cursor-3", "committed_assistant"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+    const input = screen.getByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "First question" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+    fireEvent.change(input, { target: { value: "Second question" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
   it("does not start customer-chat polling after Production automation navigates away from its query marker", async () => {
@@ -466,10 +549,8 @@ describe("CustomerChat", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it("catches up immediately when focus or network returns and pauses interval polling while hidden", async () => {
+  it("does not catch up on focus, visibility, or network events", async () => {
     vi.useFakeTimers();
-    let hidden = false;
-    Object.defineProperty(document, "hidden", { configurable: true, get: () => hidden });
     const fetchMock = vi.fn().mockResolvedValue(updates());
     vi.stubGlobal("fetch", fetchMock);
     render(<CustomerChat />);
@@ -477,18 +558,11 @@ describe("CustomerChat", () => {
     await act(async () => {});
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
-    hidden = true;
     fireEvent(document, new Event("visibilitychange"));
     await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
-    expect(fetchMock).toHaveBeenCalledTimes(1);
-
-    hidden = false;
-    fireEvent(document, new Event("visibilitychange"));
-    await act(async () => {});
     fireEvent.focus(window);
-    await act(async () => {});
     fireEvent(window, new Event("online"));
     await act(async () => {});
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });
