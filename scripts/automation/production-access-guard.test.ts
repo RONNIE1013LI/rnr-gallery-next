@@ -193,6 +193,7 @@ describe("central automation access policy", () => {
         rawUrl: `https://${host}/`,
         targetMode: "PREVIEW",
         guardStatus,
+        now,
       }).hostname).toBe(host);
     }
     expect(() => assertAutomationTarget({
@@ -200,6 +201,29 @@ describe("central automation access policy", () => {
       targetMode: "PREVIEW",
       guardStatus,
     })).toThrow("AUTOMATION_TARGET_BLOCKED");
+  });
+
+  it.each([
+    ["expired", {
+      startedAt: new Date(now.getTime() - 120_000),
+      expiresAt: new Date(now.getTime() - 1),
+    }],
+    ["future-starting", {
+      startedAt: new Date(now.getTime() + 1),
+      expiresAt: new Date(now.getTime() + 120_000),
+    }],
+  ])("does not let a %s direct grant authorize Production", (_label, dates) => {
+    expect(() => assertAutomationTarget({
+      rawUrl: "https://rnrgallery.com/",
+      targetMode: "PREVIEW",
+      guardStatus: {
+        state: "TEMP_BYPASS",
+        owner: "admin",
+        reason: "reason",
+        ...dates,
+      },
+      now,
+    })).toThrow("PRODUCTION_AUTOMATION_BLOCKED");
   });
 
   it("exports stable session storage keys", () => {

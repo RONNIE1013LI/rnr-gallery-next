@@ -22,6 +22,7 @@ export type AssertAutomationTargetInput = Readonly<{
   targetMode: AutomationTargetMode;
   guardStatus: GuardStatus;
   productionSmokeAuthorized?: boolean;
+  now?: Date;
 }>;
 
 export const DEFAULT_PRODUCTION_TTL_SECONDS = 120;
@@ -100,10 +101,8 @@ function assertParsedAutomationTarget(url: URL, input: AssertAutomationTargetInp
   }
 
   const isOfficialProduction = officialProductionHosts.has(url.hostname);
-  // A status passed to this assertion is expected to come from
-  // resolveGuardStatus; retain its bounded, well-formed grant properties
-  // without introducing a second, non-injectable clock into the API.
-  const temporaryBypass = isWellFormedTemporaryGrant(input.guardStatus);
+  const temporaryBypass = input.now instanceof Date
+    && isValidTemporaryGrant(input.guardStatus, input.now);
 
   if (isOfficialProduction) {
     if (url.protocol === "https:"
@@ -177,6 +176,7 @@ export function buildProductionSmokeUrl(input: Readonly<{
   capability: ProductionCapability;
   guardStatus: GuardStatus;
   productionSmokeAuthorized: boolean;
+  now?: Date;
 }>): URL {
   if (!capabilities.has(input.capability)) blocked("AUTOMATION_TARGET_BLOCKED", "Capability is invalid");
   const url = parseTargetUrl(input.rawUrl);
@@ -188,5 +188,6 @@ export function buildProductionSmokeUrl(input: Readonly<{
     targetMode: "PRODUCTION_SMOKE",
     guardStatus: input.guardStatus,
     productionSmokeAuthorized: input.productionSmokeAuthorized,
+    now: input.now,
   });
 }
