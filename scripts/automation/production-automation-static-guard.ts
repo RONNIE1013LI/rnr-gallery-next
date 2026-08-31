@@ -22,7 +22,7 @@ const approvedPaths = new Set([
 
 const skippedDirectories = new Set([".git", ".next", "node_modules", "coverage", "output", ".worktrees"]);
 const automationDirectories = new Set(["scripts", "tests", "test", "e2e", "playwright"]);
-const automationFilename = /(playwright|browser|smoke|screenshot|visual|ui-audit|e2e|lighthouse)/i;
+const automationFilename = /(playwright|browser|smoke|screenshot|visual|ui-audit|audit|e2e|lighthouse)/i;
 const escapedHosts = OFFICIAL_PRODUCTION_HOSTS.map((host) => host.replaceAll(".", "\\.")).join("|");
 const officialProductionHost = new RegExp(
   `(?:^|[^a-z0-9.-])(?:https:\\/\\/)?(?:${escapedHosts})(?=$|[/:?#\\s"'])`,

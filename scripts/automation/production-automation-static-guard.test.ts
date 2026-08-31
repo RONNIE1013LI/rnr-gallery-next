@@ -72,6 +72,15 @@ describe("production automation static guard", () => {
     expect(findForbiddenProductionAutomationReferences(rootDir)).toEqual([]);
   });
 
+  it("blocks an official Production host in an audit-named file", async () => {
+    const rootDir = await fixtureRoot();
+    await fixtureFile(rootDir, "src/production-audit.ts", 'const site = "https://rnrgallery.com"\n');
+
+    expect(findForbiddenProductionAutomationReferences(rootDir)).toEqual([
+      { line: 1, relativePath: "src/production-audit.ts" },
+    ]);
+  });
+
   it("detects both bare official hosts and HTTPS URLs in automation files", async () => {
     const rootDir = await fixtureRoot();
     await fixtureFile(rootDir, "playwright/check.ts", [
