@@ -115,6 +115,17 @@ function response(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
 }
 
+function emptyUpdate() {
+  return {
+    cursor: "cursor-1",
+    hasMore: false,
+    queueItems: [],
+    metrics: null,
+    learningCandidates: null,
+    caseMemories: null,
+  };
+}
+
 async function advance(ms: number) {
   await act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 }
@@ -122,11 +133,19 @@ async function advance(ms: number) {
 describe("ReplyAssistantLiveDashboard", () => {
   beforeEach(() => {
     vi.useFakeTimers();
+    window.history.replaceState(null, "", "/reply-assistant");
+    window.sessionStorage.clear();
     Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
   });
 
   afterEach(() => {
+    window.history.replaceState(null, "", "/");
+    window.sessionStorage.clear();
+    Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+    Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
     vi.useRealTimers();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -207,6 +226,8 @@ describe("ReplyAssistantLiveDashboard", () => {
     render(<ReplyAssistantLiveDashboard {...props} />);
 
     await advance(2_500);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await advance(2_500);
 
     expect(screen.getByText("Yes, we can combine people from different photos.")).toBeInTheDocument();
     expect(screen.getByText("I want a refund")).toBeInTheDocument();
@@ -278,6 +299,121 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(screen.getByText("Human reply sent in Meta. AI draft closed.")).toBeInTheDocument();
   });
 
+  it("suppresses Reply Assistant polling for DEFAULT Production automation", async () => {
+    window.sessionStorage.setItem("rnr_automation", "1");
+    window.sessionStorage.setItem("rnr_automation_capability", "DEFAULT");
+    const fetchMock = vi.fn(async () => response(emptyUpdate()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReplyAssistantLiveDashboard {...props} />);
+    await advance(15_000);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("allows one Reply Assistant update at 5 seconds for REPLY_ASSISTANT_TEST automation", async () => {
+    window.sessionStorage.setItem("rnr_automation", "1");
+    window.sessionStorage.setItem("rnr_automation_capability", "REPLY_ASSISTANT_TEST");
+    const fetchMock = vi.fn(async () => response(emptyUpdate()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReplyAssistantLiveDashboard {...props} />);
+    await advance(4_999);
+    expect(fetchMock).not.toHaveBeenCalled();
+    await advance(1);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["hidden", "offline"] as const)("performs zero polling while %s", async (state) => {
+    if (state === "hidden") {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+    } else {
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+    }
+    const fetchMock = vi.fn(async () => response(emptyUpdate()));
+    vi.stubGlobal("fetch", fetchMock);
+
+    render(<ReplyAssistantLiveDashboard {...props} />);
+    await advance(15_000);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["visibility", "online", "focus"] as const)(
+    "%s recovery performs one immediate request and leaves one 5-second loop",
+    async (recovery) => {
+      if (recovery === "visibility") {
+        Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+      }
+      if (recovery === "online") {
+        Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+      }
+      const fetchMock = vi.fn(async () => response(emptyUpdate()));
+      vi.stubGlobal("fetch", fetchMock);
+      render(<ReplyAssistantLiveDashboard {...props} />);
+
+      if (recovery === "visibility") {
+        Object.defineProperty(document, "visibilityState", { configurable: true, value: "visible" });
+        fireEvent(document, new Event("visibilitychange"));
+      } else if (recovery === "online") {
+        Object.defineProperty(navigator, "onLine", { configurable: true, value: true });
+        fireEvent(window, new Event("online"));
+      } else {
+        fireEvent.focus(window);
+      }
+      await act(async () => { await Promise.resolve(); });
+
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await advance(4_999);
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+      await advance(1);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("aborts a pending update request on unmount and never starts another timer request", async () => {
+    let signal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      signal = init?.signal instanceof AbortSignal ? init.signal : undefined;
+      return new Promise<Response>(() => {});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const dashboard = render(<ReplyAssistantLiveDashboard {...props} />);
+
+    await advance(5_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(signal?.aborted).toBe(false);
+
+    dashboard.unmount();
+
+    expect(signal?.aborted).toBe(true);
+    await advance(15_000);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["hidden", "offline"] as const)("aborts a pending update request immediately when becoming %s", async (state) => {
+    let signal: AbortSignal | undefined;
+    const fetchMock = vi.fn((_url: string, init?: RequestInit) => {
+      signal = init?.signal instanceof AbortSignal ? init.signal : undefined;
+      return new Promise<Response>(() => {});
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ReplyAssistantLiveDashboard {...props} />);
+    await advance(5_000);
+    expect(signal?.aborted).toBe(false);
+
+    if (state === "hidden") {
+      Object.defineProperty(document, "visibilityState", { configurable: true, value: "hidden" });
+      fireEvent(document, new Event("visibilitychange"));
+    } else {
+      Object.defineProperty(navigator, "onLine", { configurable: true, value: false });
+      fireEvent(window, new Event("offline"));
+    }
+
+    expect(signal?.aborted).toBe(true);
+  });
+
   it("pauses while hidden and catches up immediately when the page becomes visible", async () => {
     const fetchMock = vi.fn(async () => response({
       cursor: "cursor-1",
@@ -314,7 +450,7 @@ describe("ReplyAssistantLiveDashboard", () => {
     vi.stubGlobal("fetch", fetchMock);
     render(<ReplyAssistantLiveDashboard {...props} />);
 
-    await advance(2_500);
+    await advance(5_000);
     expect(screen.getByText("Live updates reconnecting")).toBeInTheDocument();
     await advance(5_000);
 

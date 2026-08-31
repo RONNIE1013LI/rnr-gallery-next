@@ -37,6 +37,7 @@ describe("CustomerChat", () => {
 
   afterEach(() => {
     window.history.replaceState(null, "", "/");
+    window.sessionStorage.clear();
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -410,11 +411,15 @@ describe("CustomerChat", () => {
     expect(screen.getByTestId("customer-chat-live-region")).toHaveAttribute("aria-live", "polite");
   });
 
-  it("does not start customer-chat polling in explicit Production automation mode", async () => {
+  it("does not start customer-chat polling after Production automation navigates away from its query marker", async () => {
     vi.useFakeTimers();
-    window.history.replaceState(null, "", "/?rnr_automation=1");
+    window.history.replaceState(null, "", "/?rnr_automation=1&rnr_automation_capability=DEFAULT");
     const fetchMock = vi.fn().mockResolvedValue(updates());
     vi.stubGlobal("fetch", fetchMock);
+
+    const firstPage = render(<CustomerChat />);
+    firstPage.unmount();
+    window.history.replaceState(null, "", "/shop");
 
     render(<CustomerChat />);
     openChat();

@@ -4,6 +4,7 @@ import { FaArrowUp, FaRegCommentDots } from "react-icons/fa";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { emitAnalyticsEvent } from "@/domain/analytics/client";
+import { pollingAllowedForAutomation } from "@/lib/automation-mode";
 import styles from "./customer-chat.module.css";
 
 type PublicEvent = Readonly<{
@@ -41,12 +42,6 @@ const QUICK_ACTIONS = Object.freeze([
 const updatesEndpoint = "/api/customer-chat/updates";
 const messagesEndpoint = "/api/customer-chat/messages";
 const pollingIntervalMs = 5_000;
-const automationQueryParameter = "rnr_automation";
-
-function pollingDisabledForAutomation() {
-  if (typeof window === "undefined") return false;
-  return new URLSearchParams(window.location.search).get(automationQueryParameter) === "1";
-}
 
 function clientMessageKey() {
   const generated = globalThis.crypto?.randomUUID?.().replaceAll("-", "");
@@ -118,7 +113,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   const poll = useCallback(async () => {
-    if (pollingDisabledForAutomation()
+    if (!pollingAllowedForAutomation("customer-chat")
       || document.hidden
       || document.visibilityState !== "visible"
       || pollingRef.current) return;
@@ -182,9 +177,10 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   }, []);
 
   useEffect(() => {
+    const pollingAllowed = pollingAllowedForAutomation("customer-chat");
     if (!open) return;
     inputRef.current?.focus();
-    if (pollingDisabledForAutomation()) return;
+    if (!pollingAllowed) return;
     const catchUp = () => void poll();
     queueMicrotask(catchUp);
     const interval = window.setInterval(catchUp, pollingIntervalMs);

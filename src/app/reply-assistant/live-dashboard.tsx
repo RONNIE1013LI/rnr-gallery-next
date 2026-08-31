@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { ReplyAssistantClient, type ReplyQueueItem } from "@/components/reply-assistant/reply-assistant-client";
+import { pollingAllowedForAutomation } from "@/lib/automation-mode";
 import type {
   PilotMetricCounts,
   ReplyAssistantCaseMemoryPage,
@@ -16,7 +17,7 @@ import {
 } from "./metric-cards";
 import styles from "./reply-assistant.module.css";
 
-const ACTIVE_POLL_MS = 2_500;
+const ACTIVE_POLL_MS = 5_000;
 const RETRY_POLL_MS = 5_000;
 
 type LiveUpdateResponse = Readonly<{
@@ -84,22 +85,47 @@ export function ReplyAssistantLiveDashboard({
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
     let inFlight = false;
-    const pageIsVisible = () => document.visibilityState !== "hidden";
+    let activeController: AbortController | null = null;
+    const pollingAllowed = () => document.visibilityState === "visible"
+      && navigator.onLine
+      && pollingAllowedForAutomation("reply-assistant");
+
+    const clearScheduledPoll = () => {
+      if (timer === null) return;
+      clearTimeout(timer);
+      timer = null;
+    };
+
+    const abortActivePoll = () => {
+      activeController?.abort();
+      activeController = null;
+    };
 
     const schedule = (delay: number) => {
-      if (cancelled) return;
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => { void poll(); }, delay);
+      clearScheduledPoll();
+      if (cancelled || !pollingAllowed()) return;
+      timer = setTimeout(() => {
+        timer = null;
+        void poll();
+      }, delay);
     };
 
     const poll = async () => {
-      if (cancelled || inFlight || !pageIsVisible()) return;
+      if (cancelled) return;
+      if (!pollingAllowed()) {
+        abortActivePoll();
+        return;
+      }
+      if (inFlight) return;
       inFlight = true;
+      const controller = new AbortController();
+      activeController = controller;
       let nextDelay = ACTIVE_POLL_MS;
       try {
         const response = await fetch(`/api/reply-assistant/updates?cursor=${encodeURIComponent(cursorRef.current)}`, {
           cache: "no-store",
           headers: { accept: "application/json" },
+          signal: controller.signal,
         });
         if (!response.ok) throw new Error("live_updates_failed");
         const update = await response.json() as LiveUpdateResponse;
@@ -124,41 +150,39 @@ export function ReplyAssistantLiveDashboard({
         setConnectionState("active");
         nextDelay = update.hasMore ? 0 : ACTIVE_POLL_MS;
       } catch {
-        if (!cancelled) setConnectionState("reconnecting");
+        if (!cancelled && !controller.signal.aborted) setConnectionState("reconnecting");
         nextDelay = RETRY_POLL_MS;
       } finally {
+        if (activeController === controller) activeController = null;
         inFlight = false;
-        if (!cancelled && pageIsVisible()) schedule(nextDelay);
+        if (!cancelled && pollingAllowed()) schedule(nextDelay);
       }
     };
 
     const catchUp = () => {
-      if (pageIsVisible()) {
-        if (timer) clearTimeout(timer);
-        void poll();
+      clearScheduledPoll();
+      if (!pollingAllowed()) {
+        abortActivePoll();
+        return;
       }
+      void poll();
     };
     refreshRef.current = catchUp;
-    const handleVisibility = () => {
-      if (document.visibilityState === "hidden") {
-        if (timer) clearTimeout(timer);
-        timer = null;
-      } else {
-        catchUp();
-      }
-    };
 
-    if (pageIsVisible()) schedule(ACTIVE_POLL_MS);
-    document.addEventListener("visibilitychange", handleVisibility);
+    if (pollingAllowed()) schedule(ACTIVE_POLL_MS);
+    document.addEventListener("visibilitychange", catchUp);
     window.addEventListener("focus", catchUp);
     window.addEventListener("online", catchUp);
+    window.addEventListener("offline", catchUp);
     return () => {
       cancelled = true;
       refreshRef.current = () => undefined;
-      if (timer) clearTimeout(timer);
-      document.removeEventListener("visibilitychange", handleVisibility);
+      clearScheduledPoll();
+      abortActivePoll();
+      document.removeEventListener("visibilitychange", catchUp);
       window.removeEventListener("focus", catchUp);
       window.removeEventListener("online", catchUp);
+      window.removeEventListener("offline", catchUp);
     };
   }, [selectedReviewSelector]);
 
