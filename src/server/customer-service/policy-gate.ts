@@ -1,4 +1,9 @@
-import { detectIntent, isGenericBannerQuoteEnquiry, type CustomerServiceIntent } from "./intent-detection";
+import {
+  detectIntent,
+  isGenericBannerQuoteEnquiry,
+  isStaticCataloguePricingEnquiry,
+  type CustomerServiceIntent,
+} from "./intent-detection";
 import type { CustomerServiceChannel } from "./types";
 
 export type PolicyRule = Readonly<{
@@ -31,15 +36,21 @@ const HIGH_RISK_PATTERNS = [
   /\bchargeback\b|payment dispute|dispute.*payment|payment.*disput|charged twice|duplicate charge|charged (?:two times|again)|two charges/i,
   /consumer rights/i,
   /guarantee.*deliver|deliver.*guarantee|guaranteed delivery/i,
+  /guarantee.*(?:price|cost)|(?:price|cost).*guarantee/i,
   /guarantee.*urgent|urgent.*guarantee|guarantee.*complet|complet.*guarantee/i,
   /\b(?:arrive|deliver(?:ed)?) by\b/i,
   /\b(?:complete|finish|ready) (?:it )?(?:today|tomorrow|within (?:one|two|1|2) days?)\b/i,
 ];
 
 const REALTIME_PATTERNS = [
-  /\bhow much\b|\bcurrent price\b|\bprice (?:is|for)\b|\bcost (?:is|of|for)\b|\bquote for\b/i,
   /shipping (?:price|cost|fee|charge)|delivery (?:price|cost|fee|charge)/i,
+  /\bhow much\b.{0,30}\b(?:shipping|delivery|courier|freight)\b/i,
+  /\b(?:exact )?(?:courier|freight) (?:price|cost|fee|charge|quote)\b/i,
   /\b(?:eta|tracking number|order status|my balance|customer balance)\b/i,
+  /\b(?:payment|deposit) (?:arrived|received|status)\b|\bhas my (?:payment|deposit)\b/i,
+  /\b(?:my order|order \w+)\b.{0,30}\b(?:ready|complete|finished|status)\b/i,
+  /\b(?:currently )?in stock\b|\blive (?:inventory|availability)\b/i,
+  /\b(?:courier|delivery) tracking\b/i,
   /when will .*arrive|how long .*delivery|delivery.*how long/i,
   /pickup (?:address|hours|time)|where (?:can i|do i) (?:pick up|pickup|collect)/i,
   /\bpromotion\b/i,
@@ -109,19 +120,24 @@ function realtimeReason(
   if (channel === "website" && isPrivateCurrentDesignRecordRequest(message)) {
     return "realtime_data_required";
   }
+  if (REALTIME_PATTERNS.some((pattern) => pattern.test(message))) {
+    return "realtime_data_required";
+  }
   if (intent === "quote_information_collection") {
+    if (isStaticCataloguePricingEnquiry(message)) return "";
     if (isGenericBannerQuoteEnquiry(message)) return "";
-    if (isContextualQuoteDetail && !/\bhow much\b|\bcurrent price\b|\bprice (?:is|for)\b|\bcost (?:is|of|for)\b|\bquote for\b/i.test(message)) {
+    if (isContextualQuoteDetail) {
       return "";
     }
-    return /\bhow much\b|\bcurrent price\b|\bprice (?:is|for)\b|\bcost (?:is|of|for)\b|\bA[0-4]\b|\b\d+\s*[x×]\s*\d+\b/i.test(message)
+    return (/\b(?:custom|bespoke)\b/i.test(message) && /\bhow much\b|\bprices?\b|\bcost\b/i.test(message))
+      || /\b\d+\s*[x×]\s*\d+\b/i.test(message)
       ? "realtime_data_required"
       : "";
   }
   if (intent === "payment_process" && /how (?:does|do).*deposit|what.*deposit.*process/i.test(message) && !/\bmy\b|amount|balance|status/i.test(message)) {
     return "";
   }
-  return REALTIME_PATTERNS.some((pattern) => pattern.test(message)) ? "realtime_data_required" : "";
+  return "";
 }
 
 export function evaluatePolicyGate({

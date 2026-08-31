@@ -13,7 +13,7 @@ import {
 } from "../src/server/customer-service/website/session";
 
 const CATEGORIES = [
-  "product", "quote", "design", "photo", "production", "payment", "acknowledgement",
+  "product", "quote", "catalogue_pricing", "design", "photo", "production", "payment", "acknowledgement",
   "high_risk", "realtime", "unresolved", "prompt_injection", "malformed_schema", "cross_session",
 ] as const;
 const OUTCOMES = ["direct_reply", "no_reply", "human_review", "session_blocked"] as const;

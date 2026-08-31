@@ -17,10 +17,19 @@ export function isGenericBannerQuoteEnquiry(message: string) {
   return asksPrice && mentionsBanner && !namesProductType && !namesSize;
 }
 
+export function isStaticCataloguePricingEnquiry(message: string) {
+  const asksPrice = /\bhow much\b|\bprices?\b|\bpricing\b|\bcost\b|\bprice list\b|\bquote\b/i.test(message);
+  if (!asksPrice) return false;
+  const asksDynamicFact = /\b(?:shipping|delivery|courier|freight|order|payment|balance|inventory|in stock|availability|tracking)\b|\b(?:custom|bespoke)\s+(?:size|dimensions?|quote)\b|\b(?:custom|bespoke)\b(?!\s+themed\b).{0,30}\b\d+\s*[x×]\s*\d+\b/i.test(message);
+  if (asksDynamicFact) return false;
+  return /\b(?:your|our) prices?\b|\bproducts?\b|\bprice list\b|\bcanvas(?:es)?\b|\bbanners?\b|\broll[ -]?up\b|\bwall banner\b|\bbundle\b|\bA[0-4]\b/i.test(message);
+}
+
 export function detectIntent(message: string): CustomerServiceIntent {
   const value = String(message ?? "").trim().toLowerCase();
 
   if (/revision|free changes|changes included/.test(value)) return "revision_policy";
+  if (isStaticCataloguePricingEnquiry(value)) return "quote_information_collection";
   if (isGenericBannerQuoteEnquiry(value)) return "quote_information_collection";
   if (/what details|what information|prepare a quote|information.*quote|details.*quote|get a quote|quote please|want a quote/.test(value)) {
     return "quote_information_collection";

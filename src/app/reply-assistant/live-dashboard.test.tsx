@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { mergeReplyQueueItems, ReplyAssistantLiveDashboard } from "./live-dashboard";
 import type { PilotMetricCounts } from "@/server/customer-service/repositories/customer-service-repository";
@@ -255,6 +255,88 @@ describe("ReplyAssistantLiveDashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: "Facebook metrics" }));
     expect(screen.getByText("Sessions").parentElement).toHaveTextContent("9");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("uses the selected channel for the metrics, count, and conversation list", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const facebookItems = Array.from({ length: 5 }, (_, index) => ({
+      ...baseItem,
+      messageId: `facebook-message-${index}`,
+      body: `Facebook customer question ${index + 1}`,
+      timeline: [],
+    }));
+    const websiteItems = Array.from({ length: 3 }, (_, index) => ({
+      ...baseItem,
+      messageId: `website-message-${index}`,
+      channel: "website" as const,
+      body: `Website customer question ${index + 1}`,
+      timeline: [],
+    }));
+    render(<ReplyAssistantLiveDashboard
+      {...props}
+      initialItems={[...facebookItems, ...websiteItems]}
+      initialMetrics={updatedMetrics}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Website metrics" }));
+    expect(screen.getByText("3 conversations")).toBeInTheDocument();
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+    expect(screen.getAllByRole("article").every((article) => (
+      within(article).getAllByText("Website").length === 1
+    ))).toBe(true);
+    expect(screen.queryByText("Facebook customer question 1")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Facebook metrics" }));
+    expect(screen.getByText("5 conversations")).toBeInTheDocument();
+    expect(screen.getAllByRole("article")).toHaveLength(5);
+    expect(screen.getAllByRole("article").every((article) => (
+      within(article).getAllByText("Facebook").length === 1
+    ))).toBe(true);
+    expect(screen.queryByText("Website customer question 1")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "All metrics" }));
+    expect(screen.getByText("8 conversations")).toBeInTheDocument();
+    expect(screen.getAllByRole("article")).toHaveLength(8);
+
+    fireEvent.click(screen.getByRole("button", { name: "Website metrics" }));
+    expect(screen.getAllByRole("article")).toHaveLength(3);
+    expect(screen.queryByText("Facebook customer question 1")).not.toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps opposite-channel live updates out of the active filtered list", async () => {
+    const incomingWebsite = {
+      ...baseItem,
+      messageId: "incoming-website",
+      channel: "website" as const,
+      body: "New website conversation",
+      receivedAt: "2026-08-20T00:00:03.000Z",
+    };
+    const incomingFacebook = {
+      ...baseItem,
+      messageId: "incoming-facebook",
+      body: "New Facebook conversation",
+      receivedAt: "2026-08-20T00:00:04.000Z",
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => response({
+      ...emptyUpdate(),
+      cursor: "cursor-2",
+      queueItems: [incomingWebsite, incomingFacebook, incomingFacebook],
+    })));
+    render(<ReplyAssistantLiveDashboard {...props} initialMetrics={updatedMetrics} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Website metrics" }));
+    await advance(5_000);
+
+    expect(screen.getByText("New website conversation")).toBeInTheDocument();
+    expect(screen.queryByText("New Facebook conversation")).not.toBeInTheDocument();
+    expect(screen.getByText("1 conversation")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Facebook metrics" }));
+    expect(screen.queryByText("New website conversation")).not.toBeInTheDocument();
+    expect(screen.getByText("New Facebook conversation")).toBeInTheDocument();
+    expect(screen.getByText("2 conversations")).toBeInTheDocument();
   });
 
   it("keeps detailed metrics collapsed until staff asks to see them", () => {

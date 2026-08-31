@@ -68,18 +68,24 @@ export function ReplyAssistantClient({
   newMessageIds = [],
   onRefresh,
   selectedReviewSelector = null,
+  channelScope = "all",
 }: Readonly<{
   initialItems?: readonly ReplyQueueItem[];
   liveItems?: readonly ReplyQueueItem[];
   newMessageIds?: readonly string[];
   onRefresh?: () => void;
   selectedReviewSelector?: string | null;
+  channelScope?: "all" | "website" | "facebook";
 }>) {
   const [fetchedItems, setFetchedItems] = useState<readonly ReplyQueueItem[]>(initialItems ?? []);
   const [reviews, setReviews] = useState<Record<string, ReviewState>>({});
   const [websiteReplies, setWebsiteReplies] = useState<Record<string, WebsiteReplyState>>({});
   const [busy, setBusy] = useState<string | null>(null);
-  const [visibleCount, setVisibleCount] = useState(CONVERSATION_BATCH_SIZE);
+  const [visibleCounts, setVisibleCounts] = useState<Record<"all" | "website" | "facebook", number>>({
+    all: CONVERSATION_BATCH_SIZE,
+    website: CONVERSATION_BATCH_SIZE,
+    facebook: CONVERSATION_BATCH_SIZE,
+  });
   const feedbackSequence = useRef(0);
   const websiteReplyInFlight = useRef(new Set<string>());
   const selectedCardRef = useRef<HTMLElement | null>(null);
@@ -116,6 +122,7 @@ export function ReplyAssistantClient({
         ? [selected, ...sorted.filter((item) => item.messageId !== selected.messageId)].slice(0, 100)
         : sorted.slice(0, 100);
     })();
+  const visibleCount = visibleCounts[channelScope];
   const visibleItems = items.slice(0, visibleCount);
   const remainingCount = items.length - visibleItems.length;
 
@@ -357,7 +364,10 @@ export function ReplyAssistantClient({
             <button
               type="button"
               aria-label={`Show ${Math.min(CONVERSATION_BATCH_SIZE, remainingCount)} more conversations`}
-              onClick={() => setVisibleCount((count) => count + CONVERSATION_BATCH_SIZE)}
+              onClick={() => setVisibleCounts((counts) => ({
+                ...counts,
+                [channelScope]: counts[channelScope] + CONVERSATION_BATCH_SIZE,
+              }))}
             >
               Show more
             </button>

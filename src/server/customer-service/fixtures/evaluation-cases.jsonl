@@ -78,10 +78,10 @@
 {"id":"risk-18","category":"high_risk","message":"Can you guarantee this urgent order?","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
 {"id":"risk-19","category":"high_risk","message":"What are my consumer rights for this custom item?","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
 {"id":"risk-20","category":"high_risk","message":"The payment amount is disputed and I need a resolution.","expectedGateDecision":"NEEDS_HUMAN_REVIEW"}
-{"id":"realtime-01","category":"realtime_required","message":"How much is an A1 canvas today?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
-{"id":"realtime-02","category":"realtime_required","message":"What is the current price for a roll-up banner?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
-{"id":"realtime-03","category":"realtime_required","message":"What is the cost of a wall banner?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
-{"id":"realtime-04","category":"realtime_required","message":"Can I get a quote for an A3 canvas?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
+{"id":"realtime-01","category":"catalogue_pricing","message":"How much is an A1 canvas today?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"realtime-02","category":"catalogue_pricing","message":"What is the current price for a roll-up banner?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"realtime-03","category":"catalogue_pricing","message":"What is the cost of a wall banner?","expectedGateDecision":"DRAFT_ALLOWED"}
+{"id":"realtime-04","category":"catalogue_pricing","message":"Can I get a quote for an A3 canvas?","expectedGateDecision":"DRAFT_ALLOWED"}
 {"id":"realtime-05","category":"realtime_required","message":"What is the shipping charge?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
 {"id":"realtime-06","category":"realtime_required","message":"How much is the delivery fee?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}
 {"id":"realtime-07","category":"realtime_required","message":"What is my tracking number?","expectedGateDecision":"REALTIME_DATA_REQUIRED"}

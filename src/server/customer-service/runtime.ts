@@ -10,6 +10,7 @@ import { createImageJobRunner } from "./image-job-runner";
 import { createCustomerTurnRecoveryRunner } from "./turn-recovery-runner";
 import { createReviewAlertService } from "./website/review-alert-service";
 import { createResendEmailProvider } from "@/server/notifications/resend-email-provider";
+import { getProductRegistryRuntime } from "@/server/admin/product-registry-runtime";
 
 export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.env) {
   const config = parseCustomerServiceConfig(env);
@@ -23,6 +24,7 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
     repository,
     provider,
     knowledge: compiledKnowledge,
+    pricingSource: () => getProductRegistryRuntime().current(),
     budget: {
       reservationMicrousd: 1_000,
       dailyHardStopMicrousd: config.dailyHardStopMicrousd,

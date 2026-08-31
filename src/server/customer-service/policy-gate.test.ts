@@ -34,15 +34,48 @@ describe("customer service policy gate", () => {
     });
   });
 
-  it("blocks live price, timing and order data", () => {
+  it.each([
+    "How much are your products?",
+    "Can I see your prices?",
+    "How much is a banner?",
+    "How much is an A1 canvas?",
+    "What does a roll-up banner cost?",
+    "What's the price for your banner bundle?",
+    "Can I get your price list?",
+  ])("allows static first-party catalogue pricing questions: %s", (message) => {
+    expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge })).toMatchObject({
+      decision: "DRAFT_ALLOWED",
+      intent: "quote_information_collection",
+      providerAllowed: true,
+    });
+  });
+
+  it.each([
+    "Has my payment arrived?",
+    "Is my order ready now?",
+    "Can you guarantee delivery tomorrow?",
+    "What is the exact courier charge to this remote address right now?",
+    "Is this item currently in stock?",
+    "Where is my courier tracking right now?",
+    "Can you quote a custom 137 x 289 cm canvas?",
+    "Can you guarantee the current price for an A1 canvas?",
+  ])("keeps transactional or genuinely live facts blocked: %s", (message) => {
+    expect(evaluatePolicyGate({ message, knowledge: compiledKnowledge })).toMatchObject({
+      providerAllowed: false,
+      riskLevel: "high",
+    });
+  });
+
+  it("does not let contextual quote-detail inheritance bypass live shipping checks", () => {
     expect(evaluatePolicyGate({
-      message: "How much is an A1 canvas today?",
+      message: "How much is shipping?",
       knowledge: compiledKnowledge,
-    })).toMatchObject({ decision: "REALTIME_DATA_REQUIRED", providerAllowed: false });
-    expect(evaluatePolicyGate({
-      message: "What is my order status?",
-      knowledge: compiledKnowledge,
-    })).toMatchObject({ decision: "REALTIME_DATA_REQUIRED", providerAllowed: false });
+      intentOverride: "quote_information_collection",
+      isContextualQuoteDetail: true,
+    })).toMatchObject({
+      decision: "REALTIME_DATA_REQUIRED",
+      providerAllowed: false,
+    });
   });
 
   it.each([
@@ -124,7 +157,7 @@ describe("customer service policy gate", () => {
       message: "How much is it?",
       intentOverride: "quote_information_collection",
       knowledge: compiledKnowledge,
-    })).toMatchObject({ providerAllowed: false, reason: "realtime_data_required" });
+    })).toMatchObject({ providerAllowed: true, intent: "quote_information_collection" });
     expect(evaluatePolicyGate({
       message: "Australia",
       intentOverride: "quote_information_collection",
@@ -140,7 +173,7 @@ describe("customer service policy gate", () => {
       message: "How much is A1?",
       intentOverride: "quote_information_collection",
       knowledge: compiledKnowledge,
-    })).toMatchObject({ providerAllowed: false, reason: "realtime_data_required" });
+    })).toMatchObject({ providerAllowed: true, intent: "quote_information_collection" });
   });
 
   it("blocks evidence-based and unresolved supporting rules", () => {

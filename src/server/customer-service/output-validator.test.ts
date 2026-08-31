@@ -18,4 +18,39 @@ describe("AI draft output validator", () => {
     expect(validateDraft(draft, { intent: draft.includes("revisions") ? "design_process" : "photo_guidance" }))
       .toMatchObject({ ok: false, codes: [code] });
   });
+
+  it("accepts only an exact monetary amount supplied by the current pricing source", () => {
+    expect(validateDraft(
+      "The current Roll-Up Banner price is NZ$264.50.",
+      {
+        intent: "quote_information_collection",
+        approvedPrices: [{ currency: "NZD", amountInclTaxCents: 26_450 }],
+      },
+    )).toEqual({ ok: true, codes: [] });
+
+    expect(validateDraft(
+      "The current Roll-Up Banner price is NZ$299.00.",
+      {
+        intent: "quote_information_collection",
+        approvedPrices: [{ currency: "NZD", amountInclTaxCents: 26_450 }],
+      },
+    )).toEqual({ ok: false, codes: ["monetary_claim"] });
+  });
+
+  it.each([
+    "The price is 299.00 NZD.",
+    "The price is 299 NZ dollars.",
+    "The price is AUD $264.50.",
+    "The price is USD $264.50.",
+    "The price is US$264.50.",
+    "The price is AU $264.50.",
+    "The price is Australian $264.50.",
+    "The price is 264.50 USD.",
+    "The price is 264.50 US dollars.",
+  ])("rejects wrong or conflicting currency formats: %s", (draft) => {
+    expect(validateDraft(draft, {
+      intent: "quote_information_collection",
+      approvedPrices: [{ currency: "NZD", amountInclTaxCents: 26_450 }],
+    })).toEqual({ ok: false, codes: ["monetary_claim"] });
+  });
 });

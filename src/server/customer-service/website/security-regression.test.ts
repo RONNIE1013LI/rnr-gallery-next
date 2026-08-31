@@ -353,7 +353,6 @@ describe("website public security regression", () => {
   });
 
   it.each([
-    "What is the current price for an A1 canvas?",
     "Can you apply a 10% discount?",
     "How much is shipping today?",
     "What is the delivery ETA?",

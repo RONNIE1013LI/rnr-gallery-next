@@ -5,6 +5,7 @@ import type { ImageAnalysisResult } from "./image-analysis-schema";
 import compiledKnowledge from "./knowledge/compiled-knowledge.json";
 import { validateDraft } from "./output-validator";
 import { evaluatePolicyGate } from "./policy-gate";
+import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import type { CustomerServiceRepository } from "./repositories/customer-service-repository";
 import type { AiProviderRequest } from "./providers/ai-provider";
 
@@ -160,6 +161,7 @@ function setup(body: string | null, input: Readonly<{
   withImage?: boolean;
   previousAnalysis?: string;
   imageAnalysisEnabled?: boolean;
+  pricingSourceFailure?: boolean;
 }> = {}) {
   const repository = repositoryFor(body, input.withImage);
   if (input.previousAnalysis) {
@@ -186,6 +188,9 @@ function setup(body: string | null, input: Readonly<{
       attachmentProcessor: input.imageAnalysisEnabled === false ? undefined : image.processor,
       policyGate,
       outputValidator,
+      pricingSource: input.pricingSourceFailure
+        ? async () => { throw new Error("pricing source unavailable"); }
+        : async () => ({ revision: 12, registry: defaultProductRegistry }),
       knowledge: compiledKnowledge,
       budget: {
         reservationMicrousd: 1_000,
@@ -205,6 +210,74 @@ const attachmentContext = [{
 }];
 
 describe("CustomerServiceEngine", () => {
+  it("generates a helpful clarification for a broad pricing question after loading the catalogue", async () => {
+    const current = setup("How much are your products?", {
+      reply: "We offer several canvas and banner options. Which product and market are you interested in?",
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+
+    const prompt = current.provider.generate.mock.calls[0]?.[0];
+    expect(prompt?.instructions).toContain("Current approved catalogue revision: 12");
+    expect(prompt?.instructions).toContain("Ask for: market, product");
+    expect(prompt?.instructions).not.toMatch(/NZ\$\d|AU\$\d/);
+  });
+
+  it("allows only a current first-party catalogue price in a Facebook draft", async () => {
+    const current = setup("What does a roll-up banner cost?", {
+      reply: "The current Roll-Up Banner price is NZ$264.50.",
+    });
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: "What does a roll-up banner cost?", channel: "facebook" },
+      context: [
+        { role: "customer", text: "I am in New Zealand.", receivedAt: "2026-08-18T00:00:00.000Z" },
+        { role: "customer", text: "What does a roll-up banner cost?", receivedAt: "2026-08-18T00:00:01.000Z" },
+      ],
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.provider.generate.mock.calls[0]?.[0]?.instructions).toContain(
+      "Roll-Up Banner | 85 × 200 cm | NZ$264.50",
+    );
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      status: "draft_ready",
+      draftText: "The current Roll-Up Banner price is NZ$264.50.",
+    }));
+  });
+
+  it("blocks an invented price even when a current catalogue price was supplied", async () => {
+    const current = setup("What does a roll-up banner cost?", {
+      reply: "The current Roll-Up Banner price is NZ$299.00.",
+    });
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: "What does a roll-up banner cost?", channel: "facebook" },
+      context: [
+        { role: "customer", text: "NZ", receivedAt: "2026-08-18T00:00:00.000Z" },
+        { role: "customer", text: "What does a roll-up banner cost?", receivedAt: "2026-08-18T00:00:01.000Z" },
+      ],
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "output_blocked", attemptId: "attempt-1" });
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      status: "output_blocked",
+      validatorCodes: ["monetary_claim"],
+    }));
+  });
+
+  it("fails closed before the provider when the current pricing source cannot be loaded", async () => {
+    const current = setup("How much are your products?", { pricingSourceFailure: true });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "gate_blocked", attemptId: "attempt-blocked" });
+    expect(current.repository.createGateBlockedAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      gateReasons: ["pricing_source_unavailable"],
+    }));
+    expect(current.provider.generate).not.toHaveBeenCalled();
+  });
+
   it("does not call the provider when repository budget admission is blocked", async () => {
     const current = setup("Can you explain the design process?");
     current.repository.reserveProviderAttempt.mockResolvedValueOnce({
@@ -257,7 +330,6 @@ describe("CustomerServiceEngine", () => {
 
   it.each([
     ["I want a refund", "gate_blocked"],
-    ["How much is an A1 canvas today?", "realtime_required"],
     ["How many free revisions do I get?", "gate_blocked"],
   ])("blocks before every image and text dependency: %s", async (message, expected) => {
     const current = setup(message, { withImage: true });
@@ -325,7 +397,6 @@ describe("CustomerServiceEngine", () => {
 
   it.each([
     ["I want a refund", "gate_blocked"],
-    ["How much is an A1 canvas today?", "realtime_required"],
     ["How many free revisions do I get?", "gate_blocked"],
   ])("keeps website policy blocks in front of the provider: %s", async (message, expected) => {
     const current = setup(message);
@@ -338,6 +409,105 @@ describe("CustomerServiceEngine", () => {
       .resolves.toMatchObject({ status: expected });
     expect(current.provider.generate).not.toHaveBeenCalled();
     expect(current.repository.reserveProviderAttempt).not.toHaveBeenCalled();
+  });
+
+  it("keeps a broad Website catalogue pricing question in the generated-reply flow", async () => {
+    const message = "How much are your products?";
+    const current = setup(message);
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: message, channel: "website" },
+      context: [{ role: "customer", text: message, receivedAt: "2026-08-20T00:00:00.000Z" }],
+    });
+    current.provider.generate.mockResolvedValueOnce(providerResult(websiteDecision({
+      response_type: "ASK_FOR_INFORMATION",
+      intent: "quote_information_collection",
+      missing_fields: ["PRODUCT_TYPE", "SIZE"],
+      follow_up_fields: ["PRODUCT_TYPE", "SIZE"],
+      allowed_facts: [],
+    })));
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      draftText: "Is this for New Zealand or Australia?\nWhich product format are you considering?",
+    }));
+  });
+
+  it("allows an exact configured numeric catalogue size and blocks an unconfigured one", async () => {
+    const configured = setup("How much is a Custom Themed Wall Banner 160 x 80 cm in New Zealand?", {
+      reply: "The current price is NZ$189.75.",
+    });
+    await expect(configured.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(configured.provider.generate).toHaveBeenCalledOnce();
+
+    const unconfigured = setup("How much is a 137 x 289 cm wall banner in New Zealand?");
+    await expect(unconfigured.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "gate_blocked", attemptId: "attempt-blocked" });
+    expect(unconfigured.provider.generate).not.toHaveBeenCalled();
+  });
+
+  it("renders an exact verified Website catalogue price from server-owned proof", async () => {
+    const message = "What does a roll-up banner cost in New Zealand?";
+    const current = setup(message);
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: message, channel: "website" },
+      context: [{ role: "customer", text: message, receivedAt: "2026-08-20T00:00:00.000Z" }],
+    });
+    current.provider.generate.mockResolvedValueOnce(providerResult(websiteDecision({
+      intent: "quote_information_collection",
+      allowed_facts: ["APPROVED_CATALOGUE_PRICE"],
+    })));
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      status: "draft_ready",
+      draftText: "Roll-Up Banner (85 × 200 cm) is currently NZ$264.50.",
+      websiteDecision: expect.objectContaining({
+        allowed_facts: ["APPROVED_CATALOGUE_PRICE"],
+        approved_catalogue_price: expect.objectContaining({
+          sourceRevision: 12,
+          currency: "NZD",
+          amountInclTaxCents: 26_450,
+        }),
+      }),
+    }));
+  });
+
+  it("renders a Website market clarification when that is the only missing price field", async () => {
+    const message = "What does a roll-up banner cost?";
+    const current = setup(message);
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: message, channel: "website" },
+      context: [{ role: "customer", text: message, receivedAt: "2026-08-20T00:00:00.000Z" }],
+    });
+    current.provider.generate.mockResolvedValueOnce(providerResult(websiteDecision({
+      response_type: "ASK_FOR_INFORMATION",
+      intent: "quote_information_collection",
+      missing_fields: ["MARKET"],
+      follow_up_fields: ["MARKET"],
+      allowed_facts: [],
+    })));
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      draftText: "Is this for New Zealand or Australia?",
+    }));
+  });
+
+  it("blocks Website pricing before provider use when the requested market is unavailable", async () => {
+    const message = "What does a roll-up banner cost in Australia?";
+    const current = setup(message);
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: message, channel: "website" },
+      context: [{ role: "customer", text: message, receivedAt: "2026-08-20T00:00:00.000Z" }],
+    });
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
+      .resolves.toEqual({ status: "gate_blocked", attemptId: "attempt-blocked" });
+    expect(current.provider.generate).not.toHaveBeenCalled();
   });
 
   it("uses same-conversation staff context to interpret a short location reply", async () => {

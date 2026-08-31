@@ -6,11 +6,75 @@ export type DraftValidationResult = Readonly<{
   codes: readonly string[];
 }>;
 
+type ApprovedPrice = Readonly<{
+  currency: "NZD" | "AUD";
+  amountInclTaxCents: number;
+}>;
+
+function monetaryClaimsAreApproved(value: string, approvedPrices: readonly ApprovedPrice[]) {
+  const claims: Array<Readonly<{
+    currency: "NZD" | "AUD" | null;
+    amountInclTaxCents: number;
+    start: number;
+    end: number;
+  }>> = [];
+  const approvedCurrencies = new Set(approvedPrices.map((price) => price.currency));
+
+  const currencyFor = (rawMarker: string) => {
+    const marker = rawMarker.toUpperCase().replaceAll(".", "").trim();
+    if (marker === "NZD" || marker === "NZ$" || marker === "NZ" || marker.startsWith("NZ ") || marker.startsWith("NEW ZEALAND")) {
+      return "NZD" as const;
+    }
+    if (marker === "AUD" || marker === "AU$" || marker === "AU" || marker.startsWith("AU ") || marker.startsWith("AUSTRALIAN")) {
+      return "AUD" as const;
+    }
+    return marker === "$" && approvedCurrencies.size === 1 ? [...approvedCurrencies][0] : null;
+  };
+  const amountInCents = (rawAmount: string) => {
+    const amount = rawAmount.replaceAll(",", "");
+    const [dollars, decimals = ""] = amount.split(".");
+    return Number(dollars) * 100 + Number(decimals.padEnd(2, "0"));
+  };
+
+  for (const match of value.matchAll(/(?:(NZD|AUD|USD|NZ|AU|US|New Zealand|Australian|United States)\s*(?:dollars?)?\s*\$?\s*|((?:NZ|AU|US)\$|(?<![A-Za-z])\$)\s*)([0-9][\d,]*(?:\.\d{1,2})?)/gi)) {
+    claims.push({
+      currency: currencyFor(match[1] ?? match[2]),
+      amountInclTaxCents: amountInCents(match[3]),
+      start: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+  for (const match of value.matchAll(/([0-9][\d,]*(?:\.\d{1,2})?)\s*(NZD|AUD|USD|NZ dollars?|New Zealand dollars?|AU dollars?|Australian dollars?|US dollars?|United States dollars?)/gi)) {
+    claims.push({
+      currency: currencyFor(match[2]),
+      amountInclTaxCents: amountInCents(match[1]),
+      start: match.index,
+      end: match.index + match[0].length,
+    });
+  }
+
+  const covered = [...value].map(() => false);
+  for (const claim of claims) {
+    for (let index = claim.start; index < claim.end; index += 1) covered[index] = true;
+  }
+  const unmatched = [...value].map((character, index) => covered[index] ? " " : character).join("");
+  const hasUnparsedMoney = /(?:NZD|AUD|USD|NZ\$|AU\$|US\$|Australian|New Zealand|United States|\$)\s*(?:dollars?)?\s*\$?\s*\d|\d[\d,.]*\s*(?:NZD|AUD|USD|NZ dollars?|New Zealand dollars?|AU dollars?|Australian dollars?|US dollars?|United States dollars?|dollars?)\b|\b(?:price|cost)\b.{0,20}\b\d+(?:\.\d{1,2})?\b/i.test(unmatched);
+  if (hasUnparsedMoney) return false;
+  if (!claims.length) return true;
+  if (!approvedPrices.length) return false;
+  return claims.every((claim) => (
+    claim.currency !== null && approvedPrices.some(
+      (price) => price.currency === claim.currency && price.amountInclTaxCents === claim.amountInclTaxCents,
+    )
+  ));
+}
+
 export function validateDraft(
   draft: string,
-  { intent, channel }: Readonly<{
+  { intent, channel, approvedPrices = [] }: Readonly<{
     intent: CustomerServiceIntent;
     channel?: "facebook" | "website";
+    approvedPrices?: readonly ApprovedPrice[];
   }>,
 ): DraftValidationResult {
   const value = String(draft ?? "").trim();
@@ -25,7 +89,7 @@ export function validateDraft(
   if (/\bguarantee(?:d)?\b|\brefund\b|\bcancel\b|\bcompensation\b|\bchargeback\b|\breprint\b/i.test(value)) {
     return { ok: false, codes: ["forbidden_commitment"] };
   }
-  if (/(?:NZ\$|AU\$|\$)\s*\d|\b(?:NZD|AUD)\s*\d/i.test(value)) {
+  if (!monetaryClaimsAreApproved(value, approvedPrices)) {
     return { ok: false, codes: ["monetary_claim"] };
   }
   if (/%/.test(value) && !(intent === "payment_process" && /\b50%(?:\s|$)/.test(value))) {

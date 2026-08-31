@@ -70,7 +70,7 @@ export function ReplyAssistantLiveDashboard({
   const [newMessageIds, setNewMessageIds] = useState<readonly string[]>([]);
   const [metricCards, setMetricCards] = useState(initialMetricCards);
   const [metricCounts, setMetricCounts] = useState<PilotMetricCounts | null>(initialMetrics ?? null);
-  const [metricScope, setMetricScope] = useState<"all" | "website" | "facebook">("all");
+  const [channelScope, setChannelScope] = useState<"all" | "website" | "facebook">("all");
   const [showAllMetrics, setShowAllMetrics] = useState(false);
   const [learningCandidates, setLearningCandidates] = useState(initialLearningCandidates);
   const [caseMemories, setCaseMemories] = useState(initialCaseMemories);
@@ -185,12 +185,15 @@ export function ReplyAssistantLiveDashboard({
     };
   }, [selectedReviewSelector]);
 
-  const visibleMetricCards = metricScope === "all"
+  const visibleMetricCards = channelScope === "all"
     ? metricCards
     : metricCounts?.channelMetrics
-      ? channelMetricCards(metricCounts.channelMetrics[metricScope])
+      ? channelMetricCards(metricCounts.channelMetrics[channelScope])
       : metricCards;
   const displayedMetricCards = showAllMetrics ? visibleMetricCards : visibleMetricCards.slice(0, 8);
+  const filteredItems = channelScope === "all"
+    ? items
+    : items.filter((item) => item.channel === channelScope);
 
   return (
     <div className={styles.liveDashboard}>
@@ -202,9 +205,9 @@ export function ReplyAssistantLiveDashboard({
                 key={scope}
                 type="button"
                 aria-label={`${scope[0].toUpperCase()}${scope.slice(1)} metrics`}
-                aria-pressed={metricScope === scope}
+                aria-pressed={channelScope === scope}
                 onClick={() => {
-                  setMetricScope(scope);
+                  setChannelScope(scope);
                   setShowAllMetrics(false);
                 }}
               >
@@ -239,14 +242,15 @@ export function ReplyAssistantLiveDashboard({
       <section className={styles.conversationPanel} aria-label="Needs attention conversations">
         <div className={styles.conversationHeading}>
           <h2>Needs attention</h2>
-          <span>{items.length} {items.length === 1 ? "conversation" : "conversations"}</span>
+          <span>{filteredItems.length} {filteredItems.length === 1 ? "conversation" : "conversations"}</span>
         </div>
         <ReplyAssistantClient
-          initialItems={initialItems}
-          liveItems={items}
+          initialItems={initialItems.filter((item) => channelScope === "all" || item.channel === channelScope)}
+          liveItems={filteredItems}
           newMessageIds={newMessageIds}
           onRefresh={() => refreshRef.current()}
           selectedReviewSelector={selectedReviewSelector}
+          channelScope={channelScope}
         />
       </section>
     </div>

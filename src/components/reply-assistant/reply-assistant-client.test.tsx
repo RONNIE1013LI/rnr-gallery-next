@@ -174,6 +174,47 @@ describe("ReplyAssistantClient", () => {
     expect(screen.getByText("Showing 24 of 25 conversations")).toBeInTheDocument();
   });
 
+  it("resets the visible batch when the active channel changes", () => {
+    const facebook = Array.from({ length: 13 }, (_, index) => ({
+      ...item,
+      messageId: `facebook-${index}`,
+      body: `Facebook question ${index + 1}`,
+      receivedAt: new Date(Date.UTC(2026, 7, 17, 0, 0, index)).toISOString(),
+      humanReplyReceived: true,
+      timeline: [],
+    }));
+    const website = facebook.map((entry, index) => ({
+      ...entry,
+      messageId: `website-${index}`,
+      channel: "website" as const,
+      body: `Website question ${index + 1}`,
+    }));
+    const view = render(<ReplyAssistantClient
+      initialItems={facebook}
+      liveItems={facebook}
+      channelScope="facebook"
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Show 1 more conversations" }));
+    expect(screen.getAllByRole("article")).toHaveLength(13);
+
+    view.rerender(<ReplyAssistantClient
+      initialItems={facebook}
+      liveItems={website}
+      channelScope="website"
+    />);
+
+    expect(screen.getAllByRole("article")).toHaveLength(12);
+    expect(screen.getByText("Showing 12 of 13 conversations")).toBeInTheDocument();
+
+    view.rerender(<ReplyAssistantClient
+      initialItems={facebook}
+      liveItems={facebook}
+      channelScope="facebook"
+    />);
+    expect(screen.getAllByRole("article")).toHaveLength(13);
+  });
+
   it("shows a Website review timeline, alert state, and only committed public replies", () => {
     render(<ReplyAssistantClient initialItems={[{
       ...item,

@@ -115,6 +115,48 @@ describe("Website structured decision boundary", () => {
     })).toBe(false);
   });
 
+  it("renders and re-verifies a server-owned approved catalogue price proof", () => {
+    const decision = {
+      response_type: "ANSWER_SAFE",
+      intent: "quote_information_collection",
+      product_type: "BANNER",
+      missing_fields: [],
+      follow_up_fields: [],
+      allowed_facts: ["APPROVED_CATALOGUE_PRICE"],
+      human_review_reason: "NONE",
+      approved_catalogue_price: {
+        sourceRevision: 12,
+        productKey: "roll-up-banner",
+        productTitle: "Roll-Up Banner",
+        sizeKey: "standard",
+        sizeLabel: "85 × 200 cm",
+        currency: "NZD",
+        amountInclTaxCents: 26_450,
+      },
+    } as const;
+    const text = "Roll-Up Banner (85 × 200 cm) is currently NZ$264.50.";
+    expect(renderWebsiteDecision({
+      decision,
+      expectedIntent: "quote_information_collection",
+      productCategory: "banners",
+      acknowledgementAllowed: false,
+    })).toMatchObject({ ok: true, outcome: "rendered", text });
+    expect(verifyWebsiteRendererProof({
+      intent: "quote_information_collection",
+      text,
+      decision,
+      templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+      productCategory: "banners",
+    })).toBe(true);
+    expect(verifyWebsiteRendererProof({
+      intent: "quote_information_collection",
+      text: "Roll-Up Banner (85 × 200 cm) is currently NZ$299.00.",
+      decision,
+      templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+      productCategory: "banners",
+    })).toBe(false);
+  });
+
   it.each([
     [
       "mixed fact and question",

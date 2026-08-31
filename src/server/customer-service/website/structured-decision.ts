@@ -26,6 +26,7 @@ const INTENTS = [
 const PRODUCT_TYPES = ["CANVAS", "BANNER", "UNSPECIFIED"] as const;
 const MAX_DECISION_ARRAY_ITEMS = 6;
 const FOLLOW_UP_FIELDS = [
+  "MARKET",
   "PRODUCT_TYPE",
   "SIZE",
   "PEOPLE_COUNT",
@@ -39,6 +40,7 @@ const FOLLOW_UP_FIELDS = [
   "DELIVERY_LOCATION_IF_REQUIRED",
 ] as const;
 const ALLOWED_FACTS = [
+  "APPROVED_CATALOGUE_PRICE",
   "CANVAS_WALL_KEEPSAKE",
   "CANVAS_PERMANENT_KEEPSAKE_RECOMMENDATION",
   "BANNER_DISPLAY_OPTIONS",
@@ -79,6 +81,17 @@ export type WebsiteDecision = Readonly<{
   follow_up_fields: readonly FollowUpField[];
   allowed_facts: readonly AllowedFact[];
   human_review_reason: HumanReviewReason;
+  approved_catalogue_price?: WebsiteApprovedCataloguePrice;
+}>;
+
+export type WebsiteApprovedCataloguePrice = Readonly<{
+  sourceRevision: number;
+  productKey: string;
+  productTitle: string;
+  sizeKey: string;
+  sizeLabel: string;
+  currency: "NZD" | "AUD";
+  amountInclTaxCents: number;
 }>;
 
 const REQUIRED_KEYS = [
@@ -319,6 +332,10 @@ const FACTS: Readonly<Record<AllowedFact, Readonly<{
   text: string;
   requiresMessage?: RegExp;
 }>>> = Object.freeze({
+  APPROVED_CATALOGUE_PRICE: {
+    intent: "quote_information_collection",
+    text: "",
+  },
   CANVAS_WALL_KEEPSAKE: {
     intent: "product_differences",
     text: "Canvas suits a wall display and keepsake-style presentation.",
@@ -395,6 +412,10 @@ const QUESTIONS: Readonly<Record<FollowUpField, Readonly<{
   intents: readonly CustomerServiceIntent[];
   text: string;
 }>>> = Object.freeze({
+  MARKET: {
+    intents: ["quote_information_collection"],
+    text: "Is this for New Zealand or Australia?",
+  },
   PRODUCT_TYPE: {
     intents: ["product_differences", "quote_information_collection", "design_process"],
     text: "Which product format are you considering?",
@@ -466,6 +487,68 @@ function productCompatible(productType: ProductType, productCategory: "canvas" |
     || (productType === "BANNER" && productCategory === "banners");
 }
 
+function validApprovedCataloguePrice(value: unknown): value is WebsiteApprovedCataloguePrice {
+  if (!isRecord(value)) return false;
+  const keys = Object.keys(value).sort();
+  const expected = [
+    "sourceRevision",
+    "productKey",
+    "productTitle",
+    "sizeKey",
+    "sizeLabel",
+    "currency",
+    "amountInclTaxCents",
+  ].sort();
+  const safeText = (text: unknown, maximum: number) => typeof text === "string"
+    && text.length > 0
+    && text.length <= maximum
+    && !/[\u0000-\u001f\u007f]/.test(text);
+  return keys.length === expected.length
+    && keys.every((key, index) => key === expected[index])
+    && Number.isSafeInteger(value.sourceRevision)
+    && Number(value.sourceRevision) >= 0
+    && safeText(value.productKey, 100)
+    && safeText(value.productTitle, 160)
+    && safeText(value.sizeKey, 100)
+    && safeText(value.sizeLabel, 160)
+    && (value.currency === "NZD" || value.currency === "AUD")
+    && Number.isSafeInteger(value.amountInclTaxCents)
+    && Number(value.amountInclTaxCents) >= 0
+    && Number(value.amountInclTaxCents) <= 100_000_000;
+}
+
+function factText(decision: WebsiteDecision, fact: AllowedFact) {
+  if (fact !== "APPROVED_CATALOGUE_PRICE") return FACTS[fact].text;
+  const price = decision.approved_catalogue_price;
+  if (!price) return null;
+  const amount = `${price.currency === "NZD" ? "NZ$" : "AU$"}${(price.amountInclTaxCents / 100).toFixed(2)}`;
+  return `${price.productTitle} (${price.sizeLabel}) is currently ${amount}.`;
+}
+
+function parseWebsiteRendererProofValue(value: unknown):
+  | Readonly<{ ok: true; decision: WebsiteDecision }>
+  | Readonly<{ ok: false; code: "website_decision_schema_invalid" }> {
+  if (!isRecord(value)) return { ok: false, code: "website_decision_schema_invalid" };
+  const allowedKeys = new Set<string>([...REQUIRED_KEYS, "approved_catalogue_price"]);
+  if (Object.keys(value).some((key) => !allowedKeys.has(key))) {
+    return { ok: false, code: "website_decision_schema_invalid" };
+  }
+  const base = Object.fromEntries(REQUIRED_KEYS.map((key) => [key, value[key]]));
+  const parsed = parseWebsiteDecisionValue(base);
+  if (!parsed.ok) return parsed;
+  if (value.approved_catalogue_price === undefined) return parsed;
+  if (!validApprovedCataloguePrice(value.approved_catalogue_price)) {
+    return { ok: false, code: "website_decision_schema_invalid" };
+  }
+  return {
+    ok: true,
+    decision: Object.freeze({
+      ...parsed.decision,
+      approved_catalogue_price: Object.freeze({ ...value.approved_catalogue_price }),
+    }),
+  };
+}
+
 function allEmpty(decision: WebsiteDecision) {
   return decision.missing_fields.length === 0
     && decision.follow_up_fields.length === 0
@@ -513,6 +596,10 @@ export function renderWebsiteDecision(input: Readonly<{
     const required = FACTS[fact].requiresMessage;
     return required ? !required.test(input.messageText ?? "") : false;
   })) return { ok: false, code: "website_decision_incompatible" };
+  const hasApprovedPriceFact = decision.allowed_facts.includes("APPROVED_CATALOGUE_PRICE");
+  if (hasApprovedPriceFact !== Boolean(decision.approved_catalogue_price)) {
+    return { ok: false, code: "website_decision_incompatible" };
+  }
   if ([...decision.missing_fields, ...decision.follow_up_fields]
     .some((field) => !QUESTIONS[field].intents.includes(decision.intent))) {
     return { ok: false, code: "website_decision_incompatible" };
@@ -528,7 +615,7 @@ export function renderWebsiteDecision(input: Readonly<{
     return {
       ok: true,
       outcome: "rendered",
-      text: decision.allowed_facts.map((fact) => FACTS[fact].text).join("\n"),
+      text: decision.allowed_facts.map((fact) => factText(decision, fact)).join("\n"),
       templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
     };
   }
@@ -544,7 +631,7 @@ export function renderWebsiteDecision(input: Readonly<{
     return {
       ok: true,
       outcome: "rendered",
-      text: `${decision.allowed_facts.map((fact) => FACTS[fact].text).join(" ")} ${renderQuestions(decision.follow_up_fields)}`,
+      text: `${decision.allowed_facts.map((fact) => factText(decision, fact)).join(" ")} ${renderQuestions(decision.follow_up_fields)}`,
       templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
     };
   }
@@ -597,7 +684,7 @@ export function verifyWebsiteRendererProof(input: Readonly<{
     !isEnumValue(INTENTS, input.intent)
     || input.templateVersion !== WEBSITE_RESPONSE_TEMPLATE_VERSION
   ) return false;
-  const parsed = parseWebsiteDecisionValue(input.decision);
+  const parsed = parseWebsiteRendererProofValue(input.decision);
   if (!parsed.ok) return false;
   const rendered = renderWebsiteDecision({
     decision: parsed.decision,

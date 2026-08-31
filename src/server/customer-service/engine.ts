@@ -13,6 +13,12 @@ import type { CustomerServiceRepository } from "./repositories/customer-service-
 import type { DraftGenerationRequest, DraftGenerationResult } from "./types";
 import { sanitizeWebsiteModelInput } from "./website/model-input-sanitizer";
 import { classifyAcknowledgement } from "./conversation/acknowledgement";
+import { isStaticCataloguePricingEnquiry } from "./intent-detection";
+import {
+  resolveApprovedPricing,
+  type ApprovedPricingResolution,
+} from "./pricing-source";
+import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
 import {
   parseWebsiteDecision,
   renderWebsiteDecision,
@@ -52,6 +58,10 @@ export class CustomerServiceEngine {
   private readonly policyGate: typeof evaluatePolicyGate;
   private readonly outputValidator: typeof validateDraft;
   private readonly knowledge: EngineKnowledge;
+  private readonly pricingSource?: () => Promise<Readonly<{
+    revision: number;
+    registry: ProductRegistryDocument;
+  }>>;
   private readonly budget: Readonly<{
     reservationMicrousd: number;
     dailyHardStopMicrousd: number;
@@ -67,6 +77,10 @@ export class CustomerServiceEngine {
     attachmentProcessor?: AttachmentProcessor;
     policyGate?: typeof evaluatePolicyGate;
     outputValidator?: typeof validateDraft;
+    pricingSource?: () => Promise<Readonly<{
+      revision: number;
+      registry: ProductRegistryDocument;
+    }>>;
     knowledge: EngineKnowledge;
     budget: Readonly<{
       reservationMicrousd: number;
@@ -81,6 +95,7 @@ export class CustomerServiceEngine {
     this.provider = input.provider;
     this.policyGate = input.policyGate ?? evaluatePolicyGate;
     this.outputValidator = input.outputValidator ?? validateDraft;
+    this.pricingSource = input.pricingSource;
     this.knowledge = input.knowledge;
     this.budget = {
       ...input.budget,
@@ -182,6 +197,7 @@ export class CustomerServiceEngine {
         attemptId,
       };
     }
+
     const attemptId = await this.repository.createGateBlockedAttempt({
       messageId: input.messageId,
       trigger: "webhook_after",
@@ -232,6 +248,36 @@ export class CustomerServiceEngine {
         status: gate.decision === "REALTIME_DATA_REQUIRED" ? "realtime_required" : "gate_blocked",
         attemptId,
       };
+    }
+
+    let approvedPricing: ApprovedPricingResolution | null = null;
+    const asksCataloguePrice = isStaticCataloguePricingEnquiry(draftInput.current.text)
+      || (gate.intent === "quote_information_collection"
+        && /\bhow much\b|\bprices?\b|\bpricing\b|\bcost\b|\bprice list\b/i.test(draftInput.current.text));
+    if (asksCataloguePrice) {
+      try {
+        if (!this.pricingSource) throw new Error("pricing_source_unavailable");
+        const currentPricing = await this.pricingSource();
+        approvedPricing = resolveApprovedPricing({
+          message: draftInput.current.text,
+          context: draftInput.context,
+          productContext: draftInput.current.productContext ?? null,
+          registry: currentPricing.registry,
+          revision: currentPricing.revision,
+        });
+        if (approvedPricing.status === "unavailable") throw new Error(approvedPricing.reason);
+      } catch {
+        const attemptId = await this.repository.createGateBlockedAttempt({
+          messageId: request.messageId,
+          trigger: request.trigger,
+          intent: gate.intent,
+          riskLevel: "high",
+          gateResult: "unresolved",
+          gateReasons: ["pricing_source_unavailable"],
+          knowledgeVersion: this.knowledge.knowledgeVersion,
+        });
+        return { status: "gate_blocked", attemptId };
+      }
     }
 
     const currentWebsiteInput = draftInput.current.channel === "website"
@@ -328,6 +374,7 @@ export class CustomerServiceEngine {
         context: providerContext,
         productContext: draftInput.current.productContext ?? null,
         approvedCaseMemoryCount: caseMemories.length,
+        approvedPricing,
       })
       : buildDraftPrompt({
         intent: gate.intent,
@@ -338,6 +385,7 @@ export class CustomerServiceEngine {
         qualityGuide: sources.qualityGuide,
         toneGuide: this.knowledge.toneGuide,
         caseMemories,
+        approvedPricing,
       });
     const invocation = await this.repository.confirmProviderInvocation({
       attemptId: reservation.attemptId,
@@ -376,8 +424,52 @@ export class CustomerServiceEngine {
           currentText: draftInput.current.text,
           recentHistory: draftInput.context,
         });
+        const websiteBaseDecision: WebsiteDecision = approvedPricing?.status === "clarification_required"
+          ? Object.freeze({
+            response_type: "ASK_FOR_INFORMATION",
+            intent: "quote_information_collection",
+            product_type: "UNSPECIFIED",
+            missing_fields: Object.freeze(approvedPricing.missing.map(
+              (field) => field === "product" ? "PRODUCT_TYPE" as const : field.toUpperCase() as "MARKET" | "SIZE",
+            )),
+            follow_up_fields: Object.freeze(approvedPricing.missing.map(
+              (field) => field === "product" ? "PRODUCT_TYPE" as const : field.toUpperCase() as "MARKET" | "SIZE",
+            )),
+            allowed_facts: Object.freeze([]),
+            human_review_reason: "NONE",
+          })
+          : approvedPricing?.status === "verified"
+            ? Object.freeze({
+              response_type: "ANSWER_SAFE",
+              intent: "quote_information_collection",
+              product_type: "UNSPECIFIED",
+              missing_fields: Object.freeze([]),
+              follow_up_fields: Object.freeze([]),
+              allowed_facts: Object.freeze(["APPROVED_CATALOGUE_PRICE"] as const),
+              human_review_reason: "NONE",
+            })
+            : parsed.decision;
+        const approvedWebsitePrice = (() => {
+          if (approvedPricing?.status !== "verified" || approvedPricing.facts.length !== 1) return null;
+          const fact = approvedPricing.facts[0];
+          return Object.freeze({
+            sourceRevision: approvedPricing.sourceRevision,
+            productKey: fact.productKey,
+            productTitle: fact.productTitle,
+            sizeKey: fact.sizeKey,
+            sizeLabel: fact.sizeLabel,
+            currency: fact.currency,
+            amountInclTaxCents: fact.amountInclTaxCents,
+          });
+        })();
+        const websiteDecision = approvedWebsitePrice
+          ? Object.freeze({
+            ...websiteBaseDecision,
+            approved_catalogue_price: approvedWebsitePrice,
+          })
+          : websiteBaseDecision;
         const rendered = renderWebsiteDecision({
-          decision: parsed.decision,
+          decision: websiteDecision,
           expectedIntent: gate.intent,
           productCategory: draftInput.current.productContext?.category ?? null,
           messageText: draftInput.current.text,
@@ -421,13 +513,19 @@ export class CustomerServiceEngine {
         }
         candidateText = rendered.text;
         websiteRendererProof = {
-          decision: parsed.decision,
+          decision: websiteDecision,
           templateVersion: rendered.templateVersion,
         };
       }
       const textValidation = this.outputValidator(candidateText, {
         intent: gate.intent,
         ...(draftInput.current.channel === "website" ? { channel: "website" as const } : {}),
+        approvedPrices: approvedPricing?.status === "verified"
+          ? approvedPricing.facts.map((fact) => ({
+            currency: fact.currency,
+            amountInclTaxCents: fact.amountInclTaxCents,
+          }))
+          : [],
       });
       const validation = {
         ok: textValidation.ok,

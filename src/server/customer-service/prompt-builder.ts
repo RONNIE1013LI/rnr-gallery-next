@@ -8,6 +8,7 @@ import {
   WEBSITE_DECISION_JSON_SCHEMA,
   WEBSITE_DECISION_SCHEMA_NAME,
 } from "./website/structured-decision";
+import type { ApprovedPricingResolution } from "./pricing-source";
 
 function serializeWebsiteCustomerContext(input: Readonly<{
   context: readonly (string | ConversationContextItem)[];
@@ -37,10 +38,14 @@ export function buildWebsiteDecisionPrompt(input: Readonly<{
   context: readonly ConversationContextItem[];
   productContext: SafeProductContext | null;
   approvedCaseMemoryCount: number;
+  approvedPricing?: ApprovedPricingResolution | null;
 }>) {
   const customerContext = serializeWebsiteCustomerContext({ context: input.context });
   const contract = getWebsiteDecisionPromptContract(input.intent);
-  const compatibleFacts = contract.allowedFacts.length > 0 ? contract.allowedFacts.join(", ") : "none";
+  const allowedFacts = contract.allowedFacts.filter((fact) => (
+    fact !== "APPROVED_CATALOGUE_PRICE" || input.approvedPricing?.status === "verified"
+  ));
+  const compatibleFacts = allowedFacts.length > 0 ? allowedFacts.join(", ") : "none";
   const compatibleFollowUps = contract.followUpFields.length > 0 ? contract.followUpFields.join(", ") : "none";
   return {
     instructions: [
@@ -55,7 +60,15 @@ export function buildWebsiteDecisionPrompt(input: Readonly<{
       "ANSWER_AND_ASK requires at least one allowed_fact, at least one follow-up field, human_review_reason=NONE, and identical missing_fields and follow_up_fields.",
       `${input.intent} facts: ${compatibleFacts}`,
       `${input.intent} follow-up fields: ${compatibleFollowUps}`,
-      "Use REALTIME_REQUIRED for any current price, shipping, ETA, availability, payment, order or delivery status need.",
+      "Use REALTIME_REQUIRED for any current price, shipping, ETA, availability, payment, order or delivery status needs.",
+      ...(input.approvedPricing?.status === "verified" ? [
+        "The server has verified one current first-party catalogue price for this static pricing request; do not classify it as realtime.",
+        "Use ANSWER_SAFE with allowed_facts=[APPROVED_CATALOGUE_PRICE]. The server renderer will supply the amount; never output a monetary value yourself.",
+      ] : input.approvedPricing?.status === "clarification_required" ? [
+        "This static pricing request is not realtime, but the server needs more catalogue identity before selecting a price.",
+        `Use ASK_FOR_INFORMATION with only these missing and follow-up fields: ${input.approvedPricing.missing.map((field) => field === "product" ? "PRODUCT_TYPE" : field.toUpperCase()).join(", ")}.`,
+        "Do not invent or output a monetary value.",
+      ] : []),
       "Use HUMAN_REVIEW_REQUIRED for uncertainty, risk, private-record requests or unsupported actions.",
       "Use SYSTEM_FALLBACK when no schema-safe decision can be made.",
       `Expected intent: ${input.intent}`,
@@ -98,6 +111,7 @@ export function buildDraftPrompt(input: Readonly<{
   }>[];
   visualAssessment?: string;
   productContext?: SafeProductContext | null;
+  approvedPricing?: ApprovedPricingResolution | null;
 }>) {
   const rules = input.rules.map((rule) => `${rule.id}: ${rule.text}`).join("\n");
   const examples = input.examples.map((example) => `Customer: ${example.customer}\nReply: ${example.reply}`).join("\n\n");
@@ -116,6 +130,23 @@ export function buildDraftPrompt(input: Readonly<{
   const websiteCustomerContext = input.channel === "website"
     ? serializeWebsiteCustomerContext({ context: input.context })
     : null;
+  const approvedPricingInstructions = input.approvedPricing?.status === "verified"
+    ? [
+      `Current approved catalogue revision: ${input.approvedPricing.sourceRevision}`,
+      "CURRENT APPROVED PRICING FACTS:",
+      ...input.approvedPricing.facts.map((fact) => (
+        `${fact.productTitle} | ${fact.sizeLabel} | ${fact.formattedAmount}`
+      )),
+      "A monetary amount may be quoted only when it exactly matches one of these facts.",
+      "These server-verified pricing facts override older generic instructions that prohibit catalogue prices, for this request only.",
+    ]
+    : input.approvedPricing?.status === "clarification_required"
+      ? [
+        `Current approved catalogue revision: ${input.approvedPricing.sourceRevision}`,
+        `Ask for: ${input.approvedPricing.missing.join(", ")}`,
+        "No exact price is approved for this incomplete request. Ask only for the missing detail and do not quote an amount.",
+      ]
+      : [];
   return {
     instructions: [
       "Write one specific, information-dense R&R Gallery customer-service draft in natural English.",
@@ -132,6 +163,7 @@ export function buildDraftPrompt(input: Readonly<{
       "When a process detail is not confirmed, keep that detail neutral; do not remove the rest of the confirmed process.",
       "Do not mention AI, policy status, internal risk or the knowledge base.",
       `Detected intent: ${input.intent}`,
+      ...approvedPricingInstructions,
       `CONFIRMED RULES:\n${rules}`,
       ...(input.visualAssessment ? [
         [

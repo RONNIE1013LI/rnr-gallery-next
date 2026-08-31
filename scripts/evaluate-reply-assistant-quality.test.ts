@@ -25,7 +25,7 @@ describe("reply assistant quality evaluation", () => {
       cases: [
         { id: "allowed", category: "product_differences", message: "Which product should I choose?", expectedGateDecision: "DRAFT_ALLOWED" },
         { id: "risk", category: "high_risk", message: "I want a refund", expectedGateDecision: "NEEDS_HUMAN_REVIEW" },
-        { id: "realtime", category: "realtime_required", message: "How much is an A1 canvas today?", expectedGateDecision: "REALTIME_DATA_REQUIRED" },
+        { id: "realtime", category: "realtime_required", message: "Is this item currently in stock?", expectedGateDecision: "REALTIME_DATA_REQUIRED" },
       ],
       knowledge: compiledKnowledge,
       provider,

@@ -5,6 +5,13 @@ describe("customer service intent detection", () => {
   it.each([
     ["Which product format should I choose?", "product_differences"],
     ["What details do you need to prepare a quote?", "quote_information_collection"],
+    ["How much are your products?", "quote_information_collection"],
+    ["Can I see your prices?", "quote_information_collection"],
+    ["How much is an A1 canvas?", "quote_information_collection"],
+    ["What does a roll-up banner cost?", "quote_information_collection"],
+    ["What's the price for your banner bundle?", "quote_information_collection"],
+    ["Can I get your price list?", "quote_information_collection"],
+    ["How much is a Custom Themed Wall Banner 160 x 80 cm?", "quote_information_collection"],
     ["Can you use my blurry original photo?", "photo_guidance"],
     ["Can you combine people from different photographs?", "photo_guidance"],
     ["What happens during the design process?", "design_process"],
