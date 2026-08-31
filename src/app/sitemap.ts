@@ -5,8 +5,7 @@ import { getSafePublicProductRegistry } from "@/server/admin/product-registry-ru
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
 import { buildMarketAlternates } from "@/server/seo/metadata";
 import { getSiteUrl } from "@/server/seo/site-url";
-
-export const dynamic = "force-dynamic";
+import { cachePublicData, PUBLIC_CACHE_TAGS } from "@/server/cache/public-cache-tags";
 
 const pages = [
   ["/", 1, "weekly"],
@@ -75,13 +74,28 @@ export function buildPublicSitemap(
   ];
 }
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+async function generatePublicSitemap(): Promise<MetadataRoute.Sitemap> {
   const { registry } = await getSafePublicProductRegistry();
-  let designs: readonly Readonly<{ slug: string; createdAt: Date }>[] = [];
-  try {
-    designs = await getGalleryRuntime().publicService.listSitemapDesigns();
-  } catch {
-    designs = [];
-  }
+  const designs = await getGalleryRuntime().publicService.listSitemapDesigns();
   return buildPublicSitemap(registry, getSiteUrl(), designs);
+}
+
+const getCachedPublicSitemap = cachePublicData(
+  generatePublicSitemap,
+  "sitemap",
+  [
+    PUBLIC_CACHE_TAGS.sitemap,
+    PUBLIC_CACHE_TAGS.products,
+    PUBLIC_CACHE_TAGS.gallery,
+  ],
+  172_800,
+);
+
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  try {
+    return await getCachedPublicSitemap();
+  } catch {
+    const { registry } = await getSafePublicProductRegistry();
+    return buildPublicSitemap(registry, getSiteUrl(), []);
+  }
 }

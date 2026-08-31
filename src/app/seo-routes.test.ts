@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import { buildRobots } from "./robots";
-import { buildPublicSitemap, dynamic as sitemapDynamic } from "./sitemap";
+import { buildPublicSitemap } from "./sitemap";
 import { generateMetadata as generateHomeMetadata } from "./page";
 import { generateMetadata as generateShopMetadata } from "./shop/page";
 import { generateMetadata as generateCanvasMetadata } from "./canvas/page";
@@ -40,10 +40,6 @@ describe("public SEO routes", () => {
       title: socialTitle,
       images: [socialImage],
     });
-  });
-
-  it("renders the sitemap from the current market registry instead of a build-time snapshot", () => {
-    expect(sitemapDynamic).toBe("force-dynamic");
   });
 
   it("publishes only the canonical .com origin in robots and the live sitemap", () => {
