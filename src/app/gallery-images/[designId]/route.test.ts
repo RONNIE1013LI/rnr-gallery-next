@@ -1,5 +1,9 @@
-import { describe, expect, it } from "vitest";
-import { createGalleryImageHandler } from "@/server/gallery/gallery-image-handler";
+import { describe, expect, it, vi } from "vitest";
+import {
+  createCachedGalleryImageLookup,
+  createGalleryImageHandler,
+} from "@/server/gallery/gallery-image-handler";
+import type { cachePublicData } from "@/server/cache/public-cache-tags";
 
 const designId = "a".repeat(64);
 const metadata = {
@@ -17,7 +21,7 @@ describe("gallery image route", () => {
     });
 
     const response = await handler(
-      new Request(`http://localhost/gallery-images/${designId}`),
+      new Request(`http://localhost/gallery-images/${designId}?v=${metadata.contentHash}`),
       { params: Promise.resolve({ designId }) },
     );
 
@@ -27,6 +31,52 @@ describe("gallery image route", () => {
     expect(response.headers.get("etag")).toBe(`"${metadata.contentHash}"`);
     expect(response.headers.get("cache-control")).toContain("immutable");
     expect(response.headers.get("x-content-type-options")).toBe("nosniff");
+  });
+
+  it("does not make an unversioned or stale-version URL immutable", async () => {
+    const handler = createGalleryImageHandler({
+      findActiveImage: async () => metadata,
+      read: async () => Buffer.from("image-bytes"),
+    });
+    const unversioned = await handler(
+      new Request(`http://localhost/gallery-images/${designId}`),
+      { params: Promise.resolve({ designId }) },
+    );
+    const stale = await handler(
+      new Request(`http://localhost/gallery-images/${designId}?v=${"d".repeat(64)}`),
+      { params: Promise.resolve({ designId }) },
+    );
+
+    expect(unversioned.headers.get("cache-control")).toContain("must-revalidate");
+    expect(unversioned.headers.get("cache-control")).not.toContain("immutable");
+    expect(stale.status).toBe(404);
+  });
+
+  it("reuses cached active-image metadata for repeated route requests", async () => {
+    const findActiveImage = vi.fn().mockResolvedValue(metadata);
+    const memoryCache = ((loader: (id: string) => Promise<unknown>) => {
+      const values = new Map<string, unknown>();
+      return async (id: string) => {
+        if (values.has(id)) return values.get(id);
+        const value = await loader(id);
+        values.set(id, value);
+        return value;
+      };
+    }) as typeof cachePublicData;
+    const cachedLookup = createCachedGalleryImageLookup(findActiveImage, memoryCache);
+    const handler = createGalleryImageHandler({
+      findActiveImage: cachedLookup,
+      read: async () => Buffer.from("image-bytes"),
+    });
+
+    await handler(new Request(`http://localhost/gallery-images/${designId}?v=${metadata.contentHash}`), {
+      params: Promise.resolve({ designId }),
+    });
+    await handler(new Request(`http://localhost/gallery-images/${designId}?v=${metadata.contentHash}`), {
+      params: Promise.resolve({ designId }),
+    });
+
+    expect(findActiveImage).toHaveBeenCalledOnce();
   });
 
   it("returns 304 for a matching ETag and 404 for invalid IDs", async () => {

@@ -40,7 +40,7 @@ export type CustomerReviewMediaRepository = Readonly<{
   findPublic(
     reviewId: string,
     kind: "AVATAR" | "FEATURED_IMAGE",
-  ): Promise<Pick<CustomerReviewMediaRecord, "storageKey" | "mimeType"> | null>;
+  ): Promise<Pick<CustomerReviewMediaRecord, "storageKey" | "mimeType" | "sha256"> | null>;
   findAdmin(
     reviewId: string,
     kind: CustomerReviewMediaKind,

@@ -24,11 +24,12 @@ describe("customer review public database projection", () => {
       mimeType: "image/jpeg",
       width: 100,
       height: 100,
+      sha256: "a".repeat(64),
       storageKey: "private-uploads/secret.bin",
     }]);
 
     expect(review.avatar).toEqual({
-      url: "/review-media/00000000-0000-4000-8000-000000000001/avatar",
+      url: `/review-media/00000000-0000-4000-8000-000000000001/avatar?v=${"a".repeat(64)}`,
       mimeType: "image/jpeg",
       width: 100,
       height: 100,
@@ -57,6 +58,7 @@ describe("customer review public database projection", () => {
       mimeType: "image/png",
       width: 200,
       height: 100,
+      sha256: "b".repeat(64),
       storageKey: "private-uploads/evidence.bin",
     }]);
 

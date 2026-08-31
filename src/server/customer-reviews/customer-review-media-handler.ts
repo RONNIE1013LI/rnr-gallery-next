@@ -1,8 +1,10 @@
 import type { AdminPermission } from "@/server/auth/admin-permissions";
 import { HttpError } from "@/server/auth/require-session";
 import type { CustomerReviewMediaKind } from "@/domain/customer-reviews/types";
+import { cachePublicData, PUBLIC_CACHE_TAGS } from "@/server/cache/public-cache-tags";
 
-type MediaRecord = Readonly<{ storageKey: string; mimeType: string }>;
+type MediaRecord = Readonly<{ storageKey: string; mimeType: string; sha256?: string }>;
+type PublicMediaRecord = MediaRecord & Readonly<{ sha256: string }>;
 const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const noStore = { "Cache-Control": "no-store" };
 
@@ -33,23 +35,55 @@ function adminKind(value: string): CustomerReviewMediaKind | null {
 }
 
 export function createPublicReviewMediaHandler(dependencies: Readonly<{
-  findPublic(reviewId: string, kind: "AVATAR" | "FEATURED_IMAGE"): Promise<MediaRecord | null>;
+  findPublic(reviewId: string, kind: "AVATAR" | "FEATURED_IMAGE"): Promise<PublicMediaRecord | null>;
   read(storageKey: string): Promise<Buffer>;
 }>) {
   return Object.freeze({
-    async GET(params: { reviewId: string; kind: string }) {
+    async GET(request: Request, params: { reviewId: string; kind: string }) {
       const kind = publicKind(params.kind);
       if (!uuidPattern.test(params.reviewId) || !kind) return notFound();
       try {
         const record = await dependencies.findPublic(params.reviewId, kind);
         if (!record) return notFound();
+        const requestedVersion = new URL(request.url).searchParams.get("v");
+        if (requestedVersion && requestedVersion !== record.sha256) return notFound();
+        const etag = `"${record.sha256}"`;
+        const cacheControl = requestedVersion === record.sha256
+          ? "public, max-age=31536000, immutable"
+          : "public, max-age=60, must-revalidate";
+        if (request.headers.get("if-none-match") === etag) {
+          return new Response(null, {
+            status: 304,
+            headers: {
+              "Cache-Control": cacheControl,
+              ETag: etag,
+              "X-Content-Type-Options": "nosniff",
+            },
+          });
+        }
         const bytes = await dependencies.read(record.storageKey);
-        return mediaResponse(bytes, record.mimeType, "public, max-age=60, must-revalidate");
+        const response = mediaResponse(bytes, record.mimeType, cacheControl);
+        response.headers.set("ETag", etag);
+        return response;
       } catch {
         return notFound();
       }
     },
   });
+}
+
+export function createCachedPublicReviewMediaLookup(
+  findPublic: (
+    reviewId: string,
+    kind: "AVATAR" | "FEATURED_IMAGE",
+  ) => Promise<PublicMediaRecord | null>,
+  cache: typeof cachePublicData = cachePublicData,
+) {
+  return cache(
+    findPublic,
+    "review-media-metadata",
+    [PUBLIC_CACHE_TAGS.reviews, PUBLIC_CACHE_TAGS.reviewMedia],
+  );
 }
 
 export function createAdminReviewMediaHandler(dependencies: Readonly<{

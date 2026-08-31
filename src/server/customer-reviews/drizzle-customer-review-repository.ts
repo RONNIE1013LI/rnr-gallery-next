@@ -77,6 +77,7 @@ type PublicMediaRow = Readonly<{
   mimeType: string;
   width: number;
   height: number;
+  sha256: string;
   storageKey?: string;
 }>;
 
@@ -116,7 +117,7 @@ export function mapPublicCustomerReview(
       return null;
     }
     return Object.freeze({
-      url: `/review-media/${row.id}/${mediaKindSlug(kind)}`,
+      url: `/review-media/${row.id}/${mediaKindSlug(kind)}?v=${item.sha256}`,
       mimeType: item.mimeType as "image/jpeg" | "image/png" | "image/webp",
       width: item.width,
       height: item.height,
@@ -438,6 +439,7 @@ export function createDrizzleCustomerReviewRepository(
         mimeType: customerReviewMedia.mimeType,
         width: customerReviewMedia.width,
         height: customerReviewMedia.height,
+        sha256: customerReviewMedia.sha256,
       }).from(customerReviewMedia).where(and(
         inArray(customerReviewMedia.reviewId, rows.map((row) => row.id)),
         inArray(customerReviewMedia.kind, ["AVATAR", "FEATURED_IMAGE"]),
@@ -555,6 +557,7 @@ export function createDrizzleCustomerReviewMediaRepository(
       const [record] = await database.select({
         storageKey: customerReviewMedia.storageKey,
         mimeType: customerReviewMedia.mimeType,
+        sha256: customerReviewMedia.sha256,
       }).from(customerReviewMedia)
         .innerJoin(customerReviews, eq(customerReviews.id, customerReviewMedia.reviewId))
         .where(and(

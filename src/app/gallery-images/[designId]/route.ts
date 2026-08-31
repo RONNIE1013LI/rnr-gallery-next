@@ -1,12 +1,18 @@
 import { getGalleryRuntime } from "@/server/gallery/gallery-runtime";
-import { createGalleryImageHandler } from "@/server/gallery/gallery-image-handler";
+import {
+  createCachedGalleryImageLookup,
+  createGalleryImageHandler,
+} from "@/server/gallery/gallery-image-handler";
 
 type Context = Readonly<{ params: Promise<{ designId: string }> }>;
 
+const findActiveImage = createCachedGalleryImageLookup(
+  (designId) => getGalleryRuntime().repository.findActiveImage(designId),
+);
+
 export async function GET(request: Request, context: Context) {
-  const runtime = getGalleryRuntime();
   return createGalleryImageHandler({
-    findActiveImage: (designId) => runtime.repository.findActiveImage(designId),
-    read: (storageKey) => runtime.store.read(storageKey),
+    findActiveImage,
+    read: (storageKey) => getGalleryRuntime().store.read(storageKey),
   })(request, context);
 }
