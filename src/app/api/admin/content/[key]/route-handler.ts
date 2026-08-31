@@ -9,6 +9,10 @@ import {
   parseBoundedJson,
   MutationRequestError,
 } from "@/server/http/mutation-request";
+import {
+  PUBLIC_CACHE_TAGS,
+  revalidatePublicCache,
+} from "@/server/cache/public-cache-tags";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
@@ -21,6 +25,7 @@ type Dependencies = Readonly<{
   publish: ContentRuntime["publish"];
   trustedOrigin?: string;
   recordFailure?: typeof recordAdminFailure;
+  revalidatePublic?: () => void;
 }>;
 type Context = Readonly<{ params: Promise<{ key: string }> }>;
 
@@ -49,6 +54,7 @@ export function createAdminContentRoute(dependencies?: Dependencies) {
       saveDraft: runtime.saveDraft,
       publish: runtime.publish,
       recordFailure: recordAdminFailure,
+      revalidatePublic: () => revalidatePublicCache([PUBLIC_CACHE_TAGS.content]),
     };
   };
   return {
@@ -81,7 +87,9 @@ export function createAdminContentRoute(dependencies?: Dependencies) {
         }
         if (body.action === "publish") {
           await deps.requirePermission("publish_content");
-          return Response.json({ result: await deps.publish(actor, input) }, { headers: noStore });
+          const result = await deps.publish(actor, input);
+          deps.revalidatePublic?.();
+          return Response.json({ result }, { headers: noStore });
         }
         throw new ContentValidationError("Unknown content action");
       } catch (error) {

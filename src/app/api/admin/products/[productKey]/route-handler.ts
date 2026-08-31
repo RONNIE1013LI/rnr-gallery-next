@@ -13,6 +13,7 @@ import {
   parseBoundedJson,
   MutationRequestError,
 } from "@/server/http/mutation-request";
+import { PUBLIC_CACHE_TAGS, revalidatePublicCache } from "@/server/cache/public-cache-tags";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
@@ -23,6 +24,7 @@ type Dependencies = Readonly<{
   publishProduct: RegistryRuntime["publishProduct"];
   trustedOrigin?: string;
   recordFailure?: typeof recordAdminFailure;
+  revalidatePublic?: () => void;
 }>;
 type Context = Readonly<{ params: Promise<{ productKey: string }> }>;
 
@@ -56,6 +58,10 @@ export function createAdminProductRoute(dependencies?: Dependencies) {
       requirePermission: requireAdminPermission,
       publishProduct: registry.publishProduct,
       recordFailure: recordAdminFailure,
+      revalidatePublic: () => revalidatePublicCache([
+        PUBLIC_CACHE_TAGS.products,
+        PUBLIC_CACHE_TAGS.sitemap,
+      ]),
     };
   };
   return {
@@ -79,6 +85,7 @@ export function createAdminProductRoute(dependencies?: Dependencies) {
           productKey,
           requestSource: source(request),
         });
+        deps.revalidatePublic?.();
         return Response.json(
           { result: result.result, revision: result.revision },
           { headers: noStore },

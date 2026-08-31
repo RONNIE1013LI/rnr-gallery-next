@@ -30,12 +30,14 @@ describe("admin product publication route", () => {
 
   it("publishes the route product key with the authenticated actor", async () => {
     const publishProduct = vi.fn().mockResolvedValue({ result: "published", revision: 4 });
+    const revalidatePublic = vi.fn();
     const route = createAdminProductRoute({
       requirePermission: vi.fn().mockResolvedValue({
         user: { id: "admin-1", email: "owner@example.test" },
       }),
       publishProduct,
       trustedOrigin: origin,
+      revalidatePublic,
     });
     const response = await route.PATCH(request({
       expectedRevision: 3,
@@ -49,6 +51,7 @@ describe("admin product publication route", () => {
       { userId: "admin-1", email: "owner@example.test" },
       expect.objectContaining({ productKey: "roll-up-banner", expectedRevision: 3 }),
     );
+    expect(revalidatePublic).toHaveBeenCalledOnce();
   });
 
   it("returns conflict instead of overwriting a newer publication", async () => {

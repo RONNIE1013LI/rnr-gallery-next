@@ -1,7 +1,7 @@
 import { requireAdminPermission } from "@/server/auth/require-admin";
 import { getAdminGalleryService } from "@/server/gallery/admin-gallery-runtime";
 import { assertTrustedMutationRequest } from "@/server/http/mutation-request";
-import { adminGalleryResponseError } from "../../route-handler";
+import { adminGalleryResponseError, revalidateGallerySurfaces } from "../../route-handler";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
@@ -12,6 +12,7 @@ export async function POST(request: Request, context: { params: Promise<{ design
     assertTrustedMutationRequest(request);
     const { designId } = await context.params;
     await getAdminGalleryService().restore(designId, admin.user.id);
+    revalidateGallerySurfaces();
     return Response.json({ ok: true }, { headers: noStore });
   } catch (error) { return adminGalleryResponseError(error); }
 }

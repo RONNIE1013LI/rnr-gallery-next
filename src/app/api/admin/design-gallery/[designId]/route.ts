@@ -2,7 +2,12 @@ import { requireAdminPermission } from "@/server/auth/require-admin";
 import { getAdminGalleryService } from "@/server/gallery/admin-gallery-runtime";
 import { assertTrustedMultipartMutationRequest, parseBoundedMultipartFormData } from "@/server/http/multipart-mutation-request";
 import { assertTrustedMutationRequest } from "@/server/http/mutation-request";
-import { adminGalleryResponseError, parseAdminGalleryMetadata } from "../route-handler";
+import {
+  adminGalleryResponseError,
+  isGalleryUploadFile,
+  parseAdminGalleryMetadata,
+  revalidateGallerySurfaces,
+} from "../route-handler";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
@@ -23,7 +28,7 @@ export async function PUT(request: Request, context: { params: Promise<{ designI
     assertTrustedMultipartMutationRequest(request);
     const form = await parseBoundedMultipartFormData(request);
     const image = form.get("image");
-    const bytes = image instanceof File && image.size > 0
+    const bytes = isGalleryUploadFile(image)
       ? new Uint8Array(await image.arrayBuffer())
       : undefined;
     const { designId } = await context.params;
@@ -32,6 +37,7 @@ export async function PUT(request: Request, context: { params: Promise<{ designI
       ...(bytes ? { bytes } : {}),
       actorUserId: admin.user.id,
     });
+    revalidateGallerySurfaces();
     return Response.json({ ok: true }, { headers: noStore });
   } catch (error) { return adminGalleryResponseError(error); }
 }
@@ -42,6 +48,7 @@ export async function DELETE(request: Request, context: { params: Promise<{ desi
     assertTrustedMutationRequest(request);
     const { designId } = await context.params;
     await getAdminGalleryService().trash(designId, admin.user.id);
+    revalidateGallerySurfaces();
     return Response.json({ ok: true }, { headers: noStore });
   } catch (error) { return adminGalleryResponseError(error); }
 }

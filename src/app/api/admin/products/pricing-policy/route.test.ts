@@ -6,12 +6,14 @@ const origin = "http://localhost:3000";
 describe("admin pricing policy route", () => {
   it("publishes only through a trusted same-origin administrator request", async () => {
     const publishPricing = vi.fn().mockResolvedValue({ result: "published", revision: 2 });
+    const revalidatePublic = vi.fn();
     const route = createAdminPricingPolicyRoute({
       requirePermission: vi.fn().mockResolvedValue({
         user: { id: "admin-1", email: "owner@example.test" },
       }),
       publishPricing,
       trustedOrigin: origin,
+      revalidatePublic,
     });
     const response = await route.PATCH(new Request(`${origin}/api/admin/products/pricing-policy`, {
       method: "PATCH",
@@ -30,5 +32,6 @@ describe("admin pricing policy route", () => {
       { userId: "admin-1", email: "owner@example.test" },
       expect.objectContaining({ expectedRevision: 1, requestSource: "direct" }),
     );
+    expect(revalidatePublic).toHaveBeenCalledOnce();
   });
 });

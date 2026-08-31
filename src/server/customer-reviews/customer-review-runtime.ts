@@ -1,4 +1,3 @@
-import { cache } from "react";
 import type { PublicCustomerReviewSection } from "@/domain/customer-reviews/types";
 import type { CustomerReviewMediaKind } from "@/domain/customer-reviews/types";
 import { getProductRegistryRuntime } from "@/server/admin/product-registry-runtime";
@@ -15,6 +14,7 @@ import {
   createDrizzleCustomerReviewRepository,
   type CustomerReviewDatabase,
 } from "./drizzle-customer-review-repository";
+import { cachePublicData, PUBLIC_CACHE_TAGS } from "@/server/cache/public-cache-tags";
 
 export function getCustomerReviewRuntime(
   database: CustomerReviewDatabase = getDatabase(),
@@ -62,14 +62,20 @@ export async function persistCustomerReviewMutationWithMedia<T extends { id: str
   });
 }
 
-export const getSafePublicCustomerReviewSection = cache(async function getSafePublicCustomerReviewSection(
+const getCachedPublicCustomerReviewSection = cachePublicData(
+  async () => getCustomerReviewRuntime().getSafePublicSection(),
+  "customer-reviews",
+  [PUBLIC_CACHE_TAGS.reviews],
+);
+
+export async function getSafePublicCustomerReviewSection(
   service: Readonly<{
     getSafePublicSection(): Promise<PublicCustomerReviewSection | null>;
-  }> = getCustomerReviewRuntime(),
+  }> | undefined = undefined,
 ): Promise<PublicCustomerReviewSection | null> {
   try {
-    return await service.getSafePublicSection();
+    return await (service?.getSafePublicSection() ?? getCachedPublicCustomerReviewSection());
   } catch {
     return null;
   }
-});
+}

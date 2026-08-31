@@ -83,4 +83,31 @@ describe("admin content route", () => {
     expect(blocked.status).toBe(403);
     expect(publish).not.toHaveBeenCalled();
   });
+
+  it("invalidates public content only after a successful publication", async () => {
+    const revalidatePublic = vi.fn();
+    const route = createAdminContentRoute({
+      requirePermission: vi.fn().mockResolvedValue({
+        user: { id: "admin-1", email: "owner@example.test" },
+      }),
+      saveDraft: vi.fn().mockResolvedValue("saved"),
+      publish: vi.fn().mockResolvedValue("published"),
+      trustedOrigin: origin,
+      revalidatePublic,
+    });
+    const context = { params: Promise.resolve({ key: "home.hero.title" }) };
+
+    await route.PATCH(
+      request({ action: "save", value: "Draft", idempotencyKey: "content-0003" }),
+      context,
+    );
+    expect(revalidatePublic).not.toHaveBeenCalled();
+
+    const response = await route.PATCH(
+      request({ action: "publish", value: "Published", idempotencyKey: "content-0004" }),
+      context,
+    );
+    expect(response.status).toBe(200);
+    expect(revalidatePublic).toHaveBeenCalledOnce();
+  });
 });

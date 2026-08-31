@@ -7,12 +7,14 @@ const origin = "http://localhost:3000";
 describe("admin market pricing route", () => {
   it("publishes the AUD price book only through a trusted administrator request", async () => {
     const publishMarket = vi.fn().mockResolvedValue({ result: "published", revision: 2 });
+    const revalidatePublic = vi.fn();
     const route = createAdminMarketPricingRoute({
       requirePermission: vi.fn().mockResolvedValue({
         user: { id: "admin-1", email: "owner@example.test" },
       }),
       publishMarket,
       trustedOrigin: origin,
+      revalidatePublic,
     });
     const response = await route.PATCH(new Request(
       `${origin}/api/admin/products/market-pricing`,
@@ -40,5 +42,6 @@ describe("admin market pricing route", () => {
         requestSource: "direct",
       }),
     );
+    expect(revalidatePublic).toHaveBeenCalledOnce();
   });
 });

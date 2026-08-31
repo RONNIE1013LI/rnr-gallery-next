@@ -7,10 +7,17 @@ import {
   resolvePublishedContent,
   type ContentKey,
 } from "./content-service";
+import { cachePublicData, PUBLIC_CACHE_TAGS } from "@/server/cache/public-cache-tags";
+
+const getCachedPublicContent = cachePublicData(
+  async (keys: readonly ContentKey[]) => getPublicContent(getDatabase(), keys),
+  "content",
+  [PUBLIC_CACHE_TAGS.content],
+);
 
 export async function getSafePublicContent<K extends ContentKey>(keys: readonly K[]) {
   try {
-    return await getPublicContent(getDatabase(), keys);
+    return await getCachedPublicContent(keys) as Awaited<ReturnType<typeof getPublicContent>>;
   } catch {
     return resolvePublishedContent([], keys);
   }
