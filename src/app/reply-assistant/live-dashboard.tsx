@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ReplyAssistantClient, type ReplyQueueItem } from "@/components/reply-assistant/reply-assistant-client";
-import { pollingAllowedForAutomation } from "@/lib/automation-mode";
 import type {
   PilotMetricCounts,
   ReplyAssistantCaseMemoryPage,
@@ -16,9 +15,6 @@ import {
   type ReplyAssistantMetricCard,
 } from "./metric-cards";
 import styles from "./reply-assistant.module.css";
-
-const ACTIVE_POLL_MS = 5_000;
-const RETRY_POLL_MS = 5_000;
 
 type LiveUpdateResponse = Readonly<{
   cursor: string;
@@ -74,116 +70,61 @@ export function ReplyAssistantLiveDashboard({
   const [showAllMetrics, setShowAllMetrics] = useState(false);
   const [learningCandidates, setLearningCandidates] = useState(initialLearningCandidates);
   const [caseMemories, setCaseMemories] = useState(initialCaseMemories);
-  const [connectionState, setConnectionState] = useState<"active" | "reconnecting">("active");
+  const [refreshState, setRefreshState] = useState<"idle" | "refreshing" | "failed">("idle");
+  const [lastUpdatedAt, setLastUpdatedAt] = useState<Date | null>(null);
   const cursorRef = useRef(initialCursor);
   const itemsRef = useRef(initialItems);
-  const refreshRef = useRef<() => void>(() => undefined);
+  const activeControllerRef = useRef<AbortController | null>(null);
+  const inFlightRef = useRef(false);
 
   useEffect(() => { itemsRef.current = items; }, [items]);
 
-  useEffect(() => {
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    let inFlight = false;
-    let activeController: AbortController | null = null;
-    const pollingAllowed = () => document.visibilityState === "visible"
-      && navigator.onLine
-      && pollingAllowedForAutomation("reply-assistant");
-
-    const clearScheduledPoll = () => {
-      if (timer === null) return;
-      clearTimeout(timer);
-      timer = null;
-    };
-
-    const abortActivePoll = () => {
-      activeController?.abort();
-      activeController = null;
-    };
-
-    const schedule = (delay: number) => {
-      clearScheduledPoll();
-      if (cancelled || !pollingAllowed()) return;
-      timer = setTimeout(() => {
-        timer = null;
-        void poll();
-      }, delay);
-    };
-
-    const poll = async () => {
-      if (cancelled) return;
-      if (!pollingAllowed()) {
-        abortActivePoll();
-        return;
+  const refresh = useCallback(async () => {
+    if (inFlightRef.current) return;
+    inFlightRef.current = true;
+    const controller = new AbortController();
+    activeControllerRef.current = controller;
+    setRefreshState("refreshing");
+    try {
+      const response = await fetch(`/api/reply-assistant/updates?cursor=${encodeURIComponent(cursorRef.current)}`, {
+        cache: "no-store",
+        headers: { accept: "application/json" },
+        signal: controller.signal,
+      });
+      if (!response.ok) throw new Error("live_updates_failed");
+      const update = await response.json() as LiveUpdateResponse;
+      if (controller.signal.aborted) return;
+      const knownIds = new Set(itemsRef.current.map((item) => item.messageId));
+      const arrived = update.queueItems
+        .filter((item) => !knownIds.has(item.messageId))
+        .map((item) => item.messageId);
+      if (arrived.length) {
+        setNewMessageIds((current) => [...new Set([...current, ...arrived])]);
       }
-      if (inFlight) return;
-      inFlight = true;
-      const controller = new AbortController();
-      activeController = controller;
-      let nextDelay = ACTIVE_POLL_MS;
-      try {
-        const response = await fetch(`/api/reply-assistant/updates?cursor=${encodeURIComponent(cursorRef.current)}`, {
-          cache: "no-store",
-          headers: { accept: "application/json" },
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error("live_updates_failed");
-        const update = await response.json() as LiveUpdateResponse;
-        if (cancelled) return;
-        const knownIds = new Set(itemsRef.current.map((item) => item.messageId));
-        const arrived = update.queueItems
-          .filter((item) => !knownIds.has(item.messageId))
-          .map((item) => item.messageId);
-        if (arrived.length) {
-          setNewMessageIds((current) => [...new Set([...current, ...arrived])]);
-        }
-        if (update.queueItems.length) {
-          setItems((current) => mergeReplyQueueItems(current, update.queueItems, selectedReviewSelector));
-        }
-        if (update.metrics) {
-          setMetricCounts(update.metrics);
-          setMetricCards(replyAssistantMetricCards(update.metrics));
-        }
-        if (update.learningCandidates) setLearningCandidates(update.learningCandidates.items);
-        if (update.caseMemories) setCaseMemories(update.caseMemories.items);
-        cursorRef.current = update.cursor;
-        setConnectionState("active");
-      } catch {
-        if (!cancelled && !controller.signal.aborted) setConnectionState("reconnecting");
-        nextDelay = RETRY_POLL_MS;
-      } finally {
-        if (activeController === controller) activeController = null;
-        inFlight = false;
-        if (!cancelled && pollingAllowed()) schedule(nextDelay);
+      if (update.queueItems.length) {
+        setItems((current) => mergeReplyQueueItems(current, update.queueItems, selectedReviewSelector));
       }
-    };
-
-    const catchUp = () => {
-      clearScheduledPoll();
-      if (!pollingAllowed()) {
-        abortActivePoll();
-        return;
+      if (update.metrics) {
+        setMetricCounts(update.metrics);
+        setMetricCards(replyAssistantMetricCards(update.metrics));
       }
-      void poll();
-    };
-    refreshRef.current = catchUp;
-
-    if (pollingAllowed()) schedule(ACTIVE_POLL_MS);
-    document.addEventListener("visibilitychange", catchUp);
-    window.addEventListener("focus", catchUp);
-    window.addEventListener("online", catchUp);
-    window.addEventListener("offline", catchUp);
-    return () => {
-      cancelled = true;
-      refreshRef.current = () => undefined;
-      clearScheduledPoll();
-      abortActivePoll();
-      document.removeEventListener("visibilitychange", catchUp);
-      window.removeEventListener("focus", catchUp);
-      window.removeEventListener("online", catchUp);
-      window.removeEventListener("offline", catchUp);
-    };
+      if (update.learningCandidates) setLearningCandidates(update.learningCandidates.items);
+      if (update.caseMemories) setCaseMemories(update.caseMemories.items);
+      cursorRef.current = update.cursor;
+      setLastUpdatedAt(new Date());
+      setRefreshState("idle");
+    } catch {
+      if (!controller.signal.aborted) setRefreshState("failed");
+    } finally {
+      if (activeControllerRef.current === controller) activeControllerRef.current = null;
+      inFlightRef.current = false;
+    }
   }, [selectedReviewSelector]);
+
+  useEffect(() => () => {
+    activeControllerRef.current?.abort();
+    activeControllerRef.current = null;
+  }, []);
 
   const visibleMetricCards = channelScope === "all"
     ? metricCards
@@ -216,8 +157,25 @@ export function ReplyAssistantLiveDashboard({
             ))}
           </div>
         ) : null}
-        <div className={styles.liveStatus} aria-live="polite" data-state={connectionState}>
-          {connectionState === "reconnecting" ? "Live updates reconnecting" : "Live updates active"}
+        <div className={styles.refreshControls}>
+          <div className={styles.liveStatus} aria-live="polite" data-state={refreshState}>
+            {refreshState === "failed"
+              ? "Refresh failed"
+              : refreshState === "refreshing"
+                ? "Refreshing"
+                : lastUpdatedAt
+                  ? `Last updated ${lastUpdatedAt.toLocaleTimeString()}`
+                  : "Updates on request"}
+          </div>
+          <button
+            type="button"
+            className={styles.refreshButton}
+            aria-label="Refresh conversations"
+            disabled={refreshState === "refreshing"}
+            onClick={() => void refresh()}
+          >
+            Refresh
+          </button>
         </div>
       </div>
       <section className={styles.metricPanel} aria-label="Reply assistant metrics">
@@ -248,7 +206,7 @@ export function ReplyAssistantLiveDashboard({
           initialItems={initialItems.filter((item) => channelScope === "all" || item.channel === channelScope)}
           liveItems={filteredItems}
           newMessageIds={newMessageIds}
-          onRefresh={() => refreshRef.current()}
+          onRefresh={() => { void refresh(); }}
           selectedReviewSelector={selectedReviewSelector}
           channelScope={channelScope}
         />

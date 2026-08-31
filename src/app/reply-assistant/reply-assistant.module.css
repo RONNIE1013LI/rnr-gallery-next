@@ -166,7 +166,6 @@
 
 .liveStatus {
   display: inline-flex;
-  margin-left: auto;
   align-items: center;
   gap: 7px;
   color: #246334;
@@ -175,7 +174,30 @@
 }
 
 .liveStatus::before { width: 7px; height: 7px; border-radius: 50%; background: currentColor; content: ""; }
-.liveStatus[data-state="reconnecting"] { color: #8a3027; }
+.liveStatus[data-state="failed"] { color: #8a3027; }
+
+.refreshControls {
+  display: inline-flex;
+  margin-left: auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.refreshButton {
+  min-height: 34px;
+  padding: 5px 11px;
+  border: 1px solid var(--reply-border);
+  border-radius: 8px;
+  color: var(--reply-accent);
+  background: var(--reply-surface);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.refreshButton:disabled { cursor: wait; opacity: 0.6; }
+.refreshButton:focus-visible { outline: 3px solid color-mix(in srgb, var(--reply-focus) 42%, transparent); outline-offset: 2px; }
 
 .metricDisclosure {
   width: fit-content;
