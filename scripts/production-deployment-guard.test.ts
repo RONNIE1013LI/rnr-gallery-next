@@ -12,8 +12,11 @@ describe("production deployment guard wiring", () => {
     ) as { scripts?: Record<string, string> };
 
     expect(packageJson.scripts?.prebuild).toBe(
-      "tsx scripts/verify-production-deployment-source.ts",
+      "npm run automation:guard && tsx scripts/verify-production-deployment-source.ts",
     );
+    expect(
+      existsSync(resolve(root, "scripts/automation/production-automation-static-guard.ts")),
+    ).toBe(true);
     expect(
       existsSync(resolve(root, "scripts/verify-production-deployment-source.ts")),
     ).toBe(true);

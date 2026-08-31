@@ -40,8 +40,11 @@ describe("Production governance wiring", () => {
       scripts?: Record<string, string>;
     };
 
+    expect(packageJson.scripts?.["automation:guard"]).toBe(
+      "tsx scripts/automation/production-automation-static-guard.ts",
+    );
     expect(packageJson.scripts?.prebuild).toBe(
-      "tsx scripts/verify-production-deployment-source.ts",
+      "npm run automation:guard && tsx scripts/verify-production-deployment-source.ts",
     );
   });
 });
