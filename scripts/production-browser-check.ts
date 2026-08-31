@@ -39,6 +39,8 @@ export type ProductionBrowserCheckOptions = Readonly<{
 
 export type ProductionBrowserCheckResult = Readonly<{
   session: string;
+  owner: string;
+  startedAt: string;
   capability: ProductionCapability;
   ttlSeconds: number;
   routeCount: number;
@@ -55,13 +57,39 @@ export type ProductionSmokeProgramConfig = Readonly<{
   allowMedia: boolean;
 }>;
 
-type ProcessRow = Readonly<{ pid: number; ppid: number; command: string }>;
+type ProcessRow = Readonly<{
+  pid: number;
+  ppid: number;
+  startedAt: string;
+  command: string;
+}>;
+
+type OwnedProcessIdentity = Readonly<{
+  process: ProcessRow;
+  ancestry: readonly ProcessRow[];
+}>;
+
+type ProductionSmokeOperationResult = Pick<
+  ProductionBrowserCheckResult,
+  | "routeCount"
+  | "blockedResourceCounts"
+  | "pollingCounts"
+  | "consoleErrorCount"
+  | "unexpectedNavigationCount"
+>;
 
 function processRows(processList: string): ProcessRow[] {
   return processList.split("\n").flatMap((line) => {
-    const match = line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/);
+    const match = line.trim().match(
+      /^(\d+)\s+(\d+)\s+(\S{3}\s+\S{3}\s+\d{1,2}\s+\d{2}:\d{2}:\d{2}\s+\d{4})\s+(.+)$/,
+    );
     if (!match) return [];
-    return [{ pid: Number(match[1]), ppid: Number(match[2]), command: match[3] }];
+    return [{
+      pid: Number(match[1]),
+      ppid: Number(match[2]),
+      startedAt: match[3],
+      command: match[4],
+    }];
   });
 }
 
@@ -77,26 +105,41 @@ export function buildProductionAutomationUrl(rawUrl: string) {
   return url;
 }
 
-export function productionBrowserSessionProcessIds(processList: string, session: string) {
+function productionBrowserSessionProcessIdentities(
+  processList: string,
+  session: string,
+): OwnedProcessIdentity[] {
   const rows = processRows(processList);
   const escapedSession = session.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const daemonCommand = new RegExp(`cliDaemon\\.js\\s+${escapedSession}(?:\\s|$)`);
-  const matched = new Set(rows.filter(({ command }) => daemonCommand.test(command)).map(({ pid }) => pid));
+  const matched = new Map<number, OwnedProcessIdentity>();
+  for (const row of rows) {
+    if (daemonCommand.test(row.command)) {
+      matched.set(row.pid, { process: row, ancestry: [row] });
+    }
+  }
   let changed = true;
   while (changed) {
     changed = false;
     for (const row of rows) {
-      if (!matched.has(row.pid) && matched.has(row.ppid)) {
-        matched.add(row.pid);
+      const parent = matched.get(row.ppid);
+      if (!matched.has(row.pid) && parent) {
+        matched.set(row.pid, {
+          process: row,
+          ancestry: [...parent.ancestry, row],
+        });
         changed = true;
       }
     }
   }
-  return [...matched].sort((left, right) => left - right);
+  return [...matched.values()].sort((left, right) =>
+    right.ancestry.length - left.ancestry.length || right.process.pid - left.process.pid);
 }
 
-function allProcessIds(processList: string) {
-  return new Set(processRows(processList).map(({ pid }) => pid));
+export function productionBrowserSessionProcessIds(processList: string, session: string) {
+  return productionBrowserSessionProcessIdentities(processList, session)
+    .map(({ process }) => process.pid)
+    .sort((left, right) => left - right);
 }
 
 async function runCli(session: string, args: string[], timeoutMs: number): Promise<string> {
@@ -125,7 +168,11 @@ async function runCli(session: string, args: string[], timeoutMs: number): Promi
 }
 
 async function processList() {
-  const { stdout } = await execFile("ps", ["-axo", "pid=,ppid=,command="], { maxBuffer: 10 * 1024 * 1024 });
+  const { stdout } = await execFile(
+    "ps",
+    ["-axo", "pid=,ppid=,lstart=,command="],
+    { maxBuffer: 10 * 1024 * 1024 },
+  );
   return stdout;
 }
 
@@ -139,30 +186,79 @@ const defaultDependencies: ProductionBrowserCheckDependencies = {
   randomHex: () => randomBytes(4).toString("hex"),
 };
 
-async function stopLeakedSessionProcesses(session: string, trackedProcessIds: readonly number[], dependencies: ProductionBrowserCheckDependencies) {
-  const current = await dependencies.processList();
-  const currentIds = allProcessIds(current);
-  const remaining = new Set([
-    ...productionBrowserSessionProcessIds(current, session),
-    ...trackedProcessIds.filter((pid) => currentIds.has(pid)),
-  ]);
-  if (remaining.size === 0) return;
+function sameProcessRow(left: ProcessRow, right: ProcessRow) {
+  return left.pid === right.pid
+    && left.ppid === right.ppid
+    && left.startedAt === right.startedAt
+    && left.command === right.command;
+}
 
-  for (const pid of [...remaining].sort((left, right) => right - left)) {
-    try { dependencies.kill(pid, "SIGTERM"); } catch { /* process exited */ }
+function sameOwnedProcessIdentity(left: OwnedProcessIdentity, right: OwnedProcessIdentity) {
+  return left.ancestry.length === right.ancestry.length
+    && left.ancestry.every((row, index) => sameProcessRow(row, right.ancestry[index]));
+}
+
+async function signalIfStillOwned(
+  session: string,
+  identity: OwnedProcessIdentity,
+  signal: NodeJS.Signals,
+  dependencies: ProductionBrowserCheckDependencies,
+) {
+  const current = productionBrowserSessionProcessIdentities(
+    await dependencies.processList(),
+    session,
+  );
+  const matched = current.find(({ process }) => process.pid === identity.process.pid);
+  if (!matched || !sameOwnedProcessIdentity(identity, matched)) return false;
+  try {
+    dependencies.kill(identity.process.pid, signal);
+    return true;
+  } catch {
+    return false;
   }
-  await dependencies.sleep(1_000);
-  const afterTerm = await dependencies.processList();
-  const afterTermIds = allProcessIds(afterTerm);
-  const stubborn = [...remaining].filter((pid) => afterTermIds.has(pid));
-  for (const pid of stubborn) {
-    try { dependencies.kill(pid, "SIGKILL"); } catch { /* process exited */ }
+}
+
+async function stopLeakedSessionProcesses(
+  session: string,
+  trackedProcesses: readonly OwnedProcessIdentity[],
+  dependencies: ProductionBrowserCheckDependencies,
+) {
+  const discovered = productionBrowserSessionProcessIdentities(
+    await dependencies.processList(),
+    session,
+  );
+  const candidates = new Map<number, OwnedProcessIdentity>();
+  for (const identity of trackedProcesses) {
+    candidates.set(identity.process.pid, identity);
   }
-  if (stubborn.length) await dependencies.sleep(250);
+  for (const identity of discovered) {
+    if (!candidates.has(identity.process.pid)) {
+      candidates.set(identity.process.pid, identity);
+    }
+  }
+  const ordered = [...candidates.values()].sort((left, right) =>
+    right.ancestry.length - left.ancestry.length || right.process.pid - left.process.pid);
+  if (ordered.length === 0) return;
+
+  let termSignals = 0;
+  for (const identity of ordered) {
+    if (await signalIfStillOwned(session, identity, "SIGTERM", dependencies)) termSignals += 1;
+  }
+  if (termSignals) await dependencies.sleep(1_000);
+
+  let killSignals = 0;
+  for (const identity of ordered) {
+    if (await signalIfStillOwned(session, identity, "SIGKILL", dependencies)) killSignals += 1;
+  }
+  if (killSignals) await dependencies.sleep(250);
+
   const finalList = await dependencies.processList();
-  const finalIds = allProcessIds(finalList);
-  const leaked = stubborn.filter((pid) => finalIds.has(pid));
-  if (leaked.length || productionBrowserSessionProcessIds(finalList, session).length) {
+  const finalRows = processRows(finalList);
+  const knownProcessStillRunning = ordered.some(({ process }) =>
+    finalRows.some((row) => row.pid === process.pid
+      && row.startedAt === process.startedAt
+      && row.command === process.command));
+  if (knownProcessStillRunning || productionBrowserSessionProcessIds(finalList, session).length) {
     throw new Error(`Production browser session ${session} did not close completely`);
   }
 }
@@ -175,6 +271,7 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
     capability: config.capability,
     blockedResourceTypes,
     officialHosts: OFFICIAL_PRODUCTION_HOSTS,
+    attributionParameterNames: ["gclid", "gbraid", "wbraid", "fbclid"],
     sessionStorageKey: AUTOMATION_SESSION_STORAGE_KEY,
     capabilityStorageKey: AUTOMATION_CAPABILITY_STORAGE_KEY,
   });
@@ -194,8 +291,12 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
     for (const candidate of context.pages()) attachConsoleListener(candidate);
     context.on("page", attachConsoleListener);
     await context.addInitScript(({ sessionStorageKey, capabilityStorageKey, capability }) => {
-      sessionStorage.setItem(sessionStorageKey, "1");
-      sessionStorage.setItem(capabilityStorageKey, capability);
+      try {
+        sessionStorage.setItem(sessionStorageKey, "1");
+        sessionStorage.setItem(capabilityStorageKey, capability);
+      } catch {
+        // Query markers remain authoritative when browser storage is unavailable.
+      }
     }, config);
     await context.route("**/*", async (route) => {
       const request = route.request();
@@ -204,10 +305,27 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
       const isTopLevelDocument = request.isNavigationRequest()
         && resourceType === "document"
         && frame === frame.page().mainFrame();
-      if (isTopLevelDocument && !config.officialHosts.includes(new URL(request.url()).hostname)) {
-        unexpectedNavigationCount += 1;
-        await route.abort();
-        return;
+      if (isTopLevelDocument) {
+        let allowedNavigation = false;
+        try {
+          const target = new URL(request.url());
+          const hasAttribution = [...target.searchParams.keys()].some((key) => {
+            const normalized = key.toLowerCase();
+            return config.attributionParameterNames.includes(normalized) || normalized.startsWith("utm_");
+          });
+          allowedNavigation = target.protocol === "https:"
+            && !target.username
+            && !target.password
+            && config.officialHosts.includes(target.hostname)
+            && (!hasAttribution || config.capability === "ATTRIBUTION");
+        } catch {
+          allowedNavigation = false;
+        }
+        if (!allowedNavigation) {
+          unexpectedNavigationCount += 1;
+          await route.abort();
+          return;
+        }
       }
       if (config.blockedResourceTypes.includes(resourceType)) {
         blockedResourceCounts[resourceType] = (blockedResourceCounts[resourceType] || 0) + 1;
@@ -217,19 +335,27 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
       await route.continue();
     });
     let pollingCounts = { customerChat: 0, replyAssistant: 0 };
+    const assertNoConsoleErrors = () => {
+      if (consoleErrorCount) throw new Error("Production browser operation emitted a console error");
+    };
+    const baseUrl = new URL(config.url);
     for (const path of ["/", "/shop", "/canvas", "/banners", "/design-gallery", "/help", "/account", "/cart"]) {
-      const consoleErrorsBeforeRoute = consoleErrorCount;
-      const routeUrl = new URL(path, config.url);
-      if (path === "/") routeUrl.search = new URL(config.url).search;
+      const routeUrl = new URL(path, baseUrl);
+      routeUrl.search = baseUrl.search;
+      routeUrl.searchParams.set(config.sessionStorageKey, "1");
+      routeUrl.searchParams.set(config.capabilityStorageKey, config.capability);
       const response = await page.goto(routeUrl.toString(), { waitUntil: "networkidle" });
       if (unexpectedNavigationCount) throw new Error("Production smoke encountered an unexpected navigation");
       if (!response || response.status() >= 400) throw new Error("Production route returned an unsuccessful response");
+      assertNoConsoleErrors();
       if (await page.locator("body").count() < 1) throw new Error("Production route did not render a body");
-      if (consoleErrorCount !== consoleErrorsBeforeRoute) throw new Error("Production route emitted a console error");
+      assertNoConsoleErrors();
       routeCount += 1;
       if (path === "/") {
         await page.getByRole("button", { name: "Chat with R&R Gallery" }).click();
+        assertNoConsoleErrors();
         await page.waitForTimeout(6_000);
+        assertNoConsoleErrors();
         pollingCounts = await page.evaluate(() => {
           const entries = performance.getEntriesByType("resource");
           return {
@@ -237,22 +363,40 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
             replyAssistant: entries.filter((entry) => entry.name.includes("/api/reply-assistant/updates")).length,
           };
         });
-        if (config.capability !== "REPLY_ASSISTANT_TEST" && (pollingCounts.customerChat || pollingCounts.replyAssistant)) {
+        assertNoConsoleErrors();
+        if (pollingCounts.customerChat
+          || (config.capability !== "REPLY_ASSISTANT_TEST" && pollingCounts.replyAssistant)) {
           throw new Error("Automation mode started customer-service polling");
         }
       }
     }
+    assertNoConsoleErrors();
+    if (unexpectedNavigationCount) throw new Error("Production smoke encountered an unexpected navigation");
     const result = { routeCount, blockedResourceCounts, pollingCounts, consoleErrorCount, unexpectedNavigationCount };
     return result;
   }`;
 }
 
-function parseOperationResult(value: unknown): Omit<ProductionBrowserCheckResult, "session" | "capability" | "ttlSeconds" | "browserProcessesAfterClose"> | undefined {
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function isCounterRecord(value: unknown): value is Readonly<Record<string, number>> {
+  return !!value
+    && typeof value === "object"
+    && !Array.isArray(value)
+    && Object.entries(value).every(([key, count]) =>
+      ["image", "media", "font"].includes(key) && isNonNegativeInteger(count));
+}
+
+function parseOperationResult(value: unknown): ProductionSmokeOperationResult | undefined {
   if (typeof value === "string") {
     for (const line of value.trim().split("\n").reverse()) {
       try {
         const parsed = JSON.parse(line) as { rnrProductionBrowserCheck?: unknown };
-        return parseOperationResult(parsed.rnrProductionBrowserCheck ?? parsed);
+        if (typeof parsed === "string") continue;
+        const result = parseOperationResult(parsed.rnrProductionBrowserCheck ?? parsed);
+        if (result) return result;
       } catch {
         // Playwright CLI may emit non-JSON progress lines before the result.
       }
@@ -261,16 +405,34 @@ function parseOperationResult(value: unknown): Omit<ProductionBrowserCheckResult
   }
   if (!value || typeof value !== "object") return undefined;
   const candidate = value as Record<string, unknown>;
-  if (typeof candidate.routeCount === "number"
-    && typeof candidate.consoleErrorCount === "number"
-    && typeof candidate.unexpectedNavigationCount === "number"
-    && !!candidate.blockedResourceCounts
-    && typeof candidate.blockedResourceCounts === "object"
-    && !!candidate.pollingCounts
-    && typeof candidate.pollingCounts === "object") {
-    return value as Omit<ProductionBrowserCheckResult, "session" | "capability" | "ttlSeconds" | "browserProcessesAfterClose">;
+  if (candidate.routeCount !== 8
+    || !isNonNegativeInteger(candidate.consoleErrorCount)
+    || !isNonNegativeInteger(candidate.unexpectedNavigationCount)
+    || !isCounterRecord(candidate.blockedResourceCounts)
+    || !candidate.pollingCounts
+    || typeof candidate.pollingCounts !== "object"
+    || Array.isArray(candidate.pollingCounts)) return undefined;
+  const pollingCounts = candidate.pollingCounts as Record<string, unknown>;
+  if (!isNonNegativeInteger(pollingCounts.customerChat)
+    || !isNonNegativeInteger(pollingCounts.replyAssistant)) return undefined;
+  return {
+    routeCount: 8,
+    blockedResourceCounts: candidate.blockedResourceCounts,
+    pollingCounts: {
+      customerChat: pollingCounts.customerChat,
+      replyAssistant: pollingCounts.replyAssistant,
+    },
+    consoleErrorCount: candidate.consoleErrorCount,
+    unexpectedNavigationCount: candidate.unexpectedNavigationCount,
+  };
+}
+
+function resolvePrivacySafeOwner(value: string | undefined) {
+  const owner = value?.trim() || "local-runner";
+  if (!/^[a-zA-Z0-9][a-zA-Z0-9._-]{0,63}$/.test(owner)) {
+    throw new Error("Production browser checks require a privacy-safe owner label");
   }
-  return undefined;
+  return owner;
 }
 
 export async function runProductionBrowserCheck(
@@ -280,9 +442,12 @@ export async function runProductionBrowserCheck(
   if (dependencies.env.RNR_PRODUCTION_SMOKE !== "1") {
     throw new Error("Production browser checks require RNR_PRODUCTION_SMOKE=1");
   }
+  const owner = resolvePrivacySafeOwner(options.owner);
   const capability = options.capability ?? "DEFAULT";
   const ttlSeconds = resolveProductionTtlSeconds(capability, options.ttlSeconds);
   const startedAt = dependencies.now();
+  if (!Number.isFinite(startedAt)) throw new Error("Production browser start time is invalid");
+  const startedAtIso = new Date(startedAt).toISOString();
   const url = buildProductionSmokeUrl({
     rawUrl: buildProductionAutomationUrl(options.url).toString(),
     capability,
@@ -299,33 +464,55 @@ export async function runProductionBrowserCheck(
     if (remaining <= 0) throw new Error("Production browser maximum lifetime exceeded");
     return remaining;
   };
-  let trackedProcessIds: number[] = [];
-  let operationResult: Omit<ProductionBrowserCheckResult, "session" | "capability" | "ttlSeconds" | "browserProcessesAfterClose"> = {
-    routeCount: 0,
-    blockedResourceCounts: {},
-    pollingCounts: { customerChat: 0, replyAssistant: 0 },
-    consoleErrorCount: 0,
-    unexpectedNavigationCount: 0,
-  };
+  let trackedProcesses: OwnedProcessIdentity[] = [];
+  let operationResult: ProductionSmokeOperationResult | undefined;
 
   try {
     await dependencies.runCli(session, ["open", "about:blank", "--browser", "chrome"], remainingLifetime());
-    trackedProcessIds = productionBrowserSessionProcessIds(await dependencies.processList(), session);
+    trackedProcesses = productionBrowserSessionProcessIdentities(
+      await dependencies.processList(),
+      session,
+    );
     const output = await dependencies.runCli(session, ["run-code", buildProductionSmokeProgram({ url: url.toString(), capability, allowMedia: options.allowMedia === true })], remainingLifetime());
-    operationResult = parseOperationResult(output) ?? operationResult;
+    operationResult = parseOperationResult(output);
+    if (!operationResult) {
+      throw new Error("Playwright CLI did not return a valid Production browser result");
+    }
+    if (operationResult.consoleErrorCount !== 0) {
+      throw new Error("Production browser operation reported a console error");
+    }
+    if (operationResult.unexpectedNavigationCount !== 0) {
+      throw new Error("Production browser operation reported an unexpected navigation");
+    }
+    if (operationResult.pollingCounts.customerChat !== 0
+      || (capability !== "REPLY_ASSISTANT_TEST" && operationResult.pollingCounts.replyAssistant !== 0)) {
+      throw new Error("Production browser operation reported customer-service polling");
+    }
   } finally {
     try {
       await dependencies.runCli(session, ["close"], closeTimeoutMs);
     } finally {
-      await stopLeakedSessionProcesses(session, trackedProcessIds, dependencies);
+      await stopLeakedSessionProcesses(session, trackedProcesses, dependencies);
     }
   }
 
-  return Object.freeze({ ...operationResult, session, capability, ttlSeconds, browserProcessesAfterClose: 0 });
+  if (!operationResult) {
+    throw new Error("Playwright CLI did not return a valid Production browser result");
+  }
+  return Object.freeze({
+    ...operationResult,
+    session,
+    owner,
+    startedAt: startedAtIso,
+    capability,
+    ttlSeconds,
+    browserProcessesAfterClose: 0,
+  });
 }
 
 function parseCliArguments(args: readonly string[]): ProductionBrowserCheckOptions {
   let url = "https://rnrgallery.com/";
+  let positionalUrlSeen = false;
   let capability: ProductionCapability | undefined;
   let ttlSeconds: number | undefined;
   let allowMedia = false;
@@ -342,8 +529,9 @@ function parseCliArguments(args: readonly string[]): ProductionBrowserCheckOptio
       ttlSeconds = Number(value);
     } else if (arg.startsWith("-")) {
       throw new Error(`Unknown flag: ${arg}`);
-    } else if (url === "https://rnrgallery.com/") {
+    } else if (!positionalUrlSeen) {
       url = arg;
+      positionalUrlSeen = true;
     } else {
       throw new Error("Only one Production URL may be provided");
     }
@@ -355,6 +543,8 @@ async function main() {
   const result = await runProductionBrowserCheck(parseCliArguments(process.argv.slice(2)));
   console.log(JSON.stringify({
     session: result.session,
+    owner: result.owner,
+    startedAt: result.startedAt,
     capability: result.capability,
     ttlSeconds: result.ttlSeconds,
     routeCount: result.routeCount,
