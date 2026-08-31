@@ -239,6 +239,37 @@ describe("CustomerChat", () => {
     expect(screen.queryByRole("heading", { name: "Hi 👋 How can we help?" })).not.toBeInTheDocument();
   });
 
+  it("performs one cursor catch-up when the chat is reopened", async () => {
+    const existing = {
+      eventKey: "existing-customer-message",
+      role: "customer",
+      text: "I need a banner.",
+      createdAt: "2026-08-28T00:00:00.000Z",
+      state: "committed_assistant",
+    };
+    const staff = {
+      eventKey: "staff-response",
+      role: "staff",
+      text: "We can help with that banner.",
+      createdAt: "2026-08-28T00:01:00.000Z",
+      state: "human_outbound",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([existing], "cursor-1", "committed_assistant"))
+      .mockResolvedValueOnce(updates([staff], "cursor-2", "human_outbound"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    expect(await screen.findByText("I need a banner.")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
+    openChat();
+
+    expect(await screen.findByText("We can help with that banner.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/customer-chat/updates?cursor=cursor-1");
+  });
+
   it("sends on Enter and lets Shift+Enter add a newline without preventing the textarea default", async () => {
     const fetchMock = vi.mocked(fetch);
     render(<CustomerChat />);

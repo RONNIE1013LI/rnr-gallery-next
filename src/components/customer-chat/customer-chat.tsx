@@ -222,7 +222,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     if (!open) return;
     inputRef.current?.focus();
     if (!pollingAllowed) return;
-    if (!historyReadyRef.current) queueMicrotask(() => void poll());
+    queueMicrotask(() => void poll());
     return () => {
       stopPendingPolling();
       const controller = activePollControllerRef.current;
