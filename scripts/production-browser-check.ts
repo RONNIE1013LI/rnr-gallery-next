@@ -280,12 +280,18 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
     const config = ${programConfig};
     const context = page.context();
     const blockedResourceCounts = {};
+    const blockedResourceUrls = new Set();
     let unexpectedNavigationCount = 0;
     let consoleErrorCount = 0;
     let routeCount = 0;
     const attachConsoleListener = (candidate) => {
       candidate.on("console", (message) => {
-        if (message.type && message.type() === "error") consoleErrorCount += 1;
+        if (!message.type || message.type() !== "error") return;
+        const text = message.text ? message.text() : "";
+        const location = message.location ? message.location() : {};
+        const expectedResourceBlock = blockedResourceUrls.has(location.url)
+          && /^Failed to load resource: net::ERR_BLOCKED_BY_CLIENT(?:\.Inspector)?$/.test(text);
+        if (!expectedResourceBlock) consoleErrorCount += 1;
       });
     };
     for (const candidate of context.pages()) attachConsoleListener(candidate);
@@ -329,7 +335,8 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
       }
       if (config.blockedResourceTypes.includes(resourceType)) {
         blockedResourceCounts[resourceType] = (blockedResourceCounts[resourceType] || 0) + 1;
-        await route.abort();
+        blockedResourceUrls.add(request.url());
+        await route.abort("blockedbyclient");
         return;
       }
       await route.continue();

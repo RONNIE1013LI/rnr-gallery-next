@@ -44,7 +44,11 @@ function dependencies(overrides: Partial<ProductionBrowserCheckDependencies> = {
   } satisfies ProductionBrowserCheckDependencies;
 }
 
-type FakeConsoleMessage = Readonly<{ type: () => string }>;
+type FakeConsoleMessage = Readonly<{
+  type: () => string;
+  text: () => string;
+  location: () => Readonly<{ url: string }>;
+}>;
 type FakeFrame = Readonly<{ page: () => FakePage }>;
 type FakeRequest = Readonly<{
   url: () => string;
@@ -55,7 +59,7 @@ type FakeRequest = Readonly<{
 type FakeRoute = Readonly<{
   request: () => FakeRequest;
   continue: () => Promise<void>;
-  abort: () => Promise<void>;
+  abort: (errorCode?: string) => Promise<void>;
 }>;
 type FakeInitScriptInput = Readonly<{
   sessionStorageKey: string;
@@ -99,6 +103,7 @@ function createFakePage(options: Readonly<{
   popupNavigationOnFirstGoto?: string;
   topLevelNavigationOnFirstGoto?: string;
   consoleErrorDuringChat?: "click" | "wait" | "evaluate";
+  blockedImageOnFirstGoto?: boolean;
   storageBlocked?: boolean;
 }> = {}) {
   const events: string[] = [];
@@ -141,7 +146,13 @@ function createFakePage(options: Readonly<{
 
   function emitConsoleError(candidate: FakePage, phase: "click" | "wait" | "evaluate") {
     if (options.consoleErrorDuringChat !== phase) return;
-    for (const listener of consoleListeners.get(candidate) ?? []) listener({ type: () => "error" });
+    for (const listener of consoleListeners.get(candidate) ?? []) {
+      listener({
+        type: () => "error",
+        text: () => "Application console error",
+        location: () => ({ url: "https://rnrgallery.com/app.js" }),
+      });
+    }
   }
 
   function makePage(isPopup: boolean): FakePage {
@@ -156,6 +167,13 @@ function createFakePage(options: Readonly<{
         events.push(`goto:${url}`);
         visited.push(url);
         await invoke({ url, resourceType: "document", navigation: true, page: candidate });
+        if (!isPopup && visited.length === 1 && options.blockedImageOnFirstGoto) {
+          await invoke({
+            url: "https://rnrgallery.com/blocked-image.jpg",
+            resourceType: "image",
+            page: candidate,
+          });
+        }
         if (!isPopup && visited.length === 1 && options.topLevelNavigationOnFirstGoto) {
           await invoke({
             url: options.topLevelNavigationOnFirstGoto,
@@ -212,7 +230,20 @@ function createFakePage(options: Readonly<{
         frame: () => requestFrame,
       }),
       continue: vi.fn(async () => { continued.push(fixture.url); }),
-      abort: vi.fn(async () => { aborted.push(fixture.url); }),
+      abort: vi.fn(async (errorCode?: string) => {
+        aborted.push(fixture.url);
+        if (["image", "font", "media"].includes(fixture.resourceType)) {
+          for (const listener of consoleListeners.get(requestPage) ?? []) {
+            listener({
+              type: () => "error",
+              text: () => errorCode === "blockedbyclient"
+                ? "Failed to load resource: net::ERR_BLOCKED_BY_CLIENT.Inspector"
+                : "Failed to load resource: net::ERR_FAILED",
+              location: () => ({ url: fixture.url }),
+            });
+          }
+        }
+      }),
     };
     await routeHandler(route);
   }
@@ -575,6 +606,20 @@ describe("Production browser check", () => {
     expect(fake.aborted).toEqual(expect.arrayContaining([
       "https://example.com/", "https://rnrgallery.com/logo.png", "https://rnrgallery.com/site.woff2", "https://rnrgallery.com/demo.mp4", "https://example.com/popup",
     ]));
+  });
+
+  it("does not count the browser console error caused by its own blocked image", async () => {
+    const fake = createFakePage({ blockedImageOnFirstGoto: true });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+    })})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).resolves.toMatchObject({
+      blockedResourceCounts: { image: 1 },
+      consoleErrorCount: 0,
+    });
   });
 
   it("allows visual images and fonts, and allows media only when visual media is requested", async () => {
