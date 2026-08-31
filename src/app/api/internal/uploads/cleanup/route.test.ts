@@ -21,6 +21,7 @@ describe("POST /api/internal/uploads/cleanup", () => {
       deleteEnabled: false,
       report,
       run,
+      now: () => new Date("2026-09-01T04:04:00.000Z"),
     })(
       request("Bearer supplied"),
     );
@@ -37,6 +38,7 @@ describe("POST /api/internal/uploads/cleanup", () => {
       deleteEnabled: false,
       report,
       run,
+      now: () => new Date("2026-09-01T04:04:00.000Z"),
     })(
       request("Bearer wrong"),
     );
@@ -57,6 +59,7 @@ describe("POST /api/internal/uploads/cleanup", () => {
       deleteEnabled: false,
       report,
       run,
+      now: () => new Date("2026-09-01T04:04:00.000Z"),
     })(request("Bearer correct"));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -83,6 +86,7 @@ describe("POST /api/internal/uploads/cleanup", () => {
       deleteEnabled: true,
       report,
       run,
+      now: () => new Date("2026-09-01T04:04:00.000Z"),
     })(request("Bearer correct"));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
@@ -95,6 +99,22 @@ describe("POST /api/internal/uploads/cleanup", () => {
     });
     expect(report).not.toHaveBeenCalled();
     expect(run).toHaveBeenCalledWith(100);
+  });
+
+  it("skips the off-day before report or delete work", async () => {
+    const report = vi.fn();
+    const run = vi.fn();
+    const response = await createUploadCleanupRoute({
+      secret: "correct",
+      deleteEnabled: true,
+      report,
+      run,
+      now: () => new Date("2026-09-02T04:04:00.000Z"),
+    })(request("Bearer correct"));
+
+    expect(await response.json()).toEqual({ skipped: "two_day_cadence" });
+    expect(report).not.toHaveBeenCalled();
+    expect(run).not.toHaveBeenCalled();
   });
 
   it("prefers CRON_SECRET and requires exact true for delete mode", () => {

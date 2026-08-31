@@ -61,4 +61,20 @@ describe("website retention cron route", () => {
       limit: 17,
     });
   });
+
+  it("skips the off-day before invoking the retention repository", async () => {
+    const run = vi.fn();
+    const handler = createWebsiteRetentionCronHandler({
+      secret: "retention-secret-at-least-32-bytes",
+      run,
+      now: () => new Date("2026-09-02T04:02:00.000Z"),
+    });
+
+    const response = await handler(new Request("https://example.test/internal", {
+      headers: { authorization: "Bearer retention-secret-at-least-32-bytes" },
+    }));
+
+    expect(await response.json()).toEqual({ skipped: "two_day_cadence" });
+    expect(run).not.toHaveBeenCalled();
+  });
 });

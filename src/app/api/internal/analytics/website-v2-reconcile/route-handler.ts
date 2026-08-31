@@ -2,6 +2,7 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { readWebsiteAnalyticsBusinessConfig } from "@/server/analytics/website-analytics-config";
 import { createWebsiteAnalyticsV2Reconciliation } from "@/server/analytics/website-analytics-v2-reconciliation";
 import { getDatabase } from "@/server/db/client";
+import { shouldRunTwoDayMaintenance } from "@/server/maintenance/two-day-cadence";
 
 type ReconciliationResult = Readonly<{
   repair: Readonly<{
@@ -21,6 +22,7 @@ type Dependencies = Readonly<{
   v2Enabled: boolean;
   secret: string | null;
   run: () => Promise<ReconciliationResult>;
+  now?: () => Date;
 }>;
 
 const noStore = { "Cache-Control": "no-store" };
@@ -48,11 +50,10 @@ export function createWebsiteAnalyticsV2ReconciliationDependencies(
       },
     });
   }
-  const reconciliation = createWebsiteAnalyticsV2Reconciliation(databaseFactory());
   return Object.freeze({
     v2Enabled: true,
     secret: env.CRON_SECRET?.trim() || null,
-    run: () => reconciliation.run({
+    run: () => createWebsiteAnalyticsV2Reconciliation(databaseFactory()).run({
       recentDays: 3,
       repairBatchSize: 100,
       maxDirtyDates: 7,
@@ -87,6 +88,9 @@ export function createWebsiteAnalyticsV2ReconciliationRoute(dependencies?: Depen
         status: 401,
         headers: noStore,
       });
+    }
+    if (!shouldRunTwoDayMaintenance(input.now?.() ?? new Date())) {
+      return Response.json({ skipped: "two_day_cadence" }, { headers: noStore });
     }
     try {
       const result = await input.run();

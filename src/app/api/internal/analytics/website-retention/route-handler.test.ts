@@ -20,8 +20,25 @@ describe("website analytics retention route", () => {
   it("returns only aggregate cleanup counts", async () => {
     const run = vi.fn().mockResolvedValue({ deletedSessions: 9, privateData: "hidden" });
     const secret = "x".repeat(32);
-    const response = await createWebsiteAnalyticsRetentionRoute({ secret, run })(request(secret));
+    const response = await createWebsiteAnalyticsRetentionRoute({
+      secret,
+      run,
+      now: () => new Date("2026-09-01T04:01:00.000Z"),
+    })(request(secret));
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ deletedSessions: 9 });
+  });
+
+  it("skips the off-day before invoking retention work", async () => {
+    const run = vi.fn();
+    const secret = "x".repeat(32);
+    const response = await createWebsiteAnalyticsRetentionRoute({
+      secret,
+      run,
+      now: () => new Date("2026-09-02T04:01:00.000Z"),
+    })(request(secret));
+
+    expect(await response.json()).toEqual({ skipped: "two_day_cadence" });
+    expect(run).not.toHaveBeenCalled();
   });
 });

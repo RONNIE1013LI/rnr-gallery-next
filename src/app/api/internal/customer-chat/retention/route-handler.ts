@@ -1,4 +1,5 @@
 import { createHash, timingSafeEqual } from "node:crypto";
+import { shouldRunTwoDayMaintenance } from "@/server/maintenance/two-day-cadence";
 
 type RetentionResult = Readonly<{
   sessionsExpired: number;
@@ -26,7 +27,13 @@ export function createWebsiteRetentionCronHandler(input: Readonly<{
     if (!authorized(request.headers.get("authorization"), input.secret)) {
       return new Response(null, { status: 401 });
     }
-    const result = await input.run({ now: (input.now ?? (() => new Date()))(), limit });
+    const now = (input.now ?? (() => new Date()))();
+    if (!shouldRunTwoDayMaintenance(now)) {
+      return Response.json({ skipped: "two_day_cadence" }, {
+        headers: { "cache-control": "no-store" },
+      });
+    }
+    const result = await input.run({ now, limit });
     return Response.json({
       sessionsExpired: result.sessionsExpired,
       rateBucketsDeleted: result.rateBucketsDeleted,

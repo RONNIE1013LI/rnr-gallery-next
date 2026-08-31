@@ -21,7 +21,11 @@ describe("POST /api/internal/payment-proofs/cleanup", () => {
 
   it("rejects an invalid bearer secret", async () => {
     const run = vi.fn();
-    const response = await createPaymentProofCleanupRoute({ secret: "correct", run })(
+    const response = await createPaymentProofCleanupRoute({
+      secret: "correct",
+      run,
+      now: () => new Date("2026-09-01T04:05:00.000Z"),
+    })(
       request("Bearer wrong"),
     );
     expect(response.status).toBe(401);
@@ -37,7 +41,11 @@ describe("POST /api/internal/payment-proofs/cleanup", () => {
       storageKey: "must-not-leak.bin",
       originalName: "must-not-leak.jpg",
     });
-    const response = await createPaymentProofCleanupRoute({ secret: "correct", run })(
+    const response = await createPaymentProofCleanupRoute({
+      secret: "correct",
+      run,
+      now: () => new Date("2026-09-01T04:05:00.000Z"),
+    })(
       request("Bearer correct"),
     );
     expect(response.status).toBe(200);
@@ -48,6 +56,18 @@ describe("POST /api/internal/payment-proofs/cleanup", () => {
       failed: 1,
     });
     expect(run).toHaveBeenCalledWith(100);
+  });
+
+  it("skips the off-day before cleanup work", async () => {
+    const run = vi.fn();
+    const response = await createPaymentProofCleanupRoute({
+      secret: "correct",
+      run,
+      now: () => new Date("2026-09-02T04:05:00.000Z"),
+    })(request("Bearer correct"));
+
+    expect(await response.json()).toEqual({ skipped: "two_day_cadence" });
+    expect(run).not.toHaveBeenCalled();
   });
 
   it("exports the same authenticated handler for GET and POST", () => {

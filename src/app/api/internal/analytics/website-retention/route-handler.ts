@@ -2,10 +2,12 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { getDatabase } from "@/server/db/client";
 import { createWebsiteAnalyticsRetention } from "@/server/analytics/website-analytics-retention";
 import { createWebsiteAnalyticsRetentionRepository } from "@/server/analytics/website-analytics-retention-repository";
+import { shouldRunTwoDayMaintenance } from "@/server/maintenance/two-day-cadence";
 
 type Dependencies = Readonly<{
   secret: string | null;
   run: () => Promise<Readonly<{ deletedSessions: number }>>;
+  now?: () => Date;
 }>;
 
 const noStore = { "Cache-Control": "no-store" };
@@ -28,8 +30,8 @@ function defaults(): Dependencies {
 
 export function createWebsiteAnalyticsRetentionRoute(dependencies?: Dependencies) {
   return async function handle(request: Request) {
-    const input = dependencies ?? defaults();
-    if (!input.secret) {
+    const secret = dependencies?.secret ?? (process.env.CRON_SECRET?.trim() || null);
+    if (!secret) {
       return Response.json({ error: { code: "WEBSITE_ANALYTICS_RETENTION_UNAVAILABLE" } }, {
         status: 503,
         headers: noStore,
@@ -38,14 +40,17 @@ export function createWebsiteAnalyticsRetentionRoute(dependencies?: Dependencies
     const token = /^Bearer ([^\s,]{1,1024})$/.exec(
       request.headers.get("authorization") ?? "",
     )?.[1];
-    if (!token || !safeEqual(token, input.secret)) {
+    if (!token || !safeEqual(token, secret)) {
       return Response.json({ error: { code: "UNAUTHORIZED" } }, {
         status: 401,
         headers: noStore,
       });
     }
+    if (!shouldRunTwoDayMaintenance(dependencies?.now?.() ?? new Date())) {
+      return Response.json({ skipped: "two_day_cadence" }, { headers: noStore });
+    }
     try {
-      const result = await input.run();
+      const result = await (dependencies?.run ?? defaults().run)();
       return Response.json({ deletedSessions: result.deletedSessions }, { headers: noStore });
     } catch {
       return Response.json({ error: { code: "WEBSITE_ANALYTICS_RETENTION_UNAVAILABLE" } }, {

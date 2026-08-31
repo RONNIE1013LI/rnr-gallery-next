@@ -64,6 +64,7 @@ describe("Website Analytics V2 reconciliation cron route", () => {
       v2Enabled: true,
       secret: "correct-secret",
       run,
+      now: () => new Date("2026-09-01T04:03:00.000Z"),
     })(request(authorization));
     expect(response.status).toBe(401);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
@@ -92,6 +93,7 @@ describe("Website Analytics V2 reconciliation cron route", () => {
       v2Enabled: true,
       secret: "correct-secret",
       run,
+      now: () => new Date("2026-09-01T04:03:00.000Z"),
     })(request("Bearer correct-secret"));
     expect(response.status).toBe(200);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
@@ -106,6 +108,20 @@ describe("Website Analytics V2 reconciliation cron route", () => {
     expect(run).toHaveBeenCalledOnce();
   });
 
+  it("skips the off-day without constructing or running reconciliation", async () => {
+    const run = vi.fn();
+    const response = await createWebsiteAnalyticsV2ReconciliationRoute({
+      v2Enabled: true,
+      secret: "correct-secret",
+      run,
+      now: () => new Date("2026-09-02T04:03:00.000Z"),
+    })(request("Bearer correct-secret"));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ skipped: "two_day_cadence" });
+    expect(run).not.toHaveBeenCalled();
+  });
+
   it.each([
     { repairFailed: 1, aggregateFailed: 0 },
     { repairFailed: 0, aggregateFailed: 1 },
@@ -116,6 +132,7 @@ describe("Website Analytics V2 reconciliation cron route", () => {
     const response = await createWebsiteAnalyticsV2ReconciliationRoute({
       v2Enabled: true,
       secret: "correct-secret",
+      now: () => new Date("2026-09-01T04:03:00.000Z"),
       run: vi.fn().mockResolvedValue({
         repair: {
           totals: {
@@ -148,6 +165,7 @@ describe("Website Analytics V2 reconciliation cron route", () => {
     const response = await createWebsiteAnalyticsV2ReconciliationRoute({
       v2Enabled: true,
       secret: "correct-secret",
+      now: () => new Date("2026-09-01T04:03:00.000Z"),
       run: vi.fn().mockRejectedValue(new Error("private source and database detail")),
     })(request("Bearer correct-secret"));
     expect(response.status).toBe(503);

@@ -7,6 +7,7 @@ import {
   createDrizzleAbandonedUploadCleanupRepository,
 } from "@/server/uploads/drizzle-abandoned-upload-cleanup-repository";
 import { createPrivateUploadStore } from "@/server/uploads/private-upload-store";
+import { shouldRunTwoDayMaintenance } from "@/server/maintenance/two-day-cadence";
 
 export const runtime = "nodejs";
 
@@ -23,6 +24,7 @@ type Dependencies = Readonly<{
   deleteEnabled: boolean;
   report: () => Promise<{ eligible: number; eligibleBytes: number }>;
   run: (limit: number) => Promise<CleanupResult>;
+  now?: () => Date;
 }>;
 
 const noStore = { "Cache-Control": "no-store" };
@@ -66,27 +68,24 @@ function defaults(): Dependencies {
 
 export function createUploadCleanupRoute(dependencies?: Dependencies) {
   return async function POST(request: Request) {
-    let deps: Dependencies;
-    try {
-      deps = dependencies ?? defaults();
-    } catch {
-      return Response.json({
-        error: { code: "UPLOAD_CLEANUP_UNAVAILABLE", message: "Upload cleanup is unavailable" },
-      }, { status: 503, headers: noStore });
-    }
-    if (!deps.secret) {
+    const config = dependencies ?? resolveUploadCleanupConfig(process.env);
+    if (!config.secret) {
       return Response.json({
         error: { code: "UPLOAD_CLEANUP_UNAVAILABLE", message: "Upload cleanup is unavailable" },
       }, { status: 503, headers: noStore });
     }
     const token = bearerToken(request.headers);
-    if (!token || !safeEqual(token, deps.secret)) {
+    if (!token || !safeEqual(token, config.secret)) {
       return Response.json({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } }, {
         status: 401,
         headers: noStore,
       });
     }
+    if (!shouldRunTwoDayMaintenance(dependencies?.now?.() ?? new Date())) {
+      return Response.json({ skipped: "two_day_cadence" }, { headers: noStore });
+    }
     try {
+      const deps = dependencies ?? defaults();
       if (!deps.deleteEnabled) {
         const report = await deps.report();
         return Response.json({

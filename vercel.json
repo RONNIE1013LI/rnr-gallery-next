@@ -9,28 +9,28 @@
       "schedule": "*/30 * * * *"
     },
     {
-      "path": "/api/internal/analytics/conversion-deliveries",
-      "schedule": "*/10 * * * *"
-    },
-    {
       "path": "/api/internal/analytics/conversion-retention",
-      "schedule": "47 4 * * *"
+      "schedule": "0 4 * * *"
     },
     {
       "path": "/api/internal/analytics/website-retention",
-      "schedule": "13 4 * * *"
+      "schedule": "1 4 * * *"
+    },
+    {
+      "path": "/api/internal/customer-chat/retention",
+      "schedule": "2 4 * * *"
     },
     {
       "path": "/api/internal/analytics/website-v2-reconcile",
-      "schedule": "31 4 * * *"
+      "schedule": "3 4 * * *"
     },
     {
       "path": "/api/internal/uploads/cleanup",
-      "schedule": "17 * * * *"
+      "schedule": "4 4 * * *"
     },
     {
       "path": "/api/internal/payment-proofs/cleanup",
-      "schedule": "29 * * * *"
+      "schedule": "5 4 * * *"
     },
     {
       "path": "/api/internal/reply-assistant/turn-recovery",
@@ -39,10 +39,6 @@
     {
       "path": "/api/internal/customer-chat/review-alerts",
       "schedule": "*/30 * * * *"
-    },
-    {
-      "path": "/api/internal/customer-chat/retention",
-      "schedule": "13 4 * * *"
     }
   ]
 }

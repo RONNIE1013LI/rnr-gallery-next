@@ -1,10 +1,12 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 import { getDatabase } from "@/server/db/client";
 import { createDrizzleConversionDeliveryRepository } from "@/server/analytics/drizzle-conversion-delivery-repository";
+import { shouldRunTwoDayMaintenance } from "@/server/maintenance/two-day-cadence";
 
 type Dependencies = Readonly<{
   secret: string | null;
   run: () => Promise<number>;
+  now?: () => Date;
 }>;
 
 const noStore = { "Cache-Control": "no-store" };
@@ -31,22 +33,25 @@ function defaults(): Dependencies {
 
 export function createConversionRetentionCronRoute(dependencies?: Dependencies) {
   return async function handle(request: Request) {
-    const deps = dependencies ?? defaults();
-    if (!deps.secret) {
+    const secret = dependencies?.secret ?? (process.env.CRON_SECRET?.trim() || null);
+    if (!secret) {
       return Response.json({ error: { code: "CONVERSION_RETENTION_UNAVAILABLE" } }, {
         status: 503,
         headers: noStore,
       });
     }
     const token = bearerToken(request.headers);
-    if (!token || !safeEqual(token, deps.secret)) {
+    if (!token || !safeEqual(token, secret)) {
       return Response.json({ error: { code: "UNAUTHORIZED" } }, {
         status: 401,
         headers: noStore,
       });
     }
+    if (!shouldRunTwoDayMaintenance(dependencies?.now?.() ?? new Date())) {
+      return Response.json({ skipped: "two_day_cadence" }, { headers: noStore });
+    }
     try {
-      const redacted = await deps.run();
+      const redacted = await (dependencies?.run ?? defaults().run)();
       return Response.json({ redacted }, { headers: noStore });
     } catch {
       return Response.json({ error: { code: "CONVERSION_RETENTION_UNAVAILABLE" } }, {

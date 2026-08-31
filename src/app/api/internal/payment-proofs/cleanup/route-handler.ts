@@ -3,6 +3,7 @@ import { getDatabase } from "@/server/db/client";
 import { createDrizzlePaymentProofRetentionRepository } from "@/server/production/drizzle-payment-proof-retention-repository";
 import { createPaymentProofRetentionCleanup } from "@/server/production/payment-proof-retention-cleanup";
 import { createPrivateUploadStore } from "@/server/uploads/private-upload-store";
+import { shouldRunTwoDayMaintenance } from "@/server/maintenance/two-day-cadence";
 
 export const runtime = "nodejs";
 
@@ -16,6 +17,7 @@ type CleanupResult = Readonly<{
 type Dependencies = Readonly<{
   secret: string | null;
   run(limit: number): Promise<CleanupResult>;
+  now?: () => Date;
 }>;
 
 const noStore = { "Cache-Control": "no-store" };
@@ -47,27 +49,28 @@ function defaults(): Dependencies {
 
 export function createPaymentProofCleanupRoute(dependencies?: Dependencies) {
   return async function POST(request: Request) {
-    let deps: Dependencies;
-    try {
-      deps = dependencies ?? defaults();
-    } catch {
-      return Response.json({
-        error: { code: "PAYMENT_PROOF_CLEANUP_UNAVAILABLE", message: "Payment-proof cleanup is unavailable" },
-      }, { status: 503, headers: noStore });
-    }
-    if (!deps.secret) {
+    const secret = dependencies?.secret ?? (
+      process.env.CRON_SECRET?.trim()
+      || process.env.MAINTENANCE_CRON_SECRET?.trim()
+      || null
+    );
+    if (!secret) {
       return Response.json({
         error: { code: "PAYMENT_PROOF_CLEANUP_UNAVAILABLE", message: "Payment-proof cleanup is unavailable" },
       }, { status: 503, headers: noStore });
     }
     const token = bearerToken(request.headers);
-    if (!token || !safeEqual(token, deps.secret)) {
+    if (!token || !safeEqual(token, secret)) {
       return Response.json({ error: { code: "UNAUTHORIZED", message: "Unauthorized" } }, {
         status: 401,
         headers: noStore,
       });
     }
+    if (!shouldRunTwoDayMaintenance(dependencies?.now?.() ?? new Date())) {
+      return Response.json({ skipped: "two_day_cadence" }, { headers: noStore });
+    }
     try {
+      const deps = dependencies ?? defaults();
       const result = await deps.run(100);
       return Response.json({
         examined: result.examined,
