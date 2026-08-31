@@ -216,9 +216,13 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
       }
       await route.continue();
     });
+    let pollingCounts = { customerChat: 0, replyAssistant: 0 };
     for (const path of ["/", "/shop", "/canvas", "/banners", "/design-gallery", "/help", "/account", "/cart"]) {
       const consoleErrorsBeforeRoute = consoleErrorCount;
-      const response = await page.goto(new URL(path, config.url).toString(), { waitUntil: "networkidle" });
+      const routeUrl = new URL(path, config.url);
+      if (path === "/") routeUrl.search = new URL(config.url).search;
+      const response = await page.goto(routeUrl.toString(), { waitUntil: "networkidle" });
+      if (unexpectedNavigationCount) throw new Error("Production smoke encountered an unexpected navigation");
       if (!response || response.status() >= 400) throw new Error("Production route returned an unsuccessful response");
       if (await page.locator("body").count() < 1) throw new Error("Production route did not render a body");
       if (consoleErrorCount !== consoleErrorsBeforeRoute) throw new Error("Production route emitted a console error");
@@ -226,20 +230,19 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
       if (path === "/") {
         await page.getByRole("button", { name: "Chat with R&R Gallery" }).click();
         await page.waitForTimeout(6_000);
+        pollingCounts = await page.evaluate(() => {
+          const entries = performance.getEntriesByType("resource");
+          return {
+            customerChat: entries.filter((entry) => entry.name.includes("/api/customer-chat/updates")).length,
+            replyAssistant: entries.filter((entry) => entry.name.includes("/api/reply-assistant/updates")).length,
+          };
+        });
+        if (config.capability !== "REPLY_ASSISTANT_TEST" && (pollingCounts.customerChat || pollingCounts.replyAssistant)) {
+          throw new Error("Automation mode started customer-service polling");
+        }
       }
     }
-    const pollingCounts = await page.evaluate(() => {
-      const entries = performance.getEntriesByType("resource");
-      return {
-        customerChat: entries.filter((entry) => entry.name.includes("/api/customer-chat/updates")).length,
-        replyAssistant: entries.filter((entry) => entry.name.includes("/api/reply-assistant/updates")).length,
-      };
-    });
-    if (config.capability !== "REPLY_ASSISTANT_TEST" && (pollingCounts.customerChat || pollingCounts.replyAssistant)) {
-      throw new Error("Automation mode started customer-service polling");
-    }
     const result = { routeCount, blockedResourceCounts, pollingCounts, consoleErrorCount, unexpectedNavigationCount };
-    console.log(JSON.stringify({ rnrProductionBrowserCheck: result }));
     return result;
   }`;
 }
@@ -249,7 +252,7 @@ function parseOperationResult(value: unknown): Omit<ProductionBrowserCheckResult
     for (const line of value.trim().split("\n").reverse()) {
       try {
         const parsed = JSON.parse(line) as { rnrProductionBrowserCheck?: unknown };
-        if (parsed.rnrProductionBrowserCheck) return parseOperationResult(parsed.rnrProductionBrowserCheck);
+        return parseOperationResult(parsed.rnrProductionBrowserCheck ?? parsed);
       } catch {
         // Playwright CLI may emit non-JSON progress lines before the result.
       }

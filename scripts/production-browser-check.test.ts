@@ -28,7 +28,11 @@ type Fixture = Readonly<{
   page?: ReturnType<typeof createFakePage>["page"];
 }>;
 
-function createFakePage(options: Readonly<{ bodyCount?: number; polling?: number }> = {}) {
+function createFakePage(options: Readonly<{
+  bodyCount?: number;
+  homepagePolling?: number;
+  externalPopupOnFirstGoto?: boolean;
+}> = {}) {
   const events: string[] = [];
   const continued: string[] = [];
   const aborted: string[] = [];
@@ -71,12 +75,21 @@ function createFakePage(options: Readonly<{ bodyCount?: number; polling?: number
       events.push(`goto:${url}`);
       visited.push(url);
       await invoke({ url, resourceType: "document", navigation: true, page });
+      if (options.externalPopupOnFirstGoto && visited.length === 1) {
+        emitPopup();
+        await invoke({ url: "https://example.com/popup", resourceType: "document", navigation: true, page: popup });
+      }
       return { status: () => 200 };
     }),
     locator: vi.fn(() => ({ count: vi.fn().mockResolvedValue(options.bodyCount ?? 1) })),
     getByRole: vi.fn(() => ({ click: vi.fn(async () => events.push("chat")) })),
     waitForTimeout: vi.fn().mockResolvedValue(undefined),
-    evaluate: vi.fn().mockResolvedValue({ customerChat: options.polling ?? 0, replyAssistant: 0 }),
+    evaluate: vi.fn(async () => ({
+      customerChat: new URL(visited.at(-1) ?? "https://rnrgallery.com/").pathname === "/"
+        ? options.homepagePolling ?? 0
+        : 0,
+      replyAssistant: 0,
+    })),
   };
   const frame = { page: () => page };
   pages.push(page);
@@ -164,7 +177,7 @@ describe("Production browser check", () => {
     const deps = dependencies({ runCli: vi.fn(async (_session, args) => {
       if (args[0] === "run-code") {
         const result = await (0, eval)(`(${args[1]})`)(fake.page);
-        return `Playwright complete\n${JSON.stringify({ rnrProductionBrowserCheck: result })}`;
+        return `### Result\n${JSON.stringify(result)}`;
       }
     }) });
     await expect(runProductionBrowserCheck({ url: "https://rnrgallery.com/" }, deps)).resolves.toMatchObject({
@@ -200,6 +213,14 @@ describe("Production browser check", () => {
     expect(deps.kill).toHaveBeenCalledWith(124, "SIGTERM");
     expect(deps.kill).toHaveBeenCalledWith(123, "SIGTERM");
     expect(deps.kill).not.toHaveBeenCalledWith(456, expect.anything());
+  });
+
+  it("rejects the actual generated operation when a popup navigates externally during a route", async () => {
+    const fake = createFakePage({ externalPopupOnFirstGoto: true });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({ url: "https://rnrgallery.com/", capability: "DEFAULT", allowMedia: false })})`);
+
+    await expect(operation(fake.page)).rejects.toThrow("unexpected navigation");
+    expect(fake.aborted).toContain("https://example.com/popup");
   });
 
   it("enforces resource and context-wide navigation policy through the generated operation", async () => {
@@ -240,6 +261,29 @@ describe("Production browser check", () => {
     expect(fake.events.indexOf("route")).toBeLessThan(fake.events.findIndex((event) => event.startsWith("goto:")));
     expect(fake.events.indexOf("storage:1:ATTRIBUTION")).toBeLessThan(fake.events.findIndex((event) => event.startsWith("goto:")));
     expect(fake.visited.map((url) => new URL(url).pathname)).toEqual(["/", "/shop", "/canvas", "/banners", "/design-gallery", "/help", "/account", "/cart"]);
+  });
+
+  it("checks homepage Customer Chat polling before later route navigations", async () => {
+    const fake = createFakePage({ homepagePolling: 1 });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({ url: "https://rnrgallery.com/", capability: "DEFAULT", allowMedia: false })})`);
+
+    await expect(operation(fake.page)).rejects.toThrow("polling");
+    expect(fake.visited.map((url) => new URL(url).pathname)).toEqual(["/"]);
+  });
+
+  it("retains automation and attribution parameters on the first Production route", async () => {
+    const fake = createFakePage();
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/?rnr_automation=1&utm_source=review&fbclid=allowed",
+      capability: "ATTRIBUTION",
+      allowMedia: false,
+    })})`);
+
+    await operation(fake.page);
+    const firstRoute = new URL(fake.visited[0]);
+    expect(firstRoute.searchParams.get("rnr_automation")).toBe("1");
+    expect(firstRoute.searchParams.get("utm_source")).toBe("review");
+    expect(firstRoute.searchParams.get("fbclid")).toBe("allowed");
   });
 
   it("generates distinct internal random session suffixes with one injected clock and exposes no session option", async () => {
