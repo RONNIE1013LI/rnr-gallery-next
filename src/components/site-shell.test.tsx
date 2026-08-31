@@ -417,6 +417,21 @@ describe("site shell", () => {
     expect(homeLink).not.toHaveFocus();
   });
 
+  it("does not mark or focus the Australian home link on a nested Australian route", () => {
+    usePathname.mockReturnValue("/au/canvas");
+    render(<SiteHeader initialMarket="AU" australiaEnabled />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Open navigation menu" }));
+    const mobileNavigation = screen.getByRole("navigation", { name: "Mobile navigation" });
+    const homeLink = within(mobileNavigation).getByRole("link", { name: "Home" });
+    const canvasLink = within(mobileNavigation).getByRole("link", { name: "Canvas" });
+
+    expect(homeLink).not.toHaveAttribute("aria-current");
+    expect(homeLink).not.toHaveFocus();
+    expect(canvasLink).toHaveAttribute("aria-current", "page");
+    expect(canvasLink).toHaveFocus();
+  });
+
   it("keeps support and legal links in the footer", () => {
     render(<SiteFooter />);
     const footer = screen.getByRole("contentinfo");

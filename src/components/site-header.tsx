@@ -35,7 +35,8 @@ const galleryMenu = [
 
 function isCurrentRoute(pathname: string, href: string) {
   if (href.includes("#")) return false;
-  return pathname === href || (href !== "/" && pathname.startsWith(`${href}/`));
+  if (href === "/" || href === "/au") return pathname === href;
+  return pathname === href || pathname.startsWith(`${href}/`);
 }
 
 function NavigationLinks({
