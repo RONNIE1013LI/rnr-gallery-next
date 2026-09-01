@@ -1056,6 +1056,24 @@ describe("Production browser check", () => {
     expect(fake.visited).toHaveLength(8);
   });
 
+  it("isolates baseline smoke consent and fulfills it locally before opening chat", async () => {
+    const fake = createFakePage({ consentPostOnFirstGoto: true });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+    })})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).resolves.toMatchObject({
+      routeCount: 8,
+      consentLocallyFulfilledCount: 1,
+      pollingCounts: { customerChat: 0, replyAssistant: 0 },
+    });
+    expect(fake.events).toContain("cookies-cleared");
+    expect(fake.events).toContain("consent-overlay-closed");
+    expect(fake.fulfilled).toHaveLength(1);
+  });
+
   it("generates distinct internal random session suffixes with one injected clock and exposes no session option", async () => {
     const deps = dependencies({ randomHex: vi.fn().mockReturnValueOnce("11111111").mockReturnValueOnce("22222222") });
     const first = await runProductionBrowserCheck({ url: "https://rnrgallery.com/", session: "attacker" } as Parameters<typeof runProductionBrowserCheck>[0], deps);

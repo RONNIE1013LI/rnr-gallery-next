@@ -509,9 +509,9 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
     }));
   const blockedResourceTypes = ["image", "media", "font"].filter((resourceType) =>
     shouldBlockProductionResource(resourceType, config.capability, config.allowMedia));
-  const localConsentPostUrls = (config.coverageOnly || config.authOnly || config.formsOrdersOnly)
-    ? OFFICIAL_PRODUCTION_HOSTS.map((hostname) => `https://${hostname}/api/consent`)
-    : [];
+  const localConsentPostUrls = OFFICIAL_PRODUCTION_HOSTS.map(
+    (hostname) => `https://${hostname}/api/consent`,
+  );
   const localConsentResponseBody = JSON.stringify({
     consent: {
       version: 1,
@@ -543,7 +543,7 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
   return `async (page) => {
     const config = ${programConfig};
     const context = page.context();
-    if (config.coverageOnly || config.authOnly || config.formsOrdersOnly) await context.clearCookies();
+    await context.clearCookies();
     const blockedResourceCounts = {};
     const blockedResourceUrls = new Set();
     const guardBlockedRequests = new WeakSet();
