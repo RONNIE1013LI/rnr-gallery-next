@@ -13,6 +13,7 @@ import {
   customerServiceWebSessions,
 } from "@/server/db/schema";
 import { isDedicatedTestDatabase } from "@/server/db/test-database-safety";
+import { hashWebsiteClientMessageKey } from "./public-api";
 import { createDrizzleCustomerServiceRepository } from "../repositories/drizzle-customer-service-repository";
 import {
   bootstrapWebsiteSession,
@@ -110,6 +111,8 @@ describeDatabase("customer-chat first-message identity", () => {
     });
     const keyA = `A${randomBytes(16).toString("base64url").slice(0, 21)}`;
     const keyB = `B${randomBytes(16).toString("base64url").slice(0, 21)}`;
+    const messageHashA = hashWebsiteClientMessageKey({ conversationHash, clientKey: keyA, secret: abuseSecret });
+    const messageHashB = hashWebsiteClientMessageKey({ conversationHash, clientKey: keyB, secret: abuseSecret });
     const bootstrap = await bootstrapWebsiteSession({
       request: new Request("https://rrgallery.co.nz/api/customer-chat/session", { method: "POST" }),
       repository,
@@ -127,8 +130,12 @@ describeDatabase("customer-chat first-message identity", () => {
       .where(eq(customerServiceConversations.externalKeyHash, conversationHash)))[0]?.value).toBe(0);
     expect((await database.select({ value: count() }).from(customerServiceWebSessions)
       .where(eq(customerServiceWebSessions.sessionTokenHash, sessionKeyHash)))[0]?.value).toBe(0);
+    expect((await database.select({ value: count() }).from(customerServiceMessages)
+      .where(inArray(customerServiceMessages.externalMessageKeyHash, [messageHashA, messageHashB])))[0]?.value).toBe(0);
+    expect((await database.select({ value: count() }).from(customerServiceRateLimitBuckets)
+      .where(eq(customerServiceRateLimitBuckets.bucketKeyHash, sessionKeyHash)))[0]?.value).toBe(0);
+    expect(inquiryRecorder.recordInquiry).not.toHaveBeenCalled();
 
-    const first = await handler.POST(messageRequest({ token: rawToken, permit: bootstrap.permit, clientMessageKey: keyA, message: "Synthetic first message" }));
     const permitB = createWebsiteSessionPermit({
       token: rawToken,
       clientMessageKey: keyB,
@@ -138,7 +145,10 @@ describeDatabase("customer-chat first-message identity", () => {
       permitSecret: abuseSecret,
       nonce: "m".repeat(22),
     });
-    const second = await handler.POST(messageRequest({ token: rawToken, permit: permitB, clientMessageKey: keyB, message: "Synthetic second message" }));
+    const [first, second] = await Promise.all([
+      handler.POST(messageRequest({ token: rawToken, permit: bootstrap.permit, clientMessageKey: keyA, message: "Synthetic first message" })),
+      handler.POST(messageRequest({ token: rawToken, permit: permitB, clientMessageKey: keyB, message: "Synthetic second message" })),
+    ]);
     const duplicate = await handler.POST(messageRequest({ token: rawToken, permit: bootstrap.permit, clientMessageKey: keyA, message: "Synthetic first message" }));
 
     expect(first.status).toBe(202);

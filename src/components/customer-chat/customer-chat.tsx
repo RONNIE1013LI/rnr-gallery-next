@@ -117,6 +117,8 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const pendingPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPollCycleRef = useRef(0);
   const sendingRef = useRef(false);
+  const mountedRef = useRef(false);
+  const openRef = useRef(false);
   const lockWaitAbortControllerRef = useRef<AbortController | null>(null);
   const lockGrantedRef = useRef(false);
   const awaitingReplyRef = useRef(false);
@@ -127,6 +129,10 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const isComposingRef = useRef(false);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+
+  function currentlyTrackable() {
+    return mountedRef.current && openRef.current && pollingAllowedForAutomation("customer-chat");
+  }
 
   const poll = useCallback(async (): Promise<PollResult> => {
     if (!pollingAllowedForAutomation("customer-chat")) return "blocked";
@@ -211,19 +217,23 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   }, []);
 
   const startPendingPolling = useCallback((pendingCheckAlreadyConsumed = false) => {
+    if (!currentlyTrackable()) return;
     stopPendingPolling();
     const cycle = pendingPollCycleRef.current;
     let checks = pendingCheckAlreadyConsumed ? 1 : 0;
     const scheduleNextCheck = () => {
       pendingPollTimerRef.current = setTimeout(() => {
         pendingPollTimerRef.current = null;
+        if (!currentlyTrackable()) return;
         void check();
       }, pollingIntervalMs);
     };
     const check = async () => {
+      if (!currentlyTrackable()) return;
       if (cycle !== pendingPollCycleRef.current) return;
       checks += 1;
       const result = await poll();
+      if (!currentlyTrackable()) return;
       if (cycle !== pendingPollCycleRef.current) return;
       if (result === "terminal" || result === "blocked") return;
       if (result === "error") {
@@ -240,13 +250,23 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     else void check();
   }, [poll, stopPendingPolling]);
 
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      openRef.current = false;
+    };
+  }, []);
+
   function close() {
     if (!lockGrantedRef.current) lockWaitAbortControllerRef.current?.abort();
+    openRef.current = false;
     restoreLauncherFocusRef.current = true;
     setOpen(false);
   }
 
   useEffect(() => {
+    openRef.current = open;
     const pollingAllowed = pollingAllowedForAutomation("customer-chat");
     if (!open) return;
     inputRef.current?.focus();
@@ -259,6 +279,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
       }
     }));
     return () => {
+      openRef.current = false;
       stopPendingPolling();
       const controller = activePollControllerRef.current;
       activePollControllerRef.current = null;
@@ -345,6 +366,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
         return;
       }
       if (response.ok) {
+        if (!currentlyTrackable()) return;
         awaitingReplyGenerationRef.current += 1;
         awaitingReplyRef.current = true;
         setDraft("");

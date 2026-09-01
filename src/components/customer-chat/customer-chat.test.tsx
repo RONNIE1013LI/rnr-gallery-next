@@ -921,6 +921,32 @@ describe("CustomerChat", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
+  it.each(["close", "unmount"] as const)("does not restart reply polling when an accepted send resolves after %s", async (disposition) => {
+    vi.useFakeTimers();
+    let acceptMessage: ((response: Response) => void) | undefined;
+    const deferredMessage = new Promise<Response>((resolve) => { acceptMessage = resolve; });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(accepted())
+      .mockReturnValueOnce(deferredMessage);
+    vi.stubGlobal("fetch", fetchMock);
+    const page = render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+    const input = screen.getByLabelText("Message R&R Gallery");
+    fireEvent.change(input, { target: { value: "Please help" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    if (disposition === "close") fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
+    else page.unmount();
+    await act(async () => { acceptMessage?.(accepted()); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+  });
+
   it("aborts an in-flight update request when the chat closes", async () => {
     vi.useFakeTimers();
     let signal: AbortSignal | undefined;
