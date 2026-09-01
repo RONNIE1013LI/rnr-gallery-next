@@ -33,6 +33,15 @@ type OperationResult = Readonly<{
     formsOrdersInitialLoad: "authenticated" | "auth-gated";
     websiteChatInitialLoad: boolean;
   }>;
+  authCoverage?: Readonly<{
+    replyAssistantAuthBoundary: "auth-gated";
+    replyAssistantCanonicalNext: "/reply-assistant";
+    replyAssistantPolling: Readonly<{ customerChat: number; replyAssistant: number }>;
+    formsOrdersAuthBoundary: "authenticated" | "auth-gated";
+    formsOrdersCanonicalNext: "/order-system" | null;
+    formsOrdersPolling: Readonly<{ customerChat: number; replyAssistant: number }>;
+    expectedAuthRedirectCount: number;
+  }>;
 }>;
 
 function validOperationResult(overrides: Partial<OperationResult> = {}): OperationResult {
@@ -105,6 +114,7 @@ type FakeContext = Readonly<{
 }>;
 type FakeResponse = Readonly<{
   status: () => number;
+  url: () => string;
   text: () => Promise<string>;
   headerValue: (name: string) => Promise<string | null>;
   body: () => Promise<Uint8Array>;
@@ -117,8 +127,10 @@ type FakePage = Readonly<{
   context: () => FakeContext;
   mainFrame: () => FakeFrame;
   on: (
-    event: "console" | "requestfailed",
-    handler: ((message: FakeConsoleMessage) => void) | ((request: FakeRequest) => void),
+    event: "console" | "requestfailed" | "response",
+    handler: ((message: FakeConsoleMessage) => void)
+      | ((request: FakeRequest) => void)
+      | ((response: FakeResponse) => void),
   ) => void;
   goto: (url: string, options?: Readonly<{ waitUntil: string }>) => Promise<FakeResponse>;
   url: () => string;
@@ -151,6 +163,11 @@ function createFakePage(options: Readonly<{
   mutationRequestOnFirstGoto?: boolean;
   consentPostOnFirstGoto?: boolean;
   storageBlocked?: boolean;
+  replyAssistantAuthUrl?: string;
+  formsOrdersAuthUrl?: string;
+  replyAssistantRedirectStatus?: number;
+  formsOrdersRedirectStatus?: number;
+  redirectLoop?: "reply-assistant" | "forms-orders";
 }> = {}) {
   const events: string[] = [];
   const continued: string[] = [];
@@ -166,6 +183,7 @@ function createFakePage(options: Readonly<{
   const pageListeners: Array<(page: FakePage) => void> = [];
   const consoleListeners = new Map<FakePage, Array<(message: FakeConsoleMessage) => void>>();
   const requestFailedListeners = new Map<FakePage, Array<(request: FakeRequest) => void>>();
+  const responseListeners = new Map<FakePage, Array<(response: FakeResponse) => void>>();
   const pages: FakePage[] = [];
   let currentUrl = "about:blank";
   let chatOpen = false;
@@ -223,10 +241,15 @@ function createFakePage(options: Readonly<{
             ...(consoleListeners.get(candidate) ?? []),
             handler as (message: FakeConsoleMessage) => void,
           ]);
-        } else {
+        } else if (event === "requestfailed") {
           requestFailedListeners.set(candidate, [
             ...(requestFailedListeners.get(candidate) ?? []),
             handler as (request: FakeRequest) => void,
+          ]);
+        } else {
+          responseListeners.set(candidate, [
+            ...(responseListeners.get(candidate) ?? []),
+            handler as (response: FakeResponse) => void,
           ]);
         }
       },
@@ -236,11 +259,29 @@ function createFakePage(options: Readonly<{
         await invoke({ url, resourceType: "document", navigation: true, page: candidate });
         currentUrl = url;
         if (url.includes("/reply-assistant?")) {
-          currentUrl = "https://rnrgallery.com/account/sign-in?next=%2Freply-assistant";
+          emitResponse(candidate, url, options.replyAssistantRedirectStatus ?? 307);
+          currentUrl = options.replyAssistantAuthUrl
+            ?? "https://rnrgallery.com/account/sign-in?next=%2Freply-assistant";
           await invoke({ url: currentUrl, resourceType: "document", navigation: true, page: candidate });
+          if (options.redirectLoop === "reply-assistant") {
+            emitResponse(candidate, currentUrl, 307);
+            emitResponse(candidate, url, 307);
+          } else {
+            emitResponse(candidate, currentUrl, 200);
+          }
         } else if (url.includes("/order-system?")) {
-          currentUrl = "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system";
+          emitResponse(candidate, url, options.formsOrdersRedirectStatus ?? 307);
+          currentUrl = options.formsOrdersAuthUrl
+            ?? "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system";
           await invoke({ url: currentUrl, resourceType: "document", navigation: true, page: candidate });
+          if (options.redirectLoop === "forms-orders") {
+            emitResponse(candidate, currentUrl, 307);
+            emitResponse(candidate, url, 307);
+          } else {
+            emitResponse(candidate, currentUrl, 200);
+          }
+        } else {
+          emitResponse(candidate, url, 200);
         }
         if (!isPopup && visited.length === 1 && options.blockedImageOnFirstGoto) {
           await invoke({
@@ -294,6 +335,7 @@ function createFakePage(options: Readonly<{
         }
         return {
           status: () => 200,
+          url: () => currentUrl,
           text: async () => url.includes("/sitemap.xml")
             ? "<?xml version=\"1.0\"?><urlset><url><loc>https://rnrgallery.com/au</loc></url></urlset>"
             : "",
@@ -345,6 +387,17 @@ function createFakePage(options: Readonly<{
   const page = makePage(false);
   const popup = makePage(true);
   pages.push(page);
+
+  function emitResponse(candidate: FakePage, url: string, status: number) {
+    const response: FakeResponse = {
+      status: () => status,
+      url: () => url,
+      text: async () => "",
+      headerValue: async () => "text/html",
+      body: async () => new Uint8Array(),
+    };
+    for (const listener of responseListeners.get(candidate) ?? []) listener(response);
+  }
 
   async function invoke(fixture: Fixture) {
     if (!routeHandler) throw new Error("route handler was not registered");
@@ -1121,5 +1174,167 @@ describe("Production browser check", () => {
       "https://rnrgallery.com/api/consent?unexpected=1",
       "https://example.com/api/consent",
     ]));
+  });
+
+  it("visits only the two approved auth-boundary routes in auth-only mode", async () => {
+    const fake = createFakePage();
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      authOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).resolves.toMatchObject({
+      routeCount: 2,
+      requestFailedCount: 0,
+      blockedMutationRequestCount: 0,
+      authCoverage: {
+        replyAssistantAuthBoundary: "auth-gated",
+        replyAssistantCanonicalNext: "/reply-assistant",
+        replyAssistantPolling: { customerChat: 0, replyAssistant: 0 },
+        formsOrdersAuthBoundary: "auth-gated",
+        formsOrdersCanonicalNext: "/order-system",
+        formsOrdersPolling: { customerChat: 0, replyAssistant: 0 },
+        expectedAuthRedirectCount: 2,
+      },
+    });
+    expect(fake.visited.map((url) => new URL(url).pathname)).toEqual([
+      "/reply-assistant",
+      "/order-system",
+    ]);
+  });
+
+  it("parses and returns the narrow auth-only evidence from the CLI", async () => {
+    const fake = createFakePage();
+    const deps = dependencies({
+      runCli: vi.fn(async (_session, args) => {
+        if (args[0] !== "run-code") return undefined;
+        const operation = (0, eval)(`(${args[1]})`) as (page: FakePage) => Promise<OperationResult>;
+        return JSON.stringify(await operation(fake.page));
+      }),
+    });
+
+    await expect(runProductionBrowserCheck({
+      url: "https://rnrgallery.com/",
+      authOnly: true,
+    }, deps)).resolves.toMatchObject({
+      routeCount: 2,
+      authCoverage: {
+        replyAssistantAuthBoundary: "auth-gated",
+        replyAssistantCanonicalNext: "/reply-assistant",
+        formsOrdersAuthBoundary: "auth-gated",
+        formsOrdersCanonicalNext: "/order-system",
+        expectedAuthRedirectCount: 2,
+      },
+      browserProcessesAfterClose: 0,
+    });
+  });
+
+  it.each([
+    "https://rnrgallery.com/account/sign-in?next=%2freply-assistant",
+    "https://rnrgallery.com/account/sign-in?next=/reply-assistant",
+    "https://rnrgallery.com/account/sign-in?rnr_automation=1&next=%252Freply-assistant",
+  ])("accepts an equivalent Reply Assistant next serialization: %s", async (replyAssistantAuthUrl) => {
+    const fake = createFakePage({ replyAssistantAuthUrl });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      authOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).resolves.toMatchObject({
+      authCoverage: { replyAssistantCanonicalNext: "/reply-assistant" },
+    });
+  });
+
+  it("applies the same canonical next contract to Forms/Orders", async () => {
+    const accepted = createFakePage({
+      formsOrdersAuthUrl: "https://rnrgallery.com/order-system/sign-in?rnr_automation=1&next=%252Forder-system",
+    });
+    const rejected = createFakePage({
+      formsOrdersAuthUrl: "https://rnrgallery.com/order-system/sign-in?next=%2Freply-assistant",
+    });
+    const program = buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      authOnly: true,
+    });
+    const operation = (0, eval)(`(${program})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(accepted.page)).resolves.toMatchObject({
+      authCoverage: { formsOrdersCanonicalNext: "/order-system" },
+    });
+    await expect(operation(rejected.page)).rejects.toThrow("canonical_next=(mismatch)");
+  });
+
+  it.each([
+    ["wrong next", "https://rnrgallery.com/account/sign-in?next=%2Forder-system"],
+    ["missing next", "https://rnrgallery.com/account/sign-in?rnr_automation=1"],
+    ["wrong hostname", "https://example.com/account/sign-in?next=%2Freply-assistant"],
+    ["wrong pathname", "https://rnrgallery.com/sign-in?next=%2Freply-assistant"],
+  ])("rejects a Reply Assistant auth boundary with %s", async (_label, replyAssistantAuthUrl) => {
+    const fake = createFakePage({ replyAssistantAuthUrl });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      authOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).rejects.toThrow();
+  });
+
+  it("rejects an auth redirect loop", async () => {
+    const fake = createFakePage({ redirectLoop: "reply-assistant" });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      authOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).rejects.toThrow("redirect loop");
+  });
+
+  it("rejects a non-307 Reply Assistant auth redirect", async () => {
+    const fake = createFakePage({ replyAssistantRedirectStatus: 302 });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      authOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).rejects.toThrow("redirect_status=302->200");
+  });
+
+  it("reports only sanitized auth-boundary diagnostics", async () => {
+    const fake = createFakePage({
+      replyAssistantAuthUrl: "https://rnrgallery.com/account/sign-in?token=top-secret-token&next=%2Fprivate%3Fsecret%3Dleak",
+    });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      authOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    let error: Error | undefined;
+    try {
+      await operation(fake.page);
+    } catch (caught) {
+      if (caught instanceof Error) error = caught;
+    }
+    expect(error).toBeInstanceOf(Error);
+    expect(error?.message).toContain("pathname=/account/sign-in");
+    expect(error?.message).toContain("query_keys=next,[redacted]");
+    expect(error?.message).toContain("canonical_next=(mismatch)");
+    expect(error?.message).toContain("redirect_status=307->200");
+    expect(error?.message).not.toContain("top-secret-token");
+    expect(error?.message).not.toContain("/private");
+    expect(error?.message).not.toContain("secret=leak");
   });
 });
