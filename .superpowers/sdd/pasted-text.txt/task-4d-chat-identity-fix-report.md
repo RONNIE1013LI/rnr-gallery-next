@@ -57,3 +57,11 @@ Implemented the reviewed migration-free protocol. Supported same-origin tabs now
 - Browser support deliberately fails closed when Web Locks are unavailable; customers can use the existing contact path rather than an unlocked chat send.
 - The coordinator intentionally has no aggressive message timeout: a dispatched request may have committed, so duplicate recovery retains the stable client key and existing server idempotency.
 - Cross-profile, private-storage, or different-origin contexts are distinct cookie storage buckets and are not merged.
+
+## Final review follow-up
+
+- Follow-up commit: `441085c`.
+- A deferred accepted message response could previously return after the panel had closed or unmounted and start a fresh pending-poll cycle. The client now gates polling starts, scheduled checks and post-poll continuations on mounted, open and currently trackable state; close and unmount clear the gate before the deferred response settles.
+- New component regression coverage proves no updates request restarts after a deferred accepted response settles following either close or unmount.
+- The guarded Test DB identity integration now asserts stateless bootstrap has zero matching message/rate/inquiry effects and dispatches the two distinct first-message permits through `Promise.all`; it passed with 1 conversation, 1 session, 2 messages, 1 inquiry callback and duplicate-stable rate/message counts.
+- Follow-up verification: focused customer-chat/security suite PASS (9 files, 205 tests); guarded dedicated Test DB integration PASS (1 file, 1 test); Task paths lint/typecheck/diff check PASS.
