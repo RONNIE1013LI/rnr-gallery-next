@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import { resolveConversationState } from "./conversation/conversation-state";
 import { CustomerServiceEngine } from "./engine";
 import compiledKnowledge from "./knowledge/compiled-knowledge.json";
 import type { AiProviderRequest } from "./providers/ai-provider";
@@ -14,6 +15,18 @@ const at = "2026-09-01T07:00:00.000Z";
 const customer = (text: string): ConversationContextItem => ({ role: "customer", text, receivedAt: at });
 const staff = (text: string): ConversationContextItem => ({ role: "staff", text, receivedAt: at });
 
+const REQUIRED_REAL_ENGINE_PARITY_CASE_IDS = [
+  "roll-up-follow-up-nz",
+  "roll-up-direct-nz",
+  "a2-canvas-follow-up",
+  "wall-banner-au",
+  "brisbane-shipping",
+  "turnaround",
+  "product-guidance",
+  "design-guidance",
+  "production-guidance",
+] as const;
+
 function websiteDecision(overrides: Readonly<Record<string, unknown>> = {}) {
   return JSON.stringify({
     response_type: "ASK_FOR_INFORMATION",
@@ -26,6 +39,325 @@ function websiteDecision(overrides: Readonly<Record<string, unknown>> = {}) {
     ...overrides,
   });
 }
+
+type ExpectedConversation = Readonly<{
+  intent: string;
+  market?: "NZ" | "AU" | null;
+  productKey?: string | null;
+  productCandidates?: readonly string[];
+  size?: string | null;
+  peoplePets?: number | null;
+  photoCount?: number | null;
+  missingFields?: readonly string[];
+  asksCataloguePrice?: boolean;
+}>;
+
+function expectedAllowedBusinessContext(input: Readonly<{
+  conversation: ExpectedConversation;
+  ruleIds: readonly string[];
+  qualityGuideId: string;
+  qualityRequirementIds: readonly string[];
+  canonicalQuote: Readonly<Record<string, unknown>>;
+  allowedFactIds: readonly string[];
+  allowedFollowUpFields: readonly string[];
+}>) {
+  return {
+    version: 1,
+    conversation: {
+      intent: input.conversation.intent,
+      market: input.conversation.market ?? null,
+      productKey: input.conversation.productKey ?? null,
+      productCandidates: input.conversation.productCandidates ?? [],
+      size: input.conversation.size ?? null,
+      peoplePets: input.conversation.peoplePets ?? null,
+      photoCount: input.conversation.photoCount ?? null,
+      missingFields: input.conversation.missingFields ?? [],
+      asksCataloguePrice: input.conversation.asksCataloguePrice ?? false,
+    },
+    knowledge: {
+      version: compiledKnowledge.knowledgeVersion,
+      ruleIds: input.ruleIds,
+      qualityGuideId: input.qualityGuideId,
+      qualityRequirementIds: input.qualityRequirementIds,
+    },
+    canonicalQuote: input.canonicalQuote,
+    decision: {
+      allowedFactIds: input.allowedFactIds,
+      allowedFollowUpFields: input.allowedFollowUpFields,
+      policy: { decision: "DRAFT_ALLOWED", reason: "confirmed_draft_scope" },
+      handoff: { required: false, reason: null },
+    },
+  };
+}
+
+type LockedParityRow = Readonly<{
+  id: typeof REQUIRED_REAL_ENGINE_PARITY_CASE_IDS[number];
+  currentText: string;
+  context: readonly ConversationContextItem[];
+  facebookOutput: string;
+  websiteOutput: string;
+  expectedContext: ReturnType<typeof expectedAllowedBusinessContext>;
+}> | Readonly<{
+  id: typeof REQUIRED_REAL_ENGINE_PARITY_CASE_IDS[number];
+  currentText: string;
+  context: readonly ConversationContextItem[];
+  blocked: true;
+  expectedConversation: ExpectedConversation;
+}>;
+
+const quoteRuleIds = ["AI-SCOPE-03", "VOICE-01"] as const;
+const quoteQualityRequirementIds = [
+  "product_and_size",
+  "photos_and_people",
+  "design_preferences",
+  "date_and_location",
+  "quote_next_step",
+] as const;
+const canvasProductCandidates = [
+  "photo-print-canvas",
+  "digital-oil-painting-canvas",
+  "custom-themed-canvas",
+] as const;
+
+const lockedRealEngineParityMatrix: readonly LockedParityRow[] = [
+  {
+    id: "roll-up-follow-up-nz",
+    currentText: "New Zealand",
+    context: [
+      customer("How much for roll up banner?"),
+      staff("Is this for New Zealand or Australia?"),
+      customer("New Zealand"),
+    ],
+    facebookOutput: "I can confirm the current catalogue price for that Roll-Up Banner configuration.",
+    websiteOutput: websiteDecision({
+      response_type: "ANSWER_SAFE",
+      allowed_facts: ["APPROVED_CATALOGUE_PRICE"],
+      missing_fields: [],
+      follow_up_fields: [],
+    }),
+    expectedContext: expectedAllowedBusinessContext({
+      conversation: {
+        intent: "quote_information_collection",
+        market: "NZ",
+        productKey: "roll-up-banner",
+        size: "standard",
+        asksCataloguePrice: true,
+      },
+      ruleIds: quoteRuleIds,
+      qualityGuideId: "quote_information_collection",
+      qualityRequirementIds: quoteQualityRequirementIds,
+      canonicalQuote: {
+        status: "verified",
+        sourceRevision: 12,
+        facts: [{ productKey: "roll-up-banner", sizeKey: "standard", currency: "NZD" }],
+      },
+      allowedFactIds: ["APPROVED_CATALOGUE_PRICE"],
+      allowedFollowUpFields: [],
+    }),
+  },
+  {
+    id: "roll-up-direct-nz",
+    currentText: "How much is a roll up banner in NZ?",
+    context: [customer("How much is a roll up banner in NZ?")],
+    facebookOutput: "I can confirm the current catalogue price for that Roll-Up Banner configuration.",
+    websiteOutput: websiteDecision({
+      response_type: "ANSWER_SAFE",
+      allowed_facts: ["APPROVED_CATALOGUE_PRICE"],
+      missing_fields: [],
+      follow_up_fields: [],
+    }),
+    expectedContext: expectedAllowedBusinessContext({
+      conversation: {
+        intent: "quote_information_collection",
+        market: "NZ",
+        productKey: "roll-up-banner",
+        size: "standard",
+        asksCataloguePrice: true,
+      },
+      ruleIds: quoteRuleIds,
+      qualityGuideId: "quote_information_collection",
+      qualityRequirementIds: quoteQualityRequirementIds,
+      canonicalQuote: {
+        status: "verified",
+        sourceRevision: 12,
+        facts: [{ productKey: "roll-up-banner", sizeKey: "standard", currency: "NZD" }],
+      },
+      allowedFactIds: ["APPROVED_CATALOGUE_PRICE"],
+      allowedFollowUpFields: [],
+    }),
+  },
+  {
+    id: "a2-canvas-follow-up",
+    currentText: "A2, 3 people",
+    context: [
+      customer("How much for A2 canvas in NZ?"),
+      staff("Which Canvas type would you like?"),
+      customer("A2, 3 people"),
+    ],
+    facebookOutput: "Which Canvas type would you like: Photo Print, Digital Oil Painting, or Custom Themed?",
+    websiteOutput: websiteDecision({
+      product_type: "CANVAS",
+      missing_fields: ["PRODUCT_TYPE"],
+      follow_up_fields: ["PRODUCT_TYPE"],
+    }),
+    expectedContext: expectedAllowedBusinessContext({
+      conversation: {
+        intent: "quote_information_collection",
+        market: "NZ",
+        productCandidates: canvasProductCandidates,
+        size: "a2",
+        peoplePets: 3,
+        missingFields: ["PRODUCT_TYPE"],
+        asksCataloguePrice: true,
+      },
+      ruleIds: quoteRuleIds,
+      qualityGuideId: "quote_information_collection",
+      qualityRequirementIds: quoteQualityRequirementIds,
+      canonicalQuote: { status: "clarification_required", sourceRevision: 12, missing: ["product"] },
+      allowedFactIds: [],
+      allowedFollowUpFields: ["PRODUCT_TYPE"],
+    }),
+  },
+  {
+    id: "wall-banner-au",
+    currentText: "Australia",
+    context: [
+      customer("How much for wall hanging banner?"),
+      staff("Is this for New Zealand or Australia?"),
+      customer("Australia"),
+    ],
+    facebookOutput: "What size do you need?",
+    websiteOutput: websiteDecision({
+      product_type: "BANNER",
+      missing_fields: ["SIZE"],
+      follow_up_fields: ["SIZE"],
+    }),
+    expectedContext: expectedAllowedBusinessContext({
+      conversation: {
+        intent: "quote_information_collection",
+        market: "AU",
+        productKey: "custom-themed-wall-banner",
+        missingFields: ["SIZE"],
+        asksCataloguePrice: true,
+      },
+      ruleIds: quoteRuleIds,
+      qualityGuideId: "quote_information_collection",
+      qualityRequirementIds: quoteQualityRequirementIds,
+      canonicalQuote: { status: "clarification_required", sourceRevision: 12, missing: ["size"] },
+      allowedFactIds: [],
+      allowedFollowUpFields: ["SIZE"],
+    }),
+  },
+  {
+    id: "brisbane-shipping",
+    currentText: "Do you ship to Brisbane?",
+    context: [customer("Do you ship to Brisbane?")],
+    blocked: true,
+    expectedConversation: { intent: "unknown" },
+  },
+  {
+    id: "turnaround",
+    currentText: "How long does it take?",
+    context: [customer("How long does it take?")],
+    blocked: true,
+    expectedConversation: { intent: "unknown" },
+  },
+  {
+    id: "product-guidance",
+    currentText: "What is the difference between canvas and a banner?",
+    context: [customer("What is the difference between canvas and a banner?")],
+    facebookOutput: "Canvas suits a wall display and keepsake-style presentation. Banners can suit event displays; tell us whether you need a wall or freestanding format.",
+    websiteOutput: websiteDecision({
+      response_type: "ANSWER_SAFE",
+      intent: "product_differences",
+      allowed_facts: ["CANVAS_WALL_KEEPSAKE", "BANNER_DISPLAY_OPTIONS"],
+      missing_fields: [],
+      follow_up_fields: [],
+    }),
+    expectedContext: expectedAllowedBusinessContext({
+      conversation: { intent: "product_differences", productCandidates: canvasProductCandidates },
+      ruleIds: ["AI-SCOPE-02", "PRODUCT-04", "PRODUCT-05", "PRODUCT-06"],
+      qualityGuideId: "product_differences",
+      qualityRequirementIds: ["display_method", "product_structure", "product_use_cases", "recommendation_reason"],
+      canonicalQuote: { status: "not_requested" },
+      allowedFactIds: [
+        "CANVAS_WALL_KEEPSAKE",
+        "CANVAS_PERMANENT_KEEPSAKE_RECOMMENDATION",
+        "BANNER_DISPLAY_OPTIONS",
+        "ROLL_UP_FREESTANDING_RECOMMENDATION",
+      ],
+      allowedFollowUpFields: ["PRODUCT_TYPE"],
+    }),
+  },
+  {
+    id: "design-guidance",
+    currentText: "How does the design process work?",
+    context: [customer("How does the design process work?")],
+    facebookOutput: "We’ll collect your photos, wording, theme and colour preferences. We’ll then prepare a design draft for you to review before printing.",
+    websiteOutput: websiteDecision({
+      response_type: "ANSWER_SAFE",
+      intent: "design_process",
+      allowed_facts: ["DESIGN_INPUTS", "DESIGN_DRAFT_REVIEW_BEFORE_PRINTING"],
+      missing_fields: [],
+      follow_up_fields: [],
+    }),
+    expectedContext: expectedAllowedBusinessContext({
+      conversation: { intent: "design_process" },
+      ruleIds: ["AI-SCOPE-04", "DESIGN-01", "DESIGN-06", "PHOTO-01"],
+      qualityGuideId: "design_process",
+      qualityRequirementIds: [
+        "design_inputs",
+        "photo_arrangement",
+        "draft_review",
+        "adjustments_and_approval",
+        "approval_to_production",
+      ],
+      canonicalQuote: { status: "not_requested" },
+      allowedFactIds: [
+        "DESIGN_INPUTS",
+        "DESIGN_DRAFT_REVIEW_BEFORE_PRINTING",
+        "HAPPY_50TH_BIRTHDAY_MUM_WORDING_NOTED",
+        "WORDING_NOTED",
+      ],
+      allowedFollowUpFields: [
+        "PRODUCT_TYPE",
+        "SIZE",
+        "ORIGINAL_PHOTOS",
+        "WORDING",
+        "THEME",
+        "COLOUR_PREFERENCES",
+      ],
+    }),
+  },
+  {
+    id: "production-guidance",
+    currentText: "What is the general production process?",
+    context: [customer("What is the general production process?")],
+    facebookOutput: "Once your design is approved, we’ll proceed to printing and production. Once the order is confirmed, we can arrange delivery.",
+    websiteOutput: websiteDecision({
+      response_type: "ANSWER_SAFE",
+      intent: "production_process",
+      allowed_facts: ["PRODUCTION_AFTER_APPROVAL", "DELIVERY_AFTER_CONFIRMATION"],
+      missing_fields: [],
+      follow_up_fields: [],
+    }),
+    expectedContext: expectedAllowedBusinessContext({
+      conversation: { intent: "production_process" },
+      ruleIds: ["AI-SCOPE-06", "DESIGN-06", "VOICE-01"],
+      qualityGuideId: "production_process",
+      qualityRequirementIds: [
+        "production_inputs",
+        "artwork_preparation",
+        "customer_approval",
+        "printing_transition",
+        "production_next_step",
+      ],
+      canonicalQuote: { status: "not_requested" },
+      allowedFactIds: ["PRODUCTION_AFTER_APPROVAL", "DELIVERY_AFTER_CONFIRMATION"],
+      allowedFollowUpFields: [],
+    }),
+  },
+];
 
 function repositoryFor(
   channel: CustomerServiceChannel,
@@ -120,7 +452,163 @@ function expectNoFalseHandoff(
   expect(run.repository.createGateBlockedAttempt).not.toHaveBeenCalled();
 }
 
+function blockedBusinessContext(
+  run: Awaited<ReturnType<typeof runChannel>>,
+  currentText: string,
+  context: readonly ConversationContextItem[],
+) {
+  const gateAttempt = run.repository.createGateBlockedAttempt.mock.calls[0]?.[0];
+  expect(gateAttempt).toBeDefined();
+  const state = resolveConversationState({
+    currentText,
+    history: context,
+    productContext: null,
+    registry: defaultProductRegistry,
+  });
+  expect(gateAttempt!.intent).toBe(state.intent.value);
+  return {
+    version: 1,
+    conversation: {
+      intent: state.intent.value,
+      market: state.market?.value ?? null,
+      productKey: state.product?.productKey ?? null,
+      productCandidates: [...state.productCandidates],
+      size: state.size?.value ?? null,
+      peoplePets: state.peoplePets?.value ?? null,
+      photoCount: state.photoCount?.value ?? null,
+      missingFields: [...state.missingFields],
+      asksCataloguePrice: state.asksCataloguePrice,
+    },
+    knowledge: {
+      version: gateAttempt!.knowledgeVersion,
+      ruleIds: [],
+      qualityGuideId: null,
+      qualityRequirementIds: [],
+    },
+    canonicalQuote: { status: "not_requested" },
+    decision: {
+      allowedFactIds: [],
+      allowedFollowUpFields: [],
+      policy: { decision: "NEEDS_HUMAN_REVIEW", reason: gateAttempt!.gateReasons[0] },
+      handoff: { required: true, reason: gateAttempt!.gateReasons[0] },
+    },
+  };
+}
+
 describe("real Facebook and Website engine parity", () => {
+  it("contains every locked real-engine parity acceptance row", () => {
+    expect(lockedRealEngineParityMatrix.map((row) => row.id))
+      .toEqual(REQUIRED_REAL_ENGINE_PARITY_CASE_IDS);
+  });
+
+  it.each(lockedRealEngineParityMatrix)(
+    "exercises the locked real-engine parity row: $id",
+    async (row) => {
+      const [facebook, website] = await Promise.all([
+        runChannel({
+          channel: "facebook",
+          currentText: row.currentText,
+          context: row.context,
+          modelOutput: "blocked" in row ? "unused" : row.facebookOutput,
+        }),
+        runChannel({
+          channel: "website",
+          currentText: row.currentText,
+          context: row.context,
+          modelOutput: "blocked" in row ? "unused" : row.websiteOutput,
+        }),
+      ]);
+
+      if ("blocked" in row) {
+        expect(facebook.result).toEqual({
+          status: "gate_blocked",
+          attemptId: "facebook-blocked-attempt",
+        });
+        expect(website.result).toEqual({
+          status: "gate_blocked",
+          attemptId: "website-blocked-attempt",
+        });
+        expect(facebook.provider.generate).not.toHaveBeenCalled();
+        expect(website.provider.generate).not.toHaveBeenCalled();
+
+        const expectedContext = {
+          version: 1,
+          conversation: {
+            intent: row.expectedConversation.intent,
+            market: row.expectedConversation.market ?? null,
+            productKey: row.expectedConversation.productKey ?? null,
+            productCandidates: row.expectedConversation.productCandidates ?? [],
+            size: row.expectedConversation.size ?? null,
+            peoplePets: row.expectedConversation.peoplePets ?? null,
+            photoCount: row.expectedConversation.photoCount ?? null,
+            missingFields: row.expectedConversation.missingFields ?? [],
+            asksCataloguePrice: row.expectedConversation.asksCataloguePrice ?? false,
+          },
+          knowledge: {
+            version: compiledKnowledge.knowledgeVersion,
+            ruleIds: [],
+            qualityGuideId: null,
+            qualityRequirementIds: [],
+          },
+          canonicalQuote: { status: "not_requested" },
+          decision: {
+            allowedFactIds: [],
+            allowedFollowUpFields: [],
+            policy: { decision: "NEEDS_HUMAN_REVIEW", reason: "unresolved_intent" },
+            handoff: { required: true, reason: "unresolved_intent" },
+          },
+        };
+        expect(blockedBusinessContext(facebook, row.currentText, row.context)).toEqual(expectedContext);
+        expect(blockedBusinessContext(website, row.currentText, row.context)).toEqual(expectedContext);
+        expect(facebook.repository.createGateBlockedAttempt.mock.calls[0]?.[0]).toMatchObject({
+          intent: row.expectedConversation.intent,
+          gateResult: "unresolved",
+          gateReasons: ["unresolved_intent"],
+          knowledgeVersion: compiledKnowledge.knowledgeVersion,
+        });
+        expect(website.repository.createGateBlockedAttempt.mock.calls[0]?.[0]).toMatchObject({
+          intent: row.expectedConversation.intent,
+          gateResult: "unresolved",
+          gateReasons: ["unresolved_intent"],
+          knowledgeVersion: compiledKnowledge.knowledgeVersion,
+        });
+        return;
+      }
+
+      expectNoFalseHandoff(facebook, { status: "draft_ready", attemptId: "facebook-attempt" });
+      expectNoFalseHandoff(website, { status: "draft_ready", attemptId: "website-attempt" });
+
+      const facebookPrompt = promptFor(facebook);
+      const websitePrompt = promptFor(website);
+      expect(resolvedBusinessContext(facebookPrompt)).toEqual(row.expectedContext);
+      expect(resolvedBusinessContext(websitePrompt)).toEqual(row.expectedContext);
+      expect(websitePrompt.responseFormat).toMatchObject({
+        name: "website_customer_service_decision_v1",
+        schema: { additionalProperties: false },
+      });
+      expect(websitePrompt.instructions).not.toMatch(/NZ\$\d|AU\$\d|amountInclTaxCents/);
+
+      const websiteCompletion = completion(website);
+      expect(completion(facebook)).toMatchObject({
+        status: "draft_ready",
+        draftText: row.facebookOutput,
+      });
+      expect(websiteCompletion).toMatchObject({
+        status: "draft_ready",
+        draftText: expect.any(String),
+        websiteDecision: JSON.parse(row.websiteOutput) as Record<string, unknown>,
+      });
+      if (row.expectedContext.canonicalQuote.status === "verified") {
+        const price = websiteCompletion?.websiteDecision?.approved_catalogue_price;
+        expect(price).toBeDefined();
+        const currencyPrefix = price!.currency === "NZD" ? "NZ$" : "AU$";
+        const formattedPrice = `${currencyPrefix}${(price!.amountInclTaxCents / 100).toFixed(2)}`;
+        expect(facebookPrompt.instructions).toContain(formattedPrice);
+        expect(websitePrompt.instructions).not.toContain(formattedPrice);
+      }
+    },
+  );
+
   it.each([
     "Which Canvas type would you like?",
     "Which type of Canvas would you like?",
