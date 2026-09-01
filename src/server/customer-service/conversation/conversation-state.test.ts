@@ -87,6 +87,47 @@ describe("resolveConversationState", () => {
     });
   });
 
+  it.each([
+    "Which type of Canvas would you like?",
+    "Would you prefer Photo Print, Digital Oil Painting, or Custom Themed Canvas?",
+  ])("uses the open customer-derived Canvas subtype slot without depending on staff prose: %s", (question) => {
+    const state = resolveConversationState({
+      currentText: "Digital oil painting canvas",
+      history: [
+        customer("How much for canvas in New Zealand?"),
+        staff(question),
+        customer("A2 3 people"),
+      ],
+      productContext: null,
+      registry,
+    });
+
+    expect(state).toMatchObject({
+      product: { productKey: "digital-oil-painting-canvas" },
+      size: { value: "a2", source: "customer_history" },
+      peoplePets: { value: 3, source: "customer_history" },
+      asksCataloguePrice: true,
+      missingFields: [],
+    });
+  });
+
+  it("does not merge an unprompted exact Canvas mention into an older ambiguous topic", () => {
+    const state = resolveConversationState({
+      currentText: "Digital oil painting canvas",
+      history: [
+        customer("How much for canvas in New Zealand?"),
+        customer("A2 3 people"),
+      ],
+      productContext: null,
+      registry,
+    });
+
+    expect(state.product?.productKey).toBe("digital-oil-painting-canvas");
+    expect(state.size).toBeNull();
+    expect(state.peoplePets).toBeNull();
+    expect(state.missingFields).toEqual(["SIZE", "PEOPLE_COUNT"]);
+  });
+
   it("clears incompatible Canvas values when the customer switches to Roll-up Banner", () => {
     const state = resolveConversationState({
       currentText: "Actually how much for a roll up banner?",

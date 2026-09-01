@@ -95,11 +95,6 @@ function categoryCandidates(value: string, registry: ProductRegistryDocument) {
   return [];
 }
 
-function isProductSelectionQuestion(value: string) {
-  return /\bwhich\s+canvas\s+type\b/i.test(value)
-    || /\b(?:which|what)\s+(?:product|format|product format)\b/i.test(value);
-}
-
 function sizeMention(value: string) {
   const aSize = value.match(/\bA([0-4])\b/i);
   if (aSize) return `a${aSize[1]}`;
@@ -113,6 +108,71 @@ function countMention(value: string, subject: "people" | "photos") {
     : /\b(\d{1,2})\s*(?:photos?|images?|pictures?)\b/i;
   const match = value.match(pattern);
   return match ? Number(match[1]) : null;
+}
+
+function priorHistoryWithoutCurrent(
+  currentText: string,
+  history: readonly ConversationContextItem[],
+) {
+  let skippedCurrent = false;
+  return [...history].reverse().flatMap((entry): ConversationContextItem[] => {
+    if (!skippedCurrent && entry.role === "customer" && entry.text.trim() === currentText.trim()) {
+      skippedCurrent = true;
+      return [];
+    }
+    return [entry];
+  }).reverse();
+}
+
+function openCanvasSubtypeCompletion(input: Readonly<{
+  currentText: string;
+  history: readonly ConversationContextItem[];
+  registry: ProductRegistryDocument;
+}>) {
+  const currentExact = activeProductMatches(input.currentText, input.registry);
+  if (currentExact.length !== 1 || currentExact[0]!.category !== "canvas") return null;
+
+  const priorHistory = priorHistoryWithoutCurrent(input.currentText, input.history);
+  let canvasTopicIndex = -1;
+  let canvasOptions: ReturnType<typeof categoryCandidates> = [];
+  for (let index = priorHistory.length - 1; index >= 0; index -= 1) {
+    const entry = priorHistory[index]!;
+    if (entry.role !== "customer") continue;
+    const exact = activeProductMatches(entry.text, input.registry);
+    const options = exact.length ? exact : categoryCandidates(entry.text, input.registry);
+    if (!options.length) continue;
+    canvasTopicIndex = index;
+    canvasOptions = options;
+    break;
+  }
+  if (
+    canvasTopicIndex < 0
+    || canvasOptions.length < 2
+    || canvasOptions.some((product) => product.category !== "canvas")
+    || !canvasOptions.some((product) => product.key === currentExact[0]!.key)
+  ) return null;
+
+  const topicHistory = priorHistory.slice(canvasTopicIndex);
+  if (!topicHistory.some((entry) => entry.role === "staff")) return null;
+  const customerTopicTexts = topicHistory
+    .filter((entry) => entry.role === "customer")
+    .map((entry) => entry.text);
+  const selectedProduct = currentExact[0]!;
+  const priorSize = [...customerTopicTexts].reverse()
+    .map(sizeMention)
+    .find((value): value is string => value !== null) ?? null;
+  const sizeCompatible = priorSize !== null
+    && selectedProduct.configuration.sizes.some((size) => size.key === priorSize);
+  const priorPeople = [...customerTopicTexts].reverse()
+    .map((text) => countMention(text, "people"))
+    .find((value): value is number => value !== null) ?? null;
+  const peopleCompatible = selectedProduct.configuration.peoplePetsMode !== "required"
+    || priorPeople !== null;
+  const hasCustomerMarket = customerTopicTexts.some((text) => marketMention(text) !== null);
+  const hasPriceIntent = customerTopicTexts.some(isStaticCataloguePricingEnquiry);
+  return sizeCompatible && peopleCompatible && hasCustomerMarket && hasPriceIntent
+    ? selectedProduct.key
+    : null;
 }
 
 function deepFreeze<T>(value: T): T {
@@ -160,6 +220,7 @@ function customerTexts(currentText: string, history: readonly ConversationContex
 function resolveIntent(
   texts: readonly CustomerText[],
   history: readonly ConversationContextItem[],
+  completesOpenCanvasSubtype: boolean,
 ): ResolvedConversationValue<CustomerServiceIntent> {
   const currentIntent = detectIntent(texts[0]?.text ?? "");
   if (currentIntent !== "unknown") {
@@ -169,6 +230,14 @@ function resolveIntent(
   const priorIntent = texts.slice(1)
     .map((entry) => ({ value: detectIntent(entry.text), source: entry.source }))
     .find((entry) => entry.value !== "unknown" && entry.value !== "tone_adjustment");
+  if (completesOpenCanvasSubtype) {
+    return {
+      value: priorIntent?.value === "quote_information_collection"
+        ? priorIntent.value
+        : "quote_information_collection",
+      source: priorIntent?.source ?? "customer_history",
+    };
+  }
   if (lastStaff && isQuoteDetailQuestion(lastStaff.text) && isQuoteDetailAnswer(texts[0]?.text ?? "")) {
     return {
       value: priorIntent?.value === "quote_information_collection"
@@ -189,7 +258,8 @@ export function resolveConversationState(input: Readonly<{
   registry: ProductRegistryDocument;
 }>): ConversationState {
   const texts = customerTexts(input.currentText, input.history);
-  const intent = resolveIntent(texts, input.history);
+  const openCanvasSubtypeProductKey = openCanvasSubtypeCompletion(input);
+  const intent = resolveIntent(texts, input.history, openCanvasSubtypeProductKey !== null);
   const asksCataloguePrice = texts.some((entry) => isStaticCataloguePricingEnquiry(entry.text));
 
   let market: ResolvedConversationValue<Market> | null = null;
@@ -233,16 +303,8 @@ export function resolveConversationState(input: Readonly<{
   const currentCategoryProducts = categoryCandidates(input.currentText, input.registry);
   const currentHasProductMention = currentExactProducts.length > 0
     || currentCategoryProducts.length > 0;
-  const lastStaff = [...input.history].reverse().find((entry) => entry.role === "staff");
-  const priorProductOptions = texts.slice(1).map((entry) => {
-    const exact = activeProductMatches(entry.text, input.registry);
-    return (exact.length ? exact : categoryCandidates(entry.text, input.registry))
-      .map((candidate) => candidate.key);
-  }).find((keys) => keys.length > 0) ?? [];
-  const priorProductKeys = new Set(priorProductOptions);
   const completesOpenProductSlot = currentExactProducts.length === 1
-    && Boolean(lastStaff && isProductSelectionQuestion(lastStaff.text))
-    && priorProductKeys.has(currentExactProducts[0]!.key);
+    && currentExactProducts[0]!.key === openCanvasSubtypeProductKey;
   const startsNewProductTopic = currentHasProductMention && !completesOpenProductSlot;
   const selectedProduct = product
     ? input.registry.products.find((candidate) => candidate.key === product.productKey) ?? null

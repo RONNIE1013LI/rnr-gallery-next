@@ -121,11 +121,15 @@ function expectNoFalseHandoff(
 }
 
 describe("real Facebook and Website engine parity", () => {
-  it("keeps the complete Canvas subtype answer and exposes the same approved three-person quote", async () => {
+  it.each([
+    "Which Canvas type would you like?",
+    "Which type of Canvas would you like?",
+    "Would you prefer Photo Print, Digital Oil Painting, or Custom Themed Canvas?",
+  ])("keeps the complete Canvas subtype answer and exposes the same approved three-person quote: %s", async (question) => {
     const currentText = "Digital oil painting canvas";
     const context = [
       customer("How much for canvas in New Zealand?"),
-      staff("Which Canvas type would you like?"),
+      staff(question),
       customer("A2 3 people"),
       customer(currentText),
     ];
