@@ -298,12 +298,13 @@ export function resolveConversationState(input: Readonly<{
     }
     break;
   }
-  if (!product && productCandidates.length === 0 && input.productContext) {
+  if (!product && input.productContext) {
     const contextual = input.registry.products.find((candidate) => (
       candidate.active && candidate.key === input.productContext?.productKey
     ));
     if (contextual) {
       product = { productKey: contextual.key, source: "server_page_context" };
+      productCandidates = [];
       productMentionSource = "server_page_context";
     }
   }

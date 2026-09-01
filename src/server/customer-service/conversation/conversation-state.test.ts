@@ -202,6 +202,31 @@ describe("resolveConversationState", () => {
     });
   });
 
+  it("keeps a specific Website product context ahead of generic Canvas candidates", () => {
+    const state = resolveConversationState({
+      currentText: "A2 5 people",
+      history: [
+        customer("How much for canvas in New Zealand?"),
+        staff("Which Canvas type would you like?"),
+      ],
+      productContext: {
+        market: "NZ",
+        productKey: "photo-print-canvas",
+        productTitle: "Photo Print Canvas",
+        category: "canvas",
+        pageKind: "product",
+      },
+      registry,
+    });
+
+    expect(state.product).toEqual({
+      productKey: "photo-print-canvas",
+      source: "server_page_context",
+    });
+    expect(state.productCandidates).toEqual([]);
+    expect(state.peoplePets).toBeNull();
+  });
+
   it("returns deeply immutable state", () => {
     const state = resolveConversationState({
       currentText: "How much for canvas in NZ?",
