@@ -8,6 +8,10 @@ const analytics = vi.hoisted(() => ({ emitAnalyticsEvent: vi.fn() }));
 const sessionEndpoint = "/api/customer-chat/session";
 const messagesEndpoint = "/api/customer-chat/messages";
 
+let resizeObserverCallback: ResizeObserverCallback | null = null;
+let resizeObserverTarget: Element | null = null;
+let resizeObserverDisconnect: () => void;
+
 vi.mock("@/domain/analytics/client", () => analytics);
 
 function updates(
@@ -49,9 +53,19 @@ describe("CustomerChat", () => {
       return 1;
     });
     vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    resizeObserverCallback = null;
+    resizeObserverTarget = null;
+    resizeObserverDisconnect = vi.fn();
     vi.stubGlobal("ResizeObserver", class {
-      observe() {}
-      disconnect() {}
+      constructor(callback: ResizeObserverCallback) {
+        resizeObserverCallback = callback;
+      }
+      observe(target: Element) {
+        resizeObserverTarget = target;
+      }
+      disconnect() {
+        resizeObserverDisconnect();
+      }
     });
     vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
     Object.defineProperty(HTMLElement.prototype, "scrollTo", {
@@ -612,6 +626,396 @@ describe("CustomerChat", () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(16); });
     expect(scrollTo).toHaveBeenCalledWith({ top: 900, behavior: "smooth" });
     expect(screen.queryByRole("button", { name: "New message" })).not.toBeInTheDocument();
+  });
+
+  it("follows descendant growth reported by the observed transcript content", async () => {
+    let resolveHistory: ((response: Response) => void) | undefined;
+    const history = new Promise<Response>((resolve) => { resolveHistory = resolve; });
+    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(history));
+    render(<CustomerChat />);
+    openChat();
+    const transcript = screen.getByLabelText("Chat messages");
+    let scrollHeight = 900;
+    let scrollTop = 400;
+    const scrollTo = vi.fn(({ top }: ScrollToOptions) => {
+      scrollTop = Number(top) - 500;
+    });
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, get: () => scrollTop },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+
+    await act(async () => {
+      resolveHistory?.(updates([{
+        eventKey: "assistant-before-layout-growth",
+        role: "assistant",
+        text: "This reply grows after its font finishes loading.",
+        createdAt: "2026-09-01T07:00:00.000Z",
+        state: "committed_assistant",
+      }], "cursor-growth", "committed_assistant"));
+      await history;
+    });
+    scrollTo.mockClear();
+
+    const content = transcript.querySelector("[data-chat-transcript-content]");
+    expect(content).not.toBeNull();
+    expect(resizeObserverTarget).toBe(content);
+    scrollHeight = 1_300;
+    resizeObserverCallback?.([], {} as ResizeObserver);
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1_300, behavior: "auto" });
+  });
+
+  it("keeps following through intermediate programmatic smooth-scroll events", async () => {
+    vi.useFakeTimers();
+    const assistant = {
+      eventKey: "assistant-during-smooth-scroll",
+      role: "assistant",
+      text: "A tall final reply.",
+      createdAt: "2026-09-01T07:00:01.000Z",
+      state: "committed_assistant",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([], "cursor-1"))
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(updates([], "cursor-2", "pending"))
+      .mockResolvedValueOnce(updates([assistant], "cursor-3", "committed_assistant"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+    const transcript = screen.getByLabelText("Chat messages");
+    let scrollHeight = 900;
+    let scrollTop = 400;
+    const scrollTo = vi.fn();
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: {
+        configurable: true,
+        get: () => scrollTop,
+        set: (value: number) => { scrollTop = value; },
+      },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+    const input = screen.getByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Can you help?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+    scrollHeight = 1_200;
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1_200, behavior: "smooth" });
+    expect(resizeObserverTarget).toBe(transcript.querySelector("[data-chat-transcript-content]"));
+    expect(resizeObserverCallback).not.toBeNull();
+    scrollTo.mockClear();
+
+    scrollTop = 450;
+    fireEvent.scroll(transcript);
+    expect(screen.queryByRole("button", { name: "New message" })).not.toBeInTheDocument();
+    scrollHeight = 1_400;
+    resizeObserverCallback?.([], {} as ResizeObserver);
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1_400, behavior: "auto" });
+    expect(screen.queryByRole("button", { name: "New message" })).not.toBeInTheDocument();
+  });
+
+  it("measures a long final reply after its DOM commit before following", async () => {
+    vi.useFakeTimers();
+    let nextFrame = 1;
+    const scheduledFrames = new Map<number, FrameRequestCallback>();
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      const frame = nextFrame;
+      nextFrame += 1;
+      scheduledFrames.set(frame, callback);
+      return frame;
+    });
+    vi.stubGlobal("cancelAnimationFrame", (frame: number) => {
+      scheduledFrames.delete(frame);
+    });
+    const flushAnimationFrames = () => {
+      const frames = [...scheduledFrames.values()];
+      scheduledFrames.clear();
+      frames.forEach((callback) => callback(0));
+    };
+    const finalText = "A long final response that increases the transcript height after React commits it.";
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([], "cursor-1"))
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(updates([], "cursor-2", "pending"))
+      .mockResolvedValueOnce(updates([{
+        eventKey: "assistant-long-final",
+        role: "assistant",
+        text: finalText,
+        createdAt: "2026-09-01T07:00:01.000Z",
+        state: "committed_assistant",
+      }], "cursor-3", "committed_assistant"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+    const transcript = screen.getByLabelText("Chat messages");
+    let scrollTop = 400;
+    const scrollTo = vi.fn(({ top }: ScrollToOptions) => {
+      scrollTop = Number(top) - 500;
+    });
+    Object.defineProperties(transcript, {
+      scrollHeight: {
+        configurable: true,
+        get: () => screen.queryByText(finalText) ? 1_400 : 900,
+      },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, get: () => scrollTop },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+    const input = screen.getByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Please send the details." } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+    act(flushAnimationFrames);
+    scrollTo.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    act(flushAnimationFrames);
+
+    expect(screen.getByText(finalText)).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1_400, behavior: "smooth" });
+  });
+
+  it.each([
+    ["desktop", 1_200, 620],
+    ["mobile", 920, 280],
+  ] as const)("keeps %s geometry inside the transcript instead of scrolling the window", async (_viewport, scrollHeight, clientHeight) => {
+    const windowScrollTo = vi.fn();
+    vi.stubGlobal("scrollTo", windowScrollTo);
+    let resolveHistory: ((response: Response) => void) | undefined;
+    const history = new Promise<Response>((resolve) => { resolveHistory = resolve; });
+    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(history));
+    render(<CustomerChat />);
+    openChat();
+    const transcript = screen.getByLabelText("Chat messages");
+    const transcriptScrollTo = vi.fn();
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, value: scrollHeight },
+      clientHeight: { configurable: true, value: clientHeight },
+      scrollTop: { configurable: true, value: 0 },
+      scrollTo: { configurable: true, value: transcriptScrollTo },
+    });
+
+    await act(async () => {
+      resolveHistory?.(updates([{
+        eventKey: `assistant-${_viewport}`,
+        role: "assistant",
+        text: `Latest ${_viewport} reply.`,
+        createdAt: "2026-09-01T07:00:00.000Z",
+        state: "committed_assistant",
+      }], `cursor-${_viewport}`, "committed_assistant"));
+      await history;
+    });
+
+    expect(transcriptScrollTo).toHaveBeenCalledWith({ top: scrollHeight, behavior: "auto" });
+    expect(windowScrollTo).not.toHaveBeenCalled();
+  });
+
+  it("uses non-animated transcript scrolling for reduced-motion customers", async () => {
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: true })));
+    let resolveHistory: ((response: Response) => void) | undefined;
+    const history = new Promise<Response>((resolve) => { resolveHistory = resolve; });
+    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(history));
+    render(<CustomerChat />);
+    openChat();
+    const transcript = screen.getByLabelText("Chat messages");
+    const scrollTo = vi.fn();
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, value: 900 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, value: 0 },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+
+    await act(async () => {
+      resolveHistory?.(updates([{
+        eventKey: "assistant-reduced-motion",
+        role: "assistant",
+        text: "Reduced-motion reply.",
+        createdAt: "2026-09-01T07:00:00.000Z",
+        state: "committed_assistant",
+      }], "cursor-reduced-motion", "committed_assistant"));
+      await history;
+    });
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 900, behavior: "auto" });
+  });
+
+  it("restores follow mode before a quick-action optimistic append", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValue(updates());
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    const quickAction = await screen.findByRole("button", { name: "Get a Quote" });
+    const transcript = screen.getByLabelText("Chat messages");
+    let scrollTop = 100;
+    const scrollTo = vi.fn(({ top }: ScrollToOptions) => { scrollTop = Number(top) - 500; });
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, value: 900 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, get: () => scrollTop },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+    fireEvent.scroll(transcript);
+    scrollTo.mockClear();
+
+    fireEvent.click(quickAction);
+
+    expect(within(transcript).getByText("I'd like to get a quote.")).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 900, behavior: "auto" });
+  });
+
+  it("restores follow mode before a typed-message optimistic append", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([{
+        eventKey: "earlier-assistant-before-send",
+        role: "assistant",
+        text: "Earlier reply.",
+        createdAt: "2026-09-01T06:59:00.000Z",
+        state: "committed_assistant",
+      }], "cursor-earlier", "committed_assistant"))
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValue(updates());
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    expect(await screen.findByText("Earlier reply.")).toBeInTheDocument();
+    const transcript = screen.getByLabelText("Chat messages");
+    let scrollTop = 100;
+    const scrollTo = vi.fn(({ top }: ScrollToOptions) => { scrollTop = Number(top) - 500; });
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, value: 900 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, get: () => scrollTop },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+    fireEvent.scroll(transcript);
+    const input = screen.getByLabelText("Message R&R Gallery");
+    fireEvent.change(input, { target: { value: "A new question." } });
+    scrollTo.mockClear();
+
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(within(transcript).getByText("A new question.")).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 900, behavior: "smooth" });
+  });
+
+  it("restores follow mode before retrying a failed optimistic message", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(accepted())
+      .mockRejectedValueOnce(new Error("offline"))
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValue(updates());
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    const input = await screen.findByLabelText("Message R&R Gallery");
+    fireEvent.change(input, { target: { value: "Retry this question." } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(await screen.findByText("Message not sent. Try again.")).toBeInTheDocument();
+    const transcript = screen.getByLabelText("Chat messages");
+    let scrollTop = 100;
+    const scrollTo = vi.fn(({ top }: ScrollToOptions) => { scrollTop = Number(top) - 500; });
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, value: 900 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, get: () => scrollTop },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+    fireEvent.scroll(transcript);
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry message" }));
+
+    expect(scrollTo).toHaveBeenCalledWith({ top: 900, behavior: "smooth" });
+  });
+
+  it("catches up to the latest reply when a closed conversation is reopened", async () => {
+    let resolveCatchUp: ((response: Response) => void) | undefined;
+    const catchUp = new Promise<Response>((resolve) => { resolveCatchUp = resolve; });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([{
+        eventKey: "customer-before-close",
+        role: "customer",
+        text: "Earlier question.",
+        createdAt: "2026-09-01T06:59:00.000Z",
+        state: "committed_assistant",
+      }], "cursor-before-close", "committed_assistant"))
+      .mockReturnValueOnce(catchUp);
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    expect(await screen.findByText("Earlier question.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
+    openChat();
+    const transcript = screen.getByLabelText("Chat messages");
+    const scrollTo = vi.fn();
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, value: 1_100 },
+      clientHeight: { configurable: true, value: 360 },
+      scrollTop: { configurable: true, value: 0 },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+
+    await act(async () => {
+      resolveCatchUp?.(updates([{
+        eventKey: "assistant-after-reopen-scroll",
+        role: "assistant",
+        text: "Newest reply after reopening.",
+        createdAt: "2026-09-01T07:00:00.000Z",
+        state: "committed_assistant",
+      }], "cursor-after-reopen", "committed_assistant"));
+      await catchUp;
+    });
+
+    expect(screen.getByText("Newest reply after reopening.")).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 1_100, behavior: "smooth" });
+  });
+
+  it("cancels scheduled transcript work and disconnects observation when closed", async () => {
+    const cancelFrame = vi.fn();
+    vi.stubGlobal("requestAnimationFrame", vi.fn(() => 42));
+    vi.stubGlobal("cancelAnimationFrame", cancelFrame);
+    let resolveHistory: ((response: Response) => void) | undefined;
+    const history = new Promise<Response>((resolve) => { resolveHistory = resolve; });
+    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(history));
+    render(<CustomerChat />);
+    openChat();
+
+    await act(async () => {
+      resolveHistory?.(updates([{
+        eventKey: "assistant-before-close-cleanup",
+        role: "assistant",
+        text: "Reply queued for layout.",
+        createdAt: "2026-09-01T07:00:00.000Z",
+        state: "committed_assistant",
+      }], "cursor-before-cleanup", "committed_assistant"));
+      await history;
+    });
+    expect(requestAnimationFrame).toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(cancelFrame).toHaveBeenCalledWith(42);
+    expect(resizeObserverDisconnect).toHaveBeenCalledTimes(1);
   });
 
   it("sends on Enter and lets Shift+Enter add a newline without preventing the textarea default", async () => {

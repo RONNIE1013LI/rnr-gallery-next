@@ -145,8 +145,10 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const launcherRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const transcriptRef = useRef<HTMLDivElement>(null);
+  const transcriptContentRef = useRef<HTMLDivElement>(null);
   const followLatestRef = useRef(true);
   const readingHistoryRef = useRef(false);
+  const programmaticScrollRef = useRef<{ lastScrollTop: number } | null>(null);
   const positionedTranscriptRef = useRef(false);
   const lastNonCustomerEventKeyRef = useRef<string | null>(null);
   const transcriptFrameRef = useRef<number | null>(null);
@@ -157,12 +159,21 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     if (transcriptFrameRef.current !== null) {
       cancelAnimationFrame(transcriptFrameRef.current);
     }
-    transcriptFrameRef.current = requestAnimationFrame(() => {
+    let completedSynchronously = false;
+    const frame = requestAnimationFrame(() => {
+      completedSynchronously = true;
       transcriptFrameRef.current = null;
       const reducedMotion = typeof window.matchMedia === "function"
         && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      programmaticScrollRef.current = { lastScrollTop: transcript.scrollTop };
       scrollTranscriptToLatest(transcript, reducedMotion ? "auto" : requestedBehavior);
+      const programmaticScroll = programmaticScrollRef.current;
+      if (programmaticScroll) {
+        programmaticScroll.lastScrollTop = transcript.scrollTop;
+        if (isNearBottom(transcript)) programmaticScrollRef.current = null;
+      }
     });
+    if (!completedSynchronously) transcriptFrameRef.current = frame;
   }, []);
 
   function currentlyTrackable() {
@@ -294,6 +305,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
         cancelAnimationFrame(transcriptFrameRef.current);
         transcriptFrameRef.current = null;
       }
+      programmaticScrollRef.current = null;
       if (!lockGrantedRef.current) lockWaitAbortControllerRef.current?.abort();
     };
   }, []);
@@ -301,6 +313,11 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   function close() {
     if (!lockGrantedRef.current) lockWaitAbortControllerRef.current?.abort();
     openRef.current = false;
+    if (transcriptFrameRef.current !== null) {
+      cancelAnimationFrame(transcriptFrameRef.current);
+      transcriptFrameRef.current = null;
+    }
+    programmaticScrollRef.current = null;
     restoreLauncherFocusRef.current = true;
     setOpen(false);
   }
@@ -357,14 +374,14 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
 
   useEffect(() => {
     if (!open || typeof ResizeObserver !== "function") return;
-    const transcript = transcriptRef.current;
-    if (!transcript) return;
+    const transcriptContent = transcriptContentRef.current;
+    if (!transcriptContent) return;
     const observer = new ResizeObserver(() => {
       if (followLatestRef.current && positionedTranscriptRef.current) {
         scrollToLatest("auto");
       }
     });
-    observer.observe(transcript);
+    observer.observe(transcriptContent);
     return () => observer.disconnect();
   }, [open, scrollToLatest]);
 
@@ -548,56 +565,79 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
             <button type="button" className={styles.closeButton} aria-label="Close chat" title="Close chat" onClick={close}>×</button>
           </header>
           <div className={styles.transcriptShell}>
-          <div
-            ref={transcriptRef}
-            className={styles.transcript}
-            aria-label="Chat messages"
-            onScroll={(event) => {
-              const following = isNearBottom(event.currentTarget);
-              followLatestRef.current = following;
-              readingHistoryRef.current = !following;
-              if (following) setNewMessageAvailable(false);
-            }}
-          >
-            {historyError ? <div className={styles.historyError} role="status">
-              <p>We couldn’t load your earlier messages. You can still start a new chat.</p>
-              <button type="button" onClick={() => void poll()}>Retry conversation history</button>
-            </div> : null}
-            {showWelcome ? <section className={styles.welcome} aria-labelledby="customer-chat-welcome-title">
-              <h2 id="customer-chat-welcome-title">Hi 👋 How can we help?</h2>
-              <p>Choose an option below or simply type your message.</p>
-              <div className={styles.quickActions} aria-label="Quick chat options">
-                {QUICK_ACTIONS.map((action) => <button
-                  key={action.id}
-                  type="button"
-                  className={styles.quickAction}
-                  disabled={sending}
-                  onClick={() => startQuickAction(action)}
-                >{action.label}</button>)}
+            <div
+              ref={transcriptRef}
+              className={styles.transcript}
+              aria-label="Chat messages"
+              onScroll={(event) => {
+                const programmaticScroll = programmaticScrollRef.current;
+                if (programmaticScroll) {
+                  if (isNearBottom(event.currentTarget)) {
+                    programmaticScrollRef.current = null;
+                    followLatestRef.current = true;
+                    readingHistoryRef.current = false;
+                    setNewMessageAvailable(false);
+                  } else if (event.currentTarget.scrollTop >= programmaticScroll.lastScrollTop) {
+                    programmaticScroll.lastScrollTop = event.currentTarget.scrollTop;
+                  } else {
+                    programmaticScrollRef.current = null;
+                  }
+                  if (programmaticScrollRef.current) return;
+                }
+                const following = isNearBottom(event.currentTarget);
+                followLatestRef.current = following;
+                readingHistoryRef.current = !following;
+                if (following) setNewMessageAvailable(false);
+              }}
+              onWheel={() => { programmaticScrollRef.current = null; }}
+              onPointerDown={() => { programmaticScrollRef.current = null; }}
+              onTouchStart={() => { programmaticScrollRef.current = null; }}
+            >
+              <div
+                ref={transcriptContentRef}
+                className={styles.transcriptContent}
+                data-chat-transcript-content
+              >
+                {historyError ? <div className={styles.historyError} role="status">
+                  <p>We couldn’t load your earlier messages. You can still start a new chat.</p>
+                  <button type="button" onClick={() => void poll()}>Retry conversation history</button>
+                </div> : null}
+                {showWelcome ? <section className={styles.welcome} aria-labelledby="customer-chat-welcome-title">
+                  <h2 id="customer-chat-welcome-title">Hi 👋 How can we help?</h2>
+                  <p>Choose an option below or simply type your message.</p>
+                  <div className={styles.quickActions} aria-label="Quick chat options">
+                    {QUICK_ACTIONS.map((action) => <button
+                      key={action.id}
+                      type="button"
+                      className={styles.quickAction}
+                      disabled={sending}
+                      onClick={() => startQuickAction(action)}
+                    >{action.label}</button>)}
+                  </div>
+                </section> : null}
+                {events.map((event) => <div className={styles.message} data-role={event.role} key={event.eventKey}>
+                  <span>{messageLabel(event.role)}</span><p>{event.text}</p>
+                </div>)}
+                {outgoingMessages.map((message) => <div
+                  className={styles.message}
+                  data-role="customer"
+                  data-state={message.status}
+                  key={message.clientMessageKey}
+                ><span>You</span><p>{message.message}</p></div>)}
+                {assistantPending ? <div className={styles.typing} role="status">R&amp;R Gallery is typing…</div> : null}
+                <div aria-hidden="true" />
               </div>
-            </section> : null}
-            {events.map((event) => <div className={styles.message} data-role={event.role} key={event.eventKey}>
-              <span>{messageLabel(event.role)}</span><p>{event.text}</p>
-            </div>)}
-            {outgoingMessages.map((message) => <div
-              className={styles.message}
-              data-role="customer"
-              data-state={message.status}
-              key={message.clientMessageKey}
-            ><span>You</span><p>{message.message}</p></div>)}
-            {assistantPending ? <div className={styles.typing} role="status">R&amp;R Gallery is typing…</div> : null}
-            <div aria-hidden="true" />
-          </div>
-          {newMessageAvailable ? <button
-            type="button"
-            className={styles.newMessageButton}
-            onClick={() => {
-              followLatestRef.current = true;
-              readingHistoryRef.current = false;
-              setNewMessageAvailable(false);
-              scrollToLatest("smooth");
-            }}
-          >New message</button> : null}
+            </div>
+            {newMessageAvailable ? <button
+              type="button"
+              className={styles.newMessageButton}
+              onClick={() => {
+                followLatestRef.current = true;
+                readingHistoryRef.current = false;
+                setNewMessageAvailable(false);
+                scrollToLatest("smooth");
+              }}
+            >New message</button> : null}
           </div>
           <p id="customer-chat-status" className={styles.status} aria-live="polite">{feedback}</p>
           <form className={styles.composer} onSubmit={(event) => {
