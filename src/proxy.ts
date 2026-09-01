@@ -20,9 +20,6 @@ const retiredLegacyPaths = new Set([
   "/locations.kml",
   "/my-account",
 ]);
-const metaWebIndexerPattern = /(?:^|[\s;(])meta-webindexer(?:\/|$|[\s;)])/i;
-const metaWebIndexerImageWidth = "828";
-const metaWebIndexerImageQuality = "60";
 
 function getCurrentGenericLegacyProductSlug(pathname: string) {
   const match = pathname.match(/^\/product\/([^/]+)\/?$/);
@@ -81,36 +78,6 @@ function gone() {
       "X-Robots-Tag": "noindex, nofollow",
     },
   });
-}
-
-function isApprovedPublicImageSource(source: string, origin: string) {
-  if (!source.startsWith("/") || source.startsWith("//") || source.includes("\\")) {
-    return false;
-  }
-  const resolved = new URL(source, origin);
-  return resolved.origin === origin
-    && (resolved.pathname.startsWith("/gallery-images/")
-      || resolved.pathname.startsWith("/media/"));
-}
-
-function getMetaWebIndexerImageRedirect(request: NextRequest) {
-  if (request.nextUrl.pathname !== "/_next/image") return undefined;
-  if (!metaWebIndexerPattern.test(request.headers.get("user-agent") ?? "")) {
-    return undefined;
-  }
-  const source = request.nextUrl.searchParams.get("url");
-  if (!source || !isApprovedPublicImageSource(source, request.nextUrl.origin)) {
-    return undefined;
-  }
-  if (
-    request.nextUrl.searchParams.get("w") === metaWebIndexerImageWidth
-    && request.nextUrl.searchParams.get("q") === metaWebIndexerImageQuality
-  ) return undefined;
-
-  const canonical = request.nextUrl.clone();
-  canonical.searchParams.set("w", metaWebIndexerImageWidth);
-  canonical.searchParams.set("q", metaWebIndexerImageQuality);
-  return canonical;
 }
 
 function skipsStorefrontMarketLogic(pathname: string) {
@@ -181,14 +148,6 @@ export function proxy(request: NextRequest) {
     const canonicalUrl = new URL(request.url);
     canonicalUrl.pathname = pathname.slice(0, -1);
     return NextResponse.redirect(canonicalUrl, 308);
-  }
-
-  const metaWebIndexerImageRedirect = getMetaWebIndexerImageRedirect(request);
-  if (metaWebIndexerImageRedirect) {
-    const response = NextResponse.redirect(metaWebIndexerImageRedirect);
-    response.headers.set("Cache-Control", "private, no-store");
-    response.headers.set("Vary", "User-Agent");
-    return response;
   }
 
   if (skipsStorefrontMarketLogic(pathname)) return NextResponse.next();

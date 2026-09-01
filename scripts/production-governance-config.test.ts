@@ -47,4 +47,31 @@ describe("Production governance wiring", () => {
       "npm run automation:guard && tsx scripts/verify-production-deployment-source.ts",
     );
   });
+
+  it("canonicalizes only meta-webindexer public image requests before Vercel image optimization", () => {
+    const vercel = JSON.parse(
+      readFileSync(resolve(root, "vercel.json"), "utf8"),
+    ) as {
+      redirects?: Array<Record<string, unknown>>;
+    };
+
+    expect(vercel.redirects).toEqual([{
+      source: "/_next/image",
+      has: [
+        {
+          type: "header",
+          key: "user-agent",
+          value: "(?:^|.*[\\s;(])meta-webindexer(?:/.*|$|[\\s;)].*)",
+        },
+        {
+          type: "query",
+          key: "url",
+          value: "(?<metaImageSource>/(?:gallery-images|media)/.*)",
+        },
+      ],
+      missing: [{ type: "query", key: "rnr_meta_image" }],
+      destination: "/_next/image?url=:metaImageSource&w=828&q=60&rnr_meta_image=1",
+      statusCode: 307,
+    }]);
+  });
 });
