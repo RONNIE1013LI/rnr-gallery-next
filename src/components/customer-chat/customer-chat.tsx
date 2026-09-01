@@ -41,6 +41,7 @@ const QUICK_ACTIONS = Object.freeze([
 ] as const);
 
 const updatesEndpoint = "/api/customer-chat/updates";
+const sessionEndpoint = "/api/customer-chat/session";
 const messagesEndpoint = "/api/customer-chat/messages";
 const pollingIntervalMs = 5_000;
 const maximumPendingPolls = 24;
@@ -48,6 +49,9 @@ const maximumUpdatePages = 24;
 
 type PollResult = "pending" | "terminal" | "error" | "blocked";
 
+type CustomerChatLockManager = Readonly<{
+  request: <T>(name: string, options: Readonly<{ mode: "exclusive"; signal?: AbortSignal }>, callback: () => Promise<T>) => Promise<T>;
+}>;
 function clientMessageKey() {
   const generated = globalThis.crypto?.randomUUID?.().replaceAll("-", "");
   if (generated) return generated;
@@ -113,6 +117,8 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const pendingPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPollCycleRef = useRef(0);
   const sendingRef = useRef(false);
+  const lockWaitAbortControllerRef = useRef<AbortController | null>(null);
+  const lockGrantedRef = useRef(false);
   const awaitingReplyRef = useRef(false);
   const awaitingReplyGenerationRef = useRef(0);
   const initialPollRef = useRef(true);
@@ -234,6 +240,12 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     else void check();
   }, [poll, stopPendingPolling]);
 
+  function close() {
+    if (!lockGrantedRef.current) lockWaitAbortControllerRef.current?.abort();
+    restoreLauncherFocusRef.current = true;
+    setOpen(false);
+  }
+
   useEffect(() => {
     const pollingAllowed = pollingAllowedForAutomation("customer-chat");
     if (!open) return;
@@ -271,11 +283,6 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     }
   }, [open]);
 
-  function close() {
-    restoreLauncherFocusRef.current = true;
-    setOpen(false);
-  }
-
   async function sendMessage(current: PendingMessage) {
     if (sendingRef.current) return;
     sendingRef.current = true;
@@ -291,15 +298,52 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
         : message);
     });
     try {
-      const response = await fetch(messagesEndpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Accept: "application/json" },
-        body: JSON.stringify({
-          clientMessageKey: current.clientMessageKey,
-          message: current.message,
-          pageContext: { pathname },
-        }),
+      const locks = (navigator as Navigator & { locks?: CustomerChatLockManager }).locks;
+      if (!locks) {
+        setPendingMessage(current);
+        if (current.restoreDraftOnFailure) setDraft(current.message);
+        setOutgoingMessages((messages) => messages.map((message) => message.clientMessageKey === current.clientMessageKey
+          ? { ...message, status: "failed" }
+          : message));
+        setFeedback("Chat needs a supported browser. Please use our contact form instead.");
+        return;
+      }
+      const lockWaitController = new AbortController();
+      lockWaitAbortControllerRef.current = lockWaitController;
+      const response = await locks.request("rnr-customer-chat-session-v1", { mode: "exclusive", signal: lockWaitController.signal }, async () => {
+        lockGrantedRef.current = true;
+        if (lockWaitAbortControllerRef.current === lockWaitController) lockWaitAbortControllerRef.current = null;
+        const bootstrap = async () => {
+          const session = await fetch(sessionEndpoint, {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Accept: "application/json" },
+            body: JSON.stringify({ version: 1, clientMessageKey: current.clientMessageKey }),
+          });
+          if (!session.ok) return null;
+          const body = await session.json().catch(() => null) as { permit?: unknown } | null;
+          return typeof body?.permit === "string" && body.permit.length <= 256 ? body.permit : null;
+        };
+        const post = (permit: string) => fetch(messagesEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Accept: "application/json", "X-RNR-Customer-Chat-Permit": permit },
+          body: JSON.stringify({ clientMessageKey: current.clientMessageKey, message: current.message, pageContext: { pathname } }),
+        });
+        const firstPermit = await bootstrap();
+        if (!firstPermit) return null;
+        const firstResponse = await post(firstPermit);
+        if (firstResponse.status !== 409) return firstResponse;
+        const retryPermit = await bootstrap();
+        return retryPermit ? post(retryPermit) : null;
       });
+      if (!response) {
+        setPendingMessage(current);
+        if (current.restoreDraftOnFailure) setDraft(current.message);
+        setOutgoingMessages((messages) => messages.map((message) => message.clientMessageKey === current.clientMessageKey
+          ? { ...message, status: "failed" }
+          : message));
+        setFeedback("Message not sent. Try again.");
+        return;
+      }
       if (response.ok) {
         awaitingReplyGenerationRef.current += 1;
         awaitingReplyRef.current = true;
@@ -343,6 +387,8 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
       )));
       setFeedback("Message not sent. Try again.");
     } finally {
+      lockGrantedRef.current = false;
+      lockWaitAbortControllerRef.current = null;
       sendingRef.current = false;
       setSending(false);
     }

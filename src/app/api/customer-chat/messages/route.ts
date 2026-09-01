@@ -24,6 +24,7 @@ export async function POST(request: Request) {
       trustedOrigin: parseAuthConfig().origin,
       sessionSecret: config.websiteSessionSecret,
       messageHashSecret: config.websiteAbuseHashSecret,
+      permitSecret: config.websiteAbuseHashSecret,
       debounceMs: config.conversationDebounceMs,
       repository: customerService.repository,
       resolveProductContext: resolveCurrentSafeProductContext,

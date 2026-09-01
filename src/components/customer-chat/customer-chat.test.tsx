@@ -5,6 +5,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { CustomerChat } from "./customer-chat";
 
 const analytics = vi.hoisted(() => ({ emitAnalyticsEvent: vi.fn() }));
+const sessionEndpoint = "/api/customer-chat/session";
+const messagesEndpoint = "/api/customer-chat/messages";
 
 vi.mock("@/domain/analytics/client", () => analytics);
 
@@ -14,13 +16,13 @@ function updates(
   state = "pending",
   hasMore = false,
 ) {
-  return new Response(JSON.stringify({ cursor, hasMore, events, state }), {
+  return new Response(JSON.stringify({ cursor, hasMore, events, state, permit: "test-permit" }), {
     headers: { "Content-Type": "application/json" },
   });
 }
 
 function accepted() {
-  return new Response(JSON.stringify({ status: "accepted" }), {
+  return new Response(JSON.stringify({ status: "accepted", permit: "test-permit" }), {
     status: 202,
     headers: { "Content-Type": "application/json" },
   });
@@ -37,7 +39,11 @@ describe("CustomerChat", () => {
   beforeEach(() => {
     analytics.emitAnalyticsEvent.mockReset();
     analytics.emitAnalyticsEvent.mockReturnValue(true);
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(updates()));
+    vi.stubGlobal("fetch", vi.fn(() => Promise.resolve(updates())));
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: { request: async (_name: string, _options: unknown, callback: () => Promise<unknown>) => callback() },
+    });
   });
 
   afterEach(() => {
@@ -149,9 +155,10 @@ describe("CustomerChat", () => {
     expect(screen.getByLabelText("Message R&R Gallery")).toHaveValue("");
     expect(screen.queryByRole("heading", { name: "Hi 👋 How can we help?" })).not.toBeInTheDocument();
     expect(screen.getByText("R&R Gallery is typing…")).toBeInTheDocument();
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/customer-chat/messages");
-    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/customer-chat/session");
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/customer-chat/messages");
+    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toEqual({
       clientMessageKey: expect.stringMatching(/^[A-Za-z0-9_-]{22,64}$/),
       message,
       pageContext: { pathname: "/products" },
@@ -176,10 +183,11 @@ describe("CustomerChat", () => {
 
     fireEvent.click(quickAction);
     fireEvent.click(quickAction);
-    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/customer-chat/messages")).toHaveLength(1);
+    expect(fetchMock.mock.calls.filter(([url]) => url === "/api/customer-chat/session")).toHaveLength(1);
 
     acceptMessage?.(accepted());
     await act(async () => { await pendingResponse; });
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === "/api/customer-chat/messages")).toHaveLength(1));
   });
 
   it("reconciles the optimistic quick-action message with the persisted event without duplication", async () => {
@@ -200,7 +208,7 @@ describe("CustomerChat", () => {
 
     fireEvent.click(await screen.findByRole("button", { name: "Get a Quote" }));
 
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     expect(screen.getAllByText("I'd like to get a quote.")).toHaveLength(1);
   });
 
@@ -415,10 +423,10 @@ describe("CustomerChat", () => {
     expect(input).toHaveValue("First line\nSecond line");
 
     fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
-    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/customer-chat/messages");
-    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "POST" });
-    expect(JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body))).toEqual({
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(fetchMock.mock.calls[2]?.[0]).toBe("/api/customer-chat/messages");
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: "POST" });
+    expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toEqual({
       clientMessageKey: expect.stringMatching(/^[A-Za-z0-9_-]{22,64}$/),
       message: "First line\nSecond line",
       pageContext: { pathname: "/" },
@@ -455,14 +463,17 @@ describe("CustomerChat", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
 
     fireEvent.keyDown(input, { key: "Enter", isComposing: false });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
   });
 
   it("keeps an unchanged network-failed draft retry-only and reuses its idempotency key on explicit retry", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(accepted())
       .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce(accepted());
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValue(updates());
     vi.stubGlobal("fetch", fetchMock);
     render(<CustomerChat />);
     openChat();
@@ -477,12 +488,12 @@ describe("CustomerChat", () => {
 
     fireEvent.keyDown(input, { key: "Enter" });
     expect(await screen.findByText("Use Retry message to resend the unchanged message.")).toHaveAttribute("aria-live", "polite");
-    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock).toHaveBeenCalledTimes(3);
 
     fireEvent.click(screen.getByRole("button", { name: "Retry message" }));
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    const firstPost = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
-    const retriedPost = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
+    const firstPost = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
+    const retriedPost = JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body));
     expect(retriedPost).toEqual(firstPost);
     expect(input).toHaveValue("");
   });
@@ -490,8 +501,11 @@ describe("CustomerChat", () => {
   it("sends an edited failed draft as a new message and clears only that accepted visible draft", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(accepted())
       .mockRejectedValueOnce(new Error("offline"))
-      .mockResolvedValueOnce(accepted());
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValue(updates());
     vi.stubGlobal("fetch", fetchMock);
     render(<CustomerChat />);
     openChat();
@@ -501,14 +515,14 @@ describe("CustomerChat", () => {
     fireEvent.change(input, { target: { value: "Original message" } });
     fireEvent.keyDown(input, { key: "Enter" });
     await screen.findByText("Message not sent. Try again.");
-    const failedPost = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+    const failedPost = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
 
     fireEvent.change(input, { target: { value: "Edited visible message" } });
     expect(screen.getByRole("button", { name: "Send message" })).toBeEnabled();
     expect(screen.queryByRole("button", { name: "Retry message" })).not.toBeInTheDocument();
     fireEvent.keyDown(input, { key: "Enter" });
-    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
-    const editedPost = JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(6));
+    const editedPost = JSON.parse(String(fetchMock.mock.calls[4]?.[1]?.body));
     expect(editedPost).toMatchObject({ message: "Edited visible message", pageContext: { pathname: "/" } });
     expect(editedPost.clientMessageKey).not.toBe(failedPost.clientMessageKey);
     expect(input).toHaveValue("");
@@ -518,6 +532,7 @@ describe("CustomerChat", () => {
   it("renders a rate limit response without exposing server details or discarding the draft", async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(accepted())
       .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "RATE_LIMITED", detail: "private" } }), {
         status: 429,
         headers: { "Content-Type": "application/json" },
@@ -533,6 +548,139 @@ describe("CustomerChat", () => {
     expect(await screen.findByText("Please wait a moment before sending another message.")).toHaveAttribute("aria-live", "polite");
     expect(screen.queryByText("private")).not.toBeInTheDocument();
     expect(input).toHaveValue("A message");
+  });
+
+  it("does not bootstrap or post when Web Locks are unavailable", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(updates());
+    vi.stubGlobal("fetch", fetchMock);
+    Object.defineProperty(navigator, "locks", { configurable: true, value: undefined });
+    render(<CustomerChat />);
+    openChat();
+    const input = await screen.findByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Please help" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(await screen.findByText("Chat needs a supported browser. Please use our contact form instead.")).toHaveAttribute("aria-live", "polite");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.some(([url]) => url === sessionEndpoint || url === messagesEndpoint)).toBe(false);
+  });
+
+  it("cancels a waiting lock when the customer closes the unsent chat", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(updates());
+    vi.stubGlobal("fetch", fetchMock);
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request: <T,>(_name: string, options: { signal?: AbortSignal }, _callback: () => Promise<T>) => new Promise<T>((_resolve, reject) => {
+          void _callback;
+          options.signal?.addEventListener("abort", () => reject(new DOMException("aborted", "AbortError")), { once: true });
+        }),
+      },
+    });
+    render(<CustomerChat />);
+    openChat();
+    const input = await screen.findByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Please help" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
+    await act(async () => {});
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls.some(([url]) => url === sessionEndpoint || url === messagesEndpoint)).toBe(false);
+  });
+
+  it("keeps the message local when bootstrap fails", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "SERVICE_UNAVAILABLE" } }), { status: 503 }));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    const input = await screen.findByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Please help" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(await screen.findByText("Message not sent. Try again.")).toHaveAttribute("aria-live", "polite");
+    expect(input).toHaveValue("Please help");
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls.some(([url]) => url === messagesEndpoint)).toBe(false);
+  });
+
+  it("rebootstraps once after SESSION_REQUIRED and retries with the same message key", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { code: "SESSION_REQUIRED" } }), { status: 409 }))
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValue(updates());
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    const input = await screen.findByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Please help" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(fetchMock.mock.calls.filter(([url]) => url === sessionEndpoint)).toHaveLength(2));
+    const posts = fetchMock.mock.calls.filter(([url]) => url === messagesEndpoint);
+    expect(posts).toHaveLength(2);
+    expect(JSON.parse(String(posts[0]?.[1]?.body)).clientMessageKey)
+      .toBe(JSON.parse(String(posts[1]?.[1]?.body)).clientMessageKey);
+  });
+
+  it("holds the FIFO lock across bootstrap and message POST for two first-send components", async () => {
+    let releaseFirstMessage: ((response: Response) => void) | undefined;
+    const firstMessage = new Promise<Response>((resolve) => { releaseFirstMessage = resolve; });
+    let lockTail = Promise.resolve();
+    const fifoLocks = {
+      request: <T,>(_name: string, _options: unknown, callback: () => Promise<T>) => {
+        const run = lockTail.then(callback, callback);
+        lockTail = run.then(() => undefined, () => undefined);
+        return run;
+      },
+    };
+    Object.defineProperty(navigator, "locks", { configurable: true, value: fifoLocks });
+    const trace: string[] = [];
+    let sharedCookieJar = "";
+    const fetchMock = vi.fn((url: string, init?: RequestInit) => {
+      if (url === sessionEndpoint) {
+        const key = JSON.parse(String(init?.body)).clientMessageKey as string;
+        trace.push(`bootstrap:${key}`);
+        if (!sharedCookieJar) sharedCookieJar = "server-issued-identity";
+        return Promise.resolve(new Response(JSON.stringify({ status: "ready", permit: "test-permit" }), { headers: { "Content-Type": "application/json" } }));
+      }
+      if (url === messagesEndpoint) {
+        const message = JSON.parse(String(init?.body)).message as string;
+        trace.push(`message:${message}:${sharedCookieJar}`);
+        return message === "First tab" ? firstMessage : Promise.resolve(accepted());
+      }
+      return Promise.resolve(updates());
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat pathname="/first" />);
+    render(<CustomerChat pathname="/second" />);
+    const launchers = screen.getAllByRole("button", { name: "Chat with R&R Gallery" });
+    fireEvent.click(launchers[0]!);
+    fireEvent.click(launchers[1]!);
+    const inputs = await screen.findAllByLabelText("Message R&R Gallery");
+
+    fireEvent.change(inputs[0]!, { target: { value: "First tab" } });
+    fireEvent.keyDown(inputs[0]!, { key: "Enter" });
+    fireEvent.change(inputs[1]!, { target: { value: "Second tab" } });
+    fireEvent.keyDown(inputs[1]!, { key: "Enter" });
+    await waitFor(() => expect(trace).toHaveLength(2));
+    expect(trace[0]).toMatch(/^bootstrap:/);
+    expect(trace[1]).toBe("message:First tab:server-issued-identity");
+
+    releaseFirstMessage?.(accepted());
+    await waitFor(() => expect(trace).toHaveLength(4));
+    expect(trace[2]).toMatch(/^bootstrap:/);
+    expect(trace[3]).toBe("message:Second tab:server-issued-identity");
+    expect(trace.filter((entry) => entry.startsWith("message:"))).toHaveLength(2);
   });
 
   it("loads history once and does not poll while idle or on lifecycle events", async () => {
@@ -576,6 +724,7 @@ describe("CustomerChat", () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(updates([], "cursor-1"))
       .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted())
       .mockResolvedValueOnce(updates([], "cursor-2", "pending"))
       .mockResolvedValueOnce(updates([assistant], "cursor-3", "committed_assistant"));
     vi.stubGlobal("fetch", fetchMock);
@@ -587,16 +736,16 @@ describe("CustomerChat", () => {
     fireEvent.change(input, { target: { value: "Can you help?" } });
     fireEvent.keyDown(input, { key: "Enter" });
     await act(async () => {});
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(4);
 
     await act(async () => { await vi.advanceTimersByTimeAsync(4_999); });
-    expect(fetchMock).toHaveBeenCalledTimes(3);
-    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(fetchMock).toHaveBeenCalledTimes(4);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(fetchMock).toHaveBeenCalledTimes(5);
     expect(screen.getByText("Thanks for your message.")).toBeInTheDocument();
 
     await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
-    expect(fetchMock).toHaveBeenCalledTimes(4);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
   });
 
   it("stops a pending cycle after 24 checks instead of polling forever", async () => {
@@ -618,10 +767,10 @@ describe("CustomerChat", () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     }
 
-    expect(fetchMock).toHaveBeenCalledTimes(26);
+    expect(fetchMock).toHaveBeenCalledTimes(27);
     expect(screen.getByText("Reply is taking longer than expected. Please reopen chat later to check for an update.")).toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
-    expect(fetchMock).toHaveBeenCalledTimes(26);
+    expect(fetchMock).toHaveBeenCalledTimes(27);
   });
 
   it("keeps a newer accepted send awaiting a reply when an older terminal catch-up resolves", async () => {
@@ -637,7 +786,7 @@ describe("CustomerChat", () => {
     const initialUpdates = new Promise<Response>((resolve) => { resolveInitialUpdates = resolve; });
     let updateRequestCount = 0;
     const fetchMock = vi.fn((url: string) => {
-      if (url === "/api/customer-chat/messages") return Promise.resolve(accepted());
+      if (url === "/api/customer-chat/session" || url === "/api/customer-chat/messages") return Promise.resolve(accepted());
       updateRequestCount += 1;
       if (updateRequestCount === 1) return initialUpdates;
       if (updateRequestCount === 2) return Promise.resolve(updates([], "cursor-reopen", "pending"));
@@ -677,7 +826,7 @@ describe("CustomerChat", () => {
     };
     let updateRequests = 0;
     const fetchMock = vi.fn((url: string) => {
-      if (url === "/api/customer-chat/messages") return Promise.resolve(accepted());
+      if (url === "/api/customer-chat/session" || url === "/api/customer-chat/messages") return Promise.resolve(accepted());
       updateRequests += 1;
       if (updateRequests === 27) {
         return Promise.resolve(updates([terminalReply], "cursor-terminal", "committed_assistant"));
@@ -697,19 +846,19 @@ describe("CustomerChat", () => {
       await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
     }
     expect(screen.getByText("Reply is taking longer than expected. Please reopen chat later to check for an update.")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(26);
+    expect(fetchMock).toHaveBeenCalledTimes(27);
 
     fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
     openChat();
     await act(async () => {});
 
-    expect(fetchMock).toHaveBeenCalledTimes(27);
+    expect(fetchMock).toHaveBeenCalledTimes(28);
     expect(screen.queryByText("Your reply is ready now.")).not.toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(4_999); });
-    expect(fetchMock).toHaveBeenCalledTimes(27);
+    expect(fetchMock).toHaveBeenCalledTimes(28);
     await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(screen.getByText("Your reply is ready now.")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(28);
+    expect(fetchMock).toHaveBeenCalledTimes(29);
   });
 
   it("starts a fresh bounded cycle for a second accepted send without keeping the old timer", async () => {
@@ -733,9 +882,9 @@ describe("CustomerChat", () => {
     fireEvent.keyDown(input, { key: "Enter" });
     await act(async () => {});
 
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
     await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
-    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(fetchMock).toHaveBeenCalledTimes(6);
   });
 
   it("does not start customer-chat polling after Production automation navigates away from its query marker", async () => {

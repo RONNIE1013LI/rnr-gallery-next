@@ -4,6 +4,11 @@ import type { websiteSessionCookie } from "./session";
 
 const clientMessageKeyPattern = /^[A-Za-z0-9_-]{22,64}$/;
 
+const bootstrapRequestSchema = z.object({
+  version: z.literal(1),
+  clientMessageKey: z.string().regex(clientMessageKeyPattern),
+}).strict();
+
 const requestSchema = z.object({
   clientMessageKey: z.string().regex(clientMessageKeyPattern),
   message: z.string(),
@@ -15,6 +20,12 @@ export type WebsiteMessageRequest = Readonly<{
   message: string;
   pathname: string | null;
 }>;
+
+export function parseWebsiteSessionBootstrapRequest(value: unknown) {
+  const parsed = bootstrapRequestSchema.safeParse(value);
+  if (!parsed.success) throw new Error("website_session_bootstrap_request_invalid");
+  return Object.freeze(parsed.data);
+}
 
 export function parseWebsiteMessageRequest(value: unknown): WebsiteMessageRequest {
   const parsed = requestSchema.safeParse(value);

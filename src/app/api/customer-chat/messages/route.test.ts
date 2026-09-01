@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { defaultProductRegistry, parseProductRegistry } from "@/domain/catalogue/product-registry";
 import { resolveSafeProductContext } from "@/server/customer-service/website/product-context";
 import { createCustomerChatMessagesHandler } from "./route-handler";
+import { createWebsiteSessionPermit } from "@/server/customer-service/website/session";
 import { serializeAdvertisingConsent } from "@/domain/consent/advertising-consent";
 import {
   createWebsiteAnalyticsIdentity,
@@ -18,6 +19,7 @@ function request(body: unknown, input: Readonly<{
   origin?: string;
   contentType?: string;
   cookie?: string;
+  permit?: string;
   rawBody?: string;
 }> = {}) {
   return new Request("https://rrgallery.co.nz/api/customer-chat/messages", {
@@ -27,6 +29,7 @@ function request(body: unknown, input: Readonly<{
       "content-type": input.contentType ?? "application/json",
       "sec-fetch-site": "same-origin",
       ...(input.cookie ? { cookie: input.cookie } : {}),
+      ...(input.permit ? { "x-rnr-customer-chat-permit": input.permit } : {}),
     },
     body: input.rawBody ?? JSON.stringify(body),
   });
@@ -74,6 +77,7 @@ function setup(input: Readonly<{
     trustedOrigin: "https://rrgallery.co.nz",
     sessionSecret,
     messageHashSecret: abuseSecret,
+    permitSecret: abuseSecret,
     debounceMs: 2_000,
     repository,
     resolveProductContext,
@@ -84,7 +88,6 @@ function setup(input: Readonly<{
     waitUntil: vi.fn(async () => undefined),
     now: () => now,
     cookieEnvironment: "preview",
-    createSessionToken: () => sessionToken,
     resolveTrustedIp: () => "203.0.113.42",
     analyticsConfig: input.analyticsConfig ?? {
       enabled: false,
@@ -110,7 +113,91 @@ const validBody = {
   pageContext: { pathname: "/products/roll-up-banner" },
 };
 
+function permittedRequest(body: typeof validBody = validBody, input: Readonly<{ cookie?: string }> = {}) {
+  const sessionExpiresAt = new Date("2026-08-28T00:00:00.000Z");
+  const permit = createWebsiteSessionPermit({
+    token: sessionToken,
+    clientMessageKey: body.clientMessageKey,
+    sessionExpiresAt,
+    now,
+    sessionSecret,
+    permitSecret: abuseSecret,
+    nonce: "n".repeat(22),
+  });
+  return request(body, {
+    cookie: input.cookie ?? `__Host-rnr_customer_chat=${sessionToken}`,
+    permit,
+  });
+}
+
 describe("POST /api/customer-chat/messages", () => {
+  it("fails closed before ingest when a first message has no bootstrapped session identity", async () => {
+    const current = setup();
+
+    const response = await current.handler.POST(request(validBody));
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: { code: "SESSION_REQUIRED" } });
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(current.repository.ingestConversationEvent).not.toHaveBeenCalled();
+    expect(current.tasks).toHaveLength(0);
+  });
+
+  it.each([
+    ["unknown cookie without permit", request(validBody, { cookie: `__Host-rnr_customer_chat=${sessionToken}` })],
+    ["wrong message key", request({ ...validBody, clientMessageKey: "B".repeat(22) }, {
+      cookie: `__Host-rnr_customer_chat=${sessionToken}`,
+      permit: createWebsiteSessionPermit({
+        token: sessionToken,
+        clientMessageKey: validBody.clientMessageKey,
+        sessionExpiresAt: new Date("2026-08-28T00:00:00.000Z"),
+        now,
+        sessionSecret,
+        permitSecret: abuseSecret,
+        nonce: "n".repeat(22),
+      }),
+    })],
+    ["tampered permit", request(validBody, {
+      cookie: `__Host-rnr_customer_chat=${sessionToken}`,
+      permit: `${createWebsiteSessionPermit({
+        token: sessionToken,
+        clientMessageKey: validBody.clientMessageKey,
+        sessionExpiresAt: new Date("2026-08-28T00:00:00.000Z"),
+        now,
+        sessionSecret,
+        permitSecret: abuseSecret,
+        nonce: "n".repeat(22),
+      }).slice(0, -1)}x`,
+    })],
+  ])("does not ingest an unresolved cookie with %s", async (_name, incoming) => {
+    const current = setup();
+
+    const response = await current.handler.POST(incoming);
+
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ error: { code: "SESSION_REQUIRED" } });
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(current.repository.ingestConversationEvent).not.toHaveBeenCalled();
+    expect(current.tasks).toHaveLength(0);
+  });
+
+  it("preserves active-session behavior without a permit", async () => {
+    const current = setup();
+    current.repository.resolveWebsiteSession.mockResolvedValue({
+      conversationId: "conversation-private",
+      expiresAt: new Date("2026-08-28T00:00:00.000Z"),
+    });
+
+    const response = await current.handler.POST(request(validBody, {
+      cookie: `__Host-rnr_customer_chat=${sessionToken}`,
+    }));
+
+    expect(response.status).toBe(202);
+    expect(current.repository.ingestConversationEvent).toHaveBeenCalledWith(expect.objectContaining({
+      websiteRateLimit: expect.objectContaining({ isNewSession: false }),
+    }));
+  });
+
   it("passes only signed consented V1 identity to the authoritative inquiry write", async () => {
     const analyticsSecret = "customer-chat-analytics-secret-value-0001";
     const identity = createWebsiteAnalyticsIdentity(analyticsSecret, now);
@@ -129,8 +216,9 @@ describe("POST /api/customer-chat/messages", () => {
       },
     });
 
-    const response = await current.handler.POST(request(validBody, {
+    const response = await current.handler.POST(permittedRequest(validBody, {
       cookie: [
+        `__Host-rnr_customer_chat=${sessionToken}`,
         `rnr-consent-v1=${consent}`,
         `ra_vid_v1=${identity.visitorCookie}`,
         `ra_sid_v1=${identity.sessionCookie}`,
@@ -152,11 +240,11 @@ describe("POST /api/customer-chat/messages", () => {
 
   it("persists first, returns a minimal 202 response, and schedules the durable turn", async () => {
     const current = setup();
-    const response = await current.handler.POST(request(validBody));
+    const response = await current.handler.POST(permittedRequest());
 
     expect(response.status).toBe(202);
     expect(response.headers.get("Cache-Control")).toBe("no-store");
-    expect(response.headers.get("Set-Cookie")).toContain("__Host-rnr_customer_chat=");
+    expect(response.headers.get("Set-Cookie")).toBeNull();
     const responseBody = await response.json();
     expect(responseBody).toEqual({ status: "accepted" });
     expect(current.repository.ingestConversationEvent).toHaveBeenCalledWith(expect.objectContaining({
@@ -182,7 +270,7 @@ describe("POST /api/customer-chat/messages", () => {
     const current = setup();
     current.processReviewAlert.mockRejectedValueOnce(new Error("email provider unavailable"));
 
-    const response = await current.handler.POST(request(validBody));
+    const response = await current.handler.POST(permittedRequest());
 
     expect(response.status).toBe(202);
     expect(await response.json()).toEqual({ status: "accepted" });
@@ -217,7 +305,7 @@ describe("POST /api/customer-chat/messages", () => {
   it("returns 429 without scheduling processing when the database rejects website abuse", async () => {
     const current = setup({ ingestResults: [{ status: "rate_limited" }] });
 
-    const response = await current.handler.POST(request(validBody));
+    const response = await current.handler.POST(permittedRequest());
 
     expect(response.status).toBe(429);
     expect(await response.json()).toEqual({ error: { code: "RATE_LIMITED" } });
@@ -229,7 +317,7 @@ describe("POST /api/customer-chat/messages", () => {
 
   it("fails closed before session creation when the feature is disabled", async () => {
     const current = setup({ enabled: false });
-    const response = await current.handler.POST(request(validBody));
+    const response = await current.handler.POST(permittedRequest());
     expect(response.status).toBe(503);
     expect(await response.json()).toEqual({ error: { code: "SERVICE_UNAVAILABLE" } });
     expect(current.repository.ensureWebsiteSession).not.toHaveBeenCalled();
@@ -256,7 +344,7 @@ describe("POST /api/customer-chat/messages", () => {
     const current = setup();
     current.repository.ingestConversationEvent.mockReset();
     current.repository.ingestConversationEvent.mockRejectedValueOnce(new Error("private database host and token"));
-    const response = await current.handler.POST(request(validBody));
+    const response = await current.handler.POST(permittedRequest());
     expect(response.status).toBe(500);
     const body = await response.json();
     expect(body).toEqual({ error: { code: "INTERNAL_ERROR" } });

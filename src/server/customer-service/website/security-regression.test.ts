@@ -17,10 +17,7 @@ import {
   createReviewAlertToken,
   hashReviewAlertToken,
 } from "./review-alert-service";
-import {
-  hashWebsiteConversationKey,
-  hashWebsiteSessionToken,
-} from "./session";
+import { createWebsiteSessionPermit, hashWebsiteSessionToken } from "./session";
 
 const trustedOrigin = "https://rrgallery.co.nz";
 const sessionSecret = "website-session-security-secret-at-least-32-bytes";
@@ -111,6 +108,7 @@ function websiteEnvelope(input: string) {
 
 function messageRequest(body: unknown, input: Readonly<{
   cookie?: string;
+  permit?: string;
   origin?: string;
   fetchSite?: string;
 }> = {}) {
@@ -121,13 +119,25 @@ function messageRequest(body: unknown, input: Readonly<{
       origin: input.origin ?? trustedOrigin,
       "sec-fetch-site": input.fetchSite ?? "same-origin",
       ...(input.cookie ? { cookie: input.cookie } : {}),
+      ...(input.permit ? { "x-rnr-customer-chat-permit": input.permit } : {}),
     },
     body: JSON.stringify(body),
   });
 }
 
+function permitFor(token: string, clientMessageKey: string) {
+  return createWebsiteSessionPermit({
+    token,
+    clientMessageKey,
+    sessionExpiresAt: new Date("2026-08-29T00:00:00.000Z"),
+    now,
+    sessionSecret,
+    permitSecret: abuseSecret,
+    nonce: "n".repeat(22),
+  });
+}
+
 function messageHandler(input: Readonly<{
-  sessionTokens?: readonly string[];
   ingestResults?: readonly ({ status: "duplicate" } | { status: "rate_limited" } | {
     status: "turn_pending";
     messageId: string;
@@ -135,7 +145,6 @@ function messageHandler(input: Readonly<{
     debounceUntil: Date;
   })[];
 }> = {}) {
-  const tokenQueue = [...(input.sessionTokens ?? [firstSessionToken])];
   const resultQueue = [...(input.ingestResults ?? [{
     status: "turn_pending" as const,
     messageId: "private-message-id",
@@ -146,7 +155,10 @@ function messageHandler(input: Readonly<{
     resolveWebsiteSession: vi.fn(async () => null),
     ingestConversationEvent: vi.fn(async (
       _event: Parameters<CustomerServiceRepository["ingestConversationEvent"]>[0],
-    ) => resultQueue.shift() ?? { status: "duplicate" as const }),
+    ) => {
+      void _event;
+      return resultQueue.shift() ?? { status: "duplicate" as const };
+    }),
   };
   const scheduled: Array<() => Promise<void>> = [];
   const processTurn = vi.fn(async () => undefined);
@@ -156,6 +168,7 @@ function messageHandler(input: Readonly<{
     trustedOrigin,
     sessionSecret,
     messageHashSecret: abuseSecret,
+    permitSecret: abuseSecret,
     debounceMs: 2_000,
     repository,
     resolveProductContext: vi.fn(async () => null),
@@ -165,7 +178,6 @@ function messageHandler(input: Readonly<{
     waitUntil: vi.fn(async () => undefined),
     now: () => now,
     cookieEnvironment: "preview",
-    createSessionToken: () => tokenQueue.shift() ?? secondSessionToken,
     resolveTrustedIp: () => "203.0.113.42",
   });
   return { handler, repository, scheduled, processTurn, processReviewAlert };
@@ -196,14 +208,17 @@ function websiteEngine(providerOutput: string, customerText = "Can you explain t
   const provider = {
     providerKind: "mock" as const,
     model: "security-probe",
-    generate: vi.fn(async (_prompt: AiProviderRequest) => ({
-      text: providerOutput,
-      provider: "mock" as const,
-      model: "security-probe",
-      usage: { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10 },
-      estimatedCostMicrousd: 1,
-      latencyMs: 1,
-    })),
+    generate: vi.fn(async (_prompt: AiProviderRequest) => {
+      void _prompt;
+      return {
+        text: providerOutput,
+        provider: "mock" as const,
+        model: "security-probe",
+        usage: { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10 },
+        estimatedCostMicrousd: 1,
+        latencyMs: 1,
+      };
+    }),
   };
   const engine = new CustomerServiceEngine({
     repository: repository as unknown as CustomerServiceRepository,
@@ -396,29 +411,25 @@ describe("website public security regression", () => {
     expect(current.processReviewAlert).not.toHaveBeenCalled();
   });
 
-  it("replaces an attacker-supplied unknown session token instead of fixing it to a new conversation", async () => {
+  it("fails closed for an attacker-supplied unknown session token", async () => {
     const attackerToken = "Z".repeat(43);
-    const current = messageHandler({ sessionTokens: [firstSessionToken] });
+    const current = messageHandler();
 
     const response = await current.handler.POST(messageRequest(validMessage, {
       cookie: `__Host-rnr_customer_chat=${attackerToken}; rnr_customer_chat=${secondSessionToken}`,
     }));
 
-    expect(response.status).toBe(202);
-    expect(response.headers.get("Set-Cookie")).toContain(`__Host-rnr_customer_chat=${firstSessionToken}`);
-    expect(response.headers.get("Set-Cookie")).not.toContain(attackerToken);
+    expect(response.status).toBe(409);
+    expect(response.headers.get("Set-Cookie")).toBeNull();
     expect(current.repository.resolveWebsiteSession).toHaveBeenCalledWith({
       sessionTokenHash: hashWebsiteSessionToken(attackerToken, sessionSecret),
       now,
     });
-    expect(current.repository.ingestConversationEvent).toHaveBeenCalledWith(expect.objectContaining({
-      externalConversationKeyHash: hashWebsiteConversationKey(firstSessionToken, sessionSecret),
-    }));
+    expect(current.repository.ingestConversationEvent).not.toHaveBeenCalled();
   });
 
   it("keeps the network rate bucket stable across cookie resets and schedules no work after the block", async () => {
     const current = messageHandler({
-      sessionTokens: [firstSessionToken, secondSessionToken],
       ingestResults: [{
         status: "turn_pending",
         messageId: "message-1",
@@ -427,10 +438,16 @@ describe("website public security regression", () => {
       }, { status: "rate_limited" }],
     });
 
-    const first = await current.handler.POST(messageRequest(validMessage));
+    const first = await current.handler.POST(messageRequest(validMessage, {
+      cookie: `__Host-rnr_customer_chat=${firstSessionToken}`,
+      permit: permitFor(firstSessionToken, validMessage.clientMessageKey),
+    }));
     const second = await current.handler.POST(messageRequest({
       ...validMessage,
       clientMessageKey: "D".repeat(22),
+    }, {
+      cookie: `__Host-rnr_customer_chat=${secondSessionToken}`,
+      permit: permitFor(secondSessionToken, "D".repeat(22)),
     }));
     const firstRate = current.repository.ingestConversationEvent.mock.calls[0][0].websiteRateLimit;
     const secondRate = current.repository.ingestConversationEvent.mock.calls[1][0].websiteRateLimit;
@@ -454,8 +471,15 @@ describe("website public security regression", () => {
       }, { status: "duplicate" }],
     });
 
-    const first = await current.handler.POST(messageRequest(validMessage));
-    const duplicate = await current.handler.POST(messageRequest(validMessage));
+    const permit = permitFor(firstSessionToken, validMessage.clientMessageKey);
+    const first = await current.handler.POST(messageRequest(validMessage, {
+      cookie: `__Host-rnr_customer_chat=${firstSessionToken}`,
+      permit,
+    }));
+    const duplicate = await current.handler.POST(messageRequest(validMessage, {
+      cookie: `__Host-rnr_customer_chat=${firstSessionToken}`,
+      permit,
+    }));
 
     expect(first.status).toBe(202);
     expect(duplicate.status).toBe(202);

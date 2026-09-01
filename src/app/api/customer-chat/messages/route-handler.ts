@@ -3,17 +3,14 @@ import { websiteChannelAdapter } from "@/server/customer-service/adapters/websit
 import type { CustomerServiceRepository } from "@/server/customer-service/repositories/customer-service-repository";
 import type { SafeProductContext } from "@/server/customer-service/types";
 import {
-  createWebsiteSessionToken,
   hashWebsiteConversationKey,
   hashWebsiteSessionToken,
   readWebsiteSessionToken,
-  WEBSITE_SESSION_MAX_AGE_SECONDS,
-  websiteSessionCookie,
+  validateWebsiteSessionPermit,
 } from "@/server/customer-service/website/session";
 import {
   hashWebsiteClientMessageKey,
   parseWebsiteMessageRequest,
-  serializeWebsiteSessionCookie,
 } from "@/server/customer-service/website/public-api";
 import {
   hashTrustedNetworkBucket,
@@ -36,6 +33,7 @@ type Dependencies = Readonly<{
   trustedOrigin: string;
   sessionSecret: string;
   messageHashSecret: string;
+  permitSecret?: string;
   debounceMs: number;
   repository: WebsiteMessageRepository;
   resolveProductContext: (pathname: string) => Promise<SafeProductContext | null>;
@@ -46,7 +44,6 @@ type Dependencies = Readonly<{
   waitUntil?: (deadline: Date) => Promise<void>;
   now?: () => Date;
   cookieEnvironment?: CookieEnvironment;
-  createSessionToken?: () => string;
   resolveTrustedIp?: (request: Request) => string;
   analyticsConfig?: WebsiteAnalyticsRuntimeConfig;
 }>;
@@ -59,6 +56,10 @@ function json(body: unknown, status: number) {
 
 function rejected(status: number) {
   return json({ error: { code: "REQUEST_REJECTED" } }, status);
+}
+
+function sessionRequired() {
+  return json({ error: { code: "SESSION_REQUIRED" } }, 409);
 }
 
 function waitUntil(deadline: Date) {
@@ -87,20 +88,25 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
           : null;
         const receivedAt = (dependencies.now ?? (() => new Date()))();
         const cookieToken = readWebsiteSessionToken(request, dependencies.cookieEnvironment);
+        if (!cookieToken) return sessionRequired();
         const existingSession = cookieToken
           ? await dependencies.repository.resolveWebsiteSession({
             sessionTokenHash: hashWebsiteSessionToken(cookieToken, dependencies.sessionSecret),
             now: receivedAt,
           })
           : null;
-        const sessionToken = existingSession && cookieToken
-          ? cookieToken
-          : (dependencies.createSessionToken ?? createWebsiteSessionToken)();
-        const sessionExpiresAt = existingSession?.expiresAt
-          ?? new Date(receivedAt.getTime() + WEBSITE_SESSION_MAX_AGE_SECONDS * 1_000);
-        const sessionCookie = existingSession
-          ? null
-          : websiteSessionCookie(sessionToken, dependencies.cookieEnvironment);
+        const permit = existingSession ? null : validateWebsiteSessionPermit({
+          permit: request.headers.get("X-RNR-Customer-Chat-Permit"),
+          token: cookieToken,
+          clientMessageKey: input.clientMessageKey,
+          now: receivedAt,
+          sessionSecret: dependencies.sessionSecret,
+          permitSecret: dependencies.permitSecret ?? dependencies.messageHashSecret,
+        });
+        if (!existingSession && !permit) return sessionRequired();
+        const sessionToken = cookieToken;
+        const sessionExpiresAt = existingSession?.expiresAt ?? permit?.sessionExpiresAt;
+        if (!sessionExpiresAt) return sessionRequired();
         const conversationHash = hashWebsiteConversationKey(sessionToken, dependencies.sessionSecret);
         const messageHash = hashWebsiteClientMessageKey({
           conversationHash,
@@ -173,9 +179,6 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
         }
 
         const response = json({ status: "accepted" }, 202);
-        if (sessionCookie) {
-          response.headers.append("Set-Cookie", serializeWebsiteSessionCookie(sessionCookie));
-        }
         return response;
       } catch (error) {
         if (error instanceof MutationRequestError) return rejected(error.status);

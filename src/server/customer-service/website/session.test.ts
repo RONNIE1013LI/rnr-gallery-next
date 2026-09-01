@@ -2,6 +2,8 @@ import { createHmac } from "node:crypto";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   WEBSITE_SESSION_MAX_AGE_SECONDS,
+  bootstrapWebsiteSession,
+  createWebsiteSessionPermit,
   createWebsiteSessionToken,
   ensureWebsiteSessionForPost,
   hashWebsiteConversationKey,
@@ -9,6 +11,7 @@ import {
   isWebsiteSessionToken,
   readWebsiteSessionToken,
   resolveWebsiteSession,
+  validateWebsiteSessionPermit,
   websiteSessionCookie,
   websiteSessionPublicState,
 } from "./session";
@@ -81,6 +84,64 @@ describe("website customer session", () => {
     expect(readWebsiteSessionToken(new Request("https://rrgallery.co.nz", {
       headers: { cookie: "__Host-rnr_customer_chat=bad" },
     }), "production")).toBeNull();
+  });
+
+  it("creates a stateless bootstrap cookie and exact-key permit without a repository write", async () => {
+    const repository = { resolveWebsiteSession: vi.fn().mockResolvedValue(null) };
+    const token = "b".repeat(43);
+    const result = await bootstrapWebsiteSession({
+      request: request("POST"),
+      repository,
+      sessionSecret: secret,
+      permitSecret: "website-permit-secret-that-is-long-enough",
+      clientMessageKey: "M".repeat(22),
+      now,
+      environment: "preview",
+      createToken: () => token,
+      createNonce: () => "n".repeat(22),
+    });
+
+    expect(repository.resolveWebsiteSession).not.toHaveBeenCalled();
+    expect(result.cookie).toMatchObject({ value: token, httpOnly: true, secure: true });
+    expect(validateWebsiteSessionPermit({
+      permit: result.permit,
+      token,
+      clientMessageKey: "M".repeat(22),
+      now,
+      sessionSecret: secret,
+      permitSecret: "website-permit-secret-that-is-long-enough",
+    })).toEqual({ sessionExpiresAt: new Date("2026-08-28T00:00:00.000Z") });
+  });
+
+  it("binds permits to the exact cookie token, key, expiry and secret", () => {
+    const token = "c".repeat(43);
+    const permitSecret = "website-permit-secret-that-is-long-enough";
+    const permit = createWebsiteSessionPermit({
+      token,
+      clientMessageKey: "K".repeat(22),
+      sessionExpiresAt: new Date("2026-08-28T00:00:00.000Z"),
+      now,
+      sessionSecret: secret,
+      permitSecret,
+      nonce: "n".repeat(22),
+    });
+    const validate = (overrides: Partial<Parameters<typeof validateWebsiteSessionPermit>[0]> = {}) => validateWebsiteSessionPermit({
+      permit,
+      token,
+      clientMessageKey: "K".repeat(22),
+      now,
+      sessionSecret: secret,
+      permitSecret,
+      ...overrides,
+    });
+
+    expect(validate()).toEqual({ sessionExpiresAt: new Date("2026-08-28T00:00:00.000Z") });
+    expect(validate({ token: "d".repeat(43) })).toBeNull();
+    expect(validate({ clientMessageKey: "L".repeat(22) })).toBeNull();
+    expect(validate({ permitSecret: "different-permit-secret-that-is-long-enough" })).toBeNull();
+    expect(validate({ now: new Date("2026-08-21T00:01:31.000Z") })).toBeNull();
+    expect(validate({ permit: `${permit}x` })).toBeNull();
+    expect(validate({ permit: `${permit.slice(0, -1)}x` })).toBeNull();
   });
 
   it("GET-style resolution never creates a session", async () => {
