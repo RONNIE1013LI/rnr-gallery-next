@@ -199,32 +199,39 @@ export type FeedbackEventInput = Readonly<{
   idempotencyKey: string;
 }>;
 
-export type SafeQueuePage = Readonly<{
-  items: readonly Readonly<{
-    messageId: string;
-    channel: CustomerServiceChannel;
-    body: string;
-    receivedAt: string;
-    status: string;
-    latestAttemptId: string | null;
-    draftText: string | null;
-    gateResult: string | null;
-    attachmentCount: number;
-    imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
-    imageAssessmentSummary: string | null;
-    humanReplyReceived: boolean;
-    websiteReview: Readonly<{
-      selector: string | null;
-      reason: "high_risk" | "unresolved" | "realtime_required" | "provider_error" | "output_blocked" | "budget_blocked" | "system_failure";
-      alertStatus: "not_created" | "pending" | "leased" | "retry_wait" | "sent" | "failed";
-    }> | null;
-    timeline: readonly Readonly<{
-      role: "customer" | "assistant" | "staff";
-      text: string;
-      receivedAt: string;
-    }>[];
-  }>[];
+export type SafeWebsiteReview = Readonly<{
+  selector: string | null;
+  reason: "high_risk" | "unresolved" | "realtime_required" | "provider_error" | "output_blocked" | "budget_blocked" | "system_failure";
+  alertStatus: "not_created" | "pending" | "leased" | "retry_wait" | "sent" | "failed";
 }>;
+
+export type SafeTimelineEvent = Readonly<{
+  eventId: string;
+  role: "customer" | "assistant" | "staff";
+  text: string;
+  receivedAt: string;
+}>;
+
+export type SafeInboxItem = Readonly<{
+  inboxId: string;
+  channel: CustomerServiceChannel;
+  latestMessageId: string;
+  lastActivityAt: string;
+  unreadCount: number;
+  status: string;
+  latestAttemptId: string | null;
+  draftText: string | null;
+  gateResult: string | null;
+  attachmentCount: number;
+  imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
+  imageAssessmentSummary: string | null;
+  humanReplyReceived: boolean;
+  websiteReview: SafeWebsiteReview | null;
+  timeline: readonly SafeTimelineEvent[];
+  hasEarlierTimeline: boolean;
+}>;
+
+export type SafeQueuePage = Readonly<{ items: readonly SafeInboxItem[] }>;
 
 export type ReplyAssistantLearningCandidatePage = Readonly<{ items: readonly Readonly<{
   id: string;

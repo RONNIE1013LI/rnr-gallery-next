@@ -43,7 +43,6 @@ import type {
   ProviderAttemptCompletion,
   ProviderAttemptReservation,
   ReplyAssistantLearningCandidatePage,
-  SafeQueuePage,
 } from "./customer-service-repository";
 import { parseImageAnalysisResult } from "../image-analysis-schema";
 import { IMAGE_LIMITS } from "../attachments/limits";
@@ -91,6 +90,10 @@ import {
   type WebsiteAnalyticsBehavioralContext,
 } from "@/server/analytics/website-analytics-v2-business-recorder";
 import type { CustomerInboxIdentity } from "../identity/customer-identity";
+import {
+  projectCustomerInbox,
+  type CustomerInboxProjectionRow,
+} from "../inbox/customer-inbox";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -1097,98 +1100,353 @@ export function createDrizzleCustomerServiceRepository(
   }
 
   async function loadQueuePage(limit: number, messageIds?: readonly string[], selectorNow = now()) {
-    const latestAttempts = database.select({
-      messageId: customerServiceAiAttempts.messageId,
-      attemptNumber: max(customerServiceAiAttempts.attemptNumber).as("latest_attempt_number"),
-    }).from(customerServiceAiAttempts)
-      .groupBy(customerServiceAiAttempts.messageId)
-      .as("latest_attempts");
-    const eligible = sql`(
-      exists (
-        select 1 from customer_service_turns turns
-        where turns.representative_message_id = ${customerServiceMessages.id}
+    const safeLimit = Math.max(1, Math.min(100, limit));
+    const messageFilter = messageIds?.length
+      ? sql`and bool_or(exists (
+          select 1 from customer_service_messages changed
+          where changed.conversation_id = identity.conversation_id
+            and changed.id in (${sql.join(messageIds.map((id) => sql`${id}`), sql`, `)})
+        ))`
+      : sql``;
+    const identityResult = await database.execute<{
+      channel: "facebook" | "website";
+      identity_kind: CustomerInboxIdentity["kind"];
+      identity_key_hash: string;
+      inbox_id: string;
+      last_activity_at: Date;
+    }>(sql`
+      select
+        identity.channel,
+        identity.identity_kind,
+        identity.identity_key_hash,
+        encode(sha256(
+          convert_to(identity.channel, 'UTF8')
+          || decode('00', 'hex')
+          || convert_to(identity.identity_kind, 'UTF8')
+          || decode('00', 'hex')
+          || convert_to(identity.identity_key_hash, 'UTF8')
+        ), 'hex') as inbox_id,
+        max(activity.received_at) as last_activity_at
+      from ${customerServiceConversationIdentities} identity
+      join lateral (
+        select messages.received_at
+        from ${customerServiceMessages} messages
+        where messages.conversation_id = identity.conversation_id
+        union all
+        select events.received_at
+        from ${customerServiceConversationEvents} events
+        where events.conversation_id = identity.conversation_id
+          and events.event_type in ('customer_message', 'human_outbound')
+        union all
+        select assistant.published_at
+        from ${customerServiceWebsiteAssistantMessages} assistant
+        where assistant.conversation_id = identity.conversation_id
+      ) activity on true
+      group by identity.channel, identity.identity_kind, identity.identity_key_hash
+      having bool_or(exists (
+        select 1 from customer_service_messages candidate
+        where candidate.conversation_id = identity.conversation_id
           and (
-            turns.status in ('sealed', 'pilot_complete')
-            or (turns.status = 'suppressed' and turns.suppression_reason = 'human_outbound_received')
+            exists (
+              select 1 from customer_service_turns turns
+              where turns.representative_message_id = candidate.id
+                and (
+                  turns.status in ('sealed', 'pilot_complete')
+                  or (turns.status = 'suppressed' and turns.suppression_reason = 'human_outbound_received')
+                )
+            )
+            or exists (
+              select 1 from customer_service_attachments attachments
+              where attachments.message_id = candidate.id
+            )
+            or not exists (
+              select 1 from customer_service_conversation_events events
+              where events.legacy_message_id = candidate.id
+            )
           )
-      )
-      or exists (
-        select 1 from customer_service_attachments attachments
-        where attachments.message_id = ${customerServiceMessages.id}
-      )
-      or not exists (
-        select 1 from customer_service_conversation_events events
-        where events.legacy_message_id = ${customerServiceMessages.id}
-      )
-    )`;
-    const queueQuery = database.select({
-      messageId: customerServiceMessages.id,
-      channel: customerServiceMessages.channel,
-      conversationId: customerServiceMessages.conversationId,
-      body: customerServiceMessages.body,
-      receivedAt: customerServiceMessages.receivedAt,
-      status: customerServiceMessages.ingestStatus,
-      latestAttemptId: customerServiceAiAttempts.id,
-      draftText: customerServiceAiAttempts.draftText,
-      gateResult: customerServiceAiAttempts.gateResult,
-      humanReplyReceived: sql<boolean>`exists (
-        select 1 from customer_service_turns turns
-        where turns.representative_message_id = ${customerServiceMessages.id}
-          and turns.status = 'suppressed'
-          and turns.suppression_reason = 'human_outbound_received'
-      )`,
-    }).from(customerServiceMessages)
-      .leftJoin(latestAttempts, eq(latestAttempts.messageId, customerServiceMessages.id))
-      .leftJoin(customerServiceAiAttempts, and(
-        eq(customerServiceAiAttempts.messageId, latestAttempts.messageId),
-        eq(customerServiceAiAttempts.attemptNumber, latestAttempts.attemptNumber),
       ))
-      .where(messageIds?.length
-        ? and(inArray(customerServiceMessages.id, [...messageIds]), eligible)
-        : eligible)
-      .orderBy(desc(customerServiceMessages.receivedAt), desc(customerServiceMessages.id))
-      .limit(Math.max(1, Math.min(500, limit)));
-    const rows = await queueQuery;
-    const items = rows.map((row) => ({ ...row, receivedAt: row.receivedAt.toISOString() }));
-    const attachmentRows = items.length
-      ? await database.select({
-        messageId: customerServiceAttachments.messageId,
-        attachmentId: customerServiceAttachments.id,
-      }).from(customerServiceAttachments).where(inArray(
-        customerServiceAttachments.messageId,
-        items.map((item) => item.messageId),
-      )).orderBy(asc(customerServiceAttachments.ordinal))
-      : [];
-    const attachmentIdsByMessage = new Map<string, string[]>();
-    for (const attachment of attachmentRows) {
-      attachmentIdsByMessage.set(attachment.messageId, [
-        ...(attachmentIdsByMessage.get(attachment.messageId) ?? []),
-        attachment.attachmentId,
-      ]);
-    }
-    const assessments = await validatedQueueImageAssessments(database, attachmentIdsByMessage);
-    const conversationIds = [...new Set(items.map((item) => item.conversationId))];
-    const websiteConversationIds = [...new Set(items
-      .filter((item) => item.channel === "website")
-      .map((item) => item.conversationId))];
-    const reviewRows = websiteConversationIds.length
-      ? await database.select({
-        id: customerServiceHumanReviews.id,
-        conversationId: customerServiceHumanReviews.conversationId,
-        generation: customerServiceHumanReviews.generation,
-        reason: customerServiceHumanReviews.reason,
-        alertStatus: customerServiceReviewAlertOutbox.status,
-      }).from(customerServiceHumanReviews)
-        .leftJoin(
-          customerServiceReviewAlertOutbox,
-          eq(customerServiceReviewAlertOutbox.humanReviewId, customerServiceHumanReviews.id),
+      ${messageFilter}
+      order by last_activity_at desc, inbox_id asc
+      limit ${safeLimit}
+    `);
+    const identities = identityResult.rows;
+    if (!identities.length) return { items: [] };
+
+    const identityValues = sql.join(identities.map((identity) => sql`(
+      ${identity.channel}, ${identity.identity_kind}, ${identity.identity_key_hash}
+    )`), sql`, `);
+    const selected = sql`selected(channel, identity_kind, identity_key_hash) as (
+      values ${identityValues}
+    )`;
+    const identityKey = (row: Readonly<{
+      channel: string;
+      identity_kind: string;
+      identity_key_hash: string;
+    }>) => `${row.channel}\0${row.identity_kind}\0${row.identity_key_hash}`;
+    const identityKeyByInboxId = new Map(identities.map((identity) => {
+      const key = identityKey(identity);
+      return [createHash("sha256").update(key).digest("hex"), key] as const;
+    }));
+
+    const [timelineResult, actionResult, unreadResult, reviewResult] = await Promise.all([
+      database.execute<{
+        channel: "facebook" | "website";
+        identity_kind: CustomerInboxIdentity["kind"];
+        identity_key_hash: string;
+        event_id: string;
+        conversation_id: string;
+        message_id: string | null;
+        role: "customer" | "assistant" | "staff";
+        body: string;
+        received_at: Date;
+        total_count: string | number;
+      }>(sql`
+        with ${selected}, combined as (
+          select
+            identity.channel,
+            identity.identity_kind,
+            identity.identity_key_hash,
+            'event:' || events.id::text as event_id,
+            events.conversation_id,
+            events.legacy_message_id as message_id,
+            events.role::text as role,
+            events.body,
+            events.received_at,
+            events.created_at,
+            0 as source_order
+          from ${customerServiceConversationEvents} events
+          join ${customerServiceConversationIdentities} identity
+            on identity.conversation_id = events.conversation_id
+          join selected on selected.channel = identity.channel
+            and selected.identity_kind = identity.identity_kind
+            and selected.identity_key_hash = identity.identity_key_hash
+          where events.event_type in ('customer_message', 'human_outbound')
+          union all
+          select
+            identity.channel,
+            identity.identity_kind,
+            identity.identity_key_hash,
+            'assistant:' || assistant.id::text,
+            assistant.conversation_id,
+            null::uuid,
+            'assistant',
+            assistant.body,
+            assistant.published_at,
+            assistant.created_at,
+            1
+          from ${customerServiceWebsiteAssistantMessages} assistant
+          join ${customerServiceConversationIdentities} identity
+            on identity.conversation_id = assistant.conversation_id
+          join selected on selected.channel = identity.channel
+            and selected.identity_kind = identity.identity_kind
+            and selected.identity_key_hash = identity.identity_key_hash
+          union all
+          select
+            identity.channel,
+            identity.identity_kind,
+            identity.identity_key_hash,
+            'message:' || messages.id::text,
+            messages.conversation_id,
+            messages.id,
+            'customer',
+            messages.body,
+            messages.received_at,
+            messages.created_at,
+            2
+          from ${customerServiceMessages} messages
+          join ${customerServiceConversationIdentities} identity
+            on identity.conversation_id = messages.conversation_id
+          join selected on selected.channel = identity.channel
+            and selected.identity_kind = identity.identity_kind
+            and selected.identity_key_hash = identity.identity_key_hash
+          where not exists (
+            select 1 from ${customerServiceConversationEvents} events
+            where events.legacy_message_id = messages.id
+          )
+        ), ranked as (
+          select *,
+            row_number() over (
+              partition by channel, identity_kind, identity_key_hash
+              order by received_at desc, created_at desc, source_order desc, event_id desc
+            ) as ordinal,
+            count(*) over (
+              partition by channel, identity_kind, identity_key_hash
+            ) as total_count
+          from combined
         )
-        .where(and(
-          inArray(customerServiceHumanReviews.conversationId, websiteConversationIds),
-          eq(customerServiceHumanReviews.channel, "website"),
-          eq(customerServiceHumanReviews.status, "open"),
-        ))
-      : [];
+        select * from ranked
+        where ordinal <= 50
+        order by received_at asc, created_at asc, source_order asc, event_id asc
+      `),
+      database.execute<{
+        channel: "facebook" | "website";
+        identity_kind: CustomerInboxIdentity["kind"];
+        identity_key_hash: string;
+        conversation_id: string;
+        message_id: string;
+        body: string;
+        received_at: Date;
+        status: string;
+        latest_attempt_id: string | null;
+        draft_text: string | null;
+        gate_result: string | null;
+        human_reply_received: boolean;
+      }>(sql`
+        with ${selected}, candidates as (
+          select
+            identity.channel,
+            identity.identity_kind,
+            identity.identity_key_hash,
+            messages.conversation_id,
+            messages.id as message_id,
+            messages.body,
+            messages.received_at,
+            messages.ingest_status as status,
+            case when identity.channel = 'facebook' and not exists (
+              select 1 from customer_service_turns replied
+              where replied.representative_message_id = messages.id
+                and replied.status = 'suppressed'
+                and replied.suppression_reason = 'human_outbound_received'
+            ) then attempt.id else null end as latest_attempt_id,
+            case when identity.channel = 'facebook' and not exists (
+              select 1 from customer_service_turns replied
+              where replied.representative_message_id = messages.id
+                and replied.status = 'suppressed'
+                and replied.suppression_reason = 'human_outbound_received'
+            ) then attempt.draft_text else null end as draft_text,
+            case when identity.channel = 'facebook' and not exists (
+              select 1 from customer_service_turns replied
+              where replied.representative_message_id = messages.id
+                and replied.status = 'suppressed'
+                and replied.suppression_reason = 'human_outbound_received'
+            ) then attempt.gate_result else null end as gate_result,
+            exists (
+              select 1 from customer_service_turns replied
+              where replied.representative_message_id = messages.id
+                and replied.status = 'suppressed'
+                and replied.suppression_reason = 'human_outbound_received'
+            ) as human_reply_received,
+            row_number() over (
+              partition by identity.channel, identity.identity_kind, identity.identity_key_hash
+              order by messages.received_at desc, messages.id desc
+            ) as ordinal
+          from ${customerServiceMessages} messages
+          join ${customerServiceConversationIdentities} identity
+            on identity.conversation_id = messages.conversation_id
+          join selected on selected.channel = identity.channel
+            and selected.identity_kind = identity.identity_kind
+            and selected.identity_key_hash = identity.identity_key_hash
+          left join lateral (
+            select attempts.id, attempts.draft_text, attempts.gate_result
+            from ${customerServiceAiAttempts} attempts
+            where attempts.message_id = messages.id
+            order by attempts.attempt_number desc
+            limit 1
+          ) attempt on true
+          where
+            exists (
+              select 1 from ${customerServiceTurns} turns
+              where turns.representative_message_id = messages.id
+                and (
+                  turns.status in ('sealed', 'pilot_complete')
+                  or (turns.status = 'suppressed' and turns.suppression_reason = 'human_outbound_received')
+                )
+            )
+            or exists (
+              select 1 from ${customerServiceAttachments} attachments
+              where attachments.message_id = messages.id
+            )
+            or not exists (
+              select 1 from ${customerServiceConversationEvents} events
+              where events.legacy_message_id = messages.id
+            )
+        )
+        select * from candidates where ordinal = 1
+      `),
+      database.execute<{
+        channel: "facebook" | "website";
+        identity_kind: CustomerInboxIdentity["kind"];
+        identity_key_hash: string;
+        unread_count: string | number;
+      }>(sql`
+        with ${selected}, customer_events as (
+          select identity.channel, identity.identity_kind, identity.identity_key_hash,
+            events.received_at
+          from ${customerServiceConversationEvents} events
+          join ${customerServiceConversationIdentities} identity
+            on identity.conversation_id = events.conversation_id
+          join selected on selected.channel = identity.channel
+            and selected.identity_kind = identity.identity_kind
+            and selected.identity_key_hash = identity.identity_key_hash
+          where events.event_type = 'customer_message'
+          union all
+          select identity.channel, identity.identity_kind, identity.identity_key_hash,
+            messages.received_at
+          from ${customerServiceMessages} messages
+          join ${customerServiceConversationIdentities} identity
+            on identity.conversation_id = messages.conversation_id
+          join selected on selected.channel = identity.channel
+            and selected.identity_kind = identity.identity_kind
+            and selected.identity_key_hash = identity.identity_key_hash
+          where not exists (
+            select 1 from ${customerServiceConversationEvents} events
+            where events.legacy_message_id = messages.id
+          )
+        ), latest_staff as (
+          select identity.channel, identity.identity_kind, identity.identity_key_hash,
+            max(events.received_at) as received_at
+          from ${customerServiceConversationEvents} events
+          join ${customerServiceConversationIdentities} identity
+            on identity.conversation_id = events.conversation_id
+          join selected on selected.channel = identity.channel
+            and selected.identity_kind = identity.identity_kind
+            and selected.identity_key_hash = identity.identity_key_hash
+          where events.event_type = 'human_outbound'
+          group by identity.channel, identity.identity_kind, identity.identity_key_hash
+        )
+        select customer.channel, customer.identity_kind, customer.identity_key_hash,
+          count(*) filter (
+            where staff.received_at is null or customer.received_at > staff.received_at
+          ) as unread_count
+        from customer_events customer
+        left join latest_staff staff on staff.channel = customer.channel
+          and staff.identity_kind = customer.identity_kind
+          and staff.identity_key_hash = customer.identity_key_hash
+        group by customer.channel, customer.identity_kind, customer.identity_key_hash
+      `),
+      database.execute<{
+        id: string;
+        channel: "website";
+        identity_kind: CustomerInboxIdentity["kind"];
+        identity_key_hash: string;
+        generation: number;
+        status: "open" | "resolved";
+        reason: WebsiteHumanReviewReason;
+        alert_status: "pending" | "leased" | "retry_wait" | "sent" | "failed" | null;
+      }>(sql`
+        with ${selected}, ranked as (
+          select reviews.id, identity.channel, identity.identity_kind, identity.identity_key_hash,
+            reviews.generation, reviews.status, reviews.reason,
+            alerts.status as alert_status,
+            row_number() over (
+              partition by identity.channel, identity.identity_kind, identity.identity_key_hash
+              order by (reviews.status = 'open') desc, reviews.opened_at desc,
+                reviews.generation desc, reviews.id desc
+            ) as ordinal
+          from ${customerServiceHumanReviews} reviews
+          join ${customerServiceConversationIdentities} identity
+            on identity.conversation_id = reviews.conversation_id
+          join selected on selected.channel = identity.channel
+            and selected.identity_kind = identity.identity_kind
+            and selected.identity_key_hash = identity.identity_key_hash
+          left join ${customerServiceReviewAlertOutbox} alerts
+            on alerts.human_review_id = reviews.id
+        )
+        select * from ranked where ordinal = 1
+      `),
+    ]);
+
+    const reviewRows = reviewResult.rows;
     const selectorRows = reviewRows.length
       ? await database.select({
         humanReviewId: customerServiceReviewSelectors.humanReviewId,
@@ -1218,109 +1476,140 @@ export function createDrizzleCustomerServiceRepository(
         }
       }
     }
-    const reviewByConversation = new Map(reviewRows.map((review) => [review.conversationId, review]));
-    const timelineRows = conversationIds.length
-      ? await database.execute<{
-        conversation_id: string;
-        role: "customer" | "assistant" | "staff";
-        body: string;
-        received_at: Date;
-      }>(sql`
-        select conversation_id, role, body, received_at
-        from (
-          select *, row_number() over (
-            partition by conversation_id
-            order by received_at desc, created_at desc, source_order desc, id desc
-          ) as ordinal
-          from (
-            select
-              conversation_id,
-              role::text as role,
-              body,
-              received_at,
-              created_at,
-              id,
-              0 as source_order
-            from ${customerServiceConversationEvents}
-            where ${customerServiceConversationEvents.conversationId} in (${sql.join(
-              conversationIds.map((id) => sql`${id}`),
-              sql`, `,
-            )})
-              and ${customerServiceConversationEvents.eventType} in ('customer_message', 'human_outbound')
-            union all
-            select
-              conversation_id,
-              'assistant' as role,
-              body,
-              published_at as received_at,
-              created_at,
-              id,
-              1 as source_order
-            from ${customerServiceWebsiteAssistantMessages}
-            where ${customerServiceWebsiteAssistantMessages.conversationId} in (${sql.join(
-              conversationIds.map((id) => sql`${id}`),
-              sql`, `,
-            )})
-              and ${customerServiceWebsiteAssistantMessages.channel} = 'website'
-          ) combined
-        ) recent
-        where ordinal <= 8
-        order by conversation_id, received_at asc, created_at asc, source_order asc, id asc
-      `)
-      : { rows: [] as Array<{
-        conversation_id: string;
-        role: "customer" | "staff";
-        body: string;
-        received_at: Date;
-      }> };
-    const timelineByConversation = new Map<string, Array<{
-      role: "customer" | "assistant" | "staff";
-      text: string;
-      receivedAt: string;
-    }>>();
-    for (const event of timelineRows.rows) {
-      timelineByConversation.set(event.conversation_id, [
-        ...(timelineByConversation.get(event.conversation_id) ?? []),
-        {
-          role: event.role,
-          text: event.body,
-          receivedAt: new Date(event.received_at).toISOString(),
-        },
+
+    const actions = new Map(actionResult.rows.map((row) => [identityKey(row), row]));
+    const reviews = new Map(reviewRows.map((row) => [identityKey(row), row]));
+    const unreadCounts = new Map(unreadResult.rows.map((row) => [identityKey(row), Number(row.unread_count)]));
+    const actionMessageIds = actionResult.rows.map((row) => row.message_id);
+    const attachmentRows = actionMessageIds.length
+      ? await database.select({
+        messageId: customerServiceAttachments.messageId,
+        attachmentId: customerServiceAttachments.id,
+      }).from(customerServiceAttachments).where(inArray(
+        customerServiceAttachments.messageId,
+        actionMessageIds,
+      )).orderBy(asc(customerServiceAttachments.ordinal))
+      : [];
+    const attachmentIdsByMessage = new Map<string, string[]>();
+    for (const attachment of attachmentRows) {
+      attachmentIdsByMessage.set(attachment.messageId, [
+        ...(attachmentIdsByMessage.get(attachment.messageId) ?? []),
+        attachment.attachmentId,
       ]);
     }
-    return {
-      items: items.map((item) => {
-        const attachmentIds = attachmentIdsByMessage.get(item.messageId) ?? [];
-        const assessment = assessments.get(item.messageId);
-        const websiteReview = item.channel === "website"
-          ? reviewByConversation.get(item.conversationId)
-          : undefined;
-        const selector = websiteReview ? selectorByReview.get(websiteReview.id) ?? null : null;
-        const websiteReviewDto: SafeQueuePage["items"][number]["websiteReview"] = websiteReview ? {
-          selector,
-          reason: websiteReview.reason,
-          alertStatus: websiteReview.alertStatus ?? "not_created",
-        } : null;
-        return {
-          messageId: item.messageId,
+    const assessments = await validatedQueueImageAssessments(database, attachmentIdsByMessage);
+    const projectionRows: CustomerInboxProjectionRow[] = timelineResult.rows.map((event) => {
+      const key = identityKey(event);
+      const action = actions.get(key);
+      const review = reviews.get(key);
+      return {
+        channel: event.channel,
+        identity: { kind: event.identity_kind, keyHash: event.identity_key_hash },
+        conversationId: event.conversation_id,
+        sessionId: null,
+        eventId: event.event_id,
+        messageId: event.message_id,
+        role: event.role,
+        text: event.body,
+        receivedAt: new Date(event.received_at).toISOString(),
+        actionEligible: event.message_id !== null && event.message_id === action?.message_id,
+        status: action?.status ?? "received",
+        latestAttemptId: action?.latest_attempt_id ?? null,
+        draftText: action?.draft_text ?? null,
+        gateResult: action?.gate_result ?? null,
+        attachmentCount: action ? (attachmentIdsByMessage.get(action.message_id)?.length ?? 0) : 0,
+        imageAnalysisStatus: action
+          ? attachmentIdsByMessage.has(action.message_id)
+            ? assessments.get(action.message_id)?.status ?? "human_review_required"
+            : "not_applicable"
+          : "not_applicable",
+        imageAssessmentSummary: action ? assessments.get(action.message_id)?.summary ?? null : null,
+        humanReplyReceived: action?.human_reply_received ?? false,
+        review: review ? {
+          id: review.id,
+          status: review.status,
+          generation: review.generation,
+          selector: selectorByReview.get(review.id) ?? "",
+        } : null,
+        hasEarlierTimeline: Number(event.total_count) > 50,
+        includeInTimeline: true,
+      };
+    });
+    for (const identity of identities) {
+      const key = identityKey(identity);
+      const action = actions.get(key);
+      if (!action || projectionRows.some((row) => row.actionEligible && identityKey({
+        channel: row.channel,
+        identity_kind: row.identity.kind,
+        identity_key_hash: row.identity.keyHash,
+      }) === key)) continue;
+      const review = reviews.get(key);
+      projectionRows.push({
+        channel: identity.channel,
+        identity: { kind: identity.identity_kind, keyHash: identity.identity_key_hash },
+        conversationId: action.conversation_id,
+        sessionId: null,
+        eventId: `action:${action.message_id}`,
+        messageId: action.message_id,
+        role: "customer",
+        text: action.body,
+        receivedAt: new Date(action.received_at).toISOString(),
+        actionEligible: true,
+        status: action.status,
+        latestAttemptId: action.latest_attempt_id,
+        draftText: action.draft_text,
+        gateResult: action.gate_result,
+        attachmentCount: attachmentIdsByMessage.get(action.message_id)?.length ?? 0,
+        imageAnalysisStatus: attachmentIdsByMessage.has(action.message_id)
+          ? assessments.get(action.message_id)?.status ?? "human_review_required"
+          : "not_applicable",
+        imageAssessmentSummary: assessments.get(action.message_id)?.summary ?? null,
+        humanReplyReceived: action.human_reply_received,
+        review: review ? {
+          id: review.id,
+          status: review.status,
+          generation: review.generation,
+          selector: selectorByReview.get(review.id) ?? "",
+        } : null,
+        hasEarlierTimeline: true,
+        includeInTimeline: false,
+      });
+    }
+
+    const projected = projectCustomerInbox(projectionRows);
+    return Object.freeze({
+      items: Object.freeze(projected.flatMap((item) => {
+        if (!item.latestMessageId) return [];
+        const review = item.websiteReview ? reviewById.get(item.websiteReview.id) : null;
+        return [Object.freeze({
+          inboxId: item.inboxId,
           channel: item.channel,
-          body: item.body,
-          receivedAt: item.receivedAt,
+          latestMessageId: item.latestMessageId,
+          lastActivityAt: item.lastActivityAt,
+          unreadCount: unreadCounts.get(identityKeyByInboxId.get(item.inboxId) ?? "") ?? item.unreadCount,
           status: item.status,
-          latestAttemptId: item.humanReplyReceived || item.channel === "website" ? null : item.latestAttemptId,
-          draftText: item.humanReplyReceived || item.channel === "website" ? null : item.draftText,
-          gateResult: item.humanReplyReceived || item.channel === "website" ? null : item.gateResult,
+          latestAttemptId: item.latestAttemptId,
+          draftText: item.draftText,
+          gateResult: item.gateResult,
+          attachmentCount: item.attachmentCount,
+          imageAnalysisStatus: item.imageAnalysisStatus,
+          imageAssessmentSummary: item.imageAssessmentSummary,
           humanReplyReceived: item.humanReplyReceived,
-          websiteReview: websiteReviewDto,
-          attachmentCount: attachmentIds.length,
-          imageAnalysisStatus: attachmentIds.length
-            ? assessment?.status ?? "human_review_required"
-            : "not_applicable" as const,
-          imageAssessmentSummary: assessment?.summary ?? null,
-          timeline: timelineByConversation.get(item.conversationId) ?? [],
-        };
-      }),
-    };
+          websiteReview: review ? Object.freeze({
+            selector: review.status === "open" ? selectorByReview.get(review.id) ?? null : null,
+            reason: review.reason,
+            alertStatus: review.alert_status ?? "not_created",
+          }) : null,
+          timeline: Object.freeze(item.timeline.map((event) => Object.freeze({
+            eventId: event.eventId,
+            role: event.role,
+            text: event.text,
+            receivedAt: event.receivedAt,
+          }))),
+          hasEarlierTimeline: item.hasEarlierTimeline,
+        })];
+      })),
+    });
   }
 
   const repository: CustomerServiceRepository = {
@@ -2465,11 +2754,23 @@ export function createDrizzleCustomerServiceRepository(
       return database.transaction(async (transaction) => {
         const [identity] = await transaction.select({
           conversationId: customerServiceTurns.conversationId,
-        }).from(customerServiceTurns).where(and(
-          eq(customerServiceTurns.id, input.turnId),
-          eq(customerServiceTurns.channel, "website"),
-        )).limit(1);
+          channel: customerServiceConversationIdentities.channel,
+          identityKind: customerServiceConversationIdentities.identityKind,
+          identityKeyHash: customerServiceConversationIdentities.identityKeyHash,
+        }).from(customerServiceTurns)
+          .innerJoin(
+            customerServiceConversationIdentities,
+            eq(customerServiceConversationIdentities.conversationId, customerServiceTurns.conversationId),
+          )
+          .where(and(
+            eq(customerServiceTurns.id, input.turnId),
+            eq(customerServiceTurns.channel, "website"),
+            eq(customerServiceConversationIdentities.channel, "website"),
+          )).limit(1);
         if (!identity) return { status: "cancelled" as const };
+        await transaction.execute(sql`select pg_advisory_xact_lock(hashtext(${
+          `website-review-identity:${identity.channel}:${identity.identityKind}:${identity.identityKeyHash}`
+        }))`);
         await lockConversation(transaction, identity.conversationId);
 
         const [turn] = await transaction.select({
@@ -2501,13 +2802,27 @@ export function createDrizzleCustomerServiceRepository(
 
         const [existing] = await transaction.select({
           id: customerServiceHumanReviews.id,
+          conversationId: customerServiceHumanReviews.conversationId,
           generation: customerServiceHumanReviews.generation,
-        }).from(customerServiceHumanReviews).where(and(
-          eq(customerServiceHumanReviews.conversationId, turn.conversationId),
-          eq(customerServiceHumanReviews.status, "open"),
-        )).limit(1).for("update");
+        }).from(customerServiceHumanReviews)
+          .innerJoin(
+            customerServiceConversationIdentities,
+            eq(customerServiceConversationIdentities.conversationId, customerServiceHumanReviews.conversationId),
+          )
+          .where(and(
+            eq(customerServiceConversationIdentities.channel, identity.channel),
+            eq(customerServiceConversationIdentities.identityKind, identity.identityKind),
+            eq(customerServiceConversationIdentities.identityKeyHash, identity.identityKeyHash),
+            eq(customerServiceHumanReviews.status, "open"),
+          ))
+          .orderBy(
+            desc(customerServiceHumanReviews.openedAt),
+            desc(customerServiceHumanReviews.generation),
+            desc(customerServiceHumanReviews.id),
+          )
+          .limit(1).for("update");
 
-        const review = existing ?? await (async () => {
+        let review = existing ?? await (async () => {
           const [latest] = await transaction.select({ generation: max(customerServiceHumanReviews.generation) })
             .from(customerServiceHumanReviews)
             .where(eq(customerServiceHumanReviews.conversationId, turn.conversationId));
@@ -2527,6 +2842,7 @@ export function createDrizzleCustomerServiceRepository(
             openedAt: input.now,
           }).returning({
             id: customerServiceHumanReviews.id,
+            conversationId: customerServiceHumanReviews.conversationId,
             generation: customerServiceHumanReviews.generation,
           });
           const notificationCount = await enqueueInternalNotifications(transaction, {
@@ -2551,6 +2867,46 @@ export function createDrizzleCustomerServiceRepository(
         })();
 
         if (existing) {
+          const movingConversation = existing.conversationId !== turn.conversationId;
+          if (movingConversation) {
+            const [latestTarget] = await transaction.select({
+              generation: max(customerServiceHumanReviews.generation),
+            }).from(customerServiceHumanReviews)
+              .where(eq(customerServiceHumanReviews.conversationId, turn.conversationId));
+            const nextGeneration = Math.max(
+              existing.generation + 1,
+              (latestTarget?.generation ?? 0) + 1,
+            );
+            const [moved] = await transaction.update(customerServiceHumanReviews).set({
+              conversationId: turn.conversationId,
+              triggerTurnId: turn.id,
+              generation: nextGeneration,
+              reason: response.reason,
+              redactedSummary: redactedWebsiteReviewSummary(turn.body),
+              updatedAt: input.now,
+            }).where(and(
+              eq(customerServiceHumanReviews.id, existing.id),
+              eq(customerServiceHumanReviews.status, "open"),
+              eq(customerServiceHumanReviews.conversationId, existing.conversationId),
+              eq(customerServiceHumanReviews.generation, existing.generation),
+            )).returning({
+              id: customerServiceHumanReviews.id,
+              conversationId: customerServiceHumanReviews.conversationId,
+              generation: customerServiceHumanReviews.generation,
+            });
+            if (!moved) throw new Error("customer_service_review_identity_move_conflict");
+            review = moved;
+          } else {
+            await transaction.update(customerServiceHumanReviews).set({
+              triggerTurnId: turn.id,
+              reason: response.reason,
+              redactedSummary: redactedWebsiteReviewSummary(turn.body),
+              updatedAt: input.now,
+            }).where(and(
+              eq(customerServiceHumanReviews.id, existing.id),
+              eq(customerServiceHumanReviews.status, "open"),
+            ));
+          }
           await transaction.update(customerServiceReviewAlertOutbox).set({
             deduplicatedCount: sql`${customerServiceReviewAlertOutbox.deduplicatedCount} + 1`,
             updatedAt: input.now,

@@ -5,6 +5,7 @@ import type {
   ReplyAssistantUpdatePage,
   SafeQueuePage,
 } from "./repositories/customer-service-repository";
+import { mergeChangedInboxItems } from "./inbox/customer-inbox";
 
 export type ReplyAssistantUiChange = Readonly<{
   scope: "queue_message" | "queue_conversation" | "metrics" | "learning_candidates" | "case_memories";
@@ -66,10 +67,7 @@ export function createReplyAssistantUpdateReader(dependencies: UpdateReaderDepen
       changedScopes.has("case_memories") ? dependencies.loadCaseMemories() : Promise.resolve(null),
     ]);
 
-    const queueById = new Map([...messageItems, ...conversationItems].map((item) => [item.messageId, item]));
-    const queueItems = [...queueById.values()].sort((left, right) => (
-      right.receivedAt.localeCompare(left.receivedAt) || right.messageId.localeCompare(left.messageId)
-    ));
+    const queueItems = mergeChangedInboxItems([], [...messageItems, ...conversationItems]).slice(0, 100);
     const lastReturnedRevision = changePage.changes.at(-1)?.revision ?? afterRevision;
     const nextRevision = changePage.hasMore
       ? lastReturnedRevision

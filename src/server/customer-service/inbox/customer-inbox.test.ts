@@ -20,7 +20,18 @@ function row(overrides: Partial<CustomerInboxProjectionRow> = {}): CustomerInbox
     role: "customer",
     text: "Roll-up",
     receivedAt: "2026-09-01T07:10:00.000Z",
+    actionEligible: true,
+    status: "received",
+    latestAttemptId: null,
+    draftText: null,
+    gateResult: null,
+    attachmentCount: 0,
+    imageAnalysisStatus: "not_applicable",
+    imageAssessmentSummary: null,
+    humanReplyReceived: false,
     review: null,
+    hasEarlierTimeline: false,
+    includeInTimeline: true,
     ...overrides,
   };
 }
@@ -154,12 +165,126 @@ describe("one customer Inbox projection", () => {
     ]);
 
     expect(items).toHaveLength(1);
-    expect(items[0]?.review).toEqual({
+    expect(items[0]?.websiteReview).toEqual({
       id: "review-1",
       status: "open",
       generation: 2,
       selector: "selector-2",
     });
+  });
+
+  it("keeps the newest open customer review active ahead of a newer resolved review", () => {
+    const items = projectCustomerInbox([
+      row({
+        conversationId: "conversation-open",
+        eventId: "event-open",
+        messageId: "message-open",
+        receivedAt: "2026-09-01T07:10:00.000Z",
+        review: { id: "review-open", status: "open", generation: 2, selector: "selector-open" },
+      }),
+      row({
+        conversationId: "conversation-resolved",
+        eventId: "event-resolved",
+        messageId: "message-resolved",
+        receivedAt: "2026-09-01T07:20:00.000Z",
+        review: { id: "review-resolved", status: "resolved", generation: 3, selector: "selector-resolved" },
+      }),
+    ]);
+
+    expect(items[0]?.websiteReview).toEqual({
+      id: "review-open",
+      status: "open",
+      generation: 2,
+      selector: "selector-open",
+    });
+  });
+
+  it("selects the chronologically newest open review across conversation-local generations", () => {
+    const items = projectCustomerInbox([
+      row({
+        conversationId: "conversation-old-generation",
+        eventId: "event-old-generation",
+        receivedAt: "2026-09-01T07:10:00.000Z",
+        review: { id: "review-old", status: "open", generation: 10, selector: "selector-old" },
+      }),
+      row({
+        conversationId: "conversation-new-generation",
+        eventId: "event-new-generation",
+        receivedAt: "2026-09-01T07:20:00.000Z",
+        review: { id: "review-new", status: "open", generation: 1, selector: "selector-new" },
+      }),
+    ]);
+
+    expect(items[0]?.websiteReview?.id).toBe("review-new");
+  });
+
+  it("selects the newest eligible action and carries its complete action state", () => {
+    const eligibleAction = {
+      ...row({
+        eventId: "event-eligible",
+        messageId: "message-eligible",
+        receivedAt: "2026-09-01T07:10:00.000Z",
+      }),
+      actionEligible: true,
+      status: "draft_ready",
+      latestAttemptId: "attempt-eligible",
+      draftText: "Eligible draft",
+      hasEarlierTimeline: true,
+    };
+    const newerIneligibleAction = {
+      ...row({
+        eventId: "event-ineligible",
+        messageId: "message-ineligible",
+        receivedAt: "2026-09-01T07:20:00.000Z",
+      }),
+      actionEligible: false,
+      status: "received",
+      latestAttemptId: null,
+      draftText: null,
+      hasEarlierTimeline: false,
+    };
+
+    const items = projectCustomerInbox([eligibleAction, newerIneligibleAction]);
+
+    expect(items[0]).toMatchObject({
+      latestMessageId: "message-eligible",
+      status: "draft_ready",
+      latestAttemptId: "attempt-eligible",
+      draftText: "Eligible draft",
+      hasEarlierTimeline: true,
+    });
+  });
+
+  it("can project an eligible action outside the bounded visible timeline", () => {
+    const actionOutsideTimeline = {
+      ...row({
+        eventId: "action-outside-timeline",
+        messageId: "message-action",
+        receivedAt: "2026-09-01T07:00:00.000Z",
+      }),
+      actionEligible: true,
+      status: "draft_ready",
+      latestAttemptId: "attempt-action",
+      draftText: "Older actionable draft",
+      includeInTimeline: false,
+    };
+    const visibleNewestEvent = {
+      ...row({
+        eventId: "visible-event",
+        messageId: null,
+        role: "assistant",
+        text: "Newest bounded event",
+        receivedAt: "2026-09-01T08:00:00.000Z",
+      }),
+      actionEligible: false,
+      includeInTimeline: true,
+    };
+
+    const items = projectCustomerInbox([actionOutsideTimeline, visibleNewestEvent]);
+
+    expect(items[0]?.latestMessageId).toBe("message-action");
+    expect(items[0]?.timeline.map((event) => event.text)).toEqual(["Newest bounded event"]);
+    expect(items[0]?.lastActivityAt).toBe("2026-09-01T08:00:00.000Z");
   });
 
   it("returns an opaque Inbox id without leaking the raw identity tuple", () => {

@@ -19,7 +19,18 @@ export type CustomerInboxProjectionRow = Readonly<{
   role: "customer" | "assistant" | "staff";
   text: string;
   receivedAt: string;
+  actionEligible: boolean;
+  status: string;
+  latestAttemptId: string | null;
+  draftText: string | null;
+  gateResult: string | null;
+  attachmentCount: number;
+  imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
+  imageAssessmentSummary: string | null;
+  humanReplyReceived: boolean;
   review: CustomerInboxReviewProjection | null;
+  hasEarlierTimeline: boolean;
+  includeInTimeline: boolean;
 }>;
 
 export type ProjectedCustomerInboxItem = Readonly<{
@@ -28,7 +39,15 @@ export type ProjectedCustomerInboxItem = Readonly<{
   latestMessageId: string | null;
   lastActivityAt: string;
   unreadCount: number;
-  review: CustomerInboxReviewProjection | null;
+  status: string;
+  latestAttemptId: string | null;
+  draftText: string | null;
+  gateResult: string | null;
+  attachmentCount: number;
+  imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
+  imageAssessmentSummary: string | null;
+  humanReplyReceived: boolean;
+  websiteReview: CustomerInboxReviewProjection | null;
   timeline: readonly Readonly<{
     eventId: string;
     conversationId: string;
@@ -38,6 +57,7 @@ export type ProjectedCustomerInboxItem = Readonly<{
     text: string;
     receivedAt: string;
   }>[];
+  hasEarlierTimeline: boolean;
 }>;
 
 function identityGroupKey(row: CustomerInboxProjectionRow) {
@@ -62,7 +82,9 @@ function rowOrder(left: CustomerInboxProjectionRow, right: CustomerInboxProjecti
     || left.eventId.localeCompare(right.eventId);
 }
 
-function itemOrder(left: ProjectedCustomerInboxItem, right: ProjectedCustomerInboxItem) {
+type InboxMergeItem = Readonly<{ inboxId: string; lastActivityAt: string }>;
+
+function itemOrder(left: InboxMergeItem, right: InboxMergeItem) {
   return timestamp(right.lastActivityAt) - timestamp(left.lastActivityAt)
     || left.inboxId.localeCompare(right.inboxId);
 }
@@ -95,11 +117,12 @@ export function projectCustomerInbox(
       const current = uniqueEvents.get(row.eventId);
       if (!current || rowOrder(current, row) <= 0) uniqueEvents.set(row.eventId, row);
     }
-    const ordered = [...uniqueEvents.values()].sort(rowOrder);
+    const allOrdered = [...uniqueEvents.values()].sort(rowOrder);
+    const ordered = allOrdered.filter((row) => row.includeInTimeline);
     const latest = ordered.at(-1);
     if (!latest) throw new Error("customer_inbox_projection_empty");
-    const latestCustomerMessage = [...ordered].reverse().find((row) => (
-      row.role === "customer" && row.messageId !== null
+    const latestAction = [...allOrdered].reverse().find((row) => (
+      row.role === "customer" && row.messageId !== null && row.actionEligible
     ));
     let mostRecentHumanOutboundIndex = -1;
     ordered.forEach((row, index) => {
@@ -107,15 +130,30 @@ export function projectCustomerInbox(
     });
     const unreadCount = ordered.slice(mostRecentHumanOutboundIndex + 1)
       .filter((row) => row.role === "customer").length;
-    const review = [...ordered].reverse().find((row) => row.review !== null)?.review ?? null;
+    const reviewRows = allOrdered.filter((row) => row.review !== null);
+    const openReviewRows = reviewRows.filter((row) => row.review?.status === "open");
+    const reviewRow = [...(openReviewRows.length ? openReviewRows : reviewRows)].sort((left, right) => (
+      timestamp(right.receivedAt) - timestamp(left.receivedAt)
+      || (right.review?.generation ?? 0) - (left.review?.generation ?? 0)
+      || (right.review?.id ?? "").localeCompare(left.review?.id ?? "")
+    ))[0];
+    const websiteReview = reviewRow?.review ?? null;
 
     return deepFreeze({
       inboxId: createHash("sha256").update(identityKey).digest("hex"),
       channel: latest.channel,
-      latestMessageId: latestCustomerMessage?.messageId ?? null,
+      latestMessageId: latestAction?.messageId ?? null,
       lastActivityAt: latest.receivedAt,
       unreadCount,
-      review: review ? { ...review } : null,
+      status: latestAction?.status ?? latest.status,
+      latestAttemptId: latestAction?.latestAttemptId ?? null,
+      draftText: latestAction?.draftText ?? null,
+      gateResult: latestAction?.gateResult ?? null,
+      attachmentCount: latestAction?.attachmentCount ?? 0,
+      imageAnalysisStatus: latestAction?.imageAnalysisStatus ?? "not_applicable",
+      imageAssessmentSummary: latestAction?.imageAssessmentSummary ?? null,
+      humanReplyReceived: latestAction?.humanReplyReceived ?? false,
+      websiteReview: websiteReview ? { ...websiteReview } : null,
       timeline: ordered.map((row) => ({
         eventId: row.eventId,
         conversationId: row.conversationId,
@@ -125,15 +163,16 @@ export function projectCustomerInbox(
         text: row.text,
         receivedAt: row.receivedAt,
       })),
+      hasEarlierTimeline: allOrdered.some((row) => row.hasEarlierTimeline),
     });
   });
   return deepFreeze(items.sort(itemOrder));
 }
 
-export function mergeChangedInboxItems(
-  current: readonly ProjectedCustomerInboxItem[],
-  changed: readonly ProjectedCustomerInboxItem[],
-): readonly ProjectedCustomerInboxItem[] {
+export function mergeChangedInboxItems<T extends InboxMergeItem>(
+  current: readonly T[],
+  changed: readonly T[],
+): readonly T[] {
   const merged = new Map(current.map((item) => [item.inboxId, item]));
   for (const item of changed) merged.set(item.inboxId, item);
   return deepFreeze([...merged.values()].sort(itemOrder));

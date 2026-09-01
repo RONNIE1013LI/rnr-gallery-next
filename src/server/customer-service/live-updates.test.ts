@@ -5,11 +5,12 @@ import {
   encodeReplyAssistantCursor,
 } from "./live-updates";
 
-const queueItem = (messageId: string, receivedAt: string) => ({
-  messageId,
+const queueItem = (inboxId: string, latestMessageId: string, lastActivityAt: string) => ({
+  inboxId,
   channel: "facebook" as const,
-  body: `Message ${messageId}`,
-  receivedAt,
+  latestMessageId,
+  lastActivityAt,
+  unreadCount: 1,
   status: "received",
   latestAttemptId: null,
   draftText: null,
@@ -20,6 +21,7 @@ const queueItem = (messageId: string, receivedAt: string) => ({
   humanReplyReceived: false,
   websiteReview: null,
   timeline: [],
+  hasEarlierTimeline: false,
 });
 
 describe("reply assistant live update reader", () => {
@@ -56,10 +58,10 @@ describe("reply assistant live update reader", () => {
   });
 
   it("loads only changed scopes and de-duplicates queue items", async () => {
-    const fromMessage = queueItem("message-1", "2026-08-20T00:00:00.000Z");
+    const fromMessage = queueItem("inbox-1", "message-1", "2026-08-20T00:00:00.000Z");
     const fromConversation = [
-      queueItem("message-1", "2026-08-20T00:00:00.000Z"),
-      queueItem("message-2", "2026-08-20T00:00:01.000Z"),
+      queueItem("inbox-1", "message-1", "2026-08-20T00:00:00.000Z"),
+      queueItem("inbox-2", "message-2", "2026-08-20T00:00:01.000Z"),
     ];
     const reader = createReplyAssistantUpdateReader({
       readChanges: vi.fn(async () => ({
@@ -83,10 +85,40 @@ describe("reply assistant live update reader", () => {
     const result = await reader(encodeReplyAssistantCursor(10), 250);
 
     expect(result.cursor).toBe(encodeReplyAssistantCursor(15));
-    expect(result.queueItems.map((item) => item.messageId)).toEqual(["message-2", "message-1"]);
+    expect(result.queueItems.map((item) => item.inboxId)).toEqual(["inbox-2", "inbox-1"]);
     expect(result.metrics).toEqual({ draftsGenerated: 2 });
     expect(result.learningCandidates).toEqual({ items: [{ id: "candidate-1" }] });
     expect(result.caseMemories).toEqual({ items: [{ id: "case-1" }] });
+  });
+
+  it("returns one changed Inbox item when two technical conversations resolve to the same identity", async () => {
+    const reader = createReplyAssistantUpdateReader({
+      readChanges: vi.fn(async () => ({
+        currentRevision: 32,
+        hasMore: false,
+        changes: [
+          { scope: "queue_conversation" as const, entityKey: "conversation-1", revision: 31 },
+          { scope: "queue_conversation" as const, entityKey: "conversation-2", revision: 32 },
+        ],
+      })),
+      loadQueueByMessageIds: vi.fn(),
+      loadQueueByConversationIds: vi.fn(async () => [
+        queueItem("shared-inbox", "message-old", "2026-08-20T00:00:00.000Z"),
+        queueItem("shared-inbox", "message-new", "2026-08-20T00:00:02.000Z"),
+      ]),
+      loadMetrics: vi.fn(),
+      loadLearningCandidates: vi.fn(),
+      loadCaseMemories: vi.fn(),
+    });
+
+    const result = await reader(encodeReplyAssistantCursor(30), 250);
+
+    expect(result.queueItems).toHaveLength(1);
+    expect(result.queueItems[0]).toMatchObject({
+      inboxId: "shared-inbox",
+      latestMessageId: "message-new",
+      lastActivityAt: "2026-08-20T00:00:02.000Z",
+    });
   });
 
   it("advances only to the last returned revision when more changes remain", async () => {
