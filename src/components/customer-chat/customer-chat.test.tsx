@@ -947,6 +947,49 @@ describe("CustomerChat", () => {
     expect(fetchMock).toHaveBeenCalledTimes(3);
   });
 
+  it("resumes a persisted deferred accepted send only after chat reopens", async () => {
+    vi.useFakeTimers();
+    const assistant = {
+      eventKey: "assistant-after-reopen",
+      role: "assistant",
+      text: "Your reply is ready.",
+      createdAt: "2026-09-01T00:00:05.000Z",
+      state: "committed_assistant",
+    };
+    let acceptMessage: ((response: Response) => void) | undefined;
+    const deferredMessage = new Promise<Response>((resolve) => { acceptMessage = resolve; });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([], "cursor-1", "committed_assistant"))
+      .mockResolvedValueOnce(accepted())
+      .mockReturnValueOnce(deferredMessage)
+      .mockResolvedValueOnce(updates([], "cursor-2", "pending"))
+      .mockResolvedValueOnce(updates([assistant], "cursor-3", "committed_assistant"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+    const input = screen.getByLabelText("Message R&R Gallery");
+    fireEvent.change(input, { target: { value: "Please help" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
+
+    await act(async () => { acceptMessage?.(accepted()); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    openChat();
+    await act(async () => {});
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_999); });
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+    expect(screen.getByText("Your reply is ready.")).toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(10_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+
   it("aborts an in-flight update request when the chat closes", async () => {
     vi.useFakeTimers();
     let signal: AbortSignal | undefined;

@@ -255,6 +255,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     return () => {
       mountedRef.current = false;
       openRef.current = false;
+      if (!lockGrantedRef.current) lockWaitAbortControllerRef.current?.abort();
     };
   }, []);
 
@@ -366,18 +367,19 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
         return;
       }
       if (response.ok) {
-        if (!currentlyTrackable()) return;
         awaitingReplyGenerationRef.current += 1;
         awaitingReplyRef.current = true;
-        setDraft("");
-        setPendingMessage(null);
-        setOutgoingMessages((messages) => messages.map((message) => (
-          message.clientMessageKey === current.clientMessageKey
-            ? { ...message, status: "accepted" }
-            : message
-        )));
-        setFeedback("Message sent.");
-        startPendingPolling();
+        if (mountedRef.current) {
+          setDraft("");
+          setPendingMessage(null);
+          setOutgoingMessages((messages) => messages.map((message) => (
+            message.clientMessageKey === current.clientMessageKey
+              ? { ...message, status: "accepted" }
+              : message
+          )));
+          setFeedback("Message sent.");
+        }
+        if (currentlyTrackable()) startPendingPolling();
         return;
       }
       if (response.status === 429) {
