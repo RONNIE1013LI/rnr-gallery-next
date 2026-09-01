@@ -75,6 +75,85 @@ describe("protected request proxy", () => {
       .toBeNull();
   });
 
+  it("collapses meta-webindexer public image variants to one stable optimized size", () => {
+    const source = `/gallery-images/${"a".repeat(64)}?v=${"b".repeat(64)}`;
+    const requestUrl = new URL("https://rnrgallery.com/_next/image");
+    requestUrl.searchParams.set("url", source);
+    requestUrl.searchParams.set("w", "384");
+    requestUrl.searchParams.set("q", "75");
+
+    const response = proxy(new NextRequest(requestUrl, {
+      headers: { "user-agent": "meta-webindexer/1.1" },
+    }));
+    const locationHeader = response.headers.get("location");
+
+    expect(response.status).toBe(307);
+    expect(locationHeader).not.toBeNull();
+    expect(response.headers.get("cache-control")).toBe("private, no-store");
+    expect(response.headers.get("vary")).toBe("User-Agent");
+    const location = new URL(locationHeader ?? "https://invalid.example");
+    expect(location.origin).toBe("https://rnrgallery.com");
+    expect(location.pathname).toBe("/_next/image");
+    expect(location.searchParams.get("url")).toBe(source);
+    expect(location.searchParams.get("w")).toBe("828");
+    expect(location.searchParams.get("q")).toBe("60");
+  });
+
+  it("does not loop when meta-webindexer requests the canonical image variant", () => {
+    const requestUrl = new URL("https://rnrgallery.com/_next/image");
+    requestUrl.searchParams.set("url", "/media/products/banner-bundle.webp");
+    requestUrl.searchParams.set("w", "828");
+    requestUrl.searchParams.set("q", "60");
+
+    const response = proxy(new NextRequest(requestUrl, {
+      headers: { "user-agent": "Mozilla/5.0 (compatible; meta-webindexer/1.1)" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it.each([
+    "Mozilla/5.0 Chrome/140.0",
+    "Googlebot/2.1",
+    "AdsBot-Google-Mobile",
+    "facebookexternalhit/1.1",
+    "meta-externalagent/1.1",
+    "meta-externalads/1.1",
+    "meta-externalfetcher/1.1",
+    "notmeta-webindexer/1.1",
+  ])("keeps responsive image variants unchanged for %s", (userAgent) => {
+    const requestUrl = new URL("https://rnrgallery.com/_next/image");
+    requestUrl.searchParams.set("url", "/media/home/homepage-hero-showcase-16x9.webp");
+    requestUrl.searchParams.set("w", "2048");
+    requestUrl.searchParams.set("q", "60");
+
+    const response = proxy(new NextRequest(requestUrl, {
+      headers: { "user-agent": userAgent },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
+  it.each([
+    "https://images.example.com/product.webp",
+    "/api/private/payment-proof",
+    "/review-media/customer/avatar",
+  ])("does not canonicalize an unapproved meta-webindexer image source %s", (source) => {
+    const requestUrl = new URL("https://rnrgallery.com/_next/image");
+    requestUrl.searchParams.set("url", source);
+    requestUrl.searchParams.set("w", "384");
+    requestUrl.searchParams.set("q", "75");
+
+    const response = proxy(new NextRequest(requestUrl, {
+      headers: { "user-agent": "meta-webindexer/1.1" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("location")).toBeNull();
+  });
+
   it("keeps unrelated customer pages on the existing slashless canonical form", () => {
     const response = proxy(new NextRequest(
       "https://rnrgallery.com/how-it-works/?utm_source=customer-link",
