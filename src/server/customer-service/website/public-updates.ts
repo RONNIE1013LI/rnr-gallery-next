@@ -29,6 +29,7 @@ export type WebsitePublicUpdateCursor = Readonly<{
 export type WebsitePublicUpdateRecord = Readonly<{
   source: WebsitePublicUpdateSource;
   id: string;
+  messageKeyHash?: string | null;
   role: "customer" | "assistant" | "staff";
   text: string;
   createdAt: Date;
@@ -67,6 +68,19 @@ function eventKey(input: Readonly<{
 }>) {
   return createHmac("sha256", input.secret)
     .update(`website-public-update-event\0${input.sessionKeyHash}\0${input.source}\0${input.id}`)
+    .digest("hex");
+}
+
+export function websitePublicMessageKey(input: Readonly<{
+  secret: string;
+  sessionKeyHash: string;
+  messageKeyHash: string;
+}>) {
+  if (!/^[a-f0-9]{64}$/.test(input.sessionKeyHash) || !/^[a-f0-9]{64}$/.test(input.messageKeyHash)) {
+    throw new Error("website_public_message_identity_invalid");
+  }
+  return createHmac("sha256", input.secret)
+    .update(`website-public-message\0${input.sessionKeyHash}\0${input.messageKeyHash}`)
     .digest("hex");
 }
 
@@ -190,6 +204,13 @@ export function createWebsitePublicUpdatesReader(input: Readonly<{
             source: record.source,
             id: record.id,
           }),
+          ...(record.role === "customer" && record.messageKeyHash ? {
+            messageKey: websitePublicMessageKey({
+              secret: input.cursorSecret,
+              sessionKeyHash: request.sessionKeyHash,
+              messageKeyHash: record.messageKeyHash,
+            }),
+          } : {}),
           role: record.role,
           text: record.text,
           createdAt: record.createdAt.toISOString(),

@@ -21,6 +21,25 @@ describe("Website safe product context", () => {
   });
 
   it.each([
+    ["/custom-roll-up-banners-nz", "roll-up-banner", "Roll-Up Banner", "banners"],
+    ["/custom-wall-banners-nz", "custom-themed-wall-banner", "Custom Themed Wall Banner", "banners"],
+    ["/custom-photo-canvas-nz", "photo-print-canvas", "Photo Print Canvas", "canvas"],
+  ] as const)("resolves an approved NZ advertising landing page: %s", (
+    pathname,
+    productKey,
+    productTitle,
+    category,
+  ) => {
+    expect(resolveSafeProductContext(pathname, registry)).toEqual({
+      market: "NZ",
+      productKey,
+      productTitle,
+      category,
+      pageKind: "product",
+    });
+  });
+
+  it.each([
     "https://rrgallery.co.nz/products/digital-oil-painting-canvas",
     "/products/digital-oil-painting-canvas?price=1",
     "/products/digital-oil-painting-canvas#order-1",

@@ -9,6 +9,7 @@ import styles from "./customer-chat.module.css";
 
 type PublicEvent = Readonly<{
   eventKey: string;
+  messageKey?: string;
   role: "customer" | "assistant" | "staff";
   text: string;
   createdAt: string;
@@ -23,6 +24,7 @@ type PendingMessage = Readonly<{
 
 type OutgoingMessage = PendingMessage & Readonly<{
   createdAt: string;
+  messageKey?: string;
   status: "sending" | "accepted" | "failed";
 }>;
 
@@ -71,6 +73,8 @@ function publicUpdates(value: unknown): UpdatesResponse | null {
     if (!event || typeof event !== "object") return false;
     const candidate = event as Record<string, unknown>;
     return typeof candidate.eventKey === "string"
+      && (candidate.messageKey === undefined
+        || (typeof candidate.messageKey === "string" && /^[a-f0-9]{64}$/.test(candidate.messageKey)))
       && (candidate.role === "customer" || candidate.role === "assistant" || candidate.role === "staff")
       && typeof candidate.text === "string"
       && typeof candidate.createdAt === "string"
@@ -87,8 +91,14 @@ function reconcileOutgoing(
   for (const event of incoming) {
     if (event.role !== "customer") continue;
     const eventTime = Date.parse(event.createdAt);
-    const match = remaining.findIndex((message) => message.message === event.text
-      && eventTime >= Date.parse(message.createdAt) - 5_000);
+    const keyedMatch = event.messageKey
+      ? remaining.findIndex((message) => message.messageKey === event.messageKey)
+      : -1;
+    const match = keyedMatch >= 0 ? keyedMatch : remaining.findIndex((message) => (
+      (!event.messageKey || !message.messageKey)
+      && message.message === event.text
+      && eventTime >= Date.parse(message.createdAt) - 5_000
+    ));
     if (match >= 0) remaining.splice(match, 1);
   }
   return remaining.length === outgoing.length ? outgoing : remaining;
@@ -367,6 +377,11 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
         return;
       }
       if (response.ok) {
+        const acceptedBody = await response.json().catch(() => null) as { messageKey?: unknown } | null;
+        const messageKey = typeof acceptedBody?.messageKey === "string"
+          && /^[a-f0-9]{64}$/.test(acceptedBody.messageKey)
+          ? acceptedBody.messageKey
+          : undefined;
         awaitingReplyGenerationRef.current += 1;
         awaitingReplyRef.current = true;
         if (mountedRef.current) {
@@ -374,7 +389,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
           setPendingMessage(null);
           setOutgoingMessages((messages) => messages.map((message) => (
             message.clientMessageKey === current.clientMessageKey
-              ? { ...message, status: "accepted" }
+              ? { ...message, status: "accepted", ...(messageKey ? { messageKey } : {}) }
               : message
           )));
           setFeedback("Message sent.");

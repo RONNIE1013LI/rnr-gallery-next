@@ -21,8 +21,8 @@ function updates(
   });
 }
 
-function accepted() {
-  return new Response(JSON.stringify({ status: "accepted", permit: "test-permit" }), {
+function accepted(messageKey = "a".repeat(64)) {
+  return new Response(JSON.stringify({ status: "accepted", messageKey, permit: "test-permit" }), {
     status: 202,
     headers: { "Content-Type": "application/json" },
   });
@@ -210,6 +210,75 @@ describe("CustomerChat", () => {
 
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
     expect(screen.getAllByText("I'd like to get a quote.")).toHaveLength(1);
+  });
+
+  it("reconciles by the server message key despite timestamp skew and clears stale typing", async () => {
+    const messageKey = "d".repeat(64);
+    const persisted = {
+      eventKey: "persisted-clock-skewed-message",
+      messageKey,
+      role: "customer",
+      text: "Hi how much for roll up banner",
+      createdAt: "2020-01-01T00:00:00.000Z",
+      state: "pending",
+    };
+    const assistant = {
+      eventKey: "assistant-after-clock-skewed-message",
+      role: "assistant",
+      text: "The roll-up banner price is ready.",
+      createdAt: "2020-01-01T00:00:01.000Z",
+      state: "committed_assistant",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted(messageKey))
+      .mockResolvedValueOnce(updates([persisted, assistant], "cursor-2", "committed_assistant"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    const input = await screen.findByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Hi how much for roll up banner" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(screen.getAllByText("Hi how much for roll up banner")).toHaveLength(1);
+    expect(screen.queryByText("R&R Gallery is typing…")).not.toBeInTheDocument();
+  });
+
+  it("keeps timestamp reconciliation for a persisted event without a message key", async () => {
+    const message = "Please help with a canvas";
+    const persisted = {
+      eventKey: "persisted-legacy-message",
+      role: "customer",
+      text: message,
+      createdAt: new Date(Date.now() + 1_000).toISOString(),
+      state: "pending",
+    };
+    const assistant = {
+      eventKey: "assistant-after-legacy-message",
+      role: "assistant",
+      text: "We can help with your canvas.",
+      createdAt: new Date(Date.now() + 2_000).toISOString(),
+      state: "committed_assistant",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted("e".repeat(64)))
+      .mockResolvedValueOnce(updates([persisted, assistant], "cursor-2", "committed_assistant"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    const input = await screen.findByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: message } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    expect(screen.getAllByText(message)).toHaveLength(1);
+    expect(screen.queryByText("R&R Gallery is typing…")).not.toBeInTheDocument();
   });
 
   it("keeps a failed quick-action message and existing retry flow without restoring the welcome", async () => {

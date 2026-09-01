@@ -1450,6 +1450,7 @@ export function createDrizzleCustomerServiceRepository(
       }
       const events = await database.select({
         id: customerServiceConversationEvents.id,
+        messageKeyHash: customerServiceConversationEvents.externalMessageKeyHash,
         role: customerServiceConversationEvents.role,
         eventType: customerServiceConversationEvents.eventType,
         body: customerServiceConversationEvents.body,
@@ -1499,6 +1500,7 @@ export function createDrizzleCustomerServiceRepository(
       return [...events.map((event): WebsitePublicUpdateRecord => ({
         source: "event",
         id: event.id,
+        messageKeyHash: event.role === "customer" ? event.messageKeyHash : null,
         role: event.role === "staff" ? "staff" : "customer",
         text: event.body,
         createdAt: event.createdAt,

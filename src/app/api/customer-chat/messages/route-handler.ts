@@ -12,6 +12,7 @@ import {
   hashWebsiteClientMessageKey,
   parseWebsiteMessageRequest,
 } from "@/server/customer-service/website/public-api";
+import { websitePublicMessageKey } from "@/server/customer-service/website/public-updates";
 import {
   hashTrustedNetworkBucket,
   resolveTrustedClientIp,
@@ -178,7 +179,14 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
           });
         }
 
-        const response = json({ status: "accepted" }, 202);
+        const response = json({
+          status: "accepted",
+          messageKey: websitePublicMessageKey({
+            secret: dependencies.messageHashSecret,
+            sessionKeyHash,
+            messageKeyHash: messageHash,
+          }),
+        }, 202);
         return response;
       } catch (error) {
         if (error instanceof MutationRequestError) return rejected(error.status);

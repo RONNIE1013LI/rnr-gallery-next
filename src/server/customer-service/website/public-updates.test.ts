@@ -22,6 +22,37 @@ function record(input: Partial<WebsitePublicUpdateRecord> = {}): WebsitePublicUp
 }
 
 describe("website public updates", () => {
+  it("emits a session-scoped message key for reconciling persisted customer messages", async () => {
+    const reader = createWebsitePublicUpdatesReader({
+      cursorSecret,
+      repository: {
+        async listWebsitePublicUpdates() {
+          return [record({ messageKeyHash: "b".repeat(64) })];
+        },
+      },
+    });
+
+    const first = await reader.read({
+      conversationId,
+      sessionKeyHash: "a".repeat(64),
+      cursor: null,
+      limit: 10,
+    });
+    const second = await reader.read({
+      conversationId,
+      sessionKeyHash: "c".repeat(64),
+      cursor: null,
+      limit: 10,
+    });
+
+    expect(first.events[0]).toMatchObject({
+      role: "customer",
+      messageKey: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
+    expect(first.events[0]?.messageKey).not.toBe(second.events[0]?.messageKey);
+    expect(JSON.stringify(first)).not.toContain("b".repeat(64));
+  });
+
   it("uses an opaque signed cursor bound to one resolved session", async () => {
     const calls: unknown[] = [];
     const reader = createWebsitePublicUpdatesReader({

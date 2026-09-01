@@ -246,7 +246,10 @@ describe("POST /api/customer-chat/messages", () => {
     expect(response.headers.get("Cache-Control")).toBe("no-store");
     expect(response.headers.get("Set-Cookie")).toBeNull();
     const responseBody = await response.json();
-    expect(responseBody).toEqual({ status: "accepted" });
+    expect(responseBody).toEqual({
+      status: "accepted",
+      messageKey: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
     expect(current.repository.ingestConversationEvent).toHaveBeenCalledWith(expect.objectContaining({
       channel: "website",
       role: "customer",
@@ -273,7 +276,10 @@ describe("POST /api/customer-chat/messages", () => {
     const response = await current.handler.POST(permittedRequest());
 
     expect(response.status).toBe(202);
-    expect(await response.json()).toEqual({ status: "accepted" });
+    expect(await response.json()).toEqual({
+      status: "accepted",
+      messageKey: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
     expect(current.repository.ingestConversationEvent).toHaveBeenCalledOnce();
     expect(current.tasks).toHaveLength(1);
     await expect(current.tasks[0]()).resolves.toBeUndefined();

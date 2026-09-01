@@ -2,6 +2,7 @@ import {
   getRegistryProductBySlug,
   type ProductRegistryDocument,
 } from "@/domain/catalogue/product-registry";
+import { adLandingPages } from "@/domain/ads/landing-pages";
 import { getSafePublicProductRegistry } from "@/server/admin/product-registry-runtime";
 import type { SafeProductContext } from "../types";
 
@@ -20,16 +21,18 @@ export function resolveSafeProductContext(
     || pathname.includes("%")
   ) return null;
   const match = PRODUCT_PATH.exec(pathname);
-  if (!match) return null;
-  const product = getRegistryProductBySlug(registry, match[2]);
+  const landingPage = Object.values(adLandingPages).find((page) => page.path === pathname);
+  const productSlug = match?.[2] ?? landingPage?.productSlug;
+  if (!productSlug) return null;
+  const product = getRegistryProductBySlug(registry, productSlug);
   if (!product) return null;
   if (product.key.length > 100 || product.title.length > 160) return null;
   const context = Object.freeze({
-    market: match[1] ? "AU" : "NZ",
+    market: match?.[1] ? "AU" : "NZ",
     productKey: product.key,
     productTitle: product.title,
     category: product.category,
-    pageKind: match[3] ? "configure" : "product",
+    pageKind: match?.[3] ? "configure" : "product",
   });
   resolvedContexts.add(context);
   return context;
