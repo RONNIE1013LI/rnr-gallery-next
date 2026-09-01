@@ -463,7 +463,7 @@ const QUESTIONS: Readonly<Record<FollowUpField, Readonly<{
   },
 });
 
-function renderQuestions(fields: readonly FollowUpField[]) {
+function renderQuestions(fields: readonly FollowUpField[], productType: ProductType) {
   if (fields.join("|") === "PEOPLE_COUNT|PHOTO_COUNT|REQUIRED_DATE|DELIVERY_LOCATION_IF_REQUIRED") {
     return "About how many people and photos would you like to include, and what date do you need it for? If delivery is required, please also send your suburb or postcode.";
   }
@@ -476,10 +476,16 @@ function renderQuestions(fields: readonly FollowUpField[]) {
     return fields.flatMap((field, index) => {
       if (index === peopleIndex) return ["About how many people and photos would you like to include?"];
       if (index === photoIndex) return [];
-      return [QUESTIONS[field].text];
+      return [field === "PRODUCT_TYPE" && productType === "CANVAS"
+        ? "Which Canvas type would you like: Photo Print, Digital Oil Painting, or Custom Themed?"
+        : QUESTIONS[field].text];
     }).join("\n");
   }
-  return fields.map((field) => QUESTIONS[field].text).join("\n");
+  return fields.map((field) => (
+    field === "PRODUCT_TYPE" && productType === "CANVAS"
+      ? "Which Canvas type would you like: Photo Print, Digital Oil Painting, or Custom Themed?"
+      : QUESTIONS[field].text
+  )).join("\n");
 }
 
 function productCompatible(productType: ProductType, productCategory: "canvas" | "banners" | null) {
@@ -640,7 +646,7 @@ export function renderWebsiteDecision(input: Readonly<{
     return {
       ok: true,
       outcome: "rendered",
-      text: `${decision.allowed_facts.map((fact) => factText(decision, fact)).join(" ")} ${renderQuestions(decision.follow_up_fields)}`,
+      text: `${decision.allowed_facts.map((fact) => factText(decision, fact)).join(" ")} ${renderQuestions(decision.follow_up_fields, decision.product_type)}`,
       templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
     };
   }
@@ -656,7 +662,7 @@ export function renderWebsiteDecision(input: Readonly<{
     return {
       ok: true,
       outcome: "rendered",
-      text: renderQuestions(decision.follow_up_fields),
+      text: renderQuestions(decision.follow_up_fields, decision.product_type),
       templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
     };
   }

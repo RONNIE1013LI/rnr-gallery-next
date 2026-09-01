@@ -6,6 +6,10 @@ import { buildDraftPrompt, buildWebsiteDecisionPrompt } from "./prompt-builder";
 import { localDateScopeKey } from "./usage-cost";
 import { detectIntent } from "./intent-detection";
 import { resolveContextualIntent } from "./conversation/contextual-intent";
+import {
+  resolveConversationState,
+  type ConversationState,
+} from "./conversation/conversation-state";
 import type { AttachmentProcessor } from "./attachments/attachment-processor";
 import type { NormalizedAttachment } from "./attachments/types";
 import type { AiProvider } from "./providers/ai-provider";
@@ -13,12 +17,14 @@ import type { CustomerServiceRepository } from "./repositories/customer-service-
 import type { DraftGenerationRequest, DraftGenerationResult } from "./types";
 import { sanitizeWebsiteModelInput } from "./website/model-input-sanitizer";
 import { classifyAcknowledgement } from "./conversation/acknowledgement";
-import { isStaticCataloguePricingEnquiry } from "./intent-detection";
 import {
   resolveApprovedPricing,
   type ApprovedPricingResolution,
 } from "./pricing-source";
-import type { ProductRegistryDocument } from "@/domain/catalogue/product-registry";
+import {
+  defaultProductRegistry,
+  type ProductRegistryDocument,
+} from "@/domain/catalogue/product-registry";
 import {
   parseWebsiteDecision,
   renderWebsiteDecision,
@@ -125,6 +131,21 @@ export class CustomerServiceEngine {
     });
   }
 
+  private gateForConversationState(
+    text: string,
+    state: ConversationState,
+    channel: "facebook" | "website",
+  ) {
+    return this.policyGate({
+      message: text,
+      knowledge: this.knowledge,
+      channel,
+      intentOverride: state.intent.value,
+      isContextualQuoteDetail: state.intent.value === "quote_information_collection"
+        && state.intent.source !== "current_message",
+    });
+  }
+
   async checkImageJobPolicy(messageId: string): Promise<
     Readonly<{ status: "allowed" }> | Readonly<{ status: "blocked"; code: string }>
   > {
@@ -142,7 +163,17 @@ export class CustomerServiceEngine {
       });
       return { status: "blocked", code: "image_only_without_text" };
     }
-    const gate = this.gateFor(draftInput.current.text, draftInput.context, draftInput.current.channel);
+    const conversationState = resolveConversationState({
+      currentText: draftInput.current.text,
+      history: draftInput.context,
+      productContext: draftInput.current.productContext ?? null,
+      registry: defaultProductRegistry,
+    });
+    const gate = this.gateForConversationState(
+      draftInput.current.text,
+      conversationState,
+      draftInput.current.channel,
+    );
     if (gate.providerAllowed) return { status: "allowed" };
     const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
       ? "realtime_required"
@@ -179,7 +210,17 @@ export class CustomerServiceEngine {
       });
       return { status: "image_review_required", attemptId };
     }
-    const gate = this.gateFor(draftInput.current.text, draftInput.context, draftInput.current.channel);
+    const conversationState = resolveConversationState({
+      currentText: draftInput.current.text,
+      history: draftInput.context,
+      productContext: draftInput.current.productContext ?? null,
+      registry: defaultProductRegistry,
+    });
+    const gate = this.gateForConversationState(
+      draftInput.current.text,
+      conversationState,
+      draftInput.current.channel,
+    );
     if (!gate.providerAllowed) {
       const attemptId = await this.repository.createGateBlockedAttempt({
         messageId: input.messageId,
@@ -228,7 +269,17 @@ export class CustomerServiceEngine {
       });
       return { status: "image_review_required", attemptId };
     }
-    const gate = this.gateFor(draftInput.current.text, draftInput.context, draftInput.current.channel);
+    let conversationState = resolveConversationState({
+      currentText: draftInput.current.text,
+      history: draftInput.context,
+      productContext: draftInput.current.productContext ?? null,
+      registry: defaultProductRegistry,
+    });
+    const gate = this.gateForConversationState(
+      draftInput.current.text,
+      conversationState,
+      draftInput.current.channel,
+    );
     if (!gate.providerAllowed) {
       const gateResult = gate.decision === "REALTIME_DATA_REQUIRED"
         ? "realtime_required"
@@ -251,17 +302,22 @@ export class CustomerServiceEngine {
     }
 
     let approvedPricing: ApprovedPricingResolution | null = null;
-    const asksCataloguePrice = isStaticCataloguePricingEnquiry(draftInput.current.text)
-      || (gate.intent === "quote_information_collection"
-        && /\bhow much\b|\bprices?\b|\bpricing\b|\bcost\b|\bprice list\b/i.test(draftInput.current.text));
-    if (asksCataloguePrice) {
+    let currentPricing: Readonly<{
+      revision: number;
+      registry: ProductRegistryDocument;
+    }> | null = null;
+    if (conversationState.asksCataloguePrice) {
       try {
         if (!this.pricingSource) throw new Error("pricing_source_unavailable");
-        const currentPricing = await this.pricingSource();
-        approvedPricing = resolveApprovedPricing({
-          message: draftInput.current.text,
-          context: draftInput.context,
+        currentPricing = await this.pricingSource();
+        conversationState = resolveConversationState({
+          currentText: draftInput.current.text,
+          history: draftInput.context,
           productContext: draftInput.current.productContext ?? null,
+          registry: currentPricing.registry,
+        });
+        approvedPricing = resolveApprovedPricing({
+          state: conversationState,
           registry: currentPricing.registry,
           revision: currentPricing.revision,
         });
@@ -373,6 +429,7 @@ export class CustomerServiceEngine {
         intent: gate.intent,
         context: providerContext,
         productContext: draftInput.current.productContext ?? null,
+        conversationState,
         approvedCaseMemoryCount: caseMemories.length,
         approvedPricing,
       })
@@ -385,6 +442,7 @@ export class CustomerServiceEngine {
         qualityGuide: sources.qualityGuide,
         toneGuide: this.knowledge.toneGuide,
         caseMemories,
+        conversationState,
         approvedPricing,
       });
     const invocation = await this.repository.confirmProviderInvocation({
@@ -428,12 +486,32 @@ export class CustomerServiceEngine {
           ? Object.freeze({
             response_type: "ASK_FOR_INFORMATION",
             intent: "quote_information_collection",
-            product_type: "UNSPECIFIED",
+            product_type: (() => {
+              const productKeys = conversationState.product
+                ? [conversationState.product.productKey]
+                : conversationState.productCandidates;
+              const categories = new Set(productKeys.flatMap((productKey) => {
+                const category = (currentPricing?.registry ?? defaultProductRegistry).products
+                  .find((product) => product.key === productKey)?.category;
+                return category ? [category] : [];
+              }));
+              return categories.size === 1
+                ? categories.has("canvas") ? "CANVAS" : "BANNER"
+                : "UNSPECIFIED";
+            })(),
             missing_fields: Object.freeze(approvedPricing.missing.map(
-              (field) => field === "product" ? "PRODUCT_TYPE" as const : field.toUpperCase() as "MARKET" | "SIZE",
+              (field) => field === "product"
+                ? "PRODUCT_TYPE" as const
+                : field === "peoplePets"
+                  ? "PEOPLE_COUNT" as const
+                  : field.toUpperCase() as "MARKET" | "SIZE",
             )),
             follow_up_fields: Object.freeze(approvedPricing.missing.map(
-              (field) => field === "product" ? "PRODUCT_TYPE" as const : field.toUpperCase() as "MARKET" | "SIZE",
+              (field) => field === "product"
+                ? "PRODUCT_TYPE" as const
+                : field === "peoplePets"
+                  ? "PEOPLE_COUNT" as const
+                  : field.toUpperCase() as "MARKET" | "SIZE",
             )),
             allowed_facts: Object.freeze([]),
             human_review_reason: "NONE",
@@ -458,6 +536,7 @@ export class CustomerServiceEngine {
             productTitle: fact.productTitle,
             sizeKey: fact.sizeKey,
             sizeLabel: fact.sizeLabel,
+            ...(fact.peoplePets === undefined ? {} : { peoplePets: fact.peoplePets }),
             currency: fact.currency,
             amountInclTaxCents: fact.amountInclTaxCents,
           });

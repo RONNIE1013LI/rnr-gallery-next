@@ -475,6 +475,65 @@ describe("CustomerServiceEngine", () => {
     }));
   });
 
+  it("answers the Roll-up price after the customer answers New Zealand", async () => {
+    const current = setup("New Zealand");
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: "New Zealand", channel: "website" },
+      context: [
+        { role: "customer", text: "How much for roll up banner?", receivedAt: "2026-09-01T06:59:58.000Z" },
+        { role: "staff", text: "Is this for New Zealand or Australia?", receivedAt: "2026-09-01T06:59:59.000Z" },
+        { role: "customer", text: "New Zealand", receivedAt: "2026-09-01T07:00:00.000Z" },
+      ],
+    });
+    current.provider.generate.mockResolvedValueOnce(providerResult(websiteDecision({
+      intent: "quote_information_collection",
+      allowed_facts: ["APPROVED_CATALOGUE_PRICE"],
+    })));
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      draftText: "Roll-Up Banner (85 × 200 cm) is currently NZ$264.50.",
+      websiteDecision: expect.objectContaining({
+        approved_catalogue_price: expect.objectContaining({
+          productKey: "roll-up-banner",
+          amountInclTaxCents: 26_450,
+        }),
+      }),
+    }));
+  });
+
+  it("asks only for Canvas subtype after A2 and three people are already known", async () => {
+    const current = setup("A2 3 people");
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: "A2 3 people", channel: "website" },
+      context: [
+        { role: "customer", text: "How much for canvas in New Zealand?", receivedAt: "2026-09-01T06:59:58.000Z" },
+        { role: "staff", text: "Which Canvas type would you like?", receivedAt: "2026-09-01T06:59:59.000Z" },
+        { role: "customer", text: "A2 3 people", receivedAt: "2026-09-01T07:00:00.000Z" },
+      ],
+    });
+    current.provider.generate.mockResolvedValueOnce(providerResult(websiteDecision({
+      response_type: "ASK_FOR_INFORMATION",
+      intent: "quote_information_collection",
+      product_type: "CANVAS",
+      missing_fields: ["PRODUCT_TYPE", "SIZE", "PEOPLE_COUNT", "PHOTO_COUNT", "REQUIRED_DATE", "DELIVERY_LOCATION"],
+      follow_up_fields: ["PRODUCT_TYPE", "SIZE", "PEOPLE_COUNT", "PHOTO_COUNT", "REQUIRED_DATE", "DELIVERY_LOCATION"],
+      allowed_facts: [],
+    })));
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      draftText: "Which Canvas type would you like: Photo Print, Digital Oil Painting, or Custom Themed?",
+      websiteDecision: expect.objectContaining({
+        product_type: "CANVAS",
+        missing_fields: ["PRODUCT_TYPE"],
+        follow_up_fields: ["PRODUCT_TYPE"],
+      }),
+    }));
+  });
+
   it("renders a Website market clarification when that is the only missing price field", async () => {
     const message = "What does a roll-up banner cost?";
     const current = setup(message);

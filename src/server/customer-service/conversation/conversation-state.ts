@@ -74,6 +74,7 @@ function activeProductMatches(value: string, registry: ProductRegistryDocument) 
   const aliases: Readonly<Record<string, readonly string[]>> = {
     "digital-oil-painting-canvas": ["digital oil canvas"],
     "roll-up-banner": ["roll up"],
+    "custom-themed-wall-banner": ["wall banner", "wall hanging banner"],
   };
   return registry.products.filter((product) => {
     if (!product.active) return false;
@@ -266,7 +267,7 @@ export function resolveConversationState(input: Readonly<{
   if (asksCataloguePrice) {
     if (!market) missingFields.push("MARKET");
     if (!product) missingFields.push("PRODUCT_TYPE");
-    if (!size) missingFields.push("SIZE");
+    if (product && !size) missingFields.push("SIZE");
     if (selectedProduct?.configuration.peoplePetsMode === "required" && !peoplePets) {
       missingFields.push("PEOPLE_COUNT");
     }
