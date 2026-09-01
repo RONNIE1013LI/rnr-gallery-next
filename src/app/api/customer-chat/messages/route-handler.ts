@@ -89,6 +89,7 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
         const productContext = input.pathname
           ? await dependencies.resolveProductContext(input.pathname)
           : null;
+        const pageMarket = productContext?.market ?? input.pageMarket;
         const receivedAt = (dependencies.now ?? (() => new Date()))();
         const cookieToken = readWebsiteSessionToken(request, dependencies.cookieEnvironment);
         if (!cookieToken) return sessionRequired();
@@ -163,6 +164,7 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
           attachments: [],
           imageJob: null,
           productContext: message.productContext ?? null,
+          websitePageMarket: pageMarket,
           debounceMs: dependencies.debounceMs,
           receivedAt: message.receivedAt,
           identity,

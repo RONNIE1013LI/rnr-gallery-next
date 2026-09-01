@@ -188,7 +188,7 @@ function deepFreeze<T>(value: T): T {
 export function isQuoteDetailQuestion(value: string) {
   return /\b(?:country|area|location|located|address|size|date|day|when|how many (?:photos?|faces?|people)|wording|theme)\b/i.test(value)
     || /\bnew zealand\b.{0,30}\baustralia\b|\baustralia\b.{0,30}\bnew zealand\b/i.test(value)
-    || /\bwhich\s+canvas\s+type\b/i.test(value);
+    || /\bwhich\s+canvas\s+type\b|\b(?:which\s+)?product\s+format\b/i.test(value);
 }
 
 export function isQuoteDetailAnswer(value: string) {
@@ -255,12 +255,16 @@ export function resolveConversationState(input: Readonly<{
   currentText: string;
   history: readonly ConversationContextItem[];
   productContext: SafeProductContext | null;
+  pageMarket?: Market | null;
   registry: ProductRegistryDocument;
 }>): ConversationState {
   const texts = customerTexts(input.currentText, input.history);
   const openCanvasSubtypeProductKey = openCanvasSubtypeCompletion(input);
   const intent = resolveIntent(texts, input.history, openCanvasSubtypeProductKey !== null);
-  const asksCataloguePrice = texts.some((entry) => isStaticCataloguePricingEnquiry(entry.text));
+  const asksCataloguePrice = texts.some((entry) => (
+    isStaticCataloguePricingEnquiry(entry.text)
+    || (detectIntent(entry.text) === "quote_information_collection" && /\bquote\b/i.test(entry.text))
+  ));
 
   let market: ResolvedConversationValue<Market> | null = null;
   for (const entry of texts) {
@@ -272,6 +276,9 @@ export function resolveConversationState(input: Readonly<{
   }
   if (!market && input.productContext) {
     market = { value: input.productContext.market, source: "server_page_context" };
+  }
+  if (!market && input.pageMarket) {
+    market = { value: input.pageMarket, source: "server_page_context" };
   }
 
   let product: ConversationState["product"] = null;

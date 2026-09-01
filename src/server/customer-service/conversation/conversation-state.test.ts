@@ -60,6 +60,29 @@ describe("resolveConversationState", () => {
     expect(state.missingFields).toEqual(["PRODUCT_TYPE"]);
   });
 
+  it("uses the selected Website market and treats a generic quote as a continuing price request", () => {
+    const state = resolveConversationState({
+      currentText: "A2 3 people",
+      history: [
+        customer("I'd like to get a quote."),
+        staff("Which product format are you considering?"),
+      ],
+      productContext: null,
+      pageMarket: "NZ",
+      registry,
+    });
+
+    expect(state.market).toEqual({ value: "NZ", source: "server_page_context" });
+    expect(state.intent).toEqual({
+      value: "quote_information_collection",
+      source: "customer_history",
+    });
+    expect(state.size).toEqual({ value: "a2", source: "current_message" });
+    expect(state.peoplePets).toEqual({ value: 3, source: "current_message" });
+    expect(state.asksCataloguePrice).toBe(true);
+    expect(state.missingFields).toEqual(["PRODUCT_TYPE"]);
+  });
+
   it("retains the answered Canvas fields when the requested subtype is selected", () => {
     const state = resolveConversationState({
       currentText: "Digital oil painting canvas",

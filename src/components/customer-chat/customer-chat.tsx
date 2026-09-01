@@ -111,7 +111,10 @@ function messageLabel(role: PublicEvent["role"]) {
   return "You";
 }
 
-export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>) {
+export function CustomerChat({
+  pathname = "/",
+  market = "NZ",
+}: Readonly<{ pathname?: string; market?: "NZ" | "AU" }>) {
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [events, setEvents] = useState<readonly PublicEvent[]>([]);
@@ -438,7 +441,11 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
         const post = (permit: string) => fetch(messagesEndpoint, {
           method: "POST",
           headers: { "Content-Type": "application/json", Accept: "application/json", "X-RNR-Customer-Chat-Permit": permit },
-          body: JSON.stringify({ clientMessageKey: current.clientMessageKey, message: current.message, pageContext: { pathname } }),
+          body: JSON.stringify({
+            clientMessageKey: current.clientMessageKey,
+            message: current.message,
+            pageContext: { pathname, market },
+          }),
         });
         const firstPermit = await bootstrap();
         if (!firstPermit) return null;

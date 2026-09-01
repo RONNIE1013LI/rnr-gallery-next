@@ -11,11 +11,12 @@ describe("Website customer chat public API helpers", () => {
     expect(parseWebsiteMessageRequest({
       clientMessageKey: "A".repeat(22),
       message: "  What details do you need?  ",
-      pageContext: { pathname: "/products/roll-up-banner" },
+      pageContext: { pathname: "/products/roll-up-banner", market: "NZ" },
     })).toEqual({
       clientMessageKey: "A".repeat(22),
       message: "What details do you need?",
       pathname: "/products/roll-up-banner",
+      pageMarket: "NZ",
     });
 
     expect(() => parseWebsiteMessageRequest({

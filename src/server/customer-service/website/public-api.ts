@@ -12,13 +12,17 @@ const bootstrapRequestSchema = z.object({
 const requestSchema = z.object({
   clientMessageKey: z.string().regex(clientMessageKeyPattern),
   message: z.string(),
-  pageContext: z.object({ pathname: z.string().min(1).max(240) }).strict().optional(),
+  pageContext: z.object({
+    pathname: z.string().min(1).max(240),
+    market: z.enum(["NZ", "AU"]).optional(),
+  }).strict().optional(),
 }).strict();
 
 export type WebsiteMessageRequest = Readonly<{
   clientMessageKey: string;
   message: string;
   pathname: string | null;
+  pageMarket: "NZ" | "AU" | null;
 }>;
 
 export function parseWebsiteSessionBootstrapRequest(value: unknown) {
@@ -39,6 +43,7 @@ export function parseWebsiteMessageRequest(value: unknown): WebsiteMessageReques
     clientMessageKey: parsed.data.clientMessageKey,
     message,
     pathname: parsed.data.pageContext?.pathname ?? null,
+    pageMarket: parsed.data.pageContext?.market ?? null,
   });
 }
 

@@ -122,7 +122,9 @@ export function SiteChrome({
       {children}
       {!suppressFooterLead ? footerLead : null}
       <SiteFooter content={footerContent} market={market} />
-      {customerChatEnabled && !customerChatExcluded ? <CustomerChat pathname={pathname} /> : null}
+      {customerChatEnabled && !customerChatExcluded
+        ? <CustomerChat pathname={pathname} market={market} />
+        : null}
     </CommerceIdentityProvider>
   );
 }

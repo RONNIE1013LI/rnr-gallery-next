@@ -17,6 +17,7 @@ import type {
   CustomerInboxIdentity,
   WebsiteCustomerInboxIdentity,
 } from "../identity/customer-identity";
+import type { Market } from "@/domain/markets/types";
 
 export type ImageJobStage = "policy" | "download" | "vision" | "cleanup" | "draft";
 
@@ -68,6 +69,7 @@ export type HashedIncomingMessage = Readonly<{
 type HashedConversationEventDetails = Readonly<{
   eventType?: "customer_message" | "human_outbound";
   productContext?: SafeProductContext | null;
+  websitePageMarket?: Market | null;
   bodyHash?: string | null;
   redactionCodes?: readonly string[];
   replyToExternalMessageKeyHash?: string | null;
@@ -103,6 +105,7 @@ export type DraftInput = Readonly<{
     text: string | null;
     channel: CustomerServiceChannel;
     productContext?: SafeProductContext | null;
+    pageMarket?: Market | null;
   }>;
   context: readonly ConversationContextItem[];
 }>;

@@ -384,6 +384,7 @@ function websiteRateEvent(input: Readonly<{
   receivedAt?: Date;
   isNewSession?: boolean;
   productContext?: SafeProductContext | null;
+  pageMarket?: "NZ" | "AU" | null;
 }>) {
   return {
     channel: "website" as const,
@@ -398,6 +399,7 @@ function websiteRateEvent(input: Readonly<{
       keyHash: input.sessionHash,
     },
     productContext: input.productContext ?? null,
+    websitePageMarket: input.pageMarket ?? null,
     debounceMs: 2_000,
     receivedAt: input.receivedAt ?? websiteRateNow,
     websiteRateLimit: {
@@ -7108,6 +7110,21 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
     if (incoming.status !== "turn_pending") throw new Error("expected pending turn");
     await repository.sealDueCustomerTurn({ turnId: incoming.turnId, now: new Date("2026-08-18T00:00:03.000Z") });
+    const [message] = await database.select({ conversationId: customerServiceMessages.conversationId })
+      .from(customerServiceMessages)
+      .where(eq(customerServiceMessages.id, incoming.messageId));
+    if (!message) throw new Error("expected stored customer message");
+    await database.insert(customerServiceConversationEvents).values({
+      conversationId: message.conversationId,
+      turnId: incoming.turnId,
+      channel: "facebook",
+      externalMessageKeyHash: "5f".repeat(32),
+      role: "staff",
+      eventType: "system_event",
+      body: "[internal marker must stay hidden]",
+      learningEligible: false,
+      receivedAt: new Date("2026-08-18T00:00:03.500Z"),
+    });
     for (const [number, draft] of [[1, "A generic reply."], [2, "Please send your photos, wording and theme."]] as const) {
       await database.insert(customerServiceAiAttempts).values({
         messageId: incoming.messageId, attemptNumber: number, trigger: "webhook_after", intent: "design_process",
@@ -7130,6 +7147,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       status: "matched", turnId: incoming.turnId, editClassification: "accepted_unchanged",
       aiAttemptId: expect.any(String), confidence: "high", matchMethod: "reply_to",
     });
+    expect(matched.contextSummary).not.toContain("internal marker must stay hidden");
     const snapshot = JSON.stringify(matched);
     await expect(repository.matchHumanReply({ matchId: group.id, now: new Date("2026-08-18T00:03:00.000Z") }))
       .resolves.toEqual({ status: "already_terminal" });
@@ -7629,6 +7647,67 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
 
     await expect(repository.loadDraftInput(pending.messageId, 6)).resolves.toMatchObject({
       current: { channel: "website", productContext },
+    });
+  });
+
+  it("round-trips the latest selected Website market without exposing its internal system events", async () => {
+    const first = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash: "e1".repeat(32),
+      networkHash: "e2".repeat(32),
+      messageHash: "e3".repeat(32),
+      text: "I'd like to get a quote.",
+      pageMarket: "NZ",
+    }));
+    expect(first.status).toBe("turn_pending");
+    if (first.status !== "turn_pending") return;
+
+    await expect(repository.loadDraftInput(first.messageId, 6)).resolves.toMatchObject({
+      current: { channel: "website", pageMarket: "NZ" },
+      context: [{ role: "customer", text: "I'd like to get a quote." }],
+    });
+
+    const second = await repository.ingestConversationEvent(websiteRateEvent({
+      sessionHash: "e1".repeat(32),
+      networkHash: "e2".repeat(32),
+      messageHash: "e4".repeat(32),
+      text: "Actually, this is for Australia.",
+      pageMarket: "AU",
+      receivedAt: new Date("2026-08-19T00:00:01.000Z"),
+    }));
+    expect(second).toMatchObject({
+      status: "turn_pending",
+      messageId: first.messageId,
+      turnId: first.turnId,
+    });
+    if (second.status !== "turn_pending") return;
+
+    await expect(repository.loadDraftInput(second.messageId, 6)).resolves.toMatchObject({
+      current: {
+        channel: "website",
+        pageMarket: "AU",
+        text: "I'd like to get a quote.\nActually, this is for Australia.",
+      },
+      context: [
+        { role: "customer", text: "I'd like to get a quote.\nActually, this is for Australia." },
+      ],
+    });
+    const loaded = await repository.loadDraftInput(second.messageId, 6);
+    expect(JSON.stringify(loaded)).not.toContain("website_page_market");
+    const [message] = await database.select({ conversationId: customerServiceMessages.conversationId })
+      .from(customerServiceMessages)
+      .where(eq(customerServiceMessages.id, second.messageId));
+    if (!message) throw new Error("expected stored Website message");
+    await expect(repository.listWebsitePublicUpdates({
+      conversationId: message.conversationId,
+      after: null,
+      limit: 20,
+    })).resolves.toEqual([
+      expect.objectContaining({ role: "customer", text: "I'd like to get a quote." }),
+      expect.objectContaining({ role: "customer", text: "Actually, this is for Australia." }),
+    ]);
+    await expect(repository.metricCounts()).resolves.toMatchObject({
+      staffContextEvents: 0,
+      totalActualHumanReplies: 0,
     });
   });
 

@@ -429,7 +429,7 @@ describe("CustomerServiceEngine", () => {
     await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "manual_generate" }))
       .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
     expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
-      draftText: "Is this for New Zealand or Australia?\nWhich product format are you considering?",
+      draftText: "Is this for New Zealand or Australia?",
     }));
   });
 
@@ -471,6 +471,31 @@ describe("CustomerServiceEngine", () => {
           currency: "NZD",
           amountInclTaxCents: 26_450,
         }),
+      }),
+    }));
+  });
+
+  it("answers Roll-up pricing from the selected NZ Website market without asking for country", async () => {
+    const message = "How much for roll up banner";
+    const current = setup(message);
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: message, channel: "website", pageMarket: "NZ" },
+      context: [{ role: "customer", text: message, receivedAt: "2026-09-01T07:00:00.000Z" }],
+    });
+    current.provider.generate.mockResolvedValueOnce(providerResult(websiteDecision({
+      intent: "quote_information_collection",
+      allowed_facts: ["APPROVED_CATALOGUE_PRICE"],
+    })));
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      status: "draft_ready",
+      draftText: "Roll-Up Banner (85 × 200 cm) is currently NZ$264.50.",
+      websiteDecision: expect.objectContaining({
+        missing_fields: [],
+        follow_up_fields: [],
+        approved_catalogue_price: expect.objectContaining({ currency: "NZD" }),
       }),
     }));
   });
@@ -530,6 +555,70 @@ describe("CustomerServiceEngine", () => {
         product_type: "CANVAS",
         missing_fields: ["PRODUCT_TYPE"],
         follow_up_fields: ["PRODUCT_TYPE"],
+      }),
+    }));
+  });
+
+  it("uses the Website-selected NZ market and asks one question for a generic quote", async () => {
+    const message = "I'd like to get a quote.";
+    const current = setup(message);
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: message, channel: "website", pageMarket: "NZ" },
+      context: [{ role: "customer", text: message, receivedAt: "2026-09-01T07:00:00.000Z" }],
+    });
+    current.provider.generate.mockResolvedValueOnce(providerResult(websiteDecision({
+      response_type: "ASK_FOR_INFORMATION",
+      intent: "quote_information_collection",
+      product_type: "UNSPECIFIED",
+      missing_fields: ["MARKET", "PRODUCT_TYPE", "SIZE", "PEOPLE_COUNT", "PHOTO_COUNT"],
+      follow_up_fields: ["MARKET", "PRODUCT_TYPE", "SIZE", "PEOPLE_COUNT", "PHOTO_COUNT"],
+      allowed_facts: [],
+    })));
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      status: "draft_ready",
+      draftText: "Which product format are you considering?",
+      validatorCodes: [],
+      websiteDecision: expect.objectContaining({
+        missing_fields: ["PRODUCT_TYPE"],
+        follow_up_fields: ["PRODUCT_TYPE"],
+      }),
+    }));
+  });
+
+  it("keeps generic quote context after A2 and people details without a tone-length fallback", async () => {
+    const message = "A2 3 people";
+    const current = setup(message);
+    current.repository.loadDraftInput.mockResolvedValue({
+      current: { id: "message-1", text: message, channel: "website", pageMarket: "NZ" },
+      context: [
+        { role: "customer", text: "I'd like to get a quote.", receivedAt: "2026-09-01T06:59:58.000Z" },
+        { role: "staff", text: "Which product format are you considering?", receivedAt: "2026-09-01T06:59:59.000Z" },
+        { role: "customer", text: message, receivedAt: "2026-09-01T07:00:00.000Z" },
+      ],
+    });
+    current.provider.generate.mockResolvedValueOnce(providerResult(websiteDecision({
+      response_type: "ANSWER_AND_ASK",
+      intent: "quote_information_collection",
+      product_type: "CANVAS",
+      missing_fields: ["PRODUCT_TYPE", "PHOTO_COUNT", "ORIGINAL_PHOTOS", "REQUIRED_DATE", "DELIVERY_LOCATION"],
+      follow_up_fields: ["PRODUCT_TYPE", "PHOTO_COUNT", "ORIGINAL_PHOTOS", "REQUIRED_DATE", "DELIVERY_LOCATION"],
+      allowed_facts: ["DESIGN_INPUTS", "DESIGN_DRAFT_REVIEW_BEFORE_PRINTING"],
+    })));
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      status: "draft_ready",
+      draftText: "Which product format are you considering?",
+      validatorCodes: [],
+      websiteDecision: expect.objectContaining({
+        response_type: "ASK_FOR_INFORMATION",
+        missing_fields: ["PRODUCT_TYPE"],
+        follow_up_fields: ["PRODUCT_TYPE"],
+        allowed_facts: [],
       }),
     }));
   });
@@ -754,11 +843,11 @@ describe("CustomerServiceEngine", () => {
       websiteDecision({
         response_type: "ASK_FOR_INFORMATION",
         intent: "quote_information_collection",
-        missing_fields: ["PRODUCT_TYPE", "SIZE", "PEOPLE_COUNT", "PHOTO_COUNT", "REQUIRED_DATE", "DELIVERY_LOCATION"],
-        follow_up_fields: ["PRODUCT_TYPE", "SIZE", "PEOPLE_COUNT", "PHOTO_COUNT", "REQUIRED_DATE", "DELIVERY_LOCATION"],
+        missing_fields: ["MARKET"],
+        follow_up_fields: ["MARKET"],
         allowed_facts: [],
       }),
-      "Which product format are you considering?\nWhat size do you need?\nAbout how many people and photos would you like to include?\nWhat date do you need it for?\nWhich suburb or postcode would delivery be to?",
+      "Is this for New Zealand or Australia?",
     ],
     [
       "product_differences",

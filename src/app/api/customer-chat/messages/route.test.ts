@@ -121,7 +121,7 @@ function setup(input: Readonly<{
 const validBody = {
   clientMessageKey: "A".repeat(22),
   message: "What details do you need for a quote?",
-  pageContext: { pathname: "/products/roll-up-banner" },
+  pageContext: { pathname: "/products/roll-up-banner", market: "NZ" as const },
 };
 
 function permittedRequest(body: typeof validBody = validBody, input: Readonly<{
@@ -282,6 +282,7 @@ describe("POST /api/customer-chat/messages", () => {
       externalConversationKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       externalMessageKeyHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       productContext: expect.objectContaining({ productKey: "roll-up-banner" }),
+      websitePageMarket: "NZ",
     }));
     expect(current.tasks).toHaveLength(1);
     await current.tasks[0]();

@@ -95,6 +95,23 @@ import {
   type CustomerInboxProjectionRow,
 } from "../inbox/customer-inbox";
 
+const WEBSITE_PAGE_MARKET_EVENT = Object.freeze({
+  NZ: "website_page_market:NZ",
+  AU: "website_page_market:AU",
+} as const);
+
+function websitePageMarketEventKey(messageKeyHash: string, market: "NZ" | "AU") {
+  return createHash("sha256")
+    .update(`website-page-market\0${messageKeyHash}\0${market}`)
+    .digest("hex");
+}
+
+function pageMarketFromEventBody(body: string | undefined) {
+  if (body === WEBSITE_PAGE_MARKET_EVENT.NZ) return "NZ" as const;
+  if (body === WEBSITE_PAGE_MARKET_EVENT.AU) return "AU" as const;
+  return null;
+}
+
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
 type LearningCandidateRecord = typeof customerServiceLearningCandidates.$inferSelect;
@@ -2427,6 +2444,22 @@ export function createDrizzleCustomerServiceRepository(
           body,
           receivedAt: input.receivedAt,
         });
+        if (input.channel === "website" && input.websitePageMarket) {
+          await transaction.insert(customerServiceConversationEvents).values({
+            conversationId: conversation.id,
+            turnId: turn.id,
+            channel: "website",
+            externalMessageKeyHash: websitePageMarketEventKey(
+              input.externalMessageKeyHash,
+              input.websitePageMarket,
+            ),
+            role: "staff",
+            eventType: "system_event",
+            body: WEBSITE_PAGE_MARKET_EVENT[input.websitePageMarket],
+            learningEligible: false,
+            receivedAt: input.receivedAt,
+          });
+        }
         let representativeMessageId = message.id;
         if (canAggregate) {
           const orderedEvents = await transaction.select({
@@ -2438,9 +2471,10 @@ export function createDrizzleCustomerServiceRepository(
             .leftJoin(customerServiceMessages, eq(
               customerServiceMessages.id,
               customerServiceConversationEvents.legacyMessageId,
-            )).where(
-            eq(customerServiceConversationEvents.turnId, turn.id),
-          ).orderBy(
+            )).where(and(
+              eq(customerServiceConversationEvents.turnId, turn.id),
+              eq(customerServiceConversationEvents.eventType, "customer_message"),
+            )).orderBy(
             asc(customerServiceConversationEvents.receivedAt),
             asc(customerServiceConversationEvents.createdAt),
             asc(customerServiceConversationEvents.id),
@@ -2527,6 +2561,7 @@ export function createDrizzleCustomerServiceRepository(
           text: customerServiceConversationEvents.body,
         }).from(customerServiceConversationEvents).where(and(
           eq(customerServiceConversationEvents.conversationId, turn.conversationId),
+          inArray(customerServiceConversationEvents.eventType, ["customer_message", "human_outbound"]),
           sql`${customerServiceConversationEvents.turnId} is distinct from ${turn.id}`,
           lte(customerServiceConversationEvents.receivedAt, turn.openedAt),
         )).orderBy(
@@ -3693,12 +3728,33 @@ export function createDrizzleCustomerServiceRepository(
         customerServiceTurns.representativeMessageId,
         current.id,
       )).limit(1);
+      const [pageMarketEvent] = current.channel === "website" && currentTurn
+        ? await database.select({ body: customerServiceConversationEvents.body })
+          .from(customerServiceConversationEvents)
+          .where(and(
+            eq(customerServiceConversationEvents.turnId, currentTurn.id),
+            eq(customerServiceConversationEvents.channel, "website"),
+            eq(customerServiceConversationEvents.eventType, "system_event"),
+            inArray(customerServiceConversationEvents.body, [
+              WEBSITE_PAGE_MARKET_EVENT.NZ,
+              WEBSITE_PAGE_MARKET_EVENT.AU,
+            ]),
+          ))
+          .orderBy(
+            desc(customerServiceConversationEvents.receivedAt),
+            desc(customerServiceConversationEvents.createdAt),
+            desc(customerServiceConversationEvents.id),
+          )
+          .limit(1)
+        : [];
+      const pageMarket = pageMarketFromEventBody(pageMarketEvent?.body);
       const boundary = currentTurn?.lastEventAt ?? current.receivedAt;
       const causalBoundary = current.createdAt;
       const boundedLimit = Math.max(1, Math.min(12, contextLimit));
       const events = await database.select({
         id: customerServiceConversationEvents.id,
         role: customerServiceConversationEvents.role,
+        eventType: customerServiceConversationEvents.eventType,
         text: customerServiceConversationEvents.body,
         receivedAt: customerServiceConversationEvents.receivedAt,
         createdAt: customerServiceConversationEvents.createdAt,
@@ -3764,6 +3820,7 @@ export function createDrizzleCustomerServiceRepository(
       const seenTurns = new Set<string>();
       const context = [
         ...events.reverse().flatMap((event) => {
+          if (event.eventType === "system_event") return [];
           if (event.role === "customer" && event.turnId) {
             if (seenTurns.has(event.turnId)) return [];
             seenTurns.add(event.turnId);
@@ -3817,6 +3874,7 @@ export function createDrizzleCustomerServiceRepository(
           text: current.text,
           channel: current.channel,
           productContext: current.channel === "website" ? current.productContext : null,
+          pageMarket: current.channel === "website" ? pageMarket : null,
         },
         context,
       };
@@ -4719,6 +4777,7 @@ export function createDrizzleCustomerServiceRepository(
           body: customerServiceConversationEvents.body,
         }).from(customerServiceConversationEvents).where(and(
           eq(customerServiceConversationEvents.conversationId, group.conversationId),
+          inArray(customerServiceConversationEvents.eventType, ["customer_message", "human_outbound"]),
           lte(customerServiceConversationEvents.receivedAt, group.firstOutboundAt),
         )).orderBy(desc(customerServiceConversationEvents.receivedAt)).limit(6);
         const contextSummary = history.reverse().map((event) => `${event.role}: ${event.body}`).join("\n")
@@ -5801,7 +5860,8 @@ export function createDrizzleCustomerServiceRepository(
         select
           (select count(*) from customer_service_messages where pilot_run_id is not null) as total_incoming_eligible,
           (select count(*) from customer_service_conversation_events where role = 'customer') as raw_customer_events,
-          (select count(*) from customer_service_conversation_events where role = 'staff') as staff_context_events,
+          (select count(*) from customer_service_conversation_events
+            where role = 'staff' and event_type = 'human_outbound') as staff_context_events,
           (select count(*) from customer_service_turns where status in ('sealed', 'pilot_complete')) as meaningful_turns,
           (select coalesce(sum(greatest(fragment_count - 1, 0)), 0) from customer_service_turns) as aggregated_fragments,
           (select count(*) from customer_service_turns
@@ -5851,7 +5911,8 @@ export function createDrizzleCustomerServiceRepository(
             from customer_service_image_jobs jobs
             left join customer_service_image_analysis_attempts image_attempts on image_attempts.id = jobs.image_analysis_attempt_id
             left join customer_service_ai_attempts text_attempts on text_attempts.id = jobs.text_attempt_id) as image_aware_total_cost_microusd,
-          (select count(*) from customer_service_conversation_events where role = 'staff') as total_actual_human_replies,
+          (select count(*) from customer_service_conversation_events
+            where role = 'staff' and event_type = 'human_outbound') as total_actual_human_replies,
           (select count(*) from customer_service_human_reply_matches where status = 'matched') as matched_human_replies,
           (select count(*) from customer_service_human_reply_matches where status = 'unmatched') as unmatched_human_replies,
           (select count(*) from customer_service_human_reply_matches where edit_classification = 'accepted_unchanged') as accepted_unchanged_human_replies,

@@ -191,7 +191,7 @@ describe("CustomerChat", () => {
     expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toEqual({
       clientMessageKey: expect.stringMatching(/^[A-Za-z0-9_-]{22,64}$/),
       message,
-      pageContext: { pathname: "/products" },
+      pageContext: { pathname: "/products", market: "NZ" },
     });
     expect(analytics.emitAnalyticsEvent).toHaveBeenCalledWith({
       event: "chat_quick_action_clicked",
@@ -1044,7 +1044,7 @@ describe("CustomerChat", () => {
     expect(JSON.parse(String(fetchMock.mock.calls[2]?.[1]?.body))).toEqual({
       clientMessageKey: expect.stringMatching(/^[A-Za-z0-9_-]{22,64}$/),
       message: "First line\nSecond line",
-      pageContext: { pathname: "/" },
+      pageContext: { pathname: "/", market: "NZ" },
     });
   });
 

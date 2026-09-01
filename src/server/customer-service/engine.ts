@@ -168,6 +168,7 @@ export class CustomerServiceEngine {
       currentText: draftInput.current.text,
       history: draftInput.context,
       productContext: draftInput.current.productContext ?? null,
+      pageMarket: draftInput.current.pageMarket ?? null,
       registry: defaultProductRegistry,
     });
     const gate = this.gateForConversationState(
@@ -315,6 +316,7 @@ export class CustomerServiceEngine {
           currentText: draftInput.current.text,
           history: draftInput.context,
           productContext: draftInput.current.productContext ?? null,
+          pageMarket: draftInput.current.pageMarket ?? null,
           registry: currentPricing.registry,
         });
         approvedPricing = resolveApprovedPricing({
@@ -494,39 +496,37 @@ export class CustomerServiceEngine {
           recentHistory: draftInput.context,
         });
         const websiteBaseDecision: WebsiteDecision = approvedPricing?.status === "clarification_required"
-          ? Object.freeze({
-            response_type: "ASK_FOR_INFORMATION",
-            intent: "quote_information_collection",
-            product_type: (() => {
-              const productKeys = conversationState.product
-                ? [conversationState.product.productKey]
-                : conversationState.productCandidates;
-              const categories = new Set(productKeys.flatMap((productKey) => {
-                const category = (currentPricing?.registry ?? defaultProductRegistry).products
-                  .find((product) => product.key === productKey)?.category;
-                return category ? [category] : [];
-              }));
-              return categories.size === 1
-                ? categories.has("canvas") ? "CANVAS" : "BANNER"
-                : "UNSPECIFIED";
-            })(),
-            missing_fields: Object.freeze(approvedPricing.missing.map(
+          ? (() => {
+            const nextMissing = approvedPricing.missing.slice(0, 1);
+            const nextFields = Object.freeze(nextMissing.map(
               (field) => field === "product"
                 ? "PRODUCT_TYPE" as const
                 : field === "peoplePets"
                   ? "PEOPLE_COUNT" as const
                   : field.toUpperCase() as "MARKET" | "SIZE",
-            )),
-            follow_up_fields: Object.freeze(approvedPricing.missing.map(
-              (field) => field === "product"
-                ? "PRODUCT_TYPE" as const
-                : field === "peoplePets"
-                  ? "PEOPLE_COUNT" as const
-                  : field.toUpperCase() as "MARKET" | "SIZE",
-            )),
-            allowed_facts: Object.freeze([]),
-            human_review_reason: "NONE",
-          })
+            ));
+            return Object.freeze({
+              response_type: "ASK_FOR_INFORMATION",
+              intent: "quote_information_collection",
+              product_type: (() => {
+                const productKeys = conversationState.product
+                  ? [conversationState.product.productKey]
+                  : conversationState.productCandidates;
+                const categories = new Set(productKeys.flatMap((productKey) => {
+                  const category = (currentPricing?.registry ?? defaultProductRegistry).products
+                    .find((product) => product.key === productKey)?.category;
+                  return category ? [category] : [];
+                }));
+                return categories.size === 1
+                  ? categories.has("canvas") ? "CANVAS" : "BANNER"
+                  : "UNSPECIFIED";
+              })(),
+              missing_fields: nextFields,
+              follow_up_fields: nextFields,
+              allowed_facts: Object.freeze([]),
+              human_review_reason: "NONE",
+            });
+          })()
           : approvedPricing?.status === "verified"
             ? Object.freeze({
               response_type: "ANSWER_SAFE",
