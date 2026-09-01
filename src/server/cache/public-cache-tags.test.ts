@@ -17,6 +17,7 @@ const nextCache = vi.hoisted(() => ({
 vi.mock("next/cache", () => nextCache);
 
 import {
+  PUBLIC_CACHE_INVALIDATION,
   PUBLIC_CACHE_TAGS,
   cachePublicData,
   revalidatePublicCache,
@@ -57,5 +58,19 @@ describe("public data cache boundaries", () => {
       PUBLIC_CACHE_TAGS.sitemap,
       { expire: 0 },
     );
+  });
+
+  it("keeps the mutation invalidation matrix explicit", () => {
+    expect(PUBLIC_CACHE_INVALIDATION).toEqual({
+      content: [PUBLIC_CACHE_TAGS.content],
+      product: [PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.sitemap],
+      pricing: [PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.sitemap],
+      gallery: [
+        PUBLIC_CACHE_TAGS.gallery,
+        PUBLIC_CACHE_TAGS.galleryMedia,
+        PUBLIC_CACHE_TAGS.sitemap,
+      ],
+      review: [PUBLIC_CACHE_TAGS.reviews, PUBLIC_CACHE_TAGS.reviewMedia],
+    });
   });
 });

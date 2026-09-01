@@ -10,6 +10,18 @@ export const PUBLIC_CACHE_TAGS = Object.freeze({
   sitemap: "rnr-public-sitemap",
 });
 
+export const PUBLIC_CACHE_INVALIDATION = Object.freeze({
+  content: Object.freeze([PUBLIC_CACHE_TAGS.content]),
+  product: Object.freeze([PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.sitemap]),
+  pricing: Object.freeze([PUBLIC_CACHE_TAGS.products, PUBLIC_CACHE_TAGS.sitemap]),
+  gallery: Object.freeze([
+    PUBLIC_CACHE_TAGS.gallery,
+    PUBLIC_CACHE_TAGS.galleryMedia,
+    PUBLIC_CACHE_TAGS.sitemap,
+  ]),
+  review: Object.freeze([PUBLIC_CACHE_TAGS.reviews, PUBLIC_CACHE_TAGS.reviewMedia]),
+});
+
 export function cachePublicData<TArgs extends unknown[], TResult>(
   loader: (...args: TArgs) => Promise<TResult>,
   key: string,

@@ -5,7 +5,7 @@ import type { GalleryAdminMetadata } from "@/server/gallery/admin-gallery-servic
 import { GalleryAdminValidationError } from "@/server/gallery/admin-gallery-service";
 import { assertTrustedMultipartMutationRequest, parseBoundedMultipartFormData } from "@/server/http/multipart-mutation-request";
 import { MutationRequestError } from "@/server/http/mutation-request";
-import { PUBLIC_CACHE_TAGS, revalidatePublicCache } from "@/server/cache/public-cache-tags";
+import { PUBLIC_CACHE_INVALIDATION, revalidatePublicCache } from "@/server/cache/public-cache-tags";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
@@ -19,11 +19,7 @@ type Dependencies = Readonly<{
 }>;
 
 export function revalidateGallerySurfaces() {
-  revalidatePublicCache([
-    PUBLIC_CACHE_TAGS.gallery,
-    PUBLIC_CACHE_TAGS.galleryMedia,
-    PUBLIC_CACHE_TAGS.sitemap,
-  ]);
+  revalidatePublicCache(PUBLIC_CACHE_INVALIDATION.gallery);
 }
 
 export function isGalleryUploadFile(value: FormDataEntryValue | null): value is File {

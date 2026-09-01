@@ -18,6 +18,18 @@ const execFile = promisify(execFileCallback);
 const officialProductionHosts = new Set(OFFICIAL_PRODUCTION_HOSTS);
 const closeTimeoutMs = 10_000;
 const playwrightCliPackage = "@playwright/cli@0.1.18";
+const maxCliDiagnosticLength = 2_000;
+const maxCapturedCliOutputLength = 10_000;
+const productionSmokeRoutePaths = Object.freeze([
+  "/",
+  "/shop",
+  "/canvas",
+  "/banners",
+  "/design-gallery",
+  "/help",
+  "/account",
+  "/cart",
+]);
 
 export type ProductionBrowserCheckDependencies = Readonly<{
   env: Readonly<Record<string, string | undefined>>;
@@ -55,6 +67,13 @@ export type ProductionSmokeProgramConfig = Readonly<{
   url: string;
   capability: ProductionCapability;
   allowMedia: boolean;
+}>;
+
+export type PlaywrightCliFailure = Readonly<{
+  stage: string;
+  exitCode: number | string;
+  stdout?: string;
+  stderr?: string;
 }>;
 
 type ProcessRow = Readonly<{
@@ -105,6 +124,36 @@ export function buildProductionAutomationUrl(rawUrl: string) {
   return url;
 }
 
+function sanitizePlaywrightCliOutput(value: string | undefined) {
+  const sanitized = (value ?? "")
+    .replace(/\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis):\/\/[^\s"'<>]+/gi, "[REDACTED_DATABASE_URL]")
+    .replace(/(https?:\/\/)[^\s/@:]+:[^\s/@]+@/gi, "$1[REDACTED]@")
+    .replace(/\b(authorization|proxy-authorization|cookie|set-cookie|x-api-key)\s*:\s*[^\r\n]*/gi, "$1: [REDACTED]")
+    .replace(/\b([A-Z0-9_]*(?:TOKEN|SECRET|PASSWORD|DATABASE_URL|COOKIE|API_KEY)[A-Z0-9_]*)\s*=\s*[^\s\r\n]*/gi, "$1=[REDACTED]")
+    .replace(/(["'](?:access[_-]?token|authorization|cookie|credential|database_url|password|secret|session|token)["']\s*:\s*)(["'])[^"']*\2/gi, "$1$2[REDACTED]$2")
+    .replace(/\b(Bearer|Basic)\s+[A-Za-z0-9._~+/=-]+/gi, "$1 [REDACTED]")
+    .replace(/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, "[REDACTED_JWT]")
+    .replace(/([?&](?:access_token|auth|code|cookie|credential|key|password|secret|session|token)=)[^&#\s]*/gi, "$1[REDACTED]")
+    .trim();
+  if (!sanitized) return "(empty)";
+  if (sanitized.length <= maxCliDiagnosticLength) return sanitized;
+  return `${sanitized.slice(0, maxCliDiagnosticLength)}\n...[truncated]`;
+}
+
+export function formatPlaywrightCliFailure(input: PlaywrightCliFailure) {
+  const stage = /^[a-z0-9-]{1,32}$/i.test(input.stage) ? input.stage : "unknown";
+  const exitCode = typeof input.exitCode === "number" && Number.isInteger(input.exitCode)
+    ? String(input.exitCode)
+    : /^[a-z0-9-]{1,32}$/i.test(String(input.exitCode)) ? String(input.exitCode) : "unknown";
+  return [
+    "Playwright CLI failure",
+    `stage: ${stage}`,
+    `exit code: ${exitCode}`,
+    `stdout:\n${sanitizePlaywrightCliOutput(input.stdout)}`,
+    `stderr:\n${sanitizePlaywrightCliOutput(input.stderr)}`,
+  ].join("\n");
+}
+
 function productionBrowserSessionProcessIdentities(
   processList: string,
   session: string,
@@ -144,9 +193,14 @@ export function productionBrowserSessionProcessIds(processList: string, session:
 
 async function runCli(session: string, args: string[], timeoutMs: number): Promise<string> {
   return new Promise<string>((resolve, reject) => {
-    const child = spawn("npx", ["--yes", playwrightCliPackage, `-s=${session}`, ...args], { stdio: ["ignore", "pipe", "inherit"] });
+    const child = spawn("npx", ["--yes", playwrightCliPackage, `-s=${session}`, ...args], { stdio: ["ignore", "pipe", "pipe"] });
+    const stage = args[0] ?? "unknown";
     let stdout = "";
-    child.stdout?.on("data", (chunk) => { stdout += chunk.toString(); });
+    let stderr = "";
+    const appendOutput = (current: string, chunk: unknown) =>
+      `${current}${String(chunk)}`.slice(0, maxCapturedCliOutputLength);
+    child.stdout?.on("data", (chunk) => { stdout = appendOutput(stdout, chunk); });
+    child.stderr?.on("data", (chunk) => { stderr = appendOutput(stderr, chunk); });
     let settled = false;
     const finish = (error?: Error) => {
       if (settled) return;
@@ -157,12 +211,27 @@ async function runCli(session: string, args: string[], timeoutMs: number): Promi
     };
     const timeout = setTimeout(() => {
       child.kill("SIGTERM");
-      finish(new Error(`Playwright CLI command exceeded ${timeoutMs}ms`));
+      finish(new Error(formatPlaywrightCliFailure({
+        stage,
+        exitCode: "timeout",
+        stdout,
+        stderr: `${stderr}\nCommand exceeded ${timeoutMs}ms`,
+      })));
     }, timeoutMs);
-    child.once("error", (error) => finish(error));
+    child.once("error", (error) => finish(new Error(formatPlaywrightCliFailure({
+      stage,
+      exitCode: "spawn-error",
+      stdout,
+      stderr: `${stderr}\n${error.message}`,
+    }))));
     child.once("exit", (code, signal) => {
       if (code === 0) finish();
-      else finish(new Error(`Playwright CLI exited with ${code ?? signal ?? "unknown status"}`));
+      else finish(new Error(formatPlaywrightCliFailure({
+        stage,
+        exitCode: code ?? signal ?? "unknown",
+        stdout,
+        stderr,
+      })));
     });
   });
 }
@@ -264,13 +333,25 @@ async function stopLeakedSessionProcesses(
 }
 
 export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig): string {
+  const baseUrl = buildProductionAutomationUrl(config.url);
+  baseUrl.searchParams.set(AUTOMATION_CAPABILITY_STORAGE_KEY, config.capability);
+  const routeTargets = productionSmokeRoutePaths.map((path) => {
+    const routeUrl = new URL(path, baseUrl);
+    routeUrl.search = baseUrl.search;
+    return { path, url: routeUrl.toString() };
+  });
+  const allowedNavigationBases = OFFICIAL_PRODUCTION_HOSTS.flatMap((hostname) =>
+    productionSmokeRoutePaths.flatMap((path) => {
+      const routeUrl = new URL(path, `https://${hostname}/`).toString();
+      return path === "/" ? [routeUrl] : [routeUrl, `${routeUrl}/`];
+    }));
   const blockedResourceTypes = ["image", "media", "font"].filter((resourceType) =>
     shouldBlockProductionResource(resourceType, config.capability, config.allowMedia));
   const programConfig = JSON.stringify({
-    url: config.url,
+    routeTargets,
+    allowedNavigationBases,
     capability: config.capability,
     blockedResourceTypes,
-    officialHosts: OFFICIAL_PRODUCTION_HOSTS,
     attributionParameterNames: ["gclid", "gbraid", "wbraid", "fbclid"],
     sessionStorageKey: AUTOMATION_SESSION_STORAGE_KEY,
     capabilityStorageKey: AUTOMATION_CAPABILITY_STORAGE_KEY,
@@ -314,15 +395,18 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
       if (isTopLevelDocument) {
         let allowedNavigation = false;
         try {
-          const target = new URL(request.url());
-          const hasAttribution = [...target.searchParams.keys()].some((key) => {
-            const normalized = key.toLowerCase();
+          const requestUrl = request.url();
+          const hashIndex = requestUrl.indexOf("#");
+          const withoutHash = hashIndex === -1 ? requestUrl : requestUrl.slice(0, hashIndex);
+          const queryIndex = withoutHash.indexOf("?");
+          const navigationBase = queryIndex === -1 ? withoutHash : withoutHash.slice(0, queryIndex);
+          const rawQuery = queryIndex === -1 ? "" : withoutHash.slice(queryIndex + 1);
+          const hasAttribution = rawQuery.split("&").filter(Boolean).some((entry) => {
+            const rawKey = entry.split("=", 1)[0].split("+").join(" ");
+            const normalized = decodeURIComponent(rawKey).toLowerCase();
             return config.attributionParameterNames.includes(normalized) || normalized.startsWith("utm_");
           });
-          allowedNavigation = target.protocol === "https:"
-            && !target.username
-            && !target.password
-            && config.officialHosts.includes(target.hostname)
+          allowedNavigation = config.allowedNavigationBases.includes(navigationBase)
             && (!hasAttribution || config.capability === "ATTRIBUTION");
         } catch {
           allowedNavigation = false;
@@ -345,20 +429,15 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
     const assertNoConsoleErrors = () => {
       if (consoleErrorCount) throw new Error("Production browser operation emitted a console error");
     };
-    const baseUrl = new URL(config.url);
-    for (const path of ["/", "/shop", "/canvas", "/banners", "/design-gallery", "/help", "/account", "/cart"]) {
-      const routeUrl = new URL(path, baseUrl);
-      routeUrl.search = baseUrl.search;
-      routeUrl.searchParams.set(config.sessionStorageKey, "1");
-      routeUrl.searchParams.set(config.capabilityStorageKey, config.capability);
-      const response = await page.goto(routeUrl.toString(), { waitUntil: "networkidle" });
+    for (const routeTarget of config.routeTargets) {
+      const response = await page.goto(routeTarget.url, { waitUntil: "networkidle" });
       if (unexpectedNavigationCount) throw new Error("Production smoke encountered an unexpected navigation");
       if (!response || response.status() >= 400) throw new Error("Production route returned an unsuccessful response");
       assertNoConsoleErrors();
       if (await page.locator("body").count() < 1) throw new Error("Production route did not render a body");
       assertNoConsoleErrors();
       routeCount += 1;
-      if (path === "/") {
+      if (routeTarget.path === "/") {
         await page.getByRole("button", { name: "Chat with R&R Gallery" }).click();
         assertNoConsoleErrors();
         await page.waitForTimeout(6_000);

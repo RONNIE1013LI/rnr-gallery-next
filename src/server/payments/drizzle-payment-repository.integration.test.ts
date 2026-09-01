@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { and, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
-import { Pool } from "pg";
+import { Pool, type PoolClient } from "pg";
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import {
   internalNotificationOutbox,
@@ -268,6 +268,7 @@ describe("Drizzle payment repository", () => {
     const order = await createOrder();
     const preMigrationSchema = `test_pre_migration_${randomUUID().replaceAll("-", "")}`;
     let preMigrationPool: Pool | undefined;
+    let preMigrationClient: PoolClient | undefined;
 
     try {
       await pool.query(`create schema "${preMigrationSchema}"`);
@@ -280,16 +281,16 @@ describe("Drizzle payment repository", () => {
           country, payer_snapshot, status, sanitized_failure_code, created_at, updated_at
         from public.payment_attempts
       `);
-      const preMigrationUrl = new URL(databaseUrl);
-      preMigrationUrl.searchParams.set(
-        "options",
-        `-c search_path=${preMigrationSchema},public`,
-      );
       preMigrationPool = new Pool({
-        connectionString: preMigrationUrl.toString(),
+        connectionString: databaseUrl,
         max: 1,
       });
-      const preMigrationDatabase = drizzle(preMigrationPool);
+      preMigrationClient = await preMigrationPool.connect();
+      await preMigrationClient.query(
+        `set search_path to "${preMigrationSchema}", public`,
+      );
+      const preMigrationDatabase = drizzle(preMigrationClient) as unknown as
+        Parameters<typeof createDrizzlePaymentRepository>[0];
       const disabledRepository = createDrizzlePaymentRepository(preMigrationDatabase, {
         websiteAnalyticsV2Enabled: false,
       });
@@ -365,6 +366,7 @@ describe("Drizzle payment repository", () => {
         ledger[1].receivedAt.getTime(),
       );
     } finally {
+      preMigrationClient?.release();
       await preMigrationPool?.end();
       await pool.query(`drop schema if exists "${preMigrationSchema}" cascade`);
     }

@@ -10,7 +10,7 @@ import {
   MutationRequestError,
 } from "@/server/http/mutation-request";
 import {
-  PUBLIC_CACHE_TAGS,
+  PUBLIC_CACHE_INVALIDATION,
   revalidatePublicCache,
 } from "@/server/cache/public-cache-tags";
 
@@ -54,7 +54,7 @@ export function createAdminContentRoute(dependencies?: Dependencies) {
       saveDraft: runtime.saveDraft,
       publish: runtime.publish,
       recordFailure: recordAdminFailure,
-      revalidatePublic: () => revalidatePublicCache([PUBLIC_CACHE_TAGS.content]),
+      revalidatePublic: () => revalidatePublicCache(PUBLIC_CACHE_INVALIDATION.content),
     };
   };
   return {

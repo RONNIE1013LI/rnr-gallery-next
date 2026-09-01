@@ -13,7 +13,7 @@ import {
   parseBoundedJson,
   MutationRequestError,
 } from "@/server/http/mutation-request";
-import { PUBLIC_CACHE_TAGS, revalidatePublicCache } from "@/server/cache/public-cache-tags";
+import { PUBLIC_CACHE_INVALIDATION, revalidatePublicCache } from "@/server/cache/public-cache-tags";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
@@ -57,10 +57,7 @@ export function createAdminMarketPricingRoute(dependencies?: Dependencies) {
       requirePermission: requireAdminPermission,
       publishMarket: registry.publishMarket,
       recordFailure: recordAdminFailure,
-      revalidatePublic: () => revalidatePublicCache([
-        PUBLIC_CACHE_TAGS.products,
-        PUBLIC_CACHE_TAGS.sitemap,
-      ]),
+      revalidatePublic: () => revalidatePublicCache(PUBLIC_CACHE_INVALIDATION.pricing),
     };
   };
   return {

@@ -22,7 +22,7 @@ import {
 import { MutationRequestError } from "@/server/http/mutation-request";
 import { createPrivateUploadStore } from "@/server/uploads/private-upload-store";
 import type { UploadFile } from "@/server/uploads/local-private-upload-store";
-import { PUBLIC_CACHE_TAGS, revalidatePublicCache } from "@/server/cache/public-cache-tags";
+import { PUBLIC_CACHE_INVALIDATION, revalidatePublicCache } from "@/server/cache/public-cache-tags";
 
 export const runtime = "nodejs";
 const noStore = { "Cache-Control": "no-store" };
@@ -34,10 +34,7 @@ type AdminAccess = Readonly<{
 }>;
 
 export function revalidateReviewSurfaces() {
-  revalidatePublicCache([
-    PUBLIC_CACHE_TAGS.reviews,
-    PUBLIC_CACHE_TAGS.reviewMedia,
-  ]);
+  revalidatePublicCache(PUBLIC_CACHE_INVALIDATION.review);
   revalidatePath("/");
   revalidatePath("/au");
 }

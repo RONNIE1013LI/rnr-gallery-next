@@ -6,6 +6,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   buildProductionAutomationUrl,
   buildProductionSmokeProgram,
+  formatPlaywrightCliFailure,
   productionBrowserSessionProcessIds,
   runProductionBrowserCheck,
   type ProductionBrowserCheckDependencies,
@@ -328,6 +329,74 @@ describe("Production browser check", () => {
     });
   });
 
+  it("runs the generated smoke operation when the sandbox has no global URL APIs", async () => {
+    const fake = createFakePage();
+    const program = buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+    });
+    const originalUrl = globalThis.URL;
+    const originalUrlSearchParams = globalThis.URLSearchParams;
+    Object.defineProperty(globalThis, "URL", { configurable: true, value: undefined });
+    Object.defineProperty(globalThis, "URLSearchParams", { configurable: true, value: undefined });
+    try {
+      await expect((0, eval)(`(${program})`)(fake.page)).resolves.toMatchObject({
+        routeCount: 8,
+        unexpectedNavigationCount: 0,
+      });
+    } finally {
+      Object.defineProperty(globalThis, "URL", { configurable: true, value: originalUrl });
+      Object.defineProperty(globalThis, "URLSearchParams", { configurable: true, value: originalUrlSearchParams });
+    }
+  });
+
+  it("closes the owned session after a URL-less sandbox run", async () => {
+    const fake = createFakePage();
+    const calls: string[] = [];
+    const deps = dependencies({
+      runCli: vi.fn(async (_session, args) => {
+        calls.push(args[0]);
+        if (args[0] !== "run-code") return undefined;
+        const originalUrl = globalThis.URL;
+        const originalUrlSearchParams = globalThis.URLSearchParams;
+        Object.defineProperty(globalThis, "URL", { configurable: true, value: undefined });
+        Object.defineProperty(globalThis, "URLSearchParams", { configurable: true, value: undefined });
+        try {
+          const result = await (0, eval)(`(${args[1]})`)(fake.page);
+          return JSON.stringify(result);
+        } finally {
+          Object.defineProperty(globalThis, "URL", { configurable: true, value: originalUrl });
+          Object.defineProperty(globalThis, "URLSearchParams", { configurable: true, value: originalUrlSearchParams });
+        }
+      }),
+    });
+
+    await runProductionBrowserCheck({ url: "https://rnrgallery.com/" }, deps);
+    expect(calls).toEqual(["open", "run-code", "close"]);
+    expect(deps.processList).toHaveBeenCalled();
+  });
+
+  it("reports bounded sanitized CLI diagnostics without secrets", () => {
+    const message = formatPlaywrightCliFailure({
+      stage: "run-code",
+      exitCode: 7,
+      stdout: `DATABASE_URL=postgresql://user:db-password@db.example/prod\nAuthorization: Bearer token-value\n${"x".repeat(6_000)}`,
+      stderr: "Cookie: session=customer-cookie\nhttps://user:url-password@rnrgallery.com/",
+    });
+
+    expect(message).toContain("stage: run-code");
+    expect(message).toContain("exit code: 7");
+    expect(message).toContain("stdout:");
+    expect(message).toContain("stderr:");
+    expect(message).toContain("[REDACTED]");
+    expect(message).not.toContain("db-password");
+    expect(message).not.toContain("token-value");
+    expect(message).not.toContain("customer-cookie");
+    expect(message).not.toContain("url-password");
+    expect(message.length).toBeLessThan(5_000);
+  });
+
   it("fails closed for absent, malformed, partial, wrong-route-count, and invalid-counter CLI output", async () => {
     const invalidOutputs: ReadonlyArray<readonly [string, unknown]> = [
       ["absent", undefined],
@@ -606,6 +675,26 @@ describe("Production browser check", () => {
     expect(fake.aborted).toEqual(expect.arrayContaining([
       "https://example.com/", "https://rnrgallery.com/logo.png", "https://rnrgallery.com/site.woff2", "https://rnrgallery.com/demo.mp4", "https://example.com/popup",
     ]));
+  });
+
+  it("rejects an unapproved route even on an official Production host", async () => {
+    const fake = createFakePage();
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+    })})`) as (page: FakePage) => Promise<OperationResult>;
+    await operation(fake.page);
+
+    await fake.invoke({
+      url: "https://rnrgallery.com/not-approved-for-smoke?rnr_automation=1&rnr_automation_capability=DEFAULT",
+      resourceType: "document",
+      navigation: true,
+    });
+
+    expect(fake.aborted).toContain(
+      "https://rnrgallery.com/not-approved-for-smoke?rnr_automation=1&rnr_automation_capability=DEFAULT",
+    );
   });
 
   it("does not count the browser console error caused by its own blocked image", async () => {
