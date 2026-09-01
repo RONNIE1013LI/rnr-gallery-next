@@ -120,6 +120,11 @@ export const customerServiceConversationIdentities = pgTable(
       sql`${table.identityKind} in ('facebook_psid', 'website_authenticated_customer', 'website_stable_visitor', 'website_conversation')`,
     ),
     check(
+      "customer_service_conversation_identities_channel_kind_valid",
+      sql`(${table.channel} = 'facebook' and ${table.identityKind} = 'facebook_psid')
+        or (${table.channel} = 'website' and ${table.identityKind} in ('website_authenticated_customer', 'website_stable_visitor', 'website_conversation'))`,
+    ),
+    check(
       "customer_service_conversation_identities_hash_valid",
       sql`${table.identityKeyHash} ~ '^[a-f0-9]{64}$'`,
     ),

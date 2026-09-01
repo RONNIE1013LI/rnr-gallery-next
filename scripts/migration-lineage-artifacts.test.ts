@@ -133,7 +133,7 @@ describe("migration lineage artifacts", () => {
       tag: "0062_customer_service_conversation_identities",
     });
     expect(sha256("drizzle/0062_customer_service_conversation_identities.sql")).toBe(
-      "0c32bc5256a6c239949ea046cb04f9b515a1adc6eb738a209eec59a84fc3e0a4",
+      "eb82b078195e3a55329e78687dd83c9b7743743c1c719527d19735eacd3f7c76",
     );
   });
 

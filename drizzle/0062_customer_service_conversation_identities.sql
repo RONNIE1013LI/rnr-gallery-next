@@ -61,6 +61,9 @@ ALTER TABLE "customer_service_conversation_identities"
 		CHECK ("channel" in ('facebook', 'website')),
 	ADD CONSTRAINT "customer_service_conversation_identities_kind_valid"
 		CHECK ("identity_kind" in ('facebook_psid', 'website_authenticated_customer', 'website_stable_visitor', 'website_conversation')),
+	ADD CONSTRAINT "customer_service_conversation_identities_channel_kind_valid"
+		CHECK (("channel" = 'facebook' AND "identity_kind" = 'facebook_psid')
+			OR ("channel" = 'website' AND "identity_kind" in ('website_authenticated_customer', 'website_stable_visitor', 'website_conversation'))),
 	ADD CONSTRAINT "customer_service_conversation_identities_hash_valid"
 		CHECK ("identity_key_hash" ~ '^[a-f0-9]{64}$');
 --> statement-breakpoint

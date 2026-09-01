@@ -18,6 +18,7 @@
     "release:test:isolated": "tsx scripts/release-test-database.ts",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx scripts/migrate-database.ts",
+    "db:reconcile:customer-identities": "tsx scripts/reconcile-customer-service-conversation-identities.ts",
     "db:lineage:check": "tsx scripts/verify-migration-lineage.ts",
     "db:check": "drizzle-kit check",
     "db:runtime-role": "tsx scripts/database-runtime-role-security.ts",

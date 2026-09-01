@@ -61,6 +61,7 @@ describe("website customer service schema contract", () => {
     expect(config.checks.map((item) => item.name)).toEqual(expect.arrayContaining([
       "customer_service_conversation_identities_channel_valid",
       "customer_service_conversation_identities_kind_valid",
+      "customer_service_conversation_identities_channel_kind_valid",
       "customer_service_conversation_identities_hash_valid",
     ]));
     expect(identityIndex?.config.unique).toBe(false);
