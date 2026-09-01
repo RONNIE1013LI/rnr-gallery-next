@@ -44,6 +44,21 @@ describe("CustomerChat", () => {
       configurable: true,
       value: { request: async (_name: string, _options: unknown, callback: () => Promise<unknown>) => callback() },
     });
+    vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) => {
+      callback(0);
+      return 1;
+    });
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    vi.stubGlobal("ResizeObserver", class {
+      observe() {}
+      disconnect() {}
+    });
+    vi.stubGlobal("matchMedia", vi.fn(() => ({ matches: false })));
+    Object.defineProperty(HTMLElement.prototype, "scrollTo", {
+      configurable: true,
+      writable: true,
+      value: vi.fn(),
+    });
   });
 
   afterEach(() => {
@@ -52,6 +67,7 @@ describe("CustomerChat", () => {
     vi.useRealTimers();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
+    Reflect.deleteProperty(HTMLElement.prototype, "scrollTo");
   });
 
   it("is closed by default with a labelled 48px launcher", () => {
@@ -470,6 +486,132 @@ describe("CustomerChat", () => {
 
     expect(await screen.findByText("Historical second-page assistant reply.")).toBeInTheDocument();
     expect(screen.getByTestId("customer-chat-live-region")).toBeEmptyDOMElement();
+  });
+
+  it("positions an existing conversation at the latest message inside the transcript", async () => {
+    let resolveHistory: ((response: Response) => void) | undefined;
+    const history = new Promise<Response>((resolve) => { resolveHistory = resolve; });
+    vi.stubGlobal("fetch", vi.fn().mockReturnValueOnce(history));
+    render(<CustomerChat />);
+    openChat();
+    const transcript = screen.getByLabelText("Chat messages");
+    const scrollTo = vi.fn();
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, value: 900 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, writable: true, value: 0 },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+
+    await act(async () => {
+      resolveHistory?.(updates([{
+        eventKey: "existing-assistant",
+        role: "assistant",
+        text: "The latest existing reply.",
+        createdAt: "2026-09-01T07:00:00.000Z",
+        state: "committed_assistant",
+      }], "cursor-existing", "committed_assistant"));
+      await history;
+    });
+
+    expect(screen.getByText("The latest existing reply.")).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 900, behavior: "auto" });
+  });
+
+  it("follows a final assistant reply while the customer remains near the bottom", async () => {
+    vi.useFakeTimers();
+    const assistant = {
+      eventKey: "assistant-followed",
+      role: "assistant",
+      text: "The newest reply is visible.",
+      createdAt: "2026-09-01T07:00:01.000Z",
+      state: "committed_assistant",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([], "cursor-1"))
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(updates([], "cursor-2", "pending"))
+      .mockResolvedValueOnce(updates([assistant], "cursor-3", "committed_assistant"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+    const transcript = screen.getByLabelText("Chat messages");
+    let scrollTop = 400;
+    const scrollTo = vi.fn(({ top }: ScrollToOptions) => {
+      scrollTop = Math.min(Number(top), 400);
+    });
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, value: 900 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, get: () => scrollTop },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+    const input = screen.getByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Can you help?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+    scrollTo.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+
+    expect(screen.getByText("The newest reply is visible.")).toBeInTheDocument();
+    expect(scrollTo).toHaveBeenCalledWith({ top: 900, behavior: "smooth" });
+    expect(screen.queryByRole("button", { name: "New message" })).not.toBeInTheDocument();
+  });
+
+  it("preserves history reading and offers an explicit jump for a new assistant reply", async () => {
+    vi.useFakeTimers();
+    const assistant = {
+      eventKey: "assistant-not-forced",
+      role: "assistant",
+      text: "A reply arrived while reading history.",
+      createdAt: "2026-09-01T07:00:01.000Z",
+      state: "committed_assistant",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([], "cursor-1"))
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(accepted())
+      .mockResolvedValueOnce(updates([], "cursor-2", "pending"))
+      .mockResolvedValueOnce(updates([assistant], "cursor-3", "committed_assistant"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+    const transcript = screen.getByLabelText("Chat messages");
+    let scrollTop = 400;
+    const scrollTo = vi.fn(({ top }: ScrollToOptions) => {
+      scrollTop = Math.min(Number(top), 400);
+    });
+    Object.defineProperties(transcript, {
+      scrollHeight: { configurable: true, value: 900 },
+      clientHeight: { configurable: true, value: 500 },
+      scrollTop: { configurable: true, get: () => scrollTop },
+      scrollTo: { configurable: true, value: scrollTo },
+    });
+    const input = screen.getByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Can you help?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+    scrollTop = 100;
+    fireEvent.scroll(transcript);
+    scrollTo.mockClear();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+
+    expect(screen.getByText("A reply arrived while reading history.")).toBeInTheDocument();
+    expect(scrollTo).not.toHaveBeenCalled();
+    const jump = screen.getByRole("button", { name: "New message" });
+    fireEvent.click(jump);
+    await act(async () => { await vi.advanceTimersByTimeAsync(16); });
+    expect(scrollTo).toHaveBeenCalledWith({ top: 900, behavior: "smooth" });
+    expect(screen.queryByRole("button", { name: "New message" })).not.toBeInTheDocument();
   });
 
   it("sends on Enter and lets Shift+Enter add a newline without preventing the textarea default", async () => {

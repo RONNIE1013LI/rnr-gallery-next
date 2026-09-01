@@ -1,11 +1,12 @@
 "use client";
 
 import { FaArrowUp, FaRegCommentDots } from "react-icons/fa";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 
 import { emitAnalyticsEvent } from "@/domain/analytics/client";
 import { pollingAllowedForAutomation } from "@/lib/automation-mode";
 import styles from "./customer-chat.module.css";
+import { isNearBottom, scrollTranscriptToLatest } from "./follow-latest";
 
 type PublicEvent = Readonly<{
   eventKey: string;
@@ -121,6 +122,10 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const [historyError, setHistoryError] = useState(false);
   const [feedback, setFeedback] = useState("");
   const [announcement, setAnnouncement] = useState("");
+  const [newMessageAvailable, setNewMessageAvailable] = useState(false);
+  const latestEvent = events.at(-1);
+  const assistantPending = outgoingMessages.some((message) => message.status !== "failed")
+    || (latestEvent?.role === "customer" && (latestEvent.state === "pending" || latestEvent.state === "recovery"));
   const cursorRef = useRef<string | null>(null);
   const pollingRef = useRef(false);
   const activePollControllerRef = useRef<AbortController | null>(null);
@@ -139,6 +144,26 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const isComposingRef = useRef(false);
   const launcherRef = useRef<HTMLButtonElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const transcriptRef = useRef<HTMLDivElement>(null);
+  const followLatestRef = useRef(true);
+  const readingHistoryRef = useRef(false);
+  const positionedTranscriptRef = useRef(false);
+  const lastNonCustomerEventKeyRef = useRef<string | null>(null);
+  const transcriptFrameRef = useRef<number | null>(null);
+
+  const scrollToLatest = useCallback((requestedBehavior: ScrollBehavior = "smooth") => {
+    const transcript = transcriptRef.current;
+    if (!transcript) return;
+    if (transcriptFrameRef.current !== null) {
+      cancelAnimationFrame(transcriptFrameRef.current);
+    }
+    transcriptFrameRef.current = requestAnimationFrame(() => {
+      transcriptFrameRef.current = null;
+      const reducedMotion = typeof window.matchMedia === "function"
+        && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      scrollTranscriptToLatest(transcript, reducedMotion ? "auto" : requestedBehavior);
+    });
+  }, []);
 
   function currentlyTrackable() {
     return mountedRef.current && openRef.current && pollingAllowedForAutomation("customer-chat");
@@ -265,6 +290,10 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     return () => {
       mountedRef.current = false;
       openRef.current = false;
+      if (transcriptFrameRef.current !== null) {
+        cancelAnimationFrame(transcriptFrameRef.current);
+        transcriptFrameRef.current = null;
+      }
       if (!lockGrantedRef.current) lockWaitAbortControllerRef.current?.abort();
     };
   }, []);
@@ -308,6 +337,37 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     return () => document.removeEventListener("keydown", closeOnEscape);
   }, [open]);
 
+  useLayoutEffect(() => {
+    if (!open) return;
+    const hasVisibleContent = events.length > 0 || outgoingMessages.length > 0 || assistantPending;
+    if (!hasVisibleContent) return;
+    const latestNonCustomerEvent = [...events].reverse().find((event) => event.role !== "customer") ?? null;
+    const receivedNewNonCustomer = latestNonCustomerEvent !== null
+      && latestNonCustomerEvent.eventKey !== lastNonCustomerEventKeyRef.current;
+
+    if (followLatestRef.current && !readingHistoryRef.current) {
+      setNewMessageAvailable(false);
+      scrollToLatest(positionedTranscriptRef.current ? "smooth" : "auto");
+      positionedTranscriptRef.current = true;
+    } else if (receivedNewNonCustomer && !initialPollRef.current) {
+      setNewMessageAvailable(true);
+    }
+    lastNonCustomerEventKeyRef.current = latestNonCustomerEvent?.eventKey ?? null;
+  }, [assistantPending, events, open, outgoingMessages, scrollToLatest]);
+
+  useEffect(() => {
+    if (!open || typeof ResizeObserver !== "function") return;
+    const transcript = transcriptRef.current;
+    if (!transcript) return;
+    const observer = new ResizeObserver(() => {
+      if (followLatestRef.current && positionedTranscriptRef.current) {
+        scrollToLatest("auto");
+      }
+    });
+    observer.observe(transcript);
+    return () => observer.disconnect();
+  }, [open, scrollToLatest]);
+
   useEffect(() => {
     if (!open && restoreLauncherFocusRef.current) {
       launcherRef.current?.focus();
@@ -318,6 +378,9 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   async function sendMessage(current: PendingMessage) {
     if (sendingRef.current) return;
     sendingRef.current = true;
+    followLatestRef.current = true;
+    readingHistoryRef.current = false;
+    setNewMessageAvailable(false);
     setSending(true);
     setFeedback("");
     setOutgoingMessages((messages) => {
@@ -466,9 +529,6 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     : null;
   const hasMessages = events.length > 0 || outgoingMessages.length > 0;
   const showWelcome = historyReady && !hasMessages;
-  const latestEvent = events.at(-1);
-  const assistantPending = outgoingMessages.some((message) => message.status !== "failed")
-    || (latestEvent?.role === "customer" && (latestEvent.state === "pending" || latestEvent.state === "recovery"));
 
   return (
     <div className={`${styles.root} customer-chat-root`} data-open={open}>
@@ -487,7 +547,18 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
             <div><strong>R&R Gallery</strong><span>Chat with our team</span></div>
             <button type="button" className={styles.closeButton} aria-label="Close chat" title="Close chat" onClick={close}>×</button>
           </header>
-          <div className={styles.transcript} aria-label="Chat messages">
+          <div className={styles.transcriptShell}>
+          <div
+            ref={transcriptRef}
+            className={styles.transcript}
+            aria-label="Chat messages"
+            onScroll={(event) => {
+              const following = isNearBottom(event.currentTarget);
+              followLatestRef.current = following;
+              readingHistoryRef.current = !following;
+              if (following) setNewMessageAvailable(false);
+            }}
+          >
             {historyError ? <div className={styles.historyError} role="status">
               <p>We couldn’t load your earlier messages. You can still start a new chat.</p>
               <button type="button" onClick={() => void poll()}>Retry conversation history</button>
@@ -515,6 +586,18 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
               key={message.clientMessageKey}
             ><span>You</span><p>{message.message}</p></div>)}
             {assistantPending ? <div className={styles.typing} role="status">R&amp;R Gallery is typing…</div> : null}
+            <div aria-hidden="true" />
+          </div>
+          {newMessageAvailable ? <button
+            type="button"
+            className={styles.newMessageButton}
+            onClick={() => {
+              followLatestRef.current = true;
+              readingHistoryRef.current = false;
+              setNewMessageAvailable(false);
+              scrollToLatest("smooth");
+            }}
+          >New message</button> : null}
           </div>
           <p id="customer-chat-status" className={styles.status} aria-live="polite">{feedback}</p>
           <form className={styles.composer} onSubmit={(event) => {
@@ -554,6 +637,10 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
       ) : null}
       {!open ? <button ref={launcherRef} type="button" className={styles.launcher} aria-label="Chat with R&R Gallery" title="Chat with R&R Gallery" onClick={() => {
         initialPollRef.current = events.length === 0;
+        followLatestRef.current = true;
+        readingHistoryRef.current = false;
+        positionedTranscriptRef.current = false;
+        setNewMessageAvailable(false);
         setOpen(true);
       }}>
         <FaRegCommentDots aria-hidden="true" />
