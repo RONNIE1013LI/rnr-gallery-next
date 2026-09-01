@@ -18,6 +18,22 @@ type OperationResult = Readonly<{
   pollingCounts: Readonly<{ customerChat: number; replyAssistant: number }>;
   consoleErrorCount: number;
   unexpectedNavigationCount: number;
+  requestFailedCount: number;
+  ignoredRequestFailedCounts: Readonly<{
+    guardBlocked: number;
+    navigationAborted: number;
+  }>;
+  blockedMutationRequestCount: number;
+  coverage?: Readonly<{
+    australia: boolean;
+    sitemap: boolean;
+    publicMedia: boolean;
+    reviews: boolean;
+    pricing: boolean;
+    replyAssistantInitialLoad: "authenticated" | "auth-gated";
+    formsOrdersInitialLoad: "authenticated" | "auth-gated";
+    websiteChatInitialLoad: boolean;
+  }>;
 }>;
 
 function validOperationResult(overrides: Partial<OperationResult> = {}): OperationResult {
@@ -27,6 +43,9 @@ function validOperationResult(overrides: Partial<OperationResult> = {}): Operati
     pollingCounts: { customerChat: 0, replyAssistant: 0 },
     consoleErrorCount: 0,
     unexpectedNavigationCount: 0,
+    requestFailedCount: 0,
+    ignoredRequestFailedCounts: { guardBlocked: 0, navigationAborted: 0 },
+    blockedMutationRequestCount: 0,
     ...overrides,
   };
 }
@@ -53,9 +72,11 @@ type FakeConsoleMessage = Readonly<{
 type FakeFrame = Readonly<{ page: () => FakePage }>;
 type FakeRequest = Readonly<{
   url: () => string;
+  method: () => string;
   resourceType: () => string;
   isNavigationRequest: () => boolean;
   frame: () => FakeFrame;
+  failure: () => Readonly<{ errorText: string }> | null;
 }>;
 type FakeRoute = Readonly<{
   request: () => FakeRequest;
@@ -68,6 +89,7 @@ type FakeInitScriptInput = Readonly<{
   capability: string;
 }>;
 type FakeContext = Readonly<{
+  clearCookies: () => Promise<void>;
   addInitScript: (
     script: (input: FakeInitScriptInput) => void,
     input: FakeInitScriptInput,
@@ -76,16 +98,30 @@ type FakeContext = Readonly<{
   on: (event: "page", handler: (page: FakePage) => void) => void;
   pages: () => FakePage[];
 }>;
+type FakeResponse = Readonly<{
+  status: () => number;
+  text: () => Promise<string>;
+  headerValue: (name: string) => Promise<string | null>;
+  body: () => Promise<Uint8Array>;
+}>;
+type FakeLocator = Readonly<{
+  count: () => Promise<number>;
+  allTextContents: () => Promise<string[]>;
+}>;
 type FakePage = Readonly<{
   context: () => FakeContext;
   mainFrame: () => FakeFrame;
-  on: (event: "console", handler: (message: FakeConsoleMessage) => void) => void;
-  goto: (url: string, options?: Readonly<{ waitUntil: string }>) => Promise<Readonly<{ status: () => number }>>;
-  locator: (selector: string) => Readonly<{ count: () => Promise<number> }>;
+  on: (
+    event: "console" | "requestfailed",
+    handler: ((message: FakeConsoleMessage) => void) | ((request: FakeRequest) => void),
+  ) => void;
+  goto: (url: string, options?: Readonly<{ waitUntil: string }>) => Promise<FakeResponse>;
+  url: () => string;
+  locator: (selector: string) => FakeLocator;
   getByRole: (
     role: string,
     options: Readonly<{ name: string }>,
-  ) => Readonly<{ click: () => Promise<void> }>;
+  ) => Readonly<{ click: () => Promise<void>; count: () => Promise<number> }>;
   waitForTimeout: (milliseconds: number) => Promise<void>;
   evaluate: (callback: () => unknown) => Promise<Readonly<{ customerChat: number; replyAssistant: number }>>;
 }>;
@@ -93,6 +129,7 @@ type FakePage = Readonly<{
 type Fixture = Readonly<{
   url: string;
   resourceType: string;
+  method?: string;
   navigation?: boolean;
   page?: FakePage;
 }>;
@@ -105,6 +142,8 @@ function createFakePage(options: Readonly<{
   topLevelNavigationOnFirstGoto?: string;
   consoleErrorDuringChat?: "click" | "wait" | "evaluate";
   blockedImageOnFirstGoto?: boolean;
+  failedRequestOnFirstGoto?: boolean;
+  mutationRequestOnFirstGoto?: boolean;
   storageBlocked?: boolean;
 }> = {}) {
   const events: string[] = [];
@@ -114,9 +153,13 @@ function createFakePage(options: Readonly<{
   let routeHandler: ((route: FakeRoute) => Promise<void>) | undefined;
   const pageListeners: Array<(page: FakePage) => void> = [];
   const consoleListeners = new Map<FakePage, Array<(message: FakeConsoleMessage) => void>>();
+  const requestFailedListeners = new Map<FakePage, Array<(request: FakeRequest) => void>>();
   const pages: FakePage[] = [];
+  let currentUrl = "about:blank";
+  let chatOpen = false;
 
   const context: FakeContext = {
+    clearCookies: vi.fn(async () => { events.push("cookies-cleared"); }),
     addInitScript: vi.fn(async (script: (input: FakeInitScriptInput) => void, input: FakeInitScriptInput) => {
       events.push("init");
       const original = (globalThis as { sessionStorage?: unknown }).sessionStorage;
@@ -161,17 +204,50 @@ function createFakePage(options: Readonly<{
     const candidate: FakePage = {
       context: () => context,
       mainFrame: () => frame,
-      on: (_event, handler) => {
-        consoleListeners.set(candidate, [...(consoleListeners.get(candidate) ?? []), handler]);
+      on: (event, handler) => {
+        if (event === "console") {
+          consoleListeners.set(candidate, [
+            ...(consoleListeners.get(candidate) ?? []),
+            handler as (message: FakeConsoleMessage) => void,
+          ]);
+        } else {
+          requestFailedListeners.set(candidate, [
+            ...(requestFailedListeners.get(candidate) ?? []),
+            handler as (request: FakeRequest) => void,
+          ]);
+        }
       },
       goto: async (url: string) => {
         events.push(`goto:${url}`);
         visited.push(url);
         await invoke({ url, resourceType: "document", navigation: true, page: candidate });
+        currentUrl = url;
+        if (url.includes("/reply-assistant?")) {
+          currentUrl = "https://rnrgallery.com/account/sign-in?next=%2Freply-assistant";
+          await invoke({ url: currentUrl, resourceType: "document", navigation: true, page: candidate });
+        } else if (url.includes("/order-system?")) {
+          currentUrl = "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system";
+          await invoke({ url: currentUrl, resourceType: "document", navigation: true, page: candidate });
+        }
         if (!isPopup && visited.length === 1 && options.blockedImageOnFirstGoto) {
           await invoke({
             url: "https://rnrgallery.com/blocked-image.jpg",
             resourceType: "image",
+            page: candidate,
+          });
+        }
+        if (!isPopup && visited.length === 1 && options.failedRequestOnFirstGoto) {
+          failRequest({
+            url: "https://rnrgallery.com/api/read-only-check",
+            resourceType: "fetch",
+            page: candidate,
+          });
+        }
+        if (!isPopup && visited.length === 1 && options.mutationRequestOnFirstGoto) {
+          await invoke({
+            url: "https://rnrgallery.com/api/blocked-mutation",
+            resourceType: "fetch",
+            method: "POST",
             page: candidate,
           });
         }
@@ -194,13 +270,41 @@ function createFakePage(options: Readonly<{
             page: popup,
           });
         }
-        return { status: () => 200 };
+        return {
+          status: () => 200,
+          text: async () => url.includes("/sitemap.xml")
+            ? "<?xml version=\"1.0\"?><urlset><url><loc>https://rnrgallery.com/au</loc></url></urlset>"
+            : "",
+          headerValue: async (name: string) => name.toLowerCase() === "content-type"
+            && url.includes("homepage-hero-showcase-16x9.webp") ? "image/webp" : "text/html",
+          body: async () => new Uint8Array(url.includes("homepage-hero-showcase-16x9.webp") ? [1, 2, 3] : []),
+        };
       },
-      locator: () => ({ count: async () => options.bodyCount ?? 1 }),
-      getByRole: () => ({
+      url: () => currentUrl,
+      locator: (selector: string) => ({
+        count: async () => {
+          if (selector === "body") return options.bodyCount ?? 1;
+          if (selector === '[aria-label="Customer reviews"]') return currentUrl.includes("/au?") ? 1 : 0;
+          if (selector === '[role="dialog"][aria-label="Chat with R&R Gallery"]') return chatOpen ? 1 : 0;
+          return 0;
+        },
+        allTextContents: async () => selector === "strong" && currentUrl.includes("/au/shop?")
+          ? ["From A$400.00 AUD", "From A$550.00 AUD"] : [],
+      }),
+      getByRole: (role, roleOptions) => ({
         click: async () => {
           events.push("chat");
+          if (role === "button" && roleOptions.name === "Chat with R&R Gallery") chatOpen = true;
           emitConsoleError(candidate, "click");
+        },
+        count: async () => {
+          if (role !== "heading") return 0;
+          if (roleOptions.name === "From your photos to the piece you imagined." && currentUrl.includes("/au?")) return 1;
+          if (roleOptions.name === "Reply Assistant" && currentUrl.includes("/reply-assistant?")) return 1;
+          if (roleOptions.name === "Welcome back." && currentUrl.includes("/account/sign-in?")) return 1;
+          if (roleOptions.name === "Order system data list" && currentUrl.includes("/order-system?")) return 1;
+          if (roleOptions.name === "Studio workbench." && currentUrl.includes("/order-system/sign-in?")) return 1;
+          return 0;
         },
       }),
       waitForTimeout: async () => { emitConsoleError(candidate, "wait"); },
@@ -223,13 +327,16 @@ function createFakePage(options: Readonly<{
     if (!routeHandler) throw new Error("route handler was not registered");
     const requestPage = fixture.page ?? page;
     const requestFrame = requestPage.mainFrame();
-    const route: FakeRoute = {
-      request: () => ({
+    const request: FakeRequest = {
         url: () => fixture.url,
+        method: () => fixture.method ?? "GET",
         resourceType: () => fixture.resourceType,
         isNavigationRequest: () => fixture.navigation ?? false,
         frame: () => requestFrame,
-      }),
+        failure: () => ({ errorText: "net::ERR_BLOCKED_BY_CLIENT" }),
+      };
+    const route: FakeRoute = {
+      request: () => request,
       continue: vi.fn(async () => { continued.push(fixture.url); }),
       abort: vi.fn(async (errorCode?: string) => {
         aborted.push(fixture.url);
@@ -244,9 +351,24 @@ function createFakePage(options: Readonly<{
             });
           }
         }
+        for (const listener of requestFailedListeners.get(requestPage) ?? []) listener(request);
       }),
     };
     await routeHandler(route);
+  }
+
+  function failRequest(fixture: Fixture, errorText = "net::ERR_CONNECTION_RESET") {
+    const requestPage = fixture.page ?? page;
+    const requestFrame = requestPage.mainFrame();
+    const request: FakeRequest = {
+      url: () => fixture.url,
+      method: () => fixture.method ?? "GET",
+      resourceType: () => fixture.resourceType,
+      isNavigationRequest: () => fixture.navigation ?? false,
+      frame: () => requestFrame,
+      failure: () => ({ errorText }),
+    };
+    for (const listener of requestFailedListeners.get(requestPage) ?? []) listener(request);
   }
 
   function emitPopup() {
@@ -254,7 +376,7 @@ function createFakePage(options: Readonly<{
     for (const listener of pageListeners) listener(popup);
   }
 
-  return { page, popup, context, events, continued, aborted, visited, invoke, emitPopup };
+  return { page, popup, context, events, continued, aborted, visited, invoke, failRequest, emitPopup };
 }
 
 const processStartA = "Mon Aug 31 20:00:00 2026";
@@ -806,5 +928,99 @@ describe("Production browser check", () => {
     expect(first.session).toBe(`rnr-production-smoke-${process.pid}-1000-11111111`);
     expect(second.session).toBe(`rnr-production-smoke-${process.pid}-1000-22222222`);
     expect(first.session).not.toContain("attacker");
+  });
+
+  it("visits only the approved coverage routes and proves every requested read-only surface", async () => {
+    const fake = createFakePage();
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      coverageOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).resolves.toMatchObject({
+      routeCount: 6,
+      requestFailedCount: 0,
+      blockedMutationRequestCount: 0,
+      coverage: {
+        australia: true,
+        sitemap: true,
+        publicMedia: true,
+        reviews: true,
+        pricing: true,
+        replyAssistantInitialLoad: "auth-gated",
+        formsOrdersInitialLoad: "auth-gated",
+        websiteChatInitialLoad: true,
+      },
+    });
+    expect(fake.visited.map((url) => new URL(url).pathname)).toEqual([
+      "/au",
+      "/au/shop",
+      "/sitemap.xml",
+      "/media/home/homepage-hero-showcase-16x9.webp",
+      "/reply-assistant",
+      "/order-system",
+    ]);
+    expect(fake.visited.map((url) => new URL(url).pathname)).not.toEqual(expect.arrayContaining([
+      "/", "/shop", "/canvas", "/banners", "/design-gallery", "/help", "/account", "/cart",
+    ]));
+  });
+
+  it("clears the isolated browser cookies before any coverage route can authenticate", async () => {
+    const fake = createFakePage();
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      coverageOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await operation(fake.page);
+    expect(fake.events.indexOf("cookies-cleared")).toBeGreaterThanOrEqual(0);
+    expect(fake.events.indexOf("cookies-cleared"))
+      .toBeLessThan(fake.events.findIndex((event) => event.startsWith("goto:")));
+  });
+
+  it("counts a genuine client request failure and fails the coverage smoke", async () => {
+    const fake = createFakePage({ failedRequestOnFirstGoto: true });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      coverageOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).rejects.toThrow("network request");
+  });
+
+  it("excludes only Guard-blocked resources and navigation cancellations from requestfailed", async () => {
+    const fake = createFakePage({ blockedImageOnFirstGoto: true });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      coverageOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    const result = await operation(fake.page);
+    expect(result.requestFailedCount).toBe(0);
+    expect(result.ignoredRequestFailedCounts.guardBlocked).toBeGreaterThan(0);
+  });
+
+  it("blocks every non-read request before it can reach Production", async () => {
+    const fake = createFakePage({ mutationRequestOnFirstGoto: true });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      coverageOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).resolves.toMatchObject({
+      blockedMutationRequestCount: 1,
+      requestFailedCount: 0,
+    });
+    expect(fake.aborted).toContain("https://rnrgallery.com/api/blocked-mutation");
   });
 });
