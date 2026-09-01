@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCustomerChatUpdatesHandler } from "./route-handler";
+import { hashWebsiteConversationKey } from "@/server/customer-service/website/session";
 
 const sessionSecret = "website-session-secret-that-is-long-enough";
 const sessionToken = "s".repeat(43);
@@ -60,6 +61,10 @@ describe("GET /api/customer-chat/updates", () => {
           return {
             conversationId: "00000000-0000-4000-8000-000000000001",
             expiresAt: new Date("2026-08-28T00:00:00.000Z"),
+            identity: {
+              kind: "website_conversation",
+              keyHash: hashWebsiteConversationKey(sessionToken, sessionSecret),
+            },
           };
         },
         async listWebsitePublicUpdates(input) {
@@ -115,6 +120,10 @@ describe("GET /api/customer-chat/updates", () => {
           return {
             conversationId: "00000000-0000-4000-8000-000000000001",
             expiresAt: new Date("2026-08-28T00:00:00.000Z"),
+            identity: {
+              kind: "website_conversation",
+              keyHash: hashWebsiteConversationKey(sessionToken, sessionSecret),
+            },
           };
         },
         async listWebsitePublicUpdates() {

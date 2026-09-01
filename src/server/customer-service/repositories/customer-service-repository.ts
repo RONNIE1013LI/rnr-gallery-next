@@ -13,6 +13,7 @@ import type {
   WebsitePublicUpdateCursor,
   WebsitePublicUpdateRecord,
 } from "../website/public-updates";
+import type { CustomerInboxIdentity } from "../identity/customer-identity";
 
 export type ImageJobStage = "policy" | "download" | "vision" | "cleanup" | "draft";
 
@@ -63,6 +64,7 @@ export type HashedIncomingMessage = Readonly<{
 
 export type HashedConversationEvent = HashedIncomingMessage & Readonly<{
   role: ConversationRole;
+  identity?: CustomerInboxIdentity;
   eventType?: "customer_message" | "human_outbound";
   productContext?: SafeProductContext | null;
   bodyHash?: string | null;
@@ -349,12 +351,17 @@ export interface CustomerServiceRepository {
   resolveWebsiteSession(input: Readonly<{
     sessionTokenHash: string;
     now: Date;
-  }>): Promise<Readonly<{ conversationId: string; expiresAt: Date }> | null>;
+  }>): Promise<Readonly<{
+    conversationId: string;
+    expiresAt: Date;
+    identity: CustomerInboxIdentity;
+  }> | null>;
   ensureWebsiteSession(input: Readonly<{
     sessionTokenHash: string;
     externalConversationKeyHash: string;
     now: Date;
     expiresAt: Date;
+    identity?: CustomerInboxIdentity;
   }>): Promise<Readonly<{ conversationId: string; expiresAt: Date }>>;
   ingestConversationEvent(input: HashedConversationEvent): Promise<
     | Readonly<{ status: "turn_pending"; messageId: string; turnId: string; debounceUntil: Date }>

@@ -6,6 +6,7 @@ import { resolveCurrentSafeProductContext } from "@/server/customer-service/webs
 import { getAllCustomerNotificationRuntime } from "@/server/notifications/customer-notification-runtime";
 import { createCustomerChatMessagesHandler } from "./route-handler";
 import { readWebsiteAnalyticsBusinessConfig } from "@/server/analytics/website-analytics-config";
+import { getOptionalSession } from "@/server/auth/get-optional-session";
 
 export const runtime = "nodejs";
 
@@ -27,6 +28,7 @@ export async function POST(request: Request) {
       permitSecret: config.websiteAbuseHashSecret,
       debounceMs: config.conversationDebounceMs,
       repository: customerService.repository,
+      getOptionalSession,
       resolveProductContext: resolveCurrentSafeProductContext,
       processTurn: (turnId) => customerService.turnRecoveryRunner.runOnce({ turnId }),
       processReviewAlert: () => customerService.reviewAlertService?.deliverNext() ?? Promise.resolve({ result: "not_configured" }),

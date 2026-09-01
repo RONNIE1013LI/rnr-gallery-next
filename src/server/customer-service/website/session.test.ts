@@ -19,6 +19,13 @@ import {
 const secret = "website-session-secret-that-is-long-enough";
 const now = new Date("2026-08-21T00:00:00.000Z");
 
+function conversationIdentity(token: string) {
+  return {
+    kind: "website_conversation" as const,
+    keyHash: hashWebsiteConversationKey(token, secret),
+  };
+}
+
 function request(method: "GET" | "POST", token?: string) {
   return new Request("https://rrgallery.co.nz/api/customer-chat", {
     method,
@@ -99,6 +106,8 @@ describe("website customer session", () => {
       environment: "preview",
       createToken: () => token,
       createNonce: () => "n".repeat(22),
+      authenticatedCustomerId: null,
+      stableVisitorDigest: null,
     });
 
     expect(repository.resolveWebsiteSession).not.toHaveBeenCalled();
@@ -110,6 +119,7 @@ describe("website customer session", () => {
       now,
       sessionSecret: secret,
       permitSecret: "website-permit-secret-that-is-long-enough",
+      identity: conversationIdentity(token),
     })).toEqual({ sessionExpiresAt: new Date("2026-08-28T00:00:00.000Z") });
   });
 
@@ -124,6 +134,7 @@ describe("website customer session", () => {
       sessionSecret: secret,
       permitSecret,
       nonce: "n".repeat(22),
+      identity: conversationIdentity(token),
     });
     const validate = (overrides: Partial<Parameters<typeof validateWebsiteSessionPermit>[0]> = {}) => validateWebsiteSessionPermit({
       permit,
@@ -132,12 +143,19 @@ describe("website customer session", () => {
       now,
       sessionSecret: secret,
       permitSecret,
+      identity: conversationIdentity(token),
       ...overrides,
     });
 
     expect(validate()).toEqual({ sessionExpiresAt: new Date("2026-08-28T00:00:00.000Z") });
     expect(validate({ token: "d".repeat(43) })).toBeNull();
     expect(validate({ clientMessageKey: "L".repeat(22) })).toBeNull();
+    expect(validate({
+      identity: {
+        kind: "website_authenticated_customer",
+        keyHash: "f".repeat(64),
+      },
+    })).toBeNull();
     expect(validate({ permitSecret: "different-permit-secret-that-is-long-enough" })).toBeNull();
     expect(validate({ now: new Date("2026-08-21T00:01:31.000Z") })).toBeNull();
     expect(validate({ permit: `${permit}x` })).toBeNull();
@@ -177,7 +195,11 @@ describe("website customer session", () => {
     const expiresAt = new Date(now.getTime() + WEBSITE_SESSION_MAX_AGE_SECONDS * 1_000);
     const repository = {
       resolveWebsiteSession: vi.fn()
-        .mockResolvedValue({ conversationId: "conversation-1", expiresAt }),
+        .mockResolvedValue({
+          conversationId: "conversation-1",
+          expiresAt,
+          identity: conversationIdentity(token),
+        }),
       ensureWebsiteSession: vi.fn().mockResolvedValue({ conversationId: "conversation-1", expiresAt }),
     };
 
@@ -195,6 +217,7 @@ describe("website customer session", () => {
       externalConversationKeyHash: hashWebsiteConversationKey(token, secret),
       now,
       expiresAt,
+      identity: conversationIdentity(token),
     });
 
     const reused = await ensureWebsiteSessionForPost({
@@ -211,6 +234,7 @@ describe("website customer session", () => {
       externalConversationKeyHash: hashWebsiteConversationKey(token, secret),
       now: new Date(now.getTime() + 60_000),
       expiresAt,
+      identity: conversationIdentity(token),
     });
     expect(repository.ensureWebsiteSession).toHaveBeenCalledTimes(2);
   });
@@ -233,6 +257,7 @@ describe("website customer session", () => {
     const state = websiteSessionPublicState({
       conversationId: "private-conversation-id",
       expiresAt: new Date("2026-08-28T00:00:00.000Z"),
+      identity: conversationIdentity("a".repeat(43)),
     });
     const serialized = JSON.stringify(state);
 

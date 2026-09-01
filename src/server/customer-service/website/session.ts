@@ -1,5 +1,9 @@
 import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import type { CustomerServiceRepository } from "../repositories/customer-service-repository";
+import {
+  resolveWebsiteInboxIdentity,
+  type CustomerInboxIdentity,
+} from "../identity/customer-identity";
 
 export const WEBSITE_SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7;
 
@@ -18,6 +22,7 @@ type WebsiteSessionLookupRepository = Pick<CustomerServiceRepository, "resolveWe
 export type WebsiteSession = Readonly<{
   conversationId: string;
   expiresAt: Date;
+  identity: CustomerInboxIdentity;
 }>;
 
 const WEBSITE_SESSION_PERMIT_MAX_AGE_SECONDS = 90;
@@ -54,6 +59,7 @@ function hmacPermit(input: Readonly<{
   nonce: string;
   sessionSecret: string;
   permitSecret: string;
+  identity: CustomerInboxIdentity;
 }>) {
   const sessionTokenHash = hashWebsiteSessionToken(input.token, input.sessionSecret);
   return createHmac("sha256", input.permitSecret)
@@ -64,6 +70,8 @@ function hmacPermit(input: Readonly<{
       String(Math.floor(input.sessionExpiresAt.getTime() / 1_000)),
       String(Math.floor(input.permitExpiresAt.getTime() / 1_000)),
       input.nonce,
+      input.identity.kind,
+      input.identity.keyHash,
     ].join("\0"))
     .digest("base64url");
 }
@@ -82,6 +90,7 @@ export function createWebsiteSessionPermit(input: Readonly<{
   sessionSecret: string;
   permitSecret: string;
   nonce?: string;
+  identity: CustomerInboxIdentity;
 }>) {
   const nonce = input.nonce ?? randomBytes(16).toString("base64url");
   if (!permitNoncePattern.test(nonce)) throw new Error("website_session_permit_nonce_invalid");
@@ -102,6 +111,7 @@ export function validateWebsiteSessionPermit(input: Readonly<{
   now: Date;
   sessionSecret: string;
   permitSecret: string;
+  identity: CustomerInboxIdentity;
 }>) {
   if (!input.permit || input.permit.length > 256) return null;
   const parts = input.permit.split(".");
@@ -119,6 +129,7 @@ export function validateWebsiteSessionPermit(input: Readonly<{
     nonce,
     sessionSecret: input.sessionSecret,
     permitSecret: input.permitSecret,
+    identity: input.identity,
   });
   const received = Buffer.from(mac);
   const calculated = Buffer.from(expected);
@@ -136,6 +147,8 @@ export async function bootstrapWebsiteSession(input: Readonly<{
   environment?: CookieEnvironment;
   createToken?: () => string;
   createNonce?: () => string;
+  authenticatedCustomerId: string | null;
+  stableVisitorDigest: string | null;
 }>) {
   if (input.request.method !== "POST") throw new Error("website_session_post_required");
   const existingToken = readWebsiteSessionToken(input.request, input.environment);
@@ -145,12 +158,32 @@ export async function bootstrapWebsiteSession(input: Readonly<{
       now: input.now,
     })
     : null;
-  const token = existing && existingToken
+  const requestedExistingIdentity = existingToken
+    ? resolveWebsiteInboxIdentity({
+      authenticatedCustomerId: input.authenticatedCustomerId,
+      stableVisitorDigest: input.stableVisitorDigest,
+      technicalConversationHash: hashWebsiteConversationKey(existingToken, input.sessionSecret),
+      secret: input.sessionSecret,
+    })
+    : null;
+  const reuseExisting = Boolean(existing && existingToken && requestedExistingIdentity
+    && existing.identity.kind === requestedExistingIdentity.kind
+    && existing.identity.keyHash === requestedExistingIdentity.keyHash);
+  const token = reuseExisting && existingToken
     ? existingToken
     : (input.createToken ?? createWebsiteSessionToken)();
   if (!isWebsiteSessionToken(token)) throw new Error("website_session_token_invalid");
-  const sessionExpiresAt = existing?.expiresAt
-    ?? new Date(input.now.getTime() + WEBSITE_SESSION_MAX_AGE_SECONDS * 1_000);
+  const identity = reuseExisting && existing
+    ? existing.identity
+    : resolveWebsiteInboxIdentity({
+      authenticatedCustomerId: input.authenticatedCustomerId,
+      stableVisitorDigest: input.stableVisitorDigest,
+      technicalConversationHash: hashWebsiteConversationKey(token, input.sessionSecret),
+      secret: input.sessionSecret,
+    });
+  const sessionExpiresAt = reuseExisting && existing
+    ? existing.expiresAt
+    : new Date(input.now.getTime() + WEBSITE_SESSION_MAX_AGE_SECONDS * 1_000);
   return Object.freeze({
     permit: createWebsiteSessionPermit({
       token,
@@ -160,8 +193,10 @@ export async function bootstrapWebsiteSession(input: Readonly<{
       sessionSecret: input.sessionSecret,
       permitSecret: input.permitSecret,
       nonce: input.createNonce?.(),
+      identity,
     }),
-    cookie: existing ? null : websiteSessionCookie(token, input.environment),
+    cookie: reuseExisting ? null : websiteSessionCookie(token, input.environment),
+    identity,
   });
 }
 
@@ -240,21 +275,32 @@ export async function ensureWebsiteSessionForPost(input: Readonly<{
       externalConversationKeyHash: hashWebsiteConversationKey(existingToken, input.secret),
       now: input.now,
       expiresAt: existing.expiresAt,
+      identity: existing.identity,
     });
-    return Object.freeze({ session, cookie: null });
+    return Object.freeze({
+      session: Object.freeze({ ...session, identity: existing.identity }),
+      cookie: null,
+    });
   }
 
   const token = (input.createToken ?? createWebsiteSessionToken)();
   if (!isWebsiteSessionToken(token)) throw new Error("website_session_token_invalid");
   const expiresAt = new Date(input.now.getTime() + WEBSITE_SESSION_MAX_AGE_SECONDS * 1_000);
+  const identity = resolveWebsiteInboxIdentity({
+    authenticatedCustomerId: null,
+    stableVisitorDigest: null,
+    technicalConversationHash: hashWebsiteConversationKey(token, input.secret),
+    secret: input.secret,
+  });
   const session = await input.repository.ensureWebsiteSession({
     sessionTokenHash: hashWebsiteSessionToken(token, input.secret),
     externalConversationKeyHash: hashWebsiteConversationKey(token, input.secret),
     now: input.now,
     expiresAt,
+    identity,
   });
   return Object.freeze({
-    session,
+    session: Object.freeze({ ...session, identity }),
     cookie: websiteSessionCookie(token, input.environment),
   });
 }

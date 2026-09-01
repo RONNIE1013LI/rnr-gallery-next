@@ -17,7 +17,11 @@ import {
   createReviewAlertToken,
   hashReviewAlertToken,
 } from "./review-alert-service";
-import { createWebsiteSessionPermit, hashWebsiteSessionToken } from "./session";
+import {
+  createWebsiteSessionPermit,
+  hashWebsiteConversationKey,
+  hashWebsiteSessionToken,
+} from "./session";
 
 const trustedOrigin = "https://rrgallery.co.nz";
 const sessionSecret = "website-session-security-secret-at-least-32-bytes";
@@ -134,6 +138,10 @@ function permitFor(token: string, clientMessageKey: string) {
     sessionSecret,
     permitSecret: abuseSecret,
     nonce: "n".repeat(22),
+    identity: {
+      kind: "website_conversation",
+      keyHash: hashWebsiteConversationKey(token, sessionSecret),
+    },
   });
 }
 
@@ -171,6 +179,7 @@ function messageHandler(input: Readonly<{
     permitSecret: abuseSecret,
     debounceMs: 2_000,
     repository,
+    getOptionalSession: async () => null,
     resolveProductContext: vi.fn(async () => null),
     processTurn,
     processReviewAlert,
@@ -505,7 +514,17 @@ describe("website public security regression", () => {
       repository: {
         async resolveWebsiteSession(input) {
           const conversationId = conversations.get(input.sessionTokenHash);
-          return conversationId ? { conversationId, expiresAt: new Date("2026-08-29T00:00:00.000Z") } : null;
+          const rawToken = input.sessionTokenHash === hashWebsiteSessionToken(firstSessionToken, sessionSecret)
+            ? firstSessionToken
+            : secondSessionToken;
+          return conversationId ? {
+            conversationId,
+            expiresAt: new Date("2026-08-29T00:00:00.000Z"),
+            identity: {
+              kind: "website_conversation" as const,
+              keyHash: hashWebsiteConversationKey(rawToken, sessionSecret),
+            },
+          } : null;
         },
         async listWebsitePublicUpdates(input) {
           selected.push(input.conversationId);

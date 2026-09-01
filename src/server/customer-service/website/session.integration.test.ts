@@ -3,6 +3,7 @@ import { and, count, eq, inArray } from "drizzle-orm";
 import { drizzle } from "drizzle-orm/node-postgres";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  customerServiceConversationIdentities,
   customerServiceConversations,
   customerServiceWebSessions,
 } from "@/server/db/schema";
@@ -38,6 +39,8 @@ async function cleanup() {
   if (conversations.length) {
     const ids = conversations.map((conversation) => conversation.id);
     await database.delete(customerServiceWebSessions).where(inArray(customerServiceWebSessions.conversationId, ids));
+    await database.delete(customerServiceConversationIdentities)
+      .where(inArray(customerServiceConversationIdentities.conversationId, ids));
     await database.delete(customerServiceConversations).where(inArray(customerServiceConversations.id, ids));
   }
   createdConversationHashes.clear();
@@ -68,7 +71,13 @@ describeDatabase("website session repository", () => {
     const [stored] = await database.select().from(customerServiceWebSessions)
       .where(eq(customerServiceWebSessions.sessionTokenHash, sessionTokenHash));
 
-    expect(created).toEqual(resolved);
+    expect(resolved).toEqual({
+      ...created,
+      identity: {
+        kind: "website_conversation",
+        keyHash: externalConversationKeyHash,
+      },
+    });
     expect(stored.sessionTokenHash).toBe(sessionTokenHash);
     expect(JSON.stringify(stored)).not.toContain(rawToken);
     expect(stored.channel).toBe("website");

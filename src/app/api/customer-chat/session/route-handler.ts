@@ -2,6 +2,8 @@ import { assertTrustedMutationRequest, MutationRequestError, parseBoundedJson } 
 import type { CustomerServiceRepository } from "@/server/customer-service/repositories/customer-service-repository";
 import { bootstrapWebsiteSession } from "@/server/customer-service/website/session";
 import { parseWebsiteSessionBootstrapRequest, serializeWebsiteSessionCookie } from "@/server/customer-service/website/public-api";
+import { resolveWebsiteAnalyticsBehavioralContext } from "@/server/analytics/website-analytics-v2-business-recorder";
+import type { WebsiteAnalyticsRuntimeConfig } from "@/server/analytics/website-analytics-config";
 
 type Dependencies = Readonly<{
   enabled: boolean;
@@ -9,6 +11,8 @@ type Dependencies = Readonly<{
   sessionSecret: string;
   permitSecret: string;
   repository: Pick<CustomerServiceRepository, "resolveWebsiteSession">;
+  getOptionalSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
+  analyticsConfig: WebsiteAnalyticsRuntimeConfig;
   now?: () => Date;
   cookieEnvironment?: "production" | "preview" | "development" | "test";
   createSessionToken?: () => string;
@@ -36,16 +40,27 @@ export function createCustomerChatSessionHandler(dependencies: Dependencies) {
           if (error instanceof MutationRequestError) throw error;
           return rejected(422);
         }
+        const currentTime = (dependencies.now ?? (() => new Date()))();
+        const authenticated = await dependencies.getOptionalSession(request.headers);
+        const analyticsContext = resolveWebsiteAnalyticsBehavioralContext(
+          request.headers.get("cookie"),
+          dependencies.analyticsConfig,
+          currentTime,
+        );
         const bootstrapped = await bootstrapWebsiteSession({
           request,
           repository: dependencies.repository,
           sessionSecret: dependencies.sessionSecret,
           permitSecret: dependencies.permitSecret,
           clientMessageKey: input.clientMessageKey,
-          now: (dependencies.now ?? (() => new Date()))(),
+          now: currentTime,
           environment: dependencies.cookieEnvironment,
           createToken: dependencies.createSessionToken,
           createNonce: dependencies.createPermitNonce,
+          authenticatedCustomerId: authenticated?.user.id ?? null,
+          stableVisitorDigest: analyticsContext.consentLinked
+            ? analyticsContext.visitorDigest ?? null
+            : null,
         });
         const response = Response.json({ status: "ready", permit: bootstrapped.permit }, { headers: noStoreHeaders });
         if (bootstrapped.cookie) response.headers.append("Set-Cookie", serializeWebsiteSessionCookie(bootstrapped.cookie));

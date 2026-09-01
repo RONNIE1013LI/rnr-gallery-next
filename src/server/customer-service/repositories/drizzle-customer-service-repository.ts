@@ -9,6 +9,7 @@ import {
   customerServiceCaseMemories,
   customerServiceCaseRetrievals,
   customerServiceConversationEvents,
+  customerServiceConversationIdentities,
   customerServiceConversations,
   customerServiceFeedbackEvents,
   customerServiceHumanReplyMatches,
@@ -89,6 +90,7 @@ import {
   type WebsiteAnalyticsV2BusinessRecorder,
   type WebsiteAnalyticsBehavioralContext,
 } from "@/server/analytics/website-analytics-v2-business-recorder";
+import type { CustomerInboxIdentity } from "../identity/customer-identity";
 
 type Database = ReturnType<typeof getDatabase>;
 type Transaction = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -105,6 +107,67 @@ type LearningEvidenceRecord = Readonly<{
   riskClass: "low" | "medium";
   eligibilityStatus: "pending_review" | "approved_reusable" | "excluded" | "revoked";
 }>;
+
+const customerIdentityHashPattern = /^[a-f0-9]{64}$/;
+
+function fallbackConversationIdentity(
+  channel: "facebook" | "website",
+  externalConversationKeyHash: string,
+): CustomerInboxIdentity {
+  return Object.freeze({
+    kind: channel === "facebook" ? "facebook_psid" : "website_conversation",
+    keyHash: externalConversationKeyHash,
+  });
+}
+
+function assertIdentityForChannel(
+  channel: "facebook" | "website",
+  identity: CustomerInboxIdentity,
+) {
+  const validKind = channel === "facebook"
+    ? identity.kind === "facebook_psid"
+    : identity.kind === "website_authenticated_customer"
+      || identity.kind === "website_stable_visitor"
+      || identity.kind === "website_conversation";
+  if (!validKind || !customerIdentityHashPattern.test(identity.keyHash)) {
+    throw new Error("customer_service_conversation_identity_invalid");
+  }
+}
+
+async function ensureConversationIdentity(
+  transaction: Transaction,
+  input: Readonly<{
+    conversationId: string;
+    channel: "facebook" | "website";
+    externalConversationKeyHash: string;
+    identity?: CustomerInboxIdentity;
+    now: Date;
+  }>,
+) {
+  const candidate = input.identity
+    ?? fallbackConversationIdentity(input.channel, input.externalConversationKeyHash);
+  assertIdentityForChannel(input.channel, candidate);
+  await transaction.insert(customerServiceConversationIdentities).values({
+    conversationId: input.conversationId,
+    channel: input.channel,
+    identityKind: candidate.kind,
+    identityKeyHash: candidate.keyHash,
+    createdAt: input.now,
+    updatedAt: input.now,
+  }).onConflictDoNothing();
+  const [stored] = await transaction.select({
+    channel: customerServiceConversationIdentities.channel,
+    kind: customerServiceConversationIdentities.identityKind,
+    keyHash: customerServiceConversationIdentities.identityKeyHash,
+  }).from(customerServiceConversationIdentities)
+    .where(eq(customerServiceConversationIdentities.conversationId, input.conversationId))
+    .limit(1);
+  if (!stored || stored.channel !== input.channel || (input.identity && (
+    stored.kind !== candidate.kind || stored.keyHash !== candidate.keyHash
+  ))) {
+    throw new Error("customer_service_conversation_identity_mismatch");
+  }
+}
 
 const WEBSITE_RATE_LIMITS = Object.freeze({
   sessionMinute: 5,
@@ -1528,13 +1591,32 @@ export function createDrizzleCustomerServiceRepository(
       const [session] = await database.select({
         conversationId: customerServiceWebSessions.conversationId,
         expiresAt: customerServiceWebSessions.expiresAt,
-      }).from(customerServiceWebSessions).where(and(
-        eq(customerServiceWebSessions.channel, "website"),
-        eq(customerServiceWebSessions.sessionTokenHash, input.sessionTokenHash),
-        eq(customerServiceWebSessions.status, "active"),
-        sql`${customerServiceWebSessions.expiresAt} > ${input.now}`,
-      )).limit(1);
-      return session ?? null;
+        conversationHash: customerServiceConversations.externalKeyHash,
+        identityKind: customerServiceConversationIdentities.identityKind,
+        identityKeyHash: customerServiceConversationIdentities.identityKeyHash,
+      }).from(customerServiceWebSessions)
+        .innerJoin(customerServiceConversations, eq(
+          customerServiceConversations.id,
+          customerServiceWebSessions.conversationId,
+        ))
+        .leftJoin(customerServiceConversationIdentities, eq(
+          customerServiceConversationIdentities.conversationId,
+          customerServiceWebSessions.conversationId,
+        ))
+        .where(and(
+          eq(customerServiceWebSessions.channel, "website"),
+          eq(customerServiceWebSessions.sessionTokenHash, input.sessionTokenHash),
+          eq(customerServiceWebSessions.status, "active"),
+          sql`${customerServiceWebSessions.expiresAt} > ${input.now}`,
+        )).limit(1);
+      if (!session) return null;
+      return Object.freeze({
+        conversationId: session.conversationId,
+        expiresAt: session.expiresAt,
+        identity: session.identityKind && session.identityKeyHash
+          ? Object.freeze({ kind: session.identityKind, keyHash: session.identityKeyHash })
+          : fallbackConversationIdentity("website", session.conversationHash),
+      });
     },
 
     async ensureWebsiteSession(input) {
@@ -1553,6 +1635,14 @@ export function createDrizzleCustomerServiceRepository(
           ))
           .limit(1);
         if (!conversation) throw new Error("website_session_conversation_missing");
+
+        await ensureConversationIdentity(transaction, {
+          conversationId: conversation.id,
+          channel: "website",
+          externalConversationKeyHash: input.externalConversationKeyHash,
+          identity: input.identity,
+          now: input.now,
+        });
 
         await transaction.insert(customerServiceWebSessions).values({
           conversationId: conversation.id,
@@ -1605,13 +1695,36 @@ export function createDrizzleCustomerServiceRepository(
           await transaction.execute(sql`
             select pg_advisory_xact_lock(hashtext(${'website-message:' + input.externalMessageKeyHash}))
           `);
-          const [duplicate] = await transaction.select({ id: customerServiceMessages.id })
+          const [duplicate] = await transaction.select({
+            id: customerServiceMessages.id,
+            conversationId: customerServiceMessages.conversationId,
+          })
             .from(customerServiceMessages)
             .where(and(
               eq(customerServiceMessages.channel, "website"),
               eq(customerServiceMessages.externalMessageKeyHash, input.externalMessageKeyHash),
             )).limit(1);
-          if (duplicate) return { status: "duplicate" as const };
+          if (duplicate) {
+            const [conversation] = await transaction.select({
+              externalKeyHash: customerServiceConversations.externalKeyHash,
+            }).from(customerServiceConversations)
+              .where(and(
+                eq(customerServiceConversations.id, duplicate.conversationId),
+                eq(customerServiceConversations.channel, input.channel),
+              ))
+              .limit(1);
+            if (!conversation || conversation.externalKeyHash !== input.externalConversationKeyHash) {
+              throw new Error("customer_service_conversation_identity_mismatch");
+            }
+            await ensureConversationIdentity(transaction, {
+              conversationId: duplicate.conversationId,
+              channel: input.channel,
+              externalConversationKeyHash: input.externalConversationKeyHash,
+              identity: input.identity,
+              now: input.receivedAt,
+            });
+            return { status: "duplicate" as const };
+          }
           const allowed = await consumeWebsiteRateLimits(transaction, input.websiteRateLimit, input.receivedAt);
           if (!allowed) {
             await recordWebsiteRateBlock(transaction, input.externalMessageKeyHash, input.receivedAt);
@@ -1631,6 +1744,13 @@ export function createDrizzleCustomerServiceRepository(
               eq(customerServiceConversations.channel, input.channel),
               eq(customerServiceConversations.externalKeyHash, input.externalConversationKeyHash),
             )).limit(1);
+        await ensureConversationIdentity(transaction, {
+          conversationId: conversation.id,
+          channel: input.channel,
+          externalConversationKeyHash: input.externalConversationKeyHash,
+          identity: input.identity,
+          now: input.receivedAt,
+        });
         if (
           insertedConversation.length > 0 &&
           input.channel === "website" &&
@@ -2984,6 +3104,12 @@ export function createDrizzleCustomerServiceRepository(
               eq(customerServiceConversations.channel, input.channel),
               eq(customerServiceConversations.externalKeyHash, input.externalConversationKeyHash),
             )).limit(1);
+        await ensureConversationIdentity(transaction, {
+          conversationId: conversation.id,
+          channel: input.channel,
+          externalConversationKeyHash: input.externalConversationKeyHash,
+          now: input.receivedAt,
+        });
 
         const customerText = input.text?.trim() || null;
         const inserted = await transaction.insert(customerServiceMessages).values({

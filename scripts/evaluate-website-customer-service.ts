@@ -8,6 +8,7 @@ import {
   renderWebsiteDecision,
 } from "../src/server/customer-service/website/structured-decision";
 import {
+  hashWebsiteConversationKey,
   hashWebsiteSessionToken,
   resolveWebsiteSession,
 } from "../src/server/customer-service/website/session";
@@ -159,7 +160,19 @@ function evaluationSessionRepository() {
     async resolveWebsiteSession(input: Readonly<{ sessionTokenHash: string; now: Date }>) {
       const conversationId = sessions.get(input.sessionTokenHash);
       return conversationId && input.now < EVALUATION_EXPIRES_AT
-        ? Object.freeze({ conversationId, expiresAt: EVALUATION_EXPIRES_AT })
+        ? Object.freeze({
+            conversationId,
+            expiresAt: EVALUATION_EXPIRES_AT,
+            identity: {
+              kind: "website_conversation" as const,
+              keyHash: hashWebsiteConversationKey(
+                input.sessionTokenHash === hashWebsiteSessionToken(EVALUATION_OWNER_TOKEN, EVALUATION_SESSION_SECRET)
+                  ? EVALUATION_OWNER_TOKEN
+                  : EVALUATION_OTHER_TOKEN,
+                EVALUATION_SESSION_SECRET,
+              ),
+            },
+          })
         : null;
     },
     async ensureWebsiteSession() {

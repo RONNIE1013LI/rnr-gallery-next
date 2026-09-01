@@ -8,6 +8,7 @@ import {
   customerServiceAttachments,
   customerServiceBudgetState,
   customerServiceConversationEvents,
+  customerServiceConversationIdentities,
   customerServiceConversations,
   customerServiceFeedbackEvents,
   customerServiceCaseMemories,
@@ -221,6 +222,7 @@ async function clearTables() {
   await database.delete(customerServiceMessages);
   await database.delete(customerServiceRateLimitBuckets);
   await database.delete(customerServiceWebSessions);
+  await database.delete(customerServiceConversationIdentities);
   await database.delete(customerServiceConversations);
   await database.delete(customerServiceWebsiteBudgetState);
   await database.delete(customerServiceBudgetState);
@@ -4915,6 +4917,74 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(results.filter((result) => result.status === "duplicate")).toHaveLength(1);
     expect(counts).toHaveLength(5);
     expect(counts.every((bucket) => bucket.count === 1)).toBe(true);
+  });
+
+  it("creates the exact Website identity link atomically and rejects a later mismatch", async () => {
+    await activateWebsitePilot("website-identity-link-atomicity");
+    const conversationHash = "41".repeat(32);
+    const identityA = {
+      kind: "website_authenticated_customer" as const,
+      keyHash: "42".repeat(32),
+    };
+    const firstEvent = {
+      ...websiteRateEvent({
+        sessionHash: conversationHash,
+        networkHash: "43".repeat(32),
+        messageHash: "44".repeat(32),
+      }),
+      identity: identityA,
+    };
+
+    await expect(repository.ingestConversationEvent(firstEvent)).resolves.toMatchObject({
+      status: "turn_pending",
+    });
+    const [conversation] = await database.select({ id: customerServiceConversations.id })
+      .from(customerServiceConversations)
+      .where(eq(customerServiceConversations.externalKeyHash, conversationHash));
+    const [identity] = await database.select({
+      conversationId: customerServiceConversationIdentities.conversationId,
+      channel: customerServiceConversationIdentities.channel,
+      kind: customerServiceConversationIdentities.identityKind,
+      keyHash: customerServiceConversationIdentities.identityKeyHash,
+    }).from(customerServiceConversationIdentities)
+      .where(eq(customerServiceConversationIdentities.conversationId, conversation.id));
+
+    expect(identity).toEqual({
+      conversationId: conversation.id,
+      channel: "website",
+      kind: identityA.kind,
+      keyHash: identityA.keyHash,
+    });
+
+    await expect(repository.ingestConversationEvent({
+      ...firstEvent,
+      identity: {
+        kind: "website_authenticated_customer",
+        keyHash: "46".repeat(32),
+      },
+    })).rejects.toThrow("customer_service_conversation_identity_mismatch");
+
+    await expect(repository.ingestConversationEvent({
+      ...firstEvent,
+      externalMessageKeyHash: "45".repeat(32),
+      identity: {
+        kind: "website_authenticated_customer",
+        keyHash: "46".repeat(32),
+      },
+      receivedAt: new Date("2026-08-19T00:00:01.000Z"),
+    })).rejects.toThrow("customer_service_conversation_identity_mismatch");
+
+    const messages = await database.select({ id: customerServiceMessages.id })
+      .from(customerServiceMessages)
+      .where(eq(customerServiceMessages.conversationId, conversation.id));
+    const links = await database.select().from(customerServiceConversationIdentities)
+      .where(eq(customerServiceConversationIdentities.conversationId, conversation.id));
+    expect(messages).toHaveLength(1);
+    expect(links).toHaveLength(1);
+    expect(links[0]).toMatchObject({
+      identityKind: identityA.kind,
+      identityKeyHash: identityA.keyHash,
+    });
   });
 
   it("reserves website and global budget scopes atomically while retaining the global hard stop", async () => {

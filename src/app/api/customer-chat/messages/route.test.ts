@@ -2,7 +2,10 @@ import { describe, expect, it, vi } from "vitest";
 import { defaultProductRegistry, parseProductRegistry } from "@/domain/catalogue/product-registry";
 import { resolveSafeProductContext } from "@/server/customer-service/website/product-context";
 import { createCustomerChatMessagesHandler } from "./route-handler";
-import { createWebsiteSessionPermit } from "@/server/customer-service/website/session";
+import {
+  createWebsiteSessionPermit,
+  hashWebsiteConversationKey,
+} from "@/server/customer-service/website/session";
 import { serializeAdvertisingConsent } from "@/domain/consent/advertising-consent";
 import {
   createWebsiteAnalyticsIdentity,
@@ -14,6 +17,13 @@ const sessionSecret = "website-session-secret-that-is-long-enough";
 const abuseSecret = "website-abuse-secret-that-is-long-enough";
 const now = new Date("2026-08-21T00:00:00.000Z");
 const registry = parseProductRegistry(defaultProductRegistry);
+
+function conversationIdentity(token = sessionToken) {
+  return {
+    kind: "website_conversation" as const,
+    keyHash: hashWebsiteConversationKey(token, sessionSecret),
+  };
+}
 
 function request(body: unknown, input: Readonly<{
   origin?: string;
@@ -80,6 +90,7 @@ function setup(input: Readonly<{
     permitSecret: abuseSecret,
     debounceMs: 2_000,
     repository,
+    getOptionalSession: async () => null,
     resolveProductContext,
     processTurn,
     processReviewAlert,
@@ -113,7 +124,13 @@ const validBody = {
   pageContext: { pathname: "/products/roll-up-banner" },
 };
 
-function permittedRequest(body: typeof validBody = validBody, input: Readonly<{ cookie?: string }> = {}) {
+function permittedRequest(body: typeof validBody = validBody, input: Readonly<{
+  cookie?: string;
+  identity?: ReturnType<typeof conversationIdentity> | {
+    kind: "website_stable_visitor";
+    keyHash: string;
+  };
+}> = {}) {
   const sessionExpiresAt = new Date("2026-08-28T00:00:00.000Z");
   const permit = createWebsiteSessionPermit({
     token: sessionToken,
@@ -123,6 +140,7 @@ function permittedRequest(body: typeof validBody = validBody, input: Readonly<{ 
     sessionSecret,
     permitSecret: abuseSecret,
     nonce: "n".repeat(22),
+    identity: input.identity ?? conversationIdentity(),
   });
   return request(body, {
     cookie: input.cookie ?? `__Host-rnr_customer_chat=${sessionToken}`,
@@ -155,6 +173,7 @@ describe("POST /api/customer-chat/messages", () => {
         sessionSecret,
         permitSecret: abuseSecret,
         nonce: "n".repeat(22),
+        identity: conversationIdentity(),
       }),
     })],
     ["tampered permit", request(validBody, {
@@ -167,6 +186,7 @@ describe("POST /api/customer-chat/messages", () => {
         sessionSecret,
         permitSecret: abuseSecret,
         nonce: "n".repeat(22),
+        identity: conversationIdentity(),
       }).slice(0, -1)}x`,
     })],
   ])("does not ingest an unresolved cookie with %s", async (_name, incoming) => {
@@ -186,6 +206,7 @@ describe("POST /api/customer-chat/messages", () => {
     current.repository.resolveWebsiteSession.mockResolvedValue({
       conversationId: "conversation-private",
       expiresAt: new Date("2026-08-28T00:00:00.000Z"),
+      identity: conversationIdentity(),
     });
 
     const response = await current.handler.POST(request(validBody, {
@@ -223,6 +244,10 @@ describe("POST /api/customer-chat/messages", () => {
         `ra_vid_v1=${identity.visitorCookie}`,
         `ra_sid_v1=${identity.sessionCookie}`,
       ].join("; "),
+      identity: {
+        kind: "website_stable_visitor",
+        keyHash: websiteAnalyticsVisitorDigest(identity.visitorId, analyticsSecret),
+      },
     }));
 
     expect(response.status).toBe(202);
@@ -297,6 +322,7 @@ describe("POST /api/customer-chat/messages", () => {
     current.repository.resolveWebsiteSession.mockResolvedValue({
       conversationId: "conversation-private",
       expiresAt: new Date("2026-08-28T00:00:00.000Z"),
+      identity: conversationIdentity(),
     });
 
     const first = await current.handler.POST(request(validBody, { cookie }));

@@ -21,6 +21,7 @@ import {
   resolveWebsiteAnalyticsBehavioralContext,
 } from "@/server/analytics/website-analytics-v2-business-recorder";
 import type { WebsiteAnalyticsRuntimeConfig } from "@/server/analytics/website-analytics-config";
+import { resolveWebsiteInboxIdentity } from "@/server/customer-service/identity/customer-identity";
 
 type WebsiteMessageRepository = Pick<
   CustomerServiceRepository,
@@ -37,6 +38,7 @@ type Dependencies = Readonly<{
   permitSecret?: string;
   debounceMs: number;
   repository: WebsiteMessageRepository;
+  getOptionalSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
   resolveProductContext: (pathname: string) => Promise<SafeProductContext | null>;
   processTurn: (turnId: string) => Promise<unknown>;
   processReviewAlert?: () => Promise<unknown>;
@@ -90,12 +92,36 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
         const receivedAt = (dependencies.now ?? (() => new Date()))();
         const cookieToken = readWebsiteSessionToken(request, dependencies.cookieEnvironment);
         if (!cookieToken) return sessionRequired();
+        const conversationHash = hashWebsiteConversationKey(cookieToken, dependencies.sessionSecret);
+        const analyticsContext = resolveWebsiteAnalyticsBehavioralContext(
+          request.headers.get("cookie"),
+          dependencies.analyticsConfig ?? {
+            enabled: false,
+            v2Enabled: false,
+            cookieSecret: null,
+            attributionLookbackDays: 90,
+          },
+          receivedAt,
+        );
+        const authenticated = await dependencies.getOptionalSession(request.headers);
+        const identity = resolveWebsiteInboxIdentity({
+          authenticatedCustomerId: authenticated?.user.id ?? null,
+          stableVisitorDigest: analyticsContext.consentLinked
+            ? analyticsContext.visitorDigest ?? null
+            : null,
+          technicalConversationHash: conversationHash,
+          secret: dependencies.sessionSecret,
+        });
         const existingSession = cookieToken
           ? await dependencies.repository.resolveWebsiteSession({
             sessionTokenHash: hashWebsiteSessionToken(cookieToken, dependencies.sessionSecret),
             now: receivedAt,
           })
           : null;
+        if (existingSession && (
+          existingSession.identity.kind !== identity.kind
+          || existingSession.identity.keyHash !== identity.keyHash
+        )) return sessionRequired();
         const permit = existingSession ? null : validateWebsiteSessionPermit({
           permit: request.headers.get("X-RNR-Customer-Chat-Permit"),
           token: cookieToken,
@@ -103,12 +129,12 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
           now: receivedAt,
           sessionSecret: dependencies.sessionSecret,
           permitSecret: dependencies.permitSecret ?? dependencies.messageHashSecret,
+          identity,
         });
         if (!existingSession && !permit) return sessionRequired();
         const sessionToken = cookieToken;
         const sessionExpiresAt = existingSession?.expiresAt ?? permit?.sessionExpiresAt;
         if (!sessionExpiresAt) return sessionRequired();
-        const conversationHash = hashWebsiteConversationKey(sessionToken, dependencies.sessionSecret);
         const messageHash = hashWebsiteClientMessageKey({
           conversationHash,
           clientKey: input.clientMessageKey,
@@ -139,22 +165,14 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
           productContext: message.productContext ?? null,
           debounceMs: dependencies.debounceMs,
           receivedAt: message.receivedAt,
+          identity,
           websiteRateLimit: {
             sessionKeyHash,
             networkKeyHash,
             sessionExpiresAt,
             isNewSession: !existingSession,
           },
-          websiteAnalyticsContext: resolveWebsiteAnalyticsBehavioralContext(
-            request.headers.get("cookie"),
-            dependencies.analyticsConfig ?? {
-              enabled: false,
-              v2Enabled: false,
-              cookieSecret: null,
-              attributionLookbackDays: 90,
-            },
-            receivedAt,
-          ),
+          websiteAnalyticsContext: analyticsContext,
         });
         if (result.status === "rate_limited") return json({ error: { code: "RATE_LIMITED" } }, 429);
         if (result.status === "turn_pending") {
