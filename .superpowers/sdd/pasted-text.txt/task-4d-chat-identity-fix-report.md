@@ -4,7 +4,7 @@
 
 Implemented the reviewed migration-free protocol. Supported same-origin tabs now take one exclusive Web Lock through a stateless cookie bootstrap and message POST; an unresolved message is accepted only with a short-lived, exact-message HMAC permit.
 
-- Commit: `8c68a4f`
+- Implementation commit: `8fac394`
 - No Production request, Production data mutation, migration, schema, environment, dependency, analytics, payment, or Vercel change was made.
 - The dedicated integration test used only the Test DB after the repository safety gate verified its target was distinct from Preview and the in-process-derived Production identity metadata. No connection strings, credentials, tokens, permits, hashes, or customer content were printed.
 
