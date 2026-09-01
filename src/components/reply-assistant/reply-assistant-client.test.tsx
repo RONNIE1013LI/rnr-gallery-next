@@ -523,6 +523,67 @@ describe("ReplyAssistantClient", () => {
     expect(screen.queryByRole("button", { name: "Load earlier conversation history" })).not.toBeInTheDocument();
   });
 
+  it("preserves a displaced rolling-window boundary after earlier history is complete", async () => {
+    const paged = {
+      ...item,
+      hasEarlierTimeline: true,
+      timeline: [
+        { eventId: "event:51", role: "customer" as const, text: "Event 51", receivedAt: "2026-08-17T00:51:00.000Z" },
+        { eventId: "event:52", role: "staff" as const, text: "Event 52", receivedAt: "2026-08-17T00:52:00.000Z" },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      events: [{ eventId: "event:50", role: "customer", text: "Event 50", receivedAt: "2026-08-17T00:50:00.000Z" }],
+      cursor: null,
+      hasEarlier: false,
+    }), { status: 200 })));
+    const view = render(<ReplyAssistantClient initialItems={[paged]} liveItems={[paged]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Load earlier conversation history" }));
+    await waitFor(() => expect(screen.getByText("Event 50")).toBeInTheDocument());
+
+    const shifted = {
+      ...paged,
+      latestMessageId: "33333333-3333-4333-8333-333333333333",
+      lastActivityAt: "2026-08-17T00:53:00.000Z",
+      timeline: [
+        paged.timeline[1],
+        { eventId: "event:53", role: "customer" as const, text: "Event 53", receivedAt: "2026-08-17T00:53:00.000Z" },
+      ],
+    };
+    view.rerender(<ReplyAssistantClient initialItems={[paged]} liveItems={[shifted]} />);
+
+    const timeline = screen.getByRole("region", { name: "Conversation timeline" });
+    expect(within(timeline).getAllByRole("listitem").map((entry) => entry.textContent)).toEqual([
+      "CustomerEvent 50",
+      "CustomerEvent 51",
+      "R&REvent 52",
+      "CustomerEvent 53",
+    ]);
+    expect(screen.getAllByText("Event 51")).toHaveLength(1);
+    expect(screen.queryByRole("button", { name: "Load earlier conversation history" })).not.toBeInTheDocument();
+
+    const shiftedAgain = {
+      ...shifted,
+      latestMessageId: "44444444-4444-4444-8444-444444444444",
+      lastActivityAt: "2026-08-17T00:54:00.000Z",
+      timeline: [
+        shifted.timeline[1],
+        { eventId: "event:54", role: "staff" as const, text: "Event 54", receivedAt: "2026-08-17T00:54:00.000Z" },
+      ],
+    };
+    view.rerender(<ReplyAssistantClient initialItems={[paged]} liveItems={[shiftedAgain]} />);
+
+    await waitFor(() => expect(within(timeline).getAllByRole("listitem").map((entry) => entry.textContent)).toEqual([
+      "CustomerEvent 50",
+      "CustomerEvent 51",
+      "R&REvent 52",
+      "CustomerEvent 53",
+      "R&REvent 54",
+    ]));
+    expect(screen.getAllByText("Event 51")).toHaveLength(1);
+    expect(screen.getAllByText("Event 53")).toHaveLength(1);
+  });
+
   it("preserves an unsaved local edit when polling replaces the server draft", () => {
     const { rerender } = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} />);
     fireEvent.click(screen.getByRole("button", { name: "Edit" }));

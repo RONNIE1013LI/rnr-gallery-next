@@ -89,6 +89,21 @@ function mergeTimelineEvents(
   return [...events.values()];
 }
 
+function timelineWindowsMatch(
+  previous: Readonly<Record<string, readonly SafeTimelineEvent[]>>,
+  current: Readonly<Record<string, readonly SafeTimelineEvent[]>>,
+) {
+  const previousIds = Object.keys(previous);
+  const currentIds = Object.keys(current);
+  if (previousIds.length !== currentIds.length) return false;
+  return currentIds.every((inboxId) => {
+    const left = previous[inboxId] ?? [];
+    const right = current[inboxId] ?? [];
+    return left.length === right.length
+      && left.every((event, index) => event.eventId === right[index]?.eventId);
+  });
+}
+
 export function ReplyAssistantClient({
   initialItems,
   liveItems,
@@ -112,6 +127,9 @@ export function ReplyAssistantClient({
   const [feedbackErrors, setFeedbackErrors] = useState<Record<string, string>>({});
   const [feedbackCompletions, setFeedbackCompletions] = useState<Record<string, FeedbackAction>>({});
   const [earlierTimelines, setEarlierTimelines] = useState<Record<string, EarlierTimelineState>>({});
+  const [previousTimelineWindows, setPreviousTimelineWindows] = useState<
+    Record<string, readonly SafeTimelineEvent[]>
+  >({});
   const [visibleCounts, setVisibleCounts] = useState<Record<"all" | "website" | "facebook", number>>({
     all: CONVERSATION_BATCH_SIZE,
     website: CONVERSATION_BATCH_SIZE,
@@ -152,6 +170,27 @@ export function ReplyAssistantClient({
         ? [selected, ...sorted.filter((item) => item.inboxId !== selected.inboxId)].slice(0, 100)
         : sorted.slice(0, 100);
     })();
+
+  const currentTimelineWindows = Object.fromEntries(items.map((item) => [item.inboxId, item.timeline]));
+  if (!timelineWindowsMatch(previousTimelineWindows, currentTimelineWindows)) {
+    setPreviousTimelineWindows(currentTimelineWindows);
+    setEarlierTimelines((states) => {
+      let next = states;
+      for (const item of items) {
+        const current = states[item.inboxId];
+        if (!current) continue;
+        const merged = mergeTimelineEvents(
+          mergeTimelineEvents(current.events, previousTimelineWindows[item.inboxId] ?? []),
+          item.timeline,
+        );
+        if (merged.length === current.events.length) continue;
+        if (next === states) next = { ...states };
+        next[item.inboxId] = { ...current, events: merged };
+      }
+      return next;
+    });
+  }
+
   const visibleCount = visibleCounts[channelScope];
   const visibleItems = items.slice(0, visibleCount);
   const remainingCount = items.length - visibleItems.length;
@@ -288,7 +327,10 @@ export function ReplyAssistantClient({
       setEarlierTimelines((states) => ({
         ...states,
         [item.inboxId]: {
-          events: mergeTimelineEvents(page.events, states[item.inboxId]?.events ?? []),
+          events: mergeTimelineEvents(
+            page.events,
+            mergeTimelineEvents(states[item.inboxId]?.events ?? [], item.timeline),
+          ),
           cursor: page.cursor,
           hasEarlier: page.hasEarlier,
           status: "idle",
