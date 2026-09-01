@@ -147,6 +147,22 @@ describe("public SEO routes", () => {
         userAgent: "meta-externalagent",
         disallow: "/",
       },
+      expect.objectContaining({
+        userAgent: "meta-webindexer",
+        allow: "/",
+        disallow: expect.arrayContaining([
+          "/_next/image",
+          "/admin/",
+          "/account/",
+          "/api/",
+          "/cart",
+          "/checkout",
+          "/forms/",
+          "/orders/",
+          "/pay/",
+          "/products/*/configure",
+        ]),
+      }),
     ]));
     expect(robots.rules).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -162,7 +178,6 @@ describe("public SEO routes", () => {
 
     for (const userAgent of [
       "facebookexternalhit",
-      "meta-webindexer",
       "meta-externalfetcher",
       "Googlebot",
       "Bingbot",
