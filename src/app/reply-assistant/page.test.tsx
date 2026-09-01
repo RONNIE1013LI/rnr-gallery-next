@@ -7,6 +7,8 @@ const mocks = vi.hoisted(() => ({
   resolveDeepLink: vi.fn(),
   listQueue: vi.fn(),
   renderDashboard: vi.fn(),
+  recoverDueHumanReplies: vi.fn(),
+  refreshLearningCandidates: vi.fn(),
 }));
 
 const emptyCounts = {
@@ -70,8 +72,8 @@ vi.mock("@/server/customer-service/config", () => ({
 vi.mock("@/server/customer-service/runtime", () => ({
   createCustomerServiceRuntime: () => ({
     repository: {
-      recoverDueHumanReplies: vi.fn(async () => ({ selected: 0, matched: 0, unmatched: 0 })),
-      refreshLearningCandidates: vi.fn(async () => ({ checkpoint: 0, created: 0 })),
+      recoverDueHumanReplies: mocks.recoverDueHumanReplies,
+      refreshLearningCandidates: mocks.refreshLearningCandidates,
       getReplyAssistantUiCursor: vi.fn(async () => "cursor-1"),
       listQueue: mocks.listQueue,
       metricCounts: vi.fn(async () => emptyCounts),
@@ -96,6 +98,8 @@ describe("Reply Assistant website-review deep link", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.listQueue.mockResolvedValue({ items: [] });
+    mocks.recoverDueHumanReplies.mockResolvedValue({ selected: 0, matched: 0, unmatched: 0 });
+    mocks.refreshLearningCandidates.mockResolvedValue({ checkpoint: 0, created: 0 });
     mocks.requirePermission.mockResolvedValue({
       user: { id: "staff-1" },
       adminRole: "staff",
@@ -144,5 +148,13 @@ describe("Reply Assistant website-review deep link", () => {
     await expect(ReplyAssistantPage({ searchParams: Promise.resolve({ review: "C".repeat(43) }) }))
       .rejects.toThrow("redirect_or_forbidden");
     expect(mocks.resolveDeepLink).not.toHaveBeenCalled();
+  });
+
+  it("renders the reply queue without performing recovery or learning maintenance", async () => {
+    render(await ReplyAssistantPage({ searchParams: Promise.resolve({}) }));
+
+    expect(screen.getByTestId("reply-dashboard")).toBeInTheDocument();
+    expect(mocks.recoverDueHumanReplies).not.toHaveBeenCalled();
+    expect(mocks.refreshLearningCandidates).not.toHaveBeenCalled();
   });
 });

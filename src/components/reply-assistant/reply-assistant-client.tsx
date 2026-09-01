@@ -17,7 +17,7 @@ export type ReplyQueueItem = Readonly<{
   imageAssessmentSummary: string | null;
   humanReplyReceived: boolean;
   websiteReview: Readonly<{
-    selector: string;
+    selector: string | null;
     reason: "high_risk" | "unresolved" | "realtime_required" | "provider_error" | "output_blocked" | "budget_blocked" | "system_failure";
     alertStatus: "not_created" | "pending" | "leased" | "retry_wait" | "sent" | "failed";
   }> | null;
@@ -38,6 +38,14 @@ type WebsiteReplyState = Readonly<{
   text: string;
   sourceReviewSelector: string;
   status: "editing" | "sending" | "sent" | "error";
+}>;
+
+type FeedbackAction = "accepted_unchanged" | "edited" | "rejected" | "copied" | "sent_confirmed";
+
+type FeedbackRequest = Readonly<{
+  attemptId: string;
+  action: FeedbackAction;
+  idempotencyKey: string;
 }>;
 
 const replyDateTime = new Intl.DateTimeFormat("en-NZ", {
@@ -81,12 +89,17 @@ export function ReplyAssistantClient({
   const [reviews, setReviews] = useState<Record<string, ReviewState>>({});
   const [websiteReplies, setWebsiteReplies] = useState<Record<string, WebsiteReplyState>>({});
   const [busy, setBusy] = useState<string | null>(null);
+  const [feedbackRequests, setFeedbackRequests] = useState<Record<string, FeedbackRequest>>({});
+  const [feedbackErrors, setFeedbackErrors] = useState<Record<string, string>>({});
+  const [feedbackCompletions, setFeedbackCompletions] = useState<Record<string, FeedbackAction>>({});
   const [visibleCounts, setVisibleCounts] = useState<Record<"all" | "website" | "facebook", number>>({
     all: CONVERSATION_BATCH_SIZE,
     website: CONVERSATION_BATCH_SIZE,
     facebook: CONVERSATION_BATCH_SIZE,
   });
   const feedbackSequence = useRef(0);
+  const feedbackRetryKeys = useRef(new Map<string, string>());
+  const feedbackInFlight = useRef(new Set<string>());
   const websiteReplyInFlight = useRef(new Set<string>());
   const selectedCardRef = useRef<HTMLElement | null>(null);
 
@@ -142,15 +155,51 @@ export function ReplyAssistantClient({
     setReviews((current) => ({ ...current, [item.messageId]: next }));
   }
 
-  async function feedback(item: ReplyQueueItem, action: string, text: string | null, reasonCode: string | null) {
-    if (!item.latestAttemptId) return;
-    feedbackSequence.current += 1;
-    await jsonRequest(`/api/reply-assistant/drafts/${item.latestAttemptId}/feedback`, {
-      action,
-      humanFinalText: text,
-      reasonCode,
-      idempotencyKey: `${action}-${feedbackSequence.current}`,
+  function setFeedbackError(messageId: string, message: string | null) {
+    setFeedbackErrors((errors) => {
+      if (message === null) {
+        const remaining = { ...errors };
+        delete remaining[messageId];
+        return remaining;
+      }
+      return { ...errors, [messageId]: message };
     });
+  }
+
+  async function feedback(item: ReplyQueueItem, action: FeedbackAction, text: string | null, reasonCode: string | null) {
+    if (!item.latestAttemptId) return false;
+    const intent = `${item.latestAttemptId}:${action}`;
+    if (feedbackInFlight.current.has(intent)) return false;
+    const idempotencyKey = feedbackRetryKeys.current.get(intent) ?? `${action}-${++feedbackSequence.current}`;
+    feedbackRetryKeys.current.set(intent, idempotencyKey);
+    feedbackInFlight.current.add(intent);
+    setFeedbackRequests((requests) => ({
+      ...requests,
+      [item.messageId]: { attemptId: item.latestAttemptId!, action, idempotencyKey },
+    }));
+    setFeedbackError(item.messageId, null);
+    try {
+      await jsonRequest(`/api/reply-assistant/drafts/${item.latestAttemptId}/feedback`, {
+        action,
+        humanFinalText: text,
+        reasonCode,
+        idempotencyKey,
+      });
+      if (action === "copied") feedbackRetryKeys.current.delete(intent);
+      else setFeedbackCompletions((completions) => ({ ...completions, [item.messageId]: action }));
+      return true;
+    } catch {
+      setFeedbackError(item.messageId, "We could not save this review. Please try again.");
+      return false;
+    } finally {
+      feedbackInFlight.current.delete(intent);
+      setFeedbackRequests((requests) => {
+        if (!requests[item.messageId]) return requests;
+        const remaining = { ...requests };
+        delete remaining[item.messageId];
+        return remaining;
+      });
+    }
   }
 
   async function generate(item: ReplyQueueItem, regenerate = false) {
@@ -167,7 +216,7 @@ export function ReplyAssistantClient({
   }
 
   async function sendWebsiteReply(item: ReplyQueueItem, current: WebsiteReplyState) {
-    if (!item.websiteReview || websiteReplyInFlight.current.has(item.messageId)) return;
+    if (!item.websiteReview?.selector || websiteReplyInFlight.current.has(item.messageId)) return;
     const text = current.text.trim();
     if (!text) return;
     websiteReplyInFlight.current.add(item.messageId);
@@ -214,12 +263,20 @@ export function ReplyAssistantClient({
         const serverChanged = current.sourceAttemptId !== item.latestAttemptId;
         const approved = !serverChanged && (current.mode === "accepted" || current.mode === "edited");
         const locallyEditing = current.mode === "editing";
+        const feedbackPending = feedbackRequests[item.messageId] !== undefined;
+        const feedbackCompletion = feedbackCompletions[item.messageId] ?? null;
+        const outcomeCompleted = feedbackCompletion === "accepted_unchanged"
+          || feedbackCompletion === "edited"
+          || feedbackCompletion === "rejected";
+        const feedbackError = feedbackErrors[item.messageId] ?? null;
+        const selected = selectedReviewSelector !== null
+          && item.websiteReview?.selector === selectedReviewSelector;
         return (
           <article
             className={styles.message}
             key={item.messageId}
-            data-selected={item.websiteReview?.selector === selectedReviewSelector}
-            ref={item.websiteReview?.selector === selectedReviewSelector ? selectedCardRef : undefined}
+            data-selected={selected}
+            ref={selected ? selectedCardRef : undefined}
           >
             <header>
               <time>{formatReplyReceivedAt(item.receivedAt)}</time>
@@ -261,6 +318,7 @@ export function ReplyAssistantClient({
               item.humanReplyReceived ? (
                 <div className={styles.blocked}>Human website reply sent. Review resolved.</div>
               ) : item.websiteReview ? (
+                item.websiteReview.selector ? (
                 <div className={styles.websiteReply}>
                   <label htmlFor={`website-reply-${item.messageId}`}>Website reply</label>
                   <textarea
@@ -290,6 +348,9 @@ export function ReplyAssistantClient({
                     >Send website reply</button>
                   </div>
                 </div>
+                ) : (
+                  <div className={styles.blocked}>Website review action is preparing. Refresh shortly.</div>
+                )
               ) : (
                 <div className={styles.blocked}>No open website review.</div>
               )
@@ -320,33 +381,41 @@ export function ReplyAssistantClient({
                       : "Server state changed. Review the new draft before using it."}
                   </div>
                 ) : null}
+                {feedbackError ? <div className={styles.serverChanged} role="alert">{feedbackError}</div> : null}
                 <div className={styles.actions}>
                   {current.mode === "editing" ? (
-                    <button type="button" data-variant="primary" disabled={serverChanged} onClick={async () => {
-                      await feedback(item, "edited", current.text, "human_edit");
+                    <button type="button" data-variant="primary" disabled={serverChanged || feedbackPending || outcomeCompleted} onClick={async () => {
+                      if (!await feedback(item, "edited", current.text, "human_edit")) return;
                       update(item, { mode: "edited", text: current.text, sourceAttemptId: item.latestAttemptId });
                     }}>Accept edit</button>
                   ) : (
-                    <button type="button" onClick={() => update(item, {
+                    <button type="button" disabled={serverChanged || feedbackPending || outcomeCompleted} onClick={() => update(item, {
                       mode: "editing",
                       text: serverChanged ? item.draftText ?? "" : current.text,
                       sourceAttemptId: item.latestAttemptId,
                     })}>Edit</button>
                   )}
-                  <button type="button" data-variant="primary" disabled={serverChanged} onClick={async () => {
-                    await feedback(item, "accepted_unchanged", item.draftText, null);
+                  <button type="button" data-variant="primary" disabled={serverChanged || feedbackPending || outcomeCompleted} onClick={async () => {
+                    if (!await feedback(item, "accepted_unchanged", item.draftText, null)) return;
                     update(item, { mode: "accepted", text: item.draftText ?? "", sourceAttemptId: item.latestAttemptId });
                   }}>Accept unchanged</button>
-                  <button type="button" data-variant="danger" disabled={serverChanged} onClick={async () => {
-                    await feedback(item, "rejected", null, "human_rejected");
+                  <button type="button" data-variant="danger" disabled={serverChanged || feedbackPending || outcomeCompleted} onClick={async () => {
+                    if (!await feedback(item, "rejected", null, "human_rejected")) return;
                     update(item, { mode: "rejected", text: current.text, sourceAttemptId: item.latestAttemptId });
                   }}>Reject</button>
-                  <button type="button" disabled={busy === item.messageId || visualReviewRequired || serverChanged} onClick={() => void generate(item, true)}>Regenerate</button>
-                  <button type="button" disabled={!approved || serverChanged} onClick={async () => {
-                    await navigator.clipboard.writeText(current.text);
-                    await feedback(item, "copied", current.text, null);
+                  <button type="button" disabled={busy === item.messageId || feedbackPending || visualReviewRequired || serverChanged} onClick={() => void generate(item, true)}>Regenerate</button>
+                  <button type="button" disabled={!approved || serverChanged || feedbackPending} onClick={async () => {
+                    try {
+                      await navigator.clipboard.writeText(current.text);
+                    } catch {
+                      setFeedbackError(item.messageId, "The reply could not be copied. Please try again.");
+                      return;
+                    }
+                    if (!await feedback(item, "copied", current.text, null)) {
+                      setFeedbackError(item.messageId, "The text was copied, but its review event was not saved. Copy again to retry.");
+                    }
                   }}>Copy</button>
-                  <button type="button" disabled={!approved || serverChanged} onClick={() => void feedback(item, "sent_confirmed", current.text, null)}>Mark as manually sent</button>
+                  <button type="button" disabled={!approved || serverChanged || feedbackPending || feedbackCompletion === "sent_confirmed"} onClick={() => void feedback(item, "sent_confirmed", current.text, null)}>Mark as manually sent</button>
                 </div>
               </div>
             ) : (

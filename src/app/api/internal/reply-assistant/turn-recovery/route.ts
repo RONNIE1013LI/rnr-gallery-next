@@ -1,4 +1,5 @@
 import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
+import compiledKnowledge from "@/server/customer-service/knowledge/compiled-knowledge.json";
 import { createTurnRecoveryHandler } from "./route-handler";
 
 export const runtime = "nodejs";
@@ -12,6 +13,17 @@ async function handle(request: Request) {
   return createTurnRecoveryHandler({
     secret: customerService.config.turnRecoverySecret,
     runOnce: () => customerService.turnRecoveryRunner.runOnce(),
+    runMaintenance: async () => {
+      const now = new Date();
+      await customerService.repository.recoverDueHumanReplies({
+        now,
+        groupWindowMs: customerService.config.humanReplyGroupMs,
+        limit: 25,
+        knowledgeVersion: compiledKnowledge.knowledgeVersion,
+      });
+      await customerService.repository.refreshLearningCandidates();
+      await customerService.repository.refreshOpenWebsiteReviewSelectors({ now, limit: 100 });
+    },
   })(request);
 }
 

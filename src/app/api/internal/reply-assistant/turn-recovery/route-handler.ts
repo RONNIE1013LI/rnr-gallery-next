@@ -11,6 +11,7 @@ function authorized(header: string | null, secret: string) {
 export function createTurnRecoveryHandler(input: Readonly<{
   secret: string;
   runOnce(): Promise<CustomerTurnRecoveryResult>;
+  runMaintenance(): Promise<void>;
   maxTurns?: number;
 }>) {
   const maxTurns = Math.max(1, Math.min(25, input.maxTurns ?? 10));
@@ -27,6 +28,7 @@ export function createTurnRecoveryHandler(input: Readonly<{
       totals.cancelled += result.cancelled;
       if (result.claimed === 0) break;
     }
+    await input.runMaintenance();
     return Response.json(totals, { headers: { "cache-control": "no-store" } });
   };
 }

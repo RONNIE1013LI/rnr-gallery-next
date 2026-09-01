@@ -70,6 +70,7 @@ import {
 import { sanitizeWebsiteModelInput } from "../website/model-input-sanitizer";
 import {
   createWebsiteReviewSelectorRecord,
+  createWebsiteReviewSelectorRecordForExpiry,
   verifyWebsiteReviewSelector,
 } from "../website/review-selector";
 import { REVIEW_ALERT_AUTOMATIC_RECOVERY_MAX_AGE_MS } from "../website/review-alert-policy";
@@ -750,8 +751,40 @@ export function createDrizzleCustomerServiceRepository(
     });
   }
 
-  function selectorForReview(review: Readonly<{ id: string; generation: number }>, issuedAt = now()) {
-    return selectorRecordForReview(review, issuedAt)?.selector ?? null;
+  function selectorRecordForReviewExpiry(review: Readonly<{
+    id: string;
+    generation: number;
+  }>, expiresAt: Date) {
+    if (reviewSelectorSecret.length < 32) return null;
+    try {
+      const record = createWebsiteReviewSelectorRecordForExpiry({
+        reviewId: review.id,
+        generation: review.generation,
+        secret: reviewSelectorSecret,
+        expiresAt,
+      });
+      return Object.freeze({
+        ...record,
+        selectorHash: createHash("sha256").update(record.selector).digest("hex"),
+      });
+    } catch {
+      return null;
+    }
+  }
+
+  async function persistReviewSelector(transaction: Transaction, review: Readonly<{
+    id: string;
+    generation: number;
+  }>, issuedAt: Date) {
+    const record = selectorRecordForReview(review, issuedAt);
+    if (!record) return false;
+    const inserted = await transaction.insert(customerServiceReviewSelectors).values({
+      humanReviewId: review.id,
+      generation: review.generation,
+      selectorHash: record.selectorHash,
+      expiresAt: record.expiresAt,
+    }).onConflictDoNothing().returning({ id: customerServiceReviewSelectors.id });
+    return inserted.length === 1;
   }
 
   function selectorMatchesReview(selector: string, review: Readonly<{
@@ -1064,39 +1097,30 @@ export function createDrizzleCustomerServiceRepository(
           eq(customerServiceHumanReviews.status, "open"),
         ))
       : [];
-    const selectorRecords = reviewRows.flatMap((review) => {
-      const record = selectorRecordForReview(review, selectorNow);
-      return record ? [{ review, record }] : [];
-    });
-    const persistedSelectorRecords = selectorRecords.length
-      ? await database.insert(customerServiceReviewSelectors).values(selectorRecords.map(({ review, record }) => ({
-        humanReviewId: review.id,
-        generation: review.generation,
-        selectorHash: record.selectorHash,
-        expiresAt: record.expiresAt,
-      }))).onConflictDoUpdate({
-        target: [
-          customerServiceReviewSelectors.humanReviewId,
-          customerServiceReviewSelectors.generation,
-          customerServiceReviewSelectors.expiresAt,
-        ],
-        set: { selectorHash: sql`excluded.selector_hash` },
-      }).returning({
+    const selectorRows = reviewRows.length
+      ? await database.select({
         humanReviewId: customerServiceReviewSelectors.humanReviewId,
+        generation: customerServiceReviewSelectors.generation,
         selectorHash: customerServiceReviewSelectors.selectorHash,
-      })
+        expiresAt: customerServiceReviewSelectors.expiresAt,
+      }).from(customerServiceReviewSelectors).where(and(
+        inArray(customerServiceReviewSelectors.humanReviewId, reviewRows.map((review) => review.id)),
+        gt(customerServiceReviewSelectors.expiresAt, selectorNow),
+      )).orderBy(desc(customerServiceReviewSelectors.expiresAt))
       : [];
-    const persistedHashByReview = new Map(persistedSelectorRecords.map((record) => [
-      record.humanReviewId,
-      record.selectorHash,
-    ]));
-    // Secret rotation must be coordinated across serving processes. The returned-row check
-    // prevents this process from emitting a selector unless its current digest was persisted.
-    const selectorByReview = new Map(selectorRecords.flatMap(({ review, record }) => (
-      persistedHashByReview.get(review.id) === record.selectorHash
-        ? [[review.id, record.selector] as const]
-        : []
-    )));
+    const reviewById = new Map(reviewRows.map((review) => [review.id, review]));
+    const selectorByReview = new Map<string, string>();
+    for (const row of selectorRows) {
+      if (selectorByReview.has(row.humanReviewId)) continue;
+      const review = reviewById.get(row.humanReviewId);
+      if (!review || review.generation !== row.generation) continue;
+      const record = selectorRecordForReviewExpiry(review, row.expiresAt);
+      if (
+        record
+        && record.selectorHash === row.selectorHash
+        && selectorMatchesReview(record.selector, review, selectorNow)
+      ) selectorByReview.set(review.id, record.selector);
+    }
     const reviewByConversation = new Map(reviewRows.map((review) => [review.conversationId, review]));
     const timelineRows = conversationIds.length
       ? await database.execute<{
@@ -1175,7 +1199,7 @@ export function createDrizzleCustomerServiceRepository(
           ? reviewByConversation.get(item.conversationId)
           : undefined;
         const selector = websiteReview ? selectorByReview.get(websiteReview.id) ?? null : null;
-        const websiteReviewDto: SafeQueuePage["items"][number]["websiteReview"] = websiteReview && selector ? {
+        const websiteReviewDto: SafeQueuePage["items"][number]["websiteReview"] = websiteReview ? {
           selector,
           reason: websiteReview.reason,
           alertStatus: websiteReview.alertStatus ?? "not_created",
@@ -1217,19 +1241,14 @@ export function createDrizzleCustomerServiceRepository(
           eq(customerServiceHumanReviews.status, "open"),
           eq(customerServiceHumanReviews.deepLinkTokenHash, input.tokenHash),
           gt(customerServiceHumanReviews.deepLinkExpiresAt, input.now),
-        ))
+      ))
         .limit(1);
       if (!review?.messageId) return null;
-      const selector = selectorForReview(review, input.now);
-      if (!selector) return null;
       const item = (await loadQueuePage(1, [review.messageId], input.now)).items[0];
-      if (!item || item.channel !== "website" || !item.websiteReview) return null;
+      if (!item || item.channel !== "website" || !item.websiteReview?.selector) return null;
       return {
-        selector,
-        item: {
-          ...item,
-          websiteReview: { ...item.websiteReview, selector },
-        },
+        selector: item.websiteReview.selector,
+        item,
       };
     },
 
@@ -2380,6 +2399,8 @@ export function createDrizzleCustomerServiceRepository(
             updatedAt: input.now,
           }).where(eq(customerServiceReviewAlertOutbox.humanReviewId, existing.id));
         }
+
+        await persistReviewSelector(transaction, review, input.now);
 
         await transaction.insert(customerServiceWebsiteAssistantMessages).values({
           conversationId: turn.conversationId,
@@ -4510,6 +4531,40 @@ export function createDrizzleCustomerServiceRepository(
         return createdCount;
       });
       return { checkpoint, created };
+    },
+
+    async refreshOpenWebsiteReviewSelectors(input) {
+      const limit = Math.max(1, Math.min(100, input.limit));
+      const currentWindow = selectorRecordForReview({
+        id: "00000000-0000-4000-8000-000000000000",
+        generation: 1,
+      }, input.now);
+      if (!currentWindow) return { selected: 0, persisted: 0 };
+      const reviews = await database.select({
+        id: customerServiceHumanReviews.id,
+        generation: customerServiceHumanReviews.generation,
+      }).from(customerServiceHumanReviews)
+        .leftJoin(customerServiceReviewSelectors, and(
+          eq(customerServiceReviewSelectors.humanReviewId, customerServiceHumanReviews.id),
+          eq(customerServiceReviewSelectors.generation, customerServiceHumanReviews.generation),
+          eq(customerServiceReviewSelectors.expiresAt, currentWindow.expiresAt),
+        ))
+        .where(and(
+          eq(customerServiceHumanReviews.channel, "website"),
+          eq(customerServiceHumanReviews.status, "open"),
+          isNull(customerServiceReviewSelectors.id),
+        ))
+        .orderBy(asc(customerServiceHumanReviews.openedAt), asc(customerServiceHumanReviews.id))
+        .limit(limit);
+      if (!reviews.length) return { selected: 0, persisted: 0 };
+      const persisted = await database.transaction(async (transaction) => {
+        let count = 0;
+        for (const review of reviews) {
+          if (await persistReviewSelector(transaction, review, input.now)) count += 1;
+        }
+        return count;
+      });
+      return { selected: reviews.length, persisted };
     },
 
     async decideLearningCandidate(input) {

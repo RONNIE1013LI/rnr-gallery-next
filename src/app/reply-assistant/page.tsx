@@ -37,15 +37,6 @@ export default async function ReplyAssistantPage({
     }
   }
   const emptyQueue: SafeQueuePage = { items: [] };
-  if (runtime) {
-    await runtime.repository.recoverDueHumanReplies({
-      now: new Date(),
-      groupWindowMs: config.humanReplyGroupMs,
-      limit: 25,
-      knowledgeVersion: compiledKnowledge.knowledgeVersion,
-    });
-    await runtime.repository.refreshLearningCandidates();
-  }
   const initialCursor = runtime
     ? await runtime.repository.getReplyAssistantUiCursor()
     : encodeReplyAssistantCursor(0);

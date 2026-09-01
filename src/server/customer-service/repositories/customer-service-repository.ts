@@ -203,7 +203,7 @@ export type SafeQueuePage = Readonly<{
     imageAssessmentSummary: string | null;
     humanReplyReceived: boolean;
     websiteReview: Readonly<{
-      selector: string;
+      selector: string | null;
       reason: "high_risk" | "unresolved" | "realtime_required" | "provider_error" | "output_blocked" | "budget_blocked" | "system_failure";
       alertStatus: "not_created" | "pending" | "leased" | "retry_wait" | "sent" | "failed";
     }> | null;
@@ -597,6 +597,13 @@ export interface CustomerServiceRepository {
   refreshLearningCandidates(input?: Readonly<{ minimumMatchedReplies?: number }>): Promise<
     Readonly<{ checkpoint: number; created: number }>
   >;
+  refreshOpenWebsiteReviewSelectors(input: Readonly<{
+    now: Date;
+    limit: number;
+  }>): Promise<Readonly<{
+    selected: number;
+    persisted: number;
+  }>>;
   createCaseMemoryCandidate(input: Readonly<{
     matchId: string;
     customerSituation: string;

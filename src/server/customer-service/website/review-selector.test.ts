@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   createWebsiteReviewSelector,
+  createWebsiteReviewSelectorRecord,
+  createWebsiteReviewSelectorRecordForExpiry,
   verifyWebsiteReviewSelector,
 } from "./review-selector";
 
@@ -118,5 +120,24 @@ describe("website review selector", () => {
       secret,
       now: day31,
     })).toBe(true);
+  });
+
+  it("reconstructs only a canonical persisted selector window", () => {
+    const issued = createWebsiteReviewSelectorRecord({
+      ...review,
+      secret,
+      now: new Date("2026-08-21T12:00:00.000Z"),
+    });
+
+    expect(createWebsiteReviewSelectorRecordForExpiry({
+      ...review,
+      secret,
+      expiresAt: issued.expiresAt,
+    })).toEqual(issued);
+    expect(() => createWebsiteReviewSelectorRecordForExpiry({
+      ...review,
+      secret,
+      expiresAt: new Date(issued.expiresAt.getTime() - 1),
+    })).toThrow("website_review_selector_input_invalid");
   });
 });

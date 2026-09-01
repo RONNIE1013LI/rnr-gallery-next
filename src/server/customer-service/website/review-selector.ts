@@ -41,6 +41,25 @@ export function createWebsiteReviewSelectorRecord(input: ReviewIdentity & Readon
   });
 }
 
+export function createWebsiteReviewSelectorRecordForExpiry(input: ReviewIdentity & Readonly<{ expiresAt: Date }>) {
+  const expiresAtMs = input.expiresAt.getTime();
+  if (
+    !input.reviewId
+    || !Number.isSafeInteger(input.generation)
+    || input.generation < 1
+    || input.secret.length < 32
+    || !Number.isSafeInteger(expiresAtMs)
+    || expiresAtMs < selectorLifetimeMs
+    || (expiresAtMs - selectorLifetimeMs) % selectorWindowMs !== 0
+  ) {
+    throw new Error("website_review_selector_input_invalid");
+  }
+  return Object.freeze({
+    selector: canonicalSelector(input, expiresAtMs),
+    expiresAt: new Date(expiresAtMs),
+  });
+}
+
 export function createWebsiteReviewSelector(input: ReviewIdentity & Readonly<{ now: Date }>) {
   return createWebsiteReviewSelectorRecord(input).selector;
 }

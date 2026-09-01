@@ -1,6 +1,6 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { formatReplyReceivedAt, ReplyAssistantClient } from "./reply-assistant-client";
+import { formatReplyReceivedAt, ReplyAssistantClient, type ReplyQueueItem } from "./reply-assistant-client";
 
 const item = {
   messageId: "11111111-1111-4111-8111-111111111111",
@@ -42,6 +42,64 @@ describe("ReplyAssistantClient", () => {
     fireEvent.click(copy);
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(item.draftText));
     expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url)).join("\n")).not.toMatch(/\/send|graph\.facebook/i);
+  });
+
+  it("sends one feedback request when acceptance is double-clicked before the response settles", async () => {
+    let release!: () => void;
+    const pending = new Promise<Response>((resolve) => { release = () => resolve(new Response(JSON.stringify({ recorded: true }), { status: 201 })); });
+    vi.stubGlobal("fetch", vi.fn(() => pending));
+    render(<ReplyAssistantClient initialItems={[item]} />);
+
+    const accept = screen.getByRole("button", { name: "Accept unchanged" });
+    fireEvent.click(accept);
+    fireEvent.click(accept);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(accept).toBeDisabled();
+    release();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled());
+  });
+
+  it("shows failed feedback and reuses its idempotency key on retry", async () => {
+    const bodies: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url, init) => {
+      bodies.push(JSON.parse(String(init?.body)));
+      return new Response(null, { status: 503 });
+    }));
+    render(<ReplyAssistantClient initialItems={[item]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept unchanged" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("We could not save this review. Please try again."));
+    fireEvent.click(screen.getByRole("button", { name: "Accept unchanged" }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+
+    expect(bodies).toHaveLength(2);
+    expect((bodies[0] as { idempotencyKey: string }).idempotencyKey)
+      .toBe((bodies[1] as { idempotencyKey: string }).idempotencyKey);
+    expect(screen.getByRole("button", { name: "Copy" })).toBeDisabled();
+  });
+
+  it("does not submit feedback when copying the approved reply fails", async () => {
+    render(<ReplyAssistantClient initialItems={[item]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Accept unchanged" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled());
+    vi.mocked(fetch).mockClear();
+    Object.assign(navigator, { clipboard: { writeText: vi.fn(async () => { throw new Error("clipboard_denied"); }) } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("The reply could not be copied. Please try again."));
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("disables a completed terminal feedback action", async () => {
+    render(<ReplyAssistantClient initialItems={[item]} />);
+    const accept = screen.getByRole("button", { name: "Accept unchanged" });
+    fireEvent.click(accept);
+    await waitFor(() => expect(accept).toBeDisabled());
+    fireEvent.click(accept);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
   });
 
   it("supports an edited human final reply", async () => {
@@ -242,6 +300,25 @@ describe("ReplyAssistantClient", () => {
     expect(screen.queryByText("Internal AI draft that was never published")).not.toBeInTheDocument();
     expect(screen.getByLabelText("Website reply")).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Copy" })).not.toBeInTheDocument();
+  });
+
+  it("shows an open website review without offering send until its persisted selector is available", () => {
+    const unavailableReview = {
+      ...item,
+      channel: "website" as const,
+      latestAttemptId: null,
+      draftText: null,
+      gateResult: null,
+      websiteReview: {
+        selector: null,
+        reason: "high_risk" as const,
+        alertStatus: "pending" as const,
+      },
+    } as ReplyQueueItem;
+    render(<ReplyAssistantClient initialItems={[unavailableReview]} />);
+
+    expect(screen.getByText("Website review action is preparing. Refresh shortly.")).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Send website reply" })).not.toBeInTheDocument();
   });
 
   it("sends only safe reply text and the server-issued website review selector", async () => {

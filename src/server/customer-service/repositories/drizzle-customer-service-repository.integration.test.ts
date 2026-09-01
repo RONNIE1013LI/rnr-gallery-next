@@ -878,6 +878,17 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
     expect(secondReview).toMatchObject({ status: "reused", generation: 1 });
     expect(secondReview).toMatchObject({ reviewId: (firstReview as { reviewId: string }).reviewId });
+    await expect(database.select({
+      humanReviewId: customerServiceReviewSelectors.humanReviewId,
+      generation: customerServiceReviewSelectors.generation,
+      selectorHash: customerServiceReviewSelectors.selectorHash,
+    }).from(customerServiceReviewSelectors)).resolves.toEqual([
+      expect.objectContaining({
+        humanReviewId: (firstReview as { reviewId: string }).reviewId,
+        generation: 1,
+        selectorHash: expect.stringMatching(/^[a-f0-9]{64}$/),
+      }),
+    ]);
     const alertDedupe = await database.execute(sql`
       select deduplicated_count from customer_service_review_alert_outbox
     `);
@@ -1184,6 +1195,97 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
   });
 
+  it("persists the website selector while opening a review and keeps queue, live update, and deep link reads pure", async () => {
+    const claimed = await claimWebsiteTurn({
+      sessionHash: "91".repeat(32),
+      networkHash: "92".repeat(32),
+      messageHash: "93".repeat(32),
+    });
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: claimed.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "knowledge-v1",
+    });
+    const reviewId = "00000000-0000-4000-8000-000000000191";
+    const deepLinkSecret = "task-13-read-purity-link-secret-at-least-32-bytes";
+    const rawToken = createReviewAlertToken({ reviewId, secret: deepLinkSecret });
+    await repository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-21T00:00:02.000Z"),
+      knowledgeVersion: "knowledge-v1",
+      reviewAlert: {
+        reviewId,
+        deepLinkTokenHash: hashReviewAlertToken(rawToken),
+        deepLinkExpiresAt: new Date("2026-08-28T00:00:02.000Z"),
+        idempotencyKey: `review-alert:${reviewId}`,
+      },
+    });
+
+    const before = await database.select({
+      humanReviewId: customerServiceReviewSelectors.humanReviewId,
+      generation: customerServiceReviewSelectors.generation,
+      selectorHash: customerServiceReviewSelectors.selectorHash,
+      expiresAt: customerServiceReviewSelectors.expiresAt,
+    }).from(customerServiceReviewSelectors);
+    expect(before).toHaveLength(1);
+
+    const cursor = await repository.getReplyAssistantUiCursor();
+    const queue = await repository.listQueue(100);
+    await repository.listReplyAssistantUpdates(null, 250);
+    const resolved = await repository.resolveWebsiteReviewDeepLink({
+      tokenHash: hashReviewAlertToken(rawToken),
+      now: new Date("2026-08-22T00:00:00.000Z"),
+    });
+    const after = await database.select({
+      humanReviewId: customerServiceReviewSelectors.humanReviewId,
+      generation: customerServiceReviewSelectors.generation,
+      selectorHash: customerServiceReviewSelectors.selectorHash,
+      expiresAt: customerServiceReviewSelectors.expiresAt,
+    }).from(customerServiceReviewSelectors);
+
+    expect(queue.items[0]?.websiteReview?.selector).toEqual(expect.stringMatching(/^wrs1\.[a-z0-9]+\.[A-Za-z0-9_-]{43}$/));
+    expect(resolved?.item.messageId).toBe(claimed.messageId);
+    expect(resolved?.selector).toBe(queue.items[0]?.websiteReview?.selector);
+    expect(after).toEqual(before);
+    expect(await repository.getReplyAssistantUiCursor()).toBe(cursor);
+  });
+
+  it("bounds insert-only selector maintenance and advances beyond an already seeded batch", async () => {
+    await openTask13Review({
+      sessionHash: "94".repeat(32),
+      networkHash: "95".repeat(32),
+      messageHash: "96".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000194",
+    });
+    await openTask13Review({
+      sessionHash: "97".repeat(32),
+      networkHash: "98".repeat(32),
+      messageHash: "99".repeat(32),
+      reviewId: "00000000-0000-4000-8000-000000000197",
+    });
+    await database.delete(customerServiceReviewSelectors);
+    const now = new Date("2026-08-22T00:00:00.000Z");
+
+    await expect(repository.refreshOpenWebsiteReviewSelectors({ now, limit: 1 }))
+      .resolves.toEqual({ selected: 1, persisted: 1 });
+    await expect(repository.refreshOpenWebsiteReviewSelectors({ now, limit: 1 }))
+      .resolves.toEqual({ selected: 1, persisted: 1 });
+    await expect(repository.refreshOpenWebsiteReviewSelectors({ now, limit: 1 }))
+      .resolves.toEqual({ selected: 0, persisted: 0 });
+    await expect(repository.listQueue(100)).resolves.toMatchObject({
+      items: expect.arrayContaining([
+        expect.objectContaining({ websiteReview: expect.objectContaining({ selector: expect.any(String) }) }),
+      ]),
+    });
+  });
+
   it("renews a bounded selector for an open day-31 review and rejects textual aliases generically", async () => {
     const claimed = await claimWebsiteTurn({
       sessionHash: "84".repeat(32),
@@ -1225,6 +1327,8 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
 
     selectorNow = new Date("2026-09-21T12:00:00.000Z");
+    await expect(timedRepository.refreshOpenWebsiteReviewSelectors({ now: selectorNow, limit: 10 }))
+      .resolves.toEqual({ selected: 1, persisted: 1 });
     const renewed = (await timedRepository.listQueue(100)).items[0].websiteReview?.selector;
     if (!renewed) throw new Error("expected renewed website review selector");
     expect(renewed).not.toBe(original);
@@ -1250,7 +1354,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     })).resolves.toEqual({ status: "sent" });
   });
 
-  it("atomically replaces a same-window old-secret selector and emits only the persisted current selector", async () => {
+  it("fails closed on a same-window old-secret selector until protected maintenance creates a new window", async () => {
     const claimed = await claimWebsiteTurn({
       sessionHash: "8a".repeat(32),
       networkHash: "8b".repeat(32),
@@ -1288,41 +1392,40 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       reviewSelectorSecret: "task-13-current-review-selector-secret-at-least-32-bytes",
       now: () => issuanceTime,
     });
-    const competingCurrentRepository = createDrizzleCustomerServiceRepository(drizzle(competingPool), {
-      reviewSelectorSecret: "task-13-current-review-selector-secret-at-least-32-bytes",
-      now: () => issuanceTime,
+    await oldRepository.openWebsiteHumanReview({
+      turnId: claimed.turnId,
+      leaseToken: claimed.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: issuanceTime,
+      knowledgeVersion: "knowledge-v1",
     });
     const oldSelector = (await oldRepository.listQueue(100)).items[0].websiteReview?.selector;
     if (!oldSelector) throw new Error("expected old-secret selector");
 
-    const [firstQueue, secondQueue] = await Promise.all([
-      currentRepository.listQueue(100),
-      competingCurrentRepository.listQueue(100),
-    ]);
-    const firstCurrentSelector = firstQueue.items[0].websiteReview?.selector;
-    const secondCurrentSelector = secondQueue.items[0].websiteReview?.selector;
-    if (!firstCurrentSelector || !secondCurrentSelector) throw new Error("expected current-secret selectors");
-
-    expect(firstCurrentSelector).toBe(secondCurrentSelector);
-    expect(firstCurrentSelector).not.toBe(oldSelector);
-    const selectors = await database.select().from(customerServiceReviewSelectors);
-    expect(selectors).toHaveLength(1);
-    expect(selectors[0]).toMatchObject({
-      selectorHash: createHash("sha256").update(firstCurrentSelector).digest("hex"),
+    await expect(currentRepository.listQueue(100)).resolves.toMatchObject({
+      items: [{ websiteReview: { selector: null } }],
     });
-    expect(JSON.stringify(firstQueue)).not.toContain(selectors[0].humanReviewId);
-    expect(JSON.stringify(selectors[0])).not.toContain(firstCurrentSelector);
-    await expect(oldRepository.answerWebsiteReview({
+    await expect(currentRepository.answerWebsiteReview({
       reviewSelector: oldSelector,
       text: "An old deployment selector must fail closed.",
       actorUserId: "task-13-selector-rotation-staff",
       now: issuanceTime,
     })).resolves.toEqual({ status: "unavailable" });
+
+    const nextWindow = new Date("2026-08-23T12:00:00.000Z");
+    await expect(currentRepository.refreshOpenWebsiteReviewSelectors({ now: nextWindow, limit: 10 }))
+      .resolves.toEqual({ selected: 1, persisted: 1 });
+    const firstCurrentSelector = (await currentRepository.listQueue(100)).items[0].websiteReview?.selector;
+    if (!firstCurrentSelector) throw new Error("expected current-secret selector after maintenance");
+    const selectors = await database.select().from(customerServiceReviewSelectors);
+    expect(selectors).toHaveLength(3);
+    expect(JSON.stringify(selectors)).not.toContain(firstCurrentSelector);
     await expect(currentRepository.answerWebsiteReview({
       reviewSelector: firstCurrentSelector,
       text: "The coordinated current-secret selector remains usable.",
       actorUserId: "task-13-selector-rotation-staff",
-      now: issuanceTime,
+      now: nextWindow,
     })).resolves.toEqual({ status: "sent" });
   });
 
