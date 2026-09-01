@@ -92,6 +92,30 @@ describe("ReplyAssistantClient", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("warns when copied feedback fails and reuses its copied-event idempotency key on retry", async () => {
+    const copiedBodies: Array<{ idempotencyKey: string }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url, init) => {
+      const body = JSON.parse(String(init?.body)) as { action: string; idempotencyKey: string };
+      if (body.action === "copied") {
+        copiedBodies.push(body);
+        return new Response(null, { status: 503 });
+      }
+      return new Response(JSON.stringify({ recorded: true }), { status: 201 });
+    }));
+    render(<ReplyAssistantClient initialItems={[item]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Accept unchanged" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled());
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    await waitFor(() => expect(screen.getByRole("alert"))
+      .toHaveTextContent("The text was copied, but its review event was not saved. Copy again to retry."));
+    expect(navigator.clipboard.writeText).toHaveBeenCalledWith(item.draftText);
+
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    await waitFor(() => expect(copiedBodies).toHaveLength(2));
+    expect(copiedBodies[1]?.idempotencyKey).toBe(copiedBodies[0]?.idempotencyKey);
+  });
+
   it("disables a completed terminal feedback action", async () => {
     render(<ReplyAssistantClient initialItems={[item]} />);
     const accept = screen.getByRole("button", { name: "Accept unchanged" });
