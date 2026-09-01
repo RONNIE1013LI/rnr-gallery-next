@@ -857,6 +857,222 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
   });
 
+  it("reconciles pre-existing linked open reviews to one active review and claimable alert", async () => {
+    const identityKeyHash = "e".repeat(64);
+    const loser = await claimWebsiteTurn({
+      sessionHash: "31".repeat(32),
+      networkHash: "32".repeat(32),
+      messageHash: "33".repeat(32),
+      text: "Older linked review",
+      receivedAt: new Date("2026-08-19T10:00:00.000Z"),
+    });
+    const winner = await ingestAndClaimWebsiteTurn({
+      sessionHash: "34".repeat(32),
+      networkHash: "35".repeat(32),
+      messageHash: "36".repeat(32),
+      text: "Newer linked review",
+      receivedAt: new Date("2026-08-19T10:10:00.000Z"),
+    });
+    const turns = await database.select({
+      id: customerServiceTurns.id,
+      conversationId: customerServiceTurns.conversationId,
+    }).from(customerServiceTurns).where(inArray(customerServiceTurns.id, [loser.turnId, winner.turnId]));
+    const conversationByTurn = new Map(turns.map((turn) => [turn.id, turn.conversationId]));
+    await database.update(customerServiceConversationIdentities).set({
+      identityKind: "website_stable_visitor",
+      identityKeyHash,
+    }).where(inArray(customerServiceConversationIdentities.conversationId, [
+      conversationByTurn.get(loser.turnId)!,
+      conversationByTurn.get(winner.turnId)!,
+    ]));
+    const loserReviewId = "00000000-0000-4000-8000-000000001121";
+    const winnerReviewId = "00000000-0000-4000-8000-000000001122";
+    const loserTokenHash = sourceHash("task-11-duplicate-loser-deep-link");
+    await database.insert(customerServiceHumanReviews).values([{
+      id: loserReviewId,
+      conversationId: conversationByTurn.get(loser.turnId)!,
+      triggerTurnId: loser.turnId,
+      generation: 1,
+      reason: "unresolved",
+      status: "open",
+      redactedSummary: "Older linked review",
+      deepLinkTokenHash: loserTokenHash,
+      deepLinkExpiresAt: new Date("2026-08-26T10:00:00.000Z"),
+      openedAt: new Date("2026-08-19T10:00:00.000Z"),
+      createdAt: new Date("2026-08-19T10:00:00.000Z"),
+    }, {
+      id: winnerReviewId,
+      conversationId: conversationByTurn.get(winner.turnId)!,
+      triggerTurnId: winner.turnId,
+      generation: 1,
+      reason: "high_risk",
+      status: "open",
+      redactedSummary: "Newer linked review",
+      deepLinkTokenHash: sourceHash("task-11-duplicate-winner-deep-link"),
+      deepLinkExpiresAt: new Date("2026-08-26T10:10:00.000Z"),
+      openedAt: new Date("2026-08-19T10:10:00.000Z"),
+      createdAt: new Date("2026-08-19T10:10:00.000Z"),
+    }]);
+    await database.insert(customerServiceReviewAlertOutbox).values([{
+      humanReviewId: loserReviewId,
+      status: "pending",
+      idempotencyKey: "task-11-duplicate-loser-alert",
+      nextAttemptAt: new Date("2026-08-19T10:00:00.000Z"),
+      createdAt: new Date("2026-08-19T10:00:00.000Z"),
+    }, {
+      humanReviewId: winnerReviewId,
+      status: "pending",
+      idempotencyKey: "task-11-duplicate-winner-alert",
+      nextAttemptAt: new Date("2026-08-19T10:10:00.000Z"),
+      createdAt: new Date("2026-08-19T10:10:00.000Z"),
+    }]);
+    await repository.refreshOpenWebsiteReviewSelectors({
+      now: new Date("2026-08-19T10:10:01.000Z"),
+      limit: 100,
+    });
+    const inconsistentPage = await repository.listQueue(100);
+    expect(inconsistentPage.items).toHaveLength(1);
+    expect(inconsistentPage.items[0]?.websiteReview).toBeNull();
+    await expect(repository.resolveWebsiteReviewDeepLink({
+      tokenHash: loserTokenHash,
+      now: new Date("2026-08-19T10:10:01.000Z"),
+    })).resolves.toBeNull();
+    await expect(repository.claimDueReviewAlert({
+      now: new Date("2026-08-19T10:10:01.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T10:15:01.000Z"),
+    })).resolves.toBeNull();
+    const attemptId = await repository.createGateBlockedAttempt({
+      messageId: winner.messageId,
+      trigger: "webhook_after",
+      intent: "refund",
+      riskLevel: "high",
+      gateResult: "high_risk",
+      gateReasons: ["high_risk_topic"],
+      knowledgeVersion: "task-11-v1",
+    });
+
+    const reused = await repository.openWebsiteHumanReview({
+      turnId: winner.turnId,
+      leaseToken: winner.leaseToken,
+      attemptId,
+      outcome: "gate_blocked",
+      now: new Date("2026-08-19T10:10:02.000Z"),
+      knowledgeVersion: "task-11-v1",
+      reviewAlert: {
+        reviewId: "00000000-0000-4000-8000-000000001123",
+        deepLinkTokenHash: sourceHash("task-11-unused-reconciled-token"),
+        deepLinkExpiresAt: new Date("2026-08-26T10:10:02.000Z"),
+        idempotencyKey: "task-11-unused-reconciled-alert",
+      },
+    });
+
+    expect(reused).toEqual({ status: "reused", reviewId: winnerReviewId, generation: 1 });
+    const reviews = await database.select().from(customerServiceHumanReviews)
+      .orderBy(asc(customerServiceHumanReviews.openedAt));
+    expect(reviews).toHaveLength(2);
+    expect(reviews[0]).toMatchObject({ id: loserReviewId, status: "resolved" });
+    expect(reviews[0]?.resolutionEventId).toEqual(expect.any(String));
+    expect(reviews[1]).toMatchObject({ id: winnerReviewId, status: "open" });
+    const outbox = await database.select().from(customerServiceReviewAlertOutbox)
+      .orderBy(asc(customerServiceReviewAlertOutbox.createdAt));
+    expect(outbox).toHaveLength(2);
+    expect(outbox[0]).toMatchObject({ humanReviewId: loserReviewId, status: "failed" });
+    expect(outbox[1]).toMatchObject({
+      humanReviewId: winnerReviewId,
+      status: "pending",
+      deduplicatedCount: 1,
+    });
+    await expect(repository.resolveWebsiteReviewDeepLink({
+      tokenHash: loserTokenHash,
+      now: new Date("2026-08-19T10:10:03.000Z"),
+    })).resolves.toBeNull();
+    const claimed = await repository.claimDueReviewAlert({
+      now: new Date("2026-08-19T10:10:03.000Z"),
+      leaseExpiresAt: new Date("2026-08-19T10:15:03.000Z"),
+    });
+    expect(claimed?.humanReviewId).toBe(winnerReviewId);
+  });
+
+  it("uses one total order for equal-timestamp linked timeline events and unread state", async () => {
+    const sameReceivedAt = new Date("2026-09-01T08:00:00.000Z");
+    const staffFirstIdentity = "7".repeat(64);
+    const staffFirstCustomer = await createInboxFixtureConversation({
+      channel: "facebook",
+      marker: "same-time-staff-first-customer",
+      identityKind: "facebook_psid",
+      identityKeyHash: staffFirstIdentity,
+      messages: [{ text: "Customer after staff", at: sameReceivedAt, eligible: true }],
+    });
+    const staffFirstContext = await createInboxFixtureConversation({
+      channel: "facebook",
+      marker: "same-time-staff-first-context",
+      identityKind: "facebook_psid",
+      identityKeyHash: staffFirstIdentity,
+      messages: [{ text: "Earlier context A", at: new Date("2026-09-01T07:00:00.000Z"), eligible: true }],
+    });
+    await database.update(customerServiceConversationEvents).set({
+      createdAt: new Date("2026-09-01T08:00:00.002Z"),
+    }).where(eq(customerServiceConversationEvents.legacyMessageId, staffFirstCustomer.messages[0].messageId));
+    await database.insert(customerServiceConversationEvents).values({
+      id: "ffffffff-ffff-4fff-8fff-ffffffffffff",
+      conversationId: staffFirstContext.conversationId,
+      channel: "facebook",
+      externalMessageKeyHash: sourceHash("same-time-staff-first"),
+      role: "staff",
+      eventType: "human_outbound",
+      body: "Staff before customer",
+      receivedAt: sameReceivedAt,
+      createdAt: new Date("2026-09-01T08:00:00.001Z"),
+    });
+
+    const customerFirstIdentity = "8".repeat(64);
+    const customerFirstCustomer = await createInboxFixtureConversation({
+      channel: "facebook",
+      marker: "same-time-customer-first-customer",
+      identityKind: "facebook_psid",
+      identityKeyHash: customerFirstIdentity,
+      messages: [{ text: "Customer before staff", at: sameReceivedAt, eligible: true }],
+    });
+    const customerFirstContext = await createInboxFixtureConversation({
+      channel: "facebook",
+      marker: "same-time-customer-first-context",
+      identityKind: "facebook_psid",
+      identityKeyHash: customerFirstIdentity,
+      messages: [{ text: "Earlier context B", at: new Date("2026-09-01T07:00:01.000Z"), eligible: true }],
+    });
+    await database.update(customerServiceConversationEvents).set({
+      createdAt: new Date("2026-09-01T08:00:00.001Z"),
+    }).where(eq(customerServiceConversationEvents.legacyMessageId, customerFirstCustomer.messages[0].messageId));
+    await database.insert(customerServiceConversationEvents).values({
+      id: "00000000-0000-4000-8000-000000000001",
+      conversationId: customerFirstContext.conversationId,
+      channel: "facebook",
+      externalMessageKeyHash: sourceHash("same-time-customer-first"),
+      role: "staff",
+      eventType: "human_outbound",
+      body: "Staff after customer",
+      receivedAt: sameReceivedAt,
+      createdAt: new Date("2026-09-01T08:00:00.002Z"),
+    });
+
+    const page = await repository.listQueue(100);
+    const staffFirst = page.items.find((item) => item.latestMessageId === staffFirstCustomer.messages[0].messageId);
+    const customerFirst = page.items.find((item) => item.latestMessageId === customerFirstCustomer.messages[0].messageId);
+
+    expect(staffFirst?.timeline.map((event) => event.text)).toEqual([
+      "Earlier context A",
+      "Staff before customer",
+      "Customer after staff",
+    ]);
+    expect(staffFirst?.unreadCount).toBe(1);
+    expect(customerFirst?.timeline.map((event) => event.text)).toEqual([
+      "Earlier context B",
+      "Customer before staff",
+      "Staff after customer",
+    ]);
+    expect(customerFirst?.unreadCount).toBe(0);
+  });
+
   it("returns only the newest 50 identity timeline events oldest-first and marks earlier history", async () => {
     const fixture = await createInboxFixtureConversation({
       channel: "facebook",
@@ -5936,6 +6152,70 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       expect.objectContaining({ role: "staff", text: "R&R reply for Customer A only" }),
     ]);
     expect(JSON.stringify(update.queueItems)).not.toContain("Customer B question");
+  });
+
+  it("loads a changed high-cardinality conversation directly without expanding its message ids", async () => {
+    await activateFacebookPilot("live-updates-direct-conversation-load");
+    const conversationHash = "d1".repeat(32);
+    const incoming = await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "customer",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "d2".repeat(32),
+      text: "Initial high-cardinality message",
+      attachments: [],
+      imageJob: null,
+      debounceMs: 2_000,
+      receivedAt: new Date("2026-08-20T00:00:00.000Z"),
+    });
+    expect(incoming.status).toBe("turn_pending");
+    if (incoming.status !== "turn_pending") return;
+    await repository.sealDueCustomerTurn({
+      turnId: incoming.turnId,
+      now: new Date("2026-08-20T00:00:03.000Z"),
+    });
+    const [message] = await database.select({ conversationId: customerServiceMessages.conversationId })
+      .from(customerServiceMessages).where(eq(customerServiceMessages.id, incoming.messageId));
+    await database.insert(customerServiceMessages).values(Array.from({ length: 600 }, (_, index) => ({
+      conversationId: message.conversationId,
+      channel: "facebook" as const,
+      externalMessageKeyHash: sourceHash(`high-cardinality-message:${index}`),
+      body: `High-cardinality history ${index}`,
+      receivedAt: new Date(Date.UTC(2026, 7, 20, 0, 1, 0, index)),
+    })));
+    const cursor = await repository.getReplyAssistantUiCursor();
+    await repository.ingestConversationEvent({
+      channel: "facebook",
+      role: "staff",
+      eventType: "human_outbound",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "d3".repeat(32),
+      text: "Staff update for the same large conversation",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-20T00:20:00.000Z"),
+    });
+    const queries: Array<Readonly<{ query: string; parameterCount: number }>> = [];
+    const countedRepository = createDrizzleCustomerServiceRepository(drizzle(testDatabaseUrl!, {
+      logger: {
+        logQuery: (query, params) => {
+          queries.push({ query, parameterCount: params.length });
+        },
+      },
+    }));
+
+    const update = await countedRepository.listReplyAssistantUpdates(cursor, 250);
+
+    expect(update.queueItems).toHaveLength(1);
+    expect(update.queueItems[0]?.timeline.at(-1)).toMatchObject({
+      role: "staff",
+      text: "Staff update for the same large conversation",
+    });
+    const inboxIdentityQuery = queries.find(({ query }) => /encode\(sha256/i.test(query));
+    expect(inboxIdentityQuery?.parameterCount).toBeLessThan(100);
+    expect(queries.some(({ query }) => (
+      /select\s+"id"\s+from\s+"customer_service_messages"/i.test(query)
+    ))).toBe(false);
   });
 
   it("persists a human outbound echo and atomically suppresses its open customer turn", async () => {

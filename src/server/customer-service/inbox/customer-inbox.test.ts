@@ -10,6 +10,7 @@ const visitorB = "b".repeat(64);
 const psid = "c".repeat(64);
 
 function row(overrides: Partial<CustomerInboxProjectionRow> = {}): CustomerInboxProjectionRow {
+  const receivedAt = overrides.receivedAt ?? "2026-09-01T07:10:00.000Z";
   return {
     channel: "website",
     identity: { kind: "website_stable_visitor", keyHash: visitorA },
@@ -19,7 +20,9 @@ function row(overrides: Partial<CustomerInboxProjectionRow> = {}): CustomerInbox
     messageId: "message-1",
     role: "customer",
     text: "Roll-up",
-    receivedAt: "2026-09-01T07:10:00.000Z",
+    receivedAt,
+    createdAt: overrides.createdAt ?? receivedAt,
+    sourceOrder: 0,
     actionEligible: true,
     status: "received",
     latestAttemptId: null,
@@ -148,6 +151,37 @@ describe("one customer Inbox projection", () => {
 
     expect(items[0]?.unreadCount).toBe(1);
     expect(items[0]?.latestMessageId).toBe("message-5");
+  });
+
+  it("uses created and source order when staff and customer events share a received timestamp", () => {
+    const staff = {
+      ...row({
+        eventId: "z-staff",
+        messageId: null,
+        role: "staff",
+        text: "Staff first",
+      }),
+      createdAt: "2026-09-01T07:10:00.001Z",
+      sourceOrder: 0,
+      actionEligible: false,
+    };
+    const customer = {
+      ...row({
+        eventId: "a-customer",
+        messageId: "message-after-staff",
+        text: "Customer second",
+      }),
+      createdAt: "2026-09-01T07:10:00.002Z",
+      sourceOrder: 0,
+    };
+
+    const items = projectCustomerInbox([customer, staff]);
+
+    expect(items[0]?.timeline.map((event) => event.text)).toEqual([
+      "Staff first",
+      "Customer second",
+    ]);
+    expect(items[0]?.unreadCount).toBe(1);
   });
 
   it("selects only the latest review state without creating another box", () => {

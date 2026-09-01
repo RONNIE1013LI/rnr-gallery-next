@@ -19,6 +19,8 @@ export type CustomerInboxProjectionRow = Readonly<{
   role: "customer" | "assistant" | "staff";
   text: string;
   receivedAt: string;
+  createdAt: string;
+  sourceOrder: number;
   actionEligible: boolean;
   status: string;
   latestAttemptId: string | null;
@@ -79,6 +81,8 @@ function timestamp(value: string) {
 
 function rowOrder(left: CustomerInboxProjectionRow, right: CustomerInboxProjectionRow) {
   return timestamp(left.receivedAt) - timestamp(right.receivedAt)
+    || timestamp(left.createdAt) - timestamp(right.createdAt)
+    || left.sourceOrder - right.sourceOrder
     || left.eventId.localeCompare(right.eventId);
 }
 
@@ -105,6 +109,10 @@ export function projectCustomerInbox(
   const grouped = new Map<string, CustomerInboxProjectionRow[]>();
   for (const row of rows) {
     timestamp(row.receivedAt);
+    timestamp(row.createdAt);
+    if (!Number.isSafeInteger(row.sourceOrder) || row.sourceOrder < 0) {
+      throw new Error("customer_inbox_source_order_invalid");
+    }
     const key = identityGroupKey(row);
     const group = grouped.get(key) ?? [];
     group.push(row);
@@ -133,7 +141,7 @@ export function projectCustomerInbox(
     const reviewRows = allOrdered.filter((row) => row.review !== null);
     const openReviewRows = reviewRows.filter((row) => row.review?.status === "open");
     const reviewRow = [...(openReviewRows.length ? openReviewRows : reviewRows)].sort((left, right) => (
-      timestamp(right.receivedAt) - timestamp(left.receivedAt)
+      rowOrder(right, left)
       || (right.review?.generation ?? 0) - (left.review?.generation ?? 0)
       || (right.review?.id ?? "").localeCompare(left.review?.id ?? "")
     ))[0];

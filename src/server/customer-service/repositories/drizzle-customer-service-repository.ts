@@ -1099,14 +1099,25 @@ export function createDrizzleCustomerServiceRepository(
     return { selected: claimed.length, deleted, failed };
   }
 
-  async function loadQueuePage(limit: number, messageIds?: readonly string[], selectorNow = now()) {
+  async function loadQueuePage(
+    limit: number,
+    messageIds?: readonly string[],
+    selectorNow = now(),
+    conversationIds?: readonly string[],
+  ) {
     const safeLimit = Math.max(1, Math.min(100, limit));
-    const messageFilter = messageIds?.length
+    const selectedConversationIds = [...new Set(conversationIds ?? [])].slice(0, 500);
+    const identityFilter = messageIds?.length
       ? sql`and bool_or(exists (
           select 1 from customer_service_messages changed
           where changed.conversation_id = identity.conversation_id
             and changed.id in (${sql.join(messageIds.map((id) => sql`${id}`), sql`, `)})
         ))`
+      : selectedConversationIds.length
+        ? sql`and bool_or(identity.conversation_id in (${sql.join(
+            selectedConversationIds.map((id) => sql`${id}`),
+            sql`, `,
+          )}))`
       : sql``;
     const identityResult = await database.execute<{
       channel: "facebook" | "website";
@@ -1165,7 +1176,7 @@ export function createDrizzleCustomerServiceRepository(
             )
           )
       ))
-      ${messageFilter}
+      ${identityFilter}
       order by last_activity_at desc, inbox_id asc
       limit ${safeLimit}
     `);
@@ -1199,6 +1210,8 @@ export function createDrizzleCustomerServiceRepository(
         role: "customer" | "assistant" | "staff";
         body: string;
         received_at: Date;
+        created_at: Date;
+        source_order: number;
         total_count: string | number;
       }>(sql`
         with ${selected}, combined as (
@@ -1286,6 +1299,7 @@ export function createDrizzleCustomerServiceRepository(
         message_id: string;
         body: string;
         received_at: Date;
+        created_at: Date;
         status: string;
         latest_attempt_id: string | null;
         draft_text: string | null;
@@ -1301,6 +1315,7 @@ export function createDrizzleCustomerServiceRepository(
             messages.id as message_id,
             messages.body,
             messages.received_at,
+            messages.created_at,
             messages.ingest_status as status,
             case when identity.channel = 'facebook' and not exists (
               select 1 from customer_service_turns replied
@@ -1371,7 +1386,8 @@ export function createDrizzleCustomerServiceRepository(
       }>(sql`
         with ${selected}, customer_events as (
           select identity.channel, identity.identity_kind, identity.identity_key_hash,
-            events.received_at
+            events.received_at, events.created_at, 0 as source_order,
+            'event:' || events.id::text as event_id
           from ${customerServiceConversationEvents} events
           join ${customerServiceConversationIdentities} identity
             on identity.conversation_id = events.conversation_id
@@ -1381,7 +1397,8 @@ export function createDrizzleCustomerServiceRepository(
           where events.event_type = 'customer_message'
           union all
           select identity.channel, identity.identity_kind, identity.identity_key_hash,
-            messages.received_at
+            messages.received_at, messages.created_at, 2 as source_order,
+            'message:' || messages.id::text as event_id
           from ${customerServiceMessages} messages
           join ${customerServiceConversationIdentities} identity
             on identity.conversation_id = messages.conversation_id
@@ -1392,9 +1409,10 @@ export function createDrizzleCustomerServiceRepository(
             select 1 from ${customerServiceConversationEvents} events
             where events.legacy_message_id = messages.id
           )
-        ), latest_staff as (
+        ), staff_events as (
           select identity.channel, identity.identity_kind, identity.identity_key_hash,
-            max(events.received_at) as received_at
+            events.received_at, events.created_at, 0 as source_order,
+            'event:' || events.id::text as event_id
           from ${customerServiceConversationEvents} events
           join ${customerServiceConversationIdentities} identity
             on identity.conversation_id = events.conversation_id
@@ -1402,11 +1420,30 @@ export function createDrizzleCustomerServiceRepository(
             and selected.identity_kind = identity.identity_kind
             and selected.identity_key_hash = identity.identity_key_hash
           where events.event_type = 'human_outbound'
-          group by identity.channel, identity.identity_kind, identity.identity_key_hash
+        ), latest_staff as (
+          select * from (
+            select staff_events.*,
+              row_number() over (
+                partition by channel, identity_kind, identity_key_hash
+                order by received_at desc, created_at desc, source_order desc, event_id desc
+              ) as ordinal
+            from staff_events
+          ) ranked
+          where ordinal = 1
         )
         select customer.channel, customer.identity_kind, customer.identity_key_hash,
           count(*) filter (
-            where staff.received_at is null or customer.received_at > staff.received_at
+            where staff.event_id is null or (
+              customer.received_at,
+              customer.created_at,
+              customer.source_order,
+              customer.event_id
+            ) > (
+              staff.received_at,
+              staff.created_at,
+              staff.source_order,
+              staff.event_id
+            )
           ) as unread_count
         from customer_events customer
         left join latest_staff staff on staff.channel = customer.channel
@@ -1428,6 +1465,9 @@ export function createDrizzleCustomerServiceRepository(
           select reviews.id, identity.channel, identity.identity_kind, identity.identity_key_hash,
             reviews.generation, reviews.status, reviews.reason,
             alerts.status as alert_status,
+            count(*) filter (where reviews.status = 'open') over (
+              partition by identity.channel, identity.identity_kind, identity.identity_key_hash
+            ) as open_count,
             row_number() over (
               partition by identity.channel, identity.identity_kind, identity.identity_key_hash
               order by (reviews.status = 'open') desc, reviews.opened_at desc,
@@ -1442,7 +1482,7 @@ export function createDrizzleCustomerServiceRepository(
           left join ${customerServiceReviewAlertOutbox} alerts
             on alerts.human_review_id = reviews.id
         )
-        select * from ranked where ordinal = 1
+        select * from ranked where ordinal = 1 and open_count <= 1
       `),
     ]);
 
@@ -1512,6 +1552,8 @@ export function createDrizzleCustomerServiceRepository(
         role: event.role,
         text: event.body,
         receivedAt: new Date(event.received_at).toISOString(),
+        createdAt: new Date(event.created_at).toISOString(),
+        sourceOrder: event.source_order,
         actionEligible: event.message_id !== null && event.message_id === action?.message_id,
         status: action?.status ?? "received",
         latestAttemptId: action?.latest_attempt_id ?? null,
@@ -1554,6 +1596,8 @@ export function createDrizzleCustomerServiceRepository(
         role: "customer",
         text: action.body,
         receivedAt: new Date(action.received_at).toISOString(),
+        createdAt: new Date(action.created_at).toISOString(),
+        sourceOrder: 2,
         actionEligible: true,
         status: action.status,
         latestAttemptId: action.latest_attempt_id,
@@ -1612,6 +1656,21 @@ export function createDrizzleCustomerServiceRepository(
     });
   }
 
+  const singleOpenReviewForIdentity = sql`not exists (
+    select 1
+    from customer_service_conversation_identities review_identity
+    join customer_service_conversation_identities other_identity
+      on other_identity.channel = review_identity.channel
+      and other_identity.identity_kind = review_identity.identity_kind
+      and other_identity.identity_key_hash = review_identity.identity_key_hash
+    join customer_service_human_reviews other_review
+      on other_review.conversation_id = other_identity.conversation_id
+    where review_identity.conversation_id = ${customerServiceHumanReviews.conversationId}
+      and review_identity.channel = ${customerServiceHumanReviews.channel}
+      and other_review.status = 'open'
+      and other_review.id <> ${customerServiceHumanReviews.id}
+  )`;
+
   const repository: CustomerServiceRepository = {
     async resolveWebsiteReviewDeepLink(input) {
       if (!isHash(input.tokenHash)) return null;
@@ -1627,6 +1686,7 @@ export function createDrizzleCustomerServiceRepository(
           eq(customerServiceHumanReviews.status, "open"),
           eq(customerServiceHumanReviews.deepLinkTokenHash, input.tokenHash),
           gt(customerServiceHumanReviews.deepLinkExpiresAt, input.now),
+          singleOpenReviewForIdentity,
       ))
         .limit(1);
       if (!review?.messageId) return null;
@@ -1662,6 +1722,7 @@ export function createDrizzleCustomerServiceRepository(
             eq(customerServiceReviewSelectors.selectorHash, selectorHash),
             eq(customerServiceReviewSelectors.generation, customerServiceHumanReviews.generation),
             gt(customerServiceReviewSelectors.expiresAt, input.now),
+            singleOpenReviewForIdentity,
           ))
           .limit(1);
         if (!candidate || !selectorMatchesReview(input.reviewSelector, candidate, input.now)) {
@@ -2800,9 +2861,10 @@ export function createDrizzleCustomerServiceRepository(
           { message: turn.body },
         );
 
-        const [existing] = await transaction.select({
+        const existingReviews = await transaction.select({
           id: customerServiceHumanReviews.id,
           conversationId: customerServiceHumanReviews.conversationId,
+          triggerTurnId: customerServiceHumanReviews.triggerTurnId,
           generation: customerServiceHumanReviews.generation,
         }).from(customerServiceHumanReviews)
           .innerJoin(
@@ -2820,7 +2882,48 @@ export function createDrizzleCustomerServiceRepository(
             desc(customerServiceHumanReviews.generation),
             desc(customerServiceHumanReviews.id),
           )
-          .limit(1).for("update");
+          .for("update");
+        const existing = existingReviews[0];
+
+        for (const duplicate of existingReviews.slice(1)) {
+          const reconciliationKeyHash = createHash("sha256")
+            .update(`website-review-identity-reconciliation\0${duplicate.id}`)
+            .digest("hex");
+          const [resolutionEvent] = await transaction.insert(customerServiceConversationEvents).values({
+            conversationId: duplicate.conversationId,
+            turnId: duplicate.triggerTurnId,
+            channel: "website",
+            externalMessageKeyHash: reconciliationKeyHash,
+            role: "staff",
+            eventType: "system_event",
+            body: "Duplicate customer review reconciled",
+            redactionCodes: [],
+            learningEligible: false,
+            receivedAt: input.now,
+            createdAt: input.now,
+          }).returning({ id: customerServiceConversationEvents.id });
+          if (!resolutionEvent) throw new Error("customer_service_review_identity_reconciliation_event_failed");
+          const [resolved] = await transaction.update(customerServiceHumanReviews).set({
+            status: "resolved",
+            resolvedAt: input.now,
+            resolutionEventId: resolutionEvent.id,
+            updatedAt: input.now,
+          }).where(and(
+            eq(customerServiceHumanReviews.id, duplicate.id),
+            eq(customerServiceHumanReviews.status, "open"),
+          )).returning({ id: customerServiceHumanReviews.id });
+          if (!resolved) throw new Error("customer_service_review_identity_reconciliation_conflict");
+          await transaction.update(customerServiceReviewAlertOutbox).set({
+            status: "failed",
+            leaseToken: null,
+            leaseExpiresAt: null,
+            lastErrorCode: "duplicate_identity_review_reconciled",
+            updatedAt: input.now,
+          }).where(and(
+            eq(customerServiceReviewAlertOutbox.humanReviewId, duplicate.id),
+            inArray(customerServiceReviewAlertOutbox.status, ["pending", "leased", "retry_wait"]),
+          ));
+        }
 
         let review = existing ?? await (async () => {
           const [latest] = await transaction.select({ generation: max(customerServiceHumanReviews.generation) })
@@ -2843,6 +2946,7 @@ export function createDrizzleCustomerServiceRepository(
           }).returning({
             id: customerServiceHumanReviews.id,
             conversationId: customerServiceHumanReviews.conversationId,
+            triggerTurnId: customerServiceHumanReviews.triggerTurnId,
             generation: customerServiceHumanReviews.generation,
           });
           const notificationCount = await enqueueInternalNotifications(transaction, {
@@ -2892,6 +2996,7 @@ export function createDrizzleCustomerServiceRepository(
             )).returning({
               id: customerServiceHumanReviews.id,
               conversationId: customerServiceHumanReviews.conversationId,
+              triggerTurnId: customerServiceHumanReviews.triggerTurnId,
               generation: customerServiceHumanReviews.generation,
             });
             if (!moved) throw new Error("customer_service_review_identity_move_conflict");
@@ -2936,16 +3041,19 @@ export function createDrizzleCustomerServiceRepository(
 
     async claimDueReviewAlert(input) {
       return database.transaction(async (transaction) => {
-        const eligible = or(
-          and(
-            eq(customerServiceHumanReviews.status, "open"),
-            gt(customerServiceHumanReviews.deepLinkExpiresAt, input.now),
-            lte(customerServiceReviewAlertOutbox.nextAttemptAt, input.now),
-            inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait"]),
-          ),
-          and(
-            eq(customerServiceReviewAlertOutbox.status, "leased"),
-            lte(customerServiceReviewAlertOutbox.leaseExpiresAt, input.now),
+        const eligible = and(
+          singleOpenReviewForIdentity,
+          or(
+            and(
+              eq(customerServiceHumanReviews.status, "open"),
+              gt(customerServiceHumanReviews.deepLinkExpiresAt, input.now),
+              lte(customerServiceReviewAlertOutbox.nextAttemptAt, input.now),
+              inArray(customerServiceReviewAlertOutbox.status, ["pending", "retry_wait"]),
+            ),
+            and(
+              eq(customerServiceReviewAlertOutbox.status, "leased"),
+              lte(customerServiceReviewAlertOutbox.leaseExpiresAt, input.now),
+            ),
           ),
         );
         const [identity] = await transaction.select({
@@ -5075,6 +5183,7 @@ export function createDrizzleCustomerServiceRepository(
           eq(customerServiceHumanReviews.channel, "website"),
           eq(customerServiceHumanReviews.status, "open"),
           isNull(customerServiceReviewSelectors.id),
+          singleOpenReviewForIdentity,
         ))
         .orderBy(asc(customerServiceHumanReviews.openedAt), asc(customerServiceHumanReviews.id))
         .limit(limit);
@@ -5293,13 +5402,7 @@ export function createDrizzleCustomerServiceRepository(
           return (await loadQueuePage(messageIds.length, messageIds)).items;
         },
         loadQueueByConversationIds: async (conversationIds) => {
-          const messageRows = conversationIds.length
-            ? await database.select({ id: customerServiceMessages.id })
-              .from(customerServiceMessages)
-              .where(inArray(customerServiceMessages.conversationId, [...conversationIds]))
-            : [];
-          const messageIds = messageRows.map((row) => row.id);
-          return messageIds.length ? (await loadQueuePage(messageIds.length, messageIds)).items : [];
+          return (await loadQueuePage(100, undefined, now(), conversationIds)).items;
         },
         loadMetrics: () => repository.metricCounts(),
         loadLearningCandidates: () => repository.listLearningCandidates(20),
