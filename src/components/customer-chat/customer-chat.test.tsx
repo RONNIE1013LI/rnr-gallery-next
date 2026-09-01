@@ -299,6 +299,102 @@ describe("CustomerChat", () => {
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/customer-chat/updates?cursor=cursor-50");
   });
 
+  it("shows a retryable history error when a later update page fails and retries from the last cursor", async () => {
+    const firstPage = {
+      eventKey: "customer-first-page",
+      role: "customer",
+      text: "First-page customer message.",
+      createdAt: "2026-08-28T00:00:00.000Z",
+      state: "committed_assistant",
+    };
+    const terminalReply = {
+      eventKey: "assistant-retried-page",
+      role: "assistant",
+      text: "The retried page reply is visible.",
+      createdAt: "2026-08-28T00:01:00.000Z",
+      state: "committed_assistant",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([firstPage], "cursor-first", "committed_assistant", true))
+      .mockResolvedValueOnce(new Response(null, { status: 503 }))
+      .mockResolvedValueOnce(updates([terminalReply], "cursor-retried", "committed_assistant"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+
+    openChat();
+
+    expect(await screen.findByText("We couldn’t load your earlier messages. You can still start a new chat.")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Retry conversation history" }));
+
+    expect(await screen.findByText("The retried page reply is visible.")).toBeInTheDocument();
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
+      "/api/customer-chat/updates",
+      "/api/customer-chat/updates?cursor=cursor-first",
+      "/api/customer-chat/updates?cursor=cursor-first",
+    ]);
+  });
+
+  it("shows a retryable history error when a paginated response makes no cursor progress", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates([], "cursor-stuck", "pending", true))
+      .mockResolvedValueOnce(updates([], "cursor-stuck", "pending", true));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+
+    openChat();
+
+    expect(await screen.findByText("We couldn’t load your earlier messages. You can still start a new chat.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows a retryable history error at the bounded page-drain limit and retries from the last cursor", async () => {
+    let updateRequestCount = 0;
+    const fetchMock = vi.fn<(url: string) => Promise<Response>>(() => {
+      updateRequestCount += 1;
+      if (updateRequestCount <= 24) {
+        return Promise.resolve(updates([], `cursor-${updateRequestCount}`, "pending", true));
+      }
+      return Promise.resolve(updates([], "cursor-complete", "pending"));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+
+    openChat();
+
+    expect(await screen.findByText("We couldn’t load your earlier messages. You can still start a new chat.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(24);
+    fireEvent.click(screen.getByRole("button", { name: "Retry conversation history" }));
+
+    await waitFor(() => expect(screen.queryByText("We couldn’t load your earlier messages. You can still start a new chat.")).not.toBeInTheDocument());
+    expect(fetchMock.mock.calls[24]?.[0]).toBe("/api/customer-chat/updates?cursor=cursor-24");
+  });
+
+  it("does not announce page-two initial history as a new live message", async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      eventKey: `history-customer-${index + 1}`,
+      role: "customer",
+      text: `Historical customer message ${index + 1}`,
+      createdAt: `2026-08-28T00:${String(index).padStart(2, "0")}:00.000Z`,
+      state: "committed_assistant",
+    }));
+    const historicalReply = {
+      eventKey: "historical-assistant-page-two",
+      role: "assistant",
+      text: "Historical second-page assistant reply.",
+      createdAt: "2026-08-28T01:00:00.000Z",
+      state: "committed_assistant",
+    };
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(updates(firstPage, "cursor-50", "committed_assistant", true))
+      .mockResolvedValueOnce(updates([historicalReply], "cursor-51", "committed_assistant")));
+    render(<CustomerChat />);
+
+    openChat();
+
+    expect(await screen.findByText("Historical second-page assistant reply.")).toBeInTheDocument();
+    expect(screen.getByTestId("customer-chat-live-region")).toBeEmptyDOMElement();
+  });
+
   it("sends on Enter and lets Shift+Enter add a newline without preventing the textarea default", async () => {
     const fetchMock = vi.mocked(fetch);
     render(<CustomerChat />);
@@ -528,6 +624,48 @@ describe("CustomerChat", () => {
     expect(fetchMock).toHaveBeenCalledTimes(26);
   });
 
+  it("keeps a newer accepted send awaiting a reply when an older terminal catch-up resolves", async () => {
+    vi.useFakeTimers();
+    const terminalReply = {
+      eventKey: "assistant-after-reopen",
+      role: "assistant",
+      text: "The reply after reopening is visible.",
+      createdAt: "2026-08-22T00:05:00.000Z",
+      state: "committed_assistant",
+    };
+    let resolveInitialUpdates: ((response: Response) => void) | undefined;
+    const initialUpdates = new Promise<Response>((resolve) => { resolveInitialUpdates = resolve; });
+    let updateRequestCount = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/customer-chat/messages") return Promise.resolve(accepted());
+      updateRequestCount += 1;
+      if (updateRequestCount === 1) return initialUpdates;
+      if (updateRequestCount === 2) return Promise.resolve(updates([], "cursor-reopen", "pending"));
+      return Promise.resolve(updates([terminalReply], "cursor-terminal", "committed_assistant"));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+
+    const input = screen.getByLabelText("Message R&R Gallery");
+    fireEvent.change(input, { target: { value: "Can you help with a canvas?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+    expect(updateRequestCount).toBe(1);
+
+    await act(async () => { resolveInitialUpdates?.(updates([], "cursor-initial", "committed_assistant")); });
+    fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
+    openChat();
+    await act(async () => {});
+
+    expect(updateRequestCount).toBe(2);
+    expect(screen.queryByText("The reply after reopening is visible.")).not.toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    expect(screen.getByText("The reply after reopening is visible.")).toBeInTheDocument();
+    expect(updateRequestCount).toBe(3);
+  });
+
   it("resumes a bounded pending cycle after reopening when the catch-up remains pending", async () => {
     vi.useFakeTimers();
     const terminalReply = {
@@ -565,9 +703,12 @@ describe("CustomerChat", () => {
     openChat();
     await act(async () => {});
 
+    expect(fetchMock).toHaveBeenCalledTimes(27);
+    expect(screen.queryByText("Your reply is ready now.")).not.toBeInTheDocument();
+    await act(async () => { await vi.advanceTimersByTimeAsync(4_999); });
+    expect(fetchMock).toHaveBeenCalledTimes(27);
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
     expect(screen.getByText("Your reply is ready now.")).toBeInTheDocument();
-    expect(fetchMock).toHaveBeenCalledTimes(28);
-    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
     expect(fetchMock).toHaveBeenCalledTimes(28);
   });
 
