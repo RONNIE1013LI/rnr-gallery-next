@@ -28,6 +28,7 @@ type OutgoingMessage = PendingMessage & Readonly<{
 
 type UpdatesResponse = Readonly<{
   cursor: string | null;
+  hasMore: boolean;
   events: readonly PublicEvent[];
   state: string;
 }>;
@@ -43,6 +44,7 @@ const updatesEndpoint = "/api/customer-chat/updates";
 const messagesEndpoint = "/api/customer-chat/messages";
 const pollingIntervalMs = 5_000;
 const maximumPendingPolls = 24;
+const maximumUpdatePages = 24;
 
 type PollResult = "pending" | "terminal" | "error" | "blocked";
 
@@ -56,8 +58,9 @@ function clientMessageKey() {
 
 function publicUpdates(value: unknown): UpdatesResponse | null {
   if (!value || typeof value !== "object") return null;
-  const response = value as { cursor?: unknown; events?: unknown; state?: unknown };
+  const response = value as { cursor?: unknown; hasMore?: unknown; events?: unknown; state?: unknown };
   if (response.cursor !== null && typeof response.cursor !== "string") return null;
+  if (typeof response.hasMore !== "boolean") return null;
   if (!Array.isArray(response.events)) return null;
   if (typeof response.state !== "string") return null;
   const events = response.events.filter((event): event is PublicEvent => {
@@ -69,7 +72,7 @@ function publicUpdates(value: unknown): UpdatesResponse | null {
       && typeof candidate.createdAt === "string"
       && typeof candidate.state === "string";
   });
-  return { cursor: response.cursor ?? null, events, state: response.state };
+  return { cursor: response.cursor ?? null, hasMore: response.hasMore, events, state: response.state };
 }
 
 function reconcileOutgoing(
@@ -110,6 +113,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
   const pendingPollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingPollCycleRef = useRef(0);
   const sendingRef = useRef(false);
+  const awaitingReplyRef = useRef(false);
   const initialPollRef = useRef(true);
   const historyReadyRef = useRef(false);
   const restoreLauncherFocusRef = useRef(false);
@@ -124,49 +128,50 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     const controller = new AbortController();
     activePollControllerRef.current = controller;
     try {
-      const query = cursorRef.current ? `?cursor=${encodeURIComponent(cursorRef.current)}` : "";
-      const response = await fetch(`${updatesEndpoint}${query}`, {
-        headers: { Accept: "application/json" },
-        signal: controller.signal,
-      });
-      if (!response.ok) {
-        if (!historyReadyRef.current) {
-          historyReadyRef.current = true;
-          setHistoryReady(true);
-          setHistoryError(true);
-        }
-        return "error";
-      }
-      const updates = publicUpdates(await response.json().catch(() => null));
-      if (!updates) {
-        if (!historyReadyRef.current) {
-          historyReadyRef.current = true;
-          setHistoryReady(true);
-          setHistoryError(true);
-        }
-        return "error";
-      }
-      cursorRef.current = updates.cursor;
-      historyReadyRef.current = true;
-      setHistoryReady(true);
-      setHistoryError(false);
-      setOutgoingMessages((current) => reconcileOutgoing(current, updates.events));
-      setEvents((current) => {
-        const known = new Set(current.map((event) => event.eventKey));
-        const added = updates.events.filter((event) => {
-          if (known.has(event.eventKey)) return false;
-          known.add(event.eventKey);
-          return true;
+      for (let page = 0; page < maximumUpdatePages; page += 1) {
+        const query = cursorRef.current ? `?cursor=${encodeURIComponent(cursorRef.current)}` : "";
+        const response = await fetch(`${updatesEndpoint}${query}`, {
+          headers: { Accept: "application/json" },
+          signal: controller.signal,
         });
-        if (!initialPollRef.current && added.some((event) => event.role !== "customer")) {
-          setAnnouncement("New message from R&R Gallery.");
+        const updates = response.ok
+          ? publicUpdates(await response.json().catch(() => null))
+          : null;
+        if (!updates) {
+          if (!historyReadyRef.current) {
+            historyReadyRef.current = true;
+            setHistoryReady(true);
+            setHistoryError(true);
+          }
+          return "error";
         }
-        return added.length ? [...current, ...added] : current;
-      });
-      initialPollRef.current = false;
-      return updates.state === "pending" || updates.state === "recovery"
-        ? "pending"
-        : "terminal";
+        cursorRef.current = updates.cursor;
+        historyReadyRef.current = true;
+        setHistoryReady(true);
+        setHistoryError(false);
+        setOutgoingMessages((current) => reconcileOutgoing(current, updates.events));
+        setEvents((current) => {
+          const known = new Set(current.map((event) => event.eventKey));
+          const added = updates.events.filter((event) => {
+            if (known.has(event.eventKey)) return false;
+            known.add(event.eventKey);
+            return true;
+          });
+          if (!initialPollRef.current && added.some((event) => event.role !== "customer")) {
+            setAnnouncement("New message from R&R Gallery.");
+          }
+          return added.length ? [...current, ...added] : current;
+        });
+        initialPollRef.current = false;
+        if (updates.hasMore) continue;
+        const result = updates.state === "pending" || updates.state === "recovery"
+          ? "pending"
+          : "terminal";
+        if (result === "terminal") awaitingReplyRef.current = false;
+        return result;
+      }
+
+      return "error";
     } catch {
       if (controller.signal.aborted) return "blocked";
       if (!historyReadyRef.current) {
@@ -222,7 +227,13 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
     if (!open) return;
     inputRef.current?.focus();
     if (!pollingAllowed) return;
-    queueMicrotask(() => void poll());
+    const resumePendingReply = awaitingReplyRef.current;
+    queueMicrotask(() => void poll().then((result) => {
+      if (resumePendingReply && result === "pending" && awaitingReplyRef.current) {
+        setFeedback("");
+        startPendingPolling();
+      }
+    }));
     return () => {
       stopPendingPolling();
       const controller = activePollControllerRef.current;
@@ -230,7 +241,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
       pollingRef.current = false;
       controller?.abort();
     };
-  }, [open, poll, stopPendingPolling]);
+  }, [open, poll, startPendingPolling, stopPendingPolling]);
 
   useEffect(() => {
     if (!open) return;
@@ -278,6 +289,7 @@ export function CustomerChat({ pathname = "/" }: Readonly<{ pathname?: string }>
         }),
       });
       if (response.ok) {
+        awaitingReplyRef.current = true;
         setDraft("");
         setPendingMessage(null);
         setOutgoingMessages((messages) => messages.map((message) => (

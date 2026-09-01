@@ -12,8 +12,9 @@ function updates(
   events: readonly unknown[] = [],
   cursor: string | null = "cursor-1",
   state = "pending",
+  hasMore = false,
 ) {
-  return new Response(JSON.stringify({ cursor, hasMore: false, events, state }), {
+  return new Response(JSON.stringify({ cursor, hasMore, events, state }), {
     headers: { "Content-Type": "application/json" },
   });
 }
@@ -270,6 +271,34 @@ describe("CustomerChat", () => {
     expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/customer-chat/updates?cursor=cursor-1");
   });
 
+  it("drains a later public-update page before showing its terminal reply", async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      eventKey: `customer-${index + 1}`,
+      role: "customer",
+      text: `Earlier message ${index + 1}`,
+      createdAt: `2026-08-28T00:${String(index).padStart(2, "0")}:00.000Z`,
+      state: "committed_assistant",
+    }));
+    const terminalReply = {
+      eventKey: "assistant-51",
+      role: "assistant",
+      text: "This reply was on the second page.",
+      createdAt: "2026-08-28T01:00:00.000Z",
+      state: "committed_assistant",
+    };
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(updates(firstPage, "cursor-50", "committed_assistant", true))
+      .mockResolvedValueOnce(updates([terminalReply], "cursor-51", "committed_assistant"));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+
+    openChat();
+
+    expect(await screen.findByText("This reply was on the second page.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(fetchMock.mock.calls[1]?.[0]).toBe("/api/customer-chat/updates?cursor=cursor-50");
+  });
+
   it("sends on Enter and lets Shift+Enter add a newline without preventing the textarea default", async () => {
     const fetchMock = vi.mocked(fetch);
     render(<CustomerChat />);
@@ -497,6 +526,49 @@ describe("CustomerChat", () => {
     expect(screen.getByText("Reply is taking longer than expected. Please reopen chat later to check for an update.")).toBeInTheDocument();
     await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
     expect(fetchMock).toHaveBeenCalledTimes(26);
+  });
+
+  it("resumes a bounded pending cycle after reopening when the catch-up remains pending", async () => {
+    vi.useFakeTimers();
+    const terminalReply = {
+      eventKey: "assistant-terminal",
+      role: "assistant",
+      text: "Your reply is ready now.",
+      createdAt: "2026-08-22T00:05:00.000Z",
+      state: "committed_assistant",
+    };
+    let updateRequests = 0;
+    const fetchMock = vi.fn((url: string) => {
+      if (url === "/api/customer-chat/messages") return Promise.resolve(accepted());
+      updateRequests += 1;
+      if (updateRequests === 27) {
+        return Promise.resolve(updates([terminalReply], "cursor-terminal", "committed_assistant"));
+      }
+      return Promise.resolve(updates([], `cursor-${updateRequests}`, "pending"));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<CustomerChat />);
+    openChat();
+    await act(async () => {});
+    const input = screen.getByLabelText("Message R&R Gallery");
+
+    fireEvent.change(input, { target: { value: "Can you help?" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await act(async () => {});
+    for (let index = 0; index < 23; index += 1) {
+      await act(async () => { await vi.advanceTimersByTimeAsync(5_000); });
+    }
+    expect(screen.getByText("Reply is taking longer than expected. Please reopen chat later to check for an update.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(26);
+
+    fireEvent.click(screen.getByRole("button", { name: "Close chat" }));
+    openChat();
+    await act(async () => {});
+
+    expect(screen.getByText("Your reply is ready now.")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(28);
+    await act(async () => { await vi.advanceTimersByTimeAsync(20_000); });
+    expect(fetchMock).toHaveBeenCalledTimes(28);
   });
 
   it("starts a fresh bounded cycle for a second accepted send without keeping the old timer", async () => {
