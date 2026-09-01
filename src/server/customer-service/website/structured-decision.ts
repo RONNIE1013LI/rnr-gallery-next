@@ -90,6 +90,7 @@ export type WebsiteApprovedCataloguePrice = Readonly<{
   productTitle: string;
   sizeKey: string;
   sizeLabel: string;
+  peoplePets?: number;
   currency: "NZD" | "AUD";
   amountInclTaxCents: number;
 }>;
@@ -496,6 +497,7 @@ function validApprovedCataloguePrice(value: unknown): value is WebsiteApprovedCa
     "productTitle",
     "sizeKey",
     "sizeLabel",
+    ...(value.peoplePets === undefined ? [] : ["peoplePets"]),
     "currency",
     "amountInclTaxCents",
   ].sort();
@@ -511,6 +513,10 @@ function validApprovedCataloguePrice(value: unknown): value is WebsiteApprovedCa
     && safeText(value.productTitle, 160)
     && safeText(value.sizeKey, 100)
     && safeText(value.sizeLabel, 160)
+    && (value.peoplePets === undefined
+      || (Number.isSafeInteger(value.peoplePets)
+        && Number(value.peoplePets) >= 1
+        && Number(value.peoplePets) <= 20))
     && (value.currency === "NZD" || value.currency === "AUD")
     && Number.isSafeInteger(value.amountInclTaxCents)
     && Number(value.amountInclTaxCents) >= 0
@@ -522,7 +528,10 @@ function factText(decision: WebsiteDecision, fact: AllowedFact) {
   const price = decision.approved_catalogue_price;
   if (!price) return null;
   const amount = `${price.currency === "NZD" ? "NZ$" : "AU$"}${(price.amountInclTaxCents / 100).toFixed(2)}`;
-  return `${price.productTitle} (${price.sizeLabel}) is currently ${amount}.`;
+  const configuration = price.peoplePets === undefined
+    ? price.sizeLabel
+    : `${price.sizeLabel}, ${price.peoplePets} people/pets`;
+  return `${price.productTitle} (${configuration}) is currently ${amount}.`;
 }
 
 function parseWebsiteRendererProofValue(value: unknown):

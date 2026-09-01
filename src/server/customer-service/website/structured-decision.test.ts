@@ -157,6 +157,43 @@ describe("Website structured decision boundary", () => {
     })).toBe(false);
   });
 
+  it("renders the server-owned people/pets count included in a canonical Canvas total", () => {
+    const decision = {
+      response_type: "ANSWER_SAFE",
+      intent: "quote_information_collection",
+      product_type: "CANVAS",
+      missing_fields: [],
+      follow_up_fields: [],
+      allowed_facts: ["APPROVED_CATALOGUE_PRICE"],
+      human_review_reason: "NONE",
+      approved_catalogue_price: {
+        sourceRevision: 42,
+        productKey: "digital-oil-painting-canvas",
+        productTitle: "Digital Oil Painting Canvas",
+        sizeKey: "a2",
+        sizeLabel: "A2 — 59.4 × 42 cm",
+        peoplePets: 3,
+        currency: "NZD",
+        amountInclTaxCents: 21_045,
+      },
+    } as const;
+    const text = "Digital Oil Painting Canvas (A2 — 59.4 × 42 cm, 3 people/pets) is currently NZ$210.45.";
+
+    expect(renderWebsiteDecision({
+      decision,
+      expectedIntent: "quote_information_collection",
+      productCategory: "canvas",
+      acknowledgementAllowed: false,
+    })).toMatchObject({ ok: true, outcome: "rendered", text });
+    expect(verifyWebsiteRendererProof({
+      intent: "quote_information_collection",
+      text,
+      decision,
+      templateVersion: WEBSITE_RESPONSE_TEMPLATE_VERSION,
+      productCategory: "canvas",
+    })).toBe(true);
+  });
+
   it.each([
     [
       "mixed fact and question",

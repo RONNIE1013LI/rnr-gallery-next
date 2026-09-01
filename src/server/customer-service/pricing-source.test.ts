@@ -1,8 +1,75 @@
 import { describe, expect, it } from "vitest";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
+import { resolveConversationState } from "./conversation/conversation-state";
 import { resolveApprovedPricing } from "./pricing-source";
 
+const at = "2026-09-01T07:00:00.000Z";
+const customer = (text: string) => ({ role: "customer" as const, text, receivedAt: at });
+
+function stateFor(currentText: string, history: readonly ReturnType<typeof customer>[] = []) {
+  return resolveConversationState({
+    currentText,
+    history,
+    productContext: null,
+    registry: defaultProductRegistry,
+  });
+}
+
 describe("Reply Assistant approved pricing source", () => {
+  it("uses the complete canonical A2 Digital Oil Canvas total for three people", () => {
+    expect(resolveApprovedPricing({
+      state: stateFor(
+        "A2 digital oil painting canvas, 3 people",
+        [customer("I am in New Zealand. How much is it?")],
+      ),
+      registry: defaultProductRegistry,
+      revision: 42,
+    })).toEqual({
+      status: "verified",
+      sourceRevision: 42,
+      market: "NZ",
+      facts: [{
+        productKey: "digital-oil-painting-canvas",
+        productTitle: "Digital Oil Painting Canvas",
+        sizeKey: "a2",
+        sizeLabel: "A2 — 59.4 × 42 cm",
+        peoplePets: 3,
+        currency: "NZD",
+        amountInclTaxCents: 21_045,
+        formattedAmount: "NZ$210.45",
+      }],
+    });
+  });
+
+  it("asks only for Canvas subtype when market, A2, and three people are known", () => {
+    expect(resolveApprovedPricing({
+      state: stateFor("A2 3 people", [customer("How much for canvas in NZ?")]),
+      registry: defaultProductRegistry,
+      revision: 43,
+    })).toEqual({
+      status: "clarification_required",
+      missing: ["product"],
+      sourceRevision: 43,
+    });
+  });
+
+  it("quotes Roll-up after the customer supplies only the market on the next turn", () => {
+    expect(resolveApprovedPricing({
+      state: stateFor("New Zealand", [customer("How much for roll up banner?")]),
+      registry: defaultProductRegistry,
+      revision: 44,
+    })).toMatchObject({
+      status: "verified",
+      sourceRevision: 44,
+      market: "NZ",
+      facts: [{
+        productKey: "roll-up-banner",
+        sizeKey: "standard",
+        amountInclTaxCents: 26_450,
+      }],
+    });
+  });
+
   it("asks for the missing market and product on a broad pricing question", () => {
     expect(resolveApprovedPricing({
       message: "How much are your products?",
