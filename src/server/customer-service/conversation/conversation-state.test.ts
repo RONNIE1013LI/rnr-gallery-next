@@ -60,6 +60,33 @@ describe("resolveConversationState", () => {
     expect(state.missingFields).toEqual(["PRODUCT_TYPE"]);
   });
 
+  it("retains the answered Canvas fields when the requested subtype is selected", () => {
+    const state = resolveConversationState({
+      currentText: "Digital oil painting canvas",
+      history: [
+        customer("How much for canvas in New Zealand?"),
+        staff("Which Canvas type would you like?"),
+        customer("A2 3 people"),
+      ],
+      productContext: null,
+      registry,
+    });
+
+    expect(state).toMatchObject({
+      intent: { value: "quote_information_collection", source: "customer_history" },
+      market: { value: "NZ", source: "customer_history" },
+      product: {
+        productKey: "digital-oil-painting-canvas",
+        source: "current_message",
+      },
+      productCandidates: [],
+      size: { value: "a2", source: "customer_history" },
+      peoplePets: { value: 3, source: "customer_history" },
+      asksCataloguePrice: true,
+      missingFields: [],
+    });
+  });
+
   it("clears incompatible Canvas values when the customer switches to Roll-up Banner", () => {
     const state = resolveConversationState({
       currentText: "Actually how much for a roll up banner?",

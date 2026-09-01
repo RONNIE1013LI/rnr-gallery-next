@@ -95,6 +95,11 @@ function categoryCandidates(value: string, registry: ProductRegistryDocument) {
   return [];
 }
 
+function isProductSelectionQuestion(value: string) {
+  return /\bwhich\s+canvas\s+type\b/i.test(value)
+    || /\b(?:which|what)\s+(?:product|format|product format)\b/i.test(value);
+}
+
 function sizeMention(value: string) {
   const aSize = value.match(/\bA([0-4])\b/i);
   if (aSize) return `a${aSize[1]}`;
@@ -224,24 +229,39 @@ export function resolveConversationState(input: Readonly<{
     }
   }
 
-  const currentHasProductMention = activeProductMatches(input.currentText, input.registry).length > 0
-    || categoryCandidates(input.currentText, input.registry).length > 0;
+  const currentExactProducts = activeProductMatches(input.currentText, input.registry);
+  const currentCategoryProducts = categoryCandidates(input.currentText, input.registry);
+  const currentHasProductMention = currentExactProducts.length > 0
+    || currentCategoryProducts.length > 0;
+  const lastStaff = [...input.history].reverse().find((entry) => entry.role === "staff");
+  const priorProductOptions = texts.slice(1).map((entry) => {
+    const exact = activeProductMatches(entry.text, input.registry);
+    return (exact.length ? exact : categoryCandidates(entry.text, input.registry))
+      .map((candidate) => candidate.key);
+  }).find((keys) => keys.length > 0) ?? [];
+  const priorProductKeys = new Set(priorProductOptions);
+  const completesOpenProductSlot = currentExactProducts.length === 1
+    && Boolean(lastStaff && isProductSelectionQuestion(lastStaff.text))
+    && priorProductKeys.has(currentExactProducts[0]!.key);
+  const startsNewProductTopic = currentHasProductMention && !completesOpenProductSlot;
+  const selectedProduct = product
+    ? input.registry.products.find((candidate) => candidate.key === product.productKey) ?? null
+    : null;
   let size: ResolvedConversationValue<string> | null = null;
   const currentSize = sizeMention(input.currentText);
   if (currentSize) {
     size = { value: currentSize, source: "current_message" };
-  } else if (!currentHasProductMention) {
+  } else if (!startsNewProductTopic) {
     for (const entry of texts.slice(1)) {
       const value = sizeMention(entry.text);
-      if (value) {
+      const compatible = !selectedProduct
+        || selectedProduct.configuration.sizes.some((candidate) => candidate.key === value);
+      if (value && compatible) {
         size = { value, source: entry.source };
         break;
       }
     }
   }
-  const selectedProduct = product
-    ? input.registry.products.find((candidate) => candidate.key === product.productKey) ?? null
-    : null;
   if (!size && selectedProduct?.configuration.sizes.length === 1) {
     size = {
       value: selectedProduct.configuration.sizes[0]!.key,
@@ -251,7 +271,7 @@ export function resolveConversationState(input: Readonly<{
 
   const resolveCount = (subject: "people" | "photos") => {
     for (const entry of texts) {
-      if (currentHasProductMention && entry.source === "customer_history") continue;
+      if (startsNewProductTopic && entry.source === "customer_history") continue;
       const value = countMention(entry.text, subject);
       if (value !== null) return { value, source: entry.source } as const;
     }

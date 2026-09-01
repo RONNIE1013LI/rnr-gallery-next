@@ -10,6 +10,10 @@ import {
 } from "./website/structured-decision";
 import type { ApprovedPricingResolution } from "./pricing-source";
 import type { ConversationState } from "./conversation/conversation-state";
+import {
+  pricingMissingFieldToFollowUp,
+  type ResolvedBusinessContext,
+} from "./resolved-business-context";
 
 function compactConversationState(state: ConversationState | undefined) {
   if (!state) return null;
@@ -24,12 +28,6 @@ function compactConversationState(state: ConversationState | undefined) {
     missingFields: state.missingFields,
     asksCataloguePrice: state.asksCataloguePrice,
   });
-}
-
-function pricingFollowUpField(field: "market" | "product" | "size" | "peoplePets") {
-  if (field === "product") return "PRODUCT_TYPE";
-  if (field === "peoplePets") return "PEOPLE_COUNT";
-  return field.toUpperCase();
 }
 
 function serializeWebsiteCustomerContext(input: Readonly<{
@@ -60,6 +58,7 @@ export function buildWebsiteDecisionPrompt(input: Readonly<{
   context: readonly ConversationContextItem[];
   productContext: SafeProductContext | null;
   conversationState?: ConversationState;
+  businessContext?: ResolvedBusinessContext;
   approvedCaseMemoryCount: number;
   approvedPricing?: ApprovedPricingResolution | null;
 }>) {
@@ -89,7 +88,7 @@ export function buildWebsiteDecisionPrompt(input: Readonly<{
         "Use ANSWER_SAFE with allowed_facts=[APPROVED_CATALOGUE_PRICE]. The server renderer will supply the amount; never output a monetary value yourself.",
       ] : input.approvedPricing?.status === "clarification_required" ? [
         "This static pricing request is not realtime, but the server needs more catalogue identity before selecting a price.",
-        `Use ASK_FOR_INFORMATION with only these missing and follow-up fields: ${input.approvedPricing.missing.map(pricingFollowUpField).join(", ")}.`,
+        `Use ASK_FOR_INFORMATION with only these missing and follow-up fields: ${input.approvedPricing.missing.map(pricingMissingFieldToFollowUp).join(", ")}.`,
         "Do not invent or output a monetary value.",
       ] : []),
       "Use HUMAN_REVIEW_REQUIRED for uncertainty, risk, private-record requests or unsupported actions.",
@@ -97,6 +96,9 @@ export function buildWebsiteDecisionPrompt(input: Readonly<{
       `Expected intent: ${input.intent}`,
       ...(input.conversationState ? [
         `Server-resolved business state: ${compactConversationState(input.conversationState)}`,
+      ] : []),
+      ...(input.businessContext ? [
+        `Server-resolved business context: ${JSON.stringify(input.businessContext)}`,
       ] : []),
       `Approved case-memory signal count: ${Math.max(0, Math.min(3, input.approvedCaseMemoryCount))}`,
     ].join("\n"),
@@ -138,6 +140,7 @@ export function buildDraftPrompt(input: Readonly<{
   visualAssessment?: string;
   productContext?: SafeProductContext | null;
   conversationState?: ConversationState;
+  businessContext?: ResolvedBusinessContext;
   approvedPricing?: ApprovedPricingResolution | null;
 }>) {
   const rules = input.rules.map((rule) => `${rule.id}: ${rule.text}`).join("\n");
@@ -192,6 +195,9 @@ export function buildDraftPrompt(input: Readonly<{
       `Detected intent: ${input.intent}`,
       ...(input.conversationState ? [
         `Server-resolved business state: ${compactConversationState(input.conversationState)}`,
+      ] : []),
+      ...(input.businessContext ? [
+        `Server-resolved business context: ${JSON.stringify(input.businessContext)}`,
       ] : []),
       ...approvedPricingInstructions,
       `CONFIRMED RULES:\n${rules}`,

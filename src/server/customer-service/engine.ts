@@ -30,6 +30,7 @@ import {
   renderWebsiteDecision,
   type WebsiteDecision,
 } from "./website/structured-decision";
+import { resolveBusinessContext } from "./resolved-business-context";
 
 type EngineKnowledge = PolicyKnowledge & Readonly<{
   knowledgeVersion: string;
@@ -381,6 +382,14 @@ export class CustomerServiceEngine {
     }
 
     const sources = retrieveKnowledge({ gate, knowledge: this.knowledge });
+    const businessContext = resolveBusinessContext({
+      conversationState,
+      gate,
+      knowledgeVersion: this.knowledge.knowledgeVersion,
+      rules: sources.rules,
+      qualityGuide: sources.qualityGuide,
+      approvedPricing,
+    });
     const dailyScopeKey = localDateScopeKey();
     const reservation = await this.repository.reserveProviderAttempt({
       messageId: request.messageId,
@@ -430,6 +439,7 @@ export class CustomerServiceEngine {
         context: providerContext,
         productContext: draftInput.current.productContext ?? null,
         conversationState,
+        businessContext,
         approvedCaseMemoryCount: caseMemories.length,
         approvedPricing,
       })
@@ -443,6 +453,7 @@ export class CustomerServiceEngine {
         toneGuide: this.knowledge.toneGuide,
         caseMemories,
         conversationState,
+        businessContext,
         approvedPricing,
       });
     const invocation = await this.repository.confirmProviderInvocation({
