@@ -265,6 +265,7 @@ export function resolveConversationState(input: Readonly<{
     isStaticCataloguePricingEnquiry(entry.text)
     || (detectIntent(entry.text) === "quote_information_collection" && /\bquote\b/i.test(entry.text))
   ));
+  const currentSize = sizeMention(input.currentText);
 
   let market: ResolvedConversationValue<Market> | null = null;
   for (const entry of texts) {
@@ -305,6 +306,16 @@ export function resolveConversationState(input: Readonly<{
       productMentionSource = "server_page_context";
     }
   }
+  if (!product && productCandidates.length === 0 && asksCataloguePrice && currentSize) {
+    const sizeCompatibleProducts = input.registry.products.filter((candidate) => (
+      candidate.active
+      && candidate.configuration.sizes.some((size) => size.key === currentSize)
+    ));
+    const compatibleCategories = new Set(sizeCompatibleProducts.map((candidate) => candidate.category));
+    if (compatibleCategories.size === 1) {
+      productCandidates = sizeCompatibleProducts.map((candidate) => candidate.key);
+    }
+  }
 
   const currentExactProducts = activeProductMatches(input.currentText, input.registry);
   const currentCategoryProducts = categoryCandidates(input.currentText, input.registry);
@@ -317,7 +328,6 @@ export function resolveConversationState(input: Readonly<{
     ? input.registry.products.find((candidate) => candidate.key === product.productKey) ?? null
     : null;
   let size: ResolvedConversationValue<string> | null = null;
-  const currentSize = sizeMention(input.currentText);
   if (currentSize) {
     size = { value: currentSize, source: "current_message" };
   } else if (!startsNewProductTopic) {

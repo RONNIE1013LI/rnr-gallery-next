@@ -60,9 +60,9 @@ describe("resolveConversationState", () => {
     expect(state.missingFields).toEqual(["PRODUCT_TYPE"]);
   });
 
-  it("uses the selected Website market and treats a generic quote as a continuing price request", () => {
+  it("uses the selected Website market and narrows A-size quote details to Canvas", () => {
     const state = resolveConversationState({
-      currentText: "A2 3 people",
+      currentText: "A2 5 people",
       history: [
         customer("I'd like to get a quote."),
         staff("Which product format are you considering?"),
@@ -78,7 +78,12 @@ describe("resolveConversationState", () => {
       source: "customer_history",
     });
     expect(state.size).toEqual({ value: "a2", source: "current_message" });
-    expect(state.peoplePets).toEqual({ value: 3, source: "current_message" });
+    expect(state.peoplePets).toEqual({ value: 5, source: "current_message" });
+    expect(state.productCandidates).toEqual([
+      "photo-print-canvas",
+      "digital-oil-painting-canvas",
+      "custom-themed-canvas",
+    ]);
     expect(state.asksCataloguePrice).toBe(true);
     expect(state.missingFields).toEqual(["PRODUCT_TYPE"]);
   });

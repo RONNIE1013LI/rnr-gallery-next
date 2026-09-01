@@ -588,8 +588,8 @@ describe("CustomerServiceEngine", () => {
     }));
   });
 
-  it("keeps generic quote context after A2 and people details without a tone-length fallback", async () => {
-    const message = "A2 3 people";
+  it("narrows A2 details to Canvas instead of repeating the generic product question", async () => {
+    const message = "A2 5 people";
     const current = setup(message);
     current.repository.loadDraftInput.mockResolvedValue({
       current: { id: "message-1", text: message, channel: "website", pageMarket: "NZ" },
@@ -612,10 +612,11 @@ describe("CustomerServiceEngine", () => {
       .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
     expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
       status: "draft_ready",
-      draftText: "Which product format are you considering?",
+      draftText: "Which Canvas type would you like: Photo Print, Digital Oil Painting, or Custom Themed?",
       validatorCodes: [],
       websiteDecision: expect.objectContaining({
         response_type: "ASK_FOR_INFORMATION",
+        product_type: "CANVAS",
         missing_fields: ["PRODUCT_TYPE"],
         follow_up_fields: ["PRODUCT_TYPE"],
         allowed_facts: [],
