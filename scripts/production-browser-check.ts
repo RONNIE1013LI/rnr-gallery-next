@@ -45,6 +45,12 @@ const productionAuthRouteTargets = Object.freeze([
   { path: "/reply-assistant", kind: "reply-assistant" },
   { path: "/order-system", kind: "forms-orders" },
 ] as const);
+const productionFormsOrdersRouteTargets = Object.freeze([
+  { path: "/order-system", kind: "forms-orders" },
+] as const);
+const productionFormsOrdersRedirectPaths = Object.freeze([
+  "/order-system/sign-in",
+]);
 
 export type ProductionBrowserCheckDependencies = Readonly<{
   env: Readonly<Record<string, string | undefined>>;
@@ -63,6 +69,7 @@ export type ProductionBrowserCheckOptions = Readonly<{
   allowMedia?: boolean;
   coverageOnly?: boolean;
   authOnly?: boolean;
+  formsOrdersOnly?: boolean;
   owner?: string;
 }>;
 
@@ -85,6 +92,13 @@ export type ProductionAuthCoverageEvidence = Readonly<{
   expectedAuthRedirectCount: number;
 }>;
 
+export type ProductionFormsOrdersAuthCoverageEvidence = Readonly<{
+  formsOrdersAuthBoundary: "auth-gated";
+  formsOrdersCanonicalNext: "/order-system";
+  formsOrdersPolling: Readonly<{ customerChat: number; replyAssistant: number }>;
+  expectedAuthRedirectCount: 1;
+}>;
+
 export type ProductionBrowserCheckResult = Readonly<{
   session: string;
   owner: string;
@@ -105,6 +119,7 @@ export type ProductionBrowserCheckResult = Readonly<{
   consentLocallyFulfilledCount: number;
   coverage?: ProductionCoverageEvidence;
   authCoverage?: ProductionAuthCoverageEvidence;
+  formsOrdersAuthCoverage?: ProductionFormsOrdersAuthCoverageEvidence;
   browserProcessesAfterClose: 0;
 }>;
 
@@ -114,6 +129,7 @@ export type ProductionSmokeProgramConfig = Readonly<{
   allowMedia: boolean;
   coverageOnly?: boolean;
   authOnly?: boolean;
+  formsOrdersOnly?: boolean;
 }>;
 
 export type PlaywrightCliFailure = Readonly<{
@@ -148,6 +164,7 @@ type ProductionSmokeOperationResult = Pick<
   | "consentLocallyFulfilledCount"
   | "coverage"
   | "authCoverage"
+  | "formsOrdersAuthCoverage"
 >;
 
 function processRows(processList: string): ProcessRow[] {
@@ -462,14 +479,18 @@ export function normalizeProductionAuthReturnTarget(
 export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig): string {
   const baseUrl = buildProductionAutomationUrl(config.url);
   baseUrl.searchParams.set(AUTOMATION_CAPABILITY_STORAGE_KEY, config.capability);
-  if (config.coverageOnly && config.authOnly) {
+  const activeModeCount = [config.coverageOnly, config.authOnly, config.formsOrdersOnly]
+    .filter(Boolean).length;
+  if (activeModeCount > 1) {
     throw new Error("Production browser check modes are mutually exclusive");
   }
-  const routeDefinitions = config.authOnly
-    ? productionAuthRouteTargets
-    : config.coverageOnly
-      ? productionCoverageRouteTargets
-      : baselineProductionSmokeRoutePaths.map((path) => ({ path, kind: "baseline" as const }));
+  const routeDefinitions = config.formsOrdersOnly
+    ? productionFormsOrdersRouteTargets
+    : config.authOnly
+      ? productionAuthRouteTargets
+      : config.coverageOnly
+        ? productionCoverageRouteTargets
+        : baselineProductionSmokeRoutePaths.map((path) => ({ path, kind: "baseline" as const }));
   const routeTargets = routeDefinitions.map(({ path, kind }) => {
     const routeUrl = new URL(path, baseUrl);
     routeUrl.search = baseUrl.search;
@@ -477,7 +498,9 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
   });
   const allowedRoutePaths = [
     ...routeDefinitions.map(({ path }) => path),
-    ...((config.coverageOnly || config.authOnly) ? productionCoverageRedirectPaths : []),
+    ...(config.formsOrdersOnly
+      ? productionFormsOrdersRedirectPaths
+      : (config.coverageOnly || config.authOnly) ? productionCoverageRedirectPaths : []),
   ];
   const allowedNavigationBases = OFFICIAL_PRODUCTION_HOSTS.flatMap((hostname) =>
     allowedRoutePaths.flatMap((path) => {
@@ -486,7 +509,7 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
     }));
   const blockedResourceTypes = ["image", "media", "font"].filter((resourceType) =>
     shouldBlockProductionResource(resourceType, config.capability, config.allowMedia));
-  const localConsentPostUrls = (config.coverageOnly || config.authOnly)
+  const localConsentPostUrls = (config.coverageOnly || config.authOnly || config.formsOrdersOnly)
     ? OFFICIAL_PRODUCTION_HOSTS.map((hostname) => `https://${hostname}/api/consent`)
     : [];
   const localConsentResponseBody = JSON.stringify({
@@ -503,6 +526,7 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
     capability: config.capability,
     coverageOnly: config.coverageOnly === true,
     authOnly: config.authOnly === true,
+    formsOrdersOnly: config.formsOrdersOnly === true,
     authBoundaryContracts: buildProductionAuthBoundaryContracts(config.url),
     blockedResourceTypes,
     localConsentPostUrls,
@@ -519,7 +543,7 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
   return `async (page) => {
     const config = ${programConfig};
     const context = page.context();
-    if (config.coverageOnly || config.authOnly) await context.clearCookies();
+    if (config.coverageOnly || config.authOnly || config.formsOrdersOnly) await context.clearCookies();
     const blockedResourceCounts = {};
     const blockedResourceUrls = new Set();
     const guardBlockedRequests = new WeakSet();
@@ -554,7 +578,8 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
         requestFailedCount += 1;
       });
       candidate.on("response", (response) => {
-        if (candidate !== page || (!config.coverageOnly && !config.authOnly)) return;
+        if (candidate !== page
+          || (!config.coverageOnly && !config.authOnly && !config.formsOrdersOnly)) return;
         const responseUrl = response.url ? response.url() : "";
         const hashIndex = responseUrl.indexOf("#");
         const withoutHash = hashIndex === -1 ? responseUrl : responseUrl.slice(0, hashIndex);
@@ -750,6 +775,12 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
       formsOrdersPolling: null,
       expectedAuthRedirectCount: 0,
     } : undefined;
+    const formsOrdersAuthCoverage = config.formsOrdersOnly ? {
+      formsOrdersAuthBoundary: null,
+      formsOrdersCanonicalNext: null,
+      formsOrdersPolling: null,
+      expectedAuthRedirectCount: 0,
+    } : undefined;
     for (const routeTarget of config.routeTargets) {
       activeNavigationResponses = [];
       controlledNavigationInProgress = true;
@@ -835,7 +866,7 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
 
       if (routeTarget.kind === "forms-orders") {
         const contract = config.authBoundaryContracts.find((candidate) => candidate.kind === "forms-orders");
-        const boundary = inspectAuthBoundary(contract, page.url(), false);
+        const boundary = inspectAuthBoundary(contract, page.url(), config.formsOrdersOnly);
         if (boundary.state === "authenticated") {
           if (await page.getByRole("heading", { name: "Order system data list" }).count() !== 1) {
             throw new Error("Forms/Orders did not render its initial view");
@@ -851,6 +882,11 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
           authCoverage.formsOrdersCanonicalNext = boundary.canonicalNext;
           authCoverage.expectedAuthRedirectCount += boundary.state === "auth-gated" ? 1 : 0;
         }
+        if (formsOrdersAuthCoverage) {
+          formsOrdersAuthCoverage.formsOrdersAuthBoundary = boundary.state;
+          formsOrdersAuthCoverage.formsOrdersCanonicalNext = boundary.canonicalNext;
+          formsOrdersAuthCoverage.expectedAuthRedirectCount += boundary.state === "auth-gated" ? 1 : 0;
+        }
       }
 
       if (routeTarget.path === "/") {
@@ -860,7 +896,10 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
         assertNoConsoleErrors();
       }
 
-      if (routeTarget.path === "/" || routeTarget.kind === "pricing" || config.authOnly) {
+      if (routeTarget.path === "/"
+        || routeTarget.kind === "pricing"
+        || config.authOnly
+        || config.formsOrdersOnly) {
         pollingCounts = await page.evaluate(() => {
           const entries = performance.getEntriesByType("resource");
           return {
@@ -869,7 +908,8 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
           };
         });
         assertNoConsoleErrors();
-        if ((config.authOnly && (pollingCounts.customerChat || pollingCounts.replyAssistant))
+        if (((config.authOnly || config.formsOrdersOnly)
+            && (pollingCounts.customerChat || pollingCounts.replyAssistant))
           || pollingCounts.customerChat
           || (config.capability !== "REPLY_ASSISTANT_TEST" && pollingCounts.replyAssistant)) {
           throw new Error("Automation mode started customer-service polling");
@@ -879,6 +919,9 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
         }
         if (authCoverage && routeTarget.kind === "forms-orders") {
           authCoverage.formsOrdersPolling = pollingCounts;
+        }
+        if (formsOrdersAuthCoverage && routeTarget.kind === "forms-orders") {
+          formsOrdersAuthCoverage.formsOrdersPolling = pollingCounts;
         }
       }
       assertNoNetworkFailures();
@@ -903,6 +946,13 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
         && authCoverage.formsOrdersCanonicalNext !== "/order-system"))) {
       throw new Error("Production auth smoke did not prove every approved auth boundary");
     }
+    if (formsOrdersAuthCoverage
+      && (formsOrdersAuthCoverage.formsOrdersAuthBoundary !== "auth-gated"
+        || formsOrdersAuthCoverage.formsOrdersCanonicalNext !== "/order-system"
+        || !formsOrdersAuthCoverage.formsOrdersPolling
+        || formsOrdersAuthCoverage.expectedAuthRedirectCount !== 1)) {
+      throw new Error("Production Forms/Orders auth smoke did not prove the approved auth boundary");
+    }
     const result = {
       routeCount,
       blockedResourceCounts,
@@ -915,6 +965,7 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
       consentLocallyFulfilledCount,
       ...(coverage ? { coverage } : {}),
       ...(authCoverage ? { authCoverage } : {}),
+      ...(formsOrdersAuthCoverage ? { formsOrdersAuthCoverage } : {}),
     };
     return result;
   }`;
@@ -937,6 +988,7 @@ function parseOperationResult(
   expectedRouteCount: number,
   coverageOnly: boolean,
   authOnly: boolean,
+  formsOrdersOnly: boolean,
 ): ProductionSmokeOperationResult | undefined {
   if (typeof value === "string") {
     for (const line of value.trim().split("\n").reverse()) {
@@ -948,6 +1000,7 @@ function parseOperationResult(
           expectedRouteCount,
           coverageOnly,
           authOnly,
+          formsOrdersOnly,
         );
         if (result) return result;
       } catch {
@@ -1014,6 +1067,24 @@ function parseOperationResult(
       || ![1, 2].includes(Number(authCandidate.expectedAuthRedirectCount))) return undefined;
     authCoverage = authCandidate as ProductionAuthCoverageEvidence;
   }
+  let formsOrdersAuthCoverage: ProductionFormsOrdersAuthCoverageEvidence | undefined;
+  if (formsOrdersOnly) {
+    if (!candidate.formsOrdersAuthCoverage
+      || typeof candidate.formsOrdersAuthCoverage !== "object"
+      || Array.isArray(candidate.formsOrdersAuthCoverage)) return undefined;
+    const formsCandidate = candidate.formsOrdersAuthCoverage as Record<string, unknown>;
+    const formsPolling = formsCandidate.formsOrdersPolling;
+    if (!formsPolling || typeof formsPolling !== "object" || Array.isArray(formsPolling)) {
+      return undefined;
+    }
+    const counts = formsPolling as Record<string, unknown>;
+    if (formsCandidate.formsOrdersAuthBoundary !== "auth-gated"
+      || formsCandidate.formsOrdersCanonicalNext !== "/order-system"
+      || counts.customerChat !== 0
+      || counts.replyAssistant !== 0
+      || formsCandidate.expectedAuthRedirectCount !== 1) return undefined;
+    formsOrdersAuthCoverage = formsCandidate as ProductionFormsOrdersAuthCoverageEvidence;
+  }
   return {
     routeCount: expectedRouteCount,
     blockedResourceCounts: candidate.blockedResourceCounts,
@@ -1032,6 +1103,7 @@ function parseOperationResult(
     consentLocallyFulfilledCount: candidate.consentLocallyFulfilledCount,
     ...(coverage ? { coverage } : {}),
     ...(authCoverage ? { authCoverage } : {}),
+    ...(formsOrdersAuthCoverage ? { formsOrdersAuthCoverage } : {}),
   };
 }
 
@@ -1087,16 +1159,20 @@ export async function runProductionBrowserCheck(
       allowMedia: options.allowMedia === true,
       coverageOnly: options.coverageOnly === true,
       authOnly: options.authOnly === true,
+      formsOrdersOnly: options.formsOrdersOnly === true,
     })], remainingLifetime());
     operationResult = parseOperationResult(
       output,
-      options.authOnly
-        ? productionAuthRouteTargets.length
-        : options.coverageOnly
-          ? productionCoverageRouteTargets.length
-          : baselineProductionSmokeRoutePaths.length,
+      options.formsOrdersOnly
+        ? productionFormsOrdersRouteTargets.length
+        : options.authOnly
+          ? productionAuthRouteTargets.length
+          : options.coverageOnly
+            ? productionCoverageRouteTargets.length
+            : baselineProductionSmokeRoutePaths.length,
       options.coverageOnly === true,
       options.authOnly === true,
+      options.formsOrdersOnly === true,
     );
     if (!operationResult) {
       throw new Error("Playwright CLI did not return a valid Production browser result");
@@ -1147,6 +1223,7 @@ function parseCliArguments(args: readonly string[]): ProductionBrowserCheckOptio
   let allowMedia = false;
   let coverageOnly = false;
   let authOnly = false;
+  let formsOrdersOnly = false;
   for (const arg of args) {
     if (arg === "--media") {
       allowMedia = true;
@@ -1154,6 +1231,8 @@ function parseCliArguments(args: readonly string[]): ProductionBrowserCheckOptio
       coverageOnly = true;
     } else if (arg === "--auth-only") {
       authOnly = true;
+    } else if (arg === "--forms-orders-only") {
+      formsOrdersOnly = true;
     } else if (arg.startsWith("--capability=")) {
       const value = arg.slice("--capability=".length) as ProductionCapability;
       if (!["DEFAULT", "VISUAL", "ATTRIBUTION", "REPLY_ASSISTANT_TEST", "EXTENDED"].includes(value)) throw new Error("Invalid --capability");
@@ -1171,8 +1250,18 @@ function parseCliArguments(args: readonly string[]): ProductionBrowserCheckOptio
       throw new Error("Only one Production URL may be provided");
     }
   }
-  if (coverageOnly && authOnly) throw new Error("--coverage-only and --auth-only are mutually exclusive");
-  return { url, capability, ttlSeconds, allowMedia, coverageOnly, authOnly };
+  if ([coverageOnly, authOnly, formsOrdersOnly].filter(Boolean).length > 1) {
+    throw new Error("Production browser check modes are mutually exclusive");
+  }
+  return {
+    url,
+    capability,
+    ttlSeconds,
+    allowMedia,
+    coverageOnly,
+    authOnly,
+    formsOrdersOnly,
+  };
 }
 
 async function main() {
@@ -1194,6 +1283,9 @@ async function main() {
     consentLocallyFulfilledCount: result.consentLocallyFulfilledCount,
     ...(result.coverage ? { coverage: result.coverage } : {}),
     ...(result.authCoverage ? { authCoverage: result.authCoverage } : {}),
+    ...(result.formsOrdersAuthCoverage
+      ? { formsOrdersAuthCoverage: result.formsOrdersAuthCoverage }
+      : {}),
     browserProcessesAfterClose: result.browserProcessesAfterClose,
   }));
 }

@@ -48,6 +48,12 @@ type OperationResult = Readonly<{
     formsOrdersPolling: Readonly<{ customerChat: number; replyAssistant: number }>;
     expectedAuthRedirectCount: number;
   }>;
+  formsOrdersAuthCoverage?: Readonly<{
+    formsOrdersAuthBoundary: "auth-gated";
+    formsOrdersCanonicalNext: "/order-system";
+    formsOrdersPolling: Readonly<{ customerChat: number; replyAssistant: number }>;
+    expectedAuthRedirectCount: 1;
+  }>;
 }>;
 
 function validOperationResult(overrides: Partial<OperationResult> = {}): OperationResult {
@@ -1228,6 +1234,149 @@ describe("Production browser check", () => {
       "/reply-assistant",
       "/order-system",
     ]);
+  });
+
+  it("accepts --forms-orders-only as a guarded CLI mode", () => {
+    const scriptPath = resolve(process.cwd(), "scripts/production-browser-check.ts");
+    const result = spawnSync(process.execPath, [
+      "--import",
+      "tsx",
+      scriptPath,
+      "--forms-orders-only",
+    ], {
+      encoding: "utf8",
+      env: { ...process.env, RNR_PRODUCTION_SMOKE: "" },
+    });
+
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("Production browser checks require RNR_PRODUCTION_SMOKE=1");
+    expect(result.stderr).not.toContain("Unknown flag");
+  });
+
+  it("visits only Forms/Orders in forms-orders-only mode", async () => {
+    const fake = createFakePage();
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      formsOrdersOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).resolves.toMatchObject({
+      routeCount: 1,
+      requestFailedCount: 0,
+      blockedMutationRequestCount: 0,
+      formsOrdersAuthCoverage: {
+        formsOrdersAuthBoundary: "auth-gated",
+        formsOrdersCanonicalNext: "/order-system",
+        formsOrdersPolling: { customerChat: 0, replyAssistant: 0 },
+        expectedAuthRedirectCount: 1,
+      },
+    });
+    expect(fake.visited.map((url) => new URL(url).pathname)).toEqual(["/order-system"]);
+    expect(fake.visited.some((url) => url.includes("/reply-assistant"))).toBe(false);
+    expect(fake.visited.some((url) => ["/", "/shop", "/canvas", "/banners"].includes(new URL(url).pathname))).toBe(false);
+  });
+
+  it("normalizes only harness-owned parameters in forms-orders-only mode", async () => {
+    const fake = createFakePage({
+      formsOrdersAuthUrl: "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system%3Frnr_automation_capability%3DDEFAULT%26rnr_automation%3D1",
+    });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      formsOrdersOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).resolves.toMatchObject({
+      formsOrdersAuthCoverage: {
+        formsOrdersCanonicalNext: "/order-system",
+      },
+    });
+  });
+
+  it.each([
+    [
+      "a genuine business query",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system%3Fjob%3D123%26rnr_automation%3D1",
+    ],
+    [
+      "a genuine hash",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system%23job-123",
+    ],
+    [
+      "the wrong canonical target",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Freply-assistant",
+    ],
+  ])("strictly rejects %s in forms-orders-only mode", async (_label, formsOrdersAuthUrl) => {
+    const fake = createFakePage({ formsOrdersAuthUrl });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      formsOrdersOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).rejects.toThrow("canonical_next=(mismatch)");
+  });
+
+  it("fails forms-orders-only mode when idle polling is observed", async () => {
+    const fake = createFakePage({ pollingCounts: { customerChat: 1 } });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      formsOrdersOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).rejects.toThrow("customer-service polling");
+  });
+
+  it("keeps the mutation guard active in forms-orders-only mode", async () => {
+    const fake = createFakePage({ mutationRequestOnFirstGoto: true });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      formsOrdersOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).resolves.toMatchObject({
+      routeCount: 1,
+      blockedMutationRequestCount: 1,
+    });
+    expect(fake.aborted).toContain("https://rnrgallery.com/api/blocked-mutation");
+  });
+
+  it("parses forms-orders-only evidence and restores the browser guard", async () => {
+    const fake = createFakePage();
+    const deps = dependencies({
+      runCli: vi.fn(async (_session, args) => {
+        if (args[0] !== "run-code") return undefined;
+        const operation = (0, eval)(`(${args[1]})`) as (page: FakePage) => Promise<OperationResult>;
+        return JSON.stringify(await operation(fake.page));
+      }),
+    });
+
+    await expect(runProductionBrowserCheck({
+      url: "https://rnrgallery.com/",
+      formsOrdersOnly: true,
+    }, deps)).resolves.toMatchObject({
+      routeCount: 1,
+      formsOrdersAuthCoverage: {
+        formsOrdersAuthBoundary: "auth-gated",
+        formsOrdersCanonicalNext: "/order-system",
+        formsOrdersPolling: { customerChat: 0, replyAssistant: 0 },
+        expectedAuthRedirectCount: 1,
+      },
+      browserProcessesAfterClose: 0,
+    });
+    expect(deps.runCli).toHaveBeenLastCalledWith(
+      expect.any(String),
+      ["close"],
+      expect.any(Number),
+    );
   });
 
   it("parses and returns the narrow auth-only evidence from the CLI", async () => {
