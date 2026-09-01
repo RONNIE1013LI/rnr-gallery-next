@@ -1,5 +1,6 @@
 import { detectIntent, type CustomerServiceIntent } from "../intent-detection";
 import type { ConversationContextItem } from "../repositories/customer-service-repository";
+import { isQuoteDetailAnswer, isQuoteDetailQuestion } from "./conversation-state";
 
 type ContextValue = ConversationContextItem | string;
 
@@ -25,7 +26,8 @@ export function resolveContextualIntent(input: Readonly<{
   const current = input.currentText.trim();
   if (
     lastStaff
-    && /\b(?:country|area|location|located|address|size|date|day|when|how many (?:photos?|faces?|people)|wording|theme)\b/i.test(staffText)
+    && isQuoteDetailQuestion(staffText)
+    && isQuoteDetailAnswer(current)
   ) {
     return { intent: "quote_information_collection", inherited: true, reason: "pending_quote_detail" };
   }

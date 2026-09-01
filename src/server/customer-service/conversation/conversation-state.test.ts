@@ -1,0 +1,122 @@
+import { describe, expect, it } from "vitest";
+import {
+  defaultProductRegistry,
+  parseProductRegistry,
+} from "@/domain/catalogue/product-registry";
+import { resolveConversationState } from "./conversation-state";
+
+const registry = parseProductRegistry(defaultProductRegistry);
+const at = "2026-09-01T07:00:00.000Z";
+const customer = (text: string) => ({ role: "customer" as const, text, receivedAt: at });
+const staff = (text: string) => ({ role: "staff" as const, text, receivedAt: at });
+
+describe("resolveConversationState", () => {
+  it("preserves the Roll-up price request when the customer answers New Zealand", () => {
+    const state = resolveConversationState({
+      currentText: "New Zealand",
+      history: [
+        customer("How much for roll up banner?"),
+        staff("Is this for New Zealand or Australia?"),
+      ],
+      productContext: null,
+      registry,
+    });
+
+    expect(state.intent).toEqual({
+      value: "quote_information_collection",
+      source: "customer_history",
+    });
+    expect(state.market).toEqual({ value: "NZ", source: "current_message" });
+    expect(state.product).toEqual({
+      productKey: "roll-up-banner",
+      source: "customer_history",
+    });
+    expect(state.size).toEqual({ value: "standard", source: "customer_history" });
+    expect(state.asksCataloguePrice).toBe(true);
+    expect(state.missingFields).toEqual([]);
+  });
+
+  it("preserves A2 and three people while asking only for the Canvas subtype", () => {
+    const state = resolveConversationState({
+      currentText: "A2 3 people",
+      history: [
+        customer("How much for canvas in New Zealand?"),
+        staff("Which Canvas type would you like?"),
+      ],
+      productContext: null,
+      registry,
+    });
+
+    expect(state.intent.value).toBe("quote_information_collection");
+    expect(state.market?.value).toBe("NZ");
+    expect(state.size).toEqual({ value: "a2", source: "current_message" });
+    expect(state.peoplePets).toEqual({ value: 3, source: "current_message" });
+    expect(state.product).toBeNull();
+    expect(state.productCandidates).toEqual([
+      "photo-print-canvas",
+      "digital-oil-painting-canvas",
+      "custom-themed-canvas",
+    ]);
+    expect(state.missingFields).toEqual(["PRODUCT_TYPE"]);
+  });
+
+  it("clears incompatible Canvas values when the customer switches to Roll-up Banner", () => {
+    const state = resolveConversationState({
+      currentText: "Actually how much for a roll up banner?",
+      history: [customer("A2 digital oil painting canvas with 3 people in NZ")],
+      productContext: null,
+      registry,
+    });
+
+    expect(state.product?.productKey).toBe("roll-up-banner");
+    expect(state.size).toEqual({ value: "standard", source: "current_message" });
+    expect(state.peoplePets).toBeNull();
+  });
+
+  it("never treats a staff statement as a customer fact", () => {
+    const state = resolveConversationState({
+      currentText: "yes",
+      history: [staff("You are in Australia and want an A2 canvas")],
+      productContext: null,
+      registry,
+    });
+
+    expect(state.market).toBeNull();
+    expect(state.product).toBeNull();
+    expect(state.size).toBeNull();
+  });
+
+  it("uses trusted Website page context only after customer messages", () => {
+    const state = resolveConversationState({
+      currentText: "How much is this?",
+      history: [],
+      productContext: {
+        market: "AU",
+        productKey: "photo-print-canvas",
+        productTitle: "Photo Print Canvas",
+        category: "canvas",
+        pageKind: "product",
+      },
+      registry,
+    });
+
+    expect(state.market).toEqual({ value: "AU", source: "server_page_context" });
+    expect(state.product).toEqual({
+      productKey: "photo-print-canvas",
+      source: "server_page_context",
+    });
+  });
+
+  it("returns deeply immutable state", () => {
+    const state = resolveConversationState({
+      currentText: "How much for canvas in NZ?",
+      history: [],
+      productContext: null,
+      registry,
+    });
+
+    expect(Object.isFrozen(state)).toBe(true);
+    expect(Object.isFrozen(state.productCandidates)).toBe(true);
+    expect(Object.isFrozen(state.missingFields)).toBe(true);
+  });
+});

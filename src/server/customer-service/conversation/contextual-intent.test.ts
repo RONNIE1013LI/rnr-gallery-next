@@ -8,8 +8,10 @@ const customer = (text: string) => ({ role: "customer" as const, text, receivedA
 describe("resolveContextualIntent", () => {
   it.each([
     ["Australia", "Which country are you in?"],
+    ["New Zealand", "Is this for New Zealand or Australia?"],
     ["yeah woorabinda", "Which area are you located in?"],
     ["A1", "What size would you like?"],
+    ["A2 3 people", "Which Canvas type would you like?"],
     ["next Saturday", "What date do you need it for?"],
     ["around 5 photos", "How many photos would you like to use?"],
   ])("maps contextual quote detail %s from the staff question", (currentText, question) => {
