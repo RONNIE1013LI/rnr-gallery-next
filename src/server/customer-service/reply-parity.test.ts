@@ -194,28 +194,37 @@ const lockedRealEngineParityMatrix: readonly LockedParityRow[] = [
       staff("Which Canvas type would you like?"),
       customer("A2, 3 people"),
     ],
-    facebookOutput: "Which Canvas type would you like: Photo Print, Digital Oil Painting, or Custom Themed?",
+    facebookOutput: "Digital Oil Painting Canvas in A2 for 3 people is currently NZ$210.45.",
     websiteOutput: websiteDecision({
-      product_type: "CANVAS",
-      missing_fields: ["PRODUCT_TYPE"],
-      follow_up_fields: ["PRODUCT_TYPE"],
+      response_type: "ANSWER_SAFE",
+      allowed_facts: ["APPROVED_CATALOGUE_PRICE"],
+      missing_fields: [],
+      follow_up_fields: [],
     }),
     expectedContext: expectedAllowedBusinessContext({
       conversation: {
         intent: "quote_information_collection",
         market: "NZ",
-        productCandidates: canvasProductCandidates,
+        productKey: "digital-oil-painting-canvas",
         size: "a2",
         peoplePets: 3,
-        missingFields: ["PRODUCT_TYPE"],
         asksCataloguePrice: true,
       },
       ruleIds: quoteRuleIds,
       qualityGuideId: "quote_information_collection",
       qualityRequirementIds: quoteQualityRequirementIds,
-      canonicalQuote: { status: "clarification_required", sourceRevision: 12, missing: ["product"] },
-      allowedFactIds: [],
-      allowedFollowUpFields: ["PRODUCT_TYPE"],
+      canonicalQuote: {
+        status: "verified",
+        sourceRevision: 12,
+        facts: [{
+          productKey: "digital-oil-painting-canvas",
+          sizeKey: "a2",
+          peoplePets: 3,
+          currency: "NZD",
+        }],
+      },
+      allowedFactIds: ["APPROVED_CATALOGUE_PRICE"],
+      allowedFollowUpFields: [],
     }),
   },
   {
@@ -765,18 +774,6 @@ describe("real Facebook and Website engine parity", () => {
   });
 
   it.each([
-    {
-      name: "Canvas subtype",
-      currentText: "A2 3 people",
-      context: [
-        customer("How much for canvas in New Zealand?"),
-        staff("Which Canvas type would you like?"),
-        customer("A2 3 people"),
-      ],
-      followUps: ["PRODUCT_TYPE"],
-      facebookOutput: "Which Canvas type would you like: Photo Print, Digital Oil Painting, or Custom Themed?",
-      websiteOutput: websiteDecision({ product_type: "CANVAS", missing_fields: ["PRODUCT_TYPE"], follow_up_fields: ["PRODUCT_TYPE"] }),
-    },
     {
       name: "Roll-up market",
       currentText: "How much for a roll-up banner?",

@@ -36,7 +36,7 @@ describe("resolveConversationState", () => {
     expect(state.missingFields).toEqual([]);
   });
 
-  it("preserves A2 and three people while asking only for the Canvas subtype", () => {
+  it("treats an A-size plus people count as Digital Oil Painting in a Canvas quote", () => {
     const state = resolveConversationState({
       currentText: "A2 3 people",
       history: [
@@ -51,16 +51,15 @@ describe("resolveConversationState", () => {
     expect(state.market?.value).toBe("NZ");
     expect(state.size).toEqual({ value: "a2", source: "current_message" });
     expect(state.peoplePets).toEqual({ value: 3, source: "current_message" });
-    expect(state.product).toBeNull();
-    expect(state.productCandidates).toEqual([
-      "photo-print-canvas",
-      "digital-oil-painting-canvas",
-      "custom-themed-canvas",
-    ]);
-    expect(state.missingFields).toEqual(["PRODUCT_TYPE"]);
+    expect(state.product).toEqual({
+      productKey: "digital-oil-painting-canvas",
+      source: "current_message",
+    });
+    expect(state.productCandidates).toEqual([]);
+    expect(state.missingFields).toEqual([]);
   });
 
-  it("uses the selected Website market and narrows A-size quote details to Canvas", () => {
+  it("uses the selected Website market and infers Digital Oil Painting from A-size plus people", () => {
     const state = resolveConversationState({
       currentText: "A2 5 people",
       history: [
@@ -79,13 +78,13 @@ describe("resolveConversationState", () => {
     });
     expect(state.size).toEqual({ value: "a2", source: "current_message" });
     expect(state.peoplePets).toEqual({ value: 5, source: "current_message" });
-    expect(state.productCandidates).toEqual([
-      "photo-print-canvas",
-      "digital-oil-painting-canvas",
-      "custom-themed-canvas",
-    ]);
+    expect(state.product).toEqual({
+      productKey: "digital-oil-painting-canvas",
+      source: "current_message",
+    });
+    expect(state.productCandidates).toEqual([]);
     expect(state.asksCataloguePrice).toBe(true);
-    expect(state.missingFields).toEqual(["PRODUCT_TYPE"]);
+    expect(state.missingFields).toEqual([]);
   });
 
   it("retains the answered Canvas fields when the requested subtype is selected", () => {

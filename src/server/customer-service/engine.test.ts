@@ -528,7 +528,7 @@ describe("CustomerServiceEngine", () => {
     }));
   });
 
-  it("asks only for Canvas subtype after A2 and three people are already known", async () => {
+  it("quotes Digital Oil Painting after a Canvas quote receives A2 and three people", async () => {
     const current = setup("A2 3 people");
     current.repository.loadDraftInput.mockResolvedValue({
       current: { id: "message-1", text: "A2 3 people", channel: "website" },
@@ -550,11 +550,17 @@ describe("CustomerServiceEngine", () => {
     await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" }))
       .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
     expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
-      draftText: "Which Canvas type would you like: Photo Print, Digital Oil Painting, or Custom Themed?",
+      draftText: "Digital Oil Painting Canvas (A2 — 59.4 × 42 cm, 3 people/pets) is currently NZ$210.45.",
       websiteDecision: expect.objectContaining({
-        product_type: "CANVAS",
-        missing_fields: ["PRODUCT_TYPE"],
-        follow_up_fields: ["PRODUCT_TYPE"],
+        response_type: "ANSWER_SAFE",
+        missing_fields: [],
+        follow_up_fields: [],
+        allowed_facts: ["APPROVED_CATALOGUE_PRICE"],
+        approved_catalogue_price: expect.objectContaining({
+          productKey: "digital-oil-painting-canvas",
+          peoplePets: 3,
+          amountInclTaxCents: 21_045,
+        }),
       }),
     }));
   });
@@ -588,7 +594,7 @@ describe("CustomerServiceEngine", () => {
     }));
   });
 
-  it("narrows A2 details to Canvas instead of repeating the generic product question", async () => {
+  it("quotes Digital Oil Painting directly when the quote answer contains A2 and people", async () => {
     const message = "A2 5 people";
     const current = setup(message);
     current.repository.loadDraftInput.mockResolvedValue({
@@ -612,14 +618,19 @@ describe("CustomerServiceEngine", () => {
       .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
     expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
       status: "draft_ready",
-      draftText: "Which Canvas type would you like: Photo Print, Digital Oil Painting, or Custom Themed?",
+      draftText: "Digital Oil Painting Canvas (A2 — 59.4 × 42 cm, 5 people/pets) is currently NZ$262.20.",
       validatorCodes: [],
       websiteDecision: expect.objectContaining({
-        response_type: "ASK_FOR_INFORMATION",
-        product_type: "CANVAS",
-        missing_fields: ["PRODUCT_TYPE"],
-        follow_up_fields: ["PRODUCT_TYPE"],
-        allowed_facts: [],
+        response_type: "ANSWER_SAFE",
+        missing_fields: [],
+        follow_up_fields: [],
+        allowed_facts: ["APPROVED_CATALOGUE_PRICE"],
+        approved_catalogue_price: expect.objectContaining({
+          productKey: "digital-oil-painting-canvas",
+          peoplePets: 5,
+          currency: "NZD",
+          amountInclTaxCents: 26_220,
+        }),
       }),
     }));
   });

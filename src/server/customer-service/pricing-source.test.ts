@@ -50,7 +50,7 @@ describe("Reply Assistant approved pricing source", () => {
     });
   });
 
-  it("asks only for Canvas subtype when market, A2, and three people are known", () => {
+  it("quotes Digital Oil Painting when a Canvas quote supplies A2 and three people", () => {
     expect(resolveApprovedPricing({
       state: stateFor("A2 3 people", {
         history: [customer("How much for canvas in NZ?")],
@@ -58,9 +58,19 @@ describe("Reply Assistant approved pricing source", () => {
       registry: defaultProductRegistry,
       revision: 43,
     })).toEqual({
-      status: "clarification_required",
-      missing: ["product"],
+      status: "verified",
       sourceRevision: 43,
+      market: "NZ",
+      facts: [{
+        productKey: "digital-oil-painting-canvas",
+        productTitle: "Digital Oil Painting Canvas",
+        sizeKey: "a2",
+        sizeLabel: "A2 — 59.4 × 42 cm",
+        peoplePets: 3,
+        currency: "NZD",
+        amountInclTaxCents: 21_045,
+        formattedAmount: "NZ$210.45",
+      }],
     });
   });
 

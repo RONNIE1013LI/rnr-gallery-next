@@ -266,6 +266,7 @@ export function resolveConversationState(input: Readonly<{
     || (detectIntent(entry.text) === "quote_information_collection" && /\bquote\b/i.test(entry.text))
   ));
   const currentSize = sizeMention(input.currentText);
+  const currentPeoplePets = countMention(input.currentText, "people");
 
   let market: ResolvedConversationValue<Market> | null = null;
   for (const entry of texts) {
@@ -304,6 +305,30 @@ export function resolveConversationState(input: Readonly<{
     if (contextual) {
       product = { productKey: contextual.key, source: "server_page_context" };
       productMentionSource = "server_page_context";
+    }
+  }
+  if (
+    !product
+    && (
+      productCandidates.length === 0
+      || productCandidates.every((productKey) => input.registry.products.some((candidate) => (
+        candidate.key === productKey && candidate.category === "canvas"
+      )))
+    )
+    && asksCataloguePrice
+    && currentSize
+    && currentPeoplePets !== null
+  ) {
+    const digitalOilPainting = input.registry.products.find((candidate) => (
+      candidate.active
+      && candidate.key === "digital-oil-painting-canvas"
+      && candidate.configuration.peoplePetsMode === "required"
+      && candidate.configuration.sizes.some((size) => size.key === currentSize)
+    ));
+    if (digitalOilPainting) {
+      product = { productKey: digitalOilPainting.key, source: "current_message" };
+      productCandidates = [];
+      productMentionSource = "current_message";
     }
   }
   if (!product && productCandidates.length === 0 && asksCataloguePrice && currentSize) {
