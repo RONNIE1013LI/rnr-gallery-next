@@ -7,10 +7,16 @@ import {
   buildProductionAutomationUrl,
   buildProductionSmokeProgram,
   formatPlaywrightCliFailure,
+  normalizeProductionAuthReturnTarget,
   productionBrowserSessionProcessIds,
   runProductionBrowserCheck,
   type ProductionBrowserCheckDependencies,
 } from "./production-browser-check";
+
+const harnessAuthQueryParameterNames = [
+  "rnr_automation",
+  "rnr_automation_capability",
+] as const;
 
 type OperationResult = Readonly<{
   routeCount: number;
@@ -491,6 +497,25 @@ function processRow(pid: number, ppid: number, startedAt: string, command: strin
 }
 
 describe("Production browser check", () => {
+  it("normalizes only harness-owned auth query parameters", () => {
+    expect(normalizeProductionAuthReturnTarget(
+      "/order-system?rnr_automation=1&rnr_automation_capability=DEFAULT",
+      harnessAuthQueryParameterNames,
+    )).toBe('["/order-system",[],""]');
+    expect(normalizeProductionAuthReturnTarget(
+      "/order-system?job=123&rnr_automation=1&rnr_automation_capability=DEFAULT",
+      harnessAuthQueryParameterNames,
+    )).toBe('["/order-system",[["job","123"]],""]');
+    expect(normalizeProductionAuthReturnTarget(
+      "/order-system?b=2&rnr_automation=1&a=1",
+      harnessAuthQueryParameterNames,
+    )).toBe('["/order-system",[["a","1"],["b","2"]],""]');
+    expect(normalizeProductionAuthReturnTarget(
+      "/order-system?rnr_automation_extra=1",
+      harnessAuthQueryParameterNames,
+    )).toBe('["/order-system",[["rnr_automation_extra","1"]],""]');
+  });
+
   it("allows only official Production hosts and adds the explicit automation mode", () => {
     expect(buildProductionAutomationUrl("https://rnrgallery.com/shop?utm_source=test").toString())
       .toBe("https://rnrgallery.com/shop?utm_source=test&rnr_automation=1");
@@ -1268,6 +1293,86 @@ describe("Production browser check", () => {
       authCoverage: { formsOrdersCanonicalNext: "/order-system" },
     });
     await expect(operation(rejected.page)).rejects.toThrow("canonical_next=(mismatch)");
+  });
+
+  it.each([
+    [
+      "both harness parameters",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system%3Frnr_automation%3D1%26rnr_automation_capability%3DDEFAULT",
+    ],
+    [
+      "both harness parameters in reverse order",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system%3Frnr_automation_capability%3DDEFAULT%26rnr_automation%3D1",
+    ],
+    [
+      "only the harness session parameter",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system%3Frnr_automation%3D1",
+    ],
+    [
+      "only the harness capability parameter",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system%3Frnr_automation_capability%3DDEFAULT",
+    ],
+  ])("normalizes %s in the Forms/Orders return target", async (_label, formsOrdersAuthUrl) => {
+    const fake = createFakePage({ formsOrdersAuthUrl });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      authOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).resolves.toMatchObject({
+      authCoverage: { formsOrdersCanonicalNext: "/order-system" },
+    });
+  });
+
+  it.each([
+    [
+      "a genuine application query",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system%3Fjob%3D123",
+    ],
+    [
+      "a genuine application query alongside harness parameters",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system%3Fjob%3D123%26rnr_automation%3D1%26rnr_automation_capability%3DDEFAULT",
+    ],
+    [
+      "the wrong genuine application query",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system%3Fjob%3D456%26rnr_automation%3D1",
+    ],
+    [
+      "an external return target",
+      "https://rnrgallery.com/order-system/sign-in?next=https%3A%2F%2Fevil.example%2Forder-system",
+    ],
+    [
+      "a protocol-relative return target",
+      "https://rnrgallery.com/order-system/sign-in?next=%2F%2Fevil.example%2Forder-system",
+    ],
+    [
+      "a malformed encoded return target",
+      "https://rnrgallery.com/order-system/sign-in?next=%E0%A4%A",
+    ],
+    [
+      "a traversal-like return target",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system%2F..%2Fadmin",
+    ],
+    [
+      "an unknown internal return target",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Fshop",
+    ],
+    [
+      "a near-match harness parameter",
+      "https://rnrgallery.com/order-system/sign-in?next=%2Forder-system%3Frnr_automation_extra%3D1",
+    ],
+  ])("does not erase %s", async (_label, formsOrdersAuthUrl) => {
+    const fake = createFakePage({ formsOrdersAuthUrl });
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      authOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await expect(operation(fake.page)).rejects.toThrow("canonical_next=(mismatch)");
   });
 
   it.each([

@@ -417,6 +417,48 @@ export function buildProductionAuthBoundaryContracts(rawUrl: string): readonly P
   }));
 }
 
+export function normalizeProductionAuthReturnTarget(
+  target: unknown,
+  ignoredQueryParameterNames: readonly string[],
+): string | null {
+  if (typeof target !== "string" || !target.startsWith("/") || target.startsWith("//")) {
+    return null;
+  }
+  const hashIndex = target.indexOf("#");
+  const withoutHash = hashIndex === -1 ? target : target.slice(0, hashIndex);
+  const rawHash = hashIndex === -1 ? "" : target.slice(hashIndex + 1);
+  const queryIndex = withoutHash.indexOf("?");
+  const pathname = queryIndex === -1 ? withoutHash : withoutHash.slice(0, queryIndex);
+  const rawQuery = queryIndex === -1 ? "" : withoutHash.slice(queryIndex + 1);
+  if (!/^\/[a-zA-Z0-9/_-]{0,127}$/.test(pathname) || pathname.includes("//")) return null;
+  const pathSegments = pathname.endsWith("/")
+    ? pathname.split("/").slice(1, -1)
+    : pathname.split("/").slice(1);
+  if (pathSegments.some((segment) => segment === "" || segment === "." || segment === "..")) {
+    return null;
+  }
+  const queryEntries: string[][] = [];
+  for (const entry of rawQuery.split("&").filter(Boolean)) {
+    const parts = entry.split("=");
+    try {
+      const key = decodeURIComponent((parts.shift() ?? "").split("+").join(" "));
+      const value = decodeURIComponent(parts.join("=").split("+").join(" "));
+      if (!ignoredQueryParameterNames.includes(key)) queryEntries.push([key, value]);
+    } catch {
+      return null;
+    }
+  }
+  queryEntries.sort((left, right) =>
+    left[0].localeCompare(right[0]) || left[1].localeCompare(right[1]));
+  let hash: string;
+  try {
+    hash = decodeURIComponent(rawHash.split("+").join(" "));
+  } catch {
+    return null;
+  }
+  return JSON.stringify([pathname, queryEntries, hash]);
+}
+
 export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig): string {
   const baseUrl = buildProductionAutomationUrl(config.url);
   baseUrl.searchParams.set(AUTOMATION_CAPABILITY_STORAGE_KEY, config.capability);
@@ -466,6 +508,10 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
     localConsentPostUrls,
     localConsentResponseBody,
     attributionParameterNames: ["gclid", "gbraid", "wbraid", "fbclid"],
+    harnessAuthQueryParameterNames: [
+      AUTOMATION_SESSION_STORAGE_KEY,
+      AUTOMATION_CAPABILITY_STORAGE_KEY,
+    ],
     sessionStorageKey: AUTOMATION_SESSION_STORAGE_KEY,
     capabilityStorageKey: AUTOMATION_CAPABILITY_STORAGE_KEY,
   });
@@ -597,6 +643,15 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
     const assertNoNetworkFailures = () => {
       if (requestFailedCount) throw new Error("Production browser operation emitted a failed network request");
     };
+    const normalizeAuthReturnTarget = ${normalizeProductionAuthReturnTarget.toString()};
+    const authReturnTargetMatches = (actual, expected) => {
+      const normalizedExpected = normalizeAuthReturnTarget(
+        expected,
+        config.harnessAuthQueryParameterNames,
+      );
+      return normalizedExpected !== null
+        && normalizeAuthReturnTarget(actual, config.harnessAuthQueryParameterNames) === normalizedExpected;
+    };
     const authBoundaryDiagnostic = (contract, currentUrl, canonicalNext) => {
       const hashIndex = currentUrl.indexOf("#");
       const withoutHash = hashIndex === -1 ? currentUrl : currentUrl.slice(0, hashIndex);
@@ -617,7 +672,8 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
         }
       }).sort((left, right) => left === "next" ? -1 : right === "next" ? 1 : left.localeCompare(right));
       const redirectStatus = activeNavigationResponses.map((entry) => entry.status).join("->") || "(none)";
-      const safeNext = canonicalNext === contract.canonicalNext ? canonicalNext
+      const safeNext = authReturnTargetMatches(canonicalNext, contract.canonicalNext)
+        ? contract.canonicalNext
         : canonicalNext === null ? "(missing)" : "(mismatch)";
       return "pathname=" + pathname
         + "; query_keys=" + (queryKeys.join(",") || "(none)")
@@ -641,8 +697,9 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
           let decoded = parts.join("=").split("+").join(" ");
           for (let iteration = 0; iteration < 3; iteration += 1) {
             const nextDecoded = decodeURIComponent(decoded);
-            if (nextDecoded === decoded) break;
+            const unchanged = nextDecoded === decoded;
             decoded = nextDecoded;
+            if (decoded.startsWith("/") || unchanged) break;
           }
           canonicalNext = decoded;
         } catch {
@@ -661,7 +718,7 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
         && activeNavigationResponses[0].status === 200;
       const authGated = currentBase === contract.signInBase
         && nextCount === 1
-        && canonicalNext === contract.canonicalNext
+        && authReturnTargetMatches(canonicalNext, contract.canonicalNext)
         && activeNavigationResponses.length === 2
         && activeNavigationResponses[0].base === contract.protectedBase
         && activeNavigationResponses[0].status === 307
@@ -671,7 +728,10 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
         throw new Error(contract.kind + " auth boundary failed: "
           + authBoundaryDiagnostic(contract, currentUrl, canonicalNext));
       }
-      return { state: authGated ? "auth-gated" : "authenticated", canonicalNext: authGated ? canonicalNext : null };
+      return {
+        state: authGated ? "auth-gated" : "authenticated",
+        canonicalNext: authGated ? contract.canonicalNext : null,
+      };
     };
     const coverage = config.coverageOnly ? {
       sitemap: false,
