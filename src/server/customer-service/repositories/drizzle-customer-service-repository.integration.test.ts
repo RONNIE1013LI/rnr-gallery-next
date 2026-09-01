@@ -393,6 +393,10 @@ function websiteRateEvent(input: Readonly<{
     text: input.text ?? "Can you help with a custom banner?",
     attachments: [],
     imageJob: null,
+    identity: {
+      kind: "website_conversation" as const,
+      keyHash: input.sessionHash,
+    },
     productContext: input.productContext ?? null,
     debounceMs: 2_000,
     receivedAt: input.receivedAt ?? websiteRateNow,
@@ -402,7 +406,7 @@ function websiteRateEvent(input: Readonly<{
       sessionExpiresAt: websiteSessionExpiresAt,
       isNewSession: input.isNewSession,
     },
-  } as Parameters<typeof repository.ingestConversationEvent>[0];
+  };
 }
 
 async function claimWebsiteTurn(input: Readonly<{
@@ -4987,6 +4991,137 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
   });
 
+  it.each([
+    ["duplicate replay", "54".repeat(32)],
+    ["new message", "55".repeat(32)],
+  ])("rejects a Facebook fallback identity mismatch for %s", async (_case, replayMessageHash) => {
+    await activateFacebookPilot(`facebook-fallback-identity-${replayMessageHash.slice(0, 2)}`);
+    const conversationHash = "51".repeat(32);
+    const firstEvent = {
+      channel: "facebook" as const,
+      role: "customer" as const,
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "54".repeat(32),
+      text: "Can you help with my photos?",
+      attachments: [],
+      imageJob: null,
+      debounceMs: 2_000,
+      receivedAt: new Date("2026-08-19T00:00:00.000Z"),
+    };
+    await expect(repository.ingestConversationEvent(firstEvent)).resolves.toMatchObject({
+      status: "turn_pending",
+    });
+    const [conversation] = await database.select({ id: customerServiceConversations.id })
+      .from(customerServiceConversations)
+      .where(and(
+        eq(customerServiceConversations.channel, "facebook"),
+        eq(customerServiceConversations.externalKeyHash, conversationHash),
+      ));
+    await database.update(customerServiceConversationIdentities).set({
+      identityKeyHash: "52".repeat(32),
+    }).where(eq(customerServiceConversationIdentities.conversationId, conversation.id));
+
+    await expect(repository.ingestConversationEvent({
+      ...firstEvent,
+      externalMessageKeyHash: replayMessageHash,
+      receivedAt: replayMessageHash === firstEvent.externalMessageKeyHash
+        ? firstEvent.receivedAt
+        : new Date("2026-08-19T00:00:01.000Z"),
+    })).rejects.toThrow("customer_service_conversation_identity_mismatch");
+  });
+
+  it.each([
+    ["duplicate replay", "58".repeat(32)],
+    ["new message", "59".repeat(32)],
+  ])("rejects a Website fallback identity mismatch for %s", async (_case, replayMessageHash) => {
+    await activateWebsitePilot(`website-fallback-identity-${replayMessageHash.slice(0, 2)}`);
+    const conversationHash = "56".repeat(32);
+    const firstEvent = websiteRateEvent({
+      sessionHash: conversationHash,
+      networkHash: "57".repeat(32),
+      messageHash: "58".repeat(32),
+    });
+    await expect(repository.ingestConversationEvent(firstEvent)).resolves.toMatchObject({
+      status: "turn_pending",
+    });
+    const [conversation] = await database.select({ id: customerServiceConversations.id })
+      .from(customerServiceConversations)
+      .where(and(
+        eq(customerServiceConversations.channel, "website"),
+        eq(customerServiceConversations.externalKeyHash, conversationHash),
+      ));
+    await database.update(customerServiceConversationIdentities).set({
+      identityKeyHash: "5a".repeat(32),
+    }).where(eq(customerServiceConversationIdentities.conversationId, conversation.id));
+
+    await expect(repository.ingestConversationEvent({
+      ...firstEvent,
+      externalMessageKeyHash: replayMessageHash,
+      receivedAt: replayMessageHash === firstEvent.externalMessageKeyHash
+        ? firstEvent.receivedAt
+        : new Date("2026-08-19T00:00:01.000Z"),
+    })).rejects.toThrow("customer_service_conversation_identity_mismatch");
+  });
+
+  it("requires an exact Website customer identity even from untyped internal callers", async () => {
+    const conversationHash = "5b".repeat(32);
+    const untypedEvent = {
+      channel: "website",
+      role: "customer",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "5c".repeat(32),
+      text: "Can you help?",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-19T00:00:00.000Z"),
+    } as unknown as Parameters<typeof repository.ingestConversationEvent>[0];
+
+    await expect(repository.ingestConversationEvent(untypedEvent))
+      .rejects.toThrow("customer_service_website_customer_identity_required");
+    await expect(database.select().from(customerServiceConversations)
+      .where(eq(customerServiceConversations.externalKeyHash, conversationHash)))
+      .resolves.toEqual([]);
+  });
+
+  it("preserves an existing richer Website identity for deliberate staff writes", async () => {
+    await activateWebsitePilot("website-staff-preserves-identity");
+    const conversationHash = "5d".repeat(32);
+    const identity = {
+      kind: "website_authenticated_customer" as const,
+      keyHash: "5e".repeat(32),
+    };
+    await expect(repository.ingestConversationEvent({
+      ...websiteRateEvent({
+        sessionHash: conversationHash,
+        networkHash: "5f".repeat(32),
+        messageHash: "60".repeat(32),
+      }),
+      identity,
+    })).resolves.toMatchObject({ status: "turn_pending" });
+
+    await expect(repository.ingestConversationEvent({
+      channel: "website",
+      role: "staff",
+      eventType: "human_outbound",
+      externalConversationKeyHash: conversationHash,
+      externalMessageKeyHash: "61".repeat(32),
+      text: "We can help with that.",
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-08-19T00:00:01.000Z"),
+    })).resolves.toEqual({ status: "context_only" });
+
+    const [conversation] = await database.select({ id: customerServiceConversations.id })
+      .from(customerServiceConversations)
+      .where(eq(customerServiceConversations.externalKeyHash, conversationHash));
+    const [storedIdentity] = await database.select({
+      kind: customerServiceConversationIdentities.identityKind,
+      keyHash: customerServiceConversationIdentities.identityKeyHash,
+    }).from(customerServiceConversationIdentities)
+      .where(eq(customerServiceConversationIdentities.conversationId, conversation.id));
+    expect(storedIdentity).toEqual(identity);
+  });
+
   it("reserves website and global budget scopes atomically while retaining the global hard stop", async () => {
     const incoming = await repository.ingestConversationEvent(websiteRateEvent({
       sessionHash: "d".repeat(64),
@@ -6705,6 +6840,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       channel: "website",
       role: "customer",
       externalConversationKeyHash: "c".repeat(64),
+      identity: { kind: "website_conversation", keyHash: "c".repeat(64) },
       externalMessageKeyHash: "d".repeat(64),
       text: "What details do you need?",
       attachments: [],
@@ -7092,6 +7228,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       channel: "website",
       role: "customer",
       externalConversationKeyHash: "e".repeat(64),
+      identity: { kind: "website_conversation", keyHash: "e".repeat(64) },
       externalMessageKeyHash: "1".repeat(64),
       text: "I need a canvas",
       attachments: [],
@@ -7108,6 +7245,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       channel: "website",
       role: "customer",
       externalConversationKeyHash: "e".repeat(64),
+      identity: { kind: "website_conversation", keyHash: "e".repeat(64) },
       externalMessageKeyHash: "2".repeat(64),
       text: "Earlier fragment",
       attachments: [],
@@ -7128,6 +7266,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       channel: "website",
       role: "customer",
       externalConversationKeyHash: "e".repeat(64),
+      identity: { kind: "website_conversation", keyHash: "e".repeat(64) },
       externalMessageKeyHash: "3".repeat(64),
       text: "Now I am on a general page",
       attachments: [],
@@ -7214,6 +7353,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
       channel: "website" as const,
       role: "customer" as const,
       externalConversationKeyHash: "4".repeat(64),
+      identity: { kind: "website_conversation" as const, keyHash: "4".repeat(64) },
       externalMessageKeyHash: "3".repeat(64),
       text: "What details do you need for a quote?",
       attachments: [],

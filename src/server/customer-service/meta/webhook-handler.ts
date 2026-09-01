@@ -156,7 +156,7 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
           };
         }
         const result = await dependencies.ingest({
-          channel: message.channel,
+          channel: "facebook",
           role: message.role,
           eventType: message.eventType,
           externalConversationKeyHash: hashExternalId(message.externalConversationKey, dependencies.config.idHashSecret),

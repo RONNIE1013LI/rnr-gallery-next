@@ -154,9 +154,9 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
           receivedAt,
         });
         const result = await dependencies.repository.ingestConversationEvent({
-          channel: message.channel,
-          role: message.role,
-          eventType: message.eventType,
+          channel: "website",
+          role: "customer",
+          eventType: "customer_message",
           externalConversationKeyHash: message.externalConversationKey,
           externalMessageKeyHash: message.externalMessageKey,
           text: message.text,

@@ -1,18 +1,44 @@
 import { describe, expect, it, vi } from "vitest";
 import { createCustomerChatUpdatesHandler } from "./route-handler";
 import { hashWebsiteConversationKey } from "@/server/customer-service/website/session";
+import { authenticatedWebsiteCustomerHash } from "@/server/customer-service/identity/customer-identity";
+import {
+  createWebsiteAnalyticsIdentity,
+  websiteAnalyticsVisitorDigest,
+} from "@/server/analytics/website-analytics-cookies";
+import { serializeAdvertisingConsent } from "@/domain/consent/advertising-consent";
 
 const sessionSecret = "website-session-secret-that-is-long-enough";
 const sessionToken = "s".repeat(43);
 const now = new Date("2026-08-21T00:00:00.000Z");
 
-function request(input: { cookie?: string; cursor?: string; conversation?: string } = {}) {
+function request(input: {
+  cookie?: string;
+  cursor?: string;
+  conversation?: string;
+  customerId?: string;
+} = {}) {
   const url = new URL("https://rrgallery.co.nz/api/customer-chat/updates");
   if (input.cursor) url.searchParams.set("cursor", input.cursor);
   if (input.conversation) url.searchParams.set("conversation", input.conversation);
   return new Request(url, {
-    headers: input.cookie ? { cookie: input.cookie } : undefined,
+    headers: {
+      ...(input.cookie ? { cookie: input.cookie } : {}),
+      ...(input.customerId ? { "x-test-customer-id": input.customerId } : {}),
+    },
   });
+}
+
+const analyticsDisabled = {
+  enabled: false,
+  v2Enabled: false,
+  cookieSecret: null,
+  attributionLookbackDays: 90,
+} as const;
+
+async function testSession(headers: Headers) {
+  const customerId = headers.get("x-test-customer-id");
+  return customerId ? { user: { id: customerId } } : null;
 }
 
 describe("GET /api/customer-chat/updates", () => {
@@ -35,6 +61,8 @@ describe("GET /api/customer-chat/updates", () => {
           return [];
         },
       },
+      getOptionalSession: testSession,
+      analyticsConfig: analyticsDisabled,
     });
 
     const response = await handler.GET(request());
@@ -80,6 +108,8 @@ describe("GET /api/customer-chat/updates", () => {
           }];
         },
       },
+      getOptionalSession: testSession,
+      analyticsConfig: analyticsDisabled,
     });
 
     try {
@@ -130,6 +160,8 @@ describe("GET /api/customer-chat/updates", () => {
           return [];
         },
       },
+      getOptionalSession: testSession,
+      analyticsConfig: analyticsDisabled,
     });
 
     const response = await handler.GET(request({
@@ -156,11 +188,114 @@ describe("GET /api/customer-chat/updates", () => {
           return [];
         },
       },
+      getOptionalSession: testSession,
+      analyticsConfig: analyticsDisabled,
     });
 
     const response = await handler.GET(request({ cookie: `__Host-rnr_customer_chat=${sessionToken}` }));
 
     expect(response.status).toBe(500);
     expect(await response.json()).toEqual({ error: { code: "INTERNAL_ERROR" } });
+  });
+
+  it.each([
+    [
+      "logout from User A",
+      { kind: "website_authenticated_customer" as const, keyHash: authenticatedWebsiteCustomerHash("user-a", sessionSecret) },
+      undefined,
+    ],
+    [
+      "User A to User B",
+      { kind: "website_authenticated_customer" as const, keyHash: authenticatedWebsiteCustomerHash("user-a", sessionSecret) },
+      "user-b",
+    ],
+    [
+      "Guest to User A",
+      { kind: "website_conversation" as const, keyHash: hashWebsiteConversationKey(sessionToken, sessionSecret) },
+      "user-a",
+    ],
+  ])("returns no transcript after %s changes the authoritative identity", async (_name, storedIdentity, customerId) => {
+    const listWebsitePublicUpdates = vi.fn(async () => []);
+    const handler = createCustomerChatUpdatesHandler({
+      enabled: true,
+      sessionSecret,
+      cursorSecret: "website-public-updates-secret-that-is-long-enough",
+      cookieEnvironment: "preview",
+      now: () => now,
+      getOptionalSession: testSession,
+      analyticsConfig: analyticsDisabled,
+      repository: {
+        async resolveWebsiteSession() {
+          return {
+            conversationId: "00000000-0000-4000-8000-000000000001",
+            expiresAt: new Date("2026-08-28T00:00:00.000Z"),
+            identity: storedIdentity,
+          };
+        },
+        listWebsitePublicUpdates,
+      },
+    });
+
+    const response = await handler.GET(request({
+      cookie: `__Host-rnr_customer_chat=${sessionToken}`,
+      customerId,
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ cursor: null, hasMore: false, events: [], state: "pending" });
+    expect(response.headers.get("Set-Cookie")).toBeNull();
+    expect(listWebsitePublicUpdates).not.toHaveBeenCalled();
+  });
+
+  it("returns no transcript after the consent-linked stable visitor changes", async () => {
+    const analyticsSecret = "website-updates-analytics-secret-long-enough";
+    const firstVisitor = createWebsiteAnalyticsIdentity(analyticsSecret, now);
+    const secondVisitor = createWebsiteAnalyticsIdentity(analyticsSecret, now);
+    const consent = encodeURIComponent(serializeAdvertisingConsent({
+      version: 1,
+      analytics: true,
+      advertising: false,
+      decidedAt: "2026-08-20T23:00:00.000Z",
+    }));
+    const listWebsitePublicUpdates = vi.fn(async () => []);
+    const handler = createCustomerChatUpdatesHandler({
+      enabled: true,
+      sessionSecret,
+      cursorSecret: "website-public-updates-secret-that-is-long-enough",
+      cookieEnvironment: "preview",
+      now: () => now,
+      getOptionalSession: testSession,
+      analyticsConfig: {
+        enabled: true,
+        v2Enabled: true,
+        cookieSecret: analyticsSecret,
+        attributionLookbackDays: 90,
+      },
+      repository: {
+        async resolveWebsiteSession() {
+          return {
+            conversationId: "00000000-0000-4000-8000-000000000001",
+            expiresAt: new Date("2026-08-28T00:00:00.000Z"),
+            identity: {
+              kind: "website_stable_visitor" as const,
+              keyHash: websiteAnalyticsVisitorDigest(firstVisitor.visitorId, analyticsSecret),
+            },
+          };
+        },
+        listWebsitePublicUpdates,
+      },
+    });
+    const response = await handler.GET(request({
+      cookie: [
+        `__Host-rnr_customer_chat=${sessionToken}`,
+        `rnr-consent-v1=${consent}`,
+        `ra_vid_v1=${secondVisitor.visitorCookie}`,
+        `ra_sid_v1=${secondVisitor.sessionCookie}`,
+      ].join("; "),
+    }));
+
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ cursor: null, hasMore: false, events: [], state: "pending" });
+    expect(listWebsitePublicUpdates).not.toHaveBeenCalled();
   });
 });

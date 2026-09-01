@@ -511,6 +511,13 @@ describe("website public security regression", () => {
       cursorSecret,
       cookieEnvironment: "preview",
       now: () => now,
+      getOptionalSession: async () => null,
+      analyticsConfig: {
+        enabled: false,
+        v2Enabled: false,
+        cookieSecret: null,
+        attributionLookbackDays: 90,
+      },
       repository: {
         async resolveWebsiteSession(input) {
           const conversationId = conversations.get(input.sessionTokenHash);

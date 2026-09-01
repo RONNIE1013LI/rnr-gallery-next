@@ -9,6 +9,14 @@ export type CustomerInboxIdentity = Readonly<{
   keyHash: string;
 }>;
 
+export type WebsiteCustomerInboxIdentity = Readonly<{
+  kind:
+    | "website_authenticated_customer"
+    | "website_stable_visitor"
+    | "website_conversation";
+  keyHash: string;
+}>;
+
 const hashPattern = /^[a-f0-9]{64}$/;
 
 function exactHash(value: string) {
@@ -43,7 +51,7 @@ export function resolveWebsiteInboxIdentity(input: Readonly<{
   stableVisitorDigest: string | null;
   technicalConversationHash: string;
   secret: string;
-}>): CustomerInboxIdentity {
+}>): WebsiteCustomerInboxIdentity {
   if (input.authenticatedCustomerId !== null) {
     return Object.freeze({
       kind: "website_authenticated_customer",

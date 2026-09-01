@@ -139,13 +139,15 @@ async function ensureConversationIdentity(
   input: Readonly<{
     conversationId: string;
     channel: "facebook" | "website";
-    externalConversationKeyHash: string;
-    identity?: CustomerInboxIdentity;
+    requirement:
+      | Readonly<{ mode: "exact"; identity: CustomerInboxIdentity }>
+      | Readonly<{ mode: "preserve_existing"; fallbackIdentity: CustomerInboxIdentity }>;
     now: Date;
   }>,
 ) {
-  const candidate = input.identity
-    ?? fallbackConversationIdentity(input.channel, input.externalConversationKeyHash);
+  const candidate = input.requirement.mode === "exact"
+    ? input.requirement.identity
+    : input.requirement.fallbackIdentity;
   assertIdentityForChannel(input.channel, candidate);
   await transaction.insert(customerServiceConversationIdentities).values({
     conversationId: input.conversationId,
@@ -162,11 +164,34 @@ async function ensureConversationIdentity(
   }).from(customerServiceConversationIdentities)
     .where(eq(customerServiceConversationIdentities.conversationId, input.conversationId))
     .limit(1);
-  if (!stored || stored.channel !== input.channel || (input.identity && (
-    stored.kind !== candidate.kind || stored.keyHash !== candidate.keyHash
-  ))) {
+  if (!stored || stored.channel !== input.channel) {
     throw new Error("customer_service_conversation_identity_mismatch");
   }
+  try {
+    assertIdentityForChannel(input.channel, { kind: stored.kind, keyHash: stored.keyHash });
+  } catch {
+    throw new Error("customer_service_conversation_identity_mismatch");
+  }
+  if (input.requirement.mode === "exact" && (
+    stored.kind !== candidate.kind || stored.keyHash !== candidate.keyHash
+  )) throw new Error("customer_service_conversation_identity_mismatch");
+}
+
+function conversationEventIdentityRequirement(input: HashedConversationEvent) {
+  if (input.channel === "facebook") {
+    return Object.freeze({
+      mode: "exact" as const,
+      identity: fallbackConversationIdentity("facebook", input.externalConversationKeyHash),
+    });
+  }
+  if (input.role === "customer") {
+    if (!input.identity) throw new Error("customer_service_website_customer_identity_required");
+    return Object.freeze({ mode: "exact" as const, identity: input.identity });
+  }
+  return Object.freeze({
+    mode: "preserve_existing" as const,
+    fallbackIdentity: fallbackConversationIdentity("website", input.externalConversationKeyHash),
+  });
 }
 
 const WEBSITE_RATE_LIMITS = Object.freeze({
@@ -1639,8 +1664,11 @@ export function createDrizzleCustomerServiceRepository(
         await ensureConversationIdentity(transaction, {
           conversationId: conversation.id,
           channel: "website",
-          externalConversationKeyHash: input.externalConversationKeyHash,
-          identity: input.identity,
+          requirement: {
+            mode: "exact",
+            identity: input.identity
+              ?? fallbackConversationIdentity("website", input.externalConversationKeyHash),
+          },
           now: input.now,
         });
 
@@ -1719,8 +1747,7 @@ export function createDrizzleCustomerServiceRepository(
             await ensureConversationIdentity(transaction, {
               conversationId: duplicate.conversationId,
               channel: input.channel,
-              externalConversationKeyHash: input.externalConversationKeyHash,
-              identity: input.identity,
+              requirement: conversationEventIdentityRequirement(input),
               now: input.receivedAt,
             });
             return { status: "duplicate" as const };
@@ -1747,8 +1774,7 @@ export function createDrizzleCustomerServiceRepository(
         await ensureConversationIdentity(transaction, {
           conversationId: conversation.id,
           channel: input.channel,
-          externalConversationKeyHash: input.externalConversationKeyHash,
-          identity: input.identity,
+          requirement: conversationEventIdentityRequirement(input),
           now: input.receivedAt,
         });
         if (
@@ -3107,7 +3133,10 @@ export function createDrizzleCustomerServiceRepository(
         await ensureConversationIdentity(transaction, {
           conversationId: conversation.id,
           channel: input.channel,
-          externalConversationKeyHash: input.externalConversationKeyHash,
+          requirement: {
+            mode: "exact",
+            identity: fallbackConversationIdentity("facebook", input.externalConversationKeyHash),
+          },
           now: input.receivedAt,
         });
 

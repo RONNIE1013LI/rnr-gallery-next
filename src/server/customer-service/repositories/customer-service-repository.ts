@@ -13,7 +13,10 @@ import type {
   WebsitePublicUpdateCursor,
   WebsitePublicUpdateRecord,
 } from "../website/public-updates";
-import type { CustomerInboxIdentity } from "../identity/customer-identity";
+import type {
+  CustomerInboxIdentity,
+  WebsiteCustomerInboxIdentity,
+} from "../identity/customer-identity";
 
 export type ImageJobStage = "policy" | "download" | "vision" | "cleanup" | "draft";
 
@@ -62,9 +65,7 @@ export type HashedIncomingMessage = Readonly<{
   receivedAt: Date;
 }>;
 
-export type HashedConversationEvent = HashedIncomingMessage & Readonly<{
-  role: ConversationRole;
-  identity?: CustomerInboxIdentity;
+type HashedConversationEventDetails = Readonly<{
   eventType?: "customer_message" | "human_outbound";
   productContext?: SafeProductContext | null;
   bodyHash?: string | null;
@@ -81,6 +82,14 @@ export type HashedConversationEvent = HashedIncomingMessage & Readonly<{
   }>;
   websiteAnalyticsContext?: WebsiteAnalyticsBehavioralContext;
 }>;
+
+export type HashedConversationEvent = HashedIncomingMessage
+  & HashedConversationEventDetails
+  & (
+    | Readonly<{ channel: "facebook"; role: ConversationRole; identity?: never }>
+    | Readonly<{ channel: "website"; role: "customer"; identity: WebsiteCustomerInboxIdentity }>
+    | Readonly<{ channel: "website"; role: "staff"; identity?: never }>
+  );
 
 export type ConversationContextItem = Readonly<{
   role: "customer" | "staff";

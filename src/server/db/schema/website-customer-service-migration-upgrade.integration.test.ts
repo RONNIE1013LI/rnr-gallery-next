@@ -148,6 +148,7 @@ describe.runIf(enabled)("Task 15 migration upgrade", () => {
         channel: "website",
         role: "customer",
         externalConversationKeyHash: "b1".repeat(32),
+        identity: { kind: "website_conversation", keyHash: "b1".repeat(32) },
         externalMessageKeyHash: "b2".repeat(32),
         text: "Can you help with a custom banner?",
         attachments: [],
