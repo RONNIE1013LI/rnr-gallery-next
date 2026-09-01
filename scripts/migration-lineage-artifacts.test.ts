@@ -54,10 +54,10 @@ describe("migration lineage artifacts", () => {
     );
     const journal = loadJson<Journal>("drizzle/meta/_journal.json");
 
-    expect(journal.entries).toHaveLength(62);
+    expect(journal.entries).toHaveLength(63);
     expect(manifest).toHaveLength(54);
-    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(62);
-    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(62);
+    expect(new Set(journal.entries.map((entry) => entry.idx)).size).toBe(63);
+    expect(new Set(journal.entries.map((entry) => String(entry.when))).size).toBe(63);
 
     for (const [index, applied] of manifest.entries()) {
       const entry = journal.entries[index];
@@ -126,6 +126,14 @@ describe("migration lineage artifacts", () => {
     });
     expect(sha256("drizzle/0061_website_analytics_internal_traffic.sql")).toBe(
       "4c552b344aa93a05567bffd00044e33df162ba4927e3d952f007549f9d8807dc",
+    );
+    expect(journal.entries[62]).toMatchObject({
+      idx: 62,
+      when: 1788256848819,
+      tag: "0062_customer_service_conversation_identities",
+    });
+    expect(sha256("drizzle/0062_customer_service_conversation_identities.sql")).toBe(
+      "0c32bc5256a6c239949ea046cb04f9b515a1adc6eb738a209eec59a84fc3e0a4",
     );
   });
 

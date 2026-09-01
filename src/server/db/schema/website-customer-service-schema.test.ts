@@ -5,6 +5,7 @@ import { getTableConfig } from "drizzle-orm/pg-core";
 import { describe, expect, it } from "vitest";
 import {
   customerServiceAiAttempts,
+  customerServiceConversationIdentities,
   customerServiceConversations,
   customerServiceHumanReviews,
   customerServiceRateLimitBuckets,
@@ -30,6 +31,65 @@ const websiteTables = [
 ];
 
 describe("website customer service schema contract", () => {
+  it("stores one hash-only authoritative identity per technical conversation", () => {
+    const columns = getTableColumns(customerServiceConversationIdentities);
+    const config = getTableConfig(customerServiceConversationIdentities);
+    const identityIndex = config.indexes.find((item) => (
+      item.config.name === "customer_service_conversation_identities_lookup_idx"
+    ));
+    const conversationForeignKey = config.foreignKeys.find((item) => (
+      item.getName() === "customer_service_conversation_identities_conversation_fk"
+    ));
+
+    expect(getTableName(customerServiceConversationIdentities)).toBe(
+      "customer_service_conversation_identities",
+    );
+    expect(Object.keys(columns)).toEqual([
+      "conversationId",
+      "channel",
+      "identityKind",
+      "identityKeyHash",
+      "createdAt",
+      "updatedAt",
+    ]);
+    expect(columns.conversationId).toMatchObject({ primary: true, notNull: true });
+    expect(columns.channel).toMatchObject({ notNull: true });
+    expect(columns.identityKind).toMatchObject({ notNull: true });
+    expect(columns.identityKeyHash).toMatchObject({ notNull: true });
+    expect(columns.createdAt).toMatchObject({ notNull: true });
+    expect(columns.updatedAt).toMatchObject({ notNull: true });
+    expect(config.checks.map((item) => item.name)).toEqual(expect.arrayContaining([
+      "customer_service_conversation_identities_channel_valid",
+      "customer_service_conversation_identities_kind_valid",
+      "customer_service_conversation_identities_hash_valid",
+    ]));
+    expect(identityIndex?.config.unique).toBe(false);
+    expect(identityIndex?.config.columns.map((column) => (
+      typeof column === "object" && column !== null && "name" in column
+        ? column.name
+        : "<expression>"
+    ))).toEqual(["channel", "identity_kind", "identity_key_hash"]);
+    expect(conversationForeignKey?.reference().columns.map((column) => column.name)).toEqual([
+      "conversation_id",
+      "channel",
+    ]);
+    expect(conversationForeignKey?.reference().foreignColumns.map((column) => column.name)).toEqual([
+      "id",
+      "channel",
+    ]);
+    expect(conversationForeignKey?.onDelete).toBe("restrict");
+    expect(Object.keys(columns)).not.toEqual(expect.arrayContaining([
+      "psid",
+      "customerId",
+      "visitorId",
+      "cookie",
+      "ipAddress",
+      "fingerprint",
+      "email",
+      "name",
+    ]));
+  });
+
   it("stores nullable canonical Website renderer proof on AI attempts", () => {
     expect(getTableColumns(customerServiceAiAttempts)).toEqual(expect.objectContaining({
       websiteDecision: expect.anything(),

@@ -88,6 +88,44 @@ export const customerServiceConversations = pgTable(
   ],
 );
 
+export const customerServiceConversationIdentities = pgTable(
+  "customer_service_conversation_identities",
+  {
+    conversationId: uuid("conversation_id").primaryKey(),
+    channel: text("channel").$type<"facebook" | "website">().notNull(),
+    identityKind: text("identity_kind").$type<
+      | "facebook_psid"
+      | "website_authenticated_customer"
+      | "website_stable_visitor"
+      | "website_conversation"
+    >().notNull(),
+    identityKeyHash: text("identity_key_hash").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: updatedTimestamp(),
+  },
+  (table) => [
+    foreignKey({
+      columns: [table.conversationId, table.channel],
+      foreignColumns: [customerServiceConversations.id, customerServiceConversations.channel],
+      name: "customer_service_conversation_identities_conversation_fk",
+    }).onDelete("restrict"),
+    index("customer_service_conversation_identities_lookup_idx")
+      .on(table.channel, table.identityKind, table.identityKeyHash),
+    check(
+      "customer_service_conversation_identities_channel_valid",
+      sql`${table.channel} in ('facebook', 'website')`,
+    ),
+    check(
+      "customer_service_conversation_identities_kind_valid",
+      sql`${table.identityKind} in ('facebook_psid', 'website_authenticated_customer', 'website_stable_visitor', 'website_conversation')`,
+    ),
+    check(
+      "customer_service_conversation_identities_hash_valid",
+      sql`${table.identityKeyHash} ~ '^[a-f0-9]{64}$'`,
+    ),
+  ],
+);
+
 export const customerServiceMessages = pgTable(
   "customer_service_messages",
   {
