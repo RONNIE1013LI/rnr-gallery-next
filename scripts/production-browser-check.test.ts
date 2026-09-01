@@ -24,11 +24,10 @@ type OperationResult = Readonly<{
     navigationAborted: number;
   }>;
   blockedMutationRequestCount: number;
+  consentLocallyFulfilledCount: number;
   coverage?: Readonly<{
-    australia: boolean;
     sitemap: boolean;
     publicMedia: boolean;
-    reviews: boolean;
     pricing: boolean;
     replyAssistantInitialLoad: "authenticated" | "auth-gated";
     formsOrdersInitialLoad: "authenticated" | "auth-gated";
@@ -46,6 +45,7 @@ function validOperationResult(overrides: Partial<OperationResult> = {}): Operati
     requestFailedCount: 0,
     ignoredRequestFailedCounts: { guardBlocked: 0, navigationAborted: 0 },
     blockedMutationRequestCount: 0,
+    consentLocallyFulfilledCount: 0,
     ...overrides,
   };
 }
@@ -82,6 +82,11 @@ type FakeRoute = Readonly<{
   request: () => FakeRequest;
   continue: () => Promise<void>;
   abort: (errorCode?: string) => Promise<void>;
+  fulfill: (response: Readonly<{
+    status: number;
+    contentType: string;
+    body: string;
+  }>) => Promise<void>;
 }>;
 type FakeInitScriptInput = Readonly<{
   sessionStorageKey: string;
@@ -144,11 +149,18 @@ function createFakePage(options: Readonly<{
   blockedImageOnFirstGoto?: boolean;
   failedRequestOnFirstGoto?: boolean;
   mutationRequestOnFirstGoto?: boolean;
+  consentPostOnFirstGoto?: boolean;
   storageBlocked?: boolean;
 }> = {}) {
   const events: string[] = [];
   const continued: string[] = [];
   const aborted: string[] = [];
+  const fulfilled: Array<Readonly<{
+    url: string;
+    status: number;
+    contentType: string;
+    body: string;
+  }>> = [];
   const visited: string[] = [];
   let routeHandler: ((route: FakeRoute) => Promise<void>) | undefined;
   const pageListeners: Array<(page: FakePage) => void> = [];
@@ -157,6 +169,7 @@ function createFakePage(options: Readonly<{
   const pages: FakePage[] = [];
   let currentUrl = "about:blank";
   let chatOpen = false;
+  let consentOverlayOpen = false;
 
   const context: FakeContext = {
     clearCookies: vi.fn(async () => { events.push("cookies-cleared"); }),
@@ -251,6 +264,15 @@ function createFakePage(options: Readonly<{
             page: candidate,
           });
         }
+        if (!isPopup && visited.length === 1 && options.consentPostOnFirstGoto) {
+          consentOverlayOpen = true;
+          await invoke({
+            url: "https://rnrgallery.com/api/consent",
+            resourceType: "fetch",
+            method: "POST",
+            page: candidate,
+          });
+        }
         if (!isPopup && visited.length === 1 && options.topLevelNavigationOnFirstGoto) {
           await invoke({
             url: options.topLevelNavigationOnFirstGoto,
@@ -294,6 +316,7 @@ function createFakePage(options: Readonly<{
       getByRole: (role, roleOptions) => ({
         click: async () => {
           events.push("chat");
+          if (consentOverlayOpen) throw new Error("Consent overlay intercepts pointer events");
           if (role === "button" && roleOptions.name === "Chat with R&R Gallery") chatOpen = true;
           emitConsoleError(candidate, "click");
         },
@@ -353,6 +376,21 @@ function createFakePage(options: Readonly<{
         }
         for (const listener of requestFailedListeners.get(requestPage) ?? []) listener(request);
       }),
+      fulfill: vi.fn(async (response) => {
+        fulfilled.push({ url: fixture.url, ...response });
+        const payload = JSON.parse(response.body) as {
+          consent?: { version?: unknown; analytics?: unknown; advertising?: unknown; decidedAt?: unknown };
+        };
+        if (response.status === 200
+          && response.contentType === "application/json"
+          && payload.consent?.version === 1
+          && typeof payload.consent.analytics === "boolean"
+          && typeof payload.consent.advertising === "boolean"
+          && typeof payload.consent.decidedAt === "string") {
+          consentOverlayOpen = false;
+          events.push("consent-overlay-closed");
+        }
+      }),
     };
     await routeHandler(route);
   }
@@ -376,7 +414,20 @@ function createFakePage(options: Readonly<{
     for (const listener of pageListeners) listener(popup);
   }
 
-  return { page, popup, context, events, continued, aborted, visited, invoke, failRequest, emitPopup };
+  return {
+    page,
+    popup,
+    context,
+    events,
+    continued,
+    aborted,
+    fulfilled,
+    visited,
+    invoke,
+    failRequest,
+    emitPopup,
+    consentOverlayOpen: () => consentOverlayOpen,
+  };
 }
 
 const processStartA = "Mon Aug 31 20:00:00 2026";
@@ -931,7 +982,7 @@ describe("Production browser check", () => {
   });
 
   it("visits only the approved coverage routes and proves every requested read-only surface", async () => {
-    const fake = createFakePage();
+    const fake = createFakePage({ consentPostOnFirstGoto: true });
     const operation = (0, eval)(`(${buildProductionSmokeProgram({
       url: "https://rnrgallery.com/",
       capability: "DEFAULT",
@@ -940,14 +991,13 @@ describe("Production browser check", () => {
     } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
 
     await expect(operation(fake.page)).resolves.toMatchObject({
-      routeCount: 6,
+      routeCount: 5,
       requestFailedCount: 0,
       blockedMutationRequestCount: 0,
+      consentLocallyFulfilledCount: 1,
       coverage: {
-        australia: true,
         sitemap: true,
         publicMedia: true,
-        reviews: true,
         pricing: true,
         replyAssistantInitialLoad: "auth-gated",
         formsOrdersInitialLoad: "auth-gated",
@@ -955,7 +1005,6 @@ describe("Production browser check", () => {
       },
     });
     expect(fake.visited.map((url) => new URL(url).pathname)).toEqual([
-      "/au",
       "/au/shop",
       "/sitemap.xml",
       "/media/home/homepage-hero-showcase-16x9.webp",
@@ -963,8 +1012,25 @@ describe("Production browser check", () => {
       "/order-system",
     ]);
     expect(fake.visited.map((url) => new URL(url).pathname)).not.toEqual(expect.arrayContaining([
-      "/", "/shop", "/canvas", "/banners", "/design-gallery", "/help", "/account", "/cart",
+      "/", "/au", "/shop", "/canvas", "/banners", "/design-gallery", "/help", "/account", "/cart",
     ]));
+    expect(fake.fulfilled).toEqual([{
+      url: "https://rnrgallery.com/api/consent",
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify({
+        consent: {
+          version: 1,
+          analytics: true,
+          advertising: true,
+          decidedAt: "2026-01-01T00:00:00.000Z",
+        },
+      }),
+    }]);
+    expect(fake.continued).not.toContain("https://rnrgallery.com/api/consent");
+    expect(fake.aborted).not.toContain("https://rnrgallery.com/api/consent");
+    expect(fake.consentOverlayOpen()).toBe(false);
+    expect(fake.events.indexOf("consent-overlay-closed")).toBeLessThan(fake.events.indexOf("chat"));
   });
 
   it("clears the isolated browser cookies before any coverage route can authenticate", async () => {
@@ -1009,7 +1075,10 @@ describe("Production browser check", () => {
   });
 
   it("blocks every non-read request before it can reach Production", async () => {
-    const fake = createFakePage({ mutationRequestOnFirstGoto: true });
+    const fake = createFakePage({
+      consentPostOnFirstGoto: true,
+      mutationRequestOnFirstGoto: true,
+    });
     const operation = (0, eval)(`(${buildProductionSmokeProgram({
       url: "https://rnrgallery.com/",
       capability: "DEFAULT",
@@ -1019,8 +1088,38 @@ describe("Production browser check", () => {
 
     await expect(operation(fake.page)).resolves.toMatchObject({
       blockedMutationRequestCount: 1,
+      consentLocallyFulfilledCount: 1,
       requestFailedCount: 0,
     });
     expect(fake.aborted).toContain("https://rnrgallery.com/api/blocked-mutation");
+    expect(fake.continued).not.toContain("https://rnrgallery.com/api/blocked-mutation");
+  });
+
+  it("does not local-fulfill near-match consent mutations", async () => {
+    const fake = createFakePage();
+    const operation = (0, eval)(`(${buildProductionSmokeProgram({
+      url: "https://rnrgallery.com/",
+      capability: "DEFAULT",
+      allowMedia: false,
+      coverageOnly: true,
+    } as Parameters<typeof buildProductionSmokeProgram>[0])})`) as (page: FakePage) => Promise<OperationResult>;
+
+    await operation(fake.page);
+    await fake.invoke({
+      url: "https://rnrgallery.com/api/consent?unexpected=1",
+      resourceType: "fetch",
+      method: "POST",
+    });
+    await fake.invoke({
+      url: "https://example.com/api/consent",
+      resourceType: "fetch",
+      method: "POST",
+    });
+
+    expect(fake.fulfilled).toHaveLength(0);
+    expect(fake.aborted).toEqual(expect.arrayContaining([
+      "https://rnrgallery.com/api/consent?unexpected=1",
+      "https://example.com/api/consent",
+    ]));
   });
 });

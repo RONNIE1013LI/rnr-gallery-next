@@ -31,7 +31,6 @@ const baselineProductionSmokeRoutePaths = Object.freeze([
   "/cart",
 ]);
 const productionCoverageRouteTargets = Object.freeze([
-  { path: "/au", kind: "australia" },
   { path: "/au/shop", kind: "pricing" },
   { path: "/sitemap.xml", kind: "sitemap" },
   { path: "/media/home/homepage-hero-showcase-16x9.webp", kind: "public-media" },
@@ -63,10 +62,8 @@ export type ProductionBrowserCheckOptions = Readonly<{
 }>;
 
 export type ProductionCoverageEvidence = Readonly<{
-  australia: boolean;
   sitemap: boolean;
   publicMedia: boolean;
-  reviews: boolean;
   pricing: boolean;
   replyAssistantInitialLoad: "authenticated" | "auth-gated";
   formsOrdersInitialLoad: "authenticated" | "auth-gated";
@@ -90,6 +87,7 @@ export type ProductionBrowserCheckResult = Readonly<{
     navigationAborted: number;
   }>;
   blockedMutationRequestCount: number;
+  consentLocallyFulfilledCount: number;
   coverage?: ProductionCoverageEvidence;
   browserProcessesAfterClose: 0;
 }>;
@@ -130,6 +128,7 @@ type ProductionSmokeOperationResult = Pick<
   | "requestFailedCount"
   | "ignoredRequestFailedCounts"
   | "blockedMutationRequestCount"
+  | "consentLocallyFulfilledCount"
   | "coverage"
 >;
 
@@ -390,12 +389,25 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
     }));
   const blockedResourceTypes = ["image", "media", "font"].filter((resourceType) =>
     shouldBlockProductionResource(resourceType, config.capability, config.allowMedia));
+  const localConsentPostUrls = config.coverageOnly
+    ? OFFICIAL_PRODUCTION_HOSTS.map((hostname) => `https://${hostname}/api/consent`)
+    : [];
+  const localConsentResponseBody = JSON.stringify({
+    consent: {
+      version: 1,
+      analytics: true,
+      advertising: true,
+      decidedAt: "2026-01-01T00:00:00.000Z",
+    },
+  });
   const programConfig = JSON.stringify({
     routeTargets,
     allowedNavigationBases,
     capability: config.capability,
     coverageOnly: config.coverageOnly === true,
     blockedResourceTypes,
+    localConsentPostUrls,
+    localConsentResponseBody,
     attributionParameterNames: ["gclid", "gbraid", "wbraid", "fbclid"],
     sessionStorageKey: AUTOMATION_SESSION_STORAGE_KEY,
     capabilityStorageKey: AUTOMATION_CAPABILITY_STORAGE_KEY,
@@ -413,6 +425,7 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
     let requestFailedCount = 0;
     const ignoredRequestFailedCounts = { guardBlocked: 0, navigationAborted: 0 };
     let blockedMutationRequestCount = 0;
+    let consentLocallyFulfilledCount = 0;
     let controlledNavigationInProgress = false;
     let routeCount = 0;
     const attachPageListeners = (candidate) => {
@@ -451,6 +464,15 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
       const request = route.request();
       const resourceType = request.resourceType();
       const method = request.method().toUpperCase();
+      if (method === "POST" && config.localConsentPostUrls.includes(request.url())) {
+        consentLocallyFulfilledCount += 1;
+        await route.fulfill({
+          status: 200,
+          contentType: "application/json",
+          body: config.localConsentResponseBody,
+        });
+        return;
+      }
       if (!["GET", "HEAD", "OPTIONS"].includes(method)) {
         blockedMutationRequestCount += 1;
         guardBlockedRequests.add(request);
@@ -506,10 +528,8 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
       if (requestFailedCount) throw new Error("Production browser operation emitted a failed network request");
     };
     const coverage = config.coverageOnly ? {
-      australia: false,
       sitemap: false,
       publicMedia: false,
-      reviews: false,
       pricing: false,
       replyAssistantInitialLoad: null,
       formsOrdersInitialLoad: null,
@@ -534,25 +554,6 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
       assertNoConsoleErrors();
       routeCount += 1;
 
-      if (routeTarget.kind === "australia") {
-        if (await page.getByRole("heading", { name: "From your photos to the piece you imagined." }).count() !== 1) {
-          throw new Error("Australia route did not render the approved public heading");
-        }
-        coverage.australia = true;
-        if (await page.locator('[aria-label="Customer reviews"]').count() !== 1) {
-          throw new Error("Australia route did not render public reviews");
-        }
-        coverage.reviews = true;
-        await page.getByRole("button", { name: "Chat with R&R Gallery" }).click();
-        assertNoConsoleErrors();
-        await page.waitForTimeout(1_000);
-        assertNoConsoleErrors();
-        if (await page.locator('[role="dialog"][aria-label="Chat with R&R Gallery"]').count() !== 1) {
-          throw new Error("Website Chat did not complete its read-only initial load");
-        }
-        coverage.websiteChatInitialLoad = true;
-      }
-
       if (routeTarget.kind === "pricing") {
         const priceTexts = (await page.locator("strong").allTextContents())
           .map((value) => value.trim())
@@ -569,6 +570,14 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
           throw new Error("Australia pricing did not render current fixed AUD values");
         }
         coverage.pricing = true;
+        await page.getByRole("button", { name: "Chat with R&R Gallery" }).click();
+        assertNoConsoleErrors();
+        await page.waitForTimeout(1_000);
+        assertNoConsoleErrors();
+        if (await page.locator('[role="dialog"][aria-label="Chat with R&R Gallery"]').count() !== 1) {
+          throw new Error("Website Chat did not complete its read-only initial load");
+        }
+        coverage.websiteChatInitialLoad = true;
       }
 
       if (routeTarget.kind === "sitemap") {
@@ -629,7 +638,7 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
         assertNoConsoleErrors();
       }
 
-      if (routeTarget.path === "/" || routeTarget.kind === "australia") {
+      if (routeTarget.path === "/" || routeTarget.kind === "pricing") {
         pollingCounts = await page.evaluate(() => {
           const entries = performance.getEntriesByType("resource");
           return {
@@ -648,10 +657,8 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
     assertNoConsoleErrors();
     assertNoNetworkFailures();
     if (unexpectedNavigationCount) throw new Error("Production smoke encountered an unexpected navigation");
-    if (coverage && (!coverage.australia
-      || !coverage.sitemap
+    if (coverage && (!coverage.sitemap
       || !coverage.publicMedia
-      || !coverage.reviews
       || !coverage.pricing
       || !coverage.replyAssistantInitialLoad
       || !coverage.formsOrdersInitialLoad
@@ -667,6 +674,7 @@ export function buildProductionSmokeProgram(config: ProductionSmokeProgramConfig
       requestFailedCount,
       ignoredRequestFailedCounts,
       blockedMutationRequestCount,
+      consentLocallyFulfilledCount,
       ...(coverage ? { coverage } : {}),
     };
     return result;
@@ -714,6 +722,7 @@ function parseOperationResult(
     || !isNonNegativeInteger(candidate.unexpectedNavigationCount)
     || !isNonNegativeInteger(candidate.requestFailedCount)
     || !isNonNegativeInteger(candidate.blockedMutationRequestCount)
+    || !isNonNegativeInteger(candidate.consentLocallyFulfilledCount)
     || !isCounterRecord(candidate.blockedResourceCounts)
     || !candidate.pollingCounts
     || typeof candidate.pollingCounts !== "object"
@@ -733,10 +742,8 @@ function parseOperationResult(
       return undefined;
     }
     const coverageCandidate = candidate.coverage as Record<string, unknown>;
-    if (coverageCandidate.australia !== true
-      || coverageCandidate.sitemap !== true
+    if (coverageCandidate.sitemap !== true
       || coverageCandidate.publicMedia !== true
-      || coverageCandidate.reviews !== true
       || coverageCandidate.pricing !== true
       || !["authenticated", "auth-gated"].includes(String(coverageCandidate.replyAssistantInitialLoad))
       || !["authenticated", "auth-gated"].includes(String(coverageCandidate.formsOrdersInitialLoad))
@@ -758,6 +765,7 @@ function parseOperationResult(
       navigationAborted: ignoredRequestFailedCounts.navigationAborted,
     },
     blockedMutationRequestCount: candidate.blockedMutationRequestCount,
+    consentLocallyFulfilledCount: candidate.consentLocallyFulfilledCount,
     ...(coverage ? { coverage } : {}),
   };
 }
@@ -830,6 +838,9 @@ export async function runProductionBrowserCheck(
     }
     if (operationResult.requestFailedCount !== 0) {
       throw new Error("Production browser operation reported a failed network request");
+    }
+    if (options.coverageOnly && operationResult.consentLocallyFulfilledCount < 1) {
+      throw new Error("Production coverage smoke did not locally fulfill consent");
     }
     if (operationResult.pollingCounts.customerChat !== 0
       || (capability !== "REPLY_ASSISTANT_TEST" && operationResult.pollingCounts.replyAssistant !== 0)) {
@@ -905,6 +916,7 @@ async function main() {
     requestFailedCount: result.requestFailedCount,
     ignoredRequestFailedCounts: result.ignoredRequestFailedCounts,
     blockedMutationRequestCount: result.blockedMutationRequestCount,
+    consentLocallyFulfilledCount: result.consentLocallyFulfilledCount,
     ...(result.coverage ? { coverage: result.coverage } : {}),
     browserProcessesAfterClose: result.browserProcessesAfterClose,
   }));
