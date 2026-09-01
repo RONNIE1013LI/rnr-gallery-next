@@ -133,6 +133,38 @@ describe("website pageview route", () => {
     }));
   });
 
+  it("reuses the signed identity returned by the preceding first pageview", async () => {
+    const route = handler();
+    const first = await route.POST(request(body));
+    const cookies = first.headers.get("Set-Cookie") ?? "";
+    const visitor = /ra_vid_v1=([^;]+)/.exec(cookies)?.[1];
+    const session = /ra_sid_v1=([^;]+)/.exec(cookies)?.[1];
+    expect(visitor).toBeTruthy();
+    expect(session).toBeTruthy();
+
+    await route.POST(request({
+      ...body,
+      eventId: "00000000-0000-4000-8000-000000000002",
+      pathname: "/design-gallery",
+    }, {
+      cookie: [
+        `rnr-consent-v1=${consent(true, false)}`,
+        `ra_vid_v1=${visitor}`,
+        `ra_sid_v1=${session}`,
+      ].join("; "),
+    }));
+
+    const [firstRecord, secondRecord] = route.record.mock.calls.map(([value]) => value);
+    expect(firstRecord).toEqual(expect.objectContaining({
+      sessionId: expect.any(String),
+      visitorDigest: expect.any(String),
+    }));
+    expect(secondRecord).toEqual(expect.objectContaining({
+      sessionId: firstRecord.sessionId,
+      visitorDigest: firstRecord.visitorDigest,
+    }));
+  });
+
   it("writes nothing without analytics consent, on private paths, or for bots", async () => {
     const route = handler();
     const requests = [

@@ -19,6 +19,30 @@ vi.mock("./consent-preferences", () => ({
   useAdvertisingConsent: () => state.consent,
 }));
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((nextResolve, nextReject) => {
+    resolve = nextResolve;
+    reject = nextReject;
+  });
+  return { promise, resolve, reject };
+}
+
+function setWebLocks(value: unknown) {
+  Object.defineProperty(navigator, "locks", {
+    configurable: true,
+    value,
+  });
+}
+
+function clearWebLocks() {
+  Object.defineProperty(navigator, "locks", {
+    configurable: true,
+    value: undefined,
+  });
+}
+
 describe("website analytics tracker", () => {
   beforeEach(() => {
     state.pathname = "/products/photo-print-canvas";
@@ -28,6 +52,88 @@ describe("website analytics tracker", () => {
     vi.stubGlobal("crypto", { randomUUID: vi.fn()
       .mockReturnValueOnce("00000000-0000-4000-8000-000000000001")
       .mockReturnValueOnce("00000000-0000-4000-8000-000000000002") });
+    clearWebLocks();
+  });
+
+  it("serializes concurrent tracker pageviews until the first request settles", async () => {
+    const firstRequest = deferred<Response>();
+    const queued: (() => Promise<void>)[] = [];
+    let active = false;
+    const request = vi.fn(async (
+      _name: string,
+      _options: unknown,
+      callback: () => Promise<void>,
+    ) => {
+      if (active) {
+        return new Promise<void>((resolve, reject) => {
+          queued.push(async () => {
+            try {
+              await callback();
+              resolve();
+            } catch (error) {
+              reject(error);
+            }
+          });
+        });
+      }
+      active = true;
+      try {
+        await callback();
+      } finally {
+        active = false;
+        const next = queued.shift();
+        if (next) void next();
+      }
+    });
+    setWebLocks({ request });
+    vi.stubGlobal("fetch", vi.fn()
+      .mockImplementationOnce(() => firstRequest.promise)
+      .mockResolvedValueOnce(new Response(null, { status: 204 })));
+
+    render(<><WebsiteAnalyticsTracker enabled /><WebsiteAnalyticsTracker enabled /></>);
+
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+    expect(request).toHaveBeenNthCalledWith(
+      1,
+      "rnr:website-analytics:pageview",
+      { mode: "exclusive" },
+      expect.any(Function),
+    );
+    expect(fetch).toHaveBeenCalledTimes(1);
+
+    firstRequest.resolve(new Response(null, { status: 204 }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+  });
+
+  it("uses one normal pageview when Web Locks is unavailable", async () => {
+    clearWebLocks();
+    render(<WebsiteAnalyticsTracker enabled />);
+
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  });
+
+  it("uses one fallback pageview when lock acquisition rejects before its callback starts", async () => {
+    const request = vi.fn().mockRejectedValue(new Error("locks unavailable"));
+    setWebLocks({ request });
+    render(<WebsiteAnalyticsTracker enabled />);
+
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
+  });
+
+  it("does not retry when the lock callback pageview fetch rejects", async () => {
+    const request = vi.fn(async (
+      _name: string,
+      _options: unknown,
+      callback: () => Promise<void>,
+    ) => callback());
+    setWebLocks({ request });
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network unavailable")));
+
+    render(<WebsiteAnalyticsTracker enabled />);
+
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
   });
 
   it("records initial load without leaking click values when advertising consent is absent", async () => {
