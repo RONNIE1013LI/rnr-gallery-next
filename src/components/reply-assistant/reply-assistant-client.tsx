@@ -1,32 +1,13 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import type {
+  SafeInboxItem,
+  SafeTimelineEvent,
+} from "@/server/customer-service/repositories/customer-service-repository";
 import styles from "./reply-assistant.module.css";
 
-export type ReplyQueueItem = Readonly<{
-  messageId: string;
-  channel: "facebook" | "website";
-  body: string;
-  receivedAt: string;
-  status: string;
-  latestAttemptId: string | null;
-  draftText: string | null;
-  gateResult: string | null;
-  attachmentCount: number;
-  imageAnalysisStatus: "not_applicable" | "assessed" | "human_review_required";
-  imageAssessmentSummary: string | null;
-  humanReplyReceived: boolean;
-  websiteReview: Readonly<{
-    selector: string | null;
-    reason: "high_risk" | "unresolved" | "realtime_required" | "provider_error" | "output_blocked" | "budget_blocked" | "system_failure";
-    alertStatus: "not_created" | "pending" | "leased" | "retry_wait" | "sent" | "failed";
-  }> | null;
-  timeline: readonly Readonly<{
-    role: "customer" | "assistant" | "staff";
-    text: string;
-    receivedAt: string;
-  }>[];
-}>;
+export type ReplyQueueItem = SafeInboxItem;
 
 type ReviewState = Readonly<{
   mode: "pending" | "editing" | "accepted" | "edited" | "rejected";
@@ -46,6 +27,19 @@ type FeedbackRequest = Readonly<{
   attemptId: string;
   action: FeedbackAction;
   idempotencyKey: string;
+}>;
+
+type EarlierTimelineState = Readonly<{
+  events: readonly SafeTimelineEvent[];
+  cursor: string | null;
+  hasEarlier: boolean;
+  status: "idle" | "loading" | "error";
+}>;
+
+type EarlierTimelineResponse = Readonly<{
+  events: readonly SafeTimelineEvent[];
+  cursor: string | null;
+  hasEarlier: boolean;
 }>;
 
 const replyDateTime = new Intl.DateTimeFormat("en-NZ", {
@@ -70,17 +64,42 @@ async function jsonRequest(url: string, body: unknown) {
   return response.json();
 }
 
+function inboxOrder(left: ReplyQueueItem, right: ReplyQueueItem) {
+  return right.lastActivityAt.localeCompare(left.lastActivityAt)
+    || left.inboxId.localeCompare(right.inboxId);
+}
+
+function normalizeInboxItems(items: readonly ReplyQueueItem[]) {
+  const byInboxId = new Map<string, ReplyQueueItem>();
+  for (const item of items) {
+    const current = byInboxId.get(item.inboxId);
+    if (!current || item.lastActivityAt >= current.lastActivityAt) {
+      byInboxId.set(item.inboxId, item);
+    }
+  }
+  return [...byInboxId.values()].sort(inboxOrder);
+}
+
+function mergeTimelineEvents(
+  earlier: readonly SafeTimelineEvent[],
+  current: readonly SafeTimelineEvent[],
+) {
+  const events = new Map<string, SafeTimelineEvent>();
+  for (const event of [...earlier, ...current]) events.set(event.eventId, event);
+  return [...events.values()];
+}
+
 export function ReplyAssistantClient({
   initialItems,
   liveItems,
-  newMessageIds = [],
+  newInboxIds = [],
   onRefresh,
   selectedReviewSelector = null,
   channelScope = "all",
 }: Readonly<{
   initialItems?: readonly ReplyQueueItem[];
   liveItems?: readonly ReplyQueueItem[];
-  newMessageIds?: readonly string[];
+  newInboxIds?: readonly string[];
   onRefresh?: () => void;
   selectedReviewSelector?: string | null;
   channelScope?: "all" | "website" | "facebook";
@@ -92,6 +111,7 @@ export function ReplyAssistantClient({
   const [feedbackRequests, setFeedbackRequests] = useState<Record<string, FeedbackRequest>>({});
   const [feedbackErrors, setFeedbackErrors] = useState<Record<string, string>>({});
   const [feedbackCompletions, setFeedbackCompletions] = useState<Record<string, FeedbackAction>>({});
+  const [earlierTimelines, setEarlierTimelines] = useState<Record<string, EarlierTimelineState>>({});
   const [visibleCounts, setVisibleCounts] = useState<Record<"all" | "website" | "facebook", number>>({
     all: CONVERSATION_BATCH_SIZE,
     website: CONVERSATION_BATCH_SIZE,
@@ -122,17 +142,14 @@ export function ReplyAssistantClient({
   }, [initialItems]);
 
   const items = liveItems === undefined
-    ? fetchedItems
+    ? normalizeInboxItems(fetchedItems)
     : (() => {
-      const sorted = [...new Map(liveItems.map((item) => [item.messageId, item])).values()]
-        .sort((left, right) => (
-          right.receivedAt.localeCompare(left.receivedAt) || right.messageId.localeCompare(left.messageId)
-        ));
+      const sorted = normalizeInboxItems(liveItems);
       const selected = selectedReviewSelector
         ? sorted.find((item) => item.websiteReview?.selector === selectedReviewSelector)
         : undefined;
       return selected
-        ? [selected, ...sorted.filter((item) => item.messageId !== selected.messageId)].slice(0, 100)
+        ? [selected, ...sorted.filter((item) => item.inboxId !== selected.inboxId)].slice(0, 100)
         : sorted.slice(0, 100);
     })();
   const visibleCount = visibleCounts[channelScope];
@@ -144,7 +161,7 @@ export function ReplyAssistantClient({
   }, [selectedReviewSelector]);
 
   function review(item: ReplyQueueItem): ReviewState {
-    return reviews[item.messageId] ?? {
+    return reviews[item.inboxId] ?? {
       mode: "pending",
       text: item.draftText ?? "",
       sourceAttemptId: item.latestAttemptId,
@@ -152,17 +169,17 @@ export function ReplyAssistantClient({
   }
 
   function update(item: ReplyQueueItem, next: ReviewState) {
-    setReviews((current) => ({ ...current, [item.messageId]: next }));
+    setReviews((current) => ({ ...current, [item.inboxId]: next }));
   }
 
-  function setFeedbackError(messageId: string, message: string | null) {
+  function setFeedbackError(inboxId: string, message: string | null) {
     setFeedbackErrors((errors) => {
       if (message === null) {
         const remaining = { ...errors };
-        delete remaining[messageId];
+        delete remaining[inboxId];
         return remaining;
       }
-      return { ...errors, [messageId]: message };
+      return { ...errors, [inboxId]: message };
     });
   }
 
@@ -176,9 +193,9 @@ export function ReplyAssistantClient({
     feedbackInFlight.current.add(intent);
     setFeedbackRequests((requests) => ({
       ...requests,
-      [item.messageId]: { attemptId, action, idempotencyKey },
+      [item.inboxId]: { attemptId, action, idempotencyKey },
     }));
-    setFeedbackError(item.messageId, null);
+    setFeedbackError(item.inboxId, null);
     try {
       await jsonRequest(`/api/reply-assistant/drafts/${attemptId}/feedback`, {
         action,
@@ -190,29 +207,29 @@ export function ReplyAssistantClient({
       else setFeedbackCompletions((completions) => ({ ...completions, [attemptId]: action }));
       return true;
     } catch {
-      setFeedbackError(item.messageId, "We could not save this review. Please try again.");
+      setFeedbackError(item.inboxId, "We could not save this review. Please try again.");
       return false;
     } finally {
       feedbackInFlight.current.delete(intent);
       setFeedbackRequests((requests) => {
-        const request = requests[item.messageId];
+        const request = requests[item.inboxId];
         if (!request
           || request.attemptId !== attemptId
           || request.action !== action
           || request.idempotencyKey !== idempotencyKey) return requests;
         const remaining = { ...requests };
-        delete remaining[item.messageId];
+        delete remaining[item.inboxId];
         return remaining;
       });
     }
   }
 
   async function generate(item: ReplyQueueItem, regenerate = false) {
-    setBusy(item.messageId);
+    setBusy(item.inboxId);
     try {
       const url = regenerate && item.latestAttemptId
         ? `/api/reply-assistant/drafts/${item.latestAttemptId}/regenerate`
-        : `/api/reply-assistant/messages/${item.messageId}/generate`;
+        : `/api/reply-assistant/messages/${item.latestMessageId}/generate`;
       await jsonRequest(url, {});
       await refresh();
     } finally {
@@ -221,13 +238,13 @@ export function ReplyAssistantClient({
   }
 
   async function sendWebsiteReply(item: ReplyQueueItem, current: WebsiteReplyState) {
-    if (!item.websiteReview?.selector || websiteReplyInFlight.current.has(item.messageId)) return;
+    if (!item.websiteReview?.selector || websiteReplyInFlight.current.has(item.inboxId)) return;
     const text = current.text.trim();
     if (!text) return;
-    websiteReplyInFlight.current.add(item.messageId);
+    websiteReplyInFlight.current.add(item.inboxId);
     setWebsiteReplies((states) => ({
       ...states,
-      [item.messageId]: { ...current, text, status: "sending" },
+      [item.inboxId]: { ...current, text, status: "sending" },
     }));
     try {
       await jsonRequest("/api/reply-assistant/website-replies", {
@@ -236,16 +253,57 @@ export function ReplyAssistantClient({
       });
       setWebsiteReplies((states) => ({
         ...states,
-        [item.messageId]: { ...current, text, status: "sent" },
+        [item.inboxId]: { ...current, text, status: "sent" },
       }));
       onRefresh?.();
     } catch {
       setWebsiteReplies((states) => ({
         ...states,
-        [item.messageId]: { ...current, text, status: "error" },
+        [item.inboxId]: { ...current, text, status: "error" },
       }));
     } finally {
-      websiteReplyInFlight.current.delete(item.messageId);
+      websiteReplyInFlight.current.delete(item.inboxId);
+    }
+  }
+
+  async function loadEarlierTimeline(item: ReplyQueueItem, current: EarlierTimelineState | undefined) {
+    const cursor = current?.cursor ?? item.timeline[0]?.eventId ?? null;
+    if (!cursor || current?.status === "loading") return;
+    setEarlierTimelines((states) => ({
+      ...states,
+      [item.inboxId]: {
+        events: current?.events ?? [],
+        cursor,
+        hasEarlier: current?.hasEarlier ?? item.hasEarlierTimeline,
+        status: "loading",
+      },
+    }));
+    try {
+      const response = await fetch(
+        `/api/reply-assistant/inbox/${encodeURIComponent(item.inboxId)}/timeline?cursor=${encodeURIComponent(cursor)}`,
+        { cache: "no-store", headers: { accept: "application/json" } },
+      );
+      if (!response.ok) throw new Error("timeline_request_failed");
+      const page = await response.json() as EarlierTimelineResponse;
+      setEarlierTimelines((states) => ({
+        ...states,
+        [item.inboxId]: {
+          events: mergeTimelineEvents(page.events, states[item.inboxId]?.events ?? []),
+          cursor: page.cursor,
+          hasEarlier: page.hasEarlier,
+          status: "idle",
+        },
+      }));
+    } catch {
+      setEarlierTimelines((states) => ({
+        ...states,
+        [item.inboxId]: {
+          events: states[item.inboxId]?.events ?? [],
+          cursor: states[item.inboxId]?.cursor ?? cursor,
+          hasEarlier: states[item.inboxId]?.hasEarlier ?? true,
+          status: "error",
+        },
+      }));
     }
   }
 
@@ -254,7 +312,7 @@ export function ReplyAssistantClient({
       {items.length === 0 ? <p className={styles.empty}>No pilot messages yet.</p> : null}
       {visibleItems.map((item) => {
         const current = review(item);
-        const currentWebsiteReply = websiteReplies[item.messageId] ?? {
+        const currentWebsiteReply = websiteReplies[item.inboxId] ?? {
           text: "",
           sourceReviewSelector: item.websiteReview?.selector ?? "",
           status: "editing" as const,
@@ -262,53 +320,68 @@ export function ReplyAssistantClient({
         const websiteReviewChanged = Boolean(item.websiteReview)
           && currentWebsiteReply.sourceReviewSelector !== item.websiteReview?.selector;
         const gateBlocked = !item.draftText && item.gateResult !== null && item.gateResult !== "allowed";
-        const imageOnly = item.attachmentCount > 0 && item.body === "[Image attachment]";
+        const earlierTimeline = earlierTimelines[item.inboxId];
+        const timeline = mergeTimelineEvents(earlierTimeline?.events ?? [], item.timeline);
+        const latestCustomerText = [...timeline].reverse().find((event) => event.role === "customer")?.text ?? "";
+        const imageOnly = item.attachmentCount > 0 && latestCustomerText === "[Image attachment]";
         const visualReviewRequired = imageOnly || item.imageAnalysisStatus === "human_review_required";
         const requiresHumanReview = gateBlocked || visualReviewRequired || item.websiteReview !== null;
         const serverChanged = current.sourceAttemptId !== item.latestAttemptId;
         const approved = !serverChanged && (current.mode === "accepted" || current.mode === "edited");
         const locallyEditing = current.mode === "editing";
-        const feedbackPending = feedbackRequests[item.messageId]?.attemptId === item.latestAttemptId;
+        const feedbackPending = feedbackRequests[item.inboxId]?.attemptId === item.latestAttemptId;
         const feedbackCompletion = item.latestAttemptId ? feedbackCompletions[item.latestAttemptId] ?? null : null;
         const outcomeCompleted = feedbackCompletion === "accepted_unchanged"
           || feedbackCompletion === "edited"
           || feedbackCompletion === "rejected";
-        const feedbackError = feedbackErrors[item.messageId] ?? null;
+        const feedbackError = feedbackErrors[item.inboxId] ?? null;
         const selected = selectedReviewSelector !== null
           && item.websiteReview?.selector === selectedReviewSelector;
         return (
           <article
             className={styles.message}
-            key={item.messageId}
+            key={item.inboxId}
             data-selected={selected}
             ref={selected ? selectedCardRef : undefined}
           >
             <header>
-              <time>{formatReplyReceivedAt(item.receivedAt)}</time>
+              <time>{formatReplyReceivedAt(item.lastActivityAt)}</time>
               <div className={styles.statuses}>
                 <span className={styles.channelBadge} data-channel={item.channel}>{item.channel === "website" ? "Website" : "Facebook"}</span>
-                {newMessageIds.includes(item.messageId) ? <span className={styles.newBadge}>New</span> : null}
+                {newInboxIds.includes(item.inboxId) ? <span className={styles.newBadge}>New</span> : null}
+                {item.unreadCount > 0 ? <span className={styles.unreadBadge}>{item.unreadCount} unread</span> : null}
                 <span data-risk={requiresHumanReview}>{item.humanReplyReceived ? "human replied" : requiresHumanReview ? "Human review required" : item.status.replaceAll("_", " ")}</span>
                 {item.websiteReview ? <span className={styles.alertBadge} data-alert={item.websiteReview.alertStatus}>Alert {item.websiteReview.alertStatus.replaceAll("_", " ")}</span> : null}
               </div>
             </header>
             <div className={styles.messageBody}>
               <div className={styles.messageContext}>
-                <div className={styles.customerText}><strong>Customer</strong><p>{item.body}</p></div>
-                {item.timeline.length > 0 ? (
+                {timeline.length > 0 ? (
                   <section className={styles.timeline} aria-label="Conversation timeline">
                     <div className={styles.timelineHeader}>
                       <strong>Conversation timeline</strong>
                       <span className={styles.timelineChannel}>{item.channel === "website" ? "Website" : "Facebook"}</span>
                     </div>
                     <ol>
-                      {item.timeline.map((event, index) => (
-                        <li key={`${event.receivedAt}-${index}`} data-role={event.role}>
+                      {timeline.map((event) => (
+                        <li key={event.eventId} data-role={event.role}>
                           <span>{event.role === "staff" ? "R&R" : event.role === "assistant" ? "Assistant" : "Customer"}</span>
                           <p>{event.text}</p>
                         </li>
                       ))}
                     </ol>
+                    {(earlierTimeline?.hasEarlier ?? item.hasEarlierTimeline) ? (
+                      <button
+                        type="button"
+                        className={styles.loadEarlier}
+                        aria-label="Load earlier conversation history"
+                        disabled={earlierTimeline?.status === "loading"}
+                        onClick={() => void loadEarlierTimeline(item, earlierTimeline)}
+                      >{earlierTimeline?.status === "loading" ? "Loading…" : "Load earlier"}</button>
+                    ) : null}
+                    {earlierTimeline?.status === "error" ? (
+                      <div className={styles.serverChanged} role="alert">Earlier history could not be loaded. Try again.</div>
+                    ) : null}
                   </section>
                 ) : null}
                 {item.attachmentCount > 0 ? (
@@ -325,14 +398,14 @@ export function ReplyAssistantClient({
               ) : item.websiteReview ? (
                 item.websiteReview.selector ? (
                 <div className={styles.websiteReply}>
-                  <label htmlFor={`website-reply-${item.messageId}`}>Website reply</label>
+                  <label htmlFor={`website-reply-${item.inboxId}`}>Website reply</label>
                   <textarea
-                    id={`website-reply-${item.messageId}`}
+                    id={`website-reply-${item.inboxId}`}
                     value={currentWebsiteReply.text}
                     maxLength={2_000}
                     onChange={(event) => setWebsiteReplies((states) => ({
                       ...states,
-                      [item.messageId]: {
+                      [item.inboxId]: {
                         text: event.target.value,
                         sourceReviewSelector: currentWebsiteReply.sourceReviewSelector,
                         status: "editing",
@@ -368,9 +441,9 @@ export function ReplyAssistantClient({
               </>
             ) : item.draftText || locallyEditing ? (
               <div className={styles.draftArea}>
-                <label htmlFor={`draft-${item.messageId}`}>Reply draft</label>
+                <label htmlFor={`draft-${item.inboxId}`}>Reply draft</label>
                 <textarea
-                  id={`draft-${item.messageId}`}
+                  id={`draft-${item.inboxId}`}
                   value={current.text}
                   readOnly={current.mode !== "editing"}
                   onChange={(event) => update(item, {
@@ -408,23 +481,23 @@ export function ReplyAssistantClient({
                     if (!await feedback(item, "rejected", null, "human_rejected")) return;
                     update(item, { mode: "rejected", text: current.text, sourceAttemptId: item.latestAttemptId });
                   }}>Reject</button>
-                  <button type="button" disabled={busy === item.messageId || feedbackPending || visualReviewRequired || serverChanged} onClick={() => void generate(item, true)}>Regenerate</button>
+                  <button type="button" disabled={busy === item.inboxId || feedbackPending || visualReviewRequired || serverChanged} onClick={() => void generate(item, true)}>Regenerate</button>
                   <button type="button" disabled={!approved || serverChanged || feedbackPending} onClick={async () => {
                     try {
                       await navigator.clipboard.writeText(current.text);
                     } catch {
-                      setFeedbackError(item.messageId, "The reply could not be copied. Please try again.");
+                      setFeedbackError(item.inboxId, "The reply could not be copied. Please try again.");
                       return;
                     }
                     if (!await feedback(item, "copied", current.text, null)) {
-                      setFeedbackError(item.messageId, "The text was copied, but its review event was not saved. Copy again to retry.");
+                      setFeedbackError(item.inboxId, "The text was copied, but its review event was not saved. Copy again to retry.");
                     }
                   }}>Copy</button>
                   <button type="button" disabled={!approved || serverChanged || feedbackPending || feedbackCompletion === "sent_confirmed"} onClick={() => void feedback(item, "sent_confirmed", current.text, null)}>Mark as manually sent</button>
                 </div>
               </div>
             ) : (
-              <button className={styles.generate} data-variant="primary" type="button" disabled={busy === item.messageId || visualReviewRequired} onClick={() => void generate(item)}>Generate AI Reply</button>
+              <button className={styles.generate} data-variant="primary" type="button" disabled={busy === item.inboxId || visualReviewRequired} onClick={() => void generate(item)}>Generate AI Reply</button>
             )}
               </div>
             </div>

@@ -111,7 +111,8 @@ describe("Reply Assistant website-review deep link", () => {
     const rawToken = "Z".repeat(43);
     const reviewSelector = `wrs1.m8k6x0.${"A".repeat(43)}`;
     const targetItem = {
-      messageId: "safe-queue-message",
+      inboxId: "a".repeat(64),
+      latestMessageId: "11111111-1111-4111-8111-111111111111",
       channel: "website",
       websiteReview: { selector: reviewSelector, reason: "high_risk", alertStatus: "pending" },
     };

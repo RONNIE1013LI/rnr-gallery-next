@@ -233,6 +233,12 @@ export type SafeInboxItem = Readonly<{
 
 export type SafeQueuePage = Readonly<{ items: readonly SafeInboxItem[] }>;
 
+export type SafeTimelinePage = Readonly<{
+  events: readonly SafeTimelineEvent[];
+  cursor: string | null;
+  hasEarlier: boolean;
+}>;
+
 export type ReplyAssistantLearningCandidatePage = Readonly<{ items: readonly Readonly<{
   id: string;
   intent: string;
@@ -692,6 +698,11 @@ export interface CustomerServiceRepository {
   messageIdForAttempt(attemptId: string): Promise<string | null>;
   appendFeedback(input: FeedbackEventInput): Promise<void>;
   listQueue(limit: number): Promise<SafeQueuePage>;
+  loadEarlierInboxTimeline(input: Readonly<{
+    inboxId: string;
+    cursor: string;
+    limit: number;
+  }>): Promise<SafeTimelinePage>;
   getReplyAssistantUiCursor(): Promise<string>;
   listReplyAssistantUpdates(cursor: string | null, limit: number): Promise<ReplyAssistantUpdatePage>;
   metricCounts(): Promise<PilotMetricCounts>;

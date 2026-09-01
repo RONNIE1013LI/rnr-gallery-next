@@ -1103,6 +1103,63 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(page.items[0]?.timeline.at(-1)).toMatchObject({ text: "Staff 50" });
   });
 
+  it("paginates earlier Inbox history by opaque Inbox and event cursors without crossing identities", async () => {
+    const primary = await createInboxFixtureConversation({
+      channel: "facebook",
+      marker: "timeline-pagination-primary",
+      identityKind: "facebook_psid",
+      identityKeyHash: "e".repeat(64),
+      messages: [{ text: "Old customer action", at: new Date("2026-09-01T09:00:00.000Z"), eligible: true }],
+    });
+    await database.insert(customerServiceConversationEvents).values(Array.from({ length: 60 }, (_, index) => ({
+      conversationId: primary.conversationId,
+      channel: "facebook" as const,
+      externalMessageKeyHash: sourceHash(`timeline-pagination-primary:${index}`),
+      role: "staff" as const,
+      eventType: "human_outbound" as const,
+      body: `Staff ${index + 1}`,
+      receivedAt: new Date(Date.UTC(2026, 8, 1, 9, index + 1)),
+    })));
+    const unrelated = await createInboxFixtureConversation({
+      channel: "facebook",
+      marker: "timeline-pagination-unrelated",
+      identityKind: "facebook_psid",
+      identityKeyHash: "f".repeat(64),
+      messages: [{ text: "Other customer", at: new Date("2026-09-01T10:30:00.000Z"), eligible: true }],
+    });
+
+    const queue = await repository.listQueue(100);
+    const primaryItem = queue.items.find((entry) => entry.latestMessageId === primary.messages[0]?.messageId);
+    const unrelatedItem = queue.items.find((entry) => entry.latestMessageId === unrelated.messages[0]?.messageId);
+    expect(primaryItem?.timeline[0]?.text).toBe("Staff 11");
+
+    const first = await repository.loadEarlierInboxTimeline({
+      inboxId: primaryItem!.inboxId,
+      cursor: primaryItem!.timeline[0]!.eventId,
+      limit: 10,
+    });
+    expect(first.events.map((event) => event.text)).toEqual(Array.from({ length: 10 }, (_, index) => `Staff ${index + 1}`));
+    expect(first).toMatchObject({ hasEarlier: true, cursor: first.events[0]?.eventId });
+
+    const final = await repository.loadEarlierInboxTimeline({
+      inboxId: primaryItem!.inboxId,
+      cursor: first.cursor!,
+      limit: 10,
+    });
+    expect(final).toEqual({
+      events: [expect.objectContaining({ text: "Old customer action" })],
+      cursor: null,
+      hasEarlier: false,
+    });
+
+    await expect(repository.loadEarlierInboxTimeline({
+      inboxId: primaryItem!.inboxId,
+      cursor: unrelatedItem!.timeline[0]!.eventId,
+      limit: 10,
+    })).rejects.toThrow("reply_assistant_timeline_cursor_invalid");
+    expect(JSON.stringify(first)).not.toMatch(/identityKind|identityKey|conversationId|sessionId|psid|visitor/i);
+  });
+
   it("serializes linked-conversation review creation with the identity advisory lock", async () => {
     const identityKeyHash = "d".repeat(64);
     const older = await claimWebsiteTurn({

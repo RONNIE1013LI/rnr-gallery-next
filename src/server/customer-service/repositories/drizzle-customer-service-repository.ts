@@ -5368,6 +5368,140 @@ export function createDrizzleCustomerServiceRepository(
       return loadQueuePage(Math.max(1, Math.min(100, limit)));
     },
 
+    async loadEarlierInboxTimeline(input) {
+      if (!/^[a-f0-9]{64}$/.test(input.inboxId)
+        || !/^(?:event|assistant|message):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(input.cursor)
+        || !Number.isSafeInteger(input.limit)
+        || input.limit < 1
+        || input.limit > 50) {
+        throw new Error("reply_assistant_timeline_cursor_invalid");
+      }
+      const identityResult = await database.execute<{
+        channel: "facebook" | "website";
+        identity_kind: CustomerInboxIdentity["kind"];
+        identity_key_hash: string;
+      }>(sql`
+        select distinct
+          identity.channel,
+          identity.identity_kind,
+          identity.identity_key_hash
+        from ${customerServiceConversationIdentities} identity
+        where encode(sha256(
+          convert_to(identity.channel, 'UTF8')
+          || decode('00', 'hex')
+          || convert_to(identity.identity_kind, 'UTF8')
+          || decode('00', 'hex')
+          || convert_to(identity.identity_key_hash, 'UTF8')
+        ), 'hex') = ${input.inboxId}
+        limit 2
+      `);
+      if (identityResult.rows.length !== 1) {
+        throw new Error("reply_assistant_inbox_not_found");
+      }
+      const identity = identityResult.rows[0];
+      const selected = sql`selected(channel, identity_kind, identity_key_hash) as (
+        values (${identity.channel}, ${identity.identity_kind}, ${identity.identity_key_hash})
+      )`;
+      const combined = sql`combined as (
+        select
+          'event:' || events.id::text as event_id,
+          events.role::text as role,
+          events.body,
+          events.received_at,
+          events.created_at,
+          0 as source_order
+        from ${customerServiceConversationEvents} events
+        join ${customerServiceConversationIdentities} identity
+          on identity.conversation_id = events.conversation_id
+        join selected on selected.channel = identity.channel
+          and selected.identity_kind = identity.identity_kind
+          and selected.identity_key_hash = identity.identity_key_hash
+        where events.event_type in ('customer_message', 'human_outbound')
+        union all
+        select
+          'assistant:' || assistant.id::text,
+          'assistant',
+          assistant.body,
+          assistant.published_at,
+          assistant.created_at,
+          1
+        from ${customerServiceWebsiteAssistantMessages} assistant
+        join ${customerServiceConversationIdentities} identity
+          on identity.conversation_id = assistant.conversation_id
+        join selected on selected.channel = identity.channel
+          and selected.identity_kind = identity.identity_kind
+          and selected.identity_key_hash = identity.identity_key_hash
+        union all
+        select
+          'message:' || messages.id::text,
+          'customer',
+          messages.body,
+          messages.received_at,
+          messages.created_at,
+          2
+        from ${customerServiceMessages} messages
+        join ${customerServiceConversationIdentities} identity
+          on identity.conversation_id = messages.conversation_id
+        join selected on selected.channel = identity.channel
+          and selected.identity_kind = identity.identity_kind
+          and selected.identity_key_hash = identity.identity_key_hash
+        where not exists (
+          select 1 from ${customerServiceConversationEvents} events
+          where events.legacy_message_id = messages.id
+        )
+      )`;
+      const boundaryResult = await database.execute<{
+        received_at: Date;
+        created_at: Date;
+        source_order: number;
+        event_id: string;
+      }>(sql`
+        with ${selected}, ${combined}
+        select received_at, created_at, source_order, event_id
+        from combined
+        where event_id = ${input.cursor}
+        limit 1
+      `);
+      const boundary = boundaryResult.rows[0];
+      if (!boundary) throw new Error("reply_assistant_timeline_cursor_invalid");
+
+      const pageResult = await database.execute<{
+        event_id: string;
+        role: "customer" | "assistant" | "staff";
+        body: string;
+        received_at: Date;
+      }>(sql`
+        with ${selected}, ${combined}
+        select event_id, role, body, received_at
+        from combined
+        where (
+          received_at,
+          created_at,
+          source_order,
+          event_id
+        ) < (
+          ${boundary.received_at},
+          ${boundary.created_at},
+          ${boundary.source_order},
+          ${boundary.event_id}
+        )
+        order by received_at desc, created_at desc, source_order desc, event_id desc
+        limit ${input.limit + 1}
+      `);
+      const hasEarlier = pageResult.rows.length > input.limit;
+      const events = pageResult.rows.slice(0, input.limit).reverse().map((event) => Object.freeze({
+        eventId: event.event_id,
+        role: event.role,
+        text: event.body,
+        receivedAt: new Date(event.received_at).toISOString(),
+      }));
+      return Object.freeze({
+        events: Object.freeze(events),
+        cursor: hasEarlier ? events[0]?.eventId ?? null : null,
+        hasEarlier,
+      });
+    },
+
     async getReplyAssistantUiCursor() {
       const [state] = await database.select({ revision: customerServiceUiRevision.revision })
         .from(customerServiceUiRevision)

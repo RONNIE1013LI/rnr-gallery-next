@@ -32,10 +32,11 @@ const channelCounts = (sessions: number, directTemplateReplies: number) => ({
 });
 
 const baseItem = {
-  messageId: "11111111-1111-4111-8111-111111111111",
+  inboxId: "a".repeat(64),
   channel: "facebook" as const,
-  body: "Can you combine photos?",
-  receivedAt: "2026-08-20T00:00:00.000Z",
+  latestMessageId: "11111111-1111-4111-8111-111111111111",
+  lastActivityAt: "2026-08-20T00:00:00.000Z",
+  unreadCount: 1,
   status: "processing",
   latestAttemptId: null,
   draftText: null,
@@ -45,7 +46,8 @@ const baseItem = {
   imageAssessmentSummary: null,
   humanReplyReceived: false,
   websiteReview: null,
-  timeline: [{ role: "customer" as const, text: "Can you combine photos?", receivedAt: "2026-08-20T00:00:00.000Z" }],
+  timeline: [{ eventId: "event:11111111-1111-4111-8111-111111111111", role: "customer" as const, text: "Can you combine photos?", receivedAt: "2026-08-20T00:00:00.000Z" }],
+  hasEarlierTimeline: false,
 };
 
 const props = {
@@ -162,15 +164,17 @@ describe("ReplyAssistantLiveDashboard", () => {
     const selector = `wrs1.m8k6x0.${"A".repeat(43)}`;
     const selected = {
       ...baseItem,
-      messageId: "selected-review",
+      inboxId: "selected-review",
+      latestMessageId: "11111111-1111-4111-8111-111111111112",
       channel: "website" as const,
-      receivedAt: "2026-08-01T00:00:00.000Z",
+      lastActivityAt: "2026-08-01T00:00:00.000Z",
       websiteReview: { selector, reason: "high_risk" as const, alertStatus: "pending" as const },
     };
     const newer = Array.from({ length: 100 }, (_, index) => ({
       ...baseItem,
-      messageId: `newer-${index}`,
-      receivedAt: new Date(Date.UTC(2026, 7, 2, 0, 0, index)).toISOString(),
+      inboxId: `newer-${index}`,
+      latestMessageId: `newer-message-${index}`,
+      lastActivityAt: new Date(Date.UTC(2026, 7, 2, 0, 0, index)).toISOString(),
     }));
 
     const merged = mergeReplyQueueItems([selected, ...newer], [], selector);
@@ -179,14 +183,41 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(merged[0]).toEqual(selected);
   });
 
+  it("replaces one customer by inbox ID and moves the same box to the top", () => {
+    const other = {
+      ...baseItem,
+      inboxId: "other-inbox",
+      latestMessageId: "22222222-2222-4222-8222-222222222222",
+      lastActivityAt: "2026-08-20T00:01:00.000Z",
+    };
+    const updated = {
+      ...baseItem,
+      latestMessageId: "33333333-3333-4333-8333-333333333333",
+      lastActivityAt: "2026-08-20T00:02:00.000Z",
+      timeline: [...baseItem.timeline, {
+        eventId: "event:33333333-3333-4333-8333-333333333333",
+        role: "customer" as const,
+        text: "Now I need Canvas too",
+        receivedAt: "2026-08-20T00:02:00.000Z",
+      }],
+    };
+
+    const merged = mergeReplyQueueItems([baseItem, other], [updated, updated]);
+
+    expect(merged).toHaveLength(2);
+    expect(merged.map((entry) => entry.inboxId)).toEqual([baseItem.inboxId, other.inboxId]);
+    expect(merged[0]?.latestMessageId).toBe(updated.latestMessageId);
+  });
+
   it("manually refreshes incremental updates and renders new messages, drafts, gate blocks, outbound replies, and learning changes", async () => {
     const newMessage = {
       ...baseItem,
-      messageId: "22222222-2222-4222-8222-222222222222",
-      body: "I want a refund",
-      receivedAt: "2026-08-20T00:00:02.000Z",
+      inboxId: "b".repeat(64),
+      latestMessageId: "22222222-2222-4222-8222-222222222222",
+      lastActivityAt: "2026-08-20T00:00:02.000Z",
       status: "blocked",
       gateResult: "high_risk",
+      timeline: [{ eventId: "event:22222222-2222-4222-8222-222222222222", role: "customer" as const, text: "I want a refund", receivedAt: "2026-08-20T00:00:02.000Z" }],
     };
     const fetchMock = vi.fn(async (...args: [RequestInfo | URL, RequestInit?]) => {
       void args;
@@ -263,16 +294,16 @@ describe("ReplyAssistantLiveDashboard", () => {
     vi.stubGlobal("fetch", fetchMock);
     const facebookItems = Array.from({ length: 5 }, (_, index) => ({
       ...baseItem,
-      messageId: `facebook-message-${index}`,
-      body: `Facebook customer question ${index + 1}`,
-      timeline: [],
+      inboxId: `facebook-inbox-${index}`,
+      latestMessageId: `facebook-message-${index}`,
+      timeline: [{ eventId: `event:facebook-${index}`, role: "customer" as const, text: `Facebook customer question ${index + 1}`, receivedAt: baseItem.lastActivityAt }],
     }));
     const websiteItems = Array.from({ length: 3 }, (_, index) => ({
       ...baseItem,
-      messageId: `website-message-${index}`,
+      inboxId: `website-inbox-${index}`,
+      latestMessageId: `website-message-${index}`,
       channel: "website" as const,
-      body: `Website customer question ${index + 1}`,
-      timeline: [],
+      timeline: [{ eventId: `event:website-${index}`, role: "customer" as const, text: `Website customer question ${index + 1}`, receivedAt: baseItem.lastActivityAt }],
     }));
     render(<ReplyAssistantLiveDashboard
       {...props}
@@ -284,7 +315,7 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(screen.getByText("3 conversations")).toBeInTheDocument();
     expect(screen.getAllByRole("article")).toHaveLength(3);
     expect(screen.getAllByRole("article").every((article) => (
-      within(article).getAllByText("Website").length === 1
+      within(article).getAllByText("Website").length >= 1
     ))).toBe(true);
     expect(screen.queryByText("Facebook customer question 1")).not.toBeInTheDocument();
 
@@ -292,7 +323,7 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(screen.getByText("5 conversations")).toBeInTheDocument();
     expect(screen.getAllByRole("article")).toHaveLength(5);
     expect(screen.getAllByRole("article").every((article) => (
-      within(article).getAllByText("Facebook").length === 1
+      within(article).getAllByText("Facebook").length >= 1
     ))).toBe(true);
     expect(screen.queryByText("Website customer question 1")).not.toBeInTheDocument();
 
@@ -309,16 +340,18 @@ describe("ReplyAssistantLiveDashboard", () => {
   it("keeps opposite-channel live updates out of the active filtered list", async () => {
     const incomingWebsite = {
       ...baseItem,
-      messageId: "incoming-website",
+      inboxId: "incoming-website",
+      latestMessageId: "incoming-website-message",
       channel: "website" as const,
-      body: "New website conversation",
-      receivedAt: "2026-08-20T00:00:03.000Z",
+      lastActivityAt: "2026-08-20T00:00:03.000Z",
+      timeline: [{ eventId: "event:incoming-website", role: "customer" as const, text: "New website conversation", receivedAt: "2026-08-20T00:00:03.000Z" }],
     };
     const incomingFacebook = {
       ...baseItem,
-      messageId: "incoming-facebook",
-      body: "New Facebook conversation",
-      receivedAt: "2026-08-20T00:00:04.000Z",
+      inboxId: "incoming-facebook",
+      latestMessageId: "incoming-facebook-message",
+      lastActivityAt: "2026-08-20T00:00:04.000Z",
+      timeline: [{ eventId: "event:incoming-facebook", role: "customer" as const, text: "New Facebook conversation", receivedAt: "2026-08-20T00:00:04.000Z" }],
     };
     vi.stubGlobal("fetch", vi.fn(async () => response({
       ...emptyUpdate(),
@@ -362,7 +395,7 @@ describe("ReplyAssistantLiveDashboard", () => {
       humanReplyReceived: true,
       timeline: [
         ...baseItem.timeline,
-        { role: "staff" as const, text: "Please send the original photos.", receivedAt: "2026-08-20T00:00:03.000Z" },
+        { eventId: "event:staff-outbound", role: "staff" as const, text: "Please send the original photos.", receivedAt: "2026-08-20T00:00:03.000Z" },
       ],
     };
     const update = {

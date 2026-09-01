@@ -30,16 +30,19 @@ export function mergeReplyQueueItems(
   changes: readonly ReplyQueueItem[],
   selectedReviewSelector?: string | null,
 ) {
-  const byId = new Map(current.map((item) => [item.messageId, item]));
-  for (const item of changes) byId.set(item.messageId, item);
+  const byId = new Map(current.map((item) => [item.inboxId, item]));
+  for (const item of changes) {
+    const existing = byId.get(item.inboxId);
+    if (!existing || item.lastActivityAt >= existing.lastActivityAt) byId.set(item.inboxId, item);
+  }
   const sorted = [...byId.values()].sort((left, right) => (
-    right.receivedAt.localeCompare(left.receivedAt) || right.messageId.localeCompare(left.messageId)
+    right.lastActivityAt.localeCompare(left.lastActivityAt) || left.inboxId.localeCompare(right.inboxId)
   ));
   const selected = selectedReviewSelector
     ? sorted.find((item) => item.websiteReview?.selector === selectedReviewSelector)
     : undefined;
   return selected
-    ? [selected, ...sorted.filter((item) => item.messageId !== selected.messageId)].slice(0, 100)
+    ? [selected, ...sorted.filter((item) => item.inboxId !== selected.inboxId)].slice(0, 100)
     : sorted.slice(0, 100);
 }
 
@@ -63,7 +66,7 @@ export function ReplyAssistantLiveDashboard({
   selectedReviewSelector?: string | null;
 }>) {
   const [items, setItems] = useState(initialItems);
-  const [newMessageIds, setNewMessageIds] = useState<readonly string[]>([]);
+  const [newInboxIds, setNewInboxIds] = useState<readonly string[]>([]);
   const [metricCards, setMetricCards] = useState(initialMetricCards);
   const [metricCounts, setMetricCounts] = useState<PilotMetricCounts | null>(initialMetrics ?? null);
   const [channelScope, setChannelScope] = useState<"all" | "website" | "facebook">("all");
@@ -94,12 +97,12 @@ export function ReplyAssistantLiveDashboard({
       if (!response.ok) throw new Error("live_updates_failed");
       const update = await response.json() as LiveUpdateResponse;
       if (controller.signal.aborted) return;
-      const knownIds = new Set(itemsRef.current.map((item) => item.messageId));
+      const knownLatestMessageByInbox = new Map(itemsRef.current.map((item) => [item.inboxId, item.latestMessageId]));
       const arrived = update.queueItems
-        .filter((item) => !knownIds.has(item.messageId))
-        .map((item) => item.messageId);
+        .filter((item) => knownLatestMessageByInbox.get(item.inboxId) !== item.latestMessageId)
+        .map((item) => item.inboxId);
       if (arrived.length) {
-        setNewMessageIds((current) => [...new Set([...current, ...arrived])]);
+        setNewInboxIds((current) => [...new Set([...current, ...arrived])]);
       }
       if (update.queueItems.length) {
         setItems((current) => mergeReplyQueueItems(current, update.queueItems, selectedReviewSelector));
@@ -205,7 +208,7 @@ export function ReplyAssistantLiveDashboard({
         <ReplyAssistantClient
           initialItems={initialItems.filter((item) => channelScope === "all" || item.channel === channelScope)}
           liveItems={filteredItems}
-          newMessageIds={newMessageIds}
+          newInboxIds={newInboxIds}
           onRefresh={() => { void refresh(); }}
           selectedReviewSelector={selectedReviewSelector}
           channelScope={channelScope}

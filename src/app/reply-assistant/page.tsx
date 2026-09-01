@@ -70,7 +70,7 @@ export default async function ReplyAssistantPage({
     }, { items: [] }, { items: [] }];
   const cards = replyAssistantMetricCards(rawMetrics);
   const initialItems = selectedReviewItem
-    ? [selectedReviewItem, ...queue.items.filter((item) => item.messageId !== selectedReviewItem.messageId)]
+    ? [selectedReviewItem, ...queue.items.filter((item) => item.inboxId !== selectedReviewItem.inboxId)]
     : queue.items;
 
   return (

@@ -69,6 +69,11 @@
   color: #214f9b;
 }
 
+.message header .unreadBadge {
+  background: #fff7e7;
+  color: #76500f;
+}
+
 .message header .channelBadge[data-channel="website"] {
   background: #e8f5ed;
   color: #246334;
@@ -167,6 +172,23 @@
 .timeline li[data-role="assistant"] { background: #eef2f8; }
 .timeline span { color: var(--reply-muted, #67706b); font-size: 11px; font-weight: 720; }
 .timeline p { min-width: 0; margin: 0; font-size: 13px; line-height: 1.48; overflow-wrap: anywhere; }
+
+.loadEarlier {
+  width: fit-content;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--reply-border-strong, #c8c9c4);
+  border-radius: 8px;
+  color: var(--reply-accent, #345c45);
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 720;
+}
+
+.loadEarlier:disabled { cursor: wait; opacity: 0.6; }
+.loadEarlier:focus-visible { outline: 3px solid rgb(155 122 63 / 24%); outline-offset: 2px; }
 
 .imageAssessment {
   display: grid;

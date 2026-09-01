@@ -1,12 +1,13 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { formatReplyReceivedAt, ReplyAssistantClient, type ReplyQueueItem } from "./reply-assistant-client";
 
 const item = {
-  messageId: "11111111-1111-4111-8111-111111111111",
+  inboxId: "a".repeat(64),
   channel: "facebook" as const,
-  body: "Can you use my blurry photo?",
-  receivedAt: "2026-08-17T00:00:00.000Z",
+  latestMessageId: "11111111-1111-4111-8111-111111111111",
+  lastActivityAt: "2026-08-17T00:01:00.000Z",
+  unreadCount: 0,
   status: "draft_ready",
   latestAttemptId: "22222222-2222-4222-8222-222222222222",
   draftText: "Please send the original photo and we can assess it for you 😊",
@@ -17,9 +18,10 @@ const item = {
   humanReplyReceived: false,
   websiteReview: null,
   timeline: [
-    { role: "customer" as const, text: "Can you use my blurry photo?", receivedAt: "2026-08-17T00:00:00.000Z" },
-    { role: "staff" as const, text: "Please send the original file.", receivedAt: "2026-08-17T00:01:00.000Z" },
+    { eventId: "event:11111111-1111-4111-8111-111111111111", role: "customer" as const, text: "Can you use my blurry photo?", receivedAt: "2026-08-17T00:00:00.000Z" },
+    { eventId: "event:22222222-2222-4222-8222-222222222222", role: "staff" as const, text: "Please send the original file.", receivedAt: "2026-08-17T00:01:00.000Z" },
   ],
+  hasEarlierTimeline: false,
 };
 const websiteSelector = `wrs1.m8k6x0.${"A".repeat(43)}`;
 
@@ -157,7 +159,7 @@ describe("ReplyAssistantClient", () => {
   it("keeps image-only messages in human review and disables generation", () => {
     render(<ReplyAssistantClient initialItems={[{
       ...item,
-      body: "[Image attachment]",
+      timeline: [{ ...item.timeline[0], text: "[Image attachment]" }],
       status: "blocked",
       draftText: null,
       gateResult: "unresolved",
@@ -205,20 +207,21 @@ describe("ReplyAssistantClient", () => {
     const selector = `wrs1.m8k6x0.${"A".repeat(43)}`;
     const selected = {
       ...item,
-      messageId: "selected-old-website-review",
+      inboxId: "selected-old-website-review",
+      latestMessageId: "11111111-1111-4111-8111-111111111112",
       channel: "website" as const,
-      body: "Deep-linked older website review",
-      receivedAt: "2026-08-01T00:00:00.000Z",
+      lastActivityAt: "2026-08-01T00:00:00.000Z",
       latestAttemptId: null,
       draftText: null,
       gateResult: null,
       websiteReview: { selector, reason: "high_risk" as const, alertStatus: "pending" as const },
+      timeline: [{ eventId: "event:selected-old", role: "customer" as const, text: "Deep-linked older website review", receivedAt: "2026-08-01T00:00:00.000Z" }],
     };
     const newer = Array.from({ length: 100 }, (_, index) => ({
       ...item,
-      messageId: `newer-${index}`,
-      body: `Newer item ${index}`,
-      receivedAt: new Date(Date.UTC(2026, 7, 2, 0, 0, index)).toISOString(),
+      inboxId: `newer-${index}`,
+      latestMessageId: `newer-message-${index}`,
+      lastActivityAt: new Date(Date.UTC(2026, 7, 2, 0, 0, index)).toISOString(),
       latestAttemptId: null,
       draftText: null,
       humanReplyReceived: true,
@@ -238,9 +241,9 @@ describe("ReplyAssistantClient", () => {
   it("shows a focused first batch and reveals more conversations on demand", () => {
     const conversations = Array.from({ length: 25 }, (_, index) => ({
       ...item,
-      messageId: `message-${index}`,
-      body: `Customer question ${index + 1}`,
-      receivedAt: new Date(Date.UTC(2026, 7, 17, 0, 0, index)).toISOString(),
+      inboxId: `inbox-${index}`,
+      latestMessageId: `message-${index}`,
+      lastActivityAt: new Date(Date.UTC(2026, 7, 17, 0, 0, index)).toISOString(),
       humanReplyReceived: true,
       timeline: [],
     }));
@@ -259,17 +262,17 @@ describe("ReplyAssistantClient", () => {
   it("resets the visible batch when the active channel changes", () => {
     const facebook = Array.from({ length: 13 }, (_, index) => ({
       ...item,
-      messageId: `facebook-${index}`,
-      body: `Facebook question ${index + 1}`,
-      receivedAt: new Date(Date.UTC(2026, 7, 17, 0, 0, index)).toISOString(),
+      inboxId: `facebook-inbox-${index}`,
+      latestMessageId: `facebook-${index}`,
+      lastActivityAt: new Date(Date.UTC(2026, 7, 17, 0, 0, index)).toISOString(),
       humanReplyReceived: true,
       timeline: [],
     }));
     const website = facebook.map((entry, index) => ({
       ...entry,
-      messageId: `website-${index}`,
+      inboxId: `website-inbox-${index}`,
+      latestMessageId: `website-${index}`,
       channel: "website" as const,
-      body: `Website question ${index + 1}`,
     }));
     const view = render(<ReplyAssistantClient
       initialItems={facebook}
@@ -310,9 +313,9 @@ describe("ReplyAssistantClient", () => {
         alertStatus: "sent",
       },
       timeline: [
-        { role: "customer", text: "Can I get a refund?", receivedAt: "2026-08-17T00:00:00.000Z" },
-        { role: "assistant", text: "Our team will review this and reply here.", receivedAt: "2026-08-17T00:00:01.000Z" },
-        { role: "staff", text: "We have reviewed your request.", receivedAt: "2026-08-17T00:02:00.000Z" },
+        { eventId: "event:website-customer", role: "customer", text: "Can I get a refund?", receivedAt: "2026-08-17T00:00:00.000Z" },
+        { eventId: "assistant:website-assistant", role: "assistant", text: "Our team will review this and reply here.", receivedAt: "2026-08-17T00:00:01.000Z" },
+        { eventId: "event:website-staff", role: "staff", text: "We have reviewed your request.", receivedAt: "2026-08-17T00:02:00.000Z" },
       ],
     }]} />);
 
@@ -398,6 +401,7 @@ describe("ReplyAssistantClient", () => {
     rerender(<ReplyAssistantClient initialItems={[websiteItem]} liveItems={[{
       ...websiteItem,
       timeline: [...websiteItem.timeline, {
+        eventId: "event:website-follow-up",
         role: "customer" as const,
         text: "One more detail",
         receivedAt: "2026-08-17T00:03:00.000Z",
@@ -428,27 +432,95 @@ describe("ReplyAssistantClient", () => {
     expect(screen.queryByRole("button", { name: "Accept unchanged" })).not.toBeInTheDocument();
   });
 
-  it("merges repeated live items by message ID and marks only newly arrived messages", () => {
+  it("keeps one mounted box when the same inbox receives a new latest message", () => {
     const second = {
       ...item,
-      messageId: "33333333-3333-4333-8333-333333333333",
-      body: "A new customer message",
-      receivedAt: "2026-08-17T00:02:00.000Z",
+      latestMessageId: "33333333-3333-4333-8333-333333333333",
+      lastActivityAt: "2026-08-17T00:02:00.000Z",
       draftText: null,
       latestAttemptId: null,
       status: "received",
+      timeline: [...item.timeline, { eventId: "event:33333333-3333-4333-8333-333333333333", role: "customer" as const, text: "A new customer message", receivedAt: "2026-08-17T00:02:00.000Z" }],
     };
-    const { rerender } = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} newMessageIds={[]} />);
+    const { rerender } = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} newInboxIds={[]} />);
 
     rerender(<ReplyAssistantClient
       initialItems={[item]}
       liveItems={[second, second, item]}
-      newMessageIds={[second.messageId]}
+      newInboxIds={[second.inboxId]}
     />);
 
-    expect(screen.getAllByRole("article")).toHaveLength(2);
+    expect(screen.getAllByRole("article")).toHaveLength(1);
     expect(screen.getByText("A new customer message")).toBeInTheDocument();
     expect(screen.getAllByText("New")).toHaveLength(1);
+  });
+
+  it("renders one oldest-first timeline across product topics and one Website reply surface", () => {
+    const websiteItem = {
+      ...item,
+      channel: "website" as const,
+      lastActivityAt: "2026-08-17T00:04:00.000Z",
+      latestAttemptId: null,
+      draftText: null,
+      gateResult: null,
+      websiteReview: {
+        selector: websiteSelector,
+        reason: "high_risk" as const,
+        alertStatus: "sent" as const,
+      },
+      timeline: [
+        { eventId: "event:rollup", role: "customer" as const, text: "How much for Roll-up?", receivedAt: "2026-08-17T00:00:00.000Z" },
+        { eventId: "event:rollup-reply", role: "staff" as const, text: "Which market?", receivedAt: "2026-08-17T00:01:00.000Z" },
+        { eventId: "event:canvas", role: "customer" as const, text: "Now I need Canvas", receivedAt: "2026-08-17T00:04:00.000Z" },
+      ],
+    };
+
+    render(<ReplyAssistantClient initialItems={[websiteItem, websiteItem]} />);
+
+    expect(screen.getAllByRole("article")).toHaveLength(1);
+    const timeline = screen.getByRole("region", { name: "Conversation timeline" });
+    expect(within(timeline).getAllByRole("listitem").map((entry) => entry.textContent)).toEqual([
+      "CustomerHow much for Roll-up?",
+      "R&RWhich market?",
+      "CustomerNow I need Canvas",
+    ]);
+    expect(screen.getAllByLabelText("Website reply")).toHaveLength(1);
+  });
+
+  it("prepends authenticated earlier timeline pages without duplicating boundary events", async () => {
+    const paged = {
+      ...item,
+      hasEarlierTimeline: true,
+      timeline: [
+        { eventId: "event:current-1", role: "customer" as const, text: "Current Roll-up question", receivedAt: "2026-08-17T00:02:00.000Z" },
+        { eventId: "event:current-2", role: "customer" as const, text: "Current Canvas question", receivedAt: "2026-08-17T00:03:00.000Z" },
+      ],
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      events: [
+        { eventId: "event:earlier-1", role: "customer", text: "Earlier question", receivedAt: "2026-08-17T00:00:00.000Z" },
+        { eventId: "event:current-1", role: "customer", text: "Current Roll-up question", receivedAt: "2026-08-17T00:02:00.000Z" },
+      ],
+      cursor: null,
+      hasEarlier: false,
+    }), { status: 200 })));
+
+    render(<ReplyAssistantClient initialItems={[paged]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Load earlier conversation history" }));
+
+    await waitFor(() => expect(screen.getByText("Earlier question")).toBeInTheDocument());
+    const timeline = screen.getByRole("region", { name: "Conversation timeline" });
+    expect(within(timeline).getAllByRole("listitem")).toHaveLength(3);
+    expect(within(timeline).getAllByRole("listitem").map((entry) => entry.textContent)).toEqual([
+      "CustomerEarlier question",
+      "CustomerCurrent Roll-up question",
+      "CustomerCurrent Canvas question",
+    ]);
+    expect(fetch).toHaveBeenCalledWith(
+      `/api/reply-assistant/inbox/${paged.inboxId}/timeline?cursor=event%3Acurrent-1`,
+      expect.objectContaining({ cache: "no-store" }),
+    );
+    expect(screen.queryByRole("button", { name: "Load earlier conversation history" })).not.toBeInTheDocument();
   });
 
   it("preserves an unsaved local edit when polling replaces the server draft", () => {
