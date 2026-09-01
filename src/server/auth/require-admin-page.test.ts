@@ -15,6 +15,18 @@ describe("requireAdminPageFrom", () => {
     );
   });
 
+  it("preserves Reply Assistant as the signed-out return target", async () => {
+    const redirectTo = vi.fn(() => { throw new Error("redirected"); });
+    await expect(requireAdminPageFrom(
+      vi.fn().mockRejectedValue(new HttpError("Unauthorized", 401)),
+      redirectTo,
+      "/reply-assistant",
+    )).rejects.toThrow("redirected");
+    expect(redirectTo).toHaveBeenCalledWith(
+      "/account/sign-in?next=%2Freply-assistant",
+    );
+  });
+
   it("redirects non-admin customers to their account", async () => {
     const redirectTo = vi.fn(() => { throw new Error("redirected"); });
     await expect(requireAdminPageFrom(
