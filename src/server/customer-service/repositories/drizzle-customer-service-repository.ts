@@ -721,11 +721,13 @@ export function createDrizzleCustomerServiceRepository(
   database: Database,
   options: Readonly<{
     reviewSelectorSecret?: string;
+    previousReviewSelectorSecret?: string;
     now?: () => Date;
     analyticsRecorder?: Pick<WebsiteAnalyticsV2BusinessRecorder, "recordInquiry">;
   }> = {},
 ): CustomerServiceRepository {
   const reviewSelectorSecret = options.reviewSelectorSecret ?? "";
+  const previousReviewSelectorSecret = options.previousReviewSelectorSecret ?? "";
   const now = options.now ?? (() => new Date());
   const analyticsRecorder = options.analyticsRecorder
     ?? createWebsiteAnalyticsV2BusinessRecorder(database);
@@ -754,13 +756,13 @@ export function createDrizzleCustomerServiceRepository(
   function selectorRecordForReviewExpiry(review: Readonly<{
     id: string;
     generation: number;
-  }>, expiresAt: Date) {
-    if (reviewSelectorSecret.length < 32) return null;
+  }>, expiresAt: Date, secret: string) {
+    if (secret.length < 32) return null;
     try {
       const record = createWebsiteReviewSelectorRecordForExpiry({
         reviewId: review.id,
         generation: review.generation,
-        secret: reviewSelectorSecret,
+        secret,
         expiresAt,
       });
       return Object.freeze({
@@ -791,13 +793,15 @@ export function createDrizzleCustomerServiceRepository(
     id: string;
     generation: number;
   }>, now: Date) {
-    return reviewSelectorSecret.length >= 32 && verifyWebsiteReviewSelector({
-      selector,
-      reviewId: review.id,
-      generation: review.generation,
-      secret: reviewSelectorSecret,
-      now,
-    });
+    return [reviewSelectorSecret, previousReviewSelectorSecret].some((secret) => (
+      secret.length >= 32 && verifyWebsiteReviewSelector({
+        selector,
+        reviewId: review.id,
+        generation: review.generation,
+        secret,
+        now,
+      })
+    ));
   }
 
   async function turnForMessage(transaction: Transaction, messageId: string) {
@@ -1114,12 +1118,17 @@ export function createDrizzleCustomerServiceRepository(
       if (selectorByReview.has(row.humanReviewId)) continue;
       const review = reviewById.get(row.humanReviewId);
       if (!review || review.generation !== row.generation) continue;
-      const record = selectorRecordForReviewExpiry(review, row.expiresAt);
-      if (
-        record
-        && record.selectorHash === row.selectorHash
-        && selectorMatchesReview(record.selector, review, selectorNow)
-      ) selectorByReview.set(review.id, record.selector);
+      for (const secret of [reviewSelectorSecret, previousReviewSelectorSecret]) {
+        const record = selectorRecordForReviewExpiry(review, row.expiresAt, secret);
+        if (
+          record
+          && record.selectorHash === row.selectorHash
+          && selectorMatchesReview(record.selector, review, selectorNow)
+        ) {
+          selectorByReview.set(review.id, record.selector);
+          break;
+        }
+      }
     }
     const reviewByConversation = new Map(reviewRows.map((review) => [review.conversationId, review]));
     const timelineRows = conversationIds.length

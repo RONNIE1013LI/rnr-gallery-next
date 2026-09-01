@@ -453,8 +453,11 @@ async function openTask13Review(input: Readonly<{
   networkHash: string;
   messageHash: string;
   reviewId: string;
+  activatePilot?: boolean;
 }>) {
-  const claimed = await claimWebsiteTurn(input);
+  const claimed = input.activatePilot === false
+    ? await ingestAndClaimWebsiteTurn(input)
+    : await claimWebsiteTurn(input);
   const attemptId = await repository.createGateBlockedAttempt({
     messageId: claimed.messageId,
     trigger: "webhook_after",
@@ -1258,17 +1261,20 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
   });
 
   it("bounds insert-only selector maintenance and advances beyond an already seeded batch", async () => {
+    await activateWebsitePilot("website-review-selector-maintenance");
     await openTask13Review({
       sessionHash: "94".repeat(32),
       networkHash: "95".repeat(32),
       messageHash: "96".repeat(32),
       reviewId: "00000000-0000-4000-8000-000000000194",
+      activatePilot: false,
     });
     await openTask13Review({
       sessionHash: "97".repeat(32),
       networkHash: "98".repeat(32),
       messageHash: "99".repeat(32),
       reviewId: "00000000-0000-4000-8000-000000000197",
+      activatePilot: false,
     });
     await database.delete(customerServiceReviewSelectors);
     const now = new Date("2026-08-22T00:00:00.000Z");
@@ -2423,7 +2429,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(resolvedReview).toMatchObject({ status: "resolved" });
   });
 
-  it("recovers a pre-provider crash after session-secret rotation with the original valid link", async () => {
+  it("recovers a pre-provider crash with a configured previous session secret and original valid link", async () => {
     const reviewId = "00000000-0000-4000-8000-000000000162";
     const deepLinkSecret = "task-13-review-link-secret-at-least-32-bytes";
     const rawToken = createReviewAlertToken({ reviewId, secret: deepLinkSecret });
@@ -2474,6 +2480,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     });
     const rotatedSessionRepository = createDrizzleCustomerServiceRepository(drizzle(competingPool), {
       reviewSelectorSecret: "task-13-rotated-session-secret-at-least-32-bytes",
+      previousReviewSelectorSecret: reviewSelectorSecret,
       now: selectorTestNow,
     });
     currentTime = new Date("2026-08-21T00:00:04.000Z");
@@ -3242,7 +3249,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(outbox).toMatchObject({ status: "sent", attemptCount: 2, sentAt: new Date("2026-08-21T00:05:04.000Z") });
   });
 
-  it("delivers a pending alert whose dedicated link survives website session-secret rotation", async () => {
+  it("delivers a pending alert whose dedicated link uses the configured previous session secret", async () => {
     const claimed = await claimWebsiteTurn({
       sessionHash: "c1".repeat(32),
       networkHash: "c2".repeat(32),
@@ -3280,6 +3287,7 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     };
     const rotatedSessionRepository = createDrizzleCustomerServiceRepository(database, {
       reviewSelectorSecret: "task-13-rotated-session-secret-at-least-32-bytes",
+      previousReviewSelectorSecret: reviewSelectorSecret,
       now: selectorTestNow,
     });
     const service = createReviewAlertService({
