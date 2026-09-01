@@ -489,4 +489,64 @@ describe("ReplyAssistantClient", () => {
     expect(screen.getByRole("button", { name: "Copy" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Mark as manually sent" })).toBeDisabled();
   });
+
+  it("adopts a live replacement attempt without inheriting the prior attempt feedback completion", async () => {
+    const replacementAttemptId = "44444444-4444-4444-8444-444444444444";
+    const replacementDraft = "A newer server draft";
+    const { rerender } = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept unchanged" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled());
+
+    rerender(<ReplyAssistantClient
+      initialItems={[item]}
+      liveItems={[{ ...item, latestAttemptId: replacementAttemptId, draftText: replacementDraft }]}
+    />);
+
+    const edit = screen.getByRole("button", { name: "Edit" });
+    expect(edit).toBeEnabled();
+    fireEvent.click(edit);
+    expect(screen.getByLabelText("Reply draft")).toHaveValue(replacementDraft);
+
+    const acceptEdit = screen.getByRole("button", { name: "Accept edit" });
+    expect(acceptEdit).toBeEnabled();
+    fireEvent.click(acceptEdit);
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+    expect(String(vi.mocked(fetch).mock.calls[1]?.[0])).toContain(`/drafts/${replacementAttemptId}/feedback`);
+  });
+
+  it("allows adopting a replacement while prior-attempt feedback is still in flight", async () => {
+    let releasePrior!: () => void;
+    let releaseReplacement!: () => void;
+    const priorPending = new Promise<Response>((resolve) => {
+      releasePrior = () => resolve(new Response(JSON.stringify({ recorded: true }), { status: 201 }));
+    });
+    const replacementPending = new Promise<Response>((resolve) => {
+      releaseReplacement = () => resolve(new Response(JSON.stringify({ recorded: true }), { status: 201 }));
+    });
+    vi.stubGlobal("fetch", vi.fn()
+      .mockImplementationOnce(() => priorPending)
+      .mockImplementationOnce(() => replacementPending));
+    const { rerender } = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Accept unchanged" }));
+    expect(screen.getByRole("button", { name: "Accept unchanged" })).toBeDisabled();
+
+    rerender(<ReplyAssistantClient
+      initialItems={[item]}
+      liveItems={[{ ...item, latestAttemptId: "44444444-4444-4444-8444-444444444444", draftText: "A newer server draft" }]}
+    />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    const acceptEdit = screen.getByRole("button", { name: "Accept edit" });
+    expect(acceptEdit).toBeEnabled();
+    fireEvent.click(acceptEdit);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect(acceptEdit).toBeDisabled();
+
+    releasePrior();
+    await waitFor(() => expect(acceptEdit).toBeDisabled());
+    releaseReplacement();
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copy" })).toBeEnabled());
+  });
 });

@@ -168,25 +168,26 @@ export function ReplyAssistantClient({
 
   async function feedback(item: ReplyQueueItem, action: FeedbackAction, text: string | null, reasonCode: string | null) {
     if (!item.latestAttemptId) return false;
-    const intent = `${item.latestAttemptId}:${action}`;
+    const attemptId = item.latestAttemptId;
+    const intent = `${attemptId}:${action}`;
     if (feedbackInFlight.current.has(intent)) return false;
     const idempotencyKey = feedbackRetryKeys.current.get(intent) ?? `${action}-${++feedbackSequence.current}`;
     feedbackRetryKeys.current.set(intent, idempotencyKey);
     feedbackInFlight.current.add(intent);
     setFeedbackRequests((requests) => ({
       ...requests,
-      [item.messageId]: { attemptId: item.latestAttemptId!, action, idempotencyKey },
+      [item.messageId]: { attemptId, action, idempotencyKey },
     }));
     setFeedbackError(item.messageId, null);
     try {
-      await jsonRequest(`/api/reply-assistant/drafts/${item.latestAttemptId}/feedback`, {
+      await jsonRequest(`/api/reply-assistant/drafts/${attemptId}/feedback`, {
         action,
         humanFinalText: text,
         reasonCode,
         idempotencyKey,
       });
       if (action === "copied") feedbackRetryKeys.current.delete(intent);
-      else setFeedbackCompletions((completions) => ({ ...completions, [item.messageId]: action }));
+      else setFeedbackCompletions((completions) => ({ ...completions, [attemptId]: action }));
       return true;
     } catch {
       setFeedbackError(item.messageId, "We could not save this review. Please try again.");
@@ -194,7 +195,11 @@ export function ReplyAssistantClient({
     } finally {
       feedbackInFlight.current.delete(intent);
       setFeedbackRequests((requests) => {
-        if (!requests[item.messageId]) return requests;
+        const request = requests[item.messageId];
+        if (!request
+          || request.attemptId !== attemptId
+          || request.action !== action
+          || request.idempotencyKey !== idempotencyKey) return requests;
         const remaining = { ...requests };
         delete remaining[item.messageId];
         return remaining;
@@ -263,8 +268,8 @@ export function ReplyAssistantClient({
         const serverChanged = current.sourceAttemptId !== item.latestAttemptId;
         const approved = !serverChanged && (current.mode === "accepted" || current.mode === "edited");
         const locallyEditing = current.mode === "editing";
-        const feedbackPending = feedbackRequests[item.messageId] !== undefined;
-        const feedbackCompletion = feedbackCompletions[item.messageId] ?? null;
+        const feedbackPending = feedbackRequests[item.messageId]?.attemptId === item.latestAttemptId;
+        const feedbackCompletion = item.latestAttemptId ? feedbackCompletions[item.latestAttemptId] ?? null : null;
         const outcomeCompleted = feedbackCompletion === "accepted_unchanged"
           || feedbackCompletion === "edited"
           || feedbackCompletion === "rejected";
@@ -389,7 +394,7 @@ export function ReplyAssistantClient({
                       update(item, { mode: "edited", text: current.text, sourceAttemptId: item.latestAttemptId });
                     }}>Accept edit</button>
                   ) : (
-                    <button type="button" disabled={serverChanged || feedbackPending || outcomeCompleted} onClick={() => update(item, {
+                    <button type="button" disabled={feedbackPending || outcomeCompleted} onClick={() => update(item, {
                       mode: "editing",
                       text: serverChanged ? item.draftText ?? "" : current.text,
                       sourceAttemptId: item.latestAttemptId,
