@@ -284,20 +284,9 @@ describe("FormsWorkbench", () => {
     expect(screen.getAllByText("Previous customer")).not.toHaveLength(0);
   });
 
-  it("refreshes only the visible order data when staff clicks Refresh", async () => {
+  it("does not expose a manual refresh control or resume polling", async () => {
     vi.useFakeTimers();
-    const updatedRow = {
-      ...formOrderRow,
-      customerName: "Live update customer",
-      reference: "07189",
-    };
-    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
-      items: [updatedRow],
-      total: 1,
-      page: 1,
-      pageSize: 100,
-      pageCount: 1,
-    })));
+    const request = vi.fn();
     vi.stubGlobal("fetch", request);
 
     render(<FormsWorkbench
@@ -309,16 +298,7 @@ describe("FormsWorkbench", () => {
 
     await act(async () => { await vi.advanceTimersByTimeAsync(1_200_000); });
     expect(request).not.toHaveBeenCalled();
-
-    fireEvent.click(screen.getByRole("button", { name: "Refresh orders" }));
-    await act(async () => {});
-
-    expect(request).toHaveBeenCalledWith(
-      "/api/forms/jobs?q=07188",
-      expect.objectContaining({ cache: "no-store" }),
-    );
-    expect(screen.getAllByText("Live update customer")).not.toHaveLength(0);
-    expect(screen.queryByText("Elena Lasalo")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Refresh orders" })).not.toBeInTheDocument();
   });
 
   it("does not refresh on visibility changes", async () => {

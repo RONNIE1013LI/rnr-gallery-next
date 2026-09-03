@@ -118,7 +118,6 @@ export function FormsWorkbench({
     result: FormWorkbenchResult;
   }> | null>(null);
   const [showUpdating, setShowUpdating] = useState(false);
-  const [showRefreshing, setShowRefreshing] = useState(false);
   const [updateError, setUpdateError] = useState("");
   const [retryTarget, setRetryTarget] = useState<Readonly<{ query: FormWorkbenchQuery; page?: number }> | null>(null);
   const navigationSequence = useRef(0);
@@ -207,7 +206,6 @@ export function FormsWorkbench({
     activeRefresh.current?.abort();
     const controller = new AbortController();
     activeRefresh.current = controller;
-    setShowRefreshing(true);
 
     try {
       const response = await fetch(refreshEndpoint, {
@@ -232,7 +230,6 @@ export function FormsWorkbench({
     } finally {
       if (activeRefresh.current === controller) {
         activeRefresh.current = null;
-        setShowRefreshing(false);
       }
     }
   }, [query, refreshEndpoint, refreshQuery, result]);
@@ -313,15 +310,6 @@ export function FormsWorkbench({
           onApply={applyFilters}
         />
         <span className={styles.toolbarSpacer} />
-        <button
-          type="button"
-          className={styles.listRefreshButton}
-          aria-label="Refresh orders"
-          disabled={showRefreshing}
-          onClick={() => void refreshOrders()}
-        >
-          {showRefreshing ? "Refreshing…" : "Refresh"}
-        </button>
         {showUpdating ? <span className={styles.listUpdateStatus} role="status" aria-label="Order list update status">Updating…</span> : null}
       </div>
 
