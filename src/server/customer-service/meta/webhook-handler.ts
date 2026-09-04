@@ -1,5 +1,6 @@
 import { createHmac, randomUUID } from "node:crypto";
 import { createFacebookChannelAdapter } from "../adapters/facebook";
+import type { NormalizedIncomingMessage } from "../types";
 import type {
   CustomerServiceRepository,
   HashedConversationEvent,
@@ -81,6 +82,7 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
   kickImageJob: (jobId: string) => Promise<unknown>;
   recoverHumanReplies?: (input: Readonly<{ now: Date; groupWindowMs: number; limit: number }>) => Promise<unknown>;
   scheduleAfter: (task: () => Promise<void>) => void;
+  onAcceptedEvent?: (message: NormalizedIncomingMessage) => Promise<unknown>;
   createJobId?: () => string;
   now?: () => Date;
 }>) {
@@ -125,6 +127,16 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
       const adapter = createFacebookChannelAdapter();
       let sawCustomerEvent = false;
       for (const message of adapter.normalize(payload)) {
+        if (dependencies.onAcceptedEvent) {
+          dependencies.scheduleAfter(async () => {
+            try {
+              await dependencies.onAcceptedEvent!(message);
+            } catch {
+              // The verified webhook is already acknowledged; the protected worker may retry durable work.
+            }
+          });
+          continue;
+        }
         if (message.role === "customer") sawCustomerEvent = true;
         const outbound = message.role === "staff" && message.text !== null
           ? sanitizeHumanOutboundText(message.text)

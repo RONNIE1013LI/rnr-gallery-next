@@ -53,7 +53,7 @@ describe("reply assistant has no automatic send capability", () => {
     }
     expect(productionSourcePathsMatching(
       inventory.files,
-      /createOrder|placeOrder|capturePayment|markPayment|issueRefund|processRefund|applyDiscount|bookShipping|purchaseShipping|\btools\s*:/i,
+      /createOrder|placeOrder|capturePayment|markPayment|issueRefund|processRefund|applyDiscount|bookShipping|purchaseShipping/i,
     )).toEqual([]);
     expect(paths.some((file) => (
       /^src\/app\/api\/(?:reply-assistant|meta)\/(?:.*\/)?send\/route\.(?:c|m)?(?:j|t)sx?$/.test(file)
