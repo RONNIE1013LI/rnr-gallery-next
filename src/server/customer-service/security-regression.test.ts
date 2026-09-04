@@ -10,6 +10,8 @@ const PAGE_ACCESS_TOKEN_NAME = ["META", "PAGE", "ACCESS", "TOKEN"].join("_");
 const PUBLIC_ENV_PREFIX = `${["NEXT", "PUBLIC"].join("_")}_`;
 const META_RUNTIME_PATH = "src/server/rnr-ai/meta/runtime.ts";
 const META_REPLY_SENDER_PATH = "src/server/rnr-ai/meta/reply-sender.ts";
+const META_MANUAL_REPLY_SENDER_PATH = "src/server/rnr-ai/meta/manual-reply-sender.ts";
+const META_MANUAL_REPLY_ROUTE_PATH = "src/app/api/reply-assistant/facebook-replies/route.ts";
 
 afterEach(() => {
   vi.doUnmock("@/server/db/client");
@@ -26,10 +28,13 @@ afterEach(() => {
 describe("reply assistant security regression", () => {
   it("isolates Messenger sending capability and its credential to the approved server boundary", () => {
     const files = loadProductionRuntimeSourceInventory().files;
-    expect(productionSourcePathsMatching(files, PAGE_ACCESS_TOKEN_NAME)).toEqual([META_RUNTIME_PATH]);
+    expect(productionSourcePathsMatching(files, PAGE_ACCESS_TOKEN_NAME)).toEqual([
+      META_MANUAL_REPLY_ROUTE_PATH,
+      META_RUNTIME_PATH,
+    ]);
     expect(productionSourcePathsMatching(files,
       /sendMessenger|sendToMeta|graph\.facebook\.com\/.+\/messages|recipient\s*:/i,
-    )).toEqual([META_REPLY_SENDER_PATH]);
+    )).toEqual([META_MANUAL_REPLY_SENDER_PATH, META_REPLY_SENDER_PATH]);
     const sender = files.find((file) => file.relativePath === META_REPLY_SENDER_PATH)?.source ?? "";
     expect(sender).toMatch(/if\s*\(\s*!config\.metaAutoSendEnabled\s*\)\s*\{\s*return\b/);
   });

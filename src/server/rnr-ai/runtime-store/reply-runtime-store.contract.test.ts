@@ -60,8 +60,30 @@ describe("ReplyRuntimeStore contract", () => {
 
     const key = hash("delivery-1");
     const lease = await store.claimDelivery(key, 30_000);
-    await store.settleDelivery(lease!, { status: "sent", providerMessageIdMasked: "***1234", settledAt: "2026-09-04T00:01:00.000Z" });
+    expect(await store.readDelivery(key)).toEqual({ providerSendStartedAt: null, result: null });
+    await store.beginDeliverySend(lease!, "2026-09-04T00:00:30.000Z");
+    expect(await store.readDelivery(key)).toEqual({ providerSendStartedAt: "2026-09-04T00:00:30.000Z", result: null });
+    const result = { status: "sent" as const, providerMessageIdMasked: "***1234", settledAt: "2026-09-04T00:01:00.000Z" };
+    await store.settleDelivery(lease!, result);
+    await expect(store.readDelivery(key)).resolves.toEqual({ providerSendStartedAt: "2026-09-04T00:00:30.000Z", result });
     expect(await store.claimDelivery(key, 30_000)).toBeNull();
+    await expect(store.settleDelivery(lease!, { ...result, status: "delivery_uncertain" })).rejects.toThrow("lease");
+  });
+
+  it("never reclaims an expired delivery after provider send starts, but releases a definite non-send", async () => {
+    let now = Date.parse("2026-09-04T00:00:00.000Z");
+    const store = new InMemoryReplyRuntimeStore({ now: () => now });
+    const uncertainKey = hash("delivery-uncertain");
+    const uncertainLease = await store.claimDelivery(uncertainKey, 1_000);
+    await store.beginDeliverySend(uncertainLease!, new Date(now).toISOString());
+    now += 1_001;
+    expect(await store.claimDelivery(uncertainKey, 1_000)).toBeNull();
+
+    const retryKey = hash("delivery-definite-failure");
+    const retryLease = await store.claimDelivery(retryKey, 1_000);
+    await store.beginDeliverySend(retryLease!, new Date(now).toISOString());
+    await store.releaseDelivery(retryLease!);
+    expect(await store.claimDelivery(retryKey, 1_000)).not.toBeNull();
   });
 
   it("atomically claims one queued backlog and recovers a stale worker lease", async () => {

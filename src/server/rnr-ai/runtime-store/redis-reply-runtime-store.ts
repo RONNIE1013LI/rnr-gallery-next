@@ -7,6 +7,7 @@ import type {
   BacklogResult,
   DeliveryLease,
   DeliveryResult,
+  DeliveryState,
   EventLease,
   EventResult,
   ReplyRuntimeStore,
@@ -39,6 +40,7 @@ local raw = redis.call("GET", KEYS[1])
 if raw then
   local current = cjson.decode(raw)
   if current.result ~= nil then return nil end
+  if current.providerSendStartedAt ~= nil then return nil end
   if tonumber(current.expiresAtMs) > tonumber(ARGV[1]) then return nil end
 end
 redis.call("SET", KEYS[1], ARGV[4], "PX", ARGV[3])
@@ -51,8 +53,32 @@ if not raw then return 0 end
 local current = cjson.decode(raw)
 if current.leaseToken ~= ARGV[1] then return 0 end
 if tonumber(current.expiresAtMs) <= tonumber(ARGV[2]) then return 0 end
+if current.result ~= nil then return 0 end
 current.result = cjson.decode(ARGV[3])
 redis.call("SET", KEYS[1], cjson.encode(current), "EX", ARGV[4])
+return 1
+`;
+
+const BEGIN_DELIVERY_SEND_SCRIPT = `
+local raw = redis.call("GET", KEYS[1])
+if not raw then return 0 end
+local current = cjson.decode(raw)
+if current.leaseToken ~= ARGV[1] then return 0 end
+if tonumber(current.expiresAtMs) <= tonumber(ARGV[2]) then return 0 end
+if current.result ~= nil then return 0 end
+current.providerSendStartedAt = ARGV[3]
+redis.call("SET", KEYS[1], cjson.encode(current), "EX", ARGV[4])
+return 1
+`;
+
+const RELEASE_DELIVERY_SCRIPT = `
+local raw = redis.call("GET", KEYS[1])
+if not raw then return 0 end
+local current = cjson.decode(raw)
+if current.leaseToken ~= ARGV[1] then return 0 end
+if tonumber(current.expiresAtMs) <= tonumber(ARGV[2]) then return 0 end
+if current.result ~= nil then return 0 end
+redis.call("DEL", KEYS[1])
 return 1
 `;
 
@@ -165,7 +191,7 @@ export class RedisReplyRuntimeStore implements ReplyRuntimeStore {
     requireLeaseMs(leaseMs);
     const now = this.now();
     const leaseToken = randomUUID();
-    const record = JSON.stringify({ leaseToken, expiresAtMs: now + leaseMs, result: null });
+    const record = JSON.stringify({ leaseToken, expiresAtMs: now + leaseMs, providerSendStartedAt: null, result: null });
     const result = await this.redis.eval<string[], string | null>(
       CLAIM_SCRIPT,
       [this.key(`${suffix}:${hash}`)],
@@ -210,6 +236,33 @@ export class RedisReplyRuntimeStore implements ReplyRuntimeStore {
   async claimDelivery(key: string, leaseMs: number): Promise<DeliveryLease | null> {
     const lease = await this.claim("delivery", key, leaseMs);
     return lease ? { key, ...lease } : null;
+  }
+
+  async readDelivery(key: string): Promise<DeliveryState | null> {
+    requireHash(key);
+    const record = await this.redis.get<DeliveryState>(this.key(`delivery:${key}`));
+    return record ? { providerSendStartedAt: record.providerSendStartedAt ?? null, result: record.result ?? null } : null;
+  }
+
+  async beginDeliverySend(lease: DeliveryLease, startedAt: string) {
+    requireHash(lease.key);
+    const started = new Date(startedAt).toISOString();
+    const result = await this.redis.eval<string[], number>(
+      BEGIN_DELIVERY_SEND_SCRIPT,
+      [this.key(`delivery:${lease.key}`)],
+      [lease.leaseToken, String(this.now()), started, String(30 * 24 * 60 * 60)],
+    );
+    if (result !== 1) throw new Error("Delivery lease is no longer valid");
+  }
+
+  async releaseDelivery(lease: DeliveryLease) {
+    requireHash(lease.key);
+    const result = await this.redis.eval<string[], number>(
+      RELEASE_DELIVERY_SCRIPT,
+      [this.key(`delivery:${lease.key}`)],
+      [lease.leaseToken, String(this.now())],
+    );
+    if (result !== 1) throw new Error("Delivery lease is no longer valid");
   }
 
   async settleDelivery(lease: DeliveryLease, result: DeliveryResult) {

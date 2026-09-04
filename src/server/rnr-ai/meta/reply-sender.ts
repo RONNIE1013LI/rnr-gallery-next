@@ -54,7 +54,7 @@ function deliveryHash(hashExternalKey: (value: string) => string, candidate: Met
   const conversationHash = hashExternalKey(candidate.externalConversationKey);
   const latestMessageHash = hashExternalKey(candidate.latestCustomerMessageKey);
   return hashExternalKey(
-    `meta-reply:${candidate.channel}:${conversationHash}:${latestMessageHash}:${candidate.brainVersion}`,
+    `meta-turn-send:${conversationHash}:${latestMessageHash}`,
   );
 }
 
@@ -141,11 +141,14 @@ export function createMetaReplySender(input: Readonly<{
         })
       );
 
+      let providerSendStarted = false;
       try {
         if (!await stillEligible({ ...input, candidate })) {
-          await settle("blocked", null);
+          await input.store.releaseDelivery(lease);
           return Object.freeze({ status: "blocked" });
         }
+        await input.store.beginDeliverySend(lease, now().toISOString());
+        providerSendStarted = true;
         const response = await fetchImpl(
           `https://graph.facebook.com/v23.0/${encodeURIComponent(input.pageId)}/messages`,
           {
@@ -163,9 +166,12 @@ export function createMetaReplySender(input: Readonly<{
           },
         );
         if (!response.ok) {
-          const terminalStatus = response.status >= 500 ? "delivery_uncertain" : "blocked";
-          await settle(terminalStatus, null);
-          return Object.freeze({ status: terminalStatus });
+          if (response.status < 500) {
+            await input.store.releaseDelivery(lease);
+            return Object.freeze({ status: "blocked" });
+          }
+          await settle("delivery_uncertain", null);
+          return Object.freeze({ status: "delivery_uncertain" });
         }
         const body = await response.json() as Record<string, unknown>;
         const providerMessageId = typeof body.message_id === "string" ? body.message_id.trim() : "";
@@ -180,8 +186,12 @@ export function createMetaReplySender(input: Readonly<{
         await settle("sent", maskedProviderMessageId(input.hashExternalKey, providerMessageId));
         return Object.freeze({ status: "sent" });
       } catch {
-        await settle("delivery_uncertain", null).catch(() => undefined);
-        return Object.freeze({ status: "delivery_uncertain" });
+        if (providerSendStarted) {
+          await settle("delivery_uncertain", null).catch(() => undefined);
+          return Object.freeze({ status: "delivery_uncertain" });
+        }
+        await input.store.releaseDelivery(lease).catch(() => undefined);
+        return Object.freeze({ status: "blocked" });
       }
     },
   });
