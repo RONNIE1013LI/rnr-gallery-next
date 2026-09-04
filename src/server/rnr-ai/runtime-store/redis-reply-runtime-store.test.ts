@@ -58,4 +58,26 @@ describe("RedisReplyRuntimeStore", () => {
 
     await expect(store.hasSenderEcho(hash("provider-message-id"))).resolves.toBe(true);
   });
+
+  it("persists a hashed reviewed-turn boundary without raw conversation data", async () => {
+    const redis = redisMock();
+    const store = new RedisReplyRuntimeStore({ redis, namespace: "rnr-ai-test" });
+    const conversationKeyHash = hash("raw-conversation-id");
+    const resolvedTurnKeyHash = hash("raw-reviewed-turn-id");
+
+    await store.setTakeover({
+      conversationKeyHash,
+      active: false,
+      source: "admin",
+      changedAt: "2026-09-04T01:00:00.000Z",
+      resolvedTurnKeyHash,
+      resolvedThroughAt: "2026-09-04T00:59:00.000Z",
+    });
+
+    expect(redis.set).toHaveBeenCalledWith(
+      `rnr-ai-test:takeover:${conversationKeyHash}`,
+      expect.objectContaining({ active: false, resolvedTurnKeyHash, resolvedThroughAt: "2026-09-04T00:59:00.000Z" }),
+    );
+    expect(JSON.stringify(vi.mocked(redis.set).mock.calls)).not.toMatch(/raw-conversation-id|raw-reviewed-turn-id/);
+  });
 });

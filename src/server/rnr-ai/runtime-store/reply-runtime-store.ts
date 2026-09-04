@@ -3,8 +3,14 @@ import type { AiControlConfig } from "../control/types";
 export type AiControlSnapshot = Readonly<{ config: AiControlConfig; readAt: string }>;
 export type EventLease = Readonly<{ keyHash: string; leaseToken: string; expiresAt: string }>;
 export type EventResult = Readonly<{ status: "processed" | "review" | "delivery_candidate" | "failed"; settledAt: string }>;
-export type TakeoverState = Readonly<{ active: boolean; source: "staff_echo" | "admin" | "risk"; changedAt: string }>;
-export type TakeoverMutation = Readonly<{ conversationKeyHash: string; active: boolean; source: TakeoverState["source"]; changedAt: string }>;
+export type TakeoverState = Readonly<{
+  active: boolean;
+  source: "staff_echo" | "admin" | "risk";
+  changedAt: string;
+  resolvedTurnKeyHash?: string;
+  resolvedThroughAt?: string;
+}>;
+export type TakeoverMutation = Readonly<{ conversationKeyHash: string } & TakeoverState>;
 export type DeliveryLease = Readonly<{ key: string; leaseToken: string; expiresAt: string }>;
 export type DeliveryResult = Readonly<{ status: "sent" | "delivery_uncertain" | "blocked"; providerMessageIdMasked: string | null; settledAt: string }>;
 export type DeliveryState = Readonly<{ providerSendStartedAt: string | null; result: DeliveryResult | null }>;
@@ -17,7 +23,14 @@ export type BacklogLease = Readonly<{
   expiresAt: string;
 }>;
 export type BacklogResult = Readonly<{ status: "completed" | "failed"; settledAt: string }>;
-export type ReviewMetadata = Readonly<{ key: string; conversationKeyHash: string; risk: "YELLOW" | "RED"; createdAt: string; expiresAt: string }>;
+export type ReviewMetadata = Readonly<{
+  key: string;
+  conversationKeyHash: string;
+  risk: "YELLOW" | "RED";
+  createdAt: string;
+  expiresAt: string;
+  reviewedTurnKeyHash?: string;
+}>;
 export type ReviewMetadataInput = Omit<ReviewMetadata, "key" | "expiresAt">;
 
 export interface ReplyRuntimeStore {

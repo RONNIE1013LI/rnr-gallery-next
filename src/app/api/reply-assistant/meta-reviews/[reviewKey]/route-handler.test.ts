@@ -8,6 +8,7 @@ const key = "a".repeat(64);
 const conversation = "b".repeat(64);
 const now = new Date("2026-09-04T04:00:00.000Z");
 const origin = "https://admin.test";
+const reviewedTurnKeyHash = "c".repeat(64);
 
 function releaseRequest(requestOrigin = origin, body: unknown = { action: "release_to_ai" }) {
   return new Request(`${origin}/api/reply-assistant/meta-reviews/${key}`, {
@@ -22,7 +23,12 @@ async function setup() {
   const protector = createMetaReviewPayloadProtector("review-secret-that-is-at-least-32-characters");
   await store.putEncryptedReview(key, protector.seal(key, {
     risk: "RED", replyText: "Private proposed reply", reasons: ["payment_request"],
-  }), 172800, { conversationKeyHash: conversation, risk: "RED", createdAt: now.toISOString() });
+  }), 172800, {
+    conversationKeyHash: conversation,
+    risk: "RED",
+    createdAt: now.toISOString(),
+    reviewedTurnKeyHash,
+  });
   const requirePermission = vi.fn(async () => ({ user: { id: "staff-1" } }));
   return {
     store,
@@ -73,6 +79,42 @@ describe("Meta review detail API", () => {
       active: false,
       source: "admin",
       changedAt: now.toISOString(),
+      resolvedTurnKeyHash: reviewedTurnKeyHash,
+      resolvedThroughAt: now.toISOString(),
+    });
+  });
+
+  it("keeps the internal reviewed-turn boundary out of the review detail response", async () => {
+    const current = await setup();
+    await current.store.setTakeover({
+      conversationKeyHash: conversation,
+      active: false,
+      source: "admin",
+      changedAt: now.toISOString(),
+      resolvedTurnKeyHash: reviewedTurnKeyHash,
+      resolvedThroughAt: now.toISOString(),
+    });
+
+    const response = await current.api.GET(new Request("https://admin.test/review"), { params: Promise.resolve({ reviewKey: key }) });
+    const text = await response.text();
+    expect(text).not.toContain("resolvedTurnKeyHash");
+    expect(text).not.toContain(reviewedTurnKeyHash);
+  });
+
+  it("releases a legacy review using its creation time when no reviewed-turn hash exists", async () => {
+    const current = await setup();
+    await current.store.putEncryptedReview(key, current.protector.seal(key, {
+      risk: "YELLOW", replyText: "Legacy private draft", reasons: ["legacy"],
+    }), 172800, { conversationKeyHash: conversation, risk: "YELLOW", createdAt: now.toISOString() });
+
+    const response = await current.api.POST(releaseRequest(), { params: Promise.resolve({ reviewKey: key }) });
+
+    expect(response.status).toBe(200);
+    await expect(current.store.readTakeover(conversation)).resolves.toEqual({
+      active: false,
+      source: "admin",
+      changedAt: now.toISOString(),
+      resolvedThroughAt: now.toISOString(),
     });
   });
 

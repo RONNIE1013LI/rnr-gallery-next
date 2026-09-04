@@ -226,10 +226,13 @@ export class RedisReplyRuntimeStore implements ReplyRuntimeStore {
 
   async setTakeover(input: TakeoverMutation) {
     requireHash(input.conversationKeyHash);
+    if (input.resolvedTurnKeyHash) requireHash(input.resolvedTurnKeyHash);
     await this.redis.set(this.key(`takeover:${input.conversationKeyHash}`), {
       active: input.active,
       source: input.source,
       changedAt: new Date(input.changedAt).toISOString(),
+      ...(input.resolvedTurnKeyHash ? { resolvedTurnKeyHash: input.resolvedTurnKeyHash } : {}),
+      ...(input.resolvedThroughAt ? { resolvedThroughAt: new Date(input.resolvedThroughAt).toISOString() } : {}),
     });
   }
 
@@ -334,6 +337,7 @@ export class RedisReplyRuntimeStore implements ReplyRuntimeStore {
     requireHash(key);
     if (ttlSeconds !== 172_800 || !metadata) throw new Error("Encrypted review requires exact retention and metadata");
     requireHash(metadata.conversationKeyHash);
+    if (metadata.reviewedTurnKeyHash) requireHash(metadata.reviewedTurnKeyHash);
     const expiresAt = new Date(this.now() + ttlSeconds * 1_000).toISOString();
     const full: ReviewMetadata = { key, ...metadata, expiresAt };
     await this.redis.eval<string[], number>(
