@@ -29,6 +29,7 @@ async function setup(input: Readonly<{
   controlIsOn?: boolean;
   takeover?: boolean;
   latestMessageKey?: string;
+  stageAAllowedRecipientHash?: string | null;
   fetchImpl?: typeof fetch;
 }> = {}) {
   const store = new InMemoryReplyRuntimeStore();
@@ -58,6 +59,7 @@ async function setup(input: Readonly<{
       masterEnabled: input.masterEnabled ?? true,
       engineMode: input.engineMode ?? "shared_active",
       metaAutoSendEnabled: input.metaAutoSendEnabled ?? true,
+      stageAAllowedRecipientHash: input.stageAAllowedRecipientHash ?? hash(candidate.externalConversationKey),
     },
     accessToken: input.accessToken ?? "test-page-access-token",
     pageId: "page-id",
@@ -73,6 +75,13 @@ async function setup(input: Readonly<{
 }
 
 describe("Meta reply sender", () => {
+  it("does not claim or call Graph for an unmatched Stage A recipient", async () => {
+    const current = await setup({ stageAAllowedRecipientHash: hash("another-customer") });
+    await expect(current.sender.sendEligibleReply(candidate)).resolves.toEqual({ status: "blocked" });
+    expect(current.fetchImpl).not.toHaveBeenCalled();
+    expect(current.store.exportStateForTest().deliveries).toHaveLength(0);
+  });
+
   it("keeps the disabled sender incapable of a Graph request", async () => {
     await expect(new DisabledMetaReplySender().sendEligibleReply(candidate))
       .resolves.toEqual({ status: "disabled" });

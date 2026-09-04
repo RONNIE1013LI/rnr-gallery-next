@@ -28,6 +28,7 @@ export type MetaOrchestratorResult = Readonly<{
   acknowledged: true;
   status:
     | "off"
+    | "stage_a_not_allowed"
     | "duplicate"
     | "human_takeover"
     | "already_answered"
@@ -55,6 +56,7 @@ type Dependencies = Readonly<{
   resolveMarket(snapshot: MetaConversationSnapshot): "NZ" | "AU" | "UNKNOWN";
   pageId: string;
   masterEnabled: boolean;
+  stageAAllowedRecipientHash: string | null;
   sender: MetaReplySender;
   now?: () => Date;
 }>;
@@ -107,6 +109,10 @@ export function createMetaReplyOrchestrator(dependencies: Dependencies) {
 
   return Object.freeze({
     async handle(event: MetaConversationEvent): Promise<MetaOrchestratorResult> {
+      if (
+        !dependencies.stageAAllowedRecipientHash
+        || dependencies.hashExternalKey(event.externalConversationKey) !== dependencies.stageAAllowedRecipientHash
+      ) return { acknowledged: true, status: "stage_a_not_allowed" };
       if (event.role === "staff") {
         try {
           await dependencies.takeover.observeStaffEvent(event);

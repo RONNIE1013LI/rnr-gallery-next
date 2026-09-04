@@ -39,7 +39,7 @@ async function lease(store: InMemoryReplyRuntimeStore, revision = 1) {
 describe("BacklogReconciler", () => {
   it("processes at most 100 conversations and merges only the latest consecutive customer fragments", async () => {
     const store = new InMemoryReplyRuntimeStore({ now: () => Date.parse(to) });
-    const locators = Array.from({ length: 101 }, (_, index) => locator(`conversation-${index}`));
+    const locators = Array.from({ length: 101 }, () => locator("allowed"));
     const processEvent = vi.fn(async (input: MetaConversationEvent) => {
       void input;
       return { acknowledged: true as const, status: "delivery_candidate_disabled" as const };
@@ -55,13 +55,14 @@ describe("BacklogReconciler", () => {
       ]),
       processEvent,
       hashExternalKey: hash,
+      stageAAllowedRecipientHash: hash("allowed"),
       now: () => new Date(to),
     });
     const result = await reconciler.run(await lease(store));
     expect(result).toMatchObject({ processed: 100, stoppedBecauseOff: false });
     expect(processEvent).toHaveBeenCalledTimes(100);
     expect(processEvent.mock.calls[0][0].text).toBe("A2 please\nwith two people");
-    expect(processEvent.mock.calls[0][0].externalMessageKey).toBe("conversation-0-3");
+    expect(processEvent.mock.calls[0][0].externalMessageKey).toBe("allowed-3");
   });
 
   it("skips later staff replies, takeover, old history, image-only backlog and duplicate results", async () => {
@@ -85,6 +86,7 @@ describe("BacklogReconciler", () => {
       loadConversation: async (item) => events.get(item.externalConversationKey)!,
       processEvent,
       hashExternalKey: hash,
+      stageAAllowedRecipientHash: hash("duplicate"),
       now: () => new Date(to),
     });
     const result = await reconciler.run(await lease(store));
@@ -106,6 +108,7 @@ describe("BacklogReconciler", () => {
       loadConversation: async (item) => snapshot(item.externalConversationKey, [history(item.externalConversationKey, "customer", "Hi", 2)]),
       processEvent,
       hashExternalKey: hash,
+      stageAAllowedRecipientHash: hash("one"),
       now: () => new Date(to),
     });
     const result = await reconciler.run(await lease(store));
@@ -124,9 +127,33 @@ describe("BacklogReconciler", () => {
         loadConversation: async () => snapshot("one", [history("one", "customer", "Hi", 2)]),
         processEvent: async () => ({ acknowledged: true, status }),
         hashExternalKey: hash,
+        stageAAllowedRecipientHash: hash("one"),
         now: () => new Date(to),
       });
       await expect(reconciler.run(await lease(store))).resolves.toMatchObject({ processed: 1, skipped: 0 });
     },
   );
+
+  it("skips unmatched locators before takeover or context loading", async () => {
+    const store = new InMemoryReplyRuntimeStore({ now: () => Date.parse(to) });
+    const loadConversation = vi.fn(async (item: MetaConversationLocator) => (
+      snapshot(item.externalConversationKey, [history(item.externalConversationKey, "customer", "Hi", 2)])
+    ));
+    const processEvent = vi.fn(async () => ({ acknowledged: true as const, status: "delivery_candidate_disabled" as const }));
+    const reconciler = createBacklogReconciler({
+      store,
+      controlIsOn: async () => true,
+      listConversations: async () => [locator("unmatched"), locator("allowed")],
+      loadConversation,
+      processEvent,
+      hashExternalKey: hash,
+      stageAAllowedRecipientHash: hash("allowed"),
+      now: () => new Date(to),
+    });
+
+    await expect(reconciler.run(await lease(store))).resolves.toMatchObject({ processed: 1, skipped: 1 });
+    expect(loadConversation).toHaveBeenCalledOnce();
+    expect(loadConversation).toHaveBeenCalledWith(locator("allowed"));
+    expect(processEvent).toHaveBeenCalledOnce();
+  });
 });

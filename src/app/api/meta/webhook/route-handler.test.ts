@@ -28,7 +28,11 @@ function request(valid = true) {
   });
 }
 
-function setup(input: Readonly<{ engineMode: "legacy" | "shadow" | "shared_draft" | "shared_active"; masterEnabled: boolean }>) {
+function setup(input: Readonly<{
+  engineMode: "legacy" | "shadow" | "shared_draft" | "shared_active";
+  masterEnabled: boolean;
+  stageAAllowedRecipientHash?: string | null;
+}>) {
   const tasks: Array<() => Promise<void>> = [];
   const legacyRuntime = {
     repository: { ingestConversationEvent: vi.fn(async () => ({ status: "duplicate" as const })), recoverDueHumanReplies: vi.fn() },
@@ -40,7 +44,13 @@ function setup(input: Readonly<{ engineMode: "legacy" | "shadow" | "shared_draft
   const createSharedRuntime = vi.fn(() => sharedRuntime);
   const handlers = createMetaWebhookRouteHandlers({
     customerConfig,
-    rnrConfig: { ...input, metaAutoSendEnabled: false, websiteSharedBrainEnabled: false },
+    rnrConfig: {
+      ...input,
+      metaAutoSendEnabled: false,
+      websiteSharedBrainEnabled: false,
+      stageAAllowedRecipientHash: input.stageAAllowedRecipientHash
+        ?? createHmac("sha256", customerConfig.idHashSecret).update("customer-1").digest("hex"),
+    },
     createLegacyRuntime,
     createSharedRuntime,
     scheduleAfter(task) { tasks.push(task); },
@@ -73,6 +83,18 @@ describe("Meta webhook route wiring", () => {
     expect(current.createSharedRuntime).toHaveBeenCalledOnce();
     expect(current.sharedRuntime.orchestrator.handle).toHaveBeenCalledOnce();
     expect(current.createLegacyRuntime).not.toHaveBeenCalled();
+  });
+
+  it("does not construct the shared runtime for an unmatched Stage A recipient", async () => {
+    const current = setup({
+      engineMode: "shared_draft",
+      masterEnabled: true,
+      stageAAllowedRecipientHash: "a".repeat(64),
+    });
+    expect((await current.handlers.POST(request())).status).toBe(200);
+    await current.tasks[0]();
+    expect(current.createSharedRuntime).not.toHaveBeenCalled();
+    expect(current.sharedRuntime.orchestrator.handle).not.toHaveBeenCalled();
   });
 
   it("keeps shared runtime unconstructed when the master flag is false", async () => {
