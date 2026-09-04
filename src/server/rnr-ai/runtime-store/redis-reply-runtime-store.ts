@@ -226,7 +226,8 @@ export class RedisReplyRuntimeStore implements ReplyRuntimeStore {
 
   async hasSenderEcho(providerMessageKeyHash: string) {
     requireHash(providerMessageKeyHash);
-    return await this.redis.get<string>(this.key(`sender-echo:${providerMessageKeyHash}`)) === "1";
+    const marker = await this.redis.get<string | number>(this.key(`sender-echo:${providerMessageKeyHash}`));
+    return marker === "1" || marker === 1;
   }
 
   async enqueueBacklog(controlRevision: number, window: TimeWindow) {

@@ -50,4 +50,12 @@ describe("RedisReplyRuntimeStore", () => {
 
     await expect(store.claimDelivery(hash("delivery"), 30_000)).rejects.toThrow("redis unavailable");
   });
+
+  it("recognizes the numeric sender-echo marker returned by Upstash auto-deserialization", async () => {
+    const redis = redisMock();
+    vi.mocked(redis.get).mockResolvedValue(1);
+    const store = new RedisReplyRuntimeStore({ redis, namespace: "rnr-ai-test" });
+
+    await expect(store.hasSenderEcho(hash("provider-message-id"))).resolves.toBe(true);
+  });
 });
