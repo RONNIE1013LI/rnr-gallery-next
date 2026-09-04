@@ -11,6 +11,7 @@ type Dependencies = Readonly<{
   loadConversation(locator: MetaConversationLocator): Promise<MetaConversationSnapshot>;
   processEvent(event: MetaConversationEvent): Promise<ProcessResult>;
   hashExternalKey(value: string): string;
+  stageAAllowedRecipientHash: string | null;
   now?: () => Date;
 }>;
 
@@ -80,6 +81,10 @@ export function createBacklogReconciler(dependencies: Dependencies) {
               break;
             }
             const conversationHash = dependencies.hashExternalKey(locator.externalConversationKey);
+            if (conversationHash !== dependencies.stageAAllowedRecipientHash) {
+              skipped += 1;
+              continue;
+            }
             if ((await dependencies.store.readTakeover(conversationHash))?.active) {
               skipped += 1;
               continue;

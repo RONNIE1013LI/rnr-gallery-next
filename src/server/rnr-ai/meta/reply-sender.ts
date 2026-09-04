@@ -26,6 +26,7 @@ type SenderConfig = Readonly<{
   masterEnabled: boolean;
   engineMode: RnrAiEngineMode;
   metaAutoSendEnabled: boolean;
+  stageAAllowedRecipientHash: string | null;
 }>;
 
 type TakeoverReader = Readonly<{
@@ -123,11 +124,17 @@ export function createMetaReplySender(input: Readonly<{
         || config.engineMode !== "shared_active"
         || !input.accessToken.trim()
         || !input.pageId.trim()
+        || !config.stageAAllowedRecipientHash
+        || input.hashExternalKey(candidate.externalConversationKey) !== config.stageAAllowedRecipientHash
         || candidate.channel !== "facebook"
         || candidate.risk !== "GREEN"
         || !candidate.replyText.trim()
       ) return Object.freeze({ status: "blocked" });
       if (!await stillEligible({ ...input, candidate })) return Object.freeze({ status: "blocked" });
+
+      if (input.hashExternalKey(candidate.externalConversationKey) !== config.stageAAllowedRecipientHash) {
+        return Object.freeze({ status: "blocked" });
+      }
 
       const deliveryKey = deliveryHash(input.hashExternalKey, candidate);
       const lease = await input.store.claimDelivery(deliveryKey, DELIVERY_LEASE_MS);

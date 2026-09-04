@@ -1,3 +1,4 @@
+import { createHmac } from "node:crypto";
 import { after } from "next/server";
 import { parseCustomerServiceConfig, type CustomerServiceConfig } from "@/server/customer-service/config";
 import { createMetaWebhookHandlers } from "@/server/customer-service/meta/webhook-handler";
@@ -36,6 +37,20 @@ function asMetaEvent(message: AcceptedEvent): MetaConversationEvent {
   });
 }
 
+function isStageAAllowedRecipient(
+  message: AcceptedEvent,
+  customerConfig: CustomerServiceConfig,
+  rnrConfig: RnrAiMetaConfig,
+) {
+  return Boolean(
+    rnrConfig.stageAAllowedRecipientHash
+    && customerConfig.idHashSecret
+    && createHmac("sha256", customerConfig.idHashSecret)
+      .update(message.externalConversationKey)
+      .digest("hex") === rnrConfig.stageAAllowedRecipientHash,
+  );
+}
+
 export function createMetaWebhookRouteHandlers(dependencies: Readonly<{
   customerConfig: CustomerServiceConfig;
   rnrConfig: RnrAiMetaConfig;
@@ -70,6 +85,7 @@ export function createMetaWebhookRouteHandlers(dependencies: Readonly<{
     ...common,
     onAcceptedEvent: async (message) => {
       if (!dependencies.rnrConfig.masterEnabled) return;
+      if (!isStageAAllowedRecipient(message, dependencies.customerConfig, dependencies.rnrConfig)) return;
       await dependencies.createSharedRuntime().orchestrator.handle(asMetaEvent(message));
     },
   });

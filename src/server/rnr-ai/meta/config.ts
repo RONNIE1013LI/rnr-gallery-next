@@ -5,6 +5,7 @@ export type RnrAiMetaConfig = Readonly<{
   engineMode: RnrAiEngineMode;
   metaAutoSendEnabled: boolean;
   websiteSharedBrainEnabled: boolean;
+  stageAAllowedRecipientHash: string | null;
 }>;
 
 const engineModes = new Set<RnrAiEngineMode>([
@@ -23,6 +24,10 @@ function engineMode(value: string | undefined): RnrAiEngineMode {
   return candidate && engineModes.has(candidate) ? candidate : "legacy";
 }
 
+function stageAAllowedRecipientHash(value: string | undefined) {
+  return typeof value === "string" && /^[a-f0-9]{64}$/.test(value) ? value : null;
+}
+
 export function parseRnrAiMetaConfig(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ): RnrAiMetaConfig {
@@ -31,5 +36,6 @@ export function parseRnrAiMetaConfig(
     engineMode: engineMode(env.RNR_AI_ENGINE_MODE),
     metaAutoSendEnabled: enabled(env.RNR_META_AUTO_SEND_ENABLED),
     websiteSharedBrainEnabled: enabled(env.RNR_WEBSITE_SHARED_BRAIN_ENABLED),
+    stageAAllowedRecipientHash: stageAAllowedRecipientHash(env.RNR_META_STAGE_A_ALLOWED_RECIPIENT_HASH),
   });
 }

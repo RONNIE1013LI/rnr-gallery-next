@@ -52,6 +52,7 @@ const greenDecision: RnrAiDecision = {
 
 async function setup(options: Readonly<{
   masterEnabled?: boolean;
+  stageAAllowedRecipientHash?: string | null;
   decision?: RnrAiDecision;
   snapshots?: readonly MetaConversationSnapshot[];
 }> = {}) {
@@ -75,6 +76,7 @@ async function setup(options: Readonly<{
     resolveMarket: () => "NZ",
     pageId: "page-1",
     masterEnabled: options.masterEnabled ?? true,
+    stageAAllowedRecipientHash: options.stageAAllowedRecipientHash ?? hash("conversation-raw"),
     sender,
     now: () => now,
   });
@@ -82,6 +84,20 @@ async function setup(options: Readonly<{
 }
 
 describe("MetaReplyOrchestrator", () => {
+  it.each([
+    ["customer", "customer_message"],
+    ["staff", "human_outbound"],
+  ] as const)("rejects an unmatched %s event before shared runtime work", async (role, eventType) => {
+    const current = await setup({ stageAAllowedRecipientHash: hash("approved-conversation") });
+    await expect(current.orchestrator.handle(event({ role, eventType })))
+      .resolves.toMatchObject({ acknowledged: true, status: "stage_a_not_allowed" });
+    expect(current.context.loadConversation).not.toHaveBeenCalled();
+    expect(current.images.resolveMetaImages).not.toHaveBeenCalled();
+    expect(current.brain.generate).not.toHaveBeenCalled();
+    expect(current.sender.sendEligibleReply).not.toHaveBeenCalled();
+    expect(current.store.exportStateForTest().events).toHaveLength(0);
+  });
+
   it("acknowledges OFF with zero Graph, image, Brain and sender work", async () => {
     const current = await setup({ masterEnabled: false });
     await expect(current.orchestrator.handle(event())).resolves.toMatchObject({ acknowledged: true, status: "off" });

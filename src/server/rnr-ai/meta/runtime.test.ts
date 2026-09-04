@@ -8,6 +8,7 @@ const baseConfig = {
   engineMode: "shared_active" as const,
   metaAutoSendEnabled: true,
   websiteSharedBrainEnabled: false,
+  stageAAllowedRecipientHash: "a".repeat(64),
 };
 
 describe("Meta reply runtime selection", () => {
@@ -16,6 +17,7 @@ describe("Meta reply runtime selection", () => {
     { ...baseConfig, engineMode: "legacy" as const },
     { ...baseConfig, engineMode: "shared_draft" as const },
     { ...baseConfig, metaAutoSendEnabled: false },
+    { ...baseConfig, stageAAllowedRecipientHash: null },
   ])("uses a disabled sender unless every activation gate is explicit", (config) => {
     const createActive = vi.fn();
     expect(selectMetaReplySender({ config, createActive })).toBeInstanceOf(DisabledMetaReplySender);
