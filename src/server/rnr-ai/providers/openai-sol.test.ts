@@ -51,14 +51,16 @@ describe("OpenAiSolProvider", () => {
       required: ["product", "size", "destination", "orderReference"],
       additionalProperties: false,
     });
+    expect(body.input[0]).toEqual({role:"developer",content:"Use only supported facts."});
+    expect(body.input[1].role).toBe("user");
     expect(body).not.toHaveProperty("previous_response_id");
-    expect(body.input[0].content.map((item: { type: string }) => item.type)).toEqual([
+    expect(body.input[1].content.map((item: { type: string }) => item.type)).toEqual([
       "input_text",
       "input_image",
       "input_image",
     ]);
-    expect(body.input[0].content[1].image_url).toBe("data:image/jpeg;base64,AwQ=");
-    expect(body.input[0].content[2].image_url).toBe("data:image/png;base64,AQI=");
+    expect(body.input[1].content[1].image_url).toBe("data:image/jpeg;base64,AwQ=");
+    expect(body.input[1].content[2].image_url).toBe("data:image/png;base64,AQI=");
     expect(result).toMatchObject({
       model: "gpt-5.6-sol",
       usage: { inputTokens: 100, cachedInputTokens: 10, outputTokens: 20 },
@@ -97,6 +99,17 @@ describe("OpenAiSolProvider", () => {
     await expect(provider.generate({ instructions: "safe", conversationText: "hello", images: [] }))
       .rejects.toMatchObject({ code });
     expect(fetchImpl).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not start or retry a call after the shared deadline", async () => {
+    const fetchImpl=vi.fn();const provider=new OpenAiSolProvider({apiKey:"unit-test-only",fetchImpl});
+    await expect(provider.generate({instructions:"safe",conversationText:"hello",images:[],deadlineAt:Date.now()-1})).rejects.toMatchObject({code:"timeout"});
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
+
+  it.each([{...successfulBody,model:"weaker-model"},{...successfulBody,status:"incomplete"}])("rejects non-equivalent or incomplete output", async body => {
+    const fetchImpl=vi.fn(async()=>Response.json(body));const provider=new OpenAiSolProvider({apiKey:"unit-test-only",fetchImpl});
+    await expect(provider.generate({instructions:"safe",conversationText:"hello",images:[]})).rejects.toMatchObject({code:"invalid_output"});expect(fetchImpl).toHaveBeenCalledOnce();
   });
 
   it("rejects invalid output and never logs secrets or response bodies", async () => {

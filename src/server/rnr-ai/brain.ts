@@ -1,3 +1,4 @@
+import { generateReasonedReply, type StructuredProvider } from './reasoning/brain';
 import { assembleConversationContext } from "./context/assembler";
 import type { SolProviderRequest, SolProviderResult } from "./providers/openai-sol";
 import { evaluateFinalRisk, type ReplyRisk } from "./risk/risk-gate";
@@ -5,6 +6,7 @@ import type { BusinessToolRequest } from "./tools/types";
 import type { RnrAiDecision, RnrAiRequest, SupportedClaim, ToolEvidence } from "./types";
 
 type SolProvider = Readonly<{
+  structured?: StructuredProvider["structured"];
   generate(request: SolProviderRequest): Promise<SolProviderResult>;
 }>;
 
@@ -70,7 +72,8 @@ function finalRiskMessage(
   if (request.channel !== "meta") return conversation.modelText;
   const activeTurn = conversation.turns.at(-1);
   if (!activeTurn || activeTurn.role !== "customer") return conversation.modelText;
-  return [activeTurn.text, candidateReply].filter(Boolean).join("\n");
+  const boundary=conversation.turns.findLastIndex(t=>t.role==='automation' && (t.reviewResolved || t.text==='[Reviewed Meta turn resolved by an administrator; keep as history and do not answer unless the customer asks again.]'));
+  return [...conversation.turns.slice(boundary+1).filter(t=>t.role==='customer').map(t=>t.text),candidateReply].filter(Boolean).join("\n");
 }
 
 function wrongMarketCurrency(request: RnrAiRequest, text: string) {
@@ -200,6 +203,9 @@ function authorizedToolRequest(
 export function createRnrAiBrain({ provider, tools, now = () => new Date() }: RnrAiBrainDependencies) {
   return Object.freeze({
     async generate(request: RnrAiRequest): Promise<RnrAiDecision> {
+      // Production Sol always implements structured generation. Failures stay in that
+      // verified pipeline; the legacy interface remains for existing adapters/fixtures.
+      if (provider.structured) return generateReasonedReply(request, {structured: provider.structured.bind(provider)}, tools);
       if (request.conversation.length === 0) return failedDecision("missing_conversation_context");
       const conversation = conversationData(request);
       const baseInstructions = businessInstructions(request);

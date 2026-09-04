@@ -335,6 +335,15 @@ describe("Meta reply sender", () => {
     expect(current.store.exportStateForTest().deliveries).toHaveLength(0);
   });
 
+  it("redacts customer text, identity, credentials and URLs in every diagnostic entry", async () => {
+    const sensitive=["test-page-access-token",candidate.externalConversationKey,candidate.latestCustomerMessageKey,candidate.replyText,"https://example.test/private-image","Bearer opaque-credential","access_token=private-token"];
+    const current=await setup({fetchImpl:vi.fn(async()=>Response.json({error:{type:sensitive.join(" "),message:sensitive.join(" "),code:190,ignoredBody:"UNTRUSTED_RESPONSE_BODY"}},{status:400}))});
+    await current.sender.sendEligibleReply(candidate);
+    const diagnostics=JSON.stringify([...current.eligibilityLog.mock.calls,...current.deliveryTrace.mock.calls]);
+    for(const value of [...sensitive,"UNTRUSTED_RESPONSE_BODY"])expect(diagnostics).not.toContain(value);
+    expect(current.deliveryTrace).toHaveBeenCalledWith(expect.objectContaining({phase:"graph_post_response",graphErrorCode:190}));
+  });
+
   it("records releaseDelivery failure without replacing the existing uncertain outcome", async () => {
     const current = await setup({
       fetchImpl: vi.fn(async () => Response.json({ error: { code: 190 } }, { status: 400 })),

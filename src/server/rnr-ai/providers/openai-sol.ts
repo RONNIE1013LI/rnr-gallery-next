@@ -28,7 +28,7 @@ const toolRequestInputSchema = z.object({
   orderReference: z.string().nullable(),
 }).strict();
 
-const toolRequestSchema = z.object({
+export const toolRequestSchema = z.object({
   name: z.enum(["canonical_product_price", "dynamic_shipping_quote", "order_status", "payment_status"]),
   input: toolRequestInputSchema,
 }).strict();
@@ -52,6 +52,7 @@ export type SolProviderRequest = Readonly<{
   instructions: string;
   conversationText: string;
   images: readonly VerifiedImageInput[];
+  deadlineAt?: number;
 }>;
 
 export type SolProviderResult = Readonly<{
@@ -144,6 +145,10 @@ export class OpenAiSolProvider {
   }
 
   async generate(request: SolProviderRequest): Promise<SolProviderResult> {
+    return this.structured(request, solStructuredResultSchema);
+  }
+
+  async structured<T>(request: SolProviderRequest, schema: z.ZodType<T>, outputTokens = 1_200): Promise<Readonly<{decision: T; model: string; usage: SolProviderResult["usage"]}>> {
     if (!this.apiKey) throw new SolProviderError("configuration");
     if (!request.instructions.trim() || !request.conversationText.trim()) {
       throw new SolProviderError("invalid_output");
@@ -154,7 +159,7 @@ export class OpenAiSolProvider {
       throw new SolProviderError("invalid_output");
     }
     const content = [
-      { type: "input_text", text: `${request.instructions.trim()}\n\nConversation:\n${request.conversationText.trim()}` },
+      { type: "input_text", text: request.conversationText.trim() },
       ...images.map((image) => ({
         type: "input_image",
         image_url: `data:${image.mediaType};base64,${Buffer.from(image.bytes).toString("base64")}`,
@@ -165,15 +170,15 @@ export class OpenAiSolProvider {
       model: this.model,
       store: false,
       reasoning: { effort: "medium" },
-      max_output_tokens: 1_200,
-      input: [{ role: "user", content }],
+      max_output_tokens: outputTokens,
+      input: [{ role: "developer", content: request.instructions.trim() }, { role: "user", content }],
       text: {
         verbosity: "low",
         format: {
           type: "json_schema",
           name: "rnr_ai_reply_decision",
           strict: true,
-          schema: z.toJSONSchema(solStructuredResultSchema, { target: "draft-7" }),
+          schema: z.toJSONSchema(schema, { target: "draft-7" }),
         },
       },
     });
@@ -181,6 +186,8 @@ export class OpenAiSolProvider {
     let lastError = new SolProviderError("transient_transport");
     for (let attempt = 0; attempt < 2; attempt += 1) {
       try {
+        const remaining = request.deadlineAt === undefined ? 25_000 : Math.min(25_000, request.deadlineAt - Date.now());
+        if (remaining < 1) throw new SolProviderError("timeout");
         const response = await this.fetchImpl("https://api.openai.com/v1/responses", {
           method: "POST",
           headers: {
@@ -188,12 +195,13 @@ export class OpenAiSolProvider {
             "content-type": "application/json",
           },
           body,
-          signal: this.timeoutSignal(25_000),
+          signal: this.timeoutSignal(remaining),
         });
         if (!response.ok) throw httpError(response);
 
         const responseBody = await response.json() as Record<string, unknown>;
-        const decision = solStructuredResultSchema.parse(JSON.parse(outputText(responseBody)));
+        if (responseBody.status === "incomplete" || (typeof responseBody.model === "string" && responseBody.model !== this.model)) throw new SolProviderError("invalid_output");
+        const decision = schema.parse(JSON.parse(outputText(responseBody)));
         return Object.freeze({
           decision,
           model: typeof responseBody.model === "string" ? responseBody.model : this.model,

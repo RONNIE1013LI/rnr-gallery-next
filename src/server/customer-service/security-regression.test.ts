@@ -57,8 +57,16 @@ describe("reply assistant security regression", () => {
       file.relativePath.startsWith("src/server/rnr-ai/")
       || file.relativePath.startsWith("src/app/api/internal/reply-assistant/")
     ));
+    // Sender diagnostics deliberately contain only masked/hash identifiers and redacted
+    // error fields. reply-sender.test exercises hostile Graph payloads and all trace phases.
+    // Permit exactly the two existing sinks, not arbitrary logging anywhere in the sender.
+    const approvedSink = /console\.info\("rnr_ai_meta_(?:still_eligible|delivery_trace)", entry\);/g;
+    const sender = rnrAiFiles.find(file => file.relativePath === META_REPLY_SENDER_PATH)!;
+    expect(sender.source.match(approvedSink)).toHaveLength(2);
+    const withoutApprovedSinks = rnrAiFiles.map(file => file.relativePath === META_REPLY_SENDER_PATH
+      ? {...file, source:file.source.replace(approvedSink, "")} : file);
     expect(productionSourcePathsMatching(
-      rnrAiFiles,
+      withoutApprovedSinks,
       /\b(?:console|logger)\.(?:log|info|warn|error|debug)\s*\(/,
     )).toEqual([]);
   });
