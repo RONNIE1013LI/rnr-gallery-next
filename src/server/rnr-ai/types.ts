@@ -9,6 +9,8 @@ export type ConversationTurn = Readonly<{
   text: string;
   channel: "meta" | "website";
   attachmentOrdinals: readonly number[];
+  /** Set only by the trusted admin-resolution adapter, never by message text. */
+  reviewResolved?: boolean;
 }>;
 
 export type VerifiedImageInput = Readonly<{

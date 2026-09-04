@@ -2,7 +2,7 @@ import type { CompiledBusinessBrain } from "../business-brain/schema";
 import type { ToolEvidence } from "../types";
 import type { CanonicalProductPriceRequest } from "./types";
 
-const priceRuleByProduct: Readonly<Record<"NZ" | "AU", Readonly<Record<string, string>>>> = {
+export const priceRuleByProduct: Readonly<Record<"NZ" | "AU", Readonly<Record<string, string>>>> = {
   NZ: {
     photo_print_canvas: "nz-canvas-base-prices",
     digital_oil_painting_canvas: "nz-canvas-base-prices",

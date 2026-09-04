@@ -106,6 +106,7 @@ function requestFromSnapshot(
       role: "automation" as const,
       sentAt: takeover!.resolvedThroughAt!,
       text: RESOLVED_REVIEW_MARKER,
+      reviewResolved: true,
       channel: "meta" as const,
       attachmentOrdinals: Object.freeze([] as number[]),
     }));

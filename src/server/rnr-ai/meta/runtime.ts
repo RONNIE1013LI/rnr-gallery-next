@@ -96,7 +96,8 @@ export function selectMetaReplySender(input: Readonly<{
 }
 
 export function resolveMetaConversationMarket(snapshot: MetaConversationSnapshot): "NZ" | "AU" | "UNKNOWN" {
-  const text = snapshot.events.map((event) => event.text ?? "").join("\n");
+  // Conservative hint only. The shared reasoner independently resolves market from customer turns.
+  const text = snapshot.events.filter(event => event.role === "customer").map((event) => event.text ?? "").join("\n");
   const hasNz = /\b(?:new zealand|nz|nzd)\b|NZ\$/i.test(text);
   const hasAu = /\b(?:australia|australian|au|aud)\b|A\$/i.test(text);
   if (hasNz === hasAu) return "UNKNOWN";

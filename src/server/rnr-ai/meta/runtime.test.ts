@@ -33,6 +33,13 @@ describe("Meta reply runtime selection", () => {
     expect(createActive).toHaveBeenCalledOnce();
   });
 
+  it("does not accept Page wording as customer market evidence", () => {
+    const event={channel:"facebook" as const,eventType:"customer_message" as const,externalConversationKey:"fixture",externalMessageKey:"one",externalReplyToMessageKey:null,attachments:[],receivedAt:new Date("2026-09-05T00:00:00Z")};
+    const snapshot:MetaConversationSnapshot={channel:"facebook",complete:true,incompleteReason:null,characters:50,turnsConsidered:2,events:[{...event,role:"staff",text:"We are based in New Zealand and quote NZD."},{...event,externalMessageKey:"two",role:"customer",text:"What sizes exist?"}]};
+    expect(resolveMetaConversationMarket(snapshot)).toBe("UNKNOWN");
+    expect(resolveMetaConversationMarket({...snapshot,events:[snapshot.events[0],{...snapshot.events[1],text:"Delivery is to Australia."}]})).toBe("AU");
+  });
+
   it.each([
     ["New Zealand", "NZ"],
     ["I am in Australia", "AU"],
