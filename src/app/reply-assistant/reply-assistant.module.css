@@ -9,6 +9,8 @@
   --reply-accent: #345c45;
   --reply-focus: #9b7a3f;
   display: grid;
+  min-width: 0;
+  max-width: 100%;
   gap: 18px;
   color: var(--reply-ink);
 }
@@ -65,6 +67,22 @@
   background: #f1f7f3;
 }
 
+.knowledgePanel {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--reply-border);
+  border-radius: 12px;
+  background: var(--reply-surface);
+}
+
+.knowledgeSummary h2,
+.knowledgeSummary p { margin: 0; }
+.knowledgeSummary h2 { font-size: 18px; }
+.knowledgeSummary p { margin-top: 5px; color: var(--reply-muted); font-size: 12px; }
+.knowledgeSummary strong { color: var(--reply-ink); }
+
 .knowledgeProvenance {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -72,17 +90,29 @@
   margin: 0;
   overflow: hidden;
   border: 1px solid var(--reply-border);
-  border-radius: 12px;
-  background: var(--reply-surface);
+  border-radius: 8px;
+  background: var(--reply-response);
 }
 
 .knowledgeDisclosure > summary {
-  display: none;
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  border: 1px solid var(--reply-border);
+  border-radius: 8px;
+  color: var(--reply-accent);
+  background: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 720;
+  list-style: none;
 }
-
-.knowledgeDisclosure:not([open]) > .knowledgeProvenance {
-  display: grid;
-}
+.knowledgeDisclosure > summary::-webkit-details-marker { display: none; }
+.knowledgeDisclosure > summary::after { content: "Show"; }
+.knowledgeDisclosure[open] > summary { margin-bottom: 8px; }
+.knowledgeDisclosure[open] > summary::after { content: "Hide"; }
 
 .knowledgeProvenance div { min-width: 0; padding: 12px 14px; }
 .knowledgeProvenance div + div { border-left: 1px solid var(--reply-border); }
@@ -127,24 +157,27 @@
 }
 .controlHeader > strong[data-state="ON"] { color: #246334; background: #edf7f0; }
 
-.controlFacts {
+.currentStatus {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin: 0;
+  min-width: 0;
+  gap: 5px;
+  padding: 12px;
   border: 1px solid var(--reply-border);
   border-radius: 8px;
+  background: var(--reply-response);
 }
-.controlFacts > div { min-width: 0; padding: 10px 12px; }
-.controlFacts > div + div { border-left: 1px solid var(--reply-border); }
-.controlFacts dt { color: var(--reply-muted); font-size: 10px; }
-.controlFacts dd { overflow-wrap: anywhere; margin: 3px 0 0; font-size: 12px; font-weight: 720; }
+.currentStatus h3,
+.currentStatus p { margin: 0; }
+.currentStatus h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.currentStatus p { overflow-wrap: anywhere; color: var(--reply-muted); font-size: 12px; }
+.currentStatus p:first-of-type { color: var(--reply-ink); }
 
 .controlActions button,
 .overrideControls button,
 .scheduleEditor button,
 .scheduleList button,
 .metaReviewPanel button {
-  min-height: 38px;
+  min-height: 44px;
   padding: 7px 11px;
   border: 1px solid var(--reply-border-strong);
   border-radius: 8px;
@@ -163,13 +196,20 @@
 
 .scheduleEditor,
 .overrideControls { align-items: end; }
+.controlActions > span {
+  flex-basis: 100%;
+  color: var(--reply-muted);
+  font-size: 12px;
+  font-weight: 720;
+}
+.scheduleExplanation { margin: 0; color: var(--reply-muted); font-size: 12px; }
 .scheduleEditor label,
 .overrideControls label { display: grid; min-width: 120px; gap: 4px; color: var(--reply-muted); font-size: 11px; font-weight: 700; }
 .scheduleEditor select,
 .scheduleEditor input,
 .overrideControls input {
   box-sizing: border-box;
-  min-height: 38px;
+  min-height: 44px;
   padding: 7px 9px;
   border: 1px solid var(--reply-border-strong);
   border-radius: 8px;
@@ -177,12 +217,16 @@
   font: inherit;
   font-size: 12px;
 }
-.overrideControls label { flex: 1 1 280px; }
+.overrideControls label { flex: 1 1 140px; }
+.overrideHeading { display: flex; flex-basis: 100%; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; }
+.overrideHeading span { color: var(--reply-muted); }
 
 .scheduleList,
 .metaReviewList { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
 .scheduleList li,
 .metaReviewList li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: 8px; background: var(--reply-response); font-size: 12px; }
+.scheduleList li span,
+.metaReviewList li span { min-width: 0; overflow-wrap: anywhere; }
 .metaReviewList li > div { display: grid; gap: 2px; }
 .metaReviewList span { color: var(--reply-muted); }
 .metaReviewDetail { display: grid; gap: 8px; padding: 12px; border: 1px solid #e2c991; border-radius: 8px; background: #fff9eb; }
@@ -433,26 +477,7 @@
   .metaReviewPanel { order: 3; }
   .metricPanel { order: 4; }
   .learning { order: 5; }
-  .knowledgeDisclosure > summary {
-    display: flex;
-    min-height: 44px;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px;
-    border: 1px solid var(--reply-border);
-    border-radius: 10px;
-    color: var(--reply-accent);
-    background: var(--reply-surface);
-    font-size: 12px;
-    font-weight: 720;
-    cursor: pointer;
-    list-style: none;
-  }
-  .knowledgeDisclosure > summary::-webkit-details-marker { display: none; }
-  .knowledgeDisclosure > summary::after { content: "Show"; }
-  .knowledgeDisclosure[open] > summary { margin-bottom: 8px; }
-  .knowledgeDisclosure[open] > summary::after { content: "Hide"; }
-  .knowledgeDisclosure:not([open]) > .knowledgeProvenance { display: none; }
+  .knowledgePanel { padding: 14px; }
   .knowledgeProvenance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .knowledgeProvenance div + div { border-left: 0; }
   .knowledgeProvenance div:nth-child(even) { border-left: 1px solid var(--reply-border); }
@@ -466,14 +491,12 @@
   .learningControls button { flex: 1 1 120px; }
   .aiControlPanel,
   .metaReviewPanel { padding: 14px; }
-  .controlFacts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .controlFacts > div + div { border-left: 0; }
-  .controlFacts > div:nth-child(even) { border-left: 1px solid var(--reply-border); }
-  .controlFacts > div:nth-child(n + 3) { border-top: 1px solid var(--reply-border); }
   .controlActions button,
   .overrideControls button { flex: 1 1 120px; min-height: 44px; }
-  .scheduleEditor label { flex: 1 1 100px; }
+  .scheduleEditor label { flex: 1 1 130px; }
   .scheduleEditor button { min-height: 44px; }
+  .scheduleList li { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .scheduleList li button { width: 100%; }
 }
 
 @media (max-width: 430px) {

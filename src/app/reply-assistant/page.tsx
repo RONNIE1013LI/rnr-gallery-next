@@ -94,7 +94,7 @@ export default async function ReplyAssistantPage({
 
   return (
     <section className={styles.page}>
-      <header><div><p>Customer Service Pilot</p><h1>Reply Assistant</h1></div><strong data-enabled={inboxEnabled}>{inboxEnabled ? "Pilot enabled" : "Disabled"}</strong></header>
+      <header><div><p>Customer Service Pilot</p><h1>Reply Assistant</h1></div><strong data-enabled={inboxEnabled}>{inboxEnabled ? "Feature available" : "Feature unavailable"}</strong></header>
       <KnowledgeProvenance
         knowledgeVersion={compiledKnowledge.knowledgeVersion}
         metadata={compiledKnowledge.metadata}

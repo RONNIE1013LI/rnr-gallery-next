@@ -1,9 +1,9 @@
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import { KnowledgeProvenance } from "./knowledge-provenance";
 
 describe("Reply Assistant knowledge provenance", () => {
-  it("shows the active server knowledge version and build source", () => {
+  it("keeps the owner summary clear while hiding diagnostic hashes by default", () => {
     render(<KnowledgeProvenance
       knowledgeVersion="1234567890abcdef"
       metadata={{
@@ -14,10 +14,16 @@ describe("Reply Assistant knowledge provenance", () => {
       }}
     />);
 
-    expect(screen.getByText("1234567890ab")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Business Knowledge" })).toBeInTheDocument();
+    expect(screen.getByText("v0.5.1")).toBeInTheDocument();
+    expect(screen.getByText(/Last updated:/)).toBeInTheDocument();
+    expect(screen.getByText("Advanced diagnostics").closest("details")).not.toHaveAttribute("open");
+    expect(screen.getByText("1234567890ab")).not.toBeVisible();
+
+    fireEvent.click(screen.getByText("Advanced diagnostics"));
+
+    expect(screen.getByText("1234567890ab")).toBeVisible();
     expect(screen.getByText("abc123456789")).toBeInTheDocument();
-    expect(screen.getByText("20 Aug 2026, 12:00 pm")).toBeInTheDocument();
     expect(screen.getByText("fedcba098765")).toBeInTheDocument();
-    expect(screen.getByText("Knowledge build details").closest("summary")).toBeInTheDocument();
   });
 });

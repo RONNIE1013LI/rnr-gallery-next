@@ -58,6 +58,78 @@ const aiDateTime = new Intl.DateTimeFormat("en-NZ", {
   timeZone: "Pacific/Auckland",
 });
 
+const aucklandParts = new Intl.DateTimeFormat("en-CA", {
+  timeZone: "Pacific/Auckland",
+  year: "numeric",
+  month: "2-digit",
+  day: "2-digit",
+  hour: "2-digit",
+  minute: "2-digit",
+  hourCycle: "h23",
+});
+
+const weekdays = [
+  { day: 1 as const, name: "Monday" },
+  { day: 2 as const, name: "Tuesday" },
+  { day: 3 as const, name: "Wednesday" },
+  { day: 4 as const, name: "Thursday" },
+  { day: 5 as const, name: "Friday" },
+  { day: 6 as const, name: "Saturday" },
+  { day: 0 as const, name: "Sunday" },
+] as const;
+
+function normalMode(mode: AiControlConfig["mode"]) {
+  return mode[0] + mode.slice(1).toLowerCase();
+}
+
+function formatSchedulePeriod(period: AiControlConfig["periods"][number]) {
+  const day = weekdays.find((entry) => entry.day === period.day)?.name ?? "Unknown day";
+  return `${day} — AI ON: ${period.start === "00:00" && period.end === "23:59" ? "All day" : `${period.start}–${period.end}`}`;
+}
+
+function aucklandClockParts(value: Date) {
+  const parts = Object.fromEntries(aucklandParts.formatToParts(value).map((part) => [part.type, part.value]));
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+  };
+}
+
+export function buildAucklandOverrideExpiry(date: string, time: string, now = new Date()) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(date);
+  const timeMatch = /^(\d{2}):(\d{2})$/.exec(time);
+  if (!match || !timeMatch) return null;
+  const requested = {
+    year: Number(match[1]),
+    month: Number(match[2]),
+    day: Number(match[3]),
+    hour: Number(timeMatch[1]),
+    minute: Number(timeMatch[2]),
+  };
+  if (requested.month < 1 || requested.month > 12 || requested.day < 1 || requested.day > 31 || requested.hour > 23 || requested.minute > 59) return null;
+
+  const localEpoch = Date.UTC(requested.year, requested.month - 1, requested.day, requested.hour, requested.minute);
+  let epoch = localEpoch;
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const rendered = aucklandClockParts(new Date(epoch));
+    epoch = localEpoch - (Date.UTC(rendered.year, rendered.month - 1, rendered.day, rendered.hour, rendered.minute) - epoch);
+  }
+  const expiresAt = new Date(epoch);
+  const rendered = aucklandClockParts(expiresAt);
+  if (!Number.isFinite(expiresAt.getTime())
+    || rendered.year !== requested.year
+    || rendered.month !== requested.month
+    || rendered.day !== requested.day
+    || rendered.hour !== requested.hour
+    || rendered.minute !== requested.minute
+    || expiresAt.getTime() <= now.getTime()
+    || expiresAt.getTime() > now.getTime() + 24 * 60 * 60 * 1_000) return null;
+  return expiresAt.toISOString();
+}
+
 function formatAiDateTime(value: string | null) {
   return value ? aiDateTime.format(new Date(value)) : "None";
 }
@@ -117,7 +189,8 @@ export function ReplyAssistantLiveDashboard({
   const [aiControl, setAiControl] = useState(initialAiControl);
   const [controlBusy, setControlBusy] = useState(false);
   const [controlError, setControlError] = useState<string | null>(null);
-  const [overrideExpiresAt, setOverrideExpiresAt] = useState("");
+  const [overrideDate, setOverrideDate] = useState("");
+  const [overrideTime, setOverrideTime] = useState("");
   const [scheduleDraft, setScheduleDraft] = useState({ day: 1, start: "09:00", end: "17:00" });
   const [metaReviews, setMetaReviews] = useState<readonly MetaReviewMetadata[]>([]);
   const [selectedMetaReview, setSelectedMetaReview] = useState<MetaReviewDetail | null>(null);
@@ -179,15 +252,14 @@ export function ReplyAssistantLiveDashboard({
     }
   }, [aiControl]);
 
-  const forceState = useCallback((state: "ON" | "OFF") => {
-    const expiresAt = overrideExpiresAt.trim();
-    if (!expiresAt || !Number.isFinite(Date.parse(expiresAt))) {
-      setControlError("Enter an exact ISO 8601 override expiry.");
+  const setTemporaryOverride = useCallback((state: "ON" | "OFF") => {
+    const expiresAt = buildAucklandOverrideExpiry(overrideDate, overrideTime);
+    if (!expiresAt) {
+      setControlError("Choose a future Pacific/Auckland date and time within 24 hours.");
       return;
     }
-    if (!window.confirm(`Force AI ${state} until exactly ${expiresAt}?`)) return;
     void saveAiControl({ override: { state, expiresAt } });
-  }, [overrideExpiresAt, saveAiControl]);
+  }, [overrideDate, overrideTime, saveAiControl]);
 
   const refreshMetaReviews = useCallback(async () => {
     setReviewState("loading");
@@ -276,24 +348,34 @@ export function ReplyAssistantLiveDashboard({
       <section className={styles.aiControlPanel} aria-label="AI control">
         <div className={styles.controlHeader}>
           <div><p>Shared R&amp;R AI Brain</p><h2>AI control</h2></div>
-          <strong data-state={aiControl.effective.effectiveState}>{aiControl.effective.effectiveState}</strong>
+          <strong data-state={aiControl.effective.effectiveState}>AI is {aiControl.effective.effectiveState}</strong>
         </div>
         {!aiControl.available ? <p className={styles.controlWarning}>Runtime store unavailable — effective state is OFF.</p> : null}
-        <dl className={styles.controlFacts}>
-          <div><dt>Configured mode</dt><dd>{aiControl.config.mode}</dd></div>
-          <div><dt>Timezone</dt><dd>{aiControl.config.timezone}</dd></div>
-          <div><dt>Source</dt><dd>{aiControl.effective.source.replaceAll("_", " ")}</dd></div>
-          <div><dt>Next transition</dt><dd>{formatAiDateTime(aiControl.effective.nextTransitionAt)}</dd></div>
-        </dl>
+        <section className={styles.currentStatus} aria-label="Current AI status">
+          <h3>Current status</h3>
+          {aiControl.effective.source === "master_kill" ? <>
+            <p><strong>Reason:</strong> Master AI switch is disabled</p>
+            <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
+            <p><strong>Next scheduled transition:</strong> Paused until Master AI is enabled</p>
+          </> : aiControl.effective.source === "override" ? <>
+            <p>Temporary override until {formatAiDateTime(aiControl.effective.nextTransitionAt)}</p>
+            <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
+          </> : <>
+            <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
+            {aiControl.config.mode === "SCHEDULE" ? <p><strong>Next change:</strong> {formatAiDateTime(aiControl.effective.nextTransitionAt)}</p> : null}
+          </>}
+        </section>
         <div className={styles.controlActions}>
+          <span>AI operating mode</span>
           {(["ON", "OFF", "SCHEDULE"] as const).map((mode) => (
-            <button key={mode} type="button" disabled={!aiControl.available || controlBusy || aiControl.config.mode === mode} onClick={() => void saveAiControl({ mode })}>Set {mode}</button>
+            <button key={mode} type="button" aria-pressed={aiControl.config.mode === mode} disabled={!aiControl.available || controlBusy || aiControl.config.mode === mode} onClick={() => void saveAiControl({ mode })}>{mode}</button>
           ))}
           <button type="button" disabled={controlBusy} onClick={() => void refreshAiControl()}>Refresh control</button>
         </div>
+        <p className={styles.scheduleExplanation}>AI will be ON during the scheduled periods below.</p>
         <div className={styles.scheduleEditor}>
           <label>Day<select value={scheduleDraft.day} disabled={!aiControl.available || controlBusy} onChange={(event) => setScheduleDraft((current) => ({ ...current, day: Number(event.target.value) }))}>
-            {["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"].map((day, index) => <option key={day} value={index}>{day}</option>)}
+            {weekdays.map(({ day, name }) => <option key={name} value={day}>{name}</option>)}
           </select></label>
           <label>Start<input type="time" value={scheduleDraft.start} disabled={!aiControl.available || controlBusy} onChange={(event) => setScheduleDraft((current) => ({ ...current, start: event.target.value }))} /></label>
           <label>End<input type="time" value={scheduleDraft.end} disabled={!aiControl.available || controlBusy} onChange={(event) => setScheduleDraft((current) => ({ ...current, end: event.target.value }))} /></label>
@@ -302,16 +384,22 @@ export function ReplyAssistantLiveDashboard({
             periods: [...aiControl.config.periods, { ...scheduleDraft, day: scheduleDraft.day as 0 | 1 | 2 | 3 | 4 | 5 | 6 }],
           })}>Add schedule period</button>
         </div>
-        {aiControl.config.periods.length ? <ul className={styles.scheduleList}>{aiControl.config.periods.map((period, index) => (
-          <li key={`${period.day}-${period.start}-${period.end}-${index}`}><span>Day {period.day}, {period.start}–{period.end}</span><button type="button" disabled={controlBusy} onClick={() => void saveAiControl({ periods: aiControl.config.periods.filter((_, current) => current !== index) })}>Remove</button></li>
+        {aiControl.config.periods.length ? <ul className={styles.scheduleList} aria-label="Scheduled AI ON periods">{aiControl.config.periods.map((period, index) => ({ period, index })).sort((left, right) => {
+          const leftOrder = left.period.day === 0 ? 7 : left.period.day;
+          const rightOrder = right.period.day === 0 ? 7 : right.period.day;
+          return leftOrder - rightOrder || left.period.start.localeCompare(right.period.start);
+        }).map(({ period, index }) => (
+          <li key={`${period.day}-${period.start}-${period.end}-${index}`}><span>{formatSchedulePeriod(period)}</span><button type="button" disabled={controlBusy} onClick={() => void saveAiControl({ periods: aiControl.config.periods.filter((_, current) => current !== index) })}>Remove</button></li>
         ))}</ul> : null}
         <div className={styles.overrideControls}>
-          <label>Override expiry (ISO 8601)<input value={overrideExpiresAt} placeholder="2026-09-05T00:00:00+12:00" onChange={(event) => setOverrideExpiresAt(event.target.value)} /></label>
-          <button type="button" disabled={!aiControl.available || controlBusy} onClick={() => forceState("ON")}>Force ON</button>
-          <button type="button" disabled={!aiControl.available || controlBusy} onClick={() => forceState("OFF")}>Force OFF</button>
-          {aiControl.config.override ? <button type="button" disabled={controlBusy} onClick={() => void saveAiControl({ override: null })}>Clear override</button> : null}
+          <div className={styles.overrideHeading}><strong>Temporary override</strong><span>Timezone: Pacific/Auckland</span></div>
+          <label>Override date<input type="date" value={overrideDate} disabled={!aiControl.available || controlBusy} onChange={(event) => setOverrideDate(event.target.value)} /></label>
+          <label>Override time<input type="time" value={overrideTime} disabled={!aiControl.available || controlBusy} onChange={(event) => setOverrideTime(event.target.value)} /></label>
+          <button type="button" disabled={!aiControl.available || controlBusy} onClick={() => setTemporaryOverride("ON")}>Turn AI ON temporarily</button>
+          <button type="button" disabled={!aiControl.available || controlBusy} onClick={() => setTemporaryOverride("OFF")}>Turn AI OFF temporarily</button>
+          {aiControl.config.override ? <button type="button" disabled={controlBusy} onClick={() => void saveAiControl({ override: null })}>Cancel override</button> : null}
         </div>
-        {aiControl.config.override ? <p className={styles.controlNotice}>Override {aiControl.config.override.state} expires {formatAiDateTime(aiControl.config.override.expiresAt)}.</p> : null}
+        {aiControl.config.override ? <p className={styles.controlNotice}>Temporary override: AI {aiControl.config.override.state}. Until: {formatAiDateTime(aiControl.config.override.expiresAt)}</p> : null}
         {controlError ? <p className={styles.controlError} role="alert">{controlError}</p> : null}
       </section>
       <section className={styles.metaReviewPanel} aria-label="Meta human reviews">
