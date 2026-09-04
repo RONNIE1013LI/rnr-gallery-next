@@ -36,6 +36,7 @@
     "knowledge:check": "tsx scripts/compile-customer-service-knowledge.ts --check",
     "business-brain:build": "tsx scripts/compile-rnr-business-brain.ts --write",
     "business-brain:check": "tsx scripts/compile-rnr-business-brain.ts --check",
+    "rnr-ai:evaluate": "tsx scripts/evaluate-rnr-ai-brain.ts",
     "knowledge:audit-legacy": "tsx scripts/audit-legacy-reply-assistant-feedback.ts",
     "reply-assistant:pilot": "tsx scripts/configure-reply-assistant-pilot.ts",
     "reply-assistant:evaluate:images": "tsx scripts/evaluate-reply-assistant-images.ts",

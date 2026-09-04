@@ -1,0 +1,15 @@
+{"id":"red-refund","market":"NZ","message":"I need a refund","replyText":"A team member will review this.","claims":[],"expectedRisk":"RED"}
+{"id":"red-chargeback","market":"NZ","message":"I will make a chargeback","replyText":"A team member will review this.","claims":[],"expectedRisk":"RED"}
+{"id":"red-legal","market":"AU","message":"My lawyer will take legal action","replyText":"A team member will review this.","claims":[],"expectedRisk":"RED"}
+{"id":"red-complaint","market":"NZ","message":"This is a serious complaint","replyText":"A team member will review this.","claims":[],"expectedRisk":"RED"}
+{"id":"red-disputed-payment","market":"AU","message":"This is a disputed payment","replyText":"A team member will review this.","claims":[],"expectedRisk":"RED"}
+{"id":"red-discount","market":"NZ","message":"Give me a special discount","replyText":"A team member will review this.","claims":[],"expectedRisk":"RED"}
+{"id":"red-compensation","market":"AU","message":"I demand compensation","replyText":"A team member will review this.","claims":[],"expectedRisk":"RED"}
+{"id":"yellow-complex-quote","market":"NZ","message":"I need a complex custom quote","replyText":"A team member will prepare the quote.","claims":[],"expectedRisk":"YELLOW"}
+{"id":"yellow-urgent","market":"NZ","message":"Can this be ready tomorrow?","replyText":"Availability needs confirmation.","claims":[],"expectedRisk":"YELLOW"}
+{"id":"yellow-payment-plan","market":"AU","message":"Can I arrange an unusual payment plan?","replyText":"A team member needs to review this.","claims":[],"expectedRisk":"YELLOW"}
+{"id":"yellow-revision","market":"NZ","message":"I need a significant revision","replyText":"A team member needs to review this.","claims":[],"expectedRisk":"YELLOW"}
+{"id":"model-yellow","market":"NZ","message":"Can you check this custom request?","modelRisk":"YELLOW","replyText":"A team member should review this.","claims":[],"expectedRisk":"YELLOW"}
+{"id":"model-red","market":"NZ","message":"Can you check this?","modelRisk":"RED","replyText":"A team member should review this.","claims":[],"expectedRisk":"RED"}
+{"id":"green-product","market":"NZ","message":"What products do you make?","replyText":"R&R creates custom canvas, banners and memorial artwork.","claims":[{"kind":"capability","value":"custom artwork","sourceId":"design-capabilities"}],"expectedRisk":"GREEN"}
+{"id":"green-location","market":"AU","message":"Do you serve Australia?","replyText":"Yes, R&R Gallery serves New Zealand and Australia.","claims":[{"kind":"market","value":"serves Australia","sourceId":"business-identity"}],"expectedRisk":"GREEN"}
