@@ -21,9 +21,16 @@ export class SolProviderError extends Error {
   }
 }
 
+const toolRequestInputSchema = z.object({
+  product: z.string().nullable(),
+  size: z.string().nullable(),
+  destination: z.string().nullable(),
+  orderReference: z.string().nullable(),
+}).strict();
+
 const toolRequestSchema = z.object({
   name: z.enum(["canonical_product_price", "dynamic_shipping_quote", "order_status", "payment_status"]),
-  input: z.record(z.string(), z.unknown()),
+  input: toolRequestInputSchema,
 }).strict();
 
 export const solStructuredResultSchema = z.object({
