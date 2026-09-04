@@ -8,6 +8,14 @@ export type TakeoverMutation = Readonly<{ conversationKeyHash: string; active: b
 export type DeliveryLease = Readonly<{ key: string; leaseToken: string; expiresAt: string }>;
 export type DeliveryResult = Readonly<{ status: "sent" | "delivery_uncertain" | "blocked"; providerMessageIdMasked: string | null; settledAt: string }>;
 export type TimeWindow = Readonly<{ from: string; to: string; maxConversations: 100 }>;
+export type BacklogLease = Readonly<{
+  key: string;
+  controlRevision: number;
+  window: TimeWindow;
+  leaseToken: string;
+  expiresAt: string;
+}>;
+export type BacklogResult = Readonly<{ status: "completed" | "failed"; settledAt: string }>;
 export type ReviewMetadata = Readonly<{ key: string; conversationKeyHash: string; risk: "YELLOW" | "RED"; createdAt: string; expiresAt: string }>;
 export type ReviewMetadataInput = Omit<ReviewMetadata, "key" | "expiresAt">;
 
@@ -21,6 +29,8 @@ export interface ReplyRuntimeStore {
   claimDelivery(key: string, leaseMs: number): Promise<DeliveryLease | null>;
   settleDelivery(lease: DeliveryLease, result: DeliveryResult): Promise<void>;
   enqueueBacklog(controlRevision: number, window: TimeWindow): Promise<boolean>;
+  claimBacklog(leaseMs: number): Promise<BacklogLease | null>;
+  settleBacklog(lease: BacklogLease, result: BacklogResult): Promise<void>;
   putEncryptedReview(
     key: string,
     ciphertext: string,

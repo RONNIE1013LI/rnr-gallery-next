@@ -2,6 +2,8 @@ import { randomUUID } from "node:crypto";
 import type { AiControlConfig } from "../control/types";
 import type {
   AiControlSnapshot,
+  BacklogLease,
+  BacklogResult,
   DeliveryLease,
   DeliveryResult,
   EventLease,
@@ -20,6 +22,14 @@ type LeaseRecord<Result> = {
   leaseToken: string;
   expiresAtMs: number;
   result: Result | null;
+};
+
+type BacklogRecord = {
+  controlRevision: number;
+  window: TimeWindow;
+  leaseToken: string | null;
+  expiresAtMs: number;
+  result: BacklogResult | null;
 };
 
 const initialControl: AiControlConfig = Object.freeze({
@@ -45,7 +55,7 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
   private readonly events = new Map<string, LeaseRecord<EventResult>>();
   private readonly deliveries = new Map<string, LeaseRecord<DeliveryResult>>();
   private readonly takeovers = new Map<string, TakeoverState>();
-  private readonly backlogs = new Set<string>();
+  private readonly backlogs = new Map<string, BacklogRecord>();
   private readonly reviews = new Map<string, { ciphertext: string; metadata: ReviewMetadata; expiresAtMs: number }>();
   private readonly ephemeralSecrets = new Map<string, { ciphertext: string; expiresAtMs: number }>();
   private readonly now: () => number;
@@ -118,8 +128,39 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
   async enqueueBacklog(controlRevision: number, window: TimeWindow) {
     const key = `${controlRevision}:${window.from}:${window.to}:${window.maxConversations}`;
     if (this.backlogs.has(key)) return false;
-    this.backlogs.add(key);
+    this.backlogs.set(key, {
+      controlRevision,
+      window: Object.freeze({ ...window }),
+      leaseToken: null,
+      expiresAtMs: 0,
+      result: null,
+    });
     return true;
+  }
+
+  async claimBacklog(leaseMs: number): Promise<BacklogLease | null> {
+    requireLeaseMs(leaseMs);
+    for (const [key, backlog] of this.backlogs) {
+      if (backlog.result || (backlog.leaseToken && backlog.expiresAtMs > this.now())) continue;
+      backlog.leaseToken = randomUUID();
+      backlog.expiresAtMs = this.now() + leaseMs;
+      return Object.freeze({
+        key,
+        controlRevision: backlog.controlRevision,
+        window: backlog.window,
+        leaseToken: backlog.leaseToken,
+        expiresAt: new Date(backlog.expiresAtMs).toISOString(),
+      });
+    }
+    return null;
+  }
+
+  async settleBacklog(lease: BacklogLease, result: BacklogResult) {
+    const current = this.backlogs.get(lease.key);
+    if (!current || current.leaseToken !== lease.leaseToken || current.expiresAtMs <= this.now()) {
+      throw new Error("Backlog lease is no longer valid");
+    }
+    current.result = Object.freeze({ ...result });
   }
 
   private deleteExpiredReviews() {

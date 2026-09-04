@@ -1,8 +1,10 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { Redis } from "@upstash/redis";
 import type { AiControlConfig } from "../control/types";
 import type {
   AiControlSnapshot,
+  BacklogLease,
+  BacklogResult,
   DeliveryLease,
   DeliveryResult,
   EventLease,
@@ -67,6 +69,45 @@ const REVIEW_PUT_SCRIPT = `
 redis.call("SET", KEYS[1], ARGV[1], "EX", ARGV[2])
 redis.call("SET", KEYS[2], ARGV[3], "EX", ARGV[2])
 redis.call("ZADD", KEYS[3], ARGV[4], ARGV[5])
+return 1
+`;
+
+const BACKLOG_ENQUEUE_SCRIPT = `
+if redis.call("EXISTS", KEYS[1]) == 1 then return 0 end
+redis.call("SET", KEYS[1], ARGV[1], "EX", ARGV[2])
+redis.call("ZADD", KEYS[2], ARGV[3], ARGV[4])
+return 1
+`;
+
+const BACKLOG_CLAIM_SCRIPT = `
+local members = redis.call("ZRANGE", KEYS[1], 0, 9)
+for _, member in ipairs(members) do
+  local itemKey = KEYS[2] .. member
+  local raw = redis.call("GET", itemKey)
+  if not raw then
+    redis.call("ZREM", KEYS[1], member)
+  else
+    local current = cjson.decode(raw)
+    if current.result == nil and (current.leaseToken == nil or tonumber(current.expiresAtMs) <= tonumber(ARGV[1])) then
+      current.leaseToken = ARGV[2]
+      current.expiresAtMs = tonumber(ARGV[3])
+      redis.call("SET", itemKey, cjson.encode(current), "EX", ARGV[4])
+      current.key = member
+      return cjson.encode(current)
+    end
+  end
+end
+return nil
+`;
+
+const BACKLOG_SETTLE_SCRIPT = `
+local raw = redis.call("GET", KEYS[1])
+if not raw then return 0 end
+local current = cjson.decode(raw)
+if current.leaseToken ~= ARGV[1] or tonumber(current.expiresAtMs) <= tonumber(ARGV[2]) then return 0 end
+current.result = cjson.decode(ARGV[3])
+redis.call("SET", KEYS[1], cjson.encode(current), "EX", ARGV[4])
+redis.call("ZREM", KEYS[2], ARGV[5])
 return 1
 `;
 
@@ -176,9 +217,45 @@ export class RedisReplyRuntimeStore implements ReplyRuntimeStore {
   }
 
   async enqueueBacklog(controlRevision: number, window: TimeWindow) {
-    const hash = `${controlRevision}:${window.from}:${window.to}:${window.maxConversations}`;
-    const result = await this.redis.set(this.key(`backlog:${hash}`), "queued", { nx: true, ex: 172_800 });
-    return result === "OK";
+    const hash = createHash("sha256")
+      .update(`${controlRevision}:${window.from}:${window.to}:${window.maxConversations}`)
+      .digest("hex");
+    const record = JSON.stringify({ controlRevision, window, leaseToken: null, expiresAtMs: 0, result: null });
+    return await this.redis.eval<string[], number>(
+      BACKLOG_ENQUEUE_SCRIPT,
+      [this.key(`backlog-item:${hash}`), this.key("backlog-index")],
+      [record, String(172_800), String(Date.parse(window.to)), hash],
+    ) === 1;
+  }
+
+  async claimBacklog(leaseMs: number): Promise<BacklogLease | null> {
+    requireLeaseMs(leaseMs);
+    const now = this.now();
+    const leaseToken = randomUUID();
+    const raw = await this.redis.eval<string[], string | null>(
+      BACKLOG_CLAIM_SCRIPT,
+      [this.key("backlog-index"), this.key("backlog-item:")],
+      [String(now), leaseToken, String(now + leaseMs), String(172_800)],
+    );
+    if (!raw) return null;
+    const record = typeof raw === "string" ? JSON.parse(raw) as Record<string, unknown> : raw as unknown as Record<string, unknown>;
+    return Object.freeze({
+      key: String(record.key),
+      controlRevision: Number(record.controlRevision),
+      window: record.window as TimeWindow,
+      leaseToken,
+      expiresAt: new Date(now + leaseMs).toISOString(),
+    });
+  }
+
+  async settleBacklog(lease: BacklogLease, result: BacklogResult) {
+    requireHash(lease.key);
+    const settled = await this.redis.eval<string[], number>(
+      BACKLOG_SETTLE_SCRIPT,
+      [this.key(`backlog-item:${lease.key}`), this.key("backlog-index")],
+      [lease.leaseToken, String(this.now()), JSON.stringify(result), String(172_800), lease.key],
+    );
+    if (settled !== 1) throw new Error("Backlog lease is no longer valid");
   }
 
   async putEncryptedReview(

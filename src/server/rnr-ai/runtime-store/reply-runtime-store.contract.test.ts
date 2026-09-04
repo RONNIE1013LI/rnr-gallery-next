@@ -64,6 +64,22 @@ describe("ReplyRuntimeStore contract", () => {
     expect(await store.claimDelivery(key, 30_000)).toBeNull();
   });
 
+  it("atomically claims one queued backlog and recovers a stale worker lease", async () => {
+    let now = Date.parse("2026-09-04T00:00:00.000Z");
+    const store = new InMemoryReplyRuntimeStore({ now: () => now });
+    const window = { from: "2026-09-03T00:00:00.000Z", to: "2026-09-04T00:00:00.000Z", maxConversations: 100 as const };
+    await store.enqueueBacklog(3, window);
+    const claims = await Promise.all(Array.from({ length: 20 }, () => store.claimBacklog(1_000)));
+    const first = claims.find(Boolean)!;
+    expect(claims.filter(Boolean)).toHaveLength(1);
+    expect(first).toMatchObject({ controlRevision: 3, window });
+    now += 1_001;
+    const recovered = await store.claimBacklog(1_000);
+    expect(recovered?.leaseToken).not.toBe(first.leaseToken);
+    await store.settleBacklog(recovered!, { status: "completed", settledAt: new Date(now).toISOString() });
+    expect(await store.claimBacklog(1_000)).toBeNull();
+  });
+
   it("expires encrypted reviews after exactly 48 hours under the injected clock", async () => {
     let now = Date.parse("2026-09-04T00:00:00.000Z");
     const store = new InMemoryReplyRuntimeStore({ now: () => now });
