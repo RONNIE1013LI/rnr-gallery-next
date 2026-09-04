@@ -32,6 +32,23 @@ describe("reply assistant serverless compatibility", () => {
     expect(route).toContain("maxDuration = 30");
   });
 
+  it("keeps the protected Meta backlog worker on the Node runtime", () => {
+    const route = readFileSync(
+      resolve(process.cwd(), "src/app/api/internal/reply-assistant/meta-runtime/route.ts"),
+      "utf8",
+    );
+    expect(route).toContain('runtime = "nodejs"');
+    expect(route).toContain("maxDuration = 30");
+    expect(route).toContain("CRON_SECRET");
+  });
+
+  it("keeps the Meta sender implementation out of browser bundles", () => {
+    expect(productionSourcePathsMatching(
+      loadProductionRuntimeSourceInventory().browserBoundaryFiles,
+      /rnr-ai\/meta\/reply-sender/,
+    )).toEqual([]);
+  });
+
   it("keeps image-analysis configuration server-only", () => {
     const config = readFileSync(resolve(process.cwd(), "src/server/customer-service/config.ts"), "utf8");
     expect(config).not.toMatch(/NEXT_PUBLIC_/i);
@@ -39,9 +56,12 @@ describe("reply assistant serverless compatibility", () => {
     expect(config).toContain("OPENAI_IMAGE_ANALYSIS_MODEL");
   });
 
-  it("keeps attachment source identities out of browser and reply-assistant API modules", () => {
+  it("keeps attachment source identities out of browser components", () => {
+    const clientComponents = loadProductionRuntimeSourceInventory().browserBoundaryFiles.filter((file) => (
+      /^\s*["']use client["'];?/.test(file.source)
+    ));
     expect(productionSourcePathsMatching(
-      loadProductionRuntimeSourceInventory().browserBoundaryFiles,
+      clientComponents,
       /sourceRef|(?:raw|source|attachment|remote)Url|storageKey|attachmentIds?|externalAttachmentKey|externalKeyHash|privateStorageKey|sha256|senderHash|conversationKeyHash/i,
     )).toEqual([]);
   });

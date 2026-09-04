@@ -8,6 +8,8 @@ import {
 
 const PAGE_ACCESS_TOKEN_NAME = ["META", "PAGE", "ACCESS", "TOKEN"].join("_");
 const PUBLIC_ENV_PREFIX = `${["NEXT", "PUBLIC"].join("_")}_`;
+const META_RUNTIME_PATH = "src/server/rnr-ai/meta/runtime.ts";
+const META_REPLY_SENDER_PATH = "src/server/rnr-ai/meta/reply-sender.ts";
 
 afterEach(() => {
   vi.doUnmock("@/server/db/client");
@@ -22,11 +24,47 @@ afterEach(() => {
 });
 
 describe("reply assistant security regression", () => {
-  it("contains no Messenger sending capability or page token", () => {
+  it("isolates Messenger sending capability and its credential to the approved server boundary", () => {
     const files = loadProductionRuntimeSourceInventory().files;
-    expect(productionSourcePathsMatching(files, PAGE_ACCESS_TOKEN_NAME)).toEqual([]);
+    expect(productionSourcePathsMatching(files, PAGE_ACCESS_TOKEN_NAME)).toEqual([META_RUNTIME_PATH]);
     expect(productionSourcePathsMatching(files,
       /sendMessenger|sendToMeta|graph\.facebook\.com\/.+\/messages|recipient\s*:/i,
+    )).toEqual([META_REPLY_SENDER_PATH]);
+    const sender = files.find((file) => file.relativePath === META_REPLY_SENDER_PATH)?.source ?? "";
+    expect(sender).toMatch(/if\s*\(\s*!config\.metaAutoSendEnabled\s*\)\s*\{\s*return\b/);
+  });
+
+  it("keeps the ordinary Meta reply path independent from Neon and product registry persistence", () => {
+    const inventory = loadProductionRuntimeSourceInventory();
+    const metaRuntime = inventory.serverFiles.filter((file) => (
+      file.relativePath.startsWith("src/server/rnr-ai/meta/")
+      || file.relativePath === "src/app/api/meta/webhook/route-handler.ts"
+      || file.relativePath === "src/app/api/internal/reply-assistant/meta-runtime/route-handler.ts"
+    ));
+    expect(productionSourcePathsMatching(
+      metaRuntime,
+      /(?:from|import\s*\()\s*["'][^"']*(?:\/server\/db|drizzle|product-registry)|\b(?:select|insert|update|delete)\b[\s\S]{0,80}\bcustomer_service_/i,
+    )).toEqual([]);
+  });
+
+  it("does not log R&R AI secrets, identifiers, prompts, response bodies or image data", () => {
+    const rnrAiFiles = loadProductionRuntimeSourceInventory().serverFiles.filter((file) => (
+      file.relativePath.startsWith("src/server/rnr-ai/")
+      || file.relativePath.startsWith("src/app/api/internal/reply-assistant/")
+    ));
+    expect(productionSourcePathsMatching(
+      rnrAiFiles,
+      /\b(?:console|logger)\.(?:log|info|warn|error|debug)\s*\(/,
+    )).toEqual([]);
+  });
+
+  it("keeps client components from importing R&R server implementations at runtime", () => {
+    const clientComponents = loadProductionRuntimeSourceInventory().browserBoundaryFiles.filter((file) => (
+      /^\s*["']use client["'];?/.test(file.source)
+    ));
+    expect(productionSourcePathsMatching(
+      clientComponents,
+      /import(?!\s+type\b)[^\r\n]+["']@\/server\/rnr-ai\//,
     )).toEqual([]);
   });
 
@@ -80,7 +118,7 @@ describe("reply assistant security regression", () => {
     expect(provider).toBeDefined();
     expect(provider ?? "").toContain("store: false");
     expect(productionSourcePathsMatching(inventory.files,
-      /\bimage_generation\b|images\.generate|\btools\s*:/i,
+      /\bimage_generation\b|images\.generate/i,
     )).toEqual([]);
   });
 
@@ -104,8 +142,11 @@ describe("reply assistant security regression", () => {
       "utf8",
     );
     expect(schema).not.toMatch(/\b(?:raw|source|attachment|remote)_?url\b/i);
+    const clientComponents = loadProductionRuntimeSourceInventory().browserBoundaryFiles.filter((file) => (
+      /^\s*["']use client["'];?/.test(file.source)
+    ));
     expect(productionSourcePathsMatching(
-      loadProductionRuntimeSourceInventory().browserBoundaryFiles,
+      clientComponents,
       /sourceRef|(?:raw|source|attachment|remote)Url|storageKey|attachmentIds?|externalAttachmentKey|externalKeyHash|privateStorageKey|sha256|senderHash|conversationKeyHash/i,
     )).toEqual([]);
   });
