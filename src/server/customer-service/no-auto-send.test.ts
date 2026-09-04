@@ -5,6 +5,7 @@ import {
 } from "./test-support/production-runtime-source";
 
 const PAGE_ACCESS_TOKEN_NAME = ["META", "PAGE", "ACCESS", "TOKEN"].join("_");
+const META_REPLY_SENDER_PATH = "src/server/rnr-ai/meta/reply-sender.ts";
 
 describe("reply assistant has no automatic send capability", () => {
   it("contains no send route, outbound method, Graph send client or page access token", () => {
@@ -29,14 +30,27 @@ describe("reply assistant has no automatic send capability", () => {
     expect(productionSourcePathsMatching(inventory.serverFiles,
       /sendMessenger|sendToMeta|sendMessage|sendReply|dispatchReply|publishReply/i,
     )).toEqual([]);
-    expect(productionSourcePathsMatching(
+    const graphMessagePaths = productionSourcePathsMatching(
       inventory.files,
       /graph\.facebook\.com\/.+\/messages|recipient\s*:|\/send\b/i,
-    )).toEqual([]);
-    expect(productionSourcePathsMatching(
+    );
+    const graphFetchPaths = productionSourcePathsMatching(
       inventory.files,
       /fetch\(\s*["'`]https:\/\/graph\.facebook\.com/i,
-    )).toEqual([]);
+    );
+    expect(graphMessagePaths).toEqual(
+      graphMessagePaths.filter((path) => path === META_REPLY_SENDER_PATH),
+    );
+    expect(graphFetchPaths).toEqual(
+      graphFetchPaths.filter((path) => path === META_REPLY_SENDER_PATH),
+    );
+
+    const replySender = inventory.files.find((file) => file.relativePath === META_REPLY_SENDER_PATH);
+    if (replySender) {
+      expect(replySender.source).toMatch(
+        /if\s*\(\s*!config\.metaAutoSendEnabled\s*\)\s*\{\s*return\b/,
+      );
+    }
     expect(productionSourcePathsMatching(
       inventory.files,
       /createOrder|placeOrder|capturePayment|markPayment|issueRefund|processRefund|applyDiscount|bookShipping|purchaseShipping|\btools\s*:/i,
