@@ -7,6 +7,7 @@ import {
   createMetaSenderEchoMatcher,
   type MetaReplyCandidate,
 } from "./reply-sender";
+import type { MetaConversationSnapshot } from "./types";
 
 const candidate: MetaReplyCandidate = Object.freeze({
   channel: "facebook",
@@ -30,22 +31,27 @@ async function setup(input: Readonly<{
   takeover?: boolean;
   latestMessageKey?: string;
   latestReceivedAt?: Date;
+  latestRole?: "customer" | "staff";
+  snapshotComplete?: boolean;
+  snapshotIncompleteReason?: MetaConversationSnapshot["incompleteReason"];
   stageAAllowedRecipientHash?: string | null;
   stageAActivatedAt?: Date | null;
   fetchImpl?: typeof fetch;
+  logEligibilityEvaluation?: (entry: unknown) => void;
 }> = {}) {
   const store = new InMemoryReplyRuntimeStore();
   const fetchImpl = input.fetchImpl ?? vi.fn(async () => Response.json({ message_id: "provider-message-id" }));
+  const eligibilityLog = vi.fn();
   const context = {
     loadConversation: vi.fn(async () => ({
       channel: "facebook" as const,
-      complete: true,
-      incompleteReason: null,
+      complete: input.snapshotComplete ?? true,
+      incompleteReason: input.snapshotIncompleteReason ?? null,
       characters: 5,
       turnsConsidered: 1,
       events: [{
         channel: "facebook" as const,
-        role: "customer" as const,
+        role: input.latestRole ?? "customer" as const,
         eventType: "customer_message" as const,
         externalConversationKey: candidate.externalConversationKey,
         externalMessageKey: input.latestMessageKey ?? candidate.latestCustomerMessageKey,
@@ -75,8 +81,9 @@ async function setup(input: Readonly<{
     hashExternalKey: hash,
     fetchImpl,
     now: () => new Date("2026-09-04T01:01:00.000Z"),
+    logEligibilityEvaluation: input.logEligibilityEvaluation ?? eligibilityLog,
   });
-  return { sender, store, fetchImpl, context };
+  return { sender, store, fetchImpl, context, eligibilityLog };
 }
 
 describe("Meta reply sender", () => {
@@ -105,6 +112,80 @@ describe("Meta reply sender", () => {
     await expect(current.sender.sendEligibleReply(candidate)).resolves.toEqual({ status: "blocked" });
     expect(current.fetchImpl).not.toHaveBeenCalled();
     expect(current.store.exportStateForTest().deliveries).toHaveLength(0);
+  });
+
+  it.each([
+    ["missing_activation", { stageAActivatedAt: null }],
+    ["control_off", { controlIsOn: false }],
+    ["takeover_active", { takeover: true }],
+    ["snapshot_incomplete", {
+      snapshotComplete: false,
+      snapshotIncompleteReason: "provider_unavailable" as const,
+    }],
+    ["latest_not_customer", { latestRole: "staff" as const }],
+    ["latest_message_mismatch", { latestMessageKey: "newer-message" }],
+    ["pre_activation", {
+      stageAActivatedAt: new Date("2026-09-04T01:00:00.000Z"),
+      latestReceivedAt: new Date("2026-09-04T00:59:59.999Z"),
+    }],
+  ])("records the exact pre-claim reason %s without claiming", async (reason, override) => {
+    const current = await setup(override);
+
+    await expect(current.sender.sendEligibleReply(candidate)).resolves.toEqual({ status: "blocked" });
+
+    expect(current.eligibilityLog).toHaveBeenCalledOnce();
+    expect(current.eligibilityLog).toHaveBeenCalledWith(expect.objectContaining({
+      phase: "pre_claim",
+      eligible: false,
+      reason,
+      candidateLatestCustomerMessageKeyHash: hash(candidate.latestCustomerMessageKey),
+    }));
+    expect(current.store.exportStateForTest().deliveries).toHaveLength(0);
+  });
+
+  it("records safe pre-claim and pre-send eligible evaluations", async () => {
+    const current = await setup();
+
+    await expect(current.sender.sendEligibleReply(candidate)).resolves.toEqual({ status: "sent" });
+
+    expect(current.eligibilityLog).toHaveBeenCalledTimes(2);
+    expect(current.eligibilityLog.mock.calls.map(([entry]) => entry)).toEqual([
+      expect.objectContaining({
+        phase: "pre_claim",
+        eligible: true,
+        reason: "eligible",
+        controlOn: true,
+        takeoverActive: false,
+        snapshotComplete: true,
+        snapshotIncompleteReason: null,
+        latestRole: "customer",
+        latestExternalMessageKeyHash: hash(candidate.latestCustomerMessageKey),
+        candidateLatestCustomerMessageKeyHash: hash(candidate.latestCustomerMessageKey),
+        latestMessageMatches: true,
+        latestReceivedAt: "2026-09-04T01:00:00.000Z",
+        stageAActivatedAt: "1970-01-01T00:00:00.000Z",
+        activationComparison: true,
+      }),
+      expect.objectContaining({
+        phase: "pre_send",
+        eligible: true,
+        reason: "eligible",
+      }),
+    ]);
+    expect(JSON.stringify(current.eligibilityLog.mock.calls)).not.toContain(candidate.externalConversationKey);
+    expect(JSON.stringify(current.eligibilityLog.mock.calls)).not.toContain(candidate.latestCustomerMessageKey);
+    expect(JSON.stringify(current.eligibilityLog.mock.calls)).not.toContain(candidate.replyText);
+    expect(JSON.stringify(current.eligibilityLog.mock.calls)).not.toContain("Hello");
+    expect(JSON.stringify(current.eligibilityLog.mock.calls)).not.toContain("test-page-access-token");
+  });
+
+  it("does not let diagnostic logging alter sender behavior", async () => {
+    const current = await setup({
+      logEligibilityEvaluation: () => { throw new Error("diagnostic sink unavailable"); },
+    });
+
+    await expect(current.sender.sendEligibleReply(candidate)).resolves.toEqual({ status: "sent" });
+    expect(current.fetchImpl).toHaveBeenCalledOnce();
   });
 
   it("keeps the disabled sender incapable of a Graph request", async () => {

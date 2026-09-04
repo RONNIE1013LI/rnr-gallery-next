@@ -34,6 +34,36 @@ type TakeoverReader = Readonly<{
   read(externalConversationKey: string): Promise<{ active: boolean } | null>;
 }>;
 
+type StillEligibleReason =
+  | "eligible"
+  | "missing_activation"
+  | "control_off"
+  | "takeover_active"
+  | "snapshot_incomplete"
+  | "latest_not_customer"
+  | "latest_message_mismatch"
+  | "pre_activation";
+
+type StillEligibleEvaluation = Readonly<{
+  eligible: boolean;
+  reason: StillEligibleReason;
+  stageAActivatedAt: string | null;
+  controlOn: boolean | null;
+  takeoverActive: boolean | null;
+  snapshotComplete: boolean | null;
+  snapshotIncompleteReason: MetaConversationSnapshot["incompleteReason"];
+  latestRole: MetaConversationEvent["role"] | null;
+  latestExternalMessageKeyHash: string | null;
+  candidateLatestCustomerMessageKeyHash: string;
+  latestMessageMatches: boolean | null;
+  latestReceivedAt: string | null;
+  activationComparison: boolean | null;
+}>;
+
+type StillEligibleLogEntry = StillEligibleEvaluation & Readonly<{
+  phase: "pre_claim" | "pre_send";
+}>;
+
 const DELIVERY_LEASE_MS = 60_000;
 const SENDER_ECHO_TTL_SECONDS = 30 * 24 * 60 * 60;
 
@@ -67,22 +97,102 @@ async function stillEligible(input: Readonly<{
   context: MetaContextProvider;
   pageId: string;
   stageAActivatedAt: Date | null;
-}>) {
-  if (!input.stageAActivatedAt) return false;
-  if (!await input.controlIsOn()) return false;
-  if ((await input.takeover.read(input.candidate.externalConversationKey))?.active) return false;
+  hashExternalKey(value: string): string;
+}>): Promise<StillEligibleEvaluation> {
+  const candidateLatestCustomerMessageKeyHash = input.hashExternalKey(
+    input.candidate.latestCustomerMessageKey,
+  );
+  const base = {
+    stageAActivatedAt: input.stageAActivatedAt?.toISOString() ?? null,
+    candidateLatestCustomerMessageKeyHash,
+  };
+  if (!input.stageAActivatedAt) {
+    return {
+      ...base,
+      eligible: false,
+      reason: "missing_activation",
+      controlOn: null,
+      takeoverActive: null,
+      snapshotComplete: null,
+      snapshotIncompleteReason: null,
+      latestRole: null,
+      latestExternalMessageKeyHash: null,
+      latestMessageMatches: null,
+      latestReceivedAt: null,
+      activationComparison: null,
+    };
+  }
+  const controlOn = await input.controlIsOn();
+  if (!controlOn) {
+    return {
+      ...base,
+      eligible: false,
+      reason: "control_off",
+      controlOn,
+      takeoverActive: null,
+      snapshotComplete: null,
+      snapshotIncompleteReason: null,
+      latestRole: null,
+      latestExternalMessageKeyHash: null,
+      latestMessageMatches: null,
+      latestReceivedAt: null,
+      activationComparison: null,
+    };
+  }
+  const takeoverActive = Boolean(
+    (await input.takeover.read(input.candidate.externalConversationKey))?.active,
+  );
+  if (takeoverActive) {
+    return {
+      ...base,
+      eligible: false,
+      reason: "takeover_active",
+      controlOn,
+      takeoverActive,
+      snapshotComplete: null,
+      snapshotIncompleteReason: null,
+      latestRole: null,
+      latestExternalMessageKeyHash: null,
+      latestMessageMatches: null,
+      latestReceivedAt: null,
+      activationComparison: null,
+    };
+  }
   const snapshot = await input.context.loadConversation({
     channel: input.candidate.channel,
     externalConversationKey: input.candidate.externalConversationKey,
     pageId: input.pageId,
   });
   const latest = latestEvent(snapshot);
-  return Boolean(
-    snapshot.complete
-    && latest?.role === "customer"
-    && latest.externalMessageKey === input.candidate.latestCustomerMessageKey
-    && latest.receivedAt.getTime() >= input.stageAActivatedAt.getTime(),
-  );
+  const details = {
+    ...base,
+    controlOn,
+    takeoverActive,
+    snapshotComplete: snapshot.complete,
+    snapshotIncompleteReason: snapshot.incompleteReason,
+    latestRole: latest?.role ?? null,
+    latestExternalMessageKeyHash: latest
+      ? input.hashExternalKey(latest.externalMessageKey)
+      : null,
+    latestMessageMatches: latest
+      ? latest.externalMessageKey === input.candidate.latestCustomerMessageKey
+      : null,
+    latestReceivedAt: latest?.receivedAt.toISOString() ?? null,
+  };
+  if (!snapshot.complete) {
+    return { ...details, eligible: false, reason: "snapshot_incomplete", activationComparison: null };
+  }
+  if (latest?.role !== "customer") {
+    return { ...details, eligible: false, reason: "latest_not_customer", activationComparison: null };
+  }
+  if (latest.externalMessageKey !== input.candidate.latestCustomerMessageKey) {
+    return { ...details, eligible: false, reason: "latest_message_mismatch", activationComparison: null };
+  }
+  const activationComparison = latest.receivedAt.getTime() >= input.stageAActivatedAt.getTime();
+  if (!activationComparison) {
+    return { ...details, eligible: false, reason: "pre_activation", activationComparison };
+  }
+  return { ...details, eligible: true, reason: "eligible", activationComparison };
 }
 
 export class DisabledMetaReplySender implements MetaReplySender {
@@ -111,11 +221,22 @@ export function createMetaReplySender(input: Readonly<{
   takeover: TakeoverReader;
   controlIsOn(): Promise<boolean>;
   hashExternalKey(value: string): string;
+  logEligibilityEvaluation?(entry: StillEligibleLogEntry): void;
   fetchImpl?: FetchImplementation;
   now?: () => Date;
 }>): MetaReplySender {
   const fetchImpl = input.fetchImpl ?? fetch;
   const now = input.now ?? (() => new Date());
+  const logEligibilityEvaluation = input.logEligibilityEvaluation ?? ((entry: StillEligibleLogEntry) => {
+    console.info("rnr_ai_meta_still_eligible", entry);
+  });
+  const safelyLogEligibilityEvaluation = (entry: StillEligibleLogEntry) => {
+    try {
+      logEligibilityEvaluation(entry);
+    } catch {
+      // Diagnostics must never alter sender eligibility or delivery behavior.
+    }
+  };
 
   return Object.freeze({
     async sendEligibleReply(candidate) {
@@ -129,13 +250,18 @@ export function createMetaReplySender(input: Readonly<{
         || !input.accessToken.trim()
         || !input.pageId.trim()
         || !config.stageAAllowedRecipientHash
-        || !config.stageAActivatedAt
         || input.hashExternalKey(candidate.externalConversationKey) !== config.stageAAllowedRecipientHash
         || candidate.channel !== "facebook"
         || candidate.risk !== "GREEN"
         || !candidate.replyText.trim()
       ) return Object.freeze({ status: "blocked" });
-      if (!await stillEligible({ ...input, candidate, stageAActivatedAt: config.stageAActivatedAt })) {
+      const preClaimEligibility = await stillEligible({
+        ...input,
+        candidate,
+        stageAActivatedAt: config.stageAActivatedAt,
+      });
+      safelyLogEligibilityEvaluation({ phase: "pre_claim", ...preClaimEligibility });
+      if (!preClaimEligibility.eligible) {
         return Object.freeze({ status: "blocked" });
       }
 
@@ -157,7 +283,13 @@ export function createMetaReplySender(input: Readonly<{
 
       let providerSendStarted = false;
       try {
-        if (!await stillEligible({ ...input, candidate, stageAActivatedAt: config.stageAActivatedAt })) {
+        const preSendEligibility = await stillEligible({
+          ...input,
+          candidate,
+          stageAActivatedAt: config.stageAActivatedAt,
+        });
+        safelyLogEligibilityEvaluation({ phase: "pre_send", ...preSendEligibility });
+        if (!preSendEligibility.eligible) {
           await input.store.releaseDelivery(lease);
           return Object.freeze({ status: "blocked" });
         }
