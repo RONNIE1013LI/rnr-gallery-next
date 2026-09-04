@@ -39,6 +39,7 @@ type RuntimeDependencies = Readonly<{
   pageId: string;
   masterEnabled: boolean;
   stageAAllowedRecipientHash: string | null;
+  stageAActivatedAt: Date | null;
   sender: MetaReplySender;
   isSenderEcho(event: MetaConversationEvent): Promise<boolean>;
   listConversations(window: Readonly<{ from: string; to: string; maxConversations: 100 }>): Promise<readonly MetaConversationLocator[]>;
@@ -73,6 +74,7 @@ export function createMetaReplyRuntime(dependencies: RuntimeDependencies) {
     processEvent: (event) => orchestrator.handle(event),
     hashExternalKey: dependencies.hashExternalKey,
     stageAAllowedRecipientHash: dependencies.stageAAllowedRecipientHash,
+    stageAActivatedAt: dependencies.stageAActivatedAt,
     now,
   });
 
@@ -88,6 +90,7 @@ export function selectMetaReplySender(input: Readonly<{
     || input.config.engineMode !== "shared_active"
     || !input.config.metaAutoSendEnabled
     || !input.config.stageAAllowedRecipientHash
+    || !input.config.stageAActivatedAt
   ) return new DisabledMetaReplySender();
   return input.createActive();
 }
@@ -189,6 +192,7 @@ export function createProductionMetaReplyRuntime(
     pageId: customerConfig.metaPageId,
     masterEnabled: rnrConfig.masterEnabled,
     stageAAllowedRecipientHash: rnrConfig.stageAAllowedRecipientHash,
+    stageAActivatedAt: rnrConfig.stageAActivatedAt,
     sender,
     isSenderEcho,
     listConversations: (window) => context.listConversations({

@@ -21,6 +21,24 @@ function payload(message: Record<string, unknown>) {
 }
 
 describe("Facebook channel adapter", () => {
+  it.each([
+    ["missing", undefined],
+    ["string", "1787001600000"],
+    ["NaN", Number.NaN],
+    ["out-of-range", 9_000_000_000_000_000],
+  ])("marks a %s original messaging timestamp invalid while preserving legacy fallback time", (_label, timestamp) => {
+    const input = payload({ mid: "mid-invalid-timestamp", text: "Hello" });
+    const event = input.entry[0].messaging[0] as Record<string, unknown>;
+    if (timestamp === undefined) delete event.timestamp;
+    else event.timestamp = timestamp;
+
+    expect(adapter.normalize(input)).toEqual([expect.objectContaining({
+      externalMessageKey: "mid-invalid-timestamp",
+      receivedAt: new Date(1_787_001_600_000),
+      providerTimestampValid: false,
+    })]);
+  });
+
   it("maps the existing normalization into the common Meta event contract", () => {
     expect(normalizeFacebookMetaEvents(payload({ mid: "mid-common", text: "Hello" }))).toEqual([{
       channel: "facebook",
@@ -45,6 +63,7 @@ describe("Facebook channel adapter", () => {
       externalReplyToMessageKey: null,
       text: "How do I prepare my photos?",
       attachments: [],
+      providerTimestampValid: true,
       receivedAt: new Date(1_787_001_600_000),
     }]);
   });
@@ -78,6 +97,7 @@ describe("Facebook channel adapter", () => {
       externalReplyToMessageKey: "customer-mid-1",
       text: "Which size would you like?",
       attachments: [],
+      providerTimestampValid: true,
       receivedAt: new Date(1_787_001_600_000),
     }]);
   });

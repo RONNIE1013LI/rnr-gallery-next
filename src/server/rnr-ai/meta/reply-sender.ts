@@ -27,6 +27,7 @@ type SenderConfig = Readonly<{
   engineMode: RnrAiEngineMode;
   metaAutoSendEnabled: boolean;
   stageAAllowedRecipientHash: string | null;
+  stageAActivatedAt: Date | null;
 }>;
 
 type TakeoverReader = Readonly<{
@@ -65,7 +66,9 @@ async function stillEligible(input: Readonly<{
   takeover: TakeoverReader;
   context: MetaContextProvider;
   pageId: string;
+  stageAActivatedAt: Date | null;
 }>) {
+  if (!input.stageAActivatedAt) return false;
   if (!await input.controlIsOn()) return false;
   if ((await input.takeover.read(input.candidate.externalConversationKey))?.active) return false;
   const snapshot = await input.context.loadConversation({
@@ -77,7 +80,8 @@ async function stillEligible(input: Readonly<{
   return Boolean(
     snapshot.complete
     && latest?.role === "customer"
-    && latest.externalMessageKey === input.candidate.latestCustomerMessageKey,
+    && latest.externalMessageKey === input.candidate.latestCustomerMessageKey
+    && latest.receivedAt.getTime() >= input.stageAActivatedAt.getTime(),
   );
 }
 
@@ -125,12 +129,15 @@ export function createMetaReplySender(input: Readonly<{
         || !input.accessToken.trim()
         || !input.pageId.trim()
         || !config.stageAAllowedRecipientHash
+        || !config.stageAActivatedAt
         || input.hashExternalKey(candidate.externalConversationKey) !== config.stageAAllowedRecipientHash
         || candidate.channel !== "facebook"
         || candidate.risk !== "GREEN"
         || !candidate.replyText.trim()
       ) return Object.freeze({ status: "blocked" });
-      if (!await stillEligible({ ...input, candidate })) return Object.freeze({ status: "blocked" });
+      if (!await stillEligible({ ...input, candidate, stageAActivatedAt: config.stageAActivatedAt })) {
+        return Object.freeze({ status: "blocked" });
+      }
 
       if (input.hashExternalKey(candidate.externalConversationKey) !== config.stageAAllowedRecipientHash) {
         return Object.freeze({ status: "blocked" });
@@ -150,7 +157,7 @@ export function createMetaReplySender(input: Readonly<{
 
       let providerSendStarted = false;
       try {
-        if (!await stillEligible({ ...input, candidate })) {
+        if (!await stillEligible({ ...input, candidate, stageAActivatedAt: config.stageAActivatedAt })) {
           await input.store.releaseDelivery(lease);
           return Object.freeze({ status: "blocked" });
         }

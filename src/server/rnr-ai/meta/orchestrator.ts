@@ -29,6 +29,7 @@ export type MetaOrchestratorResult = Readonly<{
   status:
     | "off"
     | "stage_a_not_allowed"
+    | "stage_a_not_active"
     | "duplicate"
     | "human_takeover"
     | "already_answered"
@@ -57,6 +58,7 @@ type Dependencies = Readonly<{
   pageId: string;
   masterEnabled: boolean;
   stageAAllowedRecipientHash: string | null;
+  stageAActivatedAt: Date | null;
   sender: MetaReplySender;
   now?: () => Date;
 }>;
@@ -113,6 +115,10 @@ export function createMetaReplyOrchestrator(dependencies: Dependencies) {
         !dependencies.stageAAllowedRecipientHash
         || dependencies.hashExternalKey(event.externalConversationKey) !== dependencies.stageAAllowedRecipientHash
       ) return { acknowledged: true, status: "stage_a_not_allowed" };
+      if (
+        !dependencies.stageAActivatedAt
+        || event.receivedAt.getTime() < dependencies.stageAActivatedAt.getTime()
+      ) return { acknowledged: true, status: "stage_a_not_active" };
       if (event.role === "staff") {
         try {
           await dependencies.takeover.observeStaffEvent(event);

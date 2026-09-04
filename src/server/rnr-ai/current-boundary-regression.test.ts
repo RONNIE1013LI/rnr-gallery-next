@@ -9,6 +9,7 @@ describe("R&R AI migration boundaries", () => {
       metaAutoSendEnabled: false,
       websiteSharedBrainEnabled: false,
       stageAAllowedRecipientHash: null,
+      stageAActivatedAt: null,
     });
   });
 });

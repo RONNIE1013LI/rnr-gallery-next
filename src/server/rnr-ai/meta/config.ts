@@ -6,6 +6,7 @@ export type RnrAiMetaConfig = Readonly<{
   metaAutoSendEnabled: boolean;
   websiteSharedBrainEnabled: boolean;
   stageAAllowedRecipientHash: string | null;
+  stageAActivatedAt: Date | null;
 }>;
 
 const engineModes = new Set<RnrAiEngineMode>([
@@ -28,6 +29,12 @@ function stageAAllowedRecipientHash(value: string | undefined) {
   return typeof value === "string" && /^[a-f0-9]{64}$/.test(value) ? value : null;
 }
 
+function stageAActivatedAt(value: string | undefined) {
+  if (typeof value !== "string" || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(value)) return null;
+  const parsed = new Date(value);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString() === value ? parsed : null;
+}
+
 export function parseRnrAiMetaConfig(
   env: NodeJS.ProcessEnv | Record<string, string | undefined> = process.env,
 ): RnrAiMetaConfig {
@@ -37,5 +44,6 @@ export function parseRnrAiMetaConfig(
     metaAutoSendEnabled: enabled(env.RNR_META_AUTO_SEND_ENABLED),
     websiteSharedBrainEnabled: enabled(env.RNR_WEBSITE_SHARED_BRAIN_ENABLED),
     stageAAllowedRecipientHash: stageAAllowedRecipientHash(env.RNR_META_STAGE_A_ALLOWED_RECIPIENT_HASH),
+    stageAActivatedAt: stageAActivatedAt(env.RNR_META_STAGE_A_ACTIVATED_AT),
   });
 }

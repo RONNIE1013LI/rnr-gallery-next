@@ -9,6 +9,7 @@ const baseConfig = {
   metaAutoSendEnabled: true,
   websiteSharedBrainEnabled: false,
   stageAAllowedRecipientHash: "a".repeat(64),
+  stageAActivatedAt: new Date("2026-09-04T00:00:00.000Z"),
 };
 
 describe("Meta reply runtime selection", () => {
@@ -18,13 +19,14 @@ describe("Meta reply runtime selection", () => {
     { ...baseConfig, engineMode: "shared_draft" as const },
     { ...baseConfig, metaAutoSendEnabled: false },
     { ...baseConfig, stageAAllowedRecipientHash: null },
+    { ...baseConfig, stageAActivatedAt: null },
   ])("uses a disabled sender unless every activation gate is explicit", (config) => {
     const createActive = vi.fn();
     expect(selectMetaReplySender({ config, createActive })).toBeInstanceOf(DisabledMetaReplySender);
     expect(createActive).not.toHaveBeenCalled();
   });
 
-  it("constructs the active sender only behind all three explicit gates", () => {
+  it("constructs the active sender only behind all explicit gates", () => {
     const active = { sendEligibleReply: vi.fn() };
     const createActive = vi.fn(() => active);
     expect(selectMetaReplySender({ config: baseConfig, createActive })).toBe(active);

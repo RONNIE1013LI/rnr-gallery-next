@@ -22,6 +22,7 @@ export type NormalizedIncomingMessage = Readonly<{
   text: string | null;
   attachments: readonly NormalizedAttachment[];
   productContext?: SafeProductContext | null;
+  providerTimestampValid?: boolean;
   receivedAt: Date;
 }>;
 
