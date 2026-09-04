@@ -6,6 +6,7 @@ import type {
   BacklogResult,
   DeliveryLease,
   DeliveryResult,
+  DeliveryState,
   EventLease,
   EventResult,
   ReplyRuntimeStore,
@@ -21,6 +22,7 @@ const HASH = /^[a-f0-9]{64}$/;
 type LeaseRecord<Result> = {
   leaseToken: string;
   expiresAtMs: number;
+  providerSendStartedAt?: string | null;
   result: Result | null;
 };
 
@@ -79,10 +81,10 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
     requireHash(key, "runtime key");
     requireLeaseMs(leaseMs);
     const current = map.get(key);
-    if (current?.result || (current && current.expiresAtMs > this.now())) return null;
+    if (current?.result || current?.providerSendStartedAt || (current && current.expiresAtMs > this.now())) return null;
     const leaseToken = randomUUID();
     const expiresAtMs = this.now() + leaseMs;
-    map.set(key, { leaseToken, expiresAtMs, result: null });
+    map.set(key, { leaseToken, expiresAtMs, providerSendStartedAt: null, result: null });
     return { leaseToken, expiresAt: new Date(expiresAtMs).toISOString() };
   }
 
@@ -118,9 +120,31 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
     return lease ? { key, ...lease } : null;
   }
 
+  async readDelivery(key: string): Promise<DeliveryState | null> {
+    requireHash(key, "runtime key");
+    const current = this.deliveries.get(key);
+    return current ? { providerSendStartedAt: current.providerSendStartedAt ?? null, result: current.result } : null;
+  }
+
+  async beginDeliverySend(lease: DeliveryLease, startedAt: string) {
+    const current = this.deliveries.get(lease.key);
+    if (!current || current.leaseToken !== lease.leaseToken || current.expiresAtMs <= this.now() || current.result) {
+      throw new Error("Delivery lease is no longer valid");
+    }
+    current.providerSendStartedAt = new Date(startedAt).toISOString();
+  }
+
+  async releaseDelivery(lease: DeliveryLease) {
+    const current = this.deliveries.get(lease.key);
+    if (!current || current.leaseToken !== lease.leaseToken || current.expiresAtMs <= this.now() || current.result) {
+      throw new Error("Delivery lease is no longer valid");
+    }
+    this.deliveries.delete(lease.key);
+  }
+
   async settleDelivery(lease: DeliveryLease, result: DeliveryResult) {
     const current = this.deliveries.get(lease.key);
-    if (!current || current.leaseToken !== lease.leaseToken || current.expiresAtMs <= this.now()) {
+    if (!current || current.leaseToken !== lease.leaseToken || current.expiresAtMs <= this.now() || current.result) {
       throw new Error("Delivery lease is no longer valid");
     }
     current.result = Object.freeze({ ...result });

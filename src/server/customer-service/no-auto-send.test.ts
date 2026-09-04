@@ -6,6 +6,8 @@ import {
 
 const PAGE_ACCESS_TOKEN_NAME = ["META", "PAGE", "ACCESS", "TOKEN"].join("_");
 const META_REPLY_SENDER_PATH = "src/server/rnr-ai/meta/reply-sender.ts";
+const META_MANUAL_REPLY_SENDER_PATH = "src/server/rnr-ai/meta/manual-reply-sender.ts";
+const META_MANUAL_REPLY_ROUTE_PATH = "src/app/api/reply-assistant/facebook-replies/route.ts";
 const META_RUNTIME_PATH = "src/server/rnr-ai/meta/runtime.ts";
 
 describe("reply assistant automatic send boundary", () => {
@@ -28,6 +30,7 @@ describe("reply assistant automatic send boundary", () => {
       /\.(?:test|spec)\.[^/]+$|\/(?:docs|fixtures|generated|test-support)\//.test(file)
     ))).toBe(false);
     expect(productionSourcePathsMatching(inventory.files, PAGE_ACCESS_TOKEN_NAME)).toEqual([
+      META_MANUAL_REPLY_ROUTE_PATH,
       META_RUNTIME_PATH,
     ]);
     expect(productionSourcePathsMatching(inventory.serverFiles,
@@ -42,10 +45,10 @@ describe("reply assistant automatic send boundary", () => {
       /fetch\(\s*["'`]https:\/\/graph\.facebook\.com/i,
     );
     expect(graphMessagePaths).toEqual(
-      graphMessagePaths.filter((path) => path === META_REPLY_SENDER_PATH),
+      graphMessagePaths.filter((path) => [META_MANUAL_REPLY_SENDER_PATH, META_REPLY_SENDER_PATH].includes(path)),
     );
     expect(graphFetchPaths).toEqual(
-      graphFetchPaths.filter((path) => path === META_REPLY_SENDER_PATH),
+      graphFetchPaths.filter((path) => [META_MANUAL_REPLY_SENDER_PATH, META_REPLY_SENDER_PATH].includes(path)),
     );
 
     const replySender = inventory.files.find((file) => file.relativePath === META_REPLY_SENDER_PATH);

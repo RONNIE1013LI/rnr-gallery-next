@@ -5,6 +5,7 @@ import { createConversationTakeoverHandler } from "./route-handler";
 
 const origin = "https://admin.test";
 const selector = "a".repeat(64);
+const identityKeyHash = "b".repeat(64);
 const now = new Date("2026-09-04T03:00:00.000Z");
 
 function request(body: unknown, requestOrigin = origin) {
@@ -23,6 +24,7 @@ function setup() {
     requirePermission,
     api: createConversationTakeoverHandler({
       store: () => store,
+      resolveInbox: vi.fn(async () => ({ identityKeyHash })),
       requirePermission,
       trustedOrigin: origin,
       now: () => now,
@@ -37,6 +39,7 @@ describe("conversation takeover API", () => {
     expect(response.status).toBe(200);
     expect(response.headers.get("cache-control")).toBe("no-store");
     expect(current.requirePermission).toHaveBeenCalledWith("use_reply_assistant");
+    expect(await current.store.readTakeover(selector)).toBeNull();
     await expect(response.json()).resolves.toEqual({ active: false, source: null, changedAt: null });
   });
 
@@ -47,6 +50,7 @@ describe("conversation takeover API", () => {
       expect(response.status).toBe(200);
       await expect(response.json()).resolves.toMatchObject({ active, source: "admin", changedAt: now.toISOString() });
     }
+    expect(await current.store.readTakeover(identityKeyHash)).toMatchObject({ active: false, source: "admin" });
   });
 
   it("rejects raw identifiers, unauthorized users and cross-origin mutations", async () => {
@@ -55,6 +59,7 @@ describe("conversation takeover API", () => {
     expect((await current.api.POST(request({ active: true }, "https://evil.test"), { params: Promise.resolve({ conversationKey: selector }) })).status).toBe(403);
     const denied = createConversationTakeoverHandler({
       store: () => current.store,
+      resolveInbox: vi.fn(async () => ({ identityKeyHash })),
       requirePermission: vi.fn(async () => { throw new HttpError("FORBIDDEN", 403); }),
       trustedOrigin: origin,
     });

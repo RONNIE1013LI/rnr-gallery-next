@@ -5433,6 +5433,90 @@ export function createDrizzleCustomerServiceRepository(
       await database.insert(customerServiceFeedbackEvents).values(input).onConflictDoNothing();
     },
 
+    async resolveReplyAssistantInbox(inboxId) {
+      if (!/^[a-f0-9]{64}$/.test(inboxId)) return null;
+      const result = await database.execute<{
+        channel: "facebook" | "website";
+        identity_key_hash: string;
+      }>(sql`
+        select distinct identity.channel, identity.identity_key_hash
+        from ${customerServiceConversationIdentities} identity
+        where encode(sha256(
+          convert_to(identity.channel, 'UTF8')
+          || decode('00', 'hex')
+          || convert_to(identity.identity_kind, 'UTF8')
+          || decode('00', 'hex')
+          || convert_to(identity.identity_key_hash, 'UTF8')
+        ), 'hex') = ${inboxId}
+        limit 2
+      `);
+      if (result.rows.length !== 1) return null;
+      return Object.freeze({
+        channel: result.rows[0]!.channel,
+        identityKeyHash: result.rows[0]!.identity_key_hash,
+      });
+    },
+
+    async resolveFacebookManualSendTarget(input) {
+      if (!/^[a-f0-9]{64}$/.test(input.inboxId)) return null;
+      const result = await database.execute<{
+        identity_key_hash: string;
+        external_message_key_hash: string;
+      }>(sql`
+        select identity.identity_key_hash, source_event.external_message_key_hash
+        from ${customerServiceAiAttempts} attempt
+        join ${customerServiceMessages} messages on messages.id = attempt.message_id
+        join ${customerServiceConversationEvents} source_event
+          on source_event.legacy_message_id = messages.id
+          and source_event.event_type = 'customer_message'
+        join ${customerServiceConversationIdentities} identity
+          on identity.conversation_id = messages.conversation_id
+        join ${customerServiceTurns} turns
+          on turns.representative_message_id = messages.id
+        where attempt.id = ${input.attemptId}
+          and attempt.status = 'draft_ready'
+          and attempt.draft_text is not null
+          and identity.channel = 'facebook'
+          and identity.identity_kind = 'facebook_psid'
+          and encode(sha256(
+            convert_to(identity.channel, 'UTF8')
+            || decode('00', 'hex')
+            || convert_to(identity.identity_kind, 'UTF8')
+            || decode('00', 'hex')
+            || convert_to(identity.identity_key_hash, 'UTF8')
+          ), 'hex') = ${input.inboxId}
+          and not (turns.status = 'suppressed' and turns.suppression_reason = 'human_outbound_received')
+          and not exists (
+            select 1
+            from ${customerServiceConversationEvents} human_reply
+            where human_reply.conversation_id = messages.conversation_id
+              and human_reply.event_type = 'human_outbound'
+              and human_reply.reply_to_external_message_key_hash = source_event.external_message_key_hash
+          )
+          and not exists (
+            select 1 from ${customerServiceAiAttempts} newer_attempt
+            where newer_attempt.message_id = messages.id
+              and newer_attempt.attempt_number > attempt.attempt_number
+          )
+          and not exists (
+            select 1
+            from ${customerServiceMessages} newer_message
+            join ${customerServiceConversationIdentities} newer_identity
+              on newer_identity.conversation_id = newer_message.conversation_id
+            where newer_identity.channel = identity.channel
+              and newer_identity.identity_kind = identity.identity_kind
+              and newer_identity.identity_key_hash = identity.identity_key_hash
+              and (newer_message.received_at, newer_message.id) > (messages.received_at, messages.id)
+          )
+        limit 2
+      `);
+      if (result.rows.length !== 1) return null;
+      return Object.freeze({
+        identityKeyHash: result.rows[0]!.identity_key_hash,
+        latestCustomerMessageKeyHash: result.rows[0]!.external_message_key_hash,
+      });
+    },
+
     async listQueue(limit) {
       return loadQueuePage(Math.max(1, Math.min(100, limit)));
     },

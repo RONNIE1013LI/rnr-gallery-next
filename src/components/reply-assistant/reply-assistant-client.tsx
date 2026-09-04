@@ -21,6 +21,22 @@ type WebsiteReplyState = Readonly<{
   status: "editing" | "sending" | "sent" | "error";
 }>;
 
+type FacebookReplyState = Readonly<{
+  attemptId: string;
+  status: "sending" | "sent" | "error" | "unavailable" | "uncertain";
+}>;
+
+type FacebookReplyResponse = Readonly<{
+  status: "sent";
+  item: SafeInboxItem;
+  takeover: Omit<TakeoverUiState, "status">;
+}>;
+
+type SentFacebookItem = Readonly<{
+  item: SafeInboxItem;
+  pendingTimelineEventIds: readonly string[];
+}>;
+
 type FeedbackAction = "accepted_unchanged" | "edited" | "rejected" | "copied" | "sent_confirmed";
 
 type FeedbackRequest = Readonly<{
@@ -96,6 +112,14 @@ function mergeTimelineEvents(
   return [...events.values()];
 }
 
+function mergeInboxItems(current: ReplyQueueItem, sent: SafeInboxItem): ReplyQueueItem {
+  return {
+    ...sent,
+    ...current,
+    timeline: mergeTimelineEvents(sent.timeline, current.timeline),
+  };
+}
+
 function timelineWindowsMatch(
   previous: Readonly<Record<string, readonly SafeTimelineEvent[]>>,
   current: Readonly<Record<string, readonly SafeTimelineEvent[]>>,
@@ -129,6 +153,8 @@ export function ReplyAssistantClient({
   const [fetchedItems, setFetchedItems] = useState<readonly ReplyQueueItem[]>(initialItems ?? []);
   const [reviews, setReviews] = useState<Record<string, ReviewState>>({});
   const [websiteReplies, setWebsiteReplies] = useState<Record<string, WebsiteReplyState>>({});
+  const [facebookReplies, setFacebookReplies] = useState<Record<string, FacebookReplyState>>({});
+  const [sentFacebookItems, setSentFacebookItems] = useState<Record<string, SentFacebookItem>>({});
   const [busy, setBusy] = useState<string | null>(null);
   const [feedbackRequests, setFeedbackRequests] = useState<Record<string, FeedbackRequest>>({});
   const [feedbackErrors, setFeedbackErrors] = useState<Record<string, string>>({});
@@ -147,6 +173,9 @@ export function ReplyAssistantClient({
   const feedbackRetryKeys = useRef(new Map<string, string>());
   const feedbackInFlight = useRef(new Set<string>());
   const websiteReplyInFlight = useRef(new Set<string>());
+  const facebookReplyInFlight = useRef(new Set<string>());
+  const facebookReplyKeys = useRef(new Map<string, string>());
+  const facebookReplySequence = useRef(0);
   const selectedCardRef = useRef<HTMLElement | null>(null);
 
   async function refresh() {
@@ -167,7 +196,7 @@ export function ReplyAssistantClient({
     return () => { cancelled = true; };
   }, [initialItems]);
 
-  const items = liveItems === undefined
+  const sourceItems = liveItems === undefined
     ? normalizeInboxItems(fetchedItems)
     : (() => {
       const sorted = normalizeInboxItems(liveItems);
@@ -178,6 +207,16 @@ export function ReplyAssistantClient({
         ? [selected, ...sorted.filter((item) => item.inboxId !== selected.inboxId)].slice(0, 100)
         : sorted.slice(0, 100);
     })();
+  const activeSentFacebookItems = Object.fromEntries(Object.entries(sentFacebookItems).filter(([inboxId, sent]) => {
+    const authoritative = sourceItems.find((item) => item.inboxId === inboxId);
+    if (!authoritative) return true;
+    const echoed = sent.pendingTimelineEventIds.every((eventId) => authoritative.timeline.some((event) => event.eventId === eventId));
+    return !echoed && authoritative.lastActivityAt <= sent.item.lastActivityAt;
+  }));
+  const items = sourceItems.map((item) => {
+    const sent = activeSentFacebookItems[item.inboxId];
+    return sent ? mergeInboxItems(item, sent.item) : item;
+  });
 
   const currentTimelineWindows = Object.fromEntries(items.map((item) => [item.inboxId, item.timeline]));
   if (!timelineWindowsMatch(previousTimelineWindows, currentTimelineWindows)) {
@@ -313,6 +352,55 @@ export function ReplyAssistantClient({
     }
   }
 
+  async function sendFacebookReply(item: ReplyQueueItem, current: ReviewState) {
+    if (!item.latestAttemptId || !/^[a-f0-9]{64}$/.test(item.inboxId) || facebookReplyInFlight.current.has(item.inboxId)) return;
+    const attemptId = item.latestAttemptId;
+    const text = current.text.trim();
+    if (!text || Array.from(text).length > 2_000) return;
+    const intent = `${attemptId}:${text}`;
+    const idempotencyKey = facebookReplyKeys.current.get(intent) ?? `facebook-send-${++facebookReplySequence.current}`;
+    facebookReplyKeys.current.set(intent, idempotencyKey);
+    facebookReplyInFlight.current.add(item.inboxId);
+    setFacebookReplies((states) => ({ ...states, [item.inboxId]: { attemptId, status: "sending" } }));
+    try {
+      const response = await fetch("/api/reply-assistant/facebook-replies", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          inboxId: item.inboxId,
+          attemptId,
+          text,
+          idempotencyKey,
+        }),
+      });
+      const body = await response.json().catch(() => null) as FacebookReplyResponse | { error?: { code?: string } } | null;
+      if (response.ok && body && "status" in body && body.status === "sent" && "item" in body && "takeover" in body) {
+        setSentFacebookItems((items) => ({
+          ...items,
+          [item.inboxId]: {
+            item: body.item,
+            pendingTimelineEventIds: body.item.timeline
+              .filter((event) => !item.timeline.some((currentEvent) => currentEvent.eventId === event.eventId))
+              .map((event) => event.eventId),
+          },
+        }));
+        setTakeovers((states) => ({ ...states, [item.inboxId]: { status: "ready", ...body.takeover } }));
+        setFacebookReplies((states) => ({ ...states, [item.inboxId]: { attemptId, status: "sent" } }));
+        onRefresh?.();
+        return;
+      }
+      const code = body && "error" in body ? body.error?.code : null;
+      const status = response.status === 502 && code === "META_SEND_FAILED"
+        ? "error"
+        : code === "FACEBOOK_REPLY_UNAVAILABLE" ? "unavailable" : "uncertain";
+      setFacebookReplies((states) => ({ ...states, [item.inboxId]: { attemptId, status } }));
+    } catch {
+      setFacebookReplies((states) => ({ ...states, [item.inboxId]: { attemptId, status: "uncertain" } }));
+    } finally {
+      facebookReplyInFlight.current.delete(item.inboxId);
+    }
+  }
+
   async function loadEarlierTimeline(item: ReplyQueueItem, current: EarlierTimelineState | undefined) {
     const cursor = current?.cursor ?? item.timeline[0]?.eventId ?? null;
     if (!cursor || current?.status === "loading") return;
@@ -417,6 +505,9 @@ export function ReplyAssistantClient({
           || feedbackCompletion === "edited"
           || feedbackCompletion === "rejected";
         const feedbackError = feedbackErrors[item.inboxId] ?? null;
+        const facebookReply = facebookReplies[item.inboxId]?.attemptId === item.latestAttemptId
+          ? facebookReplies[item.inboxId]
+          : undefined;
         const selected = selectedReviewSelector !== null
           && item.websiteReview?.selector === selectedReviewSelector;
         return (
@@ -494,6 +585,7 @@ export function ReplyAssistantClient({
                 ) : null}
               </div>
               <div className={styles.messageResponse}>
+              {facebookReply?.status === "sent" ? <div className={styles.sendStatus}>Reply sent to Facebook.</div> : null}
               {item.channel === "website" ? (
               item.humanReplyReceived ? (
                 <div className={styles.blocked}>Human website reply sent. Review resolved.</div>
@@ -547,6 +639,7 @@ export function ReplyAssistantClient({
                 <textarea
                   id={`draft-${item.inboxId}`}
                   value={current.text}
+                  maxLength={2_000}
                   readOnly={current.mode !== "editing"}
                   onChange={(event) => update(item, {
                     mode: "editing",
@@ -562,7 +655,16 @@ export function ReplyAssistantClient({
                   </div>
                 ) : null}
                 {feedbackError ? <div className={styles.serverChanged} role="alert">{feedbackError}</div> : null}
+                {facebookReply?.status === "error" ? <div className={styles.serverChanged} role="alert">Facebook did not send this reply. You can try again.</div> : null}
+                {facebookReply?.status === "unavailable" ? <div className={styles.serverChanged} role="alert">This Facebook reply is no longer available. Refresh the conversation before sending.</div> : null}
+                {facebookReply?.status === "uncertain" ? <div className={styles.serverChanged} role="alert">We could not confirm delivery to Facebook. Do not send again until you refresh this conversation.</div> : null}
                 <div className={styles.actions}>
+                  <button
+                    type="button"
+                    data-variant="primary"
+                    disabled={!current.text.trim() || Array.from(current.text.trim()).length > 2_000 || !item.latestAttemptId || serverChanged || facebookReply?.status === "sending" || facebookReply?.status === "sent" || facebookReply?.status === "unavailable" || facebookReply?.status === "uncertain"}
+                    onClick={() => void sendFacebookReply(item, current)}
+                  >{facebookReply?.status === "sending" ? "Sending…" : "Send to Facebook"}</button>
                   {current.mode === "editing" ? (
                     <button type="button" data-variant="primary" disabled={serverChanged || feedbackPending || outcomeCompleted} onClick={async () => {
                       if (!await feedback(item, "edited", current.text, "human_edit")) return;
@@ -595,7 +697,7 @@ export function ReplyAssistantClient({
                       setFeedbackError(item.inboxId, "The text was copied, but its review event was not saved. Copy again to retry.");
                     }
                   }}>Copy</button>
-                  <button type="button" disabled={!approved || serverChanged || feedbackPending || feedbackCompletion === "sent_confirmed"} onClick={() => void feedback(item, "sent_confirmed", current.text, null)}>Mark as manually sent</button>
+                  <button type="button" disabled={!approved || serverChanged || feedbackPending || feedbackCompletion === "sent_confirmed"} onClick={() => void feedback(item, "sent_confirmed", current.text, null)}>Mark as sent externally</button>
                 </div>
               </div>
             ) : (

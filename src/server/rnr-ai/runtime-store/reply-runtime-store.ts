@@ -7,6 +7,7 @@ export type TakeoverState = Readonly<{ active: boolean; source: "staff_echo" | "
 export type TakeoverMutation = Readonly<{ conversationKeyHash: string; active: boolean; source: TakeoverState["source"]; changedAt: string }>;
 export type DeliveryLease = Readonly<{ key: string; leaseToken: string; expiresAt: string }>;
 export type DeliveryResult = Readonly<{ status: "sent" | "delivery_uncertain" | "blocked"; providerMessageIdMasked: string | null; settledAt: string }>;
+export type DeliveryState = Readonly<{ providerSendStartedAt: string | null; result: DeliveryResult | null }>;
 export type TimeWindow = Readonly<{ from: string; to: string; maxConversations: 100 }>;
 export type BacklogLease = Readonly<{
   key: string;
@@ -27,6 +28,9 @@ export interface ReplyRuntimeStore {
   readTakeover(conversationKeyHash: string): Promise<TakeoverState | null>;
   setTakeover(input: TakeoverMutation): Promise<void>;
   claimDelivery(key: string, leaseMs: number): Promise<DeliveryLease | null>;
+  readDelivery(key: string): Promise<DeliveryState | null>;
+  beginDeliverySend(lease: DeliveryLease, startedAt: string): Promise<void>;
+  releaseDelivery(lease: DeliveryLease): Promise<void>;
   settleDelivery(lease: DeliveryLease, result: DeliveryResult): Promise<void>;
   rememberSenderEcho(providerMessageKeyHash: string, ttlSeconds: number): Promise<void>;
   hasSenderEcho(providerMessageKeyHash: string): Promise<boolean>;

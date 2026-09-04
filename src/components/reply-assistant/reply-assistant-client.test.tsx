@@ -35,7 +35,7 @@ describe("ReplyAssistantClient", () => {
     expect(formatReplyReceivedAt("2026-08-17T00:00:00.000Z")).toBe("17/08/2026, 12:00:00 pm");
   });
 
-  it("requires human acceptance before copy and never calls a send endpoint", async () => {
+  it("keeps Copy as an accepted-draft fallback", async () => {
     render(<ReplyAssistantClient initialItems={[item]} />);
     const copy = screen.getByRole("button", { name: "Copy" });
     expect(copy).toBeDisabled();
@@ -43,7 +43,153 @@ describe("ReplyAssistantClient", () => {
     await waitFor(() => expect(copy).toBeEnabled());
     fireEvent.click(copy);
     await waitFor(() => expect(navigator.clipboard.writeText).toHaveBeenCalledWith(item.draftText));
-    expect(vi.mocked(fetch).mock.calls.map(([url]) => String(url)).join("\n")).not.toMatch(/\/send|graph\.facebook/i);
+  });
+
+  it("sends the current edited Facebook draft with a stable request key and prevents double sends", async () => {
+    let release!: () => void;
+    const sentBodies: unknown[] = [];
+    const pending = new Promise<Response>((resolve) => {
+      release = () => resolve(new Response(JSON.stringify({
+        status: "sent",
+        item: { ...item, humanReplyReceived: true },
+        takeover: { active: true, source: "admin", changedAt: "2026-09-04T00:00:00.000Z" },
+      }), { status: 201 }));
+    });
+    vi.stubGlobal("fetch", vi.fn((_url, init) => {
+      sentBodies.push(JSON.parse(String(init?.body)));
+      return pending;
+    }));
+    render(<ReplyAssistantClient initialItems={[item]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    fireEvent.change(screen.getByLabelText("Reply draft"), { target: { value: "The current human-edited reply" } });
+    const send = screen.getByRole("button", { name: "Send to Facebook" });
+    fireEvent.click(send);
+    fireEvent.click(send);
+
+    expect(send).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Sending…" })).toBeDisabled();
+    expect(sentBodies).toHaveLength(1);
+    expect(sentBodies[0]).toMatchObject({
+      inboxId: item.inboxId,
+      attemptId: item.latestAttemptId,
+      text: "The current human-edited reply",
+    });
+    expect((sentBodies[0] as { idempotencyKey: string }).idempotencyKey).toMatch(/^facebook-send-/);
+    expect(JSON.stringify(sentBodies[0])).not.toMatch(/psid|recipient|page/i);
+
+    release();
+    await waitFor(() => expect(screen.getByText("Reply sent to Facebook.")).toBeInTheDocument());
+  });
+
+  it("merges the returned sent item into the timeline without a duplicate echo and shows active human takeover", async () => {
+    const sentEvent = {
+      eventId: "event:facebook-manual-send",
+      role: "staff" as const,
+      text: "The current human-edited reply",
+      receivedAt: "2026-09-04T00:00:00.000Z",
+    };
+    const sentItem = {
+      ...item,
+      humanReplyReceived: true,
+      timeline: [...item.timeline, sentEvent],
+    };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      status: "sent",
+      item: sentItem,
+      takeover: { active: true, source: "admin", changedAt: "2026-09-04T00:00:00.000Z" },
+    }), { status: 201 })));
+    const view = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send to Facebook" }));
+    await waitFor(() => expect(screen.getByText("Reply sent to Facebook.")).toBeInTheDocument());
+    expect(screen.getByText("Human takeover active")).toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "Conversation timeline" })).getAllByText(sentEvent.text)).toHaveLength(1);
+
+    view.rerender(<ReplyAssistantClient initialItems={[item]} liveItems={[sentItem]} />);
+    expect(within(screen.getByRole("region", { name: "Conversation timeline" })).getAllByText(sentEvent.text)).toHaveLength(1);
+  });
+
+  it("lets a newer live item replace sent-cache fields and retires the echoed sent timeline", async () => {
+    const sentEvent = {
+      eventId: "event:facebook-manual-send",
+      role: "staff" as const,
+      text: "The current human-edited reply",
+      receivedAt: "2026-09-04T00:00:00.000Z",
+    };
+    const sentItem = { ...item, humanReplyReceived: true, timeline: [...item.timeline, sentEvent] };
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      status: "sent",
+      item: sentItem,
+      takeover: { active: true, source: "admin", changedAt: "2026-09-04T00:00:00.000Z" },
+    }), { status: 201 })));
+    const view = render(<ReplyAssistantClient initialItems={[item]} liveItems={[item]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send to Facebook" }));
+    await waitFor(() => expect(screen.getByText("Reply sent to Facebook.")).toBeInTheDocument());
+
+    const newerCustomer = {
+      eventId: "event:facebook-new-customer",
+      role: "customer" as const,
+      text: "A newer customer message",
+      receivedAt: "2026-09-04T00:01:00.000Z",
+    };
+    const newerLiveItem = {
+      ...item,
+      latestMessageId: "33333333-3333-4333-8333-333333333333",
+      latestAttemptId: "44444444-4444-4444-8444-444444444444",
+      lastActivityAt: "2026-09-04T00:01:00.000Z",
+      status: "draft_ready",
+      draftText: "A newer server draft",
+      humanReplyReceived: false,
+      timeline: [...item.timeline, sentEvent, newerCustomer],
+    };
+    view.rerender(<ReplyAssistantClient initialItems={[item]} liveItems={[newerLiveItem]} />);
+
+    expect(screen.getByText(formatReplyReceivedAt(newerLiveItem.lastActivityAt))).toBeInTheDocument();
+    expect(screen.getByText("draft ready")).toBeInTheDocument();
+    expect(screen.getByLabelText("Reply draft")).toHaveValue("A newer server draft");
+    expect(screen.queryByText("Reply sent to Facebook.")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Send to Facebook" })).toBeEnabled();
+    expect(within(screen.getByRole("region", { name: "Conversation timeline" })).getAllByText(sentEvent.text)).toHaveLength(1);
+
+    await waitFor(() => expect(screen.getByText("A newer customer message")).toBeInTheDocument());
+    view.rerender(<ReplyAssistantClient initialItems={[item]} liveItems={[{
+      ...newerLiveItem,
+      draftText: null,
+      timeline: [newerCustomer],
+    }]} />);
+    expect(screen.queryByText(sentEvent.text)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Generate AI Reply" }));
+    await waitFor(() => expect(fetch).toHaveBeenLastCalledWith(
+      `/api/reply-assistant/messages/${newerLiveItem.latestMessageId}/generate`,
+      expect.anything(),
+    ));
+  });
+
+  it("keeps a definite Meta failure retryable but fails closed on uncertain delivery", async () => {
+    const responses = [
+      new Response(JSON.stringify({ error: { code: "META_SEND_FAILED" } }), { status: 502 }),
+      new Response(JSON.stringify({ error: { code: "DELIVERY_UNCERTAIN" } }), { status: 409 }),
+    ];
+    vi.stubGlobal("fetch", vi.fn(async () => responses.shift()!));
+    render(<ReplyAssistantClient initialItems={[item]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Send to Facebook" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("Facebook did not send this reply. You can try again."));
+    expect(screen.getByRole("button", { name: "Send to Facebook" })).toBeEnabled();
+
+    fireEvent.click(screen.getByRole("button", { name: "Send to Facebook" }));
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("We could not confirm delivery to Facebook. Do not send again until you refresh this conversation."));
+    expect(screen.getByRole("button", { name: "Send to Facebook" })).toBeDisabled();
+  });
+
+  it("labels direct sending and the external-send fallback clearly", () => {
+    render(<ReplyAssistantClient initialItems={[item]} />);
+
+    expect(screen.getByRole("button", { name: "Send to Facebook" })).toHaveAttribute("data-variant", "primary");
+    expect(screen.getByRole("button", { name: "Mark as sent externally" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Mark as manually sent" })).not.toBeInTheDocument();
   });
 
   it("sends one feedback request when acceptance is double-clicked before the response settles", async () => {
@@ -639,7 +785,7 @@ describe("ReplyAssistantClient", () => {
 
     expect(screen.getByText("Server state changed. Review the new draft before using it.")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Copy" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Mark as manually sent" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Mark as sent externally" })).toBeDisabled();
   });
 
   it("adopts a live replacement attempt without inheriting the prior attempt feedback completion", async () => {

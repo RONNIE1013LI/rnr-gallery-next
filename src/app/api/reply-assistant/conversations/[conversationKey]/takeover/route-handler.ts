@@ -9,6 +9,7 @@ type RouteContext = Readonly<{ params: Promise<Readonly<{ conversationKey: strin
 
 export function createConversationTakeoverHandler(dependencies: Readonly<{
   store: () => ReplyRuntimeStore;
+  resolveInbox: (inboxId: string) => Promise<Readonly<{ identityKeyHash: string }> | null>;
   requirePermission: (permission: "use_reply_assistant") => Promise<{ user: { id: string } }>;
   trustedOrigin?: string;
   now?: () => Date;
@@ -18,7 +19,9 @@ export function createConversationTakeoverHandler(dependencies: Readonly<{
     async GET(_request: Request, context: RouteContext) {
       try {
         await dependencies.requirePermission("use_reply_assistant");
-        const state = await dependencies.store().readTakeover(await readSelector(context));
+        const identity = await dependencies.resolveInbox(await readSelector(context));
+        if (!identity) return noStoreJson({ error: { code: "CONVERSATION_UNAVAILABLE" } }, 404);
+        const state = await dependencies.store().readTakeover(identity.identityKeyHash);
         return noStoreJson(state ?? { active: false, source: null, changedAt: null });
       } catch (error) {
         return customerServiceApiError(error);
@@ -28,10 +31,11 @@ export function createConversationTakeoverHandler(dependencies: Readonly<{
       try {
         await dependencies.requirePermission("use_reply_assistant");
         assertTrustedMutationRequest(request, dependencies.trustedOrigin);
-        const conversationKeyHash = await readSelector(context);
+        const identity = await dependencies.resolveInbox(await readSelector(context));
+        if (!identity) return noStoreJson({ error: { code: "CONVERSATION_UNAVAILABLE" } }, 404);
         const input = mutationSchema.parse(await parseBoundedJson(request, 1_024));
         const state = {
-          conversationKeyHash,
+          conversationKeyHash: identity.identityKeyHash,
           active: input.active,
           source: "admin" as const,
           changedAt: (dependencies.now?.() ?? new Date()).toISOString(),

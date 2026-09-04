@@ -242,6 +242,16 @@ export type SafeTimelinePage = Readonly<{
   hasEarlier: boolean;
 }>;
 
+export type ReplyAssistantInboxRuntimeIdentity = Readonly<{
+  channel: CustomerServiceChannel;
+  identityKeyHash: string;
+}>;
+
+export type FacebookManualSendTarget = Readonly<{
+  identityKeyHash: string;
+  latestCustomerMessageKeyHash: string;
+}>;
+
 export type ReplyAssistantLearningCandidatePage = Readonly<{ items: readonly Readonly<{
   id: string;
   intent: string;
@@ -700,6 +710,11 @@ export interface CustomerServiceRepository {
   completeProviderAttempt(input: ProviderAttemptCompletion): Promise<void>;
   messageIdForAttempt(attemptId: string): Promise<string | null>;
   appendFeedback(input: FeedbackEventInput): Promise<void>;
+  resolveReplyAssistantInbox(inboxId: string): Promise<ReplyAssistantInboxRuntimeIdentity | null>;
+  resolveFacebookManualSendTarget(input: Readonly<{
+    inboxId: string;
+    attemptId: string;
+  }>): Promise<FacebookManualSendTarget | null>;
   listQueue(limit: number): Promise<SafeQueuePage>;
   loadEarlierInboxTimeline(input: Readonly<{
     inboxId: string;

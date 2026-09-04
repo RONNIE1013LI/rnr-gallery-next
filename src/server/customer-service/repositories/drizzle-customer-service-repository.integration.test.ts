@@ -1105,6 +1105,75 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     expect(page.items[0]?.timeline.at(-1)).toMatchObject({ text: "Staff 50" });
   });
 
+  it("resolves an opaque Facebook Inbox and current draft attempt without exposing or accepting a PSID", async () => {
+    const identityKeyHash = sourceHash("inbox-conversation:manual-facebook-target");
+    const fixture = await createInboxFixtureConversation({
+      channel: "facebook",
+      marker: "manual-facebook-target",
+      identityKind: "facebook_psid",
+      identityKeyHash,
+      messages: [{ text: "Can you help?", at: new Date("2026-09-01T09:00:00.000Z"), eligible: true }],
+    });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: fixture.messages[0]!.messageId,
+      attemptNumber: 1,
+      trigger: "manual_generate",
+      intent: "general_enquiry",
+      riskLevel: "low",
+      gateResult: "allowed",
+      gateReasons: [],
+      knowledgeSources: ["business-brain"],
+      knowledgeVersion: "manual-send-test-v1",
+      status: "draft_ready",
+      providerCalled: true,
+      provider: "mock",
+      model: "test",
+      draftText: "Yes, we can help.",
+      validatorCodes: [],
+      inputTokens: 1,
+      cachedInputTokens: 0,
+      outputTokens: 1,
+      estimatedCostMicrousd: 0,
+      reservedCostMicrousd: 0,
+      latencyMs: 1,
+      completedAt: new Date("2026-09-01T09:00:01.000Z"),
+    }).returning({ id: customerServiceAiAttempts.id });
+    const inbox = (await repository.listQueue(100)).items.find((item) => item.latestMessageId === fixture.messages[0]!.messageId)!;
+
+    await expect(repository.resolveReplyAssistantInbox(inbox.inboxId)).resolves.toEqual({
+      channel: "facebook",
+      identityKeyHash,
+    });
+    await expect(repository.resolveFacebookManualSendTarget({ inboxId: inbox.inboxId, attemptId: attempt.id })).resolves.toEqual({
+      identityKeyHash,
+      latestCustomerMessageKeyHash: sourceHash("inbox-event:manual-facebook-target:0"),
+    });
+    await expect(repository.resolveFacebookManualSendTarget({ inboxId: "f".repeat(64), attemptId: attempt.id })).resolves.toBeNull();
+
+    const outbound = {
+      channel: "facebook" as const,
+      role: "staff" as const,
+      eventType: "human_outbound" as const,
+      externalConversationKeyHash: identityKeyHash,
+      externalMessageKeyHash: sourceHash("manual-facebook-provider-message"),
+      replyToExternalMessageKeyHash: sourceHash("inbox-event:manual-facebook-target:0"),
+      text: "Yes, we can help.",
+      bodyHash: sourceHash("manual-facebook-body"),
+      redactionCodes: [],
+      learningEligible: true,
+      humanReplyGroupMs: 90_000,
+      attachments: [],
+      imageJob: null,
+      receivedAt: new Date("2026-09-01T09:00:02.000Z"),
+    };
+    await expect(repository.ingestConversationEvent(outbound)).resolves.toEqual({ status: "context_only" });
+    await expect(repository.ingestConversationEvent(outbound)).resolves.toEqual({ status: "duplicate" });
+    await expect(repository.resolveFacebookManualSendTarget({ inboxId: inbox.inboxId, attemptId: attempt.id })).resolves.toBeNull();
+    const answered = (await repository.listQueue(100)).items.find((item) => item.inboxId === inbox.inboxId)!;
+    expect(answered.humanReplyReceived).toBe(true);
+    expect(answered.timeline.filter((event) => event.role === "staff" && event.text === "Yes, we can help.")).toHaveLength(1);
+  });
+
   it("paginates earlier Inbox history by opaque Inbox and event cursors without crossing identities", async () => {
     const primary = await createInboxFixtureConversation({
       channel: "facebook",
