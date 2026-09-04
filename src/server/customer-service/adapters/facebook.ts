@@ -1,6 +1,7 @@
 import { IMAGE_LIMITS } from "../attachments/limits";
 import type { NormalizedAttachment } from "../attachments/types";
 import type { ChannelAdapter, NormalizedIncomingMessage } from "../types";
+import type { MetaConversationEvent } from "../../rnr-ai/meta/types";
 
 function record(value: unknown): Record<string, unknown> | null {
   return value !== null && typeof value === "object"
@@ -118,4 +119,21 @@ export function createFacebookChannelAdapter(): ChannelAdapter<unknown> {
       return normalized;
     },
   });
+}
+
+export function normalizeFacebookMetaEvents(payload: unknown): readonly MetaConversationEvent[] {
+  return createFacebookChannelAdapter().normalize(payload).map((message) => Object.freeze({
+    ...message,
+    channel: "facebook" as const,
+    attachments: message.attachments.map((attachment) => Object.freeze({
+      externalAttachmentKey: attachment.externalAttachmentKey,
+      ordinal: attachment.ordinal,
+      kind: attachment.kind,
+      sourceRef: attachment.sourceRef?.kind === "facebook_remote"
+        ? Object.freeze({ kind: "facebook_remote" as const, url: attachment.sourceRef.url })
+        : null,
+      mimeTypeHint: attachment.mimeTypeHint,
+      failureCode: attachment.failureCode ?? null,
+    })),
+  }));
 }

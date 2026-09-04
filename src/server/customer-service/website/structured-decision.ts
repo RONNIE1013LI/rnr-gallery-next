@@ -67,11 +67,11 @@ const HUMAN_REVIEW_REASONS = [
   "MODEL_UNCERTAIN",
 ] as const;
 
-type ResponseType = typeof RESPONSE_TYPES[number];
-type ProductType = typeof PRODUCT_TYPES[number];
-type FollowUpField = typeof FOLLOW_UP_FIELDS[number];
-type AllowedFact = typeof ALLOWED_FACTS[number];
-type HumanReviewReason = typeof HUMAN_REVIEW_REASONS[number];
+export type ResponseType = typeof RESPONSE_TYPES[number];
+export type ProductType = typeof PRODUCT_TYPES[number];
+export type FollowUpField = typeof FOLLOW_UP_FIELDS[number];
+export type AllowedFact = typeof ALLOWED_FACTS[number];
+export type HumanReviewReason = typeof HUMAN_REVIEW_REASONS[number];
 
 export type WebsiteDecision = Readonly<{
   response_type: ResponseType;

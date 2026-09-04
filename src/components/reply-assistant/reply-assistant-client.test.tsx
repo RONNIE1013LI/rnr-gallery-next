@@ -203,6 +203,25 @@ describe("ReplyAssistantClient", () => {
     expect(screen.getByRole("button", { name: "Copy" })).toBeInTheDocument();
   });
 
+  it("checks, activates, and releases Meta human takeover using only the hashed selector", async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ active: false, source: null, changedAt: null })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ active: true, source: "admin", changedAt: "2026-09-04T00:00:00.000Z" })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ active: false, source: "admin", changedAt: "2026-09-04T00:01:00.000Z" })));
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ReplyAssistantClient initialItems={[item]} />);
+
+    fireEvent.click(screen.getByRole("button", { name: "Check AI handling" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Take over conversation" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Take over conversation" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Release conversation to AI" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "Release conversation to AI" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Take over conversation" })).toBeEnabled());
+
+    expect(fetchMock.mock.calls.every(([url]) => String(url).includes(item.inboxId))).toBe(true);
+    expect(JSON.stringify(fetchMock.mock.calls)).not.toMatch(/psid|customer name/i);
+  });
+
   it("pins a deep-linked website review even when 100 newer live items exist", () => {
     const selector = `wrs1.m8k6x0.${"A".repeat(43)}`;
     const selected = {

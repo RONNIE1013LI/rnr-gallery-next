@@ -6,6 +6,10 @@ export type DraftValidationResult = Readonly<{
   codes: readonly string[];
 }>;
 
+export function draftValidationRisk(result: DraftValidationResult): "GREEN" | "RED" {
+  return result.ok ? "GREEN" : "RED";
+}
+
 type ApprovedPrice = Readonly<{
   currency: "NZD" | "AUD";
   amountInclTaxCents: number;

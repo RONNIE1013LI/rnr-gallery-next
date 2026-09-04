@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createFacebookChannelAdapter } from "./facebook";
+import { createFacebookChannelAdapter, normalizeFacebookMetaEvents } from "./facebook";
 
 const adapter = createFacebookChannelAdapter();
 const recipientField = ["recip", "ient"].join("");
@@ -21,6 +21,20 @@ function payload(message: Record<string, unknown>) {
 }
 
 describe("Facebook channel adapter", () => {
+  it("maps the existing normalization into the common Meta event contract", () => {
+    expect(normalizeFacebookMetaEvents(payload({ mid: "mid-common", text: "Hello" }))).toEqual([{
+      channel: "facebook",
+      role: "customer",
+      eventType: "customer_message",
+      externalConversationKey: "sender-1",
+      externalMessageKey: "mid-common",
+      externalReplyToMessageKey: null,
+      text: "Hello",
+      attachments: [],
+      receivedAt: new Date(1_787_001_600_000),
+    }]);
+  });
+
   it("normalizes supported customer text", () => {
     expect(adapter.normalize(payload({ mid: "mid-1", text: "How do I prepare my photos?" }))).toEqual([{
       channel: "facebook",

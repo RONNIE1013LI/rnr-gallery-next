@@ -397,6 +397,30 @@ describe("Meta webhook handler", () => {
     expect(disabled.ingest).not.toHaveBeenCalled();
   });
 
+  it("hands a verified normalized event to injected shared execution without constructing legacy persistence", async () => {
+    const current = setup();
+    const onAcceptedEvent = vi.fn(async () => { throw new Error("runtime unavailable"); });
+    const handlers = createMetaWebhookHandlers({
+      config,
+      ingest: current.ingest,
+      processTurn: current.processTurn,
+      kickImageJob: current.kickImageJob,
+      scheduleAfter: current.scheduleAfter,
+      onAcceptedEvent,
+    });
+
+    const response = await handlers.POST(signedRequest(messagePayload()));
+    expect(response.status).toBe(200);
+    expect(current.ingest).not.toHaveBeenCalled();
+    expect(current.scheduledTasks).toHaveLength(1);
+    await expect(current.scheduledTasks[0]()).resolves.toBeUndefined();
+    expect(onAcceptedEvent).toHaveBeenCalledWith(expect.objectContaining({
+      role: "customer",
+      externalConversationKey: "sender-1",
+      externalMessageKey: "mid-1",
+    }));
+  });
+
   it("keeps an image webhook successful without creating deferred work", async () => {
     const current = setup();
     current.kickImageJob.mockRejectedValueOnce(new Error("private deferred failure"));

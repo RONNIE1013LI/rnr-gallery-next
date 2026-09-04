@@ -37,10 +37,11 @@ type Dependencies = Readonly<{
   messageHashSecret: string;
   permitSecret?: string;
   debounceMs: number;
+  generationMode?: "legacy" | "shared_brain";
   repository: WebsiteMessageRepository;
   getOptionalSession: (headers: Headers) => Promise<{ user: { id: string } } | null>;
   resolveProductContext: (pathname: string) => Promise<SafeProductContext | null>;
-  processTurn: (turnId: string) => Promise<unknown>;
+  processTurn: (turnId: string, generationMode: "legacy" | "shared_brain") => Promise<unknown>;
   processReviewAlert?: () => Promise<unknown>;
   processCustomerNotifications?: () => Promise<unknown>;
   scheduleAfter: (task: () => Promise<void>) => void;
@@ -181,7 +182,7 @@ export function createCustomerChatMessagesHandler(dependencies: Dependencies) {
           dependencies.scheduleAfter(async () => {
             try {
               await (dependencies.waitUntil ?? waitUntil)(result.debounceUntil);
-              await dependencies.processTurn(result.turnId);
+              await dependencies.processTurn(result.turnId, dependencies.generationMode ?? "legacy");
             } catch {
               // The committed turn remains recoverable by the durable worker.
               return;

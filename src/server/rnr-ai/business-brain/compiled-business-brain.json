@@ -1,0 +1,669 @@
+{
+  "effectiveDate": "2026-09-04",
+  "reviewItems": [
+    "au-shipping-owner-review",
+    "banner-bundle-inclusions-review",
+    "banner-bundle-owner-review",
+    "grave-cover-pricing-review",
+    "nz-shipping-tariff-review",
+    "oil-painting-banner-pricing-review",
+    "photo-replacement-fee-review",
+    "photo-restoration-fee-review",
+    "refund-deposit-policy-review",
+    "revision-policy-review",
+    "special-editing-fee-review"
+  ],
+  "riskRules": [
+    {
+      "action": "May be eligible for automatic reply after all deterministic and channel gates pass.",
+      "id": "green-routine",
+      "risk": "GREEN",
+      "triggers": [
+        "canonical price",
+        "location",
+        "design feasibility",
+        "normal product explanation",
+        "simple acknowledgement"
+      ]
+    },
+    {
+      "action": "Do not make a commitment; require human review and takeover.",
+      "id": "red-block",
+      "risk": "RED",
+      "triggers": [
+        "refund",
+        "chargeback",
+        "legal threat",
+        "serious complaint",
+        "disputed payment",
+        "special discount",
+        "compensation",
+        "unsupported claim"
+      ]
+    },
+    {
+      "action": "Create a human-review draft and do not auto-send.",
+      "id": "yellow-review",
+      "risk": "YELLOW",
+      "triggers": [
+        "complex custom quote",
+        "tight deadline",
+        "unusual payment arrangement",
+        "significant revision",
+        "REVIEW fact",
+        "incomplete context"
+      ]
+    }
+  ],
+  "rules": [
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "AUD",
+      "facts": {
+        "pricesMinor": {
+          "rollUpPlus200x100cm": 33999,
+          "rollUpPlus300x150cm": 46999
+        },
+        "taxPresentation": "final_price"
+      },
+      "id": "au-banner-bundle-prices",
+      "market": "AU",
+      "provenance": "Owner-supplied AU price book, 2026-09-04",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "AU Banner Bundle final prices are 339.99 AUD with a 200x100 cm wall banner and 469.99 AUD with a 300x150 cm wall banner.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "AUD",
+      "facts": {
+        "backgroundRemovalMinor": 2000,
+        "extraPhotoMinor": 500,
+        "priceMinor": 19999,
+        "taxPresentation": "final_price"
+      },
+      "id": "au-grave-cover-price",
+      "market": "AU",
+      "provenance": "Owner-supplied AU price book, 2026-09-04",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "The AU standard Grave Cover final price is 199.99 AUD, with extra photos 5 AUD each and background removal 20 AUD.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "AUD",
+      "facts": {
+        "backgroundRemovalMinor": 2000,
+        "pricesMinor": {
+          "160x80cm": 16999,
+          "200x100cm": 20999,
+          "300x150cm": 36999
+        },
+        "taxPresentation": "final_price"
+      },
+      "id": "au-oil-painting-banner-prices",
+      "market": "AU",
+      "provenance": "Owner-supplied AU price book, 2026-09-04",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "AU Digital Oil Painting Banner base final prices are 160x80 cm 169.99, 200x100 cm 209.99 and 300x150 cm 369.99 AUD, plus applicable people or pets fees.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "AUD",
+      "facts": {
+        "pricesMinor": {
+          "A0": 30999,
+          "A1": 16999,
+          "A2": 10999,
+          "A3": 7999,
+          "A4": 6999
+        },
+        "taxPresentation": "final_price"
+      },
+      "id": "au-oil-painting-canvas-prices",
+      "market": "AU",
+      "provenance": "Owner-supplied AU price book, 2026-09-04",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "AU Digital Oil Painting Canvas base final prices are A4 69.99, A3 79.99, A2 109.99, A1 169.99 and A0 309.99 AUD, plus applicable people or pets fees.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "AUD",
+      "facts": {
+        "feesMinor": {
+          "1": 4000,
+          "2": 6000,
+          "3": 8500,
+          "4": 11000,
+          "5": 13000
+        },
+        "sixPlusPerPersonMinor": 2500
+      },
+      "id": "au-people-pets-fees",
+      "market": "AU",
+      "provenance": "Owner-supplied AU price book, 2026-09-04",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "AU digital-painting people or pets fees are 1:40, 2:60, 3:85, 4:110, 5:130 AUD and 6+ is 25 AUD times the total count.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "AUD",
+      "facts": {
+        "pricesMinor": {
+          "A0": 30999,
+          "A1": 16999,
+          "A2": 10999,
+          "A3": 7999,
+          "A4": 6999
+        },
+        "taxPresentation": "final_price"
+      },
+      "id": "au-photo-canvas-prices",
+      "market": "AU",
+      "provenance": "Owner-supplied AU price book, 2026-09-04",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "AU Photo Print Canvas final prices are A4 69.99, A3 79.99, A2 109.99, A1 169.99 and A0 309.99 AUD.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "AUD",
+      "facts": {
+        "backgroundRemovalMinor": 2000,
+        "extraPhotoMinor": 500,
+        "priceMinor": 25999,
+        "taxPresentation": "final_price"
+      },
+      "id": "au-roll-up-banner-price",
+      "market": "AU",
+      "provenance": "Owner-supplied AU price book, 2026-09-04",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "The AU standard Roll-Up Banner final price is 259.99 AUD, with extra photos 5 AUD each and background removal 20 AUD.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "shipping",
+      "currency": "AUD",
+      "id": "au-shipping-dynamic",
+      "market": "AU",
+      "provenance": "R&R Business Brain v0.5.1 sections 2.0 and 3.3",
+      "requiresLiveTool": true,
+      "sourceKind": "canonical",
+      "statement": "AU shipping depends on product type, size and shipping dimensions; Standard and DHL Express are distinct. Use the current quote source and never infer a flat rate.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": false,
+      "category": "shipping",
+      "currency": "AUD",
+      "id": "au-shipping-owner-review",
+      "market": "AU",
+      "provenance": "R&R Business Brain v0.5.1 owner-review item 10",
+      "requiresLiveTool": true,
+      "sourceKind": "approved_rule",
+      "statement": "Use current product-and-size shipping logic for AU exact quotes and never define a universal flat rate without owner approval.",
+      "status": "REVIEW"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "AUD",
+      "facts": {
+        "extraPhotoMinor": 500,
+        "pricesMinor": {
+          "A0": 35999,
+          "A1": 20999,
+          "A2": 15999,
+          "A3": 12999
+        },
+        "taxPresentation": "final_price"
+      },
+      "id": "au-themed-canvas-prices",
+      "market": "AU",
+      "provenance": "Owner-supplied AU price book, 2026-09-04",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "AU Custom Themed Canvas final prices are A3 129.99, A2 159.99, A1 209.99 and A0 359.99 AUD; no A4 price is approved.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "production",
+      "currency": "AUD",
+      "facts": {
+        "feesMinor": {
+          "1": 8000,
+          "2": 7000,
+          "3": 6000,
+          "4": 5000
+        }
+      },
+      "id": "au-urgent-fees",
+      "market": "AU",
+      "provenance": "Owner-supplied AU price book, 2026-09-04",
+      "requiresLiveTool": true,
+      "sourceKind": "canonical",
+      "statement": "AU urgent fees are 80 AUD for working day 1, 70 for day 2, 60 for day 3 and 50 for day 4, but availability and deadlines still require confirmation.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "AUD",
+      "facts": {
+        "backgroundRemovalMinor": 2000,
+        "extraPhotoMinor": 500,
+        "pricesMinor": {
+          "160x80cm": 17999,
+          "200x100cm": 19999,
+          "300x150cm": 35999
+        },
+        "taxPresentation": "final_price"
+      },
+      "id": "au-wall-banner-prices",
+      "market": "AU",
+      "provenance": "Owner-supplied AU price book, 2026-09-04",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "AU Custom Themed Wall Banner final prices are 160x80 cm 179.99, 200x100 cm 199.99 and 300x150 cm 359.99 AUD.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": false,
+      "category": "pricing",
+      "id": "banner-bundle-inclusions-review",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 owner-review item 11",
+      "requiresLiveTool": false,
+      "sourceKind": "approved_rule",
+      "statement": "Confirm the exact current composition and inclusions for each Banner Bundle.",
+      "status": "REVIEW"
+    },
+    {
+      "autonomous": false,
+      "category": "pricing",
+      "id": "banner-bundle-owner-review",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 owner-review item 1",
+      "requiresLiveTool": false,
+      "sourceKind": "approved_rule",
+      "statement": "Resolve conflicting historical Banner Bundle prices without overriding the current canonical market tables.",
+      "status": "REVIEW"
+    },
+    {
+      "autonomous": true,
+      "category": "identity",
+      "facts": {
+        "base": "Auckland, New Zealand",
+        "business": "R&R Gallery",
+        "markets": [
+          "NZ",
+          "AU"
+        ]
+      },
+      "id": "business-identity",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 section 1",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "R&R Gallery is based in Auckland, New Zealand and serves New Zealand and Australia with designer-led custom artwork.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "design",
+      "id": "design-capabilities",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 sections 1 and 4",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "R&R can combine people or pets from different photos, remove backgrounds, create memorial and event artwork, use supplied wording and themes, and provide a proof where technically feasible.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": false,
+      "category": "pricing",
+      "currency": "NZD",
+      "id": "grave-cover-pricing-review",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 owner-review item 2",
+      "requiresLiveTool": false,
+      "sourceKind": "approved_rule",
+      "statement": "Confirm the canonical NZ Grave Cover size and price table.",
+      "status": "REVIEW"
+    },
+    {
+      "autonomous": true,
+      "category": "design",
+      "id": "image-integrity",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 section 4",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "Do not promise perfect restoration from poor source material and do not stretch, squash or warp supplied artwork.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "payment",
+      "id": "live-order-payment-status",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 sections 7.16 and 7.17",
+      "requiresLiveTool": true,
+      "sourceKind": "canonical",
+      "statement": "Payment receipt and order status may be stated only from an authenticated live read; never infer them from conversation age.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "decision",
+      "id": "meta-duplicate-reply-prevention",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 section 7.14",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "Inspect recent conversation before replying and do not duplicate a Meta automated or staff answer that already resolved the customer question.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "NZD",
+      "facts": {
+        "pricesMinor": {
+          "extraLarge": 48999,
+          "standard": 35999
+        },
+        "retiredPricesMinor": [
+          33000
+        ],
+        "taxPresentation": "including_gst"
+      },
+      "id": "nz-banner-bundle-prices",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 section 2.5 canonical NZ table",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "Current NZ Banner Bundle prices including GST are Standard 359.99 and Extra Large 489.99 NZD; the retired 330 NZD historical price must never be quoted.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "NZD",
+      "facts": {
+        "pricesMinor": {
+          "A0": 28000,
+          "A1": 14800,
+          "A2": 9800,
+          "A3": 7800,
+          "A4": 6500
+        },
+        "taxPresentation": "before_gst"
+      },
+      "id": "nz-canvas-base-prices",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 section 2.1",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "NZ Canvas base prices before GST are A4 65, A3 78, A2 98, A1 148 and A0 280 NZD.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "NZD",
+      "facts": {
+        "feesMinor": {
+          "1": 4000,
+          "2": 6000,
+          "3": 8500,
+          "4": 11000,
+          "5": 13000
+        },
+        "sixPlusPerPersonMinor": 2500,
+        "taxPresentation": "before_gst"
+      },
+      "id": "nz-digital-painting-people-fees",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 section 2.1",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "NZ digital-painting people or pets fees before GST are 1:40, 2:60, 3:85, 4:110, 5:130 NZD and 6+ is 25 NZD times the total count.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "NZD",
+      "facts": {
+        "gstBasisPoints": 1500
+      },
+      "id": "nz-gst",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 section 2.1",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "New Zealand GST is 15 percent and applies to before-GST canvas and editing amounts.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "NZD",
+      "facts": {
+        "baseMinorBeforeGst": 23000,
+        "includedBackgroundRemovals": 1,
+        "includedPhotos": 5,
+        "priceMinorIncludingGst": 26450,
+        "sizeCm": "85 x 200"
+      },
+      "id": "nz-roll-up-banner",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 section 2.2",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "The NZ standard Roll-Up Banner is 230 NZD before GST or 264.50 NZD including GST, with the stand, carry bag, pegs, packing box, up to five photos and one background removal.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "shipping",
+      "currency": "NZD",
+      "id": "nz-shipping-dynamic",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 section 3.2",
+      "requiresLiveTool": true,
+      "sourceKind": "canonical",
+      "statement": "NZ courier cost varies by destination, parcel size and service; use a current quote for an exact delivered total and never invent a universal rate.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": false,
+      "category": "shipping",
+      "currency": "NZD",
+      "id": "nz-shipping-tariff-review",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 owner-review item 9",
+      "requiresLiveTool": true,
+      "sourceKind": "approved_rule",
+      "statement": "Keep exact NZ shipping dynamic unless a current canonical tariff is approved.",
+      "status": "REVIEW"
+    },
+    {
+      "autonomous": true,
+      "category": "pricing",
+      "currency": "NZD",
+      "facts": {
+        "pricesMinor": {
+          "160x80cm": 18975,
+          "200x100cm": 21275,
+          "300x150cm": 37950
+        },
+        "taxPresentation": "including_gst"
+      },
+      "id": "nz-wall-banner-prices",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 section 2.3",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "NZ Wall Banner prices including GST are 160x80 cm 189.75, 200x100 cm 212.75 and 300x150 cm 379.50 NZD.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": false,
+      "category": "pricing",
+      "currency": "NZD",
+      "id": "oil-painting-banner-pricing-review",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 owner-review item 3",
+      "requiresLiveTool": false,
+      "sourceKind": "approved_rule",
+      "statement": "Confirm or retire the historical NZ Oil Painting Banner price table.",
+      "status": "REVIEW"
+    },
+    {
+      "autonomous": false,
+      "category": "pricing",
+      "currency": "NZD",
+      "id": "photo-replacement-fee-review",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 owner-review item 6",
+      "requiresLiveTool": false,
+      "sourceKind": "approved_rule",
+      "statement": "Confirm the current Photo Replacement fee and policy after design work.",
+      "status": "REVIEW"
+    },
+    {
+      "autonomous": false,
+      "category": "pricing",
+      "currency": "NZD",
+      "id": "photo-restoration-fee-review",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 owner-review item 4",
+      "requiresLiveTool": false,
+      "sourceKind": "approved_rule",
+      "statement": "Confirm the standard Photo Restoration charge and conditions.",
+      "status": "REVIEW"
+    },
+    {
+      "autonomous": true,
+      "category": "production",
+      "facts": {
+        "workingDaysApproximate": 5
+      },
+      "id": "production-standard-target",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 section 3.1",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "The standard production target is approximately five working days once required photos, details and applicable payment conditions are satisfied; urgent deadlines are never guaranteed without capacity confirmation.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": false,
+      "category": "policy",
+      "id": "refund-deposit-policy-review",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 owner-review item 8",
+      "requiresLiveTool": false,
+      "sourceKind": "approved_rule",
+      "statement": "Approve one canonical customer-facing refund, cancellation and deposit policy across relevant order flows.",
+      "status": "REVIEW"
+    },
+    {
+      "autonomous": true,
+      "category": "decision",
+      "id": "reply-decision-principle",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 sections 7.0 through 7.24",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "Read the complete available conversation, reuse established facts, answer every material question directly, ask at most one necessary follow-up and never invent business facts.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": false,
+      "category": "revision",
+      "id": "revision-policy-review",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 owner-review item 7",
+      "requiresLiveTool": false,
+      "sourceKind": "approved_rule",
+      "statement": "Confirm whether two free revision rounds apply universally to every product and channel.",
+      "status": "REVIEW"
+    },
+    {
+      "autonomous": false,
+      "category": "pricing",
+      "currency": "NZD",
+      "id": "special-editing-fee-review",
+      "market": "NZ",
+      "provenance": "R&R Business Brain v0.5.1 owner-review item 5",
+      "requiresLiveTool": false,
+      "sourceKind": "approved_rule",
+      "statement": "Confirm which special edits qualify for a standard charge.",
+      "status": "REVIEW"
+    },
+    {
+      "autonomous": true,
+      "category": "payment",
+      "id": "website-payment-flow",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 section 6.1",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "Public website checkout collects payment for the complete website order in one checkout flow; do not promise deposit or balance stages unless explicitly active.",
+      "status": "CONFIRMED"
+    },
+    {
+      "autonomous": true,
+      "category": "workflow",
+      "id": "workflow-proof-before-print",
+      "market": "GLOBAL",
+      "provenance": "R&R Business Brain v0.5.1 section 5.1",
+      "requiresLiveTool": false,
+      "sourceKind": "canonical",
+      "statement": "The normal flow confirms product, photos, wording, timing and delivery; a proof is reviewed and printing proceeds only after final approval.",
+      "status": "CONFIRMED"
+    }
+  ],
+  "sourceSha256": "9bb3840c97f59728d00723432c7a82727528e25ff11ddf66e5923aadfb5846a5",
+  "version": "0.5.1",
+  "voice": {
+    "avoid": [
+      "Long generic introductions",
+      "Excessive enthusiasm",
+      "Unsupported prices or delivery guarantees",
+      "Repeated questions for known facts",
+      "Pressure or unnecessary upselling"
+    ],
+    "responsePattern": "Direct answer, then one useful supporting detail, then one clear next step only when needed.",
+    "style": [
+      "Friendly but concise",
+      "Natural English",
+      "Practical and calm",
+      "Answer the actual question first",
+      "Use established conversation context",
+      "Ask at most one necessary follow-up"
+    ]
+  }
+}

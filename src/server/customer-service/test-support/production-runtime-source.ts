@@ -27,6 +27,7 @@ interface RuntimeRoot {
 }
 
 const RUNTIME_ROOTS: readonly RuntimeRoot[] = [
+  { relativePath: "src/server/rnr-ai", server: true },
   { relativePath: "src/server/customer-service", server: true },
   { relativePath: "src/app/api/meta", server: true },
   { relativePath: "src/app/api/customer-chat", server: true },

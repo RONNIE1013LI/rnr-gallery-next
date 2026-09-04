@@ -42,6 +42,13 @@ type EarlierTimelineResponse = Readonly<{
   hasEarlier: boolean;
 }>;
 
+type TakeoverUiState = Readonly<{
+  status: "unknown" | "loading" | "ready" | "error";
+  active: boolean;
+  source: string | null;
+  changedAt: string | null;
+}>;
+
 const replyDateTime = new Intl.DateTimeFormat("en-NZ", {
   dateStyle: "short",
   timeStyle: "medium",
@@ -127,6 +134,7 @@ export function ReplyAssistantClient({
   const [feedbackErrors, setFeedbackErrors] = useState<Record<string, string>>({});
   const [feedbackCompletions, setFeedbackCompletions] = useState<Record<string, FeedbackAction>>({});
   const [earlierTimelines, setEarlierTimelines] = useState<Record<string, EarlierTimelineState>>({});
+  const [takeovers, setTakeovers] = useState<Record<string, TakeoverUiState>>({});
   const [previousTimelineWindows, setPreviousTimelineWindows] = useState<
     Record<string, readonly SafeTimelineEvent[]>
   >({});
@@ -349,6 +357,38 @@ export function ReplyAssistantClient({
     }
   }
 
+  async function readTakeover(item: ReplyQueueItem) {
+    setTakeovers((states) => ({ ...states, [item.inboxId]: { status: "loading", active: false, source: null, changedAt: null } }));
+    try {
+      const response = await fetch(`/api/reply-assistant/conversations/${encodeURIComponent(item.inboxId)}/takeover`, {
+        cache: "no-store",
+        headers: { accept: "application/json" },
+      });
+      if (!response.ok) throw new Error("takeover_read_failed");
+      const state = await response.json() as Omit<TakeoverUiState, "status">;
+      setTakeovers((states) => ({ ...states, [item.inboxId]: { status: "ready", ...state } }));
+    } catch {
+      setTakeovers((states) => ({ ...states, [item.inboxId]: { status: "error", active: false, source: null, changedAt: null } }));
+    }
+  }
+
+  async function mutateTakeover(item: ReplyQueueItem, active: boolean) {
+    const previous = takeovers[item.inboxId] ?? { status: "unknown", active: false, source: null, changedAt: null };
+    setTakeovers((states) => ({ ...states, [item.inboxId]: { ...previous, status: "loading" } }));
+    try {
+      const response = await fetch(`/api/reply-assistant/conversations/${encodeURIComponent(item.inboxId)}/takeover`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ active }),
+      });
+      if (!response.ok) throw new Error("takeover_write_failed");
+      const state = await response.json() as Omit<TakeoverUiState, "status">;
+      setTakeovers((states) => ({ ...states, [item.inboxId]: { status: "ready", ...state } }));
+    } catch {
+      setTakeovers((states) => ({ ...states, [item.inboxId]: { ...previous, status: "error" } }));
+    }
+  }
+
   return (
     <div className={styles.queue}>
       {items.length === 0 ? <p className={styles.empty}>No pilot messages yet.</p> : null}
@@ -396,6 +436,26 @@ export function ReplyAssistantClient({
                 {item.websiteReview ? <span className={styles.alertBadge} data-alert={item.websiteReview.alertStatus}>Alert {item.websiteReview.alertStatus.replaceAll("_", " ")}</span> : null}
               </div>
             </header>
+            {item.channel === "facebook" && /^[a-f0-9]{64}$/.test(item.inboxId) ? (
+              <div className={styles.takeoverBar}>
+                <span>
+                  {takeovers[item.inboxId]?.status === "error"
+                    ? "AI handling status unavailable"
+                    : takeovers[item.inboxId]?.status === "ready"
+                      ? takeovers[item.inboxId]?.active ? "Human takeover active" : "AI handling available"
+                      : "AI handling status not checked"}
+                </span>
+                {takeovers[item.inboxId]?.status === "ready" ? (
+                  takeovers[item.inboxId]?.active ? (
+                    <button type="button" disabled={takeovers[item.inboxId]?.status === "loading"} onClick={() => void mutateTakeover(item, false)}>Release conversation to AI</button>
+                  ) : (
+                    <button type="button" disabled={takeovers[item.inboxId]?.status === "loading"} onClick={() => void mutateTakeover(item, true)}>Take over conversation</button>
+                  )
+                ) : (
+                  <button type="button" disabled={takeovers[item.inboxId]?.status === "loading"} onClick={() => void readTakeover(item)}>Check AI handling</button>
+                )}
+              </div>
+            ) : null}
             <div className={styles.messageBody}>
               <div className={styles.messageContext}>
                 {timeline.length > 0 ? (

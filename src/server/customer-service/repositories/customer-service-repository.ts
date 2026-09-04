@@ -488,7 +488,7 @@ export interface CustomerServiceRepository {
     | Readonly<{ status: "duplicate"; messageId: string }>
     | Readonly<{ status: "pilot_complete"; messageId: string }>
   >;
-  loadDraftInput(messageId: string, contextLimit: number): Promise<DraftInput | null>;
+  loadDraftInput(messageId: string, contextLimit: number | null): Promise<DraftInput | null>;
   selectImageContext(messageId: string): Promise<Readonly<{
     messageId: string;
     attachmentIds: readonly string[];

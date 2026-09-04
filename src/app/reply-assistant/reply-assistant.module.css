@@ -92,6 +92,110 @@
 .liveDashboard { display: contents; }
 .conversationPanel { display: contents; }
 
+.aiControlPanel,
+.metaReviewPanel {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+  padding: 16px 18px;
+  border: 1px solid var(--reply-border);
+  border-radius: 12px;
+  background: var(--reply-surface);
+}
+
+.controlHeader,
+.controlActions,
+.overrideControls,
+.scheduleEditor,
+.metaReviewList li {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.controlHeader { justify-content: space-between; }
+.controlHeader p { color: var(--reply-muted); font-size: 11px; font-weight: 720; }
+.controlHeader h2 { margin: 3px 0 0; font-size: 18px; }
+.controlHeader > strong {
+  padding: 6px 10px;
+  border-radius: 999px;
+  color: #8a3027;
+  background: #fff2ef;
+  font-size: 12px;
+}
+.controlHeader > strong[data-state="ON"] { color: #246334; background: #edf7f0; }
+
+.controlFacts {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin: 0;
+  border: 1px solid var(--reply-border);
+  border-radius: 8px;
+}
+.controlFacts > div { min-width: 0; padding: 10px 12px; }
+.controlFacts > div + div { border-left: 1px solid var(--reply-border); }
+.controlFacts dt { color: var(--reply-muted); font-size: 10px; }
+.controlFacts dd { overflow-wrap: anywhere; margin: 3px 0 0; font-size: 12px; font-weight: 720; }
+
+.controlActions button,
+.overrideControls button,
+.scheduleEditor button,
+.scheduleList button,
+.metaReviewPanel button {
+  min-height: 38px;
+  padding: 7px 11px;
+  border: 1px solid var(--reply-border-strong);
+  border-radius: 8px;
+  color: var(--reply-accent);
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 720;
+  cursor: pointer;
+}
+.controlActions button:disabled,
+.overrideControls button:disabled,
+.scheduleEditor button:disabled,
+.scheduleList button:disabled,
+.metaReviewPanel button:disabled { cursor: not-allowed; opacity: 0.5; }
+
+.scheduleEditor,
+.overrideControls { align-items: end; }
+.scheduleEditor label,
+.overrideControls label { display: grid; min-width: 120px; gap: 4px; color: var(--reply-muted); font-size: 11px; font-weight: 700; }
+.scheduleEditor select,
+.scheduleEditor input,
+.overrideControls input {
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 7px 9px;
+  border: 1px solid var(--reply-border-strong);
+  border-radius: 8px;
+  background: #fff;
+  font: inherit;
+  font-size: 12px;
+}
+.overrideControls label { flex: 1 1 280px; }
+
+.scheduleList,
+.metaReviewList { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.scheduleList li,
+.metaReviewList li { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 9px 10px; border-radius: 8px; background: var(--reply-response); font-size: 12px; }
+.metaReviewList li > div { display: grid; gap: 2px; }
+.metaReviewList span { color: var(--reply-muted); }
+.metaReviewDetail { display: grid; gap: 8px; padding: 12px; border: 1px solid #e2c991; border-radius: 8px; background: #fff9eb; }
+.metaReviewDetail p,
+.metaReviewDetail ul { margin: 0; }
+.metaReviewDetail ul { padding-left: 18px; color: var(--reply-muted); font-size: 12px; }
+.controlWarning,
+.controlError,
+.controlNotice { margin: 0; font-size: 12px; }
+.controlWarning,
+.controlError { color: #8a3027; }
+.controlNotice { color: var(--reply-muted); }
+
 .conversationHeading {
   display: none;
 }
@@ -325,7 +429,10 @@
   .conversationHeading span { color: var(--reply-muted); font-size: 12px; }
   .dashboardToolbar { order: 0; }
   .metricPanel { order: 2; }
-  .learning { order: 3; }
+  .aiControlPanel { order: 2; }
+  .metaReviewPanel { order: 3; }
+  .metricPanel { order: 4; }
+  .learning { order: 5; }
   .knowledgeDisclosure > summary {
     display: flex;
     min-height: 44px;
@@ -357,6 +464,16 @@
   .metricDisclosure { min-height: 44px; }
   .learning { padding: 14px; }
   .learningControls button { flex: 1 1 120px; }
+  .aiControlPanel,
+  .metaReviewPanel { padding: 14px; }
+  .controlFacts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .controlFacts > div + div { border-left: 0; }
+  .controlFacts > div:nth-child(even) { border-left: 1px solid var(--reply-border); }
+  .controlFacts > div:nth-child(n + 3) { border-top: 1px solid var(--reply-border); }
+  .controlActions button,
+  .overrideControls button { flex: 1 1 120px; min-height: 44px; }
+  .scheduleEditor label { flex: 1 1 100px; }
+  .scheduleEditor button { min-height: 44px; }
 }
 
 @media (max-width: 430px) {

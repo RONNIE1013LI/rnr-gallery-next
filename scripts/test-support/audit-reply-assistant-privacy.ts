@@ -1,6 +1,9 @@
 import { createHash, randomInt, randomUUID } from "node:crypto";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { Client } from "pg";
 import { isDedicatedTestDatabase } from "../../src/server/db/test-database-safety";
+import { hasForbiddenDatabaseImport } from "./audit-reply-assistant-privacy-static";
 
 const TABLES = [
   "customer_service_pilot_runs",
@@ -18,6 +21,41 @@ const TABLES = [
 
 type TableName = typeof TABLES[number];
 
+const PHASE_2_META_RUNTIME_FILES = [
+  "src/server/rnr-ai/meta/orchestrator.ts",
+  "src/server/rnr-ai/meta/runtime.ts",
+  "src/server/rnr-ai/meta/backlog-reconciler.ts",
+  "src/server/rnr-ai/meta/reply-sender.ts",
+] as const;
+
+function auditPhase2StaticPrivacy() {
+  const sources = PHASE_2_META_RUNTIME_FILES.map((path) => ({
+    path,
+    source: readFileSync(resolve(process.cwd(), path), "utf8"),
+  }));
+  const databaseImports = sources
+    .filter(({ source }) => hasForbiddenDatabaseImport(source))
+    .map(({ path }) => path);
+  const logging = sources
+    .filter(({ source }) => /\b(?:console|logger)\.(?:log|info|warn|error|debug)\s*\(/.test(source))
+    .map(({ path }) => path);
+  const graphPostFiles = sources
+    .filter(({ source }) => /graph\.facebook\.com[\s\S]{0,240}\/messages/.test(source))
+    .map(({ path }) => path);
+  if (
+    databaseImports.length > 0
+    || logging.length > 0
+    || graphPostFiles.length !== 1
+    || graphPostFiles[0] !== "src/server/rnr-ai/meta/reply-sender.ts"
+  ) throw new Error("phase_2_static_privacy_boundary_failed");
+  return Object.freeze({
+    filesInspected: sources.length,
+    databaseImports: 0,
+    loggingCalls: 0,
+    graphPostFiles,
+  });
+}
+
 function hash(value: string) {
   return createHash("sha256").update(value).digest("hex");
 }
@@ -27,6 +65,7 @@ function databaseName(url: string) {
 }
 
 async function main() {
+  const phase2StaticPrivacy = auditPhase2StaticPrivacy();
   const testDatabaseUrl = process.env.TEST_DATABASE_URL;
   const safetyDatabaseUrl = process.env.DATABASE_URL;
   if (
@@ -287,6 +326,7 @@ async function main() {
       forbiddenColumns,
       conversationScopeViolations,
       residualRowsAfterRollback,
+      phase2StaticPrivacy,
     }, null, 2)}\n`);
   } finally {
     if (transactionOpen) await client.query("ROLLBACK");

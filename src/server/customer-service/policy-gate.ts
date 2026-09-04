@@ -27,6 +27,10 @@ export type PolicyGateResult = Readonly<{
   selectedRules: readonly PolicyRule[];
 }>;
 
+export function policyGateRisk(result: PolicyGateResult): "GREEN" | "RED" {
+  return result.decision === "DRAFT_ALLOWED" && result.providerAllowed ? "GREEN" : "RED";
+}
+
 const HIGH_RISK_PATTERNS = [
   /\brefund\b/i,
   /\bcancell?ation\b|\bcancel\b/i,

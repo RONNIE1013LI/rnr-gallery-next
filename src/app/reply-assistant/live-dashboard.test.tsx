@@ -57,6 +57,11 @@ const props = {
   initialLearningCandidates: [],
   initialCaseMemories: [],
   canReview: false,
+  initialAiControl: {
+    available: true,
+    config: { revision: 3, mode: "SCHEDULE" as const, timezone: "Pacific/Auckland" as const, periods: [{ day: 1 as const, start: "09:00", end: "17:00" }], override: null },
+    effective: { effectiveState: "OFF" as const, source: "schedule" as const, nextTransitionAt: "2026-09-07T21:00:00.000Z" },
+  },
 };
 
 const updatedMetrics: PilotMetricCounts = {
@@ -158,6 +163,70 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(screen.getByRole("region", { name: "Needs attention conversations" })).toBeInTheDocument();
     expect(screen.getByRole("heading", { name: "Needs attention" })).toBeInTheDocument();
     expect(screen.getByText("1 conversation")).toBeInTheDocument();
+  });
+
+  it("shows the Auckland AI control state and next schedule transition without polling", () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ReplyAssistantLiveDashboard {...props} />);
+
+    expect(screen.getByRole("region", { name: "AI control" })).toHaveTextContent("SCHEDULE");
+    expect(screen.getByRole("region", { name: "AI control" })).toHaveTextContent("Pacific/Auckland");
+    expect(screen.getByRole("region", { name: "AI control" })).toHaveTextContent("Next transition");
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("fails closed when the runtime control store is unavailable", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<ReplyAssistantLiveDashboard {...props} initialAiControl={{
+      available: false,
+      config: { revision: 0, mode: "OFF", timezone: "Pacific/Auckland", periods: [], override: null },
+      effective: { effectiveState: "OFF", source: "invalid", nextTransitionAt: null },
+    }} />);
+
+    expect(screen.getByRole("region", { name: "AI control" })).toHaveTextContent("Runtime store unavailable — effective state is OFF");
+  });
+
+  it("confirms an exact expiring override and reports a revision conflict without retrying", async () => {
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.override).toEqual({ state: "ON", expiresAt: "2026-09-05T00:00:00.000Z" });
+      return response({ error: { code: "CONTROL_REVISION_CONFLICT" } }, 409);
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ReplyAssistantLiveDashboard {...props} />);
+
+    fireEvent.change(screen.getByLabelText("Override expiry (ISO 8601)"), { target: { value: "2026-09-05T00:00:00.000Z" } });
+    fireEvent.click(screen.getByRole("button", { name: "Force ON" }));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("2026-09-05T00:00:00.000Z"));
+    expect(screen.getByRole("alert")).toHaveTextContent("Control changed elsewhere. Refresh control before retrying.");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("loads review metadata and decrypts detail only after an explicit operator action", async () => {
+    const reviewKey = "c".repeat(64);
+    const conversationKey = "d".repeat(64);
+    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+      if (String(url) === "/api/reply-assistant/meta-reviews") return response({ reviews: [{
+        reviewKey, conversationKey, risk: "YELLOW", createdAt: "2026-09-04T01:00:00.000Z", expiresAt: "2026-09-06T01:00:00.000Z",
+      }] });
+      return response({ reviewKey, conversationKey, risk: "YELLOW", replyText: "Protected draft", reasons: ["review_required"], createdAt: "2026-09-04T01:00:00.000Z", expiresAt: "2026-09-06T01:00:00.000Z" });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ReplyAssistantLiveDashboard {...props} />);
+
+    expect(screen.queryByText("Protected draft")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Refresh Meta reviews" }));
+    await act(async () => { await Promise.resolve(); });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: "Open protected review" }));
+    await act(async () => { await Promise.resolve(); });
+    expect(screen.getByText("Protected draft")).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(document.body.textContent).not.toContain(conversationKey);
   });
 
   it("keeps the selected deep-link review pinned while merging a full live queue", () => {
