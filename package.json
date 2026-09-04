@@ -50,6 +50,7 @@
     "@next/third-parties": "16.3.3",
     "@stripe/react-stripe-js": "^6.8.0",
     "@stripe/stripe-js": "^9.12.1",
+    "@upstash/redis": "^1.38.3",
     "@vercel/blob": "^2.8.0",
     "better-auth": "1.6.25",
     "drizzle-orm": "0.45.2",
