@@ -160,6 +160,14 @@
 }
 .controlHeader > strong[data-state="ON"] { color: #246334; background: #edf7f0; }
 
+.aiControlDisclosure { display: none; }
+
+.aiControlSettings {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
 .currentStatus {
   display: grid;
   min-width: 0;
@@ -475,10 +483,27 @@
   .conversationHeading h2 { margin: 0; font-size: 18px; }
   .conversationHeading span { color: var(--reply-muted); font-size: 12px; }
   .dashboardToolbar { order: 0; }
+  .aiControlPanel { order: -1; }
   .metricPanel { order: 2; }
-  .aiControlPanel { order: 2; }
   .metaReviewPanel { order: 3; }
-  .metricPanel { order: 4; }
+  .aiControlDisclosure {
+    display: inline-flex;
+    min-height: 44px;
+    flex: 1 0 100%;
+    align-items: center;
+    justify-content: center;
+    padding: 7px 11px;
+    border: 1px solid var(--reply-border-strong);
+    border-radius: 8px;
+    color: var(--reply-accent);
+    background: #fff;
+    font: inherit;
+    font-size: 12px;
+    font-weight: 720;
+    cursor: pointer;
+  }
+  .aiControlDisclosure:focus-visible { outline: 3px solid color-mix(in srgb, var(--reply-focus) 42%, transparent); outline-offset: 2px; }
+  .aiControlSettings[data-mobile-expanded="false"] { display: none; }
   .learning { order: 5; }
   .knowledgePanel { padding: 14px; }
   .knowledgeProvenance { grid-template-columns: repeat(2, minmax(0, 1fr)); }
