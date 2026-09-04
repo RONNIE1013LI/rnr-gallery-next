@@ -44,6 +44,11 @@ type MetaReviewMetadata = Readonly<{
 type MetaReviewDetail = MetaReviewMetadata & Readonly<{
   replyText: string | null;
   reasons: readonly string[];
+  takeover: Readonly<{
+    active: boolean;
+    source: "staff_echo" | "admin" | "risk" | null;
+    changedAt: string | null;
+  }>;
 }>;
 
 const unavailableAiControl: AiControlView = {
@@ -291,6 +296,25 @@ export function ReplyAssistantLiveDashboard({
     }
   }, []);
 
+  const releaseMetaReviewToAi = useCallback(async (reviewKey: string) => {
+    setReviewState("loading");
+    try {
+      const response = await fetch(`/api/reply-assistant/meta-reviews/${encodeURIComponent(reviewKey)}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ action: "release_to_ai" }),
+      });
+      if (!response.ok) throw new Error("review_release_failed");
+      const body = await response.json() as Pick<MetaReviewDetail, "takeover">;
+      setSelectedMetaReview((current) => current?.reviewKey === reviewKey
+        ? { ...current, takeover: body.takeover }
+        : current);
+      setReviewState("idle");
+    } catch {
+      setReviewState("failed");
+    }
+  }, []);
+
   const refresh = useCallback(async () => {
     if (inFlightRef.current) return;
     inFlightRef.current = true;
@@ -441,6 +465,9 @@ export function ReplyAssistantLiveDashboard({
           <strong>{selectedMetaReview.risk} review</strong>
           <p>{selectedMetaReview.replyText ?? "No proposed reply is available."}</p>
           <ul>{selectedMetaReview.reasons.map((reason) => <li key={reason}>{reason.replaceAll("_", " ")}</li>)}</ul>
+          {selectedMetaReview.takeover.active ? (
+            <button type="button" disabled={reviewState === "loading"} onClick={() => void releaseMetaReviewToAi(selectedMetaReview.reviewKey)}>Release conversation to AI</button>
+          ) : <p>AI handling available</p>}
         </article> : null}
       </section>
       <div className={styles.dashboardToolbar}>
