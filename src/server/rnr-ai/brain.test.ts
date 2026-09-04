@@ -108,9 +108,9 @@ describe("RnrAiBrain", () => {
 
   it("executes at most two allowlisted tools and gives timestamped evidence to the final model pass", async () => {
     const requestedTools = [
-      { name: "dynamic_shipping_quote" as const, input: { market: "NZ", product: "roll-up-banner", size: "85x200", destination: "Auckland" } },
-      { name: "canonical_product_price" as const, input: { market: "NZ", product: "roll-up-banner", size: "85x200" } },
-      { name: "payment_status" as const, input: { customerReference: "verified", orderReference: "RNR-1" } },
+      { name: "dynamic_shipping_quote" as const, input: { product: "roll-up-banner", size: "85x200", destination: "Auckland", orderReference: null } },
+      { name: "canonical_product_price" as const, input: { product: "roll-up-banner", size: "85x200", destination: null, orderReference: null } },
+      { name: "payment_status" as const, input: { product: null, size: null, destination: null, orderReference: "RNR-1" } },
     ];
     const current = setup([
       providerResult({ replyText: null, claims: [], requestedTools }),
@@ -183,7 +183,7 @@ describe("RnrAiBrain", () => {
   it("uses only the verified tool context for private status lookups", async () => {
     const toolRequest = {
       name: "order_status" as const,
-      input: { customerReference: "model-invented", orderReference: "RNR-1" },
+      input: { product: null, size: null, destination: null, orderReference: "RNR-1" },
     };
     const current = setup([
       providerResult({ replyText: null, claims: [], requestedTools: [toolRequest] }),
@@ -201,7 +201,7 @@ describe("RnrAiBrain", () => {
       providerResult({
         replyText: null,
         claims: [],
-        requestedTools: [{ name: "payment_status", input: { customerReference: "model-invented", orderReference: "RNR-1" } }],
+        requestedTools: [{ name: "payment_status", input: { product: null, size: null, destination: null, orderReference: "RNR-1" } }],
       }),
       providerResult({ replyText: "I cannot verify that payment.", claims: [] }),
     ]);

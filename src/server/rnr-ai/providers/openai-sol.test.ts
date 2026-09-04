@@ -45,6 +45,12 @@ describe("OpenAiSolProvider", () => {
       reasoning: { effort: "medium" },
       text: { format: { type: "json_schema", strict: true } },
     });
+    expect(JSON.stringify(body.text.format.schema)).not.toContain("propertyNames");
+    expect(body.text.format.schema.properties.requestedTools.items.properties.input).toMatchObject({
+      type: "object",
+      required: ["product", "size", "destination", "orderReference"],
+      additionalProperties: false,
+    });
     expect(body).not.toHaveProperty("previous_response_id");
     expect(body.input[0].content.map((item: { type: string }) => item.type)).toEqual([
       "input_text",
