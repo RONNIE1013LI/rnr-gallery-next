@@ -4,16 +4,17 @@
 
 Phase 2 implementation is complete at code level and remains non-deployed. Production behavior, Production data, Vercel configuration, Meta configuration and database migrations were not changed.
 
-Deployment readiness is **BLOCKED ON EXTERNAL PREREQUISITES AND THE ISOLATED DB RELEASE GATE**. The code is ready for review, but not ready to merge or deploy until an approved Redis-compatible runtime store and its server-only credentials exist and the full database-backed suite is rerun against an isolated Test database.
+The isolated database release gate is complete. The branch is technically ready for merge/deployment once the approved Redis-compatible runtime store and required server-only runtime secrets exist. It remains non-deployed, unmerged and unpushed.
 
 ## Source state
 
 - Implementation base: `origin/main` at `081fc825b5e3574c85ef674082bce41ff2f8e1bf`
-- Pre-final-validation implementation HEAD: `552b083`
+- Isolated DB verification implementation HEAD: `66a9759`
 - Branch: `feature/rnr-ai-reply-assistant-phase2`
 - Database schema files changed: 0
 - Drizzle migration files changed: 0
 - Production deployment: none
+- Production database access: none
 
 ## Implemented boundaries
 
@@ -43,23 +44,39 @@ Deployment readiness is **BLOCKED ON EXTERNAL PREREQUISITES AND THE ISOLATED DB 
 - Deterministic image harness: 80 cases; zero gate bypass, policy violation, forbidden claim, cross-customer exposure, automatic send or network call. Mock-provider quality scoring is intentionally unavailable.
 - Website evaluation: 120/120 gate and outcome matches; zero policy bypass, unsupported real-time claim, unsafe direct free text, cross-session leakage or automatic send.
 
-### Full-suite limitation
+### Isolated database release gate
 
-The unfiltered `npm run test:run` collected 628 files. It passed 584 files and 5,170 tests, skipped 11 files and 234 tests, and failed 33 database-backed suites before test collection because `TEST_DATABASE_URL` is not configured. No failed assertion was reported in the 584 executed suites. The database-backed result is therefore **NOT VERIFIED**, not PASS.
+- Test PostgreSQL: ephemeral `postgres:16-alpine` Docker container, loopback-only port, `tmpfs` data directory and clearly test-named databases.
+- `TEST_DATABASE_URL`: process-scoped only; not written to the repository, `.env` files or Production configuration.
+- Isolation guard: passed before migrations/tests; the test target was distinct from the local safety database and configured Production identity sentinels.
+- Existing migrations: applied only to fresh local test databases.
+- Full release gate: 629 files and 5,691 tests passed; 0 failed.
+- Release-created test databases: dropped automatically; cleanup passed.
 
-The privacy database audit was not run for the same reason. It fails closed unless `TEST_DATABASE_URL` is demonstrably isolated from Production.
+### Privacy database audit
+
+- 11 customer-service tables were inspected with synthetic records inside one transaction.
+- Forbidden sensitive patterns: 0.
+- Forbidden columns: 0.
+- Conversation-scope violations: 0.
+- Rows remaining after rollback: 0.
+- Meta runtime files with database imports: 0.
+- Meta runtime logging calls: 0.
+- The only Graph `/messages` POST remains isolated in `reply-sender.ts`.
+- Result: PASS.
 
 ### Final command record
 
-- Non-database complete suite: 583 files passed; 5,167 tests passed; 4 tests skipped by design.
+- Isolated database complete suite: 629 files passed; 5,691 tests passed.
 - TypeScript: passed.
 - ESLint: passed with 0 errors and 8 pre-existing warnings in legacy test files.
 - Drizzle schema check: passed.
 - Local optimized Next.js build: passed and generated 128/128 static pages using documented non-secret build-only placeholders.
 - Production Source Guard: passed in the ordinary local-build context and correctly rejected an attempted feature-branch build explicitly marked `VERCEL_ENV=production`; the guard was not bypassed.
 - `git diff --check`: passed.
-- Latest `origin/main`: fetched with prune and remained `081fc825b5e3574c85ef674082bce41ff2f8e1bf`; branch was 17 commits ahead and 0 behind before the validation commit.
+- Latest `origin/main`: fetched with prune and remained `081fc825b5e3574c85ef674082bce41ff2f8e1bf`; branch was 19 commits ahead and 0 behind before this validation update.
 - Schema/migration diff against `origin/main`: none.
+- Production, Neon, Vercel, Meta and runtime feature flags were not read or changed.
 
 ## Independent safety review
 
@@ -78,8 +95,7 @@ The privacy database audit was not run for the same reason. It fails closed unle
 
 1. Owner-approved dedicated Redis-compatible service with atomic Lua and TTL support. No suitable configured service was found and no paid resource was provisioned.
 2. Server-only Redis URL/token/namespace and review-encryption key.
-3. Isolated Test PostgreSQL credentials for the full database suite and privacy audit. Production credentials/data must not be used.
-4. Later Meta Page permissions/test recipient and separate owner approval before any send validation.
+3. Later Meta Page permissions/test recipient and separate owner approval before any send validation.
 
 ## Safe rollout defaults
 
