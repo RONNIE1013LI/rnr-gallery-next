@@ -1,4 +1,5 @@
 import { z } from "zod";
+import type { DiagnosticReason, ProviderDiagnostic } from "../diagnostics";
 import type { VerifiedImageInput } from "../types";
 
 type FetchImplementation = (input: string | URL | Request, init?: RequestInit) => Promise<Response>;
@@ -14,7 +15,10 @@ export type SolProviderErrorCode =
 export class SolProviderError extends Error {
   readonly code: SolProviderErrorCode;
 
-  constructor(code: SolProviderErrorCode) {
+  constructor(code: SolProviderErrorCode, readonly reason: DiagnosticReason = ({
+    configuration: "provider_not_called", timeout: "provider_timeout", transient_transport: "provider_connection_error",
+    rate_limited: "provider_rate_limit", invalid_output: "structured_output_invalid", permanent_provider: "provider_http_error",
+  } as const)[code]) {
     super(`sol_provider_${code}`);
     this.name = "SolProviderError";
     this.code = code;
@@ -53,6 +57,7 @@ export type SolProviderRequest = Readonly<{
   conversationText: string;
   images: readonly VerifiedImageInput[];
   deadlineAt?: number;
+  onDiagnostic?: (entry: ProviderDiagnostic) => void;
 }>;
 
 export type SolProviderResult = Readonly<{
@@ -101,13 +106,43 @@ function parseUsage(body: Record<string, unknown>) {
   };
 }
 
-function httpError(response: Response): SolProviderError {
-  if (response.status === 408) return new SolProviderError("timeout");
-  if (response.status === 429) return new SolProviderError("rate_limited");
-  if (response.status >= 500) return new SolProviderError("transient_transport");
-  if (response.status === 401 || response.status === 403) return new SolProviderError("configuration");
-  if (response.status === 400 || response.status === 422) return new SolProviderError("invalid_output");
-  return new SolProviderError("permanent_provider");
+async function httpError(response: Response, diagnostic: ProviderDiagnostic): Promise<SolProviderError> {
+  // Never retain the free-form provider message or unknown code/type in diagnostics.
+  let reason: DiagnosticReason = "provider_http_error";
+  try {
+    const raw = await response.text();
+    diagnostic.responseBytes = raw.length > 0;
+    const body: unknown = JSON.parse(raw);
+    const error = body && typeof body === "object" && "error" in body ? body.error : null;
+    const codes = error && typeof error === "object" ? ["code" in error ? error.code : null, "type" in error ? error.type : null] : [];
+    if (codes.some(code => ["insufficient_quota", "credit_balance_exhausted", "billing_hard_limit_reached"].includes(String(code)))) reason = "provider_credit_or_quota_failure";
+    else if (codes.some(code => ["model_not_found", "model_not_available", "model_access_denied"].includes(String(code)))) reason = "model_not_available";
+  } catch { /* HTTP status remains available when the error body is not JSON. */ }
+  if (reason === "provider_http_error") {
+    if (response.status === 401 || response.status === 403) reason = "provider_auth_failure";
+    else if (response.status === 429) reason = "provider_rate_limit";
+    else if (response.status === 408) reason = "provider_timeout";
+  }
+  // Preserve existing retry/error-code semantics.
+  const code: SolProviderErrorCode = response.status === 408 ? "timeout" : response.status === 429 ? "rate_limited"
+    : response.status >= 500 ? "transient_transport" : [401, 403].includes(response.status) ? "configuration"
+    : [400, 422].includes(response.status) ? "invalid_output" : "permanent_provider";
+  return new SolProviderError(code, reason);
+}
+function errorClass(reason: DiagnosticReason): ProviderDiagnostic["errorClass"] {
+  switch (reason) {
+    case "provider_auth_failure": return "auth";
+    case "provider_credit_or_quota_failure": return "quota";
+    case "provider_rate_limit": return "rate_limit";
+    case "provider_http_error": return "http";
+    case "provider_connection_error": return "connection";
+    case "provider_timeout": case "reasoning_timeout": return "timeout";
+    case "model_not_available": case "model_mismatch": return "model";
+    case "response_parse_failure": case "response_empty": return "parse";
+    case "structured_output_invalid": return "schema";
+    case "response_incomplete": return "incomplete";
+    default: return "configuration";
+  }
 }
 
 function transportError(error: unknown) {
@@ -185,33 +220,59 @@ export class OpenAiSolProvider {
 
     let lastError = new SolProviderError("transient_transport");
     for (let attempt = 0; attempt < 2; attempt += 1) {
+      const startedAt = Date.now();
+      const diagnostic: ProviderDiagnostic = {
+        phase: "start", attempt: attempt + 1, providerCalled: false, httpStatus: null, latencyMs: 0,
+        responseReturned: false, responseBytes: false, responseText: false, parsed: false, structuredValid: false,
+        reason: "none", timeoutSource: "none", errorClass: "none", incompleteReason: "none",
+      };
+      const emit = (phase: ProviderDiagnostic["phase"]) => {
+        try { request.onDiagnostic?.({ ...diagnostic, phase, latencyMs: Math.max(0, Date.now() - startedAt) }); } catch { /* No effect on retries or safety. */ }
+      };
       try {
         const remaining = request.deadlineAt === undefined ? 25_000 : Math.min(25_000, request.deadlineAt - Date.now());
-        if (remaining < 1) throw new SolProviderError("timeout");
+        if (remaining < 1) throw new SolProviderError("timeout", "reasoning_timeout");
+        const signal = this.timeoutSignal(remaining);
+        diagnostic.providerCalled = true;
+        emit("start");
         const response = await this.fetchImpl("https://api.openai.com/v1/responses", {
           method: "POST",
-          headers: {
-            authorization: `Bearer ${this.apiKey}`,
-            "content-type": "application/json",
-          },
-          body,
-          signal: this.timeoutSignal(remaining),
+          headers: { authorization: `Bearer ${this.apiKey}`, "content-type": "application/json" },
+          body, signal,
         });
-        if (!response.ok) throw httpError(response);
-
-        const responseBody = await response.json() as Record<string, unknown>;
-        if (responseBody.status === "incomplete" || (typeof responseBody.model === "string" && responseBody.model !== this.model)) throw new SolProviderError("invalid_output");
-        const decision = schema.parse(JSON.parse(outputText(responseBody)));
-        return Object.freeze({
-          decision,
-          model: typeof responseBody.model === "string" ? responseBody.model : this.model,
-          usage: Object.freeze(parseUsage(responseBody)),
-        });
-      } catch (error) {
-        if (error instanceof SyntaxError || error instanceof z.ZodError) {
-          throw new SolProviderError("invalid_output");
+        diagnostic.httpStatus = response.status;
+        diagnostic.responseReturned = true;
+        emit("response");
+        if (!response.ok) throw await httpError(response, diagnostic);
+        const raw = await response.text();
+        diagnostic.responseBytes = raw.length > 0;
+        if (!raw.trim()) throw new SolProviderError("invalid_output", "response_empty");
+        const decoded: unknown = JSON.parse(raw);
+        if (!decoded || typeof decoded !== "object" || Array.isArray(decoded)) throw new SolProviderError("invalid_output", "structured_output_invalid");
+        const responseBody = decoded as Record<string, unknown>;
+        const text = outputText(responseBody);
+        diagnostic.responseText = text.length > 0;
+        if (responseBody.status === "incomplete") {
+          const detail = responseBody.incomplete_details;
+          const reason = detail && typeof detail === "object" && "reason" in detail ? detail.reason : null;
+          diagnostic.incompleteReason = reason === "max_output_tokens" || reason === "content_filter" ? reason : "other";
+          throw new SolProviderError("invalid_output", "response_incomplete");
         }
-        lastError = transportError(error);
+        if (typeof responseBody.model === "string" && responseBody.model !== this.model) throw new SolProviderError("invalid_output", "model_mismatch");
+        if (!text.trim()) throw new SolProviderError("invalid_output", "response_empty");
+        const parsed: unknown = JSON.parse(text);
+        diagnostic.parsed = true;
+        const decision = schema.parse(parsed);
+        diagnostic.structuredValid = true;
+        emit("finish");
+        return Object.freeze({ decision, model: typeof responseBody.model === "string" ? responseBody.model : this.model, usage: Object.freeze(parseUsage(responseBody)) });
+      } catch (error) {
+        lastError = error instanceof SyntaxError ? new SolProviderError("invalid_output", "response_parse_failure")
+          : error instanceof z.ZodError ? new SolProviderError("invalid_output", "structured_output_invalid") : transportError(error);
+        diagnostic.reason = lastError.reason;
+        diagnostic.errorClass = errorClass(lastError.reason);
+        if (lastError.code === "timeout") diagnostic.timeoutSource = lastError.reason === "reasoning_timeout" || (request.deadlineAt !== undefined && Date.now() >= request.deadlineAt) ? "orchestration" : "provider";
+        emit("finish");
         if (!retryable(lastError) || attempt === 1) throw lastError;
       }
     }

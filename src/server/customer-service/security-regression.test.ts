@@ -65,8 +65,13 @@ describe("reply assistant security regression", () => {
     expect(sender.source.match(approvedSink)).toHaveLength(2);
     const withoutApprovedSinks = rnrAiFiles.map(file => file.relativePath === META_REPLY_SENDER_PATH
       ? {...file, source:file.source.replace(approvedSink, "")} : file);
+    const diagnosticPath = "src/server/rnr-ai/diagnostics.ts";
+    const diagnosticSink = /console\.info\("rnr_ai_reasoning_diagnostic", entry\);/g;
+    expect(rnrAiFiles.find(file => file.relativePath === diagnosticPath)!.source.match(diagnosticSink)).toHaveLength(1);
+    const withoutDiagnosticSink = withoutApprovedSinks.map(file => file.relativePath === diagnosticPath
+      ? { ...file, source: file.source.replace(diagnosticSink, "") } : file);
     expect(productionSourcePathsMatching(
-      withoutApprovedSinks,
+      withoutDiagnosticSink,
       /\b(?:console|logger)\.(?:log|info|warn|error|debug)\s*\(/,
     )).toEqual([]);
   });
