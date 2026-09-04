@@ -7,7 +7,7 @@ import { hashReviewAlertToken } from "@/server/customer-service/website/review-a
 import { evaluateAiControl } from "@/server/rnr-ai/control/schedule";
 import { parseRnrAiMetaConfig } from "@/server/rnr-ai/meta/config";
 import { RedisReplyRuntimeStore } from "@/server/rnr-ai/runtime-store/redis-reply-runtime-store";
-import compiledKnowledge from "@/server/customer-service/knowledge/compiled-knowledge.json";
+import { loadBusinessBrain } from "@/server/rnr-ai/business-brain/loader";
 import styles from "./reply-assistant.module.css";
 import { replyAssistantMetricCards } from "./metric-cards";
 import { KnowledgeProvenance } from "./knowledge-provenance";
@@ -23,6 +23,7 @@ export default async function ReplyAssistantPage({
   const access = await requireAdminPermission("use_reply_assistant");
   const config = parseCustomerServiceConfig();
   const rnrAiConfig = parseRnrAiMetaConfig();
+  const businessBrain = loadBusinessBrain();
   const inboxEnabled = config.enabled || config.websiteEnabled;
   const runtime = inboxEnabled ? createCustomerServiceRuntime() : null;
   const requestedReview = (await searchParams).review;
@@ -96,8 +97,7 @@ export default async function ReplyAssistantPage({
     <section className={styles.page}>
       <header><div><p>Customer Service Pilot</p><h1>Reply Assistant</h1></div><strong data-enabled={inboxEnabled}>{inboxEnabled ? "Feature available" : "Feature unavailable"}</strong></header>
       <KnowledgeProvenance
-        knowledgeVersion={compiledKnowledge.knowledgeVersion}
-        metadata={compiledKnowledge.metadata}
+        businessBrain={businessBrain}
       />
       <ReplyAssistantLiveDashboard
         initialCursor={initialCursor}
