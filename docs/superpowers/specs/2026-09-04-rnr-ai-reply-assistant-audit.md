@@ -1,8 +1,8 @@
 # R&R Gallery AI Reply Assistant — Phase 1 Audit
 
-**Audit date:** 2026-09-04 (Pacific/Auckland)  
-**Authoritative source baseline:** `origin/main` at `081fc825b5e3574c85ef674082bce41ff2f8e1bf`  
-**Audit branch:** `audit/rnr-ai-reply-assistant-phase1-20260904`  
+**Audit date:** 2026-09-04 (Pacific/Auckland)
+**Authoritative source baseline:** `origin/main` at `081fc825b5e3574c85ef674082bce41ff2f8e1bf`
+**Audit branch:** `audit/rnr-ai-reply-assistant-phase1-20260904`
 **Scope:** source/history inspection and safe local tests only. No Production data was queried or changed.
 
 ## Executive findings

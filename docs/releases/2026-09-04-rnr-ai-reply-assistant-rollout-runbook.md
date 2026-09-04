@@ -111,4 +111,3 @@ Every stage must confirm:
 ## Stop conditions
 
 Stop and keep all execution flags false if Redis is unavailable, Meta history is incomplete, a permission is missing, a credential is invalid, control cannot be read, a delivery result is uncertain, privacy evidence fails, or any Website/commerce regression appears.
-
