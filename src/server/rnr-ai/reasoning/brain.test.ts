@@ -118,6 +118,35 @@ describe('production structured Brain with mocked Responses transport (no paid m
         expect(await h.brain.generate(request())).toMatchObject({ risk: 'RED', replyText: null, nextAction: 'HUMAN_REVIEW' });
         expect(h.fetchImpl).toHaveBeenCalledTimes(2);
     });
+    it('records a created candidate separately when verification schema validation fails', async () => {
+        const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+        try {
+            const h = harness([plan(), { invalid: true }]);
+            expect(await h.brain.generate(request())).toMatchObject({ risk: 'RED', replyText: null, reasons: ['verification_failure', 'structured_output_invalid'] });
+            expect(spy.mock.calls.at(-1)?.[1]).toMatchObject({ stage: 'verification', candidateCreated: true, reasoningSuccess: true, verificationSuccess: false, reason: 'verification_failure', risk: 'RED' });
+            expect(JSON.stringify(spy.mock.calls)).not.toMatch(/external-private|private-hash|What dimensions/);
+        } finally { spy.mockRestore(); }
+    });
+    it('records successful generation, parsing and completed verification without the candidate body', async () => {
+        const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+        try {
+            const h = harness([plan(), audit()]);
+            expect((await h.brain.generate(request())).risk).toBe('GREEN');
+            expect(spy.mock.calls.at(-1)?.[1]).toMatchObject({ stage: 'contract', candidateCreated: true, reasoningSuccess: true, verificationSuccess: true, reason: 'none', risk: 'GREEN' });
+            expect(spy.mock.calls.some(call => call[1].provider?.structuredValid === true && call[1].provider?.httpStatus === 200)).toBe(true);
+            expect(JSON.stringify(spy.mock.calls)).not.toContain(base.reply);
+        } finally { spy.mockRestore(); }
+    });
+    it('keeps a verification transport timeout separate from candidate generation', async () => {
+        const spy = vi.spyOn(console, 'info').mockImplementation(() => {});
+        try {
+            const h = harness([plan()]);
+            h.fetchImpl.mockImplementationOnce(async () => Response.json({ output_text: JSON.stringify(plan()) }))
+              .mockRejectedValue(new DOMException('private error', 'TimeoutError'));
+            expect(await h.brain.generate(request())).toMatchObject({ risk: 'RED', replyText: null, reasons: ['verification_timeout', 'provider_timeout'] });
+            expect(spy.mock.calls.at(-1)?.[1]).toMatchObject({ candidateCreated: true, reasoningSuccess: true, verificationSuccess: false });
+        } finally { spy.mockRestore(); }
+    });
     it('gives direct supported facts GREEN even when the verifier would prefer a longer answer', async () => {
         const h = harness([plan(), audit(base, [fact], { helpful: false })]);
         expect((await h.brain.generate(request())).risk).toBe('GREEN');
