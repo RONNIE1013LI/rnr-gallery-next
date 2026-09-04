@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { Client } from "pg";
 import { isDedicatedTestDatabase } from "../../src/server/db/test-database-safety";
+import { hasForbiddenDatabaseImport } from "./audit-reply-assistant-privacy-static";
 
 const TABLES = [
   "customer_service_pilot_runs",
@@ -33,7 +34,7 @@ function auditPhase2StaticPrivacy() {
     source: readFileSync(resolve(process.cwd(), path), "utf8"),
   }));
   const databaseImports = sources
-    .filter(({ source }) => /@\/server\/db|(?:^|[/'"-])drizzle(?:[/'"-]|$)|customer_service_|product-registry/im.test(source))
+    .filter(({ source }) => hasForbiddenDatabaseImport(source))
     .map(({ path }) => path);
   const logging = sources
     .filter(({ source }) => /\b(?:console|logger)\.(?:log|info|warn|error|debug)\s*\(/.test(source))
