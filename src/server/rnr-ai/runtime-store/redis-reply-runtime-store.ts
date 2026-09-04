@@ -218,4 +218,22 @@ export class RedisReplyRuntimeStore implements ReplyRuntimeStore {
     await this.redis.del(this.key(`review:${key}`), this.key(`review-meta:${key}`));
     await this.redis.zrem(this.key("review-index"), key);
   }
+
+  async putEphemeralSecret(keyHash: string, ciphertext: string, ttlSeconds: number) {
+    requireHash(keyHash);
+    if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > 900) {
+      throw new Error("Ephemeral secret TTL must not exceed 15 minutes");
+    }
+    await this.redis.set(this.key(`ephemeral:${keyHash}`), ciphertext, { ex: ttlSeconds });
+  }
+
+  async readEphemeralSecret(keyHash: string) {
+    requireHash(keyHash);
+    return this.redis.get<string>(this.key(`ephemeral:${keyHash}`));
+  }
+
+  async deleteEphemeralSecret(keyHash: string) {
+    requireHash(keyHash);
+    await this.redis.del(this.key(`ephemeral:${keyHash}`));
+  }
 }

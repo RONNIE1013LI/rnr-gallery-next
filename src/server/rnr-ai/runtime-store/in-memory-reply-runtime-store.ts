@@ -47,6 +47,7 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
   private readonly takeovers = new Map<string, TakeoverState>();
   private readonly backlogs = new Set<string>();
   private readonly reviews = new Map<string, { ciphertext: string; metadata: ReviewMetadata; expiresAtMs: number }>();
+  private readonly ephemeralSecrets = new Map<string, { ciphertext: string; expiresAtMs: number }>();
   private readonly now: () => number;
 
   constructor({ now = Date.now }: Readonly<{ now?: () => number }> = {}) {
@@ -170,6 +171,29 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
     this.reviews.delete(key);
   }
 
+  async putEphemeralSecret(keyHash: string, ciphertext: string, ttlSeconds: number) {
+    requireHash(keyHash, "ephemeral key");
+    if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > 900) {
+      throw new Error("Ephemeral secret TTL must not exceed 15 minutes");
+    }
+    this.ephemeralSecrets.set(keyHash, { ciphertext, expiresAtMs: this.now() + ttlSeconds * 1_000 });
+  }
+
+  async readEphemeralSecret(keyHash: string) {
+    requireHash(keyHash, "ephemeral key");
+    const entry = this.ephemeralSecrets.get(keyHash);
+    if (!entry || entry.expiresAtMs <= this.now()) {
+      this.ephemeralSecrets.delete(keyHash);
+      return null;
+    }
+    return entry.ciphertext;
+  }
+
+  async deleteEphemeralSecret(keyHash: string) {
+    requireHash(keyHash, "ephemeral key");
+    this.ephemeralSecrets.delete(keyHash);
+  }
+
   exportStateForTest() {
     this.deleteExpiredReviews();
     return {
@@ -179,6 +203,7 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
       takeovers: [...this.takeovers.entries()],
       backlogs: [...this.backlogs],
       reviews: [...this.reviews.entries()].map(([key, review]) => [key, review.metadata]),
+      ephemeralSecrets: [...this.ephemeralSecrets.keys()],
     };
   }
 }

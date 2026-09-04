@@ -30,4 +30,7 @@ export interface ReplyRuntimeStore {
   listReviewMetadata(limit: number): Promise<readonly ReviewMetadata[]>;
   readEncryptedReview(key: string): Promise<string | null>;
   deleteReview(key: string): Promise<void>;
+  putEphemeralSecret(keyHash: string, ciphertext: string, ttlSeconds: number): Promise<void>;
+  readEphemeralSecret(keyHash: string): Promise<string | null>;
+  deleteEphemeralSecret(keyHash: string): Promise<void>;
 }

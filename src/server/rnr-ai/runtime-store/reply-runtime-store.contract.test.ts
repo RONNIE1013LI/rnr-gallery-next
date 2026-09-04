@@ -80,6 +80,18 @@ describe("ReplyRuntimeStore contract", () => {
     expect(await store.listReviewMetadata(10)).toEqual([]);
   });
 
+  it("expires encrypted attachment sources after at most 15 minutes", async () => {
+    let now = Date.parse("2026-09-04T00:00:00.000Z");
+    const store = new InMemoryReplyRuntimeStore({ now: () => now });
+    const key = hash("ephemeral-source-1");
+    await store.putEphemeralSecret(key, "v1.ciphertext-only", 900);
+    now += 899_999;
+    expect(await store.readEphemeralSecret(key)).toBe("v1.ciphertext-only");
+    now += 1;
+    expect(await store.readEphemeralSecret(key)).toBeNull();
+    await expect(store.putEphemeralSecret(key, "v1.ciphertext-only", 901)).rejects.toThrow(/15 minutes/i);
+  });
+
   it("stores only hashed identifiers and never serializes customer payload fields", async () => {
     const store = new InMemoryReplyRuntimeStore();
     await store.claimEvent(hash("psid-raw-value"), 1_000);
