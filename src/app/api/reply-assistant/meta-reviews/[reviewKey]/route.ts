@@ -5,7 +5,7 @@ import { createMetaReviewPayloadProtector } from "@/server/rnr-ai/meta/review-pa
 import { RedisReplyRuntimeStore } from "@/server/rnr-ai/runtime-store/redis-reply-runtime-store";
 import { createMetaReviewDetailHandler } from "./route-handler";
 
-export const { GET } = createMetaReviewDetailHandler({
+export const { GET, POST } = createMetaReviewDetailHandler({
   store: () => RedisReplyRuntimeStore.fromEnvironment(),
   protector: () => createMetaReviewPayloadProtector(process.env.RNR_AI_REVIEW_ENCRYPTION_KEY ?? ""),
   requirePermission: requireAdminPermission,

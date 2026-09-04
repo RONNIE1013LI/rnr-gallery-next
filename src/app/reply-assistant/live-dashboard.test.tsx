@@ -350,11 +350,21 @@ describe("ReplyAssistantLiveDashboard", () => {
   it("loads review metadata and decrypts detail only after an explicit operator action", async () => {
     const reviewKey = "c".repeat(64);
     const conversationKey = "d".repeat(64);
-    const fetchMock = vi.fn(async (url: RequestInfo | URL) => {
+    const fetchMock = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       if (String(url) === "/api/reply-assistant/meta-reviews") return response({ reviews: [{
         reviewKey, conversationKey, risk: "YELLOW", createdAt: "2026-09-04T01:00:00.000Z", expiresAt: "2026-09-06T01:00:00.000Z",
       }] });
-      return response({ reviewKey, conversationKey, risk: "YELLOW", replyText: "Protected draft", reasons: ["review_required"], createdAt: "2026-09-04T01:00:00.000Z", expiresAt: "2026-09-06T01:00:00.000Z" });
+      if (init?.method === "POST") return response({ takeover: { active: false, source: "admin", changedAt: "2026-09-04T01:01:00.000Z" } });
+      return response({
+        reviewKey,
+        conversationKey,
+        risk: "YELLOW",
+        replyText: "Protected draft",
+        reasons: ["review_required"],
+        createdAt: "2026-09-04T01:00:00.000Z",
+        expiresAt: "2026-09-06T01:00:00.000Z",
+        takeover: { active: true, source: "risk", changedAt: "2026-09-04T01:00:00.000Z" },
+      });
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<ReplyAssistantLiveDashboard {...props} />);
@@ -367,6 +377,13 @@ describe("ReplyAssistantLiveDashboard", () => {
     await act(async () => { await Promise.resolve(); });
     expect(screen.getByText("Protected draft")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledTimes(2);
+    fireEvent.click(screen.getByRole("button", { name: "Release conversation to AI" }));
+    await act(async () => { await Promise.resolve(); });
+    expect(fetchMock).toHaveBeenLastCalledWith(`/api/reply-assistant/meta-reviews/${reviewKey}`, expect.objectContaining({
+      method: "POST",
+      body: JSON.stringify({ action: "release_to_ai" }),
+    }));
+    expect(screen.getByText("AI handling available")).toBeInTheDocument();
     expect(document.body.textContent).not.toContain(conversationKey);
   });
 

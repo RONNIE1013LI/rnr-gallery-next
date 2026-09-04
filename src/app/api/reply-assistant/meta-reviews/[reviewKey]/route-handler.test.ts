@@ -7,6 +7,15 @@ import { createMetaReviewDetailHandler } from "./route-handler";
 const key = "a".repeat(64);
 const conversation = "b".repeat(64);
 const now = new Date("2026-09-04T04:00:00.000Z");
+const origin = "https://admin.test";
+
+function releaseRequest(requestOrigin = origin, body: unknown = { action: "release_to_ai" }) {
+  return new Request(`${origin}/api/reply-assistant/meta-reviews/${key}`, {
+    method: "POST",
+    headers: { origin: requestOrigin, "sec-fetch-site": "same-origin", "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+}
 
 async function setup() {
   const store = new InMemoryReplyRuntimeStore({ now: () => now.getTime() });
@@ -15,7 +24,18 @@ async function setup() {
     risk: "RED", replyText: "Private proposed reply", reasons: ["payment_request"],
   }), 172800, { conversationKeyHash: conversation, risk: "RED", createdAt: now.toISOString() });
   const requirePermission = vi.fn(async () => ({ user: { id: "staff-1" } }));
-  return { store, protector, requirePermission, api: createMetaReviewDetailHandler({ store: () => store, protector: () => protector, requirePermission }) };
+  return {
+    store,
+    protector,
+    requirePermission,
+    api: createMetaReviewDetailHandler({
+      store: () => store,
+      protector: () => protector,
+      requirePermission,
+      trustedOrigin: origin,
+      now: () => now,
+    }),
+  };
 }
 
 describe("Meta review detail API", () => {
@@ -28,7 +48,46 @@ describe("Meta review detail API", () => {
     const text = await response.text();
     expect(text).toContain("Private proposed reply");
     expect(text).toContain("payment_request");
+    expect(text).toContain('"active":false');
     expect(text).not.toContain("v1.");
+  });
+
+  it("releases the reviewed Meta conversation to AI without requiring a Neon inbox row", async () => {
+    const current = await setup();
+    await current.store.setTakeover({
+      conversationKeyHash: conversation,
+      active: true,
+      source: "risk",
+      changedAt: new Date(now.getTime() - 1_000).toISOString(),
+    });
+
+    const response = await current.api.POST(releaseRequest(), { params: Promise.resolve({ reviewKey: key }) });
+
+    expect(response.status).toBe(200);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(current.requirePermission).toHaveBeenCalledWith("use_reply_assistant");
+    await expect(response.json()).resolves.toEqual({
+      takeover: { active: false, source: "admin", changedAt: now.toISOString() },
+    });
+    await expect(current.store.readTakeover(conversation)).resolves.toEqual({
+      active: false,
+      source: "admin",
+      changedAt: now.toISOString(),
+    });
+  });
+
+  it("rejects activation, unknown actions and cross-origin release requests", async () => {
+    const current = await setup();
+    await current.store.setTakeover({
+      conversationKeyHash: conversation,
+      active: true,
+      source: "risk",
+      changedAt: now.toISOString(),
+    });
+
+    expect((await current.api.POST(releaseRequest(origin, { action: "take_over" }), { params: Promise.resolve({ reviewKey: key }) })).status).toBe(422);
+    expect((await current.api.POST(releaseRequest("https://evil.test"), { params: Promise.resolve({ reviewKey: key }) })).status).toBe(403);
+    await expect(current.store.readTakeover(conversation)).resolves.toMatchObject({ active: true, source: "risk" });
   });
 
   it("rejects invalid selectors and missing reviews", async () => {
@@ -44,8 +103,10 @@ describe("Meta review detail API", () => {
       store: () => ({ readEncryptedReview } as never),
       protector: () => ({ open } as never),
       requirePermission: vi.fn(async () => { throw new HttpError("FORBIDDEN", 403); }),
+      trustedOrigin: origin,
     });
     expect((await denied.GET(new Request("https://admin.test/review"), { params: Promise.resolve({ reviewKey: key }) })).status).toBe(403);
+    expect((await denied.POST(releaseRequest(), { params: Promise.resolve({ reviewKey: key }) })).status).toBe(403);
     expect(readEncryptedReview).not.toHaveBeenCalled();
     expect(open).not.toHaveBeenCalled();
   });
