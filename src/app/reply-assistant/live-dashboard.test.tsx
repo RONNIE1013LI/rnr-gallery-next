@@ -182,6 +182,7 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(control).toHaveTextContent("Pacific/Auckland");
     expect(control).not.toHaveTextContent("Day 1");
     expect(control).not.toHaveTextContent("Force ON");
+    expect(within(control).getAllByRole("button", { name: /^(OFF|ON|SCHEDULE)$/ }).map((button) => button.textContent)).toEqual(["OFF", "ON", "SCHEDULE"]);
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -217,6 +218,19 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(control).toHaveTextContent("Master AI switch is disabled");
     expect(control).toHaveTextContent("Normal mode");
     expect(control).toHaveTextContent("Paused until Master AI is enabled");
+  });
+
+  it("fails closed with a clear explanation when the control configuration is invalid", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<ReplyAssistantLiveDashboard {...props} initialAiControl={{
+      ...props.initialAiControl,
+      config: { ...props.initialAiControl.config, periods: [] },
+      effective: { effectiveState: "OFF", source: "invalid", nextTransitionAt: null },
+    }} />);
+
+    const status = screen.getByRole("region", { name: "Current AI status" });
+    expect(status).toHaveTextContent("AI is OFF because the control configuration is invalid");
+    expect(status).toHaveTextContent("No scheduled transitions will run until the control configuration is corrected");
   });
 
   it("converts only valid, unique Auckland local times within the 24-hour limit to ISO", () => {
@@ -297,6 +311,21 @@ describe("ReplyAssistantLiveDashboard", () => {
     await act(async () => { await Promise.resolve(); });
 
     expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not present a stale expired override as active", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<ReplyAssistantLiveDashboard {...props} initialAiControl={{
+      ...props.initialAiControl,
+      config: {
+        ...props.initialAiControl.config,
+        override: { state: "ON", expiresAt: "2026-09-03T00:00:00.000Z", actorUserId: "admin-1" },
+      },
+      effective: { effectiveState: "OFF", source: "schedule", nextTransitionAt: "2026-09-04T01:00:00.000Z" },
+    }} />);
+
+    expect(screen.queryByRole("button", { name: "Cancel override" })).not.toBeInTheDocument();
+    expect(screen.queryByText(/Temporary override: AI ON/)).not.toBeInTheDocument();
   });
 
   it("loads review metadata and decrypts detail only after an explicit operator action", async () => {

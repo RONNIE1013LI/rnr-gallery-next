@@ -346,6 +346,7 @@ export function ReplyAssistantLiveDashboard({
   const filteredItems = channelScope === "all"
     ? items
     : items.filter((item) => item.channel === channelScope);
+  const activeOverride = aiControl.effective.source === "override" ? aiControl.config.override : null;
 
   return (
     <div className={styles.liveDashboard}>
@@ -364,6 +365,10 @@ export function ReplyAssistantLiveDashboard({
           </> : aiControl.effective.source === "override" ? <>
             <p>Temporary override until {formatAiDateTime(aiControl.effective.nextTransitionAt)}</p>
             <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
+          </> : aiControl.effective.source === "invalid" ? <>
+            <p>AI is OFF because the control configuration is invalid.</p>
+            <p>No scheduled transitions will run until the control configuration is corrected.</p>
+            <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
           </> : <>
             <p><strong>Normal mode:</strong> {normalMode(aiControl.config.mode)}</p>
             {aiControl.config.mode === "SCHEDULE" ? <p><strong>Next change:</strong> {formatAiDateTime(aiControl.effective.nextTransitionAt)}</p> : null}
@@ -371,7 +376,7 @@ export function ReplyAssistantLiveDashboard({
         </section>
         <div className={styles.controlActions}>
           <span>AI operating mode</span>
-          {(["ON", "OFF", "SCHEDULE"] as const).map((mode) => (
+          {(["OFF", "ON", "SCHEDULE"] as const).map((mode) => (
             <button key={mode} type="button" aria-pressed={aiControl.config.mode === mode} disabled={!aiControl.available || controlBusy || aiControl.config.mode === mode} onClick={() => void saveAiControl({ mode })}>{mode}</button>
           ))}
           <button type="button" disabled={controlBusy} onClick={() => void refreshAiControl()}>Refresh control</button>
@@ -401,9 +406,9 @@ export function ReplyAssistantLiveDashboard({
           <label>Override time<input type="time" value={overrideTime} disabled={!aiControl.available || controlBusy} onChange={(event) => setOverrideTime(event.target.value)} /></label>
           <button type="button" disabled={!aiControl.available || controlBusy} onClick={() => setTemporaryOverride("ON")}>Turn AI ON temporarily</button>
           <button type="button" disabled={!aiControl.available || controlBusy} onClick={() => setTemporaryOverride("OFF")}>Turn AI OFF temporarily</button>
-          {aiControl.config.override ? <button type="button" disabled={controlBusy} onClick={() => void saveAiControl({ override: null })}>Cancel override</button> : null}
+          {activeOverride ? <button type="button" disabled={controlBusy} onClick={() => void saveAiControl({ override: null })}>Cancel override</button> : null}
         </div>
-        {aiControl.config.override ? <p className={styles.controlNotice}>Temporary override: AI {aiControl.config.override.state}. Until: {formatAiDateTime(aiControl.config.override.expiresAt)}</p> : null}
+        {activeOverride ? <p className={styles.controlNotice}>Temporary override: AI {activeOverride.state}. Until: {formatAiDateTime(activeOverride.expiresAt)}</p> : null}
         {controlError ? <p className={styles.controlError} role="alert">{controlError}</p> : null}
       </section>
       <section className={styles.metaReviewPanel} aria-label="Meta human reviews">
