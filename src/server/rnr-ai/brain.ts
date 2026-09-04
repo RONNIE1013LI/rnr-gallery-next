@@ -269,6 +269,14 @@ export function createRnrAiBrain({ provider, tools, now = () => new Date() }: Rn
         ...(tooManyTools ? ["tool_limit_exceeded"] : []),
         ...(repeatedToolRequest ? ["repeated_tool_request"] : []),
       ]);
+      const providerRun = Object.freeze({
+        model: final.model,
+        usage: Object.freeze({
+          inputTokens: first.usage.inputTokens + (final === first ? 0 : final.usage.inputTokens),
+          cachedInputTokens: first.usage.cachedInputTokens + (final === first ? 0 : final.usage.cachedInputTokens),
+          outputTokens: first.usage.outputTokens + (final === first ? 0 : final.usage.outputTokens),
+        }),
+      });
 
       return Object.freeze({
         risk: finalRisk.risk,
@@ -280,6 +288,7 @@ export function createRnrAiBrain({ provider, tools, now = () => new Date() }: Rn
         nextAction: finalRisk.autoReplyEligible
           ? (final.decision.replyText ? "AUTO_REPLY_ELIGIBLE" : "NO_REPLY")
           : "HUMAN_REVIEW",
+        providerRun,
       });
     },
   });

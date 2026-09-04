@@ -71,6 +71,7 @@ describe("RnrAiBrain", () => {
       risk: "GREEN",
       replyText: "Yes. The NZ Roll-Up Banner is NZ$264.50 including GST.",
       nextAction: "AUTO_REPLY_ELIGIBLE",
+      providerRun: { model: "gpt-5.6-sol", usage: { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10 } },
     });
     const prompt = current.provider.generate.mock.calls[0][0];
     expect(prompt.instructions).toContain("Answer the customer's actual question first");
@@ -122,7 +123,14 @@ describe("RnrAiBrain", () => {
     expect(current.tools.execute).toHaveBeenCalledTimes(2);
     expect(current.provider.generate).toHaveBeenCalledTimes(2);
     expect(current.provider.generate.mock.calls[1][0].instructions).toContain("2026-09-04T01:02:03.000Z");
-    expect(decision).toMatchObject({ risk: "RED", nextAction: "HUMAN_REVIEW" });
+    expect(decision).toMatchObject({
+      risk: "RED",
+      nextAction: "HUMAN_REVIEW",
+      providerRun: {
+        model: "gpt-5.6-sol",
+        usage: { inputTokens: 20, cachedInputTokens: 0, outputTokens: 20 },
+      },
+    });
   });
 
   it("passes only pre-validated images to the provider", async () => {

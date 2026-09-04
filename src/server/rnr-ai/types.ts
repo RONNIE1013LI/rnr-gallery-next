@@ -53,4 +53,12 @@ export type RnrAiDecision = Readonly<{
   claims: readonly SupportedClaim[];
   toolEvidence: readonly ToolEvidence[];
   nextAction: "AUTO_REPLY_ELIGIBLE" | "HUMAN_REVIEW" | "NO_REPLY";
+  providerRun?: Readonly<{
+    model: string;
+    usage: Readonly<{
+      inputTokens: number;
+      cachedInputTokens: number;
+      outputTokens: number;
+    }>;
+  }>;
 }>;

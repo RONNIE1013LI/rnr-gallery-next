@@ -3750,8 +3750,8 @@ export function createDrizzleCustomerServiceRepository(
       const pageMarket = pageMarketFromEventBody(pageMarketEvent?.body);
       const boundary = currentTurn?.lastEventAt ?? current.receivedAt;
       const causalBoundary = current.createdAt;
-      const boundedLimit = Math.max(1, Math.min(12, contextLimit));
-      const events = await database.select({
+      const boundedLimit = contextLimit === null ? null : Math.max(1, Math.min(12, contextLimit));
+      const eventsQuery = database.select({
         id: customerServiceConversationEvents.id,
         role: customerServiceConversationEvents.role,
         eventType: customerServiceConversationEvents.eventType,
@@ -3776,9 +3776,11 @@ export function createDrizzleCustomerServiceRepository(
           desc(customerServiceConversationEvents.receivedAt),
           desc(customerServiceConversationEvents.createdAt),
           desc(customerServiceConversationEvents.id),
-        )
-        .limit(boundedLimit * 8);
-      const legacyMessages = await database.select({
+        );
+      const events = boundedLimit === null
+        ? await eventsQuery
+        : await eventsQuery.limit(boundedLimit * 8);
+      const legacyMessagesQuery = database.select({
         id: customerServiceMessages.id,
         text: customerServiceMessages.customerText,
         receivedAt: customerServiceMessages.receivedAt,
@@ -3800,22 +3802,28 @@ export function createDrizzleCustomerServiceRepository(
         desc(customerServiceMessages.receivedAt),
         desc(customerServiceMessages.createdAt),
         desc(customerServiceMessages.id),
-      ).limit(boundedLimit);
+      );
+      const legacyMessages = boundedLimit === null
+        ? await legacyMessagesQuery
+        : await legacyMessagesQuery.limit(boundedLimit);
       const websiteAssistantMessages = current.channel === "website"
-        ? await database.select({
-          id: customerServiceWebsiteAssistantMessages.id,
-          text: customerServiceWebsiteAssistantMessages.body,
-          publishedAt: customerServiceWebsiteAssistantMessages.publishedAt,
-          createdAt: customerServiceWebsiteAssistantMessages.createdAt,
-        }).from(customerServiceWebsiteAssistantMessages).where(and(
-          eq(customerServiceWebsiteAssistantMessages.conversationId, current.conversationId),
-          lte(customerServiceWebsiteAssistantMessages.publishedAt, boundary),
-          lte(customerServiceWebsiteAssistantMessages.createdAt, causalBoundary),
-        )).orderBy(
-          desc(customerServiceWebsiteAssistantMessages.publishedAt),
-          desc(customerServiceWebsiteAssistantMessages.createdAt),
-          desc(customerServiceWebsiteAssistantMessages.id),
-        ).limit(boundedLimit * 8)
+        ? await (async () => {
+          const query = database.select({
+            id: customerServiceWebsiteAssistantMessages.id,
+            text: customerServiceWebsiteAssistantMessages.body,
+            publishedAt: customerServiceWebsiteAssistantMessages.publishedAt,
+            createdAt: customerServiceWebsiteAssistantMessages.createdAt,
+          }).from(customerServiceWebsiteAssistantMessages).where(and(
+            eq(customerServiceWebsiteAssistantMessages.conversationId, current.conversationId),
+            lte(customerServiceWebsiteAssistantMessages.publishedAt, boundary),
+            lte(customerServiceWebsiteAssistantMessages.createdAt, causalBoundary),
+          )).orderBy(
+            desc(customerServiceWebsiteAssistantMessages.publishedAt),
+            desc(customerServiceWebsiteAssistantMessages.createdAt),
+            desc(customerServiceWebsiteAssistantMessages.id),
+          );
+          return boundedLimit === null ? await query : await query.limit(boundedLimit * 8);
+        })()
         : [];
       const seenTurns = new Set<string>();
       const context = [
@@ -3867,7 +3875,9 @@ export function createDrizzleCustomerServiceRepository(
         || left.causalAt.getTime() - right.causalAt.getTime()
         || left.sourceRank - right.sourceRank
         || left.sortId.localeCompare(right.sortId)
-      )).slice(-boundedLimit).map(({ role, text, receivedAt }) => ({ role, text, receivedAt }));
+      ));
+      const selectedContext = (boundedLimit === null ? context : context.slice(-boundedLimit))
+        .map(({ role, text, receivedAt }) => ({ role, text, receivedAt }));
       return {
         current: {
           id: current.id,
@@ -3876,7 +3886,7 @@ export function createDrizzleCustomerServiceRepository(
           productContext: current.channel === "website" ? current.productContext : null,
           pageMarket: current.channel === "website" ? pageMarket : null,
         },
-        context,
+        context: selectedContext,
       };
     },
 

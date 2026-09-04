@@ -59,6 +59,7 @@ function setup(input: Readonly<{
     turnId: string;
     debounceUntil: Date;
   })[];
+  generationMode?: "legacy" | "shared_brain";
 }> = {}) {
   const ingestConversationEvent = vi.fn();
   for (const result of input.ingestResults ?? [{
@@ -89,6 +90,7 @@ function setup(input: Readonly<{
     messageHashSecret: abuseSecret,
     permitSecret: abuseSecret,
     debounceMs: 2_000,
+    generationMode: input.generationMode ?? "legacy",
     repository,
     getOptionalSession: async () => null,
     resolveProductContext,
@@ -286,13 +288,25 @@ describe("POST /api/customer-chat/messages", () => {
     }));
     expect(current.tasks).toHaveLength(1);
     await current.tasks[0]();
-    expect(current.processTurn).toHaveBeenCalledWith("turn-private");
+    expect(current.processTurn).toHaveBeenCalledWith("turn-private", "legacy");
     expect(current.processReviewAlert).toHaveBeenCalledOnce();
     expect(current.processCustomerNotifications).toHaveBeenCalledOnce();
     expect(current.processReviewAlert.mock.invocationCallOrder[0])
       .toBeLessThan(current.processCustomerNotifications.mock.invocationCallOrder[0]);
     expect(JSON.stringify(responseBody))
       .not.toMatch(/message-private|turn-private|conversation-private|policy|hash|secret/i);
+  });
+
+  it("selects shared Website reasoning only after the message is accepted and persisted", async () => {
+    const current = setup({ generationMode: "shared_brain" });
+
+    const response = await current.handler.POST(permittedRequest());
+
+    expect(response.status).toBe(202);
+    expect(current.processTurn).not.toHaveBeenCalled();
+    await current.tasks[0]();
+    expect(current.repository.ingestConversationEvent).toHaveBeenCalledOnce();
+    expect(current.processTurn).toHaveBeenCalledWith("turn-private", "shared_brain");
   });
 
   it("keeps the accepted chat response and durable alert recovery path when best-effort alert delivery fails", async () => {
@@ -309,7 +323,7 @@ describe("POST /api/customer-chat/messages", () => {
     expect(current.repository.ingestConversationEvent).toHaveBeenCalledOnce();
     expect(current.tasks).toHaveLength(1);
     await expect(current.tasks[0]()).resolves.toBeUndefined();
-    expect(current.processTurn).toHaveBeenCalledWith("turn-private");
+    expect(current.processTurn).toHaveBeenCalledWith("turn-private", "legacy");
     expect(current.processReviewAlert).toHaveBeenCalledOnce();
     expect(current.processCustomerNotifications).toHaveBeenCalledOnce();
   });

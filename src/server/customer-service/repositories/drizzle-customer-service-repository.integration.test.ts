@@ -7977,6 +7977,14 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
         { role: "customer", text: "Current Website customer turn." },
       ],
     });
+    await expect(repository.loadDraftInput(current.messageId, null)).resolves.toMatchObject({
+      context: [
+        { role: "customer", text: "Can you help with a custom banner?" },
+        { role: "staff", text: approvedWebsiteDesignResponse },
+        { role: "staff", text: "Human Website reply." },
+        { role: "customer", text: "Current Website customer turn." },
+      ],
+    });
     await expect(repository.loadDraftInput(current.messageId, 3)).resolves.toMatchObject({
       context: [
         { role: "staff", text: approvedWebsiteDesignResponse },

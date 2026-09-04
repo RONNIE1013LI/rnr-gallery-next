@@ -11,6 +11,19 @@ import { createCustomerTurnRecoveryRunner } from "./turn-recovery-runner";
 import { createReviewAlertService } from "./website/review-alert-service";
 import { createResendEmailProvider } from "@/server/notifications/resend-email-provider";
 import { getProductRegistryRuntime } from "@/server/admin/product-registry-runtime";
+import { createRnrAiBrain } from "@/server/rnr-ai/brain";
+import { loadBusinessBrain } from "@/server/rnr-ai/business-brain/loader";
+import { parseRnrAiMetaConfig } from "@/server/rnr-ai/meta/config";
+import { OpenAiSolProvider } from "@/server/rnr-ai/providers/openai-sol";
+import { BusinessToolRegistry } from "@/server/rnr-ai/tools/tool-registry";
+import { createWebsiteBrainAdapter } from "@/server/rnr-ai/website/website-brain-adapter";
+
+export type WebsiteReplyGenerationMode = "legacy" | "shared_brain";
+
+export function selectWebsiteReplyGenerationMode(env: NodeJS.ProcessEnv = process.env): WebsiteReplyGenerationMode {
+  const config = parseRnrAiMetaConfig(env);
+  return config.masterEnabled && config.websiteSharedBrainEnabled ? "shared_brain" : "legacy";
+}
 
 export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.env) {
   const config = parseCustomerServiceConfig(env);
@@ -20,9 +33,33 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
   const provider = config.provider === "openai"
     ? new OpenAIResponsesProvider({ apiKey: config.openaiApiKey, model: config.openaiModel })
     : new MockAiProvider();
+  const websiteGenerationMode = selectWebsiteReplyGenerationMode(env);
+  const websiteBrain = websiteGenerationMode === "shared_brain"
+    ? (() => {
+      const businessBrain = loadBusinessBrain();
+      const unavailable = async () => Object.freeze({
+        status: "unavailable_review_required" as const,
+        source: "website_live_tool_not_configured",
+        facts: Object.freeze({}),
+      });
+      return createWebsiteBrainAdapter({
+        businessBrain,
+        brain: createRnrAiBrain({
+          provider: new OpenAiSolProvider({ apiKey: env.OPENAI_API_KEY ?? "" }),
+          tools: new BusinessToolRegistry({
+            businessBrain,
+            shipping: { quote: unavailable },
+            orderStatus: { read: unavailable },
+            paymentStatus: { read: unavailable },
+          }),
+        }),
+      });
+    })()
+    : undefined;
   const engine = new CustomerServiceEngine({
     repository,
     provider,
+    websiteBrain,
     knowledge: compiledKnowledge,
     pricingSource: () => getProductRegistryRuntime().current(),
     budget: {
@@ -65,5 +102,23 @@ export function createCustomerServiceRuntime(env: NodeJS.ProcessEnv = process.en
       providerScopeFingerprint: config.reviewAlertProviderScopeFingerprint,
     })
     : undefined;
-  return Object.freeze({ config, repository, engine, imageJobRunner, turnRecoveryRunner, reviewAlertService });
+  const processWebsiteTurn = (
+    turnId: string,
+    expectedMode: WebsiteReplyGenerationMode,
+  ) => {
+    if (expectedMode !== websiteGenerationMode) {
+      return Promise.resolve(Object.freeze({ result: "generation_mode_changed" as const }));
+    }
+    return turnRecoveryRunner.runOnce({ turnId });
+  };
+  return Object.freeze({
+    config,
+    repository,
+    engine,
+    imageJobRunner,
+    turnRecoveryRunner,
+    reviewAlertService,
+    websiteGenerationMode,
+    processWebsiteTurn,
+  });
 }

@@ -8,6 +8,7 @@ import { evaluatePolicyGate } from "./policy-gate";
 import { defaultProductRegistry } from "@/domain/catalogue/product-registry";
 import type { CustomerServiceRepository } from "./repositories/customer-service-repository";
 import type { AiProviderRequest } from "./providers/ai-provider";
+import type { WebsiteBrainAdapter } from "@/server/rnr-ai/website/website-brain-adapter";
 
 const safeAnalysis: ImageAnalysisResult = {
   schemaVersion: "1",
@@ -162,6 +163,7 @@ function setup(body: string | null, input: Readonly<{
   previousAnalysis?: string;
   imageAnalysisEnabled?: boolean;
   pricingSourceFailure?: boolean;
+  websiteBrain?: WebsiteBrainAdapter;
 }> = {}) {
   const repository = repositoryFor(body, input.withImage);
   if (input.previousAnalysis) {
@@ -188,6 +190,7 @@ function setup(body: string | null, input: Readonly<{
       attachmentProcessor: input.imageAnalysisEnabled === false ? undefined : image.processor,
       policyGate,
       outputValidator,
+      websiteBrain: input.websiteBrain,
       pricingSource: input.pricingSourceFailure
         ? async () => { throw new Error("pricing source unavailable"); }
         : async () => ({ revision: 12, registry: defaultProductRegistry }),
@@ -210,6 +213,43 @@ const attachmentContext = [{
 }];
 
 describe("CustomerServiceEngine", () => {
+  it("uses the complete sanitized Website transcript through the shared brain without publishing raw model text", async () => {
+    const raw = "Can you explain the design process? Email tina@example.com.";
+    const websiteBrain = {
+      generate: vi.fn(async () => providerResult(websiteDecision({
+        allowed_facts: ["DESIGN_INPUTS", "DESIGN_DRAFT_REVIEW_BEFORE_PRINTING"],
+      }))),
+    };
+    const current = setup(raw, { websiteBrain });
+    const fullInput = {
+      current: { id: "message-1", text: raw, channel: "website" as const, pageMarket: "NZ" as const },
+      context: [
+        { role: "customer" as const, text: "Earlier question", receivedAt: "2026-08-19T00:00:00.000Z" },
+        { role: "customer" as const, text: raw, receivedAt: "2026-08-20T00:00:00.000Z" },
+      ],
+    };
+    current.repository.loadDraftInput
+      .mockResolvedValueOnce(fullInput)
+      .mockResolvedValueOnce(fullInput);
+
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" }))
+      .resolves.toEqual({ status: "draft_ready", attemptId: "attempt-1" });
+
+    expect(current.repository.loadDraftInput).toHaveBeenNthCalledWith(1, "message-1", 6);
+    expect(current.repository.loadDraftInput).toHaveBeenNthCalledWith(2, "message-1", null);
+    expect(websiteBrain.generate).toHaveBeenCalledWith(expect.objectContaining({
+      context: [
+        expect.objectContaining({ text: "Earlier question" }),
+        expect.objectContaining({ text: "Can you explain the design process? Email [email removed]." }),
+      ],
+      expectedIntent: "design_process",
+    }));
+    expect(current.provider.generate).not.toHaveBeenCalled();
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
+      draftText: "We’ll collect your photos, wording, theme and colour preferences.\nWe’ll then prepare a design draft for you to review before printing.",
+    }));
+  });
+
   it("generates a helpful clarification for a broad pricing question after loading the catalogue", async () => {
     const current = setup("How much are your products?", {
       reply: "We offer several canvas and banner options. Which product and market are you interested in?",

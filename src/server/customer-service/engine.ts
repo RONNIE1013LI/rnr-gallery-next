@@ -31,6 +31,7 @@ import {
   type WebsiteDecision,
 } from "./website/structured-decision";
 import { resolveBusinessContext } from "./resolved-business-context";
+import type { WebsiteBrainAdapter } from "@/server/rnr-ai/website/website-brain-adapter";
 
 type EngineKnowledge = PolicyKnowledge & Readonly<{
   knowledgeVersion: string;
@@ -62,6 +63,7 @@ type EngineKnowledge = PolicyKnowledge & Readonly<{
 export class CustomerServiceEngine {
   private readonly repository: CustomerServiceRepository;
   private readonly provider: AiProvider;
+  private readonly websiteBrain?: WebsiteBrainAdapter;
   private readonly policyGate: typeof evaluatePolicyGate;
   private readonly outputValidator: typeof validateDraft;
   private readonly knowledge: EngineKnowledge;
@@ -81,6 +83,7 @@ export class CustomerServiceEngine {
   constructor(input: Readonly<{
     repository: CustomerServiceRepository;
     provider: AiProvider;
+    websiteBrain?: WebsiteBrainAdapter;
     attachmentProcessor?: AttachmentProcessor;
     policyGate?: typeof evaluatePolicyGate;
     outputValidator?: typeof validateDraft;
@@ -100,6 +103,7 @@ export class CustomerServiceEngine {
   }>) {
     this.repository = input.repository;
     this.provider = input.provider;
+    this.websiteBrain = input.websiteBrain;
     this.policyGate = input.policyGate ?? evaluatePolicyGate;
     this.outputValidator = input.outputValidator ?? validateDraft;
     this.pricingSource = input.pricingSource;
@@ -257,8 +261,12 @@ export class CustomerServiceEngine {
     request: DraftGenerationRequest,
     attachmentSourceContext?: readonly NormalizedAttachment[],
   ): Promise<DraftGenerationResult> {
-    const draftInput = await this.repository.loadDraftInput(request.messageId, 6);
+    let draftInput = await this.repository.loadDraftInput(request.messageId, 6);
     if (!draftInput) throw new Error("customer_service_message_not_found");
+    if (draftInput.current.channel === "website" && this.websiteBrain) {
+      draftInput = await this.repository.loadDraftInput(request.messageId, null);
+      if (!draftInput) throw new Error("customer_service_message_not_found");
+    }
     if (draftInput.current.text === null) {
       const attemptId = await this.repository.createGateBlockedAttempt({
         messageId: request.messageId,
@@ -466,7 +474,13 @@ export class CustomerServiceEngine {
       return { status: "human_reply_received", attemptId: reservation.attemptId };
     }
     try {
-      const generated = await this.provider.generate(prompt);
+      const generated = draftInput.current.channel === "website" && this.websiteBrain
+        ? await this.websiteBrain.generate({
+          current: draftInput.current,
+          context: providerContext,
+          expectedIntent: gate.intent,
+        })
+        : await this.provider.generate(prompt);
       let candidateText = generated.text;
       let websiteRendererProof: Readonly<{
         decision: WebsiteDecision;
@@ -654,8 +668,12 @@ export class CustomerServiceEngine {
       await this.repository.completeProviderAttempt({
         attemptId: reservation.attemptId,
         status: "provider_error",
-        provider: this.provider.providerKind,
-        model: this.provider.model,
+        provider: draftInput.current.channel === "website" && this.websiteBrain
+          ? "openai"
+          : this.provider.providerKind,
+        model: draftInput.current.channel === "website" && this.websiteBrain
+          ? "gpt-5.6-sol"
+          : this.provider.model,
         validatorCodes: [],
         inputTokens: 0,
         cachedInputTokens: 0,
