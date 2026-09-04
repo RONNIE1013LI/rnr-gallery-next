@@ -186,6 +186,25 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
+  it("keeps AI control independent from channel filters and collapsible on mobile", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<ReplyAssistantLiveDashboard {...props} initialMetrics={updatedMetrics} />);
+
+    const control = screen.getByRole("region", { name: "AI control" });
+    const channelFilters = screen.getByLabelText("Metric channel");
+    const disclosure = screen.getByRole("button", { name: "Expand AI control settings" });
+    const settings = document.getElementById("ai-control-settings");
+
+    expect(control.compareDocumentPosition(channelFilters) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    expect(settings).toHaveAttribute("data-mobile-expanded", "false");
+
+    fireEvent.click(disclosure);
+
+    expect(screen.getByRole("button", { name: "Collapse AI control settings" })).toHaveAttribute("aria-expanded", "true");
+    expect(settings).toHaveAttribute("data-mobile-expanded", "true");
+  });
+
   it("sorts schedule periods Monday through Sunday and describes full-day periods", () => {
     vi.stubGlobal("fetch", vi.fn());
     render(<ReplyAssistantLiveDashboard {...props} initialAiControl={{
