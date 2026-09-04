@@ -4,11 +4,14 @@ import type { SafeQueuePage } from "@/server/customer-service/repositories/custo
 import { createCustomerServiceRuntime } from "@/server/customer-service/runtime";
 import { encodeReplyAssistantCursor } from "@/server/customer-service/live-updates";
 import { hashReviewAlertToken } from "@/server/customer-service/website/review-alert-service";
+import { evaluateAiControl } from "@/server/rnr-ai/control/schedule";
+import { parseRnrAiMetaConfig } from "@/server/rnr-ai/meta/config";
+import { RedisReplyRuntimeStore } from "@/server/rnr-ai/runtime-store/redis-reply-runtime-store";
 import compiledKnowledge from "@/server/customer-service/knowledge/compiled-knowledge.json";
 import styles from "./reply-assistant.module.css";
 import { replyAssistantMetricCards } from "./metric-cards";
 import { KnowledgeProvenance } from "./knowledge-provenance";
-import { ReplyAssistantLiveDashboard } from "./live-dashboard";
+import { ReplyAssistantLiveDashboard, type AiControlView } from "./live-dashboard";
 
 export const metadata = { title: "Reply Assistant | R&R Gallery" };
 
@@ -19,6 +22,7 @@ export default async function ReplyAssistantPage({
 }>) {
   const access = await requireAdminPermission("use_reply_assistant");
   const config = parseCustomerServiceConfig();
+  const rnrAiConfig = parseRnrAiMetaConfig();
   const inboxEnabled = config.enabled || config.websiteEnabled;
   const runtime = inboxEnabled ? createCustomerServiceRuntime() : null;
   const requestedReview = (await searchParams).review;
@@ -69,6 +73,21 @@ export default async function ReplyAssistantPage({
       commonEditReasons: [],
     }, { items: [] }, { items: [] }];
   const cards = replyAssistantMetricCards(rawMetrics);
+  let initialAiControl: AiControlView = {
+    available: false,
+    config: { revision: 0, mode: "OFF" as const, timezone: "Pacific/Auckland" as const, periods: [], override: null },
+    effective: { effectiveState: "OFF" as const, source: "invalid" as const, nextTransitionAt: null },
+  };
+  try {
+    const snapshot = await RedisReplyRuntimeStore.fromEnvironment().readControl();
+    initialAiControl = {
+      available: true,
+      config: snapshot.config,
+      effective: evaluateAiControl(snapshot, new Date(), rnrAiConfig.masterEnabled),
+    };
+  } catch {
+    // Missing or unavailable runtime storage is intentionally represented as OFF.
+  }
   const initialItems = selectedReviewItem
     ? [selectedReviewItem, ...queue.items.filter((item) => item.inboxId !== selectedReviewItem.inboxId)]
     : queue.items;
@@ -89,6 +108,7 @@ export default async function ReplyAssistantPage({
         initialCaseMemories={caseMemories.items}
         canReview={access.adminRole === "admin"}
         selectedReviewSelector={selectedReviewSelector}
+        initialAiControl={initialAiControl}
       />
     </section>
   );

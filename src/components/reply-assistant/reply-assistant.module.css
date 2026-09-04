@@ -202,6 +202,33 @@
 
 .imageAssessment p { margin: 0; overflow-wrap: anywhere; }
 
+.takeoverBar {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 9px 13px;
+  border-top: 1px solid var(--reply-border, #d8d7d2);
+  color: var(--reply-muted, #67706b);
+  background: #fafaf7;
+  font-size: 12px;
+}
+
+.takeoverBar button {
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 1px solid var(--reply-border-strong, #c8c9c4);
+  border-radius: 8px;
+  color: var(--reply-accent, #345c45);
+  background: #fff;
+  font: inherit;
+  font-weight: 720;
+  cursor: pointer;
+}
+.takeoverBar button:disabled { cursor: wait; opacity: 0.55; }
+
 .draftArea,
 .websiteReply {
   display: grid;
@@ -336,4 +363,6 @@
   .generate { width: 100%; }
   .queueFooter { align-items: stretch; flex-direction: column; }
   .queueFooter button { width: 100%; }
+  .takeoverBar { align-items: stretch; flex-direction: column; }
+  .takeoverBar button { width: 100%; min-height: 44px; }
 }
