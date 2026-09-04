@@ -111,7 +111,13 @@ describe("manual Facebook reply sender", () => {
     await expect(current.sender.send(input)).resolves.toMatchObject({ status: "sent" });
     const autoFetch = vi.fn(async () => new Response(JSON.stringify({ message_id: "mid.auto" }), { status: 200 }));
     const auto = createMetaReplySender({
-      config: { masterEnabled: true, engineMode: "shared_active", metaAutoSendEnabled: true, stageAAllowedRecipientHash: hash(psid) },
+      config: {
+        masterEnabled: true,
+        engineMode: "shared_active",
+        metaAutoSendEnabled: true,
+        stageAAllowedRecipientHash: hash(psid),
+        stageAActivatedAt: new Date(0),
+      },
       accessToken: "server-only-token",
       pageId: "page-1",
       store: current.store,

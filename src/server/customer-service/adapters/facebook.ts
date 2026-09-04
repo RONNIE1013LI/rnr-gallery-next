@@ -98,8 +98,12 @@ export function createFacebookChannelAdapter(): ChannelAdapter<unknown> {
             ? "[Staff sent an attachment]"
             : textValue;
           if (!conversationKey || !messageId || (!safeText && !attachments.length)) continue;
-          const timestamp = typeof event?.timestamp === "number"
-            ? event.timestamp
+          const originalTimestamp = event?.timestamp;
+          const providerTimestampValid = typeof originalTimestamp === "number"
+            && Number.isFinite(originalTimestamp)
+            && Number.isFinite(new Date(originalTimestamp).getTime());
+          const timestamp = providerTimestampValid
+            ? originalTimestamp
             : typeof entry.time === "number"
               ? entry.time
               : Date.now();
@@ -112,6 +116,7 @@ export function createFacebookChannelAdapter(): ChannelAdapter<unknown> {
             externalReplyToMessageKey,
             text: safeText || null,
             attachments,
+            providerTimestampValid,
             receivedAt: new Date(timestamp),
           }));
         }
@@ -122,18 +127,22 @@ export function createFacebookChannelAdapter(): ChannelAdapter<unknown> {
 }
 
 export function normalizeFacebookMetaEvents(payload: unknown): readonly MetaConversationEvent[] {
-  return createFacebookChannelAdapter().normalize(payload).map((message) => Object.freeze({
-    ...message,
-    channel: "facebook" as const,
-    attachments: message.attachments.map((attachment) => Object.freeze({
-      externalAttachmentKey: attachment.externalAttachmentKey,
-      ordinal: attachment.ordinal,
-      kind: attachment.kind,
-      sourceRef: attachment.sourceRef?.kind === "facebook_remote"
-        ? Object.freeze({ kind: "facebook_remote" as const, url: attachment.sourceRef.url })
-        : null,
-      mimeTypeHint: attachment.mimeTypeHint,
-      failureCode: attachment.failureCode ?? null,
-    })),
-  }));
+  return createFacebookChannelAdapter().normalize(payload).map((message) => {
+    const event = { ...message };
+    delete event.providerTimestampValid;
+    return Object.freeze({
+      ...event,
+      channel: "facebook" as const,
+      attachments: message.attachments.map((attachment) => Object.freeze({
+        externalAttachmentKey: attachment.externalAttachmentKey,
+        ordinal: attachment.ordinal,
+        kind: attachment.kind,
+        sourceRef: attachment.sourceRef?.kind === "facebook_remote"
+          ? Object.freeze({ kind: "facebook_remote" as const, url: attachment.sourceRef.url })
+          : null,
+        mimeTypeHint: attachment.mimeTypeHint,
+        failureCode: attachment.failureCode ?? null,
+      })),
+    });
+  });
 }

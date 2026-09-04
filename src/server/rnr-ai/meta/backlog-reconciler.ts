@@ -12,6 +12,7 @@ type Dependencies = Readonly<{
   processEvent(event: MetaConversationEvent): Promise<ProcessResult>;
   hashExternalKey(value: string): string;
   stageAAllowedRecipientHash: string | null;
+  stageAActivatedAt: Date | null;
   now?: () => Date;
 }>;
 
@@ -69,9 +70,12 @@ export function createBacklogReconciler(dependencies: Dependencies) {
       let processed = 0;
       let skipped = 0;
       let stoppedBecauseOff = false;
+      const stageAActivatedAt = dependencies.stageAActivatedAt;
       try {
         if (!validLease(lease)) throw new Error("invalid_backlog_window");
-        if (!await dependencies.controlIsOn()) {
+        if (!dependencies.stageAAllowedRecipientHash || !stageAActivatedAt) {
+          stoppedBecauseOff = true;
+        } else if (!await dependencies.controlIsOn()) {
           stoppedBecauseOff = true;
         } else {
           const locators = (await dependencies.listConversations(lease.window)).slice(0, 100);
@@ -90,12 +94,14 @@ export function createBacklogReconciler(dependencies: Dependencies) {
               continue;
             }
             const snapshot = await dependencies.loadConversation(locator);
-            const events = sortedEvents(snapshot);
+            const events = sortedEvents(snapshot)
+              .filter((event) => event.receivedAt.getTime() >= stageAActivatedAt.getTime());
             const run = latestCustomerRun(events);
             const latest = run?.at(-1);
             if (
               !run
               || !latest
+              || latest.receivedAt.getTime() < stageAActivatedAt.getTime()
               || latest.receivedAt.getTime() < Date.parse(lease.window.from)
               || latest.receivedAt.getTime() > Date.parse(lease.window.to)
             ) {

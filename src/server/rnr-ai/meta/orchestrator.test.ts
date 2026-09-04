@@ -53,6 +53,7 @@ const greenDecision: RnrAiDecision = {
 async function setup(options: Readonly<{
   masterEnabled?: boolean;
   stageAAllowedRecipientHash?: string | null;
+  stageAActivatedAt?: Date | null;
   decision?: RnrAiDecision;
   snapshots?: readonly MetaConversationSnapshot[];
 }> = {}) {
@@ -76,7 +77,10 @@ async function setup(options: Readonly<{
     resolveMarket: () => "NZ",
     pageId: "page-1",
     masterEnabled: options.masterEnabled ?? true,
-    stageAAllowedRecipientHash: options.stageAAllowedRecipientHash ?? hash("conversation-raw"),
+    stageAAllowedRecipientHash: options.stageAAllowedRecipientHash === undefined
+      ? hash("conversation-raw")
+      : options.stageAAllowedRecipientHash,
+    stageAActivatedAt: options.stageAActivatedAt === undefined ? new Date(0) : options.stageAActivatedAt,
     sender,
     now: () => now,
   });
@@ -91,6 +95,20 @@ describe("MetaReplyOrchestrator", () => {
     const current = await setup({ stageAAllowedRecipientHash: hash("approved-conversation") });
     await expect(current.orchestrator.handle(event({ role, eventType })))
       .resolves.toMatchObject({ acknowledged: true, status: "stage_a_not_allowed" });
+    expect(current.context.loadConversation).not.toHaveBeenCalled();
+    expect(current.images.resolveMetaImages).not.toHaveBeenCalled();
+    expect(current.brain.generate).not.toHaveBeenCalled();
+    expect(current.sender.sendEligibleReply).not.toHaveBeenCalled();
+    expect(current.store.exportStateForTest().events).toHaveLength(0);
+  });
+
+  it.each([
+    ["missing cutoff", null, event()],
+    ["pre-cutoff event", new Date("2026-09-04T00:10:00.000Z"), event()],
+  ] as const)("rejects a controlled recipient before shared runtime work with %s", async (_label, stageAActivatedAt, incoming) => {
+    const current = await setup({ stageAActivatedAt });
+    await expect(current.orchestrator.handle(incoming))
+      .resolves.toMatchObject({ acknowledged: true, status: "stage_a_not_active" });
     expect(current.context.loadConversation).not.toHaveBeenCalled();
     expect(current.images.resolveMetaImages).not.toHaveBeenCalled();
     expect(current.brain.generate).not.toHaveBeenCalled();

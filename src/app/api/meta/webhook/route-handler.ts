@@ -21,8 +21,10 @@ type SharedRuntime = Readonly<{
 type AcceptedEvent = Parameters<NonNullable<Parameters<typeof createMetaWebhookHandlers>[0]["onAcceptedEvent"]>>[0];
 
 function asMetaEvent(message: AcceptedEvent): MetaConversationEvent {
+  const event = { ...message };
+  delete event.providerTimestampValid;
   return Object.freeze({
-    ...message,
+    ...event,
     channel: "facebook" as const,
     attachments: Object.freeze(message.attachments.map((attachment) => Object.freeze({
       externalAttachmentKey: attachment.externalAttachmentKey,
@@ -44,7 +46,9 @@ function isStageAAllowedRecipient(
 ) {
   return Boolean(
     rnrConfig.stageAAllowedRecipientHash
+    && rnrConfig.stageAActivatedAt
     && customerConfig.idHashSecret
+    && message.receivedAt.getTime() >= rnrConfig.stageAActivatedAt.getTime()
     && createHmac("sha256", customerConfig.idHashSecret)
       .update(message.externalConversationKey)
       .digest("hex") === rnrConfig.stageAAllowedRecipientHash,
@@ -85,6 +89,7 @@ export function createMetaWebhookRouteHandlers(dependencies: Readonly<{
     ...common,
     onAcceptedEvent: async (message) => {
       if (!dependencies.rnrConfig.masterEnabled) return;
+      if (message.providerTimestampValid !== true) return;
       if (!isStageAAllowedRecipient(message, dependencies.customerConfig, dependencies.rnrConfig)) return;
       await dependencies.createSharedRuntime().orchestrator.handle(asMetaEvent(message));
     },

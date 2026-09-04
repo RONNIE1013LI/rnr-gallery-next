@@ -29,7 +29,9 @@ async function setup(input: Readonly<{
   controlIsOn?: boolean;
   takeover?: boolean;
   latestMessageKey?: string;
+  latestReceivedAt?: Date;
   stageAAllowedRecipientHash?: string | null;
+  stageAActivatedAt?: Date | null;
   fetchImpl?: typeof fetch;
 }> = {}) {
   const store = new InMemoryReplyRuntimeStore();
@@ -50,7 +52,7 @@ async function setup(input: Readonly<{
         externalReplyToMessageKey: null,
         text: "Hello",
         attachments: [],
-        receivedAt: new Date("2026-09-04T01:00:00.000Z"),
+        receivedAt: input.latestReceivedAt ?? new Date("2026-09-04T01:00:00.000Z"),
       }],
     })),
   };
@@ -59,7 +61,10 @@ async function setup(input: Readonly<{
       masterEnabled: input.masterEnabled ?? true,
       engineMode: input.engineMode ?? "shared_active",
       metaAutoSendEnabled: input.metaAutoSendEnabled ?? true,
-      stageAAllowedRecipientHash: input.stageAAllowedRecipientHash ?? hash(candidate.externalConversationKey),
+      stageAAllowedRecipientHash: input.stageAAllowedRecipientHash === undefined
+        ? hash(candidate.externalConversationKey)
+        : input.stageAAllowedRecipientHash,
+      stageAActivatedAt: input.stageAActivatedAt === undefined ? new Date(0) : input.stageAActivatedAt,
     },
     accessToken: input.accessToken ?? "test-page-access-token",
     pageId: "page-id",
@@ -77,6 +82,26 @@ async function setup(input: Readonly<{
 describe("Meta reply sender", () => {
   it("does not claim or call Graph for an unmatched Stage A recipient", async () => {
     const current = await setup({ stageAAllowedRecipientHash: hash("another-customer") });
+    await expect(current.sender.sendEligibleReply(candidate)).resolves.toEqual({ status: "blocked" });
+    expect(current.fetchImpl).not.toHaveBeenCalled();
+    expect(current.store.exportStateForTest().deliveries).toHaveLength(0);
+  });
+
+  it.each([
+    ["missing recipient hash", { stageAAllowedRecipientHash: null }],
+    ["missing cutoff", { stageAActivatedAt: null }],
+  ])("does not claim or call Graph with %s", async (_label, override) => {
+    const current = await setup(override);
+    await expect(current.sender.sendEligibleReply(candidate)).resolves.toEqual({ status: "blocked" });
+    expect(current.fetchImpl).not.toHaveBeenCalled();
+    expect(current.store.exportStateForTest().deliveries).toHaveLength(0);
+  });
+
+  it("does not claim or call Graph when the final latest customer event predates Stage A", async () => {
+    const current = await setup({
+      stageAActivatedAt: new Date("2026-09-04T01:00:00.000Z"),
+      latestReceivedAt: new Date("2026-09-04T00:59:59.999Z"),
+    });
     await expect(current.sender.sendEligibleReply(candidate)).resolves.toEqual({ status: "blocked" });
     expect(current.fetchImpl).not.toHaveBeenCalled();
     expect(current.store.exportStateForTest().deliveries).toHaveLength(0);

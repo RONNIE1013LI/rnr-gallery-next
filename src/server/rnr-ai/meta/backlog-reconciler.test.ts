@@ -8,6 +8,7 @@ import type { MetaConversationEvent, MetaConversationSnapshot, MetaHistoryEvent 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 const from = "2026-09-03T00:00:00.000Z";
 const to = "2026-09-04T00:00:00.000Z";
+const stageAActivatedAt = new Date("2026-09-01T00:00:00.000Z");
 
 function locator(id: string): MetaConversationLocator {
   return { channel: "facebook", externalConversationKey: id, pageId: "page-1" };
@@ -56,6 +57,7 @@ describe("BacklogReconciler", () => {
       processEvent,
       hashExternalKey: hash,
       stageAAllowedRecipientHash: hash("allowed"),
+      stageAActivatedAt,
       now: () => new Date(to),
     });
     const result = await reconciler.run(await lease(store));
@@ -87,6 +89,7 @@ describe("BacklogReconciler", () => {
       processEvent,
       hashExternalKey: hash,
       stageAAllowedRecipientHash: hash("duplicate"),
+      stageAActivatedAt,
       now: () => new Date(to),
     });
     const result = await reconciler.run(await lease(store));
@@ -109,6 +112,7 @@ describe("BacklogReconciler", () => {
       processEvent,
       hashExternalKey: hash,
       stageAAllowedRecipientHash: hash("one"),
+      stageAActivatedAt,
       now: () => new Date(to),
     });
     const result = await reconciler.run(await lease(store));
@@ -128,6 +132,7 @@ describe("BacklogReconciler", () => {
         processEvent: async () => ({ acknowledged: true, status }),
         hashExternalKey: hash,
         stageAAllowedRecipientHash: hash("one"),
+        stageAActivatedAt,
         now: () => new Date(to),
       });
       await expect(reconciler.run(await lease(store))).resolves.toMatchObject({ processed: 1, skipped: 0 });
@@ -148,6 +153,7 @@ describe("BacklogReconciler", () => {
       processEvent,
       hashExternalKey: hash,
       stageAAllowedRecipientHash: hash("allowed"),
+      stageAActivatedAt,
       now: () => new Date(to),
     });
 
@@ -155,5 +161,51 @@ describe("BacklogReconciler", () => {
     expect(loadConversation).toHaveBeenCalledOnce();
     expect(loadConversation).toHaveBeenCalledWith(locator("allowed"));
     expect(processEvent).toHaveBeenCalledOnce();
+  });
+
+  it("processes only a deliberate controlled unanswered message after the Stage A cutoff", async () => {
+    const store = new InMemoryReplyRuntimeStore({ now: () => Date.parse(to) });
+    const loadConversation = vi.fn(async () => snapshot("allowed", [
+      history("allowed", "staff", "Earlier answer", 1),
+      history("allowed", "customer", "pre-cutoff customer message", 3),
+      history("allowed", "customer", "deliberate controlled unanswered message", 5),
+    ]));
+    const processEvent = vi.fn(async () => ({ acknowledged: true as const, status: "delivery_candidate_disabled" as const }));
+    const reconciler = createBacklogReconciler({
+      store,
+      controlIsOn: async () => true,
+      listConversations: async () => [locator("allowed")],
+      loadConversation,
+      processEvent,
+      hashExternalKey: hash,
+      stageAAllowedRecipientHash: hash("allowed"),
+      stageAActivatedAt: new Date(Date.parse(from) + 4 * 60_000),
+      now: () => new Date(to),
+    });
+
+    await expect(reconciler.run(await lease(store))).resolves.toMatchObject({ processed: 1, skipped: 0 });
+    expect(processEvent).toHaveBeenCalledWith(expect.objectContaining({
+      externalMessageKey: "allowed-5",
+      text: "deliberate controlled unanswered message",
+    }));
+  });
+
+  it("skips a controlled historical backlog event before processing when Stage A cutoff is later", async () => {
+    const store = new InMemoryReplyRuntimeStore({ now: () => Date.parse(to) });
+    const processEvent = vi.fn(async () => ({ acknowledged: true as const, status: "delivery_candidate_disabled" as const }));
+    const reconciler = createBacklogReconciler({
+      store,
+      controlIsOn: async () => true,
+      listConversations: async () => [locator("allowed")],
+      loadConversation: async () => snapshot("allowed", [history("allowed", "customer", "historical message", 3)]),
+      processEvent,
+      hashExternalKey: hash,
+      stageAAllowedRecipientHash: hash("allowed"),
+      stageAActivatedAt: new Date(Date.parse(from) + 4 * 60_000),
+      now: () => new Date(to),
+    });
+
+    await expect(reconciler.run(await lease(store))).resolves.toMatchObject({ processed: 0, skipped: 1 });
+    expect(processEvent).not.toHaveBeenCalled();
   });
 });
