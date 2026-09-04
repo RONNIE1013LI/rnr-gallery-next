@@ -38,10 +38,15 @@ async function setup(input: Readonly<{
   stageAActivatedAt?: Date | null;
   fetchImpl?: typeof fetch;
   logEligibilityEvaluation?: (entry: unknown) => void;
+  logDeliveryTrace?: (entry: unknown) => void;
+  traceNow?: () => Date;
 }> = {}) {
-  const store = new InMemoryReplyRuntimeStore();
+  const store = new InMemoryReplyRuntimeStore({
+    now: () => Date.parse("2026-09-04T01:00:00.000Z"),
+  });
   const fetchImpl = input.fetchImpl ?? vi.fn(async () => Response.json({ message_id: "provider-message-id" }));
   const eligibilityLog = vi.fn();
+  const deliveryTrace = vi.fn();
   const context = {
     loadConversation: vi.fn(async () => ({
       channel: "facebook" as const,
@@ -82,8 +87,10 @@ async function setup(input: Readonly<{
     fetchImpl,
     now: () => new Date("2026-09-04T01:01:00.000Z"),
     logEligibilityEvaluation: input.logEligibilityEvaluation ?? eligibilityLog,
+    logDeliveryTrace: input.logDeliveryTrace ?? deliveryTrace,
+    traceNow: input.traceNow ?? (() => new Date("2026-09-04T01:00:00.100Z")),
   });
-  return { sender, store, fetchImpl, context, eligibilityLog };
+  return { sender, store, fetchImpl, context, eligibilityLog, deliveryTrace };
 }
 
 describe("Meta reply sender", () => {
@@ -224,6 +231,129 @@ describe("Meta reply sender", () => {
     const delivery = current.store.exportStateForTest().deliveries[0]?.[1].result;
     expect(delivery).toMatchObject({ status: "sent", providerMessageIdMasked: expect.stringMatching(/^[a-f0-9]{12}$/) });
     expect(JSON.stringify(delivery)).not.toContain("provider-message-id");
+  });
+
+  it("records the successful delivery execution phases with one safe correlation", async () => {
+    const current = await setup();
+
+    await expect(current.sender.sendEligibleReply(candidate)).resolves.toEqual({ status: "sent" });
+
+    const entries = current.deliveryTrace.mock.calls.map(([entry]) => entry);
+    expect(entries.map((entry) => entry.phase)).toEqual([
+      "delivery_claimed",
+      "begin_delivery_send_start",
+      "begin_delivery_send_success",
+      "graph_post_start",
+      "graph_post_response",
+      "sender_final",
+    ]);
+    expect(entries[0]).toMatchObject({
+      claimedAt: "2026-09-04T01:00:00.100Z",
+      leaseExpiresAt: "2026-09-04T01:01:00.000Z",
+      millisecondsUntilExpiry: 59_900,
+    });
+    expect(entries[4]).toMatchObject({ httpStatus: 200, responseOk: true });
+    expect(entries[5]).toMatchObject({
+      finalSenderStatus: "sent",
+      providerMessageIdMasked: expect.stringMatching(/^[a-f0-9]{12}$/),
+    });
+    expect(new Set(entries.map((entry) => entry.deliveryKeyMasked)).size).toBe(1);
+    const serialized = JSON.stringify(entries);
+    expect(serialized).not.toContain(candidate.externalConversationKey);
+    expect(serialized).not.toContain(candidate.latestCustomerMessageKey);
+    expect(serialized).not.toContain(candidate.replyText);
+    expect(serialized).not.toContain("test-page-access-token");
+    expect(serialized).not.toContain("provider-message-id");
+  });
+
+  it("records beginDeliverySend failure and preserves the blocked result", async () => {
+    const current = await setup();
+    vi.spyOn(current.store, "beginDeliverySend")
+      .mockRejectedValueOnce(new Error("Delivery lease is no longer valid"));
+
+    await expect(current.sender.sendEligibleReply(candidate)).resolves.toEqual({ status: "blocked" });
+
+    expect(current.fetchImpl).not.toHaveBeenCalled();
+    expect(current.deliveryTrace.mock.calls.map(([entry]) => entry.phase)).toEqual([
+      "delivery_claimed",
+      "begin_delivery_send_start",
+      "begin_delivery_send_error",
+      "release_delivery_start",
+      "release_delivery_success",
+      "sender_final",
+    ]);
+    expect(current.deliveryTrace).toHaveBeenCalledWith(expect.objectContaining({
+      phase: "begin_delivery_send_error",
+      errorName: "Error",
+      errorMessage: "Delivery lease is no longer valid",
+      currentTime: "2026-09-04T01:00:00.100Z",
+      leaseExpiresAt: "2026-09-04T01:01:00.000Z",
+      elapsedSinceClaim: 0,
+    }));
+    expect(current.deliveryTrace).toHaveBeenLastCalledWith(expect.objectContaining({
+      phase: "sender_final",
+      finalSenderStatus: "blocked",
+    }));
+  });
+
+  it("records a safe Meta Graph 4xx response before releasing delivery", async () => {
+    const current = await setup({
+      fetchImpl: vi.fn(async () => Response.json({
+        error: {
+          type: "OAuthException",
+          code: 190,
+          error_subcode: 463,
+          message: "Invalid token test-page-access-token at https://graph.facebook.com/private",
+        },
+      }, { status: 400 })),
+    });
+
+    await expect(current.sender.sendEligibleReply(candidate)).resolves.toEqual({ status: "blocked" });
+
+    expect(current.deliveryTrace.mock.calls.map(([entry]) => entry.phase)).toEqual([
+      "delivery_claimed",
+      "begin_delivery_send_start",
+      "begin_delivery_send_success",
+      "graph_post_start",
+      "graph_post_response",
+      "release_delivery_start",
+      "release_delivery_success",
+      "sender_final",
+    ]);
+    const responseEntry = current.deliveryTrace.mock.calls
+      .map(([entry]) => entry)
+      .find((entry) => entry.phase === "graph_post_response");
+    expect(responseEntry).toMatchObject({
+      httpStatus: 400,
+      responseOk: false,
+      graphErrorType: "OAuthException",
+      graphErrorCode: 190,
+      graphErrorSubcode: 463,
+    });
+    expect(JSON.stringify(responseEntry)).not.toContain("test-page-access-token");
+    expect(JSON.stringify(responseEntry)).not.toContain("graph.facebook.com/private");
+    expect(current.store.exportStateForTest().deliveries).toHaveLength(0);
+  });
+
+  it("records releaseDelivery failure without replacing the existing uncertain outcome", async () => {
+    const current = await setup({
+      fetchImpl: vi.fn(async () => Response.json({ error: { code: 190 } }, { status: 400 })),
+    });
+    vi.spyOn(current.store, "releaseDelivery")
+      .mockRejectedValueOnce(new Error("Delivery lease is no longer valid"));
+
+    await expect(current.sender.sendEligibleReply(candidate))
+      .resolves.toEqual({ status: "delivery_uncertain" });
+
+    expect(current.deliveryTrace).toHaveBeenCalledWith(expect.objectContaining({
+      phase: "release_delivery_error",
+      errorName: "Error",
+      errorMessage: "Delivery lease is no longer valid",
+    }));
+    expect(current.deliveryTrace).toHaveBeenLastCalledWith(expect.objectContaining({
+      phase: "sender_final",
+      finalSenderStatus: "delivery_uncertain",
+    }));
   });
 
   it("recognizes a sender-originated echo using only a stored HMAC marker", async () => {
