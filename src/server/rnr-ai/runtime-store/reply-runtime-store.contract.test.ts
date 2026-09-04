@@ -52,6 +52,27 @@ describe("ReplyRuntimeStore contract", () => {
     expect(await store.readTakeover(key)).toMatchObject({ active: false, source: "admin" });
   });
 
+  it("persists only a hashed reviewed-turn resolution boundary", async () => {
+    const store = new InMemoryReplyRuntimeStore();
+    const conversationKeyHash = hash("conversation-1");
+    const messageKeyHash = hash("raw-reviewed-message-id");
+    await store.setTakeover({
+      conversationKeyHash,
+      active: false,
+      source: "admin",
+      changedAt: "2026-09-04T01:00:00.000Z",
+      resolvedTurnKeyHash: messageKeyHash,
+      resolvedThroughAt: "2026-09-04T00:59:00.000Z",
+    });
+
+    await expect(store.readTakeover(conversationKeyHash)).resolves.toMatchObject({
+      active: false,
+      resolvedTurnKeyHash: messageKeyHash,
+      resolvedThroughAt: "2026-09-04T00:59:00.000Z",
+    });
+    expect(JSON.stringify(store.exportStateForTest())).not.toContain("raw-reviewed-message-id");
+  });
+
   it("deduplicates backlog windows and prevents replay of terminal delivery", async () => {
     const store = new InMemoryReplyRuntimeStore();
     const window = { from: "2026-09-03T00:00:00.000Z", to: "2026-09-04T00:00:00.000Z", maxConversations: 100 as const };

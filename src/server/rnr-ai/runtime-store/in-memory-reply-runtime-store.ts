@@ -108,10 +108,13 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
 
   async setTakeover(input: TakeoverMutation) {
     requireHash(input.conversationKeyHash, "conversation key");
+    if (input.resolvedTurnKeyHash) requireHash(input.resolvedTurnKeyHash, "resolved turn key");
     this.takeovers.set(input.conversationKeyHash, Object.freeze({
       active: input.active,
       source: input.source,
       changedAt: new Date(input.changedAt).toISOString(),
+      ...(input.resolvedTurnKeyHash ? { resolvedTurnKeyHash: input.resolvedTurnKeyHash } : {}),
+      ...(input.resolvedThroughAt ? { resolvedThroughAt: new Date(input.resolvedThroughAt).toISOString() } : {}),
     }));
   }
 
@@ -222,6 +225,7 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
     if (ttlSeconds !== 172_800) throw new Error("Review retention must be exactly 48 hours");
     if (!metadata) throw new Error("Review metadata is required");
     requireHash(metadata.conversationKeyHash, "conversation key");
+    if (metadata.reviewedTurnKeyHash) requireHash(metadata.reviewedTurnKeyHash, "reviewed turn key");
     const expiresAtMs = this.now() + ttlSeconds * 1_000;
     this.reviews.set(key, {
       ciphertext,

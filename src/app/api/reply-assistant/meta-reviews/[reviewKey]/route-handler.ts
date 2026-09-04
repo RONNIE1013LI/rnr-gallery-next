@@ -41,7 +41,11 @@ export function createMetaReviewDetailHandler(dependencies: Readonly<{
           reasons: payload.reasons,
           createdAt: metadata.createdAt,
           expiresAt: metadata.expiresAt,
-          takeover: takeover ?? { active: false, source: null, changedAt: null },
+          takeover: takeover ? {
+            active: takeover.active,
+            source: takeover.source,
+            changedAt: takeover.changedAt,
+          } : { active: false, source: null, changedAt: null },
         });
       } catch (error) {
         return customerServiceApiError(error);
@@ -62,6 +66,8 @@ export function createMetaReviewDetailHandler(dependencies: Readonly<{
           active: false,
           source: "admin" as const,
           changedAt: (dependencies.now?.() ?? new Date()).toISOString(),
+          ...(metadata.reviewedTurnKeyHash ? { resolvedTurnKeyHash: metadata.reviewedTurnKeyHash } : {}),
+          resolvedThroughAt: metadata.createdAt,
         };
         await store.setTakeover(takeover);
         return noStoreJson({ takeover: {

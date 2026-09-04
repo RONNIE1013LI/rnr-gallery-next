@@ -1,7 +1,7 @@
 import type { CompiledBusinessBrain } from "../business-brain/schema";
 import { evaluateAiControl } from "../control/schedule";
-import type { ReplyRuntimeStore } from "../runtime-store/reply-runtime-store";
-import type { RnrAiDecision, RnrAiRequest, VerifiedImageInput } from "../types";
+import type { ReplyRuntimeStore, TakeoverState } from "../runtime-store/reply-runtime-store";
+import type { ConversationTurn, RnrAiDecision, RnrAiRequest, VerifiedImageInput } from "../types";
 import type { MetaContextProvider } from "./context-provider";
 import { MetaImageResolutionError } from "./image-resolver";
 import type { MetaReviewPayload, createMetaReviewPayloadProtector } from "./review-payload-protector";
@@ -18,7 +18,7 @@ type MetaBrain = Readonly<{
 
 type HumanTakeover = Readonly<{
   observeStaffEvent(event: MetaConversationEvent): Promise<void>;
-  read(externalConversationKey: string): Promise<{ active: boolean } | null>;
+  read(externalConversationKey: string): Promise<TakeoverState | null>;
   set(externalConversationKey: string, active: boolean, source: "staff_echo" | "admin" | "risk", changedAt?: Date): Promise<void>;
 }>;
 
@@ -65,6 +65,7 @@ type Dependencies = Readonly<{
 
 const EVENT_LEASE_MS = 60_000;
 const REVIEW_TTL_SECONDS = 172_800;
+const RESOLVED_REVIEW_MARKER = "[Reviewed Meta turn resolved by an administrator; keep as history and do not answer unless the customer asks again.]";
 
 function latestEvent(snapshot: MetaConversationSnapshot) {
   return [...snapshot.events].sort((left, right) => (
@@ -77,18 +78,42 @@ function requestFromSnapshot(
   dependencies: Dependencies,
   snapshot: MetaConversationSnapshot,
   images: readonly VerifiedImageInput[],
+  takeover: TakeoverState | null,
 ): RnrAiRequest {
+  const events: ConversationTurn[] = snapshot.events.map((item) => Object.freeze({
+    providerMessageKey: dependencies.hashExternalKey(item.externalMessageKey),
+    role: item.role,
+    sentAt: item.receivedAt.toISOString(),
+    text: item.text ?? "",
+    channel: "meta" as const,
+    attachmentOrdinals: Object.freeze(item.attachments.map((attachment) => attachment.ordinal)),
+  }));
+  const resolvedIndex = (() => {
+    if (!takeover || takeover.active || !takeover.resolvedThroughAt) return -1;
+    if (takeover.resolvedTurnKeyHash) {
+      const exact = snapshot.events.findLastIndex((item) => (
+        dependencies.hashExternalKey(item.externalMessageKey) === takeover.resolvedTurnKeyHash
+      ));
+      if (exact >= 0) return exact;
+    }
+    const through = Date.parse(takeover.resolvedThroughAt);
+    if (!Number.isFinite(through)) return -1;
+    return snapshot.events.findLastIndex((item) => item.receivedAt.getTime() <= through);
+  })();
+  if (resolvedIndex >= 0) {
+    events.splice(resolvedIndex + 1, 0, Object.freeze({
+      providerMessageKey: dependencies.hashExternalKey(`resolved-review:${takeover!.resolvedTurnKeyHash ?? takeover!.resolvedThroughAt}`),
+      role: "automation" as const,
+      sentAt: takeover!.resolvedThroughAt!,
+      text: RESOLVED_REVIEW_MARKER,
+      channel: "meta" as const,
+      attachmentOrdinals: Object.freeze([] as number[]),
+    }));
+  }
   return Object.freeze({
     channel: "meta",
     market: dependencies.resolveMarket(snapshot),
-    conversation: Object.freeze(snapshot.events.map((item) => Object.freeze({
-      providerMessageKey: dependencies.hashExternalKey(item.externalMessageKey),
-      role: item.role,
-      sentAt: item.receivedAt.toISOString(),
-      text: item.text ?? "",
-      channel: "meta" as const,
-      attachmentOrdinals: Object.freeze(item.attachments.map((attachment) => attachment.ordinal)),
-    }))),
+    conversation: Object.freeze(events),
     attachments: Object.freeze([...images]),
     businessBrain: dependencies.businessBrain,
     toolContext: Object.freeze({
@@ -129,8 +154,10 @@ export function createMetaReplyOrchestrator(dependencies: Dependencies) {
       }
       if (!await controlIsOn(dependencies, now())) return { acknowledged: true, status: "off" };
 
+      let takeoverAtStart: TakeoverState | null;
       try {
-        if ((await dependencies.takeover.read(event.externalConversationKey))?.active) {
+        takeoverAtStart = await dependencies.takeover.read(event.externalConversationKey);
+        if (takeoverAtStart?.active) {
           return { acknowledged: true, status: "human_takeover" };
         }
       } catch {
@@ -149,6 +176,14 @@ export function createMetaReplyOrchestrator(dependencies: Dependencies) {
       const settle = async (status: "processed" | "review" | "delivery_candidate" | "failed") => {
         await dependencies.store.settleEvent(lease!, { status, settledAt: now().toISOString() });
       };
+      const resolvedThrough = takeoverAtStart?.resolvedThroughAt ? Date.parse(takeoverAtStart.resolvedThroughAt) : Number.NaN;
+      if (
+        takeoverAtStart?.resolvedTurnKeyHash === dependencies.hashExternalKey(event.externalMessageKey)
+        || (Number.isFinite(resolvedThrough) && event.receivedAt.getTime() <= resolvedThrough)
+      ) {
+        await settle("processed");
+        return { acknowledged: true, status: "already_answered" };
+      }
       const persistReview = async (payload: MetaReviewPayload): Promise<MetaOrchestratorResult> => {
         const reviewKey = dependencies.hashExternalKey(`review:${event.channel}:${event.externalMessageKey}`);
         try {
@@ -157,6 +192,7 @@ export function createMetaReplyOrchestrator(dependencies: Dependencies) {
             conversationKeyHash: dependencies.hashExternalKey(event.externalConversationKey),
             risk: payload.risk,
             createdAt: now().toISOString(),
+            reviewedTurnKeyHash: dependencies.hashExternalKey(event.externalMessageKey),
           });
           await dependencies.takeover.set(event.externalConversationKey, true, "risk", now());
           await settle("review");
@@ -194,7 +230,7 @@ export function createMetaReplyOrchestrator(dependencies: Dependencies) {
           }
           throw error;
         }
-        let decision = await dependencies.brain.generate(requestFromSnapshot(dependencies, before, images));
+        let decision = await dependencies.brain.generate(requestFromSnapshot(dependencies, before, images, takeoverAtStart));
         if (!before.complete && decision.risk === "GREEN") {
           decision = Object.freeze({
             ...decision,

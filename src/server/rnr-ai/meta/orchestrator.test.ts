@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { loadBusinessBrain } from "../business-brain/loader";
 import { InMemoryReplyRuntimeStore } from "../runtime-store/in-memory-reply-runtime-store";
-import type { RnrAiDecision } from "../types";
+import type { RnrAiDecision, RnrAiRequest } from "../types";
 import { createHumanTakeoverService } from "./human-takeover";
 import { MetaImageResolutionError } from "./image-resolver";
 import { createMetaReplyOrchestrator } from "./orchestrator";
@@ -56,14 +56,18 @@ async function setup(options: Readonly<{
   stageAActivatedAt?: Date | null;
   decision?: RnrAiDecision;
   snapshots?: readonly MetaConversationSnapshot[];
+  senderStatus?: "disabled" | "sent";
 }> = {}) {
   const store = new InMemoryReplyRuntimeStore({ now: () => now.getTime() });
   await store.compareAndSetControl(0, { revision: 1, mode: "ON", timezone: "Pacific/Auckland", periods: [], override: null });
   let contextIndex = 0;
   const context = { loadConversation: vi.fn(async () => options.snapshots?.[contextIndex++] ?? options.snapshots?.at(-1) ?? snapshot()) };
   const images = { resolveMetaImages: vi.fn(async () => []) };
-  const brain = { generate: vi.fn(async () => options.decision ?? greenDecision) };
-  const sender = { sendEligibleReply: vi.fn(async () => ({ status: "disabled" as const })) };
+  const brain = { generate: vi.fn(async (request: RnrAiRequest) => {
+    expect(request.channel).toBe("meta");
+    return options.decision ?? greenDecision;
+  }) };
+  const sender = { sendEligibleReply: vi.fn(async () => ({ status: options.senderStatus ?? "disabled" })) };
   const takeover = createHumanTakeoverService({ store, hashExternalKey: hash, isSenderEcho: async () => false });
   const orchestrator = createMetaReplyOrchestrator({
     store,
@@ -158,6 +162,73 @@ describe("MetaReplyOrchestrator", () => {
     expect(ciphertext).toMatch(/^v1\./);
     expect(ciphertext).not.toContain("Private draft");
     expect(await current.takeover.read("conversation-raw")).toMatchObject({ active: true, source: "risk" });
+  });
+
+  it("keeps a released review as history while making the next customer message the only active turn", async () => {
+    const reviewed = event({
+      externalMessageKey: "reviewed-suburb-question",
+      text: "Which suburb are you based in?",
+      receivedAt: new Date("2026-09-04T00:08:00.000Z"),
+    });
+    const next = event({
+      externalMessageKey: "new-canvas-question",
+      text: "Can you make a custom canvas from my photos?",
+      receivedAt: new Date("2026-09-04T00:09:00.000Z"),
+    });
+    const history = snapshot([reviewed, next]);
+    const current = await setup({ snapshots: [history, history], senderStatus: "sent" });
+    await current.store.setTakeover({
+      conversationKeyHash: hash("conversation-raw"),
+      active: false,
+      source: "admin",
+      changedAt: "2026-09-04T00:08:30.000Z",
+      resolvedTurnKeyHash: hash(reviewed.externalMessageKey),
+      resolvedThroughAt: "2026-09-04T00:08:10.000Z",
+    });
+    current.brain.generate.mockImplementationOnce(async (request: RnrAiRequest) => {
+      expect(request.conversation.map(({ role, text }) => ({ role, text }))).toEqual([
+        { role: "customer", text: "Which suburb are you based in?" },
+        { role: "automation", text: "[Reviewed Meta turn resolved by an administrator; keep as history and do not answer unless the customer asks again.]" },
+        { role: "customer", text: "Can you make a custom canvas from my photos?" },
+      ]);
+      return { ...greenDecision, replyText: "Yes, we can create a custom canvas from your photos." };
+    });
+
+    await expect(current.orchestrator.handle(next)).resolves.toMatchObject({ status: "delivery_sent" });
+    await expect(current.orchestrator.handle(next)).resolves.toMatchObject({ status: "duplicate" });
+    expect(current.sender.sendEligibleReply).toHaveBeenCalledTimes(1);
+    await expect(current.store.readTakeover(hash("conversation-raw"))).resolves.toMatchObject({ active: false });
+  });
+
+  it("still sends a newly repeated risky question through the normal YELLOW review gate", async () => {
+    const reviewed = event({
+      externalMessageKey: "reviewed-suburb-question",
+      text: "Which suburb are you based in?",
+      receivedAt: new Date("2026-09-04T00:08:00.000Z"),
+    });
+    const repeated = event({
+      externalMessageKey: "repeated-suburb-question",
+      text: "Which suburb are you based in?",
+      receivedAt: new Date("2026-09-04T00:09:00.000Z"),
+    });
+    const history = snapshot([reviewed, repeated]);
+    const current = await setup({
+      snapshots: [history, history],
+      decision: { ...greenDecision, risk: "YELLOW", nextAction: "HUMAN_REVIEW", replyText: "A risky candidate" },
+    });
+    await current.store.setTakeover({
+      conversationKeyHash: hash("conversation-raw"),
+      active: false,
+      source: "admin",
+      changedAt: "2026-09-04T00:08:30.000Z",
+      resolvedTurnKeyHash: hash(reviewed.externalMessageKey),
+      resolvedThroughAt: "2026-09-04T00:08:10.000Z",
+    });
+
+    await expect(current.orchestrator.handle(repeated)).resolves.toMatchObject({ status: "review", risk: "YELLOW" });
+    expect(current.brain.generate).toHaveBeenCalledOnce();
+    expect(current.sender.sendEligibleReply).not.toHaveBeenCalled();
+    await expect(current.takeover.read("conversation-raw")).resolves.toMatchObject({ active: true, source: "risk" });
   });
 
   it("cancels a candidate when a newer customer message or OFF state wins the final recheck", async () => {
