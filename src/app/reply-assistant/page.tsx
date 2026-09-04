@@ -8,6 +8,7 @@ import { evaluateAiControl } from "@/server/rnr-ai/control/schedule";
 import { parseRnrAiMetaConfig } from "@/server/rnr-ai/meta/config";
 import { RedisReplyRuntimeStore } from "@/server/rnr-ai/runtime-store/redis-reply-runtime-store";
 import { loadBusinessBrain } from "@/server/rnr-ai/business-brain/loader";
+import compiledKnowledge from "@/server/customer-service/knowledge/compiled-knowledge.json";
 import styles from "./reply-assistant.module.css";
 import { replyAssistantMetricCards } from "./metric-cards";
 import { KnowledgeProvenance } from "./knowledge-provenance";
@@ -98,6 +99,12 @@ export default async function ReplyAssistantPage({
       <header><div><p>Customer Service Pilot</p><h1>Reply Assistant</h1></div><strong data-enabled={inboxEnabled}>{inboxEnabled ? "Feature available" : "Feature unavailable"}</strong></header>
       <KnowledgeProvenance
         businessBrain={businessBrain}
+        supportingKnowledge={{
+          knowledgeVersion: compiledKnowledge.knowledgeVersion,
+          sourceCommit: compiledKnowledge.metadata.sourceCommit,
+          compiledAt: compiledKnowledge.metadata.compiledAt,
+          sourceChecksum: compiledKnowledge.metadata.sourceChecksum,
+        }}
       />
       <ReplyAssistantLiveDashboard
         initialCursor={initialCursor}
