@@ -62,6 +62,17 @@ function conversationData(request: RnrAiRequest) {
   };
 }
 
+function finalRiskMessage(
+  request: RnrAiRequest,
+  conversation: ReturnType<typeof conversationData>["assembled"],
+  candidateReply: string | null,
+) {
+  if (request.channel !== "meta") return conversation.modelText;
+  const activeTurn = conversation.turns.at(-1);
+  if (!activeTurn || activeTurn.role !== "customer") return conversation.modelText;
+  return [activeTurn.text, candidateReply].filter(Boolean).join("\n");
+}
+
 function wrongMarketCurrency(request: RnrAiRequest, text: string) {
   if (request.market === "NZ") return /\bAUD\b|A\$/i.test(text);
   if (request.market === "AU") return /\bNZD\b|NZ\$/i.test(text);
@@ -191,7 +202,6 @@ export function createRnrAiBrain({ provider, tools, now = () => new Date() }: Rn
     async generate(request: RnrAiRequest): Promise<RnrAiDecision> {
       if (request.conversation.length === 0) return failedDecision("missing_conversation_context");
       const conversation = conversationData(request);
-      const riskMessage = conversation.assembled.modelText;
       const baseInstructions = businessInstructions(request);
 
       let first: SolProviderResult;
@@ -249,6 +259,7 @@ export function createRnrAiBrain({ provider, tools, now = () => new Date() }: Rn
       const toolUnavailable = toolEvidence.some((item) => item.status === "unavailable_review_required");
       const modelMismatch = final.model !== "gpt-5.6-sol";
       const repeatedToolRequest = final !== first && final.decision.requestedTools.length > 0;
+      const riskMessage = finalRiskMessage(request, conversation.assembled, final.decision.replyText);
       const finalRisk = evaluateFinalRisk({
         message: riskMessage,
         deterministicRisk: modelMismatch || tooManyTools || repeatedToolRequest || INSTRUCTION_INJECTION.test(riskMessage)

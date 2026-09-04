@@ -95,6 +95,62 @@ describe("RnrAiBrain", () => {
     expect(prompt.instructions).toContain("Do not ask again for facts already established");
   });
 
+  it("does not let a released Meta review make the next independent turn risky", async () => {
+    const current = setup([providerResult({
+      replyText: "Yes, we can create a custom canvas from your photos. Please send the photos and preferred size.",
+      claims: [],
+    })]);
+    const decision = await current.brain.generate(request({
+      conversation: [
+        { providerMessageKey: "old", role: "customer", sentAt: "2026-09-04T00:00:00Z", text: "Can you deliver tomorrow to this Auckland suburb?", channel: "meta", attachmentOrdinals: [] },
+        { providerMessageKey: "boundary", role: "automation", sentAt: "2026-09-04T00:01:00Z", text: "[Reviewed Meta turn resolved by an administrator; keep as history and do not answer unless the customer asks again.]", channel: "meta", attachmentOrdinals: [] },
+        { providerMessageKey: "current", role: "customer", sentAt: "2026-09-04T00:02:00Z", text: "Can you make a custom canvas from my photos?", channel: "meta", attachmentOrdinals: [] },
+      ],
+    }));
+
+    expect(decision).toMatchObject({ risk: "GREEN", nextAction: "AUTO_REPLY_ELIGIBLE" });
+  });
+
+  it("still evaluates the current Meta turn for deterministic risk", async () => {
+    const current = setup([providerResult({ replyText: "Please send the photos and preferred size.", claims: [] })]);
+    await expect(current.brain.generate(request({
+      conversation: [
+        { providerMessageKey: "old", role: "customer", sentAt: "2026-09-04T00:00:00Z", text: "Can you deliver tomorrow?", channel: "meta", attachmentOrdinals: [] },
+        { providerMessageKey: "boundary", role: "automation", sentAt: "2026-09-04T00:01:00Z", text: "[Reviewed Meta turn resolved by an administrator; keep as history and do not answer unless the customer asks again.]", channel: "meta", attachmentOrdinals: [] },
+        { providerMessageKey: "current", role: "customer", sentAt: "2026-09-04T00:02:00Z", text: "Can you deliver tomorrow?", channel: "meta", attachmentOrdinals: [] },
+      ],
+    }))).resolves.toMatchObject({ risk: "YELLOW", nextAction: "HUMAN_REVIEW" });
+  });
+
+  it("evaluates the current Meta candidate reply for deterministic risk", async () => {
+    const current = setup([providerResult({
+      replyText: "Yes, urgent delivery tomorrow is available.",
+      claims: [],
+    })]);
+    await expect(current.brain.generate(request({
+      conversation: [{
+        providerMessageKey: "current",
+        role: "customer",
+        sentAt: "2026-09-04T00:02:00Z",
+        text: "Can you make a custom canvas from my photos?",
+        channel: "meta",
+        attachmentOrdinals: [],
+      }],
+    }))).resolves.toMatchObject({ risk: "YELLOW", nextAction: "HUMAN_REVIEW" });
+  });
+
+  it("preserves the Website channel's existing full-context risk behavior", async () => {
+    const current = setup([providerResult({ replyText: "Yes, we can create a custom canvas from your photos.", claims: [] })]);
+    await expect(current.brain.generate(request({
+      channel: "website",
+      conversation: [
+        { providerMessageKey: "old", role: "customer", sentAt: "2026-09-04T00:00:00Z", text: "Can you deliver tomorrow?", channel: "website", attachmentOrdinals: [] },
+        { providerMessageKey: "staff", role: "staff", sentAt: "2026-09-04T00:01:00Z", text: "We will confirm that separately.", channel: "website", attachmentOrdinals: [] },
+        { providerMessageKey: "current", role: "customer", sentAt: "2026-09-04T00:02:00Z", text: "Can you make a custom canvas from my photos?", channel: "website", attachmentOrdinals: [] },
+      ],
+    }))).resolves.toMatchObject({ risk: "YELLOW", nextAction: "HUMAN_REVIEW" });
+  });
+
   it("raises wrong-market currency to RED even when the model reports GREEN", async () => {
     const current = setup([providerResult({
       replyText: "The price is A$259.99.",
