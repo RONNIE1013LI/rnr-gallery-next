@@ -1,6 +1,10 @@
 import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { mergeReplyQueueItems, ReplyAssistantLiveDashboard } from "./live-dashboard";
+import {
+  buildAucklandOverrideExpiry,
+  mergeReplyQueueItems,
+  ReplyAssistantLiveDashboard,
+} from "./live-dashboard";
 import type { PilotMetricCounts } from "@/server/customer-service/repositories/customer-service-repository";
 
 const channelCounts = (sessions: number, directTemplateReplies: number) => ({
@@ -165,15 +169,61 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(screen.getByText("1 conversation")).toBeInTheDocument();
   });
 
-  it("shows the Auckland AI control state and next schedule transition without polling", () => {
+  it("shows owner-facing schedule controls without polling", () => {
     const fetchMock = vi.fn();
     vi.stubGlobal("fetch", fetchMock);
     render(<ReplyAssistantLiveDashboard {...props} />);
 
-    expect(screen.getByRole("region", { name: "AI control" })).toHaveTextContent("SCHEDULE");
-    expect(screen.getByRole("region", { name: "AI control" })).toHaveTextContent("Pacific/Auckland");
-    expect(screen.getByRole("region", { name: "AI control" })).toHaveTextContent("Next transition");
+    const control = screen.getByRole("region", { name: "AI control" });
+    expect(control).toHaveTextContent("AI operating mode");
+    expect(control).toHaveTextContent("AI will be ON during the scheduled periods below.");
+    expect(control).toHaveTextContent("Monday");
+    expect(control).toHaveTextContent("Temporary override");
+    expect(control).toHaveTextContent("Pacific/Auckland");
+    expect(control).not.toHaveTextContent("Day 1");
+    expect(control).not.toHaveTextContent("Force ON");
     expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it("sorts schedule periods Monday through Sunday and describes full-day periods", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<ReplyAssistantLiveDashboard {...props} initialAiControl={{
+      ...props.initialAiControl,
+      config: {
+        ...props.initialAiControl.config,
+        periods: [
+          { day: 0, start: "00:00", end: "23:59" },
+          { day: 1, start: "09:00", end: "17:00" },
+        ],
+      },
+    }} />);
+
+    const schedule = screen.getByRole("list", { name: "Scheduled AI ON periods" });
+    expect(schedule).toHaveTextContent("Monday");
+    expect(schedule).toHaveTextContent("Sunday");
+    expect(schedule).toHaveTextContent("All day");
+    expect(schedule.textContent?.indexOf("Monday")).toBeLessThan(schedule.textContent?.indexOf("Sunday") ?? -1);
+  });
+
+  it("explains when the disabled master switch pauses scheduled transitions", () => {
+    vi.stubGlobal("fetch", vi.fn());
+    render(<ReplyAssistantLiveDashboard {...props} initialAiControl={{
+      ...props.initialAiControl,
+      effective: { effectiveState: "OFF", source: "master_kill", nextTransitionAt: null },
+    }} />);
+
+    const control = screen.getByRole("region", { name: "AI control" });
+    expect(control).toHaveTextContent("AI is OFF");
+    expect(control).toHaveTextContent("Master AI switch is disabled");
+    expect(control).toHaveTextContent("Normal mode");
+    expect(control).toHaveTextContent("Paused until Master AI is enabled");
+  });
+
+  it("converts Auckland date and time selections to ISO and rejects a duration beyond 24 hours", () => {
+    const now = new Date("2026-09-04T00:00:00.000Z");
+
+    expect(buildAucklandOverrideExpiry("2026-09-05", "12:00", now)).toBe("2026-09-05T00:00:00.000Z");
+    expect(buildAucklandOverrideExpiry("2026-09-05", "12:01", now)).toBeNull();
   });
 
   it("fails closed when the runtime control store is unavailable", () => {
@@ -187,22 +237,51 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(screen.getByRole("region", { name: "AI control" })).toHaveTextContent("Runtime store unavailable — effective state is OFF");
   });
 
-  it("confirms an exact expiring override and reports a revision conflict without retrying", async () => {
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  it("submits a temporary override from Auckland date and time inputs and reports a revision conflict without retrying", async () => {
+    vi.setSystemTime(new Date("2026-09-03T00:00:00.000Z"));
     const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
-      expect(body.override).toEqual({ state: "ON", expiresAt: "2026-09-05T00:00:00.000Z" });
+      expect(body.override).toEqual({ state: "ON", expiresAt: "2026-09-04T00:00:00.000Z" });
       return response({ error: { code: "CONTROL_REVISION_CONFLICT" } }, 409);
     });
     vi.stubGlobal("fetch", fetchMock);
     render(<ReplyAssistantLiveDashboard {...props} />);
 
-    fireEvent.change(screen.getByLabelText("Override expiry (ISO 8601)"), { target: { value: "2026-09-05T00:00:00.000Z" } });
-    fireEvent.click(screen.getByRole("button", { name: "Force ON" }));
+    fireEvent.change(screen.getByLabelText("Override date"), { target: { value: "2026-09-04" } });
+    fireEvent.change(screen.getByLabelText("Override time"), { target: { value: "12:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Turn AI ON temporarily" }));
     await act(async () => { await Promise.resolve(); });
 
-    expect(confirm).toHaveBeenCalledWith(expect.stringContaining("2026-09-05T00:00:00.000Z"));
     expect(screen.getByRole("alert")).toHaveTextContent("Control changed elsewhere. Refresh control before retrying.");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shows and cancels an existing temporary override only after an explicit action", async () => {
+    vi.setSystemTime(new Date("2026-09-03T00:00:00.000Z"));
+    const initialAiControl = {
+      ...props.initialAiControl,
+      config: {
+        ...props.initialAiControl.config,
+        override: { state: "ON" as const, expiresAt: "2026-09-04T00:00:00.000Z", actorUserId: "admin-1" },
+      },
+      effective: { effectiveState: "ON" as const, source: "override" as const, nextTransitionAt: "2026-09-04T00:00:00.000Z" },
+    };
+    const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body));
+      expect(body.override).toBeNull();
+      return response({
+        config: { ...initialAiControl.config, revision: 4, override: null },
+        effective: props.initialAiControl.effective,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    render(<ReplyAssistantLiveDashboard {...props} initialAiControl={initialAiControl} />);
+
+    expect(screen.getByText(/Temporary override: AI ON\. Until:/)).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Cancel override" }));
+    await act(async () => { await Promise.resolve(); });
+
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
