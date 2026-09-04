@@ -29,4 +29,14 @@ describe("Reply Assistant visual hierarchy", () => {
     expect(mobile).toMatch(/\.conversationPanel\s*\{[\s\S]*?order:\s*1;/);
     expect(mobile).toMatch(/\.metricPanel\s*\{[\s\S]*?order:\s*2;/);
   });
+
+  it("keeps AI control separate, desktop-expanded, and mobile-collapsible", () => {
+    expect(pageCss).toMatch(/\.aiControlDisclosure\s*\{\s*display:\s*none;/);
+    expect(pageCss).toMatch(/\.aiControlSettings\s*\{[\s\S]*?display:\s*grid;/);
+
+    const mobile = pageCss.slice(pageCss.indexOf("@media (max-width: 700px)"));
+    expect(mobile).toMatch(/\.aiControlPanel\s*\{\s*order:\s*-1;/);
+    expect(mobile).toMatch(/\.aiControlDisclosure\s*\{[\s\S]*?display:\s*inline-flex;[\s\S]*?min-height:\s*44px;/);
+    expect(mobile).toMatch(/\.aiControlSettings\[data-mobile-expanded="false"\]\s*\{\s*display:\s*none;/);
+  });
 });
