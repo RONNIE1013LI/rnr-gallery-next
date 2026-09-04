@@ -83,6 +83,81 @@ export class GraphMetaContextProvider implements MetaContextProvider {
     this.timeoutSignal = timeoutSignal;
   }
 
+  async listConversations(input: Readonly<{
+    pageId: string;
+    window: Readonly<{ from: string; to: string; maxConversations: 100 }>;
+  }>): Promise<readonly Readonly<{
+    channel: "facebook";
+    externalConversationKey: string;
+    pageId: string;
+  }>[]> {
+    const from = Date.parse(input.window.from);
+    const to = Date.parse(input.window.to);
+    if (
+      !this.accessToken
+      || !input.pageId.trim()
+      || !Number.isFinite(from)
+      || !Number.isFinite(to)
+      || to < from
+      || to - from > 24 * 60 * 60 * 1_000
+      || input.window.maxConversations !== 100
+    ) return Object.freeze([]);
+
+    let url: string | null = `${GRAPH_ORIGIN}/v23.0/${encodeURIComponent(input.pageId)}/conversations?platform=messenger&fields=participants%2Cupdated_time&limit=100`;
+    const conversations: Array<Readonly<{
+      channel: "facebook";
+      externalConversationKey: string;
+      pageId: string;
+    }>> = [];
+    const seen = new Set<string>();
+    while (url && conversations.length < input.window.maxConversations) {
+      let response: Response;
+      try {
+        response = await this.fetchImpl(url, {
+          method: "GET",
+          headers: { authorization: `Bearer ${this.accessToken}` },
+          signal: this.timeoutSignal(10_000),
+        });
+      } catch {
+        return Object.freeze(conversations);
+      }
+      if (!response.ok) return Object.freeze(conversations);
+      let body: unknown;
+      try {
+        body = await response.json();
+      } catch {
+        return Object.freeze(conversations);
+      }
+      const root = record(body);
+      if (!root) return Object.freeze(conversations);
+      for (const raw of array(root.data)) {
+        const conversation = record(raw);
+        const updatedAt = typeof conversation?.updated_time === "string"
+          ? Date.parse(conversation.updated_time)
+          : Number.NaN;
+        if (!Number.isFinite(updatedAt) || updatedAt < from || updatedAt > to) continue;
+        const participants = array(record(conversation?.participants)?.data)
+          .flatMap((participant) => {
+            const id = record(participant)?.id;
+            return typeof id === "string" && id.trim() && id !== input.pageId ? [id.trim()] : [];
+          });
+        for (const externalConversationKey of participants) {
+          if (seen.has(externalConversationKey) || conversations.length >= input.window.maxConversations) continue;
+          seen.add(externalConversationKey);
+          conversations.push(Object.freeze({
+            channel: "facebook",
+            externalConversationKey,
+            pageId: input.pageId,
+          }));
+        }
+      }
+      const next = nextPage(root);
+      if (next === "invalid") return Object.freeze(conversations);
+      url = next;
+    }
+    return Object.freeze(conversations);
+  }
+
   async loadConversation(locator: MetaConversationLocator): Promise<MetaConversationSnapshot> {
     if (!this.accessToken || !locator.pageId.trim() || !locator.externalConversationKey.trim()) {
       return this.incomplete(locator, [], "provider_unavailable");

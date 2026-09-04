@@ -112,4 +112,21 @@ describe("BacklogReconciler", () => {
     expect(result).toMatchObject({ processed: 0, stoppedBecauseOff: true });
     expect(processEvent).not.toHaveBeenCalled();
   });
+
+  it.each(["delivery_sent", "delivery_blocked", "delivery_uncertain"] as const)(
+    "counts %s as an attempted backlog item",
+    async (status) => {
+      const store = new InMemoryReplyRuntimeStore({ now: () => Date.parse(to) });
+      const reconciler = createBacklogReconciler({
+        store,
+        controlIsOn: async () => true,
+        listConversations: async () => [locator("one")],
+        loadConversation: async () => snapshot("one", [history("one", "customer", "Hi", 2)]),
+        processEvent: async () => ({ acknowledged: true, status }),
+        hashExternalKey: hash,
+        now: () => new Date(to),
+      });
+      await expect(reconciler.run(await lease(store))).resolves.toMatchObject({ processed: 1, skipped: 0 });
+    },
+  );
 });

@@ -2,6 +2,33 @@ import { describe, expect, it, vi } from "vitest";
 import { GraphMetaContextProvider } from "./graph-context-provider";
 
 describe("GraphMetaContextProvider", () => {
+  it("lists only Facebook conversations updated inside the approved backlog window", async () => {
+    const fetchImpl = vi.fn(async () => new Response(JSON.stringify({
+      data: [
+        { updated_time: "2026-09-04T00:30:00Z", participants: { data: [{ id: "page-1" }, { id: "customer-1" }] } },
+        { updated_time: "2026-09-02T00:30:00Z", participants: { data: [{ id: "page-1" }, { id: "old-customer" }] } },
+      ],
+    }), { status: 200 }));
+    const provider = new GraphMetaContextProvider({ accessToken: "secret", fetchImpl });
+
+    await expect(provider.listConversations({
+      pageId: "page-1",
+      window: {
+        from: "2026-09-03T01:00:00.000Z",
+        to: "2026-09-04T01:00:00.000Z",
+        maxConversations: 100,
+      },
+    })).resolves.toEqual([{
+      channel: "facebook",
+      externalConversationKey: "customer-1",
+      pageId: "page-1",
+    }]);
+    expect(fetchImpl).toHaveBeenCalledWith(
+      expect.stringContaining("platform=messenger"),
+      expect.any(Object),
+    );
+  });
+
   it("loads paginated history with stable roles, reply links and safe image metadata", async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(new Response(JSON.stringify({

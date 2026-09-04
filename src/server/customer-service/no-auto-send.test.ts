@@ -6,9 +6,10 @@ import {
 
 const PAGE_ACCESS_TOKEN_NAME = ["META", "PAGE", "ACCESS", "TOKEN"].join("_");
 const META_REPLY_SENDER_PATH = "src/server/rnr-ai/meta/reply-sender.ts";
+const META_RUNTIME_PATH = "src/server/rnr-ai/meta/runtime.ts";
 
-describe("reply assistant has no automatic send capability", () => {
-  it("contains no send route, outbound method, Graph send client or page access token", () => {
+describe("reply assistant automatic send boundary", () => {
+  it("keeps credentials and Graph send code inside the approved server-only boundary", () => {
     const inventory = loadProductionRuntimeSourceInventory();
     const paths = inventory.files.map((file) => file.relativePath);
     expect(paths).toEqual(expect.arrayContaining([
@@ -26,7 +27,9 @@ describe("reply assistant has no automatic send capability", () => {
     expect(paths.some((file) => (
       /\.(?:test|spec)\.[^/]+$|\/(?:docs|fixtures|generated|test-support)\//.test(file)
     ))).toBe(false);
-    expect(productionSourcePathsMatching(inventory.files, PAGE_ACCESS_TOKEN_NAME)).toEqual([]);
+    expect(productionSourcePathsMatching(inventory.files, PAGE_ACCESS_TOKEN_NAME)).toEqual([
+      META_RUNTIME_PATH,
+    ]);
     expect(productionSourcePathsMatching(inventory.serverFiles,
       /sendMessenger|sendToMeta|sendMessage|sendReply|dispatchReply|publishReply/i,
     )).toEqual([]);

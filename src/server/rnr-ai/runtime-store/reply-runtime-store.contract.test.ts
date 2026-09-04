@@ -108,6 +108,17 @@ describe("ReplyRuntimeStore contract", () => {
     await expect(store.putEphemeralSecret(key, "v1.ciphertext-only", 901)).rejects.toThrow(/15 minutes/i);
   });
 
+  it("retains only a hashed sender-echo marker and expires it", async () => {
+    let now = Date.parse("2026-09-04T00:00:00.000Z");
+    const store = new InMemoryReplyRuntimeStore({ now: () => now });
+    const key = hash("provider-message-id");
+    await store.rememberSenderEcho(key, 60);
+    expect(await store.hasSenderEcho(key)).toBe(true);
+    now += 60_000;
+    expect(await store.hasSenderEcho(key)).toBe(false);
+    expect(JSON.stringify(store.exportStateForTest())).not.toContain("provider-message-id");
+  });
+
   it("stores only hashed identifiers and never serializes customer payload fields", async () => {
     const store = new InMemoryReplyRuntimeStore();
     await store.claimEvent(hash("psid-raw-value"), 1_000);

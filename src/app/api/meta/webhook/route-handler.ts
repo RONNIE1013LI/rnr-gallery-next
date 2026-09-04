@@ -5,6 +5,7 @@ import { createCustomerServiceRuntime } from "@/server/customer-service/runtime"
 import compiledKnowledge from "@/server/customer-service/knowledge/compiled-knowledge.json";
 import { parseRnrAiMetaConfig, type RnrAiMetaConfig } from "@/server/rnr-ai/meta/config";
 import type { MetaConversationEvent } from "@/server/rnr-ai/meta/types";
+import { createProductionMetaReplyRuntime } from "@/server/rnr-ai/meta/runtime";
 
 type FullLegacyRuntime = ReturnType<typeof createCustomerServiceRuntime>;
 type LegacyRuntime = Readonly<{
@@ -79,9 +80,7 @@ const handlers = createMetaWebhookRouteHandlers({
   customerConfig: config,
   rnrConfig: parseRnrAiMetaConfig(),
   createLegacyRuntime: () => createCustomerServiceRuntime(),
-  createSharedRuntime: () => {
-    throw new Error("rnr_ai_shared_runtime_not_configured");
-  },
+  createSharedRuntime: () => createProductionMetaReplyRuntime(),
   scheduleAfter: (task) => after(task),
 });
 

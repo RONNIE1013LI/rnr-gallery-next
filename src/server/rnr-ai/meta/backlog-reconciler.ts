@@ -103,7 +103,13 @@ export function createBacklogReconciler(dependencies: Dependencies) {
               continue;
             }
             const result = await dependencies.processEvent(candidate);
-            if (result.status === "delivery_candidate_disabled" || result.status === "review") processed += 1;
+            if (
+              result.status === "delivery_candidate_disabled"
+              || result.status === "delivery_sent"
+              || result.status === "delivery_blocked"
+              || result.status === "delivery_uncertain"
+              || result.status === "review"
+            ) processed += 1;
             else skipped += 1;
           }
         }

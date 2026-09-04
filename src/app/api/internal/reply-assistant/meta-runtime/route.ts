@@ -1,4 +1,5 @@
 import { parseRnrAiMetaConfig } from "@/server/rnr-ai/meta/config";
+import { createProductionMetaReplyRuntime } from "@/server/rnr-ai/meta/runtime";
 import { createMetaRuntimeWorkerHandler } from "./route-handler";
 
 export const runtime = "nodejs";
@@ -8,9 +9,7 @@ const config = parseRnrAiMetaConfig();
 const handler = createMetaRuntimeWorkerHandler({
   secret: process.env.CRON_SECRET?.trim() || null,
   enabled: config.masterEnabled && config.engineMode !== "legacy",
-  createRuntime: () => {
-    throw new Error("rnr_ai_shared_runtime_not_configured");
-  },
+  createRuntime: () => createProductionMetaReplyRuntime(),
 });
 
 export const GET = handler;

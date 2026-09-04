@@ -6,6 +6,7 @@ import type { MetaContextProvider } from "./context-provider";
 import { MetaImageResolutionError } from "./image-resolver";
 import type { MetaReviewPayload, createMetaReviewPayloadProtector } from "./review-payload-protector";
 import type { MetaConversationEvent, MetaConversationSnapshot } from "./types";
+import type { MetaReplySender } from "./reply-sender";
 
 type MetaImageResolver = Readonly<{
   resolveMetaImages(event: MetaConversationEvent): Promise<readonly VerifiedImageInput[]>;
@@ -21,10 +22,6 @@ type HumanTakeover = Readonly<{
   set(externalConversationKey: string, active: boolean, source: "staff_echo" | "admin" | "risk", changedAt?: Date): Promise<void>;
 }>;
 
-type DisabledSender = Readonly<{
-  sendEligibleReply(candidate: unknown): Promise<unknown>;
-}>;
-
 type ReviewProtector = ReturnType<typeof createMetaReviewPayloadProtector>;
 
 export type MetaOrchestratorResult = Readonly<{
@@ -38,6 +35,9 @@ export type MetaOrchestratorResult = Readonly<{
     | "off_before_candidate"
     | "review"
     | "delivery_candidate_disabled"
+    | "delivery_sent"
+    | "delivery_blocked"
+    | "delivery_uncertain"
     | "failed";
   risk?: "YELLOW" | "RED";
   reviewKey?: string;
@@ -55,7 +55,7 @@ type Dependencies = Readonly<{
   resolveMarket(snapshot: MetaConversationSnapshot): "NZ" | "AU" | "UNKNOWN";
   pageId: string;
   masterEnabled: boolean;
-  sender: DisabledSender;
+  sender: MetaReplySender;
   now?: () => Date;
 }>;
 
@@ -216,7 +216,25 @@ export function createMetaReplyOrchestrator(dependencies: Dependencies) {
           return persistReview(payload);
         }
 
+        if (decision.nextAction !== "AUTO_REPLY_ELIGIBLE" || !decision.replyText?.trim()) {
+          return persistReview({
+            risk: "YELLOW",
+            replyText: decision.replyText,
+            reasons: [...decision.reasons, "green_decision_without_sendable_reply"],
+          });
+        }
+        const delivery = await dependencies.sender.sendEligibleReply({
+          channel: "facebook",
+          externalConversationKey: event.externalConversationKey,
+          latestCustomerMessageKey: event.externalMessageKey,
+          brainVersion: dependencies.businessBrain.version,
+          risk: decision.risk,
+          replyText: decision.replyText,
+        });
         await settle("delivery_candidate");
+        if (delivery.status === "sent") return { acknowledged: true, status: "delivery_sent" };
+        if (delivery.status === "delivery_uncertain") return { acknowledged: true, status: "delivery_uncertain" };
+        if (delivery.status === "blocked") return { acknowledged: true, status: "delivery_blocked" };
         return { acknowledged: true, status: "delivery_candidate_disabled" };
       } catch {
         await settle("failed").catch(() => undefined);

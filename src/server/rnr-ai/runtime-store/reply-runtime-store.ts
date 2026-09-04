@@ -28,6 +28,8 @@ export interface ReplyRuntimeStore {
   setTakeover(input: TakeoverMutation): Promise<void>;
   claimDelivery(key: string, leaseMs: number): Promise<DeliveryLease | null>;
   settleDelivery(lease: DeliveryLease, result: DeliveryResult): Promise<void>;
+  rememberSenderEcho(providerMessageKeyHash: string, ttlSeconds: number): Promise<void>;
+  hasSenderEcho(providerMessageKeyHash: string): Promise<boolean>;
   enqueueBacklog(controlRevision: number, window: TimeWindow): Promise<boolean>;
   claimBacklog(leaseMs: number): Promise<BacklogLease | null>;
   settleBacklog(lease: BacklogLease, result: BacklogResult): Promise<void>;

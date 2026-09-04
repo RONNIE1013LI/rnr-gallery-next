@@ -216,6 +216,19 @@ export class RedisReplyRuntimeStore implements ReplyRuntimeStore {
     await this.settle("delivery", lease.key, lease.leaseToken, result);
   }
 
+  async rememberSenderEcho(providerMessageKeyHash: string, ttlSeconds: number) {
+    requireHash(providerMessageKeyHash);
+    if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > 30 * 24 * 60 * 60) {
+      throw new Error("Sender echo TTL is invalid");
+    }
+    await this.redis.set(this.key(`sender-echo:${providerMessageKeyHash}`), "1", { ex: ttlSeconds });
+  }
+
+  async hasSenderEcho(providerMessageKeyHash: string) {
+    requireHash(providerMessageKeyHash);
+    return await this.redis.get<string>(this.key(`sender-echo:${providerMessageKeyHash}`)) === "1";
+  }
+
   async enqueueBacklog(controlRevision: number, window: TimeWindow) {
     const hash = createHash("sha256")
       .update(`${controlRevision}:${window.from}:${window.to}:${window.maxConversations}`)

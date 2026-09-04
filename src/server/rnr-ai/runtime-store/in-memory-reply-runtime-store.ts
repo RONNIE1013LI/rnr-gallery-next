@@ -54,6 +54,7 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
   private control: AiControlConfig = initialControl;
   private readonly events = new Map<string, LeaseRecord<EventResult>>();
   private readonly deliveries = new Map<string, LeaseRecord<DeliveryResult>>();
+  private readonly senderEchoes = new Map<string, number>();
   private readonly takeovers = new Map<string, TakeoverState>();
   private readonly backlogs = new Map<string, BacklogRecord>();
   private readonly reviews = new Map<string, { ciphertext: string; metadata: ReviewMetadata; expiresAtMs: number }>();
@@ -123,6 +124,24 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
       throw new Error("Delivery lease is no longer valid");
     }
     current.result = Object.freeze({ ...result });
+  }
+
+  async rememberSenderEcho(providerMessageKeyHash: string, ttlSeconds: number) {
+    requireHash(providerMessageKeyHash, "provider message key");
+    if (!Number.isSafeInteger(ttlSeconds) || ttlSeconds < 1 || ttlSeconds > 30 * 24 * 60 * 60) {
+      throw new Error("Sender echo TTL is invalid");
+    }
+    this.senderEchoes.set(providerMessageKeyHash, this.now() + ttlSeconds * 1_000);
+  }
+
+  async hasSenderEcho(providerMessageKeyHash: string) {
+    requireHash(providerMessageKeyHash, "provider message key");
+    const expiresAt = this.senderEchoes.get(providerMessageKeyHash);
+    if (!expiresAt || expiresAt <= this.now()) {
+      this.senderEchoes.delete(providerMessageKeyHash);
+      return false;
+    }
+    return true;
   }
 
   async enqueueBacklog(controlRevision: number, window: TimeWindow) {
@@ -241,6 +260,7 @@ export class InMemoryReplyRuntimeStore implements ReplyRuntimeStore {
       control: this.control,
       events: [...this.events.entries()],
       deliveries: [...this.deliveries.entries()],
+      senderEchoes: [...this.senderEchoes.keys()],
       takeovers: [...this.takeovers.entries()],
       backlogs: [...this.backlogs],
       reviews: [...this.reviews.entries()].map(([key, review]) => [key, review.metadata]),

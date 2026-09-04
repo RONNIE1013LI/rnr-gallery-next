@@ -61,7 +61,7 @@ async function setup(options: Readonly<{
   const context = { loadConversation: vi.fn(async () => options.snapshots?.[contextIndex++] ?? options.snapshots?.at(-1) ?? snapshot()) };
   const images = { resolveMetaImages: vi.fn(async () => []) };
   const brain = { generate: vi.fn(async () => options.decision ?? greenDecision) };
-  const sender = { sendEligibleReply: vi.fn(async () => { throw new Error("must remain disabled"); }) };
+  const sender = { sendEligibleReply: vi.fn(async () => ({ status: "disabled" as const })) };
   const takeover = createHumanTakeoverService({ store, hashExternalKey: hash, isSenderEcho: async () => false });
   const orchestrator = createMetaReplyOrchestrator({
     store,
@@ -97,7 +97,15 @@ describe("MetaReplyOrchestrator", () => {
     expect(results.filter((result) => result.status === "delivery_candidate_disabled")).toHaveLength(1);
     expect(results.filter((result) => result.status === "duplicate")).toHaveLength(19);
     expect(current.brain.generate).toHaveBeenCalledTimes(1);
-    expect(current.sender.sendEligibleReply).not.toHaveBeenCalled();
+    expect(current.sender.sendEligibleReply).toHaveBeenCalledOnce();
+    expect(current.sender.sendEligibleReply).toHaveBeenCalledWith(expect.objectContaining({
+      channel: "facebook",
+      externalConversationKey: "conversation-raw",
+      latestCustomerMessageKey: "message-raw",
+      brainVersion: "0.5.1",
+      risk: "GREEN",
+      replyText: greenDecision.replyText,
+    }));
   });
 
   it("activates takeover for a human staff echo before model work", async () => {
@@ -159,8 +167,8 @@ describe("MetaReplyOrchestrator", () => {
     expect(await current.takeover.read("conversation-raw")).toMatchObject({ active: true, source: "risk" });
   });
 
-  it("contains no Neon, product registry or channel send implementation imports", () => {
-    const source = ["orchestrator.ts", "runtime.ts", "backlog-reconciler.ts"]
+  it("keeps orchestration and backlog free of Neon, product registry and channel send implementation", () => {
+    const source = ["orchestrator.ts", "backlog-reconciler.ts"]
       .map((file) => readFileSync(resolve("src/server/rnr-ai/meta", file), "utf8"))
       .join("\n");
     expect(source).not.toMatch(/getDatabase|drizzle|customer_service_|product-registry|graph\.facebook\.com|\/messages/i);
