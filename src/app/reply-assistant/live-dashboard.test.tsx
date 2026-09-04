@@ -219,11 +219,17 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(control).toHaveTextContent("Paused until Master AI is enabled");
   });
 
-  it("converts Auckland date and time selections to ISO and rejects a duration beyond 24 hours", () => {
+  it("converts only valid, unique Auckland local times within the 24-hour limit to ISO", () => {
     const now = new Date("2026-09-04T00:00:00.000Z");
 
     expect(buildAucklandOverrideExpiry("2026-09-05", "12:00", now)).toBe("2026-09-05T00:00:00.000Z");
     expect(buildAucklandOverrideExpiry("2026-09-05", "12:01", now)).toBeNull();
+    expect(buildAucklandOverrideExpiry("2026-09-04", "11:59", now)).toBeNull();
+    expect(buildAucklandOverrideExpiry("2026-02-30", "12:00", now)).toBeNull();
+    expect(buildAucklandOverrideExpiry("2026-09-05", "24:00", now)).toBeNull();
+    expect(buildAucklandOverrideExpiry("2026-9-05", "12:00", now)).toBeNull();
+    expect(buildAucklandOverrideExpiry("2026-09-27", "02:30", new Date("2026-09-26T00:00:00.000Z"))).toBeNull();
+    expect(buildAucklandOverrideExpiry("2026-04-05", "02:30", new Date("2026-04-04T00:00:00.000Z"))).toBeNull();
   });
 
   it("fails closed when the runtime control store is unavailable", () => {
@@ -237,8 +243,9 @@ describe("ReplyAssistantLiveDashboard", () => {
     expect(screen.getByRole("region", { name: "AI control" })).toHaveTextContent("Runtime store unavailable — effective state is OFF");
   });
 
-  it("submits a temporary override from Auckland date and time inputs and reports a revision conflict without retrying", async () => {
+  it("requires confirmation before a temporary override POST and reports a revision conflict without retrying", async () => {
     vi.setSystemTime(new Date("2026-09-03T00:00:00.000Z"));
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
     const fetchMock = vi.fn(async (_url: RequestInfo | URL, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body));
       expect(body.override).toEqual({ state: "ON", expiresAt: "2026-09-04T00:00:00.000Z" });
@@ -249,6 +256,13 @@ describe("ReplyAssistantLiveDashboard", () => {
 
     fireEvent.change(screen.getByLabelText("Override date"), { target: { value: "2026-09-04" } });
     fireEvent.change(screen.getByLabelText("Override time"), { target: { value: "12:00" } });
+    fireEvent.click(screen.getByRole("button", { name: "Turn AI ON temporarily" }));
+    await act(async () => { await Promise.resolve(); });
+
+    expect(confirm).toHaveBeenCalledWith("Turn AI ON temporarily until 4 Sept 2026, 12:00 pm?");
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    confirm.mockReturnValue(true);
     fireEvent.click(screen.getByRole("button", { name: "Turn AI ON temporarily" }));
     await act(async () => { await Promise.resolve(); });
 

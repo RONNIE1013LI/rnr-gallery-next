@@ -112,19 +112,22 @@ export function buildAucklandOverrideExpiry(date: string, time: string, now = ne
   if (requested.month < 1 || requested.month > 12 || requested.day < 1 || requested.day > 31 || requested.hour > 23 || requested.minute > 59) return null;
 
   const localEpoch = Date.UTC(requested.year, requested.month - 1, requested.day, requested.hour, requested.minute);
-  let epoch = localEpoch;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const rendered = aucklandClockParts(new Date(epoch));
-    epoch = localEpoch - (Date.UTC(rendered.year, rendered.month - 1, rendered.day, rendered.hour, rendered.minute) - epoch);
-  }
-  const expiresAt = new Date(epoch);
-  const rendered = aucklandClockParts(expiresAt);
+  const offsets = new Set([-48, 0, 48].map((hours) => {
+    const sample = new Date(localEpoch + hours * 60 * 60 * 1_000);
+    const rendered = aucklandClockParts(sample);
+    return Date.UTC(rendered.year, rendered.month - 1, rendered.day, rendered.hour, rendered.minute) - sample.getTime();
+  }));
+  const matches = [...offsets].map((offset) => new Date(localEpoch - offset)).filter((candidate) => {
+    const rendered = aucklandClockParts(candidate);
+    return rendered.year === requested.year
+      && rendered.month === requested.month
+      && rendered.day === requested.day
+      && rendered.hour === requested.hour
+      && rendered.minute === requested.minute;
+  });
+  if (matches.length !== 1) return null;
+  const expiresAt = matches[0];
   if (!Number.isFinite(expiresAt.getTime())
-    || rendered.year !== requested.year
-    || rendered.month !== requested.month
-    || rendered.day !== requested.day
-    || rendered.hour !== requested.hour
-    || rendered.minute !== requested.minute
     || expiresAt.getTime() <= now.getTime()
     || expiresAt.getTime() > now.getTime() + 24 * 60 * 60 * 1_000) return null;
   return expiresAt.toISOString();
@@ -258,6 +261,7 @@ export function ReplyAssistantLiveDashboard({
       setControlError("Choose a future Pacific/Auckland date and time within 24 hours.");
       return;
     }
+    if (!window.confirm(`Turn AI ${state} temporarily until ${formatAiDateTime(expiresAt)}?`)) return;
     void saveAiControl({ override: { state, expiresAt } });
   }, [overrideDate, overrideTime, saveAiControl]);
 
