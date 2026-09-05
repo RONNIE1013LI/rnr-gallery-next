@@ -160,7 +160,7 @@ function retryable(error: SolProviderError) {
 }
 
 export class OpenAiSolProvider {
-  readonly model = "gpt-5.6-sol" as const;
+  readonly model = "gpt-5.6-luna" as const;
   private readonly apiKey: string;
   private readonly fetchImpl: FetchImplementation;
   private readonly timeoutSignal: (milliseconds: number) => AbortSignal;

@@ -121,11 +121,14 @@ function buildModelText(turns: readonly ConversationTurn[], maxCharacters: numbe
 
 export function assembleConversationContext(
   sourceTurns: readonly ConversationTurn[],
-  options: Readonly<{ maxCharacters?: number }> = {},
+  options: Readonly<{ maxCharacters?: number; maxTurns?: number }> = {},
 ): AssembledConversationContext {
   const maxCharacters = options.maxCharacters ?? DEFAULT_MAX_CHARACTERS;
   if (!Number.isSafeInteger(maxCharacters) || maxCharacters < 1) {
     throw new Error("maxCharacters must be a positive integer");
+  }
+  if (options.maxTurns !== undefined && (!Number.isSafeInteger(options.maxTurns) || options.maxTurns < 1)) {
+    throw new Error("maxTurns must be a positive integer");
   }
 
   const sorted = sourceTurns.map(normalizeTurn).sort((left, right) => (
@@ -138,7 +141,8 @@ export function assembleConversationContext(
     seen.add(turn.providerMessageKey);
     return true;
   });
-  const merged = mergeLatestCustomerFragments(deduplicated);
+  const limited = options.maxTurns === undefined ? deduplicated : deduplicated.slice(-options.maxTurns);
+  const merged = mergeLatestCustomerFragments(limited);
   const model = buildModelText(merged.turns, maxCharacters);
 
   return Object.freeze({

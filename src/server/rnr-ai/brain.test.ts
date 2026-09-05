@@ -9,7 +9,7 @@ import type { RnrAiRequest, ToolEvidence } from "./types";
 
 function providerResult(decision: Partial<SolStructuredResult> = {}): SolProviderResult {
   return {
-    model: "gpt-5.6-sol",
+    model: "gpt-5.6-luna",
     usage: { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10 },
     decision: {
       risk: "GREEN",
@@ -71,7 +71,7 @@ describe("RnrAiBrain", () => {
       risk: "GREEN",
       replyText: "Yes. The NZ Roll-Up Banner is NZ$264.50 including GST.",
       nextAction: "AUTO_REPLY_ELIGIBLE",
-      providerRun: { model: "gpt-5.6-sol", usage: { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10 } },
+      providerRun: { model: "gpt-5.6-luna", usage: { inputTokens: 10, cachedInputTokens: 0, outputTokens: 10 } },
     });
     const prompt = current.provider.generate.mock.calls[0][0];
     expect(prompt.instructions).toContain("Answer the customer's actual question first");
@@ -183,7 +183,7 @@ describe("RnrAiBrain", () => {
       risk: "RED",
       nextAction: "HUMAN_REVIEW",
       providerRun: {
-        model: "gpt-5.6-sol",
+        model: "gpt-5.6-luna",
         usage: { inputTokens: 20, cachedInputTokens: 0, outputTokens: 20 },
       },
     });

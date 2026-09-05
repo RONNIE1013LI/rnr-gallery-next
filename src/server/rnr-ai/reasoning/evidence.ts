@@ -28,7 +28,7 @@ export function reasoningEvidence(request: RnrAiRequest): EvidenceSource[] {
     return sources;
 }
 export function reasoningContext(request: RnrAiRequest) {
-    const assembled = assembleConversationContext(request.conversation);
+    const assembled = assembleConversationContext(request.conversation, { maxTurns: 6 });
     // IDs are local ordinal references: no external customer/message identifiers reach the model.
     const turns = assembled.turns.map((turn, index) => ({ id: `t${index + 1}`, role: turn.role, text: turn.text, sentAt: turn.sentAt, attachmentOrdinals: turn.attachmentOrdinals }));
     const resolvedIndex = assembled.turns.findLastIndex(t => t.role === 'automation' && t.reviewResolved === true);

@@ -139,7 +139,7 @@ export function createWebsiteBrainAdapter(input: Readonly<{
       return Object.freeze({
         text: JSON.stringify(mapDecision(request, decision)),
         provider: "openai",
-        model: decision.providerRun?.model ?? "gpt-5.6-sol",
+        model: decision.providerRun?.model ?? "gpt-5.6-luna",
         usage,
         estimatedCostMicrousd: null,
         latencyMs: Math.max(0, Date.now() - startedAt),

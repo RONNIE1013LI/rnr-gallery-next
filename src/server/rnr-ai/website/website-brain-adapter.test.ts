@@ -11,7 +11,7 @@ const green: RnrAiDecision = {
   claims: [{ kind: "design", value: "Subjects can be combined", sourceId: "design-capabilities" }],
   toolEvidence: [],
   nextAction: "AUTO_REPLY_ELIGIBLE",
-  providerRun: { model: "gpt-5.6-sol", usage: { inputTokens: 20, cachedInputTokens: 4, outputTokens: 8 } },
+  providerRun: { model: "gpt-5.6-luna", usage: { inputTokens: 20, cachedInputTokens: 4, outputTokens: 8 } },
 };
 
 function setup(decision: RnrAiDecision = green) {

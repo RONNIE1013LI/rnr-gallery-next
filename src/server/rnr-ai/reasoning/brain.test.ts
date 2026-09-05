@@ -14,7 +14,7 @@ function request(texts: [
 ][] = [['customer', 'What dimensions is A2 photo canvas?']]): RnrAiRequest { return { channel: 'meta', market: 'NZ', conversation: texts.map(([role, text], i) => ({ providerMessageKey: `external-private-${i}`, role, text, sentAt: new Date(Date.UTC(2026, 8, 5, 0, i)).toISOString(), channel: 'meta', attachmentOrdinals: [] })), attachments: [], businessBrain: loadBusinessBrain(), toolContext: { conversationKeyHash: 'private-hash' } }; }
 function harness(outputs: unknown[], evidence?: ToolEvidence) {
     let index = 0;
-    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => { void init; return Response.json({ model: 'gpt-5.6-sol', status: 'completed', output_text: JSON.stringify(outputs[index++] ?? outputs.at(-1)), usage: { input_tokens: 10, output_tokens: 10 } }); });
+    const fetchImpl = vi.fn(async (_url: string | URL | Request, init?: RequestInit) => { void init; return Response.json({ model: 'gpt-5.6-luna', status: 'completed', output_text: JSON.stringify(outputs[index++] ?? outputs.at(-1)), usage: { input_tokens: 10, output_tokens: 10 } }); });
     const provider = new OpenAiSolProvider({ apiKey: 'unit-test-only', fetchImpl });
     const tools = { execute: vi.fn(async () => evidence ?? { tool: 'dynamic_shipping_quote', status: 'failed' as const, source: 'offline', facts: {} }) };
     return { brain: createRnrAiBrain({ provider, tools }), fetchImpl, tools };
@@ -31,7 +31,7 @@ describe('production structured Brain with mocked Responses transport (no paid m
         const first = JSON.parse(String(h.fetchImpl.mock.calls[0][1]?.body));
         expect(first.input[0].role).toBe('developer');
         expect(first.reasoning.effort).toBe('medium');
-        expect(first.model).toBe('gpt-5.6-sol');
+        expect(first.model).toBe('gpt-5.6-luna');
         const data = JSON.parse(first.input[1].content[0].text);
         expect(data.evidence.find((s: {
             id: string;
@@ -157,18 +157,21 @@ describe('production structured Brain with mocked Responses transport (no paid m
         const changed = { ...r, businessBrain: { ...r.businessBrain, rules: r.businessBrain.rules.map(s => s.id === 'nz-gst' ? { ...s, status: 'REVIEW' as const } : s) } };
         expect(reasoningEvidence(changed).some(s => s.id === 'derived-nz-canvas-including-gst')).toBe(false);
     });
-    it('retains one same-thread eight-turn conversation through the production structured transport', async()=>{
+    it('uses only the latest six messages throughout a same-thread conversation', async()=>{
       const inputs=['Could you print my family photo on canvas?','What sizes could I choose?','Which is about sixty centimetres?','What would that cost?','Sydney','How long does production take?','Could I include five photos?','What happens if I change my mind after approving?'];
       const replies=['Yes, we make photo-print canvases.','A4, A3, A2, A1 and A0 are available.','A2 is 59.4 × 42 cm.','Will delivery be in New Zealand or Australia?','A2 Photo Print Canvas is AUD109.99.','The production target is approximately five working days after required inputs and applicable payment.','Standard photo print uses one source photo; separate photos can be combined in a digital painting where feasible.','Has printing already started?'];
+      const marketEvidenceTurns=[null,null,null,null,'t6','t4','t2',null] as const;
       const conversation:ConversationTurn[]=[];
       for(let i=0;i<inputs.length;i++){
         const current=request().conversation[0];conversation.push({...current,providerMessageKey:`c${i}`,sentAt:new Date(Date.UTC(2026,8,5,0,i*2)).toISOString(),text:inputs[i]});
-        const c:Candidate={mode:i===3||i===7?'CLARIFICATION':'ANSWER',reply:replies[i],market:i>=4?'AU':'UNKNOWN',marketEvidenceTurn:i>=4?'t9':null};
+        const marketEvidenceTurn=marketEvidenceTurns[i];
+        const c:Candidate={mode:i===3||i===7?'CLARIFICATION':'ANSWER',reply:replies[i],market:marketEvidenceTurn?'AU':'UNKNOWN',marketEvidenceTurn};
         const claims:ClaimAudit['claims']=c.mode==='CLARIFICATION'?[]:[{...fact,span:c.reply,sources:i===5?['production-standard-target']:i===6?['product-config','design-capabilities']:['product-config'],kind:i===5?'process':'product'}];
         if(i===4)claims[0]={...fact,span:'AUD109.99',product:'photo-print-canvas',orderReference:null,kind:'price',sources:['au-photo-canvas-prices'],marketDependent:true,amountMinor:10999,currency:'AUD',size:'A2',numericPath:'pricesMinor.A2'};
-        const h=harness([plan(c),audit(c,claims,{relevantCustomerTurnIds:[`t${i*2+1}`],openIssue:i===7?'POLICY_ENTITLEMENT':'NONE'})]);
+        const expectedTurns=Math.min(6,i*2+1);
+        const h=harness([plan(c),audit(c,claims,{relevantCustomerTurnIds:[`t${expectedTurns}`],openIssue:i===7?'POLICY_ENTITLEMENT':'NONE'})]);
         const decision=await h.brain.generate({...request(),conversation:[...conversation]});expect(decision.risk).toBe('GREEN');
-        const sent=JSON.parse(JSON.parse(String(h.fetchImpl.mock.calls[0][1]?.body)).input[1].content[0].text);expect(sent.turns).toHaveLength(i*2+1);expect(sent.activeCustomerTurn.text).toBe(inputs[i]);
+        const sent=JSON.parse(JSON.parse(String(h.fetchImpl.mock.calls[0][1]?.body)).input[1].content[0].text);expect(sent.turns).toHaveLength(expectedTurns);expect(sent.activeCustomerTurn.text).toBe(inputs[i]);
         conversation.push({...current,role:'staff',providerMessageKey:`s${i}`,sentAt:new Date(Date.UTC(2026,8,5,0,i*2+1)).toISOString(),text:decision.replyText!});
       }
     });

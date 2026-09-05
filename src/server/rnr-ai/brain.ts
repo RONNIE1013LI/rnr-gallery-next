@@ -263,7 +263,7 @@ export function createRnrAiBrain({ provider, tools, now = () => new Date() }: Rn
       );
       const toolFailed = toolEvidence.some((item) => item.status === "failed");
       const toolUnavailable = toolEvidence.some((item) => item.status === "unavailable_review_required");
-      const modelMismatch = final.model !== "gpt-5.6-sol";
+      const modelMismatch = final.model !== "gpt-5.6-luna";
       const repeatedToolRequest = final !== first && final.decision.requestedTools.length > 0;
       const riskMessage = finalRiskMessage(request, conversation.assembled, final.decision.replyText);
       const finalRisk = evaluateFinalRisk({

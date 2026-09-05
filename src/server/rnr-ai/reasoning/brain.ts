@@ -43,10 +43,10 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
     let verificationSuccess = false;
     const messageHash = createHash('sha256').update(request.conversation.at(-1)?.providerMessageKey ?? request.toolContext.conversationKeyHash).digest('hex');
     const trace = (reason: DiagnosticReason, risk: RnrAiDecision['risk'] | null = null, provider?: ProviderDiagnostic) =>
-        logReasoningDiagnostic({ messageHash, model: 'gpt-5.6-sol', stage, reason, candidateCreated, reasoningSuccess, verificationSuccess, risk, ...(provider ? { provider } : {}) });
+        logReasoningDiagnostic({ messageHash, model: 'gpt-5.6-luna', stage, reason, candidateCreated, reasoningSuccess, verificationSuccess, risk, ...(provider ? { provider } : {}) });
     const stop = (reason: string, diagnosticReason: DiagnosticReason = 'provider_not_called', detail?: DiagnosticReason): RnrAiDecision => {
         trace(diagnosticReason, 'RED');
-        return { risk: 'RED', intent: 'verification_required', replyText: null, reasons: [reason, ...(detail && detail !== reason ? [detail] : [])], claims: [], toolEvidence, nextAction: 'HUMAN_REVIEW', providerRun: { model: 'gpt-5.6-sol', usage } };
+        return { risk: 'RED', intent: 'verification_required', replyText: null, reasons: [reason, ...(detail && detail !== reason ? [detail] : [])], claims: [], toolEvidence, nextAction: 'HUMAN_REVIEW', providerRun: { model: 'gpt-5.6-luna', usage } };
     };
     trace('none');
     try {
@@ -61,7 +61,7 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
         const deadlineAt = Date.now() + 24000;
         const modelCall = async <T>(instructions: string, data: unknown, schema: z.ZodType<T>, max: number) => {
             const result = await provider.structured({ instructions, conversationText: JSON.stringify(data), images: request.attachments, deadlineAt, onDiagnostic: entry => trace(entry.reason, null, entry) }, schema, max);
-            if (result.model !== 'gpt-5.6-sol')
+            if (result.model !== 'gpt-5.6-luna')
                 throw new SolProviderError('invalid_output', 'model_mismatch');
             usage.inputTokens += result.usage.inputTokens;
             usage.cachedInputTokens += result.usage.cachedInputTokens;
@@ -123,7 +123,7 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
         trace(contract.failures.length ? 'verification_failure' : 'none', contract.risk);
         return { risk: contract.risk, intent: candidate.mode, replyText: candidate.reply, reasons: [...contract.failures, ...(candidate.mode === 'HANDOFF' ? ['relevant_evidence_requires_review'] : [])],
             claims: audit.claims.flatMap(c => c.sources.map(sourceId => ({ kind: c.kind, value: c.span, sourceId }))), toolEvidence,
-            nextAction: contract.risk === 'GREEN' ? 'AUTO_REPLY_ELIGIBLE' : 'HUMAN_REVIEW', providerRun: { model: 'gpt-5.6-sol', usage } };
+            nextAction: contract.risk === 'GREEN' ? 'AUTO_REPLY_ELIGIBLE' : 'HUMAN_REVIEW', providerRun: { model: 'gpt-5.6-luna', usage } };
     }
     catch (error) {
         const underlying: DiagnosticReason = error instanceof SolProviderError ? error.reason : stage === 'evidence' || stage === 'tool' ? 'tool_or_retrieval_failure' : 'orchestrator_exception';

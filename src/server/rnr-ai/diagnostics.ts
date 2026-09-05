@@ -29,7 +29,7 @@ export const diagnosticStageSchema = z.enum(['orchestration', 'evidence', 'gener
 export type DiagnosticStage = z.infer<typeof diagnosticStageSchema>;
 const logSchema = z.object({
   messageHash: z.string().regex(/^[a-f0-9]{64}$/),
-  model: z.literal('gpt-5.6-sol'),
+  model: z.literal('gpt-5.6-luna'),
   stage: diagnosticStageSchema,
   reason: diagnosticReasonSchema,
   candidateCreated: z.boolean(),

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest';
 import { logReasoningDiagnostic, type ReasoningDiagnostic } from './diagnostics';
-const safe: ReasoningDiagnostic = { messageHash: 'a'.repeat(64), model: 'gpt-5.6-sol', stage: 'generation', reason: 'none', candidateCreated: false, reasoningSuccess: false, verificationSuccess: false, risk: null };
+const safe: ReasoningDiagnostic = { messageHash: 'a'.repeat(64), model: 'gpt-5.6-luna', stage: 'generation', reason: 'none', candidateCreated: false, reasoningSuccess: false, verificationSuccess: false, risk: null };
 describe('diagnostic log privacy boundary', () => {
   it('drops extra payload fields and rejects untrusted strings in allowed fields', () => {
     const spy = vi.spyOn(console, 'info').mockImplementation(() => {});

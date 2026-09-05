@@ -48,6 +48,30 @@ describe("assembleConversationContext", () => {
     expect(result.fragmentsMerged).toBe(1);
   });
 
+  it("sends only the latest six messages in chronological order", () => {
+    const result = assembleConversationContext([
+      turn("8", "customer", "2026-09-04T01:08:00.000Z", "eighth"),
+      turn("1", "customer", "2026-09-04T01:01:00.000Z", "first"),
+      turn("5", "customer", "2026-09-04T01:05:00.000Z", "fifth"),
+      turn("3", "customer", "2026-09-04T01:03:00.000Z", "third"),
+      turn("7", "staff", "2026-09-04T01:07:00.000Z", "seventh"),
+      turn("2", "staff", "2026-09-04T01:02:00.000Z", "second"),
+      turn("6", "staff", "2026-09-04T01:06:00.000Z", "sixth"),
+      turn("4", "staff", "2026-09-04T01:04:00.000Z", "fourth"),
+    ], { maxTurns: 6 });
+
+    expect(result.turns.map((entry) => entry.text)).toEqual([
+      "third",
+      "fourth",
+      "fifth",
+      "sixth",
+      "seventh",
+      "eighth",
+    ]);
+    expect(result.turns.at(-1)?.role).toBe("customer");
+    expect(result.turnsConsidered).toBe(8);
+  });
+
   it("retains latest text verbatim and compacts old non-material turns deterministically", () => {
     const oldText = `hello ${"x".repeat(500)}`;
     const latestText = `latest ${"z".repeat(220)}`;

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { OpenAiSolProvider, SolProviderError } from "./openai-sol";
 
 const successfulBody = {
-  model: "gpt-5.6-sol",
+  model: "gpt-5.6-luna",
   output_text: JSON.stringify({
     risk: "GREEN",
     intent: "PRICE",
@@ -19,7 +19,7 @@ const successfulBody = {
 };
 
 describe("OpenAiSolProvider", () => {
-  it("uses the exact Sol model, non-storage, strict schema and ordered text/images", async () => {
+  it("uses the exact Luna model, non-storage, strict schema and ordered text/images", async () => {
     const fetchImpl = vi.fn(async (...args: [string | URL | Request, RequestInit?]) => {
       void args;
       return new Response(JSON.stringify(successfulBody), { status: 200 });
@@ -40,7 +40,7 @@ describe("OpenAiSolProvider", () => {
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const body = JSON.parse(String(fetchImpl.mock.calls[0][1]?.body));
     expect(body).toMatchObject({
-      model: "gpt-5.6-sol",
+      model: "gpt-5.6-luna",
       store: false,
       reasoning: { effort: "medium" },
       text: { format: { type: "json_schema", strict: true } },
@@ -62,7 +62,7 @@ describe("OpenAiSolProvider", () => {
     expect(body.input[1].content[1].image_url).toBe("data:image/jpeg;base64,AwQ=");
     expect(body.input[1].content[2].image_url).toBe("data:image/png;base64,AQI=");
     expect(result).toMatchObject({
-      model: "gpt-5.6-sol",
+      model: "gpt-5.6-luna",
       usage: { inputTokens: 100, cachedInputTokens: 10, outputTokens: 20 },
       decision: { risk: "GREEN", intent: "PRICE" },
     });
