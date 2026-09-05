@@ -887,8 +887,8 @@
   }
 
   .galleryCardBadge {
-    min-height: 2rem;
-    padding: 0.35rem 0.75rem;
+    min-height: 1.5rem;
+    padding: 0.25rem 0.55rem;
     position: absolute;
     top: 0.65rem;
     left: 0.65rem;
@@ -897,8 +897,8 @@
     border-radius: 999px;
     background: rgba(252, 250, 246, 0.94);
     color: var(--gallery-green);
-    font-size: 0.7rem;
-    font-weight: 800;
+    font-size: 0.625rem;
+    font-weight: 400;
     letter-spacing: 0.12em;
     line-height: 1;
     text-transform: uppercase;
