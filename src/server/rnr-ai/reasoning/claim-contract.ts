@@ -18,6 +18,20 @@ export type Turn = {
     role: 'customer' | 'staff';
     text: string;
 };
+export const contractFailureCodes = [
+    'semantic_verification_failed', 'uncovered_money_claim', 'internal_error_language',
+    'response_mode_disagreement', 'market_disagreement', 'market_source_not_customer',
+    'invalid_active_context_source', 'unresolved_issue_requires_clarification_or_review',
+    'order_answer_without_verified_state', 'not_claim_free_clarification',
+    'claim_span_not_in_candidate', 'unsupported_source', 'missing_or_wrong_market',
+    'unapproved_policy_source', 'authenticated_live_evidence_required',
+    'incomplete_money_binding', 'tool_product_binding_mismatch', 'tool_size_binding_mismatch',
+    'tool_returned_size_mismatch', 'tool_currency_mismatch', 'product_source_binding_mismatch',
+    'actual_text_amount_mismatch', 'actual_text_currency_mismatch',
+    'invalid_monetary_fact_path', 'amount_not_at_cited_path', 'size_price_binding_mismatch',
+] as const;
+export const contractFailureCodeSchema = z.enum(contractFailureCodes);
+export type ContractFailureCode = z.infer<typeof contractFailureCodeSchema>;
 function scopeOf(source: EvidenceSource): Record<string, unknown> {
     const scope=source.facts.scope;
     return scope&&typeof scope==='object'&&!Array.isArray(scope)?scope as Record<string,unknown>:{};
@@ -34,9 +48,9 @@ function liveSourceSupports(claim: ClaimAudit['claims'][number], source: Evidenc
 }
 export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sources: EvidenceSource[], turns: Turn[]): {
     risk: 'GREEN' | 'YELLOW' | 'RED';
-    failures: string[];
+    failures: ContractFailureCode[];
 } {
-    const failures: string[] = [];
+    const failures: ContractFailureCode[] = [];
     const byId = new Map(sources.map(s => [s.id, s]));
     const customerIds = new Set(turns.filter(t => t.role === 'customer').map(t => t.id));
     const genuineClarification = candidate.mode === 'CLARIFICATION' && audit.mode === 'CLARIFICATION' && audit.clarificationOnly && audit.claims.length === 0 && candidate.reply.includes('?');

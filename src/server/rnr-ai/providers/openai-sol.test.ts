@@ -107,6 +107,56 @@ describe("OpenAiSolProvider", () => {
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 
+  it("retries only when the current stage retains the minimum attempt budget", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      const enoughFetch = vi.fn()
+        .mockImplementationOnce(async () => { vi.setSystemTime(1_000); throw new DOMException("bounded timeout", "TimeoutError"); })
+        .mockResolvedValueOnce(Response.json(successfulBody));
+      const enough = new OpenAiSolProvider({ apiKey: "unit-test-only", fetchImpl: enoughFetch });
+      await expect(enough.generate({ instructions: "safe", conversationText: "hello", images: [], deadlineAt: 5_000, retryMinimumMs: 3_000 })).resolves.toBeDefined();
+      expect(enoughFetch).toHaveBeenCalledTimes(2);
+
+      vi.setSystemTime(0);
+      const diagnostics: Array<{ attempt: number; phase: string }> = [];
+      const shortFetch = vi.fn(async () => { vi.setSystemTime(3_000); throw new DOMException("bounded timeout", "TimeoutError"); });
+      const short = new OpenAiSolProvider({ apiKey: "unit-test-only", fetchImpl: shortFetch });
+      await expect(short.generate({ instructions: "safe", conversationText: "hello", images: [], deadlineAt: 5_000, retryMinimumMs: 3_000, onDiagnostic: entry => diagnostics.push(entry) })).rejects.toMatchObject({ code: "timeout" });
+      expect(shortFetch).toHaveBeenCalledOnce();
+      expect(diagnostics.every(entry => entry.attempt === 1)).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("rejects an HTTP 200 whose body does not finish before the stage deadline", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(0);
+    try {
+      let aborted = false;
+      const fetchImpl = vi.fn(async (_input: string | URL | Request, init?: RequestInit) => ({
+        ok: true,
+        status: 200,
+        text: () => new Promise<string>((resolve, reject) => {
+          const signal = init?.signal;
+          const timer = setTimeout(() => resolve(JSON.stringify(successfulBody)), 6_000);
+          signal?.addEventListener("abort", () => { aborted = true; clearTimeout(timer); reject(new DOMException("late body", "TimeoutError")); });
+        }),
+      } as Response));
+      const timeoutSignal = (milliseconds: number) => {
+        const controller = new AbortController();
+        setTimeout(() => controller.abort(), milliseconds);
+        return controller.signal;
+      };
+      const provider = new OpenAiSolProvider({ apiKey: "unit-test-only", fetchImpl, timeoutSignal });
+      const pending = provider.generate({ instructions: "safe", conversationText: "hello", images: [], deadlineAt: 5_000, retryMinimumMs: 3_000 });
+      const rejected = expect(pending).rejects.toMatchObject({ code: "timeout" });
+      await vi.advanceTimersByTimeAsync(5_001);
+      await rejected;
+      expect(fetchImpl).toHaveBeenCalledOnce();
+      expect(aborted).toBe(true);
+    } finally { vi.useRealTimers(); }
+  });
+
   it.each([{...successfulBody,model:"weaker-model"},{...successfulBody,status:"incomplete"}])("rejects non-equivalent or incomplete output", async body => {
     const fetchImpl=vi.fn(async()=>Response.json(body));const provider=new OpenAiSolProvider({apiKey:"unit-test-only",fetchImpl});
     await expect(provider.generate({instructions:"safe",conversationText:"hello",images:[]})).rejects.toMatchObject({code:"invalid_output"});expect(fetchImpl).toHaveBeenCalledOnce();

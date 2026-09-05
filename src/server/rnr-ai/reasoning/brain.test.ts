@@ -175,7 +175,21 @@ describe('production structured Brain with mocked Responses transport (no paid m
         conversation.push({...current,role:'staff',providerMessageKey:`s${i}`,sentAt:new Date(Date.UTC(2026,8,5,0,i*2+1)).toISOString(),text:decision.replyText!});
       }
     });
-    it('stops a stalled tool at the shared deadline without another model call', async () => {
+    it('binds a two-turn A2 country clarification to the latest New Zealand customer evidence', async()=>{
+      const c:Candidate={mode:'ANSWER',reply:'A2 Photo Print Canvas is NZD112.70 including GST.',market:'NZ',marketEvidenceTurn:'t3'};
+      const price:ClaimAudit['claims'][number]={...fact,span:'NZD112.70',product:'photo-print-canvas',kind:'price',sources:['derived-nz-canvas-including-gst'],marketDependent:true,amountMinor:11270,currency:'NZD',size:'A2',numericPath:'pricesMinor.A2'};
+      const h=harness([plan(c),audit(c,[price],{relevantCustomerTurnIds:['t1','t3']})]);
+      const result=await h.brain.generate(request([
+        ['customer','How much is an A2 canvas?'],
+        ['staff','Which country should I price it for?'],
+        ['customer','New Zealand'],
+      ]));
+      expect(result).toMatchObject({risk:'GREEN',nextAction:'AUTO_REPLY_ELIGIBLE',replyText:c.reply});
+      const sent=JSON.parse(JSON.parse(String(h.fetchImpl.mock.calls[0][1]?.body)).input[1].content[0].text);
+      expect(sent.turns).toHaveLength(3);
+      expect(sent.activeCustomerTurn).toMatchObject({id:'t3',role:'customer',text:'New Zealand'});
+    });
+    it('keeps callers without an invocation budget on the existing 24 second outer cap', async () => {
         vi.useFakeTimers();
         try {
             const initial={...plan(),market:'AU',marketEvidenceTurn:'t1',requestedTools:[{name:'dynamic_shipping_quote',input:{product:'photo_print_canvas',size:'A2',destination:'Sydney 2000',orderReference:null}}]};

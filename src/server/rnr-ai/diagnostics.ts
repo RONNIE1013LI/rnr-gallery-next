@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { contractFailureCodeSchema } from './reasoning/claim-contract';
 
 export const diagnosticReasonSchema = z.enum([
   'none', 'provider_not_called', 'provider_auth_failure', 'provider_credit_or_quota_failure',
@@ -37,6 +38,8 @@ const logSchema = z.object({
   verificationSuccess: z.boolean(),
   risk: z.enum(['GREEN', 'YELLOW', 'RED']).nullable(),
   provider: providerDiagnosticSchema.optional(),
+  contractPhase: z.enum(['initial_contract', 'repair_contract']).optional(),
+  contractFailures: z.array(contractFailureCodeSchema).max(26).optional(),
 });
 export type ReasoningDiagnostic = z.infer<typeof logSchema>;
 // Projection drops unknown fields; every emitted string is a fixed enum or a hash.

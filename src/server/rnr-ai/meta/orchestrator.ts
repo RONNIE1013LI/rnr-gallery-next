@@ -7,13 +7,14 @@ import { MetaImageResolutionError } from "./image-resolver";
 import type { MetaReviewPayload, createMetaReviewPayloadProtector } from "./review-payload-protector";
 import type { MetaConversationEvent, MetaConversationSnapshot } from "./types";
 import type { MetaReplySender } from "./reply-sender";
+import type { ReasoningExecutionOptions } from "../reasoning/brain";
 
 type MetaImageResolver = Readonly<{
   resolveMetaImages(event: MetaConversationEvent): Promise<readonly VerifiedImageInput[]>;
 }>;
 
 type MetaBrain = Readonly<{
-  generate(request: RnrAiRequest): Promise<RnrAiDecision>;
+  generate(request: RnrAiRequest, execution?: ReasoningExecutionOptions): Promise<RnrAiDecision>;
 }>;
 
 type HumanTakeover = Readonly<{
@@ -136,7 +137,7 @@ export function createMetaReplyOrchestrator(dependencies: Dependencies) {
   const now = dependencies.now ?? (() => new Date());
 
   return Object.freeze({
-    async handle(event: MetaConversationEvent): Promise<MetaOrchestratorResult> {
+    async handle(event: MetaConversationEvent, execution: ReasoningExecutionOptions = {}): Promise<MetaOrchestratorResult> {
       if (
         !dependencies.stageAAllowedRecipientHash
         || dependencies.hashExternalKey(event.externalConversationKey) !== dependencies.stageAAllowedRecipientHash
@@ -231,7 +232,7 @@ export function createMetaReplyOrchestrator(dependencies: Dependencies) {
           }
           throw error;
         }
-        let decision = await dependencies.brain.generate(requestFromSnapshot(dependencies, before, images, takeoverAtStart));
+        let decision = await dependencies.brain.generate(requestFromSnapshot(dependencies, before, images, takeoverAtStart), execution);
         if (!before.complete && decision.risk === "GREEN") {
           decision = Object.freeze({
             ...decision,

@@ -262,6 +262,35 @@ describe("MetaReplyOrchestrator", () => {
     expect(current.sender.sendEligibleReply).not.toHaveBeenCalled();
   });
 
+  it("keeps the route-entry deadline after slow context loading so the sender reserve is not consumed", async () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    try {
+      const current = await setup({ senderStatus: "sent" });
+      current.context.loadConversation.mockImplementationOnce(async () => {
+        vi.setSystemTime(11_000);
+        return snapshot();
+      }).mockResolvedValue(snapshot());
+      await expect(current.orchestrator.handle(event(), { deadlineAt: 46_000 })).resolves.toMatchObject({ status: "delivery_sent" });
+      expect(current.brain.generate).toHaveBeenCalledWith(expect.anything(), { deadlineAt: 46_000 });
+      expect(Date.now()).toBe(11_000);
+    } finally { vi.useRealTimers(); }
+  });
+
+  it("persists a late verification timeout for review and never reaches the sender", async () => {
+    const current = await setup({ decision: {
+      ...greenDecision,
+      risk: "RED",
+      replyText: null,
+      reasons: ["verification_timeout"],
+      nextAction: "HUMAN_REVIEW",
+    } });
+    await expect(current.orchestrator.handle(event(), { deadlineAt: Date.now() + 45_000 }))
+      .resolves.toMatchObject({ status: "review", risk: "RED" });
+    expect(current.sender.sendEligibleReply).not.toHaveBeenCalled();
+    expect(await current.takeover.read("conversation-raw")).toMatchObject({ active: true, source: "risk" });
+  });
+
   it("turns an image resolution failure into review takeover without a generic model answer", async () => {
     const current = await setup();
     current.images.resolveMetaImages.mockRejectedValueOnce(new MetaImageResolutionError());

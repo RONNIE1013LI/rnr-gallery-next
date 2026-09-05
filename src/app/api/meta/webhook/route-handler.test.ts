@@ -80,14 +80,22 @@ describe("Meta webhook route wiring", () => {
   });
 
   it("acknowledges shared mode before deferred runtime work and constructs no legacy runtime", async () => {
-    const current = setup({ engineMode: "shared_draft", masterEnabled: true });
-    expect((await current.handlers.POST(request())).status).toBe(200);
-    expect(current.createSharedRuntime).not.toHaveBeenCalled();
-    expect(current.tasks).toHaveLength(1);
-    await current.tasks[0]();
-    expect(current.createSharedRuntime).toHaveBeenCalledOnce();
-    expect(current.sharedRuntime.orchestrator.handle).toHaveBeenCalledOnce();
-    expect(current.createLegacyRuntime).not.toHaveBeenCalled();
+    vi.useFakeTimers();
+    vi.setSystemTime(1_000);
+    try {
+      const current = setup({ engineMode: "shared_draft", masterEnabled: true });
+      expect((await current.handlers.POST(request())).status).toBe(200);
+      expect(current.createSharedRuntime).not.toHaveBeenCalled();
+      expect(current.tasks).toHaveLength(1);
+      vi.setSystemTime(11_000);
+      await current.tasks[0]();
+      expect(current.createSharedRuntime).toHaveBeenCalledOnce();
+      expect(current.sharedRuntime.orchestrator.handle).toHaveBeenCalledWith(
+        expect.anything(),
+        { deadlineAt: 46_000 },
+      );
+      expect(current.createLegacyRuntime).not.toHaveBeenCalled();
+    } finally { vi.useRealTimers(); }
   });
 
   it("does not construct the shared runtime for an unmatched Stage A recipient", async () => {

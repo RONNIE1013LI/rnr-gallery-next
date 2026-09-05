@@ -15,8 +15,10 @@ type LegacyRuntime = Readonly<{
   imageJobRunner: Pick<NonNullable<FullLegacyRuntime["imageJobRunner"]>, "runOnce"> | undefined;
 }>;
 type SharedRuntime = Readonly<{
-  orchestrator: Readonly<{ handle(event: MetaConversationEvent): Promise<unknown> }>;
+  orchestrator: Readonly<{ handle(event: MetaConversationEvent, execution?: Readonly<{ deadlineAt: number }>): Promise<unknown> }>;
 }>;
+export const META_WEBHOOK_INVOCATION_MS = 60_000;
+export const META_REPLY_TAIL_RESERVE_MS = 15_000;
 
 type AcceptedEvent = Parameters<NonNullable<Parameters<typeof createMetaWebhookHandlers>[0]["onAcceptedEvent"]>>[0];
 
@@ -87,11 +89,13 @@ export function createMetaWebhookRouteHandlers(dependencies: Readonly<{
   }
   return createMetaWebhookHandlers({
     ...common,
-    onAcceptedEvent: async (message) => {
+    onAcceptedEvent: async (message, execution) => {
       if (!dependencies.rnrConfig.masterEnabled) return;
       if (message.providerTimestampValid !== true) return;
       if (!isStageAAllowedRecipient(message, dependencies.customerConfig, dependencies.rnrConfig)) return;
-      await dependencies.createSharedRuntime().orchestrator.handle(asMetaEvent(message));
+      await dependencies.createSharedRuntime().orchestrator.handle(asMetaEvent(message), {
+        deadlineAt: execution.invocationStartedAtMs + META_WEBHOOK_INVOCATION_MS - META_REPLY_TAIL_RESERVE_MS,
+      });
     },
   });
 }

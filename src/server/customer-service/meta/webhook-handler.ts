@@ -82,7 +82,7 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
   kickImageJob: (jobId: string) => Promise<unknown>;
   recoverHumanReplies?: (input: Readonly<{ now: Date; groupWindowMs: number; limit: number }>) => Promise<unknown>;
   scheduleAfter: (task: () => Promise<void>) => void;
-  onAcceptedEvent?: (message: NormalizedIncomingMessage) => Promise<unknown>;
+  onAcceptedEvent?: (message: NormalizedIncomingMessage, execution: Readonly<{ invocationStartedAtMs: number }>) => Promise<unknown>;
   createJobId?: () => string;
   now?: () => Date;
 }>) {
@@ -104,6 +104,7 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
     },
 
     async POST(request: Request) {
+      const invocationStartedAtMs = now().getTime();
       if (!dependencies.config.enabled) return new Response("Disabled", { status: 503 });
       const rawBody = await readWebhookBody(request);
       if (rawBody === null) return new Response("Payload Too Large", { status: 413 });
@@ -130,7 +131,7 @@ export function createMetaWebhookHandlers(dependencies: Readonly<{
         if (dependencies.onAcceptedEvent) {
           dependencies.scheduleAfter(async () => {
             try {
-              await dependencies.onAcceptedEvent!(message);
+              await dependencies.onAcceptedEvent!(message, { invocationStartedAtMs });
             } catch {
               // The verified webhook is already acknowledged; the protected worker may retry durable work.
             }

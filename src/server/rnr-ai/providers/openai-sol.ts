@@ -57,6 +57,7 @@ export type SolProviderRequest = Readonly<{
   conversationText: string;
   images: readonly VerifiedImageInput[];
   deadlineAt?: number;
+  retryMinimumMs?: number;
   onDiagnostic?: (entry: ProviderDiagnostic) => void;
 }>;
 
@@ -274,6 +275,8 @@ export class OpenAiSolProvider {
         if (lastError.code === "timeout") diagnostic.timeoutSource = lastError.reason === "reasoning_timeout" || (request.deadlineAt !== undefined && Date.now() >= request.deadlineAt) ? "orchestration" : "provider";
         emit("finish");
         if (!retryable(lastError) || attempt === 1) throw lastError;
+        const retryRemaining = request.deadlineAt === undefined ? 25_000 : request.deadlineAt - Date.now();
+        if (retryRemaining < (request.retryMinimumMs ?? 1)) throw lastError;
       }
     }
     throw lastError;

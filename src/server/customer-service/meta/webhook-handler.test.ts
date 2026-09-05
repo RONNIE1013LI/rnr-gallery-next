@@ -414,11 +414,14 @@ describe("Meta webhook handler", () => {
     expect(current.ingest).not.toHaveBeenCalled();
     expect(current.scheduledTasks).toHaveLength(1);
     await expect(current.scheduledTasks[0]()).resolves.toBeUndefined();
-    expect(onAcceptedEvent).toHaveBeenCalledWith(expect.objectContaining({
-      role: "customer",
-      externalConversationKey: "sender-1",
-      externalMessageKey: "mid-1",
-    }));
+    expect(onAcceptedEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        role: "customer",
+        externalConversationKey: "sender-1",
+        externalMessageKey: "mid-1",
+      }),
+      expect.objectContaining({ invocationStartedAtMs: expect.any(Number) }),
+    );
   });
 
   it("keeps an image webhook successful without creating deferred work", async () => {

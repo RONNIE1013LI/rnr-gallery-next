@@ -29,7 +29,7 @@ describe("reply assistant serverless compatibility", () => {
   it("keeps the Meta endpoint on the Node runtime", () => {
     const route = readFileSync(resolve(process.cwd(), "src/app/api/meta/webhook/route.ts"), "utf8");
     expect(route).toContain('runtime = "nodejs"');
-    expect(route).toContain("maxDuration = 30");
+    expect(route).toContain("maxDuration = 60");
   });
 
   it("keeps the protected Meta backlog worker on the Node runtime", () => {

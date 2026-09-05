@@ -10,6 +10,12 @@ import { z } from 'zod';
 export const planSchema = candidateSchema.extend({ requestedTools: z.array(toolRequestSchema).max(2) });
 type Plan = z.infer<typeof planSchema>;
 export type StructuredProvider = Pick<OpenAiSolProvider, 'structured'>;
+export const BRAIN_BUDGET_MS = 40_000;
+const DEFAULT_EXECUTION_BUDGET_MS = 24_000;
+export const STAGE_BUDGET_MS = Object.freeze({ generation: 7_000, verification: 11_000, repair: 7_000, repair_verification: 11_000 });
+export const REPAIR_ADMISSION_MS = STAGE_BUDGET_MS.repair + STAGE_BUDGET_MS.repair_verification + 1_000;
+export const STAGE_RETRY_MINIMUM_MS = Object.freeze({ generation: 3_500, verification: 8_000 });
+export type ReasoningExecutionOptions = Readonly<{ deadlineAt?: number }>;
 type Tools = {
     execute(request: BusinessToolRequest): Promise<ToolEvidence>;
 };
@@ -34,7 +40,7 @@ async function withinDeadline<T>(operation:Promise<T>,deadlineAt:number):Promise
         return await Promise.race([operation,new Promise<never>((_,reject)=>{timer=setTimeout(()=>reject(new Error('request_deadline')),Math.max(0,deadlineAt-Date.now()));})]);
     } finally {if(timer)clearTimeout(timer);}
 }
-export async function generateReasonedReply(request: RnrAiRequest, provider: StructuredProvider, tools: Tools): Promise<RnrAiDecision> {
+export async function generateReasonedReply(request: RnrAiRequest, provider: StructuredProvider, tools: Tools, execution: ReasoningExecutionOptions = {}): Promise<RnrAiDecision> {
     const usage = { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0 };
     const toolEvidence: ToolEvidence[] = [];
     let stage: DiagnosticStage = 'orchestration';
@@ -42,8 +48,8 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
     let reasoningSuccess = false;
     let verificationSuccess = false;
     const messageHash = createHash('sha256').update(request.conversation.at(-1)?.providerMessageKey ?? request.toolContext.conversationKeyHash).digest('hex');
-    const trace = (reason: DiagnosticReason, risk: RnrAiDecision['risk'] | null = null, provider?: ProviderDiagnostic) =>
-        logReasoningDiagnostic({ messageHash, model: 'gpt-5.6-luna', stage, reason, candidateCreated, reasoningSuccess, verificationSuccess, risk, ...(provider ? { provider } : {}) });
+    const trace = (reason: DiagnosticReason, risk: RnrAiDecision['risk'] | null = null, provider?: ProviderDiagnostic, contract?: Readonly<{ phase: 'initial_contract' | 'repair_contract'; failures: ReturnType<typeof checkSafetyContract>['failures'] }>) =>
+        logReasoningDiagnostic({ messageHash, model: 'gpt-5.6-luna', stage, reason, candidateCreated, reasoningSuccess, verificationSuccess, risk, ...(provider ? { provider } : {}), ...(contract ? { contractPhase: contract.phase, contractFailures: contract.failures } : {}) });
     const stop = (reason: string, diagnosticReason: DiagnosticReason = 'provider_not_called', detail?: DiagnosticReason): RnrAiDecision => {
         trace(diagnosticReason, 'RED');
         return { risk: 'RED', intent: 'verification_required', replyText: null, reasons: [reason, ...(detail && detail !== reason ? [detail] : [])], claims: [], toolEvidence, nextAction: 'HUMAN_REVIEW', providerRun: { model: 'gpt-5.6-luna', usage } };
@@ -58,9 +64,20 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
             return stop('material_context_exceeds_reasoning_budget');
         stage = 'evidence';
         const evidence = reasoningEvidence(request);
-        const deadlineAt = Date.now() + 24000;
+        const deadlineAt = Math.min(Date.now() + BRAIN_BUDGET_MS, execution.deadlineAt ?? Date.now() + DEFAULT_EXECUTION_BUDGET_MS);
+        const stageDeadline = (currentStage: DiagnosticStage) => {
+            const stageBudget = currentStage === 'verification' || currentStage === 'repair_verification'
+                ? STAGE_BUDGET_MS[currentStage]
+                : STAGE_BUDGET_MS[currentStage === 'repair' ? 'repair' : 'generation'];
+            return Math.min(Date.now() + stageBudget, deadlineAt);
+        };
         const modelCall = async <T>(instructions: string, data: unknown, schema: z.ZodType<T>, max: number) => {
-            const result = await provider.structured({ instructions, conversationText: JSON.stringify(data), images: request.attachments, deadlineAt, onDiagnostic: entry => trace(entry.reason, null, entry) }, schema, max);
+            const result = await provider.structured({
+                instructions, conversationText: JSON.stringify(data), images: request.attachments,
+                deadlineAt: stageDeadline(stage),
+                retryMinimumMs: stage === 'verification' || stage === 'repair_verification' ? STAGE_RETRY_MINIMUM_MS.verification : STAGE_RETRY_MINIMUM_MS.generation,
+                onDiagnostic: entry => trace(entry.reason, null, entry),
+            }, schema, max);
             if (result.model !== 'gpt-5.6-luna')
                 throw new SolProviderError('invalid_output', 'model_mismatch');
             usage.inputTokens += result.usage.inputTokens;
@@ -109,8 +126,9 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
             role: 'customer' | 'staff';
         } => t.role === 'customer' || t.role === 'staff');
         let contract = checkSafetyContract(candidate, audit, evidence, turns);
+        trace(contract.failures.length ? 'verification_failure' : 'none', contract.risk, undefined, { phase: 'initial_contract', failures: contract.failures });
         // One bounded semantic repair; never a phrase-specific fallback or unverified send.
-        if (contract.risk === 'RED' && deadlineAt - Date.now() > 8000) {
+        if (contract.risk === 'RED' && deadlineAt - Date.now() >= REPAIR_ADMISSION_MS) {
             stage = 'repair';
             verificationSuccess = false;
             candidate = await modelCall(generator, { ...data(), previousCandidate: candidate, verificationFeedback: contract.failures, issues: audit.issues }, candidateSchema, 1200);
@@ -119,8 +137,8 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
             verificationSuccess = true;
             stage = 'contract';
             contract = checkSafetyContract(candidate, audit, evidence, turns);
+            trace(contract.failures.length ? 'verification_failure' : 'none', contract.risk, undefined, { phase: 'repair_contract', failures: contract.failures });
         }
-        trace(contract.failures.length ? 'verification_failure' : 'none', contract.risk);
         return { risk: contract.risk, intent: candidate.mode, replyText: candidate.reply, reasons: [...contract.failures, ...(candidate.mode === 'HANDOFF' ? ['relevant_evidence_requires_review'] : [])],
             claims: audit.claims.flatMap(c => c.sources.map(sourceId => ({ kind: c.kind, value: c.span, sourceId }))), toolEvidence,
             nextAction: contract.risk === 'GREEN' ? 'AUTO_REPLY_ELIGIBLE' : 'HUMAN_REVIEW', providerRun: { model: 'gpt-5.6-luna', usage } };

@@ -1,4 +1,4 @@
-import { generateReasonedReply, type StructuredProvider } from './reasoning/brain';
+import { generateReasonedReply, type ReasoningExecutionOptions, type StructuredProvider } from './reasoning/brain';
 import { assembleConversationContext } from "./context/assembler";
 import type { SolProviderRequest, SolProviderResult } from "./providers/openai-sol";
 import { evaluateFinalRisk, type ReplyRisk } from "./risk/risk-gate";
@@ -202,10 +202,10 @@ function authorizedToolRequest(
 
 export function createRnrAiBrain({ provider, tools, now = () => new Date() }: RnrAiBrainDependencies) {
   return Object.freeze({
-    async generate(request: RnrAiRequest): Promise<RnrAiDecision> {
+    async generate(request: RnrAiRequest, execution: ReasoningExecutionOptions = {}): Promise<RnrAiDecision> {
       // Production Sol always implements structured generation. Failures stay in that
       // verified pipeline; the legacy interface remains for existing adapters/fixtures.
-      if (provider.structured) return generateReasonedReply(request, {structured: provider.structured.bind(provider)}, tools);
+      if (provider.structured) return generateReasonedReply(request, {structured: provider.structured.bind(provider)}, tools, execution);
       if (request.conversation.length === 0) return failedDecision("missing_conversation_context");
       const conversation = conversationData(request);
       const baseInstructions = businessInstructions(request);
