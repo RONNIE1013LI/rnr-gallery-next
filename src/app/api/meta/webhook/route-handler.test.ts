@@ -35,6 +35,7 @@ function setup(input: Readonly<{
   masterEnabled: boolean;
   stageAAllowedRecipientHash?: string | null;
   stageAActivatedAt?: Date | null;
+  allCustomersActivatedAt?: Date | null;
 }>) {
   const tasks: Array<() => Promise<void>> = [];
   const legacyRuntime = {
@@ -139,4 +140,19 @@ describe("Meta webhook route wiring", () => {
     expect(current.createSharedRuntime).not.toHaveBeenCalled();
     expect(current.createLegacyRuntime).not.toHaveBeenCalled();
   });
+});
+
+it.each([
+  ["at activation", 1_787_001_600_000, true],
+  ["before activation", 1_787_001_599_999, false],
+  ["missing provider timestamp", undefined, false],
+  ["invalid provider timestamp", "1787001600000", false],
+] as const)("applies the full rollout and provider timestamp gates: %s", async (_label, timestamp, allowed) => {
+  const current = setup({
+    engineMode: "shared_active", masterEnabled: true, stageAAllowedRecipientHash: null, stageAActivatedAt: null,
+    allCustomersActivatedAt: new Date(1_787_001_600_000),
+  });
+  expect((await current.handlers.POST(request(true, timestamp))).status).toBe(200);
+  await current.tasks[0]();
+  expect(current.createSharedRuntime).toHaveBeenCalledTimes(allowed ? 1 : 0);
 });

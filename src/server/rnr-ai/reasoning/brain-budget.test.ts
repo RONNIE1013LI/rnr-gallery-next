@@ -6,7 +6,7 @@ import { BRAIN_BUDGET_MS, REPAIR_ADMISSION_MS, STAGE_BUDGET_MS, STAGE_RETRY_MINI
 import type { Candidate, ClaimAudit } from './claim-contract';
 
 const candidate: Candidate = { mode: 'ANSWER', reply: 'A2 is 59.4 x 42 cm.', market: 'UNKNOWN', marketEvidenceTurn: null };
-const claim: ClaimAudit['claims'][number] = { span: candidate.reply, product: null, orderReference: null, destination: null, kind: 'product', sources: ['product-config'], marketDependent: false, amountMinor: null, currency: null, size: null, numericPath: null, liveRequired: false };
+const claim: ClaimAudit['claims'][number] = { span: candidate.reply, product: null, orderReference: null, destination: null, kind: 'product', sources: ['product-config'], marketDependent: false, amountMinor: null, currency: null, size: null, calculation: [], quantity: null, numericPath: null, liveRequired: false };
 const audit = (safe: boolean): ClaimAudit => ({ mode: 'ANSWER', market: 'UNKNOWN', marketEvidenceTurn: null, openIssue: 'NONE', relevantCustomerTurnIds: ['t1'], claims: [claim], safe, helpful: true, clarificationOnly: false, customerInputRequest: null, internalErrorLanguage: false, unnecessaryQuestion: false, issues: [] });
 const plan = (value = candidate) => ({ ...value, requestedTools: [] });
 const request = (conversation?: ConversationTurn[]): RnrAiRequest => ({

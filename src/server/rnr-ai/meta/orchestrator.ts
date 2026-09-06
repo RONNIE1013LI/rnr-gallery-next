@@ -1,3 +1,4 @@
+import { metaActivationCutoff, metaRecipientAllowed, metaMessageWithinReplyWindow } from "./config";
 import type { CompiledBusinessBrain } from "../business-brain/schema";
 import { evaluateAiControl } from "../control/schedule";
 import type { ReplyRuntimeStore, TakeoverState } from "../runtime-store/reply-runtime-store";
@@ -58,6 +59,7 @@ type Dependencies = Readonly<{
   resolveMarket(snapshot: MetaConversationSnapshot): "NZ" | "AU" | "UNKNOWN";
   pageId: string;
   masterEnabled: boolean;
+  allCustomersActivatedAt?: Date | null;
   stageAAllowedRecipientHash: string | null;
   stageAActivatedAt: Date | null;
   sender: MetaReplySender;
@@ -139,12 +141,14 @@ export function createMetaReplyOrchestrator(dependencies: Dependencies) {
   return Object.freeze({
     async handle(event: MetaConversationEvent, execution: ReasoningExecutionOptions = {}): Promise<MetaOrchestratorResult> {
       if (
-        !dependencies.stageAAllowedRecipientHash
-        || dependencies.hashExternalKey(event.externalConversationKey) !== dependencies.stageAAllowedRecipientHash
+        !metaRecipientAllowed(dependencies, dependencies.hashExternalKey(event.externalConversationKey))
       ) return { acknowledged: true, status: "stage_a_not_allowed" };
+      const cutoff = metaActivationCutoff(dependencies);
       if (
-        !dependencies.stageAActivatedAt
-        || event.receivedAt.getTime() < dependencies.stageAActivatedAt.getTime()
+        !cutoff
+        || !Number.isFinite(event.receivedAt.getTime())
+        || (event.role === "customer" && !metaMessageWithinReplyWindow(event.receivedAt, now()))
+        || event.receivedAt.getTime() < cutoff.getTime()
       ) return { acknowledged: true, status: "stage_a_not_active" };
       if (event.role === "staff") {
         try {

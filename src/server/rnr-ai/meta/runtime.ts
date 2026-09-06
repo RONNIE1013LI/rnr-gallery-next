@@ -24,7 +24,7 @@ import {
   type MetaReplySender,
 } from "./reply-sender";
 import { createMetaReviewPayloadProtector } from "./review-payload-protector";
-import { parseRnrAiMetaConfig, type RnrAiMetaConfig } from "./config";
+import { metaActivationConfigured, parseRnrAiMetaConfig, type RnrAiMetaConfig } from "./config";
 import type { MetaConversationEvent, MetaConversationSnapshot } from "./types";
 
 type RuntimeDependencies = Readonly<{
@@ -38,6 +38,7 @@ type RuntimeDependencies = Readonly<{
   resolveMarket(snapshot: MetaConversationSnapshot): "NZ" | "AU" | "UNKNOWN";
   pageId: string;
   masterEnabled: boolean;
+  allCustomersActivatedAt?: Date | null;
   stageAAllowedRecipientHash: string | null;
   stageAActivatedAt: Date | null;
   sender: MetaReplySender;
@@ -75,6 +76,7 @@ export function createMetaReplyRuntime(dependencies: RuntimeDependencies) {
     hashExternalKey: dependencies.hashExternalKey,
     stageAAllowedRecipientHash: dependencies.stageAAllowedRecipientHash,
     stageAActivatedAt: dependencies.stageAActivatedAt,
+    allCustomersActivatedAt: dependencies.allCustomersActivatedAt,
     now,
   });
 
@@ -89,8 +91,7 @@ export function selectMetaReplySender(input: Readonly<{
     !input.config.masterEnabled
     || input.config.engineMode !== "shared_active"
     || !input.config.metaAutoSendEnabled
-    || !input.config.stageAAllowedRecipientHash
-    || !input.config.stageAActivatedAt
+    || !metaActivationConfigured(input.config)
   ) return new DisabledMetaReplySender();
   return input.createActive();
 }
@@ -194,6 +195,7 @@ export function createProductionMetaReplyRuntime(
     masterEnabled: rnrConfig.masterEnabled,
     stageAAllowedRecipientHash: rnrConfig.stageAAllowedRecipientHash,
     stageAActivatedAt: rnrConfig.stageAActivatedAt,
+    allCustomersActivatedAt: rnrConfig.allCustomersActivatedAt,
     sender,
     isSenderEcho,
     listConversations: (window) => context.listConversations({
