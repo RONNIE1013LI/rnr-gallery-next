@@ -11,6 +11,8 @@ import {
   orders,
   paymentLedgerEntries,
   paymentAttempts,
+  productionJobItems,
+  productionJobs,
   webhookEvents,
   websiteAnalyticsFinancialEvents,
 } from "@/server/db/schema";
@@ -166,6 +168,23 @@ async function createOrder(input: {
   );
   const orderId = order.rows[0].id;
   orderIds.push(orderId);
+  await pool.query(
+    `insert into order_items (
+      checkout_session_id, order_id, position, client_item_id,
+      product_key, product_slug, product_title, size_key, size_label,
+      orientation, people_pets, photo_submission_method, design_text, notes,
+      needed_date, urgent_service_confirmed, urgent_working_days, quantity,
+      price_lines, upload_references, unit_subtotal_ex_gst_cents,
+      unit_gst_cents, unit_total_incl_gst_cents, line_subtotal_ex_gst_cents,
+      line_gst_cents, line_total_incl_gst_cents
+    ) values (
+      $1, $2, 0, $3, 'photo-print-canvas', 'photo-print-canvas',
+      'Photo Print Canvas', 'a4', 'A4 — 29.7 × 21 cm', 'landscape', 0,
+      'later', 'Payment test artwork', '', '2026-09-30', false, 10, 1,
+      '[]'::jsonb, '[]'::jsonb, 6500, 975, 7475, 6500, 975, 7475
+    )`,
+    [sessionId, orderId, randomUUID()],
+  );
   for (const [kind, country] of [
     ["billing", input.billingCountry ?? "NZ"],
     ["delivery", input.deliveryCountry ?? input.billingCountry ?? "NZ"],
@@ -478,6 +497,7 @@ describe("Drizzle payment repository", () => {
       [orderIds],
     );
     await pool.query("delete from payment_attempts where order_id = any($1::uuid[])", [orderIds]);
+    await database.delete(productionJobs).where(inArray(productionJobs.orderId, orderIds));
     await pool.query("delete from orders where id = any($1::uuid[])", [orderIds]);
     await pool.query("delete from checkout_sessions where id = any($1::uuid[])", [sessionIds]);
     if (notificationRecipientIds.length) {
@@ -1348,6 +1368,8 @@ describe("Drizzle payment repository", () => {
       amountCents: 7_475, currency: "NZD" as const,
       orderNumber: order.orderNumber, status: "paid" as const,
     };
+    await expect(database.select().from(productionJobs)
+      .where(eq(productionJobs.orderId, order.orderId))).resolves.toHaveLength(0);
     await expect(repository.applyVerifiedResult({
       attemptId: claim.attempt.id,
       result,
@@ -1356,6 +1378,16 @@ describe("Drizzle payment repository", () => {
       order: { paymentStatus: "paid" },
       attempt: { status: "paid" },
     });
+    const [productionJob] = await database.select().from(productionJobs)
+      .where(eq(productionJobs.orderId, order.orderId));
+    expect(productionJob).toMatchObject({
+      orderId: order.orderId,
+      jobNumber: order.orderNumber,
+      source: "web",
+      customerName: "Payment Customer",
+    });
+    await expect(database.select().from(productionJobItems)
+      .where(eq(productionJobItems.jobId, productionJob.id))).resolves.toHaveLength(1);
     await expect(database.select().from(orderNotificationOutbox)
       .where(and(
         eq(orderNotificationOutbox.orderId, order.orderId),
@@ -1390,6 +1422,8 @@ describe("Drizzle payment repository", () => {
       source: "reconciliation",
     });
     await expect(paymentRows(order.orderId, claim.attempt.id)).resolves.toEqual(paidBefore);
+    await expect(database.select().from(productionJobs)
+      .where(eq(productionJobs.orderId, order.orderId))).resolves.toHaveLength(1);
     expect(await database.select().from(websiteAnalyticsFinancialEvents)
       .where(eq(websiteAnalyticsFinancialEvents.orderId, order.orderId))).toHaveLength(1);
     await expect(repository.applyVerifiedResult({

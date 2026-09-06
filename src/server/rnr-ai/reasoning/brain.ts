@@ -12,8 +12,10 @@ type Plan = z.infer<typeof planSchema>;
 export type StructuredProvider = Pick<OpenAiSolProvider, 'structured'>;
 export const BRAIN_BUDGET_MS = 40_000;
 const DEFAULT_EXECUTION_BUDGET_MS = 24_000;
-export const STAGE_BUDGET_MS = Object.freeze({ generation: 7_000, verification: 11_000, repair: 7_000, repair_verification: 11_000 });
-export const REPAIR_ADMISSION_MS = STAGE_BUDGET_MS.repair + STAGE_BUDGET_MS.repair_verification + 1_000;
+// Both independent verification passes may use the remaining outer request budget.
+export const STAGE_BUDGET_MS = Object.freeze({ generation: 12_000, verification: BRAIN_BUDGET_MS, repair: 7_000, repair_verification: BRAIN_BUDGET_MS });
+// Admit a rewrite only with at least 7s generation + 11s verification + 1s margin.
+export const REPAIR_ADMISSION_MS = 19_000;
 export const STAGE_RETRY_MINIMUM_MS = Object.freeze({ generation: 3_500, verification: 8_000 });
 export type ReasoningExecutionOptions = Readonly<{ deadlineAt?: number }>;
 type Tools = {
@@ -85,7 +87,7 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
             usage.outputTokens += result.usage.outputTokens;
             return result.decision;
         };
-        const data = () => ({ ...context, evidence });
+        const data = () => ({ ...context, evidence, voice: request.businessBrain.voice });
         stage = 'generation';
         let plan = await modelCall(generator + '\n' + toolInstructions, data(), planSchema, 1200);
         candidateCreated = true;
@@ -127,21 +129,36 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
         } => t.role === 'customer' || t.role === 'staff');
         let contract = checkSafetyContract(candidate, audit, evidence, turns);
         trace(contract.failures.length ? 'verification_failure' : 'none', contract.risk, undefined, { phase: 'initial_contract', failures: contract.failures });
-        // One bounded semantic repair; never a phrase-specific fallback or unverified send.
-        if (contract.risk === 'RED' && deadlineAt - Date.now() >= REPAIR_ADMISSION_MS) {
-            stage = 'repair';
-            verificationSuccess = false;
-            candidate = await modelCall(generator, { ...data(), previousCandidate: candidate, verificationFeedback: contract.failures, issues: audit.issues }, candidateSchema, 1200);
-            stage = 'repair_verification';
-            audit = await modelCall(verifier, { ...data(), candidate }, auditSchema, 2400);
-            verificationSuccess = true;
-            stage = 'contract';
-            contract = checkSafetyContract(candidate, audit, evidence, turns);
-            trace(contract.failures.length ? 'verification_failure' : 'none', contract.risk, undefined, { phase: 'repair_contract', failures: contract.failures });
+        // Quality is separate from factual risk, but a material defect still requires a
+        // bounded rewrite and fresh verification before an autonomous reply.
+        const needsQualityRepair = () => !audit.helpful || audit.unnecessaryQuestion;
+        if ((contract.risk === 'RED' || needsQualityRepair()) && deadlineAt - Date.now() >= REPAIR_ADMISSION_MS) {
+            const original = { candidate, audit, contract };
+            try {
+                stage = 'repair';
+                verificationSuccess = false;
+                candidate = await modelCall(generator, { ...data(), previousCandidate: candidate, verificationFeedback: contract.failures, qualityFeedback: { helpful: audit.helpful, unnecessaryQuestion: audit.unnecessaryQuestion }, issues: audit.issues }, candidateSchema, 1200);
+                stage = 'repair_verification';
+                audit = await modelCall(verifier, { ...data(), candidate }, auditSchema, 2400);
+                verificationSuccess = true;
+                stage = 'contract';
+                contract = checkSafetyContract(candidate, audit, evidence, turns);
+                trace(contract.failures.length ? 'verification_failure' : 'none', contract.risk, undefined, { phase: 'repair_contract', failures: contract.failures });
+            } catch (error) {
+                // A quality-only outage does not invalidate the original independent
+                // factual verification. Keep that draft for review, never auto-send it.
+                if (original.contract.risk !== 'GREEN') throw error;
+                candidate = original.candidate;
+                audit = original.audit;
+                contract = original.contract;
+                trace(error instanceof SolProviderError ? error.reason : 'orchestrator_exception', 'YELLOW');
+            }
         }
-        return { risk: contract.risk, intent: candidate.mode, replyText: candidate.reply, reasons: [...contract.failures, ...(candidate.mode === 'HANDOFF' ? ['relevant_evidence_requires_review'] : [])],
+        const qualityRequiresReview = needsQualityRepair();
+        const risk = contract.risk === 'GREEN' && qualityRequiresReview ? 'YELLOW' : contract.risk;
+        return { risk, intent: candidate.mode, replyText: candidate.reply, reasons: [...contract.failures, ...(qualityRequiresReview ? ['reply_quality_requires_review'] : []), ...(candidate.mode === 'HANDOFF' ? ['relevant_evidence_requires_review'] : [])],
             claims: audit.claims.flatMap(c => c.sources.map(sourceId => ({ kind: c.kind, value: c.span, sourceId }))), toolEvidence,
-            nextAction: contract.risk === 'GREEN' ? 'AUTO_REPLY_ELIGIBLE' : 'HUMAN_REVIEW', providerRun: { model: 'gpt-5.6-luna', usage } };
+            nextAction: risk === 'GREEN' ? 'AUTO_REPLY_ELIGIBLE' : 'HUMAN_REVIEW', providerRun: { model: 'gpt-5.6-luna', usage } };
     }
     catch (error) {
         const underlying: DiagnosticReason = error instanceof SolProviderError ? error.reason : stage === 'evidence' || stage === 'tool' ? 'tool_or_retrieval_failure' : 'orchestrator_exception';

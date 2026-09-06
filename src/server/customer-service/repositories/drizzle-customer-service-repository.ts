@@ -1,3 +1,4 @@
+import { createSharedReplyProof, verifySharedReplyProof, SHARED_REPLY_PROOF_VERSION } from "@/server/rnr-ai/website/shared-reply-proof";
 import { createHash, randomUUID } from "node:crypto";
 import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, lte, max, or, sql } from "drizzle-orm";
 import type { getDatabase } from "@/server/db/client";
@@ -3533,14 +3534,17 @@ export function createDrizzleCustomerServiceRepository(
           || !attempt.model?.trim()
           || !attempt.draftText?.trim()
           || attempt.validatorCodes.length !== 0
-          || !verifyWebsiteRendererProof({
+          || !(attempt.websiteResponseTemplateVersion === SHARED_REPLY_PROOF_VERSION
+            ? verifySharedReplyProof({ secret: reviewSelectorSecret, attemptId: attempt.id,
+              messageId: turn.messageId, text: attempt.draftText, proof: attempt.websiteDecision })
+            : verifyWebsiteRendererProof({
             intent: attempt.intent,
             text: attempt.draftText,
             decision: attempt.websiteDecision,
             templateVersion: attempt.websiteResponseTemplateVersion,
             productCategory: attempt.productContext?.category ?? null,
             messageText: attempt.messageText,
-          })
+          }))
         ) return { status: "not_publishable" as const };
 
         const [publication] = await transaction.insert(customerServiceWebsiteAssistantMessages).values({
@@ -5398,18 +5402,37 @@ export function createDrizzleCustomerServiceRepository(
         const keepWebsiteRendererProof = !humanReplyReceived
           && initial.channel === "website"
           && input.status === "draft_ready";
+        const sharedProof = keepWebsiteRendererProof && input.sharedBrainDecision
+          && input.validatorCodes.length === 0
+          ? createSharedReplyProof({ secret: reviewSelectorSecret, attemptId: input.attemptId,
+            messageId: initial.messageId, text: input.draftText ?? "", decision: input.sharedBrainDecision })
+          : null;
+        const invalidSharedProof = keepWebsiteRendererProof && Boolean(input.sharedBrainDecision) && !sharedProof;
         await transaction.update(customerServiceAiAttempts).set({
-          status: humanReplyReceived ? "abandoned" : input.status,
+          status: humanReplyReceived ? "abandoned" : invalidSharedProof ? "output_blocked" : input.status,
+          ...(input.sharedBrainDecision ? {
+            intent: input.sharedBrainDecision.intent,
+            riskLevel: input.sharedBrainDecision.risk === "GREEN" ? "low" as const
+              : input.sharedBrainDecision.risk === "YELLOW" ? "medium" as const : "high" as const,
+            gateReasons: input.sharedBrainDecision.reasons,
+          } : {}),
           providerCalled: true,
           provider: input.provider,
           model: input.model,
-          draftText: !humanReplyReceived && input.status === "draft_ready" ? input.draftText : null,
-          websiteDecision: keepWebsiteRendererProof ? input.websiteDecision ?? null : null,
-          websiteResponseTemplateVersion: keepWebsiteRendererProof
-            ? input.websiteResponseTemplateVersion ?? null
+          draftText: !humanReplyReceived && !invalidSharedProof && input.status === "draft_ready" ? input.draftText : null,
+          websiteDecision: keepWebsiteRendererProof && !invalidSharedProof ? sharedProof ?? input.websiteDecision ?? null
+            : !humanReplyReceived && initial.channel === "website" && input.sharedBrainDecision ? {
+              version: "rnr-shared-review-v1", risk: input.sharedBrainDecision.risk,
+              nextAction: input.sharedBrainDecision.nextAction, reasons: input.sharedBrainDecision.reasons,
+              replyText: input.sharedBrainDecision.risk === "YELLOW" ? input.sharedBrainDecision.replyText : null,
+            } : null,
+          websiteResponseTemplateVersion: keepWebsiteRendererProof && !invalidSharedProof
+            ? sharedProof ? SHARED_REPLY_PROOF_VERSION : input.websiteResponseTemplateVersion ?? null
             : null,
-          rejectedOutputHash: humanReplyReceived ? null : input.rejectedOutputHash ?? null,
-          validatorCodes: input.validatorCodes,
+          rejectedOutputHash: humanReplyReceived ? null : invalidSharedProof
+            ? createHash("sha256").update(input.draftText ?? "").digest("hex")
+            : input.rejectedOutputHash ?? null,
+          validatorCodes: invalidSharedProof ? ["shared_brain_proof_invalid"] : input.validatorCodes,
           inputTokens: input.inputTokens,
           cachedInputTokens: input.cachedInputTokens,
           outputTokens: input.outputTokens,

@@ -3,7 +3,7 @@ import { contractFailureCodes } from './reasoning/claim-contract';
 import { logReasoningDiagnostic, type ReasoningDiagnostic } from './diagnostics';
 
 const expectedCodes = [
-  'semantic_verification_failed', 'uncovered_money_claim', 'internal_error_language',
+  'unsafe_public_output', 'semantic_verification_failed', 'uncovered_money_claim', 'internal_error_language',
   'response_mode_disagreement', 'market_disagreement', 'market_source_not_customer',
   'invalid_active_context_source', 'unresolved_issue_requires_clarification_or_review',
   'order_answer_without_verified_state', 'not_claim_free_clarification',
@@ -33,9 +33,9 @@ describe('contract diagnostics privacy boundary', () => {
     try { expect(() => logReasoningDiagnostic(safe)).not.toThrow(); } finally { spy.mockRestore(); }
   });
 
-  it('uses the exact 26 deterministic failure codes from the contract', () => {
+  it('uses the exact 27 deterministic failure codes from the contract', () => {
     expect(contractFailureCodes).toEqual(expectedCodes);
-    expect(contractFailureCodes).toHaveLength(26);
+    expect(contractFailureCodes).toHaveLength(27);
   });
 
   it.each(expectedCodes)('logs %s only as an allowlisted enum', (failure) => {

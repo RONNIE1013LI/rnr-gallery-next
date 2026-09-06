@@ -1,3 +1,4 @@
+import type { RnrAiDecision } from "@/server/rnr-ai/types";
 import type {
   ConversationRole,
   CustomerServiceChannel,
@@ -164,6 +165,7 @@ export type ProviderAttemptCompletion = Readonly<{
   provider: "mock" | "openai";
   model: string;
   draftText?: string;
+  sharedBrainDecision?: RnrAiDecision;
   websiteDecision?: WebsiteDecision;
   websiteResponseTemplateVersion?: string;
   rejectedOutputHash?: string;

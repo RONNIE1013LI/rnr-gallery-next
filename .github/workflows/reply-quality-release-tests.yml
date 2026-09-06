@@ -1,0 +1,54 @@
+name: Reply quality isolated release tests
+on:
+  push:
+    branches: [codex/reply-quality-20260906]
+permissions:
+  contents: read
+concurrency:
+  group: reply-quality-release-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  isolated-tests:
+    runs-on: macos-15
+    timeout-minutes: 25
+    env:
+      PRODUCTION_DATABASE_TARGET_FINGERPRINTS: ${{ secrets.PRODUCTION_DATABASE_TARGET_FINGERPRINT }}
+      EXPECTED_PRODUCTION_DATABASE: ${{ secrets.EXPECTED_PRODUCTION_DATABASE }}
+      EXPECTED_PRODUCTION_HOST_FINGERPRINT: ${{ secrets.EXPECTED_PRODUCTION_HOST_FINGERPRINT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install test runtime prerequisites
+        run: |
+          brew install postgresql@16 ripgrep
+          echo "$(brew --prefix postgresql@16)/bin" >> "$GITHUB_PATH"
+      - name: Start isolated PostgreSQL
+        run: |
+          initdb -D "$RUNNER_TEMP/reply-quality-postgres" -U postgres -A trust
+          pg_ctl -D "$RUNNER_TEMP/reply-quality-postgres" -l "$RUNNER_TEMP/reply-quality-postgres.log" -o "-h 127.0.0.1 -p 5432 -k $RUNNER_TEMP" -w start
+          echo "RELEASE_TEST_DATABASE_ADMIN_URL=postgresql://postgres@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npx eslint src/server/rnr-ai src/server/customer-service/engine.ts src/server/customer-service/engine.test.ts src/server/customer-service/repositories src/server/customer-service/website/output-safety-validator.ts scripts/evaluate-rnr-ai-brain.ts scripts/evaluate-rnr-ai-quality.ts
+      - run: npm run rnr-ai:evaluate
+      - run: npm run release:test:isolated
+      - name: Verify local optimized build with a disposable Test database
+        run: |
+          createdb -h 127.0.0.1 -U postgres rnr_gallery_test_reply_quality_build
+          export TEST_DATABASE_URL=postgresql://postgres@127.0.0.1:5432/rnr_gallery_test_reply_quality_build
+          npm run db:migrate -- --environment test
+          export DATABASE_URL="$TEST_DATABASE_URL"
+          export BETTER_AUTH_URL=https://localhost:3000
+          export BETTER_AUTH_SECRET=$(openssl rand -hex 32)
+          npm run build
+      - name: Stop isolated PostgreSQL
+        if: always()
+        run: |
+          if [ -f "$RUNNER_TEMP/reply-quality-postgres/postmaster.pid" ]; then
+            pg_ctl -D "$RUNNER_TEMP/reply-quality-postgres" -m immediate -w stop
+          fi

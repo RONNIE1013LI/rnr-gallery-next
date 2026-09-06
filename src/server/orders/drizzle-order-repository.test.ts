@@ -107,6 +107,52 @@ describe("order item customisation snapshot", () => {
 });
 
 describe("web order production job snapshot", () => {
+  it.each(["awaiting_payment", "processing", "failed", "cancelled"] as const)(
+    "does not admit a %s web order to production",
+    (paymentStatus) => {
+      const now = new Date("2026-08-04T00:00:00.000Z");
+      const priced = repriceCart({
+        version: 1,
+        items: [{
+          clientItemId: randomUUID(),
+          productKey: "photo-print-canvas",
+          sizeKey: "a4",
+          orientation: "landscape",
+          peoplePets: 0,
+          photoSubmissionMethod: "later",
+          designText: "Family",
+          notes: "",
+          neededDate: "2026-08-12",
+          urgentServiceConfirmed: false,
+          quantity: 1,
+          uploadReferences: [],
+        }],
+      }, { now });
+      const address = normalizeAddress({
+        country: "NZ",
+        fullName: "Aroha Ngata",
+        building: "",
+        street: "12 Queen Street",
+        suburb: "Auckland Central",
+        region: "Auckland",
+        postcode: "1010",
+        phone: "021 123 4567",
+        email: "aroha@example.test",
+      });
+
+      expect(buildWebProductionJobSnapshot({
+        order: { id: randomUUID(), orderNumber: "RNR-2026-UNPAID" },
+        items: priced.items,
+        billingAddress: address,
+        deliveryAddress: address,
+        deliveryMethod: "post",
+        orderItemIds: [randomUUID()],
+        now,
+        paymentStatus,
+      })).toBeNull();
+    },
+  );
+
   it("maps all ordered items and the earliest required date without copying money", () => {
     const now = new Date("2026-08-04T00:00:00.000Z");
     const priced = repriceCart({
@@ -156,12 +202,13 @@ describe("web order production job snapshot", () => {
 
     const snapshot = buildWebProductionJobSnapshot({
       order: { id: randomUUID(), orderNumber: "RNR-2026-ABC123" },
-      cart: priced,
+      items: priced.items,
       billingAddress: address,
       deliveryAddress: address,
       deliveryMethod: "post",
       orderItemIds,
       now,
+      paymentStatus: "paid",
     });
 
     expect(snapshot.job).toEqual(expect.objectContaining({
@@ -249,12 +296,13 @@ describe("web order production job snapshot", () => {
 
     const snapshot = buildWebProductionJobSnapshot({
       order: { id: randomUUID(), orderNumber: "RNR-2026-BUNDLE" },
-      cart: priced,
+      items: priced.items,
       billingAddress: address,
       deliveryAddress: address,
       deliveryMethod: "post",
       orderItemIds: [randomUUID()],
       now,
+      paymentStatus: "paid",
     });
 
     expect(snapshot.items[0]).toMatchObject({

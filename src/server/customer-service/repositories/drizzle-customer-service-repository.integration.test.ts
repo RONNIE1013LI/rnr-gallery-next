@@ -4555,6 +4555,33 @@ describe.runIf(enabled)("DrizzleCustomerServiceRepository", () => {
     await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
   });
 
+  it.each(["valid", "changed_text", "changed_signature", "yellow", "red", "missing_secret", "review"] as const)("validates shared-brain publication: %s", async (variant) => {
+    const claimed = await claimWebsiteTurn({ sessionHash: "a7".repeat(32), networkHash: "a8".repeat(32), messageHash: "a9".repeat(32) });
+    const [attempt] = await database.insert(customerServiceAiAttempts).values({
+      messageId: claimed.messageId, attemptNumber: 1, trigger: "webhook_after", intent: "design_process",
+      riskLevel: "medium", gateResult: "allowed", knowledgeVersion: "shared-test", status: "provider_pending",
+      providerCalled: true, reservedCostMicrousd: 0,
+    }).returning({ id: customerServiceAiAttempts.id });
+    const writer = variant === "missing_secret" ? createDrizzleCustomerServiceRepository(database) : repository;
+    const replyText = "Thank you for sharing this with us. We can combine the subjects from your photos.";
+    await writer.completeProviderAttempt({
+      attemptId: attempt.id, status: variant === "review" ? "output_blocked" : "draft_ready", provider: "openai", model: "gpt-5.6-luna",
+      ...(variant === "review" ? { rejectedOutputHash: createHash("sha256").update(replyText).digest("hex") } : { draftText: replyText }),
+      sharedBrainDecision: { risk: variant === "yellow" || variant === "review" ? "YELLOW" : variant === "red" ? "RED" : "GREEN",
+        nextAction: variant === "review" ? "HUMAN_REVIEW" : "AUTO_REPLY_ELIGIBLE", intent: "photo_guidance", replyText, reasons: [], claims: [], toolEvidence: [] },
+      validatorCodes: variant === "review" ? ["shared_brain_review_required"] : [], inputTokens: 10, cachedInputTokens: 0, outputTokens: 10,
+      estimatedCostMicrousd: 0, latencyMs: 1, dailyScopeKey: "daily:2026-08-19",
+    });
+    if (variant === "changed_text") await database.update(customerServiceAiAttempts).set({ draftText: replyText + " Extra promise." }).where(eq(customerServiceAiAttempts.id, attempt.id));
+    if (variant === "changed_signature") await database.update(customerServiceAiAttempts).set({ websiteDecision: { version: "rnr-shared-reply-v1", signature: "00".repeat(32) } }).where(eq(customerServiceAiAttempts.id, attempt.id));
+    const publication = { turnId: claimed.turnId, leaseToken: claimed.leaseToken, attemptId: attempt.id, now: new Date("2026-08-19T00:00:03.000Z") };
+    await expect(repository.publishWebsiteValidatedAi(publication)).resolves.toEqual({ status: variant === "valid" ? "published" : "not_publishable" });
+    if (variant === "valid") {
+      await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toEqual([expect.objectContaining({ body: replyText })]);
+      await expect(repository.publishWebsiteValidatedAi(publication)).resolves.not.toEqual({ status: "published" });
+    } else await expect(database.select().from(customerServiceWebsiteAssistantMessages)).resolves.toHaveLength(0);
+  });
+
   it.each([
     ["canvas", "e7", "e8", "e9"],
     ["banners", "f1", "f2", "f3"],

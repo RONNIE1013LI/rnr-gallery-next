@@ -7,7 +7,7 @@ import type { RnrAiRequest, ConversationTurn, ToolEvidence } from '../types';
 import type { Candidate, ClaimAudit } from './claim-contract';
 const base: Candidate = { mode: 'ANSWER', reply: 'A2 is 59.4 × 42 cm.', market: 'UNKNOWN', marketEvidenceTurn: null };
 const fact: ClaimAudit['claims'][number] = { span: base.reply, product: null, destination: null, orderReference: null, kind: 'product', sources: ['product-config'], marketDependent: false, amountMinor: null, currency: null, size: null, numericPath: null, liveRequired: false };
-function audit(candidate: Candidate = base, claims: ClaimAudit['claims'] = [fact], extra: Partial<ClaimAudit> = {}): ClaimAudit { return { mode: candidate.mode, market: candidate.market, marketEvidenceTurn: candidate.marketEvidenceTurn, openIssue: 'NONE', relevantCustomerTurnIds: ['t1'], claims, safe: true, helpful: true, clarificationOnly: candidate.mode === 'CLARIFICATION', internalErrorLanguage: false, unnecessaryQuestion: false, issues: [], ...extra }; }
+function audit(candidate: Candidate = base, claims: ClaimAudit['claims'] = [fact], extra: Partial<ClaimAudit> = {}): ClaimAudit { return { mode: candidate.mode, market: candidate.market, marketEvidenceTurn: candidate.marketEvidenceTurn, openIssue: 'NONE', relevantCustomerTurnIds: ['t1'], claims, safe: true, helpful: true, clarificationOnly: candidate.mode === 'CLARIFICATION', customerInputRequest: candidate.mode === 'CLARIFICATION' ? candidate.reply : null, internalErrorLanguage: false, unnecessaryQuestion: false, issues: [], ...extra }; }
 function request(texts: [
     ConversationTurn['role'],
     string
@@ -44,11 +44,12 @@ describe('production structured Brain with mocked Responses transport (no paid m
         const checked = JSON.parse(String(h.fetchImpl.mock.calls[1][1]?.body));
         expect(JSON.parse(checked.input[1].content[0].text).candidate.reply).toBe(base.reply);
     });
-    it('permits first-class policy clarification regardless of missing policy or a quality opinion', async () => {
+    it('keeps a safe but repeatedly unhelpful clarification for review after one quality repair', async () => {
         const c: Candidate = { ...base, mode: 'CLARIFICATION', reply: 'Has the design been approved or printed?' };
-        const h = harness([plan(c), audit(c, [], { safe: false, helpful: false, unnecessaryQuestion: true, openIssue: 'POLICY_ENTITLEMENT' })]);
-        expect(await h.brain.generate(request([['customer', 'I changed my mind. Can I get my money back?']]))).toMatchObject({ risk: 'GREEN', intent: 'CLARIFICATION', nextAction: 'AUTO_REPLY_ELIGIBLE' });
-        expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+        const a = audit(c, [], { safe: false, helpful: false, unnecessaryQuestion: true, openIssue: 'POLICY_ENTITLEMENT' });
+        const h = harness([plan(c), a, c, a]);
+        expect(await h.brain.generate(request([['customer', 'I changed my mind. Can I get my money back?']]))).toMatchObject({ risk: 'YELLOW', intent: 'CLARIFICATION', nextAction: 'HUMAN_REVIEW', reasons: expect.arrayContaining(['reply_quality_requires_review']) });
+        expect(h.fetchImpl).toHaveBeenCalledTimes(4);
     });
     it.each(['refund', 'cancellation', 'deposit', 'approval', 'change fee'])("blocks unsupported %s entitlement even if generation says ANSWER", async (_topic) => {
         const c = { ...base, reply: 'You are entitled to a full refund.' };
@@ -147,9 +148,11 @@ describe('production structured Brain with mocked Responses transport (no paid m
             expect(spy.mock.calls.at(-1)?.[1]).toMatchObject({ candidateCreated: true, reasoningSuccess: true, verificationSuccess: false });
         } finally { spy.mockRestore(); }
     });
-    it('gives direct supported facts GREEN even when the verifier would prefer a longer answer', async () => {
-        const h = harness([plan(), audit(base, [fact], { helpful: false })]);
-        expect((await h.brain.generate(request())).risk).toBe('GREEN');
+    it('repairs a material quality defect without calling it a factual safety failure', async () => {
+        const better = { ...base, reply: 'A2 measures 59.4 × 42 cm, roughly 60 cm along the long edge.' };
+        const h = harness([plan(), audit(base, [fact], { helpful: false, issues: ['Explain which side is approximately 60 cm.'] }), better, audit(better, [{ ...fact, span: better.reply }])]);
+        expect(await h.brain.generate(request())).toMatchObject({ risk: 'GREEN', replyText: better.reply });
+        expect(h.fetchImpl).toHaveBeenCalledTimes(4);
     });
     it('calculates GST from both confirmed operands and cannot retain it when tax is REVIEW', () => {
         const r = request();
@@ -157,10 +160,10 @@ describe('production structured Brain with mocked Responses transport (no paid m
         const changed = { ...r, businessBrain: { ...r.businessBrain, rules: r.businessBrain.rules.map(s => s.id === 'nz-gst' ? { ...s, status: 'REVIEW' as const } : s) } };
         expect(reasoningEvidence(changed).some(s => s.id === 'derived-nz-canvas-including-gst')).toBe(false);
     });
-    it('uses only the latest six messages throughout a same-thread conversation', async()=>{
+    it('retains product choices and market throughout a same-thread conversation', async()=>{
       const inputs=['Could you print my family photo on canvas?','What sizes could I choose?','Which is about sixty centimetres?','What would that cost?','Sydney','How long does production take?','Could I include five photos?','What happens if I change my mind after approving?'];
       const replies=['Yes, we make photo-print canvases.','A4, A3, A2, A1 and A0 are available.','A2 is 59.4 × 42 cm.','Will delivery be in New Zealand or Australia?','A2 Photo Print Canvas is AUD109.99.','The production target is approximately five working days after required inputs and applicable payment.','Standard photo print uses one source photo; separate photos can be combined in a digital painting where feasible.','Has printing already started?'];
-      const marketEvidenceTurns=[null,null,null,null,'t6','t4','t2',null] as const;
+      const marketEvidenceTurns=[null,null,null,null,'t9','t9','t9','t9'] as const;
       const conversation:ConversationTurn[]=[];
       for(let i=0;i<inputs.length;i++){
         const current=request().conversation[0];conversation.push({...current,providerMessageKey:`c${i}`,sentAt:new Date(Date.UTC(2026,8,5,0,i*2)).toISOString(),text:inputs[i]});
@@ -168,7 +171,7 @@ describe('production structured Brain with mocked Responses transport (no paid m
         const c:Candidate={mode:i===3||i===7?'CLARIFICATION':'ANSWER',reply:replies[i],market:marketEvidenceTurn?'AU':'UNKNOWN',marketEvidenceTurn};
         const claims:ClaimAudit['claims']=c.mode==='CLARIFICATION'?[]:[{...fact,span:c.reply,sources:i===5?['production-standard-target']:i===6?['product-config','design-capabilities']:['product-config'],kind:i===5?'process':'product'}];
         if(i===4)claims[0]={...fact,span:'AUD109.99',product:'photo-print-canvas',orderReference:null,kind:'price',sources:['au-photo-canvas-prices'],marketDependent:true,amountMinor:10999,currency:'AUD',size:'A2',numericPath:'pricesMinor.A2'};
-        const expectedTurns=Math.min(6,i*2+1);
+        const expectedTurns=i*2+1;
         const h=harness([plan(c),audit(c,claims,{relevantCustomerTurnIds:[`t${expectedTurns}`],openIssue:i===7?'POLICY_ENTITLEMENT':'NONE'})]);
         const decision=await h.brain.generate({...request(),conversation:[...conversation]});expect(decision.risk).toBe('GREEN');
         const sent=JSON.parse(JSON.parse(String(h.fetchImpl.mock.calls[0][1]?.body)).input[1].content[0].text);expect(sent.turns).toHaveLength(expectedTurns);expect(sent.activeCustomerTurn.text).toBe(inputs[i]);
@@ -207,4 +210,44 @@ describe('production structured Brain with mocked Responses transport (no paid m
         expect(h.fetchImpl).not.toHaveBeenCalled();
         expect(h.tools.execute).not.toHaveBeenCalled();
     });
+    it('retains earlier destination and selections beyond six messages without claiming missing context is complete', async () => {
+        const h = harness([plan(), audit()]);
+        await h.brain.generate(request([
+            ['customer', 'I am in Sydney and would like A2 photo canvas.'], ['staff', 'Understood.'],
+            ['customer', 'Will I see a proof?'], ['staff', 'Yes.'],
+            ['customer', 'Can it be landscape?'], ['staff', 'Yes.'], ['customer', 'How much is that?'],
+        ]));
+        const sent = JSON.parse(JSON.parse(String(h.fetchImpl.mock.calls[0][1]?.body)).input[1].content[0].text);
+        expect(sent.turns[0].text).toContain('Sydney');
+        expect(sent.turns[0].text).toContain('A2 photo canvas');
+        expect(sent.turns).toHaveLength(7);
+    });
+    it('delivers the approved business voice to generation and quality repair', async () => {
+        const r = request();
+        const voice = { ...r.businessBrain.voice, style: ['Calm and attentive'], responsePattern: 'Answer each requested edit before the next step.' };
+        const h = harness([plan(), audit(base, [fact], { unnecessaryQuestion: true }), base, audit()]);
+        await h.brain.generate({ ...r, businessBrain: { ...r.businessBrain, voice } });
+        const sent = h.fetchImpl.mock.calls.map(call => JSON.parse(String(call[1]?.body)));
+        expect(JSON.stringify(sent[0].input)).toContain('Calm and attentive');
+        expect(JSON.stringify(sent[2].input)).toContain('Answer each requested edit before the next step.');
+    });
+    it('never sends an unsupported quality rewrite even when it sounds more helpful', async () => {
+        const fabricated = { ...base, reply: 'We guarantee delivery tomorrow.' };
+        const h = harness([plan(), audit(base, [fact], { helpful: false }), fabricated,
+            audit(fabricated, [{ ...fact, span: fabricated.reply, kind: 'delivery_promise', liveRequired: true }])]);
+        expect(await h.brain.generate(request())).toMatchObject({ risk: 'RED', nextAction: 'HUMAN_REVIEW' });
+        expect(h.fetchImpl).toHaveBeenCalledTimes(4);
+    });
+
+    it.each(['rewrite', 'verification'])('preserves a verified draft for review when quality %s fails', async (phase) => {
+        const h = harness([plan(), audit(base, [fact], { helpful: false })]);
+        const outputs = [plan(), audit(base, [fact], { helpful: false }), ...(phase === 'verification' ? [base] : [])];
+        let call = 0;
+        h.fetchImpl.mockImplementation(async () => {
+            if (call >= outputs.length) throw new DOMException('offline', 'TimeoutError');
+            return Response.json({ model: 'gpt-5.6-luna', status: 'completed', output_text: JSON.stringify(outputs[call++]) });
+        });
+        expect(await h.brain.generate(request())).toMatchObject({ risk: 'YELLOW', replyText: base.reply, nextAction: 'HUMAN_REVIEW', reasons: expect.arrayContaining(['reply_quality_requires_review']) });
+    });
+
 });

@@ -22,14 +22,18 @@ import type { getDatabase } from "@/server/db/client";
 import {
   checkoutSessions,
   orderAddresses,
+  orderItems,
   orderNotificationOutbox,
   orders,
   paymentLedgerEntries,
   paymentAttemptCoreColumns,
   paymentAttempts,
+  productionJobItems,
+  productionJobs,
   webhookEvents,
 } from "@/server/db/schema";
 import { enqueueInternalNotifications } from "@/server/notifications/drizzle-internal-notification-outbox-repository";
+import { buildWebProductionJobSnapshot } from "@/server/orders/drizzle-order-repository";
 import type {
   OrderPaymentStatus,
   PaymentAttemptStatus,
@@ -264,6 +268,54 @@ async function loadAddresses(
     .select()
     .from(orderAddresses)
     .where(eq(orderAddresses.orderId, orderId));
+}
+
+async function ensurePaidWebOrderProductionJob(
+  transaction: Transaction,
+  order: OrderRow,
+  now: Date,
+) {
+  if (order.paymentStatus !== "paid" && order.paymentStatus !== "refunded") return;
+  const [existing] = await transaction.select({ id: productionJobs.id })
+    .from(productionJobs)
+    .where(eq(productionJobs.orderId, order.id))
+    .limit(1);
+  if (existing) return;
+
+  const [addresses, items] = await Promise.all([
+    loadAddresses(transaction, order.id),
+    transaction.select({
+      id: orderItems.id,
+      productTitle: orderItems.productTitle,
+      sizeLabel: orderItems.sizeLabel,
+      quantity: orderItems.quantity,
+      designText: orderItems.designText,
+      notes: orderItems.notes,
+      neededDate: orderItems.neededDate,
+      urgentServiceConfirmed: orderItems.urgentServiceConfirmed,
+      bundleComponents: orderItems.bundleComponents,
+    }).from(orderItems)
+      .where(eq(orderItems.orderId, order.id))
+      .orderBy(asc(orderItems.position)),
+  ]);
+  const snapshot = buildWebProductionJobSnapshot({
+    order,
+    items,
+    billingAddress: addressFor(addresses, "billing"),
+    deliveryAddress: addressFor(addresses, "delivery"),
+    deliveryMethod: order.deliveryMethod,
+    orderItemIds: items.map(({ id }) => id),
+    now,
+    paymentStatus: order.paymentStatus,
+  });
+  if (!snapshot) return;
+  const [job] = await transaction.insert(productionJobs)
+    .values(snapshot.job)
+    .returning({ id: productionJobs.id });
+  await transaction.insert(productionJobItems).values(snapshot.items.map((item) => ({
+    ...item,
+    jobId: job.id,
+  })));
 }
 
 async function loadDirectPaymentEvidence(
@@ -587,6 +639,7 @@ async function applyLockedVerifiedResult(
   assertVerifiedResult(order, attempt, input.result);
 
   if (order.paymentStatus === "refunded") {
+    await ensurePaidWebOrderProductionJob(transaction, order, await databaseNow(transaction));
     const addresses = await loadAddresses(transaction, order.id);
     const evidence = evidenceForResult(
       await loadDirectPaymentEvidence(transaction, attempt.id, websiteAnalyticsV2Enabled),
@@ -607,6 +660,7 @@ async function applyLockedVerifiedResult(
     input.result.status,
   );
   if (order.paymentStatus === "paid" && incoming !== "refunded") {
+    await ensurePaidWebOrderProductionJob(transaction, order, await databaseNow(transaction));
     const addresses = await loadAddresses(transaction, order.id);
     const evidence = evidenceForResult(
       await loadDirectPaymentEvidence(transaction, attempt.id, websiteAnalyticsV2Enabled),
@@ -658,6 +712,9 @@ async function applyLockedVerifiedResult(
     .set({ paymentStatus: orderStatus, updatedAt: now })
     .where(eq(orders.id, order.id))
     .returning();
+  if (updatedOrder.paymentStatus === "paid" || order.paymentStatus === "paid") {
+    await ensurePaidWebOrderProductionJob(transaction, updatedOrder, now);
+  }
   if (orderStatus === "paid") {
     await transaction.delete(orderNotificationOutbox).where(and(
       eq(orderNotificationOutbox.orderId, order.id),

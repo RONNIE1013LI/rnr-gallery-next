@@ -3,7 +3,7 @@ import compiledKnowledge from "@/server/customer-service/knowledge/compiled-know
 import { createTurnRecoveryHandler } from "./route-handler";
 
 export const runtime = "nodejs";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 async function handle(request: Request) {
   const customerService = createCustomerServiceRuntime();

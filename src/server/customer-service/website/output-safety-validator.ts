@@ -220,6 +220,17 @@ function hasRealtimeBusinessClaim(clause: Clause) {
   );
 }
 
+// Transport-independent protections; business claims are evaluated by the shared brain.
+export function validateReplyPublicSurface(draft: string):
+  Readonly<{ ok: true }> | Readonly<{ ok: false; code: WebsiteOutputSafetyCode }> {
+  const value = normalizeWebsiteOutput(draft);
+  const clauses = clausesFor(value);
+  if (hasExternalTarget(value)) return { ok: false, code: "external_url" };
+  if (hasInternalDisclosure(clauses)) return { ok: false, code: "internal_instruction_disclosure" };
+  if (hasPrivateThirdPartyDisclosure(value, clauses)) return { ok: false, code: "private_case_disclosure" };
+  return { ok: true };
+}
+
 export function validateWebsitePublicOutput(
   draft: string,
   intent: CustomerServiceIntent,
@@ -227,9 +238,8 @@ export function validateWebsitePublicOutput(
   const value = normalizeWebsiteOutput(draft);
   const clauses = clausesFor(value);
 
-  if (hasExternalTarget(value)) return { ok: false, code: "external_url" };
-  if (hasInternalDisclosure(clauses)) return { ok: false, code: "internal_instruction_disclosure" };
-  if (hasPrivateThirdPartyDisclosure(value, clauses)) return { ok: false, code: "private_case_disclosure" };
+  const surface = validateReplyPublicSurface(draft);
+  if (!surface.ok) return surface;
 
   for (const clause of clauses.slice(1)) {
     if (isAllowedConditionalProcess(clause, intent)) continue;
