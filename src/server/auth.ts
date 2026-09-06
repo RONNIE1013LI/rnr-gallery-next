@@ -13,6 +13,7 @@ import {
 } from "@/server/auth/config";
 import { getSocialProviderOptions } from "@/server/auth/social-provider-config";
 import { createPasswordResetEmailSender } from "@/server/auth/password-reset-email";
+import { getWebsiteChatAuthOptions } from "@/server/auth/website-chat-storage";
 
 const authConfig = parseAuthConfig();
 const localOAuthProxyOptions = getLocalOAuthProxyOptions(
@@ -21,6 +22,7 @@ const localOAuthProxyOptions = getLocalOAuthProxyOptions(
 );
 
 export const auth = betterAuth({
+  ...getWebsiteChatAuthOptions(),
   appName: "R&R Gallery",
   baseURL: getBetterAuthBaseURL(authConfig, process.env),
   secret: authConfig.secret,

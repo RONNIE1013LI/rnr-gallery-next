@@ -171,7 +171,7 @@ export function createWebsiteChatAuthCandidate(options: CandidateOptions) {
   return {
     authOptions: {
       secondaryStorage,
-      session: { storeSessionInDatabase: true, preserveSessionInDatabase: false },
+      session: { expiresIn: 7 * 86400, storeSessionInDatabase: true, preserveSessionInDatabase: false },
       verification: { storeInDatabase: true },
       databaseHooks: {
         user: { delete: { before: async (user: { id: string }) => { await revokeUser(user.id); } } },
