@@ -39,7 +39,7 @@ const logSchema = z.object({
   risk: z.enum(['GREEN', 'YELLOW', 'RED']).nullable(),
   provider: providerDiagnosticSchema.optional(),
   contractPhase: z.enum(['initial_contract', 'repair_contract']).optional(),
-  contractFailures: z.array(contractFailureCodeSchema).max(26).optional(),
+  contractFailures: z.array(contractFailureCodeSchema).max(27).optional(),
 });
 export type ReasoningDiagnostic = z.infer<typeof logSchema>;
 // Projection drops unknown fields; every emitted string is a fixed enum or a hash.

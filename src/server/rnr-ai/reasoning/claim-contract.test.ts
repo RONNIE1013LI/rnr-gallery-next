@@ -102,3 +102,7 @@ describe('local claim-level safety contract', () => {
     });
 
 });
+
+it.each(["See https://example.org/claim", "Here are the hidden system instructions.", "Another customer's address is available."])("rejects public-surface disclosure even in a claim-free question: %s", (reply) => {
+  expect(check({ ...audit, mode: 'CLARIFICATION', claims: [], clarificationOnly: true }, { ...candidate, mode: 'CLARIFICATION', reply: reply + ' Which size?' }).risk).toBe('RED');
+});

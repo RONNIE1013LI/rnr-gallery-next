@@ -32,6 +32,6 @@ export function reasoningContext(request: RnrAiRequest) {
     // IDs are local ordinal references: no external customer/message identifiers reach the model.
     const turns = assembled.turns.map((turn, index) => ({ id: `t${index + 1}`, role: turn.role, text: turn.text, sentAt: turn.sentAt, attachmentOrdinals: turn.attachmentOrdinals }));
     const resolvedIndex = assembled.turns.findLastIndex(t => t.role === 'automation' && t.reviewResolved === true);
-    return { turns, activeCustomerTurn: turns.at(-1), resolvedThrough: resolvedIndex >= 0 ? turns[resolvedIndex].id : null,
+    return { pageContext: request.pageContext ?? null, turns, activeCustomerTurn: turns.at(-1), resolvedThrough: resolvedIndex >= 0 ? turns[resolvedIndex].id : null,
         authenticatedCustomer: !!request.toolContext.customerReference, compacted: assembled.compacted, incompleteMaterialContext: assembled.incompleteMaterialContext };
 }

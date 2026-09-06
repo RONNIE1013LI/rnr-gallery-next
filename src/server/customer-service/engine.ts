@@ -13,7 +13,7 @@ import {
 import type { AttachmentProcessor } from "./attachments/attachment-processor";
 import type { NormalizedAttachment } from "./attachments/types";
 import type { AiProvider } from "./providers/ai-provider";
-import type { CustomerServiceRepository } from "./repositories/customer-service-repository";
+import type { CustomerServiceRepository, DraftInput } from "./repositories/customer-service-repository";
 import type { DraftGenerationRequest, DraftGenerationResult } from "./types";
 import { sanitizeWebsiteModelInput } from "./website/model-input-sanitizer";
 import { classifyAcknowledgement } from "./conversation/acknowledgement";
@@ -257,6 +257,73 @@ export class CustomerServiceEngine {
     return { status: "image_review_required", attemptId };
   }
 
+  private async generateSharedWebsiteDraft(
+    request: DraftGenerationRequest,
+    input: DraftInput,
+    attachmentSourceContext?: readonly NormalizedAttachment[],
+  ): Promise<DraftGenerationResult> {
+    const current = sanitizeWebsiteModelInput(input.current.text ?? "");
+    const intent = detectIntent(current.text); // Attempt telemetry only; the shared brain makes the decision.
+    const image = await this.repository.selectImageContext(request.messageId);
+    if (current.reviewRequired || image || attachmentSourceContext?.length) {
+      const attemptId = await this.repository.createGateBlockedAttempt({
+        messageId: request.messageId, trigger: request.trigger, intent, riskLevel: "high",
+        gateResult: current.reviewRequired ? "unresolved" : "pilot_limit",
+        gateReasons: [current.reviewRequired ? "website_sensitive_input" : image?.hasUnsupportedAttachments
+          ? "unsupported_attachment" : "image_manual_review_required"],
+        knowledgeVersion: this.knowledge.knowledgeVersion,
+      });
+      return { status: current.reviewRequired ? "gate_blocked" : "image_review_required", attemptId };
+    }
+    const dailyScopeKey = localDateScopeKey();
+    const reservation = await this.repository.reserveProviderAttempt({
+      messageId: request.messageId, trigger: request.trigger, intent, riskLevel: "medium",
+      gateReasons: ["shared_brain_verification_required"], knowledgeSources: [],
+      knowledgeVersion: this.knowledge.knowledgeVersion,
+      reservationMicrousd: this.budget.reservationMicrousd, dailyScopeKey,
+      dailyHardStopMicrousd: this.budget.dailyHardStopMicrousd,
+      totalHardStopMicrousd: this.budget.totalHardStopMicrousd,
+      websiteDailyWarningMicrousd: this.budget.websiteDailyWarningMicrousd,
+      websiteDailyHardStopMicrousd: this.budget.websiteDailyHardStopMicrousd,
+      websiteTotalHardStopMicrousd: this.budget.websiteTotalHardStopMicrousd,
+    });
+    if (reservation.status !== "reserved") return { status: reservation.status, attemptId: reservation.attemptId };
+    const attemptId = reservation.attemptId;
+    const invocation = await this.repository.confirmProviderInvocation({ attemptId, dailyScopeKey });
+    if (invocation.status === "human_reply_received") return { status: "human_reply_received", attemptId };
+    try {
+      const generated = await this.websiteBrain!.generate({
+        current: { ...input.current, text: current.text },
+        context: input.context.map((turn) => ({ ...turn, text: sanitizeWebsiteModelInput(turn.text).text })),
+        expectedIntent: intent,
+      });
+      const decision = generated.decision;
+      const ready = decision.risk === "GREEN" && decision.nextAction === "AUTO_REPLY_ELIGIBLE"
+        && Boolean(decision.replyText?.trim()) && generated.text === decision.replyText;
+      const silent = decision.risk === "GREEN" && decision.nextAction === "NO_REPLY";
+      const status = ready ? "draft_ready" : silent ? "abandoned" : "output_blocked";
+      await this.repository.completeProviderAttempt({
+        attemptId, status, provider: generated.provider, model: generated.model,
+        sharedBrainDecision: decision,
+        ...(ready ? { draftText: decision.replyText! } : {}),
+        validatorCodes: ready || silent ? [] : ["shared_brain_review_required"],
+        inputTokens: generated.usage.inputTokens, cachedInputTokens: generated.usage.cachedInputTokens,
+        outputTokens: generated.usage.outputTokens, estimatedCostMicrousd: generated.estimatedCostMicrousd,
+        latencyMs: generated.latencyMs, dailyScopeKey,
+      });
+      return { status: silent ? "no_reply_needed" : ready ? "draft_ready" : "output_blocked", attemptId };
+    } catch (error) {
+      await this.repository.completeProviderAttempt({
+        attemptId, status: "provider_error", provider: "openai", model: "gpt-5.6-luna",
+        validatorCodes: [], inputTokens: 0, cachedInputTokens: 0, outputTokens: 0,
+        estimatedCostMicrousd: null, latencyMs: 0, dailyScopeKey,
+        providerErrorCode: error instanceof Error && /^[a-z][a-z0-9_]{0,119}$/.test(error.message)
+          ? error.message : "provider_error",
+      });
+      return { status: "provider_error", attemptId };
+    }
+  }
+
   async generateDraft(
     request: DraftGenerationRequest,
     attachmentSourceContext?: readonly NormalizedAttachment[],
@@ -278,6 +345,9 @@ export class CustomerServiceEngine {
         knowledgeVersion: this.knowledge.knowledgeVersion,
       });
       return { status: "image_review_required", attemptId };
+    }
+    if (draftInput.current.channel === "website" && this.websiteBrain) {
+      return this.generateSharedWebsiteDraft(request, draftInput, attachmentSourceContext);
     }
     let conversationState = resolveConversationState({
       currentText: draftInput.current.text,
@@ -474,13 +544,7 @@ export class CustomerServiceEngine {
       return { status: "human_reply_received", attemptId: reservation.attemptId };
     }
     try {
-      const generated = draftInput.current.channel === "website" && this.websiteBrain
-        ? await this.websiteBrain.generate({
-          current: draftInput.current,
-          context: providerContext,
-          expectedIntent: gate.intent,
-        })
-        : await this.provider.generate(prompt);
+      const generated = await this.provider.generate(prompt);
       let candidateText = generated.text;
       let websiteRendererProof: Readonly<{
         decision: WebsiteDecision;

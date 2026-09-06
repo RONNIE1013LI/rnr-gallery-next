@@ -40,6 +40,8 @@ export type RnrAiRequest = Readonly<{
   market: "NZ" | "AU" | "UNKNOWN";
   conversation: readonly ConversationTurn[];
   attachments: readonly VerifiedImageInput[];
+  /** Page selection is a reference hint, never customer destination or business evidence. */
+  pageContext?: Readonly<{ productKey?: string; category: "canvas" | "banners" }> | null;
   businessBrain: CompiledBusinessBrain;
   toolContext: Readonly<{
     conversationKeyHash: string;

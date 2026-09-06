@@ -213,12 +213,12 @@ const attachmentContext = [{
 }];
 
 describe("CustomerServiceEngine", () => {
-  it("uses the complete sanitized Website transcript through the shared brain without publishing raw model text", async () => {
+  it("uses the complete sanitized Website transcript through the shared brain and retains the verified shared reply", async () => {
     const raw = "Can you explain the design process? Email tina@example.com.";
     const websiteBrain = {
-      generate: vi.fn(async () => providerResult(websiteDecision({
-        allowed_facts: ["DESIGN_INPUTS", "DESIGN_DRAFT_REVIEW_BEFORE_PRINTING"],
-      }))),
+      generate: vi.fn(async () => ({ ...providerResult("Thank you for sharing this with us. We can combine your photos."),
+        decision: { risk: "GREEN" as const, intent: "design_process", replyText: "Thank you for sharing this with us. We can combine your photos.", reasons: [], claims: [], toolEvidence: [], nextAction: "AUTO_REPLY_ELIGIBLE" as const },
+      })),
     };
     const current = setup(raw, { websiteBrain });
     const fullInput = {
@@ -246,8 +246,30 @@ describe("CustomerServiceEngine", () => {
     }));
     expect(current.provider.generate).not.toHaveBeenCalled();
     expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({
-      draftText: "We’ll collect your photos, wording, theme and colour preferences.\nWe’ll then prepare a design draft for you to review before printing.",
+      draftText: "Thank you for sharing this with us. We can combine your photos.",
+      sharedBrainDecision: expect.objectContaining({ risk: "GREEN" }),
     }));
+  });
+
+  it.each(["YELLOW", "RED"] as const)("retains shared %s review evidence without making a publishable draft", async (risk) => {
+    const decision = { risk, intent: "refund_question", replyText: "Has printing started?", reasons: ["reply_quality_requires_review"], claims: [], toolEvidence: [], nextAction: "HUMAN_REVIEW" as const };
+    const websiteBrain = { generate: vi.fn(async () => ({ ...providerResult(decision.replyText), decision })) };
+    const current = setup("Can I get a refund?", { websiteBrain });
+    current.repository.loadDraftInput.mockResolvedValue({ current: { id: "message-1", text: "Can I get a refund?", channel: "website" }, context: [{ role: "customer", text: "Can I get a refund?", receivedAt: "2026-09-06T00:00:00Z" }] });
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" })).resolves.toMatchObject({ status: "output_blocked" });
+    expect(current.policyGate).not.toHaveBeenCalled();
+    expect(current.outputValidator).not.toHaveBeenCalled();
+    expect(current.repository.completeProviderAttempt).toHaveBeenCalledWith(expect.objectContaining({ sharedBrainDecision: decision, status: "output_blocked" }));
+    expect(current.repository.completeProviderAttempt.mock.calls[0][0].draftText).toBeUndefined();
+  });
+
+  it.each(["budget_blocked", "human_reply_received"] as const)("preserves %s before shared generation", async (status) => {
+    const websiteBrain = { generate: vi.fn() };
+    const current = setup("Can you combine photos?", { websiteBrain });
+    current.repository.loadDraftInput.mockResolvedValue({ current: { id: "message-1", text: "Can you combine photos?", channel: "website" }, context: [] });
+    current.repository.reserveProviderAttempt.mockResolvedValue({ status, attemptId: "blocked" });
+    await expect(current.engine.generateDraft({ messageId: "message-1", trigger: "webhook_after" })).resolves.toEqual({ status, attemptId: "blocked" });
+    expect(websiteBrain.generate).not.toHaveBeenCalled();
   });
 
   it("generates a helpful clarification for a broad pricing question after loading the catalogue", async () => {

@@ -1,3 +1,4 @@
+import { validateReplyPublicSurface } from "@/server/customer-service/website/output-safety-validator";
 import { z } from 'zod';
 export const candidateSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), reply: z.string().min(1), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable() }).strict();
 export type Candidate = z.infer<typeof candidateSchema>;
@@ -19,7 +20,7 @@ export type Turn = {
     text: string;
 };
 export const contractFailureCodes = [
-    'semantic_verification_failed', 'uncovered_money_claim', 'internal_error_language',
+    'unsafe_public_output', 'semantic_verification_failed', 'uncovered_money_claim', 'internal_error_language',
     'response_mode_disagreement', 'market_disagreement', 'market_source_not_customer',
     'invalid_active_context_source', 'unresolved_issue_requires_clarification_or_review',
     'order_answer_without_verified_state', 'not_claim_free_clarification',
@@ -51,6 +52,7 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
     failures: ContractFailureCode[];
 } {
     const failures: ContractFailureCode[] = [];
+    if (!validateReplyPublicSurface(candidate.reply).ok) failures.push('unsafe_public_output');
     const byId = new Map(sources.map(s => [s.id, s]));
     const customerIds = new Set(turns.filter(t => t.role === 'customer').map(t => t.id));
     const genuineClarification = candidate.mode === 'CLARIFICATION' && audit.mode === 'CLARIFICATION' && audit.clarificationOnly && audit.claims.length === 0 && /[?？]/.test(candidate.reply);
