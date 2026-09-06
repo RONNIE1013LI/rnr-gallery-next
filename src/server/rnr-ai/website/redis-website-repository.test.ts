@@ -283,3 +283,29 @@ describe("website Redis failure isolation", () => {
     );
   });
 });
+
+describe("atomic website charge reconciliation", () => {
+  it("settles once after a newer turn cancels the old turn", async () => {
+    const f = fixture(),
+      first = await f.repository.ingestConversationEvent(f.event());
+    if (first.status !== "turn_pending") throw Error();
+    const lease = (await f.repository.claimTurn(first.turnId))!;
+    const limits = { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 };
+    expect(
+      await f.repository.reserveProviderBudget(lease, limits, 2500, "call1"),
+    ).toBe(true);
+    const second = await f.repository.ingestConversationEvent(f.event("new"));
+    if (second.status !== "turn_pending") throw Error();
+    await Promise.all([
+      f.repository.settleProviderCallBudget(lease, "call1", 500),
+      f.repository.settleProviderCallBudget(lease, "call1", 500),
+    ]);
+    const next = (await f.repository.claimTurn(second.turnId))!;
+    expect(
+      await f.repository.reserveProviderBudget(next, limits, 2500, "call2"),
+    ).toBe(true);
+    expect(
+      await f.repository.reserveProviderBudget(next, limits, 1, "call3"),
+    ).toBe(false);
+  });
+});

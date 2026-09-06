@@ -119,3 +119,130 @@ describe("website conservative per-attempt spend bound", () => {
     expect(transport).not.toHaveBeenCalled();
   });
 });
+
+describe("website per-attempt usage reconciliation", () => {
+  it("refunds unused allowance from complete response usage and leaves original response readable", async () => {
+    const f = fixture(),
+      turn = await f.repository.ingestConversationEvent(f.event());
+    if (turn.status !== "turn_pending") throw Error();
+    const lease = (await f.repository.claimTurn(turn.turnId))!;
+    const payload = {
+      model: "gpt-5.6-luna",
+      usage: {
+        input_tokens: 100,
+        input_tokens_details: { cached_tokens: 20, cache_write_tokens: 30 },
+        output_tokens: 10,
+      },
+    };
+    const transport = vi.fn(async () => Response.json(payload));
+    const budgeted = createBudgetedWebsiteFetch({
+      repository: f.repository,
+      lease,
+      limits: { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 },
+      enabled: () => true,
+      fetchImpl: transport,
+    });
+    const init = {
+      body: JSON.stringify({
+        model: "gpt-5.6-luna",
+        max_output_tokens: 1200,
+        input: "hello",
+      }),
+    };
+    const response = await budgeted(
+      "https://api.openai.com/v1/responses",
+      init,
+    );
+    expect(await response.json()).toEqual(payload);
+    await budgeted("https://api.openai.com/v1/responses", init);
+    expect(transport).toHaveBeenCalledTimes(2);
+    // 50 uncached +20 cached +30 cache writes +10 output =30 estimated microusd/call.
+    expect(
+      await f.repository.reserveProviderBudget(
+        lease,
+        { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 },
+        2940,
+        "remaining",
+      ),
+    ).toBe(true);
+    expect(
+      await f.repository.reserveProviderBudget(
+        lease,
+        { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 },
+        1,
+        "overflow",
+      ),
+    ).toBe(false);
+  });
+  it("retains allowance when cache-write usage is missing", async () => {
+    const f = fixture(),
+      turn = await f.repository.ingestConversationEvent(f.event());
+    if (turn.status !== "turn_pending") throw Error();
+    const lease = (await f.repository.claimTurn(turn.turnId))!;
+    const transport = vi.fn(async () =>
+      Response.json({
+        model: "gpt-5.6-luna",
+        usage: {
+          input_tokens: 100,
+          input_tokens_details: { cached_tokens: 20 },
+          output_tokens: 10,
+        },
+      }),
+    );
+    const budgeted = createBudgetedWebsiteFetch({
+      repository: f.repository,
+      lease,
+      limits: { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 },
+      enabled: () => true,
+      fetchImpl: transport,
+    });
+    const init = {
+      body: JSON.stringify({ model: "gpt-5.6-luna", max_output_tokens: 1200 }),
+    };
+    await budgeted("https://api.openai.com/v1/responses", init);
+    await expect(
+      budgeted("https://api.openai.com/v1/responses", init),
+    ).rejects.toThrow();
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("website reconciliation outage", () => {
+  it("returns the original response and retains allowance if Redis settlement fails", async () => {
+    const f = fixture(),
+      turn = await f.repository.ingestConversationEvent(f.event());
+    if (turn.status !== "turn_pending") throw Error();
+    const lease = (await f.repository.claimTurn(turn.turnId))!;
+    vi.spyOn(f.repository, "settleProviderCallBudget").mockRejectedValue(
+      Error("synthetic Redis outage"),
+    );
+    const payload = {
+      model: "gpt-5.6-luna",
+      usage: {
+        input_tokens: 100,
+        input_tokens_details: { cached_tokens: 20, cache_write_tokens: 30 },
+        output_tokens: 10,
+      },
+    };
+    const transport = vi.fn(async () => Response.json(payload));
+    const budgeted = createBudgetedWebsiteFetch({
+      repository: f.repository,
+      lease,
+      limits: { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 },
+      enabled: () => true,
+      fetchImpl: transport,
+    });
+    const init = {
+      body: JSON.stringify({ model: "gpt-5.6-luna", max_output_tokens: 1200 }),
+    };
+    expect(
+      await (
+        await budgeted("https://api.openai.com/v1/responses", init)
+      ).json(),
+    ).toEqual(payload);
+    await expect(
+      budgeted("https://api.openai.com/v1/responses", init),
+    ).rejects.toThrow();
+    expect(transport).toHaveBeenCalledTimes(1);
+  });
+});

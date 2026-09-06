@@ -196,4 +196,29 @@ describe.runIf(Boolean(url))("real Redis website Lua", () => {
     );
     expect(results.sort()).toEqual([false, true]);
   });
+  it("atomically reconciles one HTTP reservation once under concurrent settlement", async () => {
+    const { repository, event } = setup();
+    const turn = await repository.ingestConversationEvent(event());
+    if (turn.status !== "turn_pending") throw Error();
+    const lease = (await repository.claimTurn(turn.turnId))!;
+    const limits = { dailyHardStopMicrousd: 3000, totalHardStopMicrousd: 3000 };
+    expect(
+      await repository.reserveProviderBudget(
+        lease,
+        limits,
+        2500,
+        "reserved-call",
+      ),
+    ).toBe(true);
+    await Promise.all([
+      repository.settleProviderCallBudget(lease, "reserved-call", 500),
+      repository.settleProviderCallBudget(lease, "reserved-call", 500),
+    ]);
+    expect(
+      await repository.reserveProviderBudget(lease, limits, 2500, "next-call"),
+    ).toBe(true);
+    expect(
+      await repository.reserveProviderBudget(lease, limits, 1, "overflow-call"),
+    ).toBe(false);
+  });
 });

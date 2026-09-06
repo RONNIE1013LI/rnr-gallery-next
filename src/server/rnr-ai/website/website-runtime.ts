@@ -55,7 +55,8 @@ export function createWebsiteReplyRuntime(input: {
       !lease.takeover &&
       lease.attempts <= 3 &&
       !current.reviewRequired &&
-      (await input.repository.reserveProviderBudget(lease, budget));
+      (input.perCallBudget ||
+        (await input.repository.reserveProviderBudget(lease, budget)));
     if (admitted) {
       try {
         const result = await input.brain.generate(
@@ -253,14 +254,67 @@ export function createBudgetedWebsiteFetch(input: {
       (Buffer.byteLength(init.body, "utf8") + 4096) * 0.25 +
         body.max_output_tokens * 1.2,
     );
+    const chargeId = randomUUID();
     const reserved = await input.repository.reserveProviderBudget(
       input.lease,
       input.limits,
       allowance,
-      randomUUID(),
+      chargeId,
     );
     if (!reserved || !input.enabled())
       throw new SolProviderError("configuration");
-    return (input.fetchImpl ?? fetch)(url, init);
+    const response = await (input.fetchImpl ?? fetch)(url, init);
+    if (response.ok) {
+      try {
+        const cost = completeResponseUsageCost(await response.clone().json());
+        if (cost !== null)
+          await input.repository.settleProviderCallBudget(
+            input.lease,
+            chargeId,
+            cost,
+          );
+      } catch {
+        // Parsing/storage failure retains the reservation and must not replay a paid call.
+      }
+    }
+    return response;
   };
+}
+
+function completeResponseUsageCost(body: unknown): number | null {
+  if (!body || typeof body !== "object") return null;
+  const record = body as Record<string, unknown>;
+  if (
+    record.model !== "gpt-5.6-luna" ||
+    !record.usage ||
+    typeof record.usage !== "object"
+  )
+    return null;
+  const usage = record.usage as Record<string, unknown>,
+    details = usage.input_tokens_details;
+  if (!details || typeof details !== "object") return null;
+  const inputDetails = details as Record<string, unknown>;
+  const tokens = [
+    usage.input_tokens,
+    inputDetails.cached_tokens,
+    inputDetails.cache_write_tokens,
+    usage.output_tokens,
+  ];
+  if (
+    !tokens.every(
+      (value) =>
+        typeof value === "number" && Number.isSafeInteger(value) && value >= 0,
+    )
+  )
+    return null;
+  const [inputTokens, cachedInputTokens, cacheWriteTokens, outputTokens] =
+    tokens as number[];
+  if (cachedInputTokens + cacheWriteTokens > inputTokens) return null;
+  return estimateCostMicrousd({
+    model: "gpt-5.6-luna",
+    inputTokens,
+    cachedInputTokens,
+    cacheWriteTokens,
+    outputTokens,
+  });
 }

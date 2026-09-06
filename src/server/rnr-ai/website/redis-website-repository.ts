@@ -634,6 +634,12 @@ export class RedisWebsiteRepository
     }
     throw Error("website_redis_conflict_retry_required");
   }
+  private providerChargeKey(lease: WebsiteTurnLease, chargeId: string) {
+    return this.key(
+      "provider-charge",
+      `${lease.conversationId}\0${lease.leaseToken}\0${chargeId}`,
+    );
+  }
   async reserveProviderBudget(
     lease: WebsiteTurnLease,
     limits: WebsiteProviderBudget,
@@ -708,11 +714,70 @@ export class RedisWebsiteRepository
           this.write(key, c),
           this.write(dailyKey, (daily.value ?? 0) + reservation, 48 * 3600000),
           this.write(totalKey, (total.value ?? 0) + reservation, 0),
+          this.write(this.providerChargeKey(lease, chargeId), {
+            day,
+            reservation,
+            settled: false,
+          }),
         ],
         rates: [],
       });
       if (committed === -2) return false;
       if (committed === 1) return true;
+    }
+    throw Error("website_redis_conflict_retry_required");
+  }
+  async settleProviderCallBudget(
+    lease: WebsiteTurnLease,
+    chargeId: string,
+    costMicrousd: number,
+  ) {
+    if (!Number.isSafeInteger(costMicrousd) || costMicrousd < 0)
+      throw Error("website_budget_cost_invalid");
+    const chargeKey = this.providerChargeKey(lease, chargeId);
+    for (let attempt = 0; attempt < 12; attempt++) {
+      const charge = await this.read<{
+        day: string;
+        reservation: number;
+        settled: boolean;
+      }>(chargeKey);
+      if (!charge.value || charge.value.settled) return;
+      const dailyKey = this.key("budget", charge.value.day),
+        totalKey = this.key("budget", "total");
+      const [daily, total] = await Promise.all([
+        this.read<number>(dailyKey),
+        this.read<number>(totalKey),
+      ]);
+      // Missing counters cannot justify a refund. Keep the conservative reservation.
+      if (
+        daily.value === null ||
+        total.value === null ||
+        daily.value < charge.value.reservation ||
+        total.value < charge.value.reservation
+      )
+        return;
+      const delta = costMicrousd - charge.value.reservation;
+      if (
+        (await this.commit({
+          now: this.now(),
+          checks: [
+            [chargeKey, charge.raw],
+            [dailyKey, daily.raw],
+            [totalKey, total.raw],
+          ],
+          writes: [
+            this.write(chargeKey, {
+              ...charge.value,
+              settled: true,
+              costMicrousd,
+            }),
+            this.write(dailyKey, daily.value + delta, 48 * 3600000),
+            this.write(totalKey, total.value + delta, 0),
+          ],
+          rates: [],
+        })) === 1
+      )
+        return;
     }
     throw Error("website_redis_conflict_retry_required");
   }
