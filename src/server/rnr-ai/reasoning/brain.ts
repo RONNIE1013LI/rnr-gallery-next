@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { logReasoningDiagnostic, type DiagnosticReason, type DiagnosticStage, type ProviderDiagnostic } from '../diagnostics';
-import { candidateSchema, auditSchemaForSources, auditCoverageFeedback, checkSafetyContract, type Candidate, type EvidenceSource, type Turn } from './claim-contract';
+import { candidateSchema, auditSchemaForSources, auditCoverageFeedback, numericMentions, checkSafetyContract, type Candidate, type EvidenceSource, type Turn } from './claim-contract';
 import { generator, verifier, toolInstructions } from './instructions';
 import { reasoningContext, reasoningEvidence } from './evidence';
 import { SolProviderError, toolRequestSchema, type OpenAiSolProvider } from '../providers/openai-sol';
@@ -124,13 +124,13 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
         let candidate: Candidate = plan;
         const customerTurnIds = context.turns.filter(turn => turn.role === 'customer').map(turn => turn.id);
         stage = 'verification';
-        let audit = await modelCall(verifier, { ...data(), candidate }, auditSchemaForSources(evidence, customerTurnIds), 2400);
+        let audit = await modelCall(verifier, { ...data(), candidate, numericMentions: numericMentions(candidate.reply) }, auditSchemaForSources(evidence, customerTurnIds, candidate), 2400);
         verificationSuccess = true;
         stage = 'contract';
         const turns: Turn[] = context.turns.filter((t): t is typeof t & {
             role: 'customer' | 'staff';
         } => t.role === 'customer' || t.role === 'staff');
-        let contract = checkSafetyContract(candidate, audit, evidence, turns);
+        let contract = checkSafetyContract(candidate, audit, evidence, turns, true);
         trace(contract.failures.length ? 'verification_failure' : 'none', contract.risk, undefined, { phase: 'initial_contract', failures: contract.failures });
         // Quality is separate from factual risk, but a material defect still requires a
         // bounded rewrite and fresh verification before an autonomous reply.
@@ -140,17 +140,17 @@ export async function generateReasonedReply(request: RnrAiRequest, provider: Str
             try {
                 const repairAuditOnly = audit.safe && !needsQualityRepair() && contract.failures.length > 0
                     && contract.failures.every(failure => failure === 'uncovered_money_claim' || failure === 'claim_span_not_in_candidate');
-                const contractFeedback = repairAuditOnly ? { failures: contract.failures, ...auditCoverageFeedback(candidate, audit) } : null;
+                const contractFeedback = repairAuditOnly ? { failures: contract.failures, ...auditCoverageFeedback(candidate, audit, true) } : null;
                 verificationSuccess = false;
                 if (!repairAuditOnly) {
                     stage = 'repair';
                     candidate = await modelCall(generator, { ...data(), previousCandidate: candidate, verificationFeedback: contract.failures, qualityFeedback: { helpful: audit.helpful, unnecessaryQuestion: audit.unnecessaryQuestion }, issues: audit.issues }, candidateSchema, 1200);
                 }
                 stage = 'repair_verification';
-                audit = await modelCall(verifier, { ...data(), candidate, ...(contractFeedback ? { contractFeedback } : {}) }, auditSchemaForSources(evidence, customerTurnIds), 2400);
+                audit = await modelCall(verifier, { ...data(), candidate, numericMentions: numericMentions(candidate.reply), ...(contractFeedback ? { contractFeedback } : {}) }, auditSchemaForSources(evidence, customerTurnIds, candidate), 2400);
                 verificationSuccess = true;
                 stage = 'contract';
-                contract = checkSafetyContract(candidate, audit, evidence, turns);
+                contract = checkSafetyContract(candidate, audit, evidence, turns, true);
                 trace(contract.failures.length ? 'verification_failure' : 'none', contract.risk, undefined, { phase: 'repair_contract', failures: contract.failures });
             } catch (error) {
                 // A quality-only outage does not invalidate the original independent

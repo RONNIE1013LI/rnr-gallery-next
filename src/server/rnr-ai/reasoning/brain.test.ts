@@ -4,10 +4,10 @@ import { OpenAiSolProvider } from '../providers/openai-sol';
 import { loadBusinessBrain } from '../business-brain/loader';
 import { reasoningContext, reasoningEvidence } from './evidence';
 import type { RnrAiRequest, ConversationTurn, ToolEvidence } from '../types';
-import type { Candidate, ClaimAudit } from './claim-contract';
+import { numericMentions, type Candidate, type ClaimAudit } from './claim-contract';
 const base: Candidate = { mode: 'ANSWER', reply: 'A2 is 59.4 × 42 cm.', market: 'UNKNOWN', marketEvidenceTurn: null };
 const fact: ClaimAudit['claims'][number] = { span: base.reply, product: null, destination: null, orderReference: null, kind: 'product', sources: ['product-config'], marketDependent: false, amountMinor: null, currency: null, size: null, calculation: [], quantity: null, numericPath: null, liveRequired: false };
-function audit(candidate: Candidate = base, claims: ClaimAudit['claims'] = [fact], extra: Partial<ClaimAudit> = {}): ClaimAudit { return { mode: candidate.mode, market: candidate.market, marketEvidenceTurn: candidate.marketEvidenceTurn, openIssue: 'NONE', relevantCustomerTurnIds: ['t1'], claims, safe: true, helpful: true, clarificationOnly: candidate.mode === 'CLARIFICATION', customerInputRequest: candidate.mode === 'CLARIFICATION' ? candidate.reply : null, internalErrorLanguage: false, unnecessaryQuestion: false, issues: [], ...extra }; }
+function audit(candidate: Candidate = base, claims: ClaimAudit['claims'] = [fact], extra: Partial<ClaimAudit> = {}): ClaimAudit { return { mode: candidate.mode, market: candidate.market, marketEvidenceTurn: candidate.marketEvidenceTurn, openIssue: 'NONE', relevantCustomerTurnIds: ['t1'], claims: claims.map(claim => ['price', 'additional_fee', 'unit_rate', 'shipping_cost'].includes(claim.kind) ? { ...claim, amountMentionIds: claim.amountMentionIds ?? numericMentions(candidate.reply).filter(mention => mention.start >= candidate.reply.indexOf(claim.span) && mention.end <= candidate.reply.indexOf(claim.span) + claim.span.length && mention.amountMinor === claim.amountMinor).map(mention => mention.id) } : claim), safe: true, helpful: true, clarificationOnly: candidate.mode === 'CLARIFICATION', customerInputRequest: candidate.mode === 'CLARIFICATION' ? candidate.reply : null, internalErrorLanguage: false, unnecessaryQuestion: false, issues: [], ...extra }; }
 function request(texts: [
     ConversationTurn['role'],
     string
@@ -121,7 +121,7 @@ describe('production structured Brain with mocked Responses transport (no paid m
         const schema = JSON.parse(String(h.fetchImpl.mock.calls[2][1]?.body)).text.format.schema;
         expect(schema.properties.relevantCustomerTurnIds.items.enum).toEqual(['t1']);
         expect(schema.properties.marketEvidenceTurn.anyOf[0].enum).toEqual(['t1']);
-        for (const variant of schema.properties.claims.items.anyOf) {
+        for (const variant of schema.properties.claims.items.anyOf ?? [schema.properties.claims.items]) {
             expect(variant.properties.sources.items.enum).toContain('tool-1');
             expect(variant.properties.calculation.items.properties.sourceId.enum).toContain('tool-1');
         }
@@ -290,6 +290,13 @@ describe('audit coverage repair', () => {
             expect(payload.candidate).toMatchObject(c);
             expect(payload.contractFeedback).toMatchObject({ failures: ['uncovered_money_claim'], invalidClaimSpans: [] });
             expect(payload.contractFeedback.uncoveredText).toContain('Final total: AUD109.99.');
+            expect(payload.numericMentions).toEqual(numericMentions(c.reply));
+            for (const variant of sent.text.format.schema.properties.claims.items.anyOf) {
+                if (variant.properties.amountMentionIds) {
+                    expect(variant.required).toContain('amountMentionIds');
+                    expect(variant.properties.amountMentionIds.items.enum).toEqual(payload.numericMentions.map((mention: { id: string }) => mention.id));
+                }
+            }
             expect(JSON.stringify(spy.mock.calls)).not.toContain('AUD109.99');
             if (outcome === 'repeated omission') expect(result.reasons).toContain('uncovered_money_claim');
             if (outcome === 'unsupported new claim') expect(result.reasons).toContain('authenticated_live_evidence_required');
@@ -302,4 +309,23 @@ describe('audit coverage repair', () => {
         const payload = JSON.parse(JSON.parse(String(h.fetchImpl.mock.calls[2][1]?.body)).input[1].content[0].text);
         expect(payload.contractFeedback).toMatchObject({ failures: ['claim_span_not_in_candidate'], invalidClaimSpans: ['This span does not exist.'] });
     });
+});
+
+
+it('verifies the v10 bare fee table through the production transport and occurrence schema', async () => {
+    const c: Candidate = { mode: 'CLARIFICATION', market: 'AU', marketEvidenceTurn: 't1', reply: 'An A3 Digital Oil Painting Canvas has a base price of 79.99 AUD. People or pets fees are additional: 1: 40, 2: 60, 3: 85, 4: 110, 5: 130, or 6+: 25 per person. How many people or pets will be included?' };
+    const price: ClaimAudit['claims'][number] = { ...fact, product: 'digital-oil-painting-canvas', kind: 'price', span: 'An A3 Digital Oil Painting Canvas has a base price of 79.99 AUD.', marketDependent: true, amountMinor: 7999, currency: 'AUD', size: 'A3', numericPath: 'pricesMinor.A3', sources: ['au-oil-painting-canvas-prices'] };
+    const fees: ClaimAudit['claims'] = [40, 60, 85, 110, 130, 25].map((amount, i) => ({ ...price, kind: i === 5 ? 'unit_rate' : 'additional_fee', span: i === 5 ? '6+: 25 per person' : `${i + 1}: ${amount}`, amountMinor: amount * 100, quantity: i + 1, size: null, numericPath: i === 5 ? 'sixPlusPerPersonMinor' : `feesMinor.${i + 1}`, sources: ['au-people-pets-fees'] }));
+    const a = audit(c, [price, ...fees], { clarificationOnly: false, customerInputRequest: 'How many people or pets will be included?' });
+    const h = harness([plan(c), a]);
+    expect(await h.brain.generate(request([['customer', 'Australia. How much is an A3 oil painting canvas?']]))).toMatchObject({ risk: 'GREEN', replyText: c.reply });
+    expect(h.fetchImpl).toHaveBeenCalledTimes(2);
+});
+
+it('rejects a production monetary audit without occurrence bindings', async () => {
+    const c: Candidate = { ...base, reply: 'AUD109.99', market: 'AU', marketEvidenceTurn: 't1' };
+    const a = audit(c, [{ ...fact, span: c.reply, kind: 'price', amountMinor: 10999, currency: 'AUD', size: 'A2', numericPath: 'pricesMinor.A2', product: 'photo-print-canvas', sources: ['au-photo-canvas-prices'] }]);
+    delete a.claims[0].amountMentionIds;
+    const h = harness([plan(c), a]);
+    expect(await h.brain.generate(request([['customer', 'Australia. A2 price?']]))).toMatchObject({ risk: 'RED', replyText: null, reasons: ['verification_failure', 'structured_output_invalid'] });
 });

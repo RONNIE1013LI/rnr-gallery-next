@@ -206,53 +206,114 @@ it('allows an explicit six-plus per-person rate without treating it as a fee tot
     expect(check({ ...audit, claims: [{ ...rate, quantity: 3 }] }, c, sources).risk).toBe('RED');
 });
 
+const nativeAudit = { ...audit, claims: [{ ...audit.claims[0], amountMentionIds: ['n2'] }] };
 it('restricts audit references to available sources, including current live evidence', () => {
-    const schema = auditSchemaForSources([source], ['c1']);
-    expect(schema.safeParse(audit).success).toBe(true);
-    expect(schema.safeParse({ ...audit, claims: [{ ...audit.claims[0], sources: ['au-photo-print-canvas-prices'] }] }).success).toBe(false);
-    expect(schema.safeParse({ ...audit, claims: [{ ...audit.claims[0], calculation: [{ sourceId: 'invented', numericPath: 'priceMinor' }] }] }).success).toBe(false);
+    const schema = auditSchemaForSources([source], ['c1'], candidate);
+    expect(schema.safeParse(nativeAudit).success).toBe(true);
+    expect(schema.safeParse({ ...nativeAudit, claims: [{ ...nativeAudit.claims[0], sources: ['au-photo-print-canvas-prices'] }] }).success).toBe(false);
+    expect(schema.safeParse({ ...nativeAudit, claims: [{ ...nativeAudit.claims[0], calculation: [{ sourceId: 'invented', numericPath: 'priceMinor' }] }] }).success).toBe(false);
     const toolSource = { ...source, id: 'tool-1', kind: 'tool' as const };
-    expect(auditSchemaForSources([source, toolSource], ['c1']).safeParse({ ...audit, claims: [{ ...audit.claims[0], sources: ['tool-1'] }] }).success).toBe(true);
+    expect(auditSchemaForSources([source, toolSource], ['c1'], candidate).safeParse({ ...nativeAudit, claims: [{ ...nativeAudit.claims[0], sources: ['tool-1'] }] }).success).toBe(true);
 });
 
 
 it('restricts audit context references to actual customer turn IDs', () => {
-    const schema = auditSchemaForSources([source], ['c1', 'c3']);
-    expect(schema.safeParse({ ...audit, marketEvidenceTurn: 'c3', relevantCustomerTurnIds: ['c1', 'c3'] }).success).toBe(true);
-    expect(schema.safeParse({ ...audit, marketEvidenceTurn: 'staff2' }).success).toBe(false);
-    expect(schema.safeParse({ ...audit, relevantCustomerTurnIds: ['c1', 'staff2'] }).success).toBe(false);
+    const schema = auditSchemaForSources([source], ['c1', 'c3'], candidate);
+    expect(schema.safeParse({ ...nativeAudit, marketEvidenceTurn: 'c3', relevantCustomerTurnIds: ['c1', 'c3'] }).success).toBe(true);
+    expect(schema.safeParse({ ...nativeAudit, marketEvidenceTurn: 'staff2' }).success).toBe(false);
+    expect(schema.safeParse({ ...nativeAudit, relevantCustomerTurnIds: ['c1', 'staff2'] }).success).toBe(false);
 });
 
 it('requires complete bindings for calculated prices and fees without weakening amount validation', () => {
     const sources = reasoningEvidence({ channel: 'meta', market: 'AU', conversation: [], attachments: [], businessBrain: loadBusinessBrain(), toolContext: { conversationKeyHash: 'synthetic' } });
-    const schema = auditSchemaForSources(sources, ['c1']);
-    const sum = { ...audit.claims[0], span: 'AUD164.99', product: 'digital-oil-painting-canvas', amountMinor: 16499, size: 'A3', quantity: 3, numericPath: null, sources: ['au-oil-painting-canvas-prices', 'au-people-pets-fees'], calculation: [{ sourceId: 'au-oil-painting-canvas-prices', numericPath: 'pricesMinor.A3' }, { sourceId: 'au-people-pets-fees', numericPath: 'feesMinor.3' }] };
-    expect(schema.safeParse({ ...audit, claims: [sum] }).success).toBe(true);
+    const schema = auditSchemaForSources(sources, ['c1'], candidate);
+    const sum = { ...nativeAudit.claims[0], span: 'AUD164.99', product: 'digital-oil-painting-canvas', amountMinor: 16499, size: 'A3', quantity: 3, numericPath: null, sources: ['au-oil-painting-canvas-prices', 'au-people-pets-fees'], calculation: [{ sourceId: 'au-oil-painting-canvas-prices', numericPath: 'pricesMinor.A3' }, { sourceId: 'au-people-pets-fees', numericPath: 'feesMinor.3' }] };
+    expect(schema.safeParse({ ...nativeAudit, claims: [sum] }).success).toBe(true);
     for (const invalid of [{ quantity: null }, { quantity: 0 }, { quantity: 1.5 }, { size: null }, { amountMinor: null }, { currency: null }, { numericPath: 'pricesMinor.A3' }, { calculation: sum.calculation.slice(0, 1) }, { calculation: [...sum.calculation, sum.calculation[0]] }, { kind: 'product' }, { calculation: [{ ...sum.calculation[0], sourceId: 'invented' }, sum.calculation[1]] }]) {
-        expect(schema.safeParse({ ...audit, claims: [{ ...sum, ...invalid }] }).success).toBe(false);
+        expect(schema.safeParse({ ...nativeAudit, claims: [{ ...sum, ...invalid }] }).success).toBe(false);
     }
     const malicious = { ...sum, span: 'AUD1', amountMinor: 100 };
-    expect(schema.safeParse({ ...audit, claims: [malicious] }).success).toBe(true);
-    expect(check({ ...audit, claims: [malicious] }, { ...candidate, reply: malicious.span }, sources).failures).toContain('invalid_price_calculation');
+    expect(schema.safeParse({ ...nativeAudit, claims: [malicious] }).success).toBe(true);
+    expect(check({ ...nativeAudit, claims: [malicious] }, { ...candidate, reply: malicious.span }, sources).failures).toContain('invalid_price_calculation');
     const fee = { ...sum, kind: 'additional_fee' as const, span: 'AUD150', amountMinor: 15000, quantity: 6, size: null, sources: ['au-people-pets-fees'], calculation: [{ sourceId: 'au-people-pets-fees', numericPath: 'sixPlusPerPersonMinor' }] };
-    expect(schema.safeParse({ ...audit, claims: [fee] }).success).toBe(true);
+    expect(schema.safeParse({ ...nativeAudit, claims: [fee] }).success).toBe(true);
     for (const invalid of [{ quantity: null }, { quantity: 5 }, { amountMinor: null }, { currency: null }, { calculation: sum.calculation }]) {
-        expect(schema.safeParse({ ...audit, claims: [{ ...fee, ...invalid }] }).success).toBe(false);
+        expect(schema.safeParse({ ...nativeAudit, claims: [{ ...fee, ...invalid }] }).success).toBe(false);
     }
     const rate = { ...fee, kind: 'unit_rate', amountMinor: 2500, numericPath: 'sixPlusPerPersonMinor', calculation: [] };
-    expect(schema.safeParse({ ...audit, claims: [rate] }).success).toBe(true);
+    expect(schema.safeParse({ ...nativeAudit, claims: [rate] }).success).toBe(true);
 });
 
 
 it.each(['price', 'additional_fee', 'unit_rate', 'shipping_cost'] as const)('requires direct monetary bindings for %s instead of accepting the ordinary branch', kind => {
-    const schema = auditSchemaForSources([source], ['c1']);
-    const direct = { ...audit.claims[0], kind };
-    expect(schema.safeParse({ ...audit, claims: [direct] }).success).toBe(true);
+    const schema = auditSchemaForSources([source], ['c1'], candidate);
+    const direct = { ...nativeAudit.claims[0], kind };
+    expect(schema.safeParse({ ...nativeAudit, claims: [direct] }).success).toBe(true);
     for (const missing of [{ numericPath: null }, { numericPath: '' }, { amountMinor: null }, { currency: null }]) {
-        expect(schema.safeParse({ ...audit, claims: [{ ...direct, ...missing }] }).success).toBe(false);
+        expect(schema.safeParse({ ...nativeAudit, claims: [{ ...direct, ...missing }] }).success).toBe(false);
     }
     // A structurally bound citation still cannot attest an invented amount.
     const invented = { ...direct, amountMinor: 22999, span: 'AUD229.99' };
-    expect(schema.safeParse({ ...audit, claims: [invented] }).success).toBe(true);
-    expect(check({ ...audit, claims: [invented] }, { ...candidate, reply: invented.span }).risk).toBe('RED');
+    expect(schema.safeParse({ ...nativeAudit, claims: [invented] }).success).toBe(true);
+    expect(check({ ...nativeAudit, claims: [invented] }, { ...candidate, reply: invented.span }).risk).toBe('RED');
+});
+
+it('binds implicit fee cells to exact numeric occurrences without parsing quantities as amounts', () => {
+    const c = { ...candidate, reply: 'Fees: 1: 40, 2: 60, 6+: 25 per person.' };
+    const feeSource = { ...source, id: 'fees', facts: { feesMinor: { 1: 4000, 2: 6000 }, sixPlusPerPersonMinor: 2500 } };
+    const claims = [
+        { ...audit.claims[0], kind: 'additional_fee' as const, span: '1: 40', quantity: 1, amountMinor: 4000, numericPath: 'feesMinor.1', sources: ['fees'], amountMentionIds: ['n2'] },
+        { ...audit.claims[0], kind: 'additional_fee' as const, span: '2: 60', quantity: 2, amountMinor: 6000, numericPath: 'feesMinor.2', sources: ['fees'], amountMentionIds: ['n4'] },
+        { ...audit.claims[0], kind: 'unit_rate' as const, span: '6+: 25 per person', quantity: 6, amountMinor: 2500, numericPath: 'sixPlusPerPersonMinor', sources: ['fees'], amountMentionIds: ['n6'] },
+    ];
+    expect(check({ ...audit, claims }, c, [feeSource]).risk).toBe('GREEN');
+});
+
+it('does not let a quantity mention cover a different explicit monetary amount', () => {
+    const c = { ...candidate, reply: '40 people cost AUD999.' };
+    const a = { ...audit, claims: [{ ...audit.claims[0], span: c.reply, amountMinor: 4000, amountMentionIds: ['n1'] }] };
+    const s = { ...source, facts: { ...source.facts, pricesMinor: { A2: 4000 } } };
+    expect(check(a, c, [s]).failures).toContain('uncovered_money_claim');
+});
+
+it('binds repeated identical monetary spans to their actual occurrences', () => {
+    const c = { ...candidate, reply: 'AUD109.99. AUD109.99.' };
+    const a = { ...audit, claims: [{ ...audit.claims[0], amountMentionIds: ['n1', 'n2'] }] };
+    expect(check(a, c).risk).toBe('GREEN');
+    expect(check({ ...a, claims: [{ ...a.claims[0], amountMentionIds: ['n1'] }] }, c).failures).toContain('uncovered_money_claim');
+    expect(check({ ...a, claims: [{ ...a.claims[0], span: 'AUD109.99. AUD', amountMentionIds: ['n2'] }] }, c).failures).toContain('invalid_money_mention');
+});
+
+it('rejects reuse of a monetary occurrence for conflicting quantities', () => {
+    const c = { ...candidate, reply: 'AUD40' };
+    const claim = { ...audit.claims[0], span: c.reply, kind: 'additional_fee' as const, amountMinor: 4000, sources: ['fees'], amountMentionIds: ['n1'] };
+    const s = { ...source, id: 'fees', facts: { feesMinor: { 1: 4000, 2: 4000 } } };
+    const claims = [{ ...claim, quantity: 1, numericPath: 'feesMinor.1' }, { ...claim, quantity: 2, numericPath: 'feesMinor.2' }];
+    expect(check({ ...audit, claims }, c, [s]).failures).toContain('conflicting_money_mention');
+});
+
+
+it('requires candidate-bound monetary IDs in the native output schema', () => {
+    const schema = auditSchemaForSources([source], ['c1'], candidate);
+    expect(schema.safeParse(audit).success).toBe(false);
+    expect(schema.safeParse(nativeAudit).success).toBe(true);
+    expect(schema.safeParse({ ...nativeAudit, claims: [{ ...nativeAudit.claims[0], amountMentionIds: ['invented'] }] }).success).toBe(false);
+    expect(schema.safeParse({ ...nativeAudit, claims: [{ ...nativeAudit.claims[0], amountMentionIds: [] }] }).success).toBe(false);
+});
+
+it('keeps explicit currency binding when the semantic span contains only the numeric token', () => {
+    const c = { ...candidate, reply: 'NZ$109.99' };
+    const a = { ...audit, claims: [{ ...audit.claims[0], span: '109.99', amountMentionIds: ['n1'] }] };
+    expect(check(a, c).failures).toContain('actual_text_currency_mismatch');
+});
+
+it('does not let nonmonetary semantic spans conceal native money occurrences', () => {
+    const a = { ...audit, claims: [{ ...audit.claims[0], kind: 'product' as const, span: candidate.reply }] };
+    expect(checkSafetyContract(candidate, a, [source], turns, true).failures).toContain('uncovered_money_claim');
+});
+
+it('does not reinterpret a later quantity as money after a bound amount is masked', () => {
+    const c = { ...candidate, reply: 'AUD109.99 2 days' };
+    const a = { ...audit, claims: [{ ...audit.claims[0], amountMentionIds: ['n1'] }] };
+    expect(check(a, c).risk).toBe('GREEN');
 });

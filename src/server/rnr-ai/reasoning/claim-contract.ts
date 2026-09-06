@@ -2,27 +2,30 @@ import { validateReplyPublicSurface } from "@/server/customer-service/website/ou
 import { z } from 'zod';
 export const candidateSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), reply: z.string().min(1), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable() }).strict();
 export type Candidate = z.infer<typeof candidateSchema>;
-export const auditSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable(), openIssue: z.enum(['NONE', 'POLICY_ENTITLEMENT', 'DISPUTE', 'EXCEPTION', 'ORDER_STATE']), relevantCustomerTurnIds: z.array(z.string()), claims: z.array(z.object({ span: z.string(), product: z.string().nullable(), orderReference: z.string().nullable(), destination: z.string().nullable(), kind: z.enum(['product', 'capability', 'price', 'pricing_rule', 'tax', 'shipping_cost', 'shipping_rule', 'delivery_promise', 'process', 'policy', 'additional_fee', 'unit_rate', 'order_status', 'payment_status']), sources: z.array(z.string()), marketDependent: z.boolean(), amountMinor: z.number().nullable(), currency: z.enum(['NZD', 'AUD']).nullable(), size: z.string().nullable(), quantity: z.number().int().positive().nullable(), numericPath: z.string().nullable(), calculation: z.array(z.object({ sourceId: z.string(), numericPath: z.string() }).strict()).max(2), liveRequired: z.boolean() }).strict()), safe: z.boolean(), helpful: z.boolean(), clarificationOnly: z.boolean(), customerInputRequest: z.string().nullable(), internalErrorLanguage: z.boolean(), unnecessaryQuestion: z.boolean(), issues: z.array(z.string()) }).strict();
+export const auditSchema = z.object({ mode: z.enum(['ANSWER', 'CLARIFICATION', 'HANDOFF']), market: z.enum(['NZ', 'AU', 'UNKNOWN']), marketEvidenceTurn: z.string().nullable(), openIssue: z.enum(['NONE', 'POLICY_ENTITLEMENT', 'DISPUTE', 'EXCEPTION', 'ORDER_STATE']), relevantCustomerTurnIds: z.array(z.string()), claims: z.array(z.object({ span: z.string(), product: z.string().nullable(), orderReference: z.string().nullable(), destination: z.string().nullable(), kind: z.enum(['product', 'capability', 'price', 'pricing_rule', 'tax', 'shipping_cost', 'shipping_rule', 'delivery_promise', 'process', 'policy', 'additional_fee', 'unit_rate', 'order_status', 'payment_status']), sources: z.array(z.string()), marketDependent: z.boolean(), amountMinor: z.number().nullable(), currency: z.enum(['NZD', 'AUD']).nullable(), size: z.string().nullable(), quantity: z.number().int().positive().nullable(), numericPath: z.string().nullable(), calculation: z.array(z.object({ sourceId: z.string(), numericPath: z.string() }).strict()).max(2), liveRequired: z.boolean(), amountMentionIds: z.array(z.string()).optional() }).strict()), safe: z.boolean(), helpful: z.boolean(), clarificationOnly: z.boolean(), customerInputRequest: z.string().nullable(), internalErrorLanguage: z.boolean(), unnecessaryQuestion: z.boolean(), issues: z.array(z.string()) }).strict();
 export type ClaimAudit = z.infer<typeof auditSchema>;
-export function auditSchemaForSources(sources: EvidenceSource[], customerTurnIds: string[]) {
+export function auditSchemaForSources(sources: EvidenceSource[], customerTurnIds: string[], candidate: Candidate) {
     const ids = [...new Set(sources.map(source => source.id))];
     if (!ids.length) throw new Error('missing_audit_evidence');
     const sourceId = z.enum(ids as [string, ...string[]]);
     const turnIds = [...new Set(customerTurnIds)];
     const customerTurnId = turnIds.length ? z.enum(turnIds as [string, ...string[]]) : null;
     const operand = z.object({ sourceId, numericPath: z.string() }).strict();
-    const claim = auditSchema.shape.claims.element.extend({ sources: z.array(sourceId) });
+    const claim = auditSchema.shape.claims.element.omit({ amountMentionIds: true }).extend({ sources: z.array(sourceId) });
+    const mentions = numericMentions(candidate.reply);
+    const mentionIds = mentions.map(mention => mention.id);
+    const amountMentionIds = mentionIds.length ? z.array(z.enum(mentionIds as [string, ...string[]])).min(1) : null;
     const monetaryKinds = ['price', 'additional_fee', 'unit_rate', 'shipping_cost'] as const;
-    const calculatedMoney = { amountMinor: z.number(), currency: z.enum(['NZD', 'AUD']), numericPath: z.null() };
+    const calculatedMoney = { amountMentionIds: amountMentionIds ?? z.array(z.string()).max(0), amountMinor: z.number(), currency: z.enum(['NZD', 'AUD']), numericPath: z.null() };
     return auditSchema.extend({
         marketEvidenceTurn: customerTurnId ? customerTurnId.nullable() : z.null(),
         relevantCustomerTurnIds: customerTurnId ? z.array(customerTurnId) : z.array(z.string()).max(0),
-        claims: z.array(z.union([
+        claims: z.array(amountMentionIds ? z.union([
             claim.extend({ kind: claim.shape.kind.exclude(monetaryKinds), calculation: z.array(operand).max(0) }),
             claim.extend({ ...calculatedMoney, kind: z.enum(monetaryKinds), numericPath: z.string().min(1), calculation: z.array(operand).max(0) }),
             claim.extend({ ...calculatedMoney, kind: z.literal('price'), quantity: z.number().int().positive(), size: z.string(), calculation: z.array(operand).length(2) }),
             claim.extend({ ...calculatedMoney, kind: z.literal('additional_fee'), quantity: z.number().int().min(6), calculation: z.array(operand).length(1) }),
-        ])),
+        ]) : claim.extend({ kind: claim.shape.kind.exclude(monetaryKinds), calculation: z.array(operand).max(0) })),
     });
 }
 
@@ -42,7 +45,7 @@ export type Turn = {
     text: string;
 };
 export const contractFailureCodes = [
-    'unsafe_public_output', 'semantic_verification_failed', 'uncovered_money_claim', 'internal_error_language',
+    'invalid_money_mention', 'conflicting_money_mention', 'unsafe_public_output', 'semantic_verification_failed', 'uncovered_money_claim', 'internal_error_language',
     'response_mode_disagreement', 'market_disagreement', 'market_source_not_customer',
     'invalid_active_context_source', 'unresolved_issue_requires_clarification_or_review',
     'order_answer_without_verified_state', 'not_claim_free_clarification',
@@ -106,17 +109,49 @@ function liveSourceSupports(claim: ClaimAudit['claims'][number], source: Evidenc
     // A generic order read or courier-price result must not become such an attestation.
     return false;
 }
-export function auditCoverageFeedback(candidate: Candidate, audit: ClaimAudit) {
+const monetaryKinds = new Set(['price', 'shipping_cost', 'additional_fee', 'unit_rate']);
+const moneyPattern = /(?:NZ\$|A\$|\$|NZD|AUD)\s*([0-9]+(?:[.,][0-9]+)*)|([0-9]+(?:[.,][0-9]+)*)\s*(?:NZD|AUD)/gi;
+export function numericMentions(reply: string) {
+    const explicitMoney = [...reply.matchAll(moneyPattern)];
+    return [...reply.matchAll(/[0-9]+(?:[.,][0-9]+)*/g)].map((match, index) => {
+        const money = explicitMoney.find(money => match.index >= money.index && match.index + match[0].length <= money.index + money[0].length)?.[0];
+        return {
+            id: `n${index + 1}`, text: match[0], start: match.index, end: match.index + match[0].length,
+            amountMinor: Math.round(Number(match[0].replaceAll(',', '')) * 100),
+            explicitCurrency: money && /NZD|NZ\$/i.test(money) ? 'NZD' : money && /AUD|A\$/i.test(money) ? 'AUD' : null,
+        };
+    });
+}
+function mentionInsideSpan(reply: string, span: string, mention: ReturnType<typeof numericMentions>[number]) {
+    if (!span) return false;
+    for (let start = reply.indexOf(span); start >= 0; start = reply.indexOf(span, start + 1)) {
+        if (mention.start >= start && mention.end <= start + span.length) return true;
+    }
+    return false;
+}
+export function auditCoverageFeedback(candidate: Candidate, audit: ClaimAudit, requireMoneyMentions = false) {
+    const nativeMentions = requireMoneyMentions || audit.claims.some(claim => claim.amountMentionIds !== undefined);
+    const mentions = numericMentions(candidate.reply);
+    const boundIds = new Set(audit.claims.filter(claim => monetaryKinds.has(claim.kind)).flatMap(claim => claim.amountMentionIds ?? []));
+    const covered = nativeMentions ? mentions.filter(mention => boundIds.has(mention.id)) : [];
+    const coveredRanges = [...covered, ...[...candidate.reply.matchAll(moneyPattern)]
+        .filter(money => covered.some(mention => mention.start >= money.index && mention.end <= money.index + money[0].length))
+        .map(money => ({ start: money.index, end: money.index + money[0].length }))];
     return {
-        uncoveredText: candidate.reply.split('').map((char, index) => audit.claims.some(c => { const start = candidate.reply.indexOf(c.span); return start >= 0 && index >= start && index < start + c.span.length; }) ? ' ' : char).join(''),
+        uncoveredText: candidate.reply.split('').map((char, index) => (nativeMentions
+            ? coveredRanges.some(mention => index >= mention.start && index < mention.end)
+            : audit.claims.some(c => { const start = candidate.reply.indexOf(c.span); return start >= 0 && index >= start && index < start + c.span.length; })) ? ' ' : char).join(''),
         invalidClaimSpans: audit.claims.filter(claim => !claim.span || !candidate.reply.includes(claim.span)).map(claim => claim.span),
     };
 }
-export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sources: EvidenceSource[], turns: Turn[]): {
+
+export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sources: EvidenceSource[], turns: Turn[], requireMoneyMentions = false): {
     risk: 'GREEN' | 'YELLOW' | 'RED';
     failures: ContractFailureCode[];
 } {
     const failures: ContractFailureCode[] = [];
+    const mentions = numericMentions(candidate.reply);
+    const mentionBindings = new Map<string, string>();
     if (!validateReplyPublicSurface(candidate.reply).ok) failures.push('unsafe_public_output');
     const byId = new Map(sources.map(s => [s.id, s]));
     const customerIds = new Set(turns.filter(t => t.role === 'customer').map(t => t.id));
@@ -125,7 +160,7 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
     // Helpfulness is not factual risk. A question with no asserted entitlement may be sent even when policy is missing.
     if (!audit.safe && !genuineClarification)
         failures.push('semantic_verification_failed');
-    const { uncoveredText: uncovered } = auditCoverageFeedback(candidate, audit);
+    const { uncoveredText: uncovered } = auditCoverageFeedback(candidate, audit, requireMoneyMentions);
     if (/(?:[$]\s*\d|(?:NZD|AUD)\s*\d|\d[\d,.]*\s*(?:NZD|AUD))/i.test(uncovered))
         failures.push('uncovered_money_claim');
     if (audit.internalErrorLanguage)
@@ -190,9 +225,21 @@ export function checkSafetyContract(candidate: Candidate, audit: ClaimAudit, sou
                 if(source.facts.size&&normalize(source.facts.size)!==normalize(claim.size))failures.push('tool_returned_size_mismatch');
                 if(source.facts.currency&&source.facts.currency!==claim.currency)failures.push('tool_currency_mismatch');
             }
-            const moneyValues = [...claim.span.matchAll(/(?:NZ\$|A\$|\$|NZD|AUD)\s*([0-9]+(?:[.,][0-9]+)*)|([0-9]+(?:[.,][0-9]+)*)\s*(?:NZD|AUD)/gi)].map(m => Math.round(Number((m[1] ?? m[2]).replaceAll(',', '')) * 100));
-            if (!moneyValues.length && /^\d+(?:\.\d{1,2})?$/.test(claim.span))
-                moneyValues.push(Math.round(Number(claim.span) * 100));
+            let moneyValues: number[];
+            if (requireMoneyMentions || claim.amountMentionIds !== undefined) {
+                const selected = (claim.amountMentionIds ?? []).map(id => mentions.find(mention => mention.id === id));
+                if (!selected.length || selected.some(mention => !mention || !mentionInsideSpan(candidate.reply, claim.span, mention))) failures.push('invalid_money_mention');
+                moneyValues = selected.flatMap(mention => mention ? [mention.amountMinor] : []);
+                if (selected.some(mention => mention?.explicitCurrency && mention.explicitCurrency !== claim.currency)) failures.push('actual_text_currency_mismatch');
+                const binding = JSON.stringify([claim.kind, claim.product, claim.orderReference, claim.destination, claim.amountMinor, claim.currency, claim.size, claim.quantity, claim.numericPath, claim.calculation, [...claim.sources].sort()]);
+                for (const id of claim.amountMentionIds ?? []) {
+                    if (mentionBindings.has(id) && mentionBindings.get(id) !== binding) failures.push('conflicting_money_mention');
+                    mentionBindings.set(id, binding);
+                }
+            } else {
+                moneyValues = [...claim.span.matchAll(moneyPattern)].map(m => Math.round(Number((m[1] ?? m[2]).replaceAll(',', '')) * 100));
+                if (!moneyValues.length && /^\d+(?:\.\d{1,2})?$/.test(claim.span)) moneyValues.push(Math.round(Number(claim.span) * 100));
+            }
             if (!moneyValues.length || moneyValues.some(amount => amount !== claim.amountMinor))
                 failures.push('actual_text_amount_mismatch');
             if ((candidate.market === 'AU' && /(?:NZD|NZ\$)\s*\d|\d[\d,.]*\s*NZD/i.test(claim.span)) || (candidate.market === 'NZ' && /(?:AUD|A\$)\s*\d|\d[\d,.]*\s*AUD/i.test(claim.span)))
