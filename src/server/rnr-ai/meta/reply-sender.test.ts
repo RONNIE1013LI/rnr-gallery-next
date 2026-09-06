@@ -36,10 +36,12 @@ async function setup(input: Readonly<{
   snapshotIncompleteReason?: MetaConversationSnapshot["incompleteReason"];
   stageAAllowedRecipientHash?: string | null;
   stageAActivatedAt?: Date | null;
+  allCustomersActivatedAt?: Date | null;
   fetchImpl?: typeof fetch;
   logEligibilityEvaluation?: (entry: unknown) => void;
   logDeliveryTrace?: (entry: unknown) => void;
   traceNow?: () => Date;
+  now?: () => Date;
 }> = {}) {
   const store = new InMemoryReplyRuntimeStore({
     now: () => Date.parse("2026-09-04T01:00:00.000Z"),
@@ -76,6 +78,7 @@ async function setup(input: Readonly<{
         ? hash(candidate.externalConversationKey)
         : input.stageAAllowedRecipientHash,
       stageAActivatedAt: input.stageAActivatedAt === undefined ? new Date(0) : input.stageAActivatedAt,
+    allCustomersActivatedAt: input.allCustomersActivatedAt,
     },
     accessToken: input.accessToken ?? "test-page-access-token",
     pageId: "page-id",
@@ -85,7 +88,7 @@ async function setup(input: Readonly<{
     controlIsOn: vi.fn(async () => input.controlIsOn ?? true),
     hashExternalKey: hash,
     fetchImpl,
-    now: () => new Date("2026-09-04T01:01:00.000Z"),
+    now: input.now ?? (() => new Date("2026-09-04T01:01:00.000Z")),
     logEligibilityEvaluation: input.logEligibilityEvaluation ?? eligibilityLog,
     logDeliveryTrace: input.logDeliveryTrace ?? deliveryTrace,
     traceNow: input.traceNow ?? (() => new Date("2026-09-04T01:00:00.100Z")),
@@ -391,4 +394,74 @@ describe("Meta reply sender", () => {
     expect(current.store.exportStateForTest().deliveries[0]?.[1].result)
       .toMatchObject({ status: "delivery_uncertain", providerMessageIdMasked: null });
   });
+});
+
+it("sends to a non-tester only at or after full activation without claiming old tester messages", async () => {
+  const activation = new Date("2026-09-04T01:00:00.000Z");
+  const current = await setup({ stageAAllowedRecipientHash: null, stageAActivatedAt: null, allCustomersActivatedAt: activation });
+  expect(await current.sender.sendEligibleReply(candidate)).toEqual({ status: "sent" });
+  expect(current.fetchImpl).toHaveBeenCalledOnce();
+  for (const recipientHash of [null, hash(candidate.externalConversationKey)]) {
+    const stale = await setup({ stageAAllowedRecipientHash: recipientHash, allCustomersActivatedAt: activation, latestReceivedAt: new Date(activation.getTime() - 1) });
+    expect(await stale.sender.sendEligibleReply(candidate)).toEqual({ status: "blocked" });
+    expect(stale.store.exportStateForTest().deliveries).toHaveLength(0);
+    expect(stale.fetchImpl).not.toHaveBeenCalled();
+  }
+});
+it("rechecks the full activation cutoff after claiming before Graph send", async () => {
+  const activation = new Date("2026-09-04T01:00:00.000Z");
+  const current = await setup({ stageAAllowedRecipientHash: null, allCustomersActivatedAt: activation });
+  const original = current.context.loadConversation.getMockImplementation()!;
+  current.context.loadConversation.mockImplementationOnce(original).mockImplementationOnce(async () => {
+    const snapshot = await original();
+    return { ...snapshot, events: snapshot.events.map(event => ({ ...event, receivedAt: new Date(activation.getTime() - 1) })) };
+  });
+  expect(await current.sender.sendEligibleReply(candidate)).toEqual({ status: "blocked" });
+  expect(current.fetchImpl).not.toHaveBeenCalled();
+  expect(current.eligibilityLog).toHaveBeenCalledWith(expect.objectContaining({ phase: "pre_send", reason: "pre_activation" }));
+});
+
+it.each([
+  ["expired", "2026-09-03T01:01:00.000Z"],
+  ["future", "2026-09-04T01:01:00.001Z"],
+])("blocks %s provider timestamps before claiming in full mode", async (_label, receivedAt) => {
+  const current = await setup({ stageAAllowedRecipientHash: null, allCustomersActivatedAt: new Date(0), latestReceivedAt: new Date(receivedAt) });
+  expect(await current.sender.sendEligibleReply(candidate)).toEqual({ status: "blocked" });
+  expect(current.fetchImpl).not.toHaveBeenCalled();
+  expect(current.store.exportStateForTest().deliveries).toHaveLength(0);
+});
+
+it("rechecks the 24h window after claim before Graph send", async () => {
+  const current = await setup({ stageAAllowedRecipientHash: null, allCustomersActivatedAt: new Date(0) });
+  const original = current.context.loadConversation.getMockImplementation()!;
+  current.context.loadConversation.mockImplementationOnce(original).mockImplementationOnce(async () => {
+    const snapshot = await original();
+    return { ...snapshot, events: snapshot.events.map(event => ({ ...event, receivedAt: new Date("2026-09-03T01:01:00.000Z") })) };
+  });
+  expect(await current.sender.sendEligibleReply(candidate)).toEqual({ status: "blocked" });
+  expect(current.fetchImpl).not.toHaveBeenCalled();
+  expect(current.eligibilityLog).toHaveBeenCalledWith(expect.objectContaining({ phase: "pre_send", reason: "outside_messaging_window" }));
+});
+
+it("settles blocked without Graph when beginDeliverySend crosses the 24h boundary", async () => {
+  const receivedAt = new Date("2026-09-03T01:01:00.000Z");
+  let currentTime = receivedAt.getTime() + 24 * 60 * 60 * 1_000 - 1;
+  const current = await setup({
+    stageAAllowedRecipientHash: null,
+    allCustomersActivatedAt: new Date(0),
+    latestReceivedAt: receivedAt,
+    now: () => new Date(currentTime),
+  });
+  const begin = current.store.beginDeliverySend.bind(current.store);
+  vi.spyOn(current.store, "beginDeliverySend").mockImplementation(async (lease, startedAt) => {
+    await begin(lease, startedAt);
+    currentTime += 1;
+  });
+
+  expect(await current.sender.sendEligibleReply(candidate)).toEqual({ status: "blocked" });
+  expect(current.fetchImpl).not.toHaveBeenCalled();
+  expect(current.context.loadConversation).toHaveBeenCalledTimes(2);
+  expect(current.store.exportStateForTest().deliveries).toEqual([
+    [expect.any(String), expect.objectContaining({ result: expect.objectContaining({ status: "blocked" }) })],
+  ]);
 });

@@ -209,3 +209,24 @@ describe("BacklogReconciler", () => {
     expect(processEvent).not.toHaveBeenCalled();
   });
 });
+
+it("never replays pre-activation backlog for testers or other customers in full mode", async () => {
+  const store = new InMemoryReplyRuntimeStore({ now: () => Date.parse(to) });
+  const processedEvents: MetaConversationEvent[] = [];
+  const reconciler = createBacklogReconciler({
+    store, controlIsOn: async () => true,
+    listConversations: async () => ["tester", "old", "new"].map(locator),
+    loadConversation: async item => snapshot(item.externalConversationKey, [
+      history(item.externalConversationKey, "customer", "old fragment", 1),
+      ...(item.externalConversationKey === "new" ? [history("new", "customer", "new question", 5)] : []),
+    ]),
+    processEvent: async event => { processedEvents.push(event); return { acknowledged: true, status: "delivery_candidate_disabled" }; },
+    hashExternalKey: hash,
+    stageAAllowedRecipientHash: hash("tester"), stageAActivatedAt,
+    allCustomersActivatedAt: new Date(Date.parse(from) + 4 * 60_000),
+    now: () => new Date(to),
+  });
+  expect(await reconciler.run(await lease(store))).toMatchObject({ processed: 1, skipped: 2 });
+  expect(processedEvents).toHaveLength(1);
+  expect(processedEvents[0]).toMatchObject({ externalConversationKey: "new", text: "new question" });
+});

@@ -1,4 +1,4 @@
-import type { RnrAiEngineMode } from "./config";
+import { metaActivationCutoff, metaRecipientAllowed, metaMessageWithinReplyWindow, type RnrAiEngineMode } from "./config";
 import type { MetaContextProvider } from "./context-provider";
 import type { MetaConversationEvent, MetaConversationSnapshot } from "./types";
 import type { ReplyRuntimeStore } from "../runtime-store/reply-runtime-store";
@@ -26,6 +26,7 @@ type SenderConfig = Readonly<{
   masterEnabled: boolean;
   engineMode: RnrAiEngineMode;
   metaAutoSendEnabled: boolean;
+  allCustomersActivatedAt?: Date | null;
   stageAAllowedRecipientHash: string | null;
   stageAActivatedAt: Date | null;
 }>;
@@ -42,7 +43,8 @@ type StillEligibleReason =
   | "snapshot_incomplete"
   | "latest_not_customer"
   | "latest_message_mismatch"
-  | "pre_activation";
+  | "pre_activation"
+  | "outside_messaging_window";
 
 type StillEligibleEvaluation = Readonly<{
   eligible: boolean;
@@ -155,6 +157,7 @@ async function stillEligible(input: Readonly<{
   context: MetaContextProvider;
   pageId: string;
   stageAActivatedAt: Date | null;
+  now(): Date;
   hashExternalKey(value: string): string;
 }>): Promise<StillEligibleEvaluation> {
   const candidateLatestCustomerMessageKeyHash = input.hashExternalKey(
@@ -250,6 +253,9 @@ async function stillEligible(input: Readonly<{
   if (!activationComparison) {
     return { ...details, eligible: false, reason: "pre_activation", activationComparison };
   }
+  if (!metaMessageWithinReplyWindow(latest.receivedAt, input.now())) {
+    return { ...details, eligible: false, reason: "outside_messaging_window", activationComparison };
+  }
   return { ...details, eligible: true, reason: "eligible", activationComparison };
 }
 
@@ -320,8 +326,7 @@ export function createMetaReplySender(input: Readonly<{
         || config.engineMode !== "shared_active"
         || !input.accessToken.trim()
         || !input.pageId.trim()
-        || !config.stageAAllowedRecipientHash
-        || input.hashExternalKey(candidate.externalConversationKey) !== config.stageAAllowedRecipientHash
+        || !metaRecipientAllowed(config, input.hashExternalKey(candidate.externalConversationKey))
         || candidate.channel !== "facebook"
         || candidate.risk !== "GREEN"
         || !candidate.replyText.trim()
@@ -329,14 +334,15 @@ export function createMetaReplySender(input: Readonly<{
       const preClaimEligibility = await stillEligible({
         ...input,
         candidate,
-        stageAActivatedAt: config.stageAActivatedAt,
+        now,
+        stageAActivatedAt: metaActivationCutoff(config),
       });
       safelyLogEligibilityEvaluation({ phase: "pre_claim", ...preClaimEligibility });
       if (!preClaimEligibility.eligible) {
         return Object.freeze({ status: "blocked" });
       }
 
-      if (input.hashExternalKey(candidate.externalConversationKey) !== config.stageAAllowedRecipientHash) {
+      if (!metaRecipientAllowed(config, input.hashExternalKey(candidate.externalConversationKey))) {
         return Object.freeze({ status: "blocked" });
       }
 
@@ -396,7 +402,8 @@ export function createMetaReplySender(input: Readonly<{
         const preSendEligibility = await stillEligible({
           ...input,
           candidate,
-          stageAActivatedAt: config.stageAActivatedAt,
+          now,
+          stageAActivatedAt: metaActivationCutoff(config),
         });
         safelyLogEligibilityEvaluation({ phase: "pre_send", ...preSendEligibility });
         if (!preSendEligibility.eligible) {
@@ -430,6 +437,14 @@ export function createMetaReplySender(input: Readonly<{
           throw error;
         }
         safelyLogDeliveryTrace({ phase: "begin_delivery_send_success", ...traceBase });
+        // The durable send reservation can consume the remaining messaging window.
+        if (
+          !preSendEligibility.latestReceivedAt
+          || !metaMessageWithinReplyWindow(new Date(preSendEligibility.latestReceivedAt), now())
+        ) {
+          await settle("blocked", null);
+          return finish("blocked", { reason: "outside_messaging_window" });
+        }
         providerSendStarted = true;
         safelyLogDeliveryTrace({ phase: "graph_post_start", ...traceBase });
         const response = await fetchImpl(
