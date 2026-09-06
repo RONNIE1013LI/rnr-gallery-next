@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Product } from "@/domain/catalogue/types";
 import {
   defaultProductRegistry,
@@ -86,9 +86,33 @@ export function ProductConfigurator({
       ? initialSizeKey
       : schema.defaultSizeKey,
   );
-  const [orientation, setOrientation] = useState<Orientation | undefined>(
-    schema.defaultOrientation,
-  );
+  const previewImage = designInspiration?.imageUrl ?? product.image.src;
+  const [orientationSelection, setOrientationSelection] = useState<{ imageSrc: string; value: Orientation }>();
+  const [loadedArtwork, setLoadedArtwork] = useState<{ imageSrc: string; width: number; height: number }>();
+  const detectOrientation = product.category === "canvas" && schema.orientationMode === "choice";
+  const hasDesignDimensions = !!designInspiration && designInspiration.width > 0 && designInspiration.height > 0;
+  const artworkDimensions = hasDesignDimensions
+    ? designInspiration
+    : loadedArtwork?.imageSrc === previewImage ? loadedArtwork : undefined;
+  const orientation = orientationSelection?.imageSrc === previewImage
+    ? orientationSelection.value
+    : detectOrientation && artworkDimensions
+      ? artworkDimensions.width >= artworkDimensions.height ? "landscape" : "portrait"
+      : schema.defaultOrientation;
+
+  useEffect(() => {
+    if (!detectOrientation || hasDesignDimensions) return;
+    // Load independently of the 2D preview, which unmounts when 3D is opened.
+    const image = new window.Image();
+    let active = true;
+    image.onload = () => {
+      if (active && image.naturalWidth > 0 && image.naturalHeight > 0) {
+        setLoadedArtwork({ imageSrc: previewImage, width: image.naturalWidth, height: image.naturalHeight });
+      }
+    };
+    image.src = previewImage;
+    return () => { active = false; image.onload = null; };
+  }, [detectOrientation, hasDesignDimensions, previewImage]);
   const [peoplePets, setPeoplePets] = useState(schema.defaultPeoplePets);
   const [sourcePhotoCustomisation, setSourcePhotoCustomisation] =
     useState<SourcePhotoCustomisationValue>({
@@ -143,7 +167,6 @@ export function ProductConfigurator({
     photoSubmissionMethod === "upload" ? uploadedFiles.map((file) => file.id) : [];
   const activeBackgroundRemovalUploadIds =
     photoSubmissionMethod === "upload" ? extraBackgroundRemovalUploadIds : [];
-  const previewImage = designInspiration?.imageUrl ?? product.image.src;
   const previewAlt = designInspiration?.altText ?? product.image.alt;
   const currency = currencyForMarket(market);
   const marketBook = registry?.markets[market];
@@ -297,7 +320,7 @@ export function ProductConfigurator({
       <div className={styles.configuratorLayout}>
         <div className={styles.configuratorSidebar}>
         <section className={styles.artworkPreview} aria-label="Artwork preview">
-        <CanvasProductPreview imageSrc={previewImage} sizeKey={product.category === "canvas" ? sizeKey : ""} orientation={orientation}>
+        <CanvasProductPreview imageSrc={previewImage} sizeKey={product.category === "canvas" ? sizeKey : ""} orientation={detectOrientation && !artworkDimensions && orientationSelection?.imageSrc !== previewImage ? undefined : orientation}>
         <div className={styles.artworkPreviewMedia}>
           <Image
             src={previewImage}
@@ -470,7 +493,8 @@ export function ProductConfigurator({
                         name="orientation"
                         value={option}
                         checked={orientation === option}
-                        onChange={() => setOrientation(option)}
+                        onClick={() => setOrientationSelection({ imageSrc: previewImage, value: option })}
+                        onChange={() => setOrientationSelection({ imageSrc: previewImage, value: option })}
                         aria-label={option === "landscape" ? "Landscape" : "Portrait"}
                       />
                       <span>{option === "landscape" ? "Landscape" : "Portrait"}</span>
