@@ -27,8 +27,8 @@ jobs:
       - name: Start isolated PostgreSQL
         run: |
           initdb -D "$RUNNER_TEMP/canvas-postgres" -U postgres -A trust
-          pg_ctl -D "$RUNNER_TEMP/canvas-postgres" -l "$RUNNER_TEMP/canvas-postgres.log" -o "-h 127.0.0.1 -p 55439 -k $RUNNER_TEMP" -w start
-          echo "RELEASE_TEST_DATABASE_ADMIN_URL=postgresql://postgres@127.0.0.1:55439/postgres" >> "$GITHUB_ENV"
+          pg_ctl -D "$RUNNER_TEMP/canvas-postgres" -l "$RUNNER_TEMP/canvas-postgres.log" -o "-h 127.0.0.1 -p 5432 -k $RUNNER_TEMP" -w start
+          echo "RELEASE_TEST_DATABASE_ADMIN_URL=postgresql://postgres@127.0.0.1:5432/postgres" >> "$GITHUB_ENV"
       - run: npm ci
       - name: Check previously incompatible tests first
         run: >-
@@ -38,6 +38,7 @@ jobs:
           src/server/customer-service/serverless-compatibility.test.ts
           src/server/customer-service/website/security-regression.test.ts
           src/components/admin/invoice-workspace.test.tsx
+          src/components/forms/forms-stats-chart.test.tsx
           'src/app/api/admin/notification-recipients/[recipientId]/route.test.ts'
           'src/app/api/admin/notification-recipients/[recipientId]/verification/route.test.ts'
           'src/app/api/admin/uploads/[uploadId]/route.test.ts'

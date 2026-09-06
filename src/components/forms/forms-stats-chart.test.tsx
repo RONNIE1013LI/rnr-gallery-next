@@ -5,6 +5,12 @@ import type { FormStatistic } from "@/server/forms/drizzle-forms-stats-repositor
 import type { FormStatWidget } from "@/server/forms/forms-stats-service";
 import { FormsStatsChart, FormsStatsTooltip, formatStatisticAxisValue, formatStatisticValue } from "./forms-stats-chart";
 
+// Geometry assertions do not depend on animation timing on a loaded CI runner.
+vi.mock("recharts", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("recharts")>();
+  return { ...actual, Bar: (props: React.ComponentProps<typeof actual.Bar>) => <actual.Bar {...props} isAnimationActive={false} /> };
+});
+
 class SizedResizeObserver {
   constructor(private readonly callback: ResizeObserverCallback) {}
 
